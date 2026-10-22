@@ -138,6 +138,7 @@ pub struct EffectsGpu {
     ops: (wgpu::Buffer, usize),
     keys: (wgpu::Buffer, usize),
     key_desc: (wgpu::Buffer, usize),
+    paths: (wgpu::Buffer, usize),
     slots: (wgpu::Buffer, usize),
     sverts: (wgpu::Buffer, usize),
     sframes: (wgpu::Buffer, usize),
@@ -177,7 +178,7 @@ impl EffectsGpu {
         let cs = wgpu::ShaderStages::COMPUTE;
         let update_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects update"),
-            entries: &[uniform(0, cs), storage(1, false, cs), storage(2, true, cs), storage(3, true, cs), storage(4, true, cs), storage(5, true, cs), storage(6, false, cs), storage(7, false, cs)],
+            entries: &[uniform(0, cs), storage(1, false, cs), storage(2, true, cs), storage(3, true, cs), storage(4, true, cs), storage(5, true, cs), storage(6, false, cs), storage(7, false, cs), storage(8, true, cs)],
         });
         let update = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("effects update"),
@@ -317,6 +318,7 @@ impl EffectsGpu {
             ops: table("effects ops"),
             keys: table("effects keys"),
             key_desc: table("effects key table"),
+            paths: table("effects paths"),
             slots: table("effects slots"),
             sverts: table("effects sprite vertices"),
             sframes: table("effects sprite frames"),
@@ -383,6 +385,11 @@ impl EffectsGpu {
             q.write_buffer(&self.key_desc.0, 0, bytemuck::cast_slice(&reg.key_desc));
             reg.keys_dirty = false;
         }
+        if reg.paths_dirty {
+            rebind |= Self::fit(gpu, &mut self.paths, reg.path_data.len() * 16, "effects paths");
+            q.write_buffer(&self.paths.0, 0, bytemuck::cast_slice(&reg.path_data));
+            reg.paths_dirty = false;
+        }
         if reg.sprites_dirty {
             redraw |= Self::fit(gpu, &mut self.sverts, reg.sprite_verts.len() * 36, "effects sprite vertices");
             redraw |= Self::fit(gpu, &mut self.sframes, reg.sprite_frame_table.len() * 8, "effects sprite frames");
@@ -433,6 +440,7 @@ impl EffectsGpu {
                     wgpu::BindGroupEntry { binding: 5, resource: self.slots.0.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 6, resource: self.outs.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 7, resource: self.back.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 8, resource: self.paths.0.as_entire_binding() },
                 ],
             }));
         }

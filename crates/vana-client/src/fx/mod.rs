@@ -8,6 +8,7 @@ pub mod lib;
 pub mod math;
 pub mod sched;
 pub mod sound;
+pub mod spline;
 mod tasks;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
@@ -209,6 +210,10 @@ pub struct Registry {
     pub key_desc: Vec<[u32; 2]>,
     key_id: HashMap<Ref, u32>,
     pub keys_dirty: bool,
+    /// Vtx paths as splines (fx/spline.rs gpu_words), back to back; an element slot holds first vec4 + 1.
+    pub path_data: Vec<[f32; 4]>,
+    path_id: HashMap<Ref, (u32, Vec<spline::Seg>)>,
+    pub paths_dirty: bool,
     /// Element update streams back to back (op words).
     pub ops: Vec<u32>,
     stream_at: HashMap<Ref, (u32, Option<usize>)>,
@@ -249,6 +254,9 @@ impl Registry {
             key_desc: Vec::new(),
             key_id: HashMap::new(),
             keys_dirty: false,
+            path_data: Vec::new(),
+            path_id: HashMap::new(),
+            paths_dirty: false,
             ops: vec![0],
             stream_at: HashMap::new(),
             ops_dirty: true,
@@ -316,6 +324,21 @@ impl Registry {
         self.key_id.insert(r, id);
         self.keys_dirty = true;
         id
+    }
+
+    /// A Vtx path by 4cc from the generator's scope: its GPU reference (first vec4 + 1) and p(0); None when it does
+    /// not resolve or has fewer than two points.
+    pub fn path_ref(&mut self, lib: usize, from: usize, name: u32) -> Option<(u32, Vec3)> {
+        let r = self.resolve(lib, from, kind::VTX, name)?;
+        if !self.path_id.contains_key(&r) {
+            let segs = spline::build(&spline::points(self.libs[r.0].data(r.1)))?;
+            let at = self.path_data.len() as u32 + 1;
+            self.path_data.extend(spline::gpu_words(&segs));
+            self.path_id.insert(r, (at, segs));
+            self.paths_dirty = true;
+        }
+        let (at, segs) = &self.path_id[&r];
+        Some((*at, spline::eval(segs, 0.0)))
     }
 
     /// The generator's element update stream in the ops buffer: (first word, slot of its op 0x02).

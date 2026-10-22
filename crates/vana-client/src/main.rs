@@ -591,6 +591,9 @@ enum Cmd {
         /// Moon phase 0..11 for the effects (0 = new moon).
         #[arg(long, default_value_t = 0)]
         moon: u32,
+        /// Also start this generator of the zone (4cc) with the effects, for checking one that is not auto-started.
+        #[arg(long)]
+        start: Option<String>,
     },
     /// Dump every table of an MSI as TSV, for inspection.
     DumpMsi { msi: PathBuf, out: PathBuf },
@@ -888,7 +891,7 @@ fn main() -> Result<()> {
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust), frames, every, hour),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -924,6 +927,12 @@ fn main() -> Result<()> {
                     fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
                     fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
                     fx.set_weather(&weather, 0.0);
+                    if let Some(name) = start.as_deref().and_then(|s| <[u8; 4]>::try_from(s.as_bytes()).ok())
+                        && let Some(l) = fx.reg.lib_of(100 + zone)
+                        && let Some(n) = fx.reg.libs[l].find_global(dat::generator::kind::GENERATOR, u32::from_le_bytes(name))
+                    {
+                        fx.start((l, n), fx::Owner::Zone);
+                    }
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
                     let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
                         let mut eg = render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb);

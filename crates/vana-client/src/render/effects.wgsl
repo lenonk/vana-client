@@ -27,6 +27,25 @@ struct Params {
 @group(0) @binding(5) var<storage, read> slots: array<u32>;
 @group(0) @binding(6) var<storage, read_write> outs: array<f32>;
 @group(0) @binding(7) var<storage, read_write> back: array<u32>;
+@group(0) @binding(8) var<storage, read> paths: array<vec4<f32>>;
+
+// FUN_10062c80 (fx/spline.rs eval): path `at` (first vec4 + 1) at u.
+fn path_at(at: u32, u: f32) -> vec3<f32> {
+    let h = at - 1u;
+    let n = bitcast<u32>(paths[h].x);
+    var acc = 0.0;
+    var j = n - 1u;
+    var t = 1.0;
+    for (var k = 0u; k < n; k = k + 1u) {
+        let len = paths[h + 1u + 4u * k + 1u].w;
+        acc = acc + len;
+        if (u <= acc) { j = k; t = (u - (acc - len)) / len; break; }
+    }
+    let q = h + 1u + 4u * j;
+    let t2 = t * t;
+    let t3 = t2 * t;
+    return paths[q].xyz * (2.0 * t3 - 3.0 * t2 + 1.0) + paths[q + 1u].xyz * (t3 - 2.0 * t2 + t) + paths[q + 2u].xyz * (3.0 * t2 - 2.0 * t3) + paths[q + 3u].xyz * (t3 - t2);
+}
 
 const PI: f32 = 3.141592;
 const IDENT: mat4x4<f32> = mat4x4<f32>(vec4<f32>(1.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, 1.0, 0.0, 0.0), vec4<f32>(0.0, 0.0, 1.0, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
@@ -226,6 +245,20 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
         switch code {
             case 0x01u: { set_ev3(b, E_POS, ev3(b, E_POS) + opv3(r) * dt); }
             case 0x02u: { set_ev3(b, E_POS, ev3(b, E_POS) + slv3(b, s) * dt); }
+            // Follow the path: u = t, or key(t) (no override, fmod 1 above 1); pos += p(u) - S[s+3..5].
+            case 0x34u: {
+                let at = sl(b, s + 7u);
+                if (at != 0u) {
+                    var u = t;
+                    if (sl(b, s) != NONE) {
+                        u = key_n(b, s, t);
+                        if (u > 1.0) { u = fract(u); }
+                    }
+                    let pp = path_at(at, u);
+                    set_ev3(b, E_POS, ev3(b, E_POS) + pp - slv3(b, s + 3u));
+                    set_slv3(b, s + 3u, pp);
+                }
+            }
             case 0x03u: { if ((el[b + E_STATE] & ST_BATCHED) == 0u) { set_slv3(b, s, slv3(b, s) + opv3(r) * dt); } }
             case 0x04u: { set_ev3(b, E_ROT, ev3(b, E_ROT) + opv3(r) * dt); }
             case 0x05u: { set_ev3(b, E_ROT, ev3(b, E_ROT) + slv3(b, s) * dt); }

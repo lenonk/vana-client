@@ -242,6 +242,16 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     }
                 }
             }
+            // Path start: S[s] keyframe, S[s+1] sampler, S[s+7] the path; S[s+3..5] = p(0), pos += p(0).
+            0x54 => {
+                if let Some((at, p)) = reg.path_ref(lib, from, op.u32(5)) {
+                    e.set_s(s, if op.u32(2) != 0 { key(reg, op) } else { NONE });
+                    e.set_s(s + 1, op.u32(3));
+                    e.set_s(s + 7, at);
+                    e.set_sv3(s + 3, p);
+                    pos += p;
+                }
+            }
             0x87 => {
                 e.set_sv3(s, pos);
                 e.set_sv3(s + 3, Vec3::ZERO);

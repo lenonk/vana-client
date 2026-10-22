@@ -3165,3 +3165,19 @@ area_light, the update Params `area`. Test port_sandoria_area_light: 232 fine 12
 area folders, collision object +0xb0, actor area id, event op 0xae sub 7), e.g. zone 232 `ev01` indoors (flags
 bit 0, so never c2: 12:00 (0.9843, 0.9529, 0.8588)). Byte 0x0c of the payload is red (MODLOG's earlier "B,G,R"
 note on the env colours is wrong; weather.rs rgb() reads R, G, B).
+
+## Effect spline paths (Vtx 0x3e, CMoSpline; fx/spline.rs, update op 0x34) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/splines.md. Vtx data: u32 N, from +0x10 N vec4 points (w = 1). FUN_10062c80 builds
+a CMoSpline once per Vtx (FUN_10062bd0 / FUN_10062600; closed and uniform branches dead): cubic Hermite, Bessel
+tangents, chord-length knots: c_k = max(|Q_k+1 - Q_k|, 0.01), c_-1 = c_0, c_N-1 = c_N-2, phantoms 2Q_0 - Q_1 and
+2Q_N-1 - Q_N-2; a = c_k-1 / (c_k-1 + c_k), b = c_k / (c_k + c_k+1); m_k = ((1-a)^2/a)(Q_k - Q_k-1) + a(Q_k+1 - Q_k),
+m_k+1 = (1-b)(Q_k+1 - Q_k) + (b^2/(1-b))(Q_k+2 - Q_k+1); segment = first with u <= its accumulated c/C, else the
+last at t = 1. Emission 0x54 ([2] KeyFrame 4cc, [3] sampler, [5] Vtx 4cc): S[s] keyframe, S[s+1] sampler, S[s+7]
+path, S[s+3..5] = p(0), pos += p(0). Update 0x34: u = t, or key(t) without override and fmod 1 above 1; pos +=
+p(u) - S[s+3..5]; S[s+3..5] = p(u). Here the segments go to the GPU (update binding 8, `paths`, header + 4 vec4 a
+segment; the slot holds first vec4 + 1). Test worked_paths: DAT 202 'lin2' and DAT 265 'a7' match the spec's
+numbers. zone-shot `--start NAME` starts a zone generator: 102 `--start hat2` pigeons fly along 'lin2'.
+Corrections: S[0] is the keyframe (spec C.4 said spline); gen+0xa0 = op[1] of 0x54 is the KeyFrame; op 0x15's
+corners are its own op[1] (always 0: the unit cube). Not done: who starts f_la/mode/hato (flags 0x40000000, not
+auto), scheduler ops 0x26 / 0x27 (CMoPathDriveActorTask), CMoPathObject.
