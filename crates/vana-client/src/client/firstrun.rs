@@ -18,6 +18,9 @@ fn volume(i: usize) -> String {
     if i == 1 { "FFXIFullSetup_US.part1.exe".into() } else { format!("FFXIFullSetup_US.part{i}.rar") }
 }
 
+/// The first-start window's size (fixed; the configured size applies once the game files are in).
+pub const WINDOW: [u32; 2] = [760, 540];
+
 /// No game files where the config says they are.
 pub fn needed(ffxi_dir: &Path) -> bool {
     !ffxi_dir.join("VTABLE.DAT").is_file()
@@ -90,7 +93,7 @@ impl FirstRun {
                     .corner_radius(6.0)
                     .inner_margin(32.0)
                     .show(ui, |ui| {
-                        ui.set_max_width(640.0);
+                        ui.set_max_width(620.0);
                         ui.style_mut().spacing.button_padding = egui::vec2(14.0, 8.0);
                         ui.vertical(|ui| {
                             ui.label(egui::RichText::new("FINAL FANTASY XI game files").size(30.0).color(gold));
@@ -118,7 +121,7 @@ impl FirstRun {
                                     let (done, total) = (p.done.load(Ordering::Relaxed), p.total.load(Ordering::Relaxed));
                                     ui.label(egui::RichText::new(p.phase.lock().unwrap().clone()).size(19.0));
                                     ui.add_space(8.0);
-                                    ui.add(egui::ProgressBar::new(p.fraction()).desired_width(640.0).fill(egui::Color32::from_rgb(0x9a, 0x7a, 0x40)));
+                                    ui.add(egui::ProgressBar::new(p.fraction()).desired_width(620.0).fill(egui::Color32::from_rgb(0x9a, 0x7a, 0x40)));
                                     if total > 0 {
                                         ui.label(format!("{:.2} of {:.2} GB", done as f64 / 1e9, total as f64 / 1e9));
                                     }

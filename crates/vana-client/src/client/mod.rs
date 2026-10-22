@@ -2143,6 +2143,7 @@ impl App {
         if self.drive.driven() && std::env::var_os("FFXI_TEST_WINDOW").is_none() {
             return;
         }
+        window.set_resizable(true);
         let (size, mode) = (self.cfg.window_size(), self.cfg.window_mode());
         // A new monitor: Wayland can't move a window and KWin won't switch a full-screen window's output, so go
         // full screen on the new one (that places the window there), then come back to the mode a few frames on.
@@ -3440,6 +3441,8 @@ impl App {
                     self.game_ui_state = LoadState::Idle;
                     self.flyover_state = LoadState::Idle;
                     self.cfg.installed = true;
+                    // From the fixed first-start window to the configured one.
+                    self.window_dirty = true;
                     if let Err(e) = self.cfg.save() {
                         log::warn!("saving the config: {e:#}");
                     }
@@ -4304,7 +4307,9 @@ impl App {
                 g.window.set_visible(true);
             }
             // A full-screen state asked for while the window was hidden is not kept by KWin; ask again once mapped.
-            self.refullscreen.set(Some(3));
+            if self.first_run.is_none() {
+                self.refullscreen.set(Some(3));
+            }
         }
         let shoot = self.step_drive();
         let dt = self.last_frame.elapsed().as_secs_f32().min(0.1);
@@ -4885,11 +4890,14 @@ impl ApplicationHandler for App {
         // Hidden (and on Wayland unmapped, nothing being presented) until the title can draw. Driven test runs
         // don't ask for focus and say so in the title, so they never take the user's keyboard.
         let title = if self.drive.driven() { "FINAL FANTASY XI [test]" } else { "FINAL FANTASY XI" };
-        let [ww, wh] = self.cfg.window_size();
+        // No game files yet: the first-start window is a fixed size, whatever the config says.
+        let bootstrap = firstrun::needed(&self.cfg.ffxi_dir());
+        let [ww, wh] = if bootstrap { firstrun::WINDOW } else { self.cfg.window_size() };
         // Test runs are always windowed.
-        let mode = if self.drive.driven() { 1 } else { self.cfg.window_mode() };
+        let mode = if self.drive.driven() || bootstrap { 1 } else { self.cfg.window_mode() };
         let attrs = Window::default_attributes()
             .with_title(title)
+            .with_resizable(!bootstrap)
             .with_inner_size(winit::dpi::PhysicalSize::new(ww, wh))
             .with_fullscreen(fullscreen(mode, [ww, wh], pick_monitor(&self.cfg.monitor, event_loop.primary_monitor(), event_loop.available_monitors(), [ww, wh])))
             .with_decorations(mode == 1)
