@@ -74,7 +74,7 @@ enum Cmd {
         /// After the screenshot, log out and close instead of leaving the window up.
         #[arg(long)]
         quit: bool,
-        /// Scripted input, e.g. "until:login;user;key:Tab;pass;key:Enter;until:title;shot:a.png"
+        /// Scripted input, e.g. "until:login;user;key:Tab;pass;key:Enter;until:title;shot:a.png", or @FILE holding it
         /// (see client/script.rs).
         #[arg(long, allow_hyphen_values = true)]
         input: Option<String>,
@@ -740,6 +740,8 @@ fn main() -> Result<()> {
                 }
                 None => None,
             };
+            // "@path" reads the script from a file.
+            let input = input.map(|s| match s.strip_prefix('@') { Some(p) => std::fs::read_to_string(p).map(|t| t.trim().to_string()), None => Ok(s) }).transpose()?;
             let input = input.map(|s| client::script::Script::parse(&s, login.as_ref())).transpose()?;
             let drive = client::Drive { login, character, walk_secs: walk, goto, screenshot, screenshot_after: after, quit, input, chase, ..Default::default() };
             client::run(config::Config::load(), drive)

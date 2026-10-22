@@ -1946,7 +1946,7 @@ Decompile: ~/ffxi/lab/creatorwork/ghidra/all.c / all.asm. Research notes with ad
 - Text width = clamp((W - 512) * pct / 100 + 352, 352, W - 160), pct config 0x9c = 100; frame x 16, width text + 14,
   bottom H - 16, height 134 + (lines - 8) * 16. Each new wrapped line adds 300 ticks (config 0x11 = 5 s) capped at
   8 lines (config 0x0f), the count drops one line per 5 s down to 0 (config 0x10), Escape (key 0x95) takes one off.
-  Kept open while typing with more than 2 lines and *(inf)* while an event prompt or choice waits.
+  Kept open while typing with more than 2 lines, and during events by FUN_1015ba60's rule (see "Messages" below).
 - Frame height eases 8 px a tick while more than 16 px off, else 2 px *(inf: per 1/60 tick, retail per frame)*.
 - Lines 16 px apart, newest at y1 - 20, clipped to [x0, y0 + 3, x1, y1 - 4] (UiBatch now carries scissor rects);
   slide-in 16 px over 20 ticks; with the input open the text rect loses 16 px at the bottom.
@@ -2089,7 +2089,13 @@ are marked *(inf)*. Live checks on lnxtest01: the new character Lnxcsfix (Hume M
   or no full update (+0x141) is asked for once (bitmap DAT_104755d8) and the walk stops there; then it waits for the
   model (+0x120 bit 9). FUN_100ad280 clears the bitmap every 120 ticks (real ticks; at 300 fps a per-frame clamp to 1
   would re-ask five times too often). No give-up. Requests therefore go one at a time: live 0x1f7 asked for 29 actors
-  and started after 14.8 s. A model that fails to load, or an entity with no look, counts as loaded *(inf)*. The
+  and started after 14.8 s. Ours, not retail: every missing bound actor is asked for at once (LSB answers only the
+  client's 400 ms datagrams, so one at a time froze the player ~12 s before the San d'Oria opening 0x1f4); ready
+  after 3.6 s live (2026-10-22).
+- Event bodies' walk / run ratio (sync) counts VM ticks: it updates only on frames where the VM ticked, with that
+  many ticks. Per frame at 300 fps it flipped between 0 (no VM step) and a capped run (a whole tick's step over a
+  1/300 s frame), and the legs blurred. FUN_1008cce0 sets the actor's speed / speed base to body +0x16c / +0x168 x
+  0.8 (_DAT_1031e8a4); the reference unit (units/s vs tenths) is not confirmed *(inf: 4.0 units/s)*. A model that fails to load, or an entity with no look, counts as loaded *(inf)*. The
   Mode & 0x100 checks (state 7, busy model) are not modelled.
 - +0x141: a first 0x00E counts only with mask & 7 == 7 (& 0x17 for kinds 1 / 7, 0x1009a097); 0x00D needs 0x1F
   (0x100982f6). A partial first update is dropped and the actor asked for again (+0x12c bit 15, FUN_1008d280).
@@ -2142,7 +2148,19 @@ are marked *(inf)*. Live checks on lnxtest01: the new character Lnxcsfix (Hume M
   (x, y) without the frame. 0x67 = (1, val@1, val@3), 0x68 = (0, 0, 0); text codes `02 lo hi` / `03 lo hi` set
   DAT_10476f98 / 9a and place it (FUN_100bf790). Negative x / y are -176 - W * v / 100 and -32 - H * v / 100. The place
   goes through FUN_10159920 mode 0, taken as plain pixels (as the creator's origin) *(inf)*: the narration sits at
-  (80, 340). Lines still go to the log, which is not drawn while an event runs *(inf)*.
+  (80, 340).
+- Correction (2026-10-22, traced by a sub-agent): event text is written to logwindo and the log is drawn during events.
+  The message object (FUN_10122b50 / FUN_10122fc0, rem4line at +0x83c) cuts it into 4-line chunks (FUN_10123060);
+  FUN_10131e30 wraps each at the log width (DAT_105dc3e4 +0x32), counts its lines (rem4line +0x4e, list +0x14, count
+  +0x24) and writes it to the log ring (FUN_10124050) with entry +0x12 = 1 ("the open message's" *(inf)*), first serial at
+  +0x50. rem4line ("menu    rem4line", DAT_105657b8) is only an overflow window: its show path FUN_10131d20 is called
+  only from the log's add-line FUN_1015b8e0, when the log is at its max lines and its oldest visible row is the
+  message's; it then sits at the log's top-left (height +0x4e x 16 + 4, asm 10131dc2..10131deb) and the log's text rect
+  loses min(lines, 4) rows (FUN_1015ba60, asm 1015be84..1015bed3). FUN_1015ba60 keeps the log open while a window with
+  flag 0x1000 is up, while rem4line is open (+0x69), or while the oldest visible row is the message's and the message
+  rows showing are <= its line count; otherwise it decays to the min as usual. Ours: pages go to the log as they open,
+  the log holds while a message waits with no more rows than its page; placed narration keeps its own frameless
+  window; the overflow case is not modelled.
 - Mouth: a spoken line (0x2b / 0x1d / 0xb0) starts the speaker's face motion ('mou4', else 'mou6'; FUN_10086710 /
   FUN_100867a0) at once and every 142 ticks, (chars + 20) / 20 times, over the body motion; it stops when the window
   closes (0x23, FUN_100b1140; the 8-tick blend out is not done). Curilla (model 69) and Rahal both have mou4.

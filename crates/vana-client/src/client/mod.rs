@@ -896,6 +896,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     paginate(gu, world, logwin::text_width(sw, world.log.cfg.pct));
+    // FUN_10123060 / FUN_10131e30: each page of the open message goes into the log as it opens.
+    let page_lines: Vec<String> = match event::message(world) {
+        Some(m) => match &m.pages {
+            Some((_, pages)) if m.logged <= m.page.min(pages.len() - 1) => {
+                let upto = m.page.min(pages.len() - 1);
+                let lines = pages[m.logged..=upto].concat();
+                m.logged = upto + 1;
+                lines
+            }
+            _ => Vec::new(),
+        },
+        None => Vec::new(),
+    };
+    for l in page_lines {
+        world.chat.push(l);
+    }
     let target = world.target.and_then(|t| world.entities.get(&t));
     let st = crate::render::screens::HudState {
         party: world.vitals.map(|v| vec![(v.3 as f32 / 100.0, v.4 as f32 / 100.0)]).unwrap_or_default(),
@@ -927,8 +943,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             gu.sprite("menu    windowps", 212, r[0], r[1], 0x8080_8080);
         }
     }
-    // The log stays open while typing with more than 2 lines, and (inferred) while an event waits on it.
-    let keep = (world.typing && world.log.lines() > 2) || event::prompt(world) || event::choice(world).is_some();
+    // FUN_1015ba60: the log stays open while typing with more than 2 lines, while a window with flag 0x1000 is up
+    // (the choice menu *(inf)*), and while a message waits with no more rows showing than its page: older lines
+    // decay away and the message holds.
+    let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
+    let keep = (world.typing && world.log.lines() > 2) || event::choice(world).is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
     if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) {
         world.log_active = false;
@@ -947,14 +966,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.hud_top = top;
     let party = crate::render::screens::party_menu(st.party.len());
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
-    // In an event the log stays behind the event message window and does not show between its lines (inferred:
-    // retail writes those lines to the log but the cutscene shows only the message window).
+    // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
     } else if let Some(fl) = world.full_log {
         // The small logs are closed while the full log is open (FUN_1015c280).
         blockers.push(world.log.draw_full(gu, &fl, sw, sh, world.typing, world.game.get(0xb4) != 0));
-    } else if log.rect[3] > 0.0 && !event::active(world) {
+    } else if log.rect[3] > 0.0 {
         let [x, y, w, h] = log.rect;
         gu.frame(x, y, w, h);
         let newest = world.log.draw(gu, &log, world.typing);
@@ -1218,23 +1236,15 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     bars
 }
 
-/// The event message window (FUN_10131d20 / FUN_10131c10): the open message's current page, 4 wrapped lines
-/// at most, in a frame of lines * 16 + 4 at the log's place, or without the frame at the FUN_10132030 place
-/// (ops 0x67 / 0x68, text codes 02 / 03). The log is not drawn while it is up *(inf)*. Returns its rect.
+/// Placed narration (rem4line opened by FUN_10131c10 at the FUN_10132030 place: ops 0x67 / 0x68, text codes
+/// 02 / 03): the open message's current page without a frame. Other event text is in the log; rem4line's overflow
+/// case (FUN_10131d20: the log full and its oldest row the message's) is not modelled. Returns its rect.
 fn event_window(gu: &mut GameUi, world: &World, sw: f32, sh: f32, tw: f32) -> Option<[f32; 4]> {
-    let place = event::placement(world, sw, sh);
+    let (x, y) = event::placement(world, sw, sh)?;
     let waits = event::prompt(world);
     let m = event::message_ref(world)?;
     let page = m.pages.as_ref().and_then(|(_, p)| p.get(m.page).cloned()).unwrap_or_default();
     let (w, h) = (tw + 14.0, page.len().max(1) as f32 * 16.0 + 4.0);
-    let (x, y) = match place {
-        Some((x, y)) => (x, y),
-        None => {
-            let (x, y) = (16.0, sh - 16.0 - h);
-            gu.frame(x, y, w, h);
-            (x, y)
-        }
-    };
     for (k, line) in page.iter().enumerate() {
         gu.text(line, x + 4.0, y + 2.0 + 16.0 * k as f32, 0, WHITE);
     }

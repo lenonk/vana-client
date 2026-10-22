@@ -241,6 +241,8 @@ pub struct Msg {
     /// Pages of wrapped lines and the width they were wrapped at; the page shown.
     pub pages: Option<(f32, Vec<Vec<String>>)>,
     pub page: usize,
+    /// Pages already written to the log (FUN_10131e30 writes each as it opens).
+    pub logged: usize,
 }
 
 impl Msg {
@@ -450,9 +452,6 @@ impl Host for LiveHost<'_> {
         let index = self.st.start.index;
         match e {
             Effect::Message { id, text, prompt, wait, speaker, op, place } => {
-                for l in text.split('\n') {
-                    self.w.chat.push(l.to_string());
-                }
                 // FUN_100bf790: 02 / 03 set DAT_10476f98 / 9a and place the window there (FUN_10132030(1, x, y)).
                 if place.iter().any(Option::is_some) {
                     self.st.code_xy = (place[0].unwrap_or(self.st.code_xy.0), place[1].unwrap_or(self.st.code_xy.1));
@@ -468,7 +467,7 @@ impl Host for LiveHost<'_> {
                 }
                 let lines = text.split('\n').map(str::to_string).collect();
                 // Inferred: a 7f 34 / 7f 38 wait closes the line by itself, even before a 7f 31.
-                self.st.msg = Some(Msg { id, prompt: prompt && wait.is_none(), wait: wait.unwrap_or(0) as f32, open: 0.0, lines, pages: None, page: 0 });
+                self.st.msg = Some(Msg { id, prompt: prompt && wait.is_none(), wait: wait.unwrap_or(0) as f32, open: 0.0, lines, pages: None, page: 0, logged: 0 });
             }
             Effect::Choice { question, options, cursor, .. } => {
                 self.st.choice = Some(Choice { question, options, cursor, scroll: cursor.saturating_sub(2) });
@@ -819,12 +818,22 @@ fn actors_ready(w: &World, wt: &mut Waiting, ticks: f32) -> bool {
     let model = |id: u32| has_model(w, id);
     let blocks = wt.blocks.as_deref().unwrap_or_default();
     let waiting = first_waiting(blocks, ev, (w.my_id, w.my_index), &present, &model, &mut wt.joined);
-    if let Some((id, index, true)) = waiting
-        && wt.asked.insert(index)
-    {
-        let _ = w.net.commands.send(NetCommand::CharReq(index));
+    // Not retail, which asks for the first missing actor and waits for it: every missing one is asked for at
+    // once. With LSB answering only the client's 400 ms datagrams, the San d'Oria opening (29 actors across the
+    // city) otherwise froze the player for 12 s before the event began.
+    let mut asked = 0;
+    for b in blocks.iter().filter(|b| bound_block(b, ev)) {
+        if let Some((id, index)) = resolve((w.my_id, w.my_index), b.actor)
+            && !present(id)
+            && wt.asked.insert(index)
+        {
+            let _ = w.net.commands.send(NetCommand::CharReq(index));
+            asked += 1;
+        }
+    }
+    if asked > 0 {
         wt.timer = ASK_AGAIN;
-        log::info!("event {ev:#x}: asking for actor {id:#x} (index {index}) after {:.2} s", wt.since.elapsed().as_secs_f32());
+        log::info!("event {ev:#x}: asking for {asked} actors after {:.2} s", wt.since.elapsed().as_secs_f32());
     }
     let ready = waiting.is_none();
     if !ready {
@@ -927,12 +936,18 @@ pub fn update(w: &mut World, dt: f32) {
     // The VM runs in 60 Hz ticks as at retail's frame rate (FUN_10014000 counts at least one tick a frame), so
     // a faster frame limit does not speed the script up; a slow frame runs up to 4 ticks.
     live.st.vm_ticks = (live.st.vm_ticks + ticks).min(4.0);
+    let mut ran = 0;
     while live.st.vm_ticks >= 1.0 && !live.rt.done() {
         live.st.vm_ticks -= 1.0;
+        ran += 1;
         let mut host = LiveHost { w: &mut *w, st: &mut live.st, index: &index };
         live.rt.tick(&mut host, 1.0);
     }
-    sync(&mut live, w, ticks, dt);
+    // The bodies only move when the VM ticks: their motion ratios count VM ticks, not frames (at 300 fps a
+    // frame-based ratio flipped between 0 and a capped run, and the legs blurred).
+    if ran > 0 {
+        sync(&mut live, w, ran as f32, ran as f32 / 60.0);
+    }
     if !live.rt.done() && live.rt.idle() && live.st.msg.is_none() && live.st.choice.is_none() {
         // Every thread ended without 0x21: the server ends these (0x052); then the client cancels.
         let since = *live.st.idle_since.get_or_insert_with(Instant::now);
@@ -994,7 +1009,14 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
             pose.yaw += angle_to(pose.yaw, want) * (1.0 - 0.875f32.powf(ticks));
         }
         pose.turning = angle_to(pose.yaw, b.dir).abs() > TURN_GAP;
-        pose.ratio = crate::motion::move_ratio_ref(pose.ratio, flat, dt, 0.8 * b.anim_speed);
+        // A placement (snap, or a jump of over 2 a tick) is not walking *(inf)*: it set the ratio near its cap and the
+        // body sprinted in place for a few ticks.
+        let walked = if snap || flat > 2.0 * ticks { 0.0 } else { flat };
+        pose.ratio = crate::motion::move_ratio_ref(pose.ratio, walked, dt, 0.8 * b.anim_speed);
+        // FFXI_TRACE_MOVE=1: event bodies' speed and walk / run ratio (test runs).
+        if flat > 1e-4 && std::env::var_os("FFXI_TRACE_MOVE").is_some() {
+            log::info!("evmove {id:#x} {:.2} u/s ratio {:.2} anim_speed {:.2}", flat / dt, pose.ratio, b.anim_speed);
+        }
         // FUN_1008b680 -> FUN_10089850: a new direction more than 1/8 turn away, not while walking, plays the
         // step scheduler '@tl0' (old - new in (0x200, 0x800) of 4096) or '@tr0'.
         if b.dir != pose.dir {
