@@ -19,6 +19,7 @@ mod configui;
 mod configui2;
 mod settings;
 mod target;
+mod input;
 mod items;
 pub mod select;
 pub mod net;
@@ -695,8 +696,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.typing => {}
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
-                // Key function 0x78 (Ctrl / Alt + F; numpad + comes from the winit handler).
-                egui::Key::F if modifiers.ctrl || modifiers.alt => log_cycle(world),
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
                 }
@@ -1752,6 +1751,8 @@ pub struct App {
     next_frame: Option<Instant>,
     /// The last '/' key pressed was the numpad one (egui maps both to Key::Slash).
     numpad_slash: bool,
+    /// Retail key functions (DAT_103619f0 and FUN_1011ff30).
+    input: input::Input,
     /// Frames per second, 0 = unlimited (config frame_limit), and the present mode must be picked again.
     frame_limit: u32,
     present_dirty: bool,
@@ -1904,6 +1905,7 @@ impl App {
             last_frame: Instant::now(),
             next_frame: None,
             numpad_slash: false,
+            input: input::Input::default(),
             frame_limit,
             present_dirty: false,
             window_dirty: false,
@@ -2213,7 +2215,9 @@ impl App {
     fn game_data(&mut self) -> Result<(Arc<DatIndex>, Arc<zone::Keys>)> {
         if self.index.is_none() {
             self.index = Some(Arc::new(DatIndex::open(&self.cfg.ffxi_dir())?));
-            self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&std::fs::read(self.cfg.ffxi_dir().join("FFXiMain.dll"))?)?));
+            let dll = std::fs::read(self.cfg.ffxi_dir().join("FFXiMain.dll"))?;
+            self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
+            self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
     }
@@ -3074,6 +3078,29 @@ impl App {
         world.moving = moving;
     }
 
+    /// The frame's key state, then the key functions that run outside any window.
+    fn key_functions(&mut self, dt: f32) {
+        let mut f = input::Frame { ticks: dt * 60.0, ..Default::default() };
+        if let Phase::World(w) = &self.phase {
+            self.input.assign(&w.game);
+            self.input.context = if w.map.is_some() { 0x26 } else { 0xffff };
+            f.typing = w.typing;
+            f.keyboard = w.game.get(0x42);
+            f.window = w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some();
+            f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
+        }
+        self.input.begin_frame(f);
+        let Phase::World(world) = &mut self.phase else { return };
+        // Numpad * / compact H: 0x44 (/heal) and 0x30 (lock-on) read the same press; FUN_101516d0 picks.
+        if self.input.test(0x44, input::mode::PRESS) {
+            target::numpad_star(world);
+        }
+        // Numpad + / Ctrl or Alt + F / compact F, mode 0 (repeats): FUN_10151550.
+        if self.input.test(0x78, input::mode::REPEAT) {
+            log_cycle(world);
+        }
+    }
+
     fn camera(world: &World) -> Camera {
         if let Some(c) = event::camera(world) {
             return c;
@@ -3675,7 +3702,7 @@ impl App {
         }
         match &mut self.phase {
             Phase::Login { .. } if !self.drive.started => {
-                if let (Some((user, pass)), None) = (self.drive.login.clone(), &self.drive.input) {
+                if let (Some((user, pass)), false) = (self.drive.login.clone(), self.drive.input.as_ref().is_some_and(|s| s.logs_in)) {
                     self.drive.started = true;
                     self.cfg.username = user;
                     self.login(pass, String::new(), false);
@@ -3698,8 +3725,8 @@ impl App {
                     }
                 }
             }
-            // A script walks the title menu itself; pick the character once it reaches Select.
-            Phase::Characters { lobby, chars, screen, .. } if self.drive.input.is_none() || *screen == LobbyScreen::Select => {
+            // A script that logs in walks the title menu itself; pick the character once it reaches Select.
+            Phase::Characters { lobby, chars, screen, .. } if !self.drive.input.as_ref().is_some_and(|s| s.logs_in) || *screen == LobbyScreen::Select => {
                 if let (Some(name), Some(_)) = (self.drive.character.clone(), lobby.as_ref()) {
                     if let Some(c) = chars.iter().find(|c| c.name.eq_ignore_ascii_case(&name)).cloned() {
                         let l = lobby.take().unwrap();
@@ -3952,6 +3979,7 @@ impl App {
         let shoot = self.step_drive();
         let dt = self.last_frame.elapsed().as_secs_f32().min(0.1);
         self.last_frame = Instant::now();
+        self.key_functions(dt);
         perf::timed(|| "movement".into(), || self.update_movement(dt));
         if matches!(&self.phase, Phase::Characters { screen: LobbyScreen::Create, .. }) && self.creator.as_ref().is_some_and(|c| c.wants().is_some()) && self.lobby_fade.next.is_none() {
             self.lobby_fade.scene_to = 1.0;
@@ -4004,14 +4032,16 @@ impl App {
                 _ => Vec::new(),
             };
             let (events, shot, action) = sc.next(phase, &probes, gfx.window.scale_factor() as f32);
+            for e in &events {
+                self.input.drive_event(e);
+            }
             raw.events.extend(events);
             script_shot = shot;
-            // Keys egui has no name for (numpad *), as the winit handler runs them.
-            if let (Some("numpad*"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
-                target::numpad_star(world);
-            }
-            if let (Some("numpad+"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
-                log_cycle(world);
+            // Keys egui has no name for.
+            match action.as_deref() {
+                Some("numpad*") => self.input.tap(0x37),
+                Some("numpad+") => self.input.tap(0x4e),
+                _ => {}
             }
             // Test drives only: target the nearest living monster with a model (Tab picks NPCs first at gates).
             if let (Some("target-mob"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
@@ -4506,28 +4536,11 @@ impl ApplicationHandler for App {
                     if event.state == ElementState::Pressed && !event.repeat && matches!(code, KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD) && hud_keys {
                         log::info!("{code:?} ignored: the HUD has the keys");
                     }
+                    if !event.repeat {
+                        self.input.key(code, event.state == ElementState::Pressed, &event.logical_key);
+                    }
                     // Ctrl / Alt + letter are shortcuts, not movement (bindings carry flag 0x80 "no Ctrl/Alt").
                     let shortcut = self.mods.control_key() || self.mods.alt_key();
-                    if event.state == ElementState::Pressed && !hud_keys && !shortcut {
-                        // Numpad * (DIK 0x37, key functions 0x44 / 0x30; flag 0xc0: not typing, no Ctrl / Alt).
-                        if let (false, KeyCode::NumpadMultiply, Phase::World(world)) = (event.repeat, code, &mut self.phase) {
-                            target::numpad_star(world);
-                        }
-                        // Compact keyboards (0x42 = 1 / 2, default 2): the key of config 0x60 (default H) sets pad bit
-                        // 0x400, the same press as Numpad * (FUN_1011fbc0, table DAT_103623c8 entry 6).
-                        if let (false, Phase::World(world)) = (event.repeat, &mut self.phase)
-                            && matches!(world.game.get(0x42), 1 | 2)
-                            && configui2::dik_keycode(world.game.get(0x60)) == Some(code)
-                        {
-                            target::numpad_star(world);
-                        }
-                    }
-                    // Numpad + (DIK 0x4E, flag 0x80): key function 0x78, also with a menu open.
-                    if event.state == ElementState::Pressed && !event.repeat && !shortcut && code == KeyCode::NumpadAdd
-                        && let Phase::World(world) = &mut self.phase
-                    {
-                        log_cycle(world);
-                    }
                     if event.state == ElementState::Pressed && !hud_keys && !shortcut {
                         self.keys.insert(code);
                     } else if event.state == ElementState::Released {
@@ -4540,6 +4553,9 @@ impl ApplicationHandler for App {
             WindowEvent::CursorLeft { .. } => self.cursor_in = false,
             // Config-tool 0035 = 0: no sound while the window is not focused (no DSBCAPS_GLOBALFOCUS).
             WindowEvent::Focused(f) => {
+                if !f {
+                    self.input.clear();
+                }
                 let (m, e) = self.volume_factors();
                 if self.cfg.tool("0035") == 0
                     && let Some(a) = self.audio.as_mut()

@@ -55,5 +55,6 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - the map's pan, zoom and its actions;
   - collision with characters and moving platforms;
   - spell and ability effects;
-  - random names in the creator.
+  - random names in the creator;
+  - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG.

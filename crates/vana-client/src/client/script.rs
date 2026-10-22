@@ -33,12 +33,15 @@ pub struct Script {
     pointer: egui::Pos2,
     /// A key pressed in the background, its period and the last press.
     every: Option<(egui::Key, f32, Instant)>,
+    /// The script types the login itself (`user` / `pass` steps); otherwise --credentials logs in.
+    pub logs_in: bool,
 }
 
 impl Script {
     /// `creds` supplies the text for the `user` and `pass` steps.
     pub fn parse(spec: &str, creds: Option<&(String, String)>) -> Result<Self> {
         let mut steps = Vec::new();
+        let mut logs_in = false;
         for raw in spec.split(';').map(str::trim).filter(|s| !s.is_empty()) {
             let (op, arg) = raw.split_once(':').unwrap_or((raw, ""));
             let xy = || -> Result<(f32, f32)> {
@@ -51,6 +54,7 @@ impl Script {
                 "type" => steps.push(Step::Text(arg.to_string())),
                 "user" | "pass" => {
                     let (u, p) = creds.ok_or_else(|| anyhow!("{op} needs --credentials"))?;
+                    logs_in = true;
                     steps.push(Step::Text(if op == "user" { u.clone() } else { p.clone() }));
                 }
                 "key" => {
@@ -92,7 +96,7 @@ impl Script {
                 _ => bail!("unknown step {raw}"),
             }
         }
-        Ok(Self { steps, at: 0, since: Instant::now(), pointer: egui::Pos2::ZERO, every: None })
+        Ok(Self { steps, at: 0, since: Instant::now(), pointer: egui::Pos2::ZERO, every: None, logs_in })
     }
 
     /// This frame's events (one step per frame), a screenshot to take and an action, given the current phase

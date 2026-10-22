@@ -1740,6 +1740,34 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
 - Implemented: all except M/J/W/B (no magic or ability windows yet). Movement keys are not taken while Ctrl or Alt is held (flag 0x80).
 - Chat: c2s 0x0B5 {Kind, 0, Str} with kind 0 say, 1 shout, 4 party, 5 linkshell, 0x1a yell, 0x1b linkshell 2, 0x21 unity; c2s 0x0B6 tell {2 bytes 0, name[15], text}. s2c 0x017 kind 3 is a tell. The log's punctuation ("(Name)", "<Name>", "Name>>") is inferred.
 
+### Input layer (client/input.rs; full spec ~/ffxi/lab/research/keys_spec.md)
+- Tables read from FFXiMain at start: bindings 0x103619f0 (0xb4 ids x 3 u16), context masks 0x103612e8, compact records
+  0x103623c8 (42, until zero bits), k1 rows 0x1036e0a8 (28 rows of record indices, 0xff ends), k2 rows 0x1036e190 (28 x 5
+  ids, 0xffff ends). Pad callback bits per id are code, so they are a table in input.rs (kspec dump.txt).
+- Key state FUN_10005520 (object FUN_10005210): a key going down gets held | press | repeat (bits 4 | 2 | 1) and counter 0;
+  held, the frame bits clear (& 0xf4) and the counter adds ftol(FUN_10014000()) (whole ticks, at least 1); past input
+  +0x94 = 16 it sets repeat and drops to 16 - 2.0 (_DAT_1031e800). Up: 0, or release (8) after a hold. Retail's frame was 2
+  ticks, so a held key repeats after 18 ticks, then every 4. Ours counts in 2-tick frames whatever the frame rate *(inf: at
+  60 fps retail repeats every 3 ticks; 30 fps was its normal rate)*. A press and release inside one frame still presses.
+- Typing: Enter / NumEnter / Esc presses are cleared before key functions (FUN_101aa930 takes them).
+- FUN_1011ff30: fails when DAT_104cf22c (FUN_101202a0, cleared each frame by FUN_10120290) and mode != 4, when the mask
+  misses DAT_10362678, or mask & 0x41 while typing; then pad callback 0, then the three bindings with their flags
+  (FUN_101201c0 Ctrl = 0x1d / 0x9d held, FUN_101201f0 Alt = 0x38 / 0xb8, FUN_10120220 Shift *(inf: 0x2a / 0x36)*; flag 0x10
+  also needs DAT_103612e4, cleared only by Key Assignment). Bindings on 0x1d / 0x2a / 0x38 answer only in mode 4.
+- FUN_1011f850: with typing and NumLock (toggle bit 0x10 of DIK 0x45) the numpad digits fail. Ours takes NumLock from the
+  last numpad digit's logical key (winit has no toggle state).
+- Pad (DAT_104cf334): +0x220 held, +0x228 edge, +0x238 press-or-repeat, +0x230 release. Compact bits (FUN_1011fbc0) OR into
+  held; newly held bits set edge and repeat; an up / down edge drops 0x30 (left / right). No edge and something held: +0x248
+  adds the ticks, the first such frame only arms (+0xda8), then past 16 repeat |= held and 14. Callback modes 2 / 3 keep only
+  their own bit in the edges (FUN_1011da00).
+- Compact record rule (FUN_1011fbc0, rewritten): no Ctrl / Alt: rule 0, 7, 4 with Shift, 8 without; else rule 1 Ctrl only,
+  2 Alt only, 7, or 0 when the key is no k2 row's key (FUN_101953b0). State mask & (6 - window active) == mask.
+- Key Assignment: FUN_10195590 sets slot 0 of each k2 row's ids to 0x10 << 8 | key (FUN_1011fb40, 0 clears), then
+  FUN_10195940 the k1 rows' record keys (FUN_1011fb10), then with keyboard type 2 FUN_10195910 sets 0xaa / 0xa9 to
+  0x80 << 8 | k1 row 28 / 29 (FUN_1011fb70).
+- Wired so far: 0x44 (Num*, compact H) and 0x78 (Num+, Ctrl / Alt + F, compact F; mode 0). Drives tap keys (egui events,
+  act:numpad* / numpad+).
+
 ### Installed DAT packs (2026-10-21)
 - AshenbubsHD Prime (November 2021) and remapster-dats-pack 1.2 are installed over the game DATs. 32482 originals (6.1 GB) are in `~/ffxi/dat-backup/original` (same ROM*/dir/file layout); `~/ffxi/dat-backup/manifest.tsv` lists every file (replaced / added); `restore_originals.py` beside it undoes the install.
 - 1591 pack files are at paths this install's VTABLE/FTABLE never reference (newer retail content), so nothing loads them until the game files are updated.
