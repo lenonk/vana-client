@@ -715,7 +715,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.full_log = Some(logwin::FullLog::open(sh));
                     world.log_active = false;
                 }
-                egui::Key::Escape if world.log_active => world.log_active = false,
+                // The map overlay closes first (after the windows, below).
+                egui::Key::Escape if world.log_active && world.overlay.is_none() => world.log_active = false,
                 egui::Key::A if modifiers.ctrl || modifiers.alt => send_chat(world, "/attack".into()),
                 // Extra: the map overlay (a free Ctrl / Alt letter in retail's key set).
                 egui::Key::O if modifiers.ctrl || modifiers.alt => {
@@ -779,6 +780,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.menu_page = 0;
                 }
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
+                egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // Escape also takes a line off the log (key 0x95, FUN_1015b830). Clearing the target is key 0x92,
                 // refused while locked (FUN_10151f20).
                 egui::Key::Escape => {

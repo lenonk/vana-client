@@ -118,7 +118,7 @@ impl Default for Config {
             frame_limit: 300,
             anisotropy: 16,
             party_tp: true,
-            map_overlay_opacity: 0.6,
+            map_overlay_opacity: 0.5,
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),
