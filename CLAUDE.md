@@ -69,6 +69,15 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
+- Game file updates (POL's patcher, rebuilt): check the installed DATs against the current version and download
+  what changed, as PlayOnline did. The install is behind the server's data (NPC models 2957+ missing: the level-5
+  crystal scene's set is blank). Research POL's update protocol from the PlayOnline binaries in the
+  FFXIFullSetup archives first; ask before contacting SE's servers. Updates go to the base files, never to mods.
+- Mod manager (in game): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files copied over the
+  install. Each mod is a folder of replacements; DatIndex resolves a file id to the highest enabled mod that has it,
+  else the base file. Enable / disable / order from a settings page; flag mods whose files a game update changed.
+  Migrate today's in-place install (~/ffxi/dat-backup: originals plus manifest.tsv of 34k replaced files) into mod
+  folders and restore the originals.
 - Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
   fonts and frames; nothing that sends actions by itself):
   - wanted: a translucent full-screen map overlay and a minimap (after the map's pan and zoom);
