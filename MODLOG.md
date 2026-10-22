@@ -3367,3 +3367,15 @@ needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in 
   message group -> slot table (0x10371da8), name vtables, language tables.
 - The updater now patches code files too; the start-up check also compares code files against the stamped
   manifest, so installs patched data-only get the current FFXiMain.
+
+## Event ops 0x34 / 0x35: another area during an event (2026-10-22)
+
+- 0x34 (FUN_100b3df0) and 0x35 (FUN_100b3ed0) take three frames (counter 0, 300, then work) and call FUN_10184380
+  with the value: the zone loader, so the event's world becomes that area (file zone::file_id(area)) with its
+  scene, collision, effects and environment. 0x34 has a branch to FUN_10184600 (environment reset) on
+  DAT_10476f10, which nothing seen sets; 0x35 lacks it.
+- Zone 230 event 0x7553 (RoV 1-1, "The crystal resonates..."): 0x34 #541 (DAT 641, a 6 MB stone chamber), the
+  scene, then 0x35 #230 brings Southern San d'Oria back; op 0x77 / 0x78 set and restore the time and weather.
+- Ours: the op sets World::area.want; the App loads the area like a zone (or, for the zone's own id, swaps back the
+  kept renderer, collision, weather keys and effect library: Effects::switch_zone) and the op's wait ends then.
+  A zone load drops the switch. The level-5 scene checked live by the user.

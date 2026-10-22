@@ -598,6 +598,11 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            // FUN_10184380 with the area: the App loads it (or brings the zone's scene back) and ends the wait.
+            Effect::Op { op: 0x34 | 0x35, args, .. } => match args.first() {
+                Some(Arg::Int(v)) if (0..0x10000).contains(v) => self.w.area.want = Some(*v as u16),
+                _ => self.w.area.done = true,
+            },
             Effect::Op { op: op @ (0x2e | 0x42 | 0x38), args, .. } => self.st.cancel_op(op, &args),
             // FUN_100b5b90 / FUN_100b5bf0: FUN_10132030(1, x, y) / (0, 0, 0) on both event message windows.
             Effect::Op { op: 0x67, args, .. } => {
@@ -692,6 +697,8 @@ impl Host for LiveHost<'_> {
                     || a.play.as_ref().is_some_and(|p| p.name == *name && p.busy())
                     || a.oneshot.as_ref().is_some_and(|o| o.name.starts_with(n) && o.ticks < o.len)
             }
+            // Asked before the op's effect runs, so the first frame waits too (retail spends three frames on it).
+            Busy::Op { op: 0x34 | 0x35, .. } => !std::mem::take(&mut self.w.area.done),
             Busy::Op { op: 0x6c, actor, .. } => {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(|a| a.fade.is_some())

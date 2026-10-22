@@ -621,12 +621,25 @@ impl Effects {
         }
     }
 
+    /// The zone library's registry index.
+    pub fn zone_lib(&self) -> Option<usize> {
+        self.zone_lib
+    }
+
     pub fn has_global(&self) -> bool {
         self.reg.global.is_some()
     }
 
     /// A new zone: the old zone's instances go, and its auto-start world generators start (FUN_10046d30).
-    pub fn load_zone(&mut self, lib: Library) {
+    /// Returns the library's registry index, for [`Effects::switch_zone`].
+    pub fn load_zone(&mut self, lib: Library) -> usize {
+        let l = self.reg.add(lib);
+        self.switch_zone(l);
+        l
+    }
+
+    /// Makes an already registered library the zone's (event op 0x34 swaps areas and back).
+    pub fn switch_zone(&mut self, l: usize) {
         for i in 0..self.insts.len() {
             if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::Weather(_))) {
                 self.kill(i);
@@ -637,7 +650,6 @@ impl Effects {
         self.dolls.clear();
         self.pending.clear();
         self.models.clear();
-        let l = self.reg.add(lib);
         self.zone_lib = Some(l);
         self.reg.zone = Some(l);
         let weat = crate::dat::generator::fourcc("weat");

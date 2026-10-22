@@ -63,6 +63,7 @@ impl Task {
             Task::Lobby(_) => "lobby",
             Task::Selected(_) => "selected",
             Task::ZoneLoaded(..) => "zone loaded",
+            Task::AreaLoaded(..) => "area loaded",
             Task::CharacterLoaded(..) => "model loaded",
             Task::GameUi(_) => "game ui",
             Task::Flyover(_) => "flyover",
@@ -82,6 +83,7 @@ enum Task {
     Lobby(Result<(Lobby, Vec<Character>)>),
     Selected(Result<MapLogin>),
     ZoneLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
+    AreaLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, Option<crate::fx::lib::Library>)>),
     /// A model by its source key, prepared for the GPU on the loader thread.
     CharacterLoaded(String, Result<Model>),
     GameUi(Result<GameUiData>),
@@ -1633,10 +1635,26 @@ fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
 /// A zone's effect library, and DAT 0's when it was not loaded yet (fx::lib).
 type ZoneEffects = (Option<crate::fx::lib::Library>, Option<crate::fx::lib::Library>);
 
+/// Event ops 0x34 / 0x35 (FUN_100b3df0 / FUN_100b3ed0 -> FUN_10184380): another area's scene, collision, effects
+/// and environment in place of the zone's while an event runs (the level-5 crystal scene shows area 541, then 0x35
+/// with the zone's own id brings it back).
+#[derive(Default)]
+struct AreaSwitch {
+    /// The area asked for, a load in flight, and the op done (its wait ends).
+    want: Option<u16>,
+    loading: bool,
+    done: bool,
+    /// The area shown, None = the zone's own.
+    shown: Option<u16>,
+    /// The zone's own renderer, collision, weather keys and effect library while another area is shown.
+    home: Option<(Option<ZoneRenderer>, Option<ground::Ground>, Option<crate::dat::weather::ZoneWeather>, Option<usize>)>,
+}
+
 struct World {
     net: NetHandle,
     zone: Option<u16>,
     loading: Option<u16>,
+    area: AreaSwitch,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -2442,7 +2460,7 @@ impl App {
 
     fn handle_task(&mut self, task: Task) {
         // The lobby art loads in the background; nobody is waiting on it.
-        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_)) {
+        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::AreaLoaded(..)) {
             self.busy = false;
         }
         match task {
@@ -2596,6 +2614,7 @@ impl App {
                             clock: None,
                             weather: 1,
                             zone_weather: None,
+                            area: AreaSwitch::default(),
                             typing: false,
                             log_focus: 0,
                             log_active: false,
@@ -2692,9 +2711,38 @@ impl App {
                     }
                 }
             }
+            Task::AreaLoaded(area, result) => {
+                let Phase::World(world) = &mut self.phase else { return };
+                world.area.loading = false;
+                match result {
+                    Ok((mut scene, ground, weather, geometry, fx)) if world.area.want == Some(area) => {
+                        if world.area.home.is_none() {
+                            world.area.home = Some((world.renderer.take(), world.ground.take(), world.zone_weather.take(), world.effects.zone_lib()));
+                        }
+                        world.zone_weather = weather;
+                        if let Some(l) = fx {
+                            world.effects.load_zone(l);
+                            world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
+                        }
+                        if let Some(gfx) = &self.gfx {
+                            world.effects.reg.light_keys = geometry.light_keys.clone();
+                            world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format));
+                        }
+                        world.ground = Some(ground);
+                        world.area.shown = Some(area);
+                    }
+                    Ok(_) => {}
+                    Err(e) => log::warn!("event area {area}: {e:#}"),
+                }
+                if world.area.want == Some(area) {
+                    world.area.want = None;
+                    world.area.done = true;
+                }
+            }
             Task::ZoneLoaded(zone_id, result) => {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.loading = None;
+                world.area = AreaSwitch::default();
                 match result {
                     Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
                         world.zone_weather = weather;
@@ -2741,6 +2789,53 @@ impl App {
             Task::Lobby(Err(e)) => {
                 self.status = format!("{e:#}");
                 self.to_login(true);
+            }
+        }
+    }
+
+    /// Event op 0x34 / 0x35: the zone's own id brings its kept scene back at once; another area loads like a zone.
+    fn switch_area(&mut self) {
+        let Phase::World(w) = &mut self.phase else { return };
+        let Some(area) = w.area.want.filter(|_| !w.area.loading) else { return };
+        if w.area.shown == Some(area) || (w.area.shown.is_none() && w.zone == Some(area)) {
+            (w.area.want, w.area.done) = (None, true);
+            return;
+        }
+        if w.zone == Some(area)
+            && let Some((renderer, ground, weather, fx)) = w.area.home.take()
+        {
+            (w.renderer, w.ground, w.zone_weather) = (renderer, ground, weather);
+            if let Some(l) = fx {
+                w.effects.switch_zone(l);
+                w.effects.set_weather(crate::dat::weather::weather_tag(w.weather), 0.0);
+            }
+            if let Some(r) = &w.renderer {
+                w.effects.reg.light_keys = r.light_keys.clone();
+            }
+            (w.area.shown, w.area.want, w.area.done) = (None, None, true);
+            return;
+        }
+        w.area.loading = true;
+        match self.game_data() {
+            Ok((index, keys)) => self.spawn(move || {
+                Task::AreaLoaded(area, (|| {
+                    let file = index.read(crate::dat::zone::file_id(area as u32))?;
+                    let scene = zone::load_scene(&keys, &file)?;
+                    let ground = ground::Ground::build(&scene);
+                    let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("area {area} weather: {e:#}")).ok();
+                    let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
+                    let fx = crate::fx::lib::Library::load(crate::dat::zone::file_id(area as u32), file).map_err(|e| log::warn!("effects: area {area}: {e:#}")).ok().map(|mut l| {
+                        l.prewarm(&keys);
+                        l
+                    });
+                    Ok((scene, ground, weather, geometry, fx))
+                })())
+            }),
+            Err(e) => {
+                log::warn!("event area {area}: {e:#}");
+                if let Phase::World(w) = &mut self.phase {
+                    (w.area.loading, w.area.want, w.area.done) = (false, None, true);
+                }
             }
         }
     }
@@ -4330,6 +4425,7 @@ impl App {
             perf::timed(|| format!("task {name}"), || self.handle_task(t));
         }
         perf::timed(|| "network".into(), || self.poll_network());
+        self.switch_area();
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {
             let ready = self.game_ui_state == LoadState::Failed || (self.game_ui.is_some() && (self.flyover.is_some() || self.flyover_state == LoadState::Failed || !self.title_backdrop()));
