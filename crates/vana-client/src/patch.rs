@@ -387,9 +387,27 @@ fn sig_of_path(p: &Path) -> Result<Option<Sig>> {
     Ok(Some(Sig::of(&std::fs::read(p).with_context(|| p.display().to_string())?)))
 }
 
+/// The version of the manifest last applied here (our stamp file).
+pub fn applied_version(root: &Path) -> Option<String> {
+    let text = std::fs::read_to_string(root.join(STAMP_FILE)).ok()?;
+    parse_manifest(&text).ok()?.iter().flat_map(|e| e.versions.iter().map(|v| v.stamp.clone())).max()
+}
+
+/// The start-up check: None when the server's version is the one applied last, else the plan.
+pub fn check(root: &Path) -> Result<Option<Plan>> {
+    let server = Session::connect()?.version()?;
+    if applied_version(root).as_deref() == Some(server.version.as_str()) {
+        return Ok(None);
+    }
+    plan_for(root, false, server).map(Some)
+}
+
 /// Asks the server for its version and manifest and checks every listed file under `root` (in parallel).
 pub fn plan(root: &Path, code: bool) -> Result<Plan> {
-    let server = Session::connect()?.version()?;
+    plan_for(root, code, Session::connect()?.version()?)
+}
+
+fn plan_for(root: &Path, code: bool, server: ServerVersion) -> Result<Plan> {
     let manifest = Session::connect()?.manifest()?;
     let entries = parse_manifest(&String::from_utf8_lossy(&manifest))?;
     let next = std::sync::atomic::AtomicUsize::new(0);

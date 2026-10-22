@@ -70,10 +70,17 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
-- Game file updates (POL's patcher, rebuilt): check the installed DATs against the current version and download
-  what changed, as PlayOnline did. The install is behind the server's data (NPC models 2957+ missing: the level-5
-  crystal scene's set is blank). Research POL's update protocol from the PlayOnline binaries in the
-  FFXIFullSetup archives first; ask before contacting SE's servers. Updates go to the base files, never to mods.
+- Updates (user's design, 2026-10-22). Never required, always offered:
+  - After login, character select gets an "Update" button above Select Character when anything is out of date
+    (checked in the background at start). Pressing it opens a window asking what to update, each with its size:
+    game files (src/patch.rs, the PlayOnline patch protocol, done as `vana-client update`), vana-client itself
+    (GitHub releases), and later others (candidates: mod packs, the client version string LSB checks).
+  - First start with no game files: download the retail installer from SE, unpack it, take what we need, then
+    patch. While no DATs exist every other title button is disabled. Open question: the title and login screens
+    are drawn from the DATs, so a first start needs some screen of its own before them.
+  - No command line for any of it.
+  - The install was behind the server's data (NPC models 2957+ missing: the level-5 crystal scene's set was
+    blank): 5321 files, 452 MB as of 30261006_0. Updates go to the base files, never to mods.
 - Mod manager (in game): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files copied over the
   install. Each mod is a folder of replacements; DatIndex resolves a file id to the highest enabled mod that has it,
   else the base file. Enable / disable / order from a settings page; flag mods whose files a game update changed.

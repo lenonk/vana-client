@@ -457,7 +457,7 @@ fn value_rect(x: f32, y: f32, i: usize) -> [f32; 4] {
 }
 
 /// A blank config-page button (windowps 105's two buttonto cells, without the caption) stretched to `r`.
-fn button(gu: &mut GameUi, r: [f32; 4], tint: u32) {
+pub(super) fn button(gu: &mut GameUi, r: [f32; 4], tint: u32) {
     let left = (r[2] * 48.0 / 88.0).round();
     gu.cell_stretch("menu    windowps", 105, 0, r[0], r[1], left, r[3], tint);
     gu.cell_stretch("menu    windowps", 105, 1, r[0] + left, r[1], r[2] - left, r[3], tint);
