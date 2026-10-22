@@ -1481,6 +1481,9 @@ impl fx::Actors for ShotActors {
     fn hidden(&self, _: u32) -> bool {
         false
     }
+    fn models(&self) -> Vec<(u32, Vec<u32>)> {
+        Vec::new()
+    }
 }
 
 #[allow(clippy::too_many_arguments)]

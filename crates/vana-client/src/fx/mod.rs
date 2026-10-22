@@ -32,6 +32,8 @@ pub trait Actors {
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>);
     /// Hidden actors (+0xb2 bit 1) get no attached effects.
     fn hidden(&self, id: u32) -> bool;
+    /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
+    fn models(&self) -> Vec<(u32, Vec<u32>)>;
 }
 
 /// No actors (offscreen shots).
@@ -52,6 +54,9 @@ impl Actors for NoActors {
     }
     fn hidden(&self, _: u32) -> bool {
         false
+    }
+    fn models(&self) -> Vec<(u32, Vec<u32>)> {
+        Vec::new()
     }
 }
 
@@ -114,6 +119,8 @@ pub enum Owner {
     Element(usize),
     /// A scheduler task (op 0x02).
     Task(usize),
+    /// An actor's model files (FUN_10083970).
+    Actor(u32),
 }
 
 /// A running generator (the CMoGenerator object, or a CMoGeneratorClone of it): its own copy of the streams
@@ -409,6 +416,8 @@ pub struct Effects {
     loading: HashSet<u32>,
     load_tx: std::sync::mpsc::Sender<(u32, Option<Library>)>,
     load_rx: std::sync::mpsc::Receiver<(u32, Option<Library>)>,
+    /// Actors whose model generators run, by the model files they were started for.
+    models: HashMap<u32, Vec<u32>>,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -456,6 +465,7 @@ impl Effects {
             loading: HashSet::new(),
             load_tx,
             load_rx,
+            models: HashMap::new(),
         }
     }
 
@@ -485,6 +495,7 @@ impl Effects {
         self.tasks.clear();
         self.dolls.clear();
         self.pending.clear();
+        self.models.clear();
         let l = self.reg.add(lib);
         self.zone_lib = Some(l);
         self.reg.zone = Some(l);
@@ -731,6 +742,7 @@ impl Effects {
         let dt = f.dt;
         self.weather_step(f.seconds);
         self.poll_loads();
+        self.model_generators(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
         // Lives first, as each element's Exec does before its update stream.
@@ -763,7 +775,7 @@ impl Effects {
             if let Some(x) = &self.insts[i]
                 && (x.finished || x.stopping)
                 && x.live.is_empty()
-                && x.owner != Owner::Zone
+                && !matches!(x.owner, Owner::Zone | Owner::Actor(_))
             {
                 self.kill(i);
             }

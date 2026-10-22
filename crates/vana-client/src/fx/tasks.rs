@@ -768,6 +768,47 @@ impl Effects {
         x.dist = d;
     }
 
+    /// FUN_10083970: every looping (0x1000) generator of an actor's model files with an actor-attached mode (1, 2,
+    /// 4, 5, 7-0xc, 0x10-0x13) runs cloned onto the actor; they go when the actor or its model does.
+    pub(super) fn model_generators(&mut self, actors: &dyn Actors) {
+        let present = actors.models();
+        let gone: Vec<u32> = self.models.keys().filter(|id| !present.iter().any(|(p, files)| p == *id && self.models.get(p) == Some(files))).copied().collect();
+        for id in gone {
+            self.models.remove(&id);
+            for i in 0..self.insts.len() {
+                if self.insts[i].as_ref().is_some_and(|x| x.owner == Owner::Actor(id)) {
+                    self.kill(i);
+                }
+            }
+        }
+        for (id, files) in present {
+            if self.models.contains_key(&id) || actors.hidden(id) {
+                continue;
+            }
+            let libs: Vec<Option<usize>> = files.iter().map(|&f| self.lib_for(f)).collect();
+            if libs.iter().any(|l| l.is_none()) {
+                continue;
+            }
+            let mut gens = Vec::new();
+            for l in libs.into_iter().flatten() {
+                for g in &self.reg.libs[l].gens {
+                    if g.flags & 0x1000 != 0 && matches!(g.attach_mode(), 1 | 2 | 4 | 5 | 7..=0xc | 0x10..=0x13) {
+                        gens.push((l, g.node));
+                    }
+                }
+            }
+            for g in gens.into_iter().take(128) {
+                if let Some(i) = self.start(g, Owner::Actor(id)) {
+                    if let Some(x) = self.insts[i].as_mut() {
+                        x.actors = [Who::Actor(id), Who::None];
+                    }
+                    self.attach_now(i, actors);
+                }
+            }
+            self.models.insert(id, files);
+        }
+    }
+
     pub fn task_count(&self) -> usize {
         self.tasks.iter().filter(|t| t.is_some()).count()
     }
@@ -798,6 +839,9 @@ mod tests {
         }
         fn hidden(&self, _: u32) -> bool {
             false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
         }
     }
 

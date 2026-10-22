@@ -1535,6 +1535,10 @@ impl crate::fx::Actors for FxActors<'_> {
     fn hidden(&self, id: u32) -> bool {
         self.actors.get(&id).is_none_or(|a| a.vanished())
     }
+
+    fn models(&self) -> Vec<(u32, Vec<u32>)> {
+        self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.clone()))).collect()
+    }
 }
 
 /// Loaded looks kept while no actor wears them.
