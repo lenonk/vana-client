@@ -139,6 +139,8 @@ pub struct EffectsGpu {
     keys: (wgpu::Buffer, usize),
     key_desc: (wgpu::Buffer, usize),
     paths: (wgpu::Buffer, usize),
+    /// The zone's point-light table (ZoneRenderer::lights), or a black one of our own until a zone gives it.
+    lights: wgpu::Buffer,
     slots: (wgpu::Buffer, usize),
     sverts: (wgpu::Buffer, usize),
     sframes: (wgpu::Buffer, usize),
@@ -178,7 +180,7 @@ impl EffectsGpu {
         let cs = wgpu::ShaderStages::COMPUTE;
         let update_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects update"),
-            entries: &[uniform(0, cs), storage(1, false, cs), storage(2, true, cs), storage(3, true, cs), storage(4, true, cs), storage(5, true, cs), storage(6, false, cs), storage(7, false, cs), storage(8, true, cs)],
+            entries: &[uniform(0, cs), storage(1, false, cs), storage(2, true, cs), storage(3, true, cs), storage(4, true, cs), storage(5, true, cs), storage(6, false, cs), storage(7, false, cs), storage(8, true, cs), storage(9, false, cs)],
         });
         let update = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
             label: Some("effects update"),
@@ -319,6 +321,7 @@ impl EffectsGpu {
             keys: table("effects keys"),
             key_desc: table("effects key table"),
             paths: table("effects paths"),
+            lights: buf("effects lights", (crate::render::LIGHTS * 32) as u64, U::STORAGE | U::COPY_DST),
             slots: table("effects slots"),
             sverts: table("effects sprite vertices"),
             sframes: table("effects sprite frames"),
@@ -368,6 +371,14 @@ impl EffectsGpu {
 
     /// Uploads this frame's element writes, tables and new meshes, then records the update pass and the copy
     /// of its readback.
+    /// The zone's point-light table for kind 0x47 elements to write (a change rebinds).
+    pub fn set_lights(&mut self, lights: &wgpu::Buffer) {
+        if self.lights != *lights {
+            self.lights = lights.clone();
+            self.update_group = None;
+        }
+    }
+
     pub fn update(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, fx: &mut Effects, f: &Frame) {
         let q = &gpu.queue;
         let reg = &mut fx.reg;
@@ -425,6 +436,8 @@ impl EffectsGpu {
                 Write::Full(e, el) => q.write_buffer(&self.elems, (e as usize * w::WORDS * 4) as u64, bytemuck::cast_slice(&el.0)),
                 Write::Words(e, off, words) => q.write_buffer(&self.elems, ((e as usize * w::WORDS + off) * 4) as u64, bytemuck::cast_slice(&words)),
                 Write::Parts(first, recs) => q.write_buffer(&self.parts, (first as usize * PART_WORDS * 4) as u64, bytemuck::cast_slice(&recs)),
+                Write::LightOff(s) if (s as usize) < crate::render::LIGHTS => q.write_buffer(&self.lights, s as u64 * 32 + 16, &[0u8; 16]),
+                Write::LightOff(_) => {}
             }
         }
         if rebind {
@@ -441,6 +454,7 @@ impl EffectsGpu {
                     wgpu::BindGroupEntry { binding: 6, resource: self.outs.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 7, resource: self.back.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 8, resource: self.paths.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 9, resource: self.lights.as_entire_binding() },
                 ],
             }));
         }
@@ -761,7 +775,7 @@ mod tests {
                             c.0[*off..*off + ws.len()].copy_from_slice(ws);
                         }
                     }
-                    Write::Parts(..) => {}
+                    Write::Parts(..) | Write::LightOff(_) => {}
                 }
             }
             let slots: Vec<u32> = fx.slots.iter().flatten().copied().collect();

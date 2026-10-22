@@ -64,7 +64,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
-    run; left: point lights, per-area light envs, the party roster for the filter;
+    run, and point lights on scenery; left: point lights on actors, the party roster for the filter;
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG.

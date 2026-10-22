@@ -220,6 +220,8 @@ pub struct Placement {
     pub translate: [f32; 3],
     pub rotate: [f32; 3],
     pub scale: [f32; 3],
+    /// Record +0x54..+0x60 (version >= 0x12): 1-based refs into the MZB light list, as the keys they name (0 none).
+    pub lights: [u32; 4],
 }
 
 impl Placement {
@@ -242,13 +244,24 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
     let count = (p[4] as usize) | (p[5] as usize) << 8 | (p[6] as usize) << 16;
     let end = u32_at(p, 20) as usize;
     let stride = [100usize, 84, 92].into_iter().find(|s| count * s + 32 == end).ok_or_else(|| anyhow::anyhow!("unknown MZB record size ({count} records end at {end})"))?;
+    // FUN_10172530: version byte 3 > 0x11 and u32 @0x18: the light list, 256 records of 0x4c with the key at +0.
+    let version = p[3];
+    let list = u32_at(p, 0x18) as usize;
+    let keys: Vec<u32> = if version > 0x11 && list != 0 && list + 256 * 0x4c <= p.len() { (0..256).map(|k| u32_at(p, list + k * 0x4c)).collect() } else { Vec::new() };
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let r = 32 + i * stride;
         for b in &mut p[r..r + 16] {
             *b ^= 0x55;
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40) });
+        let mut lights = [0u32; 4];
+        if stride == 100 && version >= 0x12 {
+            for (k, l) in lights.iter_mut().enumerate() {
+                let rf = u32_at(p, r + 0x54 + 4 * k) as usize;
+                *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
+            }
+        }
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights });
     }
     Ok(out)
 }

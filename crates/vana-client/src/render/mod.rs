@@ -93,7 +93,9 @@ impl Gpu {
         log::info!("GPU: {}", adapter.get_info().name);
         // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3).
         let required_features = adapter.features() & wgpu::Features::TEXTURE_COMPRESSION_BC;
-        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, ..Default::default() }))?;
+        // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).
+        let required_limits = wgpu::Limits { max_storage_buffers_per_shader_stage: adapter.limits().max_storage_buffers_per_shader_stage.min(16), ..Default::default() };
+        let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, required_limits, ..Default::default() }))?;
         let pipes = std::sync::Arc::new(PipeCache { device: device.clone(), mips: Default::default(), anim: Default::default(), zone: Default::default() });
         Ok(Self { instance, adapter, device, queue, mips: Default::default(), uploads: Default::default(), pipes })
     }
@@ -208,6 +210,9 @@ impl Camera {
 }
 
 pub struct ZoneRenderer {
+    /// The point-light table the scenery reads, and its keys by slot.
+    pub lights: wgpu::Buffer,
+    pub light_keys: Vec<u32>,
     pipeline: wgpu::RenderPipeline,
     alpha_pipeline: wgpu::RenderPipeline,
     actor_pipeline: wgpu::RenderPipeline,
@@ -476,12 +481,20 @@ impl ZonePipes {
         });
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("globals"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                count: None,
-            }],
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+            ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("texture"),
@@ -516,9 +529,9 @@ impl ZonePipes {
                 attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Float32x2],
             }),
             Some(wgpu::VertexBufferLayout {
-                array_stride: 64,
+                array_stride: INSTANCE_BYTES,
                 step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4],
+                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Uint32x4],
             }),
         ];
         let make_pipeline = |fragment: &str, blend: Option<wgpu::BlendState>| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -614,10 +627,26 @@ impl ZonePipes {
     }
 }
 
+/// Point-light table entries (DAT_105ecae8: 256).
+pub const LIGHTS: usize = 256;
+
+/// A scenery instance: the placement matrix and its four point lights (table slot + 1, 0 = none).
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct Instance {
+    model: [[f32; 4]; 4],
+    lights: [u32; 4],
+}
+
+/// Instance stride (actors with a CPU-posed mesh use the same layout, lights 0).
+const INSTANCE_BYTES: u64 = std::mem::size_of::<Instance>() as u64;
+
 /// Scenery as the GPU takes it (one vertex, index and instance buffer, draws in file order), built from the
 /// scene on the loader thread.
 pub struct ZoneGeometry {
-    matrices: Vec<[[f32; 4]; 4]>,
+    matrices: Vec<Instance>,
+    /// The point-light table's keys (MZB light lists; slot = index), for the effects that light them.
+    pub light_keys: Vec<u32>,
     draws: Vec<Draw>,
     verts: Vec<GpuVertex>,
     indices: Vec<u16>,
@@ -627,12 +656,27 @@ impl ZoneGeometry {
     pub fn build(scene: &ZoneScene) -> Self {
         // Slot 0 is the plain white texture; scene textures follow in order.
         let texture_slot: HashMap<&str, usize> = scene.textures.iter().enumerate().map(|(i, t)| (t.name.as_str(), i + 1)).collect();
+        // The light table (FUN_101737d0 / FUN_10171830: one entry per key); a placement's refs become slot + 1,
+        // except keys starting with 'c', which the main scenery path skips (FUN_10175ac0).
+        let mut light_keys: Vec<u32> = Vec::new();
+        let mut slot_of = |key: u32| -> u32 {
+            if key == 0 {
+                return 0;
+            }
+            let s = light_keys.iter().position(|&k| k == key).unwrap_or_else(|| {
+                light_keys.push(key);
+                light_keys.len() - 1
+            });
+            if s >= LIGHTS || key as u8 == b'c' { 0 } else { s as u32 + 1 }
+        };
         // One instance block per mesh, holding the matrices of every placement that uses it.
-        let mut by_mesh: HashMap<&str, Vec<[[f32; 4]; 4]>> = HashMap::new();
+        let mut by_mesh: HashMap<&str, Vec<Instance>> = HashMap::new();
         for p in &scene.placements {
-            by_mesh.entry(&p.name).or_default().push(p.matrix());
+            let lights = p.lights.map(&mut slot_of);
+            by_mesh.entry(&p.name).or_default().push(Instance { model: p.matrix(), lights });
         }
-        let mut matrices: Vec<[[f32; 4]; 4]> = Vec::new();
+        light_keys.truncate(LIGHTS);
+        let mut matrices: Vec<Instance> = Vec::new();
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
         let mut all_indices: Vec<u16> = Vec::new();
@@ -671,7 +715,7 @@ impl ZoneGeometry {
         }
         // A scene with no scenery (the character screen) still needs a non-empty buffer to bind.
         if matrices.is_empty() {
-            matrices.push(Mat4::IDENTITY.to_cols_array_2d());
+            matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4] });
         }
         if all_verts.is_empty() {
             all_verts.push(GpuVertex::zeroed());
@@ -679,7 +723,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, draws, verts: all_verts, indices: all_indices }
+        Self { matrices, light_keys, draws, verts: all_verts, indices: all_indices }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -723,10 +767,12 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
+        // Two vec4s a light: (position, range), (colour x intensity, 0); written by the effects update pass.
+        let lights = device.create_buffer(&wgpu::BufferDescriptor { label: Some("point lights"), size: (LIGHTS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &p.globals_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }],
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() }],
         });
         let sampler = mip_sampler(device);
         // Slot 0 is plain white for models whose texture lives elsewhere; the others fill in as they go up.
@@ -747,6 +793,8 @@ impl ZoneRenderer {
             textures: vec![white; textures + 1],
             magenta,
             instances: buffer("instances", m, wgpu::BufferUsages::VERTEX),
+            lights,
+            light_keys: geo.light_keys.clone(),
             vertices: buffer("scenery vertices", v, wgpu::BufferUsages::VERTEX),
             indices: buffer("scenery indices", i, wgpu::BufferUsages::INDEX),
             draws: geo.draws.clone(),
@@ -896,7 +944,7 @@ impl ZoneRenderer {
             let draws = mesh.groups.iter().map(|(tex, r)| (slot.get(tex.as_str()).copied().unwrap_or(0), r.clone())).collect();
             let size = (std::mem::size_of_val(mesh.verts.as_slice()) as u64).max(4);
             let vertices = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("skinned actor"), size, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-            let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor instance"), size: 64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor instance"), size: INSTANCE_BYTES, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             let actor = ActorGpu {
                 textures: vec![self.magenta.clone(); ch.textures.len() + 1],
                 slot,
@@ -1010,7 +1058,7 @@ impl ZoneRenderer {
         }
         let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("actor instance"),
-            size: 64,
+            size: INSTANCE_BYTES,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
@@ -1209,12 +1257,12 @@ pub fn render_pngs_lit(
     height: u32,
     setup: &dyn Fn(&Gpu, &mut ZoneRenderer) -> Vec<ActorGpu>,
 ) -> Result<usize> {
-    render_pngs_post(scene, frames, width, height, setup, &mut |_, _, _, _, _, _| {})
+    render_pngs_post(scene, frames, width, height, setup, &mut |_, _, _, _, _, _, _| {})
 }
 
 /// Draws over the scene in each frame (after the zone pass, same targets): gpu, encoder, colour, depth, camera,
 /// lighting.
-pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, (&wgpu::TextureView, &wgpu::Texture), &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>) + 'a;
+pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, (&wgpu::TextureView, &wgpu::Texture), &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>, &ZoneRenderer) + 'a;
 
 /// As render_pngs_lit, with `post` drawing over each frame.
 pub fn render_pngs_post(
@@ -1253,7 +1301,7 @@ pub fn render_pngs_post(
         });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
-        post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref());
+        post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref(), &renderer);
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },

@@ -28,6 +28,8 @@ struct Params {
 @group(0) @binding(6) var<storage, read_write> outs: array<f32>;
 @group(0) @binding(7) var<storage, read_write> back: array<u32>;
 @group(0) @binding(8) var<storage, read> paths: array<vec4<f32>>;
+// The zone's point-light table (render/mod.rs LIGHTS x two vec4s).
+@group(0) @binding(9) var<storage, read_write> lights: array<vec4<f32>>;
 
 // FUN_10062c80 (fx/spline.rs eval): path `at` (first vec4 + 1) at u.
 fn path_at(at: u32, u: f32) -> vec3<f32> {
@@ -384,6 +386,12 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             // Drag on the slot vector: S *= rec[1]^dt (__CIpow, d3a_particles.md 4.2).
             case 0x2cu: { set_slv3(b, s, slv3(b, s) * pow(opf(r), dt)); }
             case 0x2fu: { set_slv3(b, s, euler(ev3(b, E_ROT)) * slv3(b, s)); }
+            // Point-light fields: 0x5b / 0x5c life keys (first value S[s+2]), 0x5d / 0x5e plain, 0x49 the day.
+            case 0x5bu: { if (el[b + E_KIND] == DK_LIGHT) { set_ef(b, E_L_INT, key_t(b, s, t)); } }
+            case 0x5cu: { if (el[b + E_KIND] == DK_LIGHT) { set_ef(b, E_L_RANGE, key_t(b, s, t)); } }
+            case 0x5du: { if (el[b + E_KIND] == DK_LIGHT) { set_ef(b, E_L_ISCALE, key_n(b, s, t)); } }
+            case 0x5eu: { if (el[b + E_KIND] == DK_LIGHT) { set_ef(b, E_L_RSCALE, key_n(b, s, t)); } }
+            case 0x49u: { if (el[b + E_KIND] == DK_LIGHT) { set_ef(b, E_L_INT, key_g(b, s)); } }
             // Colour R, G, B = the slot's bytes 2 / 1 / 0 (op 0x91's base) x the zone light; ftol, wrapping.
             case 0x69u: {
                 let sc = sl(b, s);
@@ -528,6 +536,15 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     let fade = ef(b, E_FADE);
     let drawn = fade >= 0.01;
     let kind = el[b + E_KIND];
+    // FUN_10055450 from the common draw: pos = +0x54 raw, range = +0x1a8 x +0x19c, I = max(0, +0x1a0) x +0x1a4 x
+    // +0x138; FUN_10171640: colour rgb / 128 (black when I <= 0), attenuation 1 / (d^2 / I).
+    if (drawn && kind == DK_LIGHT && el[b + E_L_SLOT] != NONE) {
+        let ls = el[b + E_L_SLOT];
+        let li = max(max(0.0, ef(b, E_L_INT)) * ef(b, E_L_ISCALE) * fade, 0.0);
+        let rgb = vec3<f32>(f32(cb(b, 2u)), f32(cb(b, 1u)), f32(cb(b, 0u))) / 128.0;
+        lights[2u * ls] = vec4<f32>(ev3(b, E_POS), ef(b, E_L_RSCALE) * ef(b, E_L_RANGE));
+        lights[2u * ls + 1u] = vec4<f32>(rgb * li, 0.0);
+    }
     // D3a frame wrap at draw time (FUN_1003dad0 / FUN_1003e2f0): a reset, not a modulo.
     if (drawn && (kind == DK_SPRITE || kind == DK_BATCHED) && el[b + E_FRAME] >= el[b + E_FRAMES]) {
         el[b + E_FRAME] = 0u;

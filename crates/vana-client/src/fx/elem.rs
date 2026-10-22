@@ -49,6 +49,13 @@ pub mod w {
     pub const MORPH_PREV: usize = 49;
     /// CMoDist +0x194: the view-space shift (emission op 0x32, update op 0x24).
     pub const DIST_OFF: usize = 41;
+    /// CMoPointLightProgElem (kind 0x47): +0x19c range base, +0x1a0 intensity base, +0x1a4 intensity scale,
+    /// +0x1a8 range scale, and its light table slot (NONE: no MZB list names its key). Shares the morph words.
+    pub const L_RANGE: usize = 44;
+    pub const L_INT: usize = 45;
+    pub const L_ISCALE: usize = 46;
+    pub const L_RSCALE: usize = 47;
+    pub const L_SLOT: usize = 48;
     /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
     pub const GROUND: usize = 54;
     pub const SLOTS: usize = 64;
@@ -82,6 +89,8 @@ pub mod dk {
     pub const MORPH: u32 = 5;
     /// CMoDist (classes2.md 2.1).
     pub const DIST: u32 = 6;
+    /// CMoPointLightProgElem: draws nothing, updates its light.
+    pub const LIGHT: u32 = 7;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -233,6 +242,12 @@ pub fn wgsl_consts() -> String {
         ("E_MORPH_PREV", w::MORPH_PREV),
         ("E_GROUND", w::GROUND),
         ("E_DIST_OFF", w::DIST_OFF),
+        ("E_L_RANGE", w::L_RANGE),
+        ("E_L_INT", w::L_INT),
+        ("E_L_ISCALE", w::L_ISCALE),
+        ("E_L_RSCALE", w::L_RSCALE),
+        ("E_L_SLOT", w::L_SLOT),
+        ("DK_LIGHT", dk::LIGHT as usize),
         ("DK_DIST", dk::DIST as usize),
         ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),

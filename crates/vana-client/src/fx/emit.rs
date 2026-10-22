@@ -139,6 +139,12 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let batched = inst.flags & 0x2000_0000 != 0;
     e.0[w::GEN_BITS] = (inst.de as u32) << 8;
     e.0[w::KIND] = match draw {
+        // FUN_10055340: key = the generator's 4cc; FUN_10171720 finds its table entry (none: it does nothing).
+        Draw::None if res_kind == 0x47 => {
+            let key = u32::from_le_bytes(inst.name);
+            e.0[w::L_SLOT] = reg.light_keys.iter().position(|&k| k == key).map_or(NONE, |s| s as u32);
+            dk::LIGHT
+        }
         Draw::None => dk::NONE,
         Draw::Dist => dk::DIST,
         Draw::Mesh(_) => dk::MESH,
@@ -278,6 +284,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set_sf(s + 3, -d.z.atan2(d.x));
             }
             0x0f => e.set_v3(w::SCALE, v3(1)),
+            // Point light: range base, intensity base, range scale + 1, intensity scale + 1.
+            0x58 if e.0[w::KIND] == dk::LIGHT => {
+                e.set(w::L_RANGE, op.f32(1));
+                e.set(w::L_INT, op.f32(2));
+                e.set(w::L_RSCALE, op.f32(3) + 1.0);
+                e.set(w::L_ISCALE, op.f32(4) + 1.0);
+            }
             // vtable +0x34 = FUN_10051dc0 on CMoDist: +0x194 = op+8.
             0x32 if matches!(draw, Draw::Dist) => e.set(w::DIST_OFF, op.f32(2)),
             // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
@@ -423,6 +436,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                         Some(e.0[w::UV + 1])
                     }
                     0x33..=0x37 => Some(0.0f32.to_bits()),
+                    0x7c => Some(e.0[w::L_INT]),
+                    0x7d => Some(e.0[w::L_RANGE]),
                     0x38 => Some((1.0f32 / 120.0).to_bits()),
                     _ => None,
                 };
@@ -534,6 +549,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         snapshot: snapshot.then(|| inst.matrix.unwrap_or(Mat4::IDENTITY)),
         mslot: NONE,
         parts: None,
+        light: (e.0[w::KIND] == dk::LIGHT && e.0[w::L_SLOT] != NONE).then_some(e.0[w::L_SLOT]),
     };
     Some(Spawn { elem: e, cpu, children, parts, sound })
 }

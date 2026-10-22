@@ -934,8 +934,10 @@ fn main() -> Result<()> {
                         fx.start((l, n), fx::Owner::Zone);
                     }
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
-                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
                         let mut eg = render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+                        eg.set_lights(&zr.lights);
+                        fx.reg.light_keys = zr.light_keys.clone();
                         let view = cam.view();
                         let mut view_rot = view;
                         view_rot.w_axis = glam::Vec4::W;
@@ -958,7 +960,8 @@ fn main() -> Result<()> {
                         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                         eg.draw(gpu, enc, (color, depth, [1600, 900]), Some(color_tex), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                     };
-                    render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
+                    // Twice: the effects write the point lights the scenery reads on the next frame.
+                    render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting), (&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
                 }
             };
             println!("rendered {draws} draws from {eye} towards {target} into {}", out.display());
@@ -1535,8 +1538,10 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();
     let mut eg: Option<render::effects::EffectsGpu> = None;
     let mut started = false;
-    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
         let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
+        eg.set_lights(&zr.lights);
+        fx.reg.light_keys = zr.light_keys.clone();
         let view = cam.view();
         let mut view_rot = view;
         view_rot.w_axis = glam::Vec4::W;

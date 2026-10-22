@@ -3201,3 +3201,29 @@ the roster. Also read by the Geomancer Indi aura (FUN_1008dfb0: the entity as bo
 @0x42). Here: Actors::fx_class, Effects::filter, 0x037 u32 @0x34 >> 3 = our pet's ActIndex (World.my_pet). Not
 done *(party members count as others: the roster, s2c 0x0DD, and the 0x067 masters are not tracked)*: the quake
 (op 0x5f not implemented), the Indi aura. Test filter_rows.
+
+## Point lights on scenery (CMoPointLightProgElem -> the light table -> zone.wgsl) (2026-10-22)
+
+From classes2.md section 3 and ~/ffxi/lab/research/effects/point_lights.md.
+- MZB (FUN_10172530): version byte 3 > 0x11 and u32 @0x18: a light list of 256 records x 0x4c, key at +0; a
+  placement record (100 bytes, version >= 0x12) has 4 refs at +0x54..+0x60, 1-based into that list (runtime
+  +0xe4..+0xf0). Here Placement.lights holds the keys; ZoneGeometry gives each key a slot of a 256-entry table
+  (FUN_101737d0 / FUN_10171830: one entry per key) and each instance its 4 slots + 1 (instance stride 80, attribute
+  8). Keys starting with 'c' are skipped (FUN_10175ac0: they light actors and moving parts only).
+- Kind 0x47 elements (FUN_10055340): key = the generator's 4cc (a parent element's +0x194 when run by an element:
+  not done); FUN_10171720 finds the table entry (none: the element does nothing). Emission op 0x58: +0x19c range
+  base, +0x1a0 intensity base, +0x1a8 = op+0xc + 1, +0x1a4 = op+0x10 + 1; binds 0x7c / 0x7d take +0x1a0 / +0x19c as
+  base. Update 0x5b / 0x5c (life key, first value S[s+2]) -> +0x1a0 / +0x19c, 0x5d / 0x5e (plain) -> +0x1a4 /
+  +0x1a8, 0x49 (day) -> +0x1a0. Each drawn frame (fade >= 0.01), FUN_10055450 / FUN_10171640: position +0x54 raw,
+  range +0x1a8 x +0x19c, I = max(0, +0x1a0) x +0x1a4 x fade, colour rgb / 128 (black when I <= 0), Att2 = 1/I; the
+  dtor makes it black. Here the effects update pass writes ZoneRenderer.lights (binding 9: two vec4s a light,
+  position + range, colour x I); a dropped element sends Write::LightOff.
+- Scenery (fixed function, D3D8 POINT): per vertex sum of C x I x max(N.L, 0) / d^2, none past the range, added
+  inside lit = clamp01(vc x (ambient + sun N.L + points)). Lights are a frame late (scenery draws before the
+  effects), as in retail. zone-shot renders its frame twice for that. Zone 232 at 00:00: the lamps light the wall
+  and floor warm around pl01..; at 12:00 (pttm off) nothing.
+- The device asks for 16 storage buffers per stage (the effects update pass binds 9; wgpu's default is 8).
+- Not done: actors (the floor triangle's 4 light bytes, collision +0xac..+0xaf, the strongest I/d^2 becomes a
+  directional light), moving parts (FUN_1017ce60, no 'c' skip), the bump-map vertex-shader path (config 0017),
+  the slot leak for refs to 'c' / unknown keys, the windowed-mode gamma boost (FUN_1000b290), the two-area-light
+  scenery mode, unnormalised normals of scaled placements.

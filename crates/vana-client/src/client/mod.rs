@@ -2650,6 +2650,7 @@ impl App {
                         world.zone_lines = scene.regions.iter().filter(|r| r.name.starts_with(['z', 'Z']) && r.name.len() == 8).cloned().collect();
                         // Its geometry and textures go up over the next frames; the indicator stays until then.
                         if let Some(gfx) = &self.gfx {
+                            world.effects.reg.light_keys = geometry.light_keys.clone();
                             world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format));
                             world.zone_uploading = Some(Instant::now());
                         }
@@ -4582,6 +4583,7 @@ impl App {
                             crate::fx::sound::SoundCmd::Stop { handle, ticks } => a.voice_stop(handle, ticks),
                         }
                     }
+                    eg.set_lights(&r.lights);
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_view, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);

@@ -21,6 +21,8 @@ struct Uniforms {
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
+// Point lights (two vec4s each: position, range; colour x intensity), from the effects (classes2.md 3.2).
+@group(0) @binding(1) var<storage, read> plights: array<vec4<f32>>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -33,6 +35,8 @@ struct VertexIn {
     @location(5) m1: vec4<f32>,
     @location(6) m2: vec4<f32>,
     @location(7) m3: vec4<f32>,
+    // The placement's four lights (table slot + 1, 0 = none).
+    @location(8) lights: vec4<u32>,
 };
 
 struct VertexOut {
@@ -44,7 +48,24 @@ struct VertexOut {
     @location(4) depth: f32,
     // Target flash (FUN_100c94a0): ambient lerp toward 220 / 255, fog colour scale.
     @location(5) flash: vec2<f32>,
+    // Point lights, per vertex (D3D8 POINT: C x I x max(N.L, 0) / d^2, none past the range).
+    @location(6) point: vec3<f32>,
 };
+
+fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    var sum = vec3<f32>(0.0);
+    for (var k = 0u; k < 4u; k = k + 1u) {
+        let s = lights[k];
+        if (s == 0u) { continue; }
+        let a = plights[2u * (s - 1u)];
+        let c = plights[2u * (s - 1u) + 1u];
+        let l = a.xyz - p;
+        let d2 = max(dot(l, l), 1e-6);
+        if (d2 > a.w * a.w) { continue; }
+        sum = sum + c.rgb * max(dot(n, l * inverseSqrt(d2)), 0.0) / d2;
+    }
+    return sum;
+}
 
 @vertex
 fn vs_main(v: VertexIn) -> VertexOut {
@@ -58,6 +79,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.normal = normalize((model * vec4<f32>(v.normal, 0.0)).xyz);
     out.depth = out.clip.w;
     out.flash = vec2<f32>(0.0, 1.0);
+    out.point = point_lights(v.lights, world.xyz, out.normal);
     return out;
 }
 
@@ -100,6 +122,7 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     out.normal = normalize((model * vec4<f32>(nn, 0.0)).xyz);
     out.depth = out.clip.w;
     out.flash = pose[4].yz;
+    out.point = vec3<f32>(0.0);
     return out;
 }
 
@@ -171,7 +194,7 @@ fn d3d_out_fog(in: VertexOut, rgb: vec3<f32>, fog_color: vec3<f32>) -> vec4<f32>
 // lit = clamp(vc * (ambient + sun * max(N.-L, 0))); out = tex * lit * 2
 fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     let ndl = max(dot(normalize(in.normal), -u.sun.xyz), 0.0);
-    let lit = clamp(in.color.rgb * (u.ambient.rgb + u.sun_color.rgb * ndl), vec3<f32>(0.0), vec3<f32>(1.0));
+    let lit = clamp(in.color.rgb * (u.ambient.rgb + u.sun_color.rgb * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
     return d3d_out(in, clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)));
 }
 

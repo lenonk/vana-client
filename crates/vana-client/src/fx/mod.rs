@@ -139,6 +139,8 @@ pub struct ElemCpu {
     pub mslot: u32,
     /// Batched D3a: its particles in the pool (first, count).
     pub parts: Option<(u32, u32)>,
+    /// A point light's table slot.
+    pub light: Option<u32>,
 }
 
 /// Who started an instance.
@@ -206,6 +208,8 @@ pub enum Write {
     Words(u32, usize, Vec<u32>),
     /// Particle records from this index of the pool.
     Parts(u32, Vec<[f32; 9]>),
+    /// A point light switched off (the CMoPointLightProgElem dtor: a black light).
+    LightOff(u32),
 }
 
 /// Libraries and the tables the GPU reads (keyframes, update streams, meshes).
@@ -220,6 +224,8 @@ pub struct Registry {
     pub key_desc: Vec<[u32; 2]>,
     key_id: HashMap<Ref, u32>,
     pub keys_dirty: bool,
+    /// The zone's point-light table keys by slot (render ZoneGeometry::light_keys).
+    pub light_keys: Vec<u32>,
     /// Vtx paths as splines (fx/spline.rs gpu_words), back to back; an element slot holds first vec4 + 1.
     pub path_data: Vec<[f32; 4]>,
     path_id: HashMap<Ref, (u32, Vec<spline::Seg>)>,
@@ -264,6 +270,7 @@ impl Registry {
             key_desc: Vec::new(),
             key_id: HashMap::new(),
             keys_dirty: false,
+            light_keys: Vec::new(),
             path_data: Vec::new(),
             path_id: HashMap::new(),
             paths_dirty: false,
@@ -860,6 +867,9 @@ impl Effects {
 
     fn drop_elem(&mut self, e: u32) {
         let Some(c) = self.elems.get_mut(e as usize).and_then(|x| x.take()) else { return };
+        if let Some(s) = c.light {
+            self.writes.push(Write::LightOff(s));
+        }
         if c.mslot != NONE {
             self.slot_free.push(c.mslot);
         }
