@@ -2383,6 +2383,11 @@ impl App {
         });
     }
 
+    /// What --quit waits for: the script run to its end, else the --screenshot shot.
+    fn drive_done(&self) -> bool {
+        self.drive.input.as_ref().map_or(self.drive.shot_taken, |s| s.finished())
+    }
+
     fn game_data(&mut self) -> Result<(Arc<DatIndex>, Arc<zone::Keys>)> {
         if self.index.is_none() {
             self.index = Some(Arc::new(DatIndex::open(&self.cfg.ffxi_dir())?));
@@ -4052,6 +4057,7 @@ impl App {
         if self.busy {
             return false;
         }
+        let drive_done = self.drive_done();
         match &mut self.phase {
             Phase::Login { .. } if !self.drive.started => {
                 if let (Some((user, pass)), false) = (self.drive.login.clone(), self.drive.input.as_ref().is_some_and(|s| s.logs_in)) {
@@ -4088,7 +4094,7 @@ impl App {
             }
             Phase::World(world) if world.renderer.is_some() && world.zone_uploading.is_none() => {
                 // Test runs end with "/shutdown on" (0x0E7 mode 3, kind 3); the server refuses it in an event, so once that is over.
-                if self.drive.quit && self.drive.shot_taken && !world.logging_out && !event::active(world) {
+                if self.drive.quit && drive_done && !world.logging_out && !event::active(world) {
                     world.logging_out = true;
                     world.shutdown = true;
                     let _ = world.net.commands.send(NetCommand::Logout { mode: 3, kind: 3 });
@@ -4981,7 +4987,7 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 self.redraw();
-                if (self.drive.quit && self.drive.shot_taken && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
+                if (self.drive.quit && self.drive_done() && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
                     event_loop.exit();
                 }
             }
