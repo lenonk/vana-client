@@ -34,6 +34,10 @@ pub trait Actors {
     fn hidden(&self, id: u32) -> bool;
     /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
     fn models(&self) -> Vec<(u32, Vec<u32>)>;
+    /// PC skeletons (CXiSkeletonActor): race code and body info byte 9 (+0x881).
+    fn pc(&self, _id: u32) -> Option<(u8, i8)> {
+        None
+    }
 }
 
 /// No actors (offscreen shots).
@@ -420,6 +424,8 @@ pub struct Effects {
     models: HashMap<u32, Vec<u32>>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
+    /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
+    pub motion_files: Vec<(u32, Vec<u32>)>,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -469,6 +475,7 @@ impl Effects {
             load_rx,
             models: HashMap::new(),
             motions: Vec::new(),
+            motion_files: Vec::new(),
         }
     }
 

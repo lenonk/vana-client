@@ -1539,6 +1539,11 @@ impl crate::fx::Actors for FxActors<'_> {
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
         self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.clone()))).collect()
     }
+
+    fn pc(&self, id: u32) -> Option<(u8, i8)> {
+        let pc = self.actors.get(&id)?.character.as_ref()?.pc?;
+        Some((pc.race, pc.skirt))
+    }
 }
 
 /// Loaded looks kept while no actor wears them.
@@ -2952,7 +2957,12 @@ impl App {
         let Phase::World(world) = &mut self.phase else { return };
         combat::tick(world);
         event::update(world, dt);
-        // Motions the effect system's schedulers asked for last frame.
+        // Weapon-skill motion files and motions the effect system's schedulers asked for last frame.
+        for (id, files) in std::mem::take(&mut world.effects.motion_files) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.pending = Some(actmotion::Pending { files, name: String::new(), kind: actmotion::Kind::Skill });
+            }
+        }
         for (id, m) in std::mem::take(&mut world.effects.motions) {
             actmotion::play_op(world, id, m);
         }

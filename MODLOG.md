@@ -3007,3 +3007,8 @@ reactions and battle messages):
   `--category 4 --anim 144` (Fire: flare, ring, burst).
 - Melee timing (combat.rs): battle messages at the swing hit (dada) + 4 ticks, the damage reaction at + 5 (atpr
   wait 4 before op 0x2b; dam0 op 0x01 wait 1), as triggers.md 2.2 has it; it used to be both at the hit.
+- Weapon skills on PC skeletons (FUN_100d0570): tables at 0x10353be4..0x10353cb8 by race code 0..8 (read from
+  the DLL): kind 3 anim < 0x100 file 33227.. + anim, its second file (body info byte 9 > 0; 0x...c30 table when
+  it is 1, else c32), anim >= 0x100 61451.. + anim - 0x100, kind 14 58041.., kind 15 88035... The files go on
+  the actor list as motion files (actmotion Kind::Skill) and main runs once they are there. Retail drops them at
+  the task end (+0xac = 0x100a7440); ours stay until the next skill *(not traced)*.

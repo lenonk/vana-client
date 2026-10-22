@@ -18,6 +18,8 @@ pub enum Kind {
     Battle,
     Event,
     Emote,
+    /// Weapon-skill files (FUN_100d22a0 kind 6), put on by the effect system.
+    Skill,
 }
 
 pub type Extra = Vec<(Kind, Arc<MotionFile>)>;
@@ -392,8 +394,13 @@ pub(super) fn update(w: &mut World, dt: f32) {
             && let Some(files) = w.motion_files.all(&index, &p.files)
         {
             a.pending = None;
+            if p.kind == Kind::Skill {
+                drop_kind(&mut a.extra, Kind::Skill);
+            }
             add(&mut a.extra, p.kind, files);
-            if start(a, &ch, &p.name, &base) {
+            if p.name.is_empty() {
+                // Files only: the effect system's scheduler plays from them.
+            } else if start(a, &ch, &p.name, &base) {
                 log::info!("actor {id:#x}: event motion {} (files {:?})", p.name, p.files);
             } else {
                 log::info!("actor {id:#x}: event motion {} not in its files {:?}", p.name, p.files);
