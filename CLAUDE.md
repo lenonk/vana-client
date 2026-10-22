@@ -83,9 +83,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - No command line for any of it.
   - The install was behind the server's data (NPC models 2957+ missing: the level-5 crystal scene's set was
     blank): 5321 files, 452 MB as of 30261006_0. Updates go to the base files, never to mods.
-- Mod manager (in game): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files copied over the
-  install. Each mod is a folder of replacements; DatIndex resolves a file id to the highest enabled mod that has it,
-  else the base file. Enable / disable / order from a settings page; flag mods whose files a game update changed.
+- Mod manager (in game; XIPivot built in): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files
+  copied over the install. Each mod is a folder of replacements in XIPivot's layout (`<pack>/ROM*/<dir>/<file>.DAT`,
+  so packs made for XIPivot drop in); DatIndex resolves a file id to the highest enabled mod that has it, else the
+  base file. Enable / disable / order from a settings page. AshenbubsHD stopped in November 2021: a mod file whose
+  base file has changed since the mod was made (compare against the base it replaced, e.g. dat-backup/original)
+  would roll that content back, so skip or flag those files rather than overlay them blindly.
   Migrate today's in-place install (~/ffxi/dat-backup: originals plus manifest.tsv of 34k replaced files) into mod
   folders and restore the originals.
 - Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
