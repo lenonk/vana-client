@@ -418,6 +418,8 @@ pub struct Effects {
     load_rx: std::sync::mpsc::Receiver<(u32, Option<Library>)>,
     /// Actors whose model generators run, by the model files they were started for.
     models: HashMap<u32, Vec<u32>>,
+    /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
+    pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -466,6 +468,7 @@ impl Effects {
             load_tx,
             load_rx,
             models: HashMap::new(),
+            motions: Vec::new(),
         }
     }
 

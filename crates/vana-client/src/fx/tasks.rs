@@ -216,6 +216,9 @@ impl Effects {
         let ops = self.sched_ops(r);
         let mut t = Task::new(r, ops, a1, a2, action, speed);
         t.parent = parent;
+        if let Some(p) = parent.and_then(|p| self.tasks.get(p)?.as_ref()) {
+            t.motions = p.motions;
+        }
         // Not the slot of the task being run (it is taken out while it runs).
         let busy = self.stepping;
         match self.tasks.iter().enumerate().position(|(i, t)| t.is_none() && Some(i) != busy) {
@@ -439,6 +442,24 @@ impl Effects {
             }
             0x6b => {
                 self.stack_op(t, op);
+                Flow::Next
+            }
+            // Motions on actor1: name with the region '?' dropped, speed f32 @0x10, length u16 @6, count byte @0x1e,
+            // blend u16 @0x18 (as dat::sched::plan reads them).
+            0x05 if t.motions => {
+                if let Some(id) = t.a1.id() {
+                    let name = String::from_utf8_lossy(&op.name().to_le_bytes()).trim_end_matches(['\0', '?']).to_string();
+                    let speed = f32::from_bits(op.u32_at(0x10));
+                    let count = op.raw.get(0x1e).map_or(1, |b| b & 0x7f);
+                    let m = crate::dat::sched::Motion { name, at: 0, speed: if speed == 0.0 { 1.0 } else { speed }, ticks: op.dur.max(0) as u16, count, blend: op.u16_at(0x18) };
+                    self.motions.push((id, Some(m)));
+                }
+                Flow::Next
+            }
+            0x28 if t.motions => {
+                if let Some(id) = t.a1.id() {
+                    self.motions.push((id, None));
+                }
                 Flow::Next
             }
             0x64 | 0x65 => {
@@ -925,6 +946,9 @@ mod tests {
         for g in ["gn2s", "gn20", "gn21"] {
             assert!(casting.iter().any(|n| n == g), "{g}: {casting:?}");
         }
+        // cawh's op 0x05 plays the cast motion mw0? on the caster.
+        let moved: Vec<String> = fx.motions.drain(..).filter_map(|(id, m)| (id == HUME).then_some(m).flatten().map(|m| m.name)).collect();
+        assert!(moved.iter().any(|n| n == "mw0"), "{moved:?}");
         let finish = Action { actor: HUME, category: 4, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 1, message: 7, value: 30, ..Default::default() }] }] };
         fx.on_action(&finish, None);
         let mut seen: Vec<String> = Vec::new();

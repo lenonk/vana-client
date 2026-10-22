@@ -2952,6 +2952,10 @@ impl App {
         let Phase::World(world) = &mut self.phase else { return };
         combat::tick(world);
         event::update(world, dt);
+        // Motions the effect system's schedulers asked for last frame.
+        for (id, m) in std::mem::take(&mut world.effects.motions) {
+            actmotion::play_op(world, id, m);
+        }
         actmotion::update(world, dt);
         // Inferred safety: a talk the server never answers stops blocking after 10 s.
         if world.talk_lock.is_some_and(|t| t.elapsed().as_secs_f32() > 10.0) {

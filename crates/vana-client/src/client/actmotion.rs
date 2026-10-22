@@ -329,6 +329,30 @@ pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bo
     true
 }
 
+/// A scheduler's op 0x05 run by the effect system (fx/tasks.rs) on actor `id`, or its op 0x28 (None): the
+/// status motion comes back.
+pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
+    let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { return };
+    let base = status_motion(w, id, &ch);
+    let Some(a) = w.actors.get_mut(&id) else { return };
+    match m {
+        Some(m) if !find(&a.extra, &ch, &m.name).is_empty() => {
+            let len = if m.ticks > 0 { m.ticks as f32 } else { find(&a.extra, &ch, &m.name).iter().map(|x| x.frames as f32 / (x.speed * m.speed * 0.5).max(1e-3)).fold(0.0, f32::max) };
+            if !a.motion.is_empty() {
+                a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
+                a.blend = 0.0;
+            }
+            a.play = Some(Play { name: m.name.clone(), motions: vec![m], length: len, ticks: 0.0, base, cut: -1.0, stance_at: None });
+        }
+        Some(m) => log::debug!("actor {id:#x}: scheduler motion {} not in its files", m.name),
+        None => {
+            if let Some(p) = &mut a.play {
+                p.stance_at = Some(p.ticks);
+            }
+        }
+    }
+}
+
 /// The status motion an actor would play now (FUN_100c6b70), for ending looping holds.
 fn status_motion(w: &World, id: u32, ch: &Character) -> String {
     let (status, ratio) = if let Some(p) = super::event::pose(w, id) {

@@ -122,11 +122,14 @@ pub struct Task {
     /// The last op 0x31 (record loop start).
     pub loop_at: Option<usize>,
     pub done: bool,
+    /// Its op 0x05 / 0x28 motions are played (melee's are client/combat.rs's).
+    pub motions: bool,
 }
 
 impl Task {
     pub fn new(res: Ref, ops: Rc<Vec<SOp>>, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32) -> Self {
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false }
+        let motions = action.as_ref().is_none_or(|a| !matches!(a.borrow().action.category, 1 | 2));
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions }
     }
 }
 
