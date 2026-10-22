@@ -9,6 +9,7 @@ use crate::render::dancer::{DancerRenderer, Light};
 use crate::render::{Camera, Gpu, ZoneRenderer};
 use anyhow::{Context, Result};
 use glam::{Mat3, Mat4, Quat, Vec3};
+use std::sync::Arc;
 
 /// Lobby clock for the creator (FUN_1022ef00: FUN_10184f30(0xb)).
 const MINUTE: f32 = 11.0 * 60.0;
@@ -18,18 +19,20 @@ const ZONE_SCALE: f32 = 0.1;
 pub struct Backdrop {
     scene: zone::ZoneScene,
     lighting: Option<Lighting>,
+    fx: Option<super::select::FxLibs>,
     /// Shadow colour c = background sun colour / 4 (light 4, FUN_10245bc0 / FUN_1017ff50).
     shadow_c: Vec3,
 }
 
 impl Backdrop {
-    pub fn load(index: &DatIndex, keys: &zone::Keys) -> Result<Self> {
+    pub fn load(index: &Arc<DatIndex>, keys: &Arc<zone::Keys>) -> Result<Self> {
         let file = index.read(zone::file_id(super::select::ZONE))?;
         let scene = zone::load_scene(keys, &file)?;
+        let fx = super::select::FxLibs::load(index, keys, &file);
         let env = ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", MINUTE));
         let lighting = env.as_ref().map(|e| Lighting::from_env(e, MINUTE));
         let shadow_c = env.map_or(Vec3::splat(0.2), |e| Vec3::new(e.bg.sun[0] as f32, e.bg.sun[1] as f32, e.bg.sun[2] as f32) / 255.0 / 4.0);
-        Ok(Self { scene, lighting, shadow_c })
+        Ok(Self { scene, lighting, fx, shadow_c })
     }
 }
 
@@ -125,6 +128,7 @@ struct Posed {
 pub struct Creator {
     backdrop: Backdrop,
     zone: Option<ZoneRenderer>,
+    pub effects: Option<super::select::LobbyFx>,
     renderer: Option<DancerRenderer>,
     dancer: Option<Dancer>,
     /// Hair shown (0 = A, 1 = B) and the hair the head's materials are switched to.
@@ -147,8 +151,9 @@ pub struct Creator {
 }
 
 impl Creator {
-    pub fn new(backdrop: Backdrop) -> Self {
+    pub fn new(mut backdrop: Backdrop) -> Self {
         Self {
+            effects: backdrop.fx.take().map(|l| super::select::LobbyFx::new(l, MINUTE)),
             backdrop,
             zone: None,
             renderer: None,
@@ -197,6 +202,9 @@ impl Creator {
     pub fn advance(&mut self, dt: f32) {
         let before = self.frame;
         self.frame += dt * 30.0;
+        if let Some(fx) = &mut self.effects {
+            fx.advance(dt);
+        }
         self.orbit += if self.view == 2 { dt * 0.25 } else { 0.0 };
         // The performance loops when it ends (FUN_10245920).
         if let Some(d) = &self.dancer {
@@ -214,13 +222,19 @@ impl Creator {
         }
     }
 
-    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, depth: &wgpu::TextureView, aspect: f32) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, target: super::select::Target, depth: &wgpu::TextureView, aspect: f32, alive: Option<Vec<u32>>) {
+        let view = target.0;
         let zone = self.zone.get_or_insert_with(|| ZoneRenderer::new(gpu, &self.backdrop.scene, format));
         zone.lighting = self.backdrop.lighting;
         let r = self.renderer.get_or_insert_with(|| DancerRenderer::new(gpu, format));
         let Some(d) = &mut self.dancer else {
             // Before the first dancer loads: the opening camera of FUN_1022ef00, eye (0, -5, 40) on the origin.
-            zone.render(gpu, encoder, view, depth, &Camera { eye: Vec3::new(0.0, -5.0, 40.0), target: Vec3::ZERO, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(350.0) }, aspect, &[]);
+            let camera = Camera { eye: Vec3::new(0.0, -5.0, 40.0), target: Vec3::ZERO, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(350.0) };
+            zone.render(gpu, encoder, view, depth, &camera, aspect, &[]);
+            if let Some(fx) = &mut self.effects {
+                fx.draw(gpu, format, encoder, target, depth, zone, &camera, aspect, alive);
+            }
             return;
         };
         if self.applied_hair != Some(self.hair) {
@@ -302,7 +316,11 @@ impl Creator {
         let frame = crate::render::dancer::GFrame { view_proj: proj * cam.inverse(), eye, lights: &lights, joints: [&bm, &hm], root, scale: s, sorted };
         posed.gpu.update(gpu, r, &frame, false);
         self.pose_time += t0.elapsed();
-        zone.render(gpu, encoder, view, depth, &zone_camera(cam, fov.to_radians()), aspect, &[]);
+        let camera = zone_camera(cam, fov.to_radians());
+        zone.render(gpu, encoder, view, depth, &camera, aspect, &[]);
+        if let Some(fx) = &mut self.effects {
+            fx.draw(gpu, format, encoder, target, depth, zone, &camera, aspect, alive);
+        }
         if self.show_dancer {
             posed.gpu.draw(r, encoder, view, depth);
         }
@@ -367,9 +385,9 @@ pub struct ScreenShot {
 pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     use super::game_ui::{CreatorView, GameUi, GameUiData};
     let cfg = crate::config::Config::load();
-    let index = DatIndex::open(&cfg.ffxi_dir())?;
+    let index = Arc::new(DatIndex::open(&cfg.ffxi_dir())?);
     let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
-    let keys = zone::Keys::from_ffximain(&dll)?;
+    let keys = Arc::new(zone::Keys::from_ffximain(&dll)?);
     let mut gu = GameUi::new(GameUiData::load(&index, &dll)?);
     let mut cr = Creator::new(Backdrop::load(&index, &keys)?);
     cr.set_dancer(Dancer::load(&index, shot.race, shot.face)?);
@@ -386,11 +404,24 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         sample_count: 1,
         dimension: wgpu::TextureDimension::D2,
         format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let view = target.create_view(&Default::default());
     let depth = crate::render::depth_view(&gpu.device, w, h);
+    // A second of lobby effects first (the clouds), the performance held at --frame.
+    for _ in 0..30 {
+        if let Some(fx) = &mut cr.effects {
+            fx.advance(1.0 / 30.0);
+        }
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        cr.render(&gpu, format, &mut enc, (&view, Some(&target), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
+        gpu.queue.submit([enc.finish()]);
+        let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        if let Some(fx) = &mut cr.effects {
+            fx.after_submit(&gpu);
+        }
+    }
     let v = CreatorView { step: shot.step, race: shot.race, face: shot.face, hair: shot.hair, size: shot.size, job: shot.job, nation: shot.nation, name: &shot.name };
     // The nation step plays file 24 + nation's mov1 instead (FUN_1023ae20); --frame is its time at 30 a second.
     let mut fly = if shot.step == 6 {
@@ -408,7 +439,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
             Some(f) => {
                 f.render(&gpu, format, &mut enc, &view, &depth, [w, h], w as f32 / h.max(1) as f32);
             }
-            None => cr.render(&gpu, format, &mut enc, &view, &depth, w as f32 / h.max(1) as f32),
+            None => cr.render(&gpu, format, &mut enc, (&view, Some(&target), [w, h]), &depth, w as f32 / h.max(1) as f32, None),
         }
         gu.clear();
         draw_ui(gu, &v, w as f32, h as f32, None, Some(dt));

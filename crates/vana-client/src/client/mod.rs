@@ -4764,7 +4764,14 @@ impl App {
                     }
                     fly.render(&gfx.gpu, gfx.config.format, &mut encoder, &scene_view, &scene_depth, bg, aspect);
                 }
-                _ => cr.render(&gfx.gpu, gfx.config.format, &mut encoder, &scene_view, &scene_depth, aspect),
+                _ => {
+                    let alive = self.audio.as_ref().map(|a| a.alive());
+                    cr.render(&gfx.gpu, gfx.config.format, &mut encoder, (&scene_view, Some(&scene_tex), bg), &scene_depth, aspect, alive);
+                    for c in cr.effects.as_mut().map(|fx| fx.take_sounds()).unwrap_or_default() {
+                        let Some(a) = &mut self.audio else { break };
+                        play_fx_sound(a, c);
+                    }
+                }
             }
             drew_world = true;
         }
@@ -4774,7 +4781,7 @@ impl App {
             sel.advance(dt, self.select_ui.cursor);
             let alive = self.audio.as_ref().map(|a| a.alive());
             sel.render(&gfx.gpu, gfx.config.format, &mut encoder, (&scene_view, Some(&scene_tex), bg), &scene_depth, aspect, alive);
-            for c in sel.take_sounds() {
+            for c in sel.effects().map(|fx| fx.take_sounds()).unwrap_or_default() {
                 let Some(a) = &mut self.audio else { break };
                 play_fx_sound(a, c);
             }
@@ -4859,8 +4866,11 @@ impl App {
         if let (Some(eg), Phase::World(w)) = (&mut self.effects_gpu, &mut self.phase) {
             eg.after_submit(&gfx.gpu, &mut w.effects);
         }
-        if let Some(sel) = &mut self.select {
-            sel.after_submit(&gfx.gpu);
+        if let Some(fx) = self.select.as_mut().and_then(|s| s.effects()) {
+            fx.after_submit(&gfx.gpu);
+        }
+        if let Some(fx) = self.creator.as_mut().and_then(|c| c.effects.as_mut()) {
+            fx.after_submit(&gfx.gpu);
         }
         if let Phase::World(w) = &mut self.phase
             && let Some(r) = &mut w.renderer

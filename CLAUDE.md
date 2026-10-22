@@ -16,8 +16,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - FFXiMain decompile: `~/ffxi/lab/creatorwork/ghidra/all.c` and `all.asm`; unpacked DLL:
   `~/ffxi/lab/compress_re/unpacked/FFXiMain_unpacked.dll`. These stay outside the repo; never commit them.
 - Research specs for upcoming work: `~/ffxi/lab/research/`. `keys_spec.md` covers all 180 key functions.
-- Kuluu (`~/ffxi/lab/kuluu-ffxi`, GPL-3.0: facts only, never code): check what it already solved before starting
-  anything; `~/ffxi/lab/research/kuluu_survey.md` maps it to our open work. Its RVAs are for 30260904_1.
+- Kuluu (`~/ffxi/lab/kuluu-ffxi`, GPL-3.0: facts only, never code) is far behind us and not a guide; at most a
+  source of narrow facts, confirmed in our decompile (`~/ffxi/lab/research/kuluu_survey.md`).
 - Current FFXiMain (30261006_0): `~/ffxi/lab/current/` (DLL, unpacked), decompile `creatorwork/ghidra_30261006/`
   (run FixVt.java after analysis, or vtable-only methods are missing).
 - Helper scripts: `~/ffxi/lab/tools/` (`ptrfind.py` VA/offset mapping, `keymap.py`, `mkcnf.py`, `append_modlog.py`,

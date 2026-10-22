@@ -45,10 +45,100 @@ pub struct SelectData {
     centre: Vec3,
     slots: [Slot; SLOTS],
     models: Vec<Option<(Model, u8)>>,
-    /// The global and zone effect libraries, with what the effects engine reads files through.
-    fx: Option<(crate::fx::lib::Library, crate::fx::lib::Library)>,
+    fx: Option<FxLibs>,
+}
+
+/// The global and zone effect libraries of a lobby scene, with what the effects engine reads files through.
+pub struct FxLibs {
+    global: crate::fx::lib::Library,
+    zone: crate::fx::lib::Library,
     files: (Arc<DatIndex>, Arc<zone::Keys>),
 }
+
+impl FxLibs {
+    /// Off the UI thread, with the zone DAT already read.
+    pub fn load(index: &Arc<DatIndex>, keys: &Arc<zone::Keys>, zone_file: &[u8]) -> Option<Self> {
+        let lib = crate::fx::lib::Library::load;
+        let libs = index.read(0).and_then(|g| Ok((lib(0, g)?, lib(zone::file_id(ZONE), zone_file.to_vec())?)));
+        libs.map(|(global, zone)| Self { global, zone, files: (index.clone(), keys.clone()) }).map_err(|e| log::warn!("lobby effects: {e:#}")).ok()
+    }
+}
+
+/// The effects engine in a lobby scene (select, creator): the zone's generators and the weather 'suny' start with
+/// the zone (FUN_10242cd0, FUN_10239720), the sky's clouds among them. Its own GPU side: ids are per registry.
+pub struct LobbyFx {
+    fx: crate::fx::Effects,
+    gpu: Option<crate::render::effects::EffectsGpu>,
+    /// Real time not yet given to the effects; the lobby clock.
+    dt: f32,
+    minute: f32,
+}
+
+impl LobbyFx {
+    pub fn new(libs: FxLibs, minute: f32) -> Self {
+        let mut fx = crate::fx::Effects::new();
+        fx.set_keys(libs.files.1);
+        fx.set_index(libs.files.0);
+        fx.set_global(libs.global);
+        fx.load_zone(libs.zone);
+        fx.set_weather("suny", 0.0);
+        Self { fx, gpu: None, dt: 0.0, minute }
+    }
+
+    pub fn advance(&mut self, dt: f32) {
+        self.dt += dt;
+    }
+
+    /// Effect sounds since the last call, for the sound thread.
+    pub fn take_sounds(&mut self) -> Vec<crate::fx::sound::SoundCmd> {
+        std::mem::take(&mut self.fx.sound_cmds)
+    }
+
+    /// After the frame's submit: the effects' readback.
+    pub fn after_submit(&mut self, gpu: &Gpu) {
+        if let Some(eg) = &mut self.gpu {
+            eg.after_submit(gpu, &mut self.fx);
+        }
+    }
+
+    /// One frame over the drawn zone.
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, target: Target, depth: &wgpu::TextureView, zone: &ZoneRenderer, camera: &Camera, aspect: f32, alive: Option<Vec<u32>>) {
+        let (fx, (view, color_tex, bg)) = (&mut self.fx, target);
+        let eg = self.gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(gpu, format));
+        if fx.reg.light_keys != zone.light_keys {
+            fx.reg.light_keys = zone.light_keys.clone();
+        }
+        eg.set_lights(&zone.lights);
+        let dt = std::mem::take(&mut self.dt);
+        let view_m = camera.view();
+        let mut view_rot = view_m;
+        view_rot.w_axis = glam::Vec4::W;
+        let f = crate::fx::Frame {
+            dt: (dt * 60.0).max(1e-3),
+            seconds: dt,
+            dayfrac: self.minute / 1440.0,
+            view: view_m,
+            view_rot,
+            eye: camera.eye,
+            draw_distance: 2000.0,
+            area_light: zone.lighting.map_or(Vec3::ONE, |l| l.area),
+            focal: 192.0 / (camera.fov_y * 0.5).tan(),
+            moon_phase: 0,
+            weekday: 0,
+        };
+        if let Some(alive) = alive {
+            fx.set_alive(alive);
+        }
+        fx.tick(&f, &crate::fx::NoActors);
+        eg.update(gpu, encoder, fx, &f);
+        let (fog_color, fog) = zone.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
+        eg.draw(gpu, encoder, (view, depth, bg), color_tex, fx, (camera.proj(aspect), view_m, camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+    }
+}
+
+/// The scene's colour target, its texture (for distortion) and the background size.
+pub type Target<'a> = (&'a wgpu::TextureView, Option<&'a wgpu::Texture>, [u32; 2]);
 
 /// Facing the ring centre (model +x toward it), scaled by the model's size.
 fn placement(feet: Vec3, scale: f32) -> Mat4 {
@@ -69,9 +159,7 @@ impl SelectData {
     pub fn load(index: &Arc<DatIndex>, keys: &Arc<zone::Keys>, looks: &[Option<(Look, u8)>]) -> Result<Self> {
         let file = index.read(zone::file_id(ZONE))?;
         let scene = zone::load_scene(keys, &file)?;
-        // The lobby runs the effects engine as the world does (the sky's clouds are 'suny' generators).
-        let lib = |id: u32, f: Vec<u8>| crate::fx::lib::Library::load(id, f);
-        let fx = index.read(0).and_then(|g| Ok((lib(0, g)?, lib(zone::file_id(ZONE), file.clone())?))).map_err(|e| log::warn!("select effects: {e:#}")).ok();
+        let fx = FxLibs::load(index, keys, &file);
         let lighting = ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", MINUTE)).map(|e| Lighting::from_env(&e, MINUTE));
         let ground = Ground::build(&scene);
         let models: Vec<Option<(Model, u8)>> = looks
@@ -88,7 +176,7 @@ impl SelectData {
             let point = models.get(i).and_then(Option::as_ref).and_then(|(m, size)| rest_point(m, POINT, placement(feet, m.scale(*size)))).map(|p| p - feet);
             Slot { feet, near: feet - out, far: feet - out * 2.0, point }
         });
-        Ok(Self { scene, lighting, centre, slots, models, fx, files: (index.clone(), keys.clone()) })
+        Ok(Self { scene, lighting, centre, slots, models, fx })
     }
 }
 
@@ -145,25 +233,13 @@ pub struct SelectScene {
     idle: u32,
     acc: f32,
     time: f32,
-    effects: Option<crate::fx::Effects>,
-    effects_gpu: Option<crate::render::effects::EffectsGpu>,
-    /// Real time not yet given to the effects.
-    fx_dt: f32,
+    effects: Option<LobbyFx>,
 }
 
 impl SelectScene {
     pub fn new(mut data: SelectData) -> Self {
         let s = data.slots[0];
-        // FUN_10242cd0: the zone's generators start with it, then the weather 'suny'.
-        let effects = data.fx.take().map(|(global, zone_lib)| {
-            let mut fx = crate::fx::Effects::new();
-            fx.set_keys(data.files.1.clone());
-            fx.set_index(data.files.0.clone());
-            fx.set_global(global);
-            fx.load_zone(zone_lib);
-            fx.set_weather("suny", 0.0);
-            fx
-        });
+        let effects = data.fx.take().map(|l| LobbyFx::new(l, MINUTE));
         let mut scene = Self {
             data,
             zone: None,
@@ -177,8 +253,6 @@ impl SelectScene {
             acc: 0.0,
             time: 0.0,
             effects,
-            effects_gpu: None,
-            fx_dt: 0.0,
         };
         scene.reset();
         scene
@@ -237,7 +311,9 @@ impl SelectScene {
     /// Real time in whole lobby frames, whatever the drawing rate.
     pub fn advance(&mut self, dt: f32, cursor: usize) {
         self.time += dt;
-        self.fx_dt += dt;
+        if let Some(fx) = &mut self.effects {
+            fx.advance(dt);
+        }
         self.acc = (self.acc + dt).min(FRAME * 8.0);
         while self.acc >= FRAME {
             self.acc -= FRAME;
@@ -265,20 +341,13 @@ impl SelectScene {
         (self.eye, self.target)
     }
 
-    /// Effect sounds since the last call, for the sound thread.
-    pub fn take_sounds(&mut self) -> Vec<crate::fx::sound::SoundCmd> {
-        self.effects.as_mut().map(|fx| std::mem::take(&mut fx.sound_cmds)).unwrap_or_default()
-    }
-
-    /// After the frame's submit: the effects' readback.
-    pub fn after_submit(&mut self, gpu: &Gpu) {
-        if let (Some(eg), Some(fx)) = (&mut self.effects_gpu, &mut self.effects) {
-            eg.after_submit(gpu, fx);
-        }
+    pub fn effects(&mut self) -> Option<&mut LobbyFx> {
+        self.effects.as_mut()
     }
 
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, (view, color_tex, bg): (&wgpu::TextureView, Option<&wgpu::Texture>, [u32; 2]), depth: &wgpu::TextureView, aspect: f32, audio_alive: Option<Vec<u32>>) {
+    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, target: Target, depth: &wgpu::TextureView, aspect: f32, alive: Option<Vec<u32>>) {
+        let view = target.0;
         let zone = self.zone.get_or_insert_with(|| ZoneRenderer::new(gpu, &self.data.scene, format));
         zone.lighting = self.data.lighting;
         if self.actors.len() != self.data.models.len() {
@@ -296,36 +365,9 @@ impl SelectScene {
         let camera = Camera { eye: self.eye, target: self.target, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(350.0) };
         let actors: Vec<&ActorGpu> = self.actors.iter().flatten().collect();
         zone.render(gpu, encoder, view, depth, &camera, aspect, &actors);
-        let Some(fx) = &mut self.effects else { return };
-        let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(gpu, format));
-        if fx.reg.light_keys != zone.light_keys {
-            fx.reg.light_keys = zone.light_keys.clone();
+        if let Some(fx) = &mut self.effects {
+            fx.draw(gpu, format, encoder, target, depth, zone, &camera, aspect, alive);
         }
-        eg.set_lights(&zone.lights);
-        let dt = std::mem::take(&mut self.fx_dt);
-        let view_m = camera.view();
-        let mut view_rot = view_m;
-        view_rot.w_axis = glam::Vec4::W;
-        let f = crate::fx::Frame {
-            dt: (dt * 60.0).max(1e-3),
-            seconds: dt,
-            dayfrac: MINUTE / 1440.0,
-            view: view_m,
-            view_rot,
-            eye: camera.eye,
-            draw_distance: 2000.0,
-            area_light: self.data.lighting.map_or(Vec3::ONE, |l| l.area),
-            focal: 192.0 / (camera.fov_y * 0.5).tan(),
-            moon_phase: 0,
-            weekday: 0,
-        };
-        if let Some(alive) = audio_alive {
-            fx.set_alive(alive);
-        }
-        fx.tick(&f, &crate::fx::NoActors);
-        eg.update(gpu, encoder, fx, &f);
-        let (fog_color, fog) = self.data.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-        eg.draw(gpu, encoder, (view, depth, bg), color_tex, fx, (camera.proj(aspect), view_m, camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
     }
 }
 
@@ -923,13 +965,15 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     let view = target_tex.create_view(&Default::default());
     let depth = crate::render::depth_view(&gpu.device, w, h);
     // Every lobby frame is drawn, so the effects run as they would on screen.
-    let mut frame = |scene: &mut SelectScene, cursor: usize| {
+    let frame = |scene: &mut SelectScene, cursor: usize| {
         scene.advance(FRAME, cursor);
         let mut enc = gpu.device.create_command_encoder(&Default::default());
         scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
         gpu.queue.submit([enc.finish()]);
         let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
-        scene.after_submit(&gpu);
+        if let Some(fx) = scene.effects() {
+            fx.after_submit(&gpu);
+        }
     };
     for _ in 0..shot.hold.max(30) {
         frame(&mut scene, st.cursor);
@@ -954,7 +998,6 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         "rename" => Focus::Rename("Newname".into()),
         _ => Focus::List,
     };
-    drop(frame);
     let mut enc = gpu.device.create_command_encoder(&Default::default());
     scene.advance(FRAME, st.cursor);
     scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
