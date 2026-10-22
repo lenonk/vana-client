@@ -14,7 +14,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - FFXiMain decompile: `~/ffxi/lab/creatorwork/ghidra/all.c` and `all.asm`; unpacked DLL:
   `~/ffxi/lab/compress_re/unpacked/FFXiMain_unpacked.dll`. These stay outside the repo; never commit them.
 - Research specs for upcoming work: `~/ffxi/lab/research/`. `keys_spec.md` covers all 180 key functions.
-- Helper scripts: `~/ffxi/lab/tools/` (`ptrfind.py` VA/offset mapping, `keymap.py`, `mkcnf.py`, `append_modlog.py`).
+- Helper scripts: `~/ffxi/lab/tools/` (`ptrfind.py` VA/offset mapping, `keymap.py`, `mkcnf.py`, `append_modlog.py`,
+  `delchar.py NAME --account LOGIN [--yes]` deletes a character's every DB row so the name can be remade; dry run
+  without `--yes`, refuses while the character has an open session).
 - LSB server: `~/landsandboat`. To restart a crashed map server, run from there:
   `setsid -f ./xi_map --log log/map-server-54230.log --ip 127.0.0.1 --port 54230 > /dev/null 2>&1 < /dev/null`
 
@@ -45,11 +47,16 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Before profiling, check that the CPU and the GPU (an eGPU over Thunderbolt) are otherwise idle.
 
 ## Next up
-- Implement the full retail key set from `~/ffxi/lab/research/keys_spec.md`:
-  - numpad movement, autorun, walk/run, first person, FOV zoom, Home;
-  - F-key targeting, Shift-strafe, the compact keyboard's bare-letter keys;
+- Finish the retail key set from `~/ffxi/lab/research/keys_spec.md`. Done: the input layer (client/input.rs),
+  movement keys and the retail free camera (client/camera.rs). Left:
+  - targeting: F1-F12, Ctrl/Alt+F8, screen-order Tab / Shift+Tab, Num0, Enter with no target;
   - UI hide, screenshots, the Pause log-out prompt;
   - macros and palettes.
+- New-character flow, one nation at a time (create, opening cutscenes, first zone):
+  - San d'Oria: under review;
+  - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the
+    first, event 0x131 in Port Windurst, ran to its end);
+  - Bastok: not reviewed yet.
 - Other known gaps:
   - magic and ability menus (Ctrl+M/J/W/B);
   - the map's pan, zoom and its actions;
