@@ -6,6 +6,7 @@ mod config;
 mod eventdump;
 mod gamecfg;
 mod flashshot;
+mod fx;
 mod event_vm;
 mod itemshot;
 mod creatorshot;
@@ -557,6 +558,9 @@ enum Cmd {
         eye: Option<Vec<f32>>,
         #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         target: Option<Vec<f32>>,
+        /// Run the zone's effect generators for this many 60 Hz ticks first and draw them.
+        #[arg(long)]
+        effects: Option<u32>,
     },
     /// Dump every table of an MSI as TSV, for inspection.
     DumpMsi { msi: PathBuf, out: PathBuf },
@@ -853,7 +857,7 @@ fn main() -> Result<()> {
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -881,7 +885,42 @@ fn main() -> Result<()> {
                 _ => (centre + Vec3::new(0.0, -(hi - lo).max_element() * 0.9, 0.01), centre, Vec3::Z),
             };
             let camera = render::Camera { eye, target, up, fov_y: 60f32.to_radians() };
-            let draws = render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new())?;
+            let draws = match effects {
+                None => render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new())?,
+                Some(ticks) => {
+                    let mut fx = fx::Effects::new();
+                    fx.set_keys(std::sync::Arc::new(keys));
+                    fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
+                    fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
+                    fx.set_weather(&weather, 0.0);
+                    let dayfrac = hour.unwrap_or(12.0) / 24.0;
+                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+                        let mut eg = render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+                        let view = cam.view();
+                        let mut view_rot = view;
+                        view_rot.w_axis = glam::Vec4::W;
+                        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE };
+                        for _ in 0..ticks {
+                            fx.tick(&f);
+                            let mut e = gpu.device.create_command_encoder(&Default::default());
+                            eg.update(gpu, &mut e, &mut fx, &f);
+                            gpu.queue.submit([e.finish()]);
+                            eg.after_submit(gpu, &mut fx);
+                            let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+                            eg.after_submit(gpu, &mut fx);
+                        }
+                        println!("effects: {} live elements after {ticks} ticks", fx.live_count());
+                        if std::env::var_os("FFXI_FX_LIST").is_some() {
+                            for l in fx.describe() {
+                                println!("  {l}");
+                            }
+                        }
+                        let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
+                        eg.draw(gpu, enc, color, depth, &fx, cam.proj(1600.0 / 900.0), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                    };
+                    render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
+                }
+            };
             println!("rendered {draws} draws from {eye} towards {target} into {}", out.display());
             Ok(())
         }

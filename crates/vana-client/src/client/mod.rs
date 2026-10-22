@@ -77,7 +77,7 @@ enum Task {
     AccountCreated(Result<()>),
     Lobby(Result<(Lobby, Vec<Character>)>),
     Selected(Result<MapLogin>),
-    ZoneLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>)>),
+    ZoneLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
     /// A model by its source key, prepared for the GPU on the loader thread.
     CharacterLoaded(String, Result<Model>),
     GameUi(Result<GameUiData>),
@@ -1512,11 +1512,16 @@ fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
     glam::Mat4::from_cols(f.extend(0.0), Vec3::Y.extend(0.0), f.cross(Vec3::Y).extend(0.0), pos.extend(1.0))
 }
 
+/// A zone's effect library, and DAT 0's when it was not loaded yet (fx::lib).
+type ZoneEffects = (Option<crate::fx::lib::Library>, Option<crate::fx::lib::Library>);
+
 struct World {
     net: NetHandle,
     zone: Option<u16>,
     loading: Option<u16>,
     renderer: Option<ZoneRenderer>,
+    /// Effect generators of the zone (fx/).
+    effects: crate::fx::Effects,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,
@@ -1799,6 +1804,7 @@ pub struct App {
     ui_drawn: bool,
     /// Event crossfade and fade passes over the scene.
     screen_fx: Option<crate::render::screenfx::ScreenFx>,
+    effects_gpu: Option<crate::render::effects::EffectsGpu>,
     /// Lobby screen fades, and whether the window has been shown (it stays hidden until the title can draw).
     lobby_fade: LobbyFade,
     shown: bool,
@@ -1944,6 +1950,7 @@ impl App {
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
             screen_fx: None,
+            effects_gpu: None,
             lobby_fade: LobbyFade::default(),
             shown: false,
             hud_blockers: Vec::new(),
@@ -2378,6 +2385,7 @@ impl App {
                             zone: None,
                             loading: None,
                             renderer: None,
+                            effects: crate::fx::Effects::new(),
                             ground: None,
                             name: login.name.clone(),
                             my_id: login.char_id,
@@ -2529,8 +2537,18 @@ impl App {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.loading = None;
                 match result {
-                    Ok((mut scene, ground, weather, geometry)) => {
+                    Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
                         world.zone_weather = weather;
+                        if let Some(g) = global_fx {
+                            world.effects.set_global(g);
+                        }
+                        if let Some(z) = zone_fx {
+                            if let Some(keys) = self.keys_table.clone() {
+                                world.effects.set_keys(keys);
+                            }
+                            world.effects.load_zone(z);
+                            world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
+                        }
                         world.zone_lines = scene.regions.iter().filter(|r| r.name.starts_with(['z', 'Z']) && r.name.len() == 8).cloned().collect();
                         // Its geometry and textures go up over the next frames; the indicator stays until then.
                         if let Some(gfx) = &self.gfx {
@@ -2786,7 +2804,11 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
-                NetEvent::Weather(w) => world.weather = w,
+                NetEvent::Weather(w, minutes) => {
+                    world.weather = w;
+                    // One Vana'diel minute is 2.4 s (FUN_101804d0's duration is u16 @0x0a x 3600 units).
+                    world.effects.set_weather(crate::dat::weather::weather_tag(w), minutes as f32 * 2.4);
+                }
                 NetEvent::Assist { player, target: t } => target::assist(world, player, t),
                 NetEvent::KeyItems { table, bits } => {
                     let at = table as usize * 16;
@@ -2860,6 +2882,10 @@ impl App {
         let Phase::World(_) = &self.phase else { return };
         if let Some(zone_id) = load {
             self.status = format!("Loading zone {zone_id}...");
+            let need_global = match &self.phase {
+                Phase::World(w) => !w.effects.has_global(),
+                _ => false,
+            };
             match self.game_data() {
                 Ok((index, keys)) => self.spawn(move || {
                     Task::ZoneLoaded(zone_id, (|| {
@@ -2868,7 +2894,9 @@ impl App {
                         let ground = ground::Ground::build(&scene);
                         let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("zone {zone_id} weather: {e:#}")).ok();
                         let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
-                        Ok((scene, ground, weather, geometry))
+                        let global = need_global.then(|| index.read(0).and_then(|f| crate::fx::lib::Library::load(0, f))).and_then(|r| r.map_err(|e| log::warn!("effects: DAT 0: {e:#}")).ok());
+                        let zone_fx = crate::fx::lib::Library::load(100 + zone_id as u32, file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok();
+                        Ok((scene, ground, weather, geometry, (zone_fx, global)))
                     })())
                 }),
                 Err(e) => self.status = format!("{e:#}"),
@@ -4383,6 +4411,30 @@ impl App {
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, crate::render::MIP_BUDGET));
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &camera, aspect, &actors));
+                // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
+                if r.ready(&gfx.gpu) {
+                    let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, gfx.config.format));
+                    let view = camera.view();
+                    let mut view_rot = view;
+                    view_rot.w_axis = glam::Vec4::W;
+                    let minute = w.clock.map(|(t, at)| crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32())).unwrap_or(720.0);
+                    let f = crate::fx::Frame {
+                        dt: (dt * 60.0).max(1e-3),
+                        seconds: dt,
+                        dayfrac: minute / 1440.0,
+                        view,
+                        view_rot,
+                        eye: camera.eye,
+                        draw_distance: 2000.0,
+                        area_light: Vec3::ONE,
+                    };
+                    perf::timed(|| "effects".into(), || {
+                        w.effects.tick(&f);
+                        eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f);
+                    });
+                    let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
+                    eg.draw(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &w.effects, camera.proj(aspect), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                }
                 // Event crossfade and fades over the scene, under the 2D layer; the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
                 if cross.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
@@ -4495,6 +4547,9 @@ impl App {
             buf
         });
         perf::timed(|| "submit".into(), || gfx.gpu.queue.submit(extra.into_iter().chain([encoder.finish()])));
+        if let (Some(eg), Phase::World(w)) = (&mut self.effects_gpu, &mut self.phase) {
+            eg.after_submit(&gfx.gpu, &mut w.effects);
+        }
         if let (Some(buf), Some(path)) = (capture, script_shot.or_else(|| self.drive.screenshot.clone())) {
             if let Err(e) = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path) {
                 log::error!("screenshot failed: {e:#}");

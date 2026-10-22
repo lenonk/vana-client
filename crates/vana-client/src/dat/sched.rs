@@ -1,6 +1,6 @@
 //! Type-0x07 schedulers (FUN_10057000) as far as combat motions need them. A scheduler is a header
-//! (op stream at u32 @16, length in ticks at u32 @0x1c) and ops {u8 op, u8 length in u32s, u16,
-//! u16 wait @4 (ticks before the next op runs), ...}; op 0 ends it.
+//! (op stream at data + u32 @0x14 - 0x10, length in ticks at u32 @0x1c) and ops {u8 op, u8 length in u32s (low 5
+//! bits), u16, u16 wait @4 (ticks before the next op runs), ...}; op 0 ends it.
 
 /// One op: code, wait before the next op, and its bytes.
 #[derive(Clone, Debug)]
@@ -20,9 +20,10 @@ impl Op<'_> {
 
 pub fn ops(data: &[u8]) -> Vec<Op<'_>> {
     let mut out = Vec::new();
-    let Some(mut at) = data.get(16..20).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize) else { return out };
+    // FUN_10055aa0: the offsets count from the chunk start (16 bytes before the data).
+    let Some(mut at) = data.get(0x14..0x18).map(|b| (u32::from_le_bytes(b.try_into().unwrap()) as usize).saturating_sub(0x10)) else { return out };
     while at + 8 <= data.len() {
-        let (code, len) = (data[at], data[at + 1] as usize * 4);
+        let (code, len) = (data[at], (data[at + 1] & 0x1f) as usize * 4);
         if code == 0 || len == 0 || at + len > data.len() {
             break;
         }

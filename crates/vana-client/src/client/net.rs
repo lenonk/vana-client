@@ -146,8 +146,8 @@ pub enum NetEvent {
     CharStats(super::items::CharStats),
     /// 0x05F: a music slot changed.
     Music { slot: u16, id: u16 },
-    /// Weather change (0x057): number @8.
-    Weather(u16),
+    /// Weather change (0x057): number @8, crossfade in Vana'diel minutes @0x0a.
+    Weather(u16, u16),
     /// 0x058 (GP_SERV_COMMAND_ASSIST): UniqueNo @4, AssistNo @8 (the client reads only these).
     Assist { player: u32, target: u32 },
     /// s2c 0x055: key item table TableIndex @0x84, owned bits GetItemFlag[16] @4.
@@ -467,7 +467,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x038 => tx.send(NetEvent::Scheduler { actor: p.u32(4), target: p.u32(8), name: p.u32(12).to_le_bytes() })?,
                     0x051 => tx.send(NetEvent::SelfLook(look_at(&p, 4)))?,
                     0x00E => tx.send(NetEvent::Entity(entity(&p, EntityKind::Npc)))?,
-                    0x057 => tx.send(NetEvent::Weather(p.u16(8)))?,
+                    0x057 => tx.send(NetEvent::Weather(p.u16(8), p.u16(0x0a)))?,
                     0x053 => tx.send(NetEvent::SystemMessage { id: p.u16(0xc), para: p.u32(4), para2: p.u32(8) })?,
                     0x058 => tx.send(NetEvent::Assist { player: p.u32(4), target: p.u32(8) })?,
                     0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,

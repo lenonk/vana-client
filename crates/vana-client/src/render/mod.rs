@@ -1,6 +1,7 @@
 //! wgpu renderer for zone scenery.
 
 pub mod anim;
+pub mod effects;
 pub mod mipgen;
 pub mod upload;
 pub mod character;
@@ -179,6 +180,10 @@ struct Draw {
     alpha_test: bool,
 }
 
+/// The scene projection's near and far planes.
+pub const NEAR: f32 = 0.5;
+pub const FAR: f32 = 2000.0;
+
 #[derive(Clone, Copy)]
 pub struct Camera {
     pub eye: Vec3,
@@ -189,8 +194,15 @@ pub struct Camera {
 
 impl Camera {
     pub fn view_proj(&self, aspect: f32) -> Mat4 {
-        use glam::camera::rh::{proj::directx, view};
-        directx::perspective(self.fov_y, aspect, 0.5, 2000.0) * view::look_at_mat4(self.eye, self.target, self.up)
+        self.proj(aspect) * self.view()
+    }
+
+    pub fn view(&self) -> Mat4 {
+        glam::camera::rh::view::look_at_mat4(self.eye, self.target, self.up)
+    }
+
+    pub fn proj(&self, aspect: f32) -> Mat4 {
+        glam::camera::rh::proj::directx::perspective(self.fov_y, aspect, NEAR, FAR)
     }
 }
 
@@ -1184,6 +1196,22 @@ pub fn render_pngs_lit(
     height: u32,
     setup: &dyn Fn(&Gpu, &mut ZoneRenderer) -> Vec<ActorGpu>,
 ) -> Result<usize> {
+    render_pngs_post(scene, frames, width, height, setup, &mut |_, _, _, _, _, _| {})
+}
+
+/// Draws over the scene in each frame (after the zone pass, same targets): gpu, encoder, colour, depth, camera,
+/// lighting.
+pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, &wgpu::TextureView, &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>) + 'a;
+
+/// As render_pngs_lit, with `post` drawing over each frame.
+pub fn render_pngs_post(
+    scene: &ZoneScene,
+    frames: &[(&Camera, &std::path::Path, Option<crate::dat::weather::Lighting>)],
+    width: u32,
+    height: u32,
+    setup: &dyn Fn(&Gpu, &mut ZoneRenderer) -> Vec<ActorGpu>,
+    post: &mut PostDraw,
+) -> Result<usize> {
     let gpu = Gpu::headless()?;
     let format = wgpu::TextureFormat::Rgba8UnormSrgb;
     let mut renderer = ZoneRenderer::new(&gpu, scene, format);
@@ -1212,6 +1240,7 @@ pub fn render_pngs_lit(
         });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
+        post(&gpu, &mut encoder, &view, &depth, camera, lighting.as_ref());
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },

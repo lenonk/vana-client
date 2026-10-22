@@ -2934,3 +2934,39 @@ was loaded or created in it (client/perf.rs note / timed). Baseline (old code + 
 - The lock-on live check did not complete (no monster in /attack range when the drive looked; stopped so the user
   could test). The unit test covers the 0x058 rule; the input refusals are untested live.
 - Right-button release clearing the target (key 0x8c) is not implemented (ours drags the camera with it).
+
+## Effect generators: zone, weather, sprites (fx/, render/effects.rs, effects.wgsl) (2026-10-22)
+
+Specs with addresses: ~/ffxi/lab/research/effects/ (generators.md, triggers.md, zone_effects.md, model_draw.md,
+d3a_particles.md). Summary of what the client does, and where it departs from them:
+- **Libraries** (fx/lib.rs): a DAT as a folder tree; generators, keyframes, D3m / MMB meshes and D3a sprites by
+  scope (FUN_10071310: the folder subtree, enclosing folders, then DAT 0). A D3m that is not found falls back to an
+  MMB of the same name (FUN_100485c0). Textures: FUN_1003a0d0 (16-byte name from the first IMG of the resource
+  folder to the end of that IMG's folder), then the last 8 bytes among the zone and DAT 0 `syst/effe` IMGs.
+  MMB type 2 draws nothing as an effect.
+- **Start**: at zone load every generator with flag 0x1000, attach mode 0 / 0xe / 0xf / 0x14 and no `weat`
+  ancestor (FUN_10046d30). Weather: `weat/<tag>` (fallback `suny`, then `weat`) on zone-in and on 0x057
+  (u16 @0x0a Vana minutes x 2.4 s crossfade, weight into update op 0x50; FUN_10183780 / FUN_101804d0).
+- **CPU** (fx/emit.rs, fx/mod.rs): FUN_10048740 (generator stream ops 0x04-0x14, 0x17, 0x0a; persistent single
+  element; countdown with rand(+0xd4) + 1 + +0xd6), FUN_1004d920 (op 1 and the emission ops of B.4), life
+  countdown and the end stream (op 5 restart, flag 0x20000000 hold), child generators 0x3c / 0x44 / 0x53 / 0x6a.
+- **GPU** (effects.wgsl): the element update stream FUN_100499d0 (the C.4 ops listed in the shader), then the
+  transforms of FUN_10043f00 / FUN_100440d0 / FUN_10044f00 (Euler = Rz·Ry·Rx in row vectors, view matrices b90 /
+  d10 / d50 / c10, billboard L·Rx(pi) with the near clamp, sort key, projection depth bias). A CPU reference of the
+  update stream checks the GPU in tests (render::effects::tests). Sort keys, expire requests and positions come
+  back a frame or two late.
+- **Draw**: CMoOT order (keys clamped 0..512, larger first). Blend by +0x16c (unknown modes keep the previous);
+  z test LESSEQUAL, z write by flag 0x1000 (never for D3a); stage maths of FUN_1017c840 (MMB), FUN_1003f3e0 (D3m)
+  and FUN_1003db60 (D3a); TFACTOR alpha = A x fade only below 1; scenery fog on view depth (black in mode 0x48,
+  none for D3a or flag 25). Batched D3a (CMoVuAnmElem): particles from op 0x56 (FUN_10063060), positions in the
+  vertex shader (FUN_10062cd0, with the inverse view rotation and the (2n+1)/3 drawn count as coded).
+- **Inferred / left out**: our random sequence is not retail's MT19937 (only the value mappings are); sun / moon
+  (modes 0xe / 0xf) lack the rotation of DAT_105ec978; shading is done in gamma space (textures uploaded as plain
+  UNORM) and converted for the sRGB target, so blending happens in linear space unlike D3D8; batched sprites use
+  normalised UVs (retail draws raw UVs there; differs only for D3a with byte 7 = 0); no ZBIAS 15, no MMB
+  draw-distance cull, no zone-0xed MMB offset; weather density (config 0x3b) is taken as 1.0; the covered (roof)
+  flag is not computed; orientation modes with bit 0 (camera basis) use the plain angles; ops not handled yet are
+  logged once at debug level (point lists, paths, ground snap, sounds, point lights, distortion, rings, lens flares,
+  class-specific ops). Scheduler-started effects (battle, spells) come next (triggers.md).
+- Checks: `zone-shot 232 --effects N --weather fine` (sea layers, entrance shadows, cloud domes, sun, tower and
+  wall lamps); live in zone 101 (cloudy dome).
