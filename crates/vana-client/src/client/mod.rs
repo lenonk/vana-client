@@ -20,6 +20,7 @@ mod configui;
 mod configui2;
 mod settings;
 mod updater;
+mod firstrun;
 mod target;
 mod input;
 mod camera;
@@ -1952,6 +1953,8 @@ pub struct App {
     lobby_settings: Option<settings::SettingsUi>,
     /// The start-up update checks (not retail) and the Update window over the title.
     updates: Option<updater::Shared>,
+    /// No game files yet: the download window (not retail).
+    first_run: Option<firstrun::FirstRun>,
     update_ui: Option<updater::UpdateUi>,
     /// UI layout size / window size (Config-tool 0037 / 0038).
     ui_k: (f32, f32),
@@ -2094,6 +2097,7 @@ impl App {
             lobby_values: Default::default(),
             lobby_settings: None,
             updates,
+            first_run: None,
             update_ui: None,
             ui_k: (1.0, 1.0),
             // FFXI_DEBUG_OVERLAY=1 starts with the F12 lines on (test shots).
@@ -3426,6 +3430,25 @@ impl App {
         let mut settings_new = false;
         let mut lobby_apply = LobbyApply::default();
         // The game UI is the only UI: until its data loads nothing draws, and if it fails one plain error shows.
+        if let Some(fr) = self.first_run.as_mut() {
+            match fr.ui(ctx) {
+                firstrun::Action::Quit => self.exit_requested = true,
+                firstrun::Action::Ready => {
+                    self.first_run = None;
+                    self.index = None;
+                    self.keys_table = None;
+                    self.game_ui_state = LoadState::Idle;
+                    self.flyover_state = LoadState::Idle;
+                    self.cfg.installed = true;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("saving the config: {e:#}");
+                    }
+                    self.updates = Some(updater::start(self.cfg.ffxi_dir()));
+                }
+                firstrun::Action::None => {}
+            }
+            return;
+        }
         if self.game_ui.is_none() {
             if self.game_ui_state == LoadState::Failed {
                 egui::Area::new(egui::Id::new("error")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
@@ -4115,6 +4138,11 @@ impl App {
     /// Parses the lobby DATs and font on a worker thread.
     fn load_game_ui(&mut self) {
         self.game_ui_state = LoadState::Loading;
+        if firstrun::needed(&self.cfg.ffxi_dir()) {
+            self.first_run = Some(firstrun::FirstRun::new(self.cfg.game_dir.clone()));
+            self.game_ui_state = LoadState::Failed;
+            return;
+        }
         let index = match self.game_data() {
             Ok((index, _)) => index,
             Err(e) => {
