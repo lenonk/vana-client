@@ -143,3 +143,4 @@ pub mod sched;
 pub mod motionfile;
 pub mod texmip;
 pub mod animpack;
+pub mod generator;
