@@ -76,9 +76,9 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
         b.push_cell_rect(lobby, c, -15.0, -15.0, w / 2.0 + 15.0, h / 2.0 + 15.0, 2.0, 2.0, 0x4080_8080, 0);
     }
     if let Some(s) = lib.sprites.first() {
-        for (k, c) in s.cells.iter().enumerate().skip(1) {
-            let dx = if k == 1 { st.shift * sx } else { 0.0 };
-            b.push_cell(lobby, c, dx, 0.0, sx, sy, 0xf080_8080, 0);
+        // The whole sprite sits at the window's position (FUN_10245120), so the copyright moves with the art.
+        for c in s.cells.iter().skip(1) {
+            b.push_cell(lobby, c, st.shift * sx, 0.0, sx, sy, 0xf080_8080, 0);
         }
     }
 
