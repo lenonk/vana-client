@@ -3016,3 +3016,27 @@ reactions and battle messages):
   the nearest face's collision object +0xa4 bit 2 sets it. A change stops (elements killed) or restarts the
   transient weather emitters with op-1 flags 4 / 0x4000000; new weather sets skip them while covered
   (client/ground.rs `covered`, fx `set_covered`).
+
+## Effect sound (fx/sound.rs, audio voice handles) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/footsteps_sound.md (sections 2, 3):
+- Sound elements (kind 0x3d, CYySoundElem): SeSep data @8 = se id, @0xc bit 31 = loop. Emission ops 0x4c (near
+  op+8, far op+4, volume 127; a persistent sound generator stops emitting; world generators height mode 1), 0x6b
+  (the source rides the nearest point of an Sph capsule chain: points from block u32 @0x10 + 0x10 at 0x20 bytes
+  (x, y, z, r), segment pairs from block u32 @0x14 + 0x10; pulled in by the radius, zero inside *(inf: the clamp,
+  FUN_10054fb0 is garbled)*), 0x8a keep, 0x92 / 0x9e height mode 1 / 2; update op 0x43 volume = round(key x 127)
+  at the day fraction. Generator sound elements never run out of life; a removed one fades its voice over its
+  life (FUN_10035cd0).
+- Scheduler ops 0x0a (actor1), 0x0b (actor2), 0x53 (*(inf)* actor2; retail: the action target nearest the
+  player): a snapshot of the actor position, far f32 @0x14, near f32 @0x18, flag 0x100 = height as is (corrects
+  triggers.md, which had the fields swapped and the sound following the actor). 'shit' / 'skaz' digit variants
+  are not done.
+- FUN_10035e50 per frame (manager FUN_10035410): listener = the camera eye; far 0 -> 30, near 0 -> 3; height x3
+  (mode 0); linear volume between near and far, beyond far stop (or volume 1 with keep); behind the camera (view
+  z > 0.1) x 0.65; pan = 64 + 64 clamp(focal / max(|z|, 1) x / 512, -1, 1), focal = 192 / tan(fovy / 2). Voices
+  start with a 3-pass grace, update pan / level when they change, persistent ones restart when over (loop by
+  re-trigger), others end with their voice; at most 12 distinct sounds start a frame.
+- audio: `play_voice(handle, id, level, pan)` (refused at the busy limit), `voice_level`, `voice_pan`,
+  `voice_stop(handle, ticks)` (cmd 0 / 5), `alive()` (handles the mixer still plays, refreshed every mix).
+- Not done: footsteps (FUN_100d2970 needs the posed foot points 8 / 9 / 0xa / 0xb every frame; our poses are on
+  the GPU), the race death voice op 0x78, the one-at-a-time se ids 2239 / 2063.

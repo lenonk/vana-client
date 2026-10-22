@@ -469,6 +469,25 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Sounds at a snapshot of the actor's position: 0x0a actor1, 0x0b actor2, 0x53 the action target nearest
+            // the player *(inf: actor2)*; far @0x14, near @0x18, flag 0x100 = height as is.
+            0x0a | 0x0b | 0x53 => {
+                let who = if op.code == 0x0a { t.a1 } else { t.a2 };
+                let r = scope(self, 0x3d);
+                if let (Some(r), Some((_, m))) = (r, self.who_matrix(who, actors))
+                    && let Some((se, loops)) = super::sound::sesep(self.reg.libs[r.0].data(r.1))
+                {
+                    let mut s = super::sound::Sound::new(se, loops);
+                    s.pos = m.w_axis.truncate();
+                    s.far = f32::from_bits(op.u32_at(0x14));
+                    s.near = f32::from_bits(op.u32_at(0x18));
+                    if op.u32_at(0x10) & 0x100 != 0 {
+                        s.ymode = 1;
+                    }
+                    self.sounds.push(s);
+                }
+                Flow::Next
+            }
             0x19 => {
                 self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None });
                 Flow::Next
@@ -924,7 +943,7 @@ mod tests {
         let hit = ActionResult { kind: 1, scale: 1, value: 7, message: 1, ..Default::default() };
         let a = Action { actor: HUME, category: 1, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ORC, results: vec![hit] }] };
         fx.on_action(&a, Some("ati0".into()));
-        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
         // Wait for the actors' files first, as a loaded model would have them.
         fx.preload(&[8392, 9672, 7072, 1300]);
         while [8392, 9672, 7072, 1300].iter().any(|f| fx.reg.lib_of(*f).is_none()) {
@@ -979,7 +998,7 @@ mod tests {
             fx.poll_loads();
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
         let names = |fx: &Effects| -> Vec<String> { fx.insts.iter().flatten().filter(|x| !x.stopping).map(|x| String::from_utf8_lossy(&x.name).into_owned()).collect() };
         let start = Action { actor: HUME, category: 8, arg: u32::from_le_bytes(*b"cawh"), info: 0, targets: vec![ActionTarget { id: HUME, results: vec![ActionResult::default()] }] };
         fx.on_action(&start, None);
@@ -1008,6 +1027,8 @@ mod tests {
         for g in ["ge4s", "ge40", "kr11", "prn1", "kr10"] {
             assert!(seen.iter().any(|n| n == g), "{g}: {seen:?}");
         }
+        // 0303 = se 3037 at the target (op 0x53 / 0x0b, far 60).
+        assert!(fx.sound_cmds.iter().any(|c| matches!(c, super::super::sound::SoundCmd::Play { se: 3037, .. })), "{:?}", fx.sound_cmds);
         // stwh deleted gn2s and stopped gn20 / gn21.
         assert!(!names(&fx).iter().any(|n| n == "gn2s" || n == "gn20" || n == "gn21"), "{:?}", names(&fx));
     }
@@ -1056,7 +1077,7 @@ mod tests {
             fx.poll_loads();
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
         let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
         fx.on_action(&a, None);
         let mut gens: Vec<String> = Vec::new();

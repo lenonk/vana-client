@@ -563,7 +563,7 @@ mod tests {
             let view = glam::camera::rh::view::look_at_mat4(eye, glam::Vec3::new(20.0, 0.0, 60.0), glam::Vec3::NEG_Y);
             let mut view_rot = view;
             view_rot.w_axis = glam::Vec4::W;
-            let f = Frame { dt: 1.37, seconds: 1.37 / 60.0, dayfrac: 0.2 + tick as f32 * 0.01, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE };
+            let f = Frame { dt: 1.37, seconds: 1.37 / 60.0, dayfrac: 0.2 + tick as f32 * 0.01, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0 };
             fx.tick(&f, &crate::fx::NoActors);
             for wr in &fx.writes {
                 match wr {

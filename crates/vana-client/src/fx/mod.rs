@@ -7,6 +7,7 @@ pub mod emit;
 pub mod lib;
 pub mod math;
 pub mod sched;
+pub mod sound;
 mod tasks;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
@@ -89,6 +90,8 @@ pub struct Frame {
     pub draw_distance: f32,
     /// The brighter of sun + ambient and moon + ambient (ops 0x8f / 0x90), 1.0 = unchanged.
     pub area_light: Vec3,
+    /// Camera focal length on the 384-line reference (cam+0x2f4: fovy = 2 atan(192 / focal)), for sound pan.
+    pub focal: f32,
 }
 
 /// The CPU side of a live element (the GPU holds the rest).
@@ -431,6 +434,11 @@ pub struct Effects {
     pub motion_files: Vec<(u32, Vec<u32>)>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
+    /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
+    sounds: Vec<sound::Sound>,
+    pub sound_cmds: Vec<sound::SoundCmd>,
+    alive: HashSet<u32>,
+    next_voice: u32,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -482,6 +490,10 @@ impl Effects {
             motions: Vec::new(),
             motion_files: Vec::new(),
             covered: false,
+            sounds: Vec::new(),
+            sound_cmds: Vec::new(),
+            alive: HashSet::new(),
+            next_voice: 0,
         }
     }
 
@@ -743,6 +755,12 @@ impl Effects {
         if c.mslot != NONE {
             self.slot_free.push(c.mslot);
         }
+        if let Some(k) = self.sounds.iter().position(|s| s.elem == Some(e)) {
+            let s = self.sounds.swap_remove(k);
+            if s.handle != 0 {
+                self.sound_cmds.push(sound::SoundCmd::Stop { handle: s.handle, ticks: s.fade as i32 });
+            }
+        }
         if let Some(run) = c.parts {
             self.part_free.push(run);
             self.part_free.sort_unstable();
@@ -832,6 +850,7 @@ impl Effects {
                 self.update_instance(i, f);
             }
         }
+        self.step_sounds(f);
         // Finished or stopped instances go once their elements have.
         for i in 0..self.insts.len() {
             if let Some(x) = &self.insts[i]
@@ -964,6 +983,20 @@ impl Effects {
         }
         cpu.inst = inst;
         cpu.serial = self.serial;
+        if let Some(mut snd) = s.sound {
+            snd.elem = Some(e);
+            snd.pos = elem.v3(w::POS);
+            snd.fade = cpu.max_life;
+            if let Some(x) = self.insts[inst].as_ref() {
+                snd.gen_persistent = x.flags & 0x400 != 0 || x.streams[1].first().is_some_and(|o| o.i16_at(0x22) == 0);
+                if let Some(k) = self.reg.update_op_slot(x.src, 0x43) {
+                    snd.vol_key = Some((elem.s(k), elem.s(k + 1)));
+                }
+            }
+            // FUN_10035a90: generator sound elements never run out of life.
+            cpu.max_life = 0.0;
+            self.sounds.push(snd);
+        }
         elem.0[w::SERIAL] = self.serial;
         if let Some(m) = cpu.snapshot {
             let ms = self.alloc_slot();
@@ -1081,6 +1114,98 @@ impl Effects {
                 self.writes.push(Write::Words(e, w::LIFE, vec![0]));
                 self.writes.push(Write::Words(e, w::CTRL, vec![ctl::LIFE_SET]));
             } else {
+                if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
+                    x.live.retain(|&l| l != e);
+                }
+                self.drop_elem(e);
+            }
+        }
+    }
+
+    /// Voices the audio reports playing (FUN_1023ba50), before tick.
+    pub fn set_alive(&mut self, alive: Vec<u32>) {
+        self.alive = alive.into_iter().collect();
+    }
+
+    /// The manager pass FUN_10035410 / FUN_100356c0 over every sound: volume and pan for the eye, voices started,
+    /// updated, restarted (persistent) or let go; at most 12 distinct sounds start a frame (FUN_10035640).
+    fn step_sounds(&mut self, f: &Frame) {
+        let mut started: Vec<u32> = Vec::new();
+        let mut gone = Vec::new();
+        for k in 0..self.sounds.len() {
+            let s = &self.sounds[k];
+            // Element sounds sit where their element is (through the generator's matrix).
+            let mut pos = s.pos;
+            if let Some(e) = s.elem
+                && let Some(c) = self.elems.get(e as usize).and_then(|c| c.as_ref())
+            {
+                pos = self.insts.get(c.inst).and_then(|x| x.as_ref()).and_then(|x| x.matrix).map_or(pos, |m| m.transform_point3(pos));
+            }
+            if let Some(caps) = &s.sph {
+                pos = f.eye + sound::nearest(caps, f.eye);
+            }
+            let vol = match s.vol_key {
+                Some((id, prm)) => {
+                    let n = (prm >> 5) & 0x1ff;
+                    let x = if n != 0 { (f.dayfrac * n as f32).fract() } else { f.dayfrac };
+                    let v = self.reg.key_desc.get(id as usize).map_or(0.0, |d| {
+                        crate::dat::generator::KeyFrame { keys: self.reg.key_data[d[0] as usize..(d[0] + d[1]) as usize].iter().map(|p| (p[0], p[1])).collect() }.sample(x, prm & 0xf != 0)
+                    });
+                    (v * 127.0).round() as i32
+                }
+                None => s.vol,
+            };
+            let s = &mut self.sounds[k];
+            if s.grace > 0.0 {
+                s.grace -= 1.0;
+            }
+            let r = sound::attenuate(64.0, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal);
+            let Some((v, pan)) = r else {
+                if s.persistent() {
+                    if s.handle != 0 {
+                        self.sound_cmds.push(sound::SoundCmd::Stop { handle: s.handle, ticks: 0 });
+                        s.handle = 0;
+                    }
+                } else {
+                    gone.push(k);
+                }
+                continue;
+            };
+            if s.handle == 0 {
+                if !started.contains(&s.se) && started.len() >= 12 {
+                    continue;
+                }
+                started.push(s.se);
+                self.next_voice = self.next_voice.wrapping_add(1).max(1);
+                s.handle = self.next_voice;
+                s.last_vol = v;
+                s.last_pan = pan;
+                s.grace = 3.0;
+                self.sound_cmds.push(sound::SoundCmd::Play { handle: s.handle, se: s.se, vol: v, pan });
+                continue;
+            }
+            if s.grace > 0.0 || self.alive.contains(&s.handle) {
+                if pan != s.last_pan {
+                    s.last_pan = pan;
+                    self.sound_cmds.push(sound::SoundCmd::Pan { handle: s.handle, pan });
+                }
+                if v != s.last_vol {
+                    s.last_vol = v;
+                    self.sound_cmds.push(sound::SoundCmd::Level { handle: s.handle, vol: v });
+                }
+            } else if s.persistent() {
+                // Over: a persistent sound starts again next pass (loop by re-trigger).
+                s.handle = 0;
+            } else {
+                gone.push(k);
+            }
+        }
+        for k in gone.into_iter().rev() {
+            let s = self.sounds.remove(k);
+            if let Some(e) = s.elem
+                && self.elems.get(e as usize).is_some_and(|c| c.is_some())
+            {
+                let inst = self.elems[e as usize].as_ref().unwrap().inst;
                 if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
                     x.live.retain(|&l| l != e);
                 }

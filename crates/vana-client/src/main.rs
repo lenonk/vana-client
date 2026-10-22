@@ -924,7 +924,7 @@ fn main() -> Result<()> {
                         let view = cam.view();
                         let mut view_rot = view;
                         view_rot.w_axis = glam::Vec4::W;
-                        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE };
+                        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0 };
                         for _ in 0..ticks {
                             fx.tick(&f, &fx::NoActors);
                             let mut e = gpu.device.create_command_encoder(&Default::default());
@@ -1517,7 +1517,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         let view = cam.view();
         let mut view_rot = view;
         view_rot.w_axis = glam::Vec4::W;
-        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: hour / 24.0, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: Vec3::ONE };
+        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: hour / 24.0, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
         if !started {
             while files.iter().any(|f| fx.reg.lib_of(*f).is_none()) {
                 fx.tick(&f, &actors);

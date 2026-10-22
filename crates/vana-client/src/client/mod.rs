@@ -4493,12 +4493,28 @@ impl App {
                         eye: camera.eye,
                         draw_distance: 2000.0,
                         area_light: Vec3::ONE,
+                        focal: 192.0 / (camera.fov_y * 0.5).tan(),
                     };
                     let fa = FxActors { actors: &w.actors, places: &places };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
+                    if let Some(a) = &self.audio {
+                        w.effects.set_alive(a.alive());
+                    }
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
+                    // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.
+                    for c in std::mem::take(&mut w.effects.sound_cmds) {
+                        let Some(a) = &mut self.audio else { break };
+                        match c {
+                            crate::fx::sound::SoundCmd::Play { handle, se, vol, pan } => {
+                                a.play_voice(handle, se, vol, pan);
+                            }
+                            crate::fx::sound::SoundCmd::Level { handle, vol } => a.voice_level(handle, vol),
+                            crate::fx::sound::SoundCmd::Pan { handle, pan } => a.voice_pan(handle, pan),
+                            crate::fx::sound::SoundCmd::Stop { handle, ticks } => a.voice_stop(handle, ticks),
+                        }
+                    }
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &w.effects, camera.proj(aspect), [crate::render::NEAR, crate::render::FAR], fog_color, fog);

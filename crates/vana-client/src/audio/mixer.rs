@@ -102,7 +102,13 @@ pub enum Cmd {
     SavePosition,
     /// Forget saved positions: one id or all (cmd 11).
     ClearPositions(Option<u32>),
-    PlaySe { bytes: Arc<[u8]>, level: u8, pan: u8, priority: i32 },
+    /// Start an effect (cmd 2); `handle` (0 = none) names the voice for the commands below.
+    PlaySe { bytes: Arc<[u8]>, level: u8, pan: u8, priority: i32, handle: u32 },
+    /// Cmd 4 / 3: a voice's level / pan, at once.
+    SeLevel { handle: u32, level: u8 },
+    SePan { handle: u32, pan: u8 },
+    /// Cmd 0 (ticks 0, stop now) / cmd 5 (fade to level 1 over ticks, then stop).
+    SeStop { handle: u32, ticks: i32 },
 }
 
 struct Source {
@@ -168,6 +174,8 @@ struct Voice {
     pan: u8,
     priority: i32,
     started: u64,
+    handle: u32,
+    stop_after: bool,
 }
 
 /// Shared with the game thread: what the mixer is doing (for tests and the music logic).
@@ -176,6 +184,8 @@ pub struct Status {
     /// Music id playing + 1 (0 = none).
     pub bgm: AtomicU32,
     pub voices: AtomicU32,
+    /// Handles of the voices still playing (FUN_1023ba50's list), refreshed every mix.
+    pub alive: std::sync::Mutex<Vec<u32>>,
 }
 
 pub struct Mixer {
@@ -249,7 +259,30 @@ impl Mixer {
                 Some(i) if i < 0x400 => self.resume[i as usize] = 0,
                 _ => {}
             },
-            Cmd::PlaySe { bytes, level, pan, priority } => {
+            Cmd::SeLevel { handle, level } => {
+                for v in self.voices.iter_mut().flatten().filter(|v| v.handle == handle && handle != 0) {
+                    v.ramp.set(level, 0);
+                }
+            }
+            Cmd::SePan { handle, pan } => {
+                for v in self.voices.iter_mut().flatten().filter(|v| v.handle == handle && handle != 0) {
+                    v.pan = pan;
+                }
+            }
+            Cmd::SeStop { handle, ticks } => {
+                for slot in self.voices.iter_mut().filter(|v| v.as_ref().is_some_and(|v| v.handle == handle && handle != 0)) {
+                    let n = steps(ticks);
+                    let v = slot.as_mut().unwrap();
+                    if n == 0 {
+                        *slot = None;
+                    } else {
+                        v.ramp.left = n;
+                        v.ramp.delta = ((LEVEL[1] * 0x1000 - v.ramp.cur) + 0x800) / n;
+                        v.stop_after = true;
+                    }
+                }
+            }
+            Cmd::PlaySe { bytes, level, pan, priority, handle } => {
                 let Ok(dec) = Decoder::new(bytes) else { return };
                 let flags = dec.header.flags;
                 let mut ramp = Ramp { cur: LEVEL[(level & 0x7f) as usize] << 12, left: 0, delta: 0 };
@@ -266,7 +299,7 @@ impl Mixer {
                 });
                 if let Some(i) = slot {
                     self.serial += 1;
-                    self.voices[i] = Some(Voice { src: Source::new(dec, self.rate), ramp, pan, priority, started: self.serial });
+                    self.voices[i] = Some(Voice { src: Source::new(dec, self.rate), ramp, pan, priority, started: self.serial, handle, stop_after: false });
                 }
             }
         }
@@ -279,8 +312,13 @@ impl Mixer {
         {
             self.bgm = None;
         }
-        for v in self.voices.iter_mut().flatten() {
-            v.ramp.tick();
+        for slot in self.voices.iter_mut() {
+            if let Some(v) = slot
+                && v.ramp.tick()
+                && v.stop_after
+            {
+                *slot = None;
+            }
         }
     }
 
@@ -333,6 +371,10 @@ impl Mixer {
         }
         self.status.bgm.store(self.bgm.as_ref().map_or(0, |b| b.id + 1), Ordering::Relaxed);
         self.status.voices.store(self.voices.iter().flatten().count() as u32, Ordering::Relaxed);
+        if let Ok(mut a) = self.status.alive.lock() {
+            a.clear();
+            a.extend(self.voices.iter().flatten().map(|v| v.handle).filter(|&h| h != 0));
+        }
     }
 }
 

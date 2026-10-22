@@ -176,6 +176,40 @@ impl Audio {
         let _ = self.tx.send(Req::Se { id, level: lv });
     }
 
+    /// A positioned effect voice (FUN_10036130 -> cmd 2) under `handle`; level 0..127 before the effects factor,
+    /// pan 0..127. Refused (false) while the busy voices reach the limit (DAT_1044417c).
+    pub fn play_voice(&mut self, handle: u32, id: u32, level: i32, pan: u8) -> bool {
+        if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
+            return false;
+        }
+        let lv = self.se_level(level);
+        let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle });
+        true
+    }
+
+    pub fn voice_level(&mut self, handle: u32, level: i32) {
+        let lv = self.se_level(level);
+        self.send(Cmd::SeLevel { handle, level: lv });
+    }
+
+    pub fn voice_pan(&mut self, handle: u32, pan: u8) {
+        self.send(Cmd::SePan { handle, pan: pan & 0x7f });
+    }
+
+    /// Stop now (0) or fade out over 60 Hz ticks.
+    pub fn voice_stop(&mut self, handle: u32, ticks: i32) {
+        self.send(Cmd::SeStop { handle, ticks });
+    }
+
+    /// Handles of the voices still playing.
+    pub fn alive(&self) -> Vec<u32> {
+        self.status.alive.lock().map(|a| a.clone()).unwrap_or_default()
+    }
+
+    fn se_level(&self, level: i32) -> u8 {
+        ((level as f32 * self.effects * self.event_se) as i32).clamp(0, 127) as u8
+    }
+
     /// Event volume (0x69 set / 0x6a fade): mask 1 world effects, 2 interface, 4 music, 8 all.
     pub fn event_volume(&mut self, mask: i32, level: f32, ticks: f32) {
         let level = level.clamp(0.0, 1.0);
@@ -303,6 +337,7 @@ enum Req {
     Cmd(Cmd),
     Music { id: u32, level: u8 },
     Se { id: u32, level: u8 },
+    Voice { id: u32, level: u8, pan: u8, handle: u32 },
 }
 
 /// FUN_10036980's choice: (track, sequence entry, no follow-up) for option 0xaf;  stands for timeGetTime.
@@ -344,8 +379,9 @@ fn loader(dir: PathBuf, rx: Receiver<Req>, tx: Sender<Cmd>) {
             Req::Music { id, level } => read(format::music_path(&dir, id), "music", id).map(|bytes| Cmd::PlayBgm { id, bytes, level, ticks: 0 }),
             Req::Se { id, level } => {
                 log::debug!("se {id} at level {level}");
-                effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan: 0x40, priority: 0 })
+                effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan: 0x40, priority: 0, handle: 0 })
             }
+            Req::Voice { id, level, pan, handle } => effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan, priority: 0, handle }),
         };
         if let Some(c) = cmd
             && tx.send(c).is_err()

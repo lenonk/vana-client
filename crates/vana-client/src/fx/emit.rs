@@ -38,6 +38,8 @@ pub struct Spawn {
     pub children: Vec<Child>,
     /// Batched D3a (CMoVuAnmElem): the particle records (pos0, dir, vel) of FUN_10063060.
     pub parts: Vec<[f32; 9]>,
+    /// A sound element (kind 0x3d, CYySoundElem).
+    pub sound: Option<super::sound::Sound>,
 }
 
 /// Resource kind after FUN_1004d920's remap (table 0x10051748): Vum / Om1 -> D3m, Anm -> D3a, Mmd -> D3b.
@@ -86,10 +88,22 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     return None;
                 }
             },
-            // Sounds, D3b morphs and the rest have their own paths (not drawn yet).
+            // D3b morphs and the rest have their own paths (not drawn yet).
             _ => Draw::None,
         }
     };
+    // Kind 0x3d: a SeSep; no resource means no element (FUN_1004d920 returns at op 1).
+    let mut sound = None;
+    if res_kind == 0x3d {
+        let r = reg.resolve(lib, from, 0x3d, name)?;
+        let (se, loops) = super::sound::sesep(reg.libs[r.0].data(r.1))?;
+        let mut s = super::sound::Sound::new(se, loops);
+        // Op 0x4c on a world generator sets height mode 1; without 0x4c the defaults stand.
+        if inst.mode == 0 {
+            s.ymode = 0;
+        }
+        sound = Some(s);
+    }
     e.0[w::FLAGS] = flags;
     let mut pos = Vec3::new(op1.f32(5), op1.f32(6), op1.f32(7));
     // Step 4: flag 0x800000 snapshots the emitter frame at spawn.
@@ -386,6 +400,27 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     e.set(w::MAX_LIFE, p.max_life);
                 }
             }
+            // Sound ops (CYySoundElem only).
+            0x4c if sound.is_some() => {
+                let s = sound.as_mut().unwrap();
+                if s.loops || inst.flags & 0x400 != 0 || life == 0.0 {
+                    inst.flags &= !0x800;
+                }
+                if inst.mode == 0 {
+                    s.ymode = 1;
+                }
+                s.near = op.f32(2);
+                s.far = op.f32(1);
+                s.vol = 127;
+            }
+            0x6b if sound.is_some() => {
+                if let Some(r) = reg.resolve(lib, from, kind::SPH, op.u32(2)) {
+                    sound.as_mut().unwrap().sph = Some(std::sync::Arc::new(super::sound::sph(reg.libs[r.0].data(r.1))));
+                }
+            }
+            0x8a if sound.is_some() => sound.as_mut().unwrap().keep = true,
+            0x92 if sound.is_some() => sound.as_mut().unwrap().ymode = 1,
+            0x9e if sound.is_some() => sound.as_mut().unwrap().ymode = 2,
             // Op 0x56: the particle block of a batched D3a (CMoVuAnmElem), from the other ops of this generator.
             0x56 if e.0[w::KIND] == dk::BATCHED => {
                 let find = |st: usize, code: u8| -> Option<Op> { inst.streams[st].iter().find(|o| o.code == code).cloned() };
@@ -436,7 +471,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         mslot: NONE,
         parts: None,
     };
-    Some(Spawn { elem: e, cpu, children, parts })
+    Some(Spawn { elem: e, cpu, children, parts, sound })
 }
 
 /// FUN_10048740 steps 2-3: the generator's own stream. Returns false when this frame's emission is skipped
