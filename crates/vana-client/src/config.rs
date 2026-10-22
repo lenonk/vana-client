@@ -4,13 +4,24 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// `base`/vana-client, moved there from the project's old name (ffxi-linux) the first time.
+fn app_dir(base: Option<PathBuf>) -> PathBuf {
+    let base = base.unwrap_or_else(|| PathBuf::from("."));
+    let dir = base.join("vana-client");
+    let old = base.join("ffxi-linux");
+    if !dir.exists() && old.is_dir() {
+        let _ = std::fs::rename(&old, &dir);
+    }
+    dir
+}
+
 pub fn data_dir() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("ffxi-linux")
+    app_dir(dirs::data_dir())
 }
 
 /// FFXI_CONFIG points test runs at a copy, so they never write the user's file.
 fn config_path() -> PathBuf {
-    std::env::var_os("FFXI_CONFIG").map(PathBuf::from).unwrap_or_else(|| dirs::config_dir().unwrap_or_else(|| PathBuf::from(".")).join("ffxi-linux/config.json"))
+    std::env::var_os("FFXI_CONFIG").map(PathBuf::from).unwrap_or_else(|| app_dir(dirs::config_dir()).join("config.json"))
 }
 
 #[derive(Clone, Serialize, Deserialize)]

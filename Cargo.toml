@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/ffxi-linux"]
+members = ["crates/vana-client"]
 
 [profile.release]
 lto = "thin"

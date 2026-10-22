@@ -1,4 +1,4 @@
-# ffxi-linux RE journal
+# vana-client RE journal
 
 Confirmed facts only; each with where it was verified. Sources: LSB `~/landsandboat` (commit d90234d2d1),
 xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled output stays in `~/ffxi/lab`.
@@ -767,7 +767,7 @@ text and the window are in the dialogue entry (modlog_dialog.md); this entry is 
   fields. Stores go through FUN_100addc0, strings through FUN_100adf30.
 - Server parameters arrive in Z: 0x034 num[8] is Z2..Z9 (DAT_10475df8). The option the client returns
   is Z1.
-- Key opcodes (full table: `ffxi-linux event-ops`):
+- Key opcodes (full table: `vana-client event-ops`):
   - Flow: 00 end, 01 goto, 02 if_not (cond byte @5), 1a call / 1b ret, 26 halt, 27-29 threads on
     other actors.
   - Dialogue: 1d message (spoken by the event actor), 2b message_by actor, 48/49/89/8d/c8 other
@@ -794,10 +794,10 @@ text and the window are in the dialogue entry (modlog_dialog.md); this entry is 
   and `sched_file #130 's043'` plays camera c043, a 600-tick pan along the city wall to the gate.
 
 ### Prototype
-- `ffxi-linux event-dump ZONE [--actor ID] [--event CSID]`: the blocks and disassembly of a zone, with
+- `vana-client event-dump ZONE [--actor ID] [--event CSID]`: the blocks and disassembly of a zone, with
   dialogue text inlined from the zone dialogue DAT.
-- `ffxi-linux event-ops`: the opcode table (handler, length, wait/stop, operands).
-- `ffxi-linux cs-shot ZONE N SCHED --out-dir DIR [--steps K]`: renders the scheduler's camera paths in
+- `vana-client event-ops`: the opcode table (handler, length, wait/stop, operands).
+- `vana-client cs-shot ZONE N SCHED --out-dir DIR [--steps K]`: renders the scheduler's camera paths in
   the zone at K points.
 - Files: dat/event.rs (parser, operand kinds, control-flow walk, disassembler), dat/event_ops.rs
   (generated opcode table), eventdump.rs.
@@ -1056,9 +1056,9 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
 - Event message ids come from the client's own event DAT and need no shift.
 
 ### Commands and tests
-- `ffxi-linux event-run ZONE EVENT [--target ID] [--choice N|-1 ...] [--param P ...]` prints the
+- `vana-client event-run ZONE EVENT [--target ID] [--choice N|-1 ...] [--param P ...]` prints the
   effects, the final actor transforms and the frame count. `FFXI_EVENT_TRACE=1` prints each executed op.
-- `ffxi-linux event-sweep [ZONE...]` runs every event id with scripted inputs.
+- `vana-client event-sweep [ZONE...]` runs every event id with scripted inputs.
 - Tests (`cargo test event_vm`):
   - **0x0249, actor 0x01b:** the Mog House explanation.
     - Sure → messages 0, 1, 3, 4, 5, then 0x05B option 0.
@@ -1150,8 +1150,8 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
   55775 / 56195; titles 55584 / 55704 / 55824 / 56244; jobs 55467 / 55467 / 55776 / 56196.
 
 ### Commands
-- `ffxi-linux item-dump [--lang en|ja|de|fr] [--key] ID...`
-- `ffxi-linux item-icon-shot ID... --out PNG`
+- `vana-client item-dump [--lang en|ja|de|fr] [--key] ID...`
+- `vana-client item-icon-shot ID... --out PNG`
 - `event-run` loads the English names: zone 230 event 0x029a prints "a magical shell called a linkshell",
   and event 0x01f7 with `--param 536` prints "Here, take this adventurer coupon."
 
@@ -1161,7 +1161,7 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
 - The server's text ids need mapping. s2c 0x036 / 0x02A look their text up in the zone dialogue
   file (FUN_10094d20(8, id)), but LandSandBoat's ids come from a newer client. Event message ids
   come from the event DAT and need no mapping.
-- **Table:** `crates/ffxi-linux/data/msgshift.txt`, included at build time.
+- **Table:** `crates/vana-client/data/msgshift.txt`, included at build time.
   - It holds derived numbers only, no LSB text.
   - One `zone Z MD5 CONFIDENCE` line per zone, where MD5 is the first 8 bytes of the md5 of the
     dialogue file the mapping was made from.
@@ -1169,7 +1169,7 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
 - **Loader:** `MsgShift::bundled().verified(&index)` drops zones whose dialogue file differs from the
   install, so another client version is never mis-mapped. `map(zone, lsb_id)` returns
   `Option<u32>`; ids between segments give None.
-- **Regenerate:** `ffxi-linux msgshift-gen --lsb /path/to/landsandboat [--out ...]` (Rust port of
+- **Regenerate:** `vana-client msgshift-gen --lsb /path/to/landsandboat [--out ...]` (Rust port of
   tools/msgshift.py):
   - It reads each zone's `IDs.lua` text table and `scripts/enum/zone.codegen.lua`.
   - It normalises both sides: control codes, [a/b] alternatives and <placeholders> are removed, and
@@ -1181,7 +1181,7 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
   - 287 zones; 8439 of 8493 commented entries matched.
   - The segments are identical to tools/msgshift.py for all 287 zones.
   - 284 zones are high confidence and 3 are medium.
-- **Check:** `ffxi-linux msgshift-map 230 8002` gives 7959 "I am Taumila, …".
+- **Check:** `vana-client msgshift-map 230 8002` gives 7959 "I am Taumila, …".
 
 ### Event ops 0x69 / 0x6a are sound volume, not screen layers
 - **0x69 (FUN_100b5c30):** mask val@2. Each bit's volume becomes 1.0 if u8@1 is 0, else 0, and any
@@ -1461,7 +1461,7 @@ Ghidra copy for this work: ~/ffxi/lab/combat/proj (mk.sh / q.sh beside it). Hand
   ("Tuxedo hits the Wild Rabbit for 5 points of damage.", "Ding Bats hit Tuxedo ...", "Tuxedo casts Cure." /
   "Tuxedo recovers 12 HP.") and check modes and colours.
 - net/action.rs: reader plus LSB's packer; client/combat.rs test replays LSB-built 0x029 / 0x02D / 0x028 sub-packets
-  through the client parsers into chat lines and colours. `ffxi-linux combat-shot --out P [--layout 4|6]` renders
+  through the client parsers into chat lines and colours. `vana-client combat-shot --out P [--layout 4|6]` renders
   the same replay in the log window with the target window and the action menu.
 - Motions (client/combat.rs): melee plays the chosen ati?/atf? scheduler's op-05 motion once and prints the results and
   starts the target's dfi/dbi (or gdi) reaction at the "dada" tick; other categories print at once. Inferred: front /
@@ -2698,7 +2698,7 @@ pages `name:cursor:scroll`); shots in scratchpad config/c_*.png, live ones in co
   - Tests with hard-coded /home/lenon paths (atrac3) skip when the files are missing.
 - The Wayland window workarounds (fullscreen re-request after mapping, the full-screen hop to change monitor, delayed size requests) are harmless elsewhere. On Windows and macOS, set_outer_position can move the window between monitors directly.
 - Windows can be cross-compiled from Linux (cargo-xwin or x86_64-pc-windows-gnu); macOS needs a Mac to build. Both need a real test machine for audio, full screen and the GPU.
-- Rename the crate ("ffxi-linux") before shipping other platforms.
+- Rename the crate ("vana-client") before shipping other platforms.
 
 
 ## Lock-on on engage, walking hitches: GPU mips, budgeted uploads, shared models (2026-10-21)

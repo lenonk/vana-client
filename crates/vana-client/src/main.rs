@@ -30,7 +30,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 #[derive(Parser)]
-#[command(version, about = "Native Linux FINAL FANTASY XI installer and client")]
+#[command(version, about = "Native FINAL FANTASY XI installer and client")]
 struct Cli {
     #[command(subcommand)]
     /// Without a subcommand the game client opens.
@@ -409,7 +409,7 @@ enum Cmd {
         /// LandSandBoat checkout (reads scripts/zones/*/IDs.lua and scripts/enum/zone.codegen.lua).
         #[arg(long)]
         lsb: PathBuf,
-        #[arg(long, default_value = "crates/ffxi-linux/data/msgshift.txt")]
+        #[arg(long, default_value = "crates/vana-client/data/msgshift.txt")]
         out: PathBuf,
     },
     /// Map LSB text ids of a zone to installed dialogue ids with the bundled table.

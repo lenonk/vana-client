@@ -1,7 +1,7 @@
 //! LandSandBoat text ids -> installed zone dialogue ids (s2c 0x036 / 0x02A index the zone dialogue
 //! file, FUN_10094d20(8, id), and LSB's ids come from a newer client). The bundled table holds only
 //! the derived segments, keyed by each zone dialogue file's md5 so another install is not mis-mapped.
-//! `ffxi-linux msgshift-gen` regenerates it by matching LSB IDs.lua comments against the DAT text.
+//! `vana-client msgshift-gen` regenerates it by matching LSB IDs.lua comments against the DAT text.
 
 use super::DatIndex;
 use super::dialog::{Dialog, file_id};
@@ -280,7 +280,7 @@ fn confidence(a: &Analysis) -> &'static str {
 pub fn generate(index: &DatIndex, lsb: &Path, out: &Path) -> Result<()> {
     let ids = zone_ids(lsb)?;
     let mut text = String::from(
-        "# LandSandBoat text id -> installed zone dialogue id, from `ffxi-linux msgshift-gen`.\n\
+        "# LandSandBoat text id -> installed zone dialogue id, from `vana-client msgshift-gen`.\n\
          # zone ZONE MD5 CONFIDENCE (md5 = first 8 bytes of the dialogue file it was made from)\n\
          # FROM TO DELTA ANCHORS: LSB ids FROM..=TO map to id + DELTA; ids between segments are unknown.\n",
     );

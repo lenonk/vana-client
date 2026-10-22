@@ -1,11 +1,11 @@
-# ffxi-linux
+# vana-client
 
 A native client for FINAL FANTASY XI, in Rust, that logs into a LandSandBoat (LSB) server. No Wine, no PlayOnline.
 Rendering is wgpu (Vulkan), windows winit, audio cpal (PipeWire), UI the game's own menus and sprites (egui only for
 input and the F12 debug overlay). Faithful to retail first; improvements come after.
 
 ## Where things are
-- Code: `crates/ffxi-linux/src` (client/ game logic and UI, render/ GPU, dat/ game file formats, net/ protocol,
+- Code: `crates/vana-client/src` (client/ game logic and UI, render/ GPU, dat/ game file formats, net/ protocol,
   audio/).
 - `MODLOG.md`: every reverse-engineered fact (FFXiMain addresses, DAT formats, packets), plus what's inferred.
   Read the relevant sections before changing anything, and append what you learn.
@@ -20,7 +20,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 
 ## Build and test
 - `nice -n 19 cargo build --release`, `nice -n 19 cargo test --release`. The user runs
-  `target/release/ffxi-linux play`.
+  `target/release/vana-client play`.
 - Offscreen tools for checking without a window: `npc-shot`, `char-shot`, `select-shot`, `creator-shot`,
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
 - Live test runs: `play --credentials ~/ffxi/lab/lnxtest01.json --input '<script>'` (steps in client/script.rs).

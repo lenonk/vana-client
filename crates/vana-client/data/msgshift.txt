@@ -1,4 +1,4 @@
-# LandSandBoat text id -> installed zone dialogue id, from `ffxi-linux msgshift-gen`.
+# LandSandBoat text id -> installed zone dialogue id, from `vana-client msgshift-gen`.
 # zone ZONE MD5 CONFIDENCE (md5 = first 8 bytes of the dialogue file it was made from)
 # FROM TO DELTA ANCHORS: LSB ids FROM..=TO map to id + DELTA; ids between segments are unknown.
 zone 1 faa6a7665480cce4 high
