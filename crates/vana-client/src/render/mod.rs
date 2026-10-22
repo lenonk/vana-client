@@ -361,6 +361,8 @@ pub struct ActorGpu {
     pub alpha: f32,
     /// Target flash (client/flash.rs): ambient lerp toward 220 / 255 and fog colour scale.
     pub flash: [f32; 2],
+    /// The floor's four point lights (table slot + 1, 0 none): FUN_100c94a0 picks the strongest.
+    pub lights: [u8; 4],
     /// The last mip job of its textures; drawn once the GPU has it.
     mips: u64,
 }
@@ -656,26 +658,21 @@ impl ZoneGeometry {
     pub fn build(scene: &ZoneScene) -> Self {
         // Slot 0 is the plain white texture; scene textures follow in order.
         let texture_slot: HashMap<&str, usize> = scene.textures.iter().enumerate().map(|(i, t)| (t.name.as_str(), i + 1)).collect();
-        // The light table (FUN_101737d0 / FUN_10171830: one entry per key); a placement's refs become slot + 1,
-        // except keys starting with 'c', which the main scenery path skips (FUN_10175ac0).
-        let mut light_keys: Vec<u32> = Vec::new();
-        let mut slot_of = |key: u32| -> u32 {
-            if key == 0 {
-                return 0;
+        // A placement's refs become their table slot + 1, except keys starting with 'c', which the main scenery
+        // path skips (FUN_10175ac0).
+        let light_keys: Vec<u32> = scene.light_keys.iter().copied().take(LIGHTS).collect();
+        let slot_of = |key: u32| -> u32 {
+            match light_keys.iter().position(|&k| k == key) {
+                Some(s) if key != 0 && key as u8 != b'c' => s as u32 + 1,
+                _ => 0,
             }
-            let s = light_keys.iter().position(|&k| k == key).unwrap_or_else(|| {
-                light_keys.push(key);
-                light_keys.len() - 1
-            });
-            if s >= LIGHTS || key as u8 == b'c' { 0 } else { s as u32 + 1 }
         };
         // One instance block per mesh, holding the matrices of every placement that uses it.
         let mut by_mesh: HashMap<&str, Vec<Instance>> = HashMap::new();
         for p in &scene.placements {
-            let lights = p.lights.map(&mut slot_of);
+            let lights = p.lights.map(slot_of);
             by_mesh.entry(&p.name).or_default().push(Instance { model: p.matrix(), lights });
         }
-        light_keys.truncate(LIGHTS);
         let mut matrices: Vec<Instance> = Vec::new();
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
@@ -954,6 +951,7 @@ impl ZoneRenderer {
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 flash: [0.0, 1.0],
+                lights: [0; 4],
                 mips: 0,
             };
             self.builds.push((key, Build { ch: ch.clone(), mesh, actor, registered: false, vert_at: 0, tex: 0, cur: None }));
@@ -1003,7 +1001,7 @@ impl ZoneRenderer {
         skin.offset = (self.poses.len() * 16) as u32;
         skin.frame = self.pose_frame;
         self.poses.extend(model.to_cols_array_2d());
-        self.poses.push([alpha, flash[0], flash[1], 0.0]);
+        self.poses.push([alpha, flash[0], flash[1], f32::from_bits(u32::from_le_bytes(actor.lights))]);
         for i in 0..skin.bones {
             let (q, t) = bones.get(i).copied().unwrap_or((glam::Quat::IDENTITY, Vec3::ZERO));
             self.poses.push(q.to_array());
@@ -1062,7 +1060,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, flash: [0.0, 1.0], mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, flash: [0.0, 1.0], lights: [0; 4], mips }
     }
 
     /// Uploads this frame's posed mesh and placement.

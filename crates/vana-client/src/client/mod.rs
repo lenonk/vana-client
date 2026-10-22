@@ -4515,6 +4515,8 @@ impl App {
                     g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
+                    // The floor's lights (retail copies them at the ground probe, every 121 updates).
+                    g.lights = w.ground.as_ref().map_or([0; 4], |gr| gr.lights(pos));
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look);

@@ -295,5 +295,8 @@ mod tests {
         let objs = &scene.collision.unwrap().objects;
         // 159 ev01 records in table [5]; 76 of them are reached from the collision grid.
         assert_eq!(objs.iter().filter(|o| o.area == u32::from_le_bytes(*b"ev01")).count(), 76);
+        // point_lights.md 1.3: collision objects name lamps by MZB list ref, e.g. (pl18, pl19).
+        let pl18 = u32::from_le_bytes(*b"pl18");
+        assert!(objs.iter().any(|o| o.lights[..2] == [pl18, u32::from_le_bytes(*b"pl19")]));
     }
 }

@@ -543,7 +543,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
         let li = max(max(0.0, ef(b, E_L_INT)) * ef(b, E_L_ISCALE) * fade, 0.0);
         let rgb = vec3<f32>(f32(cb(b, 2u)), f32(cb(b, 1u)), f32(cb(b, 0u))) / 128.0;
         lights[2u * ls] = vec4<f32>(ev3(b, E_POS), ef(b, E_L_RSCALE) * ef(b, E_L_RANGE));
-        lights[2u * ls + 1u] = vec4<f32>(rgb * li, 0.0);
+        lights[2u * ls + 1u] = vec4<f32>(select(rgb, vec3<f32>(0.0), li <= 0.0), li);
     }
     // D3a frame wrap at draw time (FUN_1003dad0 / FUN_1003e2f0): a reset, not a modulo.
     if (drawn && (kind == DK_SPRITE || kind == DK_BATCHED) && el[b + E_FRAME] >= el[b + E_FRAMES]) {

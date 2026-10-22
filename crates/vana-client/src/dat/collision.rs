@@ -42,6 +42,8 @@ pub struct Object {
     pub y_range: (f32, f32),
     /// +0xb0: the area 4cc (copied to the ground info on a floor hit, FUN_10162590; area_light.md).
     pub area: u32,
+    /// +0xac..+0xaf (records of 0xc0, version >= 0x1a): 1-based MZB light list refs, as their keys (0 none).
+    pub lights: [u32; 4],
 }
 
 fn u32_at(b: &[u8], o: usize) -> Option<u32> {
@@ -72,6 +74,13 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
     }
     // Each cell's entry list starts with its own coordinates, which pins down the grid width.
     let (w, h) = (p[0x0c] as usize * 10, p[0x0d] as usize * 10);
+    let list = super::zone::light_list(p);
+    let light_keys = |xf: usize| -> [u32; 4] {
+        std::array::from_fn(|k| match p.get(xf + 0xac + k) {
+            Some(&b) if b != 0 && p[3] >= 0x1a => list.get(b as usize - 1).copied().unwrap_or(0),
+            _ => 0,
+        })
+    };
     let mut objects: HashMap<usize, u32> = HashMap::new();
     let mut seen: HashMap<(usize, usize), u32> = HashMap::new();
     let mut out = Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: (w, h) };
@@ -101,7 +110,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                     None => {
                         let next = objects.len() as u32;
                         let obj = *objects.entry(xf).or_insert_with(|| {
-                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)) });
+                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)) });
                             next
                         });
                         let first = out.tris.len() as u32;

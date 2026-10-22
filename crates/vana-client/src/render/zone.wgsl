@@ -21,7 +21,8 @@ struct Uniforms {
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
-// Point lights (two vec4s each: position, range; colour x intensity), from the effects (classes2.md 3.2).
+// Point lights (two vec4s each: position, range; colour rgb / 128 (0 when unlit), intensity I), from the effects
+// (classes2.md 3.2; D3D8 POINT, Att2 = 1 / I, or 1 when I <= 0).
 @group(0) @binding(1) var<storage, read> plights: array<vec4<f32>>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
@@ -52,6 +53,31 @@ struct VertexOut {
     @location(6) point: vec3<f32>,
 };
 
+// FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
+// its range (an unlit one competes too), as a directional light from the lamp: C x w x max(N.L, 0).
+fn actor_lamp(packed: u32, pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
+    var best = 0.0;
+    var col = vec3<f32>(0.0);
+    var dir = vec3<f32>(0.0);
+    for (var k = 0u; k < 4u; k = k + 1u) {
+        let s = (packed >> (8u * k)) & 0xffu;
+        if (s == 0u) { continue; }
+        let a = plights[2u * (s - 1u)];
+        let c = plights[2u * (s - 1u) + 1u];
+        let l = a.xyz - pos;
+        let d2 = dot(l, l);
+        if (sqrt(d2) > a.w) { continue; }
+        let att2 = select(1.0, 1.0 / c.w, c.w > 0.0);
+        let wt = 1.0 / max(d2 * att2, 1e-4);
+        if (wt > best) {
+            best = wt;
+            col = c.rgb * wt;
+            dir = l * inverseSqrt(max(d2, 1e-12));
+        }
+    }
+    return col * max(dot(n, dir), 0.0);
+}
+
 fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     for (var k = 0u; k < 4u; k = k + 1u) {
@@ -62,7 +88,7 @@ fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
         let l = a.xyz - p;
         let d2 = max(dot(l, l), 1e-6);
         if (d2 > a.w * a.w) { continue; }
-        sum = sum + c.rgb * max(dot(n, l * inverseSqrt(d2)), 0.0) / d2;
+        sum = sum + c.rgb * c.w * max(dot(n, l * inverseSqrt(d2)), 0.0) / d2;
     }
     return sum;
 }
@@ -122,7 +148,7 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     out.normal = normalize((model * vec4<f32>(nn, 0.0)).xyz);
     out.depth = out.clip.w;
     out.flash = pose[4].yz;
-    out.point = vec3<f32>(0.0);
+    out.point = actor_lamp(bitcast<u32>(pose[4].w), model[3].xyz, out.normal);
     return out;
 }
 
@@ -203,7 +229,7 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     let ndl = max(dot(normalize(in.normal), -u.actor_sun.xyz), 0.0);
     // The target flash pulls the ambient toward 220 / 255 and scales the fog colour (FUN_100c94a0).
     let amb = mix(u.actor_ambient.rgb, vec3<f32>(220.0 / 255.0), in.flash.x);
-    let lit = clamp(0.5 * (amb + u.actor_color.rgb * ndl), vec3<f32>(0.0), vec3<f32>(1.0));
+    let lit = clamp(0.5 * (amb + u.actor_color.rgb * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
     return d3d_out_fog(in, clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)), u.fog_color.rgb * in.flash.y);
 }
 

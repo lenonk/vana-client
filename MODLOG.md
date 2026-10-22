@@ -3223,7 +3223,14 @@ From classes2.md section 3 and ~/ffxi/lab/research/effects/point_lights.md.
   effects), as in retail. zone-shot renders its frame twice for that. Zone 232 at 00:00: the lamps light the wall
   and floor warm around pl01..; at 12:00 (pttm off) nothing.
 - The device asks for 16 storage buffers per stage (the effects update pass binds 9; wgpu's default is 8).
-- Not done: actors (the floor triangle's 4 light bytes, collision +0xac..+0xaf, the strongest I/d^2 becomes a
-  directional light), moving parts (FUN_1017ce60, no 'c' skip), the bump-map vertex-shader path (config 0017),
+- Actors (FUN_100c94a0, later the same day): collision object +0xac..+0xaf (version >= 0x1a) are 1-based MZB list
+  refs (Object.lights, as keys; keys with bytes 1..3 'lgb' skipped by FUN_1017aba0); the table holds every MZB list
+  key (ZoneScene.light_keys). Each frame the floor under an actor gives its four slots (Ground::lights, packed in
+  pose header word 4.w); vs_skinned picks the strongest w = 1 / max(d^2 Att2, 1e-4) within range at the actor's
+  position (an unlit lamp competes too) and adds C x w x max(N.L, 0) as a directional light from the lamp inside
+  the actor lighting. The light buffer's second vec4 is now (rgb / 128 or 0 when unlit, I). Not checked on screen
+  (no lamp near the test character); retail copies the lights at the ground probe (every 121 updates), here every
+  frame; the per-material light factor f (FUN_100216a0) is not applied.
+- Not done: moving parts (FUN_1017ce60, no 'c' skip), the bump-map vertex-shader path (config 0017),
   the slot leak for refs to 'c' / unknown keys, the windowed-mode gamma boost (FUN_1000b290), the two-area-light
   scenery mode, unnormalised normals of scaled placements.

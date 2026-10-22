@@ -240,14 +240,22 @@ impl Placement {
     }
 }
 
+/// FUN_10172530: version byte 3 > 0x11 and u32 @0x18: the light list, 256 records of 0x4c with the key at +0
+/// (empty without one).
+pub fn light_list(p: &[u8]) -> Vec<u32> {
+    let list = u32_at(p, 0x18) as usize;
+    if p.len() < 0x1c || p[3] <= 0x11 || list == 0 || list + 256 * 0x4c > p.len() {
+        return Vec::new();
+    }
+    (0..256).map(|k| u32_at(p, list + k * 0x4c)).collect()
+}
+
 pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
     let count = (p[4] as usize) | (p[5] as usize) << 8 | (p[6] as usize) << 16;
     let end = u32_at(p, 20) as usize;
     let stride = [100usize, 84, 92].into_iter().find(|s| count * s + 32 == end).ok_or_else(|| anyhow::anyhow!("unknown MZB record size ({count} records end at {end})"))?;
-    // FUN_10172530: version byte 3 > 0x11 and u32 @0x18: the light list, 256 records of 0x4c with the key at +0.
     let version = p[3];
-    let list = u32_at(p, 0x18) as usize;
-    let keys: Vec<u32> = if version > 0x11 && list != 0 && list + 256 * 0x4c <= p.len() { (0..256).map(|k| u32_at(p, list + k * 0x4c)).collect() } else { Vec::new() };
+    let keys = light_list(p);
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let r = 32 + i * stride;
@@ -451,16 +459,23 @@ pub struct ZoneScene {
     pub meshes: Vec<Mmb>,
     pub textures: Vec<Texture>,
     pub warnings: Vec<String>,
+    /// The light table's keys (every MZB light list's, once each; slot = index, FUN_101737d0).
+    pub light_keys: Vec<u32>,
 }
 
 pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
-    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new() };
+    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new() };
     let list: Vec<Chunk> = chunks(file)?;
     for c in list {
         let mut data = c.data.to_vec();
         let result = match c.kind {
             0x1C => decode_mzb(keys, &mut data).and_then(|_| parse_mzb(&mut data)).map(|p| {
                 scene.placements.extend(p);
+                for k in light_list(&data) {
+                    if k != 0 && !scene.light_keys.contains(&k) {
+                        scene.light_keys.push(k);
+                    }
+                }
                 match super::collision::parse(&data) {
                     Ok(c) => scene.collision = Some(c),
                     Err(e) => scene.warnings.push(format!("collision: {e}")),
