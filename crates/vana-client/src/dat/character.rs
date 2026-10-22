@@ -628,6 +628,9 @@ pub struct Character {
     /// these; FUN_100cc440 the motion files, then the model's files).
     pub files: Vec<u32>,
     pub part_files: Vec<u32>,
+    /// 0x45 "Cib" bytes 0..2 (FUN_100cd1d0, first file wins; the feet part file overwrites 1 and 2): leg mode
+    /// (+0x878), footstep kind (+0x879), shoe (+0x87a); -1 = unset.
+    pub cib: [i8; 3],
     /// PC looks: what picks the battle and event motion files.
     pub pc: Option<super::motionfile::PcMotion>,
     pub log: Vec<String>,
@@ -655,6 +658,11 @@ impl Character {
     /// Fills unset size bytes from a file's info chunk; the client copies only bytes not yet set.
     pub fn merge_size_info(&mut self, info: Option<[u8; 16]>) {
         let Some(info) = info else { return };
+        for (dst, &src) in self.cib.iter_mut().zip(&info[0..3]) {
+            if *dst < 0 {
+                *dst = src as i8;
+            }
+        }
         for (dst, &src) in self.size_info.iter_mut().zip(&info[10..14]) {
             if *dst == 0xFF {
                 *dst = src;
@@ -704,7 +712,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new() };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3] };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {
@@ -720,6 +728,12 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
         match slot {
             "body" => body_info = f.info,
             "sub" => sub_info = f.info,
+            "feet" => {
+                if let Some(i) = f.info {
+                    ch.cib[1] = i[1] as i8;
+                    ch.cib[2] = i[2] as i8;
+                }
+            }
             _ => {}
         }
         ch.merge_size_info(f.info);

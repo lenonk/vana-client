@@ -3076,3 +3076,27 @@ crossfade), the texture warp (elem+0x140..0x148), the distortion-morph variant.
   7, FUN_10184d70), op 0x4f multiplies the colour by a 12-entry phase table / 128 (FUN_1003d290, truncated); both
   lerp from the previous entry in the day first minute. Emission ops 0x4e / 0x4f add a point of a Vtx list (u32
   count, vec4 points from +0x10; random / by emission count). zone-shot takes --moon PHASE.
+
+## Footsteps (FUN_100d2970; client/footsteps.rs, render/points.rs) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
+- Actor bytes from the 0x45 info chunk bytes 0..2 (Character.cib; first file wins, the feet part file overwrites
+  1 and 2): leg mode +0x878 (2 = also points 0xb / 0xa, 3 = steps standing too), footstep kind +0x879 (<= 0: none),
+  shoe +0x87a. Hume M feet 8136 = (0xff, 1, 1); orc 1300 = (0, 9, 0).
+- Gate before reading: kind >= 1, status 0 / 1 / 4 / 0x1c / 0x1f / 5 / 0x55, within 30 of the eye. Points 9, 8
+  (0xb, 0xa) of the posed skeleton minus the actor root, in world axes, come from a compute pass on the frame's
+  pose buffer (render/points.rs), read back one to three frames late. A step = some point's height going from < 0
+  to >= 0 (several in a frame = one step).
+- Surface: the floor face under the feet (Ground::surface: the nearest face at or below p.y - 0.5, its type = the
+  four bit-15s; 0 when more than 0.4 below, FUN_10162470) and its covered flag (actor+0x17c).
+- Sound: name '0', '0'+surface, kind char ('0'+k, 'a'+k-10 from 10), '1'+shoe; looked for in the zone's 'fses'
+  ('fser' in rain / squl / bolt when not covered) subtree (FUN_10071510), else DAT 0 'foot' (se 12). Played at the
+  actor, pan input 0 (always centred), level 101 walking (ratio < 0.5) or 127. Test port_sandoria_step: fses/0112
+  = se 101001 at 95 (run) / 76 (walk) for the 1.5 worked example.
+- Motion gate (inferred): retail tests the base motion against the idle 'idl?' (+0x7d8 != +0x7c8) and a few
+  flags (scheduler op 0xbc's counter, a landing); here moving = movement ratio > 1e-4, or leg mode 3.
+- Live (zone 101, Lnxtest running 4 s): 11 steps "0212" (grass, kind 1, shoe 1), about 2.75 a second.
+- Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
+  (+0x840 bits 20..21), dust (op 0x8e, 'w100' / '0400'), 'fmrk' prints, 'fvib', the i900 wading ripples, the
+  footstep-effects option DAT_10444158.
+- Drive note: --quit logs out only after the --screenshot shot; a script `shot:` step does not count.

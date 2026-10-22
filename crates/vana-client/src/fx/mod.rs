@@ -1173,6 +1173,26 @@ impl Effects {
         }
     }
 
+    /// A footstep (FUN_100d2970 step 7): SeSep `name` in the zone's 'fses' folder ('fser' in the rain weathers when
+    /// not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127 running).
+    pub fn footstep(&mut self, pos: Vec3, name: [u8; 4], rain: bool, level: i32) {
+        let Some(l) = self.zone_lib else { return };
+        let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
+        let lib = &self.reg.libs[l];
+        let Some(f) = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { return };
+        let found = lib.find_in(f, 0x3d, name).map(|n| (l, n)).or_else(|| {
+            let g = self.reg.global?;
+            self.reg.libs[g].find_global(0x3d, u32::from_le_bytes(*b"foot")).map(|n| (g, n))
+        });
+        let Some(r) = found else { return };
+        let Some((se, loops)) = sound::sesep(self.reg.libs[r.0].data(r.1)) else { return };
+        let mut s = sound::Sound::new(se, loops);
+        s.pos = pos;
+        s.pan_in = 0.0;
+        s.vol = level;
+        self.sounds.push(s);
+    }
+
     /// Voices the audio reports playing (FUN_1023ba50), before tick.
     pub fn set_alive(&mut self, alive: Vec<u32>) {
         self.alive = alive.into_iter().collect();
@@ -1210,7 +1230,7 @@ impl Effects {
             if s.grace > 0.0 {
                 s.grace -= 1.0;
             }
-            let r = sound::attenuate(64.0, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal);
+            let r = sound::attenuate(s.pan_in, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal);
             let Some((v, pan)) = r else {
                 if s.persistent() {
                     if s.handle != 0 {

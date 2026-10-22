@@ -2,6 +2,7 @@
 
 pub mod anim;
 pub mod effects;
+pub mod points;
 pub mod mipgen;
 pub mod upload;
 pub mod character;
@@ -248,6 +249,8 @@ pub struct ZoneRenderer {
     pub clear_color: bool,
     /// Retail D3D8 lighting from the zone's weather keys; None keeps the placeholder shading.
     pub lighting: Option<crate::dat::weather::Lighting>,
+    /// Posed actor points read back (footsteps).
+    pub points: points::Points,
 }
 
 /// Anisotropic filtering for scenery, actor and creator samplers (config `anisotropy`, 1 = off).
@@ -764,6 +767,7 @@ impl ZoneRenderer {
             fog_color: [0.55, 0.65, 0.8],
             clear_color: true,
             lighting: None,
+            points: points::Points::new(gpu),
         }
     }
 
@@ -961,6 +965,14 @@ impl ZoneRenderer {
         self.poses.push([0.0; 4]);
     }
 
+    /// Asks for an attach point (bone, offset) of an actor posed this frame, relative to its root in world axes,
+    /// read back later by key (points::Points::take).
+    pub fn query_point(&mut self, actor: &ActorGpu, key: u64, bone: u16, off: Vec3) {
+        if let Some(skin) = actor.skin.as_ref().filter(|s| s.frame == self.pose_frame) {
+            self.points.query(key, skin.offset / 16, bone, off);
+        }
+    }
+
     /// Writes the frame's poses in one upload (the buffer grows as needed), then runs the GPU posing.
     pub fn upload_poses(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder) {
         if self.poses.is_empty() {
@@ -981,6 +993,7 @@ impl ZoneRenderer {
         if let Some((buf, _, _)) = &self.pose_gpu {
             gpu.queue.write_buffer(buf, 0, bytemuck::cast_slice(&self.poses));
             self.anim.dispatch(gpu, encoder, buf, !self.budgeted);
+            self.points.run(gpu, encoder, buf);
         }
     }
 

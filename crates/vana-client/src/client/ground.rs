@@ -55,8 +55,9 @@ pub struct Ground {
     grid: Option<Grid>,
     /// The player's body for walk_player().
     body: Cell<Body>,
-    /// Per triangle: its object is covered (+0xa4 bit 2).
+    /// Per triangle: its object is covered (+0xa4 bit 2), and its surface type (the four bit-15s).
     covers: Vec<bool>,
+    kinds: Vec<u8>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -190,7 +191,7 @@ impl Sweep {
 impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         let Some(c) = scene.collision.as_ref() else {
-            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new() };
+            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new() };
         };
         let tris = c.tris.clone();
         let y_range = c.object.iter().map(|&o| c.objects[o as usize].y_range).collect();
@@ -209,11 +210,22 @@ impl Ground {
         }
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone() }
     }
 
     pub fn is_empty(&self) -> bool {
         self.tris.is_empty()
+    }
+
+    /// The floor under feet at `p` (FUN_10162120): its surface type (0 when the face is more than 0.4 below the
+    /// feet, FUN_10162470) and whether its object is covered (actor+0x17c).
+    pub fn surface(&self, p: Vec3) -> (u8, bool) {
+        let floor = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0));
+        match floor {
+            Some((h, i)) if h - p.y <= 0.4 => (self.kinds.get(i).copied().unwrap_or(0), self.covers.get(i).copied().unwrap_or(false)),
+            Some((_, i)) => (0, self.covers.get(i).copied().unwrap_or(false)),
+            None => (0, false),
+        }
     }
 
     /// FUN_100136a0 / FUN_1017a4f0(eye, 100): a ray from just above the eye 100 down, else from just below it 15
@@ -546,7 +558,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n] }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n] }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {

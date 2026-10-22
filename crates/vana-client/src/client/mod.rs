@@ -15,6 +15,7 @@ mod logwin;
 pub(crate) mod perf;
 mod cfgapply;
 mod flash;
+mod footsteps;
 mod configui;
 mod configui2;
 mod settings;
@@ -1565,6 +1566,8 @@ struct World {
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
+    /// Per actor: its foot points' last heights relative to the root (actor+0x7e8..+0x7f4).
+    feet: HashMap<u32, [f32; 4]>,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,
@@ -2429,6 +2432,7 @@ impl App {
                             loading: None,
                             renderer: None,
                             effects: crate::fx::Effects::new(),
+                            feet: HashMap::new(),
                             ground: None,
                             name: login.name.clone(),
                             my_id: login.char_id,
@@ -4307,6 +4311,10 @@ impl App {
                     _ => None,
                 })
                 .collect();
+            // Foot points that came back from earlier frames: steps (FUN_100d2970).
+            if let Some(pts) = w.renderer.as_mut().map(|r| r.points.take()) {
+                footsteps::steps(w, &places, pts);
+            }
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.
@@ -4463,6 +4471,13 @@ impl App {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look);
                         counts.posed += 1;
+                        if footsteps::wanted(&ch, status, pos, camera.eye) {
+                            for (slot, &k) in footsteps::POINTS.iter().enumerate().take(if ch.cib[0] == 2 { 4 } else { 2 }) {
+                                if let Some(&(bone, off)) = ch.skeleton.points.get(k) {
+                                    r.query_point(g, footsteps::key(*id, slot), bone as u16, off);
+                                }
+                            }
+                        }
                     }
                 }
                 r.upload_poses(&gfx.gpu, &mut encoder);
@@ -4636,6 +4651,11 @@ impl App {
         perf::timed(|| "submit".into(), || gfx.gpu.queue.submit(extra.into_iter().chain([encoder.finish()])));
         if let (Some(eg), Phase::World(w)) = (&mut self.effects_gpu, &mut self.phase) {
             eg.after_submit(&gfx.gpu, &mut w.effects);
+        }
+        if let Phase::World(w) = &mut self.phase
+            && let Some(r) = &mut w.renderer
+        {
+            r.points.after_submit(&gfx.gpu);
         }
         if let (Some(buf), Some(path)) = (capture, script_shot.or_else(|| self.drive.screenshot.clone())) {
             if let Err(e) = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path) {

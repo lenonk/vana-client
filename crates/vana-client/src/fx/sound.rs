@@ -33,6 +33,8 @@ pub struct Sound {
     pub ymode: u8,
     /// +0x1be, 0..127.
     pub vol: i32,
+    /// +0x1d0: the pan input (64 for elements and scheduler sounds; footsteps 0, so always centred).
+    pub pan_in: f32,
     /// Update op 0x43: the volume keyframe (slot keyframe id, its parameter).
     pub vol_key: Option<(u32, u32)>,
     /// Emission op 0x6b: the sphere chain (Sph) the source rides, as capsules.
@@ -48,7 +50,7 @@ pub struct Sound {
 
 impl Sound {
     pub fn new(se: u32, loops: bool) -> Self {
-        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, vol_key: None, sph: None, fade: 0.0, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0 }
+        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, pan_in: 64.0, vol_key: None, sph: None, fade: 0.0, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0 }
     }
 
     /// vt+0x40 = FUN_10035950.

@@ -358,6 +358,13 @@ impl Library {
         self.tree.find(from, kind, fourcc_u32(name))
     }
 
+    /// FUN_10071510: a folder's subtree only, file order.
+    pub fn find_in(&self, folder: usize, kind: u8, name: [u8; 4]) -> Option<usize> {
+        let mut sub = Vec::new();
+        self.walk(folder, &mut sub);
+        sub.into_iter().find(|&i| self.tree.nodes[i].kind == kind && self.tree.nodes[i].name == name)
+    }
+
     /// The whole file from its root (how DAT 0 is searched once a file's own scope runs out).
     pub fn find_global(&self, kind: u8, name: u32) -> Option<usize> {
         let n = fourcc_u32(name);
