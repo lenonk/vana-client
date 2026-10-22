@@ -6,11 +6,6 @@ use winit::keyboard::KeyCode;
 
 /// Key function ids 0x00..0xb3.
 pub const IDS: usize = 0xb4;
-const BINDINGS_VA: u32 = 0x103619f0;
-const MASKS_VA: u32 = 0x103612e8;
-const COMPACT_VA: u32 = 0x103623c8;
-const K1_VA: u32 = 0x1036e0a8;
-const K2_VA: u32 = 0x1036e190;
 const K2_ROWS: usize = 28;
 /// Key repeat (input +0x94 = 16, FUN_10005210): past 16 ticks held it fires and drops back to 14. Counted in
 /// retail frames of 2 ticks, as retail ran.
@@ -151,13 +146,14 @@ impl Input {
     /// The tables from FFXiMain.dll. Missing data leaves them empty: no key function fires.
     pub fn load(&mut self, ffximain: &[u8]) {
         let va = |a: u32, n: usize| crate::dat::battle::va_bytes(ffximain, a, n);
+        let Ok(t) = crate::dat::tables::of(ffximain).map_err(|e| log::warn!("key tables: {e:#}")) else { return };
         let u16s = |b: &[u8]| b.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect::<Vec<u16>>();
-        if let (Some(b), Some(m)) = (va(BINDINGS_VA, IDS * 6), va(MASKS_VA, IDS * 2)) {
+        if let (Some(b), Some(m)) = (va(t.bindings, IDS * 6), va(t.masks, IDS * 2)) {
             self.base_bindings = u16s(b).chunks(3).map(|c| [c[0], c[1], c[2]]).collect();
             self.masks = u16s(m);
         }
         self.base_compact.clear();
-        let mut at = COMPACT_VA;
+        let mut at = t.compact;
         while let Some(r) = va(at, 16) {
             let bits = u64::from_le_bytes(r[8..16].try_into().unwrap());
             if bits == 0 {
@@ -167,12 +163,12 @@ impl Input {
             at += 16;
         }
         self.k1.clear();
-        let mut at = K1_VA;
+        let mut at = t.k1;
         while let Some(r) = va(at, 4).filter(|r| r[0] != 0xff) {
             self.k1.push(r.iter().copied().take_while(|&i| i != 0xff).collect());
             at += 4;
         }
-        self.k2 = va(K2_VA, K2_ROWS * 10).map_or(Vec::new(), |b| u16s(b).chunks(5).map(|r| r.iter().copied().take_while(|&i| i != 0xffff).collect()).collect());
+        self.k2 = va(t.k2, K2_ROWS * 10).map_or(Vec::new(), |b| u16s(b).chunks(5).map(|r| r.iter().copied().take_while(|&i| i != 0xffff).collect()).collect());
         self.bindings = self.base_bindings.clone();
         self.compact = self.base_compact.clone();
         self.assigned = None;

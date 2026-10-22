@@ -86,6 +86,11 @@ enum Cmd {
         /// Patch-server connections at once (1..6).
         #[arg(long, default_value_t = 4)]
         connections: usize,
+        /// Only fetch this manifest path (e.g. FFXiMain.dll) into --to, leaving the install alone.
+        #[arg(long)]
+        file: Option<String>,
+        #[arg(long)]
+        to: Option<PathBuf>,
     },
     /// Open the client window and drive it: log in, pick a character, walk, screenshot, log out.
     Play {
@@ -827,7 +832,13 @@ fn main() -> Result<()> {
             let drive = client::Drive { login, character, walk_secs: walk, goto, screenshot, screenshot_after: after, quit, input, chase, ..Default::default() };
             client::run(config::Config::load(), drive)
         }
-        Cmd::Update { dry_run, code, connections } => {
+        Cmd::Update { dry_run, code, connections, file, to } => {
+            if let Some(f) = file {
+                let dir = to.unwrap_or_else(|| PathBuf::from("."));
+                let (out, stamp) = patch::fetch_one(&f, &dir)?;
+                println!("wrote {} (version {stamp})", out.display());
+                return Ok(());
+            }
             let root = config::Config::load().ffxi_dir();
             println!("checking {} against {}:{} ...", root.display(), patch::HOST, patch::PORT);
             let plan = patch::plan(&root, code)?;

@@ -18,12 +18,7 @@ pub const GAIJI_FIRST: i32 = 0x2115;
 pub const GAIJI_END: i32 = 0x2126;
 /// Width table for glyph indices below this; the rest advance 14.
 const WIDTHS_LEN: usize = 0x440;
-/// FFXiMain.dll file offsets (.data VA 0x103607b0, .rdata VA 0x10327d98, .data VA 0x1037e428...).
-const WIDTHS_AT: usize = 0x42bb0;
 const WIDTHS_MD5: &str = "592a3523505144cc5dd1314f41421fca";
-const PNG_FONTS_AT: usize = 0xa198;
-/// Per language (0 ja, 1 en, 2 fr, 3 de; FUN_10250de0): table whose first u32 is the menu DAT id.
-const MENU_TABLE_AT: [usize; 4] = [0x60828, 0x60280, 0x600d0, 0x60438];
 
 /// Config "font" setting (DAT_10444188): 0 the DXT3 atlas, 1 / 2 the PNG atlases (FUN_10119400).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -212,12 +207,13 @@ fn decode_png(data: &[u8]) -> Result<Texture> {
 impl Font {
     /// `lang`: 0 Japanese, 1 English, 2 French, 3 German (selects the menu DAT, FUN_10250de0).
     pub fn load(index: &DatIndex, ffximain: &[u8], lang: u8, quality: Quality) -> Result<Self> {
-        let widths = ffximain.get(WIDTHS_AT..WIDTHS_AT + WIDTHS_LEN).context("FFXiMain.dll too short")?;
+        let t = super::tables::of(ffximain)?;
+        let widths = ffximain.get(t.widths_at..t.widths_at + WIDTHS_LEN).context("FFXiMain.dll too short")?;
         if hex::encode(Md5::digest(widths)) != WIDTHS_MD5 {
-            bail!("glyph width table at {WIDTHS_AT:#x} does not match this FFXiMain.dll build");
+            bail!("glyph width table at {:#x} does not match this FFXiMain.dll build", t.widths_at);
         }
         let u32_at = |o: usize| u32::from_le_bytes(ffximain[o..o + 4].try_into().unwrap());
-        let table = *MENU_TABLE_AT.get(lang as usize).context("language must be 0..3")?;
+        let table = *t.lang_at.get(lang as usize).context("language must be 0..3")?;
         let menu_id = u32_at(table);
         let menu = index.read(menu_id)?;
         let mut moji = None;
@@ -237,8 +233,8 @@ impl Font {
         }
         let atlas = match quality {
             Quality::Compressed => moji.with_context(|| format!("no font moji in menu DAT {menu_id}"))?,
-            Quality::Uncompressed => decode_png(&index.read(u32_at(PNG_FONTS_AT))?)?,
-            Quality::High => decode_png(&index.read(u32_at(PNG_FONTS_AT + 12))?)?,
+            Quality::Uncompressed => decode_png(&index.read(u32_at(t.png_fonts_at))?)?,
+            Quality::High => decode_png(&index.read(u32_at(t.png_fonts_at + 12))?)?,
         };
         let cell_px = atlas.width / COLUMNS as u32;
         if cell_px == 0 || atlas.height != cell_px * ROWS as u32 {

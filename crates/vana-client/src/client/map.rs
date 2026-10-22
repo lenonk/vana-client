@@ -7,8 +7,7 @@ use crate::dat::DatIndex;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
-/// Region table: 14-byte records from 0x10376010, ended by a record with scale (+5) 0.
-const REGIONS_VA: u32 = 0x1037_6010;
+// Region table (dat::tables): 14-byte records ended by a record with scale (+5) 0.
 const REGIONS_MAX: usize = 765;
 /// The "no map" image m_000_00 (FUN_101ef690's fallback).
 const NO_MAP: u32 = 0x1592;
@@ -41,7 +40,8 @@ pub enum Need {
 }
 
 pub fn regions(ffximain: &[u8]) -> Vec<Region> {
-    let Some(b) = crate::dat::battle::va_bytes(ffximain, REGIONS_VA, REGIONS_MAX * 14) else { return Vec::new() };
+    let Some(at) = crate::dat::tables::of(ffximain).map_err(|e| log::warn!("map regions: {e:#}")).ok().map(|t| t.regions) else { return Vec::new() };
+    let Some(b) = crate::dat::battle::va_bytes(ffximain, at, REGIONS_MAX * 14) else { return Vec::new() };
     let s16 = |r: &[u8], o: usize| i16::from_le_bytes([r[o], r[o + 1]]);
     b.chunks(14)
         .map(|r| Region { zone: s16(r, 0), key: r[2] as i8, flags: r[4], scale: r[5] as i8, ki: r[6] as i8, file: s16(r, 8), ox: s16(r, 10), oy: s16(r, 12) })

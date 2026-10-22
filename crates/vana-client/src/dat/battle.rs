@@ -20,13 +20,8 @@ const SLOT_SYSTEM: usize = 0x65; // kind 6: s2c 0x053 (FUN_10094d20(6, n))
 /// Status names (grammar kind 0x13, FUN_1021d5f0); file inferred from content, slot not traced.
 const STATUS_FILE: u32 = 55725;
 
-/// Mode tables (1024 bytes each, by message id) in FFXiMain .data, in FUN_1009cda0's order.
-const MODE_TABLES: [u32; 7] = [0x1034_d360, 0x1034_cf60, 0x1034_d760, 0x1034_db60, 0x1034_df60, 0x1034_e360, 0x1034_e760];
-/// Mode -> colour id {u16 mode, u8 colour, u8 group} (zero-terminated), colour id -> BGRA {u32 id, u32 colour}.
-const FILTER_KINDS: u32 = 0x1035_0a60;
-const FILTER_TABLES: u32 = 0x1035_1bbc;
-const MODE_COLOURS: u32 = 0x1036_2b50;
-const PALETTE: u32 = 0x1036_29c0;
+// Mode tables (1024 bytes each, by message id, FUN_1009cda0's order), mode -> colour id {u16 mode, u8 colour,
+// u8 group} (zero-terminated), colour id -> BGRA {u32 id, u32 colour}: located by dat::tables.
 /// FUN_1009cda0 returns 0xC8 for lines that are not shown.
 pub const HIDDEN: u8 = 0xC8;
 
@@ -128,26 +123,25 @@ impl BattleText {
         let dialog = |slot| -> Result<Dialog> { Dialog::parse(&index.read(file(slot)?)?) };
         let msgs = |id: u32| Messages::load(index, id).map_err(|e| log::warn!("names {id}: {e:#}")).ok();
         let basic = dialog(SLOT_BASIC).context("battle messages")?;
-        let modes = MODE_TABLES.iter().map(|&va| va_bytes(ffximain, va, 1024).and_then(|b| b.try_into().ok()).context("mode table")).collect::<Result<Vec<[u8; 1024]>>>()?;
+        let t = super::tables::of(ffximain)?;
+        let modes = t.mode_tables.iter().map(|&va| va_bytes(ffximain, va, 1024).and_then(|b| b.try_into().ok()).context("mode table")).collect::<Result<Vec<[u8; 1024]>>>()?;
         let mut mode_colours = Vec::new();
-        let mut at = MODE_COLOURS;
+        let mut at = t.mode_colours;
         while let Some(e) = va_bytes(ffximain, at, 4).filter(|e| e[0] | e[1] != 0) {
             mode_colours.push((u16::from_le_bytes([e[0], e[1]]), e[2]));
             at += 4;
         }
         let mut palette = Vec::new();
-        let mut at = PALETTE;
+        let mut at = t.palette;
         while let Some(e) = va_bytes(ffximain, at, 8).filter(|e| e[0] != 0) {
             palette.push((e[0], [e[4], e[5], e[6], e[7]]));
             at += 8;
         }
-        let filter_kinds = va_bytes(ffximain, FILTER_KINDS, 1024).map(<[u8]>::to_vec).unwrap_or_default();
-        let filter_tables = (0..11)
-            .filter_map(|i| {
-                let p = va_bytes(ffximain, FILTER_TABLES + i * 4, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))?;
-                let t = va_bytes(ffximain, p, 49 * 4)?;
-                Some(t.chunks(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect())
-            })
+        let filter_kinds = va_bytes(ffximain, t.filter_kinds, 1024).map(<[u8]>::to_vec).unwrap_or_default();
+        let filter_tables = t
+            .filter_tables
+            .iter()
+            .filter_map(|&p| Some(va_bytes(ffximain, p, 49 * 4)?.chunks(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect()))
             .collect();
         Ok(Self {
             filter_kinds,

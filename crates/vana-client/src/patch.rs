@@ -470,6 +470,17 @@ fn produce(s: &mut Session, root: &Path, e: &Entry, a: Action) -> Result<Vec<u8>
     Ok(data)
 }
 
+/// The current version of one manifest file, written under `dir` at its manifest path (the install untouched).
+pub fn fetch_one(path: &str, dir: &Path) -> Result<(PathBuf, String)> {
+    let manifest = Session::connect()?.manifest()?;
+    let entries = parse_manifest(&String::from_utf8_lossy(&manifest))?;
+    let e = entries.iter().find(|e| e.path.eq_ignore_ascii_case(path)).ok_or_else(|| anyhow!("{path} is not in the manifest"))?;
+    let data = produce(&mut Session::connect()?, dir, e, Action::Direct)?;
+    let out = dir.join(&e.path);
+    write_atomic(&out, &data)?;
+    Ok((out, e.versions.last().map(|v| v.stamp.clone()).unwrap_or_default()))
+}
+
 /// Fetches and writes every planned file on `connections` sessions, then records the manifest. `progress` gets
 /// (files done, bytes done).
 pub fn apply(root: &Path, plan: &Plan, connections: usize, progress: &(dyn Fn(usize, u64) + Sync)) -> Result<()> {

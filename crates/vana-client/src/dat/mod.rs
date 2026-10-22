@@ -122,6 +122,7 @@ pub fn chunks(file: &[u8]) -> Result<Vec<Chunk<'_>>> {
     Ok(out)
 }
 
+pub mod tables;
 pub mod zone;
 pub mod collision;
 pub mod character;

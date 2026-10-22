@@ -5,8 +5,6 @@ use super::{Chunk, chunks};
 use anyhow::{Result, bail};
 use md5::{Digest, Md5};
 
-const KEY1_AT: usize = 0x4CE60;
-const KEY2_AT: usize = 0x4D188;
 const KEY1_MD5: &str = "0bfa75c0e9ff6ff8497b370024b3b148";
 const KEY2_MD5: &str = "44b34e48298e775a58552e7d9a8f931c";
 
@@ -24,7 +22,8 @@ impl Keys {
             }
             Ok(t)
         };
-        Ok(Self { t1: table(KEY1_AT, KEY1_MD5)?, t2: table(KEY2_AT, KEY2_MD5)? })
+        let t = super::tables::of(dll)?;
+        Ok(Self { t1: table(t.key1_at, KEY1_MD5)?, t2: table(t.key2_at, KEY2_MD5)? })
     }
 }
 

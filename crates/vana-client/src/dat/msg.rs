@@ -5,8 +5,6 @@ use super::DatIndex;
 use super::font::decode_sjis;
 use anyhow::{Context, Result, bail};
 
-/// Language tables of file ids (FUN_10250de0), FFXiMain file offsets: ja, en, fr, de.
-const LANG_TABLE_AT: [usize; 4] = [0x60828, 0x60280, 0x600d0, 0x60438];
 
 /// Group -> language-table slot: the group table at 0x10365f50 names a message object, and
 /// FUN_1014d350 loads each object from FUN_10250e50(slot). Groups 8 and 10 read their slot directly.
@@ -22,9 +20,10 @@ pub fn group_file(ffximain: &[u8], lang: u8, group: u8) -> Option<u32> {
     slot_file(ffximain, lang, GROUP_SLOT.iter().find(|(g, _)| *g == group)?.1)
 }
 
-/// File id in a language's slot table (FUN_10250e50(slot)).
+/// File id in a language's slot table (FUN_10250e50(slot)), the slot numbered as in the 2019 base.
 pub fn slot_file(ffximain: &[u8], lang: u8, slot: usize) -> Option<u32> {
-    let at = LANG_TABLE_AT.get(lang as usize)? + slot * 4;
+    let t = super::tables::of(ffximain).map_err(|e| log::warn!("{e:#}")).ok()?;
+    let at = t.lang_at.get(lang as usize)? + t.slot(slot) * 4;
     Some(u32::from_le_bytes(ffximain.get(at..at + 4)?.try_into().ok()?))
 }
 

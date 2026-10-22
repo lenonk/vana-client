@@ -47,14 +47,9 @@ pub struct GameUiData {
     styles: Vec<UiFile>,
 }
 
-/// Creator stat table (STR DEX VIT AGI INT MND CHR per race and job).
-const STATS_VA: u32 = 0x1037_bb10;
-/// Action command records (12 bytes from 0x103634f8): the help id at +4.
-const CMD_HELP_VA: u32 = 0x1036_34fc;
-const ERRORS_VA: u32 = 0x1034_5800;
-/// "No. of content IDs purchased: %2d", "No. of characters registered: %2d", "(%d more characters can be made.)",
-/// "(%d more character can be made.)".
-const COUNT_FMT_VA: [u32; 4] = [0x1037_c1ac, 0x1037_c188, 0x1037_c164, 0x1037_c140];
+// From FFXiMain (dat::tables): the creator stat table (STR DEX VIT AGI INT MND CHR per race and job), the action
+// command records (12 bytes, the help id at +4), the error table, and the count formats ("No. of content IDs
+// purchased: %2d", "No. of characters registered: %2d", "(%d more characters can be made.)", the singular).
 
 /// A NUL-terminated string in FFXiMain's data.
 fn va_str(ffximain: &[u8], va: u32) -> String {
@@ -76,20 +71,21 @@ impl GameUiData {
         }
         let style = parse(WINDOW_STYLE_BASE)?.libs.into_iter().next().context("window style file has no sprite library")?;
         let font = Font::load(index, ffximain, 1, quality)?;
+        let t = crate::dat::tables::of(ffximain)?;
         let menu_msgs = group_file(ffximain, 1, 0x0e).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("menu messages: {e:#}")).ok());
         let title_msgs = group_file(ffximain, 1, 0x0d).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("title messages: {e:#}")).ok());
-        let cmd_help = crate::dat::battle::va_bytes(ffximain, CMD_HELP_VA, 0x1c * 12).map_or(Vec::new(), |b| b.chunks(12).map(|r| u16::from_le_bytes([r[0], r[1]])).collect());
+        let cmd_help = crate::dat::battle::va_bytes(ffximain, t.cmd_help, 0x1c * 12).map_or(Vec::new(), |b| b.chunks(12).map(|r| u16::from_le_bytes([r[0], r[1]])).collect());
         let lobby_msgs = [1u8, 3, 6, 7, 8, 10, 0x0b, 0x1b]
             .into_iter()
             .filter_map(|g| Some((g, group_file(ffximain, 1, g).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("message group {g:#x}: {e:#}")).ok())?)))
             .collect();
-        let stats = crate::dat::battle::va_bytes(ffximain, STATS_VA, 8 * 6 * 7).map(<[u8]>::to_vec).unwrap_or_default();
+        let stats = crate::dat::battle::va_bytes(ffximain, t.stats, 8 * 6 * 7).map(<[u8]>::to_vec).unwrap_or_default();
         let map_regions = super::map::regions(ffximain);
         let area_names = Messages::load(index, 0xd8aa).map_err(|e| log::error!("area names (group 4): {e:#}")).ok();
-        let errors = crate::dat::battle::va_bytes(ffximain, ERRORS_VA, 16 * 128)
+        let errors = crate::dat::battle::va_bytes(ffximain, t.errors, 16 * 128)
             .map(|b| b.chunks(16).map(|r| std::array::from_fn(|k| u32::from_le_bytes(r[k * 4..k * 4 + 4].try_into().unwrap()))).take_while(|r: &[u32; 4]| r[0] != 9999).collect())
             .unwrap_or_default();
-        let count_fmt = COUNT_FMT_VA.map(|va| va_str(ffximain, va));
+        let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, lobby_msgs, stats, area_names, errors, count_fmt, styles })
     }
