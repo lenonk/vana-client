@@ -146,6 +146,10 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   95/100/105, Taru 82/87/92, Mithra 89/93/97, Galka 92/96/100; monsters 85/100/115/140.
 - Client tick 1/60 s (FUN_10014000). Motion player (update 0x10019ab0): frame += ticks * speed * 0.5 *
   rate, wraps at frames; sampling clamps to the last key (it repeats the first).
+- Rotation keys (FUN_10019d30 -> FUN_10018c20 -> FUN_10018d00 -> FUN_10032400): key floor(f) and the next one; if
+  their dot is < 0 the next is negated, then (1 - t) a + t b. Keys flip sign freely: pugil (model 348) bone 17 does
+  on nearly every frame of idl0, so a plain component lerp passed near zero there and the fins spun (fixed in
+  dat/character.rs Track::sample and render/anim.rs rot_at; test npc::pugil_keys_take_the_short_way).
 - Motion choice FUN_100c6b70 on status @0x1F: 1 battle stand, 2/3 "cor", 7/33 "rx1", 47 "si1", 63-83
   "ci1", 5/85 riding, fishing "fh1". Else by movement ratio s: s > 1/3 -> walk at 3s if 3s <= 1.5, else
   run at s; s > 1e-4 -> walk at 3s; else stand. Switches blend over 16 ticks (implemented: slerp/lerp of bone poses).

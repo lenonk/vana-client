@@ -37,17 +37,34 @@ const WGSL: &str = r#"
 
 fn fl(i: u32) -> f32 { return bitcast<f32>(data[i]); }
 
-// Channel::at: a constant, or keys clamped to the last and lerped; key offsets count from the animation `an`.
-fn chan(an: u32, c: u32, frame: f32) -> f32 {
+// Channel::pair: the keys either side of `frame` (clamped to the last) and the fraction, a constant twice with 0;
+// key offsets count from the animation `an`.
+fn keys(an: u32, c: u32, frame: f32) -> vec3<f32> {
     let n = data[c];
     let v = data[c + 1u];
-    if (n == 0u) { return bitcast<f32>(v); }
+    if (n == 0u) { return vec3<f32>(bitcast<f32>(v), bitcast<f32>(v), 0.0); }
     let last = n - 1u;
     let f = clamp(frame, 0.0, f32(last));
     let i = min(u32(f), last);
     let j = min(i + 1u, last);
-    let a = fl(an + v + i);
-    return a + (fl(an + v + j) - a) * (f - f32(i));
+    return vec3<f32>(fl(an + v + i), fl(an + v + j), f - f32(i));
+}
+
+fn chan(an: u32, c: u32, frame: f32) -> f32 {
+    let k = keys(an, c, frame);
+    return k.x + (k.y - k.x) * k.z;
+}
+
+// Track::sample's rotation: FUN_10032400 negates the next key when the dot is negative, then lerps.
+fn rot_at(an: u32, tr: u32, frame: f32) -> vec4<f32> {
+    let x = keys(an, tr, frame);
+    let y = keys(an, tr + 2u, frame);
+    let z = keys(an, tr + 4u, frame);
+    let w = keys(an, tr + 6u, frame);
+    let a = vec4<f32>(x.x, y.x, z.x, w.x);
+    var b = vec4<f32>(x.y, y.y, z.y, w.y);
+    if (dot(a, b) < 0.0) { b = -b; }
+    return normalize(mix(a, b, max(max(x.z, y.z), max(z.z, w.z))));
 }
 
 fn qmul(a: vec4<f32>, b: vec4<f32>) -> vec4<f32> {
@@ -94,7 +111,7 @@ fn local_tf(skel: u32, b: u32, job: u32, first: u32, count: u32, q: ptr<function
         let ti = data[a + 2u + b];
         if (ti != 0u) {
             let tr = a + 2u + 256u + (ti - 1u) * 20u;
-            let r = normalize(vec4<f32>(chan(a, tr, frame), chan(a, tr + 2u, frame), chan(a, tr + 4u, frame), chan(a, tr + 6u, frame)));
+            let r = rot_at(a, tr, frame);
             *q = qmul(r, rq);
             *t = rt + vec3<f32>(chan(a, tr + 8u, frame), chan(a, tr + 10u, frame), chan(a, tr + 12u, frame));
         }
@@ -185,7 +202,20 @@ mod tests {
         let to: Vec<(&Animation, f32)> = ch.find_animations("run").into_iter().map(|a| (a, 3.37)).collect();
         let from: Vec<(&Animation, f32)> = ch.find_animations("idl").into_iter().map(|a| (a, 7.5)).collect();
         assert!(!to.is_empty() && !from.is_empty());
-        for (f, t) in [(&from[..], 0.3f32), (&[][..], 0.0)] {
+        check(&gpu, &ch, &to, &from);
+        // Pugil idle: its keys flip sign between frames (the short-way lerp).
+        let Ok(pugil) = crate::dat::npc::load_model(&index, 0x15c) else { return };
+        let pugil = Arc::new(pugil);
+        let idle: Vec<(&Animation, f32)> = pugil.find_animations("idl").into_iter().map(|a| (a, 4.5)).collect();
+        assert!(!idle.is_empty());
+        check(&gpu, &pugil, &idle, &[]);
+    }
+
+    fn check(gpu: &Gpu, ch: &Arc<Character>, to: &[(&Animation, f32)], from: &[(&Animation, f32)]) {
+        for (f, t) in [(from, 0.3f32), (&[][..], 0.0)] {
+            if f.is_empty() && t != 0.0 {
+                continue;
+            }
             let cpu = if f.is_empty() { pose(&ch.skeleton, &to) } else { crate::render::character::pose_blend(&ch, f, &to, t) };
             let mut ga = GpuAnim::new(&gpu);
             ga.begin();

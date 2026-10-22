@@ -158,6 +158,26 @@ pub fn load_npc(index: &DatIndex, look: &NpcLook) -> Result<Character> {
 mod tests {
     use super::*;
 
+    /// Pugil (model 348) keys flip quaternion sign between frames; samples between keys stay on the short arc
+    /// (FUN_10032400), not near zero where the fins spun.
+    #[test]
+    fn pugil_keys_take_the_short_way() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let Ok(ch) = load_model(&index, 0x15c) else { return };
+        let mut flips = 0;
+        for a in &ch.animations {
+            for t in &a.tracks {
+                for f in 0..a.frames.saturating_sub(1) as usize {
+                    let (p, q, m) = (t.sample(f as f32).0, t.sample(f as f32 + 1.0).0, t.sample(f as f32 + 0.5).0);
+                    flips += (p.dot(q) < 0.0) as usize;
+                    let gap = p.angle_between(q);
+                    assert!(p.angle_between(m).max(q.angle_between(m)) <= gap * 0.5 + 1e-3, "{} bone {} frame {f}", a.name, t.bone);
+                }
+            }
+        }
+        assert!(flips > 100, "{flips}");
+    }
+
     #[test]
     fn looks() {
         let hex = |s: &str| (0..20).map(|i| u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap()).collect::<Vec<u8>>();

@@ -262,17 +262,23 @@ pub enum Channel {
 }
 
 impl Channel {
-    fn at(&self, frame: f32) -> f32 {
+    /// The keys either side of `frame` and the fraction between them (a constant twice, fraction 0).
+    fn pair(&self, frame: f32) -> (f32, f32, f32) {
         match self {
-            Channel::Const(v) => *v,
+            Channel::Const(v) => (*v, *v, 0.0),
             Channel::Keys(k) => {
                 let last = k.len() - 1;
                 let f = frame.clamp(0.0, last as f32);
                 let i = (f as usize).min(last);
                 let j = (i + 1).min(last);
-                k[i] + (k[j] - k[i]) * (f - i as f32)
+                (k[i], k[j], f - i as f32)
             }
         }
+    }
+
+    fn at(&self, frame: f32) -> f32 {
+        let (a, b, s) = self.pair(frame);
+        a + (b - a) * s
     }
 }
 
@@ -295,10 +301,14 @@ pub struct Animation {
 
 impl Track {
     pub fn sample(&self, frame: f32) -> (Quat, Vec3, Vec3) {
-        let [x, y, z, w] = [0, 1, 2, 3].map(|i| self.rot[i].at(frame));
+        // FUN_10032400: the next key is negated when the dot is negative, then lerped (keys flip sign freely).
+        let k = self.rot.each_ref().map(|c| c.pair(frame));
+        let f = k.iter().fold(0f32, |m, p| m.max(p.2));
+        let (a, b) = (glam::Vec4::from(k.map(|p| p.0)), glam::Vec4::from(k.map(|p| p.1)));
+        let b = if a.dot(b) < 0.0 { -b } else { b };
         let t = [0, 1, 2].map(|i| self.trans[i].at(frame));
         let s = [0, 1, 2].map(|i| self.scale[i].at(frame));
-        (Quat::from_xyzw(x, y, z, w).normalize(), Vec3::from(t), Vec3::from(s))
+        (Quat::from_vec4(a.lerp(b, f)).normalize(), Vec3::from(t), Vec3::from(s))
     }
 }
 
