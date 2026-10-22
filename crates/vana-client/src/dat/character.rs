@@ -624,6 +624,10 @@ pub struct Character {
     pub motions: crate::motion::MotionNames,
     /// Type-0x07 schedulers of the model files, first file first.
     pub schedulers: Vec<(String, Vec<u8>)>,
+    /// The model's files in load order, and the equipment part files face..range (actor vtable +0x1ec searches
+    /// these; FUN_100cc440 the motion files, then the model's files).
+    pub files: Vec<u32>,
+    pub part_files: Vec<u32>,
     /// PC looks: what picks the battle and event motion files.
     pub pc: Option<super::motionfile::PcMotion>,
     pub log: Vec<String>,
@@ -700,7 +704,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new() };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {
@@ -722,6 +726,8 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
         ch.parts.extend(f.parts);
         ch.textures.extend(f.textures);
         ch.schedulers.extend(f.schedulers);
+        ch.files.push(id);
+        ch.part_files.push(id);
     }
     // Motions are split by region: "xxx0" legs (skeleton file), "xxx1" upper body, "xxx2" skirt bones
     // 38-47. Client (FUN_100d0dc0 / FUN_100d0d00): upper = skeleton + 1 + sub info[5],

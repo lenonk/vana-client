@@ -1503,6 +1503,40 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
     }
 }
 
+/// The world's actors as the effect system sees them (fx::Actors): placements, rest-pose attach points, files.
+struct FxActors<'a> {
+    actors: &'a HashMap<u32, Actor>,
+    places: &'a HashMap<u32, Place>,
+}
+
+impl crate::fx::Actors for FxActors<'_> {
+    fn matrix(&self, id: u32) -> Option<glam::Mat4> {
+        let p = self.places.get(&id)?;
+        Some(actor_matrix(p.pos, p.forward))
+    }
+
+    fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+        let a = self.actors.get(&id)?;
+        let ch = a.character.as_ref()?;
+        let (bone, off) = ch.skeleton.points.get(k as usize)?;
+        a.rest.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)
+    }
+
+    fn scale(&self, id: u32) -> f32 {
+        self.actors.get(&id).map_or(1.0, |a| a.scale)
+    }
+
+    fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+        let Some(a) = self.actors.get(&id) else { return (Vec::new(), Vec::new()) };
+        let Some(ch) = a.character.as_ref() else { return (Vec::new(), Vec::new()) };
+        (ch.part_files.clone(), a.extra.iter().rev().map(|(_, f)| f.id).chain(ch.files.iter().copied()).collect())
+    }
+
+    fn hidden(&self, id: u32) -> bool {
+        self.actors.get(&id).is_none_or(|a| a.vanished())
+    }
+}
+
 /// Loaded looks kept while no actor wears them.
 const MODEL_CACHE: usize = 96;
 
@@ -2511,6 +2545,9 @@ impl App {
                 match result {
                     Ok(ch) => {
                         let ch = Arc::new(ch);
+                        // Its files' effect schedulers and generators, ahead of the first action.
+                        let files: Vec<u32> = ch.files.iter().chain(&ch.part_files).copied().collect();
+                        world.effects.preload(&files);
                         for a in world.actors.values_mut().filter(|a| a.key == key) {
                             a.character = Some(ch.clone());
                             a.gpu = None;
@@ -2545,6 +2582,9 @@ impl App {
                         if let Some(z) = zone_fx {
                             if let Some(keys) = self.keys_table.clone() {
                                 world.effects.set_keys(keys);
+                            }
+                            if let Some(index) = world.index.clone() {
+                                world.effects.set_index(index);
                             }
                             world.effects.load_zone(z);
                             world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
@@ -4428,8 +4468,9 @@ impl App {
                         draw_distance: 2000.0,
                         area_light: Vec3::ONE,
                     };
+                    let fa = FxActors { actors: &w.actors, places: &places };
                     perf::timed(|| "effects".into(), || {
-                        w.effects.tick(&f);
+                        w.effects.tick(&f, &fa);
                         eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f);
                     });
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));

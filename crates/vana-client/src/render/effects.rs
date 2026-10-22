@@ -551,7 +551,7 @@ mod tests {
             let mut view_rot = view;
             view_rot.w_axis = glam::Vec4::W;
             let f = Frame { dt: 1.37, seconds: 1.37 / 60.0, dayfrac: 0.2 + tick as f32 * 0.01, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE };
-            fx.tick(&f);
+            fx.tick(&f, &crate::fx::NoActors);
             for wr in &fx.writes {
                 match wr {
                     Write::Full(e, el) => {

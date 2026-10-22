@@ -6,6 +6,8 @@ pub mod elem;
 pub mod emit;
 pub mod lib;
 pub mod math;
+pub mod sched;
+mod tasks;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
 use crate::dat::zone;
@@ -17,6 +19,41 @@ use std::sync::Arc;
 
 /// (library, tree node).
 pub type Ref = (usize, usize);
+
+/// What the effect system asks of the world's actors (CXiActor vtable +0x1c4, +0x1ec, FUN_100cc440).
+pub trait Actors {
+    /// Placement: rotation and translation (model space faces +x).
+    fn matrix(&self, id: u32) -> Option<Mat4>;
+    /// Attach point `k` in model space, model scale included.
+    fn point(&self, id: u32, k: u16) -> Option<Vec3>;
+    /// The size the scale vectors read (vtable +0x98 / +0x9c *(inf: the model scale)*).
+    fn scale(&self, id: u32) -> f32;
+    /// Equipment part files (vtable +0x1ec), and the motion files newest first followed by the model's files.
+    fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>);
+    /// Hidden actors (+0xb2 bit 1) get no attached effects.
+    fn hidden(&self, id: u32) -> bool;
+}
+
+/// No actors (offscreen shots).
+pub struct NoActors;
+
+impl Actors for NoActors {
+    fn matrix(&self, _: u32) -> Option<Mat4> {
+        None
+    }
+    fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+        None
+    }
+    fn scale(&self, _: u32) -> f32 {
+        1.0
+    }
+    fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+        (Vec::new(), Vec::new())
+    }
+    fn hidden(&self, _: u32) -> bool {
+        false
+    }
+}
 
 /// What an element draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -75,6 +112,8 @@ pub enum Owner {
     /// The weather set (index into Effects::weathers' serials).
     Weather(u32),
     Element(usize),
+    /// A scheduler task (op 0x02).
+    Task(usize),
 }
 
 /// A running generator (the CMoGenerator object, or a CMoGeneratorClone of it): its own copy of the streams
@@ -110,6 +149,8 @@ pub struct Instance {
     pub finished: bool,
     pub owner: Owner,
     pub parent_elem: Option<u32>,
+    /// Actor1 / actor2 (gen +0x30: +0x3c / +0x40).
+    pub actors: [sched::Who; 2],
 }
 
 /// A word range of an element for the GPU this frame.
@@ -182,6 +223,10 @@ impl Registry {
             logged: HashSet::new(),
             missed: HashSet::new(),
         }
+    }
+
+    pub fn lib_of(&self, file_id: u32) -> Option<usize> {
+        self.by_file.get(&file_id).copied()
     }
 
     fn add(&mut self, l: Library) -> usize {
@@ -352,6 +397,18 @@ pub struct Effects {
     /// Weather objects (YmCombineWeather), oldest first.
     weathers: Vec<WeatherSet>,
     weather_serial: u32,
+    tasks: Vec<Option<sched::Task>>,
+    /// The task being run (its slot is empty meanwhile).
+    stepping: Option<usize>,
+    dolls: Vec<tasks::Doll>,
+    pending: Vec<tasks::Pending>,
+    /// Actor +0xa0: the cast 4cc stored by FUN_10083d60.
+    casting: HashMap<u32, u32>,
+    sched_cache: HashMap<Ref, std::rc::Rc<Vec<sched::SOp>>>,
+    index: Option<Arc<crate::dat::DatIndex>>,
+    loading: HashSet<u32>,
+    load_tx: std::sync::mpsc::Sender<(u32, Option<Library>)>,
+    load_rx: std::sync::mpsc::Receiver<(u32, Option<Library>)>,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -374,6 +431,7 @@ impl Default for Effects {
 
 impl Effects {
     pub fn new() -> Self {
+        let (load_tx, load_rx) = std::sync::mpsc::channel();
         Self {
             reg: Registry::new(),
             insts: Vec::new(),
@@ -388,6 +446,16 @@ impl Effects {
             part_free: vec![(0, MAX_PARTS as u32)],
             weathers: Vec::new(),
             weather_serial: 0,
+            tasks: Vec::new(),
+            stepping: None,
+            dolls: Vec::new(),
+            pending: Vec::new(),
+            casting: HashMap::new(),
+            sched_cache: HashMap::new(),
+            index: None,
+            loading: HashSet::new(),
+            load_tx,
+            load_rx,
         }
     }
 
@@ -414,6 +482,9 @@ impl Effects {
             }
         }
         self.weathers.clear();
+        self.tasks.clear();
+        self.dolls.clear();
+        self.pending.clear();
         let l = self.reg.add(lib);
         self.zone_lib = Some(l);
         self.reg.zone = Some(l);
@@ -538,6 +609,7 @@ impl Effects {
             finished: false,
             owner,
             parent_elem: None,
+            actors: [sched::Who::None; 2],
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -646,7 +718,6 @@ impl Effects {
                 max_life: c.max_life,
                 uv: [0.0; 2],
                 bias: 0.0,
-                inst: c.inst,
             });
             // Op 0x2e / 0x48 with the kill flag: life = 1, so it expires now.
             if r[back::STATUS] & back::KILL != 0 && c.max_life != 0.0 && c.life >= 1.0 {
@@ -656,9 +727,12 @@ impl Effects {
     }
 
     /// One frame: attachments, generator updates and emissions, element lives (FUN_10043ca0) and expiry.
-    pub fn tick(&mut self, f: &Frame) {
+    pub fn tick(&mut self, f: &Frame, actors: &dyn Actors) {
         let dt = f.dt;
         self.weather_step(f.seconds);
+        self.poll_loads();
+        self.run_pending(f, actors);
+        self.step_tasks(f, actors);
         // Lives first, as each element's Exec does before its update stream.
         for e in 0..self.elems.len() {
             let Some(c) = self.elems[e].as_mut() else { continue };
@@ -673,6 +747,13 @@ impl Effects {
         for i in 0..self.insts.len() {
             let Some(inst) = self.insts[i].as_mut() else { continue };
             attach(inst, f);
+            // Generator op 0x11: follow the actors every frame.
+            if let Some(word) = inst.streams[0].iter().find(|o| o.code == 0x11).map(|o| o.u32(1))
+                && !matches!(inst.mode, 0 | 0xe | 0xf | 0x14)
+            {
+                self.follow(i, word, f, actors);
+            }
+            let Some(inst) = self.insts[i].as_ref() else { continue };
             let (m, a, b, wgt, ss, ms) = (inst.matrix, inst.scale_a, inst.scale_b, inst.weather, inst.size_scaled, inst.mslot);
             self.put_slot(ms, m, a, b, wgt, ss);
             self.update_instance(i, f);
@@ -793,7 +874,6 @@ impl Effects {
             max_life: cpu.max_life,
             uv: [elem.f(w::UV), elem.f(w::UV + 1)],
             bias: elem.f(w::BIAS),
-            inst,
         };
         cpu.back = Some(parent);
         self.elems[e as usize] = Some(cpu);
@@ -803,11 +883,33 @@ impl Effects {
         self.writes.push(Write::Full(e, Box::new(elem)));
         for ch in s.children {
             match ch {
-                emit::Child::Clone { src, .. } => {
+                emit::Child::Clone { src, op } => {
+                    // Ops 0x53 / 0x6a: the clone's matrix is the element's rotation (through the emitter's
+                    // rotation, and the camera's for 0x6a) at the element's world position, its scales the
+                    // element's; 0x44 leaves the clone's own placement.
+                    let (emitter, size, actors) = self.insts[inst].as_ref().map_or((None, Vec3::ONE, [sched::Who::None; 2]), |x| (x.matrix, x.scale_b, x.actors));
                     if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
                         if let Some(x) = self.insts[ci].as_mut() {
                             x.parent_elem = Some(e);
-                            x.matrix = Some(Mat4::from_translation(parent.world));
+                            x.actors = actors;
+                            if op != 0x44 {
+                                let mut m = math::euler(parent.rot);
+                                if let Some(a) = emitter {
+                                    let mut a = a;
+                                    a.w_axis = glam::Vec4::W;
+                                    m = math::then(m, a);
+                                }
+                                if op == 0x6a {
+                                    let [_, _, _, c10] = crate::render::effects::view_set(f.view);
+                                    let mut c = c10;
+                                    c.w_axis = glam::Vec4::W;
+                                    m = math::then(m, c);
+                                }
+                                m.w_axis = parent.world.extend(1.0);
+                                x.matrix = Some(m);
+                                x.scale_a = parent.scale;
+                                x.scale_b = size;
+                            }
                         }
                         if let Some(c) = self.elems[e as usize].as_mut() {
                             c.child = Some(ci);
@@ -892,7 +994,7 @@ impl Effects {
             };
             let pos = c.back.map(|b| b.world).unwrap_or_default();
             out.push(format!(
-                "{i:4} {}/{} {what} blend {:#06x} flags {:#010x} key {:.1} life {:.0}/{:.0} at {:.1},{:.1},{:.1} argb {:08x}",
+                "{i:4} {}/{} {what} blend {:#06x} flags {:#010x} key {:.1} life {:.0}/{:.0} at {:.1},{:.1},{:.1} argb {:08x}{}",
                 path.join("/"),
                 String::from_utf8_lossy(&inst.name),
                 c.blend,
@@ -903,7 +1005,8 @@ impl Effects {
                 pos.x,
                 pos.y,
                 pos.z,
-                c.back.map_or(0, |b| b.color)
+                c.back.map_or(0, |b| b.color),
+                if c.drawn { format!(" drawn scale {:?}", c.back.map(|b| b.scale)) } else { String::new() }
             ));
         }
         out

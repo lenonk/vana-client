@@ -30,7 +30,6 @@ pub struct Parent {
     pub max_life: f32,
     pub uv: [f32; 2],
     pub bias: f32,
-    pub inst: usize,
 }
 
 pub struct Spawn {

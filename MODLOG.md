@@ -2970,3 +2970,38 @@ d3a_particles.md). Summary of what the client does, and where it departs from th
   class-specific ops). Scheduler-started effects (battle, spells) come next (triggers.md).
 - Checks: `zone-shot 232 --effects N --weather fine` (sea layers, entrance shadows, cloud domes, sun, tower and
   wall lamps); live in zone 101 (cloudy dome).
+
+## Effect schedulers: melee sparks, casting, spells (fx/sched.rs, fx/tasks.rs) (2026-10-22)
+
+From triggers.md. Every 0x028 action goes to `Effects::on_action` besides combat.rs (which keeps the motions,
+reactions and battle messages):
+- Categories 1 / 2: the cmd_arg scheduler ("atk0") from the attacker's motion files newest first, then its model
+  files (FUN_100cc440), else DAT 0; actor1 = attacker, actor2 = first target; op 0x24 runs the swing combat.rs
+  picked. Categories 3-6, 11, 13-15: file base (FUN_100a7380) + the first record's animation, loaded in the
+  background, then FUN_10083d60(caster, 0) and its "main". Starts (7-10, 12): the cmd_arg scheduler on the
+  caster itself, "ca??" through FUN_10083d60 (stored 4cc; the next start or the finish runs "st??").
+  Several records outside 14 / 15 run at speed 0.7 (FUN_10055cc0). 0x038 runs its 4cc on the actor.
+- Tasks (CMoSchedularTask): countdown -= ticks, ops run while it is <= 0, each adding wait x speed. Ops: 0x02
+  generator clone on the pair (life = duration x speed, 1 when 0, unless persistent or flag 0x1000; flag 0x1000
+  soft-stops older clones on the pair), 0x1e kill, 0x2d soft stop, 0x03 / 0x73 child, 0x3b and 0x3c
+  call-and-wait, 0x09 on actor2 swapped, 0x57 / 0x85 on actor1, 0x5f kill tasks, 0x24 / 0x5d / 0x5c swings
+  (+0xa0 = 10: the parent resumes 10 ticks early), 0x15 / 0x16 / 0x22 / 0x23 dolls (clones move to the doll),
+  0x17 / 0x18 undo, 0x31 / 0x32 record loop, 0x30 per target, 0x19 effect file by id, 0x3d..0x3e random op,
+  0x6b stack ops with the scheduler variables (0x21..0x39), 0x64 / 0x65 conditional clones of the 0x69..0x6a
+  blocks (else after 0x67).
+- Actor lookups: part files (vtable +0x1ec), then motion and model files; Character now records `files` and
+  `part_files`; actor files load in the background when a model arrives (Effects::preload).
+- Attachment (FUN_1003afd0): modes 1-8, 0xd, 0x10-0x13, 0x16-0x1b with points from the rest pose; 9-0xc (bone
+  matrices) use the point and the actor's rotation *(inf)*; two-point modes set +0x90 and scale A x. Special
+  points 0x30 (actor position *(inf: retail rays to the ground)*), 0x31 / 0x32 (body point 0xd..0x14 nearest the
+  other actor), 0x33 (nearest the eye), the rest point 0 *(inf)*. The matrix is taken at start and again every
+  frame only with generator op 0x11 (lerped by its k, translation bit 0, rotation bit 1).
+- Child clones 0x53 / 0x6a: Euler(element rotation) through the emitter rotation (and c10 for 0x6a) at the
+  element's world position, scales from the element; 0x44 keeps the clone's own placement.
+- Not done: sound ops 0x0a / 0x0b / 0x53 / 0x60 / 0x78 (no positional SE playback yet), colour fades 0x29 /
+  0x2a, op 0x80, weapon ops 0x75 / 0xa3 and their !w schedulers, per-race weapon-skill files (FUN_100d0570),
+  element ops 0x25 / 0x33 / 0x46 (per-frame child emission), the config 0x92 effect filter, scheduler-owned
+  children waits, stores 0x14..0x18.
+- Checks: tests `fist_hit_sparks` (Hume fists on an orc: hit1 g010..g013 at tick 45 = dada 40 + 5; the orc back:
+  hit2 g020..g023), `cure_cast` (ner2 circle, stwh, shwh sparkle, tgt0); `fx-shot 232 --category 1` and
+  `--category 4 --anim 144` (Fire: flare, ring, burst).

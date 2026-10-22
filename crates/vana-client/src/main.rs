@@ -543,6 +543,30 @@ enum Cmd {
     },
     /// Parse a zone's scenery and report how placements, meshes and textures line up.
     ZoneInfo { zone: u32 },
+    /// An action's effects offscreen: a Hume M (fists) at --caster acts on a model-1300 orc at --victim in a
+    /// zone; frames every --every ticks after it starts. Category 1 = melee, else the effect file of --anim.
+    FxShot {
+        zone: u32,
+        #[arg(long)]
+        out: PathBuf,
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        eye: Vec<f32>,
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        caster: Vec<f32>,
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        victim: Vec<f32>,
+        #[arg(long, default_value_t = 1)]
+        category: u8,
+        #[arg(long, default_value_t = 0)]
+        anim: u16,
+        /// Frames to write, and ticks between them.
+        #[arg(long, default_value_t = 6)]
+        frames: u32,
+        #[arg(long, default_value_t = 8)]
+        every: u32,
+        #[arg(long, default_value_t = 12.0)]
+        hour: f32,
+    },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
         zone: u32,
@@ -857,6 +881,7 @@ fn main() -> Result<()> {
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
+        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour } => fx_shot(zone, &out, &eye, &caster, &victim, category, anim, frames, every, hour),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -901,7 +926,7 @@ fn main() -> Result<()> {
                         view_rot.w_axis = glam::Vec4::W;
                         let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE };
                         for _ in 0..ticks {
-                            fx.tick(&f);
+                            fx.tick(&f, &fx::NoActors);
                             let mut e = gpu.device.create_command_encoder(&Default::default());
                             eg.update(gpu, &mut e, &mut fx, &f);
                             gpu.queue.submit([e.finish()]);
@@ -1429,5 +1454,89 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
     }
     let pts: Vec<String> = keep.iter().skip(1).map(|&k| format!("{},{}", cells[k].0, cells[k].1)).collect();
     println!("{}", pts.join(";"));
+    Ok(())
+}
+
+/// Two stand-in actors for fx-shot: fixed placements facing each other, attach points at chest height.
+struct ShotActors {
+    at: [(u32, glam::Vec3, glam::Vec3); 2],
+}
+
+impl fx::Actors for ShotActors {
+    fn matrix(&self, id: u32) -> Option<glam::Mat4> {
+        let (_, p, fwd) = self.at.iter().find(|a| a.0 == id)?;
+        let f = fwd.normalize();
+        Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), p.extend(1.0)))
+    }
+    fn point(&self, _: u32, k: u16) -> Option<glam::Vec3> {
+        // Feet for point 0, chest otherwise *(stand-in, not a skeleton)*.
+        Some(if k == 0 { glam::Vec3::ZERO } else { glam::Vec3::new(0.0, -1.2, 0.0) })
+    }
+    fn scale(&self, _: u32) -> f32 {
+        1.0
+    }
+    fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+        if id == self.at[0].0 { (vec![8392], vec![9672, 7072]) } else { (Vec::new(), vec![1300]) }
+    }
+    fn hidden(&self, _: u32) -> bool {
+        false
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], category: u8, anim: u16, frames: u32, every: u32, hour: f32) -> Result<()> {
+    use glam::Vec3;
+    let cfg = config::Config::load();
+    let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
+    let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
+    let file = index.read(100 + zone)?;
+    let scene = dat::zone::load_scene(&keys, &file)?;
+    let lighting = dat::weather::ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", hour * 60.0)).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));
+    let v3 = |v: &[f32]| Vec3::new(v[0], v[1], v[2]);
+    let (c, t) = (v3(caster), v3(victim));
+    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)] };
+    let mut fx = fx::Effects::new();
+    fx.set_keys(std::sync::Arc::new(keys));
+    fx.set_index(index.clone());
+    fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
+    fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
+    let files = [8392u32, 9672, 7072, 1300];
+    fx.preload(&files);
+    let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim, ..Default::default() };
+    let action = net::action::Action { actor: 0x0001_0001, category, arg: if category == 1 { u32::from_le_bytes(*b"atk0") } else { anim as u32 }, info: 0, targets: vec![net::action::ActionTarget { id: 0x0100_0001, results: vec![result] }] };
+    let camera = render::Camera { eye: v3(eye), target: (c + t) / 2.0 + Vec3::new(0.0, -1.2, 0.0), up: Vec3::NEG_Y, fov_y: 50f32.to_radians() };
+    let paths: Vec<PathBuf> = (0..frames).map(|i| out.with_file_name(format!("{}_{i:02}.png", out.file_stem().unwrap().to_string_lossy()))).collect();
+    let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();
+    let mut eg: Option<render::effects::EffectsGpu> = None;
+    let mut started = false;
+    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+        let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
+        let view = cam.view();
+        let mut view_rot = view;
+        view_rot.w_axis = glam::Vec4::W;
+        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: hour / 24.0, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: Vec3::ONE };
+        if !started {
+            while files.iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+                fx.tick(&f, &actors);
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            fx.on_action(&action, (category == 1).then(|| "ati0".to_string()));
+            started = true;
+        }
+        for _ in 0..every {
+            fx.tick(&f, &actors);
+            let mut e = gpu.device.create_command_encoder(&Default::default());
+            eg.update(gpu, &mut e, &mut fx, &f);
+            gpu.queue.submit([e.finish()]);
+            let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+            eg.after_submit(gpu, &mut fx);
+        }
+        let live: Vec<String> = fx.describe().into_iter().filter(|d| !d.contains(" t_")).collect();
+        println!("{} live, {} tasks: {live:?}", fx.live_count(), fx.task_count());
+        let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
+        eg.draw(gpu, enc, color, depth, &fx, cam.proj(1600.0 / 900.0), [render::NEAR, render::FAR], fog_color, fog);
+    };
+    render::render_pngs_post(&scene, &list, 1600, 900, &|_, _| Vec::new(), &mut post)?;
+    println!("wrote {} frames", paths.len());
     Ok(())
 }

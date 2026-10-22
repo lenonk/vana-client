@@ -214,7 +214,10 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
         }
     }
     let first = a.targets.first().map(|t| t.id);
-    let delay = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
+    let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
+    // The action's schedulers drive its effects (fx/tasks.rs); op 0x24 plays the swing picked here.
+    w.effects.on_action(a, attack.as_ref().map(|(_, n)| n.clone()));
+    let delay = attack.map(|(d, _)| d);
     match delay {
         Some(d) => w.pending.push(Pending { at: Instant::now() + d, messages, reactions }),
         None => {
@@ -267,8 +270,8 @@ fn play(actor: &mut Actor, name: &str, len: f32, speed: f32) {
 
 /// Melee (FUN_100d4600 / FUN_100d46f0): standing (+0xf8 clear) a random "ati?" avoiding the one just
 /// used; moving, the first "atf?" ('r' / 'b' / 'l' by the move direction +0x598; we move forward only).
-/// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs.
-fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<Duration> {
+/// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs, and its name.
+fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String)> {
     let moving = moving(w, actor);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
     let a = w.actors.get_mut(&actor)?;
@@ -292,7 +295,7 @@ fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<Durat
     a.last_attack = name.to_string();
     let len = if m.ticks > 0 { m.ticks as f32 } else { motion_ticks(a, &ch, &m.name, m.speed) };
     play(a, &m.name, len, m.speed);
-    Some(Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0))
+    Some((Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0), a.last_attack.clone()))
 }
 
 /// Damage reaction (FUN_100cbd20): "dfi?" / "dbi?" (front / back) standing, "dfm?" / "dbm?" while
@@ -336,6 +339,7 @@ pub(super) fn die(actor: &mut Actor) {
 /// 0x038 "kesu" (LSB FadeOut before a despawn): DAT 0's scheduler fades the actor to colour 0x808080
 /// alpha 0 over 90 ticks (op 0x29).
 pub(super) fn on_scheduler(w: &mut World, actor: u32, name: [u8; 4]) {
+    w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
     if &name == b"kesu"
         && let Some(a) = w.actors.get_mut(&actor)
     {

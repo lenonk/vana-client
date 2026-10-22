@@ -141,11 +141,13 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
             // The variant's motions and schedulers first so they win by name.
             ch.animations.splice(0..0, f.animations);
             ch.schedulers.splice(0..0, f.schedulers);
+            ch.files.insert(0, id);
             apply_motion_ops(&mut ch, &init);
             return Ok(ch);
         }
         let Some(look) = init.look else { bail!("model {model}: file {id} has no skeleton, PC look or base model") };
         let mut ch = load_character(index, &look)?;
+        ch.files.insert(0, id);
         prefer_size_info(&mut ch, f.info);
         apply_motion_ops(&mut ch, &init);
         ch.log.insert(0, format!("model {model} -> file {id}: init scheduler sets {look:?}"));
@@ -160,7 +162,7 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
         f.animations.len()
     )];
     log.extend(f.warnings);
-    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None };
+    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None, files: vec![id], part_files: Vec::new() };
     ch.merge_size_info(f.info);
     let init = init_scheduler(&file);
     apply_motion_ops(&mut ch, &init);
@@ -250,7 +252,7 @@ mod tests {
     #[test]
     fn size_info_order() {
         let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new() };
-        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None };
+        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new() };
         let mut later = [0xFFu8; 16];
         later[10..14].copy_from_slice(&[85, 100, 115, 140]);
         ch.merge_size_info(Some(later));
