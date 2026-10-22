@@ -19,6 +19,7 @@ mod footsteps;
 mod configui;
 mod configui2;
 mod settings;
+mod updater;
 mod target;
 mod input;
 mod camera;
@@ -1949,6 +1950,9 @@ pub struct App {
     lobby_cfg: Option<configui::ConfigUi>,
     lobby_values: crate::gamecfg::Values,
     lobby_settings: Option<settings::SettingsUi>,
+    /// The start-up update checks (not retail) and the Update window over the title.
+    updates: Option<updater::Shared>,
+    update_ui: Option<updater::UpdateUi>,
     /// UI layout size / window size (Config-tool 0037 / 0038).
     ui_k: (f32, f32),
     /// The offscreen scene target and its scaling pass (background resolution other than the window's).
@@ -2022,6 +2026,11 @@ impl App {
         let phase = Phase::login(&cfg);
         let installed = crate::dat::installed(&cfg.ffxi_dir());
         let monitor = cfg.monitor.clone();
+        // A test drive never checks for updates.
+        let updates = (drive.login.is_none() && cfg.ffxi_dir().join("VTABLE.DAT").is_file()).then(|| {
+            updater::tidy();
+            updater::start(cfg.ffxi_dir())
+        });
         Self {
             cfg,
             drive,
@@ -2084,6 +2093,8 @@ impl App {
             lobby_cfg: None,
             lobby_values: Default::default(),
             lobby_settings: None,
+            updates,
+            update_ui: None,
             ui_k: (1.0, 1.0),
             // FFXI_DEBUG_OVERLAY=1 starts with the F12 lines on (test shots).
             debug_overlay: std::env::var_os("FFXI_DEBUG_OVERLAY").is_some(),
@@ -3484,15 +3495,23 @@ impl App {
                             ("Config", "Change settings."),
                             ("Back", "Return to the previous screen."),
                         ];
+                        const UPDATE: usize = 5;
                         // FUN_10235fa0: while lobycwin (or our settings screen) is up the title takes no input.
-                        let config_open = self.lobby_cfg.is_some() || self.lobby_settings.is_some();
+                        let config_open = self.lobby_cfg.is_some() || self.lobby_settings.is_some() || self.update_ui.is_some();
+                        // Not retail: Update (menu 5) above Select Character while something is out of date.
+                        let upd = self.updates.as_ref().is_some_and(|s| s.lock().unwrap().any());
+                        if !upd && *menu == UPDATE {
+                            *menu = 0;
+                        }
+                        let order: &[usize] = if upd { &[UPDATE, 0, 1, 2, 3, 4] } else { &[0, 1, 2, 3, 4] };
                         if !config_open {
                             ctx.input(|i| {
+                                let at = order.iter().position(|&m| m == *menu).unwrap_or(0);
                                 if i.key_pressed(egui::Key::ArrowDown) {
-                                    *menu = (*menu + 1) % ITEMS.len();
+                                    *menu = order[(at + 1) % order.len()];
                                 }
                                 if i.key_pressed(egui::Key::ArrowUp) {
-                                    *menu = (*menu + ITEMS.len() - 1) % ITEMS.len();
+                                    *menu = order[(at + order.len() - 1) % order.len()];
                                 }
                             });
                         }
@@ -3507,21 +3526,27 @@ impl App {
                             const CHILD: [usize; 5] = [0, 1, 2, 4, 3];
                             // Logos need both the server's bit and the install's (FUN_10235810, simplified).
                             let logos = *expansions & self.installed;
-                            for (i, r) in lu.button_rects(sw, sh, logos).iter().enumerate() {
+                            let mut rects: Vec<(usize, [f32; 4])> = lu.button_rects(sw, sh, logos).into_iter().enumerate().map(|(i, r)| (CHILD[i], r)).collect();
+                            if upd {
+                                rects.extend(lu.update_button_rect(sw, sh, logos).map(|r| (UPDATE, r)));
+                            }
+                            for (m, r) in &rects {
                                 if !config_open && input.pointer.is_some_and(|p| inside(r, p)) {
                                     if input.moved {
-                                        *menu = CHILD[i];
+                                        *menu = *m;
                                     }
                                     if input.clicked {
-                                        chosen = Some(CHILD[i]);
+                                        chosen = Some(*m);
                                     }
                                 }
                             }
                             let child_enabled = CHILD.map(|k| enabled[k]);
-                            let slots = lu.title(sw, sh, Some(CHILD[*menu]), logos, child_enabled);
-                            let help = match (&self.lobby_settings, &self.lobby_cfg) {
-                                (Some(s), _) => s.help(),
-                                (None, Some(c)) => match c.focus() {
+                            let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)));
+                            let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
+                                (Some(u), _, _) => u.help(),
+                                (None, Some(s), _) => s.help(),
+                                (None, None, Some(c)) => match c.focus() {
                                     Some((_, configui::SETTINGS)) => configui::SETTINGS_HELP.to_string(),
                                     // lobyhelp ids 0x24.. (FUN_10236b40) -> group 8 0xf5..0x101 by child.
                                     Some((_, child)) => {
@@ -3535,6 +3560,7 @@ impl App {
                                     }
                                     None => String::new(),
                                 },
+                                _ if *menu == UPDATE => "Update the game files or vana-client.".to_string(),
                                 _ => ITEMS[*menu].1.to_string(),
                             };
                             lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
@@ -3612,15 +3638,56 @@ impl App {
                                     }
                                 }
                             }
+                            if let Some(u) = self.update_ui.as_mut() {
+                                let mut outs = vec![u.poll()];
+                                for ev in input.events.iter() {
+                                    if let egui::Event::Key { key, pressed: true, .. } = ev {
+                                        outs.push(u.key(*key));
+                                    }
+                                }
+                                if let Some(p) = input.pointer {
+                                    outs.push(u.pointer(p, input.moved, input.clicked, sw, sh));
+                                }
+                                u.draw(lu, sw, sh);
+                                for out in outs {
+                                    if let Some(a) = self.audio.as_mut() {
+                                        for x in &out.sounds {
+                                            a.ui(*x);
+                                        }
+                                    }
+                                    // New and changed DATs: the next login opens the index again.
+                                    if out.reload {
+                                        self.index = None;
+                                    }
+                                    if out.restart {
+                                        if let Ok(exe) = std::env::current_exe() {
+                                            let _ = std::process::Command::new(exe).args(std::env::args().skip(1)).spawn();
+                                        }
+                                        self.exit_requested = true;
+                                    }
+                                    if out.closed {
+                                        self.update_ui = None;
+                                        break;
+                                    }
+                                }
+                            }
                         }
                         // FUN_10235ec0 case 5: a disabled button (Create excepted) only buzzes.
-                        if chosen.is_some_and(|i| i != 1 && !enabled[i]) {
+                        if chosen.is_some_and(|i| i < 5 && i != 1 && !enabled[i]) {
                             if let Some(a) = self.audio.as_mut() {
                                 a.ui(crate::audio::Ui::Error);
                             }
                             chosen = None;
                         }
                         match chosen {
+                            Some(UPDATE) => {
+                                if let Some(s) = self.updates.clone() {
+                                    self.update_ui = Some(updater::UpdateUi::open(s, self.cfg.ffxi_dir()));
+                                    if let Some(a) = self.audio.as_mut() {
+                                        a.ui(crate::audio::Ui::Select);
+                                    }
+                                }
+                            }
                             Some(0) => *screen = LobbyScreen::Select,
                             Some(1) => {
                                 *screen = LobbyScreen::Create;

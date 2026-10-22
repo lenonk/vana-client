@@ -58,6 +58,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the
     first, event 0x131 in Port Windurst, ran to its end);
   - Bastok: not reviewed yet.
+- Camera while locked on in combat (user, 2026-10-22): it can't be raised / lowered or zoomed. Raising and lowering
+  should work (check keys_spec / FUN_1001e030's locked branch); zoom while locked is unconfirmed: check the decomp.
 - Other known gaps:
   - magic and ability menus (Ctrl+M/J/W/B);
   - the map's pan, zoom and its actions;

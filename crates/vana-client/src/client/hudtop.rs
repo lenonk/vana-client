@@ -419,8 +419,22 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         let mut ui = super::configui::ConfigUi::default();
         ui.owned = installed.unwrap_or_else(|| crate::dat::installed(&cfg.ffxi_dir()));
         let mut settings = None;
+        let mut update = None;
         for w in spec.split(',').filter(|w| !w.is_empty()) {
             let f: Vec<&str> = w.split(':').collect();
+            // "update[:CURSOR]": the Update window with a sample plan (5321 files, 452 MB).
+            if f[0] == "update" {
+                let entry = crate::patch::Entry { path: "ROM/0/0.DAT".into(), versions: Vec::new() };
+                let todo = vec![(0usize, crate::patch::Action::Direct, 84_910u64); 5321];
+                let plan = crate::patch::Plan { server: crate::patch::ServerVersion { released: 0, label: "empty".into(), version: "30261006_0".into() }, manifest: Vec::new(), entries: vec![entry], todo, current: 44082, skipped_code: 10 };
+                let status = std::sync::Arc::new(std::sync::Mutex::new(super::updater::Status { game: super::updater::Game::Available(plan), client: super::updater::Client::Unavailable(String::new()) }));
+                let mut u = super::updater::UpdateUi::open(status, cfg.ffxi_dir());
+                for _ in 0..f.get(1).and_then(|x| x.parse::<usize>().ok()).unwrap_or(0) {
+                    u.key(egui::Key::ArrowDown);
+                }
+                update = Some(u);
+                continue;
+            }
             if f[0] == "settings" {
                 let mut s = super::settings::SettingsUi::open(&cfg, [width, height]);
                 s.gpus = crate::render::adapter_names(&wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle()), None);
@@ -448,6 +462,10 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         if let Some(s) = &settings {
             s.draw(&mut gu, sw, sh);
             (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
+        }
+        if let Some(u) = &update {
+            u.draw(&mut gu, sw, sh);
+            (bars.help[1], bars.title[1]) = (u.help(), "Update".into());
         }
     }
     if !lobby {

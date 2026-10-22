@@ -28,6 +28,9 @@ pub struct TitleState {
     pub shift: f32,
     /// Per button (object +0x20 + i * 4): disabled ones use the 0x1037bef4 sprite.
     pub enabled: [bool; 5],
+    /// Not retail: the Update button above Select Character, (selected, enabled); `selected` above is ignored
+    /// while it is selected.
+    pub update: Option<(bool, bool)>,
 }
 
 /// Design-space shift that centres the logo art (cell 1 of sprite 0 spans x 80..744).
@@ -56,6 +59,14 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
     // 0xba is the shadow panel behind the five buttons.
     if st.buttons {
         b.push_sprite(lobby, lib, 0xba, (st.shift * sx).trunc(), 0.0, sx, sy, 0xf080_8080, 0);
+        // The Update button gets the same backing: the panel one pitch up, clipped to the button.
+        if st.update.is_some()
+            && let (Some(r), Some((_, uy, _, _)), Some((_, y1, _, _))) = (update_button_rect(lobby, w, h, st.shift), update_button_pos(lobby, w, h, st.shift), first_button_pos(lobby, w, h, st.shift))
+        {
+            b.set_clip(Some(r));
+            b.push_sprite(lobby, lib, 0xba, (st.shift * sx).trunc(), uy - y1, sx, sy, 0xf080_8080, 0);
+            b.set_clip(None);
+        }
     }
     if let Some(c) = lib.sprites.first().and_then(|s| s.cells.first()) {
         b.push_cell_rect(lobby, c, -15.0, -15.0, w / 2.0 + 15.0, h / 2.0 + 15.0, 2.0, 2.0, 0x4080_8080, 0);
@@ -92,11 +103,26 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
             let on = if st.enabled[i] { on } else { off };
             let (cx, cy) = button_pos(m, c, sx, sy, st.shift);
-            let tint = if i == st.selected { 0x8080_5020 } else { 0x8080_8080 };
+            let selected = i == st.selected && !st.update.is_some_and(|u| u.0);
+            let tint = if selected { 0x8080_5020 } else { 0x8080_8080 };
             // The selected child of the active menu sits one pixel up-left (FUN_101155e0).
-            let d = if i == st.selected { -1.0 } else { 0.0 };
+            let d = if selected { -1.0 } else { 0.0 };
             b.push_sprite(lobby, lib, on as usize - 1, cx + d, cy + d, sx, sy, tint, 0);
-            if i == st.selected
+            if i == 0
+                && let Some((upd_sel, upd_on)) = st.update
+                && let (Some(spr), Some((ux, uy, _, _))) = (update_button(lib, "Update", upd_on), update_button_pos(lobby, w, h, st.shift))
+            {
+                let d = if upd_sel { -1.0 } else { 0.0 };
+                for cell in &spr.cells {
+                    b.push_cell(lobby, cell, ux + d, uy + d, sx, sy, if upd_sel { 0x8080_5020 } else { 0x8080_8080 }, 0);
+                }
+                if upd_sel && let Some(anc) = lobby.lib("anc     anc_s") {
+                    let ox = (i16::from_le_bytes([c.head[6], c.head[7]]) + i16::from_le_bytes([m.elements[0].head[6], m.elements[0].head[7]])) as f32;
+                    let oy = (i16::from_le_bytes([c.head[8], c.head[9]]) + i16::from_le_bytes([m.elements[0].head[8], m.elements[0].head[9]])) as f32;
+                    b.push_sprite(lobby, anc, st.cursor_frame % anc.sprites.len().max(1), ux + ox, uy + oy, 1.0, 1.0, 0x8080_8080, 0);
+                }
+            }
+            if selected
                 && let Some(anc) = lobby.lib("anc     anc_s")
             {
                 // Cursor at child pos + child/window header (+6, +8) (FUN_10116b10), unscaled.
@@ -113,9 +139,103 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
     (b, text)
 }
 
+/// keytophd glyphs (x, y, w, h on the sheet), as retail's title buttons cut them: lower case and digits on the
+/// row at y 359 (x-height letters from 364), capitals at 385.
+fn keytop_glyph(c: char) -> Option<[u16; 4]> {
+    let lower = "1234567890:-./@abcdefghijklmnopqrst";
+    let lx = [5, 21, 37, 53, 71, 88, 104, 121, 138, 154, 172, 183, 192, 209, 223, 244, 259, 274, 288, 303, 318, 328, 344, 359, 368, 374, 388, 394, 417, 431, 447, 462, 477, 487, 499];
+    let lw = [8, 13, 13, 15, 13, 13, 14, 14, 14, 15, 5, 4, 16, 13, 20, 13, 14, 13, 13, 13, 9, 14, 12, 4, 3, 13, 4, 20, 12, 14, 13, 13, 9, 11, 11];
+    let i = lower.find(c)?;
+    let (y, h) = match c {
+        'b' | 'd' | 'f' | 'h' | 'k' | 'l' | 'i' | 'j' => (359, 20),
+        't' => (361, 18),
+        'g' | 'p' | 'q' => (364, 20),
+        c if c.is_ascii_lowercase() => (364, 15),
+        _ => (359, 20),
+    };
+    Some([lx[i], y, lw[i], h])
+}
+
+fn keytop_capital(c: char) -> Option<[u16; 4]> {
+    let x = match c {
+        'B' => 137,
+        'C' => 152,
+        'D' => 169,
+        'S' => 405,
+        'U' => 437,
+        _ => return None,
+    };
+    let w = match c {
+        'C' => 15,
+        'D' => 16,
+        _ => 14,
+    };
+    Some([x, 385, w, 20])
+}
+
+/// Not retail: an "Update" title button built as retail builds "Back" (sprite 0x85): the three b1n cells of Select
+/// Character (0x7f), then the caption in keytophd at 0.7, centred, a shadow layer (alpha 49, +2, +2) under the
+/// letters (alpha 192; disabled letters 65, 65, 128).
+pub fn update_button(lib: &SpriteLib, caption: &str, enabled: bool) -> Option<crate::dat::ui::Sprite> {
+    let base = lib.sprites.get(0x7e)?;
+    let shadow = base.cells.iter().find(|c| c.texture.contains("keytophd") && c.colors[0][3] < 0x80)?.clone();
+    let front = base.cells.iter().find(|c| c.texture.contains("keytophd") && c.colors[0][3] >= 0x80)?.clone();
+    let mut cells: Vec<_> = base.cells.iter().filter(|c| c.texture.contains("b1n")).cloned().collect();
+    let glyphs: Vec<[u16; 4]> = caption.chars().filter_map(|c| keytop_capital(c).or_else(|| keytop_glyph(c))).collect();
+    let k = 0.7f32;
+    let total: f32 = glyphs.iter().map(|g| (g[2] as f32 * k).round()).sum();
+    let mut x = ((143.0 - total) / 2.0).round() + 1.0;
+    let mut fronts = Vec::new();
+    for g in &glyphs {
+        let (w, h) = ((g[2] as f32 * k).round(), (g[3] as f32 * k).round());
+        let top = if g[1] >= 385 { 1.0 } else { 1.0 + ((g[1] as f32 - 359.0) * k).round() };
+        let quad = |dx: f32, dy: f32| {
+            let (x0, y0, x1, y1) = ((x + dx) as i16, (top + dy) as i16, (x + dx + w) as i16, (top + dy + h) as i16);
+            [[x0, y0], [x1, y0], [x0, y1], [x1, y1]]
+        };
+        let mut s = shadow.clone();
+        (s.corners, s.uv, s.size) = (quad(2.0, 2.0), [g[0], g[1]], [g[2], g[3]]);
+        cells.push(s);
+        let mut f = front.clone();
+        (f.corners, f.uv, f.size) = (quad(0.0, 0.0), [g[0], g[1]], [g[2], g[3]]);
+        if !enabled {
+            f.colors = [[65, 65, 128, 192]; 4];
+        }
+        fronts.push(f);
+        x += w;
+    }
+    cells.extend(fronts);
+    Some(crate::dat::ui::Sprite { cells })
+}
+
+fn first_button_pos(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<(f32, f32, f32, f32)> {
+    let m = lobby.menu("menu    loby2win")?;
+    let c1 = m.elements.iter().find(|e| e.id == 1)?;
+    let (sx, sy) = (w / 1024.0, h / 768.0);
+    let (x, y) = button_pos(m, c1, sx, sy, shift);
+    Some((x, y, sx, sy))
+}
+
+/// The extra button sits one button pitch above Select Character (children 1 and 2 of loby2win).
+pub fn update_button_pos(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<(f32, f32, f32, f32)> {
+    let m = lobby.menu("menu    loby2win")?;
+    let c1 = m.elements.iter().find(|e| e.id == 1)?;
+    let c2 = m.elements.iter().find(|e| e.id == 2)?;
+    let (sx, sy) = (w / 1024.0, h / 768.0);
+    let (x, y) = button_pos(m, c1, sx, sy, shift);
+    let pitch = ((c2.y - c1.y) as f32 * sy).trunc();
+    Some((x, y - pitch, sx, sy))
+}
+
 /// Child rect = window pos + child offset, then scaled by (sx, sy) (FUN_10235620).
 fn button_pos(m: &Menu, c: &crate::dat::ui::MenuElement, sx: f32, sy: f32, shift: f32) -> (f32, f32) {
     ((((m.elements[0].x + c.x) as f32 + shift) * sx).trunc(), ((m.elements[0].y + c.y) as f32 * sy).trunc())
+}
+
+/// Screen rect of the Update button, for mouse hits.
+pub fn update_button_rect(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<[f32; 4]> {
+    let (x, y, sx, sy) = update_button_pos(lobby, w, h, shift)?;
+    Some([x, y - 4.0 * sy, 143.0 * sx, 24.0 * sy])
 }
 
 /// Screen rects (x, y, w, h) of the five title buttons, for mouse hits.

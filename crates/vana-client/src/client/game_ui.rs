@@ -166,7 +166,12 @@ impl GameUi {
 
     /// The title art; `owned` is the lobby's expansion bitmask (bit 1 Zilart .. bit 11 Adoulin).
     pub fn title(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5]) -> Vec<TextSlot> {
-        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, year: self.year, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled };
+        self.title_update(w, h, selected, owned, enabled, None)
+    }
+
+    /// The title with the Update button above Select Character (selected, enabled).
+    pub fn title_update(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5], update: Option<(bool, bool)>) -> Vec<TextSlot> {
+        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, year: self.year, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update };
         let (b, text) = screens::title_screen(&self.data.lobby, &self.data.style, w, h, &st);
         self.batch = b;
         text
@@ -179,6 +184,10 @@ impl GameUi {
 
     pub fn button_rects(&self, w: f32, h: f32, owned: u32) -> Vec<[f32; 4]> {
         screens::title_button_rects(&self.data.lobby, w, h, Self::shift(owned))
+    }
+
+    pub fn update_button_rect(&self, w: f32, h: f32, owned: u32) -> Option<[f32; 4]> {
+        screens::update_button_rect(&self.data.lobby, w, h, Self::shift(owned))
     }
 
     pub fn text_width(&self, s: &str) -> f32 {
