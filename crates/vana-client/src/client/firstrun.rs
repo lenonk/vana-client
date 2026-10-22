@@ -36,6 +36,8 @@ enum Stage {
 pub enum Action {
     None,
     Quit,
+    /// The download starts in this folder: the config keeps it, so a resumed start finds it.
+    Begin(PathBuf),
     /// Game files are in: load the title.
     Ready,
 }
@@ -44,11 +46,35 @@ pub struct FirstRun {
     game_dir: PathBuf,
     stage: Arc<Mutex<Stage>>,
     progress: Arc<Progress>,
+    /// The folder picker's answer (it runs on its own thread so the window keeps drawing).
+    picked: Arc<Mutex<Option<Option<PathBuf>>>>,
+    picking: bool,
+    /// The finish page's choices (Linux): an application menu entry, a desktop shortcut.
+    menu: bool,
+    shortcut: bool,
+    note: String,
 }
 
 impl FirstRun {
     pub fn new(game_dir: PathBuf) -> Self {
-        Self { game_dir, stage: Arc::new(Mutex::new(Stage::Ask)), progress: Arc::new(Progress::default()) }
+        Self { game_dir, stage: Arc::new(Mutex::new(Stage::Ask)), progress: Arc::new(Progress::default()), picked: Default::default(), picking: false, menu: true, shortcut: false, note: String::new() }
+    }
+
+    /// Where the game files go (the config default, or the folder picked).
+    pub fn game_dir(&self) -> &Path {
+        &self.game_dir
+    }
+
+    fn pick(&mut self) {
+        self.picking = true;
+        let (start, out) = (self.game_dir.clone(), self.picked.clone());
+        std::thread::spawn(move || {
+            let mut dialog = rfd::FileDialog::new().set_title("Install the game files in");
+            if let Some(dir) = start.ancestors().find(|d| d.is_dir()) {
+                dialog = dialog.set_directory(dir);
+            }
+            *out.lock().unwrap() = Some(dialog.pick_folder());
+        });
     }
 
     fn start(&self) {
@@ -75,8 +101,14 @@ impl FirstRun {
             Stage::Done => 2,
             Stage::Failed(_) => 3,
         };
-        if stage == 2 {
+        if stage == 2 && !super::desktop::supported() {
             return Action::Ready;
+        }
+        if let Some(answer) = self.picked.lock().unwrap().take() {
+            self.picking = false;
+            if let Some(dir) = answer {
+                self.game_dir = dir;
+            }
         }
         let failed = match &*self.stage.lock().unwrap() {
             Stage::Failed(e) => e.clone(),
@@ -106,15 +138,37 @@ impl FirstRun {
                                          files are installed and up to date. About 25 GB of free space is needed while it runs.",
                                         self.game_dir.display()
                                     )).size(17.0));
+                                    ui.add_space(6.0);
+                                    if ui.add_enabled(!self.picking, egui::Button::new(egui::RichText::new("Change install folder...").size(15.0))).clicked() {
+                                        self.pick();
+                                    }
                                     ui.add_space(16.0);
                                     ui.horizontal(|ui| {
-                                        if ui.button(egui::RichText::new("Download and install").size(19.0)).clicked() {
+                                        if ui.add_enabled(!self.picking, egui::Button::new(egui::RichText::new("Download and install").size(19.0))).clicked() {
                                             self.start();
+                                            action = Action::Begin(self.game_dir.clone());
                                         }
                                         if ui.button(egui::RichText::new("Quit").size(19.0)).clicked() {
                                             action = Action::Quit;
                                         }
                                     });
+                                }
+                                2 => {
+                                    ui.label(egui::RichText::new("The game files are installed and up to date.").size(17.0));
+                                    ui.add_space(12.0);
+                                    ui.checkbox(&mut self.menu, egui::RichText::new("Add vana-client to the application menu").size(16.0));
+                                    ui.checkbox(&mut self.shortcut, egui::RichText::new("Add a shortcut to the desktop").size(16.0));
+                                    if !self.note.is_empty() {
+                                        ui.label(egui::RichText::new(&self.note).weak());
+                                    }
+                                    ui.add_space(16.0);
+                                    if ui.button(egui::RichText::new("Continue").size(19.0)).clicked() {
+                                        let r = super::desktop::install(self.menu).and_then(|()| if self.shortcut { super::desktop::desktop_shortcut() } else { Ok(()) });
+                                        match r {
+                                            Ok(()) => action = Action::Ready,
+                                            Err(e) => self.note = format!("Could not add it: {e:#}"),
+                                        }
+                                    }
                                 }
                                 1 => {
                                     let p = &self.progress;
@@ -184,5 +238,11 @@ fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
     set(p, "Cleaning up", 0, 0);
     std::fs::remove_dir_all(&dl).with_context(|| format!("removing {}", dl.display()))?;
     let _ = std::fs::remove_dir_all(game_dir.join(".staging"));
+    // The window icon on Wayland needs the entry; hidden from menus until the finish page says otherwise.
+    if super::desktop::supported()
+        && let Err(e) = super::desktop::install(false)
+    {
+        log::warn!("desktop entry: {e:#}");
+    }
     Ok(())
 }

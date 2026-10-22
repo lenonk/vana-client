@@ -21,6 +21,7 @@ mod configui2;
 mod settings;
 mod updater;
 mod firstrun;
+mod desktop;
 mod target;
 mod input;
 mod camera;
@@ -3435,6 +3436,8 @@ impl App {
             match fr.ui(ctx) {
                 firstrun::Action::Quit => self.exit_requested = true,
                 firstrun::Action::Ready => {
+                    // The folder may have been changed in the window: the config keeps it.
+                    self.cfg.game_dir = fr.game_dir().to_path_buf();
                     self.first_run = None;
                     self.index = None;
                     self.keys_table = None;
@@ -3447,6 +3450,12 @@ impl App {
                         log::warn!("saving the config: {e:#}");
                     }
                     self.updates = Some(updater::start(self.cfg.ffxi_dir()));
+                }
+                firstrun::Action::Begin(dir) => {
+                    self.cfg.game_dir = dir;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("saving the config: {e:#}");
+                    }
                 }
                 firstrun::Action::None => {}
             }
