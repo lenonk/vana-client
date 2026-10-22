@@ -13,6 +13,7 @@ mod creatorshot;
 mod dialogshot;
 mod dat;
 mod install;
+mod patch;
 mod motion;
 mod msi_db;
 mod net;
@@ -52,6 +53,19 @@ enum Cmd {
         no_verify: bool,
         #[arg(long)]
         keep_staging: bool,
+    },
+    /// Bring the game files up to the current retail version from the PlayOnline patch server (no login).
+    /// Data files only unless --code (this client reads FFXiMain.dll at decompiled addresses).
+    Update {
+        /// Ask the server and check the files, but download nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Also update executables and libraries.
+        #[arg(long)]
+        code: bool,
+        /// Patch-server connections at once (1..6).
+        #[arg(long, default_value_t = 4)]
+        connections: usize,
     },
     /// Open the client window and drive it: log in, pick a character, walk, screenshot, log out.
     Play {
@@ -785,6 +799,28 @@ fn main() -> Result<()> {
             let input = input.map(|s| client::script::Script::parse(&s, login.as_ref())).transpose()?;
             let drive = client::Drive { login, character, walk_secs: walk, goto, screenshot, screenshot_after: after, quit, input, chase, ..Default::default() };
             client::run(config::Config::load(), drive)
+        }
+        Cmd::Update { dry_run, code, connections } => {
+            let root = config::Config::load().ffxi_dir();
+            println!("checking {} against {}:{} ...", root.display(), patch::HOST, patch::PORT);
+            let plan = patch::plan(&root, code)?;
+            let local = std::fs::read_to_string(root.join(patch::STAMP_FILE)).ok().and_then(|t| patch::parse_manifest(&t).ok()).and_then(|m| m.iter().flat_map(|e| e.versions.iter().map(|v| v.stamp.clone())).max());
+            let bytes: u64 = plan.todo.iter().map(|t| t.2).sum();
+            println!("server version {} ({}), last applied here {}", plan.server.version, plan.server.label, local.as_deref().unwrap_or("none"));
+            println!("{} files listed: {} current, {} to update ({:.1} MB to download), {} code files left as they are", plan.entries.len(), plan.current, plan.todo.len(), bytes as f64 / 1e6, plan.skipped_code);
+            for (i, a, n) in plan.todo.iter().take(20) {
+                println!("  {:?} {} ({n} bytes)", a, plan.entries[*i].path);
+            }
+            if !dry_run && !plan.todo.is_empty() {
+                let total = plan.todo.len();
+                patch::apply(&root, &plan, connections, &|f, b| {
+                    if f % 50 == 0 || f == total {
+                        println!("  {f} / {total} files, {:.1} MB", b as f64 / 1e6);
+                    }
+                })?;
+                println!("updated {total} files to {}", plan.server.version);
+            }
+            Ok(())
         }
         Cmd::Install { source, game_dir, staging, no_verify, keep_staging } => {
             let mut cfg = config::Config::load();

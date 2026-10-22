@@ -3290,3 +3290,30 @@ tunnel's lamplight baked into vertex colours over the whole tunnel.
   missing, so the install is older than the server's data. Needs the game files updated.
 - zone-shot --sched FILE:TAG starts an event scheduler in the effects; FFXI_NEAR=X,Z prints the zone's placement
   bounds and the placements near a point.
+
+## Game file updates (PlayOnline patch protocol; src/patch.rs) (2026-10-22)
+
+Sources: the retail installer bundles PlayOnline (FFXISetup.exe runs PlayOnline/PlayOnlineViewer.msi: pol.exe,
+polcore.dll, app.dll 1.18.0.0, extracted to ~/ffxi/lab/pol/bin). Its code sections are packed (Ghidra finds 6 / 45
+functions), so the protocol facts come from Kuluu's reverse engineering of the self-updated viewer 1.18.15e
+(github.com/jondwillis/kuluu-ffxi, ffxi-install / ffxi-pol; GPL-3.0: read as notes, not copied; their sources cite
+polcore FUN_1003968a.. frames, FUN_10042805 / FUN_10042d91 coders, app FUN_101b68d4 host, FUN_1029c3a8 port). Not yet
+checked against our own decompile *(inferred until then: unpack polcore.dll 1.18.0.0 and confirm)*.
+- Server: pc%03d.pol.com, port 53000 + title; FFXI is title 1: pc001.pol.com:53001, plain TCP, no login. Tags in
+  every client frame: platform "W20\0", title "0001".
+- Frame: u32 total length, MD5(frame[8..])[0..4], "POLP", u32 kind, body. Kinds: 1 hello (body: tags), 2 manifest
+  (status byte 2 then .slc), 3 file request (offset, len <= 0x10000, tags, u32 path length + 1, path, NUL), 4 chunk
+  (offset, len, extra, extra bytes, data), 5 reject, 6 close, 7 version (tags + a 0x40-byte version block; all zero
+  asks for the current version, labelled "empty"), 8 version reply (release time, flags, label + client address in
+  0x40 bytes, u32 length, version string).
+- Manifest (the Viewer's patch.cfg): `file <path> {`, one line per version `stamp len sum md5 <stamp>/Direct/<path>
+  .slc len [<stamp>/Indirect/<path>.olc len]`, `}`, until `end`; paths may hold spaces. Signature: length, bytes
+  summed as signed 8-bit (wrapping i32), MD5 word 0 little-endian as i32.
+- .slc: u32 bit count, LSB-first bits; flag 1 = copy (distance 16, length 8) from the output, 0 = literal byte. .olc
+  against the previous version: 0 literal, 10 output copy, 11 copy from base at output position + i16 offset. A
+  Direct download starts with a flag byte: 1 stored, 3 zlib, else .slc.
+- Per file: newest matching version current = skip; older match with a delta at every later step and the deltas
+  smaller than the whole file = apply them; else the whole file. Every step is checked against its signature.
+- Ours (`vana-client update [--dry-run] [--code] [--connections N]`): data files only by default, since this client
+  reads FFXiMain.dll at decompiled addresses; writes vana-update.cfg (the manifest applied), not the Viewer's
+  patch.cfg / patch.ver.
