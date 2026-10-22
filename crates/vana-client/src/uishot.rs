@@ -106,9 +106,8 @@ pub fn title_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     let lobby = load_ui_full(&index, LOBBY_US)?;
     let style_file = load_ui(&index, WINDOW_STYLE_BASE)?;
     let style = style_file.libs.first().ok_or_else(|| anyhow::anyhow!("window style file has no sprite library"))?;
-    let year = 1970 + (std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() / 31_556_952) as i32;
     let update = std::env::var("FFXI_TITLE_UPDATE").ok().map(|v| (v == "sel", true));
-    let st = TitleState { selected: 0, owned: u32::MAX, year, cursor_frame: 0, buttons: true, shift: 0.0, enabled: [true; 5], update };
+    let st = TitleState { selected: 0, owned: u32::MAX, cursor_frame: 0, buttons: true, shift: 0.0, enabled: [true; 5], update };
     let (batch, text) = title_screen(&lobby, style, width as f32, height as f32, &st);
     for t in &text {
         println!("text slot {:?} at ({:.0}, {:.0}) align {}", t.what, t.x, t.y, t.align);

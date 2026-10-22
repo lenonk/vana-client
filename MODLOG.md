@@ -3317,3 +3317,20 @@ checked against our own decompile *(inferred until then: unpack polcore.dll 1.18
 - Ours (`vana-client update [--dry-run] [--code] [--connections N]`): data files only by default, since this client
   reads FFXiMain.dll at decompiled addresses; writes vana-update.cfg (the manifest applied), not the Viewer's
   patch.cfg / patch.ver.
+
+## Retail FFXiMain 30261006_0 as the baseline; tables found by signature (dat/tables.rs) (2026-10-22)
+
+- The client reads its FFXiMain tables by content now: each has a short hint, unique in both the 2019 base and
+  30261006_0, confirmed by an MD5 over the table (or its stable start). Found once per build (keyed by length and
+  sampled bytes). Hints and MD5s from lab/current/signatures.py. Every address found matches the hand mapping
+  (lab/current/remap.py) in both builds.
+- Fixed distances, true in both builds: model key 1 = key 2 - 0x328 (a second copy of key 1 exists further on);
+  the seven mode tables are the lowest L at [L+0x400, L, L+0x800, L+0xc00, L+0x1000, L+0x1400, L+0x1800]; the
+  eleven filter tables are filter kinds + 0x400 + i * 200 (30261006_0 lists them at file offset 0x343a4);
+  count formats at COUNT_FMT - 0x24 k.
+- Language slots (FUN_10250e50 -> retail FUN_1025b580, table global DAT_10623ed4 -> DAT_10669464): SE inserted
+  slots. 2019 slot s maps to s for s < 0x20, +1 below 0x29, +2 below 0x55, +3 below 0x97, +4 after. From both
+  tables' file ids; checked on retail callers (0x3b -> 0x3d, 0x57 -> 0x5a, 0x5a -> 0x5d, 0x5c -> 0x5f).
+- Title loby2win draw is retail FUN_10240030 (2019 FUN_10235810). It still formats "- %d" / ",  %d" with the
+  year (0x1038869c / 0x10388694) but no longer draws the digit sprites; the art reads "(c) SQUARE ENIX" with no
+  year. Button sprites (0x103885a4 / ac) and logos (0x103885b8) are unchanged.

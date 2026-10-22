@@ -9,8 +9,6 @@ pub const TITLE_BUTTONS: [(u16, u16); 5] = [(0x7f, 0x80), (0x81, 0x82), (0x83, 0
 /// Expansion logos (0-based sprite ids, table 0x1037bf00, 11 x 20 bytes): RoZ, CoP, ToAU, WotG,
 /// ACP, MKD, ASA, Visions, Scars, Heroes of Abyssea, Seekers of Adoulin.
 pub const TITLE_LOGOS: [u16; 11] = [0x8d, 0x9d, 0x9f, 0xac, 0xad, 0xae, 0xaf, 0xb1, 0xb2, 0xb3, 0xb4];
-/// Copyright year digits '0'..'9', ',' and '-' start at sprite 0x91 (FUN_10235810: array + 0x244).
-pub const TITLE_DIGITS: usize = 0x91;
 /// Lobby clear colour when no zone is loaded (FUN_10183ff0(0) -> FUN_100140a0(0x80, 0x80, 0x80)).
 pub const LOBBY_CLEAR: [u8; 3] = [0x80, 0x80, 0x80];
 
@@ -19,7 +17,6 @@ pub struct TitleState {
     pub selected: usize,
     /// Expansions owned, bit i = TITLE_LOGOS[i] (drawn dim 0x50404040 when not owned).
     pub owned: u32,
-    pub year: i32,
     /// Cursor hand animation frame 0..5 (advances every 3 ticks, FUN_10116c00).
     pub cursor_frame: usize,
     /// Draw the five menu buttons (off on the login screen and the lobby sub-screens).
@@ -80,24 +77,8 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
 
     text.extend(push_help_frame(&mut b, lobby, style, w, h));
 
-    // loby2win (FUN_10235810).
+    // loby2win (retail FUN_10240030). The year digits after "(c) 2002" are gone: the art now reads "(c) SQUARE ENIX".
     text.push(TextSlot { what: "ver.<client version>", x: w - 512.0 + 370.0, y: h - 448.0 + 364.0, align: 0 });
-    // "- <year>" after the art's "(c) 2002" (", <year>" up to 2003), from design x 278 at y 608.
-    let year = if st.year > 2003 { format!("- {}", st.year) } else { format!(", {}", st.year) };
-    let mut x = 278.0f32;
-    for ch in year.chars() {
-        let k = match ch {
-            ' ' => {
-                x += 4.0 * sx.max(1.0);
-                continue;
-            }
-            ',' => 10,
-            '-' => 11,
-            d => d.to_digit(10).unwrap_or(0) as usize,
-        };
-        b.push_sprite(lobby, lib, TITLE_DIGITS + k, (x * sx).trunc(), (608.0 * sy).trunc(), sx, sy, 0xff80_8080, 0);
-        x += sprite_width(lib, TITLE_DIGITS + k);
-    }
     if let Some(m) = lobby.menu("menu    loby2win").filter(|_| st.buttons) {
         for (i, &(on, off)) in TITLE_BUTTONS.iter().enumerate() {
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };

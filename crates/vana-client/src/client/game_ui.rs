@@ -99,7 +99,6 @@ pub struct GameUi {
     /// What this frame draws, rebuilt by the UI code each frame.
     batch: UiBatch,
     started: Instant,
-    year: i32,
     /// Images (item icons) waiting for upload, and the names already uploaded.
     pending: Vec<(String, u32, u32, Vec<u8>)>,
     images: std::collections::HashSet<String>,
@@ -146,8 +145,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), year: 1970 + (secs / 31_556_952) as i32, pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default() }
     }
 
     /// Text caret phase: on for half of each second.
@@ -167,7 +165,7 @@ impl GameUi {
 
     /// The title with the Update button above Select Character (selected, enabled).
     pub fn title_update(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5], update: Option<(bool, bool)>) -> Vec<TextSlot> {
-        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, year: self.year, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update };
+        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update };
         let (b, text) = screens::title_screen(&self.data.lobby, &self.data.style, w, h, &st);
         self.batch = b;
         text
