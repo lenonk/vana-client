@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=vana-client
+GenericName=FINAL FANTASY XI client
+Comment=Native FINAL FANTASY XI client for LandSandBoat servers
+Exec=vana-client play
+Icon=vana-client
+Terminal=false
+Categories=Game;RolePlaying;
+StartupWMClass=vana-client

@@ -2339,7 +2339,13 @@ FUN_100a3560 (vtable 0x10322970 slot 0x20). Other actors (vt+0x304 false) only t
   (also without input, not in events) and draws the player between the last two steps (drawn_pos), so the physics is
   retail's at any frame rate. The old per-tick scaling probed 0.0004 down a frame at 300 fps and the player bounced
   on every slope (test stays_grounded_on_a_slope). Downhill at run speed one step in three is still in the air (the
-  ground move never goes down; retail's rule), a 10 Hz wobble of about 0.02.
+  ground move never goes down; retail's rule, asm 0x100a5474: t.y = 0 when t.y > 0, not renormalized), a 10 Hz
+  wobble of about 0.02.
+- Not retail: the player is drawn through 3-step averages of the physics results (drawn_between_steps). Retail draws
+  the collision position each frame (FUN_100a3560 copies +0x5c4 to +0x34 / +0xc4 / +0xd4), so the downhill bob and
+  step-ups show there too. The average is exact on a steady slope (one step, 33 ms, late) and cancels the 3-step bob.
+  Live hill run in East Ronfaure (41, 201) -> (41, 140) and back: drawn y jerk max 0.051 -> 0.0086, camera look
+  0.067 -> 0.0023 (FFXI_TRACE_MOVE now logs the player and camera; scratchpad live/camtrace.py).
 - Free camera look point (FUN_1001e030, loop after LAB_1001e5b7): eases toward the head 0.25 of the gap a tick (whole
   ticks, at least one a frame); ours applies it per tick with powf *(inf)*. The eye's distance spring (6 / 100 / 3,
   _DAT_1031f258 / _DAT_1031f234 / _DAT_1031eba8) is not done: our eye is still the yaw / pitch / distance orbit.

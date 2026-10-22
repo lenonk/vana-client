@@ -1436,9 +1436,29 @@ struct Place {
     size: u8,
 }
 
-/// Where the player is drawn: between the last two physics steps, or where something else just put us.
+/// The application icon (assets/vana-client.png at 256 px) for the window and the task bar.
+fn window_icon() -> Option<winit::window::Icon> {
+    let mut dec = png::Decoder::new(std::io::Cursor::new(&include_bytes!("../../assets/icon-256.png")[..]));
+    dec.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
+    let mut reader = dec.read_info().ok()?;
+    let mut buf = vec![0u8; reader.output_buffer_size()?];
+    let info = reader.next_frame(&mut buf).ok()?;
+    buf.truncate(info.buffer_size());
+    winit::window::Icon::from_rgba(buf, info.width, info.height).ok()
+}
+
+/// Where the player is drawn: between the physics steps (drawn_between_steps), or where something else just put us.
 fn drawn_pos(w: &World) -> Vec3 {
     if w.pos == w.step_to { w.draw_pos } else { w.pos }
+}
+
+/// Not retail (it draws each frame's collision position): the drawn player runs through the averages of three
+/// physics steps, `t` of the way from the older one. Exact on a steady slope, one step late; it cancels the
+/// 3-step bob of running downhill (the ground move stays level, gravity catches up) and spreads step-ups.
+fn drawn_between_steps(h: &[Vec3; 4], t: f32) -> Vec3 {
+    let a = (h[0] + h[1] + h[2]) / 3.0;
+    let b = (h[1] + h[2] + h[3]) / 3.0;
+    a.lerp(b, t)
 }
 
 /// A bound actor draws from its VM body while the event runs (status taken as 0 *(inf)*); otherwise ourselves
@@ -1540,10 +1560,10 @@ struct World {
     unsettled: bool,
     actors: HashMap<u32, Actor>,
     moving: bool,
-    /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the position before
-    /// and after the last step, and the drawn position between them (drawn_pos).
+    /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the last four step
+    /// results (oldest first), the position after the last step, and where the player is drawn (drawn_pos).
     step_ticks: f32,
-    step_from: Vec3,
+    step_hist: [Vec3; 4],
     step_to: Vec3,
     draw_pos: Vec3,
     /// The free camera's look point, eased toward the head (FUN_1001e030).
@@ -2372,7 +2392,7 @@ impl App {
                             actors: HashMap::new(),
                             moving: false,
                             step_ticks: 0.0,
-                            step_from: Vec3::ZERO,
+                            step_hist: [Vec3::ZERO; 4],
                             step_to: Vec3::ZERO,
                             draw_pos: Vec3::ZERO,
                             cam_look: None,
@@ -2981,7 +3001,7 @@ impl App {
         let moving = stepping;
         // Whole retail frames of FUN_100a48d0 / FUN_100a3560; a position set elsewhere starts over from it.
         if world.pos != world.step_to {
-            (world.step_from, world.step_to, world.step_ticks) = (world.pos, world.pos, 0.0);
+            (world.step_hist, world.step_to, world.step_ticks) = ([world.pos; 4], world.pos, 0.0);
         }
         world.step_ticks += dt * 60.0;
         // Speed byte x0.1 = units per second (5.0 for a normal run).
@@ -3010,12 +3030,13 @@ impl App {
                 // A fall goes on without input.
                 world.pos = g.walk_player(from, from, ground::STEP_TICKS);
             }
-            world.step_from = from;
+            world.step_hist = [world.step_hist[1], world.step_hist[2], world.step_hist[3], world.pos];
         }
         world.step_to = world.pos;
-        world.draw_pos = world.step_from.lerp(world.step_to, world.step_ticks / ground::STEP_TICKS);
+        world.draw_pos = drawn_between_steps(&world.step_hist, world.step_ticks / ground::STEP_TICKS);
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && stepping {
-            log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z);
+            let c = Self::camera(world);
+            log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3}) dist {:.3}", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z, world.distance);
         }
         // FUN_1001e030: the look point closes 25 % of the gap to the head a tick *(inf: per tick with powf; retail
         // runs whole ticks, at least one a frame)*; a jump of over 12 units snaps.
@@ -4416,7 +4437,15 @@ impl ApplicationHandler for App {
             .with_fullscreen(fullscreen(mode, [ww, wh], pick_monitor(&self.cfg.monitor, event_loop.primary_monitor(), event_loop.available_monitors(), [ww, wh])))
             .with_decorations(mode == 1)
             .with_visible(false)
-            .with_active(!self.drive.driven());
+            .with_active(!self.drive.driven())
+            .with_window_icon(window_icon());
+        // Wayland ignores window icons: the compositor finds ours through the app id and vana-client.desktop.
+        #[cfg(target_os = "linux")]
+        let attrs = {
+            use winit::platform::{wayland::WindowAttributesExtWayland, x11::WindowAttributesExtX11};
+            let attrs = WindowAttributesExtWayland::with_name(attrs, "vana-client", "vana-client");
+            WindowAttributesExtX11::with_name(attrs, "vana-client", "vana-client")
+        };
         let window = Arc::new(event_loop.create_window(attrs).expect("creating the window"));
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(event_loop.owned_display_handle())));
         let surface = instance.create_surface(window.clone()).expect("creating the surface");
@@ -4681,6 +4710,24 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A steady slope is drawn exactly (one step late); the downhill bob (drops 0.046, 0.083, 0.046 ...) is not.
+    #[test]
+    fn drawn_steps_smooth_the_bob() {
+        let ramp: Vec<Vec3> = (0..6).map(|k| Vec3::new(k as f32 * 0.17, k as f32 * 0.06, 0.0)).collect();
+        let h = [ramp[2], ramp[3], ramp[4], ramp[5]];
+        assert!((drawn_between_steps(&h, 0.5) - ramp[3].lerp(ramp[4], 0.5)).length() < 1e-5);
+        let drops = [0.046f32, 0.083, 0.046, 0.046, 0.083, 0.046, 0.046, 0.083];
+        let mut y = vec![0f32];
+        for d in drops {
+            y.push(y.last().unwrap() + d);
+        }
+        let p: Vec<Vec3> = y.iter().map(|&y| Vec3::new(0.0, y, 0.0)).collect();
+        let drawn: Vec<f32> = (0..5).map(|k| drawn_between_steps(&[p[k], p[k + 1], p[k + 2], p[k + 3]], 0.0).y).collect();
+        for w in drawn.windows(2) {
+            assert!((w[1] - w[0] - 0.175 / 3.0).abs() < 1e-4, "{drawn:?}");
+        }
+    }
 
     #[test]
     fn channel_swap() {

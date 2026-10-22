@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/vana-client.png" alt="vana-client icon" width="160"></p>
+
 # vana-client
 
 A native client for FINAL FANTASY XI, written in Rust, for [LandSandBoat](https://github.com/LandSandBoat/server)
@@ -68,6 +70,15 @@ target/release/vana-client play
 ```
 
 You log in on the game's own login screen. The server address and ports come from the config file.
+
+To add it to your desktop's application menu with its icon, put the binary on your `PATH` and install the desktop
+entry. Wayland compositors find the icon through this entry rather than through the window:
+
+```sh
+install -Dm755 target/release/vana-client ~/.local/bin/vana-client
+install -Dm644 assets/vana-client.desktop ~/.local/share/applications/vana-client.desktop
+install -Dm644 assets/vana-client-512.png ~/.local/share/icons/hicolor/512x512/apps/vana-client.png
+```
 
 To create an account on the server from the command line:
 
