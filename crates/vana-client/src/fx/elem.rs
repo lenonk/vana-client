@@ -47,6 +47,8 @@ pub mod w {
     /// D3b morphs: the five weights +0x194.. (ops 0x1e..0x22) and the previous frame's +0x1a8..
     pub const MORPH_W: usize = 44;
     pub const MORPH_PREV: usize = 49;
+    /// CMoDist +0x194: the view-space shift (emission op 0x32, update op 0x24).
+    pub const DIST_OFF: usize = 41;
     /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
     pub const GROUND: usize = 54;
     pub const SLOTS: usize = 64;
@@ -78,6 +80,8 @@ pub mod dk {
     pub const FLARE: u32 = 4;
     /// A D3b morph (CMoD3bElem); FRAMES holds its key count, SFRAMES its first word in the morph data.
     pub const MORPH: u32 = 5;
+    /// CMoDist (classes2.md 2.1).
+    pub const DIST: u32 = 6;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -228,6 +232,8 @@ pub fn wgsl_consts() -> String {
         ("E_MORPH_W", w::MORPH_W),
         ("E_MORPH_PREV", w::MORPH_PREV),
         ("E_GROUND", w::GROUND),
+        ("E_DIST_OFF", w::DIST_OFF),
+        ("DK_DIST", dk::DIST as usize),
         ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),

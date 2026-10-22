@@ -925,7 +925,7 @@ fn main() -> Result<()> {
                     fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
                     fx.set_weather(&weather, 0.0);
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
-                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+                    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
                         let mut eg = render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
                         let view = cam.view();
                         let mut view_rot = view;
@@ -947,7 +947,7 @@ fn main() -> Result<()> {
                             }
                         }
                         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-                        eg.draw(gpu, enc, (color, depth, [1600, 900]), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                        eg.draw(gpu, enc, (color, depth, [1600, 900]), Some(color_tex), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                     };
                     render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
                 }
@@ -1526,7 +1526,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();
     let mut eg: Option<render::effects::EffectsGpu> = None;
     let mut started = false;
-    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
+    let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>| {
         let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
         let view = cam.view();
         let mut view_rot = view;
@@ -1557,7 +1557,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         let live: Vec<String> = fx.describe().into_iter().filter(|d| !d.contains(" t_") || d.contains("/fses/")).collect();
         println!("{} live, {} tasks: {live:?}", fx.live_count(), fx.task_count());
         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-        eg.draw(gpu, enc, (color, depth, [1600, 900]), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [render::NEAR, render::FAR], fog_color, fog);
+        eg.draw(gpu, enc, (color, depth, [1600, 900]), Some(color_tex), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [render::NEAR, render::FAR], fog_color, fog);
     };
     render::render_pngs_post(&scene, &list, 1600, 900, &|_, _| Vec::new(), &mut post)?;
     println!("wrote {} frames", paths.len());

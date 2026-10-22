@@ -70,7 +70,10 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let res_kind = op1.byte(0x21);
     let name = op1.u32(3);
     // Link step FUN_10047270 / FUN_100485c0: D3m kinds fall back to an MMB of the same name.
-    let draw = if needs_no_resource(res_kind) {
+    let draw = if res_kind == 0x22 && inst.flags & 0x2000_0000 == 0 {
+        // CMoDist (FUN_10051d90); the batched CMoVuDist is not drawn here.
+        Draw::Dist
+    } else if needs_no_resource(res_kind) {
         Draw::None
     } else {
         match remap(res_kind) {
@@ -137,6 +140,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     e.0[w::GEN_BITS] = (inst.de as u32) << 8;
     e.0[w::KIND] = match draw {
         Draw::None => dk::NONE,
+        Draw::Dist => dk::DIST,
         Draw::Mesh(_) => dk::MESH,
         Draw::Morph(id) => {
             e.0[w::FRAMES] = reg.morph_data_of(id).map_or(0, |m| m.k);
@@ -264,6 +268,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set_sf(s + 3, -d.z.atan2(d.x));
             }
             0x0f => e.set_v3(w::SCALE, v3(1)),
+            // vtable +0x34 = FUN_10051dc0 on CMoDist: +0x194 = op+8.
+            0x32 if matches!(draw, Draw::Dist) => e.set(w::DIST_OFF, op.f32(2)),
             // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
             0x8e => {
                 if let Some((p, m)) = inst.ground {

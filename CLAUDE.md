@@ -63,7 +63,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
-    moon, footsteps (sounds, dust, prints) run; left: heat haze, point lights, spline paths, the
+    moon, footsteps (sounds, dust, prints) and heat haze run; left: point lights, spline paths, the
     config 0x92 effect filter;
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.

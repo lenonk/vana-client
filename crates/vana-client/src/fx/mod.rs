@@ -83,6 +83,8 @@ pub enum Draw {
     Sprite(u32),
     /// A registered D3b morph.
     Morph(u32),
+    /// CMoDist (kind 0x22): the background under a diamond redrawn shifted (heat haze).
+    Dist,
 }
 
 /// This frame's inputs.
@@ -1402,6 +1404,7 @@ impl Effects {
                 }
                 Draw::Sprite(id) => format!("sprite {id}"),
                 Draw::Morph(id) => format!("morph {id}"),
+                Draw::Dist => "dist".into(),
                 Draw::None => "none".into(),
             };
             let pos = c.back.map(|b| b.world).unwrap_or_default();

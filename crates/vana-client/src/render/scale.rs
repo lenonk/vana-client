@@ -126,8 +126,8 @@ impl SceneScale {
         Self { pipeline, layout, sampler, uniform, format, target: None }
     }
 
-    /// The offscreen colour and depth views at `size`, made on first use or a size change.
-    pub fn target(&mut self, gpu: &Gpu, size: [u32; 2]) -> (wgpu::TextureView, wgpu::TextureView) {
+    /// The offscreen colour and depth views at `size`, made on first use or a size change, and the colour texture.
+    pub fn target(&mut self, gpu: &Gpu, size: [u32; 2]) -> (wgpu::TextureView, wgpu::TextureView, wgpu::Texture) {
         let size = [size[0].max(1), size[1].max(1)];
         if self.target.as_ref().is_none_or(|t| t.size != size) {
             let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -154,7 +154,7 @@ impl SceneScale {
             self.target = Some(Target { size, tex, view, depth, group });
         }
         let t = self.target.as_ref().unwrap();
-        (t.view.clone(), t.depth.clone())
+        (t.view.clone(), t.depth.clone(), t.tex.clone())
     }
 
     /// Scales the offscreen scene onto `dst` (window size) with a gamma per channel, replacing what is there.
@@ -203,7 +203,7 @@ mod tests {
         let format = wgpu::TextureFormat::Rgba8Unorm;
         let mut s = SceneScale::new(&gpu, format);
         for (src, dst) in [([8, 8], [4, 4]), ([4, 4], [8, 8])] {
-            let (view, _) = s.target(&gpu, src);
+            let (view, _, _) = s.target(&gpu, src);
             let mut enc = gpu.device.create_command_encoder(&Default::default());
             {
                 let _clear = enc.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -233,7 +233,7 @@ mod tests {
             }
         }
         // Checker 8x8 -> 4x4: each output pixel covers two of each.
-        let (view, _) = s.target(&gpu, [8, 8]);
+        let (view, _, _) = s.target(&gpu, [8, 8]);
         let tex_rgba: Vec<u8> = (0..64).flat_map(|i| if (i % 8 + i / 8) % 2 == 0 { [255u8, 255, 255, 255] } else { [0, 0, 0, 255] }).collect();
         let _ = view;
         let tex = &s.target.as_ref().unwrap().tex;

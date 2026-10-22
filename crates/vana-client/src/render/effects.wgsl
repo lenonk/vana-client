@@ -349,6 +349,8 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             // Drag on the slot vector: S *= rec[1]^dt (__CIpow, d3a_particles.md 4.2).
             case 0x2cu: { set_slv3(b, s, slv3(b, s) * pow(opf(r), dt)); }
             case 0x2fu: { set_slv3(b, s, euler(ev3(b, E_ROT)) * slv3(b, s)); }
+            // vtable +0x34(key(t)): CMoDist +0x194 (0 without a keyframe).
+            case 0x24u: { if (el[b + E_KIND] == DK_DIST) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
             case 0x30u, 0x31u, 0x32u: {
                 let k = el[b + E_OP2_SLOT];
                 if (k != NONE) { set_slf(b, k + code - 0x30u, slf(b, s + 2u) + key_t(b, s, t)); }
@@ -757,6 +759,29 @@ fn vs_glare(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -
     return out;
 }
 
+// CMoDist (FUN_100418b0, pass 2): a fan of the cross (0,0,0), (-1,0,0), (0,-1,0), (1,0,0), (0,1,0) through +0xa0
+// with its view translation shifted by (off, off), sampling the scene copy where the unshifted points project;
+// the centre has the element colour (alpha x fade), the tips 0x00808080. Variant 9.
+@vertex
+fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5 || k >= 12u) { return hidden(); }
+    let cross = array<vec3<f32>, 5>(vec3<f32>(0.0), vec3<f32>(-1.0, 0.0, 0.0), vec3<f32>(0.0, -1.0, 0.0), vec3<f32>(1.0, 0.0, 0.0), vec3<f32>(0.0, 1.0, 0.0));
+    let tri = k / 3u;
+    let c = k % 3u;
+    var pi = 0u;
+    if (c == 1u) { pi = tri + 1u; } else if (c == 2u) { pi = (tri + 1u) % 4u + 1u; }
+    let mv = out_mat(o);
+    let vp = (mv * vec4<f32>(cross[pi], 1.0)).xyz;
+    let cl = to_clip(vp, douts[o + 24u]);
+    let off = bitcast<f32>(dels[e * E_WORDS + E_DIST_OFF]);
+    var out = vout(e, vp + vec3<f32>(off, off, 0.0), vec4<f32>(0.0), vec2<f32>(0.0), 9u);
+    out.uv = vec2<f32>(cl.x / cl.w * 0.5 + 0.5, 0.5 - cl.y / cl.w * 0.5);
+    if (pi == 0u) { out.color = out.tf; } else { out.color = vec4<f32>(vec3<f32>(128.0 / 255.0), 0.0); }
+    return out;
+}
+
 // D3b morph (FUN_1003e600): corner k of the element's mesh, its position blended from the key meshes by the
 // normalised weights; colours come doubled from the loader. Variant 7 (8 with the alpha test).
 @vertex
@@ -832,6 +857,12 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
     } else if (variant == 6u) {
         rgb = dd.rgb;
         a = 1.0;
+    } else if (variant == 9u) {
+        // TSS 0x10347f68: colour = texture x diffuse x 2, alpha = diffuse x TFACTOR (0x80, left by pass 1) x 4.
+        var t = textureSample(tex, samp, i.uv).rgb;
+        if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
+        rgb = sat3(2.0 * dd.rgb * t);
+        a = sat(dd.a * (128.0 / 255.0) * 4.0);
     } else if (variant == 7u || variant == 8u) {
         // D3b stages (TSS 0x103470b8): texture x diffuse x 2, then x TFACTOR x 2 (alpha x 4).
         let t = textureSample(tex, samp, i.uv);

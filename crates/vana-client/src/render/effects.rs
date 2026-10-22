@@ -115,6 +115,11 @@ pub struct EffectsGpu {
     mesh_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     sprite_pipes: HashMap<usize, wgpu::RenderPipeline>,
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    /// CMoDist: SRCALPHA / INVSRCALPHA, z write by flag 12.
+    dist_pipes: HashMap<bool, wgpu::RenderPipeline>,
+    /// The scene copy CMoDist samples (MIRROR, linear), remade on a size or format change.
+    scene_copy: Option<(wgpu::Texture, wgpu::BindGroup)>,
+    copy_sampler: wgpu::Sampler,
     /// Lens flares and their glare: additive, no depth test (FUN_1003ddb0, FUN_100125c0).
     flare_pipe: wgpu::RenderPipeline,
     glare_pipe: wgpu::RenderPipeline,
@@ -252,6 +257,7 @@ impl EffectsGpu {
         let mut mesh_pipes = HashMap::new();
         let mut sprite_pipes = HashMap::new();
         let mut morph_pipes = HashMap::new();
+        let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
                 mesh_pipes.insert((class, zwrite), pipe("vs_mesh", &vbuf, class, zwrite));
@@ -272,6 +278,14 @@ impl EffectsGpu {
         let parts = buf("effects particles", MAX_PARTS as u64 * PART_WORDS as u64 * 4, U::STORAGE | U::COPY_DST);
         let staging = (0..STAGES).map(|_| Staging { buf: buf("effects readback", n * BACK_WORDS as u64 * 4, U::MAP_READ | U::COPY_DST), state: 0, ready: Arc::new(AtomicBool::new(false)), words: 0 }).collect();
         let sampler = super::mip_sampler(device);
+        let copy_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("effects scene copy"),
+            address_mode_u: wgpu::AddressMode::MirrorRepeat,
+            address_mode_v: wgpu::AddressMode::MirrorRepeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let white_view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, 1, 1, vec![255; 4]), false);
         let white = Self::tex_group(device, &tex_layout, &sampler, &white_view);
         let table = |label: &str| (buf(label, 1024, U::STORAGE | U::COPY_DST), 1024usize);
@@ -283,6 +297,9 @@ impl EffectsGpu {
             mesh_pipes,
             sprite_pipes,
             morph_pipes,
+            dist_pipes,
+            scene_copy: None,
+            copy_sampler,
             flare_pipe,
             glare_pipe,
             flare_vis,
@@ -523,8 +540,33 @@ impl EffectsGpu {
 
     /// Draws the live elements over the scene (same targets, depth tested, back to front).
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: (&wgpu::TextureView, &wgpu::TextureView, [u32; 2]), fx: &Effects, cam: (Mat4, Mat4, glam::Vec3), clip: [f32; 2], fog_color: [f32; 3], fog: [f32; 2]) {
-        let Some(group) = self.draw_group.as_ref().filter(|_| self.count > 0) else { return };
+    /// `color_tex` is the texture behind `color` (CMoDist copies it; without one, or without COPY_SRC, distortion
+    /// is not drawn).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: (&wgpu::TextureView, &wgpu::TextureView, [u32; 2]), color_tex: Option<&wgpu::Texture>, fx: &Effects, cam: (Mat4, Mat4, glam::Vec3), clip: [f32; 2], fog_color: [f32; 3], fog: [f32; 2]) {
+        if self.draw_group.is_none() || self.count == 0 {
+            return;
+        }
+        let order = fx.draw_order();
+        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| c.draw == Draw::Dist));
+        let copy_src = color_tex.filter(|t| any_dist && t.usage().contains(wgpu::TextureUsages::COPY_SRC));
+        if let Some(t) = copy_src
+            && self.scene_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
+        {
+            let c = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("effects scene copy"),
+                size: t.size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: t.format(),
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &c.create_view(&Default::default()));
+            self.scene_copy = Some((c, g));
+        }
+        let Some(group) = self.draw_group.as_ref() else { return };
         let (color, depth, size) = target;
         let (proj, view, eye) = cam;
         let u = DrawU {
@@ -557,25 +599,43 @@ impl EffectsGpu {
             cp.set_bind_group(0, &fg, &[]);
             cp.dispatch_workgroups(self.count.div_ceil(64), 1, 1);
         }
-        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("effects"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }), stencil_ops: None }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_bind_group(0, group, &[]);
+        let new_pass = |encoder: &mut wgpu::CommandEncoder| {
+            let mut pass = encoder
+                .begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("effects"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                })
+                .forget_lifetime();
+            pass.set_bind_group(0, group, &[]);
+            pass
+        };
+        let mut pass = new_pass(encoder);
         // Unknown modes keep the previous element's blend (additive before the first).
         let mut class = 2usize;
         let mut bound: Option<(bool, usize, bool)> = None;
-        for e in fx.draw_order() {
+        for e in order {
             let Some(c) = fx.elems[e as usize].as_ref() else { continue };
             if e >= self.count {
                 continue;
             }
             let base = e * PER_ELEM;
             match c.draw {
+                // FUN_100418b0 pass 1: the scene so far is copied (retail: the diamond's screen box into a 256x256
+                // texture, a 2002 limit; here the whole target at full size), then the shifted redraw.
+                Draw::Dist => {
+                    let (Some(src), Some((copy, g))) = (copy_src, self.scene_copy.as_ref()) else { continue };
+                    drop(pass);
+                    encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                    pass = new_pass(encoder);
+                    pass.set_pipeline(&self.dist_pipes[&(c.flags & 0x1000 != 0)]);
+                    bound = None;
+                    pass.set_bind_group(1, g, &[]);
+                    pass.draw(0..12, base..base + 1);
+                }
                 Draw::Mesh(id) => {
                     let Some(Some(m)) = self.meshes.get(id as usize) else { continue };
                     class = blend_class(c.blend, !m.mmb).unwrap_or(class);

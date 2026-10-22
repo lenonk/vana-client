@@ -1214,7 +1214,7 @@ pub fn render_pngs_lit(
 
 /// Draws over the scene in each frame (after the zone pass, same targets): gpu, encoder, colour, depth, camera,
 /// lighting.
-pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, &wgpu::TextureView, &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>) + 'a;
+pub type PostDraw<'a> = dyn FnMut(&Gpu, &mut wgpu::CommandEncoder, (&wgpu::TextureView, &wgpu::Texture), &wgpu::TextureView, &Camera, Option<&crate::dat::weather::Lighting>) + 'a;
 
 /// As render_pngs_lit, with `post` drawing over each frame.
 pub fn render_pngs_post(
@@ -1253,7 +1253,7 @@ pub fn render_pngs_post(
         });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
-        post(&gpu, &mut encoder, &view, &depth, camera, lighting.as_ref());
+        post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref());
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },

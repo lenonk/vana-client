@@ -3136,3 +3136,17 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
 - Effect: a keyframe starting at 0 with a base from the emission (e.g. fmrk alpha 0x4e) fades from the base;
   render/effects.wgsl key_t / key_0 / key_n / key_g / key_rep, mirrored in fx/elem.rs update_ref.
 - Drive note: --quit logs out only after the --screenshot shot; a script `shot:` step does not count.
+
+## Distortion / heat haze (CMoDist, kind 0x22; render/effects.rs, vs_dist) (2026-10-22)
+
+From classes2.md section 2.1. Emission op 0x32 (vtable +0x34 = FUN_10051dc0) sets +0x194 = op+8 (element word
+DIST_OFF); update op 0x24 sets it to key(t) (first value S[s+2]; 0 without a keyframe). Draw (FUN_100418b0): the
+cross (0,0,0), (-1,0,0), (0,-1,0), (1,0,0), (0,1,0) through +0xa0 (our draw matrix A); a fan whose view translation
+is shifted by (off, off) (x right, y up) samples the scene where the unshifted points project; centre = element
+colour with alpha x fade, tips 0x00808080; colour = texture x diffuse x 2, alpha = diffuse x 0x80 x 4; SRCALPHA /
+INVSRCALPHA, z test, z write by flag 12, no fog. The effect pass is split at each distortion element and the colour
+target copied first (retail copies the diamond's screen box into a 256x256 texture; here the whole target at full
+size, the 256 cap being a 2002 limit). DAT 214 (zone 114, Eastern Altepa; classes2.md calls it "zone 214")
+`f_ri/weat/heat/dis1`: 21 live elements at 13:00 heat, alpha 0x09..0x1d, off 0.02 (checked with the shift x25: the
+background ghosts up and right). Not done: CMoVuDist (batched), DistModel / DistRing / DistMorph (op-1 flag
+0x100000 on kinds 0x1f / 0x24 / 0x25).

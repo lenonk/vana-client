@@ -4289,10 +4289,10 @@ impl App {
             [0x37, 0x38, 0x39].map(|id| ((base + 1.0 + c(id) / 100.0) / 1.5).max(0.01))
         };
         let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3);
-        let (scene_view, scene_depth) = if scaled {
+        let (scene_view, scene_depth, scene_tex) = if scaled {
             self.scene_scale.get_or_insert_with(|| crate::render::scale::SceneScale::new(&gfx.gpu, gfx.config.format)).target(&gfx.gpu, bg)
         } else {
-            (view.clone(), gfx.depth.clone())
+            (view.clone(), gfx.depth.clone(), frame.texture.clone())
         };
         let m_acquire = Instant::now();
         let mut m_actors = m_acquire;
@@ -4547,7 +4547,7 @@ impl App {
                     }
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-                    eg.draw(&gfx.gpu, &mut encoder, (&scene_view, &scene_depth, bg), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                    eg.draw(&gfx.gpu, &mut encoder, (&scene_view, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
                 // Event crossfade and fades over the scene, under the 2D layer; the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
