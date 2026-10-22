@@ -9,8 +9,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   audio/).
 - `MODLOG.md`: every reverse-engineered fact (FFXiMain addresses, DAT formats, packets), plus what's inferred.
   Read the relevant sections before changing anything, and append what you learn.
-- Game install: `~/ffxi/game/FINAL FANTASY XI`. AshenbubsHD and Remapster DAT packs are installed; the originals
-  and a restore script are in `~/ffxi/dat-backup/`.
+- Game install: `~/ffxi/game/FINAL FANTASY XI`, original DATs from the installer (2026-10-22: the AshenbubsHD and
+  Remapster packs were removed for patching; their files are in `~/ffxi/dat-backup/removed-pack-files`, listed in
+  `manifest.tsv`, to be reapplied by the mod manager).
 - FFXiMain decompile: `~/ffxi/lab/creatorwork/ghidra/all.c` and `all.asm`; unpacked DLL:
   `~/ffxi/lab/compress_re/unpacked/FFXiMain_unpacked.dll`. These stay outside the repo; never commit them.
 - Research specs for upcoming work: `~/ffxi/lab/research/`. `keys_spec.md` covers all 180 key functions.
