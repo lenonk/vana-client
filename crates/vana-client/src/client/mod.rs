@@ -3439,6 +3439,9 @@ impl App {
                     // The folder may have been changed in the window: the config keeps it.
                     self.cfg.game_dir = fr.game_dir().to_path_buf();
                     self.first_run = None;
+                    // Audio opened on the empty folder (and the title music failed): open it on the new files.
+                    self.audio = None;
+                    self.audio_tried = false;
                     self.index = None;
                     self.keys_table = None;
                     self.game_ui_state = LoadState::Idle;
