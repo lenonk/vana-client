@@ -195,7 +195,7 @@ mod tests {
             let out = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
             let rb = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             let mut enc = gpu.device.create_command_encoder(&Default::default());
-            ga.dispatch(&gpu, &mut enc, &out);
+            ga.dispatch(&gpu, &mut enc, &out, true);
             enc.copy_buffer_to_buffer(&out, 0, &rb, 0, size);
             gpu.queue.submit([enc.finish()]);
             rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
@@ -225,7 +225,10 @@ pub struct GpuAnim {
     data_buf: Option<wgpu::Buffer>,
     /// Uploaded sources by Arc address (the Arc is kept so the address stays theirs): skeleton offset and
     /// animation offsets in order.
-    sources: HashMap<usize, (Arc<dyn Any + Send + Sync>, Option<u32>, Vec<u32>)>,
+    /// Uploaded sources by Arc address: skeleton offset, animation offsets, and the end of their words.
+    sources: HashMap<usize, (Arc<dyn Any + Send + Sync>, Option<u32>, Vec<u32>, u32)>,
+    /// Where each animation block (by Packed::key) went: start and end.
+    blocks: HashMap<u64, (u32, u32)>,
     jobs: Vec<u32>,
     job_buf: Option<(wgpu::Buffer, u64)>,
     scratch: Option<(wgpu::Buffer, u64)>,
@@ -252,7 +255,7 @@ pub fn pipeline(device: &wgpu::Device) -> (wgpu::ComputePipeline, wgpu::BindGrou
 impl GpuAnim {
     pub fn new(gpu: &Gpu) -> Self {
         let (pipeline, layout) = gpu.pipes.anim().clone();
-        Self { pipeline, layout, data: Vec::new(), uploaded: 0, data_buf: None, sources: HashMap::new(), jobs: Vec::new(), job_buf: None, scratch: None }
+        Self { pipeline, layout, data: Vec::new(), uploaded: 0, data_buf: None, sources: HashMap::new(), blocks: HashMap::new(), jobs: Vec::new(), job_buf: None, scratch: None }
     }
 
     /// Offsets of a source's skeleton (if any) and animations, uploading them the first time. The loader
@@ -278,14 +281,33 @@ impl GpuAnim {
                     &local
                 }
             };
-            let base = at(&self.data, self.uploaded);
+            let (base, block_end) = match self.blocks.get(&p.key) {
+                Some(&b) => b,
+                None => {
+                    let b = at(&self.data, self.uploaded);
+                    self.data.extend_from_slice(&p.words);
+                    let e = at(&self.data, self.uploaded);
+                    self.blocks.insert(p.key, (b, e));
+                    crate::client::perf::note(|| format!("anim block {} words", p.words.len()));
+                    (b, e)
+                }
+            };
             let offs = p.offsets.iter().map(|o| base + o).collect();
-            self.data.extend_from_slice(&p.words);
-            crate::client::perf::note(|| format!("anim source {} words", p.words.len()));
-            self.sources.insert(key, (keep, s, offs));
+            let end = block_end.max(s.map_or(0, |_| at(&self.data, self.uploaded)));
+            self.sources.insert(key, (keep, s, offs, end));
         }
         let e = &self.sources[&key];
         (e.1, &e.2)
+    }
+
+    /// Adds a model's skeleton and animations ahead of its first job.
+    pub fn register(&mut self, ch: &Arc<Character>) {
+        self.source(Arc::as_ptr(ch) as usize, ch.clone(), Some(&ch.skeleton), &ch.animations, ch.packed.as_deref());
+    }
+
+    /// A registered model's words are all on the GPU.
+    pub fn ready(&self, ch: &Arc<Character>) -> bool {
+        self.sources.get(&(Arc::as_ptr(ch) as usize)).is_some_and(|s| s.3 as usize <= self.uploaded)
     }
 
     /// Starts a frame's jobs.
@@ -305,8 +327,11 @@ impl GpuAnim {
             }
             for f in extra {
                 if let Some(i) = find(&f.animations) {
-                    let (_, offs) = self.source(Arc::as_ptr(f) as usize, f.clone(), None, &f.animations, f.packed.as_deref());
-                    return offs.get(i).copied();
+                    let key = Arc::as_ptr(f) as usize;
+                    self.source(key, f.clone(), None, &f.animations, f.packed.as_deref());
+                    // A motion file whose words are not up yet sits this frame out.
+                    let e = &self.sources[&key];
+                    return if e.3 as usize <= self.uploaded { e.2.get(i).copied() } else { None };
                 }
             }
             None
@@ -341,11 +366,9 @@ impl GpuAnim {
         self.jobs.extend(words);
     }
 
-    /// Uploads new keys and this frame's jobs, then poses them into `pose` (the ZoneRenderer pose buffer).
-    pub fn dispatch(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, pose: &wgpu::Buffer) {
-        if self.jobs.is_empty() {
-            return;
-        }
+    /// Words registered but not yet on the GPU go up (under the frame copy budget, or all with `all`), whether or
+    /// not anything is posed this frame: models wait for theirs before they are drawn.
+    pub fn upload_keys(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, all: bool) {
         let device = &gpu.device;
         // Only new words go up; a bigger buffer takes the old contents by a GPU copy.
         if !self.data.is_empty() || self.data_buf.is_none() {
@@ -361,12 +384,24 @@ impl GpuAnim {
                 }
                 self.data_buf = Some(buf);
             }
-            if !self.data.is_empty() {
-                gpu.queue.write_buffer(self.data_buf.as_ref().unwrap(), (self.uploaded * 4) as u64, bytemuck::cast_slice(&self.data));
-                self.uploaded += self.data.len();
-                self.data.clear();
+            // As much of the tail as the frame's copy budget allows (render/upload.rs).
+            if !self.data.is_empty() && (all || gpu.upload_room() > 0) {
+                let n = if all { self.data.len() } else { (gpu.piece(self.data.len() as u64 * 4, 4) / 4) as usize };
+                gpu.upload(n as u64 * 4, || gpu.queue.write_buffer(self.data_buf.as_ref().unwrap(), (self.uploaded * 4) as u64, bytemuck::cast_slice(&self.data[..n])));
+                self.uploaded += n;
+                self.data.drain(..n);
             }
         }
+    }
+
+    /// Uploads new keys (under the frame copy budget, or all of them with `all`) and this frame's jobs, then
+    /// poses them into `pose` (the ZoneRenderer pose buffer).
+    pub fn dispatch(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, pose: &wgpu::Buffer, all: bool) {
+        self.upload_keys(gpu, encoder, all);
+        if self.jobs.is_empty() {
+            return;
+        }
+        let device = &gpu.device;
         let n = self.jobs.len() / JOB_WORDS;
         let jsize = (self.jobs.len() * 4) as u64;
         if self.job_buf.as_ref().is_none_or(|(_, c)| *c < jsize) {

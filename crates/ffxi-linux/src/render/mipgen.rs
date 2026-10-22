@@ -500,8 +500,10 @@ mod tests {
             let (lw, lh) = ((w >> k).max(1), (h >> k).max(1));
             let (bx, by) = (lw.div_ceil(4), lh.div_ceil(4));
             let got = read(&gpu, &tex, k as u32, bx * 8, by, wgpu::Extent3d { width: bx * 4, height: by * 4, depth_or_array_layers: 1 });
-            let d = worst(&decode_dxt(&got, bx * 4, by * 4, false), &decode_dxt(&want.data[k], bx * 4, by * 4, false));
-            assert!(d <= 12, "BC1 level {k}: {d}");
+            let (a, b) = (decode_dxt(&got, bx * 4, by * 4, false), decode_dxt(&want.data[k], bx * 4, by * 4, false));
+            // A one-step input difference can move a 565 endpoint (8 levels); on average they agree closely.
+            let mean = a.iter().zip(&b).map(|(x, y)| (*x as f32 - *y as f32).abs()).sum::<f32>() / a.len() as f32;
+            assert!(worst(&a, &b) <= 12 && mean <= 1.5, "BC1 level {k}: worst {} mean {mean}", worst(&a, &b));
         }
     }
 }

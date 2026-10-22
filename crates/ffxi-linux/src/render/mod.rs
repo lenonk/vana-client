@@ -2,6 +2,7 @@
 
 pub mod anim;
 pub mod mipgen;
+pub mod upload;
 pub mod character;
 pub mod dancer;
 pub mod ui;
@@ -24,8 +25,9 @@ pub struct Gpu {
     pub adapter: wgpu::Adapter,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-    /// Mip jobs waiting for a frame (render/mipgen.rs).
+    /// Mip jobs waiting for a frame (render/mipgen.rs) and this frame's copy budget (render/upload.rs).
     pub mips: std::sync::Mutex<mipgen::MipGen>,
+    pub uploads: std::sync::Mutex<upload::Budget>,
     pub pipes: std::sync::Arc<PipeCache>,
 }
 
@@ -91,7 +93,7 @@ impl Gpu {
         let required_features = adapter.features() & wgpu::Features::TEXTURE_COMPRESSION_BC;
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, ..Default::default() }))?;
         let pipes = std::sync::Arc::new(PipeCache { device: device.clone(), mips: Default::default(), anim: Default::default(), zone: Default::default() });
-        Ok(Self { instance, adapter, device, queue, mips: Default::default(), pipes })
+        Ok(Self { instance, adapter, device, queue, mips: Default::default(), uploads: Default::default(), pipes })
     }
 
     /// Makes the shared pipelines on a worker thread, so no frame compiles them later.
@@ -217,11 +219,13 @@ pub struct ZoneRenderer {
     anim: anim::GpuAnim,
     /// Skinned models on the GPU by model address (the Arc keeps it), and how many more this frame may add.
     models: HashMap<usize, (std::sync::Arc<crate::dat::character::Character>, ActorGpu)>,
-    new_models: u32,
+    /// Models going up piece by piece, oldest first, and the magenta slot-0 texture of actors.
+    builds: Vec<(usize, Build)>,
+    magenta: wgpu::BindGroup,
     /// A streamed zone (the world's): mips wait for the frame budget, textures and geometry still to go up
     /// (geometry by byte offset), the last mip job of its textures, and (bytes before, RGBA bytes, count) for the log.
     budgeted: bool,
-    pending: std::collections::VecDeque<(usize, crate::dat::zone::Texture)>,
+    pending: std::collections::VecDeque<(usize, crate::dat::zone::Texture, Option<upload::TexUp>)>,
     geo_pending: Option<(std::sync::Arc<ZoneGeometry>, u64)>,
     mips_seq: u64,
     tex_bytes: (u64, u64, usize),
@@ -271,9 +275,6 @@ pub fn mip_sampler(device: &wgpu::Device) -> wgpu::Sampler {
     })
 }
 
-/// New models a frame may upload (their CPU work is done on the loader threads).
-const NEW_MODELS: u32 = 2;
-
 /// Bytes of texture memory uploaded so far (the F12 overlay and zone logs).
 pub static TEXTURE_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -286,7 +287,6 @@ pub fn upload_texture(gpu: &Gpu, t: &crate::dat::zone::Texture, srgb: bool) -> w
 /// sides a multiple of 4), else RGBA. The lower levels are made on the GPU (render/mipgen.rs); returns the view
 /// and the mip job to wait for.
 pub fn upload_texture_seq(gpu: &Gpu, t: &crate::dat::zone::Texture, srgb: bool) -> (wgpu::TextureView, u64) {
-    use mipgen::Kind;
     use wgpu::TextureFormat as F;
     let (w, h) = (t.width, t.height);
     let pick = |s: F, u: F| if srgb { s } else { u };
@@ -305,33 +305,9 @@ pub fn upload_texture_seq(gpu: &Gpu, t: &crate::dat::zone::Texture, srgb: bool) 
         let texture = gpu.device.create_texture_with_data(&gpu.queue, &desc(pick(F::Rgba8UnormSrgb, F::Rgba8Unorm), 1), wgpu::util::TextureDataOrder::LayerMajor, &t.rgba);
         return (texture.create_view(&Default::default()), 0);
     }
-    let bc = gpu.device.features().contains(wgpu::Features::TEXTURE_COMPRESSION_BC) && !UNCOMPRESSED.load(std::sync::atomic::Ordering::Relaxed);
-    let (kind, format, data, row, rows) = match &t.dxt {
-        Some((true, blocks)) if bc && w % 4 == 0 && h % 4 == 0 => (Kind::Bc2, pick(F::Bc2RgbaUnormSrgb, F::Bc2RgbaUnorm), blocks.as_slice(), w / 4 * 16, h / 4),
-        Some((false, blocks)) if bc && w % 4 == 0 && h % 4 == 0 => (Kind::Bc1, pick(F::Bc1RgbaUnormSrgb, F::Bc1RgbaUnorm), blocks.as_slice(), w / 4 * 8, h / 4),
-        _ => (Kind::Rgba, pick(F::Rgba8UnormSrgb, F::Rgba8Unorm), t.rgba.as_slice(), w * 4, h),
-    };
-    let levels = mipgen::level_count(w, h);
-    let texture = gpu.device.create_texture(&desc(format, levels));
-    gpu.queue.write_texture(
-        wgpu::TexelCopyTextureInfo { texture: &texture, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
-        &data[..(row * rows) as usize],
-        wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(rows) },
-        wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-    );
-    let bytes: u64 = (0..levels)
-        .map(|k| {
-            let (lw, lh) = ((w >> k).max(1) as u64, (h >> k).max(1) as u64);
-            match kind {
-                Kind::Rgba => lw * lh * 4,
-                Kind::Bc1 => lw.div_ceil(4) * lh.div_ceil(4) * 8,
-                Kind::Bc2 => lw.div_ceil(4) * lh.div_ceil(4) * 16,
-            }
-        })
-        .sum();
-    TEXTURE_BYTES.fetch_add(bytes, std::sync::atomic::Ordering::Relaxed);
-    let seq = gpu.mips.lock().map(|mut m| m.push(texture.clone(), w, h, kind, !srgb)).unwrap_or(0);
-    (texture.create_view(&Default::default()), seq)
+    let mut up = upload::TexUp::new(gpu, t, srgb);
+    let seq = up.step(gpu, t, true).unwrap_or(0);
+    (up.texture.create_view(&Default::default()), seq)
 }
 
 fn texture_bind_group(gpu: &Gpu, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, w: u32, h: u32, rgba: &[u8]) -> wgpu::BindGroup {
@@ -380,6 +356,60 @@ struct SkinVertex {
     bones: [u32; 2],
     w: [f32; 2],
     uv: [f32; 2],
+}
+
+/// A model's skinned bind-pose corners grouped by texture name, built on the loader thread (Character::skin).
+pub struct SkinMesh {
+    verts: Vec<SkinVertex>,
+    groups: Vec<(String, std::ops::Range<u32>)>,
+    bones: usize,
+}
+
+impl SkinMesh {
+    pub fn build(ch: &crate::dat::character::Character) -> Self {
+        let bones = ch.skeleton.bones.len().min(MAX_BONES);
+        let slot_of = |b: usize| if b < bones { b as u32 } else { bones as u32 };
+        let mut verts: Vec<SkinVertex> = Vec::new();
+        let mut groups = Vec::new();
+        for part in &ch.parts {
+            for g in &part.groups {
+                let start = verts.len() as u32;
+                for t in &g.triangles {
+                    for c in t {
+                        let inf = &part.vertices[c.vertex as usize];
+                        let i0 = inf[0];
+                        let i1 = inf.get(1).copied().unwrap_or_default();
+                        let (w1, b1) = if inf.len() > 1 { (i1.weight, slot_of(i1.bone)) } else { (0.0, bones as u32) };
+                        verts.push(SkinVertex {
+                            p0: i0.pos.to_array(),
+                            n0: i0.normal.to_array(),
+                            p1: i1.pos.to_array(),
+                            n1: i1.normal.to_array(),
+                            bones: [slot_of(i0.bone), b1],
+                            w: [i0.weight, w1],
+                            uv: c.uv,
+                        });
+                    }
+                }
+                groups.push((g.texture.clone(), start..verts.len() as u32));
+            }
+        }
+        if verts.is_empty() {
+            verts.push(SkinVertex::zeroed());
+        }
+        SkinMesh { verts, groups, bones }
+    }
+}
+
+/// A model going up: animations registered, bytes of its vertices in, next texture and the one in progress.
+struct Build {
+    ch: std::sync::Arc<crate::dat::character::Character>,
+    mesh: std::sync::Arc<SkinMesh>,
+    actor: ActorGpu,
+    registered: bool,
+    vert_at: u64,
+    tex: usize,
+    cur: Option<upload::TexUp>,
 }
 
 #[derive(Clone)]
@@ -642,8 +672,7 @@ impl ZoneGeometry {
     }
 }
 
-/// Zone upload bytes a frame while a streamed zone goes up, and mip texels a frame (render/mipgen.rs).
-pub const UPLOAD_BUDGET: u64 = 16 << 20;
+/// Mip texels a frame (render/mipgen.rs).
 pub const MIP_BUDGET: u64 = 4 << 20;
 
 impl ZoneRenderer {
@@ -661,11 +690,11 @@ impl ZoneRenderer {
         r
     }
 
-    /// The world's zone: its geometry and textures go up over frames (upload_step) and its mips under the
-    /// frame budget; ready() once all of it is on the GPU.
+    /// The world's zone: its geometry and textures go up over frames under the copy budget (upload_step) and
+    /// its mips under the mip budget; ready() once all of it is on the GPU.
     pub fn streamed(gpu: &Gpu, geo: std::sync::Arc<ZoneGeometry>, textures: Vec<crate::dat::zone::Texture>, color_format: wgpu::TextureFormat) -> Self {
         let mut r = Self::empty(gpu, &geo, textures.len(), color_format, true);
-        r.pending = textures.into_iter().enumerate().map(|(i, t)| (i + 1, t)).collect();
+        r.pending = textures.into_iter().enumerate().map(|(i, t)| (i + 1, t, None)).collect();
         r.geo_pending = Some((geo, 0));
         r
     }
@@ -687,6 +716,8 @@ impl ZoneRenderer {
         let sampler = mip_sampler(device);
         // Slot 0 is plain white for models whose texture lives elsewhere; the others fill in as they go up.
         let white = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 255, 255, 255]);
+        // Slot 0 of actors: magenta, so a missing texture is obvious.
+        let magenta = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 0, 255, 255]);
         let [v, i, m] = geo.parts().map(|b| b.len() as u64);
         let buffer = |label, size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self {
@@ -699,6 +730,7 @@ impl ZoneRenderer {
             uniforms,
             globals,
             textures: vec![white; textures + 1],
+            magenta,
             instances: buffer("instances", m, wgpu::BufferUsages::VERTEX),
             vertices: buffer("scenery vertices", v, wgpu::BufferUsages::VERTEX),
             indices: buffer("scenery indices", i, wgpu::BufferUsages::INDEX),
@@ -710,7 +742,7 @@ impl ZoneRenderer {
             pose_frame: 0,
             anim: anim::GpuAnim::new(gpu),
             models: HashMap::new(),
-            new_models: NEW_MODELS,
+            builds: Vec::new(),
             budgeted,
             pending: std::collections::VecDeque::new(),
             geo_pending: None,
@@ -725,7 +757,11 @@ impl ZoneRenderer {
 
     fn put_texture(&mut self, gpu: &Gpu, slot: usize, t: &crate::dat::zone::Texture) {
         let (view, seq) = upload_texture_seq(gpu, t, true);
-        self.textures[slot] = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+        self.set_texture(gpu, slot, t, &view, seq);
+    }
+
+    fn set_texture(&mut self, gpu: &Gpu, slot: usize, t: &crate::dat::zone::Texture, view: &wgpu::TextureView, seq: u64) {
+        self.textures[slot] = view_bind_group(gpu, &self.texture_layout, &self.sampler, view);
         self.mips_seq = self.mips_seq.max(seq);
         self.tex_bytes.1 += (t.width * t.height * 4) as u64;
         self.tex_bytes.2 += 1;
@@ -739,40 +775,51 @@ impl ZoneRenderer {
         }
     }
 
-    /// Up to `budget` bytes of a streamed zone's geometry and textures (at least one piece a call).
-    pub fn upload_step(&mut self, gpu: &Gpu, budget: u64) {
-        let mut left = budget;
+    /// One frame's copies (Gpu::begin_uploads set the room): a streamed zone's geometry and textures, then the
+    /// models actors are waiting for, each piece by piece.
+    pub fn upload_step(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder) {
+        self.anim.upload_keys(gpu, encoder, false);
         if let Some((geo, mut at)) = self.geo_pending.take() {
             let parts = geo.parts();
-            let total: u64 = parts.iter().map(|p| p.len() as u64).sum();
             let bufs = [&self.vertices, &self.indices, &self.instances];
-            while at < total && left > 0 {
-                let (mut k, mut start) = (0, 0u64);
-                while at >= start + parts[k].len() as u64 {
-                    start += parts[k].len() as u64;
-                    k += 1;
+            let mut start = 0u64;
+            for (k, part) in parts.iter().enumerate() {
+                let len = part.len() as u64;
+                if at < start + len {
+                    let mut local = at - start;
+                    upload::buffer_step(gpu, bufs[k], part, &mut local);
+                    at = start + local;
                 }
-                let len = (start + parts[k].len() as u64 - at).min(left.max(4)) & !3;
-                gpu.queue.write_buffer(bufs[k], at - start, &parts[k][(at - start) as usize..][..len as usize]);
-                at += len;
-                left = left.saturating_sub(len);
+                start += len;
             }
-            crate::client::perf::note(|| format!("zone geometry {at} / {total} bytes"));
-            if at < total {
+            crate::client::perf::note(|| format!("zone geometry {at} / {start} bytes"));
+            if at < start {
                 self.geo_pending = Some((geo, at));
             }
         }
         let had = !self.pending.is_empty();
-        while left > 0
-            && let Some((slot, t)) = self.pending.pop_front()
+        while gpu.upload_room() > 0
+            && let Some((_, t, up)) = self.pending.front_mut()
         {
-            left = left.saturating_sub(t.rgba.len() as u64 / 4);
-            self.put_texture(gpu, slot, &t);
+            let up = up.get_or_insert_with(|| upload::TexUp::new(gpu, t, true));
+            let Some(seq) = up.step(gpu, t, false) else { break };
+            let view = up.texture.create_view(&Default::default());
+            let (slot, t, _) = self.pending.pop_front().unwrap();
+            self.set_texture(gpu, slot, &t, &view, seq);
         }
         if had {
             crate::client::perf::note(|| format!("zone textures, {} left", self.pending.len()));
             if self.pending.is_empty() {
                 self.log_textures();
+            }
+        }
+        let mut i = 0;
+        while i < self.builds.len() && gpu.upload_room() > 0 {
+            if self.build_step(gpu, i) {
+                let (key, b) = self.builds.remove(i);
+                self.models.insert(key, (b.ch, b.actor));
+            } else {
+                i += 1;
             }
         }
     }
@@ -782,61 +829,76 @@ impl ZoneRenderer {
         self.geo_pending.is_none() && self.pending.is_empty() && gpu.mips_done() >= self.mips_seq
     }
 
-    /// An actor skinned on the GPU: its bind-pose corners go up once, grouped by texture as skin_character does.
+    /// A model's next pieces: its animations (copied by the posing pass), its skinned vertices, its textures.
+    fn build_step(&mut self, gpu: &Gpu, i: usize) -> bool {
+        let b = &mut self.builds[i].1;
+        if !b.registered {
+            self.anim.register(&b.ch);
+            b.registered = true;
+        }
+        let b = &mut self.builds[i].1;
+        let skin = b.actor.skin.as_ref().unwrap();
+        if !upload::buffer_step(gpu, &skin.vertices, bytemuck::cast_slice(&b.mesh.verts), &mut b.vert_at) {
+            return false;
+        }
+        while b.tex < b.ch.textures.len() && gpu.upload_room() > 0 {
+            let t = &b.ch.textures[b.tex];
+            let up = b.cur.get_or_insert_with(|| upload::TexUp::new(gpu, t, true));
+            let Some(seq) = up.step(gpu, t, false) else { return false };
+            let view = up.texture.create_view(&Default::default());
+            b.actor.textures[b.tex + 1] = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+            b.actor.mips = b.actor.mips.max(seq);
+            b.cur = None;
+            b.tex += 1;
+        }
+        b.tex == b.ch.textures.len() && self.anim.ready(&b.ch)
+    }
+
+    /// An actor skinned on the GPU: its bind-pose corners (SkinMesh) and textures go up once per model.
     pub fn new_skinned(&self, gpu: &Gpu, ch: &crate::dat::character::Character) -> ActorGpu {
         let mut a = self.new_actor(gpu, ch);
-        let bones = ch.skeleton.bones.len().min(MAX_BONES);
-        let slot_of = |b: usize| if b < bones { b as u32 } else { bones as u32 };
-        let mut verts: Vec<SkinVertex> = Vec::new();
-        for part in &ch.parts {
-            for g in &part.groups {
-                let start = verts.len() as u32;
-                for t in &g.triangles {
-                    for c in t {
-                        let inf = &part.vertices[c.vertex as usize];
-                        let i0 = inf[0];
-                        let i1 = inf.get(1).copied().unwrap_or_default();
-                        let (w1, b1) = if inf.len() > 1 { (i1.weight, slot_of(i1.bone)) } else { (0.0, bones as u32) };
-                        verts.push(SkinVertex {
-                            p0: i0.pos.to_array(),
-                            n0: i0.normal.to_array(),
-                            p1: i1.pos.to_array(),
-                            n1: i1.normal.to_array(),
-                            bones: [slot_of(i0.bone), b1],
-                            w: [i0.weight, w1],
-                            uv: c.uv,
-                        });
-                    }
-                }
-                a.draws.push((a.slot.get(g.texture.as_str()).copied().unwrap_or(0), start..verts.len() as u32));
-            }
-        }
-        if verts.is_empty() {
-            verts.push(SkinVertex::zeroed());
-        }
-        let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
-        a.skin = Some(Skinned { vertices, bones, offset: 0, frame: u64::MAX });
+        let mesh = ch.skin.clone().unwrap_or_else(|| std::sync::Arc::new(SkinMesh::build(ch)));
+        a.draws = mesh.groups.iter().map(|(tex, r)| (a.slot.get(tex.as_str()).copied().unwrap_or(0), r.clone())).collect();
+        let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&mesh.verts), usage: wgpu::BufferUsages::VERTEX });
+        a.skin = Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX });
         a
     }
 
-    /// A skinned actor of a model; the model goes to the GPU once, at most NEW_MODELS a frame, so None means
-    /// not this frame (the actor is not drawn until then).
+    /// A skinned actor of a model. A new model goes up over the next frames under the copy budget; None until
+    /// then (the actor is not drawn).
     pub fn skinned_actor(&mut self, gpu: &Gpu, ch: &std::sync::Arc<crate::dat::character::Character>) -> Option<ActorGpu> {
         let key = std::sync::Arc::as_ptr(ch) as usize;
-        if !self.models.contains_key(&key) {
-            if self.new_models == 0 {
-                return None;
-            }
-            self.new_models -= 1;
-            let a = self.new_skinned(gpu, ch);
-            self.models.insert(key, (ch.clone(), a));
+        if let Some(m) = self.models.get(&key) {
+            return Some(m.1.clone());
         }
-        self.models.get(&key).map(|m| m.1.clone())
+        if !self.builds.iter().any(|(k, _)| *k == key) {
+            let mesh = ch.skin.clone().unwrap_or_else(|| std::sync::Arc::new(SkinMesh::build(ch)));
+            let mut slot = HashMap::new();
+            for (i, t) in ch.textures.iter().enumerate() {
+                slot.entry(t.name.clone()).or_insert(i + 1);
+            }
+            let draws = mesh.groups.iter().map(|(tex, r)| (slot.get(tex.as_str()).copied().unwrap_or(0), r.clone())).collect();
+            let size = (std::mem::size_of_val(mesh.verts.as_slice()) as u64).max(4);
+            let vertices = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("skinned actor"), size, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor instance"), size: 64, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            let actor = ActorGpu {
+                textures: vec![self.magenta.clone(); ch.textures.len() + 1],
+                slot,
+                vertices: None,
+                draws,
+                instance,
+                skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
+                alpha: 1.0,
+                flash: [0.0, 1.0],
+                mips: 0,
+            };
+            self.builds.push((key, Build { ch: ch.clone(), mesh, actor, registered: false, vert_at: 0, tex: 0, cur: None }));
+        }
+        None
     }
 
     /// Starts this frame's poses; skinned actors not posed again are not drawn.
     pub fn begin_poses(&mut self) {
-        self.new_models = NEW_MODELS;
         self.poses.clear();
         self.pose_frame += 1;
         self.anim.begin();
@@ -906,7 +968,7 @@ impl ZoneRenderer {
         }
         if let Some((buf, _, _)) = &self.pose_gpu {
             gpu.queue.write_buffer(buf, 0, bytemuck::cast_slice(&self.poses));
-            self.anim.dispatch(gpu, encoder, buf);
+            self.anim.dispatch(gpu, encoder, buf, !self.budgeted);
         }
     }
 

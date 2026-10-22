@@ -384,7 +384,7 @@ fn send_chat(world: &mut World, text: String) {
     } else if cmd == "/lockon" {
         // Command 0x59 (FUN_100793f0): the lock-on toggle.
         let on = !world.locked;
-        target::lock(world, on);
+        target::lock(world, on, "/lockon");
     } else if cmd == "/tell" || cmd == "/t" {
         let mut rest = text.splitn(3, ' ').skip(1);
         match (rest.next().filter(|n| !n.is_empty()), rest.next().map(str::trim).filter(|m| !m.is_empty())) {
@@ -764,9 +764,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.menu_page = 0;
                 }
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
-                // Escape also takes a line off the log (key 0x95, FUN_1015b830).
+                // Escape also takes a line off the log (key 0x95, FUN_1015b830). Clearing the target is key 0x92,
+                // refused while locked (FUN_10151f20).
                 egui::Key::Escape => {
-                    target::set(world, None);
+                    if target::picks_allowed(world) {
+                        target::set(world, None);
+                    }
                     shrink_log = true;
                 }
                 egui::Key::ArrowDown if world.menu.is_some() => world.menu = world.menu.map(|m| (m + 1) % items.len().max(1)),
@@ -3052,6 +3055,9 @@ impl App {
 
     /// Tab targeting: the next entity by distance after the current target, within 30 units.
     fn cycle_target(world: &mut World) {
+        if !target::picks_allowed(world) {
+            return;
+        }
         let hidden = event::hidden(world);
         let mut near: Vec<(u32, f32)> = world
             .entities
@@ -3636,10 +3642,11 @@ impl App {
                 }
             }
             Phase::World(world) if world.renderer.is_some() && world.zone_uploading.is_none() => {
-                // The server refuses /logout in an event; quit once it is over.
+                // Test runs end with "/shutdown on" (0x0E7 mode 3, kind 3); the server refuses it in an event, so once that is over.
                 if self.drive.quit && self.drive.shot_taken && !world.logging_out && !event::active(world) {
                     world.logging_out = true;
-                    let _ = world.net.commands.send(NetCommand::Logout { mode: 1, kind: 1 });
+                    world.shutdown = true;
+                    let _ = world.net.commands.send(NetCommand::Logout { mode: 3, kind: 3 });
                 }
                 let ready = *self.drive.zone_ready_at.get_or_insert_with(Instant::now);
                 let t = ready.elapsed().as_secs_f32();
@@ -3647,7 +3654,9 @@ impl App {
                     self.drive.goto.clear();
                     self.keys.remove(&KeyCode::KeyW);
                 }
-                if self.drive.chase && self.drive.goto.is_empty() && world.my_motion.status == 1 {
+                // While engaged, or with a monster targeted (to get in /attack range).
+                let mob_target = world.target.and_then(|t| world.entities.get(&t)).is_some_and(|e| e.mob);
+                if self.drive.chase && self.drive.goto.is_empty() && (world.my_motion.status == 1 || mob_target) {
                     match world.target.and_then(|t| world.entities.get(&t)).map(|e| e.pos - world.pos) {
                         Some(to) if to.length() > 2.0 => {
                             world.yaw = to.x.atan2(to.z);
@@ -3938,6 +3947,12 @@ impl App {
             if let (Some("numpad+"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
                 log_cycle(world);
             }
+            // Test drives only: target the nearest living monster with a model (Tab picks NPCs first at gates).
+            if let (Some("target-mob"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
+                let pos = world.pos;
+                let mob = world.entities.iter().filter(|(id, e)| e.mob && !matches!(e.motion.status, 2 | 3) && world.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
+                target::set(world, mob);
+            }
             // act:monitor:NAME picks the monitor as the settings screen does.
             if let Some(m) = action.as_deref().and_then(|a| a.strip_prefix("monitor:")) {
                 self.cfg.monitor = m.to_string();
@@ -4028,13 +4043,17 @@ impl App {
                 })
                 .collect();
             if let Some(r) = &mut w.renderer {
-                if let Some(since) = w.zone_uploading {
-                    perf::timed(|| "zone upload".into(), || r.upload_step(&gfx.gpu, crate::render::UPLOAD_BUDGET));
-                    if r.ready(&gfx.gpu) {
-                        log::info!("zone on the GPU {:.0} ms after it loaded", since.elapsed().as_secs_f32() * 1000.0);
-                        w.zone_uploading = None;
-                        w.downloading = None;
-                    }
+                // This frame's copies: a zone going up (more while its indicator hides the world), then the models
+                // actors are waiting for.
+                use crate::render::upload::{FRAME_MS, LOADING_MS};
+                gfx.gpu.begin_uploads(if w.downloading.is_some() { LOADING_MS } else { FRAME_MS });
+                perf::timed(|| "uploads".into(), || r.upload_step(&gfx.gpu, &mut encoder));
+                if let Some(since) = w.zone_uploading
+                    && r.ready(&gfx.gpu)
+                {
+                    log::info!("zone on the GPU {:.0} ms after it loaded", since.elapsed().as_secs_f32() * 1000.0);
+                    w.zone_uploading = None;
+                    w.downloading = None;
                 }
                 // Zone lighting for the Vana'diel time and weather the server gave us.
                 if let (Some(zw), Some((t, at))) = (&w.zone_weather, w.clock) {
@@ -4420,6 +4439,14 @@ impl ApplicationHandler for App {
                         if let (false, KeyCode::NumpadMultiply, Phase::World(world)) = (event.repeat, code, &mut self.phase) {
                             target::numpad_star(world);
                         }
+                        // Compact keyboards (0x42 = 1 / 2, default 2): the key of config 0x60 (default H) sets pad bit
+                        // 0x400, the same press as Numpad * (FUN_1011fbc0, table DAT_103623c8 entry 6).
+                        if let (false, Phase::World(world)) = (event.repeat, &mut self.phase)
+                            && matches!(world.game.get(0x42), 1 | 2)
+                            && configui2::dik_keycode(world.game.get(0x60)) == Some(code)
+                        {
+                            target::numpad_star(world);
+                        }
                     }
                     // Numpad + (DIK 0x4E, flag 0x80): key function 0x78, also with a menu open.
                     if event.state == ElementState::Pressed && !event.repeat && !shortcut && code == KeyCode::NumpadAdd
@@ -4462,13 +4489,17 @@ impl ApplicationHandler for App {
                             if (a.0 - b.0).abs() + (a.1 - b.1).abs() < 5.0 && !consumed && !on_hud && !event::active(world) {
                                 let size = [gfx.config.width, gfx.config.height];
                                 let aspect = cfgapply::aspect(size, self.cfg.retail_aspect, world.game.get(0x43));
-                                let picked = Self::pick(world, b, size, aspect);
-                                // A click on the NPC already targeted is the confirm key: talk (FUN_101524e0).
-                                match picked.filter(|t| world.target == Some(*t) && t >> 24 != 0 && world.entities.get(t).is_some_and(|e| !e.mob)) {
-                                    Some(t) => {
-                                        event::talk(world, t);
+                                // Key 0x8b (FUN_101524c0): no pick while locked (FUN_10151f20); a click on nothing keeps the
+                                // target (FUN_10151d20). A click that leaves the target as it was is the confirm key on it
+                                // (FUN_101524e0): talk to an NPC *(inf: monsters take no action here)*.
+                                let picked = if target::picks_allowed(world) { Self::pick(world, b, size, aspect) } else { None };
+                                match picked.or(world.target) {
+                                    Some(t) if world.target == Some(t) => {
+                                        if t >> 24 != 0 && world.entities.get(&t).is_some_and(|e| !e.mob) {
+                                            event::talk(world, t);
+                                        }
                                     }
-                                    None => target::set(world, picked),
+                                    t => target::set(world, t),
                                 }
                             }
                         }

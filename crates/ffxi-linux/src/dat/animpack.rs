@@ -6,11 +6,13 @@ use super::character::{Animation, Channel};
 /// Bone -> track table size per animation (render/anim.rs TABLE).
 pub const TABLE: usize = 256;
 
-/// Words of a list of animations and each one's start in `words`.
+/// Words of a list of animations, each one's start in `words`, and a hash of the words: models of one race
+/// carry the same motions, and the GPU keeps one copy.
 #[derive(Debug, Default)]
 pub struct Packed {
     pub words: Vec<u32>,
     pub offsets: Vec<u32>,
+    pub key: u64,
 }
 
 /// One animation: frames, track count, bone -> track + 1 table, then 10 channels of (key count or 0,
@@ -48,5 +50,10 @@ pub fn pack(anims: &[Animation]) -> Packed {
         p.offsets.push(p.words.len() as u32);
         pack_one(a, &mut p.words);
     }
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    p.words.hash(&mut h);
+    p.offsets.hash(&mut h);
+    p.key = h.finish();
     p
 }

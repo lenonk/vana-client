@@ -36,12 +36,18 @@ pub fn set(w: &mut World, t: Option<u32>) {
     w.target = t;
     w.target_since = std::time::Instant::now();
     if w.locked {
-        lock(w, false);
+        lock(w, false, "target changed");
     }
 }
 
-/// FUN_10150da0: lock needs a target, a living player and a target that is not us.
-pub fn lock(w: &mut World, on: bool) {
+/// FUN_10151f20: the player's own target inputs (Tab, Escape, a mouse pick) do nothing while locked; only the
+/// lock toggle and the server move a locked target.
+pub fn picks_allowed(w: &World) -> bool {
+    !w.locked
+}
+
+/// FUN_10150da0: lock needs a target, a living player and a target that is not us. `why` goes in the log.
+pub fn lock(w: &mut World, on: bool, why: &str) {
     if on == w.locked {
         return;
     }
@@ -60,9 +66,10 @@ pub fn lock(w: &mut World, on: bool) {
         };
         w.cam = Some(c);
         w.locked = true;
+        log::info!("lock on {:#x} ({why})", w.target.unwrap_or(0));
     } else {
         w.locked = false;
-        log::info!("lock off");
+        log::info!("lock off ({why})");
         // Nothing snaps: the same eye and look go on in the free branch (FUN_1001e030).
         w.release = w.cam.take();
         w.unlock_ticks = 20.0;
@@ -112,24 +119,27 @@ pub fn numpad_star(w: &mut World) {
         super::send_chat(w, "/heal".into());
     } else {
         let on = !w.locked;
-        lock(w, on);
+        lock(w, on, "Numpad *");
     }
 }
 
-/// s2c 0x058 (LAB_1009e570): our assist target; locks on when the target is a monster and auto
-/// lock-on (config 7 = 0, the default) is on.
+/// What LAB_1009e570 does with an s2c 0x058: None = nothing (not about us, no target, or no such actor with a
+/// model, +0x120 bit 9), else Some(lock): set the target, and lock when it is a monster (+0x120 bit 13, inferred
+/// the 0x00E monster bit) and auto lock-on is on (+0x51, config 7 = 0, the default).
+fn assist_rule(player: u32, me: u32, target: u32, modelled: bool, monster: bool, auto_lock: bool) -> Option<bool> {
+    (player == me && target != 0 && modelled).then_some(monster && auto_lock)
+}
+
+/// s2c 0x058 (LSB sends it on engage, on a target change and on auto-target): our assist target.
 pub fn assist(w: &mut World, player: u32, target: u32) {
-    if player != w.my_id || target == 0 {
-        return;
-    }
-    // +0x120 bit 9: the actor has a model.
-    if !w.entities.contains_key(&target) || !w.actors.get(&target).is_some_and(|a| a.gpu.is_some() || a.character.is_some()) {
-        return;
-    }
+    let modelled = w.entities.contains_key(&target) && w.actors.get(&target).is_some_and(|a| a.gpu.is_some() || a.character.is_some());
+    let monster = w.entities.get(&target).is_some_and(|e| e.mob);
+    let rule = assist_rule(player, w.my_id, target, modelled, monster, w.auto_lock);
+    log::info!("0x058 assist {target:#x}: {rule:?} (monster {monster}, auto lock-on {})", w.auto_lock);
+    let Some(locks) = rule else { return };
     set(w, Some(target));
-    // Inferred: +0x120 bit 13 (attackable) is the monster flag.
-    if w.auto_lock && w.entities.get(&target).is_some_and(|e| e.mob) {
-        lock(w, true);
+    if locks {
+        lock(w, true, "engaged, auto lock-on");
     }
 }
 
@@ -139,12 +149,12 @@ pub fn assist(w: &mut World, player: u32, target: u32) {
 pub fn update(w: &mut World) {
     let st = w.my_motion.status;
     if w.locked && (w.dead() || (w.last_status == 1 && st != 1 && st != 3)) {
-        lock(w, false);
+        lock(w, false, if w.dead() { "dead" } else { "disengaged" });
     }
     w.last_status = st;
     if let Some(attackoff) = w.target.and_then(|t| invalid(w, t)) {
         log::info!("target {:#x} dropped (attackoff {attackoff})", w.target.unwrap_or(0));
-        lock(w, false);
+        lock(w, false, "target dropped");
         w.target = None;
         if attackoff {
             super::send_chat(w, "/attackoff".into());
@@ -157,7 +167,7 @@ pub fn update(w: &mut World) {
         }
     }
     if w.locked && (w.target.is_none() || super::event::active(w)) {
-        lock(w, false);
+        lock(w, false, "no target or an event");
     }
 }
 
@@ -312,6 +322,22 @@ mod tests {
         let d = c.eye - c.look;
         assert!((d.length() - 6.0).abs() < 0.1, "{}", d.length());
         assert!(d.normalize().dot(dir) > 0.999);
+    }
+
+    /// Engaging with auto lock-on at its default (config 7 = 0) targets and locks a monster; config 7 = 1
+    /// only targets; NPCs are targeted without a lock; another player's 0x058, a zero target or an actor
+    /// without a model do nothing.
+    #[test]
+    fn engage_locks_by_default() {
+        let me = 0x0100_0004;
+        let auto = crate::gamecfg::Values::default().get(7) == 0;
+        assert!(auto, "config 7 defaults to 0 = auto lock-on");
+        assert_eq!(assist_rule(me, me, 0x0106_5013, true, true, auto), Some(true));
+        assert_eq!(assist_rule(me, me, 0x0106_5013, true, true, false), Some(false));
+        assert_eq!(assist_rule(me, me, 0x0106_5239, true, false, auto), Some(false));
+        assert_eq!(assist_rule(0x0100_0099, me, 0x0106_5013, true, true, auto), None);
+        assert_eq!(assist_rule(me, me, 0, true, true, auto), None);
+        assert_eq!(assist_rule(me, me, 0x0106_5013, false, true, auto), None);
     }
 
     /// Side input keeps the radius (circle strafe); forward closes in, stopping at 0.8.

@@ -619,12 +619,15 @@ pub struct Character {
     pub log: Vec<String>,
     /// The animations as GPU words (`prepare`), else packed when first posed.
     pub packed: Option<std::sync::Arc<super::animpack::Packed>>,
+    /// The skinned vertices for the GPU (`prepare`).
+    pub skin: Option<std::sync::Arc<crate::render::SkinMesh>>,
 }
 
 impl Character {
-    /// Loader-thread work for a world actor: the packed animations (mips are made on the GPU).
+    /// Loader-thread work for a world actor: the packed animations and skinned vertices (mips are made on the GPU).
     pub fn prepare(&mut self) {
         self.packed = Some(std::sync::Arc::new(super::animpack::pack(&self.animations)));
+        self.skin = Some(std::sync::Arc::new(crate::render::SkinMesh::build(self)));
     }
 
     /// Uniform model scale for the 0x00D/0x00E GraphSize (FUN_100212f0: info[10 + size] / 100, unset = 1).
@@ -687,7 +690,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {

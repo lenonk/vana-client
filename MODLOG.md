@@ -2687,3 +2687,96 @@ pages `name:cursor:scroll`); shots in scratchpad config/c_*.png, live ones in co
 - The Wayland window workarounds (fullscreen re-request after mapping, the full-screen hop to change monitor, delayed size requests) are harmless elsewhere. On Windows and macOS, set_outer_position can move the window between monitors directly.
 - Windows can be cross-compiled from Linux (cargo-xwin or x86_64-pc-windows-gnu); macOS needs a Mac to build. Both need a real test machine for audio, full screen and the GPU.
 - Rename the crate ("ffxi-linux") before shipping other platforms.
+
+
+## Lock-on on engage, walking hitches: GPU mips, budgeted uploads, shared models (2026-10-21)
+
+Decompile: all.c / all.asm (lock-on items traced by a sub-agent; notes in scratchpad lockon/). Inferred items are
+marked *(inf)*. Profiling logs and scripts: scratchpad stutter/ (walk.sh, spikes.py, load.sh; q_*.log are the clean runs).
+
+### Lock-on
+- The auto lock was firing. "lock off" is only logged when the lock was on: the user's first engage stayed locked
+  until the kill; in the second the lock went 5 s in with no target drop, i.e. a player input. Ours let Escape,
+  a click on nothing, a click on another actor and Tab clear or switch the target, and any of them unlocked.
+- FUN_10151f20 (the target-action runner) does nothing while locked (+0x5c & 3) unless in sub-target mode: Tab,
+  Escape (key 0x92: bindings N + 0x10, Esc + 0x80), right-button release (0x8c) and the mouse pick (0x8b) are all
+  refused. Now target::picks_allowed. A left click on nothing never clears the target (FUN_10151d20 keeps it and
+  runs FUN_101524e0(0), the confirm key on it): ours keeps it and talks to an NPC target *(inf: monsters take no
+  action on that click)*.
+- Only s2c 0x058 locks (LAB_1009e570, unchanged; LSB sends it from CPlayerController::Engage). FUN_101514a0's
+  engaged auto-pick and /attack only target. Callers of FUN_10150da0: key 0x30 and /lockon (cmd 0x59) toggle; the
+  rest unlock (status leaving 1 / 3, death, +0x22 = cursor moved off the actor to a ground point, invalid target,
+  target change, server-forced position FUN_1008b680 *(inf)*, Mog House layout). FUN_10152770 re-locks after
+  sub-target selection.
+- Key 0x30 = DAT_103619f0 + 0x30*6 = [0xc037, 0, 0]: Numpad * only (not while typing, no Ctrl / Alt); Key
+  Assignment never rebinds 0x30 / 0x44. Compact keyboards (config 0x42 = 1 / 2, default 2): FUN_1011fbc0 turns
+  the key of config 0x60 (default DIK 0x23 = H) into pad bit 0x400, the bit key functions 0x30 / 0x44 / 0x7e read
+  (pad callback FUN_1011dc20), so H is Numpad * there. Implemented. The physical pad button is the 5th entry of
+  the pad list (FUN_10004eb0, local_f0[4] = 10) *(inf)*.
+- Facing: nothing turns the player toward the battle target while engaged and unlocked; while locked, FUN_100a6210
+  sets the yaw only on movement input or auto-run. Ours keeps facing the target every frame while locked (the
+  user's spec; differs from that reading *(inf: retail's schedules may turn the attacker)*).
+- Config 7 = 0 by default = auto lock-on; cfgapply maps it as LAB_101a2c60 (+0x51 = (v == 0)). Not flipped.
+- Logs now say why: "lock on 0x… (engaged, auto lock-on | Numpad * | /lockon)", "lock off (target changed |
+  Numpad * | disengaged | dead | target dropped | no target or an event)", and "0x058 assist …". Unit test
+  target::tests::engage_locks_by_default.
+
+### Walking hitches: what they were
+FFXI_PERF=1 now logs every frame whose start-to-start gap is over FFXI_PERF_SPIKE ms (25) with its spans and what
+was loaded or created in it (client/perf.rs note / timed). Baseline (old code + only this logging, same routes):
+- Every new actor in range: texture mip chains box-filtered and BC re-encoded on the UI thread, 1..9 ms per
+  texture, 25..40 ms a model.
+- Its animations packed on the UI thread, then the whole animation-key buffer re-uploaded: sources were keyed by
+  Arc address and every respawn loaded the look again, so it only grew (2 MB to 42 MB within 2 minutes in 230),
+  and each new model cost 100..470 ms. The GPU then spent as long again before the next frame.
+- Each actor had its own copy of a model (no sharing of identical looks); equipped NPCs of one race each carried
+  the same ~600k-word motion set.
+- The zone swap: 250..300 ms on the UI thread (ZoneRenderer::new: shader compile, geometry, 60 MB of textures).
+- Any CPU-to-GPU copy is slow on this machine: gpu-allocator puts CpuToGpu staging in DEVICE_LOCAL | HOST_VISIBLE
+  memory (vulkan/mod.rs), i.e. the BAR, and over the eGPU's Thunderbolt link that measures ~240 MB/s (262 KB
+  write_texture 1.1 ms, 4 MB 17 ms).
+
+### The fix
+- Mips on the GPU (render/mipgen.rs): level 0 is uploaded as the file's own DXT1 / DXT3 blocks (BC1 / BC2; DXT3
+  alpha doubled at parse) or RGBA; compute passes per level: cover0 (level-0 coverage at 255 x ALPHA_REF and the
+  lowest alpha), down (2x2 box in linear light, alpha histogram), solve (the coverage scale: smallest in
+  [0.25, 8], 16 steps, as the CPU did), encode (BC1 / BC2 by the same bounding-box inset 1/16 / nearest-entry
+  rules, or RGBA), then copy_buffer_to_texture into the levels. Lower levels stay BC, so VRAM is unchanged. Jobs
+  run under 4 M level-0 texels a frame. No mip work is left on the CPU (dat/texmip.rs keeps only ALPHA_REF and the
+  DXT3 alpha fix; the old chain lives on as the test reference). Unit test render::mipgen::tests::
+  gpu_mips_match_cpu_chain: RGBA levels within 1 of the CPU chain, coverage within 1/16, BC1 levels decode within
+  12 of the CPU's (one 565 endpoint step) with a mean under 1.5.
+- Copies under a time budget (render/upload.rs): 2 ms of copying a frame in the world (8 ms while the zone
+  indicator is up) at the measured rate (EMA of bytes / ms per copy), textures in row bands, buffers in pieces.
+- Models: loaded looks are shared by key (World.models, cap 96 kept when unused; one load serves every actor
+  waiting); the loader thread packs the animations position-independently (dat/animpack.rs: key offsets relative
+  to the animation; shader chan(an, c, frame)) with a content hash, and builds the skinned vertices
+  (render::SkinMesh). ZoneRenderer uploads each model once (vertices, then textures band by band) and clones it
+  per actor; GpuAnim keeps one copy of a hashed animation block, appends only new words (a larger buffer takes
+  the old ones by a GPU copy) and uploads them under the budget; a model is drawn once its words, textures and
+  mips are all in (not drawn until then; no stand-ins). A motion file whose words are not up yet sits a frame out.
+- Zone swap: the geometry is built on the loader thread (render::ZoneGeometry); ZoneRenderer::streamed uploads it
+  and the textures over the next frames; the "Downloading data" indicator stays until ready(). Zone, posing and
+  mip pipelines are made at start-up on a worker (Gpu::warm, PipeCache) and shared by every ZoneRenderer.
+- The placeholder boxes for players without a model are gone (standing rule).
+- Test drives end with "/shutdown on" (c2s 0x0E7 Mode 3, Kind 3; LSB ignores Mode 1 with Kind 3).
+
+### Numbers (lnxtest01 / Lnxtest, 2560x1440 window, limit 144, RX 6800 XT eGPU; in-world time, the drive's own
+### screenshot frames excluded; card0 busy <= 2 % and CPU >= 94 % idle before each run, xi_map ~20..60 % of a core)
+| run | route | spikes > 25 ms | > 100 ms | worst frame |
+|---|---|---|---|---|
+| baseline q_base_a | 230 -> 101 | 110 in 118 s (56/min) | 104 | 468 ms (new model: anim re-upload) |
+| baseline q_base_b2 | 101 -> 230 | 59 in 129 s (27/min) | 13 | 316 ms (zone swap) |
+| new q_new_a | 230 -> 101 | 4 in 147 s | 1 | 113 ms (wait, 1.3 ms of work) |
+| new q_new_a2 | 230 -> 101 | 2 in 149 s | 0 | 27 ms |
+| new q_new_b | 101 -> 230 | 3 in 128 s | 0 | 37 ms |
+- No new-build frame did more than 25 ms of work, zone swaps included. The few spikes left are waits before the
+  redraw starts with ~1 ms of work (compositor / driver *(inf)*). q_new_a3 (311 wait-only spikes, fps dipping to
+  57 with 1.2 ms of work a frame) looks disturbed from outside and is not counted. Runs while another application
+  loaded the GPU / CPU were discarded.
+- Still on the UI thread: the first frame after start-up (UI renderer 210 ms, lobby mips), the drive's PNG encode.
+
+### Open
+- The lock-on live check did not complete (no monster in /attack range when the drive looked; stopped so the user
+  could test). The unit test covers the 0x058 rule; the input refusals are untested live.
+- Right-button release clearing the target (key 0x8c) is not implemented (ours drags the camera with it).
