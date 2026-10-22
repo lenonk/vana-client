@@ -12,6 +12,7 @@ use crate::net::lobby::Character;
 use crate::render::{ActorGpu, Camera, Gpu, ZoneRenderer};
 use anyhow::Result;
 use glam::{Mat4, Vec3};
+use std::sync::Arc;
 
 pub const SLOTS: usize = 16;
 /// The lobby zone (retail FUN_10242cd0; 133 in the 2019 build). The creator draws over it too.
@@ -44,6 +45,9 @@ pub struct SelectData {
     centre: Vec3,
     slots: [Slot; SLOTS],
     models: Vec<Option<(Model, u8)>>,
+    /// The global and zone effect libraries, with what the effects engine reads files through.
+    fx: Option<(crate::fx::lib::Library, crate::fx::lib::Library)>,
+    files: (Arc<DatIndex>, Arc<zone::Keys>),
 }
 
 /// Facing the ring centre (model +x toward it), scaled by the model's size.
@@ -62,9 +66,12 @@ pub fn rest_point(model: &Model, k: usize, place: Mat4) -> Option<Vec3> {
 
 impl SelectData {
     /// `looks[i]`: the character in list slot i and its size, if any.
-    pub fn load(index: &DatIndex, keys: &zone::Keys, looks: &[Option<(Look, u8)>]) -> Result<Self> {
+    pub fn load(index: &Arc<DatIndex>, keys: &Arc<zone::Keys>, looks: &[Option<(Look, u8)>]) -> Result<Self> {
         let file = index.read(zone::file_id(ZONE))?;
         let scene = zone::load_scene(keys, &file)?;
+        // The lobby runs the effects engine as the world does (the sky's clouds are 'suny' generators).
+        let lib = |id: u32, f: Vec<u8>| crate::fx::lib::Library::load(id, f);
+        let fx = index.read(0).and_then(|g| Ok((lib(0, g)?, lib(zone::file_id(ZONE), file.clone())?))).map_err(|e| log::warn!("select effects: {e:#}")).ok();
         let lighting = ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", MINUTE)).map(|e| Lighting::from_env(&e, MINUTE));
         let ground = Ground::build(&scene);
         let models: Vec<Option<(Model, u8)>> = looks
@@ -81,7 +88,7 @@ impl SelectData {
             let point = models.get(i).and_then(Option::as_ref).and_then(|(m, size)| rest_point(m, POINT, placement(feet, m.scale(*size)))).map(|p| p - feet);
             Slot { feet, near: feet - out, far: feet - out * 2.0, point }
         });
-        Ok(Self { scene, lighting, centre, slots, models })
+        Ok(Self { scene, lighting, centre, slots, models, fx, files: (index.clone(), keys.clone()) })
     }
 }
 
@@ -138,12 +145,41 @@ pub struct SelectScene {
     idle: u32,
     acc: f32,
     time: f32,
+    effects: Option<crate::fx::Effects>,
+    effects_gpu: Option<crate::render::effects::EffectsGpu>,
+    /// Real time not yet given to the effects.
+    fx_dt: f32,
 }
 
 impl SelectScene {
-    pub fn new(data: SelectData) -> Self {
+    pub fn new(mut data: SelectData) -> Self {
         let s = data.slots[0];
-        let mut scene = Self { data, zone: None, actors: Vec::new(), cam_slot: 0, latched: [false; SLOTS], eye: s.far + HEAD, target: s.feet + HEAD, curves: None, idle: 0, acc: 0.0, time: 0.0 };
+        // FUN_10242cd0: the zone's generators start with it, then the weather 'suny'.
+        let effects = data.fx.take().map(|(global, zone_lib)| {
+            let mut fx = crate::fx::Effects::new();
+            fx.set_keys(data.files.1.clone());
+            fx.set_index(data.files.0.clone());
+            fx.set_global(global);
+            fx.load_zone(zone_lib);
+            fx.set_weather("suny", 0.0);
+            fx
+        });
+        let mut scene = Self {
+            data,
+            zone: None,
+            actors: Vec::new(),
+            cam_slot: 0,
+            latched: [false; SLOTS],
+            eye: s.far + HEAD,
+            target: s.feet + HEAD,
+            curves: None,
+            idle: 0,
+            acc: 0.0,
+            time: 0.0,
+            effects,
+            effects_gpu: None,
+            fx_dt: 0.0,
+        };
         scene.reset();
         scene
     }
@@ -201,6 +237,7 @@ impl SelectScene {
     /// Real time in whole lobby frames, whatever the drawing rate.
     pub fn advance(&mut self, dt: f32, cursor: usize) {
         self.time += dt;
+        self.fx_dt += dt;
         self.acc = (self.acc + dt).min(FRAME * 8.0);
         while self.acc >= FRAME {
             self.acc -= FRAME;
@@ -228,7 +265,20 @@ impl SelectScene {
         (self.eye, self.target)
     }
 
-    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, depth: &wgpu::TextureView, aspect: f32) {
+    /// Effect sounds since the last call, for the sound thread.
+    pub fn take_sounds(&mut self) -> Vec<crate::fx::sound::SoundCmd> {
+        self.effects.as_mut().map(|fx| std::mem::take(&mut fx.sound_cmds)).unwrap_or_default()
+    }
+
+    /// After the frame's submit: the effects' readback.
+    pub fn after_submit(&mut self, gpu: &Gpu) {
+        if let (Some(eg), Some(fx)) = (&mut self.effects_gpu, &mut self.effects) {
+            eg.after_submit(gpu, fx);
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, (view, color_tex, bg): (&wgpu::TextureView, Option<&wgpu::Texture>, [u32; 2]), depth: &wgpu::TextureView, aspect: f32, audio_alive: Option<Vec<u32>>) {
         let zone = self.zone.get_or_insert_with(|| ZoneRenderer::new(gpu, &self.data.scene, format));
         zone.lighting = self.data.lighting;
         if self.actors.len() != self.data.models.len() {
@@ -246,6 +296,36 @@ impl SelectScene {
         let camera = Camera { eye: self.eye, target: self.target, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(350.0) };
         let actors: Vec<&ActorGpu> = self.actors.iter().flatten().collect();
         zone.render(gpu, encoder, view, depth, &camera, aspect, &actors);
+        let Some(fx) = &mut self.effects else { return };
+        let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(gpu, format));
+        if fx.reg.light_keys != zone.light_keys {
+            fx.reg.light_keys = zone.light_keys.clone();
+        }
+        eg.set_lights(&zone.lights);
+        let dt = std::mem::take(&mut self.fx_dt);
+        let view_m = camera.view();
+        let mut view_rot = view_m;
+        view_rot.w_axis = glam::Vec4::W;
+        let f = crate::fx::Frame {
+            dt: (dt * 60.0).max(1e-3),
+            seconds: dt,
+            dayfrac: MINUTE / 1440.0,
+            view: view_m,
+            view_rot,
+            eye: camera.eye,
+            draw_distance: 2000.0,
+            area_light: self.data.lighting.map_or(Vec3::ONE, |l| l.area),
+            focal: 192.0 / (camera.fov_y * 0.5).tan(),
+            moon_phase: 0,
+            weekday: 0,
+        };
+        if let Some(alive) = audio_alive {
+            fx.set_alive(alive);
+        }
+        fx.tick(&f, &crate::fx::NoActors);
+        eg.update(gpu, encoder, fx, &f);
+        let (fog_color, fog) = self.data.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
+        eg.draw(gpu, encoder, (view, depth, bg), color_tex, fx, (camera.proj(aspect), view_m, camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
     }
 }
 
@@ -791,9 +871,9 @@ const SHOT_NAMES: [&str; 16] = ["Lnxtest", "Lnxcsfix", "Aldo", "Bellatrix", "Cor
 pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     use super::game_ui::GameUiData;
     let cfg = crate::config::Config::load();
-    let index = DatIndex::open(&cfg.ffxi_dir())?;
+    let index = Arc::new(DatIndex::open(&cfg.ffxi_dir())?);
     let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
-    let keys = zone::Keys::from_ffximain(&dll)?;
+    let keys = Arc::new(zone::Keys::from_ffximain(&dll)?);
     let mut gu = GameUi::new(GameUiData::load(&index, &dll)?);
     let n = shot.chars.min(SLOTS);
     let mut chars: Vec<Character> = (0..n)
@@ -827,15 +907,39 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     }
     let mut scene = SelectScene::new(data);
     let mut st = SelectUi::default();
-    for _ in 0..shot.hold {
-        scene.advance(FRAME, st.cursor);
+    let (w, h) = (shot.width, shot.height);
+    let gpu = Gpu::headless()?;
+    let format = wgpu::TextureFormat::Rgba8Unorm;
+    let target_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("select shot"),
+        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let view = target_tex.create_view(&Default::default());
+    let depth = crate::render::depth_view(&gpu.device, w, h);
+    // Every lobby frame is drawn, so the effects run as they would on screen.
+    let mut frame = |scene: &mut SelectScene, cursor: usize| {
+        scene.advance(FRAME, cursor);
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
+        gpu.queue.submit([enc.finish()]);
+        let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
+        scene.after_submit(&gpu);
+    };
+    for _ in 0..shot.hold.max(30) {
+        frame(&mut scene, st.cursor);
     }
     if shot.cursor != st.cursor {
         st.cursor = shot.cursor.min(SLOTS - 1);
         scene.cursor_moved(st.cursor);
     }
     for _ in 0..shot.frames {
-        scene.advance(FRAME, st.cursor);
+        frame(&mut scene, st.cursor);
     }
     let (eye, target) = scene.camera();
     println!("camera: eye {eye:.3} target {target:.3}");
@@ -850,23 +954,10 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         "rename" => Focus::Rename("Newname".into()),
         _ => Focus::List,
     };
-    let (w, h) = (shot.width, shot.height);
-    let gpu = Gpu::headless()?;
-    let format = wgpu::TextureFormat::Rgba8Unorm;
-    let target_tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("select shot"),
-        size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let view = target_tex.create_view(&Default::default());
-    let depth = crate::render::depth_view(&gpu.device, w, h);
+    drop(frame);
     let mut enc = gpu.device.create_command_encoder(&Default::default());
-    scene.render(&gpu, format, &mut enc, &view, &depth, w as f32 / h.max(1) as f32);
+    scene.advance(FRAME, st.cursor);
+    scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
     let input = Input { events: &[], pointer: None, moved: false, clicked: false, busy: false };
     st.step(&mut gu, &input, &list, &chars, shot.deleting, w as f32, h as f32, None);
     gu.render(&gpu, format, &mut enc, &view, [w, h], true, 1.0, 1.0);

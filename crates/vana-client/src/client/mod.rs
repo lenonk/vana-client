@@ -431,6 +431,18 @@ fn stamped(world: &World, line: String) -> String {
     }
 }
 
+/// An effect's sound command (fx/sound.rs) to the sound thread.
+fn play_fx_sound(a: &mut crate::audio::Audio, c: crate::fx::sound::SoundCmd) {
+    match c {
+        crate::fx::sound::SoundCmd::Play { handle, se, vol, pan } => {
+            a.play_voice(handle, se, vol, pan);
+        }
+        crate::fx::sound::SoundCmd::Level { handle, vol } => a.voice_level(handle, vol),
+        crate::fx::sound::SoundCmd::Pan { handle, pan } => a.voice_pan(handle, pan),
+        crate::fx::sound::SoundCmd::Stop { handle, ticks } => a.voice_stop(handle, ticks),
+    }
+}
+
 /// 0x0B5 kind for a channel command (the 0x1036ec68 list plus /yell).
 fn chat_channel(cmd: &str) -> Option<u8> {
     Some(match cmd {
@@ -4714,14 +4726,7 @@ impl App {
                     // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.
                     for c in std::mem::take(&mut w.effects.sound_cmds) {
                         let Some(a) = &mut self.audio else { break };
-                        match c {
-                            crate::fx::sound::SoundCmd::Play { handle, se, vol, pan } => {
-                                a.play_voice(handle, se, vol, pan);
-                            }
-                            crate::fx::sound::SoundCmd::Level { handle, vol } => a.voice_level(handle, vol),
-                            crate::fx::sound::SoundCmd::Pan { handle, pan } => a.voice_pan(handle, pan),
-                            crate::fx::sound::SoundCmd::Stop { handle, ticks } => a.voice_stop(handle, ticks),
-                        }
+                        play_fx_sound(a, c);
                     }
                     eg.set_lights(&r.lights);
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
@@ -4761,7 +4766,12 @@ impl App {
             && let Some(sel) = &mut self.select
         {
             sel.advance(dt, self.select_ui.cursor);
-            sel.render(&gfx.gpu, gfx.config.format, &mut encoder, &scene_view, &scene_depth, aspect);
+            let alive = self.audio.as_ref().map(|a| a.alive());
+            sel.render(&gfx.gpu, gfx.config.format, &mut encoder, (&scene_view, Some(&scene_tex), bg), &scene_depth, aspect, alive);
+            for c in sel.take_sounds() {
+                let Some(a) = &mut self.audio else { break };
+                play_fx_sound(a, c);
+            }
             drew_world = true;
         }
         if self.title_backdrop()
@@ -4842,6 +4852,9 @@ impl App {
         perf::timed(|| "submit".into(), || gfx.gpu.queue.submit(extra.into_iter().chain([encoder.finish()])));
         if let (Some(eg), Phase::World(w)) = (&mut self.effects_gpu, &mut self.phase) {
             eg.after_submit(&gfx.gpu, &mut w.effects);
+        }
+        if let Some(sel) = &mut self.select {
+            sel.after_submit(&gfx.gpu);
         }
         if let Phase::World(w) = &mut self.phase
             && let Some(r) = &mut w.renderer
