@@ -1,7 +1,8 @@
-//! Item records as FUN_101550f0 reads them: 0xc00 bytes per item, each byte rotated right by 5
-//! (FUN_10156f00). The id range picks the file (table DAT_103662e8, filled by FUN_10154e50 from
-//! language slots) and the field parser (FUN_101557b0 and the others). Strings follow FUN_10155510,
-//! the icon is at +0x280 (size) / +0x284 (data).
+//! Item records as FUN_1015b9e0 reads them: 0x1400 bytes per item (0xc00 in the 2019 build, and in the German and
+//! French files retail no longer updates), each byte rotated right by 5 (FUN_1015d7f0). The id range picks the file
+//! (table DAT_10372150, filled by FUN_1015b720 from language slots) and the field parser (FUN_1015c0a0 and the
+//! others). Strings follow FUN_1015be00, the icon is at +0x280 (size) / +0x284 (data). The wide records widen the
+//! flags to u32, so fields from +6 on sit 2 later (4 after an alignment gap before the jobs word).
 
 use super::DatIndex;
 use super::font::decode_sjis;
@@ -165,25 +166,46 @@ fn text(f: Option<&Field>) -> String {
     }
 }
 
-/// Decodes one decrypted record.
-pub fn parse(r: &[u8], kind: Kind, lang: Lang) -> Item {
+/// A 2019 record offset in this record: wide records (0x1400) put fields from +6 on 2 later, and those from the
+/// jobs word on (`jobs`, where the kind has one) 2 more.
+fn wide_at(wide: bool, jobs: Option<usize>, old: usize) -> usize {
+    if !wide || old < 6 {
+        old
+    } else {
+        old + 2 + if jobs.is_some_and(|j| old >= j) { 2 } else { 0 }
+    }
+}
+
+/// Decodes one decrypted record (`wide`: a 0x1400-byte record).
+pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
+    // Kinds without the shared header keep their layout; the jobs word follows a gap in the wide ones.
+    let (shifted, jobs) = match kind {
+        Kind::Automaton => (true, Some(0x10)),
+        Kind::Armor | Kind::Weapon | Kind::K7400 => (true, Some(0x14)),
+        Kind::General | Kind::Usable | Kind::K7000 | Kind::Monster | Kind::Currency => (true, None),
+        _ => (false, None),
+    };
+    let at = |old: usize| wide_at(wide && shifted, jobs, old);
+    let r16 = |old: usize| u16_at(r, at(old));
+    let r32 = |old: usize| u32_at(r, at(old));
+    let r8 = |old: usize| r[at(old)];
     let mut it = Item { id: u32_at(r, 0), kind: Some(kind), ..Default::default() };
     let header = |it: &mut Item| {
         it.flags = u16_at(r, 4);
-        it.stack = u16_at(r, 6);
-        it.item_type = u16_at(r, 8);
-        it.resource = u16_at(r, 0xa);
-        it.targets = u16_at(r, 0xc);
+        it.stack = r16(6);
+        it.item_type = r16(8);
+        it.resource = r16(0xa);
+        it.targets = r16(0xc);
     };
-    let x16 = |o: usize, at: usize| (o as u16, u16_at(r, at) as u32);
-    let x8 = |o: usize, at: usize| (o as u16, r[at] as u32);
-    let x32 = |o: usize, at: usize| (o as u16, u32_at(r, at));
+    let x16 = |o: usize, old: usize| (o as u16, r16(old) as u32);
+    let x8 = |o: usize, old: usize| (o as u16, r8(old) as u32);
+    let x32 = |o: usize, old: usize| (o as u16, r32(old));
     // (string table offset, description count, icon)
     let (strings, descs, icon) = match kind {
         Kind::General => {
             header(&mut it);
             it.extra = vec![x16(0xd10, 0xe), x16(0xd14, 0x10), x16(0xd34, 0x12), x8(0xd54, 0x15), x16(0xd58, 0x16)];
-            (Some(0x18), 1, true)
+            (Some(if wide { 0x1c } else { 0x18 }), 1, true)
         }
         Kind::Usable => {
             header(&mut it);
@@ -192,62 +214,63 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang) -> Item {
         }
         Kind::Automaton => {
             header(&mut it);
-            it.slots = u16_at(r, 0xe);
-            it.jobs = u32_at(r, 0x10);
-            it.level = u16_at(r, 0x14);
+            it.slots = r16(0xe);
+            it.jobs = r32(0x10);
+            it.level = r16(0x14);
             it.extra = vec![x16(0xd34, 0x16)];
-            (Some(0x18), 1, true)
+            (Some(if wide { 0x1c } else { 0x18 }), 1, true)
         }
         Kind::Armor => {
             header(&mut it);
-            it.level = u16_at(r, 0xe);
-            it.slots = u16_at(r, 0x10);
-            it.races = u16_at(r, 0x12);
-            it.jobs = u32_at(r, 0x14);
-            it.superior_level = u16_at(r, 0x18);
-            it.shield_size = u16_at(r, 0x1a);
-            it.max_charges = r[0x1c];
-            it.cast_time = r[0x1d];
-            it.use_delay = u16_at(r, 0x1e);
-            it.reuse_delay = u32_at(r, 0x20);
+            it.level = r16(0xe);
+            it.slots = r16(0x10);
+            it.races = r16(0x12);
+            it.jobs = r32(0x14);
+            it.superior_level = r16(0x18);
+            it.shield_size = r16(0x1a);
+            it.max_charges = r8(0x1c);
+            it.cast_time = r8(0x1d);
+            it.use_delay = r16(0x1e);
+            it.reuse_delay = r32(0x20);
             it.extra = vec![x16(0xd34, 0x24), x8(0xd50, 0x26), x8(0xd4c, 0x27), x8(0xd84, 0x28), x8(0xd9c, 0x29), x8(0xda0, 0x2a), x8(0xda4, 0x2b)];
-            (Some(0x2c), 1, true)
+            (Some(if wide { 0x30 } else { 0x2c }), 1, true)
         }
         Kind::Weapon => {
             header(&mut it);
-            it.level = u16_at(r, 0xe);
-            it.slots = u16_at(r, 0x10);
-            it.races = u16_at(r, 0x12);
-            it.jobs = u32_at(r, 0x14);
-            it.superior_level = u16_at(r, 0x18);
-            it.damage = u16_at(r, 0x1c);
-            it.delay = u16_at(r, 0x1e);
-            it.dps = u16_at(r, 0x20);
-            it.skill = r[0x22];
-            it.max_charges = r[0x28];
-            it.cast_time = r[0x29];
-            it.use_delay = u16_at(r, 0x2a);
-            it.reuse_delay = u32_at(r, 0x2c);
+            it.level = r16(0xe);
+            it.slots = r16(0x10);
+            it.races = r16(0x12);
+            it.jobs = r32(0x14);
+            it.superior_level = r16(0x18);
+            it.damage = r16(0x1c);
+            it.delay = r16(0x1e);
+            it.dps = r16(0x20);
+            it.skill = r8(0x22);
+            it.max_charges = r8(0x28);
+            it.cast_time = r8(0x29);
+            it.use_delay = r16(0x2a);
+            it.reuse_delay = r32(0x2c);
             it.extra = vec![x16(0xd18, 0x24), x16(0xd34, 0x30), x8(0xd50, 0x32), x8(0xd4c, 0x33), x8(0xd84, 0x34), x8(0xd9c, 0x35), x8(0xda0, 0x36), x8(0xda4, 0x37)];
-            (Some(0x38), 1, true)
+            (Some(if wide { 0x3c } else { 0x38 }), 1, true)
         }
         Kind::K7000 => {
             header(&mut it);
-            it.extra = vec![x16(0xd08, 0xe), x16(0xd34, 0x10), x32(0xd30, 0x14)];
+            // The u32 at 0x14 is aligned in both layouts.
+            it.extra = vec![x16(0xd08, 0xe), x16(0xd34, 0x10), (0xd30, u32_at(r, 0x14))];
             (Some(0x54), 1, true)
         }
         Kind::K7400 => {
             header(&mut it);
-            it.level = u16_at(r, 0xe);
-            it.slots = u16_at(r, 0x10);
-            it.races = u16_at(r, 0x12);
-            it.jobs = u32_at(r, 0x14);
-            it.max_charges = r[0x1a];
-            it.cast_time = r[0x1b];
-            it.use_delay = u16_at(r, 0x1c);
-            it.reuse_delay = u32_at(r, 0x20);
+            it.level = r16(0xe);
+            it.slots = r16(0x10);
+            it.races = r16(0x12);
+            it.jobs = r32(0x14);
+            it.max_charges = r8(0x1a);
+            it.cast_time = r8(0x1b);
+            it.use_delay = r16(0x1c);
+            it.reuse_delay = r32(0x20);
             it.extra = vec![x16(0xd2c, 0x18), x16(0xd34, 0x24)];
-            (Some(0x28), 1, true)
+            (Some(if wide { 0x2c } else { 0x28 }), 1, true)
         }
         Kind::Objective => {
             it.extra = (0..7).map(|i| x32(0xd5c + i * 4, 4 + i * 4)).collect();
@@ -259,13 +282,13 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang) -> Item {
         }
         Kind::Monster => {
             it.flags = u16_at(r, 4);
-            let n = &r[6..0x26];
+            let n = &r[at(6)..at(0x26)];
             it.name = decode_sjis(&n[..n.iter().position(|&c| c == 0).unwrap_or(n.len())]);
-            it.item_type = u16_at(r, 0x26);
-            it.resource = u16_at(r, 0x2a);
-            it.extra = vec![x16(0xd3c, 0x28), x16(0xd40, 0x2c), x16(0xd44, 0x2e), x32(0xd48, 0x30)];
+            it.item_type = r16(0x26);
+            it.resource = r16(0x2a);
+            it.extra = vec![x16(0xd3c, 0x28), x16(0xd40, 0x2c), x16(0xd44, 0x2e), (0xd48, u32_at(r, if wide { 0x34 } else { 0x30 }))];
             // FUN_10155760: one string (the name).
-            (Some(0x70), 0, true)
+            (Some(if wide { 0x74 } else { 0x70 }), 0, true)
         }
         Kind::Kf200 => {
             it.extra = vec![x32(0xd78, 4), x32(0xd30, 8)];
@@ -286,7 +309,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang) -> Item {
         Kind::Currency => {
             header(&mut it);
             it.extra = vec![x16(0xd34, 0xe)];
-            (Some(0x10), 1, true)
+            (Some(if wide { 0x14 } else { 0x10 }), 1, true)
         }
     };
     if let Some(at) = strings {
@@ -306,7 +329,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang) -> Item {
     }
     if icon {
         let size = u32_at(r, 0x280) as usize;
-        if (0x400..=0xc00 - 0x284).contains(&size) {
+        if (0x400..=r.len() - 0x284).contains(&size) {
             it.icon = Some(r[0x284..0x284 + size].to_vec());
         }
     }
@@ -348,15 +371,19 @@ impl Item {
     }
 }
 
-/// Item lookup for one language: reads 0xc00-byte records straight from the files.
+/// Item lookup for one language: reads records straight from the files, each file's record size by its length.
 pub struct Items {
     lang: Lang,
-    paths: Vec<Option<std::path::PathBuf>>,
+    paths: Vec<Option<(std::path::PathBuf, usize)>>,
 }
 
 impl Items {
     pub fn load(index: &DatIndex, lang: Lang) -> Result<Items> {
-        let paths: Vec<_> = RANGES.iter().map(|r| index.path(r.3[lang as usize])).collect();
+        let stride = |p: &std::path::Path, n: u32| match std::fs::metadata(p).map(|m| m.len()) {
+            Ok(len) if len == n as u64 * 0x1400 => 0x1400,
+            _ => 0xc00,
+        };
+        let paths: Vec<_> = RANGES.iter().map(|r| index.path(r.3[lang as usize]).map(|p| (stride(&p, r.1 - r.0), p)).map(|(n, p)| (p, n))).collect();
         paths.iter().any(|p| p.is_some()).then_some(()).context("no item files")?;
         Ok(Items { lang, paths })
     }
@@ -364,9 +391,10 @@ impl Items {
     /// Decrypted record bytes of `id`.
     pub fn record(&self, id: u32) -> Option<(Kind, Vec<u8>)> {
         let i = RANGES.iter().position(|r| (r.0..r.1).contains(&id))?;
-        let mut f = std::fs::File::open(self.paths[i].as_ref()?).ok()?;
-        f.seek(SeekFrom::Start((id - RANGES[i].0) as u64 * 0xc00)).ok()?;
-        let mut r = vec![0u8; 0xc00];
+        let (path, size) = self.paths[i].as_ref()?;
+        let mut f = std::fs::File::open(path).ok()?;
+        f.seek(SeekFrom::Start((id - RANGES[i].0) as u64 * *size as u64)).ok()?;
+        let mut r = vec![0u8; *size];
         f.read_exact(&mut r).ok()?;
         r.iter_mut().for_each(|b| *b = b.rotate_right(5));
         Some((RANGES[i].2, r))
@@ -374,7 +402,7 @@ impl Items {
 
     pub fn item(&self, id: u32) -> Option<Item> {
         let (kind, r) = self.record(id)?;
-        let it = parse(&r, kind, self.lang);
+        let it = parse(&r, kind, self.lang, r.len() == 0x1400);
         (it.id == id).then_some(it)
     }
 
