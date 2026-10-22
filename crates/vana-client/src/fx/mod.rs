@@ -48,6 +48,10 @@ pub trait Actors {
     fn floor(&self, _id: u32) -> Option<Vec3> {
         None
     }
+    /// Emission op 0x8f: the tint of the area environment the actor stands in (None = the zone's).
+    fn area_light(&self, _id: u32) -> Option<Vec3> {
+        None
+    }
     /// FUN_100ac560's class of one actor: 1 you (or your pet), 2 monster, 4 party, 8 not in your party.
     fn fx_class(&self, _id: u32) -> u8 {
         8
@@ -192,6 +196,8 @@ pub struct Instance {
     pub driven: Option<u32>,
     /// Emission op 0x8e: the source actor's foot contact and ground frame (FUN_100d3750), when the stream has it.
     pub ground: Option<(Vec3, [Vec3; 3])>,
+    /// Emission op 0x8f: the source actor's area tint, when the stream has it and the actor is in an area.
+    pub area_light: Option<Vec3>,
 }
 
 /// A word range of an element for the GPU this frame.
@@ -793,6 +799,7 @@ impl Effects {
             actors: [sched::Who::None; 2],
             driven: None,
             ground: None,
+            area_light: None,
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -1194,6 +1201,9 @@ impl Effects {
     /// (0, 0, 1) (model x is its facing), side = down x front, front = side x down.
     fn ground_frame(&mut self, i: usize, actors: &dyn Actors) {
         let Some(x) = self.insts[i].as_mut() else { return };
+        if x.streams[1].iter().any(|o| o.code == 0x8f) {
+            x.area_light = x.actors[0].id().and_then(|id| actors.area_light(id));
+        }
         if !x.streams[1].iter().any(|o| o.code == 0x8e) {
             return;
         }

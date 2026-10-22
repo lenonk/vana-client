@@ -58,6 +58,8 @@ pub struct Ground {
     /// Per triangle: its object is covered (+0xa4 bit 2), and its surface type (the four bit-15s).
     covers: Vec<bool>,
     kinds: Vec<u8>,
+    /// Per triangle: its object's area 4cc (+0xb0).
+    areas: Vec<u32>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -191,11 +193,12 @@ impl Sweep {
 impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         let Some(c) = scene.collision.as_ref() else {
-            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new() };
+            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new() };
         };
         let tris = c.tris.clone();
         let y_range = c.object.iter().map(|&o| c.objects[o as usize].y_range).collect();
         let covers = c.object.iter().map(|&o| c.objects[o as usize].flags & 4 != 0).collect();
+        let areas = c.object.iter().map(|&o| c.objects[o as usize].area).collect();
         let degenerate = tris.iter().map(|[a, b, c]| *a == *b || *b == *c || *c == *a).collect();
         let mut cells: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
         for (i, t) in tris.iter().enumerate() {
@@ -210,7 +213,7 @@ impl Ground {
         }
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone() }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone(), areas }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -225,6 +228,12 @@ impl Ground {
         let (_, i) = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
         let n = *self.normals.get(i)?;
         Some(if n.y < 0.0 { -n } else { n })
+    }
+
+    /// The area 4cc of the floor under `p` (FUN_100a3560: the ground info +0x34), None without a floor.
+    pub fn area(&self, p: Vec3) -> Option<u32> {
+        let (_, i) = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        self.areas.get(i).copied()
     }
 
     pub fn surface(&self, p: Vec3) -> (u8, bool) {
@@ -566,7 +575,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n] }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n], areas: vec![0; n] }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {

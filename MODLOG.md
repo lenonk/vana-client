@@ -3161,9 +3161,12 @@ c = (actor sun + actor ambient) / 255 (FUN_1017fee0 + FUN_1017ff00), c2 = (actor
 negative, & 0xff (wraps above 255); alpha untouched. Update op 0x69 (every frame): R, G, B = the slot's bytes 2 /
 1 / 0 x the zone c (no nearest-light rule; generators.md was wrong). Here: Env::area_light, Lighting.area, Frame
 area_light, the update Params `area`. Test port_sandoria_area_light: 232 fine 12:00 (1.6196, 1.6235, 1.5451),
-00:00 (0.9255, 0.9333, 1.1412). Not done *(the zone's env stands in for 0x8f)*: the per-area envs (ZoneWeather
-area folders, collision object +0xb0, actor area id, event op 0xae sub 7), e.g. zone 232 `ev01` indoors (flags
-bit 0, so never c2: 12:00 (0.9843, 0.9529, 0.8588)). Byte 0x0c of the payload is red (MODLOG's earlier "B,G,R"
+00:00 (0.9255, 0.9333, 1.1412). Area environments (later the same day): ZoneWeather.areas from `<zone>/<id>/<tag>` and `<zone>/<id>/weat/<tag>`,
+collision Object.area (+0xb0), Ground::area (the floor face under the actor), per-frame tints by area
+(World.area_lights), Actors::area_light, Instance.area_light for streams with 0x8f; zone 232 `ev01` (flags bit 0,
+so never c2): 12:00 (0.9843, 0.9529, 0.8588), 00:00 (0.9020, 0.8706, 0.7765). Not done: the event op 0xae sub 7
+override (entity+0x208), the 120-frame refresh (looked up when asked), the `subl` environment of zones 0xb6 /
+0x84, the weather crossfade of area envs. Byte 0x0c of the payload is red (MODLOG's earlier "B,G,R"
 note on the env colours is wrong; weather.rs rgb() reads R, G, B).
 
 ## Effect spline paths (Vtx 0x3e, CMoSpline; fx/spline.rs, update op 0x34) (2026-10-22)

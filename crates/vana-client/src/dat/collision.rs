@@ -40,6 +40,8 @@ pub struct Object {
     pub flags: u32,
     /// +0xb4 / +0xb8: y range, checked before any of its triangles.
     pub y_range: (f32, f32),
+    /// +0xb0: the area 4cc (copied to the ground info on a floor hit, FUN_10162590; area_light.md).
+    pub area: u32,
 }
 
 fn u32_at(b: &[u8], o: usize) -> Option<u32> {
@@ -99,7 +101,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                     None => {
                         let next = objects.len() as u32;
                         let obj = *objects.entry(xf).or_insert_with(|| {
-                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)) });
+                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)) });
                             next
                         });
                         let first = out.tris.len() as u32;

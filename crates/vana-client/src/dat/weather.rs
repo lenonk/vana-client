@@ -110,9 +110,13 @@ impl Env {
     }
 }
 
-/// Weather tag -> keys (minute of day, env), from the zone DAT's `weat` folder.
+type Keys = BTreeMap<String, Vec<(u32, Env)>>;
+
+/// Weather tag -> keys (minute of day, env), from the zone DAT's `weat` folder; the area environments' own keys
+/// by area 4cc (`<zone>/<id>/<tag>` or `<zone>/<id>/weat/<tag>`, FUN_10180380 / FUN_10183780).
 pub struct ZoneWeather {
-    pub keys: BTreeMap<String, Vec<(u32, Env)>>,
+    pub keys: Keys,
+    pub areas: std::collections::HashMap<u32, ZoneWeather>,
 }
 
 fn key_minutes(name: &str) -> Option<u32> {
@@ -126,30 +130,39 @@ fn key_minutes(name: &str) -> Option<u32> {
 
 impl ZoneWeather {
     pub fn parse(file: &[u8]) -> Result<Self> {
-        let mut keys: BTreeMap<String, Vec<(u32, Env)>> = BTreeMap::new();
-        let mut stack: Vec<String> = Vec::new();
+        let mut keys: Keys = BTreeMap::new();
+        let mut areas: std::collections::HashMap<u32, Keys> = std::collections::HashMap::new();
+        let mut stack: Vec<(String, u32)> = Vec::new();
         for ch in super::chunks(file)? {
             match ch.kind {
-                0x01 => stack.push(ch.name()),
+                0x01 => stack.push((ch.name(), u32::from_le_bytes(ch.name))),
                 0x00 => {
                     stack.pop();
                 }
                 0x2f => {
-                    // Only direct children of weat/<tag>, not sub-folders such as "indo".
                     let n = stack.len();
-                    if n >= 2 && stack[n - 2] == "weat" {
-                        if let (Some(m), Some(e)) = (key_minutes(&ch.name()), Env::parse(ch.data)) {
-                            keys.entry(stack[n - 1].clone()).or_default().push((m, e));
-                        }
+                    let (Some(m), Some(e)) = (key_minutes(&ch.name()), Env::parse(ch.data)) else { continue };
+                    let tag = || stack[n - 1].0.clone();
+                    if n == 4 && stack[2].0 == "weat" && stack[1].0 != "weat" {
+                        areas.entry(stack[1].1).or_default().entry(tag()).or_default().push((m, e));
+                    } else if n >= 2 && stack[n - 2].0 == "weat" {
+                        // Only direct children of weat/<tag>, not sub-folders such as "indo".
+                        keys.entry(tag()).or_default().push((m, e));
+                    } else if n == 3 && WEATHER_TAGS.contains(&stack[2].0.as_str()) {
+                        areas.entry(stack[1].1).or_default().entry(tag()).or_default().push((m, e));
                     }
                 }
                 _ => {}
             }
         }
-        for v in keys.values_mut() {
-            v.sort_by_key(|k| k.0);
-        }
-        Ok(Self { keys })
+        let sorted = |mut k: Keys| {
+            for v in k.values_mut() {
+                v.sort_by_key(|k| k.0);
+            }
+            k
+        };
+        let areas = areas.into_iter().map(|(id, k)| (id, Self { keys: sorted(k), areas: Default::default() })).collect();
+        Ok(Self { keys: sorted(keys), areas })
     }
 
     /// Env at `minute` of the day for `weather`, falling back to "suny" (FUN_10183780).
@@ -272,5 +285,15 @@ mod tests {
         assert!(close(noon, Vec3::new(1.6196, 1.6235, 1.5451)), "{noon}");
         let night = w.at("fine", 0.0).unwrap().area_light();
         assert!(close(night, Vec3::new(0.9255, 0.9333, 1.1412)), "{night}");
+        // The ev01 area (shops, auction house): flags bit 0, so always sun + ambient.
+        let ev01 = &w.areas[&u32::from_le_bytes(*b"ev01")];
+        assert!(close(ev01.at("fine", 720.0).unwrap().area_light(), Vec3::new(0.9843, 0.9529, 0.8588)));
+        assert!(close(ev01.at("fine", 0.0).unwrap().area_light(), Vec3::new(0.9020, 0.8706, 0.7765)));
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let keys = crate::dat::zone::Keys::from_ffximain(&dll).unwrap();
+        let scene = crate::dat::zone::load_scene(&keys, &index.read(332).unwrap()).unwrap();
+        let objs = &scene.collision.unwrap().objects;
+        // 159 ev01 records in table [5]; 76 of them are reached from the collision grid.
+        assert_eq!(objs.iter().filter(|o| o.area == u32::from_le_bytes(*b"ev01")).count(), 76);
     }
 }

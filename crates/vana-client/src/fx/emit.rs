@@ -342,8 +342,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             }
             0x91 => e.set_s(s, e.0[w::COLOR]),
             0x8f | 0x90 => {
-                // Tint by the area light: the brighter of (sun + ambient) and (moon + ambient).
-                let c = f.area_light;
+                // Tint by the area light: the brighter of (sun + ambient) and (moon + ambient); 0x8f of the
+                // caster's area (FUN_101819a0), 0x90 of the zone.
+                let c = if op.code == 0x8f { inst.area_light.unwrap_or(f.area_light) } else { f.area_light };
                 for (k, ch) in [(2usize, c.x), (1, c.y), (0, c.z)] {
                     e.set_cb(k, (e.cb(k) as f32 * ch).max(0.0) as u32 as u8);
                 }

@@ -1512,6 +1512,9 @@ struct FxActors<'a> {
     entities: &'a HashMap<u32, Entity>,
     me: u32,
     pet: u16,
+    /// The area environments' tints this frame, and the floor to find an actor's area on.
+    areas: &'a HashMap<u32, Vec3>,
+    ground: Option<&'a ground::Ground>,
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -1560,6 +1563,14 @@ impl crate::fx::Actors for FxActors<'_> {
 
     // FUN_100ac560: you or your pet, a monster (+0x120 bit 13 = u8 @0x20 bit 0), else not in the party roster
     // *(the roster is not tracked (s2c 0x0DD), so it holds only you; party members count as others)*.
+    // FUN_101819a0(actor+0x5e4): the area of the floor under it *(looked up when asked, not every 120 frames; the
+    // event op 0xae sub 7 override is not kept)*.
+    fn area_light(&self, id: u32) -> Option<Vec3> {
+        let p = self.places.get(&id)?;
+        let area = self.ground?.area(p.pos)?;
+        self.areas.get(&area).copied()
+    }
+
     fn fx_class(&self, id: u32) -> u8 {
         let e = self.entities.get(&id);
         if id == self.me || (self.pet != 0 && e.is_some_and(|e| e.index == self.pet)) {
@@ -1597,6 +1608,8 @@ struct World {
     contacts: HashMap<u32, (Vec3, Vec3)>,
     /// Our pet's ActIndex (0x037 u32 @0x34 >> 3; 0 = none).
     my_pet: u16,
+    /// Area environment tints (area 4cc -> Env::area_light) at the current time and weather.
+    area_lights: HashMap<u32, Vec3>,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,
@@ -2464,6 +2477,7 @@ impl App {
                             feet: HashMap::new(),
                             contacts: HashMap::new(),
                             my_pet: 0,
+                            area_lights: HashMap::new(),
                             ground: None,
                             name: login.name.clone(),
                             my_id: login.char_id,
@@ -4368,6 +4382,7 @@ impl App {
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
                     let weather = ev_time.map_or(w.weather, |(_, x)| x);
                     r.lighting = zw.at(crate::dat::weather::weather_tag(weather), minute).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
+                    w.area_lights = zw.areas.iter().filter_map(|(&id, a)| Some((id, a.at(crate::dat::weather::weather_tag(weather), minute)?.area_light()))).collect();
                 }
                 // Op 0x10: the frame before the cut, drawn once offscreen from the camera it had (last frame's
                 // poses; its own submit so the zone uniforms keep that camera).
@@ -4546,7 +4561,7 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, pet: w.my_pet };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref() };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
