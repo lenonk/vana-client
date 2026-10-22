@@ -1,0 +1,134 @@
+//! Inventory, equipment, status and gil windows (39542 menus "inventor", "equip", "persona",
+//! "money"), drawn from the models in inventory.rs at the offsets the client's draw functions use.
+
+use super::screens::{push_shape_text, push_shape_text_right, push_window, shape_text_width};
+use super::ui::UiBatch;
+use crate::dat::font::{Font, encode_sjis};
+use crate::dat::ui::{Menu, SpriteLib, UiFile};
+use crate::inventory::{EQUIP_FIELDS, Equipment, ItemList, Persona, ROW_PITCH};
+
+/// Texture name an item icon is loaded under.
+pub fn icon_texture(id: u16) -> String {
+    format!("\0icon {id}")
+}
+
+/// Game-font text; `tint` is the ARGB word (quads take BGRA).
+fn text(b: &mut UiBatch, font: &Font, atlas: &str, s: &str, x: f32, y: f32, tint: u32) -> f32 {
+    let mut quads = Vec::new();
+    let end = font.layout_line(&encode_sjis(s), x.round() as i32, y.round() as i32, tint.to_le_bytes(), [1.0, 1.0], &mut quads);
+    b.push_text(&quads, atlas);
+    end as f32
+}
+
+/// Kind-0 sprite refs of the children (cursor stops) at their positions, as the menu draws them.
+pub fn push_children(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32) {
+    for e in m.elements.iter().skip(1) {
+        for r in e.refs.iter().filter(|r| r.kind == 0) {
+            if let Some(lib) = ui.lib(&r.lib) {
+                b.push_sprite(ui, lib, r.index as usize, wx + e.x as f32, wy + e.y as f32, 1.0, 1.0, 0x8080_8080, 0);
+            }
+        }
+    }
+}
+
+/// The hand cursor: the window's kind-6 library (anc_item, anc_equi), frame `frame`, at child `child`.
+pub fn push_cursor(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32, child: usize, frame: usize) {
+    let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 6) else { return };
+    let (Some(lib), Some(e)) = (ui.lib(&r.lib), m.elements.get(child)) else { return };
+    b.push_sprite(ui, lib, frame % lib.sprites.len().max(1), wx + e.x as f32, wy + e.y as f32, 1.0, 1.0, 0x8080_8080, 0);
+}
+
+/// The item list (FUN_101edb70 with FUN_101ebda0 cells). Rows start at window + (3, 4), 18 px
+/// apart; US columns (0x10375ee4) put the icon at 0 (32x32 at 0.5), the name at 18 (y + 2) and the
+/// count right-aligned at 16 (y + 4, over the icon).
+pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    let (ox, oy) = (wx + 3.0, wy + 4.0);
+    for (k, row) in list.visible().iter().enumerate() {
+        let y = oy + k as f32 * ROW_PITCH;
+        b.push_image(&icon_texture(row.id), ox, y, 16.0, 16.0, [1.0; 4]);
+        text(b, font, atlas, &row.name, ox + 18.0, y + 2.0, row.tint);
+        if let Some(c) = &row.count {
+            push_shape_text_right(b, ui, c.as_bytes(), ox + 16.0, y + 4.0, 0x8080_8080);
+        }
+    }
+    if !list.rows.is_empty() {
+        push_cursor(b, ui, m, wx, wy, list.cursor + 1, frame);
+    }
+}
+
+/// The equipment grid (FUN_1012ea90): slot labels from the children, 32x32 icons at the child of
+/// each slot, counts "%2d" right-aligned at (+30, +22); then the ten number fields (FUN_1012d0f0).
+pub fn push_equipment(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, eq: &Equipment, info: &dyn crate::inventory::ItemInfo, w: f32, h: f32, cursor: Option<usize>, frame: usize) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    push_children(b, ui, m, wx, wy);
+    for (child, id, count) in eq.icons(info) {
+        let Some(e) = m.elements.get(child as usize) else { continue };
+        let (x, y) = (wx + e.x as f32, wy + e.y as f32);
+        b.push_image(&icon_texture(id), x, y, 32.0, 32.0, [1.0; 4]);
+        if let Some(c) = count {
+            push_shape_text_right(b, ui, c.trim_start().as_bytes(), x + 30.0, y + 22.0, 0x8080_8080);
+        }
+    }
+    for (i, f) in EQUIP_FIELDS.iter().enumerate() {
+        let s = crate::inventory::field_text(eq.fields[i]);
+        let (x, y) = (wx + f[0] as f32, wy + f[1] as f32);
+        if i >= 8 {
+            push_shape_text_right(b, ui, s.as_bytes(), x + f[2] as f32, y, 0x8080_8080);
+        } else {
+            push_shape_text(b, ui, s.as_bytes(), x, y, 0x8080_8080);
+        }
+    }
+    if let Some(c) = cursor {
+        push_cursor(b, ui, m, wx, wy, c, frame);
+    }
+}
+
+/// Sprite-font text cut to `max` px (FUN_101c04c0; the client ends a cut name with sprite 0x6c).
+fn shape_clipped(b: &mut UiBatch, ui: &UiFile, s: &str, x: f32, y: f32, max: f32, tint: u32) {
+    let mut cut = s.len();
+    while cut > 0 && shape_text_width(ui, &s.as_bytes()[..cut]) > max {
+        cut -= 1;
+    }
+    let end = push_shape_text(b, ui, &s.as_bytes()[..cut], x, y, tint);
+    if cut < s.len()
+        && let Some(lib) = ui.lib("font    fontshp")
+    {
+        b.push_sprite(ui, lib, 0x6c, end, y, 1.0, 1.0, tint, 0);
+    }
+}
+
+/// The status panel (FUN_10141c10), offsets from the window origin; labels are in windowps #8.
+pub fn push_persona(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, p: &Persona, w: f32, h: f32) {
+    let (x, y) = push_window(b, ui, style, m, w, h);
+    let white = 0x8080_8080;
+    shape_clipped(b, ui, &p.name, x + 4.0, y + 7.0, m.elements[0].w as f32 - 6.0, white);
+    for (job, dy) in [(&p.main, 0x13), (&p.sub, 0x1f)] {
+        if let Some((lv, name)) = job {
+            let end = push_shape_text(b, ui, lv.as_bytes(), x + 4.0, y + dy as f32, white);
+            // Inferred: the client draws a job sprite here (FUN_1011c470); the name stands in.
+            push_shape_text(b, ui, name.as_bytes(), end + 2.0, y + dy as f32, white);
+        }
+    }
+    push_shape_text(b, ui, b"ILv", x + 4.0, y + 43.0, white);
+    push_shape_text_right(b, ui, p.ilvl.as_bytes(), x + 70.0, y + 43.0, white);
+    push_shape_text(b, ui, p.su.as_bytes(), x + 74.0, y + 43.0, white);
+    for ((cur, max), dy) in [(&p.hp, 0x3a), (&p.mp, 0x46)] {
+        push_shape_text_right(b, ui, cur.as_bytes(), x + 70.0, y + dy as f32, white);
+        push_shape_text(b, ui, max.as_bytes(), x + 72.0, y + dy as f32, white);
+    }
+    push_shape_text_right(b, ui, p.tp.as_bytes(), x + 75.0, y + 82.0, white);
+    for (i, (base, bonus)) in p.stats.iter().enumerate() {
+        let sy = y + 96.0 + i as f32 * 13.0;
+        let end = push_shape_text(b, ui, base.as_bytes(), x + 50.0, sy, white);
+        if let Some((s, tint)) = bonus {
+            push_shape_text(b, ui, s.as_bytes(), end, sy, *tint);
+        }
+    }
+}
+
+/// The gil window (FUN_1013b8b0): the amount right-aligned at (+0x67, +0x1f).
+pub fn push_money(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, gil: &str, w: f32, h: f32) {
+    let (x, y) = push_window(b, ui, style, m, w, h);
+    push_shape_text_right(b, ui, gil.as_bytes(), x + 103.0, y + 31.0, 0x8080_8080);
+}

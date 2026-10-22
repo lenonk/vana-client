@@ -1,0 +1,471 @@
+//! Battle messages ("msg basic"), as 0x029 / 0x02D (FUN_1009cf70 / FUN_1009d1b0) and 0x028 results
+//! (FUN_1009c730) print them: text FUN_10094d20(5, id) from the 1024-entry file in language slot 0x63,
+//! expanded by FUN_100bf790 with the caster / target names, and a chat mode per caster-target relation
+//! (FUN_1009cda0) that picks the line colour (FUN_10126010 / FUN_10126040).
+
+use super::DatIndex;
+use super::dialog::Dialog;
+use super::font::{decode_sjis, encode_sjis};
+use super::msg::{Messages, slot_file};
+use anyhow::{Context, Result};
+
+/// Language slots (FUN_10250e50): message kinds of FUN_10094d20 and the name tables.
+const SLOT_BASIC: usize = 0x63; // kind 5
+const SLOT_SKILLS: usize = 0x60; // kind 2: combat skills ({05})
+const SLOT_LISTS: usize = 0x61; // kind 3: 7f 84 bit names
+const SLOT_MOB_SKILLS: usize = 0x66; // kind 7: {16} ids from 0x100
+const SLOT_SPELLS: usize = 0x5a; // FUN_10221f40
+const SLOT_ABILITIES: usize = 0x5c; // FUN_10219c20
+const SLOT_SYSTEM: usize = 0x65; // kind 6: s2c 0x053 (FUN_10094d20(6, n))
+/// Status names (grammar kind 0x13, FUN_1021d5f0); file inferred from content, slot not traced.
+const STATUS_FILE: u32 = 55725;
+
+/// Mode tables (1024 bytes each, by message id) in FFXiMain .data, in FUN_1009cda0's order.
+const MODE_TABLES: [u32; 7] = [0x1034_d360, 0x1034_cf60, 0x1034_d760, 0x1034_db60, 0x1034_df60, 0x1034_e360, 0x1034_e760];
+/// Mode -> colour id {u16 mode, u8 colour, u8 group} (zero-terminated), colour id -> BGRA {u32 id, u32 colour}.
+const FILTER_KINDS: u32 = 0x1035_0a60;
+const FILTER_TABLES: u32 = 0x1035_1bbc;
+const MODE_COLOURS: u32 = 0x1036_2b50;
+const PALETTE: u32 = 0x1036_29c0;
+/// FUN_1009cda0 returns 0xC8 for lines that are not shown.
+pub const HIDDEN: u8 = 0xC8;
+
+/// Who a message is about, relative to us (FUN_1009cda0's tests, first match wins).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Relation {
+    TargetIsMe,
+    CasterIsMe,
+    PartyCaster,
+    PartyTarget,
+    AllianceCaster,
+    AllianceTarget,
+    Other,
+}
+
+/// An actor as the expander sees it: entity +0x7c name, id class, and the 0x00D/0x00E name flags.
+#[derive(Clone, Debug, Default)]
+pub struct Who {
+    pub name: String,
+    /// Player ids are below 0x01000000; they take no article.
+    pub pc: bool,
+    /// u32 @0x24 bit 29 (FUN_100892d0): no "the" (proper noun).
+    pub named: bool,
+    /// u32 @0x24 bit 30 (FUN_10089320): plural verb forms.
+    pub plural: bool,
+}
+
+/// What the codes read: the two actors, our own name and work[5] (message object +0xc50).
+#[derive(Clone, Debug, Default)]
+pub struct Ctx {
+    pub actor: Option<Who>,
+    pub target: Option<Who>,
+    pub me: String,
+    pub work: [i32; 5],
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Line {
+    pub lines: Vec<String>,
+    /// A `1f xx` code sets the message mode (msg+4).
+    pub mode: Option<u8>,
+}
+
+pub struct BattleText {
+    basic: Dialog,
+    skills: Option<Dialog>,
+    lists: Option<Dialog>,
+    mob_skills: Option<Dialog>,
+    spells: Option<Messages>,
+    abilities: Option<Messages>,
+    statuses: Option<Messages>,
+    items: Option<super::items::Items>,
+    /// File 7031 (language slot 0x65): s2c 0x053 system messages; group 9 (file 55648) client messages.
+    system: Option<Dialog>,
+    group9: Option<Messages>,
+    modes: Vec<[u8; 1024]>,
+    mode_colours: Vec<(u16, u8)>,
+    palette: Vec<(u8, [u8; 4])>,
+    /// Chat filter (FUN_100abf20 / FUN_100ac450): kind per message (0x10350a60) and 11 relation tables of 49
+    /// words (pointers at 0x10351bbc): top 2 bits pick config 0x32 / 0x33, the low 30 the bits.
+    filter_kinds: Vec<u8>,
+    filter_tables: Vec<Vec<u32>>,
+}
+
+/// Config id -> colour id of the log palette (FUN_101262c0).
+pub fn colour_id_of(config: u16) -> Option<u8> {
+    match config {
+        0x1b..=0x31 => Some((config - 0x1b) as u8 + 0x54),
+        0x9b => Some(0x6c),
+        0xb0 => Some(0x6d),
+        0xb3 => Some(0x6e),
+        _ => None,
+    }
+}
+
+/// A config colour 0x80RRGGBB as glyph BGRA bytes.
+pub fn argb_bytes(c: u32) -> [u8; 4] {
+    let b = c.to_le_bytes();
+    [b[0], b[1], b[2], b[3]]
+}
+
+/// Bytes at a virtual address of a PE image (data sections; FFXiMain keeps them unpacked).
+pub fn va_bytes(pe: &[u8], va: u32, len: usize) -> Option<&[u8]> {
+    let u16_at = |o: usize| pe.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
+    let u32_at = |o: usize| pe.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let nt = u32_at(0x3c)? as usize;
+    let (count, opt) = (u16_at(nt + 6)?, u16_at(nt + 20)?);
+    let base = u32_at(nt + 24 + 28)?;
+    (0..count).find_map(|i| {
+        let s = nt + 24 + opt + i * 40;
+        let (sva, raw, rsize) = (base + u32_at(s + 12)?, u32_at(s + 20)?, u32_at(s + 16)?);
+        (va >= sva && va + len as u32 <= sva + rsize).then(|| pe.get((raw + va - sva) as usize..(raw + va - sva) as usize + len)).flatten()
+    })
+}
+
+impl BattleText {
+    pub fn load(index: &DatIndex, ffximain: &[u8]) -> Result<Self> {
+        let file = |slot| slot_file(ffximain, 1, slot).with_context(|| format!("language slot {slot:#x}"));
+        let dialog = |slot| -> Result<Dialog> { Dialog::parse(&index.read(file(slot)?)?) };
+        let msgs = |id: u32| Messages::load(index, id).map_err(|e| log::warn!("names {id}: {e:#}")).ok();
+        let basic = dialog(SLOT_BASIC).context("battle messages")?;
+        let modes = MODE_TABLES.iter().map(|&va| va_bytes(ffximain, va, 1024).and_then(|b| b.try_into().ok()).context("mode table")).collect::<Result<Vec<[u8; 1024]>>>()?;
+        let mut mode_colours = Vec::new();
+        let mut at = MODE_COLOURS;
+        while let Some(e) = va_bytes(ffximain, at, 4).filter(|e| e[0] | e[1] != 0) {
+            mode_colours.push((u16::from_le_bytes([e[0], e[1]]), e[2]));
+            at += 4;
+        }
+        let mut palette = Vec::new();
+        let mut at = PALETTE;
+        while let Some(e) = va_bytes(ffximain, at, 8).filter(|e| e[0] != 0) {
+            palette.push((e[0], [e[4], e[5], e[6], e[7]]));
+            at += 8;
+        }
+        let filter_kinds = va_bytes(ffximain, FILTER_KINDS, 1024).map(<[u8]>::to_vec).unwrap_or_default();
+        let filter_tables = (0..11)
+            .filter_map(|i| {
+                let p = va_bytes(ffximain, FILTER_TABLES + i * 4, 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))?;
+                let t = va_bytes(ffximain, p, 49 * 4)?;
+                Some(t.chunks(4).map(|c| u32::from_le_bytes(c.try_into().unwrap())).collect())
+            })
+            .collect();
+        Ok(Self {
+            filter_kinds,
+            filter_tables,
+            basic,
+            skills: dialog(SLOT_SKILLS).ok(),
+            lists: dialog(SLOT_LISTS).ok(),
+            mob_skills: dialog(SLOT_MOB_SKILLS).ok(),
+            spells: file(SLOT_SPELLS).ok().and_then(msgs),
+            abilities: file(SLOT_ABILITIES).ok().and_then(msgs),
+            statuses: msgs(STATUS_FILE),
+            items: super::items::Items::load(index, super::items::Lang::En).ok(),
+            system: dialog(SLOT_SYSTEM).map_err(|e| log::warn!("system messages: {e:#}")).ok(),
+            group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
+            modes,
+            mode_colours,
+            palette,
+        })
+    }
+
+    /// The chat mode of a message for a relation; `HIDDEN` lines are not printed.
+    pub fn mode(&self, id: u16, rel: Relation) -> u8 {
+        let t = match rel {
+            Relation::TargetIsMe => 0,
+            Relation::CasterIsMe => 1,
+            Relation::PartyCaster => 2,
+            Relation::PartyTarget => 3,
+            Relation::AllianceCaster => 4,
+            Relation::AllianceTarget => 5,
+            Relation::Other => 6,
+        };
+        self.modes[t].get(id as usize).copied().unwrap_or(HIDDEN)
+    }
+
+    /// Line colour of a chat mode, BGRA with 0x80 = 1.0; 0x80808080 when unlisted (FUN_10126040).
+    pub fn colour(&self, mode: u8) -> [u8; 4] {
+        let id = self.mode_colours.iter().find(|(m, _)| *m == mode as u16).map_or(0, |e| e.1);
+        self.palette.iter().find(|(i, _)| *i == id).map_or([0x80; 4], |e| e.1)
+    }
+
+    /// The line colour with the config's text colours (callback LAB_10126560 replaces the palette entries).
+    pub fn colour_in(&self, mode: u8, cfg: &crate::gamecfg::Values) -> [u8; 4] {
+        let id = self.mode_colours.iter().find(|(m, _)| *m == mode as u16).map_or(0, |e| e.1);
+        let config = (0x1b..=0x31).chain([0x9b, 0xb0, 0xb3]).find(|&c| colour_id_of(c) == Some(id));
+        match config {
+            Some(c) => argb_bytes(cfg.get(c)),
+            None => self.palette.iter().find(|(i, _)| *i == id).map_or([0x80; 4], |e| e.1),
+        }
+    }
+
+    /// FUN_100ac450: whether message `id` is filtered for relation table `rel` (0 caster us, 1 target us, 2 / 3
+    /// party caster / target, 4 / 5 alliance, 6 / 7 our mob, 8 / 9 other PC, 10 else) under 0x32 / 0x33.
+    pub fn filtered(&self, id: u16, rel: usize, cfg: &crate::gamecfg::Values) -> bool {
+        let Some(&kind) = self.filter_kinds.get(id as usize) else { return false };
+        let Some(&w) = self.filter_tables.get(rel).and_then(|t| t.get(kind as usize)) else { return false };
+        let word = if w >> 30 == 0 { cfg.get(0x32) } else { cfg.get(0x33) };
+        w & 0x3fff_ffff & word != 0
+    }
+
+    pub fn raw(&self, id: u16) -> Option<Vec<u8>> {
+        self.basic.raw(id as u32)
+    }
+
+    fn name_of(d: &Option<Dialog>, id: u32) -> Vec<u8> {
+        d.as_ref().and_then(|d| d.raw(id)).map(|r| r.split(|&b| b == 0).next().unwrap_or_default().to_vec()).unwrap_or_default()
+    }
+
+    fn msg_of(m: &Option<Messages>, id: i32) -> Vec<u8> {
+        m.as_ref().and_then(|m| m.raw(id.max(0) as usize)).unwrap_or_default()
+    }
+
+    /// English item name: form 0 singular, 1 with its article, 2 plural.
+    fn item_name(&self, id: u32, form: u8) -> String {
+        let Some(it) = self.items.as_ref().and_then(|t| t.item(id)) else { return String::new() };
+        match form {
+            0 => it.singular,
+            1 => format!("{} {}", if it.article == 1 { "an" } else { "a" }, it.singular),
+            _ => it.plural,
+        }
+    }
+
+    /// A 0x053 system message expanded for `ctx`.
+    pub fn system(&self, id: u16, ctx: &Ctx) -> Option<Line> {
+        let raw = self.system.as_ref()?.raw(id as u32)?;
+        Some(self.expand_raw(&raw, ctx))
+    }
+
+    /// A group 9 client message (FUN_10076e80).
+    pub fn group9(&self, id: usize) -> Option<String> {
+        self.group9.as_ref()?.get(id)
+    }
+
+    /// Message `id` expanded for `ctx`; None when the id has no text.
+    pub fn expand(&self, id: u16, ctx: &Ctx) -> Option<Line> {
+        Some(self.expand_raw(&self.raw(id)?, ctx))
+    }
+
+    /// FUN_100bf790 (English branch) over the codes battle messages use.
+    pub fn expand_raw(&self, s: &[u8], ctx: &Ctx) -> Line {
+        let mut lines: Vec<Vec<u8>> = vec![Vec::new()];
+        let mut mode = None;
+        let work = |k: u8| ctx.work.get(k as usize).copied().unwrap_or(0);
+        let who = |k: u8| if k == 0 { ctx.actor.as_ref() } else { ctx.target.as_ref() };
+        let mut i = 0;
+        while i < s.len() {
+            let c = s[i];
+            let a = s.get(i + 1).copied().unwrap_or(0);
+            let out = lines.last_mut().unwrap();
+            let step = match c {
+                0x80.. => {
+                    out.extend_from_slice(&s[i..(i + 2).min(s.len())]);
+                    2
+                }
+                0x00 => break,
+                0x07 => {
+                    lines.push(Vec::new());
+                    1
+                }
+                // 01 len kind args: English grammar block (FUN_100bc8a0).
+                0x01 => {
+                    let body = s.get(i + 2..(i + 2 + a as usize).min(s.len())).unwrap_or_default();
+                    let idx = grammar_index(body.get(1..).unwrap_or_default());
+                    let slot = idx as u8;
+                    match body.first() {
+                        Some(0x10) => out.extend(encode_sjis(&ctx.actor.as_ref().map_or(String::new(), |w| w.name.clone()))),
+                        Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
+                        Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
+                        Some(0x04) if work(slot) != 1 => out.extend(work(slot).to_string().bytes()),
+                        // Items: form (k % 3) name / article / plural, source (k / 3) index / num / work.
+                        Some(&k @ 0x20..=0x28) => {
+                            let id = match (k - 0x20) / 3 {
+                                0 => idx as i32,
+                                1 => 0,
+                                _ => work(slot),
+                            };
+                            out.extend(encode_sjis(&self.item_name(id as u32, (k - 0x20) % 3)));
+                        }
+                        _ => {}
+                    }
+                    2 + a as usize
+                }
+                0x02 | 0x03 => 3,
+                0x05 => {
+                    out.extend(Self::name_of(&self.skills, work(a) as u16 as u32));
+                    2
+                }
+                0x08 => {
+                    out.extend(encode_sjis(&ctx.me));
+                    1
+                }
+                0x10 => {
+                    out.extend(Self::msg_of(&self.spells, work(a) as u16 as i32));
+                    2
+                }
+                0x12 => {
+                    out.extend(work(a).to_string().bytes());
+                    2
+                }
+                0x14 => {
+                    let t = work(a);
+                    out.extend(format!("{}:{:02}:{:02}", t / 3600, t % 3600 / 60, t % 60).bytes());
+                    2
+                }
+                // 16 n: an ability below 0x100 (FUN_100bba90), else kind 7 (mob skills) id - 0x100.
+                0x16 => {
+                    let id = work(a) as u16;
+                    out.extend(if id < 0x100 { Self::msg_of(&self.abilities, id as i32) } else { Self::name_of(&self.mob_skills, id as u32 - 0x100) });
+                    2
+                }
+                0x1f => {
+                    mode = Some(a);
+                    2
+                }
+                0x0a | 0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1c | 0x1e => 2,
+                0x7f => match a {
+                    0x34..=0x36 | 0x80 | 0x81 | 0x94..=0x96 | 0xa0..=0xb5 => 3,
+                    0x38 => 4,
+                    0x84 => {
+                        // Names of the set bits of work[4], kind 3 entries n * 0x20 + bit, space separated.
+                        let base = s.get(i + 2).copied().unwrap_or(0) as u32 * 0x20;
+                        let mut first = true;
+                        for bit in (0..32).filter(|b| work(4) as u32 >> b & 1 != 0) {
+                            if !first {
+                                out.push(b' ');
+                            }
+                            first = false;
+                            out.extend(Self::name_of(&self.lists, base + bit));
+                        }
+                        3
+                    }
+                    0x8f => {
+                        out.extend(Self::msg_of(&self.abilities, work(s.get(i + 2).copied().unwrap_or(0)) as u16 as i32 + 0x200));
+                        3
+                    }
+                    0x97 => {
+                        out.extend(work(s.get(i + 2).copied().unwrap_or(0)).to_string().bytes());
+                        3
+                    }
+                    // Alternatives [a/b] (FUN_100bbc10); 99 picks none.
+                    0x85..=0x88 | 0x90..=0x92 => {
+                        let n = s.get(i + 2).copied().unwrap_or(0);
+                        let k = match a {
+                            0x86 => (work(n) != 1) as usize,
+                            0x87 => who(n).is_some_and(|w| w.plural) as usize,
+                            0x88 => match who(n) {
+                                Some(w) if w.pc => 99,
+                                Some(w) => w.named as usize,
+                                None => 0,
+                            },
+                            _ => 0,
+                        };
+                        let (text, len) = alternative(s, i, k);
+                        out.extend(text);
+                        len
+                    }
+                    _ => 2,
+                },
+                0x20..0x7f => {
+                    out.push(c);
+                    1
+                }
+                _ => 1,
+            };
+            i += step.max(1);
+        }
+        while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
+            lines.pop();
+        }
+        Line { lines: lines.iter().map(|l| decode_sjis(l)).collect(), mode }
+    }
+}
+
+/// A grammar argument (FUN_100bbd20): 0x40 | k = slot k; low bits 2 = 14-bit index over the next 3 bytes.
+fn grammar_index(b: &[u8]) -> u16 {
+    match b {
+        [x, ..] if x & 0x40 != 0 => (x & 0x3f) as u16,
+        [x, b1, b2, b3, ..] if x & 0x3f == 2 => (((b2 & 0x7f) as i32 | ((*b3 as i8 as i32) << 7)) << 7) as u16 | (b1 & 0x7f) as u16,
+        _ => 0xffff,
+    }
+}
+
+/// Alternative `k` of the `[a/b]` group after the code at `from`, and the bytes the code spans.
+fn alternative(s: &[u8], from: usize, k: usize) -> (Vec<u8>, usize) {
+    let Some(open) = s[from..].iter().position(|&c| c == b'[').map(|p| from + p) else { return (Vec::new(), 3) };
+    let mut end = open + 1;
+    while end < s.len() && s[end] != b']' && s[end] != 0 {
+        end += if s[end] >= 0x80 { 2 } else { 1 };
+    }
+    let inner = &s[open + 1..end.min(s.len())];
+    (inner.split(|&c| c == b'/').nth(k).unwrap_or_default().to_vec(), (end + 1).min(s.len()) - from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load() -> Option<BattleText> {
+        let cfg = crate::config::Config::load();
+        let index = DatIndex::open(&cfg.ffxi_dir()).ok()?;
+        let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?;
+        Some(BattleText::load(&index, &dll).unwrap())
+    }
+
+    fn mob(name: &str) -> Option<Who> {
+        Some(Who { name: name.into(), ..Default::default() })
+    }
+
+    fn pc(name: &str) -> Option<Who> {
+        Some(Who { name: name.into(), pc: true, ..Default::default() })
+    }
+
+    #[test]
+    fn basic_messages() {
+        let Some(b) = load() else { return };
+        let ctx = Ctx { actor: pc("Tuxedo"), target: mob("Wild Rabbit"), work: [0, 5, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.expand(1, &ctx).unwrap().lines, ["Tuxedo hits the Wild Rabbit for 5 points of damage."]);
+        let one = Ctx { work: [0, 1, 0, 0, 0], ..ctx.clone() };
+        assert_eq!(b.expand(1, &one).unwrap().lines, ["Tuxedo hits the Wild Rabbit for 1 point of damage."]);
+        let back = Ctx { actor: mob("Wild Rabbit"), target: pc("Tuxedo"), ..ctx.clone() };
+        assert_eq!(b.expand(1, &back).unwrap().lines, ["The Wild Rabbit hits Tuxedo for 5 points of damage."]);
+        assert_eq!(b.expand(15, &back).unwrap().lines, ["The Wild Rabbit misses Tuxedo."]);
+        assert_eq!(b.expand(6, &ctx).unwrap().lines, ["Tuxedo defeats the Wild Rabbit."]);
+        // Named (proper noun) and plural monsters: "Ding Bats hit".
+        let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, pc: false }), target: pc("Tuxedo"), ..ctx.clone() };
+        assert_eq!(b.expand(1, &bats).unwrap().lines, ["Ding Bats hit Tuxedo for 5 points of damage."]);
+        // Experience (0x02D work[0]) and level up, which sets mode 0x79 with 1f 'y'.
+        let exp = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [50, 0, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.expand(8, &exp).unwrap().lines, ["Tuxedo gains 50 experience points."]);
+        let lv = Ctx { work: [2, 0, 0, 0, 0], ..exp };
+        let l = b.expand(9, &lv).unwrap();
+        assert_eq!((l.lines.as_slice(), l.mode), (["Tuxedo attains level 2!".to_string()].as_slice(), Some(0x79)));
+        // Spell names (55702) and two-line messages.
+        let cure = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [1, 12, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.expand(7, &cure).unwrap().lines, ["Tuxedo casts Cure.", "Tuxedo recovers 12 HP."]);
+    }
+
+    #[test]
+    fn modes_and_colours() {
+        let Some(b) = load() else { return };
+        // "hits": ours 0x14, on us 0x1c, others 0x28 (FFXiMain tables 0x1034cf60 / d360 / e760).
+        assert_eq!([Relation::CasterIsMe, Relation::TargetIsMe, Relation::Other].map(|r| b.mode(1, r)), [0x14, 0x1c, 0x28]);
+        assert_eq!(b.mode(13, Relation::Other), HIDDEN);
+        // Damage taken is red, system lines yellow.
+        assert_eq!(b.colour(0x1c), [0x2c, 0x30, 0xa0, 0x70]);
+        assert_eq!(b.colour(0x7a), [0x10, 0x80, 0x80, 0x60]);
+        assert_eq!(b.colour(0xff), [0x80; 4]);
+    }
+
+    /// The install predates LSB's client: ids match up to the Master Level messages, which are blank here.
+    #[test]
+    fn ids_match_lsb() {
+        let Some(b) = load() else { return };
+        let ctx = Ctx { actor: pc("A"), target: mob("B"), work: [3, 4, 5, 6, 0], me: "A".into() };
+        let t = |id| b.expand(id, &ctx).map(|l| l.lines.join(" ")).unwrap_or_default();
+        assert_eq!(t(264), "The B takes 4 points of damage.");
+        assert_eq!(t(282), "The B evades.");
+        assert_eq!(t(718), "A gains 3 capacity points.");
+        assert_eq!(t(777), "You cannot mount at this time.");
+        assert_eq!(t(809), "");
+    }
+}

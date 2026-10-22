@@ -1,0 +1,712 @@
+//! The Config pages with their own code: the scrolling lists (Chat Filters cfilter, Effects fxfilter, Log
+//! Settings conf11s, key assignment k1assign / k2assign), Font Colors (conftxtc, textcol1..3), the Windows pages
+//! (conf5m, conf5win, conf5w1 / conf5w2), Log (conf11m, conf11l) and the lobby's Config window (lobycwin).
+
+use super::configui::{Act, ConfigUi, Ctl, Mark, Out, Win, draw_page};
+use super::game_ui::GameUi;
+use crate::audio::Ui as Se;
+use crate::gamecfg::Values;
+use Ctl::*;
+
+const fn p(c: u16, id: u16, v: u32) -> (u16, Ctl) {
+    (c, Pick(id, v, Mark::Wide))
+}
+const fn p3(c: u16, id: u16, v: u32) -> (u16, Ctl) {
+    (c, Pick(id, v, Mark::Narrow))
+}
+const fn ic(c: u16, id: u16, v: u32) -> (u16, Ctl) {
+    (c, Pick(id, v, Mark::Icon))
+}
+
+/// Windows: Shared, Window 1, Window 2 (FUN_101919c0).
+const CONF5M: &[(u16, Ctl)] = &[(1, Open("conf5win")), (2, Open("conf5w1")), (3, Open("conf5w2"))];
+
+/// Window Settings (Shared) (FUN_10191ae0): log window 2 0xb4, timestamps 0xb5, frame style 0x12, open effect 0xa4.
+const CONF5WIN: &[(u16, Ctl)] = &[
+    p3(1, 0xb4, 1),
+    p3(2, 0xb4, 2),
+    p3(3, 0xb4, 0),
+    p3(4, 0xb5, 1),
+    p3(5, 0xb5, 2),
+    p3(6, 0xb5, 0),
+    ic(7, 0x12, 0),
+    ic(8, 0x12, 1),
+    ic(9, 0x12, 2),
+    ic(10, 0x12, 3),
+    ic(11, 0x12, 4),
+    ic(12, 0x12, 5),
+    ic(13, 0x12, 6),
+    ic(14, 0x12, 7),
+    p(15, 0xa4, 0),
+    p(16, 0xa4, 1),
+];
+
+/// Window 1 (FUN_10191fd0): reactive 0x0e, max 0x0f, min 0x10, width 0x9c (step 10), resize time 0x11.
+const CONF5W1: &[(u16, Ctl)] = &[p(1, 0x0e, 0), p(2, 0x0e, 1), (3, Slider(0x0f, 4, 20, 1)), (4, Slider(0x10, 0, 20, 1)), (5, Slider(0x9c, 0, 100, 10)), (6, Slider(0x11, 3, 30, 1))];
+/// Window 2: the same through the pairs at 0x1036ddd8.
+const CONF5W2: &[(u16, Ctl)] = &[p(1, 0xb6, 0), p(2, 0xb6, 1), (3, Slider(0xb7, 4, 20, 1)), (4, Slider(0xb8, 0, 20, 1)), (5, Slider(0xc5, 0, 100, 10)), (6, Slider(0xc6, 3, 30, 1))];
+
+/// Log: Window 1 / Window 2 categories, Default (confyn mode 1).
+const CONF11M: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::AskReset(1)))];
+/// Chat, For Self, For Others, System.
+const CONF11L: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::Custom(3))), (4, Act(Act::Custom(4)))];
+/// Font Colors: four categories and Default (confyn mode 0).
+const CONFTXTC: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::Custom(3))), (4, Act(Act::Custom(4))), (5, Act(Act::AskReset(0)))];
+/// textcol3: R, G, B sliders (step 4), OK, Cancel.
+const TEXTCOL3: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2))), (3, Act(Act::Custom(3))), (4, Act(Act::Custom(4))), (5, Act(Act::Custom(5)))];
+/// The shared yes/no box (FUN_102075f0) of conf6win's Default.
+const YESNO: &[(u16, Ctl)] = &[(1, Act(Act::Custom(1))), (2, Act(Act::Custom(2)))];
+/// The lobby's Config window (FUN_10196310): volume 0xa8, logout destination 0xac, aspect 0xab, title music 0xaf.
+const LOBYCWIN: &[(u16, Ctl)] = &[
+    (1, Slider(0xa8, 0, 100, 1)),
+    (2, Pick(0xac, 0, Mark::Wide)),
+    (3, Pick(0xac, 1, Mark::Wide)),
+    (4, Slider(0xab, 0, 5, 1)),
+    (5, Pick(0xaf, 0, Mark::Icon)),
+    (7, Pick(0xaf, 2, Mark::Icon)),
+    (8, Pick(0xaf, 3, Mark::Icon)),
+    (9, Pick(0xaf, 4, Mark::Icon)),
+    (10, Pick(0xaf, 5, Mark::Icon)),
+    (11, Pick(0xaf, 6, Mark::Icon)),
+    (6, Pick(0xaf, 1, Mark::Icon)),
+];
+
+/// List pages: rows 1..14 are scrolled; Enter acts on scroll + row - 1.
+const LIST_ROWS: &[(u16, Ctl)] = &[(1, Act(Act::Custom(0))), (2, Act(Act::Custom(0))), (3, Act(Act::Custom(0))), (4, Act(Act::Custom(0))), (5, Act(Act::Custom(0))), (6, Act(Act::Custom(0))), (7, Act(Act::Custom(0))), (8, Act(Act::Custom(0))), (9, Act(Act::Custom(0))), (10, Act(Act::Custom(0))), (11, Act(Act::Custom(0))), (12, Act(Act::Custom(0))), (13, Act(Act::Custom(0))), (14, Act(Act::Custom(0)))];
+/// textcol1: up to 11 category rows.
+const TEXTCOL1: &[(u16, Ctl)] = &[(1, Act(Act::Custom(0))), (2, Act(Act::Custom(0))), (3, Act(Act::Custom(0))), (4, Act(Act::Custom(0))), (5, Act(Act::Custom(0))), (6, Act(Act::Custom(0))), (7, Act(Act::Custom(0))), (8, Act(Act::Custom(0))), (9, Act(Act::Custom(0))), (10, Act(Act::Custom(0))), (11, Act(Act::Custom(0)))];
+
+pub fn page(name: &str) -> &'static [(u16, Ctl)] {
+    match name {
+        "conf5m" => CONF5M,
+        "conf5win" => CONF5WIN,
+        "conf5w1" => CONF5W1,
+        "conf5w2" => CONF5W2,
+        "conf11m" => CONF11M,
+        "conf11l" => CONF11L,
+        "conftxtc" => CONFTXTC,
+        "textcol1" => TEXTCOL1,
+        "textcol3" => TEXTCOL3,
+        "yesno" => YESNO,
+        "lobycwin" => LOBYCWIN,
+        n if is_list(n) => LIST_ROWS,
+        _ => &[],
+    }
+}
+
+fn is_list(name: &str) -> bool {
+    matches!(name, "cfilter" | "fxfilter" | "conf11s" | "k1assign" | "k2assign")
+}
+
+/// cfilter rows (0x1036d9c8): (a, b, label in group 0xb). a = mask bit (< 30: 0x32, else 0x33 bit a - 30) or 49
+/// ('1': no mask bit); b = hold bit of 0x34, 9 = none, < 0 = system level of 0x35.
+pub const CFILTER: [(i8, i8, u16); 53] = [
+    (0, 0, 0), (49, 2, 2), (49, 3, 3), (49, 4, 4), (49, 8, 5), (49, 7, 6), (3, 5, 7), (1, 1, 1), (46, 9, 190), (4, 9, 9), (5, 9, 10), (6, 9, 11),
+    (7, 9, 12), (8, 9, 13), (9, 9, 14), (23, 9, 28), (13, 9, 18), (14, 9, 19), (15, 9, 20), (16, 9, 21), (17, 9, 22), (24, 9, 29), (18, 9, 23),
+    (19, 9, 24), (20, 9, 25), (21, 9, 26), (22, 9, 27), (39, 9, 172), (38, 9, 173), (34, 9, 174), (35, 9, 175), (36, 9, 176), (37, 9, 177),
+    (33, 9, 166), (32, 9, 167), (28, 9, 168), (29, 9, 169), (30, 9, 170), (31, 9, 171), (25, 9, 30), (10, 9, 15), (11, 9, 16), (12, 9, 17),
+    (26, 9, 84), (27, 9, 139), (40, 9, 186), (41, 9, 187), (42, 9, 188), (45, 9, 189), (47, 6, 8), (49, -1, 31), (49, -2, 32), (49, -3, 33),
+];
+/// conf11s categories (0x1036de00 / de70 / dee0 / df50): (label, bit of the window's 64-bit mask).
+const LOG_ROWS: [&[(u16, u8)]; 4] = [
+    &[(34, 0), (36, 1), (37, 2), (38, 3), (39, 4), (40, 6), (41, 7), (42, 8), (43, 9), (35, 10), (191, 11)],
+    &[(44, 33), (45, 34), (46, 35), (47, 36), (48, 37), (49, 38)],
+    &[(50, 39), (51, 40), (52, 41), (53, 42), (54, 43), (55, 44)],
+    &[(197, 45), (198, 46), (58, 47)],
+];
+/// Font Colors categories (0x1036dae8 / dba8 / dc68 / dd28): (label, sample, config id), all group 0xb.
+const COLOUR_ROWS: [&[(u16, u16, u16)]; 4] = [
+    &[(0x22, 0x3b, 0x1b), (0x24, 0x3d, 0x1d), (0x25, 0x3e, 0x1e), (0x26, 0x3f, 0x1f), (0x27, 0x40, 0xb3), (0x28, 0x41, 0xb0), (0x29, 0x42, 0x20), (0x2a, 0x43, 0x21), (0x2b, 0x44, 0x22), (0x23, 0x3c, 0x1c), (0xbf, 0xc0, 0x9b)],
+    &[(0x2c, 0x45, 0x23), (0x2d, 0x46, 0x24), (0x2e, 0x47, 0x25), (0x2f, 0x48, 0x26), (0x30, 0x49, 0x27), (0x31, 0x4a, 0x28)],
+    &[(0x32, 0x4b, 0x29), (0x33, 0x4c, 0x2a), (0x34, 0x4d, 0x2b), (0x35, 0x4e, 0x2c), (0x36, 0x4f, 0x2d), (0x37, 0x50, 0x2e)],
+    &[(0x38, 0x51, 0x2f), (0x39, 0x52, 0x30), (0x3a, 0x53, 0x31)],
+];
+/// k1assign labels (0x1036e030; rows 28 / 29 Turn Right / Left only with keyboard type 2) and k2assign (0x1036e120).
+const K1_LABELS: [u16; 30] = [85, 86, 88, 87, 97, 98, 100, 99, 89, 90, 92, 91, 132, 131, 93, 94, 96, 95, 101, 102, 103, 104, 105, 106, 107, 133, 137, 136, 193, 194];
+const K2_LABELS: [u16; 28] = [108, 109, 110, 111, 112, 128, 129, 130, 135, 134, 137, 136, 133, 132, 131, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 125, 124, 123];
+
+/// DIK scan codes: the character a key shows (FUN_101a7c20) and the egui key that makes it.
+const DIK: &[(u8, &str, egui::Key)] = {
+    use egui::Key::*;
+    &[
+        (0x02, "1", Num1), (0x03, "2", Num2), (0x04, "3", Num3), (0x05, "4", Num4), (0x06, "5", Num5), (0x07, "6", Num6), (0x08, "7", Num7), (0x09, "8", Num8),
+        (0x0a, "9", Num9), (0x0b, "0", Num0), (0x0c, "-", Minus), (0x0d, "=", Equals), (0x10, "Q", Q), (0x11, "W", W), (0x12, "E", E), (0x13, "R", R),
+        (0x14, "T", T), (0x15, "Y", Y), (0x16, "U", U), (0x17, "I", I), (0x18, "O", O), (0x19, "P", P), (0x1a, "[", OpenBracket), (0x1b, "]", CloseBracket),
+        (0x1e, "A", A), (0x1f, "S", S), (0x20, "D", D), (0x21, "F", F), (0x22, "G", G), (0x23, "H", H), (0x24, "J", J), (0x25, "K", K), (0x26, "L", L),
+        (0x27, ";", Semicolon), (0x28, "'", Quote), (0x29, "`", Backtick), (0x2b, "\\", Backslash), (0x2c, "Z", Z), (0x2d, "X", X), (0x2e, "C", C),
+        (0x2f, "V", V), (0x30, "B", B), (0x31, "N", N), (0x32, "M", M), (0x33, ",", Comma), (0x34, ".", Period), (0x35, "/", Slash),
+    ]
+};
+
+pub fn dik_char(code: u32) -> &'static str {
+    DIK.iter().find(|d| d.0 as u32 == code).map_or("", |d| d.1)
+}
+
+pub fn dik_of(key: egui::Key) -> Option<u8> {
+    DIK.iter().find(|d| d.2 == key).map(|d| d.0)
+}
+
+/// The winit key of a DIK code (movement and turning bindings).
+pub fn dik_keycode(code: u32) -> Option<winit::keyboard::KeyCode> {
+    use winit::keyboard::KeyCode as K;
+    let k = dik_char(code);
+    Some(match k {
+        "1" => K::Digit1, "2" => K::Digit2, "3" => K::Digit3, "4" => K::Digit4, "5" => K::Digit5, "6" => K::Digit6, "7" => K::Digit7,
+        "8" => K::Digit8, "9" => K::Digit9, "0" => K::Digit0, "-" => K::Minus, "=" => K::Equal, "[" => K::BracketLeft, "]" => K::BracketRight,
+        ";" => K::Semicolon, "'" => K::Quote, "`" => K::Backquote, "\\" => K::Backslash, "," => K::Comma, "." => K::Period, "/" => K::Slash,
+        "A" => K::KeyA, "B" => K::KeyB, "C" => K::KeyC, "D" => K::KeyD, "E" => K::KeyE, "F" => K::KeyF, "G" => K::KeyG, "H" => K::KeyH,
+        "I" => K::KeyI, "J" => K::KeyJ, "K" => K::KeyK, "L" => K::KeyL, "M" => K::KeyM, "N" => K::KeyN, "O" => K::KeyO, "P" => K::KeyP,
+        "Q" => K::KeyQ, "R" => K::KeyR, "S" => K::KeyS, "T" => K::KeyT, "U" => K::KeyU, "V" => K::KeyV, "W" => K::KeyW, "X" => K::KeyX,
+        "Y" => K::KeyY, "Z" => K::KeyZ,
+        _ => return None,
+    })
+}
+
+/// Page state that is not a config id.
+#[derive(Default)]
+pub struct Extra {
+    /// List pages: first row shown.
+    pub scroll: usize,
+    /// conf11s / conftxtc category (0..3) and conf11s window (0 / 1).
+    pub cat: usize,
+    pub log_window: usize,
+    /// textcol1 row and textcol3's working colour and slider in edit.
+    pub row: usize,
+    pub rgb: [u8; 3],
+    pub rgb_edit: Option<u16>,
+    /// conf6win Default asked (the yes/no box is open).
+    pub ask_keys: Option<bool>,
+}
+
+fn rows(ui: &ConfigUi, v: &Values, name: &str) -> usize {
+    match name {
+        "cfilter" => CFILTER.len(),
+        "fxfilter" => 18,
+        "conf11s" => LOG_ROWS[ui.extra.cat.min(3)].len(),
+        "k1assign" => {
+            if v.get(0x42) == 2 { 30 } else { 28 }
+        }
+        "k2assign" => 28,
+        "textcol1" => COLOUR_ROWS[ui.extra.cat.min(3)].len(),
+        _ => 0,
+    }
+}
+
+/// A window was pushed.
+pub fn opened(ui: &mut ConfigUi, name: &str) {
+    if is_list(name) {
+        ui.extra.scroll = 0;
+    }
+    if name == "lobycwin"
+        && let Some(w) = ui.stack.last_mut()
+    {
+        w.cursor = 5;
+    }
+}
+
+/// A window was closed: textcol1 takes textcol2 with it.
+pub fn closed(ui: &mut ConfigUi, name: &str, _out: &mut Out) {
+    if name == "textcol1" && ui.stack.last().is_some_and(|w| w.name == "textcol2") {
+        ui.stack.pop();
+    }
+    if name == "yesno" {
+        ui.extra.ask_keys = None;
+    }
+}
+
+fn mask_bit(v: &Values, bit: u32) -> bool {
+    let (id, b) = if bit < 30 { (0x32, bit) } else { (0x33, bit - 30) };
+    v.get(id) & (1 << b) != 0
+}
+
+fn set_mask(v: &mut Values, out: &mut Out, bit: u32, on: bool) {
+    let (id, b) = if bit < 30 { (0x32, bit) } else { (0x33, bit - 30) };
+    set_bit(v, out, id, 1 << b, on);
+}
+
+fn set_bit(v: &mut Values, out: &mut Out, id: u16, mask: u32, on: bool) {
+    let cur = v.get(id);
+    if v.set(id, if on { cur | mask } else { cur & !mask }) {
+        out.changed.push(id);
+    }
+}
+
+/// cfilter row state sprite (framesus: 89 OFF, 88 ON, 83 Hold, 136 OFF + icon, 137 Hold + icon) (FUN_10190cb0).
+fn cfilter_state(v: &Values, r: usize) -> usize {
+    let (a, b, _) = CFILTER[r];
+    if b < 0 {
+        return if v.get_i(0x35) >= -b as i32 { 88 } else { 89 };
+    }
+    let hold = b != 9 && v.get(0x34) & (1 << b) != 0;
+    let icon = b == 2 && v.get(0x47) != 0;
+    if a != 49 && mask_bit(v, a as u32) {
+        88
+    } else if hold {
+        if icon { 137 } else { 83 }
+    } else if icon {
+        136
+    } else {
+        89
+    }
+}
+
+/// FUN_10190af0: Enter on a cfilter row.
+fn cfilter_toggle(v: &mut Values, out: &mut Out, r: usize) {
+    let (a, b, _) = CFILTER[r];
+    if b < 0 {
+        let lv = (r as i32 - 49).clamp(1, 3);
+        let nv = if v.get_i(0x35) < lv { lv } else { lv - 1 };
+        if v.set(0x35, nv as u32) {
+            out.changed.push(0x35);
+        }
+        return;
+    }
+    let hold = b != 9 && v.get(0x34) & (1 << b) != 0;
+    if a == 49 {
+        // OFF <-> Hold; Tell: OFF -> Hold -> OFF + icon -> Hold + icon -> OFF.
+        if b == 2 {
+            let icon = v.get(0x47) != 0;
+            if hold {
+                set_bit(v, out, 0x34, 1 << b, false);
+                if v.set(0x47, (!icon) as u32) {
+                    out.changed.push(0x47);
+                }
+            } else {
+                set_bit(v, out, 0x34, 1 << b, true);
+            }
+        } else {
+            set_bit(v, out, 0x34, 1 << b, !hold);
+        }
+        return;
+    }
+    let on = mask_bit(v, a as u32);
+    if b == 9 {
+        set_mask(v, out, a as u32, !on);
+    } else if on {
+        // ON -> Hold.
+        set_mask(v, out, a as u32, false);
+        set_bit(v, out, 0x34, 1 << b, true);
+    } else if hold {
+        set_bit(v, out, 0x34, 1 << b, false);
+    } else {
+        set_mask(v, out, a as u32, true);
+    }
+}
+
+fn log_ids(window: usize) -> (u16, u16) {
+    if window == 0 { (0xb9, 0xba) } else { (0xbb, 0xbc) }
+}
+
+fn log_bit(v: &Values, window: usize, bit: u8) -> bool {
+    let (lo, hi) = log_ids(window);
+    if bit < 32 { v.get(lo) & (1 << bit) != 0 } else { v.get(hi) & (1 << (bit - 32)) != 0 }
+}
+
+/// A list page's row: (label id in group 0xb, state sprite or None for key rows).
+fn row_toggle(ui: &mut ConfigUi, v: &mut Values, name: &str, r: usize, out: &mut Out) {
+    match name {
+        "cfilter" => cfilter_toggle(v, out, r),
+        "fxfilter" => {
+            let on = v.get(0x92) & (1 << r) != 0;
+            set_bit(v, out, 0x92, 1 << r, !on);
+        }
+        "conf11s" => {
+            let (lo, hi) = log_ids(ui.extra.log_window);
+            let bit = LOG_ROWS[ui.extra.cat.min(3)][r].1;
+            let on = log_bit(v, ui.extra.log_window, bit);
+            if bit < 32 { set_bit(v, out, lo, 1 << bit, !on) } else { set_bit(v, out, hi, 1 << (bit - 32), !on) }
+        }
+        _ => {}
+    }
+}
+
+/// Key assignment (FUN_10194e10): a key assigns to the cursor row; the same key again unassigns; a key is held
+/// by one row only. k2assign refuses the digits. Returns false for keys that are not assignable.
+fn assign(v: &mut Values, out: &mut Out, name: &str, row: usize, key: egui::Key) -> bool {
+    let Some(code) = dik_of(key) else { return false };
+    let (base, n) = if name == "k1assign" { (0x4a, 30) } else { (0x6a, 28) };
+    if name == "k2assign" && (0x02..=0x0b).contains(&code) {
+        out.sounds.push(Se::Error);
+        return true;
+    }
+    let id = base + row as u16;
+    let unassign = v.get(id) == code as u32;
+    for k in 0..n {
+        let other = base + k;
+        if v.get(other) == code as u32 && v.set(other, 0) {
+            out.changed.push(other);
+        }
+    }
+    if !unassign && v.set(id, code as u32) {
+        out.changed.push(id);
+    }
+    out.sounds.push(Se::Select);
+    true
+}
+
+/// Keys for windows with their own handling; true when taken.
+pub fn key(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, key: egui::Key, out: &mut Out) -> bool {
+    let Some(w) = ui.stack.last() else { return false };
+    let name = w.name.clone();
+    let cursor = w.cursor;
+    if name == "textcol3"
+        && let Some(ch) = ui.extra.rgb_edit
+    {
+        let c = &mut ui.extra.rgb[(ch as usize - 1).min(2)];
+        match key {
+            // FUN_10191740: +-4, capped at 0 / 255.
+            egui::Key::ArrowRight => *c = c.saturating_add(4),
+            egui::Key::ArrowLeft => *c = c.saturating_sub(4),
+            egui::Key::Enter | egui::Key::Escape => {
+                ui.extra.rgb_edit = None;
+                out.sounds.push(if key == egui::Key::Enter { Se::Select } else { Se::Cancel });
+            }
+            _ => {}
+        }
+        return true;
+    }
+    if is_list(&name) || name == "textcol1" {
+        let n = rows(ui, v, &name);
+        let shown = if name == "textcol1" { n.min(11) } else { n.min(14) };
+        let at = ui.extra.scroll + cursor as usize - 1;
+        let mut moved = false;
+        let set_cursor = |ui: &mut ConfigUi, c: u16| {
+            if let Some(w) = ui.stack.last_mut() {
+                w.cursor = c;
+            }
+        };
+        match key {
+            egui::Key::ArrowDown => {
+                if (cursor as usize) < shown {
+                    set_cursor(ui, cursor + 1);
+                    moved = true;
+                } else if name != "textcol1" && ui.extra.scroll + shown < n {
+                    ui.extra.scroll += 1;
+                    moved = true;
+                }
+            }
+            egui::Key::ArrowUp => {
+                if cursor > 1 {
+                    set_cursor(ui, cursor - 1);
+                    moved = true;
+                } else if ui.extra.scroll > 0 {
+                    ui.extra.scroll -= 1;
+                    moved = true;
+                }
+            }
+            // Right / Left page by 14 (conf11s: switch window).
+            egui::Key::ArrowRight | egui::Key::ArrowLeft if name == "conf11s" => {
+                ui.extra.log_window ^= 1;
+                moved = true;
+            }
+            egui::Key::ArrowRight if name != "textcol1" => {
+                let s = (ui.extra.scroll + 14).min(n.saturating_sub(14));
+                moved = s != ui.extra.scroll;
+                ui.extra.scroll = s;
+            }
+            egui::Key::ArrowLeft if name != "textcol1" => {
+                let s = ui.extra.scroll.saturating_sub(14);
+                moved = s != ui.extra.scroll;
+                ui.extra.scroll = s;
+            }
+            egui::Key::Enter if name == "textcol1" => {
+                out.sounds.push(Se::Select);
+                ui.extra.row = cursor as usize - 1;
+                let id = COLOUR_ROWS[ui.extra.cat.min(3)].get(ui.extra.row).map_or(0x1b, |r| r.2);
+                let c = v.get(id);
+                ui.extra.rgb = [(c >> 16) as u8, (c >> 8) as u8, c as u8];
+                ui.extra.rgb_edit = None;
+                ui.push("textcol3");
+            }
+            egui::Key::Enter if name.ends_with("assign") => out.sounds.push(Se::Error),
+            egui::Key::Enter if at < n => {
+                out.sounds.push(Se::Select);
+                row_toggle(ui, v, &name, at, out);
+            }
+            egui::Key::Escape => return false,
+            k if name.ends_with("assign") && at < n => {
+                assign(v, out, &name, at, k);
+            }
+            _ => {}
+        }
+        if moved {
+            out.sounds.push(Se::Cursor);
+        }
+        let _ = gu;
+        return true;
+    }
+    false
+}
+
+/// Enter on an Act::Custom child.
+pub fn custom(ui: &mut ConfigUi, v: &mut Values, name: &str, k: u8, out: &mut Out) {
+    match (name, k) {
+        ("conftxtc", 1..=4) => {
+            ui.extra.cat = k as usize - 1;
+            ui.push("textcol2");
+            ui.push("textcol1");
+        }
+        ("conf11m", 1 | 2) => {
+            ui.extra.log_window = k as usize - 1;
+            ui.push("conf11l");
+        }
+        ("conf11l", 1..=4) => {
+            ui.extra.cat = k as usize - 1;
+            ui.push("conf11s");
+        }
+        ("textcol3", 1..=3) => ui.extra.rgb_edit = Some(k as u16),
+        ("textcol3", 4) => {
+            // OK: 0x80RRGGBB into the row's id (FUN_10191810), then close.
+            let id = COLOUR_ROWS[ui.extra.cat.min(3)].get(ui.extra.row).map_or(0x1b, |r| r.2);
+            let [r, g, b] = ui.extra.rgb;
+            if v.set(id, 0x8000_0000 | (r as u32) << 16 | (g as u32) << 8 | b as u32) {
+                out.changed.push(id);
+            }
+            ui.stack.pop();
+        }
+        ("textcol3", 5) => {
+            ui.stack.pop();
+        }
+        ("yesno", 1) => {
+            // FUN_10195460 / FUN_101957b0: every key back to its default.
+            let ids: Vec<u16> = (0x4a..=0x89).collect();
+            for id in ids {
+                let d = crate::gamecfg::def(id).map_or(0, |d| d.default);
+                if v.set(id, d) {
+                    out.changed.push(id);
+                }
+            }
+            ui.stack.pop();
+            ui.extra.ask_keys = None;
+        }
+        ("yesno", 2) => {
+            ui.stack.pop();
+            ui.extra.ask_keys = None;
+        }
+        _ => {}
+    }
+}
+
+/// After a set: max / min lines pull each other (FUN_101920c0 *(inf: same rule for window 2)*); window 2's -1
+/// values follow window 1.
+pub fn linked(v: &mut Values, id: u16, out: &mut Out) {
+    let pair = match id {
+        0x0f | 0x10 => (0x0f, 0x10),
+        0xb7 | 0xb8 => (0xb7, 0xb8),
+        _ => return,
+    };
+    let (max, min) = (v.get_i(pair.0), v.get_i(pair.1));
+    if min > max {
+        let (fix, to) = if id == pair.0 { (pair.1, max) } else { (pair.0, min) };
+        if v.set(fix, to as u32) {
+            out.changed.push(fix);
+        }
+    }
+}
+
+/// The pointer on windows with their own handling; true when taken.
+#[allow(clippy::too_many_arguments)]
+pub fn pointer(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, p: (f32, f32), moved: bool, clicked: bool, sw: f32, sh: f32, out: &mut Out) -> bool {
+    let Some(w) = ui.stack.last() else { return false };
+    let name = w.name.clone();
+    if !(is_list(&name) || name == "textcol1") {
+        return false;
+    }
+    let Some((x, y)) = gu.window_xy(&w.full(), sw, sh) else { return true };
+    let n = rows(ui, v, &name);
+    let kids: Vec<(u16, [f32; 4])> = gu.menu_def(&w.full()).map(|m| m.elements.iter().skip(1).filter(|c| (1..=14).contains(&c.id)).map(|c| (c.id, [x + c.x as f32, y + c.y as f32, c.w as f32, c.h as f32])).collect()).unwrap_or_default();
+    let Some((id, _)) = kids.iter().find(|(id, r)| p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3] && ui.extra.scroll + *id as usize - 1 < n) else { return true };
+    let id = *id;
+    if (moved || clicked) && w.cursor != id {
+        out.sounds.push(Se::Cursor);
+        if let Some(w) = ui.stack.last_mut() {
+            w.cursor = id;
+        }
+    }
+    if clicked {
+        key(ui, gu, v, egui::Key::Enter, out);
+    }
+    true
+}
+
+/// Draws windows with their own drawing; true when drawn.
+#[allow(clippy::too_many_arguments)]
+pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: f32, sh: f32, rects: &mut Vec<[f32; 4]>) -> bool {
+    let name = w.full();
+    let white = [0x80u8; 4];
+    match w.name.as_str() {
+        n if is_list(n) => {
+            draw_page(ui, w, top, gu, v, sw, sh);
+            let Some((x, y)) = gu.window_xy(&name, sw, sh) else { return true };
+            // conf11s: the "Log Settings (Window 1 / 2)" header bar at the window position.
+            if n == "conf11s" {
+                gu.sprite("menu    windowps", 745 + ui.extra.log_window, x, y, 0x8080_8080);
+            }
+            let total = rows(ui, v, n);
+            let kids: Vec<(u16, f32, f32)> = gu.menu_def(&name).map(|m| m.elements.iter().skip(1).filter(|c| (1..=14).contains(&c.id)).map(|c| (c.id, x + c.x as f32, y + c.y as f32)).collect()).unwrap_or_default();
+            for (id, cx, cy) in kids {
+                let r = ui.extra.scroll + id as usize - 1;
+                if r >= total {
+                    continue;
+                }
+                match n {
+                    "cfilter" => {
+                        gu.sprite("menu    framesus", cfilter_state(v, r), cx, cy, 0x8080_8080);
+                        text_b(gu, CFILTER[r].2, cx + 33.0, cy, white);
+                    }
+                    "fxfilter" => {
+                        gu.sprite("menu    framesus", if v.get(0x92) & (1 << r) != 0 { 88 } else { 89 }, cx, cy, 0x8080_8080);
+                        text_b(gu, 148 + r as u16, cx + 33.0, cy, white);
+                    }
+                    "conf11s" => {
+                        let (label, bit) = LOG_ROWS[ui.extra.cat.min(3)][r];
+                        gu.sprite("menu    framesus", if log_bit(v, ui.extra.log_window, bit) { 88 } else { 89 }, cx, cy, 0x8080_8080);
+                        text_b(gu, label, cx + 30.0, cy, white);
+                    }
+                    _ => {
+                        // FUN_10194bd0: "[  ]" at x + 4, the key centred on x + 0x13, the label at x + 0x40.
+                        let (label, id) = if n == "k1assign" { (K1_LABELS[r], 0x4a + r as u16) } else { (K2_LABELS[r], 0x6a + r as u16) };
+                        gu.text("[  ]", cx + 4.0, cy, 0, white);
+                        gu.text(dik_char(v.get(id)), cx + 19.0, cy, 1, white);
+                        text_b(gu, label, cx + 64.0, cy, white);
+                    }
+                }
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        "textcol1" => {
+            let rows_of = COLOUR_ROWS[ui.extra.cat.min(3)];
+            let Some((x, y)) = gu.window(&name, sw, sh) else { return true };
+            let kids: Vec<(u16, f32, f32)> = gu.menu_def(&name).map(|m| m.elements.iter().skip(1).map(|c| (c.id, x + c.x as f32, y + c.y as f32)).collect()).unwrap_or_default();
+            for (id, cx, cy) in kids {
+                let Some(row) = rows_of.get(id as usize - 1) else { continue };
+                let on = top && id == w.cursor;
+                gu.sprite("menu    windowps", 74, cx, cy, if on { 0x8080_5020 } else { 0x8080_8080 });
+                text_b(gu, row.0, cx + 30.0, cy, white);
+                if on {
+                    gu.cursor(cx, cy);
+                }
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        "textcol2" => {
+            // FUN_101913b0: the row's sample in its colour at (x + 16, y + 20).
+            let Some((x, y)) = gu.window(&name, sw, sh) else { return true };
+            let row = top.then_some(()).map_or(ui.stack.iter().any(|s| s.name == "textcol1"), |_| true);
+            let cursor = ui.stack.iter().find(|s| s.name == "textcol1").map_or(1, |s| s.cursor) as usize;
+            if let (true, Some(r)) = (row, COLOUR_ROWS[ui.extra.cat.min(3)].get(cursor - 1)) {
+                text_b(gu, r.1, x + 16.0, y + 20.0, crate::dat::battle::argb_bytes(v.get(r.2)));
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        "textcol3" => {
+            draw_page(ui, w, top && ui.extra.rgb_edit.is_none(), gu, v, sw, sh);
+            let Some((x, y)) = gu.window_xy(&name, sw, sh) else { return true };
+            let [r, g, b] = ui.extra.rgb;
+            let colour = 0x8000_0000 | (r as u32) << 16 | (g as u32) << 8 | b as u32;
+            // FUN_10189620 with width 0x96: the sample is cut at 150 px.
+            if let Some(row) = COLOUR_ROWS[ui.extra.cat.min(3)].get(ui.extra.row) {
+                let mut t = gu.group_b(row.1 as usize).unwrap_or_default();
+                while gu.text_width(&t) > 150.0 && !t.is_empty() {
+                    t.pop();
+                }
+                gu.text(&t, x + 30.0, y + 20.0, 0, crate::dat::battle::argb_bytes(colour));
+            }
+            // FUN_10191580: windowps 98 at (child + 13, child + 2), x-scale v / 255 * 1.3.
+            let tints = [0x7080_0000, 0x7000_8000, 0x7000_0080];
+            let kids: Vec<(u16, f32, f32)> = gu.menu_def(&name).map(|m| m.elements.iter().skip(1).filter(|c| c.id <= 3).map(|c| (c.id, x + c.x as f32, y + c.y as f32)).collect()).unwrap_or_default();
+            for (id, cx, cy) in kids {
+                let c = ui.extra.rgb[id as usize - 1];
+                if c > 0 {
+                    gu.sprite_scaled("menu    windowps", 98, cx + 13.0, cy + 2.0, c as f32 / 255.0 * 1.3, 1.0, tints[id as usize - 1]);
+                }
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        "conf5w1" | "conf5w2" => {
+            draw_page(ui, w, top, gu, v, sw, sh);
+            // FUN_10191f20: the max / min line counts ("%d", fontshp, right-aligned) at (x1 - 16, y0 - 14).
+            let Some((x, y)) = gu.window_xy(&name, sw, sh) else { return true };
+            let ids = if w.name == "conf5w1" { [0x0f, 0x10] } else { [0xb7, 0xb8] };
+            let kids: Vec<(u16, f32, f32, f32)> = gu.menu_def(&name).map(|m| m.elements.iter().skip(1).filter(|c| c.id == 3 || c.id == 4).map(|c| (c.id, x + c.x as f32, y + c.y as f32, c.w as f32)).collect()).unwrap_or_default();
+            for (id, cx, cy, cw) in kids {
+                let editing = w.edit.filter(|e| e.0 == id).map(|e| e.1);
+                let val = editing.unwrap_or(v.get_i(ids[id as usize - 3]));
+                gu.shape_text(&val.to_string(), cx + cw - 16.0, cy - 14.0, 0x8080_8080, true);
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        "yesno" => {
+            draw_page(ui, w, top, gu, v, sw, sh);
+            // FUN_102075f0's text above the box *(inf: placement)*.
+            if let Some((x, y)) = gu.window_xy(&name, sw, sh) {
+                let t = gu.group_b(0x8a).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
+                let tw = gu.text_width(&t);
+                gu.frame(x, y - 28.0, tw + 16.0, 24.0);
+                gu.text(&t, x + 8.0, y - 24.0, 0, white);
+            }
+            rects.extend(gu.window_rect(&name, sw, sh));
+            true
+        }
+        _ => false,
+    }
+}
+
+fn text_b(gu: &mut GameUi, id: u16, x: f32, y: f32, colour: [u8; 4]) {
+    if let Some(t) = gu.group_b(id as usize) {
+        gu.text(&t, x, y, 0, colour);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cfilter_cycles() {
+        let mut v = Values::default();
+        let mut out = Out::default();
+        // Say: OFF -> ON -> Hold -> OFF.
+        cfilter_toggle(&mut v, &mut out, 0);
+        assert_eq!((v.get(0x32) & 1, cfilter_state(&v, 0)), (1, 88));
+        cfilter_toggle(&mut v, &mut out, 0);
+        assert_eq!((v.get(0x32) & 1, v.get(0x34) & 1, cfilter_state(&v, 0)), (0, 1, 83));
+        cfilter_toggle(&mut v, &mut out, 0);
+        assert_eq!(cfilter_state(&v, 0), 89);
+        // Tell: OFF -> Hold -> OFF + icon -> Hold + icon -> OFF.
+        let seq: Vec<usize> = (0..4)
+            .map(|_| {
+                cfilter_toggle(&mut v, &mut out, 1);
+                cfilter_state(&v, 1)
+            })
+            .collect();
+        assert_eq!(seq, vec![83, 136, 137, 89]);
+        // Yell is bit 46 = 0x33 bit 16.
+        cfilter_toggle(&mut v, &mut out, 8);
+        assert_eq!(v.get(0x33), 1 << 16);
+        // System levels.
+        cfilter_toggle(&mut v, &mut out, 51);
+        assert_eq!(v.get(0x35), 2);
+        cfilter_toggle(&mut v, &mut out, 51);
+        assert_eq!(v.get(0x35), 1);
+    }
+
+    #[test]
+    fn key_assignment_is_unique() {
+        let mut v = Values::default();
+        let mut out = Out::default();
+        // W (0x11) is Move Up by default; give it to row 1 (Move Down).
+        assert_eq!(v.get(0x4a), 0x11);
+        assign(&mut v, &mut out, "k1assign", 1, egui::Key::W);
+        assert_eq!((v.get(0x4a), v.get(0x4b)), (0, 0x11));
+        // The same key again unassigns.
+        assign(&mut v, &mut out, "k1assign", 1, egui::Key::W);
+        assert_eq!(v.get(0x4b), 0);
+        assert_eq!(dik_keycode(0x1e), Some(winit::keyboard::KeyCode::KeyA));
+    }
+}

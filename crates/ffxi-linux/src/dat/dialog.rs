@@ -1,0 +1,459 @@
+//! Zone dialogue (event message) files, as FUN_100ac7b0 / FUN_100890c0 load them and FUN_10094aa0 reads
+//! them: u32 `size | 0x10000000`, then (XOR 0x80 when byte 3 is 0x10) a table of u32 offsets relative to
+//! +4, count = first offset / 4. Strings carry the control codes FUN_100bf790 expands.
+
+use super::DatIndex;
+use super::font::decode_sjis;
+use anyhow::{Context, Result, bail};
+
+/// English file id of a zone's dialogue (FUN_100ac7b0, language slots 0x68 / 0x6b / 0x69 / 0x6a).
+pub fn file_id(zone: u16) -> u32 {
+    let z = zone as u32;
+    match z {
+        0..256 => 6420 + z,
+        256..1000 => 85591 + z - 256,
+        1000..2000 => 57945 + z - 1000,
+        _ => 68511 + z - 2000,
+    }
+}
+
+pub struct Dialog {
+    entries: Vec<Vec<u8>>,
+}
+
+impl Dialog {
+    pub fn load(index: &DatIndex, zone: u16) -> Result<Dialog> {
+        let id = file_id(zone);
+        Self::parse(&index.read(id)?).with_context(|| format!("dialogue file {id} (zone {zone})"))
+    }
+
+    pub fn parse(file: &[u8]) -> Result<Dialog> {
+        if file.len() < 8 {
+            bail!("too short");
+        }
+        let mut d = file.to_vec();
+        if d[3] == 0x10 {
+            d[4..].iter_mut().for_each(|b| *b ^= 0x80);
+        }
+        let body = &d[4..];
+        let u32_at = |o: usize| body.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+        let count = u32_at(0).context("no offset table")? / 4;
+        let mut entries = Vec::with_capacity(count);
+        for i in 0..count {
+            let start = u32_at(i * 4).context("offset table")?;
+            let end = if i + 1 < count { u32_at(i * 4 + 4).context("offset table")? } else { body.len() };
+            entries.push(body.get(start..end.max(start)).context("string out of range")?.to_vec());
+        }
+        Ok(Dialog { entries })
+    }
+
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    pub fn raw(&self, id: u32) -> Option<Vec<u8>> {
+        self.entries.get(id as usize).cloned()
+    }
+
+    /// The text with control codes shown as `{tags}`; `[a/b]` alternatives are kept as written.
+    pub fn get(&self, id: u32) -> Option<String> {
+        Some(readable(self.entries.get(id as usize)?))
+    }
+}
+
+/// Length of a `[a/b]` group starting the search at `from` (FUN_100bbc10): up to and past ']'.
+fn bracket_end(s: &[u8], from: usize) -> usize {
+    let Some(open) = s[from.min(s.len())..].iter().position(|&b| b == b'[') else { return s.len() };
+    let mut i = from + open + 1;
+    while i < s.len() && s[i] != b']' && s[i] != 0 {
+        i += if s[i] >= 0x80 { 2 } else { 1 };
+    }
+    (i + 1).min(s.len())
+}
+
+/// A grammar argument (FUN_100bbd20): 0x40|k = slot k; 0x?2 = 14-bit index packed 7 bits per byte.
+fn grammar_arg(s: &[u8]) -> String {
+    match s {
+        [b, ..] if b & 0x40 != 0 => format!("slot{}", b & 0x3f),
+        [b, b1, b2, b3, ..] if b & 0x3f == 2 => (((((b2 & 0x7f) as u16) | (*b3 as u16) << 7) << 7) | (b1 & 0x7f) as u16).to_string(),
+        _ => "?".into(),
+    }
+}
+
+/// A 0x01 block (FUN_100bc8a0, English): `01 len kind args`.
+fn grammar(kind: u8, args: &[u8]) -> String {
+    let arg = grammar_arg(args);
+    let src = |k: u8| ["#", "num", "work"][(k / 3) as usize % 3];
+    let form = |k: u8| ["", " a", " pl"][(k % 3) as usize];
+    match kind {
+        // Item records (0xc00 bytes, FUN_101550f0): name / with article / plural; index, num[] or work[].
+        0x20..=0x28 => format!("{{item{} {}{arg}}}", form(kind - 0x20), src(kind - 0x20)),
+        // Names through FUN_1014e180 (key items, inferred).
+        0x30..=0x35 => format!("{{keyitem{} {}{arg}}}", form(kind - 0x30), src(kind - 0x30)),
+        0x42..=0x44 => format!("{{keyitem{} work{arg}}}", form(kind - 0x42)),
+        0x03 => format!("{{count num{arg}}}"),
+        0x04 => format!("{{count work{arg}}}"),
+        _ => format!("{{grammar {kind:02x} {arg}}}"),
+    }
+}
+
+/// Renders a dialogue string readably, stepping over codes with FUN_100bf790's lengths.
+pub fn readable(s: &[u8]) -> String {
+    let mut out = String::new();
+    let mut text: Vec<u8> = Vec::new();
+    let mut i = 0;
+    let arg = |i: usize| s.get(i + 1).copied().unwrap_or(0);
+    while i < s.len() {
+        let c = s[i];
+        if c >= 0x80 {
+            text.extend_from_slice(&s[i..(i + 2).min(s.len())]);
+            i += 2;
+            continue;
+        }
+        if c >= 0x20 && c != 0x7f {
+            text.push(c);
+            i += 1;
+            continue;
+        }
+        out.push_str(&decode_sjis(&text));
+        text.clear();
+        let (tag, len) = match c {
+            0x00 => break,
+            0x01 => {
+                let n = arg(i) as usize;
+                let body = s.get(i + 2..(i + 2 + n).min(s.len())).unwrap_or_default();
+                (body.first().map_or("{grammar}".into(), |&k| grammar(k, &body[1..])), n + 2)
+            }
+            0x02 | 0x03 => (format!("{{{c:02x} {}}}", u16::from_le_bytes([arg(i), s.get(i + 2).copied().unwrap_or(0)])), 3),
+            0x05 => (format!("{{text2 work{}}}", arg(i)), 2),
+            0x07 => ("\n".into(), 1),
+            0x08 => ("{player}".into(), 1),
+            0x09 => ("{speaker}".into(), 1),
+            0x0a => (format!("{{num{}}}", arg(i)), 2),
+            0x0b => ("{choice}".into(), 1),
+            0x0c => (format!("{{select num{}}}", arg(i)), 2),
+            0x0d => (format!("{{sound work{}}}", arg(i)), 2),
+            0x0e => (format!("{{sound num{}}}", arg(i)), 2),
+            0x10 => (format!("{{name work{}}}", arg(i)), 2),
+            0x11 => (format!("{{name num{}}}", arg(i)), 2),
+            0x12 => (format!("{{number work{}}}", arg(i)), 2),
+            0x14 => (format!("{{time work{}}}", arg(i)), 2),
+            0x16 => (format!("{{name16 work{}}}", arg(i)), 2),
+            0x1a => (format!("{{name16 num{}}}", arg(i)), 2),
+            0x17 => (format!("{{emote {}}}", arg(i)), 2),
+            0x1c => (format!("{{string{}}}", arg(i)), 2),
+            0x1d => ("{direction}".into(), 1),
+            0x1e => (format!("{{color {:02x}}}", arg(i)), 2),
+            0x1f => (format!("{{mode {:02x}}}", arg(i)), 2),
+            0x13 | 0x18 | 0x19 => (format!("{{{c:02x} {}}}", arg(i)), 2),
+            0x7f => sub_code(s, i),
+            _ => (format!("{{{c:02x}}}"), 1),
+        };
+        out.push_str(&tag);
+        i += len.max(1);
+    }
+    out.push_str(&decode_sjis(&text));
+    out
+}
+
+/// `7f xx ...` codes: expander lengths (FUN_100bf790), display meaning from FUN_10123060.
+fn sub_code(s: &[u8], i: usize) -> (String, usize) {
+    let b = |k: usize| s.get(i + k).copied().unwrap_or(0);
+    let sub = b(1);
+    // Codes whose argument picks one of the `[a/b]` alternatives that follow.
+    let pick = |what: String| -> (String, usize) {
+        let end = bracket_end(s, i);
+        let open = s[i..end].iter().position(|&c| c == b'[').map_or(end, |p| i + p);
+        (format!("{{{what}}}{}", decode_sjis(&s[open..end])), end - i)
+    };
+    match sub {
+        0x31 => ("{next}".into(), 2),
+        0x32 | 0x33 | 0x37 => (format!("{{7f{sub:02x}}}"), 2),
+        0x34 => (format!("{{wait {}}}", b(2)), 3),
+        0x35 | 0x36 => (format!("{{7f{sub:02x} {}}}", b(2)), 3),
+        0x38 => (format!("{{wait {}}}", u16::from_le_bytes([b(2), b(3)])), 4),
+        0x80 => (format!("{{article {}}}", b(2)), 3),
+        0x81 => (format!("{{7f81 num{}}}", b(2)), 3),
+        0x84 => (format!("{{list {}}}", b(2)), 3),
+        0x85 => pick("player m/f".into()),
+        0x86 => pick(format!("plural work{}", b(2))),
+        0x92 => pick(format!("plural num{}", b(2))),
+        0x87 | 0x88 => pick(format!("7f{sub:02x} {}", b(2))),
+        0x90 => pick("speaker m/f".into()),
+        0x91 => pick("target m/f".into()),
+        0x8f => (format!("{{name8f work{}}}", b(2)), 3),
+        0x93 => ("{msgstring}".into(), 2),
+        0x94 => (format!("{{num02 num{}}}", b(2)), 3),
+        0x95 => (format!("{{hex num{}}}", b(2)), 3),
+        0x96 => (format!("{{binary num{}}}", b(2)), 3),
+        0x97 => (format!("{{num work{}}}", b(2)), 3),
+        0xa0..=0xab => (format!("{{date{:x} num{}}}", sub - 0xa0, b(2)), 3),
+        0xac | 0xb0 | 0xb1 | 0xb4 | 0xb5 => (format!("{{7f{sub:02x} {}}}", b(2)), 3),
+        _ => (format!("{{7f{sub:02x}}}"), 2),
+    }
+}
+
+/// What the client fills codes from: the message object's params (+0xc64 num, +0xd04 strings).
+#[derive(Default)]
+pub struct Ctx {
+    pub player: String,
+    pub speaker: String,
+    pub num: [i32; 8],
+    pub strings: Vec<String>,
+    pub female: bool,
+    /// Message work[5] (msg+0xc50, DAT_10474618), read by the "work" grammar forms.
+    pub work: [i32; 5],
+    /// Item, key item and other names for 0x01 grammar blocks.
+    pub names: Option<std::sync::Arc<dyn super::names::NameSource>>,
+}
+
+/// Article pending for the next noun (FUN_1024fcd0): line, byte position, definite.
+type Pending = Option<(usize, usize, bool)>;
+
+/// A 0x01 grammar block (FUN_100bc8a0, English phrase builder FUN_1024f820).
+fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pending: &mut Pending) {
+    use super::font::encode_sjis;
+    // FUN_100bbd20: 0x?2 = packed index; slot args (0x40) are not filled here.
+    let arg = match args {
+        [b, b1, b2, b3, ..] if b & 0x40 == 0 && b & 0x3f == 2 => Some(((((b2 & 0x7f) as u16) | (*b3 as u16) << 7) << 7) | (b1 & 0x7f) as u16),
+        _ => None,
+    };
+    let at = |k: u8| -> Option<u32> {
+        let a = arg? as usize;
+        match k {
+            0 => Some(a as u32),
+            1 => ctx.num.get(a).map(|&v| v as u32),
+            _ => ctx.work.get(a).map(|&v| v as u32),
+        }
+    };
+    let line = lines.len() - 1;
+    let push = |lines: &mut [Vec<u8>], t: &str| lines[line].extend_from_slice(&encode_sjis(t));
+    let names = ctx.names.as_deref();
+    let noun = |lines: &mut [Vec<u8>], pending: &mut Pending, n: super::names::Noun, form: u8| {
+        let (text, mode, an) = match form {
+            0 => (n.bare, n.mode, n.an),
+            1 => (n.singular, 3, n.singular_an),
+            _ => (n.plural, 4, false),
+        };
+        if let Some((l, pos, definite)) = pending.take() {
+            let art = match (definite, mode) {
+                (true, _) => "the",
+                (false, 3) => if an { "an" } else { "a" },
+                (false, _) => "some",
+            };
+            if l < lines.len() && pos <= lines[l].len() {
+                let a = encode_sjis(art);
+                lines[l].splice(pos..pos, a);
+            }
+        }
+        push(lines, &text);
+    };
+    match kind {
+        0x01 | 0x02 => *pending = Some((line, lines[line].len(), kind == 0x02)),
+        0x03 | 0x04 => match at(if kind == 0x03 { 1 } else { 2 }) {
+            Some(1) | None => *pending = Some((line, lines[line].len(), false)),
+            Some(v) => push(lines, &v.to_string()),
+        },
+        0x20..=0x28 => {
+            let k = kind - 0x20;
+            if let Some(n) = at(k / 3).and_then(|id| names?.item(id)) {
+                noun(lines, pending, n, k % 3);
+            }
+        }
+        0x30..=0x35 | 0x42..=0x44 => {
+            let k = if kind >= 0x42 { kind - 0x42 + 6 } else { kind - 0x30 };
+            if let Some(n) = at(k / 3).and_then(|id| names?.key_item(id)) {
+                noun(lines, pending, n, k % 3);
+            }
+        }
+        // Records of Eminence objectives: item id + 0xe000 (FUN_100bc8a0 0x39 / 0x40 / 0x41).
+        0x39 | 0x40 | 0x41 => {
+            let src = match kind {
+                0x39 => 0,
+                0x40 => 1,
+                _ => 2,
+            };
+            if let Some(n) = at(src).and_then(|id| names?.item(id + 0xe000)) {
+                noun(lines, pending, n, 0);
+            }
+        }
+        // Message group 0x14: place names.
+        0x37 | 0x38 => {
+            if let Some(t) = at(if kind == 0x37 { 0 } else { 1 }).and_then(|id| names?.place(id)) {
+                push(lines, &t);
+            }
+        }
+        0x12 => {
+            if let Some(t) = at(1).and_then(|id| names?.title(id)) {
+                push(lines, &t);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// An expanded message: Shift-JIS lines and how it ends.
+pub struct Expanded {
+    pub lines: Vec<Vec<u8>>,
+    /// Ends in `7f 31`: the log waits for a key with the kaipage arrow (FUN_10123060 type 0x8001).
+    pub prompt: bool,
+    /// Text before 0x0b and the options after it (FUN_100b0960 splits at 07).
+    pub choice: Option<usize>,
+    /// Timed close: `7f 34 n` / `7f 35 n` wait n x 60 ticks, `7f 38 lo hi` a u16 of ticks (type 0x8002).
+    pub wait: Option<u32>,
+    /// `02 lo hi` / `03 lo hi`: event message window x / y (DAT_10476f98 / 9a, FUN_100bf790 -> FUN_10132030).
+    pub place: [Option<i16>; 2],
+}
+
+/// Expands the codes a plain NPC line uses; others are dropped. Not the full FUN_100bf790.
+pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
+    use super::font::encode_sjis;
+    let mut lines = vec![Vec::new()];
+    let (mut prompt, mut choice, mut wait) = (false, None, None);
+    let mut place = [None; 2];
+    let mut pending: Pending = None;
+    let mut i = 0;
+    let push = |lines: &mut Vec<Vec<u8>>, b: &[u8]| lines.last_mut().unwrap().extend_from_slice(b);
+    let alt = |from: usize, k: usize| -> (Vec<u8>, usize) {
+        let end = bracket_end(s, from);
+        let open = s[from..end].iter().position(|&c| c == b'[').map_or(end, |p| from + p + 1);
+        let inner = &s[open..end.saturating_sub(1).max(open)];
+        (inner.split(|&c| c == b'/').nth(k).unwrap_or_default().to_vec(), end - from)
+    };
+    while i < s.len() {
+        let c = s[i];
+        let a = s.get(i + 1).copied().unwrap_or(0) as usize;
+        let step = match c {
+            0x80.. => {
+                push(&mut lines, &s[i..(i + 2).min(s.len())]);
+                2
+            }
+            0x00 => break,
+            0x07 => {
+                lines.push(Vec::new());
+                1
+            }
+            0x08 => {
+                push(&mut lines, &encode_sjis(&ctx.player));
+                1
+            }
+            0x09 => {
+                push(&mut lines, &encode_sjis(&ctx.speaker));
+                1
+            }
+            0x0a => {
+                push(&mut lines, ctx.num.get(a).copied().unwrap_or(0).to_string().as_bytes());
+                2
+            }
+            0x0b => {
+                choice.get_or_insert(lines.len() - 1);
+                1
+            }
+            0x0c => {
+                let (t, n) = alt(i + 2, ctx.num.get(a).copied().unwrap_or(0).max(0) as usize);
+                push(&mut lines, &t);
+                n + 2
+            }
+            0x1c => {
+                push(&mut lines, &encode_sjis(ctx.strings.get(a).map_or("", |s| s)));
+                2
+            }
+            0x01 => {
+                let body = s.get(i + 2..(i + 2 + a).min(s.len())).unwrap_or_default();
+                if let Some(&k) = body.first() {
+                    grammar_expand(k, &body[1..], ctx, &mut lines, &mut pending);
+                }
+                a + 2
+            }
+            0x02 | 0x03 => {
+                place[(c - 2) as usize] = Some(i16::from_le_bytes([a as u8, s.get(i + 2).copied().unwrap_or(0)]));
+                3
+            }
+            0x10 | 0x11 | 0x16 | 0x1a => {
+                let v = if c == 0x10 || c == 0x16 { ctx.work.get(a).copied() } else { ctx.num.get(a).copied() };
+                let names = ctx.names.as_deref();
+                let t = match (c, v) {
+                    (0x10 | 0x11, Some(id)) => names.and_then(|n| n.spell(id as u32)),
+                    (_, Some(id)) if (0..0x100).contains(&id) => names.and_then(|n| n.ability(id as u32)),
+                    _ => None,
+                };
+                if let Some(t) = t {
+                    push(&mut lines, &encode_sjis(&t));
+                }
+                2
+            }
+            0x1e | 0x1f | 0x05 | 0x0d | 0x0e | 0x10..=0x19 | 0x1b => 2,
+            0x7f => match a as u8 {
+                0x31 => {
+                    prompt = true;
+                    2
+                }
+                0x85 | 0x90 | 0x91 => {
+                    let (t, n) = alt(i, ctx.female as usize);
+                    push(&mut lines, &t);
+                    n
+                }
+                0x86 | 0x87 | 0x88 | 0x92 => alt(i, 0).1,
+                0x34 | 0x35 => {
+                    wait = Some(s.get(i + 2).copied().unwrap_or(0) as u32 * 60);
+                    3
+                }
+                0x38 => {
+                    wait = Some(u16::from_le_bytes([s.get(i + 2).copied().unwrap_or(0), s.get(i + 3).copied().unwrap_or(0)]) as u32);
+                    4
+                }
+                0x36 | 0x80..=0x84 | 0x8f | 0x94..=0x97 | 0xa0..=0xb5 => 3,
+                _ => 2,
+            },
+            0x20..0x7f => {
+                push(&mut lines, &[c]);
+                1
+            }
+            _ => 1,
+        };
+        i += step;
+    }
+    while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
+        lines.pop();
+    }
+    Expanded { lines, prompt, choice, wait, place }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn readable_codes() {
+        let s = b"Care to learn?\x07\x0bSure!\x07No.\x7f\x31\x00\x07";
+        assert_eq!(readable(s), "Care to learn?\n{choice}Sure!\nNo.{next}");
+        let s = b"three \x01\x05\x25\x82\x80\x80\x80, \x7f\x85[sir/madam].";
+        assert_eq!(readable(s), "three {item pl num0}, {player m/f}[sir/madam].");
+    }
+
+    #[test]
+    fn expand_choice() {
+        let s = b"Hi, \x08.\x07\x0bYes\x07No\x7f\x31\x00";
+        let e = expand(s, &Ctx { player: "Lenon".into(), ..Default::default() });
+        assert_eq!(e.lines, vec![b"Hi, Lenon.".to_vec(), b"Yes".to_vec(), b"No".to_vec()]);
+        assert_eq!(e.choice, Some(1));
+        assert!(e.prompt);
+    }
+
+    /// Narration lines carry the window place: `02 80 00` x 80, `03 54 01` y 340.
+    #[test]
+    fn place_codes() {
+        let e = expand(b"\x02\x50\x00\x03\x54\x01The fortress\x7f\x34\x09\x7f\x31", &Ctx::default());
+        assert_eq!(e.place, [Some(80), Some(340)]);
+        assert_eq!(e.lines, vec![b"The fortress".to_vec()]);
+        assert_eq!(e.wait, Some(540));
+    }
+
+    #[test]
+    fn file_ids() {
+        assert_eq!(file_id(230), 6650);
+        assert_eq!(file_id(256), 85591);
+        assert_eq!(file_id(1000), 57945);
+        assert_eq!(file_id(2000), 68511);
+    }
+}
