@@ -94,6 +94,9 @@ pub struct Frame {
     pub area_light: Vec3,
     /// Camera focal length on the 384-line reference (cam+0x2f4: fovy = 2 atan(192 / focal)), for sound pan.
     pub focal: f32,
+    /// FUN_10184dc0: the moon phase 0..11; FUN_10184d70: the weekday 0..7.
+    pub moon_phase: u32,
+    pub weekday: u32,
 }
 
 /// The CPU side of a live element (the GPU holds the rest).

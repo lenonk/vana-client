@@ -183,7 +183,7 @@ mod tests {
         fx.load_zone(crate::fx::lib::Library::load(332, index.read(332).unwrap()).unwrap());
         let eye = Vec3::new(10.0, -6.0, 20.0);
         let view = glam::camera::rh::view::look_at_mat4(eye, Vec3::new(0.0, -6.0, 20.0), Vec3::NEG_Y);
-        let f = crate::fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot: view, eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
+        let f = crate::fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot: view, eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         fx.tick(&f, &crate::fx::NoActors);
         let plays: Vec<(u32, i32)> = fx.sound_cmds.iter().filter_map(|c| match c {
             SoundCmd::Play { se, vol, .. } => Some((*se, *vol)),

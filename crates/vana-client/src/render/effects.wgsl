@@ -13,6 +13,8 @@ struct Params {
     c10: mat4x4<f32>,
     inv_view_rot: mat4x4<f32>,
     eye: vec4<f32>,
+    // moon phase, weekday
+    extra: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -254,6 +256,36 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let n = (prm >> 5u) & 0x1ffu;
                     if (n != 0u) { x = fract(x * f32(n)); }
                     set_ef(b, E_MORPH_W + code - 0x1eu, key_sample(sl(b, s), x, (prm & 0xfu) != 0u));
+                }
+            }
+            // The moon (FUN_10184dc0): frame = phase, rotation z = pi/2.
+            case 0x45u: {
+                if ((el[b + E_STATE] & ST_HAS_RES) != 0u) {
+                    el[b + E_FRAME] = u32(p.extra.x);
+                    set_ef(b, E_ROT + 2u, PI / 2.0);
+                }
+            }
+            // 0x4e: colour bytes (R, G, B, A) from an 8-entry weekday table at op+8; 0x4f: the colour times a 12-entry
+            // moon-phase table / 128 (FUN_1003d290). Both lerp from the previous entry in the day's first minute.
+            case 0x4eu, 0x4fu: {
+                let n = select(8u, 12u, code == 0x4fu);
+                let idx = select(u32(p.extra.y), u32(p.extra.x), code == 0x4fu) % n;
+                let prev = (idx + n - 1u) % n;
+                let minute = p.time.z * 1440.0;
+                let lerp = minute < 1.0;
+                let cur = ops[r + 1u + idx];
+                let old = ops[r + 1u + prev];
+                let order = array<u32, 4>(2u, 1u, 0u, 3u);
+                for (var q = 0u; q < 4u; q = q + 1u) {
+                    let cv = f32((cur >> (8u * q)) & 0xffu);
+                    let ov = f32((old >> (8u * q)) & 0xffu);
+                    let v = select(cv, ov + (cv - ov) * minute, lerp);
+                    let k = order[q];
+                    if (code == 0x4eu) {
+                        set_cb(b, k, u32(v));
+                    } else {
+                        set_cb(b, k, u32(max(f32(cb(b, k)) * v / 128.0, 0.0)));
+                    }
                 }
             }
             case 0x26u: {

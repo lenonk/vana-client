@@ -225,6 +225,19 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     pos0 = pos;
                 }
             }
+            // Point list (Vtx, kind 0x3e): u32 count, points from +0x10 (vec4); random (0x4e) or by emission count
+            // (0x4f) *(the attach-rotation option, byte op+0xc bit 0, is not applied)*.
+            0x4e | 0x4f if !batched => {
+                if let Some(r) = reg.resolve(lib, from, kind::VTX, op.u32(2)) {
+                    let d = reg.libs[r.0].data(r.1);
+                    let n = d.get(0..4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+                    if n > 0 {
+                        let i = if op.code == 0x4e { rng.un(n) } else { count % n } as usize;
+                        let f = |o: usize| d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
+                        pos += Vec3::new(f(0x10 + i * 16), f(0x14 + i * 16), f(0x18 + i * 16));
+                    }
+                }
+            }
             0x87 => {
                 e.set_sv3(s, pos);
                 e.set_sv3(s + 3, Vec3::ZERO);

@@ -4494,6 +4494,9 @@ impl App {
                         draw_distance: 2000.0,
                         area_light: Vec3::ONE,
                         focal: 192.0 / (camera.fov_y * 0.5).tan(),
+                        // FUN_10184dc0: ((Vana day of now + 12 h) / 7) % 12 (one Vana minute = 2.4 s).
+                        moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
+                        weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
                     let fa = FxActors { actors: &w.actors, places: &places };
                     if let Some(g) = &w.ground {

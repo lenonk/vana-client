@@ -3071,3 +3071,8 @@ texture name @0x10, K blocks of V positions and N packed normals from 0x20; posi
 blended in vs_morph; colours doubled at load; stages as D3a (texture x diffuse x 2, x TFACTOR x 2 / x 4) with the
 common fog and z write; alpha test GREATER 0x60. Not done: normals / lighting, op 0x6e (camera-distance
 crossfade), the texture warp (elem+0x140..0x148), the distortion-morph variant.
+- Moon (2026-10-22): update op 0x45 sets the frame to the phase FUN_10184dc0 (((Vana day of now + 12 h) / 7) % 12)
+  and rotation z = pi/2; op 0x4e sets the colour bytes (R, G, B, A) from an 8-entry weekday table at op+8 (day &
+  7, FUN_10184d70), op 0x4f multiplies the colour by a 12-entry phase table / 128 (FUN_1003d290, truncated); both
+  lerp from the previous entry in the day first minute. Emission ops 0x4e / 0x4f add a point of a Vtx list (u32
+  count, vec4 points from +0x10; random / by emission count). zone-shot takes --moon PHASE.

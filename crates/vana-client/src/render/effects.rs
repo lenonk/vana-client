@@ -21,6 +21,8 @@ struct Params {
     c10: [[f32; 4]; 4],
     inv_view_rot: [[f32; 4]; 4],
     eye: [f32; 4],
+    /// moon phase, weekday, 0, 0
+    extra: [f32; 4],
 }
 
 #[repr(C)]
@@ -442,6 +444,7 @@ impl EffectsGpu {
             c10: m(c10),
             inv_view_rot: m(b90.inverse()),
             eye: [f.eye.x, f.eye.y, f.eye.z, 1.0],
+            extra: [f.moon_phase as f32, f.weekday as f32, 0.0, 0.0],
         };
         q.write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
         if self.count == 0 {
@@ -675,7 +678,7 @@ mod tests {
             let view = glam::camera::rh::view::look_at_mat4(eye, glam::Vec3::new(20.0, 0.0, 60.0), glam::Vec3::NEG_Y);
             let mut view_rot = view;
             view_rot.w_axis = glam::Vec4::W;
-            let f = Frame { dt: 1.37, seconds: 1.37 / 60.0, dayfrac: 0.2 + tick as f32 * 0.01, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0 };
+            let f = Frame { dt: 1.37, seconds: 1.37 / 60.0, dayfrac: 0.2 + tick as f32 * 0.01, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
             fx.tick(&f, &crate::fx::NoActors);
             for wr in &fx.writes {
                 match wr {

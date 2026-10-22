@@ -585,6 +585,9 @@ enum Cmd {
         /// Run the zone's effect generators for this many 60 Hz ticks first and draw them.
         #[arg(long)]
         effects: Option<u32>,
+        /// Moon phase 0..11 for the effects (0 = new moon).
+        #[arg(long, default_value_t = 0)]
+        moon: u32,
     },
     /// Dump every table of an MSI as TSV, for inspection.
     DumpMsi { msi: PathBuf, out: PathBuf },
@@ -882,7 +885,7 @@ fn main() -> Result<()> {
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour } => fx_shot(zone, &out, &eye, &caster, &victim, category, anim, frames, every, hour),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -924,7 +927,7 @@ fn main() -> Result<()> {
                         let view = cam.view();
                         let mut view_rot = view;
                         view_rot.w_axis = glam::Vec4::W;
-                        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0 };
+                        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: moon, weekday: 0 };
                         for _ in 0..ticks {
                             fx.tick(&f, &fx::NoActors);
                             let mut e = gpu.device.create_command_encoder(&Default::default());
@@ -1517,7 +1520,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         let view = cam.view();
         let mut view_rot = view;
         view_rot.w_axis = glam::Vec4::W;
-        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: hour / 24.0, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0 };
+        let f = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: hour / 24.0, view, view_rot, eye: cam.eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         if !started {
             while files.iter().any(|f| fx.reg.lib_of(*f).is_none()) {
                 fx.tick(&f, &actors);
