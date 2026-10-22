@@ -93,4 +93,5 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - wanted: a translucent full-screen map overlay and a minimap (after the map's pan and zoom);
   - candidates: target distance, party buffs / TP, target HP %, chat timestamps, clock, recast timers, text
     auto-advance, Find across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
-- Portability to Windows and macOS: see "Portability notes" in MODLOG.
+- Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
+  user in WinBoat) left: the exe icon (a resource), a fully static link (it still imports libwinpthread-1.dll).

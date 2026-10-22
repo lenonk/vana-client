@@ -1,3 +1,6 @@
+// Windows release builds open no console window; main() attaches to the parent one when started from a terminal.
+#![cfg_attr(all(windows, not(debug_assertions)), windows_subsystem = "windows")]
+
 mod audio;
 mod cabx;
 mod client;
@@ -796,6 +799,10 @@ fn login(cfg: &config::Config, creds: &Credentials) -> Result<net::lobby::Lobby>
 }
 
 fn main() -> Result<()> {
+    #[cfg(windows)]
+    unsafe {
+        windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
+    }
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let Some(cmd) = Cli::parse().cmd else {
         return client::run(config::Config::load(), client::Drive::default());

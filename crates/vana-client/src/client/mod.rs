@@ -4860,7 +4860,17 @@ impl ApplicationHandler for App {
             Some(_) => {
                 self.next_frame = None;
                 event_loop.set_control_flow(ControlFlow::Wait);
-                if let Some(g) = &self.gfx {
+                // A hidden window gets no redraw events on Windows (no WM_PAINT): drive the frames until it shows.
+                if !self.shown && self.gfx.is_some() {
+                    self.redraw();
+                    if self.exit_requested {
+                        event_loop.exit();
+                    }
+                    // The frame it scheduled needs the timer set again.
+                    if let Some(t) = self.next_frame {
+                        event_loop.set_control_flow(ControlFlow::WaitUntil(t));
+                    }
+                } else if let Some(g) = &self.gfx {
                     g.window.request_redraw();
                 }
             }
@@ -4917,6 +4927,7 @@ impl ApplicationHandler for App {
         // Zone, posing and mip pipelines are compiled now, off this thread.
         gpu.warm(&[config.format]);
         window.request_redraw();
+        self.next_frame = Some(Instant::now());
         self.gfx = Some(Gfx { window, gpu, surface, config, depth, egui_ctx, egui_state, egui_renderer });
     }
 
