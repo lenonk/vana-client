@@ -1,0 +1,8 @@
+# Cross builds for Windows with MinGW (cargo build --release --target x86_64-pc-windows-gnu).
+# UnRAR includes <PowrProf.h>; MinGW ships powrprof.h, so a correctly cased shim sits in mingw-include.
+[target.x86_64-pc-windows-gnu]
+# Static C runtime: no libwinpthread-1.dll next to the exe.
+rustflags = ["-C", "target-feature=+crt-static", "-C", "link-arg=-static"]
+
+[env]
+CPLUS_INCLUDE_PATH = { value = ".cargo/mingw-include", relative = true }

@@ -72,6 +72,20 @@ pub fn timestamp(v: &Values) -> Option<String> {
 fn utc_offset() -> i64 {
     static OFF: std::sync::OnceLock<i64> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| {
+        // Windows: UTC = local + bias (minutes), the daylight or standard bias added while it applies.
+        #[cfg(windows)]
+        {
+            use windows_sys::Win32::System::Time::{GetTimeZoneInformation, TIME_ZONE_INFORMATION};
+            let mut tz: TIME_ZONE_INFORMATION = unsafe { std::mem::zeroed() };
+            let id = unsafe { GetTimeZoneInformation(&mut tz) };
+            let extra = match id {
+                1 => tz.StandardBias,
+                2 => tz.DaylightBias,
+                _ => 0,
+            };
+            return -((tz.Bias + extra) as i64) * 60;
+        }
+        #[allow(unreachable_code)]
         let out = std::process::Command::new("date").arg("+%z").output().ok();
         let s = out.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_default();
         let (sign, digits) = match s.strip_prefix('-') {

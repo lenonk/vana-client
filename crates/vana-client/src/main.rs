@@ -14,6 +14,23 @@ mod dialogshot;
 mod dat;
 mod install;
 mod patch;
+
+/// unrar_sys's build script picks its sources by the host (`cfg!(windows)`), so a MinGW cross build from Linux
+/// leaves out UnRAR's isnt.cpp; these are its two functions, under their C++ names.
+#[cfg(all(windows, target_env = "gnu"))]
+mod unrar_isnt {
+    /// `DWORD WinNT()`: Windows 10 (WNT_W10), the oldest this client supports.
+    #[unsafe(export_name = "_Z5WinNTv")]
+    pub extern "C" fn win_nt() -> u32 {
+        0x0a00
+    }
+
+    /// `bool IsWindows11OrGreater()`: UnRAR's own stub answers false.
+    #[unsafe(export_name = "_Z20IsWindows11OrGreaterv")]
+    pub extern "C" fn is_windows_11_or_greater() -> bool {
+        false
+    }
+}
 mod motion;
 mod msi_db;
 mod net;
@@ -744,16 +761,19 @@ struct Credentials {
 }
 
 fn random_password() -> Result<String> {
-    use std::io::Read;
     const CHARS: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
     let mut bytes = [0u8; 16];
-    std::fs::File::open("/dev/urandom")?.read_exact(&mut bytes)?;
+    getrandom::fill(&mut bytes).map_err(|e| anyhow::anyhow!("random bytes: {e}"))?;
     Ok(bytes.iter().map(|b| CHARS[*b as usize % CHARS.len()] as char).collect())
 }
 
+/// Owner-only on Unix (0600); Windows keeps user files private by default.
 fn write_private(path: &PathBuf, data: &[u8]) -> Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-    let mut f = std::fs::OpenOptions::new().write(true).create(true).truncate(true).mode(0o600).open(path)?;
+    let mut o = std::fs::OpenOptions::new();
+    o.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    std::os::unix::fs::OpenOptionsExt::mode(&mut o, 0o600);
+    let mut f = o.open(path)?;
     std::io::Write::write_all(&mut f, data)?;
     Ok(())
 }
