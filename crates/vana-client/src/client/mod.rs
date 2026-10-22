@@ -3032,13 +3032,13 @@ impl App {
             match self.game_data() {
                 Ok((index, keys)) => self.spawn(move || {
                     Task::ZoneLoaded(zone_id, (|| {
-                        let file = index.read(100 + zone_id as u32)?;
+                        let file = index.read(crate::dat::zone::file_id(zone_id as u32))?;
                         let scene = zone::load_scene(&keys, &file)?;
                         let ground = ground::Ground::build(&scene);
                         let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("zone {zone_id} weather: {e:#}")).ok();
                         let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
                         let global = need_global.then(|| index.read(0).and_then(|f| crate::fx::lib::Library::load(0, f))).and_then(|r| r.map_err(|e| log::warn!("effects: DAT 0: {e:#}")).ok());
-                        let zone_fx = crate::fx::lib::Library::load(100 + zone_id as u32, file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok().map(|mut l| {
+                        let zone_fx = crate::fx::lib::Library::load(crate::dat::zone::file_id(zone_id as u32), file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok().map(|mut l| {
                             l.prewarm(&keys);
                             l
                         });

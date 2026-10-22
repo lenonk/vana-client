@@ -9,7 +9,7 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     let cfg = config::Config::load();
     let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-    let file = index.read(100 + zone)?;
+    let file = index.read(crate::dat::zone::file_id(zone))?;
     let scene = dat::zone::load_scene(&keys, &file)?;
     let weather = dat::weather::ZoneWeather::parse(&file)?;
     let lighting = weather.at("suny", hour * 60.0).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));

@@ -168,7 +168,7 @@ mod tests {
         let cfg = crate::config::Config::load();
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let keys = crate::dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?).ok()?;
-        crate::dat::zone::load_scene(&keys, &index.read(100 + zone).ok()?).ok()?.collision
+        crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(zone)).ok()?).ok()?.collision
     }
 
     /// What the sweep relies on: unit normals, faces wound against them (FUN_101688a0), and cells covering

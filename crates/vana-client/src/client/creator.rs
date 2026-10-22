@@ -1,5 +1,5 @@
 //! Live character creator preview: the dancer performance (creatorshot's traced shading) drawn over
-//! zone 133 lit at 11:00 ('suny', FUN_1022ef00). View 0/1 follow the recorded performance cameras,
+//! zone 744 (133 in 2019) lit at 11:00 ('suny', FUN_1022ef00). View 0/1 follow the recorded performance cameras,
 //! view 2 is the idle loop with an orbit camera. The zone is drawn from the dancer's camera (FUN_102451f0).
 
 use crate::dat::dancer::{self, Channels, Model, SkinPrep, creator::{BODY_SCALE, LIGHTS, MODEL_GROUP, MOTION_GROUP}};
@@ -24,7 +24,7 @@ pub struct Backdrop {
 
 impl Backdrop {
     pub fn load(index: &DatIndex, keys: &zone::Keys) -> Result<Self> {
-        let file = index.read(100 + 133)?;
+        let file = index.read(zone::file_id(super::select::ZONE))?;
         let scene = zone::load_scene(keys, &file)?;
         let env = ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", MINUTE));
         let lighting = env.as_ref().map(|e| Lighting::from_env(e, MINUTE));

@@ -44,7 +44,7 @@ impl FlyoverData {
         let ops = title.scheduler(movie)?.to_vec();
         let zone_of = |ops: &[Op]| ops.iter().find_map(|o| if let Op::Zone(z) = o { Some(*z) } else { None });
         let zone = zone_of(&ops).or_else(|| title.scheduler("main").ok().and_then(zone_of)).with_context(|| format!("{movie} loads no zone"))?;
-        let zone_file = index.read(100 + zone)?;
+        let zone_file = index.read(crate::dat::zone::file_id(zone))?;
         let scene = zone::load_scene(keys, &zone_file)?;
         let weather = ZoneWeather::parse(&zone_file).ok();
         log::info!("flyover {file_id} {movie}: zone {zone}, {} ops", ops.len());

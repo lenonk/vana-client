@@ -973,7 +973,7 @@ fn main() -> Result<()> {
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-            let file = index.read(100 + zone)?;
+            let file = index.read(dat::zone::file_id(zone))?;
             let scene = dat::zone::load_scene(&keys, &file)?;
             let lighting = match hour {
                 Some(h) => {
@@ -1008,10 +1008,10 @@ fn main() -> Result<()> {
                     let mut fx = fx::Effects::new();
                     fx.set_keys(std::sync::Arc::new(keys));
                     fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
-                    fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
+                    fx.load_zone(fx::lib::Library::load(dat::zone::file_id(zone), file.clone())?);
                     fx.set_weather(&weather, 0.0);
                     if let Some(name) = start.as_deref().and_then(|s| <[u8; 4]>::try_from(s.as_bytes()).ok())
-                        && let Some(l) = fx.reg.lib_of(100 + zone)
+                        && let Some(l) = fx.reg.lib_of(dat::zone::file_id(zone))
                         && let Some(n) = fx.reg.libs[l].find_global(dat::generator::kind::GENERATOR, u32::from_le_bytes(name))
                     {
                         fx.start((l, n), fx::Owner::Zone);
@@ -1099,7 +1099,7 @@ fn main() -> Result<()> {
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-            let file = index.read(100 + zone)?;
+            let file = index.read(dat::zone::file_id(zone))?;
             for c in dat::chunks(&file)?.into_iter().filter(|c| c.kind == 0x2E) {
                 let mut data = c.data.to_vec();
                 dat::zone::decode_mmb(&keys, &mut data);
@@ -1129,7 +1129,7 @@ fn main() -> Result<()> {
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-            let scene = dat::zone::load_scene(&keys, &index.read(100 + zone)?)?;
+            let scene = dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)?;
             let textures: std::collections::HashMap<&str, &dat::zone::Texture> = scene.textures.iter().map(|t| (t.name.as_str(), t)).collect();
             for p in &scene.placements {
                 let Some(mesh) = scene.meshes.iter().find(|m| m.name == p.name) else { continue };
@@ -1169,7 +1169,7 @@ fn main() -> Result<()> {
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-            let scene = dat::zone::load_scene(&keys, &index.read(100 + zone)?)?;
+            let scene = dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)?;
             let names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
             let tex: std::collections::HashSet<&str> = scene.textures.iter().map(|t| t.name.as_str()).collect();
             let placed = scene.placements.iter().filter(|p| names.contains(p.name.as_str())).count();
@@ -1458,12 +1458,12 @@ fn load_zone_scene(zone: u32) -> Result<dat::zone::ZoneScene> {
     let cfg = config::Config::load();
     let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-    dat::zone::load_scene(&keys, &index.read(100 + zone)?)
+    dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)
 }
 
 fn load_zone_weather(zone: u32) -> Result<dat::weather::ZoneWeather> {
     let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
-    dat::weather::ZoneWeather::parse(&index.read(100 + zone)?)
+    dat::weather::ZoneWeather::parse(&index.read(dat::zone::file_id(zone))?)
 }
 
 fn flyover_shot(scheduler: &str, out_dir: &std::path::Path, steps: u32, flat: bool, width: u32, height: u32) -> Result<()> {
@@ -1538,7 +1538,7 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
     let cfg = config::Config::load();
     let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-    let ground = client::ground::Ground::build(&dat::zone::load_scene(&keys, &index.read(100 + zone)?)?);
+    let ground = client::ground::Ground::build(&dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)?);
     let start = Vec3::new(f[0], f[1], f[2]);
     let cell = |x: f32, z: f32| ((x.round()) as i32, (z.round()) as i32);
     let goal = cell(t[0], t[1]);
@@ -1641,7 +1641,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let cfg = config::Config::load();
     let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
     let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
-    let file = index.read(100 + zone)?;
+    let file = index.read(dat::zone::file_id(zone))?;
     let scene = dat::zone::load_scene(&keys, &file)?;
     let lighting = dat::weather::ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", hour * 60.0)).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));
     let v3 = |v: &[f32]| Vec3::new(v[0], v[1], v[2]);
@@ -1656,7 +1656,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     fx.set_keys(std::sync::Arc::new(keys));
     fx.set_index(index.clone());
     fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
-    fx.load_zone(fx::lib::Library::load(100 + zone, file.clone())?);
+    fx.load_zone(fx::lib::Library::load(dat::zone::file_id(zone), file.clone())?);
     let files = [8392u32, 9672, 7072, 1300];
     fx.preload(&files);
     let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim, ..Default::default() };

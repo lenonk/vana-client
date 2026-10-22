@@ -1,4 +1,4 @@
-//! Character select (FUN_10238ea0) and delete (FUN_10230a10): zone 133 at 15:30 with the account's characters
+//! Character select (FUN_10238ea0) and delete (FUN_10230a10): zone 744 at 15:30 with the account's characters
 //! on the radius-4 ring (FUN_10238580), the camera curving between them (FUN_10237a80 / FUN_10238250), the name
 //! list (dbnamese, FUN_102372c0), Options (chfwin / chswin) and the prompts (ptc6yesn, ok).
 
@@ -14,7 +14,8 @@ use anyhow::Result;
 use glam::{Mat4, Vec3};
 
 pub const SLOTS: usize = 16;
-const ZONE: u32 = 133;
+/// The lobby zone (retail FUN_10242cd0; 133 in the 2019 build). The creator draws over it too.
+pub const ZONE: u32 = 744;
 /// FUN_1023b360(15, 30).
 const MINUTE: f32 = 15.5 * 60.0;
 /// A lobby frame: FUN_100889d0(2) holds every frame to two 60 Hz ticks.
@@ -62,7 +63,7 @@ pub fn rest_point(model: &Model, k: usize, place: Mat4) -> Option<Vec3> {
 impl SelectData {
     /// `looks[i]`: the character in list slot i and its size, if any.
     pub fn load(index: &DatIndex, keys: &zone::Keys, looks: &[Option<(Look, u8)>]) -> Result<Self> {
-        let file = index.read(100 + ZONE)?;
+        let file = index.read(zone::file_id(ZONE))?;
         let scene = zone::load_scene(keys, &file)?;
         let lighting = ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", MINUTE)).map(|e| Lighting::from_env(&e, MINUTE));
         let ground = Ground::build(&scene);
@@ -820,7 +821,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         .map(|i| list.get(&chars, i).map(|c| (Look { race: c.race as u8, face: c.face, head: c.looks[1], body: c.looks[2], hands: c.looks[3], legs: c.looks[4], feet: c.looks[5], main: c.looks[6], sub: c.looks[7] }, c.size)))
         .collect();
     let mut data = SelectData::load(&index, &keys, &looks)?;
-    data.lighting = ZoneWeather::parse(&index.read(100 + ZONE)?).ok().and_then(|w| w.at("suny", shot.hour * 60.0)).map(|e| Lighting::from_env(&e, shot.hour * 60.0));
+    data.lighting = ZoneWeather::parse(&index.read(zone::file_id(ZONE))?).ok().and_then(|w| w.at("suny", shot.hour * 60.0)).map(|e| Lighting::from_env(&e, shot.hour * 60.0));
     for (i, s) in data.slots.iter().enumerate().take(n) {
         println!("slot {i}: feet {:.3} point7 {:?}", s.feet, s.point.map(|p| (p.x, p.y, p.z)));
     }

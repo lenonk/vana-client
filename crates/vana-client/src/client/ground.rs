@@ -706,7 +706,7 @@ mod tests {
         let cfg = crate::config::Config::load();
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let keys = crate::dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?).ok()?;
-        Some(Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(100 + id).ok()?).ok()?))
+        Some(Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(id)).ok()?).ok()?))
     }
 
     /// Holds the key from `from` towards `to` for `steps` physics steps.

@@ -8,6 +8,11 @@ use md5::{Digest, Md5};
 const KEY1_MD5: &str = "0bfa75c0e9ff6ff8497b370024b3b148";
 const KEY2_MD5: &str = "44b34e48298e775a58552e7d9a8f931c";
 
+/// File id of a zone's scene DAT (FUN_10171f00): 100 + zone, from zone 600 on zone + 0x144f7.
+pub fn file_id(zone: u32) -> u32 {
+    if zone >= 600 { zone + 0x144f7 } else { zone + 100 }
+}
+
 pub struct Keys {
     t1: [u8; 256],
     t2: [u8; 256],
