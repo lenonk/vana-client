@@ -135,7 +135,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         Draw::Sprite(id) => {
             e.0[w::FRAMES] = reg.sprite_frames(id);
             e.0[w::SFRAMES] = reg.sprite_at[id as usize].0;
-            if batched { dk::BATCHED } else { dk::SPRITE }
+            if reg.sprite_is_flare(id) {
+                dk::FLARE
+            } else if batched {
+                dk::BATCHED
+            } else {
+                dk::SPRITE
+            }
         }
     };
     let mut parts = Vec::new();
@@ -399,6 +405,11 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     e.set(w::LIFE, p.life);
                     e.set(w::MAX_LIFE, p.max_life);
                 }
+            }
+            // Op 0x4b (CMoLfdElem): the glare colour (the two floats have no reader).
+            0x4b if e.0[w::KIND] == dk::FLARE => {
+                let [r, g, b, a] = op.u32(3).to_le_bytes();
+                e.0[w::GLARE] = u32::from_le_bytes([b, g, r, a]);
             }
             // Sound ops (CYySoundElem only).
             0x4c if sound.is_some() => {

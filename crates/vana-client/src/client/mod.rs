@@ -4517,7 +4517,7 @@ impl App {
                     }
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-                    eg.draw(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &w.effects, camera.proj(aspect), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                    eg.draw(&gfx.gpu, &mut encoder, (&scene_view, &scene_depth, bg), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
                 // Event crossfade and fades over the scene, under the 2D layer; the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));

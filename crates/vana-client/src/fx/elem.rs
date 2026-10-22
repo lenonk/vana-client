@@ -42,7 +42,9 @@ pub mod w {
     pub const DRAG: usize = 38;
     /// The sprite's first entry in the GPU frame table.
     pub const SFRAMES: usize = 39;
-    pub const SLOTS: usize = 40;
+    /// Lens flares: the glare colour of emission op 0x4b (+0x19c, D3DCOLOR; 0 = 0x80808080).
+    pub const GLARE: usize = 40;
+    pub const SLOTS: usize = 44;
     pub const SLOT_COUNT: usize = 64;
     pub const WORDS: usize = SLOTS + SLOT_COUNT;
 }
@@ -65,6 +67,8 @@ pub mod dk {
     pub const MESH: u32 = 1;
     pub const SPRITE: u32 = 2;
     pub const BATCHED: u32 = 3;
+    /// CMoLfdElem: a lens flare (its own draw, FUN_10053920).
+    pub const FLARE: u32 = 4;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -209,6 +213,8 @@ pub fn wgsl_consts() -> String {
         ("E_GRAVITY", w::GRAVITY),
         ("E_DRAG", w::DRAG),
         ("E_SFRAMES", w::SFRAMES),
+        ("E_GLARE", w::GLARE),
+        ("DK_FLARE", dk::FLARE as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),
         ("DK_BATCHED", dk::BATCHED as usize),

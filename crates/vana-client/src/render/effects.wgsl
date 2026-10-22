@@ -478,7 +478,7 @@ struct Draw {
     fog_color: vec4<f32>,
     // fog start, end, linearize (1 = sRGB target: the gamma-space result is converted), 0
     fog: vec4<f32>,
-    // near, far
+    // near, far, scene target width, height
     clip: vec4<f32>,
 };
 
@@ -601,6 +601,64 @@ fn vs_sprite(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) 
     return vout(e, vp, v.color, v.uv, 4u);
 }
 
+// Lens flare (FUN_1003ddb0): every group's quads in screen space along the line from the light (sx, sy) through the
+// centre to (W - sx, H - sy); file units are W/16 x H/16 pixels; alpha x vis / 256. The group t is in normal.x.
+@vertex
+fn vs_flare(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    let vis = douts[o + 27u];
+    if (douts[o + 23u] < 0.5 || vis <= 0.0) { return hidden(); }
+    let eb = e * E_WORDS;
+    let fr = sframes[dels[eb + E_SFRAMES]];
+    if (k >= fr.y * 6u) { return hidden(); }
+    let v = svert(fr.x + k);
+    let t = bitcast<f32>(sverts[(fr.x + k) * 9u + 3u]);
+    let w = d.clip.z;
+    let h = d.clip.w;
+    let sx = douts[o + 25u];
+    let sy = douts[o + 26u];
+    let x = v.pos.x * w / 16.0 + (w - 2.0 * sx) * t + sx;
+    let y = v.pos.y * h / 16.0 + (h - 2.0 * sy) * t + sy;
+    var out: VOut;
+    out.clip = vec4<f32>(x / w * 2.0 - 1.0, 1.0 - y / h * 2.0, 0.5, 1.0);
+    let a = f32(min(255u, (u32(round(v.color.a * 255.0)) * u32(vis)) >> 8u)) / 255.0;
+    out.color = vec4<f32>(v.color.rgb, a);
+    out.uv = v.uv;
+    out.tf = vec4<f32>(douts[o + 16u], douts[o + 17u], douts[o + 18u], douts[o + 19u]);
+    out.depth = 0.0;
+    out.mode = vec3<u32>(dels[eb + E_FLAGS], dels[eb + E_BLEND], 5u);
+    return out;
+}
+
+// The screen glare of a flare (FUN_10053920 step 7 -> FUN_100125c0): g = max(0, 1 - r 2/3) from the screen
+// centre, f = g x 0.5 x (vis >> 3) / 128, the op 0x4b colour x f added to the whole view.
+@vertex
+fn vs_glare(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    let vis = douts[o + 27u];
+    if (douts[o + 23u] < 0.5 || vis <= 0.0) { return hidden(); }
+    let hw = floor(d.clip.z / 2.0);
+    let hh = floor(d.clip.w / 2.0);
+    let nx = (hw - douts[o + 25u]) / hw;
+    let ny = (hh - douts[o + 26u]) / hh;
+    let g = max(0.0, 1.0 - sqrt(nx * nx + ny * ny) * (2.0 / 3.0));
+    let f = g * 0.5 * floor(vis / 8.0) / 128.0;
+    var c = dels[e * E_WORDS + E_GLARE];
+    if (c == 0u) { c = 0x80808080u; }
+    let rgb = vec3<f32>(floor(f32((c >> 16u) & 0xffu) * f), floor(f32((c >> 8u) & 0xffu) * f), floor(f32(c & 0xffu) * f)) / 255.0;
+    let p = array<vec2<f32>, 3>(vec2<f32>(-1.0, -1.0), vec2<f32>(3.0, -1.0), vec2<f32>(-1.0, 3.0));
+    var out: VOut;
+    out.clip = vec4<f32>(p[min(k, 2u)], 0.5, 1.0);
+    out.color = vec4<f32>(rgb, 1.0);
+    out.uv = vec2<f32>(0.0);
+    out.tf = vec4<f32>(1.0);
+    out.depth = 0.0;
+    out.mode = vec3<u32>(0x2000000u, 0x48u, 6u);
+    return out;
+}
+
 fn sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn sat3(x: vec3<f32>) -> vec3<f32> { return clamp(x, vec3<f32>(0.0), vec3<f32>(1.0)); }
 
@@ -638,6 +696,14 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
     } else if (variant == 3u) {
         rgb = sat3(2.0 * dd.rgb * f.rgb);
         a = sat(4.0 * dd.a * f.a);
+    } else if (variant == 5u) {
+        // Flare stages: colour diffuse x texture x 2 (TFACTOR rgb not applied), alpha x TFACTOR x 2.
+        let t = textureSample(tex, samp, i.uv);
+        rgb = sat3(2.0 * dd.rgb * t.rgb);
+        a = sat(sat(dd.a * t.a) * f.a * 2.0);
+    } else if (variant == 6u) {
+        rgb = dd.rgb;
+        a = 1.0;
     } else {
         let t = textureSample(tex, samp, i.uv);
         let s0 = sat3(2.0 * dd.rgb * t.rgb);
@@ -648,7 +714,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if (variant != 4u && (flags & 0x2000000u) == 0u) {
+    if (variant < 4u && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }

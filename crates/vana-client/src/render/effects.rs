@@ -25,6 +25,15 @@ struct Params {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct FlareU {
+    proj: [[f32; 4]; 4],
+    view_rot: [[f32; 4]; 4],
+    eye: [f32; 4],
+    info: [f32; 4],
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct DrawU {
     proj: [[f32; 4]; 4],
     fog_color: [f32; 4],
@@ -103,6 +112,12 @@ pub struct EffectsGpu {
     tex_layout: wgpu::BindGroupLayout,
     mesh_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     sprite_pipes: HashMap<usize, wgpu::RenderPipeline>,
+    /// Lens flares and their glare: additive, no depth test (FUN_1003ddb0, FUN_100125c0).
+    flare_pipe: wgpu::RenderPipeline,
+    glare_pipe: wgpu::RenderPipeline,
+    flare_vis: wgpu::ComputePipeline,
+    flare_layout: wgpu::BindGroupLayout,
+    flare_u: wgpu::Buffer,
     params: wgpu::Buffer,
     draw_u: wgpu::Buffer,
     elems: wgpu::Buffer,
@@ -184,7 +199,7 @@ impl EffectsGpu {
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Float32x2],
         })];
-        let pipe = |vs_entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], class: usize, zwrite: bool| {
+        let pipe_z = |vs_entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], class: usize, zwrite: bool, compare: wgpu::CompareFunction| {
             device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("effects"),
                 layout: Some(&layout),
@@ -193,7 +208,7 @@ impl EffectsGpu {
                 depth_stencil: Some(wgpu::DepthStencilState {
                     format: DEPTH_FORMAT,
                     depth_write_enabled: Some(zwrite),
-                    depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                    depth_compare: Some(compare),
                     stencil: Default::default(),
                     bias: Default::default(),
                 }),
@@ -208,6 +223,28 @@ impl EffectsGpu {
                 cache: None,
             })
         };
+        let pipe = |vs_entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], class: usize, zwrite: bool| pipe_z(vs_entry, buffers, class, zwrite, wgpu::CompareFunction::LessEqual);
+        let flare_pipe = pipe_z("vs_flare", &[], 2, false, wgpu::CompareFunction::Always);
+        let glare_pipe = pipe_z("vs_glare", &[], 2, false, wgpu::CompareFunction::Always);
+        let fmod = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("effects flare"), source: wgpu::ShaderSource::Wgsl(format!("{consts}{}", include_str!("flare.wgsl")).into()) });
+        let flare_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effects flare"),
+            entries: &[
+                uniform(0, cs),
+                storage(1, true, cs),
+                storage(2, true, cs),
+                storage(3, false, cs),
+                wgpu::BindGroupLayoutEntry { binding: 4, visibility: cs, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
+            ],
+        });
+        let flare_vis = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("effects flare"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: None, bind_group_layouts: &[Some(&flare_layout)], immediate_size: 0 })),
+            module: &fmod,
+            entry_point: Some("flare_vis"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         let mut mesh_pipes = HashMap::new();
         let mut sprite_pipes = HashMap::new();
         for class in 0..6 {
@@ -222,6 +259,7 @@ impl EffectsGpu {
         let n = MAX_ELEMS as u64;
         let params = buf("effects params", std::mem::size_of::<Params>() as u64, U::UNIFORM | U::COPY_DST);
         let draw_u = buf("effects draw", std::mem::size_of::<DrawU>() as u64, U::UNIFORM | U::COPY_DST);
+        let flare_u = buf("effects flare", std::mem::size_of::<FlareU>() as u64, U::UNIFORM | U::COPY_DST);
         let elems = buf("effects elements", n * w::WORDS as u64 * 4, U::STORAGE | U::COPY_DST | U::COPY_SRC);
         let outs = buf("effects outs", n * OUT_WORDS as u64 * 4, U::STORAGE);
         let back = buf("effects back", n * BACK_WORDS as u64 * 4, U::STORAGE | U::COPY_SRC);
@@ -238,6 +276,11 @@ impl EffectsGpu {
             tex_layout,
             mesh_pipes,
             sprite_pipes,
+            flare_pipe,
+            glare_pipe,
+            flare_vis,
+            flare_layout,
+            flare_u,
             params,
             draw_u,
             elems,
@@ -460,15 +503,40 @@ impl EffectsGpu {
 
     /// Draws the live elements over the scene (same targets, depth tested, back to front).
     #[allow(clippy::too_many_arguments)]
-    pub fn draw(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, depth: &wgpu::TextureView, fx: &Effects, proj: Mat4, clip: [f32; 2], fog_color: [f32; 3], fog: [f32; 2]) {
+    pub fn draw(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: (&wgpu::TextureView, &wgpu::TextureView, [u32; 2]), fx: &Effects, cam: (Mat4, Mat4, glam::Vec3), clip: [f32; 2], fog_color: [f32; 3], fog: [f32; 2]) {
         let Some(group) = self.draw_group.as_ref().filter(|_| self.count > 0) else { return };
+        let (color, depth, size) = target;
+        let (proj, view, eye) = cam;
         let u = DrawU {
             proj: proj.to_cols_array_2d(),
             fog_color: [fog_color[0], fog_color[1], fog_color[2], 1.0],
             fog: [fog[0], fog[1].max(fog[0] + 1.0), self.linearize as u32 as f32, 0.0],
-            clip: [clip[0], clip[1], 0.0, 0.0],
+            clip: [clip[0], clip[1], size[0] as f32, size[1] as f32],
         };
         gpu.queue.write_buffer(&self.draw_u, 0, bytemuck::bytes_of(&u));
+        // Lens flares count their visible sky samples against this frame's scene depth first.
+        let flares: Vec<u32> = fx.draw_order().into_iter().filter(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Sprite(id) if fx.reg.sprite_is_flare(id)))).collect();
+        if !flares.is_empty() {
+            let mut view_rot = view;
+            view_rot.w_axis = glam::Vec4::W;
+            let fu = FlareU { proj: proj.to_cols_array_2d(), view_rot: view_rot.to_cols_array_2d(), eye: [eye.x, eye.y, eye.z, 1.0], info: [self.count as f32, 0.0, 0.0, 0.0] };
+            gpu.queue.write_buffer(&self.flare_u, 0, bytemuck::bytes_of(&fu));
+            let fg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("effects flare"),
+                layout: &self.flare_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.flare_u.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: self.elems.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: self.slots.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: self.outs.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: wgpu::BindingResource::TextureView(depth) },
+                ],
+            });
+            let mut cp = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor { label: Some("effects flare"), timestamp_writes: None });
+            cp.set_pipeline(&self.flare_vis);
+            cp.set_bind_group(0, &fg, &[]);
+            cp.dispatch_workgroups(self.count.div_ceil(64), 1, 1);
+        }
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("effects"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
@@ -503,6 +571,14 @@ impl EffectsGpu {
                         pass.draw(range.clone(), base + variant..base + variant + 1);
                     }
                 }
+                Draw::Sprite(id) if fx.reg.sprite_is_flare(id) => {
+                    pass.set_pipeline(&self.flare_pipe);
+                    bound = None;
+                    let r = fx.reg.sprites[id as usize];
+                    let tex = fx.reg.libs[r.0].sprites.get(&r.1).and_then(|s| s.texture);
+                    pass.set_bind_group(1, tex.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
+                    pass.draw(0..6 * fx.reg.sprite_at[id as usize].1, base..base + 1);
+                }
                 Draw::Sprite(id) => {
                     class = blend_class(c.blend, false).unwrap_or(class);
                     let key = (true, class, false);
@@ -520,6 +596,14 @@ impl EffectsGpu {
                     }
                 }
                 Draw::None => {}
+            }
+        }
+        // FUN_100125c0: the flares' glare over the whole view, once the effects are drawn.
+        if !flares.is_empty() {
+            pass.set_pipeline(&self.glare_pipe);
+            pass.set_bind_group(1, &self.white, &[]);
+            for e in flares {
+                pass.draw(0..3, e * PER_ELEM..e * PER_ELEM + 1);
             }
         }
     }

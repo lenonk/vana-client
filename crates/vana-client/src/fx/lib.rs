@@ -44,6 +44,9 @@ pub struct Sprite {
     pub texture: Option<(usize, usize)>,
     /// h0 >= 1 and byte 7 == 0: UVs are in texels of the loaded texture (divided once it resolves).
     pub texel_uv: bool,
+    /// The lens-flare layout (byte 4 != 0, FUN_1003ddb0): one frame of every group's quads, each vertex's group t
+    /// in normal.x.
+    pub flare: bool,
 }
 
 impl Sprite {
@@ -53,11 +56,31 @@ impl Sprite {
         }
         let h0 = i16::from_le_bytes([d[0], d[1]]);
         let count = i16::from_le_bytes([d[2], d[3]]).max(0) as usize;
-        if d[4] != 0 {
-            bail!("d3a: lens-flare layout");
-        }
         let name = String::from_utf8_lossy(&d[8..24]).into_owned();
         let f = |o: usize| f32::from_le_bytes(d[o..o + 4].try_into().unwrap());
+        if d[4] != 0 {
+            // Groups (count byte 5): {u8, u8, quads, u8, f32 t, 12 bytes} then quads x 6 vertices.
+            let mut verts = Vec::new();
+            let mut at = 0x18;
+            for _ in 0..d[5] {
+                if at + 0x14 > d.len() {
+                    break;
+                }
+                let (q, t) = (d[at + 2] as usize, f(at + 4));
+                at += 0x14;
+                if at + q * 0x90 > d.len() {
+                    bail!("d3a flare: group out of range");
+                }
+                for k in 0..q * 6 {
+                    let o = at + 24 * k;
+                    let c = &d[o + 12..o + 16];
+                    verts.push(MeshVertex { pos: [f(o), f(o + 4), f(o + 8)], normal: [t, 0.0, 0.0], rgba: [c[2], c[1], c[0], c[3]], uv: [f(o + 16), f(o + 20)] });
+                }
+                at += q * 0x90;
+            }
+            let quads = (verts.len() / 6) as u32;
+            return Ok(Self { verts, frames: vec![(0, quads)], name, texture: None, texel_uv: false, flare: true });
+        }
         let mut verts = Vec::new();
         let mut frames = Vec::new();
         let mut at = 0x18;
@@ -78,7 +101,7 @@ impl Sprite {
             }
             at += q * 0x90;
         }
-        Ok(Self { verts, frames, name, texture: None, texel_uv: h0 >= 1 && d[7] == 0 })
+        Ok(Self { verts, frames, name, texture: None, texel_uv: h0 >= 1 && d[7] == 0, flare: false })
     }
 }
 

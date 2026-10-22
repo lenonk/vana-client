@@ -377,6 +377,11 @@ impl Registry {
         Some(id)
     }
 
+    pub fn sprite_is_flare(&self, id: u32) -> bool {
+        let r = self.sprites[id as usize];
+        self.libs[r.0].sprites.get(&r.1).is_some_and(|s| s.flare)
+    }
+
     pub fn sprite_frames(&self, id: u32) -> u32 {
         let r = self.sprites[id as usize];
         self.libs[r.0].sprites.get(&r.1).map_or(0, |s| s.frames.len() as u32)

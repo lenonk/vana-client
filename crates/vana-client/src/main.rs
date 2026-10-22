@@ -941,7 +941,7 @@ fn main() -> Result<()> {
                             }
                         }
                         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-                        eg.draw(gpu, enc, color, depth, &fx, cam.proj(1600.0 / 900.0), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                        eg.draw(gpu, enc, (color, depth, [1600, 900]), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                     };
                     render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
                 }
@@ -1537,7 +1537,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         let live: Vec<String> = fx.describe().into_iter().filter(|d| !d.contains(" t_")).collect();
         println!("{} live, {} tasks: {live:?}", fx.live_count(), fx.task_count());
         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-        eg.draw(gpu, enc, color, depth, &fx, cam.proj(1600.0 / 900.0), [render::NEAR, render::FAR], fog_color, fog);
+        eg.draw(gpu, enc, (color, depth, [1600, 900]), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [render::NEAR, render::FAR], fog_color, fog);
     };
     render::render_pngs_post(&scene, &list, 1600, 900, &|_, _| Vec::new(), &mut post)?;
     println!("wrote {} frames", paths.len());

@@ -3040,3 +3040,23 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md (sections 2, 3):
   `voice_stop(handle, ticks)` (cmd 0 / 5), `alive()` (handles the mixer still plays, refreshed every mix).
 - Not done: footsteps (FUN_100d2970 needs the posed foot points 8 / 9 / 0xa / 0xb every frame; our poses are on
   the GPU), the race death voice op 0x78, the one-at-a-time se ids 2239 / 2063.
+
+## Lens flares (CMoLfdElem; render/flare.wgsl, vs_flare / vs_glare) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/classes2.md section 1:
+- Kind 0x39 takes a D3a in the flare layout (byte 4 != 0): groups {u8, u8, quads, u8, f32 t, 12 bytes} then the
+  quads' vertices; drawn instead of the common draw (FUN_10053920), last (sort key -10000).
+- Visibility FUN_1006b350 / FUN_1006b580 / FUN_1006b900, as a compute pass on this frame's scene depth: the
+  direction normalize(parent translation - eye) x 65535 through rot(V) and the projection (behind the camera: no
+  flare); a box of +-W/32 x +-H/32 pixels around it, clamped to the viewport (0 on screen: nothing) and squeezed into
+  cw16 x ch16 of a 16 x 16 grid; samples at even rows and columns pass where the depth is still at the clear value;
+  vis = 4 x samples (0..256). Retail renders black / white quads into a scratch target and reads it back the same
+  frame; ours samples the depth directly *(equivalent by construction, not compared on screen)*. Our sky and cloud
+  domes write no depth, as retail's.
+- Sprites FUN_1003ddb0: centre of group = light + (mirror - light) x t (mirror = (W - sx, H - sy)); vertex x
+  file x W/16, y file x H/16 (anisotropic); alpha min(255, A x vis >> 8); colour diffuse x texture x 2 (TFACTOR rgb
+  not applied), alpha x TFACTOR x 2; additive, no depth test.
+- Glare FUN_10014280 / FUN_100125c0: g = max(0, 1 - r x 2/3) of the light's distance from the screen centre (in
+  half-screens), f = g x 0.5 x (vis >> 3) / 128, colour = op 0x4b's (0 -> 0x80808080) x f per byte, added to the
+  whole view after the effects. Op 0x4b's two floats have no reader.
+- Check: `zone-shot 102 --weather fine --hour 9 --eye 0,-5,0 --target 60,-50,10 --effects 30` (lf02).
