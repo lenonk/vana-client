@@ -65,6 +65,64 @@ pub fn view_set(v: Mat4) -> [Mat4; 4] {
     [b90, d10, d50, c10]
 }
 
+/// Not retail: an effect texture with only a few alpha levels (DXT1 on / off, DXT3 4-bit; the artists dithered
+/// between them to fake soft edges) gets its colour spread into the clear texels and its alpha blurred, so glows
+/// fade smoothly at today's resolutions. None = leave it as it is.
+pub fn soften_alpha(t: &crate::dat::zone::Texture) -> Option<crate::dat::zone::Texture> {
+    let (w, h) = (t.width as usize, t.height as usize);
+    if w < 4 || h < 4 || t.rgba.len() < w * h * 4 {
+        return None;
+    }
+    let levels: std::collections::BTreeSet<u8> = t.rgba.chunks(4).map(|p| p[3]).collect();
+    let clear = t.rgba.chunks(4).filter(|p| p[3] == 0).count();
+    if levels.len() > 5 || levels.len() < 2 || clear == 0 || clear == w * h {
+        return None;
+    }
+    let mut px = t.rgba.clone();
+    let at = |x: isize, y: isize| (y.clamp(0, h as isize - 1) as usize * w + x.clamp(0, w as isize - 1) as usize) * 4;
+    // Colour into the clear texels, two rings out from the opaque ones.
+    let mut filled: Vec<bool> = px.chunks(4).map(|p| p[3] != 0).collect();
+    for _ in 0..2 {
+        let (src, was) = (px.clone(), filled.clone());
+        for y in 0..h as isize {
+            for x in 0..w as isize {
+                let i = at(x, y);
+                if was[i / 4] {
+                    continue;
+                }
+                let (mut sum, mut n) = ([0u32; 3], 0u32);
+                for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (1, -1), (-1, 1), (1, 1)] {
+                    let j = at(x + dx, y + dy);
+                    if was[j / 4] {
+                        (0..3).for_each(|c| sum[c] += src[j + c] as u32);
+                        n += 1;
+                    }
+                }
+                if n > 0 {
+                    (0..3).for_each(|c| px[i + c] = (sum[c] / n) as u8);
+                    filled[i / 4] = true;
+                }
+            }
+        }
+    }
+    // Alpha: a 3 x 3 box three times (about 7 x 7, smooth).
+    for _ in 0..3 {
+        let src = px.clone();
+        for y in 0..h as isize {
+            for x in 0..w as isize {
+                let mut s = 0u32;
+                for dy in -1..=1 {
+                    for dx in -1..=1 {
+                        s += src[at(x + dx, y + dy) + 3] as u32;
+                    }
+                }
+                px[at(x, y) + 3] = (s / 9) as u8;
+            }
+        }
+    }
+    Some(crate::dat::zone::Texture::new(t.name.clone(), t.format, t.width, t.height, px))
+}
+
 /// FUN_10045950's blend modes as pipelines: 0 opaque, 1 alpha, 2 additive, 3 darken, 4 subtractive, 5 D3m 'I'
 /// (DESTCOLOR / SRCALPHA). None = the mode has no case and keeps the previous element's blend.
 fn blend_class(mode: u16, d3m: bool) -> Option<usize> {
@@ -224,6 +282,7 @@ impl EffectsGpu {
                     depth_write_enabled: Some(zwrite),
                     depth_compare: Some(compare),
                     stencil: Default::default(),
+                    // ZBIAS is applied in to_clip (effects.wgsl).
                     bias: Default::default(),
                 }),
                 multisample: Default::default(),
@@ -540,7 +599,9 @@ impl EffectsGpu {
     /// stage maths there).
     fn texture(&mut self, gpu: &Gpu, fx: &Effects, t: (usize, usize)) {
         if !self.textures.contains_key(&t) {
-            let view = super::upload_texture(gpu, &fx.reg.libs[t.0].textures[t.1], false);
+            let src = &fx.reg.libs[t.0].textures[t.1];
+            let soft = soften_alpha(src);
+            let view = super::upload_texture(gpu, soft.as_ref().unwrap_or(src), false);
             self.textures.insert(t, Self::tex_group(&gpu.device, &self.tex_layout, &self.sampler, &view));
         }
     }
@@ -814,5 +875,35 @@ mod tests {
         }
         println!("{checked} elements agree");
         assert!(checked > 20, "only {checked} elements");
+    }
+}
+
+#[cfg(test)]
+mod soften_tests {
+    use super::soften_alpha;
+    use crate::dat::zone::Texture;
+
+    /// A dithered 4-level ring (as the lamps' 'light' DXT3 texture) comes out with smooth alpha and no black edge.
+    #[test]
+    fn dithered_ring_softens() {
+        let (w, h) = (16u32, 16u32);
+        let mut rgba = Vec::new();
+        for y in 0..h {
+            for x in 0..w {
+                let d = ((x as f32 - 7.5).powi(2) + (y as f32 - 7.5).powi(2)).sqrt();
+                let a = if d < 3.0 { 102 } else if d < 5.0 && (x + y) % 2 == 0 { 34 } else { 0 };
+                rgba.extend_from_slice(&if a > 0 { [240, 200, 120, a] } else { [0, 0, 0, 0] });
+            }
+        }
+        let t = Texture::new("light".into(), 0, w, h, rgba);
+        let s = soften_alpha(&t).expect("few levels");
+        let levels: std::collections::BTreeSet<u8> = s.rgba.chunks(4).map(|p| p[3]).collect();
+        assert!(levels.len() > 8, "{levels:?}");
+        // Texels just outside the old edge took the glow's colour, not black.
+        let i = ((7 * w + 13) * 4) as usize;
+        assert!(s.rgba[i] > 200 && s.rgba[i + 3] > 0, "{:?}", &s.rgba[i..i + 4]);
+        // Many alpha levels already: left alone.
+        let smooth: Vec<u8> = (0..w * h).flat_map(|k| [9, 9, 9, (k % 200) as u8]).collect();
+        assert!(soften_alpha(&Texture::new("s".into(), 0, w, h, smooth)).is_none());
     }
 }

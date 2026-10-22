@@ -3234,3 +3234,30 @@ From classes2.md section 3 and ~/ffxi/lab/research/effects/point_lights.md.
 - Not done: moving parts (FUN_1017ce60, no 'c' skip), the bump-map vertex-shader path (config 0017),
   the slot leak for refs to 'c' / unknown keys, the windowed-mode gamma boost (FUN_1000b290), the two-area-light
   scenery mode, unnormalised normals of scaled placements.
+
+## Effect fixes from the San d'Oria gate lamps; per-pixel point lights and soft alpha (ours) (2026-10-22)
+
+Zone 101's gate tunnel at night (f_ro/mode/ligh/g_li): lights glr1 / glr2 / gll1 / gll2 (kind 0x47, 8 / 20, op 0x49),
+glow meshes gl01..gl09 (MMB 'ltla', texture 'light   lanp', 70-tick lives overlapping, update 0x0e / 0x3f (key
+'kogl') / 0x2e (30, 0)), glow sprites lk01.. / glk1.. (texture 'light', 256 x 256 DXT3 with alpha levels 0 / 34 /
+68 / 102 dithered), and gin1: MMB 'san_' (2214 vertices, no texture, argb 30d08030, flags 0x08001000), the inner
+tunnel's lamplight baked into vertex colours over the whole tunnel.
+- A model's effect files asked for before the first zone set the DAT index were marked loading for good, so every
+  scheduler lookup on the player retried forever (no swing, no hit reactions on the player; crits from DAT 0 only).
+  lib_for now marks a file only when it can start loading it.
+- Ops 0x2e / 0x48 (FUN_100499d0 case 0x1004a0a2; 0x1031e5b8 = 0.0, 0x1031e5fc = 1.0): d == 0 sets the fade 0 (no
+  expire). 0x2e: d < rec[1] keeps it, rec[1] <= d <= rec[2] fades, else 0 and expire on rec[3] bit 0, so near is
+  tested first (30 / 0 = shown inside 30). 0x48 ('H'): below rec[1] 0 and expire on rec[5] bit 0, fade in to rec[2],
+  kept to rec[3], fade out to rec[4], else 0 and expire.
+- D3DRS_ZBIAS 15 for the effect draw: -15 x 5e-6 in NDC depth in to_clip, as Wine's d3d8 maps it *(inferred: D3D8
+  left the scale to the driver)*. Without it wall decals z-fought.
+- Not retail: scenery point lights per pixel (zone.wgsl point_lights from the fragment shader, the placement's slots
+  passed flat): the D3D8 term with the distance floored at 1 and a (1 - (d/R)^4)^2 window instead of the hard cut.
+  Per-vertex lighting drew triangles of light on the tunnel's coarse walls.
+- Not retail: effect textures with at most 5 alpha levels (DXT1 on / off, DXT3 4-bit) get colour spread two texels
+  into the clear ones and the alpha blurred (3 x 3 box three times) at upload (render/effects.rs soften_alpha); the
+  dither between the levels showed as grain at today's resolutions.
+- Left as retail: gin1's baked shell still draws triangles of light (Gouraud over large triangles) and the ltla
+  glows cut straight into pillars. zone-shot now keeps one effects renderer for both frames (meshes upload once);
+  FFXI_FX_OPS=NAME, FFXI_FX_TEX=SPRITE and FFXI_FX_MESH=1 (with FFXI_FX_LIST) dump streams, a sprite texture and
+  the effect meshes.

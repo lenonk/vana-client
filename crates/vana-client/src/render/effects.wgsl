@@ -362,26 +362,35 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             }
             case 0x27u: { set_ef(b, E_UV, ef(b, E_UV) + opf(r) * dt); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_U; }
             case 0x28u: { set_ef(b, E_UV + 1u, ef(b, E_UV + 1u) + opf(r) * dt); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_V; }
+            // FUN_100499d0 case 0x1004a0a2: d == 0 hides; below near kept, to far faded, else 0 (expire on bit 0).
             case 0x2eu: {
                 let d = distance(p.eye.xyz, world_of(b, parent));
                 let near = opf(r);
                 let far = opf(r + 1u);
-                if (d > far) {
+                if (d == 0.0) {
                     set_ef(b, E_FADE, 0.0);
-                    if ((ops[r + 2u] & 1u) != 0u) { kill = 1u; }
                 } else if (d >= near) {
-                    set_ef(b, E_FADE, ef(b, E_FADE) * (1.0 - (d - near) / (far - near)));
+                    if (d <= far) {
+                        set_ef(b, E_FADE, ef(b, E_FADE) * (1.0 - (d - near) / (far - near)));
+                    } else {
+                        set_ef(b, E_FADE, 0.0);
+                        if ((ops[r + 2u] & 1u) != 0u) { kill = 1u; }
+                    }
                 }
             }
+            // Same case, 'H': 0 below rec1, in to rec2, kept to rec3, out to rec4, else 0 (expire on rec5 bit 0).
             case 0x48u: {
                 let d = distance(p.eye.xyz, world_of(b, parent));
-                var f = 1.0;
-                if (d < opf(r)) { f = 0.0; } else if (d < opf(r + 1u)) { f = (d - opf(r)) / (opf(r + 1u) - opf(r)); }
-                if (d > opf(r + 3u)) {
-                    f = 0.0;
+                if (d == 0.0) {
+                    set_ef(b, E_FADE, 0.0);
+                } else if (d >= opf(r) && d < opf(r + 1u)) {
+                    set_ef(b, E_FADE, ef(b, E_FADE) * (1.0 - (d - opf(r + 1u)) / (opf(r) - opf(r + 1u))));
+                } else if (d >= opf(r) && d >= opf(r + 2u) && d < opf(r + 3u)) {
+                    set_ef(b, E_FADE, ef(b, E_FADE) * (1.0 - (d - opf(r + 2u)) / (opf(r + 3u) - opf(r + 2u))));
+                } else if (d < opf(r) || d >= opf(r + 3u)) {
+                    set_ef(b, E_FADE, 0.0);
                     if ((ops[r + 4u] & 1u) != 0u) { kill = 1u; }
-                } else if (d > opf(r + 2u)) { f = f * (1.0 - (d - opf(r + 2u)) / (opf(r + 3u) - opf(r + 2u))); }
-                set_ef(b, E_FADE, ef(b, E_FADE) * f);
+                }
             }
             // Drag on the slot vector: S *= rec[1]^dt (__CIpow, d3a_particles.md 4.2).
             case 0x2cu: { set_slv3(b, s, slv3(b, s) * pow(opf(r), dt)); }
@@ -687,7 +696,9 @@ fn to_clip(vp: vec3<f32>, f: f32) -> vec4<f32> {
         let fr = d.clip.y - f;
         c.z = vp.z * fr / (n - fr) + n * fr / (n - fr);
     }
-    c.z = min(c.z, c.w * 0.999999);
+    // D3DRS_ZBIAS 15 for the effect draw (FUN_10045950), as Wine's d3d8 maps it: -15 x 5e-6 in NDC depth
+    // (inferred; D3D8 left the scale to the driver).
+    c.z = min(c.z - 7.5e-5 * c.w, c.w * 0.999999);
     return c;
 }
 

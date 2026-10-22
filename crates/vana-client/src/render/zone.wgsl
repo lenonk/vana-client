@@ -49,8 +49,10 @@ struct VertexOut {
     @location(4) depth: f32,
     // Target flash (FUN_100c94a0): ambient lerp toward 220 / 255, fog colour scale.
     @location(5) flash: vec2<f32>,
-    // Point lights, per vertex (D3D8 POINT: C x I x max(N.L, 0) / d^2, none past the range).
+    // Actors: the floor lamp, per vertex. Scenery: 0 (its point lights are per pixel, from `lights`).
     @location(6) point: vec3<f32>,
+    // The placement's four light slots (+1, 0 = none) for the per-pixel point lights.
+    @location(7) @interpolate(flat) lights: vec4<u32>,
 };
 
 // FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
@@ -78,6 +80,9 @@ fn actor_lamp(packed: u32, pos: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     return col * max(dot(n, dir), 0.0);
 }
 
+// Retail's D3D8 POINT lights (C x I x max(N.L, 0) / d^2, cut at the range) ran per vertex, which draws triangles
+// of light on coarse walls. Ours, per pixel: the same term with the distance floored at 1 and a smooth window over
+// the range instead of the hard cut (not retail).
 fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
     var sum = vec3<f32>(0.0);
     for (var k = 0u; k < 4u; k = k + 1u) {
@@ -86,9 +91,12 @@ fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
         let a = plights[2u * (s - 1u)];
         let c = plights[2u * (s - 1u) + 1u];
         let l = a.xyz - p;
-        let d2 = max(dot(l, l), 1e-6);
-        if (d2 > a.w * a.w) { continue; }
-        sum = sum + c.rgb * c.w * max(dot(n, l * inverseSqrt(d2)), 0.0) / d2;
+        let d2 = dot(l, l);
+        let r2 = a.w * a.w;
+        if (d2 >= r2) { continue; }
+        let q = d2 / r2;
+        let win = (1.0 - q * q) * (1.0 - q * q);
+        sum = sum + c.rgb * c.w * max(dot(n, l * inverseSqrt(max(d2, 1e-6))), 0.0) * win / max(d2, 1.0);
     }
     return sum;
 }
@@ -105,7 +113,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.normal = normalize((model * vec4<f32>(v.normal, 0.0)).xyz);
     out.depth = out.clip.w;
     out.flash = vec2<f32>(0.0, 1.0);
-    out.point = point_lights(v.lights, world.xyz, out.normal);
+    out.lights = v.lights;
     return out;
 }
 
@@ -220,7 +228,8 @@ fn d3d_out_fog(in: VertexOut, rgb: vec3<f32>, fog_color: vec3<f32>) -> vec4<f32>
 // lit = clamp(vc * (ambient + sun * max(N.-L, 0))); out = tex * lit * 2
 fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     let ndl = max(dot(normalize(in.normal), -u.sun.xyz), 0.0);
-    let lit = clamp(in.color.rgb * (u.ambient.rgb + u.sun_color.rgb * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
+    let n = normalize(in.normal);
+    let lit = clamp(in.color.rgb * (u.ambient.rgb + u.sun_color.rgb * ndl + point_lights(in.lights, in.world, n)), vec3<f32>(0.0), vec3<f32>(1.0));
     return d3d_out(in, clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)));
 }
 

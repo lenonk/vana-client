@@ -367,10 +367,11 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool, Option
                 e.set(w::UV + 1, e.f(w::UV + 1) + of(1) * dt);
                 e.0[w::STATE] |= st::SCROLL_V;
             }
+            // FUN_100499d0 case 0x1004a0a2: kept below near, faded to far, else 0 (near is tested first).
             0x2e => {
                 let d = (f.eye - world(e)).length();
                 let (near, far) = (of(1), of(2));
-                if d > far {
+                if d == 0.0 || d >= near && d > far {
                     e.set(w::FADE, 0.0);
                 } else if d >= near {
                     e.set(w::FADE, e.f(w::FADE) * (1.0 - (d - near) / (far - near)));

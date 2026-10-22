@@ -934,8 +934,10 @@ fn main() -> Result<()> {
                         fx.start((l, n), fx::Owner::Zone);
                     }
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
+                    // One renderer for both frames: the zone's meshes and textures upload once.
+                    let mut eg_keep: Option<render::effects::EffectsGpu> = None;
                     let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
-                        let mut eg = render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+                        let eg = eg_keep.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
                         eg.set_lights(&zr.lights);
                         fx.reg.light_keys = zr.light_keys.clone();
                         let view = cam.view();
@@ -955,6 +957,43 @@ fn main() -> Result<()> {
                         if std::env::var_os("FFXI_FX_LIST").is_some() {
                             for l in fx.describe() {
                                 println!("  {l}");
+                            }
+                            if let Ok(id) = std::env::var("FFXI_FX_TEX").map(|s| s.parse::<usize>().unwrap_or(0)) {
+                                let r = fx.reg.sprites[id];
+                                if let Some(t) = fx.reg.libs[r.0].sprites.get(&r.1).and_then(|s| s.texture) {
+                                    let tex = &fx.reg.libs[t.0].textures[t.1];
+                                    let alphas: std::collections::BTreeSet<u8> = tex.rgba.chunks(4).map(|p| p[3]).collect();
+                                    println!("  sprite {id} texture {} {}x{} format {} dxt {:?} alphas {:?}", tex.name, tex.width, tex.height, tex.format, tex.dxt.as_ref().map(|d| d.0), alphas);
+                                    if let Ok(f) = std::fs::File::create(out.with_extension("tex.png")) {
+                                        let mut enc = png::Encoder::new(std::io::BufWriter::new(f), tex.width, tex.height);
+                                        enc.set_color(png::ColorType::Rgba);
+                                        let _ = enc.write_header().and_then(|mut w| w.write_image_data(&tex.rgba));
+                                    }
+                                }
+                            }
+                            if std::env::var_os("FFXI_FX_MESH").is_some() {
+                                let mut seen = std::collections::BTreeSet::new();
+                                for c in fx.elems.iter().flatten() {
+                                    if let fx::Draw::Mesh(id) = c.draw
+                                        && seen.insert(id)
+                                    {
+                                        let r = fx.reg.meshes[id as usize];
+                                        if let Some(m) = fx.reg.libs[r.0].meshes.get(&r.1) {
+                                            let g: Vec<String> = m.groups.iter().map(|g| format!("{:?}->{:?} {}", g.name.as_deref().map(str::trim), g.texture, g.range.len())).collect();
+                                            println!("  mesh {id} {}:{} mmb {} {}", fx.reg.libs[r.0].file_id, fx.reg.libs[r.0].tree.nodes[r.1].name(), m.mmb, g.join(", "));
+                                        }
+                                    }
+                                }
+                            }
+                            if let Ok(want) = std::env::var("FFXI_FX_OPS") {
+                                for inst in fx.insts.iter().flatten().filter(|x| x.name == want.as_bytes()[..4]).take(1) {
+                                    for (k, s) in inst.streams.iter().enumerate() {
+                                        for op in s {
+                                            let w: Vec<String> = op.words.iter().skip(1).map(|w| format!("{w:#x}={:.3}", f32::from_bits(*w))).collect();
+                                            println!("  stream {k} op {:#04x} slot {} {}", op.code, op.slot, w.join(" "));
+                                        }
+                                    }
+                                }
                             }
                         }
                         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));

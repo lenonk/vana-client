@@ -901,6 +901,10 @@ impl Effects {
                     }
                 }
             }
+            if !gens.is_empty() {
+                let names: Vec<String> = gens.iter().map(|g| String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name).into_owned()).collect();
+                log::debug!("effects: model generators on {id:#x} {:?} at {:?}: {names:?}", files, actors.matrix(id).map(|m| m.w_axis.truncate()));
+            }
             for g in gens.into_iter().take(128) {
                 if let Some(i) = self.start(g, Owner::Actor(id)) {
                     if let Some(x) = self.insts[i].as_mut() {
