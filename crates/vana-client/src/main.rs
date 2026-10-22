@@ -594,6 +594,9 @@ enum Cmd {
         /// Also start this generator of the zone (4cc) with the effects, for checking one that is not auto-started.
         #[arg(long)]
         start: Option<String>,
+        /// Also start an event scheduler in the effects as FILE:TAG (DAT id, 4cc), as event opcode 0x45 does.
+        #[arg(long)]
+        sched: Option<String>,
     },
     /// Dump every table of an MSI as TSV, for inspection.
     DumpMsi { msi: PathBuf, out: PathBuf },
@@ -891,7 +894,7 @@ fn main() -> Result<()> {
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust), frames, every, hour),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -913,6 +916,12 @@ fn main() -> Result<()> {
                 hi = hi.max(Vec3::from(p.translate));
             }
             let centre = (lo + hi) / 2.0;
+            if let Some(near) = std::env::var("FFXI_NEAR").ok().and_then(|s| s.split_once(',').and_then(|(x, z)| Some((x.parse::<f32>().ok()?, z.parse::<f32>().ok()?)))) {
+                println!("placements {} from {lo} to {hi}", scene.placements.len());
+                for p in scene.placements.iter().filter(|p| (p.translate[0] - near.0).abs() < 80.0 && (p.translate[2] - near.1).abs() < 80.0).take(30) {
+                    println!("  {} at {:?}", p.name, p.translate);
+                }
+            }
             let v3 = |v: Vec<f32>| Vec3::new(v[0], v[1], v[2]);
             let (eye, target, up) = match (eye, target) {
                 (Some(e), Some(t)) => (v3(e), v3(t), Vec3::NEG_Y),
@@ -932,6 +941,12 @@ fn main() -> Result<()> {
                         && let Some(n) = fx.reg.libs[l].find_global(dat::generator::kind::GENERATOR, u32::from_le_bytes(name))
                     {
                         fx.start((l, n), fx::Owner::Zone);
+                    }
+                    let sched = sched.as_deref().and_then(|s| s.split_once(':')).and_then(|(f, t)| Some((f.parse::<u32>().ok()?, u32::from_le_bytes(<[u8; 4]>::try_from(t.as_bytes()).ok()?))));
+                    if let Some((file, name)) = sched {
+                        fx.set_index(std::sync::Arc::new(dat::DatIndex::open(&config::Config::load().ffxi_dir())?));
+                        fx.preload(&[file]);
+                        fx.on_event_scheduler(file, name, fx::sched::Who::None, fx::sched::Who::None);
                     }
                     let dayfrac = hour.unwrap_or(12.0) / 24.0;
                     // One renderer for both frames: the zone's meshes and textures upload once.

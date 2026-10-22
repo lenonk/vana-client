@@ -473,6 +473,10 @@ impl Host for LiveHost<'_> {
                 self.st.choice = Some(Choice { question, options, cursor, scroll: cursor.saturating_sub(2) });
             }
             Effect::Scheduler { file, tag, actor, target, param } => {
+                // The same CMoSchedularTask runs the effects side (generators, sounds, motions): the set of a
+                // cutscene staged off the map is built from it.
+                let who = |a: u32| if a == 0 { crate::fx::sched::Who::None } else { crate::fx::sched::Who::Actor(self.wid(a)) };
+                self.w.effects.on_event_scheduler(file, u32::from_le_bytes(crate::dat::generator::fourcc(&tag)), who(actor), who(target));
                 let Some(f) = self.w.screen.file(self.index, file) else { return };
                 let Some(ops) = sched_ops(&f.bytes, &tag) else {
                     log::warn!("event: no scheduler {tag} in {file}");
@@ -492,6 +496,8 @@ impl Host for LiveHost<'_> {
                 self.w.screen.advance(cam, follow);
             }
             Effect::SchedulerStop { file, tag, actor, target } => {
+                let who = |a: u32| if a == 0 { crate::fx::sched::Who::None } else { crate::fx::sched::Who::Actor(self.wid(a)) };
+                self.w.effects.stop_event_scheduler(file, u32::from_le_bytes(crate::dat::generator::fourcc(&tag)), who(actor), who(target));
                 self.w.screen.scheds.retain(|x| !(x.file == file && x.tag == tag && x.actor == actor && x.target == target));
             }
             // 0x46 sub 0 kills the camera tasks (FUN_1003c780) and puts the camera behind the player.

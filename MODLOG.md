@@ -3273,3 +3273,20 @@ tunnel's lamplight baked into vertex colours over the whole tunnel.
   one); fs fades the alpha of flag-27 elements (sort key + 400: glows and light volumes) by
   sat((scene distance - fragment distance) / 1 yalm), distances from NDC z with the draw's near / far. Only flag 27,
   so footprints and other flat decals keep their look.
+
+## Event schedulers run in the effects engine; the level-5 crystal scene (2026-10-22)
+
+- Event opcodes 0x45 / 0x62 / 0x9f / 0xbb / 0xc5 / 0xcd / 0xd0 / 0xd5 start the same CMoSchedularTask as the
+  effects (the stop family 0x52 ... ends it). The event screen runner kept only ops 0x04 camera, 0x0f fade and 0x10
+  crossfade; now every event scheduler also goes to fx (Effects::on_event_scheduler / stop_event_scheduler, a file +
+  4cc task on the event's actor pair), which runs its generators, sounds and motions. Inferred: the camera ops stay
+  with the runner until the two are merged into one task list.
+- Zone 230 event 0x7553 ("The crystal resonates deep within your soul!", level 5): zone_env #541 (op 0x34,
+  FUN_10184380, area environment: not handled yet), npc 0x25f moved to (-400.0, -19.1, 372.4), motions wap* from
+  motion file #3860, sched_play_c7ef #61 'str0' = DAT 51244: generators g101 (screen quad) and gds0 (screen
+  distortion rings); cameras s063..s070, s159 from file #760 (DAT 71107) looking at (-400, -23, 372).
+- The set itself is npc 0x25f's model 2959 = DAT 0xca53 + 1459 = 53254 (FUN_100c3220's mapping matches
+  dat::npc::model_file), absent from every VTABLE of this install: models 2957 and up (and 2442, 2443, 2477) are
+  missing, so the install is older than the server's data. Needs the game files updated.
+- zone-shot --sched FILE:TAG starts an event scheduler in the effects; FFXI_NEAR=X,Z prints the zone's placement
+  bounds and the placements near a point.

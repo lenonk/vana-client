@@ -179,6 +179,23 @@ impl Effects {
         }
     }
 
+    /// Event opcodes 0x45 and family: the scheduler `name` of DAT `file` as a task on (a1, a2), the same task the
+    /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
+    pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
+        log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+    }
+
+    /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
+    pub fn stop_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
+        self.pending.retain(|p| !(p.file == Some(file) && p.name == name && p.a1 == a1 && p.a2 == a2));
+        if let Some(l) = self.reg.lib_of(file)
+            && let Some(n) = self.reg.libs[l].find_global(kind::SCHEDULER, name)
+        {
+            self.kill_tasks((l, n), Some((a1, a2)));
+        }
+    }
+
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
         self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
