@@ -67,4 +67,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     run, and point lights on scenery and actors; left: the party roster for the filter, moving-part lights;
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
+- Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
+  fonts and frames; nothing that sends actions by itself):
+  - wanted: a translucent full-screen map overlay and a minimap (after the map's pan and zoom);
+  - candidates: target distance, party buffs / TP, target HP %, chat timestamps, clock, recast timers, text
+    auto-advance, Find across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG.
