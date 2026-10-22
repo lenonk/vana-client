@@ -343,16 +343,16 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         println!("wrote {} (downloading draw {n})", out.display());
         return Ok(());
     }
-    // --map ZONE,X,Z,overlay: the map overlay (extra) at 50 %, the player facing north.
+    // --map ZONE,X,Z,overlay: the map overlay (extra) at 60 %, the player facing north.
     if let Some(spec) = map.filter(|s| s.ends_with(",overlay")) {
         let f: Vec<&str> = spec.split(',').collect();
         let num = |i: usize| f.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
         let region = super::map::Region::find(gu.map_regions(), num(0) as u16);
         let mut o = super::map::Overlay::new(num(0) as u16, region, Some(std::sync::Arc::new(index)));
-        o.draw(&mut gu, (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, 0.5);
+        o.draw(&mut gu, (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, 0.6);
         o.wait_image(&mut gu);
         gu.clear();
-        o.draw(&mut gu, (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, 0.5);
+        o.draw(&mut gu, (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, 0.6);
         gu.save_png(width, height, [0.1, 0.2, 0.3], out)?;
         println!("wrote {} (map overlay)", out.display());
         return Ok(());
