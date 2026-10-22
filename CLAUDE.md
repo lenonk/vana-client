@@ -61,7 +61,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - magic and ability menus (Ctrl+M/J/W/B);
   - the map's pan, zoom and its actions;
   - collision with characters and moving platforms;
-  - spell and ability effects;
+  - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
+    melee sparks, casting, spells, weapon skills and model generators run; left: effect sounds, footsteps, lens
+    flares, heat haze, point lights, D3b morphs, the config 0x92 effect filter;
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG.
