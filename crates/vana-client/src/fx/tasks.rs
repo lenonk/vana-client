@@ -510,6 +510,19 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_10057000 case 0x60: the named SeSep played as the stream (FUN_100360e0, DAT_10450fe8), which the
+            // event volume op leaves alone unless its mask has 8 (the opening narration's music).
+            0x60 => {
+                if let Some(r) = scope(self, 0x3d)
+                    && let Some((se, loops)) = super::sound::sesep(self.reg.libs[r.0].data(r.1))
+                {
+                    log::debug!("effects: stream {se}");
+                    let mut s = super::sound::Sound::new(se, loops);
+                    s.stream = true;
+                    self.sounds.push(s);
+                }
+                Flow::Next
+            }
             0x19 => {
                 self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None });
                 Flow::Next

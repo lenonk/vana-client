@@ -436,8 +436,8 @@ fn stamped(world: &World, line: String) -> String {
 /// An effect's sound command (fx/sound.rs) to the sound thread.
 fn play_fx_sound(a: &mut crate::audio::Audio, c: crate::fx::sound::SoundCmd) {
     match c {
-        crate::fx::sound::SoundCmd::Play { handle, se, vol, pan } => {
-            a.play_voice(handle, se, vol, pan);
+        crate::fx::sound::SoundCmd::Play { handle, se, vol, pan, stream } => {
+            a.play_voice(handle, se, vol, pan, stream);
         }
         crate::fx::sound::SoundCmd::Level { handle, vol } => a.voice_level(handle, vol),
         crate::fx::sound::SoundCmd::Pan { handle, pan } => a.voice_pan(handle, pan),
@@ -2381,8 +2381,9 @@ impl App {
             for (mask, level, ticks) in w.audio_cmds.drain(..) {
                 a.event_volume(mask, level, ticks);
             }
+            // Interface sounds (targeting, menus, prompts).
             for id in w.sounds.drain(..) {
-                a.play_se(id, 127);
+                a.play_ui_se(id);
             }
             let hour = w.clock.map(|(t, at)| crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32 / 60).unwrap_or(12);
             let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party: 1 };

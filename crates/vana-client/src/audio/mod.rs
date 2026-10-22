@@ -70,8 +70,11 @@ pub struct Audio {
     effects: f32,
     tick_acc: f32,
     /// Event sound volumes (ops 0x69 / 0x6a): music (DAT_10346570) and effects (DAT_1034656c).
-    event_music: f32,
     event_se: f32,
+    event_stream: f32,
+    event_ui: f32,
+    /// Voices started as the scheduler's stream.
+    streams: std::collections::HashSet<u32>,
     /// Level of the track playing, for re-applying the event volume.
     cur_vol: i32,
     /// Config-tool 0029: effects at once; a new one is dropped while that many play (FUN_10037510).
@@ -89,7 +92,7 @@ impl Audio {
                 log::info!("audio: {} at {} Hz", out.host, out.rate);
                 let (tx, req) = channel();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_music: 1.0, event_se: 1.0, cur_vol: 0x7f, max_se: 12 })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, streams: Default::default(), cur_vol: 0x7f, max_se: 12 })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -104,7 +107,7 @@ impl Audio {
 
     /// Volume level for a track volume (0..127) under the config multipliers.
     fn level(&self, vol: i32) -> u8 {
-        ((vol as f32 * self.music * self.event_music) as i32).clamp(0, 127) as u8
+        ((vol as f32 * self.music) as i32).clamp(0, 127) as u8
     }
 
     fn start(&mut self, id: u32, vol: i32) {
@@ -167,28 +170,45 @@ impl Audio {
         self.send(Cmd::BgmFadeOut { ticks });
     }
 
-    /// Unpositioned effect at a level 0..127 before the config factor (menus use 127).
+    /// Unpositioned world effect at a level 0..127 before the config factor.
     pub fn play_se(&mut self, id: u32, level: i32) {
+        self.se_at(id, level, self.event_se);
+    }
+
+    /// An interface sound (menus, targeting): the event volume's mask 2 / 8 level (DAT_10346568).
+    pub fn play_ui_se(&mut self, id: u32) {
+        self.se_at(id, 127, self.event_ui);
+    }
+
+    fn se_at(&mut self, id: u32, level: i32, event: f32) {
         if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
             return;
         }
-        let lv = ((level as f32 * self.effects * self.event_se) as i32).clamp(0, 127) as u8;
+        let lv = ((level as f32 * self.effects * event) as i32).clamp(0, 127) as u8;
         let _ = self.tx.send(Req::Se { id, level: lv });
     }
 
     /// A positioned effect voice (FUN_10036130 -> cmd 2) under `handle`; level 0..127 before the effects factor,
     /// pan 0..127. Refused (false) while the busy voices reach the limit (DAT_1044417c).
-    pub fn play_voice(&mut self, handle: u32, id: u32, level: i32, pan: u8) -> bool {
+    pub fn play_voice(&mut self, handle: u32, id: u32, level: i32, pan: u8, stream: bool) -> bool {
         if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
             return false;
         }
-        let lv = self.se_level(level);
+        if stream {
+            self.streams.insert(handle);
+        }
+        let lv = self.voice_level_of(handle, level);
         let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle });
         true
     }
 
+    /// A voice's level: world effects take the event's effect volume, the stream only mask 8.
+    fn voice_level_of(&self, handle: u32, level: i32) -> u8 {
+        if self.streams.contains(&handle) { ((level as f32 * self.effects * self.event_stream) as i32).clamp(0, 127) as u8 } else { self.se_level(level) }
+    }
+
     pub fn voice_level(&mut self, handle: u32, level: i32) {
-        let lv = self.se_level(level);
+        let lv = self.voice_level_of(handle, level);
         self.send(Cmd::SeLevel { handle, level: lv });
     }
 
@@ -210,21 +230,26 @@ impl Audio {
         ((level as f32 * self.effects * self.event_se) as i32).clamp(0, 127) as u8
     }
 
-    /// Event volume (0x69 set / 0x6a fade): mask 1 world effects, 2 interface, 4 music, 8 all.
-    pub fn event_volume(&mut self, mask: i32, level: f32, ticks: f32) {
+    /// Event volume (0x69 set / 0x6a fade, FUN_100b5c30 / FUN_10034be0): mask 1 world effects (DAT_1034656c), 2 interface
+    /// (DAT_10346568), 4 the zone's ambient loop (DAT_10346570, the voice FUN_10035350 starts; we play none), 8 all of
+    /// them and the stream. The music is not among them: cutscenes mute the world and keep the music.
+    pub fn event_volume(&mut self, mask: i32, level: f32, _ticks: f32) {
         let level = level.clamp(0.0, 1.0);
-        if mask & 0xd != 0 {
+        // FUN_100b5c30: 1 world effects (FUN_10035200), 8 everything and the stream (FUN_100350e0).
+        if mask & 0x9 != 0 {
             self.event_se = level;
         }
-        if mask & 0xc != 0 {
-            self.event_music = level;
-            let lv = self.level(self.cur_vol);
-            self.send(Cmd::BgmVolume { level: lv, ticks: ticks as i32 });
+        if mask & 0x8 != 0 {
+            self.event_stream = level;
+        }
+        // 2 interface sounds (FUN_10035250).
+        if mask & 0xa != 0 {
+            self.event_ui = level;
         }
     }
 
     pub fn ui(&mut self, s: Ui) {
-        self.play_se(s as u32, 127);
+        self.play_ui_se(s as u32);
     }
 
     /// Advances the music task by real time at the client's 60 Hz tick.

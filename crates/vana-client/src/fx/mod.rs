@@ -1384,7 +1384,7 @@ impl Effects {
             if s.grace > 0.0 {
                 s.grace -= 1.0;
             }
-            let r = sound::attenuate(s.pan_in, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal);
+            let r = if s.stream { Some((vol, 64)) } else { sound::attenuate(s.pan_in, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal) };
             let Some((v, pan)) = r else {
                 if s.persistent() {
                     if s.handle != 0 {
@@ -1406,7 +1406,7 @@ impl Effects {
                 s.last_vol = v;
                 s.last_pan = pan;
                 s.grace = 3.0;
-                self.sound_cmds.push(sound::SoundCmd::Play { handle: s.handle, se: s.se, vol: v, pan });
+                self.sound_cmds.push(sound::SoundCmd::Play { handle: s.handle, se: s.se, vol: v, pan, stream: s.stream });
                 continue;
             }
             if s.grace > 0.0 || self.alive.contains(&s.handle) {

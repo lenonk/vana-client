@@ -3379,3 +3379,17 @@ needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in 
 - Ours: the op sets World::area.want; the App loads the area like a zone (or, for the zone's own id, swaps back the
   kept renderer, collision, weather keys and effect library: Effects::switch_zone) and the op's wait ends then.
   A zone load drops the switch. The level-5 scene checked live by the user.
+
+## Event sound volume and the scheduler stream (2026-10-22)
+
+- Event op 0x69 / 0x6a (FUN_100b5c30 / FUN_10034be0; XiEvents 0x0069 agrees): mask 1 Effect (world sounds,
+  DAT_1034656c), 2 System (interface sounds, DAT_10346568), 4 Zone (the zone's looping ambient voice
+  DAT_10450fd8, started by FUN_10035350 from a sound object, level DAT_10346570), 8 Master (all of them and the
+  stream DAT_10450fe8, FUN_100352d0), 0x10 a flag for special chat-message sounds (DAT_10346578). The music is not
+  among them: openings mute the world (San d'Oria 0x1f7: 0x69 1, #5 at 0x37f9, back at 0x3daa) and keep the music.
+  Ours had mapped 4 and 8 to the music, so the opening flyover had no music.
+- Scheduler op 0x60 (FUN_10057000 case 0x60): the named SeSep (type 0x3d) played as the stream through
+  FUN_100360e0 (centred, not attenuated); only mask 8 changes its level. Used by e.g. hrp1 / hrp2, fan2 / fan5, s021
+  in DAT 30834; not by the San d'Oria opening's flyover schedulers (ops 01 / 04 only).
+- Interface sounds (menus, targeting, prompts) follow mask 2 / 8, world effects mask 1 / 8.
+- Creator: on the nation step the dancer is torn down (FUN_10246f10(.., 0)), so its foley stops.

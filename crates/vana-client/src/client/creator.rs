@@ -206,8 +206,8 @@ impl Creator {
             fx.advance(dt);
         }
         self.orbit += if self.view == 2 { dt * 0.25 } else { 0.0 };
-        // The performance loops when it ends (FUN_10245920).
-        if let Some(d) = &self.dancer {
+        // The performance loops when it ends (FUN_10245920); torn down on the nation step, it makes no sound.
+        if let Some(d) = self.dancer.as_ref().filter(|_| self.show_dancer) {
             if self.view != 2 {
                 let first = before == 0.0;
                 self.sounds.extend(d.foley.iter().filter(|(f, _)| (*f > before || (first && *f == 0.0)) && *f <= self.frame).map(|&(_, id)| id));

@@ -7,7 +7,8 @@ use glam::{Mat4, Vec3};
 /// What the client's audio is asked to do this frame (sound thread commands 2, 4, 3, 0 / 5).
 #[derive(Clone, Debug, PartialEq)]
 pub enum SoundCmd {
-    Play { handle: u32, se: u32, vol: i32, pan: u8 },
+    /// `stream`: the scheduler's stream voice (op 0x60), outside the world-effect volume.
+    Play { handle: u32, se: u32, vol: i32, pan: u8, stream: bool },
     Level { handle: u32, vol: i32 },
     Pan { handle: u32, pan: u8 },
     /// Stop now (0) or fade over ticks.
@@ -41,6 +42,8 @@ pub struct Sound {
     pub sph: Option<std::sync::Arc<Vec<(Vec3, f32, Vec3, f32)>>>,
     /// The element's life, the fade when a generator's element goes with its voice (FUN_10035cd0).
     pub fade: f32,
+    /// Scheduler op 0x60: the stream (DAT_10450fe8), centred and not attenuated.
+    pub stream: bool,
     pub handle: u32,
     pub last_vol: i32,
     pub last_pan: u8,
@@ -50,7 +53,7 @@ pub struct Sound {
 
 impl Sound {
     pub fn new(se: u32, loops: bool) -> Self {
-        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, pan_in: 64.0, vol_key: None, sph: None, fade: 0.0, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0 }
+        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, pan_in: 64.0, vol_key: None, sph: None, fade: 0.0, stream: false, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0 }
     }
 
     /// vt+0x40 = FUN_10035950.

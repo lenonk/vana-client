@@ -16,6 +16,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - FFXiMain decompile: `~/ffxi/lab/creatorwork/ghidra/all.c` and `all.asm`; unpacked DLL:
   `~/ffxi/lab/compress_re/unpacked/FFXiMain_unpacked.dll`. These stay outside the repo; never commit them.
 - Research specs for upcoming work: `~/ffxi/lab/research/`. `keys_spec.md` covers all 180 key functions.
+- References (facts only, never copied text or code): `~/ffxi/lab/XiEvents` (atom0s, AGPL-3.0): every event VM
+  opcode with pseudo code (current as of Feb 2022 retail), plus event DAT structures; `~/ffxi/lab/POLUtils`
+  (Windower, Apache-2.0): DAT formats (`Wiki/FileFormats.wiki`, `Wiki/FFXIDATFileEncryption.wiki`) and their readers
+  and decryption in `PlayOnline.FFXI`. Check them alongside the decompile before reverse engineering a format or op.
 - Kuluu (`~/ffxi/lab/kuluu-ffxi`, GPL-3.0: facts only, never code) is far behind us and not a guide; at most a
   source of narrow facts, confirmed in our decompile (`~/ffxi/lab/research/kuluu_survey.md`).
 - Current FFXiMain (30261006_0): `~/ffxi/lab/current/` (DLL, unpacked), decompile `creatorwork/ghidra_30261006/`
