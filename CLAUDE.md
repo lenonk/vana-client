@@ -10,7 +10,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - `MODLOG.md`: every reverse-engineered fact (FFXiMain addresses, DAT formats, packets), plus what's inferred.
   Read the relevant sections before changing anything, and append what you learn.
 - Game install: `~/.local/share/vana-client/game/FINAL FANTASY XI` (the default, made by the first-start download
-  2026-10-22), patched to current retail (30261006_0) except the code files. The unpatched 2019 base is in
+  2026-10-22), patched to current retail (30261006_0), code files included. The unpatched 2019 base is in
   `~/ffxi/lab/base-install` for comparison. HD packs: `~/ffxi/dat-backup/removed-pack-files` (manifest.tsv), for
   the mod manager. The user's old config is in `~/ffxi/config-backup/config.json`.
 - FFXiMain decompile: `~/ffxi/lab/creatorwork/ghidra/all.c` and `all.asm`; unpacked DLL:
