@@ -86,9 +86,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Mod manager (in game; XIPivot built in): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files
   copied over the install. Each mod is a folder of replacements in XIPivot's layout (`<pack>/ROM*/<dir>/<file>.DAT`,
   so packs made for XIPivot drop in); DatIndex resolves a file id to the highest enabled mod that has it, else the
-  base file. Enable / disable / order from a settings page. AshenbubsHD stopped in November 2021: a mod file whose
-  base file has changed since the mod was made (compare against the base it replaced, e.g. dat-backup/original)
-  would roll that content back, so skip or flag those files rather than overlay them blindly.
+  base file. Enable / disable / order from a settings page. AshenbubsHD stopped in November 2021 and XIPivot swaps
+  whole files, which would roll updated DATs back to 2021. Ours merges per chunk instead (DATs are named-chunk
+  containers, dat/mod.rs): start from the current retail DAT and take only the pack's texture chunks whose names
+  match, so SE's updates (models, effects, events) stay and HD textures apply wherever the pack still fits.
   Migrate today's in-place install (~/ffxi/dat-backup: originals plus manifest.tsv of 34k replaced files) into mod
   folders and restore the originals.
 - Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
