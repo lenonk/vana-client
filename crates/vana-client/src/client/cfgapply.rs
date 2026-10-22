@@ -95,9 +95,6 @@ pub fn aspect(window: [u32; 2], retail: bool, ratio: u32) -> f32 {
 
 /// Movement and turn keys from the k1assign ids (0x4a..0x4d move up / down / left / right, 0x66 / 0x67 turn
 /// right / left), as winit keys.
-pub fn move_keys(v: &Values) -> [Option<winit::keyboard::KeyCode>; 6] {
-    [0x4a, 0x4b, 0x4c, 0x4d, 0x66, 0x67].map(|id| super::configui2::dik_keycode(v.get(id)))
-}
 
 #[cfg(test)]
 mod tests {
@@ -111,7 +108,5 @@ mod tests {
         assert!(timestamp(&v).is_none());
         assert!((aspect([1600, 900], false, 0) - 16.0 / 9.0).abs() < 1e-6);
         assert!((aspect([1600, 900], true, 0) - 1.0 / 0.791).abs() < 1e-5);
-        use winit::keyboard::KeyCode as K;
-        assert_eq!(move_keys(&v), [Some(K::KeyW), Some(K::KeyS), Some(K::KeyA), Some(K::KeyD), Some(K::KeyE), Some(K::KeyQ)]);
     }
 }

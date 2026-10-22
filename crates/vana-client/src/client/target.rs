@@ -3,7 +3,6 @@
 
 use super::World;
 use crate::audio::Ui;
-use crate::render::Camera;
 use glam::Vec3;
 
 /// SE "0009" (FUN_10036f50): a target from none; "0010" (FUN_10036fb0): switching targets.
@@ -56,22 +55,13 @@ pub fn lock(w: &mut World, on: bool, why: &str) {
         if !ok {
             return;
         }
-        // The locked camera starts from the camera on screen.
-        let c = match w.release.take() {
-            Some(r) => r,
-            None => {
-                let c = super::App::free_camera(w);
-                LockCam { eye: c.eye, look: c.target }
-            }
-        };
-        w.cam = Some(c);
+        // The locked camera starts from the camera on screen (the same eye and look).
         w.locked = true;
         log::info!("lock on {:#x} ({why})", w.target.unwrap_or(0));
     } else {
         w.locked = false;
         log::info!("lock off ({why})");
-        // Nothing snaps: the same eye and look go on in the free branch (FUN_1001e030).
-        w.release = w.cam.take();
+        // Nothing snaps: the same eye and look go on in the free branch, held 20 ticks (_DAT_10444464).
         w.unlock_ticks = 20.0;
     }
 }
@@ -171,51 +161,8 @@ pub fn update(w: &mut World) {
     }
 }
 
-/// The free branch of FUN_1001e030 after an unlock, in 1/60 s ticks: for 20 ticks the eye holds and the look
-/// eases 25 % a tick toward the player's look point; then the eye is pulled in by (look - eye) (d - rest)
-/// 0.012 a tick (rest 6 in retail; ours the free camera's distance) and pushed out below 3. Hands over to the
-/// yaw / pitch orbit once it has settled or on manual input (inferred: ours has no spring camera).
-pub fn step_release(w: &mut World, ticks: f32, head: Vec3, input: bool) {
-    let Some(c) = w.release else { return };
-    let hold = w.unlock_ticks > 0.0;
-    let (c, d) = release_step(c, head, ticks, hold, w.distance);
-    w.release = Some(c);
-    if !hold && (input || (d - w.distance).abs() < 0.05 || (d <= w.distance && (head - c.look).length() < 0.01)) {
-        hand_over(w);
-    }
-}
-
-/// One step of the release camera; returns it and the eye-to-look distance before the step.
-fn release_step(mut c: LockCam, head: Vec3, ticks: f32, hold: bool, rest: f32) -> (LockCam, f32) {
-    c.look += (head - c.look) * (1.0 - 0.75f32.powf(ticks));
-    let v = c.look - c.eye;
-    let d = v.length().max(1e-3);
-    if !hold {
-        if d > 100.0 {
-            c.eye += v / d * (d - 100.0) * (0.5 * ticks).min(1.0);
-        } else if d > rest {
-            c.eye += v * ((d - rest) * 0.012 * ticks).min(0.5);
-        } else if d < 3.0 {
-            c.eye -= v * ((3.0 - d) * 0.125 * ticks).min(0.5);
-        }
-    }
-    (c, d)
-}
-
-/// Ends the release: yaw, pitch and distance from its eye and look.
-pub fn hand_over(w: &mut World) {
-    let Some(c) = w.release.take() else { return };
-    let v = c.look - c.eye;
-    let d = v.length().max(1e-3);
-    if v.x.abs() + v.z.abs() > 1e-4 {
-        w.yaw = v.x.atan2(v.z);
-    }
-    w.pitch = ((c.look.y - c.eye.y) / d).clamp(-1.0, 1.0).asin().clamp(-0.4, 1.4);
-    w.distance = d.clamp(2.0, 30.0);
-}
-
-/// The locked camera's state: eye and look-at (camera object +0x44 / +0x50).
-#[derive(Clone, Copy, Debug)]
+/// The camera's eye and look-at (camera object +0x44 / +0x50).
+#[derive(Clone, Copy, Debug, Default)]
 pub struct LockCam {
     pub eye: Vec3,
     pub look: Vec3,
@@ -233,7 +180,8 @@ fn look_height(w: &World, id: u32, bone: usize, scale_taru: bool) -> f32 {
 /// within 3 atan(4 / (near + d)) of the target-to-player line and ease its distance into
 /// [near + d/2, far + d/2], 25 % of the gap a tick. `turn` is manual orbit input in radians.
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
-    let (Some(t), Some(mut c)) = (w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))), w.cam) else { return };
+    let Some(t) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))) else { return };
+    let mut c = w.cam;
     let (tid, tpos) = t;
     let me = super::drawn_pos(w);
     let p = me + Vec3::new(0.0, look_height(w, w.my_id, 13, false), 0.0);
@@ -272,19 +220,7 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
         eye = from + (eye - from).normalize_or(Vec3::X) * (hit - 0.2).max(0.2);
     }
     c.eye = eye;
-    w.cam = Some(c);
-}
-
-pub fn camera(w: &World) -> Option<Camera> {
-    let c = w.cam.filter(|_| w.locked).or(w.release)?;
-    let mut eye = c.eye;
-    // The release's wall ray from the look point; the eye 0.5 in front of the hit.
-    if !w.locked
-        && let Some(t) = w.ground.as_ref().and_then(|g| g.raycast(c.look, c.eye))
-    {
-        eye = c.look + (c.eye - c.look).normalize_or(Vec3::X) * (t - 0.5).max(0.3);
-    }
-    Some(Camera { eye, target: c.look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(super::cfgapply::focal(&w.game)) })
+    w.cam = c;
 }
 
 #[cfg(test)]
@@ -302,27 +238,6 @@ mod tests {
         assert_eq!(drop_rule(0, true, 3, 10.0, false), None);
         assert_eq!(drop_rule(0, false, 0, 50.5, false), Some(false));
         assert_eq!(drop_rule(0, false, 0, 1.0, true), Some(false));
-    }
-
-    /// The eye holds while the hold ticks run, then the spring pulls it in to the rest distance, keeping
-    /// its direction; the look follows the player.
-    #[test]
-    fn release_spring() {
-        let head = Vec3::new(0.0, -1.5, 0.0);
-        let start = LockCam { eye: Vec3::new(0.0, -4.0, -12.0), look: Vec3::new(2.0, -1.5, 3.0) };
-        let mut c = start;
-        for _ in 0..20 {
-            c = release_step(c, head, 1.0, true, 6.0).0;
-        }
-        assert_eq!(c.eye, start.eye);
-        assert!((c.look - head).length() < 0.02);
-        let dir = (c.eye - c.look).normalize();
-        for _ in 0..600 {
-            c = release_step(c, head, 1.0, false, 6.0).0;
-        }
-        let d = c.eye - c.look;
-        assert!((d.length() - 6.0).abs() < 0.1, "{}", d.length());
-        assert!(d.normalize().dot(dir) > 0.999);
     }
 
     /// Engaging with auto lock-on at its default (config 7 = 0) targets and locks a monster; config 7 = 1

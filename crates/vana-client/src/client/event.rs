@@ -502,7 +502,7 @@ impl Host for LiveHost<'_> {
                     self.w.screen.shot = None;
                     let dir = self.w.net.me.lock().map(|m| m.dir).unwrap_or(0);
                     let f = super::forward_from_dir(dir);
-                    self.w.yaw = f.x.atan2(f.z);
+                    super::camera::face(self.w, f.x.atan2(f.z));
                 }
             }
             Effect::Volume { mask, level, ticks } => self.w.audio_cmds.push((mask, level, ticks)),
@@ -1072,7 +1072,7 @@ fn finish(w: &mut World, live: Box<Live>) {
     if live.st.flags() & 1 != 0 {
         let dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
         let f = super::forward_from_dir(dir);
-        w.yaw = f.x.atan2(f.z);
+        super::camera::face(w, f.x.atan2(f.z));
     }
 }
 

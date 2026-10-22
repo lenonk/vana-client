@@ -146,22 +146,6 @@ pub fn dik_of(key: egui::Key) -> Option<u8> {
     DIK.iter().find(|d| d.2 == key).map(|d| d.0)
 }
 
-/// The winit key of a DIK code (movement and turning bindings).
-pub fn dik_keycode(code: u32) -> Option<winit::keyboard::KeyCode> {
-    use winit::keyboard::KeyCode as K;
-    let k = dik_char(code);
-    Some(match k {
-        "1" => K::Digit1, "2" => K::Digit2, "3" => K::Digit3, "4" => K::Digit4, "5" => K::Digit5, "6" => K::Digit6, "7" => K::Digit7,
-        "8" => K::Digit8, "9" => K::Digit9, "0" => K::Digit0, "-" => K::Minus, "=" => K::Equal, "[" => K::BracketLeft, "]" => K::BracketRight,
-        ";" => K::Semicolon, "'" => K::Quote, "`" => K::Backquote, "\\" => K::Backslash, "," => K::Comma, "." => K::Period, "/" => K::Slash,
-        "A" => K::KeyA, "B" => K::KeyB, "C" => K::KeyC, "D" => K::KeyD, "E" => K::KeyE, "F" => K::KeyF, "G" => K::KeyG, "H" => K::KeyH,
-        "I" => K::KeyI, "J" => K::KeyJ, "K" => K::KeyK, "L" => K::KeyL, "M" => K::KeyM, "N" => K::KeyN, "O" => K::KeyO, "P" => K::KeyP,
-        "Q" => K::KeyQ, "R" => K::KeyR, "S" => K::KeyS, "T" => K::KeyT, "U" => K::KeyU, "V" => K::KeyV, "W" => K::KeyW, "X" => K::KeyX,
-        "Y" => K::KeyY, "Z" => K::KeyZ,
-        _ => return None,
-    })
-}
-
 /// Page state that is not a config id.
 #[derive(Default)]
 pub struct Extra {
@@ -707,6 +691,5 @@ mod tests {
         // The same key again unassigns.
         assign(&mut v, &mut out, "k1assign", 1, egui::Key::W);
         assert_eq!(v.get(0x4b), 0);
-        assert_eq!(dik_keycode(0x1e), Some(winit::keyboard::KeyCode::KeyA));
     }
 }

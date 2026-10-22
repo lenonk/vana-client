@@ -1766,7 +1766,62 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
   FUN_10195940 the k1 rows' record keys (FUN_1011fb10), then with keyboard type 2 FUN_10195910 sets 0xaa / 0xa9 to
   0x80 << 8 | k1 row 28 / 29 (FUN_1011fb70).
 - Wired so far: 0x44 (Num*, compact H) and 0x78 (Num+, Ctrl / Alt + F, compact F; mode 0). Drives tap keys (egui events,
-  act:numpad* / numpad+).
+  act:numpad* / numpad+, act:dik:XX; act:down:XX / act:up:XX hold).
+- Axes (FUN_1011fe30, Input::axis): the larger of the raw keys (FUN_1011f300 -> FUN_10120550: n1 Num6 +1 / Num4 -1, n2
+  Num8 -1 / Num2 +1, n3 Right / Left, n4 Down +1 / Up -1) and the pad bytes (b - 0x80) / 128 that FUN_1011fbc0 writes from
+  the compact records (+0x252 D 0xff / A 0, +0x253 W 0 / S 0xff, +0x250 L 0xff / J 0, +0x251 I 0 / K 0xff; the later
+  record wins). Typing: numpad movement only with NumLock off, arrows never; in a window or outside the field the arrows
+  need Shift (FUN_1011f7b0 / FUN_1011f910).
+
+### Movement keys (FUN_100a48d0; client mod.rs update_movement)
+- Speed FUN_100a5f60: |v| > 0.9 full, 0.05..0.9 a third, below nothing; walk (player +0xfa) caps at a third. Speed
+  = vt+0x1a0 (max 30, _DAT_1031ee48) x 1/60 a tick.
+- Walk 0x45 (Num/, Ctrl / Alt + Z, compact Z) toggles DAT_10565d34 +0x50 (FUN_10151910); drawn with the walk motion
+  (ratio 1/3, FUN_100c6b70).
+- Autorun 0x1c (Num7, compact R): FUN_100a4700 toggles DAT_10475579 and zeroes the vector DAT_1047555c. While on and the
+  vector is zero the move input becomes it (LAB_100a53ae); X input rotates it by 2 x X x ticks x 0.0174528 (local_9c =
+  DAT_10443fe4 +0x2c x _DAT_1031f864, asm ~0x100a5360) and the move follows it; no input and |vector| <= 0.001 ends it,
+  so Num7 standing still does nothing. With Q / E turning while on, forward is forced and the turn acts as X input.
+  Forced off in statuses 2, 3, 6, 7, 0x21, 0x26..0x2c, 0x2f, 0x30, 0x32..0x35, 0x38..0x53 and events.
+- Q / E (0xaa / 0xa9, keyboard type 2, free camera, X input 0, camera axes idle): player yaw += ticks x 0.0174528 x
+  1.57075 x (E - Q) (_DAT_10322260 = 1.57075; 94 degrees a second); the camera turns with it (FUN_1001d4c0).
+- Face-camera 0x9c (LShift held, type 2, free): the player faces the camera yaw, so A / D strafe; camera axes and Q / E off.
+
+### Free camera (FUN_1001e030 free branch; client/camera.rs; traced by a sub-agent from all.c 22024..22887)
+- State: eye (camera +0x44) and look (+0x50) only; +0x48 is the eye's y. One state serves the free, locked and first
+  person views (ours: World::cam). Per frame the free branch loops ftol(ticks) whole ticks; ours steps 1-tick states
+  with an accumulator and draws between the last two.
+- Look eases 0.25 a tick toward the player's position minus 0.6 (_DAT_1031e8a0) x model height (bounds span, at most
+  2.5 with vt+0x14c). Ours uses the posed model's top *(inf: bounds)*.
+- Axis 6: the eye turns about the look by ticks x v x 0.0279244 (_DAT_1031f25c; FUN_1001dd80, angle atan2(dz, dx), the
+  opposite sense to our yaw); axis 7: eye.y += ticks x v x 0.1066667 (_DAT_1031f254). Config 0x8b / 0x8c invert. Input
+  sets the manual hold DAT_1044445c = 10; the unlock hold _DAT_10444464 (20) blocks input and the spring.
+- Spring per tick: d = |look - eye|; d > 100: eye += unit x (d - 100) x 0.5; d >= 6 (_DAT_1031f258): eye += (look -
+  eye) x (d - 6) x 0.012 (_DAT_1031f234); d < 3 (_DAT_1031eba8): pushed out by (3 - d) x 0.125 and horizontally to 3
+  (_DAT_1031f22c), hold 10. Rest anywhere 3..6. Height memory: eye above the look and the gap shrinking (uphill), the
+  eye keeps the previous gap (_DAT_10444460).
+- Chase (config 0x91): after camera / turn input wait (hold 4) until the player has moved 0.5; then while the eye is
+  -0.5 < dot < 0.99 off the player's back, eye.xz += (look + d behind - eye) x 0.025 a tick.
+- Zoom: 0x4f / 0x50 held change focal by ticks x 6 (242..900), saved as config 0x49; both held ease to 350 by 25 % a
+  frame (DAT_1044446c). Type 2: FUN_10253af0 *(inf: wheel)* zooms too. Ours: the wheel zooms 12 a notch (user's choice:
+  FOV, not distance).
+- Home 0x51: 8 frames (ours 16 ticks) of eye += (3 behind the player at look height - eye) x 0.125 a tick, until the
+  camera's yaw is within 0.05 of the player's.
+- Collision: ray look -> eye puts the eye 0.5 in front of a hit; 0.17 clear of the floor (FUN_1017a310, within 10) and
+  ceiling; a sweep from the frame's start eye stops 0.2 short (never through walls); side rays at +-0.17 along the
+  camera's X. Ours: no ceiling, no side rays, no path mode (DAT_10444458: the camera retraces the look's path when the
+  view keeps being blocked *(inf)*).
+- First person (DAT_10475578, 0x10: Num5, Ctrl / Alt + V, compact V; SE 0014): eye 0.5 behind the actor on its facing
+  at 0.91 x joint 12's height (max 2; resting and seated: joint 6); the view where the stick points, eased 0.25 a frame,
+  max 1.413675 rad pitch / 1.8849 yaw off the body; look = eye + R(yaw, pitch)(5, 0.25, 0); eye and look ease 0.125 a
+  tick; focal 280; hold 8. Our own model fades out at 0.0625 a tick (actor +0x167 -= ticks x _DAT_1031f860, FUN at
+  all.c ~146770) *(inf: back in at the same rate)*.
+- Face-camera: the eye = look + the offset stored when Shift went down; no axes or spring.
+- Ours, not retail: face() (zone-in, event end, drives) puts the eye 5 back and 1 up, in front of what the look -> eye
+  ray hits *(inf)*; the sweep is skipped when the look cannot see the start eye. Without both an eye placed inside the
+  hill behind a zone-in point stayed underground for good (the sweep undid every move out).
+- Gone from ours: the yaw / pitch / distance orbit, the release camera and its hand-over. Mouse drag (not retail) turns
+  the eye 0.008 rad / px and raises it 0.03 / px, with the manual hold.
 
 ### Installed DAT packs (2026-10-21)
 - AshenbubsHD Prime (November 2021) and remapster-dats-pack 1.2 are installed over the game DATs. 32482 originals (6.1 GB) are in `~/ffxi/dat-backup/original` (same ROM*/dir/file layout); `~/ffxi/dat-backup/manifest.tsv` lists every file (replaced / added); `restore_originals.py` beside it undoes the install.

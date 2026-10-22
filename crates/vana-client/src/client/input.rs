@@ -113,6 +113,7 @@ pub struct Input {
     pub context: u16,
     typing: bool,
     assigning: bool,
+    window: bool,
     /// DAT_104cf22c: a handler took Enter / Esc this frame (FUN_101202a0); only mode 4 tests still pass.
     consumed: bool,
     /// NumLock, from the last numpad digit's logical key (winit reports no toggle state).
@@ -139,6 +140,7 @@ impl Default for Input {
             context: 0xffff,
             typing: false,
             assigning: false,
+            window: false,
             consumed: false,
             numlock: true,
         }
@@ -218,7 +220,8 @@ impl Input {
         self.set(k, pressed);
     }
 
-    fn set(&mut self, k: u8, pressed: bool) {
+    /// A key going down or up by DIK code (the window, and test drives act:down / act:up).
+    pub fn set(&mut self, k: u8, pressed: bool) {
         self.down[k as usize] = pressed;
         if pressed {
             self.tapped[k as usize] = true;
@@ -255,6 +258,7 @@ impl Input {
         self.consumed = false;
         self.typing = f.typing;
         self.assigning = f.assigning;
+        self.window = f.window;
         self.clock += f.ticks;
         let frames = (self.clock / FRAME_TICKS).floor();
         self.clock -= frames * FRAME_TICKS;
@@ -343,8 +347,29 @@ impl Input {
     }
 
     /// The compact pad's held bits (the stick directions W / A / S / D and I / J / K / L, among others).
+    #[cfg(test)]
     pub fn pad_held(&self) -> u64 {
         self.pad.held
+    }
+
+    /// FUN_1011fe30 for the movement (4 X, 5 Y) and camera (6 X, 7 Y) axes: the larger of the raw keys
+    /// (FUN_1011f300: numpad 6 / 4, 2 / 8, arrows) and the compact stick (W / A / S / D, I / J / K / L; byte
+    /// (b - 0x80) / 128, the later record winning). While typing only numpad movement with NumLock off counts;
+    /// with a window active the arrows need Shift (FUN_1011f7b0 / FUN_1011f910).
+    pub fn axis(&self, id: usize) -> f32 {
+        if !(4..=7).contains(&id) || self.masks[id] & self.context == 0 {
+            return 0.0;
+        }
+        let key = |p: u8, n: u8| self.held(p) as i32 as f32 - self.held(n) as i32 as f32;
+        let stick = |p: u64, n: u64| -> f32 { if self.pad.held & p != 0 { 127.0 / 128.0 } else if self.pad.held & n != 0 { -1.0 } else { 0.0 } };
+        let arrows = !self.typing && (!self.window || self.shift());
+        let (keys, pad) = match id {
+            4 => (if self.typing && self.numlock { 0.0 } else { key(0x4d, 0x4b) }, stick(0x20_0000, 0x40_0000)),
+            5 => (if self.typing && self.numlock { 0.0 } else { key(0x50, 0x48) }, stick(0x100_0000, 0x80_0000)),
+            6 => (if arrows { key(0xcd, 0xcb) } else { 0.0 }, stick(0x2_0000, 0x4_0000)),
+            _ => (if arrows { key(0xd0, 0xc8) } else { 0.0 }, stick(0x10_0000, 0x8_0000)),
+        };
+        if keys.abs() >= pad.abs() { keys } else { pad }
     }
 
     fn held(&self, k: u8) -> bool {

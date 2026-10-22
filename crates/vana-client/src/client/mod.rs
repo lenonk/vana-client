@@ -20,6 +20,7 @@ mod configui2;
 mod settings;
 mod target;
 mod input;
+mod camera;
 mod items;
 pub mod select;
 pub mod net;
@@ -1469,7 +1470,7 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     }
     if id == w.my_id {
         let m = w.my_motion;
-        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), status: m.status, ratio: if w.moving { 1.0 } else { 0.0 }, size });
+        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), status: m.status, ratio: if w.moving { w.move_tier } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), status: e.motion.status, ratio: e.ratio, size })
@@ -1509,8 +1510,6 @@ struct World {
     my_index: u16,
     pos: Vec3,
     yaw: f32,
-    pitch: f32,
-    distance: f32,
     entities: HashMap<u32, Entity>,
     /// Zone lines with a destination (tag + destination tag).
     zone_lines: Vec<zone::Region>,
@@ -1535,10 +1534,10 @@ struct World {
     /// camera ignores manual turns after a lock (DAT_10444464), auto lock-on (config 7 = 0), when the target
     /// was set, and manual camera turns waiting for the locked camera.
     locked: bool,
-    cam: Option<target::LockCam>,
+    cam: target::LockCam,
     unlock_ticks: f32,
-    /// The camera between an unlock and the free orbit (FUN_1001e030's free branch), and our status last frame.
-    release: Option<target::LockCam>,
+    /// The free camera's state (camera.rs), and our status last frame.
+    camst: camera::State,
     last_status: u8,
     auto_lock: bool,
     /// Loaded models by source key, shared by every actor with that look, and keys being loaded.
@@ -1559,14 +1558,18 @@ struct World {
     unsettled: bool,
     actors: HashMap<u32, Actor>,
     moving: bool,
+    /// Walk mode (0x45, DAT_10565d34 +0x50 / player +0xfa), autorun (0x1c, DAT_10475579) and its world-space
+    /// vector (DAT_1047555c), and this frame's speed fraction (FUN_100a5f60: 1, 1/3 or 0).
+    walk: bool,
+    autorun: bool,
+    autorun_dir: Vec3,
+    move_tier: f32,
     /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the last four step
     /// results (oldest first), the position after the last step, and where the player is drawn (drawn_pos).
     step_ticks: f32,
     step_hist: [Vec3; 4],
     step_to: Vec3,
     draw_pos: Vec3,
-    /// The free camera's look point, eased toward the head (FUN_1001e030).
-    cam_look: Option<Vec3>,
     /// Screen fade: 0 clear, 1 black. Zoning fades out, loads, then fades back in.
     fade: f32,
     my_motion: net::MotionState,
@@ -1741,6 +1744,8 @@ pub struct App {
     dragging: bool,
     left_down: bool,
     middle_down: bool,
+    /// Wheel notches since the last frame (FOV zoom).
+    wheel: f32,
     mods: winit::keyboard::ModifiersState,
     press_at: Option<(f64, f64)>,
     last_cursor: Option<(f64, f64)>,
@@ -1899,6 +1904,7 @@ impl App {
             dragging: false,
             left_down: false,
             middle_down: false,
+            wheel: 0.0,
             mods: Default::default(),
             press_at: None,
             last_cursor: None,
@@ -2361,8 +2367,6 @@ impl App {
                             my_index: 0,
                             pos: Vec3::ZERO,
                             yaw: 0.0,
-                            pitch: 0.35,
-                            distance: 6.0,
                             entities: HashMap::new(),
                             zone_lines: Vec::new(),
                             zoning_since: None,
@@ -2378,9 +2382,9 @@ impl App {
                             logging_out: false,
                             target: None,
                             locked: false,
-                            cam: None,
+                            cam: Default::default(),
                             unlock_ticks: 0.0,
-                            release: None,
+                            camst: camera::State::new(),
                             last_status: 0,
                             auto_lock: true,
                             models: HashMap::new(),
@@ -2395,11 +2399,14 @@ impl App {
                             unsettled: false,
                             actors: HashMap::new(),
                             moving: false,
+                            walk: false,
+                            autorun: false,
+                            autorun_dir: Vec3::ZERO,
+                            move_tier: 0.0,
                             step_ticks: 0.0,
                             step_hist: [Vec3::ZERO; 4],
                             step_to: Vec3::ZERO,
                             draw_pos: Vec3::ZERO,
-                            cam_look: None,
                             fade: 1.0,
                             my_motion: Default::default(),
                             vitals: None,
@@ -2583,7 +2590,7 @@ impl App {
                     world.unsettled = true;
                     log::info!("zone-in: zone {zone} at {:?} dir {dir}", pos);
                     let f = forward_from_dir(dir);
-                    world.yaw = f.x.atan2(f.z);
+                    camera::face(world, f.x.atan2(f.z));
                     world.my_id = char_id;
                     world.name = name;
                     world.entities.clear();
@@ -2748,7 +2755,7 @@ impl App {
                             world.pos = Vec3::from(pos);
                         }
                         let f = forward_from_dir(dir);
-                        world.yaw = f.x.atan2(f.z);
+                        camera::face(world, f.x.atan2(f.z));
                     }
                     event::position_ack(world, mode);
                 }
@@ -2943,26 +2950,99 @@ impl App {
         }
         let forward = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
         let right = forward.cross(Vec3::NEG_Y);
-        let mut step = Vec3::ZERO;
-        let held = |k| self.keys.contains(&k);
-        // The keys of Misc. 2's Key Assignment (ids 0x4a..0x4d, turns 0x66 / 0x67 with keyboard type 2).
-        let [k_up, k_down, k_left, k_right, turn_r, turn_l] = cfgapply::move_keys(&world.game);
-        let bound = |k: Option<KeyCode>| k.is_some_and(held);
-        let turns = world.game.get(0x42) == 2;
-        // Both mouse buttons run forward, as in most modern MMOs.
-        if bound(k_up) || held(KeyCode::ArrowUp) || (self.left_down && self.dragging) {
-            step += forward;
+        let ticks = dt * 60.0;
+        // Movement axes 4 / 5 (FUN_1011fe30): numpad 6 / 4 and 8 / 2 or the compact stick (W / A / S / D).
+        let (mut ax, mut ay) = (self.input.axis(4), self.input.axis(5));
+        // Test drives hold W; both mouse buttons run forward, as in most modern MMOs.
+        if self.keys.contains(&KeyCode::KeyW) || (self.left_down && self.dragging) {
+            ay = -1.0;
         }
-        if bound(k_down) || held(KeyCode::ArrowDown) {
-            step -= forward;
+        // Camera axes 6 / 7: the arrows (with Shift in a window) or the compact I / J / K / L stick.
+        let (cx, cy) = (self.input.axis(6), self.input.axis(7));
+        // Keyboard type 2, free camera: Shift held faces the camera (0x9c, player +0xfb; camera keys and Q / E off),
+        // and Q / E turn the player (0xaa / 0xa9, FUN_10253a60 / FUN_102539f0) while the camera axes are idle.
+        let type2 = world.game.get(0x42) == 2 && !world.locked;
+        let face_cam = type2 && self.input.test(0x9c, input::mode::HELD);
+        let turn = if type2 && !face_cam && cx == 0.0 && cy == 0.0 && ax == 0.0 {
+            self.input.test(0xaa, input::mode::HELD) as i32 as f32 - self.input.test(0xa9, input::mode::HELD) as i32 as f32
+        } else {
+            0.0
+        };
+        // Walk / run (0x45: Num/, compact Z) and autorun (0x1c: Num7, compact R): FUN_10151910 / FUN_100a4580.
+        if !in_event && self.input.test(0x45, input::mode::PRESS) {
+            world.walk = !world.walk;
         }
-        if bound(k_right) {
-            step += right;
+        if !in_event && self.input.test(0x1c, input::mode::PRESS) {
+            world.autorun = !world.autorun;
+            world.autorun_dir = Vec3::ZERO;
         }
-        if bound(k_left) {
-            step -= right;
+        // Turning while autorunning steers it: the move goes forward and the turn counts as X input.
+        if world.autorun && turn != 0.0 {
+            (ax, ay) = (turn, -1.0);
         }
-        let turn_keys = (held(KeyCode::ArrowRight) || (turns && bound(turn_r))) as i32 - (held(KeyCode::ArrowLeft) || (turns && bound(turn_l))) as i32;
+        let mut step = right * ax - forward * ay;
+        // Autorun: the first move becomes the vector; X input steers it 2 degrees a tick (ticks x 0.01745 x 2); no
+        // input and no vector ends it. Forced off while dead, resting or seated and in events. Locked on, the
+        // keys move as usual *(inf)*.
+        if world.autorun && (in_event || world.dead() || matches!(world.my_motion.status, 6 | 7 | 0x21 | 0x26..=0x2c | 0x2f | 0x30 | 0x32..=0x35 | 0x38..=0x53)) {
+            world.autorun = false;
+        }
+        if world.autorun && !world.locked {
+            if world.autorun_dir == Vec3::ZERO && step != Vec3::ZERO {
+                world.autorun_dir = step.normalize();
+            }
+            if world.autorun_dir == Vec3::ZERO {
+                world.autorun = false;
+            } else {
+                if ax != 0.0 {
+                    let d = world.autorun_dir;
+                    let a = d.x.atan2(d.z) + 2.0 * ax * ticks * 0.017452778;
+                    world.autorun_dir = Vec3::new(a.sin(), 0.0, a.cos());
+                }
+                step = world.autorun_dir;
+            }
+        }
+        if !world.autorun {
+            world.autorun_dir = Vec3::ZERO;
+        }
+        // FUN_100a5f60: |v| > 0.9 full speed, 0.05..0.9 a third; walking caps at a third.
+        let mag = if world.autorun && !world.locked { 1.0 } else { ax.hypot(ay) };
+        let mut tier = if mag > 0.9 { 1.0 } else if mag >= 0.05 { 1.0 / 3.0 } else { 0.0 };
+        if world.walk {
+            tier = f32::min(tier, 1.0 / 3.0);
+        }
+        if tier == 0.0 {
+            step = Vec3::ZERO;
+        }
+        world.move_tier = tier;
+        // Q / E: player yaw += ticks x 0.01745 x 1.57075; the camera follows the turn (FUN_1001d4c0).
+        let turn_delta = if turn != 0.0 && !world.autorun && !in_event && world.unlock_ticks <= 0.0 { turn * ticks * 0.017452778 * 1.57075 } else { 0.0 };
+        world.yaw += turn_delta;
+        let turn_keys = if face_cam { 0.0 } else { cx };
+        // Mouse/Cam.: 0x8b / 0x8c invert the camera axes, 0x8d / 0x8e in first person.
+        let first = world.camst.first;
+        let (i6, i7) = [(0x8b, 0x8c), (0x8d, 0x8e)][first as usize];
+        let (i6, i7) = (if world.game.get(i6) == 1 { -1.0 } else { 1.0 }, if world.game.get(i7) == 1 { -1.0 } else { 1.0 });
+        let still = face_cam || in_event;
+        let mut cam_in = camera::Inputs {
+            v6: if still { 0.0 } else { cx * i6 },
+            v7: if still { 0.0 } else { cy * i7 },
+            turn: turn_delta,
+            face_cam,
+            zoom_in: self.input.test(0x4f, input::mode::HELD),
+            zoom_out: self.input.test(0x50, input::mode::HELD),
+            home: self.input.test(0x51, input::mode::HELD),
+            wheel: std::mem::take(&mut self.wheel),
+            ..Default::default()
+        };
+        // First / third person (0x10: Num5, compact V; FUN_100a4580): SE 0014. The dead are third person.
+        if !in_event && !world.dead() && self.input.test(0x10, input::mode::PRESS) {
+            camera::toggle_first(world);
+            world.sounds.push(14);
+        }
+        if world.dead() && world.camst.first {
+            camera::toggle_first(world);
+        }
         // Screen edge panning (0x8f = 0, FUN_10120fc0): the pointer at the window's left / right edge turns the
         // camera *(inf: margin and rate)*.
         let edge = match (world.game.get(0x8f), self.last_cursor, self.gfx.as_ref()) {
@@ -2973,27 +3053,19 @@ impl App {
             _ => 0.0,
         };
         if edge != 0.0 && !in_event && world.unlock_ticks <= 0.0 {
-            world.yaw += edge as f32 * 1.5 * dt;
+            cam_in.edge = edge as f32 * 1.5 * dt;
         }
-        if !in_event && !world.locked && world.unlock_ticks <= 0.0 {
-            world.yaw += turn_keys as f32 * 2.0 * dt;
-        }
-        world.unlock_ticks = (world.unlock_ticks - dt * 60.0).max(0.0);
         // Locked: the keys move relative to the target (FUN_100a6210) and the camera follows FUN_1001e030.
         let lock_target = world.target.filter(|_| world.locked).and_then(|t| world.entities.get(&t)).map(|e| e.pos);
         if let Some(tp) = lock_target {
             let (dx, dy) = std::mem::take(&mut world.cam_turn);
-            target::step_camera(world, dt * 60.0, dx + turn_keys as f32 * 2.0 * dt, dy);
+            target::step_camera(world, dt * 60.0, dx + turn_keys * 2.0 * dt, dy);
             let to = tp - world.pos;
             if to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);
             }
         } else {
             world.cam_turn = (0.0, 0.0);
-            if world.release.is_some() {
-                let head = drawn_pos(world) + Vec3::new(0.0, -1.5, 0.0);
-                target::step_release(world, dt * 60.0, head, turn_keys != 0 || in_event);
-            }
         }
         let face = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
         // The KO'd and the resting (status 33, also the logout countdown) can look around but not move;
@@ -3024,7 +3096,7 @@ impl App {
             let g = world.ground.as_ref().filter(|g| !g.is_empty());
             if stepping {
                 let s = step.normalize();
-                let d = speed * ground::STEP_TICKS / 60.0;
+                let d = speed * tier * ground::STEP_TICKS / 60.0;
                 let next = match lock_target {
                     Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
                     None => from + s * d,
@@ -3040,15 +3112,12 @@ impl App {
         world.draw_pos = drawn_between_steps(&world.step_hist, world.step_ticks / ground::STEP_TICKS);
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && stepping {
             let c = Self::camera(world);
-            log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3}) dist {:.3}", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z, world.distance);
+            log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z);
         }
-        // FUN_1001e030: the look point closes 25 % of the gap to the head a tick *(inf: per tick with powf; retail
-        // runs whole ticks, at least one a frame)*; a jump of over 12 units snaps.
-        let head = world.draw_pos + Vec3::new(0.0, -1.5, 0.0);
-        world.cam_look = Some(match world.cam_look {
-            Some(l) if (head - l).length() < 12.0 => l + (head - l) * (1.0 - 0.75f32.powf(dt * 60.0)),
-            _ => head,
-        });
+        camera::step(world, dt, &cam_in);
+        if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && (cx != 0.0 || cy != 0.0 || (world.started.elapsed().as_secs_f32() * 2.0).fract() < dt * 2.0) {
+            log::info!("cam t {:.3} eye {:.3} look {:.3} drawn {:.3} unlock {:.1} v6 {cx:.2} v7 {cy:.2} first {}", world.started.elapsed().as_secs_f32(), world.cam.eye, world.cam.look, world.draw_pos, world.unlock_ticks, world.camst.first);
+        }
         // Touching a zone line asks the server to move us; wait for its answer before asking again.
         if stepping && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
             if let Some(line) = world.zone_lines.iter().find(|r| r.contains(world.pos.to_array())) {
@@ -3057,18 +3126,10 @@ impl App {
                 let _ = world.net.commands.send(NetCommand::ZoneLine { tag: line.tag(), pos: world.pos.to_array() });
             }
         }
-        // Chase Cam (0x91 = 1, FUN_1001e030): the free camera stays behind the character *(inf: eased 10 % a tick
-        // toward the facing while moving)*.
-        if world.game.get(0x91) == 1 && stepping && lock_target.is_none() && !in_event {
-            let f = step.normalize();
-            let want = f.x.atan2(f.z);
-            let diff = (want - world.yaw + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
-            world.yaw += diff * (1.0 - 0.9f32.powf(dt * 60.0));
-        }
         if let Ok(mut me) = world.net.me.lock() {
             me.pos = world.pos.to_array();
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
-            if lock_target.is_some() {
+            if lock_target.is_some() || face_cam || (turn != 0.0 && !stepping) {
                 me.dir = dir_from_forward(face);
             } else if stepping {
                 me.dir = dir_from_forward(step.normalize());
@@ -3102,25 +3163,7 @@ impl App {
     }
 
     fn camera(world: &World) -> Camera {
-        if let Some(c) = event::camera(world) {
-            return c;
-        }
-        if let Some(c) = target::camera(world) {
-            return c;
-        }
-        Self::free_camera(world)
-    }
-
-    /// The camera behind the player (yaw / pitch / distance), with retail's field of view (config 0x49).
-    fn free_camera(world: &World) -> Camera {
-        let forward = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
-        let head = world.cam_look.unwrap_or(drawn_pos(world) + Vec3::new(0.0, -1.5, 0.0));
-        let mut eye = head - forward * world.distance * world.pitch.cos() + Vec3::new(0.0, -world.distance * world.pitch.sin(), 0.0);
-        // Pull the camera in front of walls between it and the character.
-        if let Some(t) = world.ground.as_ref().and_then(|g| g.raycast(head, eye)) {
-            eye = head + (eye - head).normalize() * (t - 0.3).max(0.3);
-        }
-        Camera { eye, target: head, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(cfgapply::focal(&world.game)) }
+        event::camera(world).unwrap_or_else(|| camera::view(world))
     }
 
     /// The entity under a cursor position, nearest first: each is a body-sized screen box.
@@ -3752,7 +3795,7 @@ impl App {
                 if self.drive.chase && self.drive.goto.is_empty() && (world.my_motion.status == 1 || mob_target) {
                     match world.target.and_then(|t| world.entities.get(&t)).map(|e| e.pos - world.pos) {
                         Some(to) if to.length() > 2.0 => {
-                            world.yaw = to.x.atan2(to.z);
+                            camera::face(world, to.x.atan2(to.z));
                             self.keys.insert(KeyCode::KeyW);
                         }
                         _ => {
@@ -3766,7 +3809,7 @@ impl App {
                         self.drive.goto.remove(0);
                         self.keys.remove(&KeyCode::KeyW);
                     } else {
-                        world.yaw = to.x.atan2(to.z);
+                        camera::face(world, to.x.atan2(to.z));
                         self.keys.insert(KeyCode::KeyW);
                     }
                 }
@@ -3781,8 +3824,8 @@ impl App {
                     let head = world.pos + Vec3::new(0.0, -1.5, 0.0);
                     let g = world.ground.as_ref();
                     log::info!(
-                        "drive: pos {} yaw {:.2} pitch {:.2} eye {} hit {:?} floor-here {:?} floor-below-anything {:?}",
-                        world.pos, world.yaw, world.pitch, cam.eye,
+                        "drive: pos {} yaw {:.2} eye {} hit {:?} floor-here {:?} floor-below-anything {:?}",
+                        world.pos, world.yaw, cam.eye,
                         g.and_then(|g| g.raycast(head, cam.eye)),
                         g.and_then(|g| g.floor(world.pos.x, world.pos.z, world.pos.y, 1.2)),
                         g.and_then(|g| g.floor(world.pos.x, world.pos.z, world.pos.y, 50.0)),
@@ -4038,10 +4081,21 @@ impl App {
             raw.events.extend(events);
             script_shot = shot;
             // Keys egui has no name for.
+            // act:dik:XX taps a key by DIK code (hex); act:down:XX / act:up:XX hold and release it.
+            let dik = |p: &str| action.as_deref().and_then(|a| a.strip_prefix(p)).and_then(|h| u8::from_str_radix(h, 16).ok());
             match action.as_deref() {
                 Some("numpad*") => self.input.tap(0x37),
                 Some("numpad+") => self.input.tap(0x4e),
                 _ => {}
+            }
+            if let Some(k) = dik("dik:") {
+                self.input.tap(k);
+            }
+            if let Some(k) = dik("down:") {
+                self.input.set(k, true);
+            }
+            if let Some(k) = dik("up:") {
+                self.input.set(k, false);
             }
             // Test drives only: target the nearest living monster with a model (Tab picks NPCs first at gates).
             if let (Some("target-mob"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
@@ -4285,9 +4339,9 @@ impl App {
                         weight: a.look.weight,
                         point: a.look.point,
                     });
-                    let drawn = !a.vanished() && !hidden.contains(id);
+                    let drawn = !a.vanished() && !hidden.contains(id) && !(*id == w.my_id && w.camst.self_alpha <= 0.0);
                     let g = a.gpu.as_mut().unwrap();
-                    g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0);
+                    g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     if drawn {
@@ -4526,25 +4580,14 @@ impl ApplicationHandler for App {
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
-                    let hud_keys = matches!(&self.phase, Phase::World(w) if w.typing || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || event::active(w));
                     if code == KeyCode::F12 && event.state == ElementState::Pressed && !event.repeat {
                         self.debug_overlay = !self.debug_overlay;
                     }
                     if event.state == ElementState::Pressed && matches!(code, KeyCode::Slash | KeyCode::NumpadDivide) {
                         self.numpad_slash = code == KeyCode::NumpadDivide;
                     }
-                    if event.state == ElementState::Pressed && !event.repeat && matches!(code, KeyCode::KeyW | KeyCode::KeyA | KeyCode::KeyS | KeyCode::KeyD) && hud_keys {
-                        log::info!("{code:?} ignored: the HUD has the keys");
-                    }
                     if !event.repeat {
                         self.input.key(code, event.state == ElementState::Pressed, &event.logical_key);
-                    }
-                    // Ctrl / Alt + letter are shortcuts, not movement (bindings carry flag 0x80 "no Ctrl/Alt").
-                    let shortcut = self.mods.control_key() || self.mods.alt_key();
-                    if event.state == ElementState::Pressed && !hud_keys && !shortcut {
-                        self.keys.insert(code);
-                    } else if event.state == ElementState::Released {
-                        self.keys.remove(&code);
                     }
                 }
             }
@@ -4610,12 +4653,10 @@ impl ApplicationHandler for App {
                             world.cam_turn.0 += ((position.x - x) * 0.008 * ix) as f32;
                             world.cam_turn.1 -= ((position.y - y) * 0.02 * iy) as f32;
                         }
-                        Phase::World(world) if world.unlock_ticks > 0.0 => {}
+                        Phase::World(world) if world.unlock_ticks > 0.0 || world.camst.first => {}
                         Phase::World(world) => {
                             let (ix, iy) = (if world.game.get(0x8b) == 1 { -1.0 } else { 1.0 }, if world.game.get(0x8c) == 1 { -1.0 } else { 1.0 });
-                            target::hand_over(world);
-                            world.yaw += ((position.x - x) * 0.008 * ix) as f32;
-                            world.pitch = (world.pitch + ((position.y - y) * 0.006 * iy) as f32).clamp(-0.4, 1.4);
+                            camera::drag(world, ((position.x - x) * 0.008 * ix) as f32, ((position.y - y) * 0.03 * iy) as f32);
                         }
                         _ => {}
                     }
@@ -4628,8 +4669,10 @@ impl ApplicationHandler for App {
                         MouseScrollDelta::LineDelta(_, y) => y,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
                     };
-                    target::hand_over(world);
-                    world.distance = (world.distance - d).clamp(2.0, 30.0);
+                    // Field of view, as the keys (and retail's wheel on keyboard type 2, FUN_10253af0).
+                    if !world.locked {
+                        self.wheel += d;
+                    }
                 }
             }
             _ => {}
