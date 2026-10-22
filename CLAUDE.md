@@ -86,8 +86,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Mod manager (in game; XIPivot built in): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files
   copied over the install. Each mod is a folder of replacements in XIPivot's layout (`<pack>/ROM*/<dir>/<file>.DAT`,
   so packs made for XIPivot drop in); DatIndex resolves a file id to the highest enabled mod that has it, else the
-  base file. Enable / disable / order from a settings page. AshenbubsHD stopped in November 2021 and XIPivot swaps
-  whole files, which would roll updated DATs back to 2021. Ours merges per chunk instead (DATs are named-chunk
+  base file. Enable / disable / order from a settings page. XIPivot (github.com/HealsCodes/XIPivot, read in
+  ~/ffxi/lab/XIPivot, Redirector.cpp) hooks CreateFileA / FindFirstFileA / fopen_s and redirects only the game's
+  denormalised `//ROM` opens, so POL's updater (normal paths) never sees the overlays and never flags retail files;
+  first overlay in priority order wins per whole file; overlays may hold ROM*/VTABLE*/FTABLE*.DAT (new file ids),
+  sound*/win/se and win/music. Ours needs no hooks: DatIndex and the audio loader resolve overlays, patch.rs reads the
+  base paths. AshenbubsHD stopped in November 2021 and a whole-file swap would roll updated DATs back to 2021. Ours merges per chunk instead (DATs are named-chunk
   containers, dat/mod.rs): start from the current retail DAT and take only the pack's texture chunks whose names
   match, so SE's updates (models, effects, events) stay and HD textures apply wherever the pack still fits.
   Migrate today's in-place install (~/ffxi/dat-backup: originals plus manifest.tsv of 34k replaced files) into mod
