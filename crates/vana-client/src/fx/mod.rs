@@ -39,6 +39,10 @@ pub trait Actors {
     fn pc(&self, _id: u32) -> Option<(u8, i8)> {
         None
     }
+    /// The last foot contact in the world (actor+0x63c, attach point 0x34).
+    fn foot(&self, _id: u32) -> Option<Vec3> {
+        None
+    }
 }
 
 /// No actors (offscreen shots).
@@ -133,6 +137,8 @@ pub enum Owner {
     Task(usize),
     /// An actor's model files (FUN_10083970).
     Actor(u32),
+    /// A footstep's dust burst on an actor (FUN_100d41a0).
+    Step(u32),
 }
 
 /// A running generator (the CMoGenerator object, or a CMoGeneratorClone of it): its own copy of the streams
@@ -487,6 +493,8 @@ pub struct Effects {
     covered: bool,
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
     sounds: Vec<sound::Sound>,
+    /// Footstep dust to start next tick: generator and actor.
+    dust: Vec<(Ref, u32)>,
     pub sound_cmds: Vec<sound::SoundCmd>,
     alive: HashSet<u32>,
     next_voice: u32,
@@ -542,6 +550,7 @@ impl Effects {
             motion_files: Vec::new(),
             covered: false,
             sounds: Vec::new(),
+            dust: Vec::new(),
             sound_cmds: Vec::new(),
             alive: HashSet::new(),
             next_voice: 0,
@@ -873,6 +882,7 @@ impl Effects {
         self.model_generators(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
+        self.start_dust(f, actors);
         // Lives first, as each element's Exec does before its update stream.
         for e in 0..self.elems.len() {
             let Some(c) = self.elems[e].as_mut() else { continue };
@@ -1115,6 +1125,26 @@ impl Effects {
         }
     }
 
+    /// FUN_100d41a0: the dust generator cloned onto the actor (both slots), started, one emission now (life 10000,
+    /// elapsed 10001 after), so it ends; attach point 0x34 puts it at the foot contact. Retail keeps one clone per
+    /// actor and restarts it *(inf: a new instance per step, same emissions)*.
+    fn start_dust(&mut self, f: &Frame, actors: &dyn Actors) {
+        for (g, id) in std::mem::take(&mut self.dust) {
+            let Some(i) = self.start(g, Owner::Step(id)) else { continue };
+            log::debug!("footstep dust {} on {id:#x}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name));
+            if let Some(x) = self.insts[i].as_mut() {
+                x.actors = [sched::Who::Actor(id); 2];
+                x.life = 10000.0;
+            }
+            self.attach_now(i, actors);
+            self.update_instance(i, f);
+            if let Some(x) = self.insts[i].as_mut() {
+                x.elapsed = 10001.0;
+                x.finished = true;
+            }
+        }
+    }
+
     /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
     fn burst(&mut self, src: Ref, e: u32, f: &Frame) {
         let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
@@ -1174,12 +1204,16 @@ impl Effects {
     }
 
     /// A footstep (FUN_100d2970 step 7): SeSep `name` in the zone's 'fses' folder ('fser' in the rain weathers when
-    /// not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127 running).
-    pub fn footstep(&mut self, pos: Vec3, name: [u8; 4], rain: bool, level: i32) {
+    /// not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127 running). Then
+    /// the dust generator `dust` of that folder, if any, bursts once on actor `id`.
+    pub fn footstep(&mut self, id: u32, pos: Vec3, name: [u8; 4], dust: Option<[u8; 4]>, rain: bool, level: i32) {
         let Some(l) = self.zone_lib else { return };
         let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
         let lib = &self.reg.libs[l];
         let Some(f) = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { return };
+        if let Some(g) = dust.and_then(|d| lib.find_in(f, kind::GENERATOR, d)) {
+            self.dust.push(((l, g), id));
+        }
         let found = lib.find_in(f, 0x3d, name).map(|n| (l, n)).or_else(|| {
             let g = self.reg.global?;
             self.reg.libs[g].find_global(0x3d, u32::from_le_bytes(*b"foot")).map(|n| (g, n))

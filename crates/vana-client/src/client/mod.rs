@@ -1508,6 +1508,7 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
 struct FxActors<'a> {
     actors: &'a HashMap<u32, Actor>,
     places: &'a HashMap<u32, Place>,
+    contacts: &'a HashMap<u32, Vec3>,
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -1545,6 +1546,10 @@ impl crate::fx::Actors for FxActors<'_> {
         let pc = self.actors.get(&id)?.character.as_ref()?.pc?;
         Some((pc.race, pc.skirt))
     }
+
+    fn foot(&self, id: u32) -> Option<Vec3> {
+        self.contacts.get(&id).copied()
+    }
 }
 
 /// Loaded looks kept while no actor wears them.
@@ -1568,6 +1573,8 @@ struct World {
     effects: crate::fx::Effects,
     /// Per actor: its foot points' last heights relative to the root (actor+0x7e8..+0x7f4).
     feet: HashMap<u32, [f32; 4]>,
+    /// Per actor: the last step's foot contact in the world (actor+0x63c).
+    contacts: HashMap<u32, Vec3>,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,
@@ -2433,6 +2440,7 @@ impl App {
                             renderer: None,
                             effects: crate::fx::Effects::new(),
                             feet: HashMap::new(),
+                            contacts: HashMap::new(),
                             ground: None,
                             name: login.name.clone(),
                             my_id: login.char_id,
@@ -4513,7 +4521,7 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }

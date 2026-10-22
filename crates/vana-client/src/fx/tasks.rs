@@ -702,7 +702,12 @@ impl Effects {
             0x30 => Some(m.w_axis.truncate()),
             0x31 | 0x32 => self.who_matrix(other, actors).and_then(|(_, o)| nearest(o.w_axis.truncate())),
             0x33 => eye.and_then(nearest),
-            0x34.. => world(0),
+            0x34 => actors.foot(id),
+            // 0x36..0x3c name skeleton points (FUN_1003abe0).
+            0x36 => world(0x7e),
+            0x37 => world(0x7f),
+            0x38..=0x3c => world(k - 0x38 + 0x66),
+            0x35.. => world(0),
             _ => world(k),
         };
         Some((m, p.unwrap_or(m.w_axis.truncate())))
@@ -928,6 +933,58 @@ mod tests {
         fn models(&self) -> Vec<(u32, Vec<u32>)> {
             Vec::new()
         }
+    }
+
+    struct Walker;
+    const FOOT: Vec3 = Vec3::new(3.0, 0.5, -2.0);
+
+    impl Actors for Walker {
+        fn matrix(&self, _: u32) -> Option<Mat4> {
+            Some(Mat4::from_translation(Vec3::new(3.0, 0.0, -2.0)))
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            None
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), Vec::new())
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn foot(&self, _: u32) -> Option<Vec3> {
+            Some(FOOT)
+        }
+    }
+
+    /// footsteps_sound.md 1.3 step 7: a walking step in zone 232 bursts fses/fefs 'w100' once (attach mode 1,
+    /// point 0x34 = the foot contact), and the clone goes when its elements have.
+    #[test]
+    fn walk_dust() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let mut fx = Effects::new();
+        fx.set_keys(std::sync::Arc::new(crate::dat::zone::Keys::from_ffximain(&dll).unwrap()));
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.load_zone(Library::load(332, index.read(332).unwrap()).unwrap());
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), *b"0112", Some(*b"w100"), false, 101);
+        fx.tick(&f, &Walker);
+        let dust: Vec<&crate::fx::Instance> = fx.insts.iter().flatten().filter(|x| &x.name == b"w100").collect();
+        assert_eq!(dust.len(), 1);
+        let x = dust[0];
+        assert!(x.finished && !x.live.is_empty(), "emitted {} live {}", x.emitted, x.live.len());
+        assert_eq!(x.matrix.map(|m| m.w_axis.truncate()), Some(FOOT));
+        for _ in 0..600 {
+            fx.tick(&f, &Walker);
+        }
+        assert!(!fx.insts.iter().flatten().any(|x| &x.name == b"w100"));
     }
 
     /// triggers.md 7.1: atk0 -> ati0 -> dada -> dam0 -> damg (orc) -> chit (Hume) -> ef h (fists) -> hit1 (DAT 0):

@@ -3096,7 +3096,15 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
 - Motion gate (inferred): retail tests the base motion against the idle 'idl?' (+0x7d8 != +0x7c8) and a few
   flags (scheduler op 0xbc's counter, a landing); here moving = movement ratio > 1e-4, or leg mode 3.
 - Live (zone 101, Lnxtest running 4 s): 11 steps "0212" (grass, kind 1, shoe 1), about 2.75 a second.
+- Dust (FUN_100d41a0): generator "w" or "0", '0'+surface, "00" (type 5) in the same folder's subtree, unless leg
+  mode 3; cloned on (actor, actor), started, one emission, then ended (life 10000, elapsed 10001). The fefs
+  generators are attach mode 1 at caster point **0x34 = actor+0x63c, the foot contact** (FUN_1003abe0; 0x35 =
+  actor+0x64c the wade point, 0x36..0x3c = skeleton points 0x7e, 0x7f, 0x66..0x6a); not op 0x8e. Zone 232
+  w100: batched D3a hi11, 20 particles, R 0.09, speed 0.0005, base (0, -0.0015, 0), gravity (0, 0.00005, 0),
+  scale 0.1, additive 0x12262626, life 60 (a faint puff; invisible on pale stone). Retail keeps one clone per
+  actor and restarts it *(inf: a new instance per step)*. East Ronfaure (101) has no grass dust. Test walk_dust;
+  fx-shot --dust NAME bursts one at the caster.
 - Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
-  (+0x840 bits 20..21), dust (op 0x8e, 'w100' / '0400'), 'fmrk' prints, 'fvib', the i900 wading ripples, the
-  footstep-effects option DAT_10444158.
+  (+0x840 bits 20..21), 'fmrk' prints, 'fvib', the i900 wading ripples (point 0x35 not filled), the
+  footstep-effects option DAT_10444158 (taken as on).
 - Drive note: --quit logs out only after the --screenshot shot; a script `shot:` step does not count.

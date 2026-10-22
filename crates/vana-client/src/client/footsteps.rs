@@ -22,20 +22,26 @@ pub fn wanted(ch: &crate::dat::character::Character, status: u8, pos: Vec3, eye:
 
 /// Heights that came back: a crossing on a moving actor plays its step.
 pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u64, Vec3)>) {
-    let mut contact: HashMap<u32, bool> = HashMap::new();
+    // The last point to touch down (tested 9, 8, 0xb, 0xa), relative to the root.
+    let mut contact: HashMap<u32, Option<Vec3>> = HashMap::new();
     let actors = &w.actors;
     w.feet.retain(|id, _| actors.contains_key(id));
+    w.contacts.retain(|id, _| actors.contains_key(id));
     for (k, p) in points {
         let (id, slot) = ((k >> 8) as u32, (k & 0xff) as usize);
         let prev = w.feet.entry(id).or_insert([0.0; 4]);
         let c = prev[slot.min(3)] < 0.0 && p.y >= 0.0;
         prev[slot.min(3)] = p.y;
-        *contact.entry(id).or_default() |= c;
+        let e = contact.entry(id).or_default();
+        if c {
+            *e = Some(p);
+        }
     }
     for (id, hit) in contact {
         let (Some(pl), Some(ch)) = (places.get(&id), w.actors.get(&id).and_then(|a| a.character.clone())) else { continue };
+        let Some(foot) = hit else { continue };
         // The motion gate (+0x7d8 != the idle 'idl?', or leg mode 3): moving *(inf: from the movement ratio)*.
-        if !hit || (pl.ratio <= 1e-4 && ch.cib[0] != 3) {
+        if pl.ratio <= 1e-4 && ch.cib[0] != 3 {
             continue;
         }
         let Some(g) = &w.ground else { continue };
@@ -49,8 +55,11 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
         let rain = matches!(crate::dat::weather::weather_tag(w.weather), "rain" | "squl" | "bolt") && !covered;
         // actor+0x824 < 0.5: walking, level 101.6 -> 101; else 127.
         let level = if pl.ratio < 0.5 { 101 } else { 127 };
+        w.contacts.insert(id, pl.pos + foot);
+        // Dust "w100" walking / "0100" running, unless leg mode 3 (footstep-effects option DAT_10444158, default on).
+        let dust = (ch.cib[0] != 3).then_some([if level == 101 { b'w' } else { b'0' }, b'0' + surface, b'0', b'0']);
         log::debug!("footstep {id:#x} {} level {level}", String::from_utf8_lossy(&name));
-        w.effects.footstep(pl.pos, name, rain, level);
+        w.effects.footstep(id, pl.pos, name, dust, rain, level);
     }
 }
 
@@ -79,7 +88,7 @@ mod tests {
         let f = crate::fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot: view, eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         let mut plays = Vec::new();
         for level in [127, 101] {
-            fx.footstep(pos, *b"0112", false, level);
+            fx.footstep(1, pos, *b"0112", None, false, level);
             fx.tick(&f, &crate::fx::NoActors);
             plays.extend(fx.sound_cmds.drain(..).filter_map(|c| match c {
                 SoundCmd::Play { se, vol, pan, .. } if se != 2009 => Some((se, vol, pan)),
@@ -88,4 +97,5 @@ mod tests {
         }
         assert_eq!(plays, [(101001, 95, 64), (101001, 76, 64)]);
     }
+
 }

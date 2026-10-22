@@ -566,6 +566,9 @@ enum Cmd {
         every: u32,
         #[arg(long, default_value_t = 12.0)]
         hour: f32,
+        /// Instead of the action, a walking footstep at the caster that bursts this dust generator (e.g. w100).
+        #[arg(long)]
+        dust: Option<String>,
     },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
@@ -884,7 +887,7 @@ fn main() -> Result<()> {
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
-        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour } => fx_shot(zone, &out, &eye, &caster, &victim, category, anim, frames, every, hour),
+        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust), frames, every, hour),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -1471,6 +1474,9 @@ impl fx::Actors for ShotActors {
         let f = fwd.normalize();
         Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), p.extend(1.0)))
     }
+    fn foot(&self, id: u32) -> Option<glam::Vec3> {
+        self.at.iter().find(|a| a.0 == id).map(|a| a.1)
+    }
     fn point(&self, _: u32, k: u16) -> Option<glam::Vec3> {
         // Feet for point 0, chest otherwise *(stand-in, not a skeleton)*.
         Some(if k == 0 { glam::Vec3::ZERO } else { glam::Vec3::new(0.0, -1.2, 0.0) })
@@ -1490,7 +1496,7 @@ impl fx::Actors for ShotActors {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], category: u8, anim: u16, frames: u32, every: u32, hour: f32) -> Result<()> {
+fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust): (u8, u16, Option<String>), frames: u32, every: u32, hour: f32) -> Result<()> {
     use glam::Vec3;
     let cfg = config::Config::load();
     let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
@@ -1499,7 +1505,12 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let scene = dat::zone::load_scene(&keys, &file)?;
     let lighting = dat::weather::ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", hour * 60.0)).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));
     let v3 = |v: &[f32]| Vec3::new(v[0], v[1], v[2]);
-    let (c, t) = (v3(caster), v3(victim));
+    let (mut c, t) = (v3(caster), v3(victim));
+    if dust.is_some() {
+        let g = client::ground::Ground::build(&scene);
+        c.y = g.snap(c.x, c.z, c.y).unwrap_or(c.y);
+        println!("caster on {c} surface {:?}", g.surface(c));
+    }
     let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)] };
     let mut fx = fx::Effects::new();
     fx.set_keys(std::sync::Arc::new(keys));
@@ -1526,7 +1537,13 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
                 fx.tick(&f, &actors);
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            fx.on_action(&action, (category == 1).then(|| "ati0".to_string()));
+            match &dust {
+                Some(d) => {
+                    let name = <[u8; 4]>::try_from(d.as_bytes()).ok();
+                    fx.footstep(0x0001_0001, c, *b"0000", name, false, 101);
+                }
+                None => fx.on_action(&action, (category == 1).then(|| "ati0".to_string())),
+            }
             started = true;
         }
         for _ in 0..every {
@@ -1537,7 +1554,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
             let _ = gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None });
             eg.after_submit(gpu, &mut fx);
         }
-        let live: Vec<String> = fx.describe().into_iter().filter(|d| !d.contains(" t_")).collect();
+        let live: Vec<String> = fx.describe().into_iter().filter(|d| !d.contains(" t_") || d.contains("/fses/")).collect();
         println!("{} live, {} tasks: {live:?}", fx.live_count(), fx.task_count());
         let (fog_color, fog) = l.map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
         eg.draw(gpu, enc, (color, depth, [1600, 900]), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [render::NEAR, render::FAR], fog_color, fog);
