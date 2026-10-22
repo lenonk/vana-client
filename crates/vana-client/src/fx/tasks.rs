@@ -105,8 +105,9 @@ impl Effects {
         if let Some(l) = self.reg.lib_of(file) {
             return Some(l);
         }
-        if self.loading.insert(file)
-            && let Some(index) = self.index.clone()
+        // No index yet (a model before the first zone): not marked, so a later call loads it.
+        if let Some(index) = self.index.clone()
+            && self.loading.insert(file)
         {
             let tx = self.load_tx.clone();
             std::thread::spawn(move || {
@@ -141,6 +142,7 @@ impl Effects {
         let records = a.records().len();
         // FUN_10055cc0: several records outside categories 14 / 15 run at 0.7.
         let speed = if records > 1 && !matches!(a.category, 0xe | 0xf) { 0.7 } else { 1.0 };
+        log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing }));
         match a.category {
             1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None }),
@@ -220,6 +222,7 @@ impl Effects {
                     }
                     match res {
                         Some(r) => {
+                            log::debug!("effects: scheduler {} started", String::from_utf8_lossy(&p.name.to_le_bytes()));
                             self.spawn_task(r, p.a1, p.a2, p.action, p.speed, None);
                         }
                         None => log::debug!("effects: scheduler {} not found", String::from_utf8_lossy(&p.name.to_le_bytes())),
@@ -259,6 +262,7 @@ impl Effects {
 
     pub(super) fn spawn_task(&mut self, r: Ref, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32, parent: Option<usize>) -> usize {
         let ops = self.sched_ops(r);
+        log::debug!("effects: task {} (DAT {}) on {a1:?} -> {a2:?}", String::from_utf8_lossy(&self.reg.libs[r.0].tree.nodes[r.1].name), self.reg.libs[r.0].file_id);
         let mut t = Task::new(r, ops, a1, a2, action, speed);
         t.parent = parent;
         if let Some(p) = parent.and_then(|p| self.tasks.get(p)?.as_ref()) {
@@ -477,6 +481,7 @@ impl Effects {
                 if let (Some(r), Some((_, m))) = (r, self.who_matrix(who, actors))
                     && let Some((se, loops)) = super::sound::sesep(self.reg.libs[r.0].data(r.1))
                 {
+                    log::debug!("effects: sound {se} op {:#x}", op.code);
                     let mut s = super::sound::Sound::new(se, loops);
                     s.pos = m.w_axis.truncate();
                     s.far = f32::from_bits(op.u32_at(0x14));
@@ -630,6 +635,7 @@ impl Effects {
                 return;
             }
         }
+        log::debug!("effects: generator {} (DAT {}) on {:?} -> {:?}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name), self.reg.libs[g.0].file_id, t.a1, t.a2);
         let Some(i) = self.start(g, Owner::Task(me)) else { return };
         if let Some(x) = self.insts[i].as_mut() {
             x.actors = [t.a1, t.a2];
@@ -1172,6 +1178,26 @@ mod tests {
         for g in ["g006", "g000"] {
             assert!(gens.iter().any(|n| n == g), "{g}: {gens:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod load_tests {
+    /// A model's files asked for before the first zone set the index are loaded on the next ask.
+    #[test]
+    fn preload_before_index() {
+        let mut fx = super::Effects::new();
+        fx.preload(&[9672]);
+        assert!(!fx.loading.contains(&9672));
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        fx.set_index(std::sync::Arc::new(index));
+        let t = std::time::Instant::now();
+        while fx.lib_for(9672).is_none() && t.elapsed().as_secs() < 10 {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(fx.reg.lib_of(9672).is_some());
     }
 }
 
