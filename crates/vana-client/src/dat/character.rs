@@ -658,17 +658,17 @@ impl Character {
         }
     }
 
-    /// Chunks named exactly `name`, else the region chunks of a 3-letter motion ("idl" -> idl0 idl1 idl2).
-    /// The first chunk of each name wins.
+    /// The region chunks of a motion (FUN_100cb500): names sharing the first 3 letters, one per region (the 4th
+    /// character), the first of each. "idl0" and "idl" both give idl0 idl1 idl2.
     pub fn find_animations(&self, name: &str) -> Vec<&Animation> {
-        let mut seen = std::collections::HashSet::new();
-        let exact: Vec<&Animation> = self.animations.iter().filter(|a| a.name.trim_end() == name && seen.insert(a.name.as_str())).collect();
-        if !exact.is_empty() {
-            return exact;
-        }
+        let prefix = name.get(..3).unwrap_or(name);
+        let mut regions = std::collections::HashSet::new();
         self.animations
             .iter()
-            .filter(|a| a.name.len() == name.len() + 1 && a.name.starts_with(name) && a.name.ends_with(['0', '1', '2']) && seen.insert(a.name.as_str()))
+            .filter(|a| {
+                let n = a.name.trim_end().as_bytes();
+                n.len() == 4 && n.starts_with(prefix.as_bytes()) && (b'0'..=b'6').contains(&n[3]) && regions.insert(n[3])
+            })
             .collect()
     }
 }

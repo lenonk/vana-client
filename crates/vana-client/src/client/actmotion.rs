@@ -187,19 +187,24 @@ pub fn drop_kind(extra: &mut Extra, kind: Kind) {
     extra.retain(|(k, _)| *k != kind);
 }
 
-/// Animation chunks of a motion: an exact 4cc, else the region chunks of a 3-letter name ("btl" ->
-/// btl0 btl1 btl2); per chunk name the newest file wins.
+/// Animation chunks of a motion (FUN_100cb500): chunks matching the name's first 3 letters (mask 0xffffff), each
+/// in the body region its 4th character names (0..6), the first one per region in search order (newest file first).
+/// So "idl0" plays idl0, idl1 and idl2.
 pub fn find<'a>(extra: &'a Extra, ch: &'a Character, name: &str) -> Vec<&'a Animation> {
-    let sets = || extra.iter().rev().map(|(_, f)| f.animations.as_slice()).chain(std::iter::once(ch.animations.as_slice()));
-    let pick = |want: &dyn Fn(&str) -> bool| {
-        let mut seen = HashSet::new();
-        sets().flat_map(|s| s.iter()).filter(|a| want(a.name.trim_end()) && seen.insert(a.name.as_str())).collect::<Vec<_>>()
-    };
-    let exact = pick(&|n| n == name);
-    if !exact.is_empty() {
-        return exact;
-    }
-    pick(&|n| n.len() == name.len() + 1 && n.starts_with(name) && n.ends_with(['0', '1', '2']))
+    let sets = extra.iter().rev().map(|(_, f)| f.animations.as_slice()).chain(std::iter::once(ch.animations.as_slice()));
+    region_chunks(sets.flat_map(|s| s.iter()), name)
+}
+
+/// The first chunk per region among `chunks` whose name shares `name`'s first 3 letters.
+pub fn region_chunks<'a>(chunks: impl Iterator<Item = &'a Animation>, name: &str) -> Vec<&'a Animation> {
+    let prefix = name.get(..3).unwrap_or(name);
+    let mut regions = HashSet::new();
+    chunks
+        .filter(|a| {
+            let n = a.name.trim_end().as_bytes();
+            n.len() == 4 && n.starts_with(prefix.as_bytes()) && (b'0'..=b'6').contains(&n[3]) && regions.insert(n[3])
+        })
+        .collect()
 }
 
 /// `find` results by name for one actor, as (source, index): source 0 the model, k + 1 its k-th file. Kept

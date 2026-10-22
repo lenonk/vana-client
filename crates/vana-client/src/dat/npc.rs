@@ -4,6 +4,7 @@
 use super::{DatIndex, chunks};
 use super::character::{Character, Look, load_character, load_file};
 use anyhow::{Result, bail};
+use std::collections::HashMap;
 
 /// DAT file of a model id: FUN_100c3180 type 0 (client entity kind 2).
 pub fn model_file(model: u16) -> u32 {
@@ -51,12 +52,44 @@ pub struct InitScheduler {
     pub model: Option<u16>,
     /// (op, set) in scheduler order.
     pub motion_ops: Vec<(u8, u32)>,
+    /// Weapon meshes `wepN` hidden once init has run (ops 0x75 / 0xa3, through 0x3b calls).
+    pub hidden_weapons: Vec<u8>,
+}
+
+/// Op 0x3b calls a scheduler by name (u32 @8); op 0x75 (byte 0) and 0xa3 (byte 1) hide (u32 @8 = 1) or show
+/// (0) every `wepN` mesh, N = i16 @0xc (FUN_100d3cc0 / FUN_100d3e90). A mesh draws only while all its bytes are 0.
+/// Durations (timed hides, FUN_100609b0) are not modelled: the state after the op counts.
+fn weapon_ops(chunks: &[super::Chunk], name: &str, depth: u32, hide: &mut HashMap<u8, [bool; 2]>) {
+    let Some(c) = chunks.iter().find(|c| c.kind == 0x07 && c.name() == name) else { return };
+    let d = c.data;
+    let Some(mut at) = d.get(16..20).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize) else { return };
+    while at + 2 <= d.len() {
+        let (op, len) = (d[at], d[at + 1] as usize * 4);
+        if op == 0 || len == 0 || at + len > d.len() {
+            break;
+        }
+        let r = &d[at..at + len];
+        match op {
+            0x3b if len >= 12 && depth < 4 => {
+                let callee = String::from_utf8_lossy(&r[8..12]).trim_end_matches(['\0', ' ']).to_string();
+                weapon_ops(chunks, &callee, depth + 1, hide);
+            }
+            0x75 | 0xa3 if len >= 14 => {
+                let n = i16::from_le_bytes([r[12], r[13]]);
+                if (0..10).contains(&n) {
+                    hide.entry(n as u8).or_default()[(op == 0xa3) as usize] = u32::from_le_bytes(r[8..12].try_into().unwrap()) == 1;
+                }
+            }
+            _ => {}
+        }
+        at += len;
+    }
 }
 
 pub fn init_scheduler(file: &[u8]) -> InitScheduler {
     let mut out = InitScheduler::default();
     let Ok(chunks) = chunks(file) else { return out };
-    for c in chunks.into_iter().filter(|c| c.kind == 0x07 && c.name() == "init") {
+    for c in chunks.iter().filter(|c| c.kind == 0x07 && c.name() == "init") {
         let d = c.data;
         let Some(mut at) = d.get(16..20).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize) else { continue };
         let mut v = [None; 9];
@@ -79,6 +112,10 @@ pub fn init_scheduler(file: &[u8]) -> InitScheduler {
             out.look = Some(Look { race: race as u8, face: s(1), head: s(2), body: s(3), hands: s(4), legs: s(5), feet: s(6), main: s(7), sub: s(8) });
         }
     }
+    let mut hide = HashMap::new();
+    weapon_ops(&chunks, "init", 0, &mut hide);
+    out.hidden_weapons = hide.into_iter().filter(|(_, b)| b.iter().any(|&h| h)).map(|(n, _)| n).collect();
+    out.hidden_weapons.sort();
     out
 }
 
@@ -125,8 +162,17 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
     log.extend(f.warnings);
     let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None };
     ch.merge_size_info(f.info);
-    apply_motion_ops(&mut ch, &init_scheduler(&file));
+    let init = init_scheduler(&file);
+    apply_motion_ops(&mut ch, &init);
+    // FUN_1008ad70 plays init once the model is up; weapon meshes it hides are left out *(inf: nothing shows them
+    // again yet; a later op 0x75 / 0xa3 show needs per-actor hide bytes)*.
+    hide_weapons(&mut ch, &init.hidden_weapons);
     Ok(ch)
+}
+
+fn hide_weapons(ch: &mut Character, hidden: &[u8]) {
+    let names: Vec<String> = hidden.iter().map(|n| format!("wep{n}")).collect();
+    ch.parts.retain(|p| !names.iter().any(|w| p.name.trim_end_matches(['\0', ' ']) == w));
 }
 
 fn apply_motion_ops(ch: &mut Character, init: &InitScheduler) {
@@ -176,6 +222,19 @@ mod tests {
             }
         }
         assert!(flips > 100, "{flips}");
+    }
+
+    /// Trion (model 64, file 1364): init calls wof4, whose op 0x75 hides the wep4 sword and scabbard, and "idl0"
+    /// gives every region's idl chunk (FUN_100cb500), so the carry bones are posed.
+    #[test]
+    fn trion_init_hides_the_sword() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let Ok(file) = index.read(model_file(64)) else { return };
+        assert_eq!(init_scheduler(&file).hidden_weapons, [4]);
+        let ch = load_model(&index, 64).unwrap();
+        assert!(ch.parts.iter().all(|p| !p.name.starts_with("wep4")), "{:?}", ch.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>());
+        let idle: Vec<&str> = ch.find_animations("idl0").iter().map(|a| a.name.trim_end()).collect();
+        assert!(idle.contains(&"idl0") && idle.contains(&"idl1"), "{idle:?}");
     }
 
     #[test]

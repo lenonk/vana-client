@@ -1720,8 +1720,34 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
   battle-stance frames, then after the kill the disengage drops back to the idle pose (mo/crop_b3.png:
   b3_15 / b3_16 / b3_20 swings, b3_21 / b3_25 stance, b3_41..45 idle; mo/sheet_b3.png).
 
+### Weapons and motion lookup (traced by a sub-agent, 2026-10-22)
+- Motion lookup FUN_100cb500: chunks matching the name's first 3 letters (FUN_10073300(.., 0x2b, name & 0xffffff,
+  0xffffff)), each played in the region its 4th character names (atoi of chunk name +0x23, regions 0..6), one per
+  region (bitmask DAT_1047797c). "idl0" plays idl0, idl1 and idl2. Ours matched the exact 4cc first, so an event
+  `idle 'idl0'` posed the legs only and every upper bone fell back to the rest pose (Trion's sword carry bones
+  83 / 95 rest at the model origin: the sword lay on the floor). Fixed in actmotion::find / find_animations.
+- Weapon meshes are named wepN (N 0..9) and rigidly skinned to one carry bone (PC Elvaan main 1, file 14745: wep0 ->
+  bone 77 = skeleton point 112 = main info[6] 0x70); points 112..125 are carry bones, 126 (bone 66) / 127 (bone 52)
+  the hand grips *(inf: which is which hand)*. Motions key the carry bones (the sheathed place).
+- Visibility: each mesh object has 4 hide bytes at +0xc and draws only while all are 0 (draw loop all.c 29167).
+  Scheduler op 0x75 (case at 0x1005ae64): u32 @8 1 hide / 0 show on byte 0 of every wepN, N = i16 @0xc; duration
+  short @6 x speed runs FUN_100609b0 (hide at once, show at the end if @8 == 0). Op 0xa3 the same on byte 1; for
+  N 0 / 1 FUN_100d3d90 / 3f30 play the "!w01" / "!w11" and "!w02" / "!w12" effect schedulers. FUN_100d3cc0 / 3e90.
+- FUN_1008ad70 plays a model's "init" scheduler once loaded. Trion (model 64, file 1364, its own 99-bone elv_
+  skeleton): init = op 0x3b -> "wof4" = op 0x75 N 4 hide, so in retail his sword and scabbard are hidden; event 0x1f4
+  never plays "won4". Ours follows init's 0x3b calls for 0x75 / 0xa3 and leaves hidden wepN parts out of the model
+  (dat/npc.rs; test trion_init_hides_the_sword). Not done: per-actor hide bytes, so a later op 0x75 show (won4) or
+  timed hide does nothing.
+- Draw / sheathe: vtable +0x31c = FUN_100a30c0(bool, slot) sets model +0x83c + slot (+0x320 reads both; override
+  pair +0x83e via +0x324 / +0x328, scheduler ops 0xa7 / 0xa8, timed FUN_10060e50). FUN_10029320 (pose setup) remaps
+  when drawn: bone(point 127) -> bone(main info[6], +0x87e), bone(point 126) -> bone(sub info[6], +0x888);
+  FUN_100339b0 pass 0 skips the carry subtree, pass 1 sets world[carry] = world[grip] *(inf: the copy)* and re-chains
+  its children. Default sheathed (model reset all.c 145748 clears +0x31c / +0x324; init all.c 146831 sets +0x31c(1, 0)
+  only for engaged or flagged actors). Not done in ours.
+- Track scale channels (Trion's 83 / 95 have 1.075) are ignored by our posing; FUN_10019d30 not checked.
+
 ### Open
-- Weapon attach on draw / sheathe (vtable +0x31c), the bntg / klbt / hwat / res0 schedulers, dual-wield files,
+- Weapon attach on draw / sheathe (vtable +0x31c; see "Weapons and motion lookup"), the bntg / klbt / hwat / res0 schedulers, dual-wield files,
   multi-hit swing letters, the move direction for atr / atb / atl (moving always picks f).
 - Scheduler ops other than 0x05 in motion schedulers (sounds 0x57 / 0x0a, 0x20 / 0x2f / 0x59).
 - The actor pass's real blend states for faded actors.
