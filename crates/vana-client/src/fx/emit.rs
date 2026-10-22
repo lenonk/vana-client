@@ -444,7 +444,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
 pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> bool {
     let x = if inst.life > 0.0 { (1.0 - (inst.life - inst.elapsed) / inst.life).min(1.0) } else { 0.0 };
     let mut emit = true;
-    let ops = inst.streams[0].clone();
+    let ops = std::mem::take(&mut inst.streams[0]);
     let lib = inst.src.0;
     let from = inst.src.1;
     let sample = |reg: &Registry, op: &Op, x: f32| -> Option<f32> {
@@ -524,5 +524,6 @@ pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> b
             _ => reg.unhandled(0, op.code),
         }
     }
+    inst.streams[0] = ops;
     emit
 }

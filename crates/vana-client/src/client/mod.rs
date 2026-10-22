@@ -2944,7 +2944,10 @@ impl App {
                         let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("zone {zone_id} weather: {e:#}")).ok();
                         let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
                         let global = need_global.then(|| index.read(0).and_then(|f| crate::fx::lib::Library::load(0, f))).and_then(|r| r.map_err(|e| log::warn!("effects: DAT 0: {e:#}")).ok());
-                        let zone_fx = crate::fx::lib::Library::load(100 + zone_id as u32, file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok();
+                        let zone_fx = crate::fx::lib::Library::load(100 + zone_id as u32, file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok().map(|mut l| {
+                            l.prewarm(&keys);
+                            l
+                        });
                         Ok((scene, ground, weather, geometry, (zone_fx, global)))
                     })())
                 }),
@@ -4470,8 +4473,13 @@ impl App {
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, crate::render::MIP_BUDGET));
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &camera, aspect, &actors));
                 // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
+                // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
+                // first shown frame.
+                let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, gfx.config.format));
+                if !r.ready(&gfx.gpu) {
+                    eg.upload_pending(&gfx.gpu, &mut w.effects);
+                }
                 if r.ready(&gfx.gpu) {
-                    let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, gfx.config.format));
                     let view = camera.view();
                     let mut view_rot = view;
                     view_rot.w_axis = glam::Vec4::W;
@@ -4490,10 +4498,8 @@ impl App {
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
-                    perf::timed(|| "effects".into(), || {
-                        w.effects.tick(&f, &fa);
-                        eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f);
-                    });
+                    perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
+                    perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &w.effects, camera.proj(aspect), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }

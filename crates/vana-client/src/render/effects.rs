@@ -281,6 +281,19 @@ impl EffectsGpu {
         true
     }
 
+    /// New meshes and sprite textures only (while a zone goes up, so the first shown frame does not upload them).
+    pub fn upload_pending(&mut self, gpu: &Gpu, fx: &mut Effects) {
+        for id in std::mem::take(&mut fx.reg.new_meshes) {
+            self.upload_mesh(gpu, fx, id);
+        }
+        for id in std::mem::take(&mut fx.reg.new_sprites) {
+            let r = fx.reg.sprites[id as usize];
+            if let Some(t) = fx.reg.libs[r.0].sprites.get(&r.1).and_then(|s| s.texture) {
+                self.texture(gpu, fx, t);
+            }
+        }
+    }
+
     /// Uploads this frame's element writes, tables and new meshes, then records the update pass and the copy
     /// of its readback.
     pub fn update(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, fx: &mut Effects, f: &Frame) {

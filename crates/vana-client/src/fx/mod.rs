@@ -524,6 +524,15 @@ impl Effects {
             .map(|g| g.node)
             .collect();
         log::info!("effects: zone DAT {}: {} generators, {} start at load", self.reg.libs[l].file_id, self.reg.libs[l].gens.len(), starts.len());
+        // What the loader parsed goes to the GPU with the zone (render/effects.rs upload_pending).
+        let meshes: Vec<usize> = self.reg.libs[l].meshes.keys().copied().collect();
+        let sprites: Vec<usize> = self.reg.libs[l].sprites.keys().copied().collect();
+        for n in meshes {
+            self.reg.mesh((l, n));
+        }
+        for n in sprites {
+            self.reg.sprite((l, n));
+        }
         for node in starts {
             self.start((l, node), Owner::Zone);
         }

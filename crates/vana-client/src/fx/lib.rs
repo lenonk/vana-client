@@ -173,6 +173,29 @@ impl Library {
         self.sprites.get_mut(&node)
     }
 
+    /// Loader-thread work: the meshes, sprites and textures the file's own generators name (op 1), so the first
+    /// frame that emits them does not parse them.
+    pub fn prewarm(&mut self, keys: &zone::Keys) {
+        let wanted: Vec<(usize, u8, u32)> = self.gens.iter().filter_map(|g| g.template().map(|o| (g.node, o.byte(0x21), o.u32(3)))).collect();
+        for (from, k, name) in wanted {
+            let node = match k {
+                0x0b | 0x0c | 0x1f => self.find(from, kind::D3M, name).or_else(|| self.find(from, kind::MMB, name)),
+                0x0e | 0x21 | 0x39 => self.find(from, kind::D3A, name),
+                _ => None,
+            };
+            let Some(node) = node else { continue };
+            let names: Vec<String> = match self.tree.nodes[node].kind {
+                kind::D3A => self.sprite(node).map(|s| vec![s.name.clone()]).unwrap_or_default(),
+                _ => self.mesh(node, keys).map(|m| m.groups.iter().filter_map(|g| g.name.clone()).collect()).unwrap_or_default(),
+            };
+            for n in names {
+                if let Some(i) = self.find_texture(node, &n) {
+                    self.texture_at(i);
+                }
+            }
+        }
+    }
+
     /// FUN_1003a0d0: the IMG whose 16-byte name matches, from the folder holding `node`: the first IMG of that
     /// subtree (file order), then the rest of the folder that IMG is in.
     pub fn find_texture(&self, node: usize, name16: &str) -> Option<usize> {
