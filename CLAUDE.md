@@ -62,6 +62,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - targeting: F1-F12, Ctrl/Alt+F8, screen-order Tab / Shift+Tab, Num0, Enter with no target;
   - UI hide, screenshots, the Pause log-out prompt;
   - macros and palettes.
+- Event VM gaps against XiEvents and the current decompile, ranked with site counts:
+  `~/ffxi/lab/research/xievents_check/REPORT.md` (unsized ops that end threads, 0xba set_actor_pos, 0xd4 select,
+  0x59 actor params, 0xb6 looks, 0x75 env_wait, zone schedulers, 0x80 waits, music fades, ...).
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the
