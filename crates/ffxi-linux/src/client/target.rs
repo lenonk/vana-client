@@ -235,13 +235,14 @@ fn look_height(w: &World, id: u32, bone: usize, scale_taru: bool) -> f32 {
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let (Some(t), Some(mut c)) = (w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))), w.cam) else { return };
     let (tid, tpos) = t;
-    let p = w.pos + Vec3::new(0.0, look_height(w, w.my_id, 13, false), 0.0);
+    let me = super::drawn_pos(w);
+    let p = me + Vec3::new(0.0, look_height(w, w.my_id, 13, false), 0.0);
     let q = tpos + Vec3::new(0.0, look_height(w, tid, 5, true), 0.0);
     let l = p.lerp(q, 0.5);
     let k = 1.0 - 0.75f32.powf(ticks);
     c.look += (l - c.look) * k;
-    let d = (w.pos - tpos).length();
-    let e = (w.pos - tpos).normalize_or(Vec3::X);
+    let d = (me - tpos).length();
+    let e = (me - tpos).normalize_or(Vec3::X);
     let mut dv = c.eye - c.look;
     // Manual orbit, scaled by 6 / |D| when locked.
     if turn != 0.0 {
@@ -266,7 +267,7 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let len = len + (goal - len) * k;
     let mut eye = c.look + dir * len;
     // FUN_1017a6b0: a ray from the player (y - 1) to the eye; on a hit the eye goes 0.2 in front.
-    let from = w.pos + Vec3::new(0.0, -1.0, 0.0);
+    let from = me + Vec3::new(0.0, -1.0, 0.0);
     if let Some(hit) = w.ground.as_ref().and_then(|g| g.raycast(from, eye)) {
         eye = from + (eye - from).normalize_or(Vec3::X) * (hit - 0.2).max(0.2);
     }

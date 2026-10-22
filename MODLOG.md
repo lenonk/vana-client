@@ -2319,10 +2319,12 @@ FUN_100a3560 (vtable 0x10322970 slot 0x20). Other actors (vt+0x304 false) only t
   the same length, n x ((v x n)), and loses any downward part (asm 0x100a53f9..0x100a54b6): uphill it climbs at full
   length, i.e. horizontal speed x cos(slope); downhill horizontal speed x cos(slope) and gravity does the rest.
 - Grounded at the start of the frame: fall speed (+0xf4) = 0. Grounded and not moving: nothing happens.
-- Sweep from the old position to old + move (grounded = its floor contact), then gravity: g = 0.0408333 per frame
-  (_DAT_10322d74; a retail frame is 2 ticks at its 30 fps, FUN_100889d0; the speed is per frame too, so the client
-  converts ticks / 2 to frames), lowered to the frame's horizontal travel when that is between 0.01 and g; speed += g, at most 1.0;
-  the first frame of the actor caps it at 0.4 (+0x5f4). Sweep straight down by the speed; grounded = its floor contact.
+- Sweep from the old position to old + move (grounded = its floor contact), then gravity (asm 0x100a3803):
+  g = 0.0408333 (_DAT_10322d74) x the frame's ticks (FUN_10014000, at least 1.0), lowered to the frame's horizontal
+  travel when that is between 0.01 (_DAT_1031e888) and g; speed += g, at most 1.0; the first frame of the actor caps it
+  at 0.4 (+0x5f4). Sweep straight down by the whole speed (not scaled again); grounded = its floor contact. At retail's
+  30 fps (2 ticks a frame) a grounded player probes 0.0817 down each frame, enough to reach a slope after a floor fix.
+  Correction: an earlier note had the speed per frame converted as ticks / 2, which scaled the fall twice.
 - Floor ray FUN_1017a5d0 mode 0 (FUN_10162470 / FUN_10162d20): from 0.5 above the feet down to 40 below, any face, both
   sides, nearest to the start. No face: the frame is undone and the fall speed zeroed. A face with |n.y| > 0.7 becomes the
   ground normal (FUN_100a8df0); its surface info goes to vt+0x214 / 0x21c. A face more than 0.4 below the feet reports type 0.
@@ -2333,8 +2335,14 @@ FUN_100a3560 (vtable 0x10322970 slot 0x20). Other actors (vt+0x304 false) only t
 
 ### Ours (client/ground.rs)
 - walk_player(from, to, ticks) is one frame of the above, with the body state kept in the Ground; a position other than
-  the last result starts a new body. mod.rs calls it every frame we could fall (also without input, not in events).
-  Gravity is scaled per tick *(inf: retail adds the speed once a frame, so its fall rate depends on the frame rate)*.
+  the last result starts a new body. mod.rs runs it in fixed retail frames (ground::STEP_TICKS = 2) while we could fall
+  (also without input, not in events) and draws the player between the last two steps (drawn_pos), so the physics is
+  retail's at any frame rate. The old per-tick scaling probed 0.0004 down a frame at 300 fps and the player bounced
+  on every slope (test stays_grounded_on_a_slope). Downhill at run speed one step in three is still in the air (the
+  ground move never goes down; retail's rule), a 10 Hz wobble of about 0.02.
+- Free camera look point (FUN_1001e030, loop after LAB_1001e5b7): eases toward the head 0.25 of the gap a tick (whole
+  ticks, at least one a frame); ours applies it per tick with powf *(inf)*. The eye's distance spring (6 / 100 / 3,
+  _DAT_1031f258 / _DAT_1031f234 / _DAT_1031eba8) is not done: our eye is still the yaw / pitch / distance orbit.
 - walk(from, to, _) (zone-path, A*) runs the same frames at run speed until it gets there or stops gaining.
 - floor() / settle() now take every face (retail's rays do not filter by slope); the old |n.y| >= 0.3 rule, the 1.2 climb
   and resolve_walls are gone.

@@ -624,7 +624,7 @@ fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4)
 /// the model scale, rest data only, so it does not move with the pose; then FUN_1002b7a0's lift by status
 /// for bone-0 points (5 chocobo -1.3, 85 mount -1.3, 63..83 chairs -0.5). Without points: the mesh top.
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
-    let (pos, status) = if id == world.my_id { (world.pos, world.my_motion.status) } else { world.entities.get(&id).map(|e| (e.pos, e.motion.status))? };
+    let (pos, status) = if id == world.my_id { (drawn_pos(world), world.my_motion.status) } else { world.entities.get(&id).map(|e| (e.pos, e.motion.status))? };
     let pos = event::pose(world, id).map_or(pos, |p| p.pos);
     let a = world.actors.get(&id).filter(|a| a.gpu.is_some());
     let point = a.and_then(|a| a.character.as_ref()?.skeleton.points.get(2).copied().map(|p| (p, a.scale)));
@@ -1436,6 +1436,11 @@ struct Place {
     size: u8,
 }
 
+/// Where the player is drawn: between the last two physics steps, or where something else just put us.
+fn drawn_pos(w: &World) -> Vec3 {
+    if w.pos == w.step_to { w.draw_pos } else { w.pos }
+}
+
 /// A bound actor draws from its VM body while the event runs (status taken as 0 *(inf)*); otherwise ourselves
 /// from the session, others from their entity.
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
@@ -1445,7 +1450,7 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     }
     if id == w.my_id {
         let m = w.my_motion;
-        return Some(Place { pos: w.pos, forward: forward_from_dir(my_dir), status: m.status, ratio: if w.moving { 1.0 } else { 0.0 }, size });
+        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), status: m.status, ratio: if w.moving { 1.0 } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), status: e.motion.status, ratio: e.ratio, size })
@@ -1535,6 +1540,14 @@ struct World {
     unsettled: bool,
     actors: HashMap<u32, Actor>,
     moving: bool,
+    /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the position before
+    /// and after the last step, and the drawn position between them (drawn_pos).
+    step_ticks: f32,
+    step_from: Vec3,
+    step_to: Vec3,
+    draw_pos: Vec3,
+    /// The free camera's look point, eased toward the head (FUN_1001e030).
+    cam_look: Option<Vec3>,
     /// Screen fade: 0 clear, 1 black. Zoning fades out, loads, then fades back in.
     fade: f32,
     my_motion: net::MotionState,
@@ -2358,6 +2371,11 @@ impl App {
                             unsettled: false,
                             actors: HashMap::new(),
                             moving: false,
+                            step_ticks: 0.0,
+                            step_from: Vec3::ZERO,
+                            step_to: Vec3::ZERO,
+                            draw_pos: Vec3::ZERO,
+                            cam_look: None,
                             fade: 1.0,
                             my_motion: Default::default(),
                             vitals: None,
@@ -2949,7 +2967,7 @@ impl App {
         } else {
             world.cam_turn = (0.0, 0.0);
             if world.release.is_some() {
-                let head = world.pos + Vec3::new(0.0, -1.5, 0.0);
+                let head = drawn_pos(world) + Vec3::new(0.0, -1.5, 0.0);
                 target::step_release(world, dt * 60.0, head, turn_keys != 0 || in_event);
             }
         }
@@ -2961,24 +2979,51 @@ impl App {
         }
         let stepping = step != Vec3::ZERO;
         let moving = stepping;
-        if stepping {
-            // Speed byte x0.1 = units per second (5.0 for a normal run).
-            let speed = if world.my_motion.speed > 0 { world.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
-            let mut next = match lock_target {
-                Some(tp) => {
-                    let s = step.normalize();
-                    target::locked_step(world.pos, tp, s.dot(forward), s.dot(right), speed * dt)
-                }
-                None => world.pos + step.normalize() * speed * dt,
-            };
-            if let Some(g) = world.ground.as_ref().filter(|g| !g.is_empty()) {
-                next = g.walk_player(world.pos, next, dt * 60.0);
-            }
-            world.pos = next;
-        } else if !in_event && !world.unsettled && world.zone == Some(world.pos_zone) && let Some(g) = world.ground.as_ref().filter(|g| !g.is_empty()) {
-            // A fall goes on without input.
-            world.pos = g.walk_player(world.pos, world.pos, dt * 60.0);
+        // Whole retail frames of FUN_100a48d0 / FUN_100a3560; a position set elsewhere starts over from it.
+        if world.pos != world.step_to {
+            (world.step_from, world.step_to, world.step_ticks) = (world.pos, world.pos, 0.0);
         }
+        world.step_ticks += dt * 60.0;
+        // Speed byte x0.1 = units per second (5.0 for a normal run).
+        let speed = if world.my_motion.speed > 0 { world.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
+        let falls = !in_event && !world.unsettled && world.zone == Some(world.pos_zone);
+        let mut steps = 0;
+        while world.step_ticks >= ground::STEP_TICKS {
+            world.step_ticks -= ground::STEP_TICKS;
+            steps += 1;
+            // After a hitch, drop the backlog.
+            if steps > 8 {
+                world.step_ticks = 0.0;
+                break;
+            }
+            let from = world.pos;
+            let g = world.ground.as_ref().filter(|g| !g.is_empty());
+            if stepping {
+                let s = step.normalize();
+                let d = speed * ground::STEP_TICKS / 60.0;
+                let next = match lock_target {
+                    Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
+                    None => from + s * d,
+                };
+                world.pos = g.map_or(next, |g| g.walk_player(from, next, ground::STEP_TICKS));
+            } else if falls && let Some(g) = g {
+                // A fall goes on without input.
+                world.pos = g.walk_player(from, from, ground::STEP_TICKS);
+            }
+            world.step_from = from;
+        }
+        world.step_to = world.pos;
+        world.draw_pos = world.step_from.lerp(world.step_to, world.step_ticks / ground::STEP_TICKS);
+        if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && stepping {
+            log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z);
+        }
+        // FUN_1001e030: the look point closes 25 % of the gap to the head a tick *(inf: per tick with powf; retail
+        // runs whole ticks, at least one a frame)*; a jump of over 12 units snaps.
+        let head = world.draw_pos + Vec3::new(0.0, -1.5, 0.0);
+        world.cam_look = Some(match world.cam_look {
+            Some(l) if (head - l).length() < 12.0 => l + (head - l) * (1.0 - 0.75f32.powf(dt * 60.0)),
+            _ => head,
+        });
         // Touching a zone line asks the server to move us; wait for its answer before asking again.
         if stepping && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
             if let Some(line) = world.zone_lines.iter().find(|r| r.contains(world.pos.to_array())) {
@@ -3021,7 +3066,7 @@ impl App {
     /// The camera behind the player (yaw / pitch / distance), with retail's field of view (config 0x49).
     fn free_camera(world: &World) -> Camera {
         let forward = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
-        let head = world.pos + Vec3::new(0.0, -1.5, 0.0);
+        let head = world.cam_look.unwrap_or(drawn_pos(world) + Vec3::new(0.0, -1.5, 0.0));
         let mut eye = head - forward * world.distance * world.pitch.cos() + Vec3::new(0.0, -world.distance * world.pitch.sin(), 0.0);
         // Pull the camera in front of walls between it and the character.
         if let Some(t) = world.ground.as_ref().and_then(|g| g.raycast(head, eye)) {

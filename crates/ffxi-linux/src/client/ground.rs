@@ -17,15 +17,19 @@ const FLOOR_NY: f32 = 0.708;
 /// Fall speed gained per tick (_DAT_10322d74) and its cap.
 const GRAVITY: f32 = 0.040833335;
 const FALL_MAX: f32 = 1.0;
-/// walk() simulates frames at run speed 5.0 (one tick each).
+/// The player's physics step: one retail frame (2 ticks at its 30 fps, FUN_100889d0). The drawn position is
+/// interpolated between steps.
+pub const STEP_TICKS: f32 = 2.0;
+/// walk() simulates steps at run speed 5.0.
 const RUN_TICK: f32 = 5.0 / 60.0;
+const RUN_STEP: f32 = RUN_TICK * STEP_TICKS;
 
 /// Per-actor movement state of FUN_100a3560.
 #[derive(Clone, Copy)]
 struct Body {
     /// Where the last step left it; a body found elsewhere starts over.
     at: Option<Vec3>,
-    /// Fall speed per tick (+0xf4).
+    /// Fall speed per frame (+0xf4).
     vel: f32,
     /// The last gravity sweep touched a floor (+0x5e0).
     grounded: bool,
@@ -435,20 +439,19 @@ impl Ground {
         if !pos.is_finite() {
             pos = from + v;
         }
-        // Gravity in retail frames (2 ticks at its 30 fps; FUN_100889d0): the speed is per frame and grows by
-        // GRAVITY a frame, capped by a slow walk's travel.
-        let frames = ticks.max(1e-3) / 2.0;
-        let mut g = GRAVITY;
-        let hd = xz(pos - from).length() / frames;
+        // Gravity (asm 0x100a3803): the speed grows by GRAVITY x ticks (at least 1, FUN_10014000), lowered to the
+        // frame's travel when that is between 0.01 and it, and the fall moves the whole speed.
+        let mut g = GRAVITY * ticks.max(1.0);
+        let hd = xz(pos - from).length();
         if hd > 0.01 && hd < g {
             g = hd;
         }
-        body.vel = (body.vel + g * frames).min(FALL_MAX);
+        body.vel = (body.vel + g).min(FALL_MAX);
         if !body.fell {
             body.fell = true;
             body.vel = body.vel.min(0.4);
         }
-        let (fallen, grounded) = self.sweep(pos, pos + Vec3::Y * body.vel * frames);
+        let (fallen, grounded) = self.sweep(pos, pos + Vec3::Y * body.vel);
         body.grounded = grounded;
         pos = fallen;
         // FUN_1017a5d0 mode 0: no face from 0.5 above the feet to 40 below, and the frame is undone.
@@ -483,14 +486,14 @@ impl Ground {
         let mut body = Body::NEW;
         let mut pos = from;
         let mut stuck = 0;
-        let frames = (xz(to - from).length() / RUN_TICK) as usize * 3 + 8;
+        let frames = (xz(to - from).length() / RUN_STEP) as usize * 3 + 8;
         for _ in 0..frames {
             let left = Vec3::new(to.x - pos.x, 0.0, to.z - pos.z);
             let d = left.length();
             if d < 1e-3 {
                 break;
             }
-            let next = self.step(&mut body, pos, pos + left * (RUN_TICK.min(d) / d), 1.0);
+            let next = self.step(&mut body, pos, pos + left * (RUN_STEP.min(d) / d), STEP_TICKS);
             let gain = d - Vec3::new(to.x - next.x, 0.0, to.z - next.z).length();
             stuck = if gain < 0.002 { stuck + 1 } else { 0 };
             pos = next;
@@ -561,6 +564,28 @@ mod tests {
         assert!(got.x < 0.0 && got.y.abs() < 0.05, "{got}");
     }
 
+    /// A 20 degree slope at run speed: uphill grounded every step; downhill (the move stays level, then gravity)
+    /// at most one step in the air at a time, always descending. Per-tick gravity probed too little to reach the
+    /// slope after a floor fix, so the player bounced.
+    #[test]
+    fn stays_grounded_on_a_slope() {
+        let g = slope(20.0);
+        let mut pos = g.walk_player(Vec3::new(2.0, -1.0, 0.0), Vec3::new(2.0, -1.0, 0.0), STEP_TICKS);
+        for _ in 0..10 {
+            pos = g.walk_player(pos, pos, STEP_TICKS);
+        }
+        for dir in [1.0, -1.0] {
+            let (mut last, mut air) = (pos.y, 0);
+            for i in 0..30 {
+                pos = g.walk_player(pos, pos + Vec3::new(dir * RUN_STEP, 0.0, 0.0), STEP_TICKS);
+                air = if g.body.get().grounded { 0 } else { air + 1 };
+                assert!(air <= (dir < 0.0) as usize, "dir {dir} step {i} {pos}");
+                assert!((pos.y - last) * dir < 0.0, "dir {dir} step {i}: y {last} -> {}", pos.y);
+                last = pos.y;
+            }
+        }
+    }
+
     #[test]
     fn slope_limit_is_45_degrees() {
         let from = Vec3::new(-3.0, 0.0, 0.0);
@@ -589,7 +614,7 @@ mod tests {
         let mut pos = s;
         let dir = (e - s).normalize();
         for f in 0..120 {
-            pos = g.step(&mut body, pos, pos + dir * RUN_TICK, 1.0);
+            pos = g.step(&mut body, pos, pos + dir * RUN_STEP, STEP_TICKS);
             println!("f{f} {pos} grounded {} normal {}", body.grounded, body.normal);
         }
     }
@@ -599,11 +624,11 @@ mod tests {
         // Off the top of a 3-unit block: the fall goes on without input and ends on the floor.
         let g = step(3.0);
         let mut pos = Vec3::new(3.0, -3.0, 0.0);
-        for _ in 0..60 {
-            pos = g.walk_player(pos, pos + Vec3::new(-RUN_TICK, 0.0, 0.0), 1.0);
+        for _ in 0..30 {
+            pos = g.walk_player(pos, pos + Vec3::new(-RUN_STEP, 0.0, 0.0), STEP_TICKS);
         }
-        for _ in 0..60 {
-            pos = g.walk_player(pos, pos, 1.0);
+        for _ in 0..30 {
+            pos = g.walk_player(pos, pos, STEP_TICKS);
         }
         assert!(pos.x < -0.4 && pos.y.abs() < 0.01, "{pos}");
     }
@@ -615,12 +640,12 @@ mod tests {
         Some(Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(100 + id).ok()?).ok()?))
     }
 
-    /// Holds the key from `from` towards `to` for `frames` frames.
-    fn hold(g: &Ground, from: Vec3, to: Vec3, frames: usize) -> Vec3 {
+    /// Holds the key from `from` towards `to` for `steps` physics steps.
+    fn hold(g: &Ground, from: Vec3, to: Vec3, steps: usize) -> Vec3 {
         let dir = Vec3::new(to.x - from.x, 0.0, to.z - from.z).normalize();
         let mut pos = from;
-        for _ in 0..frames {
-            pos = g.walk_player(pos, pos + dir * RUN_TICK, 1.0);
+        for _ in 0..steps {
+            pos = g.walk_player(pos, pos + dir * RUN_STEP, STEP_TICKS);
         }
         pos
     }
@@ -635,7 +660,7 @@ mod tests {
             let got = g.walk(from, to, 1.2);
             assert!(from.y - got.y < 0.8 && (got - from).dot(dir) < 1.5, "walk {from} -> {got}");
             // Retail-rate gravity (per 30 fps frame) lets the slide along the foot carry a little further.
-            let got = hold(&g, from, to, 300);
+            let got = hold(&g, from, to, 150);
             assert!(from.y - got.y < 0.8 && (got - from).dot(dir) < 2.0, "hold {from} -> {got}");
         }
     }
@@ -647,7 +672,7 @@ mod tests {
         let (from, to) = (Vec3::new(-22.0, -0.25, -36.0), Vec3::new(-14.0, -0.25, -36.0));
         let got = g.walk(from, to, 1.2);
         assert!((got.x - to.x).abs() < 0.2 && (got.y + 3.0).abs() < 0.05, "stairs {got}");
-        let got = hold(&g, from, to, 96);
+        let got = hold(&g, from, to, 48);
         assert!((got.x - to.x).abs() < 0.2 && (got.y + 3.0).abs() < 0.05, "stairs held {got}");
         // A 39 degree ramp, up 3 units and back down.
         let (top, bottom) = (Vec3::new(72.9, 0.0, 58.0), Vec3::new(80.9, 3.0, 58.0));
