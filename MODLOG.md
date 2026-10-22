@@ -3005,3 +3005,5 @@ reactions and battle messages):
 - Checks: tests `fist_hit_sparks` (Hume fists on an orc: hit1 g010..g013 at tick 45 = dada 40 + 5; the orc back:
   hit2 g020..g023), `cure_cast` (ner2 circle, stwh, shwh sparkle, tgt0); `fx-shot 232 --category 1` and
   `--category 4 --anim 144` (Fire: flare, ring, burst).
+- Melee timing (combat.rs): battle messages at the swing hit (dada) + 4 ticks, the damage reaction at + 5 (atpr
+  wait 4 before op 0x2b; dam0 op 0x01 wait 1), as triggers.md 2.2 has it; it used to be both at the hit.

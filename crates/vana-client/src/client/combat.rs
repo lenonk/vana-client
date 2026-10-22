@@ -219,7 +219,13 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
     w.effects.on_action(a, attack.as_ref().map(|(_, n)| n.clone()));
     let delay = attack.map(|(d, _)| d);
     match delay {
-        Some(d) => w.pending.push(Pending { at: Instant::now() + d, messages, reactions }),
+        // dada at T: atpr waits 4, then op 0x2b prints; dam0 (op 0x01 wait 1) reacts at T + 5 (triggers.md 2.2).
+        Some(d) => {
+            let tick = Duration::from_secs_f32(1.0 / 60.0);
+            let now = Instant::now();
+            w.pending.push(Pending { at: now + d + tick * 4, messages, reactions: Vec::new() });
+            w.pending.push(Pending { at: now + d + tick * 5, messages: Vec::new(), reactions });
+        }
         None => {
             for m in messages {
                 print(w, m);
