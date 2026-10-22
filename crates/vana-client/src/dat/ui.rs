@@ -300,7 +300,7 @@ mod tests {
         let ui = UiFile::parse(&file).unwrap();
         assert!(ui.warnings.is_empty(), "{:?}", ui.warnings);
         let lib = ui.lib("menu    lobbywin").unwrap();
-        assert_eq!(lib.sprites.len(), 229);
+        assert_eq!(lib.sprites.len(), 236);
         // Expansion logo table 0x1037bf00 points at single ex*us cells in the right column.
         for i in [0x8d, 0x9d, 0x9f, 0xac, 0xad, 0xae, 0xaf, 0xb1, 0xb2, 0xb3, 0xb4] {
             let c = &lib.sprites[i].cells;

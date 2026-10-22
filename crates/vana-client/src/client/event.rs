@@ -1417,13 +1417,12 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
 mod tests {
     use super::*;
 
-    /// LSB 6439 "Obtained: <item>." sits in a gap of the zone 230 map; the install has it at 6432.
+    /// LSB 6439 "Obtained: <item>." sat in a gap of the 2019 zone 230 map (at 6432 there); retail 30261006_0's
+    /// dialogue matches LSB's ids.
     #[test]
     fn text_gap() {
         let m = crate::dat::msgshift::MsgShift::bundled();
-        assert_eq!(m.map(230, 6439), None);
-        assert_eq!(gap_map(&m, 230, 6439), Some(6432));
-        assert_eq!(gap_map(&m, 230, 6000), None);
+        assert_eq!(m.map(230, 6439), Some(6439));
     }
 
     /// The San d'Oria opening 0x1f7 turns cancelling off (0x42) and keeps 0x052 mode 0 from turning it on (0x38).
@@ -1518,11 +1517,11 @@ mod tests {
             }
         }
         let shown = |msg: u32, npc: u32| !seen[&msg].contains(&(0x010e_6000 | npc));
-        assert!((0x68..=0x6f).all(|k| shown(7628, k)), "gate knights at the s006 line");
-        assert!(!shown(7627, 0x68));
-        assert!((0xd7..=0xdc).all(|k| shown(7637, k)) && !shown(7636, 0xd7), "expedition");
-        assert!(!shown(7644, 0xd5) && shown(7646, 0xd5), "Curilla");
-        assert!(!shown(7652, 0xd6) && shown(7653, 0xd6), "Rahal");
+        assert!((0x68..=0x6f).all(|k| shown(7671, k)), "gate knights at the s006 line");
+        assert!(!shown(7670, 0x68));
+        assert!((0xd7..=0xdc).all(|k| shown(7680, k)) && !shown(7679, 0xd7), "expedition");
+        assert!(!shown(7687, 0xd5) && shown(7689, 0xd5), "Curilla");
+        assert!(!shown(7695, 0xd6) && shown(7696, 0xd6), "Rahal");
     }
 
     /// fdo1 (0, 0, 0, 0x80) then fdi1 (0x80, 0x80, 0x80, 0) over 60 ticks: a multiply, halfway scene x 0.5.

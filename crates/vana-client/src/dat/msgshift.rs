@@ -336,7 +336,8 @@ mod tests {
 
     #[test]
     fn bundled_zone_230() {
+        // Retail 30261006_0's dialogue matches LSB's ids (the 2019 install had 8002 at 7959).
         let s = MsgShift::bundled();
-        assert_eq!(s.map(230, 8002), Some(7959));
+        assert_eq!(s.map(230, 8002), Some(8002));
     }
 }

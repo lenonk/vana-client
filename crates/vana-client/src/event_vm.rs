@@ -2100,7 +2100,7 @@ mod tests {
         let evte = index.read(30834).unwrap();
         assert_eq!(scheduler_ticks(&evte, "s043", 0), Some(600.0));
         assert_eq!(scheduler_ticks(&evte, "s043", 1), None);
-        assert_eq!(messages(&log)[0], 7625);
+        assert_eq!(messages(&log)[0], 7668);
         assert!(end(&log).is_some());
     }
 }

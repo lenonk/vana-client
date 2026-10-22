@@ -460,6 +460,6 @@ mod tests {
         assert_eq!(t(282), "The B evades.");
         assert_eq!(t(718), "A gains 3 capacity points.");
         assert_eq!(t(777), "You cannot mount at this time.");
-        assert_eq!(t(809), "");
+        assert_eq!(t(809), "A gains 3 exemplar points.");
     }
 }
