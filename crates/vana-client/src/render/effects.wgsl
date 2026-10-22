@@ -68,10 +68,15 @@ fn to_byte(v: f32) -> u32 { return u32(i32(v * 255.0)) & 0xffu; }
 
 // FUN_10053550 (linear, x clamped) / FUN_100537f0 (eased) over keyframe `id`.
 fn key_sample(id: u32, x_in: f32, eased: bool) -> f32 {
+    return key_ov(id, x_in, eased, false, 0.0);
+}
+
+// FUN_10053520 / FUN_10053740: the same with the first key's value replaced by v0 when `ov`.
+fn key_ov(id: u32, x_in: f32, eased: bool, ov: bool, v0: f32) -> f32 {
     if (id == NONE || id >= arrayLength(&key_desc)) { return 0.0; }
     let d = key_desc[id];
     if (d.y == 0u) { return 0.0; }
-    if (d.y == 1u) { return keys[d.x].y; }
+    if (d.y == 1u) { return select(keys[d.x].y, v0, ov); }
     var x = x_in;
     if (!eased) { x = clamp(x, 0.0, 1.0); }
     var i = 0u;
@@ -79,7 +84,8 @@ fn key_sample(id: u32, x_in: f32, eased: bool) -> f32 {
         if (i + 2u >= d.y || x <= keys[d.x + i + 1u].x) { break; }
         i = i + 1u;
     }
-    let a = keys[d.x + i];
+    var a = keys[d.x + i];
+    if (ov && i == 0u) { a.y = v0; }
     let c = keys[d.x + i + 1u];
     if (c.x == a.x) { return c.y; }
     let f = (x - a.x) / (c.x - a.x);
@@ -92,18 +98,40 @@ fn key_sample(id: u32, x_in: f32, eased: bool) -> f32 {
     return a.y * g + c.y * (1.0 - g);
 }
 
-// The slot's keyframe at life fraction t.
-fn key_t(b: u32, s: u32, t: f32) -> f32 {
-    return key_sample(sl(b, s), t, (sl(b, s + 1u) & 0xfu) != 0u);
+// The slot's keyframe at x with its first value replaced by S[s+2] (FUN_1004d530 / FUN_10053520).
+fn key_t(b: u32, s: u32, x: f32) -> f32 {
+    return key_ov(sl(b, s), x, (sl(b, s + 1u) & 0xfu) != 0u, true, slf(b, s + 2u));
 }
 
-// The slot's keyframe at the day fraction, repeated n = (param >> 5) & 0x1ff times a day when set (case 0x1004c63f).
+// The same with the first value forced to 0 (ops 0x0f..0x11 / 0x6b..0x6d push a literal 0).
+fn key_0(b: u32, s: u32, x: f32) -> f32 {
+    return key_ov(sl(b, s), x, (sl(b, s + 1u) & 0xfu) != 0u, true, 0.0);
+}
+
+// No override (FUN_10053550 / FUN_100537f0 called directly).
+fn key_n(b: u32, s: u32, x: f32) -> f32 {
+    return key_sample(sl(b, s), x, (sl(b, s + 1u) & 0xfu) != 0u);
+}
+
+// The slot's keyframe at the day fraction, no override.
 fn key_g(b: u32, s: u32) -> f32 {
-    let prm = sl(b, s + 1u);
-    let n = (prm >> 5u) & 0x1ffu;
+    return key_n(b, s, p.time.z);
+}
+
+// Op 0x3f: the day fraction repeated n = (param >> 5) & 0x1ff times a day when set (case 0x1004c63f).
+fn key_rep(b: u32, s: u32) -> f32 {
+    let n = (sl(b, s + 1u) >> 5u) & 0x1ffu;
     var x = p.time.z;
     if (n != 0u) { x = fract(x * f32(n)); }
-    return key_sample(sl(b, s), x, (prm & 0xfu) != 0u);
+    return key_n(b, s, x);
+}
+
+fn fmod2(v: f32) -> f32 { return v - 2.0 * trunc(v / 2.0); }
+
+fn wrap_pi(a: f32) -> f32 {
+    if (a > PI) { return a - 2.0 * PI; }
+    if (a < -PI) { return a + 2.0 * PI; }
+    return a;
 }
 
 // FUN_1003d040: fmod(v, 2) * pi, wrapped into [-pi, pi].
@@ -237,15 +265,18 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                 }
             }
             case 0x0eu: { set_ef(b, E_T, select(1.0 - life / maxl, 0.0, maxl == 0.0)); }
-            case 0x0fu, 0x10u, 0x11u: { set_ef(b, E_POS + code - 0x0fu, slf(b, s + 2u) + key_t(b, s, t)); }
+            case 0x0fu, 0x10u, 0x11u: { set_ef(b, E_POS + code - 0x0fu, slf(b, s + 2u) + key_0(b, s, t)); }
             case 0x12u, 0x13u, 0x14u: { set_ef(b, E_ROT + code - 0x12u, half_turns(key_t(b, s, t))); }
             case 0x15u, 0x16u, 0x17u: { set_ef(b, E_SCALE + code - 0x15u, key_t(b, s, t)); }
             case 0x18u: { set_cb(b, 2u, to_byte(key_t(b, s, t))); }
             case 0x19u: { set_cb(b, 1u, to_byte(key_t(b, s, t))); }
             case 0x1au: { set_cb(b, 0u, to_byte(key_t(b, s, t))); }
             case 0x1bu: { set_cb(b, 3u, to_byte(key_t(b, s, t))); }
-            case 0x1cu, 0x54u: { let v = key_t(b, s, t); set_ef(b, E_UV, v - trunc(v)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_U; }
-            case 0x1du, 0x55u: { let v = key_t(b, s, t); set_ef(b, E_UV + 1u, v - trunc(v)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_V; }
+            // 0x1c / 0x1d: U / V = fmod(key, 2); 0x54 / 0x55 accumulate key x dt (no override), fmod 2.
+            case 0x1cu: { set_ef(b, E_UV, fmod2(key_t(b, s, t))); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_U; }
+            case 0x1du: { set_ef(b, E_UV + 1u, fmod2(key_t(b, s, t))); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_V; }
+            case 0x54u: { set_ef(b, E_UV, fmod2(ef(b, E_UV) + key_n(b, s, t) * dt)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_U; }
+            case 0x55u: { set_ef(b, E_UV + 1u, fmod2(ef(b, E_UV + 1u) + key_n(b, s, t) * dt)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_V; }
             // D3b morph weights +0x194.. (class 0xf only): the slot keyframe at life t, or the day fraction with
             // parameter bit 4, repeated (param >> 5) & 0x1ff times.
             case 0x1eu, 0x1fu, 0x20u, 0x21u, 0x22u: {
@@ -255,7 +286,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                     if ((prm & 0x10u) != 0u) { x = p.time.z; }
                     let n = (prm >> 5u) & 0x1ffu;
                     if (n != 0u) { x = fract(x * f32(n)); }
-                    set_ef(b, E_MORPH_W + code - 0x1eu, key_sample(sl(b, s), x, (prm & 0xfu) != 0u));
+                    set_ef(b, E_MORPH_W + code - 0x1eu, key_t(b, s, x));
                 }
             }
             // The moon (FUN_10184dc0): frame = phase, rotation z = pi/2.
@@ -325,17 +356,18 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             case 0x3cu: { set_cb(b, 2u, to_byte(key_g(b, s))); }
             case 0x3du: { set_cb(b, 1u, to_byte(key_g(b, s))); }
             case 0x3eu: { set_cb(b, 0u, to_byte(key_g(b, s))); }
-            case 0x3fu: { set_ef(b, E_FADE, ef(b, E_FADE) * key_g(b, s)); }
+            case 0x3fu: { set_ef(b, E_FADE, ef(b, E_FADE) * key_rep(b, s)); }
             case 0x40u, 0x41u, 0x42u: { set_ef(b, E_SCALE + code - 0x40u, key_g(b, s)); }
             case 0x4au: { set_cb(b, 2u, to_byte(key_g(b, s))); }
             case 0x4bu: { set_cb(b, 1u, to_byte(key_g(b, s))); }
             case 0x4cu: { set_cb(b, 0u, to_byte(key_g(b, s))); }
             case 0x4du: { set_cb(b, 3u, to_byte(key_g(b, s))); }
             case 0x50u: { if (parent != NONE) { set_ef(b, E_FADE, ef(b, E_FADE) * slot_f(parent, S_WEATHER)); } }
-            case 0x56u, 0x57u, 0x58u: { set_ef(b, E_ROT + code - 0x56u, ef(b, E_ROT + code - 0x56u) + key_t(b, s, t) * PI * dt); }
-            case 0x61u, 0x62u, 0x63u: { set_ef(b, E_ROT + code - 0x61u, ef(b, E_ROT + code - 0x61u) + key_g(b, s) * PI * dt); }
-            case 0x66u, 0x67u, 0x68u: { set_ef(b, E_ROT + code - 0x66u, key_g(b, s) * PI); }
-            case 0x6bu, 0x6cu, 0x6du: { set_ef(b, E_POS + code - 0x6bu, slf(b, s + 2u) + key_g(b, s)); }
+            // FUN_10046c00 / FUN_1003d0d0: rot += wrap(fmod(key, 2) pi) dt, wrapped again.
+            case 0x56u, 0x57u, 0x58u: { set_ef(b, E_ROT + code - 0x56u, wrap_pi(ef(b, E_ROT + code - 0x56u) + half_turns(key_n(b, s, t)) * dt)); }
+            case 0x61u, 0x62u, 0x63u: { set_ef(b, E_ROT + code - 0x61u, wrap_pi(ef(b, E_ROT + code - 0x61u) + half_turns(key_g(b, s)) * dt)); }
+            case 0x66u, 0x67u, 0x68u: { set_ef(b, E_ROT + code - 0x66u, half_turns(key_g(b, s))); }
+            case 0x6bu, 0x6cu, 0x6du: { set_ef(b, E_POS + code - 0x6bu, slf(b, s + 2u) + key_0(b, s, p.time.z)); }
             default: {}
         }
         ip = ip + len;
@@ -359,6 +391,9 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     let ssc = mat3x3<f32>(vec3<f32>(sc.x, 0.0, 0.0), vec3<f32>(0.0, sc.y, 0.0), vec3<f32>(0.0, 0.0, sc.z));
     var l3 = rot * ssc;
     if ((flags & 2u) != 0u) { l3 = ssc * rot; }
+    if ((el[b + E_STATE] & ST_GROUND) != 0u) {
+        l3 = mat3x3<f32>(ev3(b, E_GROUND), ev3(b, E_GROUND + 3u), ev3(b, E_GROUND + 6u)) * l3;
+    }
     let pos = ev3(b, E_POS);
     // FUN_10044350: orientation modes 1 / 2 face the motion, 3 faces the camera *(the bit-0 basis variant is not
     // built)*.

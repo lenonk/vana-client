@@ -264,6 +264,16 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set_sf(s + 3, -d.z.atan2(d.x));
             }
             0x0f => e.set_v3(w::SCALE, v3(1)),
+            // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
+            0x8e => {
+                if let Some((p, m)) = inst.ground {
+                    pos = p;
+                    for (k, c) in m.iter().enumerate() {
+                        e.set_v3(w::GROUND + 3 * k, *c);
+                    }
+                    e.0[w::STATE] |= st::GROUND;
+                }
+            }
             0x10 => {
                 let sc = e.v3(w::SCALE);
                 e.set_v3(w::SCALE, sc + Vec3::new(rng.uf(op.f32(1)), rng.uf(op.f32(2)), rng.uf(op.f32(3))));

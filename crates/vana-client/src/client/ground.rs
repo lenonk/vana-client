@@ -219,6 +219,14 @@ impl Ground {
 
     /// The floor under feet at `p` (FUN_10162120): its surface type (0 when the face is more than 0.4 below the
     /// feet, FUN_10162470) and whether its object is covered (actor+0x17c).
+    /// The same face's normal, turned to +y (into the floor; -vt+0x210 *(inf: the sign, from flat ground giving
+    /// FUN_100d3750 the identity)*).
+    pub fn floor_normal(&self, p: Vec3) -> Option<Vec3> {
+        let (_, i) = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        let n = *self.normals.get(i)?;
+        Some(if n.y < 0.0 { -n } else { n })
+    }
+
     pub fn surface(&self, p: Vec3) -> (u8, bool) {
         let floor = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0));
         match floor {

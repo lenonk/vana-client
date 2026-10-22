@@ -1508,7 +1508,7 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
 struct FxActors<'a> {
     actors: &'a HashMap<u32, Actor>,
     places: &'a HashMap<u32, Place>,
-    contacts: &'a HashMap<u32, Vec3>,
+    contacts: &'a HashMap<u32, (Vec3, Vec3)>,
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -1548,7 +1548,11 @@ impl crate::fx::Actors for FxActors<'_> {
     }
 
     fn foot(&self, id: u32) -> Option<Vec3> {
-        self.contacts.get(&id).copied()
+        self.contacts.get(&id).map(|c| c.0)
+    }
+
+    fn floor(&self, id: u32) -> Option<Vec3> {
+        self.contacts.get(&id).map(|c| c.1)
     }
 }
 
@@ -1573,8 +1577,8 @@ struct World {
     effects: crate::fx::Effects,
     /// Per actor: its foot points' last heights relative to the root (actor+0x7e8..+0x7f4).
     feet: HashMap<u32, [f32; 4]>,
-    /// Per actor: the last step's foot contact in the world (actor+0x63c).
-    contacts: HashMap<u32, Vec3>,
+    /// Per actor: the last step's foot contact in the world (actor+0x63c) and the floor normal there.
+    contacts: HashMap<u32, (Vec3, Vec3)>,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,

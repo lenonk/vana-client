@@ -43,6 +43,10 @@ pub trait Actors {
     fn foot(&self, _id: u32) -> Option<Vec3> {
         None
     }
+    /// The floor normal under it, pointing into the floor (-vtable +0x210).
+    fn floor(&self, _id: u32) -> Option<Vec3> {
+        None
+    }
 }
 
 /// No actors (offscreen shots).
@@ -179,6 +183,8 @@ pub struct Instance {
     /// A clone linked to an element (+0x164): not a task of its own; the element runs it (FUN_10048740 from
     /// emission ops 0x44 / 0x53 / 0x6a once, then update ops 0x25 / 0x33 / 0x46 every frame).
     pub driven: Option<u32>,
+    /// Emission op 0x8e: the source actor's foot contact and ground frame (FUN_100d3750), when the stream has it.
+    pub ground: Option<(Vec3, [Vec3; 3])>,
 }
 
 /// A word range of an element for the GPU this frame.
@@ -493,8 +499,9 @@ pub struct Effects {
     covered: bool,
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
     sounds: Vec<sound::Sound>,
-    /// Footstep dust to start next tick: generator and actor.
+    /// Footstep dust to start next tick: generator and actor; actors that left a footprint.
     dust: Vec<(Ref, u32)>,
+    prints: Vec<u32>,
     pub sound_cmds: Vec<sound::SoundCmd>,
     alive: HashSet<u32>,
     next_voice: u32,
@@ -551,6 +558,7 @@ impl Effects {
             covered: false,
             sounds: Vec::new(),
             dust: Vec::new(),
+            prints: Vec::new(),
             sound_cmds: Vec::new(),
             alive: HashSet::new(),
             next_voice: 0,
@@ -752,6 +760,7 @@ impl Effects {
             parent_elem: None,
             actors: [sched::Who::None; 2],
             driven: None,
+            ground: None,
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -903,6 +912,7 @@ impl Effects {
             {
                 self.follow(i, word, f, actors);
             }
+            self.ground_frame(i, actors);
             let driven = self.drive(i, f);
             let Some(inst) = self.insts[i].as_ref() else { continue };
             let (m, a, b, wgt, ss, ms) = (inst.matrix, inst.scale_a, inst.scale_b, inst.weather, inst.size_scaled, inst.mslot);
@@ -1129,6 +1139,9 @@ impl Effects {
     /// elapsed 10001 after), so it ends; attach point 0x34 puts it at the foot contact. Retail keeps one clone per
     /// actor and restarts it *(inf: a new instance per step, same emissions)*.
     fn start_dust(&mut self, f: &Frame, actors: &dyn Actors) {
+        for id in std::mem::take(&mut self.prints) {
+            self.start_print(id, f, actors);
+        }
         for (g, id) in std::mem::take(&mut self.dust) {
             let Some(i) = self.start(g, Owner::Step(id)) else { continue };
             log::debug!("footstep dust {} on {id:#x}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name));
@@ -1142,6 +1155,46 @@ impl Effects {
                 x.elapsed = 10001.0;
                 x.finished = true;
             }
+        }
+    }
+
+    /// FUN_100d3750 for an instance whose emission stream has op 0x8e: down = into the floor, front = the actor's
+    /// (0, 0, 1) (model x is its facing), side = down x front, front = side x down.
+    fn ground_frame(&mut self, i: usize, actors: &dyn Actors) {
+        let Some(x) = self.insts[i].as_mut() else { return };
+        if !x.streams[1].iter().any(|o| o.code == 0x8e) {
+            return;
+        }
+        let Some(id) = x.actors[0].id() else { return };
+        let (Some(foot), Some(m)) = (actors.foot(id), actors.matrix(id)) else { return };
+        let down = actors.floor(id).unwrap_or(Vec3::Y);
+        let side = down.cross(m.z_axis.truncate().normalize_or(Vec3::Z)).normalize_or(Vec3::X);
+        let front = side.cross(down).normalize_or(Vec3::Z);
+        x.ground = Some((foot, [side, down, front]));
+    }
+
+    /// Footprint (FUN_100d2970 step 7): 'fmrk' from the actor's part files, else DAT 0; sized by the actor, source
+    /// actor set, one element straight from the template (FUN_1004d920, no generator update).
+    fn start_print(&mut self, id: u32, f: &Frame, actors: &dyn Actors) {
+        let name = u32::from_le_bytes(*b"fmrk");
+        let from_files = actors.files(id).0.iter().find_map(|&file| {
+            let l = self.reg.lib_of(file)?;
+            self.reg.libs[l].find_global(kind::GENERATOR, name).map(|n| (l, n))
+        });
+        let Some(g) = from_files.or_else(|| self.reg.global.and_then(|l| self.reg.libs[l].find_global(kind::GENERATOR, name).map(|n| (l, n)))) else { return };
+        let Some(i) = self.start(g, Owner::Step(id)) else { return };
+        let s = actors.scale(id);
+        if let Some(x) = self.insts[i].as_mut() {
+            x.actors = [sched::Who::Actor(id), sched::Who::None];
+            x.scale_b = Vec3::splat(s);
+        }
+        self.ground_frame(i, actors);
+        let Some(mut inst) = self.insts[i].take() else { return };
+        let spawn = emit::emit(&mut self.reg, &mut inst, None, f, &mut self.rng);
+        inst.finished = true;
+        self.insts[i] = Some(inst);
+        if let Some(s) = spawn {
+            self.add_elem(i, s, f);
         }
     }
 
@@ -1206,13 +1259,16 @@ impl Effects {
     /// A footstep (FUN_100d2970 step 7): SeSep `name` in the zone's 'fses' folder ('fser' in the rain weathers when
     /// not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127 running). Then
     /// the dust generator `dust` of that folder, if any, bursts once on actor `id`.
-    pub fn footstep(&mut self, id: u32, pos: Vec3, name: [u8; 4], dust: Option<[u8; 4]>, rain: bool, level: i32) {
+    pub fn footstep(&mut self, id: u32, pos: Vec3, name: [u8; 4], dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
         let Some(l) = self.zone_lib else { return };
         let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
         let lib = &self.reg.libs[l];
         let Some(f) = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { return };
         if let Some(g) = dust.and_then(|d| lib.find_in(f, kind::GENERATOR, d)) {
             self.dust.push(((l, g), id));
+        }
+        if print {
+            self.prints.push(id);
         }
         let found = lib.find_in(f, 0x3d, name).map(|n| (l, n)).or_else(|| {
             let g = self.reg.global?;

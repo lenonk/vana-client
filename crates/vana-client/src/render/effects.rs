@@ -700,10 +700,13 @@ mod tests {
             gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
             eg.after_submit(&gpu, &mut fx);
             let reg = &fx.reg;
-            let key = |id: u32, x: f32, eased: bool| -> f32 {
+            let key = |id: u32, x: f32, eased: bool, v0: Option<f32>| -> f32 {
                 let Some(d) = reg.key_desc.get(id as usize) else { return 0.0 };
                 let k = crate::dat::generator::KeyFrame { keys: reg.key_data[d[0] as usize..(d[0] + d[1]) as usize].iter().map(|p| (p[0], p[1])).collect() };
-                k.sample(x, eased)
+                match v0 {
+                    Some(v) => k.sample_v0(x, eased, v),
+                    None => k.sample(x, eased),
+                }
             };
             for c in cpu.values_mut() {
                 update_ref(c, &reg.ops, &key, &slots, &f);

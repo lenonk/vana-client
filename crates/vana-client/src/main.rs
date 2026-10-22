@@ -1540,7 +1540,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
             match &dust {
                 Some(d) => {
                     let name = <[u8; 4]>::try_from(d.as_bytes()).ok();
-                    fx.footstep(0x0001_0001, c, *b"0000", name, false, 101);
+                    fx.footstep(0x0001_0001, c, *b"0000", name.filter(|n| n != b"fmrk"), name == Some(*b"fmrk"), false, 101);
                 }
                 None => fx.on_action(&action, (category == 1).then(|| "ati0".to_string())),
             }

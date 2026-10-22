@@ -3104,7 +3104,35 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
   scale 0.1, additive 0x12262626, life 60 (a faint puff; invisible on pale stone). Retail keeps one clone per
   actor and restarts it *(inf: a new instance per step)*. East Ronfaure (101) has no grass dust. Test walk_dust;
   fx-shot --dust NAME bursts one at the caster.
+- Footprints on surfaces 3, 4, 8 (not leg mode 3): 'fmrk' from the actor's part files (vtable +0x1ec), else DAT
+  0 syst/effe; scale B = the actor size; source actor set; one element straight from the template (FUN_1004d920,
+  no generator update). DAT 0 fmrk: world mode, D3a fmk1 life 180, bias -0.1, rot (-pi/2, 0, pi/2), scale
+  (0.15, 0.19), alpha blend 0x44, colour 0x4e141414, alpha keyframe 'fmrk' = (0, 0), (1, 0) (a fade from the
+  base, see "Keyframe sampling"), op 0x8f (area-light tint, not done), op 0x8e. Only DAT 0 carries an fmrk in
+  this install.
+- Emission op 0x8e (0x1004e7af): FUN_100d3750(actor) builds rows side = down x front, down = -vtable +0x210,
+  front = side x down (front first = the actor's (0, 0, 1) through its rotation, FUN_10027400), all normalised
+  (FUN_10026680; cross FUN_10026720 = a x b); elem+0x60 *= it, pos = actor+0x63c, +0x187 = 0, so FUN_10043f00
+  (rebuilds only when +0x187, or without +0x108 when the generator has an attach matrix) keeps it. Here: element
+  words GROUND (54..62) and state bit GROUND, multiplied into the local matrix in the update shader; the element
+  header is 64 words. *(inf: the sign of +0x210: the floor normal turned to +y, so flat ground gives identity,
+  which is what fmrk's flat-lying rotation needs.)* Not modelled: an update op that rewrites rotation or scale
+  sets +0x187 and drops the ground frame (fmrk's stream has none).
 - Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
-  (+0x840 bits 20..21), 'fmrk' prints, 'fvib', the i900 wading ripples (point 0x35 not filled), the
-  footstep-effects option DAT_10444158 (taken as on).
+  (+0x840 bits 20..21), 'fvib', the i900 wading ripples (point 0x35 not filled), the footstep-effects option
+  DAT_10444158 (taken as on).
+
+### Keyframe sampling in the update stream (FUN_100499d0, jump table 0x1004d08c = op - 1) (2026-10-22)
+- FUN_10053520 / FUN_10053740 (linear / eased, by S[s+1] & 0xf) sample with the **first key's value (+0x34)
+  replaced by the third argument** for the call; FUN_10053550 / FUN_100537f0 do not. FUN_1004d530(R, x) =
+  override with R[2] = S[s+2] (0 when R[0] = 0); FUN_1003d040 = override with S[s+2], then fmod(v, 2) pi wrapped.
+- Life-keyed with the S[s+2] override: 12-14 (rot, wrapped), 15-17 (scale), 18-1b (colour, byte), 1c/1d (U/V =
+  fmod(key, 2)), 1e-22 (morph weights), 24, 30-32 (then + S[s+2] again, into the op-02 velocity slot), 35-37,
+  38-3b, 5b/5c.
+- Override with a literal 0, plus S[s+2]: 0f-11 (life), 6b-6d (day fraction).
+- No override: 54/55 (U/V = fmod(U + key dt, 2)), 56-58 (rot += wrap(fmod(key, 2) pi) dt, wrapped), 5d/5e, 5f;
+  day fraction: 3c-3e, 40-42, 43, 49, 4a-4d, 61-63 (as 56), 66-68 (rot = wrap(fmod(key, 2) pi)); 3f uses the day
+  fraction repeated (S[s+1] >> 5) & 0x1ff times, the others take the plain day fraction.
+- Effect: a keyframe starting at 0 with a base from the emission (e.g. fmrk alpha 0x4e) fades from the base;
+  render/effects.wgsl key_t / key_0 / key_n / key_g / key_rep, mirrored in fx/elem.rs update_ref.
 - Drive note: --quit logs out only after the --screenshot shot; a script `shot:` step does not count.

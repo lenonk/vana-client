@@ -313,6 +313,15 @@ impl KeyFrame {
     pub fn sample(&self, x: f32, eased: bool) -> f32 {
         if eased { self.eased(x) } else { self.linear(x) }
     }
+
+    /// FUN_10053520 / FUN_10053740: sampled with the first key's value replaced by `v0`.
+    pub fn sample_v0(&self, x: f32, eased: bool, v0: f32) -> f32 {
+        let mut k = self.clone();
+        if let Some(first) = k.keys.first_mut() {
+            first.1 = v0;
+        }
+        k.sample(x, eased)
+    }
 }
 
 /// A D3m mesh (chunk 0x1f, FUN_1003f0a0): a triangle list of 36-byte vertices (pos, normal, BGRA colour, uv) and

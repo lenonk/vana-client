@@ -47,7 +47,9 @@ pub mod w {
     /// D3b morphs: the five weights +0x194.. (ops 0x1e..0x22) and the previous frame's +0x1a8..
     pub const MORPH_W: usize = 44;
     pub const MORPH_PREV: usize = 49;
-    pub const SLOTS: usize = 56;
+    /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
+    pub const GROUND: usize = 54;
+    pub const SLOTS: usize = 64;
     pub const SLOT_COUNT: usize = 64;
     pub const WORDS: usize = SLOTS + SLOT_COUNT;
 }
@@ -62,6 +64,8 @@ pub mod st {
     pub const BATCHED: u32 = 16;
     /// The element has a resource (+0x104 != 0): op 0x0d animates frames.
     pub const HAS_RES: u32 = 32;
+    /// Emission op 0x8e set GROUND (and cleared +0x187, so the local matrix keeps it).
+    pub const GROUND: u32 = 64;
 }
 
 /// KIND values.
@@ -223,6 +227,8 @@ pub fn wgsl_consts() -> String {
         ("DK_MORPH", dk::MORPH as usize),
         ("E_MORPH_W", w::MORPH_W),
         ("E_MORPH_PREV", w::MORPH_PREV),
+        ("E_GROUND", w::GROUND),
+        ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),
         ("DK_BATCHED", dk::BATCHED as usize),
@@ -258,7 +264,7 @@ pub fn wgsl_consts() -> String {
 /// The update stream on the CPU, for checking the GPU pass (render/effects.wgsl `update`) in tests; the same ops
 /// and the same order.
 #[cfg(test)]
-pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool) -> f32, slot_words: &[u32], f: &super::Frame) {
+pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool, Option<f32>) -> f32, slot_words: &[u32], f: &super::Frame) {
     use glam::Vec3;
     use std::f32::consts::PI;
     if e.0[w::STATE] & st::ALIVE == 0 {
@@ -284,12 +290,20 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool) -> f32
         let m = glam::Mat4::from_cols_array(&std::array::from_fn(|k| sf(slot::MATRIX + k)));
         m.transform_point3(wp)
     };
-    let kt = |e: &Elem, s: usize, t: f32| key(e.s(s), t, e.s(s + 1) & 0xf != 0);
-    let kg = |e: &Elem, s: usize| {
+    // With the first key's value = S[s+2] (kt), = 0 (k0), or plain (kn); kg / krep at the day fraction.
+    let kt = |e: &Elem, s: usize, t: f32| key(e.s(s), t, e.s(s + 1) & 0xf != 0, Some(e.sf(s + 2)));
+    let k0 = |e: &Elem, s: usize, t: f32| key(e.s(s), t, e.s(s + 1) & 0xf != 0, Some(0.0));
+    let kn = |e: &Elem, s: usize, t: f32| key(e.s(s), t, e.s(s + 1) & 0xf != 0, None);
+    let kg = |e: &Elem, s: usize| kn(e, s, f.dayfrac);
+    let krep = |e: &Elem, s: usize| {
         let n = (e.s(s + 1) >> 5) & 0x1ff;
-        let x = if n != 0 { (f.dayfrac * n as f32).fract() } else { f.dayfrac };
-        key(e.s(s), x, e.s(s + 1) & 0xf != 0)
+        kn(e, s, if n != 0 { (f.dayfrac * n as f32).fract() } else { f.dayfrac })
     };
+    let half = |v: f32| {
+        let a = (v - 2.0 * (v / 2.0).trunc()) * PI;
+        if a > PI { a - 2.0 * PI } else if a < -PI { a + 2.0 * PI } else { a }
+    };
+    let wrap = |a: f32| if a > PI { a - 2.0 * PI } else if a < -PI { a + 2.0 * PI } else { a };
     let byte = |v: f32| ((v * 255.0) as i32 as u32 & 0xff) as u8;
     let mut ip = e.0[w::STREAM] as usize;
     let mut guard = 0;
@@ -313,7 +327,7 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool) -> f32
             0x08 => e.set_v3(w::SCALE, e.v3(w::SCALE) + e.sv3(s) * dt),
             0x0e => e.set(w::T, if maxl == 0.0 { 0.0 } else { 1.0 - life / maxl }),
             0x0f..=0x11 => {
-                let v = e.sf(s + 2) + kt(e, s, t);
+                let v = e.sf(s + 2) + k0(e, s, t);
                 e.set(w::POS + (code - 0x0f) as usize, v)
             }
             0x15..=0x17 => {
@@ -344,7 +358,7 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool) -> f32
             0x3c => e.set_cb(2, byte(kg(e, s))),
             0x3d => e.set_cb(1, byte(kg(e, s))),
             0x3e => e.set_cb(0, byte(kg(e, s))),
-            0x3f => e.set(w::FADE, e.f(w::FADE) * kg(e, s)),
+            0x3f => e.set(w::FADE, e.f(w::FADE) * krep(e, s)),
             0x40..=0x42 => {
                 let v = kg(e, s);
                 e.set(w::SCALE + (code - 0x40) as usize, v)
@@ -352,15 +366,15 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool) -> f32
             0x50 if parent != NONE => e.set(w::FADE, e.f(w::FADE) * sf(slot::WEATHER)),
             0x56..=0x58 => {
                 let k = w::ROT + (code - 0x56) as usize;
-                e.set(k, e.f(k) + kt(e, s, t) * PI * dt)
+                e.set(k, wrap(e.f(k) + half(kn(e, s, t)) * dt))
             }
             0x61..=0x63 => {
                 let k = w::ROT + (code - 0x61) as usize;
-                e.set(k, e.f(k) + kg(e, s) * PI * dt)
+                e.set(k, wrap(e.f(k) + half(kg(e, s)) * dt))
             }
-            0x66..=0x68 => e.set(w::ROT + (code - 0x66) as usize, kg(e, s) * PI),
+            0x66..=0x68 => e.set(w::ROT + (code - 0x66) as usize, half(kg(e, s))),
             0x6b..=0x6d => {
-                let v = e.sf(s + 2) + kg(e, s);
+                let v = e.sf(s + 2) + k0(e, s, f.dayfrac);
                 e.set(w::POS + (code - 0x6b) as usize, v)
             }
             _ => {}
