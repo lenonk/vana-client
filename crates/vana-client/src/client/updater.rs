@@ -20,8 +20,17 @@ pub fn asset_name() -> &'static str {
 pub enum Game {
     Checking,
     Current,
+    /// Out of date (the server's version), the files still being checked.
+    Behind(String),
     Available(crate::patch::Plan),
     Failed(String),
+}
+
+impl Game {
+    /// Offered: out of date, sized or not.
+    pub fn offered(&self) -> bool {
+        matches!(self, Game::Behind(_) | Game::Available(_))
+    }
 }
 
 #[derive(Clone)]
@@ -47,7 +56,7 @@ pub struct Status {
 impl Status {
     /// Something to offer.
     pub fn any(&self) -> bool {
-        matches!(self.game, Game::Available(_)) || matches!(self.client, Client::Available(_))
+        self.game.offered() || matches!(self.client, Client::Available(_))
     }
 }
 
@@ -58,19 +67,27 @@ pub fn start(root: PathBuf) -> Shared {
     let s: Shared = Arc::new(Mutex::new(Status { game: Game::Checking, client: Client::Checking }));
     let g = s.clone();
     std::thread::spawn(move || {
-        let game = match crate::patch::check(&root) {
-            Ok(Some(plan)) if !plan.todo.is_empty() => Game::Available(plan),
-            Ok(_) => Game::Current,
-            Err(e) => {
-                log::warn!("update check: {e:#}");
-                Game::Failed(format!("{e:#}"))
+        // The button shows as soon as the version says so; the file check sizes it afterwards.
+        let game = match crate::patch::behind(&root) {
+            Ok(Some(server)) => {
+                g.lock().unwrap().game = Game::Behind(server.version.clone());
+                match crate::patch::plan_against(&root, server) {
+                    Ok(plan) if !plan.todo.is_empty() => Game::Available(plan),
+                    Ok(_) => Game::Current,
+                    Err(e) => Game::Failed(format!("{e:#}")),
+                }
             }
+            Ok(None) => Game::Current,
+            Err(e) => Game::Failed(format!("{e:#}")),
         };
+        if let Game::Failed(e) = &game {
+            log::warn!("update check: {e}");
+        }
         log::info!("update check: game files {}", match &game {
             Game::Available(p) => format!("{} files to update ({})", p.todo.len(), p.server.version),
             Game::Current => "current".into(),
             Game::Failed(e) => format!("failed: {e}"),
-            Game::Checking => String::new(),
+            Game::Checking | Game::Behind(_) => String::new(),
         });
         g.lock().unwrap().game = game;
     });
@@ -226,14 +243,14 @@ impl UpdateUi {
     pub fn open(status: Shared, root: PathBuf) -> Self {
         let (g, c) = {
             let s = status.lock().unwrap();
-            (matches!(s.game, Game::Available(_)), matches!(s.client, Client::Available(_)))
+            (s.game.offered(), matches!(s.client, Client::Available(_)))
         };
         Self { status, root, pick: [g, c], cursor: if g || c { 2 } else { 3 }, job: None, reloaded: false }
     }
 
     fn available(&self, row: usize) -> bool {
         let s = self.status.lock().unwrap();
-        if row == 0 { matches!(s.game, Game::Available(_)) } else { matches!(s.client, Client::Available(_)) }
+        if row == 0 { s.game.offered() } else { matches!(s.client, Client::Available(_)) }
     }
 
     fn running(&self) -> bool {
@@ -241,17 +258,8 @@ impl UpdateUi {
     }
 
     fn start(&mut self) {
-        let mut s = self.status.lock().unwrap();
-        let plan = if self.pick[0] { std::mem::replace(&mut s.game, Game::Checking) } else { Game::Current };
-        let plan = match plan {
-            Game::Available(p) => Some(p),
-            other => {
-                if self.pick[0] {
-                    s.game = other;
-                }
-                None
-            }
-        };
+        let s = self.status.lock().unwrap();
+        let game = self.pick[0] && s.game.offered();
         let release = match (&s.client, self.pick[1]) {
             (Client::Available(r), true) => Some(r.clone()),
             _ => None,
@@ -265,6 +273,31 @@ impl UpdateUi {
             let mut lines = Vec::new();
             let mut restart = false;
             let result = (|| -> Result<()> {
+                // Asked for before the file check finished: wait for it here.
+                let plan = if game {
+                    loop {
+                        let mut s = status.lock().unwrap();
+                        match std::mem::replace(&mut s.game, Game::Checking) {
+                            Game::Available(p) => break Some(p),
+                            Game::Behind(v) => {
+                                s.game = Game::Behind(v);
+                                drop(s);
+                                set(Progress { label: "Checking game files".into(), done: 0, total: 0, detail: String::new() });
+                                std::thread::sleep(std::time::Duration::from_millis(100));
+                            }
+                            Game::Failed(e) => {
+                                s.game = Game::Failed(e.clone());
+                                bail!("checking the game files: {e}");
+                            }
+                            other => {
+                                s.game = other;
+                                break None;
+                            }
+                        }
+                    }
+                } else {
+                    None
+                };
                 if let Some(plan) = plan {
                     let total_files = plan.todo.len();
                     let total_bytes: u64 = plan.todo.iter().map(|t| t.2).sum();
@@ -479,11 +512,12 @@ impl UpdateUi {
                         "Game files",
                         match &s.game {
                             Game::Available(p) => format!("{} files, {} MB ({})", thousands(p.todo.len() as u64), thousands((p.todo.iter().map(|t| t.2).sum::<u64>() as f64 / 1e6).round() as u64), p.server.version),
+                            Game::Behind(v) => format!("Out of date ({v}), checking files..."),
                             Game::Checking => "Checking...".into(),
                             Game::Current => "Up to date".into(),
                             Game::Failed(_) => "Could not check".into(),
                         },
-                        matches!(s.game, Game::Available(_)),
+                        s.game.offered(),
                     ),
                     (
                         "vana-client",

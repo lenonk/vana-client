@@ -394,14 +394,16 @@ pub fn applied_version(root: &Path) -> Option<String> {
     parse_manifest(&text).ok()?.iter().flat_map(|e| e.versions.iter().map(|v| v.stamp.clone())).max()
 }
 
-/// The start-up check: None when the server's version is the one applied last and its code files are in place
-/// (installs once patched with data files only keep a 2019 FFXiMain.dll), else the plan.
-pub fn check(root: &Path) -> Result<Option<Plan>> {
+/// The start-up check's quick part (one request): the server's version when it is not the one applied last or a
+/// code file is not current (installs once patched with data files only keep a 2019 FFXiMain.dll), else None.
+pub fn behind(root: &Path) -> Result<Option<ServerVersion>> {
     let server = Session::connect()?.version()?;
-    if applied_version(root).as_deref() == Some(server.version.as_str()) && code_current(root) {
-        return Ok(None);
-    }
-    plan_for(root, true, server).map(Some)
+    Ok((applied_version(root).as_deref() != Some(server.version.as_str()) || !code_current(root)).then_some(server))
+}
+
+/// The slow part: every listed file checked against `server`'s manifest.
+pub fn plan_against(root: &Path, server: ServerVersion) -> Result<Plan> {
+    plan_for(root, true, server)
 }
 
 /// Every code file of the stamped manifest matches its current version.
