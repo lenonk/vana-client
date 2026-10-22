@@ -21,9 +21,25 @@ fn volume(i: usize) -> String {
 /// The first-start window's size (fixed; the configured size applies once the game files are in).
 pub const WINDOW: [u32; 2] = [760, 540];
 
-/// No game files where the config says they are.
+/// Left in the game folder while the first start runs: one stopped part-way resumes in this window.
+const MARKER: &str = ".vana-installing";
+
+/// No game files where the config says they are, or a first start that did not finish.
 pub fn needed(ffxi_dir: &Path) -> bool {
-    !ffxi_dir.join("VTABLE.DAT").is_file()
+    !ffxi_dir.join("VTABLE.DAT").is_file() || ffxi_dir.parent().is_some_and(|g| g.join(MARKER).is_file() || g.join(".download").is_dir())
+}
+
+/// What closing the client does to the step under way.
+fn closing_note(phase: &str) -> &'static str {
+    if phase.starts_with("Downloading") {
+        "Closing vana-client stops this; the download resumes next time."
+    } else if phase.starts_with("Unpacking") || phase.starts_with("Installing") {
+        "Closing vana-client stops this; installing starts over next time (the download is kept)."
+    } else if phase.starts_with("Updating") || phase.starts_with("Checking") {
+        "Closing vana-client stops this; the update picks up where it left off next time."
+    } else {
+        ""
+    }
 }
 
 enum Stage {
@@ -180,7 +196,10 @@ impl FirstRun {
                                         ui.label(format!("{:.2} of {:.2} GB", done as f64 / 1e9, total as f64 / 1e9));
                                     }
                                     ui.add_space(8.0);
-                                    ui.label(egui::RichText::new("Closing vana-client stops this; the download resumes next time.").weak());
+                                    let note = closing_note(&p.phase.lock().unwrap());
+                                    if !note.is_empty() {
+                                        ui.label(egui::RichText::new(note).weak());
+                                    }
                                     ctx.request_repaint_after(std::time::Duration::from_millis(250));
                                 }
                                 _ => {
@@ -215,6 +234,7 @@ fn set(p: &Progress, phase: impl Into<String>, done: u64, total: u64) {
 fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
     let dl = game_dir.join(".download");
     std::fs::create_dir_all(&dl).with_context(|| dl.display().to_string())?;
+    std::fs::write(game_dir.join(MARKER), b"")?;
     // Bytes already on disk count toward the bar, so a resumed download starts where it was.
     let mut before = 0u64;
     for i in 1..=VOLUMES {
@@ -227,9 +247,13 @@ fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
         super::updater::download(&format!("{CDN}/{}", volume(i)), &dest, &|d, _| set(p, format!("Downloading from Square Enix (part {i} of {VOLUMES})"), base + d, TOTAL))?;
         before += std::fs::metadata(&dest)?.len();
     }
-    let opts = crate::install::Options { source: dl.join(volume(1)), staging: game_dir.join(".staging"), game_dir: game_dir.to_path_buf(), verify: true, keep_staging: false };
-    crate::install::install(&opts, p.clone())?;
+    // A finished install from an earlier, stopped run is not unpacked again.
     let root = game_dir.join("FINAL FANTASY XI");
+    let installed = root.join("VTABLE.DAT").is_file() && !dl.join(volume(1)).is_file();
+    let opts = crate::install::Options { source: dl.join(volume(1)), staging: game_dir.join(".staging"), game_dir: game_dir.to_path_buf(), verify: true, keep_staging: false };
+    if !installed {
+        crate::install::install(&opts, p.clone())?;
+    }
     set(p, "Checking for game updates", 0, 0);
     let plan = crate::patch::plan(&root, false)?;
     let total: u64 = plan.todo.iter().map(|t| t.2).sum();
@@ -238,6 +262,7 @@ fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
     set(p, "Cleaning up", 0, 0);
     std::fs::remove_dir_all(&dl).with_context(|| format!("removing {}", dl.display()))?;
     let _ = std::fs::remove_dir_all(game_dir.join(".staging"));
+    std::fs::remove_file(game_dir.join(MARKER))?;
     // The window icon on Wayland needs the entry; hidden from menus until the finish page says otherwise.
     if super::desktop::supported()
         && let Err(e) = super::desktop::install(false)
