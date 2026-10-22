@@ -66,6 +66,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Camera while locked on in combat (user, 2026-10-22): it can't be raised / lowered or zoomed. Raising and lowering
   should work (check keys_spec / FUN_1001e030's locked branch); zoom while locked is unconfirmed: check the decomp.
 - Other known gaps:
+  - retail mouse cursors (user, 2026-10-22): the game folder's mousenor.cur (normal), mousehit.ani (over something
+    clickable) and arw_* / oarw_* (edge panning arrows) replace the system pointer; we always show the system arrow;
   - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop draws black
     (on zone 133 too, so older); the top-bar rule FUN_10159080 changed a lot; config 0xab default from the desktop
     size; the gamepad rows (Misc. 4 0xce, the external gamepad tool);

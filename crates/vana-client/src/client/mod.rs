@@ -2816,9 +2816,12 @@ impl App {
             return;
         }
         w.area.loading = true;
+        // A background load like the select scene's: not through spawn, which marks the app busy.
         match self.game_data() {
-            Ok((index, keys)) => self.spawn(move || {
-                Task::AreaLoaded(area, (|| {
+            Ok((index, keys)) => {
+                let tx = self.tasks_tx.clone();
+                std::thread::spawn(move || {
+                    let _ = tx.send(Task::AreaLoaded(area, (|| {
                     let file = index.read(crate::dat::zone::file_id(area as u32))?;
                     let scene = zone::load_scene(&keys, &file)?;
                     let ground = ground::Ground::build(&scene);
@@ -2829,8 +2832,9 @@ impl App {
                         l
                     });
                     Ok((scene, ground, weather, geometry, fx))
-                })())
-            }),
+                    })()));
+                });
+            }
             Err(e) => {
                 log::warn!("event area {area}: {e:#}");
                 if let Phase::World(w) = &mut self.phase {
