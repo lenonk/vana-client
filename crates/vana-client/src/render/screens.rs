@@ -28,7 +28,14 @@ pub struct TitleState {
     /// Not retail: the Update button above Select Character, (selected, enabled); `selected` above is ignored
     /// while it is selected.
     pub update: Option<(bool, bool)>,
+    /// The account's features word from the lobby (FUN_100ed7e0 case 0xf -> *0x103601bc + 0xb4): bits 2..7 are
+    /// mog wardrobes 3..8 (containers 11..16).
+    pub wardrobes: u32,
 }
+
+/// Wardrobe 3..8 icons on the title (FUN_10240030 after the logos): sprites 227 + i at (74 + 21 i, 360) in a
+/// 640 x 480 design (FUN_10160210), scaled (1.7, 1.8) over the 1024 x 768 one; dim 0x50404040 when not available.
+const WARDROBE_ICONS: usize = 227;
 
 /// Design-space shift that centres the logo art (cell 1 of sprite 0 spans x 80..744).
 pub const CENTRE_SHIFT: f32 = 100.0;
@@ -116,6 +123,14 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
     // Retail dims unowned logos (0x5040_4040); we list only what the server enables.
     for (_, &logo) in TITLE_LOGOS.iter().enumerate().filter(|(i, _)| st.owned & (1 << i) != 0) {
         b.push_sprite(lobby, lib, logo as usize, 0.0, 0.0, sx, sy, 0xff80_8080, 0);
+    }
+    if st.buttons {
+        for i in 0..6 {
+            let on = st.wardrobes >> (i + 2) & 1 != 0;
+            let (x, y) = (((74 + 21 * i) as f32 * w / 640.0).trunc(), (360.0 * h / 480.0).trunc());
+            let (tint, blend) = if on { (0xff80_8080, 0) } else { (0x5040_4040, 0x44) };
+            b.push_sprite(lobby, lib, WARDROBE_ICONS + i, x, y, sx * 1.7, sy * 1.8, tint, blend);
+        }
     }
     (b, text)
 }

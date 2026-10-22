@@ -2045,8 +2045,9 @@ impl App {
         let phase = Phase::login(&cfg);
         let installed = crate::dat::installed(&cfg.ffxi_dir());
         let monitor = cfg.monitor.clone();
-        // A test drive never checks for updates.
-        let updates = (drive.login.is_none() && cfg.ffxi_dir().join("VTABLE.DAT").is_file()).then(|| {
+        // A test drive checks for updates only with FFXI_UPDATE_CHECK set.
+        let drive_checks = drive.login.is_none() || std::env::var_os("FFXI_UPDATE_CHECK").is_some();
+        let updates = (drive_checks && cfg.ffxi_dir().join("VTABLE.DAT").is_file()).then(|| {
             updater::tidy();
             updater::start(cfg.ffxi_dir())
         });
@@ -3600,7 +3601,8 @@ impl App {
                             }
                             let child_enabled = CHILD.map(|k| enabled[k]);
                             let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
-                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)));
+                            let wardrobes = lobby.as_ref().map_or(0, |l| l.features);
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes);
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
                                 (None, Some(s), _) => s.help(),
