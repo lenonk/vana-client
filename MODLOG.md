@@ -3254,7 +3254,9 @@ tunnel's lamplight baked into vertex colours over the whole tunnel.
 - Not retail: scenery point lights per pixel (zone.wgsl point_lights from the fragment shader, the placement's slots
   passed flat): the D3D8 term with the distance floored at 1 and a (1 - (d/R)^4)^2 window instead of the hard cut.
   Per-vertex lighting drew triangles of light on the tunnel's coarse walls.
-- Not retail: effect textures with at most 5 alpha levels (DXT1 on / off, DXT3 4-bit) get colour spread two texels
+- Not retail: effect textures dithered between at most 8 alpha levels (DXT1 on / off, DXT3 4-bit; dither = at least
+  15 % of covered texels a local alpha extreme on both axes: retail 30261006_0 light is 64 x 64 DXT3 with 7 levels,
+  20 %; hit sparks under 10 % stay sharp) get colour spread two texels
   into the clear ones and the alpha blurred (3 x 3 box three times) at upload (render/effects.rs soften_alpha); the
   dither between the levels showed as grain at today's resolutions.
 - Left as retail: gin1's baked shell still draws triangles of light (Gouraud over large triangles) and the ltla

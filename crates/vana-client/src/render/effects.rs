@@ -65,9 +65,30 @@ pub fn view_set(v: Mat4) -> [Mat4; 4] {
     [b90, d10, d50, c10]
 }
 
-/// Not retail: an effect texture with only a few alpha levels (DXT1 on / off, DXT3 4-bit; the artists dithered
-/// between them to fake soft edges) gets its colour spread into the clear texels and its alpha blurred, so glows
-/// fade smoothly at today's resolutions. None = leave it as it is.
+/// Dither shows as texels whose alpha is a local extreme along both axes: about 20 % of the covered texels in the
+/// retail lamp glow 'light', under 10 % in hit sparks drawn with hard steps.
+fn dithered(t: &crate::dat::zone::Texture) -> bool {
+    let (w, h) = (t.width as usize, t.height as usize);
+    let a = |x: usize, y: usize| t.rgba[(y * w + x) * 4 + 3] as i32;
+    let (mut covered, mut extreme) = (0usize, 0usize);
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let c = a(x, y);
+            if c == 0 && a(x - 1, y) == 0 && a(x + 1, y) == 0 {
+                continue;
+            }
+            covered += 1;
+            if (c - a(x - 1, y)) * (c - a(x + 1, y)) > 0 && (c - a(x, y - 1)) * (c - a(x, y + 1)) > 0 {
+                extreme += 1;
+            }
+        }
+    }
+    extreme * 100 >= covered * 15
+}
+
+/// Not retail: an effect texture dithered between a few alpha levels (DXT1 on / off, DXT3 4-bit; the artists faked
+/// soft edges that way) gets its colour spread into the clear texels and its alpha blurred, so glows fade smoothly at
+/// today's resolutions. None = leave it as it is.
 pub fn soften_alpha(t: &crate::dat::zone::Texture) -> Option<crate::dat::zone::Texture> {
     let (w, h) = (t.width as usize, t.height as usize);
     if w < 4 || h < 4 || t.rgba.len() < w * h * 4 {
@@ -75,7 +96,7 @@ pub fn soften_alpha(t: &crate::dat::zone::Texture) -> Option<crate::dat::zone::T
     }
     let levels: std::collections::BTreeSet<u8> = t.rgba.chunks(4).map(|p| p[3]).collect();
     let clear = t.rgba.chunks(4).filter(|p| p[3] == 0).count();
-    if levels.len() > 5 || levels.len() < 2 || clear == 0 || clear == w * h {
+    if levels.len() > 8 || levels.len() < 2 || clear == 0 || clear == w * h || !dithered(t) {
         return None;
     }
     let mut px = t.rgba.clone();
