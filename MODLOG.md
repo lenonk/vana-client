@@ -89,6 +89,13 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
 ## Zone session
 - New characters log in inside their intro cutscene (0x00A EventPara != 0); 0x0E7 logout is rejected
   `InEvent` until 0x05B ends it.
+- After view 0x21 (create) the client goes straight in with the new character: LSB fills only its name and ids
+  in the session's list ("We never _see_ the character", login_helpers.cpp createCharacter), so the select screen
+  would show it as race 0 / no job / area unknown *(inf: from LSB, not traced in FFXiMain)*. Ours selects it by name
+  right after the list (2026-10-22: a Mithra MNK from Windurst showed as a Hume male; the DB had race 7, mjob 2).
+- LSB sends a 0-byte datagram when a session has nothing queued (map_networking.cpp send_parse: *buffsize = 0).
+  Ours drops datagrams shorter than the header instead of disconnecting; a new character's first login hit it
+  ("short datagram (0 bytes)") while the server had loaded it into Port Windurst fine.
 - Status byte (LSB `xi::Animation`, data/enums/animation.yaml): 0 none, 1 attack, 2 despawn, 3 death,
   4 event, 5 chocobo, 33 healing (rest, also the logout countdown), 47 sit, 63..73 sitchair, 85 mount.
   POS_HEAD @0x1F in 0x00A/0x00D/0x00E.
@@ -864,8 +871,10 @@ text and the window are in the dialogue entry (modlog_dialog.md); this entry is 
   1 (108, 0, 108), 2 (242, 8100, 108), 3 (179, 7140, 108), 4 (140, 8160, 108), 5 (58, 8160, 108);
   entry 0 = 0x6c. Mode 0 plays the expansion track, fades it over 360 ticks, then loops 108; random and
   fixed stay on their track. The mask (DAT_10444110 + 0x10) is the installed-ROM mask, not the lobby's (traced, see lobycwin).
-- Lobby (FUN_1022ef00): the dancer creator plays the race BGM; creator done (step 7) ->
-  FUN_10036530(0x78 ..), cancelled (-1) -> title music. Race BGM: FUN_10036b40 fades out at race load
+- Lobby (FUN_1022ef00): the dancer creator plays the race BGM; its step DAT_10623a58 reaching 7 (the nation step,
+  ours 6: the same block tears the dancer down, FUN_10246f10) -> FUN_10036530(0x78 ..), cancelled (-1) -> title
+  music. The city choice itself changes no music (files 24..26 have no music op; checked against retail video by
+  the user). Back on the dancer steps the race BGM returns at the next performance wrap (FUN_10036a90). Race BGM: FUN_10036b40 fades out at race load
   without starting; FUN_10036a90 starts it when the performance time wraps (FUN_10245920); 0xa9 on
   the low-poly path. No music call on the select screen (title music continues).
 - Zone music FUN_100926a0 (on 0x00A, then per frame): slots DAT_104735dc[8]: 0..4 = 0x00A MusicNum

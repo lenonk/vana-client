@@ -2163,8 +2163,10 @@ impl App {
         let Some(a) = self.audio.as_mut() else { return };
         let scene = match &self.phase {
             Phase::Login { .. } => MusicScene::Title,
-            Phase::Characters { screen: LobbyScreen::Create, .. } if !self.music_created => MusicScene::Creator,
-            Phase::Characters { screen: LobbyScreen::Create | LobbyScreen::Select, .. } if self.music_created => MusicScene::Created,
+            // FUN_1022ef00: the race BGM until the nation step (its step 7, where the dancer is also torn down).
+            Phase::Characters { screen: LobbyScreen::Create, .. } if !self.music_created && self.creator_step < 6 => MusicScene::Creator,
+            Phase::Characters { screen: LobbyScreen::Create, .. } => MusicScene::Created,
+            Phase::Characters { screen: LobbyScreen::Select, .. } if self.music_created => MusicScene::Created,
             Phase::Characters { .. } => MusicScene::Title,
             Phase::World(_) => MusicScene::World,
         };
@@ -2174,7 +2176,8 @@ impl App {
         if scene != self.music_scene {
             match scene {
                 MusicScene::Title => a.title_music(self.cfg.game.global.get(0xaf), self.installed),
-                // FUN_1022fedb: the creator's last step plays 0x78 through the fade task.
+                // LAB_1022fedb: reaching the nation step plays 0x78 through the fade task; back on the dancer steps
+                // the race BGM returns when the performance wraps (FUN_10036a90).
                 MusicScene::Created => a.change_music(0x78, 0x7f, 0x7f, 0, 0, false),
                 _ => {}
             }
@@ -3621,14 +3624,23 @@ impl App {
                                 if let Some(mut l) = lobby.take() {
                                     // LSB face byte = face * 2 + hair.
                                     let (nm, r, f, sz, j, na) = (new_name.clone(), *race as u8 + 1, *face, *size, *job as u8 + 1, *nation as u8);
-                                    *screen = LobbyScreen::Select;
+                                    // Retail goes straight in with the new character (LSB login_helpers: "We never see the
+                                    // character", so its list entry carries only the name and ids) *(inf: from LSB)*.
+                                    fade_action = true;
                                     action = Some(Box::new(move |app: &mut App| {
                                         app.spawn(move || {
-                                            Task::Lobby((|| {
+                                            let made = (|| -> Result<_> {
                                                 l.create_character(&NewCharacter { name: &nm, race: r, face: f, size: sz, job: j, nation: na })?;
                                                 let chars = l.characters()?;
                                                 Ok((l, chars))
-                                            })())
+                                            })();
+                                            match made {
+                                                Ok((l, chars)) => match chars.iter().find(|c| c.name.eq_ignore_ascii_case(&nm)).cloned() {
+                                                    Some(c) => Task::Selected(l.select(&c)),
+                                                    None => Task::Lobby(Ok((l, chars))),
+                                                },
+                                                Err(e) => Task::Lobby(Err(e)),
+                                            }
                                         })
                                     }));
                                 }

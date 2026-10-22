@@ -167,8 +167,11 @@ impl MapSession {
             Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => return Ok(None),
             Err(e) => return Err(e.into()),
         };
+        // LSB sends an empty datagram when nothing is queued (send_parse sets the size to 0). It carries nothing, so
+        // it counts as no answer: dropped, and the login keeps retrying *(inf: retail drops it)*.
         if n < HEADER + 20 {
-            bail!("short datagram ({n} bytes)");
+            log::debug!("dropped a {n}-byte datagram");
+            return Ok(None);
         }
         self.bytes_in += n as u64;
         let mut dgram = buf[..n].to_vec();
