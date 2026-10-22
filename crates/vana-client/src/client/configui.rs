@@ -180,8 +180,9 @@ const CONF12WI: &[(u16, Ctl)] = &[
     (14, Bit(0x99, 1 << 6, true, Wide)),
 ];
 
-/// Misc. 4 (FUN_10194410): software keyboard 0xc9; Compact only in Japanese.
-const CONF13WI: &[(u16, Ctl)] = &[p3(1, 0xc9, 0), p3(2, 0xc9, 1), p3(3, 0xc9, 2)];
+/// Misc. 4 (FUN_1019bdd0): software keyboard 0xc9 (Compact only in Japanese); 0xce = 1 / 2 / 0, kept only while
+/// FUN_101bced0() > 0 *(inferred: a gamepad count)*, so 1 and 2 are off here.
+const CONF13WI: &[(u16, Ctl)] = &[p3(1, 0xc9, 0), p3(2, 0xc9, 1), p3(3, 0xc9, 2), p3(4, 0xce, 1), p3(5, 0xce, 2), p3(6, 0xce, 0)];
 
 /// confyn: Yes / No, the cursor starting on No (FUN_10115b70(2)).
 const CONFYN: &[(u16, Ctl)] = &[(1, Act(Act::Yes(true))), (2, Act(Act::Yes(false)))];
@@ -206,17 +207,17 @@ pub fn page(name: &str) -> &'static [(u16, Ctl)] {
 fn disabled(name: &str, child: u16, sw: f32) -> bool {
     match name {
         // Compact software keyboard: Japanese only (FUN_10194460).
-        "conf13wi" => child == 3,
+        "conf13wi" => matches!(child, 3..=5),
         // Macro palette size: below 1024 wide the full palette does not fit (FUN_10193e50, simplified).
         "conf6win" => child == 12 && sw < 1024.0,
         _ => false,
     }
 }
 
-/// lobycwin's title tracks 7..11 need their expansion installed (FUN_10195ef0 / FUN_1023ae80: bits 0, 2, 3, 4, 11).
+/// lobycwin's title tracks 7..12 need their expansion installed (FUN_102455a0: bits 0, 2, 3, 4, 11, 0).
 fn unowned(name: &str, child: u16, owned: u32) -> bool {
-    const BITS: [u32; 5] = [0, 2, 3, 4, 11];
-    name == "lobycwin" && (7..=11).contains(&child) && owned & (1 << BITS[child as usize - 7]) == 0
+    const BITS: [u32; 6] = [0, 2, 3, 4, 11, 0];
+    name == "lobycwin" && (7..=12).contains(&child) && owned & (1 << BITS[child as usize - 7]) == 0
 }
 
 /// "(4:3)" .. "(5:4)" for 0x43 (FUN_10002cc0, 0x103443f0).

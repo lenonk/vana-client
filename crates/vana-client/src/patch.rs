@@ -364,7 +364,8 @@ pub fn decide(e: &Entry, local: Option<Sig>) -> (Action, u64) {
     if bytes < cur.direct.1 { (Action::Deltas(i + 1), bytes) } else { whole }
 }
 
-/// Executables and libraries: ours reads FFXiMain.dll at decompiled addresses, so they stay unless asked.
+/// Executables and libraries. The client reads its tables out of the current FFXiMain.dll, so they are patched too
+/// unless asked not to.
 pub fn is_code(path: &str) -> bool {
     let p = path.to_ascii_lowercase();
     p.ends_with(".dll") || p.ends_with(".exe")
@@ -393,13 +394,20 @@ pub fn applied_version(root: &Path) -> Option<String> {
     parse_manifest(&text).ok()?.iter().flat_map(|e| e.versions.iter().map(|v| v.stamp.clone())).max()
 }
 
-/// The start-up check: None when the server's version is the one applied last, else the plan.
+/// The start-up check: None when the server's version is the one applied last and its code files are in place
+/// (installs once patched with data files only keep a 2019 FFXiMain.dll), else the plan.
 pub fn check(root: &Path) -> Result<Option<Plan>> {
     let server = Session::connect()?.version()?;
-    if applied_version(root).as_deref() == Some(server.version.as_str()) {
+    if applied_version(root).as_deref() == Some(server.version.as_str()) && code_current(root) {
         return Ok(None);
     }
-    plan_for(root, false, server).map(Some)
+    plan_for(root, true, server).map(Some)
+}
+
+/// Every code file of the stamped manifest matches its current version.
+fn code_current(root: &Path) -> bool {
+    let Some(entries) = std::fs::read_to_string(root.join(STAMP_FILE)).ok().and_then(|t| parse_manifest(&t).ok()) else { return false };
+    entries.iter().filter(|e| is_code(&e.path)).all(|e| sig_of_path(&root.join(&e.path)).ok().flatten().is_some_and(|l| decide(e, Some(l)).0 == Action::Current))
 }
 
 /// Asks the server for its version and manifest and checks every listed file under `root` (in parallel).

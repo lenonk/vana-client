@@ -4,9 +4,9 @@
 
 use winit::keyboard::KeyCode;
 
-/// Key function ids 0x00..0xb3.
-pub const IDS: usize = 0xb4;
-const K2_ROWS: usize = 28;
+/// Key function ids 0x00..0xba (0xb7..0xba test a second pad word, inferred: the gamepad).
+pub const IDS: usize = 0xbb;
+const K2_ROWS: usize = 29;
 /// Key repeat (input +0x94 = 16, FUN_10005210): past 16 ticks held it fires and drops back to 14. Counted in
 /// retail frames of 2 ticks, as retail ran.
 const REPEAT_DELAY: f32 = 16.0;

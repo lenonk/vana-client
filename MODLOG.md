@@ -3334,3 +3334,34 @@ checked against our own decompile *(inferred until then: unpack polcore.dll 1.18
 - Title loby2win draw is retail FUN_10240030 (2019 FUN_10235810). It still formats "- %d" / ",  %d" with the
   year (0x1038869c / 0x10388694) but no longer draws the digit sprites; the art reads "(c) SQUARE ENIX" with no
   year. Button sprites (0x103885a4 / ac) and logos (0x103885b8) are unchanged.
+
+## Tables copied from FFXiMain, ported to 30261006_0 (2026-10-22)
+
+Functions matched across the two decompiles (17,194 pairs), data addresses taken from matched instructions,
+tables compared over their full length with pointers resolved (lab/current/tables_port/). The current decompile
+needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in all).
+- Group 0xb (client messages) gained labels: 2019 id -> current: below 6 same, 6..=39 +2, 40..=123 +4, 124.. +5.
+  Groups 1, 7, 8, 9, 0xa, 0xd, 0xe, 0x1b unshifted; 0xc +1 from 0x7a.
+- Log window tabs (FUN_10138800, list built by FUN_10138700 in .data 0x1036f940): 11 sprite pairs at 0x10333b4c;
+  pairs 7 / 8 are filters 9 / 10 (Assist J / E, inferred from /assistj 9, /assiste 10 in the channel table
+  0x10355588), drawn 7 then 8 only in Japanese.
+- cfilter 0x10379a28, 55 rows: no mask bit 51 (was 49), no hold bit 11 (was 9), system level r - 51. New rows mask
+  bits 49 / 50, hold bits 9 / 10. conf11s 0x10379ef8..: window-mask bits 12 / 13. Font Colors 0x10379b50..: 13
+  rows in category 0, new config ids 0xcb / 0xcc. k1assign 0x1037a128 (labels only), k2assign 0x1037a218: 29 rows,
+  row 28 = key function 0xb4, config 0x86, default DIK 0x10. fxfilter labels from 153; yes/no text 0x8f.
+- Misc. 4 (FUN_1019bdd0): children 4 / 5 / 6 set 0xce = 1 / 2 / 0, 1 and 2 kept only while FUN_101bced0() > 0
+  (inferred: a gamepad count). configwi row 13 and lobycwin child 13 start the external gamepad config tool
+  (FUN_101bcb60): not done.
+- Title music: SEQUENCE 0x10351718 adds (34, 7740, 108); FUN_102455a0 adds (bit 0, entry 6); TITLE_MODE 0x1033cc48
+  8 entries. FUN_100377a0: newest = pick 5, random = timeGetTime % 6. lobycwin child 12 = track 7.
+- Chat: /assistj /aj /assiste /ae (list 0x1037ade8), 0x0B5 kinds 0x22 / 0x23 (FUN_10078be0 / FUN_10078d80; the name
+  to handler link inferred from the handler table 0x10356e34 order).
+- PC model slot ranges (pointers 0x1035f378, FUN_100d2f60): 48-byte records, 6 ranges; armour gained 64 models, main
+  / sub a 300-model range. Item ranges (0x10372150): new 0x7800..0x7c00, General reader, files 55555 / 55675.
+- Key functions: 0xbb (callbacks 0x1036db18); 0xb7..0xba test a second pad word (inferred: gamepad).
+- Config ids (FUN_10195460): 202; new 0xcb..0xce; defaults changed for 0x0f, 0x13, 0x33 (0x1800), 0x47, 0x86, 0x8b,
+  0x8c, 0x8f, 0xb7, 0xc0, 0xc2, 0xc3; 0xaf max 8; 0xab default computed from the desktop size (inferred; kept 0).
+- Unchanged: motion, effect, audio (atrac3, mixer), dancer, inventory, map, HUD, weather, title buttons and logos,
+  message group -> slot table (0x10371da8), name vtables, language tables.
+- The updater now patches code files too; the start-up check also compares code files against the stamped
+  manifest, so installs patched data-only get the current FFXiMain.

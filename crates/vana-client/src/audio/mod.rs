@@ -30,12 +30,12 @@ pub enum Ui {
     Open = 14,
 }
 
-/// Music after an expansion's title track: {track, ticks before the switch, next} (FFXiMain 0x10346580).
-const SEQUENCE: [(u32, i32, u32); 6] = [(0, 0, 0), (108, 0, 108), (242, 8100, 108), (179, 7140, 108), (140, 8160, 108), (58, 8160, 108)];
-/// Title track choice n -> (installed-mask bit, sequence entry) (FUN_1023ae80).
-const TITLE_PICK: [(u32, usize); 5] = [(0, 1), (2, 2), (3, 3), (4, 4), (11, 5)];
-/// Title music option 0xaf -> (mode, n) (FFXiMain 0x10331ed8): mode 0 newest installed, 1 track n, 2 random.
-const TITLE_MODE: [(u8, u32); 7] = [(0, 0), (2, 0), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4)];
+/// Music after an expansion's title track: {track, ticks before the switch, next} (FFXiMain 0x10351718).
+const SEQUENCE: [(u32, i32, u32); 7] = [(0, 0, 0), (108, 0, 108), (242, 8100, 108), (179, 7140, 108), (140, 8160, 108), (58, 8160, 108), (34, 7740, 108)];
+/// Title track choice n -> (installed-mask bit, sequence entry) (FUN_102455a0).
+const TITLE_PICK: [(u32, usize); 6] = [(0, 1), (2, 2), (3, 3), (4, 4), (11, 5), (0, 6)];
+/// Title music option 0xaf -> (mode, n) (FFXiMain 0x1033cc48): mode 0 newest installed, 1 track n, 2 random.
+const TITLE_MODE: [(u8, u32); 8] = [(0, 0), (2, 0), (1, 0), (1, 1), (1, 2), (1, 3), (1, 4), (1, 5)];
 pub const TITLE_DEFAULT: u32 = 0x6c;
 
 /// The music change task: fade out, stop, start, optionally switch to a follow-up track.
@@ -340,13 +340,13 @@ enum Req {
     Voice { id: u32, level: u8, pan: u8, handle: u32 },
 }
 
-/// FUN_10036980's choice: (track, sequence entry, no follow-up) for option 0xaf;  stands for timeGetTime.
+/// FUN_100377a0's choice: (track, sequence entry, no follow-up) for option 0xaf;  stands for timeGetTime.
 pub fn title_choice(option: u32, installed: u32, t: u32) -> (u32, usize, bool) {
     let (mode, n) = TITLE_MODE.get(option as usize).copied().unwrap_or((0, 0));
     let (mut n, single) = match mode {
-        0 => (4i32, false),
+        0 => (TITLE_PICK.len() as i32 - 1, false),
         1 => (n as i32, true),
-        2 => ((t % 5) as i32, true),
+        2 => ((t % TITLE_PICK.len() as u32) as i32, true),
         _ => (0, false),
     };
     // An expansion not installed falls back to the next older one.
@@ -497,17 +497,17 @@ mod tests {
         assert_eq!(crate::dat::installed_mask(|n| n <= 8), 0x7ff);
         assert_eq!(crate::dat::installed_mask(|n| n == 6 || n == 9), 0x801);
         let pick = |o, m| title_choice(o, m, 0);
-        // Newest: Seekers' 58 then 108; fixed 1..5 = 108, 242, 179, 140, 58.
-        assert_eq!(pick(0, all), (58, 5, false));
-        assert_eq!([2, 3, 4, 5, 6].map(|o| pick(o, all).0), [108, 242, 179, 140, 58]);
-        assert!([2, 3, 4, 5, 6].iter().all(|&o| pick(o, all).2));
-        // Random: timeGetTime % 5, falling back below a missing one.
-        assert_eq!((0..5).map(|t| title_choice(1, all, t).0).collect::<Vec<_>>(), [108, 242, 179, 140, 58]);
+        // Newest: track 34 (base game, entry 6) then 108; fixed 1..6 = 108, 242, 179, 140, 58, 34.
+        assert_eq!(pick(0, all), (34, 6, false));
+        assert_eq!([2, 3, 4, 5, 6, 7].map(|o| pick(o, all).0), [108, 242, 179, 140, 58, 34]);
+        assert!([2, 3, 4, 5, 6, 7].iter().all(|&o| pick(o, all).2));
+        // Random: timeGetTime % 6, falling back below a missing one.
+        assert_eq!((0..6).map(|t| title_choice(1, all, t).0).collect::<Vec<_>>(), [108, 242, 179, 140, 58, 34]);
         assert_eq!(title_choice(1, 0x7ff, 4).0, 140);
-        // Without ROM9 newest and 5 fall back to 140; base only plays 108.
-        assert_eq!(pick(0, 0x7ff), (140, 4, false));
+        // Without ROM9 Seekers' 58 falls back to 140; newest still needs only the base game.
+        assert_eq!(pick(0, 0x7ff), (34, 6, false));
         assert_eq!(pick(6, 0x7ff).0, 140);
-        assert_eq!(pick(0, 1), (108, 1, false));
+        assert_eq!(pick(0, 1), (34, 6, false));
     }
 
     #[test]

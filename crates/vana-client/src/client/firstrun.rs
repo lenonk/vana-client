@@ -255,7 +255,7 @@ fn run(game_dir: &Path, p: &Arc<Progress>) -> Result<()> {
         crate::install::install(&opts, p.clone())?;
     }
     set(p, "Checking for game updates", 0, 0);
-    let plan = crate::patch::plan(&root, false)?;
+    let plan = crate::patch::plan(&root, true)?;
     let total: u64 = plan.todo.iter().map(|t| t.2).sum();
     let n = plan.todo.len();
     crate::patch::apply(&root, &plan, 4, &|f, b| set(p, format!("Updating game files ({f} of {n})"), b, total))?;

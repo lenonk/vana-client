@@ -65,7 +65,7 @@ pub enum Kind {
 }
 
 /// (first id, end id, kind, file per language ja/en/de/fr), from DAT_103662e8 and the language tables.
-pub const RANGES: [(u32, u32, Kind, [u32; 4]); 17] = [
+pub const RANGES: [(u32, u32, Kind, [u32; 4]); 18] = [
     (0x0000, 0x1000, Kind::General, [4, 73, 55815, 56235]),
     (0x2200, 0x2800, Kind::General, [55551, 55671, 55791, 56211]),
     (0x1000, 0x2000, Kind::Usable, [5, 74, 55816, 56236]),
@@ -75,6 +75,7 @@ pub const RANGES: [(u32, u32, Kind, [u32; 4]); 17] = [
     (0x4000, 0x5a00, Kind::Weapon, [6, 75, 55817, 56237]),
     (0x7000, 0x7400, Kind::K7000, [55547, 55667, 55787, 56207]),
     (0x7400, 0x7800, Kind::K7400, [55550, 55670, 55790, 56210]),
+    (0x7800, 0x7c00, Kind::General, [55555, 55675, 55675, 55675]),
     (0xe000, 0xeff8, Kind::Objective, [55552, 55672, 55792, 56212]),
     (0xeff8, 0xf000, Kind::Keff8, [95, 95, 95, 95]),
     (0xf000, 0xf200, Kind::Monster, [55549, 55669, 55789, 56209]),

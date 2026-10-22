@@ -75,14 +75,14 @@ enum Cmd {
         keep_staging: bool,
     },
     /// Bring the game files up to the current retail version from the PlayOnline patch server (no login).
-    /// Data files only unless --code (this client reads FFXiMain.dll at decompiled addresses).
+    /// Data and code files (the client reads its tables out of the current FFXiMain.dll).
     Update {
         /// Ask the server and check the files, but download nothing.
         #[arg(long)]
         dry_run: bool,
-        /// Also update executables and libraries.
+        /// Leave executables and libraries as they are.
         #[arg(long)]
-        code: bool,
+        data_only: bool,
         /// Patch-server connections at once (1..6).
         #[arg(long, default_value_t = 4)]
         connections: usize,
@@ -832,7 +832,7 @@ fn main() -> Result<()> {
             let drive = client::Drive { login, character, walk_secs: walk, goto, screenshot, screenshot_after: after, quit, input, chase, ..Default::default() };
             client::run(config::Config::load(), drive)
         }
-        Cmd::Update { dry_run, code, connections, file, to } => {
+        Cmd::Update { dry_run, data_only, connections, file, to } => {
             if let Some(f) = file {
                 let dir = to.unwrap_or_else(|| PathBuf::from("."));
                 let (out, stamp) = patch::fetch_one(&f, &dir)?;
@@ -841,7 +841,7 @@ fn main() -> Result<()> {
             }
             let root = config::Config::load().ffxi_dir();
             println!("checking {} against {}:{} ...", root.display(), patch::HOST, patch::PORT);
-            let plan = patch::plan(&root, code)?;
+            let plan = patch::plan(&root, !data_only)?;
             let local = std::fs::read_to_string(root.join(patch::STAMP_FILE)).ok().and_then(|t| patch::parse_manifest(&t).ok()).and_then(|m| m.iter().flat_map(|e| e.versions.iter().map(|v| v.stamp.clone())).max());
             let bytes: u64 = plan.todo.iter().map(|t| t.2).sum();
             println!("server version {} ({}), last applied here {}", plan.server.version, plan.server.label, local.as_deref().unwrap_or("none"));

@@ -237,11 +237,12 @@ impl LogWin {
         // from FUN_10133430's highlight rect).
         let yb = bottom + 16.0 * (fl.row as f32 - lines as f32);
         gu.cursor(x0 + 3.0, yb - 15.0);
-        // Tabs (FUN_10133c40, table 0x1032867c): fep sprites, unselected A[2s] / selected A[2s + 1]; the
-        // filter-8 tab (slot 1) only with config 0xb4 (a second log window). Filter 0 (all) is selected.
-        const A: [usize; 18] = [0x12, 0x1b, 0x13, 0x1c, 0x0a, 0x14, 0x0c, 0x16, 0x0d, 0x17, 0x0e, 0x18, 0x10, 0x19, 0x11, 0x1a, 0x0b, 0x15];
+        // Tabs (FUN_10138800; list built by FUN_10138700): fep sprite pairs 0x10333b4c, unselected A[2s] / selected
+        // A[2s + 1]; the filter-8 tab (pair 1) only with config 0xb4 (a second log window). Pairs 7 / 8 are the
+        // Assist J / E filters 9 / 10, in that order only in Japanese. Filter 0 (all) is selected.
+        const A: [usize; 22] = [0x12, 0x1b, 0x13, 0x1c, 0x0a, 0x14, 0x0c, 0x16, 0x0d, 0x17, 0x0e, 0x18, 0x10, 0x19, 0x1d, 0x1f, 0x1e, 0x20, 0x11, 0x1a, 0x0b, 0x15];
         let mut x = x0;
-        for slot in [0usize, 1, 2, 3, 4, 5, 6, 7, 8].into_iter().filter(|&s| s != 1 || second) {
+        for slot in [0usize, 1, 2, 3, 4, 5, 6, 8, 7, 9, 10].into_iter().filter(|&s| s != 1 || second) {
             let on = slot == 0;
             let k = A[2 * slot + on as usize];
             gu.sprite("menu    fep", k, x, y0 - 9.0, 0x8080_8080);

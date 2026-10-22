@@ -443,7 +443,8 @@ fn play_fx_sound(a: &mut crate::audio::Audio, c: crate::fx::sound::SoundCmd) {
     }
 }
 
-/// 0x0B5 kind for a channel command (the 0x1036ec68 list plus /yell).
+/// 0x0B5 kind for a channel command (the 0x1037ade8 list plus /yell). Assist J / E: handlers FUN_10078be0 /
+/// FUN_10078d80 send 0x22 / 0x23 *(the name to handler link inferred from the handler table order)*.
 fn chat_channel(cmd: &str) -> Option<u8> {
     Some(match cmd {
         "/say" | "/s" => 0,
@@ -453,6 +454,8 @@ fn chat_channel(cmd: &str) -> Option<u8> {
         "/yell" | "/y" => 0x1a,
         "/linkshell2" | "/l2" => 0x1b,
         "/unity" | "/u" => 0x21,
+        "/assistj" | "/aj" => 0x22,
+        "/assiste" | "/ae" => 0x23,
         _ => return None,
     })
 }

@@ -68,13 +68,14 @@ const LOBYCWIN: &[(u16, Ctl)] = &[
     (9, Pick(0xaf, 4, Mark::Icon)),
     (10, Pick(0xaf, 5, Mark::Icon)),
     (11, Pick(0xaf, 6, Mark::Icon)),
+    (12, Pick(0xaf, 7, Mark::Icon)),
     (6, Pick(0xaf, 1, Mark::Icon)),
 ];
 
 /// List pages: rows 1..14 are scrolled; Enter acts on scroll + row - 1.
 const LIST_ROWS: &[(u16, Ctl)] = &[(1, Act(Act::Custom(0))), (2, Act(Act::Custom(0))), (3, Act(Act::Custom(0))), (4, Act(Act::Custom(0))), (5, Act(Act::Custom(0))), (6, Act(Act::Custom(0))), (7, Act(Act::Custom(0))), (8, Act(Act::Custom(0))), (9, Act(Act::Custom(0))), (10, Act(Act::Custom(0))), (11, Act(Act::Custom(0))), (12, Act(Act::Custom(0))), (13, Act(Act::Custom(0))), (14, Act(Act::Custom(0)))];
-/// textcol1: up to 11 category rows.
-const TEXTCOL1: &[(u16, Ctl)] = &[(1, Act(Act::Custom(0))), (2, Act(Act::Custom(0))), (3, Act(Act::Custom(0))), (4, Act(Act::Custom(0))), (5, Act(Act::Custom(0))), (6, Act(Act::Custom(0))), (7, Act(Act::Custom(0))), (8, Act(Act::Custom(0))), (9, Act(Act::Custom(0))), (10, Act(Act::Custom(0))), (11, Act(Act::Custom(0)))];
+/// textcol1: up to 13 category rows.
+const TEXTCOL1: &[(u16, Ctl)] = &[(1, Act(Act::Custom(0))), (2, Act(Act::Custom(0))), (3, Act(Act::Custom(0))), (4, Act(Act::Custom(0))), (5, Act(Act::Custom(0))), (6, Act(Act::Custom(0))), (7, Act(Act::Custom(0))), (8, Act(Act::Custom(0))), (9, Act(Act::Custom(0))), (10, Act(Act::Custom(0))), (11, Act(Act::Custom(0))), (12, Act(Act::Custom(0))), (13, Act(Act::Custom(0)))];
 
 pub fn page(name: &str) -> &'static [(u16, Ctl)] {
     match name {
@@ -98,32 +99,39 @@ fn is_list(name: &str) -> bool {
     matches!(name, "cfilter" | "fxfilter" | "conf11s" | "k1assign" | "k2assign")
 }
 
-/// cfilter rows (0x1036d9c8): (a, b, label in group 0xb). a = mask bit (< 30: 0x32, else 0x33 bit a - 30) or 49
-/// ('1': no mask bit); b = hold bit of 0x34, 9 = none, < 0 = system level of 0x35.
-pub const CFILTER: [(i8, i8, u16); 53] = [
-    (0, 0, 0), (49, 2, 2), (49, 3, 3), (49, 4, 4), (49, 8, 5), (49, 7, 6), (3, 5, 7), (1, 1, 1), (46, 9, 190), (4, 9, 9), (5, 9, 10), (6, 9, 11),
-    (7, 9, 12), (8, 9, 13), (9, 9, 14), (23, 9, 28), (13, 9, 18), (14, 9, 19), (15, 9, 20), (16, 9, 21), (17, 9, 22), (24, 9, 29), (18, 9, 23),
-    (19, 9, 24), (20, 9, 25), (21, 9, 26), (22, 9, 27), (39, 9, 172), (38, 9, 173), (34, 9, 174), (35, 9, 175), (36, 9, 176), (37, 9, 177),
-    (33, 9, 166), (32, 9, 167), (28, 9, 168), (29, 9, 169), (30, 9, 170), (31, 9, 171), (25, 9, 30), (10, 9, 15), (11, 9, 16), (12, 9, 17),
-    (26, 9, 84), (27, 9, 139), (40, 9, 186), (41, 9, 187), (42, 9, 188), (45, 9, 189), (47, 6, 8), (49, -1, 31), (49, -2, 32), (49, -3, 33),
+/// cfilter rows (0x10379a28; FUN_10197f50 counts 0x37): (a, b, label in group 0xb). a = mask bit (< 30: 0x32, else
+/// 0x33 bit a - 30) or NO_MASK; b = hold bit of 0x34, NO_HOLD = none, < 0 = system level of 0x35. Rows 5 / 6 are the
+/// Assist J / E channels *(inferred from their labels)*.
+pub const CFILTER: [(i8, i8, u16); 55] = [
+    (0, 0, 0), (51, 2, 2), (51, 3, 3), (51, 4, 4), (51, 8, 5), (49, 9, 6), (50, 10, 7), (51, 7, 8), (3, 5, 9), (1, 1, 1),
+    (46, 11, 195), (4, 11, 11), (5, 11, 12), (6, 11, 13), (7, 11, 14), (8, 11, 15), (9, 11, 16), (23, 11, 30), (13, 11, 20),
+    (14, 11, 21), (15, 11, 22), (16, 11, 23), (17, 11, 24), (24, 11, 31), (18, 11, 25), (19, 11, 26), (20, 11, 27), (21, 11, 28),
+    (22, 11, 29), (39, 11, 177), (38, 11, 178), (34, 11, 179), (35, 11, 180), (36, 11, 181), (37, 11, 182), (33, 11, 171),
+    (32, 11, 172), (28, 11, 173), (29, 11, 174), (30, 11, 175), (31, 11, 176), (25, 11, 32), (10, 11, 17), (11, 11, 18),
+    (12, 11, 19), (26, 11, 88), (27, 11, 144), (40, 11, 191), (41, 11, 192), (42, 11, 193), (45, 11, 194), (47, 6, 10),
+    (51, -1, 33), (51, -2, 34), (51, -3, 35),
 ];
-/// conf11s categories (0x1036de00 / de70 / dee0 / df50): (label, bit of the window's 64-bit mask).
+/// cfilter: '3', no mask bit; no hold bit (FUN_10198080 / FUN_10198240).
+const NO_MASK: i8 = 51;
+const NO_HOLD: i8 = 11;
+/// conf11s categories (0x10379ef8 / f68 / fd8 / 0x1037a048): (label, bit of the window's 64-bit mask).
 const LOG_ROWS: [&[(u16, u8)]; 4] = [
-    &[(34, 0), (36, 1), (37, 2), (38, 3), (39, 4), (40, 6), (41, 7), (42, 8), (43, 9), (35, 10), (191, 11)],
-    &[(44, 33), (45, 34), (46, 35), (47, 36), (48, 37), (49, 38)],
-    &[(50, 39), (51, 40), (52, 41), (53, 42), (54, 43), (55, 44)],
-    &[(197, 45), (198, 46), (58, 47)],
+    &[(36, 0), (38, 1), (39, 2), (40, 3), (41, 4), (42, 12), (43, 13), (44, 6), (45, 7), (46, 8), (47, 9), (37, 10), (196, 11)],
+    &[(48, 33), (49, 34), (50, 35), (51, 36), (52, 37), (53, 38)],
+    &[(54, 39), (55, 40), (56, 41), (57, 42), (58, 43), (59, 44)],
+    &[(202, 45), (203, 46), (62, 47)],
 ];
-/// Font Colors categories (0x1036dae8 / dba8 / dc68 / dd28): (label, sample, config id), all group 0xb.
+/// Font Colors categories (0x10379b50 / c30 / d10 / df0): (label, sample, config id), all group 0xb.
 const COLOUR_ROWS: [&[(u16, u16, u16)]; 4] = [
-    &[(0x22, 0x3b, 0x1b), (0x24, 0x3d, 0x1d), (0x25, 0x3e, 0x1e), (0x26, 0x3f, 0x1f), (0x27, 0x40, 0xb3), (0x28, 0x41, 0xb0), (0x29, 0x42, 0x20), (0x2a, 0x43, 0x21), (0x2b, 0x44, 0x22), (0x23, 0x3c, 0x1c), (0xbf, 0xc0, 0x9b)],
-    &[(0x2c, 0x45, 0x23), (0x2d, 0x46, 0x24), (0x2e, 0x47, 0x25), (0x2f, 0x48, 0x26), (0x30, 0x49, 0x27), (0x31, 0x4a, 0x28)],
-    &[(0x32, 0x4b, 0x29), (0x33, 0x4c, 0x2a), (0x34, 0x4d, 0x2b), (0x35, 0x4e, 0x2c), (0x36, 0x4f, 0x2d), (0x37, 0x50, 0x2e)],
-    &[(0x38, 0x51, 0x2f), (0x39, 0x52, 0x30), (0x3a, 0x53, 0x31)],
+    &[(0x24, 0x3f, 0x1b), (0x26, 0x41, 0x1d), (0x27, 0x42, 0x1e), (0x28, 0x43, 0x1f), (0x29, 0x44, 0xb3), (0x2a, 0xcc, 0xcb), (0x2b, 0xcd, 0xcc), (0x2c, 0x45, 0xb0), (0x2d, 0x46, 0x20), (0x2e, 0x47, 0x21), (0x2f, 0x48, 0x22), (0x25, 0x40, 0x1c), (0xc4, 0xc5, 0x9b)],
+    &[(0x30, 0x49, 0x23), (0x31, 0x4a, 0x24), (0x32, 0x4b, 0x25), (0x33, 0x4c, 0x26), (0x34, 0x4d, 0x27), (0x35, 0x4e, 0x28)],
+    &[(0x36, 0x4f, 0x29), (0x37, 0x50, 0x2a), (0x38, 0x51, 0x2b), (0x39, 0x52, 0x2c), (0x3a, 0x53, 0x2d), (0x3b, 0x54, 0x2e)],
+    &[(0x3c, 0x55, 0x2f), (0x3d, 0x56, 0x30), (0x3e, 0x57, 0x31)],
 ];
-/// k1assign labels (0x1036e030; rows 28 / 29 Turn Right / Left only with keyboard type 2) and k2assign (0x1036e120).
-const K1_LABELS: [u16; 30] = [85, 86, 88, 87, 97, 98, 100, 99, 89, 90, 92, 91, 132, 131, 93, 94, 96, 95, 101, 102, 103, 104, 105, 106, 107, 133, 137, 136, 193, 194];
-const K2_LABELS: [u16; 28] = [108, 109, 110, 111, 112, 128, 129, 130, 135, 134, 137, 136, 133, 132, 131, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 125, 124, 123];
+/// k1assign labels (0x1037a128; rows 28 / 29 Turn Right / Left only with keyboard type 2) and k2assign (0x1037a218;
+/// row 28 is key function 0xb4, config 0x86).
+const K1_LABELS: [u16; 30] = [89, 90, 92, 91, 101, 102, 104, 103, 93, 94, 96, 95, 137, 136, 97, 98, 100, 99, 105, 106, 107, 108, 109, 110, 111, 138, 142, 141, 198, 199];
+const K2_LABELS: [u16; 29] = [112, 113, 114, 115, 116, 133, 134, 135, 140, 139, 142, 141, 138, 137, 136, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 130, 129, 127, 128];
 
 /// DIK scan codes: the character a key shows (FUN_101a7c20) and the egui key that makes it.
 const DIK: &[(u8, &str, egui::Key)] = {
@@ -170,7 +178,7 @@ fn rows(ui: &ConfigUi, v: &Values, name: &str) -> usize {
         "k1assign" => {
             if v.get(0x42) == 2 { 30 } else { 28 }
         }
-        "k2assign" => 28,
+        "k2assign" => 29,
         "textcol1" => COLOUR_ROWS[ui.extra.cat.min(3)].len(),
         _ => 0,
     }
@@ -221,9 +229,9 @@ fn cfilter_state(v: &Values, r: usize) -> usize {
     if b < 0 {
         return if v.get_i(0x35) >= -b as i32 { 88 } else { 89 };
     }
-    let hold = b != 9 && v.get(0x34) & (1 << b) != 0;
+    let hold = b != NO_HOLD && v.get(0x34) & (1 << b) != 0;
     let icon = b == 2 && v.get(0x47) != 0;
-    if a != 49 && mask_bit(v, a as u32) {
+    if a != NO_MASK && mask_bit(v, a as u32) {
         88
     } else if hold {
         if icon { 137 } else { 83 }
@@ -238,15 +246,15 @@ fn cfilter_state(v: &Values, r: usize) -> usize {
 fn cfilter_toggle(v: &mut Values, out: &mut Out, r: usize) {
     let (a, b, _) = CFILTER[r];
     if b < 0 {
-        let lv = (r as i32 - 49).clamp(1, 3);
+        let lv = (r as i32 - NO_MASK as i32).clamp(1, 3);
         let nv = if v.get_i(0x35) < lv { lv } else { lv - 1 };
         if v.set(0x35, nv as u32) {
             out.changed.push(0x35);
         }
         return;
     }
-    let hold = b != 9 && v.get(0x34) & (1 << b) != 0;
-    if a == 49 {
+    let hold = b != NO_HOLD && v.get(0x34) & (1 << b) != 0;
+    if a == NO_MASK {
         // OFF <-> Hold; Tell: OFF -> Hold -> OFF + icon -> Hold + icon -> OFF.
         if b == 2 {
             let icon = v.get(0x47) != 0;
@@ -264,7 +272,7 @@ fn cfilter_toggle(v: &mut Values, out: &mut Out, r: usize) {
         return;
     }
     let on = mask_bit(v, a as u32);
-    if b == 9 {
+    if b == NO_HOLD {
         set_mask(v, out, a as u32, !on);
     } else if on {
         // ON -> Hold.
@@ -308,7 +316,7 @@ fn row_toggle(ui: &mut ConfigUi, v: &mut Values, name: &str, r: usize, out: &mut
 /// by one row only. k2assign refuses the digits. Returns false for keys that are not assignable.
 fn assign(v: &mut Values, out: &mut Out, name: &str, row: usize, key: egui::Key) -> bool {
     let Some(code) = dik_of(key) else { return false };
-    let (base, n) = if name == "k1assign" { (0x4a, 30) } else { (0x6a, 28) };
+    let (base, n) = if name == "k1assign" { (0x4a, 30) } else { (0x6a, 29) };
     if name == "k2assign" && (0x02..=0x0b).contains(&code) {
         out.sounds.push(Se::Error);
         return true;
@@ -540,7 +548,7 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
                     }
                     "fxfilter" => {
                         gu.sprite("menu    framesus", if v.get(0x92) & (1 << r) != 0 { 88 } else { 89 }, cx, cy, 0x8080_8080);
-                        text_b(gu, 148 + r as u16, cx + 33.0, cy, white);
+                        text_b(gu, 153 + r as u16, cx + 33.0, cy, white);
                     }
                     "conf11s" => {
                         let (label, bit) = LOG_ROWS[ui.extra.cat.min(3)][r];
@@ -629,7 +637,7 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
             draw_page(ui, w, top, gu, v, sw, sh);
             // FUN_102075f0's text above the box *(inf: placement)*.
             if let Some((x, y)) = gu.window_xy(&name, sw, sh) {
-                let t = gu.group_b(0x8a).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
+                let t = gu.group_b(0x8f).unwrap_or_else(|| "Reset keyboard assignment to default?".into());
                 let tw = gu.text_width(&t);
                 gu.frame(x, y - 28.0, tw + 16.0, 24.0);
                 gu.text(&t, x + 8.0, y - 24.0, 0, white);
@@ -662,21 +670,21 @@ mod tests {
         assert_eq!((v.get(0x32) & 1, v.get(0x34) & 1, cfilter_state(&v, 0)), (0, 1, 83));
         cfilter_toggle(&mut v, &mut out, 0);
         assert_eq!(cfilter_state(&v, 0), 89);
-        // Tell: OFF -> Hold -> OFF + icon -> Hold + icon -> OFF.
+        // Tell, from OFF + icon (0x47 defaults to 1): Hold + icon -> OFF -> Hold -> OFF + icon.
         let seq: Vec<usize> = (0..4)
             .map(|_| {
                 cfilter_toggle(&mut v, &mut out, 1);
                 cfilter_state(&v, 1)
             })
             .collect();
-        assert_eq!(seq, vec![83, 136, 137, 89]);
-        // Yell is bit 46 = 0x33 bit 16.
-        cfilter_toggle(&mut v, &mut out, 8);
-        assert_eq!(v.get(0x33), 1 << 16);
+        assert_eq!(seq, vec![137, 89, 83, 136]);
+        // Yell is bit 46 = 0x33 bit 16 (bits 11 / 12 are on by default).
+        cfilter_toggle(&mut v, &mut out, 10);
+        assert_eq!(v.get(0x33), 0x1800 | 1 << 16);
         // System levels.
-        cfilter_toggle(&mut v, &mut out, 51);
+        cfilter_toggle(&mut v, &mut out, 53);
         assert_eq!(v.get(0x35), 2);
-        cfilter_toggle(&mut v, &mut out, 51);
+        cfilter_toggle(&mut v, &mut out, 53);
         assert_eq!(v.get(0x35), 1);
     }
 
