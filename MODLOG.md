@@ -3261,3 +3261,15 @@ tunnel's lamplight baked into vertex colours over the whole tunnel.
   glows cut straight into pillars. zone-shot now keeps one effects renderer for both frames (meshes upload once);
   FFXI_FX_OPS=NAME, FFXI_FX_TEX=SPRITE and FFXI_FX_MESH=1 (with FFXI_FX_LIST) dump streams, a sprite texture and
   the effect meshes.
+- Parked (the user chose retail's look for now; not done, may come back): B, real lamp lights in place of baked
+  shells. Lamps = zone glow meshes textured "light..." (the ltla glows), merged by position, skipping any within
+  ~4 yalms of a kind-0x47 data light (the door lamps). Each gets a light 0.7 yalm out from its wall (Ground::raycast
+  in 8 horizontal directions finds the wall) whose colour, range and live intensity come from the nearest data
+  light's table entry on the GPU, so dusk / dawn and fades follow the data. Untextured additive MMB shells in the
+  same generator folder as such glows (gin1 'san_') are not drawn. The extra lights (nearest 64 to the camera) go in
+  a second storage buffer on the zone globals (binding 2: count, then position + template slot), summed per pixel
+  in point_lights and offered to actor_lamp. C, soft particles: depth_view gets COPY_SRC; the effects draw copies
+  the scene depth before its first pass and binds it as group 2 (texture_depth_2d, a 1 x 1 cleared dummy without
+  one); fs fades the alpha of flag-27 elements (sort key + 400: glows and light volumes) by
+  sat((scene distance - fragment distance) / 1 yalm), distances from NDC z with the draw's near / far. Only flag 27,
+  so footprints and other flat decals keep their look.

@@ -65,6 +65,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
     run, and point lights on scenery and actors; left: the party roster for the filter, moving-part lights;
+    parked (user's call, 2026-10-22): replace baked lamp shells with real lights plus soft particles (MODLOG
+    "Effect fixes from the San d'Oria gate lamps", "Parked");
   - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
 - Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
