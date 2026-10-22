@@ -4519,7 +4519,8 @@ impl App {
                         view_rot,
                         eye: camera.eye,
                         draw_distance: 2000.0,
-                        area_light: Vec3::ONE,
+                        // Op 0x8f: the actor's area env, else the zone; areas are not loaded *(the zone's)*.
+                        area_light: r.lighting.map_or(Vec3::ONE, |l| l.area),
                         focal: 192.0 / (camera.fov_y * 0.5).tan(),
                         // FUN_10184dc0: ((Vana day of now + 12 h) / 7) % 12 (one Vana minute = 2.4 s).
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),

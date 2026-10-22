@@ -23,6 +23,8 @@ struct Params {
     eye: [f32; 4],
     /// moon phase, weekday, 0, 0
     extra: [f32; 4],
+    /// The zone's area light (update op 0x69), 0
+    area: [f32; 4],
 }
 
 #[repr(C)]
@@ -462,6 +464,7 @@ impl EffectsGpu {
             inv_view_rot: m(b90.inverse()),
             eye: [f.eye.x, f.eye.y, f.eye.z, 1.0],
             extra: [f.moon_phase as f32, f.weekday as f32, 0.0, 0.0],
+            area: [f.area_light.x, f.area_light.y, f.area_light.z, 0.0],
         };
         q.write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
         if self.count == 0 {

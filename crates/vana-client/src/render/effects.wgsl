@@ -15,6 +15,8 @@ struct Params {
     eye: vec4<f32>,
     // moon phase, weekday
     extra: vec4<f32>,
+    // the zone's area light (DAT_106175ac, area_light.md)
+    area: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -349,6 +351,13 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             // Drag on the slot vector: S *= rec[1]^dt (__CIpow, d3a_particles.md 4.2).
             case 0x2cu: { set_slv3(b, s, slv3(b, s) * pow(opf(r), dt)); }
             case 0x2fu: { set_slv3(b, s, euler(ev3(b, E_ROT)) * slv3(b, s)); }
+            // Colour R, G, B = the slot's bytes 2 / 1 / 0 (op 0x91's base) x the zone light; ftol, wrapping.
+            case 0x69u: {
+                let sc = sl(b, s);
+                set_cb(b, 2u, u32(max(f32((sc >> 16u) & 0xffu) * p.area.x, 0.0)) & 0xffu);
+                set_cb(b, 1u, u32(max(f32((sc >> 8u) & 0xffu) * p.area.y, 0.0)) & 0xffu);
+                set_cb(b, 0u, u32(max(f32(sc & 0xffu) * p.area.z, 0.0)) & 0xffu);
+            }
             // vtable +0x34(key(t)): CMoDist +0x194 (0 without a keyframe).
             case 0x24u: { if (el[b + E_KIND] == DK_DIST) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
             case 0x30u, 0x31u, 0x32u: {

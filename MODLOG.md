@@ -3150,3 +3150,18 @@ size, the 256 cap being a 2002 limit). DAT 214 (zone 114, Eastern Altepa; classe
 `f_ri/weat/heat/dis1`: 21 live elements at 13:00 heat, alpha 0x09..0x1d, off 0.02 (checked with the shift x25: the
 background ghosts up and right). Not done: CMoVuDist (batched), DistModel / DistRing / DistMorph (op-1 flag
 0x100000 on kinds 0x1f / 0x24 / 0x25).
+
+## Effect area-light tint (emission 0x8f / 0x90, update 0x69) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/area_light.md. The env: 0x8f = FUN_101819a0(caster vtable +0x188) = the area the
+caster stands in (actor+0x5e4, from the floor collision object's u32 +0xb0; placements carry it at MZB +0x4c; keys
+in `<zone>/<id>/<tag>/HHMM`), else the zone; 0x90 and 0x69 = DAT_106175ac, the zone. Of its current 0x2f payload:
+c = (actor sun + actor ambient) / 255 (FUN_1017fee0 + FUN_1017ff00), c2 = (actor moon + ambient) / 255
+(FUN_1017fef0); c2 when flags bit 0 is clear (FUN_10181af0) and dot(c2, c2) > dot(c, c). R, G, B *= c, ftol, 0 if
+negative, & 0xff (wraps above 255); alpha untouched. Update op 0x69 (every frame): R, G, B = the slot's bytes 2 /
+1 / 0 x the zone c (no nearest-light rule; generators.md was wrong). Here: Env::area_light, Lighting.area, Frame
+area_light, the update Params `area`. Test port_sandoria_area_light: 232 fine 12:00 (1.6196, 1.6235, 1.5451),
+00:00 (0.9255, 0.9333, 1.1412). Not done *(the zone's env stands in for 0x8f)*: the per-area envs (ZoneWeather
+area folders, collision object +0xb0, actor area id, event op 0xae sub 7), e.g. zone 232 `ev01` indoors (flags
+bit 0, so never c2: 12:00 (0.9843, 0.9529, 0.8588)). Byte 0x0c of the payload is red (MODLOG's earlier "B,G,R"
+note on the env colours is wrong; weather.rs rgb() reads R, G, B).

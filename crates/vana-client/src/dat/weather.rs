@@ -171,6 +171,16 @@ impl ZoneWeather {
     }
 }
 
+impl Env {
+    /// FUN_1017fee0 / FUN_1017fef0 + FUN_1017ff00 (area_light.md): c = actor sun + ambient, c2 = actor moon +
+    /// ambient, bytes / 255; c2 when flags bit 0 is clear (FUN_10181af0) and it is the brighter (a tie keeps c).
+    pub fn area_light(&self) -> Vec3 {
+        let c = rgb(self.actor.sun) + rgb(self.actor.ambient);
+        let c2 = rgb(self.actor.moon) + rgb(self.actor.ambient);
+        if self.flags & 1 == 0 && c2.dot(c2) > c.dot(c) { c2 } else { c }
+    }
+}
+
 fn rgb(c: [u8; 4]) -> Vec3 {
     Vec3::new(c[0] as f32, c[1] as f32, c[2] as f32) / 255.0
 }
@@ -190,6 +200,8 @@ pub struct Lighting {
     pub fog_end: f32,
     pub clear: Vec3,
     pub sky: Option<([Vec3; 8], [f32; 8])>,
+    /// The effect tint (emission ops 0x8f / 0x90, update op 0x69): Env::area_light.
+    pub area: Vec3,
 }
 
 impl Lighting {
@@ -225,6 +237,7 @@ impl Lighting {
             fog_end: end,
             clear: rgb(env.clear),
             sky,
+            area: env.area_light(),
         }
     }
 }
@@ -242,4 +255,22 @@ pub fn weather_tag(number: u16) -> &'static str {
 /// Earth seconds since: one Vana'diel minute is 2.4 Earth seconds (LSB vanadiel_clock).
 pub fn vana_minute(game_time: u32, since_secs: f32) -> f32 {
     ((game_time as f64 + since_secs as f64) / 2.4).rem_euclid(24.0 * 60.0) as f32
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Vec3;
+
+    /// area_light.md worked numbers: zone 232 street, fine: 12:00 sun + ambient, 00:00 moon + ambient.
+    #[test]
+    fn port_sandoria_area_light() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let w = super::ZoneWeather::parse(&index.read(332).unwrap()).unwrap();
+        let close = |a: Vec3, b: Vec3| (a - b).abs().max_element() < 1e-3;
+        let noon = w.at("fine", 720.0).unwrap().area_light();
+        assert!(close(noon, Vec3::new(1.6196, 1.6235, 1.5451)), "{noon}");
+        let night = w.at("fine", 0.0).unwrap().area_light();
+        assert!(close(night, Vec3::new(0.9255, 0.9333, 1.1412)), "{night}");
+    }
 }
