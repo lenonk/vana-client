@@ -4487,6 +4487,9 @@ impl App {
                         area_light: Vec3::ONE,
                     };
                     let fa = FxActors { actors: &w.actors, places: &places };
+                    if let Some(g) = &w.ground {
+                        w.effects.set_covered(g.covered(camera.eye));
+                    }
                     perf::timed(|| "effects".into(), || {
                         w.effects.tick(&f, &fa);
                         eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f);

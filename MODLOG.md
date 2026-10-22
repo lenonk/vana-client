@@ -3012,3 +3012,7 @@ reactions and battle messages):
   it is 1, else c32), anim >= 0x100 61451.. + anim - 0x100, kind 14 58041.., kind 15 88035... The files go on
   the actor list as motion files (actmotion Kind::Skill) and main runs once they are there. Retail drops them at
   the task end (+0xac = 0x100a7440); ours stay until the next skill *(not traced)*.
+- Covered (FUN_100136a0 / FUN_101845c0): a ray from just above the eye 100 down, else from just below it 15 up;
+  the nearest face's collision object +0xa4 bit 2 sets it. A change stops (elements killed) or restarts the
+  transient weather emitters with op-1 flags 4 / 0x4000000; new weather sets skip them while covered
+  (client/ground.rs `covered`, fx `set_covered`).

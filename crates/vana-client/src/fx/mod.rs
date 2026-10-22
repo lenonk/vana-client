@@ -429,6 +429,8 @@ pub struct Effects {
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
+    /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
+    covered: bool,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -479,6 +481,7 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             motion_files: Vec::new(),
+            covered: false,
         }
     }
 
@@ -552,7 +555,8 @@ impl Effects {
                 None => return false,
             }
         };
-        let gens: Vec<usize> = self.reg.libs[l].gens.iter().filter(|g| g.flags & 0x1000 != 0 && within(g.node)).map(|g| g.node).collect();
+        let covered = self.covered;
+        let gens: Vec<usize> = self.reg.libs[l].gens.iter().filter(|g| g.flags & 0x1000 != 0 && within(g.node) && !(covered && roofed(g))).map(|g| g.node).collect();
         self.weather_serial += 1;
         let serial = self.weather_serial;
         log::info!("effects: weather {tag} over {seconds:.0} s: {} generators", gens.len());
@@ -564,6 +568,38 @@ impl Effects {
             }
         }
         self.weathers.push(WeatherSet { serial, tag: tag4, duration: seconds, remaining: seconds });
+    }
+
+    /// FUN_101845c0: on a change, covered stops the transient weather emitters that spawn at the camera (op-1
+    /// flags 4 or 0x4000000: rain, snow, dust) and kills their elements (FUN_10183b90); uncovered starts them again.
+    pub fn set_covered(&mut self, covered: bool) {
+        if covered == self.covered {
+            return;
+        }
+        self.covered = covered;
+        for i in 0..self.insts.len() {
+            let Some(x) = self.insts[i].as_ref() else { continue };
+            if !matches!(x.owner, Owner::Weather(_)) {
+                continue;
+            }
+            let Some(g) = self.reg.libs[x.src.0].generator(x.src.1) else { continue };
+            let transient = !(g.flags & 0x400 != 0 || g.template().is_some_and(|o| o.i16_at(0x22) == 0));
+            if !transient || !roofed(g) {
+                continue;
+            }
+            if covered {
+                let live = std::mem::take(&mut self.insts[i].as_mut().unwrap().live);
+                for e in live {
+                    self.drop_elem(e);
+                }
+                self.insts[i].as_mut().unwrap().stopping = true;
+            } else if let Some(x) = self.insts[i].as_mut() {
+                x.stopping = false;
+                x.countdown = 0.0;
+                x.elapsed = 0.0;
+                x.emitted = 0;
+            }
+        }
     }
 
     /// FUN_10183bd0 for the oldest `n` weather sets: their elements go now.
@@ -792,7 +828,7 @@ impl Effects {
             if let Some(x) = &self.insts[i]
                 && (x.finished || x.stopping)
                 && x.live.is_empty()
-                && !matches!(x.owner, Owner::Zone | Owner::Actor(_))
+                && !matches!(x.owner, Owner::Zone | Owner::Actor(_) | Owner::Weather(_))
             {
                 self.kill(i);
             }
@@ -1095,6 +1131,12 @@ impl Effects {
     pub fn live_count(&self) -> usize {
         self.elems.iter().filter(|e| e.is_some()).count()
     }
+}
+
+/// Op-1 flags 4 (camera-relative) or 0x4000000 (spawned in view space): stopped under a roof (LAB_10183a30 /
+/// LAB_10183b40).
+fn roofed(g: &crate::dat::generator::Generator) -> bool {
+    g.template().is_some_and(|o| o.u32(1) & 0x400_0004 != 0)
 }
 
 /// FUN_10052eb0 / FUN_1003afd0 for the modes the zone uses; actor modes come with the battle triggers.

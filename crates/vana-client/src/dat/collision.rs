@@ -35,7 +35,8 @@ pub struct Entry {
 
 /// The object record a triangle is placed by.
 pub struct Object {
-    /// +0xa4: bit 0 mirrored, bit 1 resolved after the others in the sweep.
+    /// +0xa4: bit 0 mirrored, bit 1 resolved after the others in the sweep, bit 2 covered (no weather under it,
+    /// FUN_100136a0).
     pub flags: u32,
     /// +0xb4 / +0xb8: y range, checked before any of its triangles.
     pub y_range: (f32, f32),

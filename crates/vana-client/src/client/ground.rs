@@ -55,6 +55,8 @@ pub struct Ground {
     grid: Option<Grid>,
     /// The player's body for walk_player().
     body: Cell<Body>,
+    /// Per triangle: its object is covered (+0xa4 bit 2).
+    covers: Vec<bool>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -188,10 +190,11 @@ impl Sweep {
 impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         let Some(c) = scene.collision.as_ref() else {
-            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW) };
+            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new() };
         };
         let tris = c.tris.clone();
         let y_range = c.object.iter().map(|&o| c.objects[o as usize].y_range).collect();
+        let covers = c.object.iter().map(|&o| c.objects[o as usize].flags & 4 != 0).collect();
         let degenerate = tris.iter().map(|[a, b, c]| *a == *b || *b == *c || *c == *a).collect();
         let mut cells: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
         for (i, t) in tris.iter().enumerate() {
@@ -206,11 +209,20 @@ impl Ground {
         }
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW) }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers }
     }
 
     pub fn is_empty(&self) -> bool {
         self.tris.is_empty()
+    }
+
+    /// FUN_100136a0 / FUN_1017a4f0(eye, 100): a ray from just above the eye 100 down, else from just below it 15
+    /// up; the nearest face hit says whether its object is covered (+0xa4 bit 2), which stops weather.
+    pub fn covered(&self, eye: Vec3) -> bool {
+        let hits = self.heights(eye.x, eye.z);
+        let down = hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        down.or_else(up).is_some_and(|h| self.covers.get(h.1).copied().unwrap_or(false))
     }
 
     fn near(&self, x: f32, z: f32) -> impl Iterator<Item = usize> + '_ {
@@ -534,7 +546,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW) }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n] }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
@@ -555,6 +567,19 @@ mod tests {
 
     /// Risers below the sphere's centre are stepped over. (Between 0.5 and 1.0 the result depends on face
     /// order: a wall push and a floor fix can both land in one pass, and the later face sets the height.)
+    /// FUN_100136a0: La Theine (102) has covered collision objects (+0xa4 bit 2) near
+    /// (-175.5, -509); the open field at the origin is not covered.
+    #[test]
+    fn la_theine_covered() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let keys = crate::dat::zone::Keys::from_ffximain(&dll).unwrap();
+        let g = Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(202).unwrap()).unwrap());
+        assert!(g.covered(Vec3::new(-175.5, 31.0, -509.0)));
+        assert!(!g.covered(Vec3::new(0.0, -4.0, 0.0)));
+    }
+
     #[test]
     fn steps_up_to_half_a_unit() {
         let from = Vec3::new(-3.0, 0.0, 0.0);
