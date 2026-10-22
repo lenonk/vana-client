@@ -98,6 +98,8 @@ impl GameUiData {
 pub struct GameUi {
     data: GameUiData,
     renderer: Option<UiRenderer>,
+    /// The scene depth name plates are tested against this frame (taken by render).
+    pub scene_depth: Option<wgpu::TextureView>,
     /// What this frame draws, rebuilt by the UI code each frame.
     batch: UiBatch,
     started: Instant,
@@ -149,7 +151,7 @@ pub struct CreatorView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
-        Self { data, renderer: None, batch: UiBatch::default(), started: Instant::now(), year: 1970 + (secs / 31_556_952) as i32, pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), year: 1970 + (secs / 31_556_952) as i32, pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default() }
     }
 
     /// Text caret phase: on for half of each second.
@@ -508,6 +510,11 @@ impl GameUi {
         self.batch.set_clip(clip);
     }
 
+    /// Quads drawn from now on are depth-tested against the scene at NDC z `depth` (name plates); None = not.
+    pub fn depth(&mut self, depth: Option<f32>) {
+        self.batch.set_depth(depth);
+    }
+
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
@@ -698,6 +705,7 @@ impl GameUi {
         let c = LOBBY_CLEAR.map(|v| v as f64 / 255.0 * scene.clamp(0.0, 1.0) as f64);
         let clear = (!over).then_some(wgpu::Color { r: c[0], g: c[1], b: c[2], a: 1.0 });
         r.fade = fade;
+        r.set_scene_depth(gpu, self.scene_depth.take().as_ref());
         r.render(gpu, encoder, view, size[0], size[1], clear, &self.batch);
     }
 }

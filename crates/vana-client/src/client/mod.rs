@@ -577,13 +577,13 @@ fn plate_scale(d: f32) -> Option<f32> {
 /// Name plates over characters (FUN_100ce4d0 -> FUN_10084b20): fontshp glyphs at the model's top,
 /// sized by the screen (W, H) * 0.00234375 times the depth scale.
 fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
-    let project = |p: Vec3| -> Option<(f32, f32, [f32; 2])> {
+    let project = |p: Vec3| -> Option<(f32, f32, [f32; 2], f32)> {
         let clip = view_proj * p.extend(1.0);
         let s = plate_scale(clip.w)?;
         let ndc = clip.xyz() / clip.w;
         // FUN_10084b20: viewport mapping, then -0.5 (FUN_10026220); anchors up to 100 px off screen still draw.
         let (x, y) = ((ndc.x + 1.0) / 2.0 * sw - 0.5, (1.0 - ndc.y) / 2.0 * sh - 0.5);
-        (x.abs() <= sw + 100.0 && y.abs() <= sh + 100.0).then_some((x, y, [sw * 0.00234375 * s, sh * 0.00234375 * s]))
+        (x.abs() <= sw + 100.0 && y.abs() <= sh + 100.0).then_some((x, y, [sw * 0.00234375 * s, sh * 0.00234375 * s], ndc.z))
     };
     let hidden = event::hidden(world);
     // Invisible helpers (no model or a stub one) only show a name while targeted; faded actors none.
@@ -592,7 +592,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         !faded && (e.kind == EntityKind::Player || world.actors.get(id).is_some_and(|a| a.shown()) || world.target == Some(*id))
     };
     for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id)) {
-        if let Some((x, y, scale)) = plate_point(world, *id).and_then(project) {
+        if let Some((x, y, scale, z)) = plate_point(world, *id).and_then(project) {
             // FUN_100819d0: the target's plate alpha pulses, a * (sin(ticks * 16 deg) * 32 + 96) / 128.
             let pulse = if world.target == Some(*id) {
                 let t = world.started.elapsed().as_secs_f32() * 60.0;
@@ -600,14 +600,18 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             } else {
                 1.0
             };
+            // Pre-transformed quads at the projected depth (FUN_10080100): walls in front hide them.
+            gu.depth(Some(z));
             gu.name_plate(&e.name, x, y, scale, name_colour(e, world.my_id), pulse);
         }
     }
     if !hidden.contains(&world.my_id)
-        && let Some((x, y, scale)) = plate_point(world, world.my_id).and_then(project)
+        && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
+        gu.depth(Some(z));
         gu.name_plate(&world.name, x, y, scale, 0, 1.0);
     }
+    gu.depth(None);
 }
 
 /// Where the target cursor points (FUN_10153470 -> vtable +0x27c, FUN_100ce6d0): attach point 2 like the name
@@ -4443,6 +4447,7 @@ impl App {
             && let Some(lu) = &mut self.game_ui
         {
             counts.ui_vertices = lu.vertex_count();
+            lu.scene_depth = drew_world.then(|| scene_depth.clone());
             perf::timed(|| "ui render".into(), || lu.render(&gfx.gpu, gfx.config.format, &mut encoder, &view, self.cfg.ui_size(size), drew_world, ui_level, scene_level));
             drew_world = true;
         }

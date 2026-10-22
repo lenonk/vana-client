@@ -55,6 +55,9 @@ struct UiVertex {
     pos: [f32; 2],
     uv: [f32; 2],
     color: [f32; 4],
+    /// Depth tested against the scene (name plates: XYZRHW quads at the projected depth, ZWRITE on, FUN_10080100);
+    /// negative = not tested.
+    depth: f32,
 }
 
 struct Run {
@@ -72,6 +75,7 @@ pub struct UiBatch {
     vertices: Vec<UiVertex>,
     runs: Vec<Run>,
     clip: Option<[f32; 4]>,
+    depth: Option<f32>,
 }
 
 /// PS2 colour scale: 0x80 is 1.0.
@@ -83,7 +87,7 @@ impl UiBatch {
     fn push_quad(&mut self, texture: Option<&str>, blend: Blend, corners: [[f32; 2]; 4], uvs: [[f32; 2]; 4], colors: [[f32; 4]; 4]) {
         let first = self.vertices.len() as u32;
         for k in [0, 1, 2, 1, 3, 2] {
-            self.vertices.push(UiVertex { pos: corners[k], uv: uvs[k], color: colors[k] });
+            self.vertices.push(UiVertex { pos: corners[k], uv: uvs[k], color: colors[k], depth: self.depth.unwrap_or(-1.0) });
         }
         if let Some(r) = self.runs.last_mut()
             && r.texture.as_deref() == texture
@@ -94,6 +98,11 @@ impl UiBatch {
             return;
         }
         self.runs.push(Run { texture: texture.map(str::to_string), blend, first, count: 6, clip: self.clip });
+    }
+
+    /// Quads pushed from now on are hidden where the scene is nearer than `depth` (NDC z); None = no test.
+    pub fn set_depth(&mut self, depth: Option<f32>) {
+        self.depth = depth;
     }
 
     /// Clips the quads pushed from now on to (x, y, w, h); None = the whole target.
@@ -229,17 +238,27 @@ impl UiBatch {
 const SHADER: &str = r#"
 struct U { screen: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: U;
+@group(0) @binding(1) var scene_depth: texture_depth_2d;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
-struct VOut { @builtin(position) clip: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) color: vec4<f32> };
-@vertex fn vs(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) color: vec4<f32>) -> VOut {
+struct VOut { @builtin(position) clip: vec4<f32>, @location(0) uv: vec2<f32>, @location(1) color: vec4<f32>, @location(2) depth: f32 };
+@vertex fn vs(@location(0) pos: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) color: vec4<f32>, @location(3) depth: f32) -> VOut {
     var o: VOut;
     o.clip = vec4<f32>(pos.x / u.screen.x * 2.0 - 1.0, 1.0 - pos.y / u.screen.y * 2.0, 0.0, 1.0);
     o.uv = uv;
     o.color = color;
+    o.depth = depth;
     return o;
 }
 @fragment fn fs(i: VOut) -> @location(0) vec4<f32> {
+    // Depth-tested quads (name plates) hide behind nearer scenery; the scene may be drawn at another size.
+    if i.depth >= 0.0 {
+        let dims = vec2<f32>(textureDimensions(scene_depth));
+        let t = vec2<i32>(clamp(i.clip.xy / u.screen.xy * dims, vec2<f32>(0.0), dims - 1.0));
+        if i.depth > textureLoad(scene_depth, t, 0) {
+            discard;
+        }
+    }
     // u.screen.z: the 2D layer's colour (lobby 'sfin' / 'sfot', scheduler op 0x51), 1 = as drawn.
     let c = clamp(textureSample(tex, samp, i.uv) * i.color, vec4<f32>(0.0), vec4<f32>(1.0)) * u.screen.z;
     // The UI runs with ALPHATESTENABLE, ALPHAFUNC GREATER, ALPHAREF 0 (FUN_10159ae0).
@@ -258,7 +277,10 @@ pub struct UiRenderer {
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
+    globals_layout: wgpu::BindGroupLayout,
     globals: wgpu::BindGroup,
+    /// Bound when no scene depth is given (nothing is depth tested then).
+    no_depth: wgpu::TextureView,
     textures: HashMap<String, wgpu::BindGroup>,
     white: wgpu::BindGroup,
     /// The 2D layer's fade level (multiplies colour and alpha).
@@ -271,12 +293,20 @@ impl UiRenderer {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("ui"), source: wgpu::ShaderSource::Wgsl(SHADER.into()) });
         let globals_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ui globals"),
-            entries: &[wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
-                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
-                count: None,
-            }],
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Depth, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false },
+                    count: None,
+                },
+            ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("ui texture"),
@@ -298,7 +328,7 @@ impl UiRenderer {
         let buffers = [Some(wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<UiVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x2, 1 => Float32x2, 2 => Float32x4, 3 => Float32],
         })];
         let mut pipelines = HashMap::new();
         for blend in [Blend::Alpha, Blend::Add, Blend::Subtract, Blend::Opaque, Blend::Replace, Blend::Glyph] {
@@ -321,11 +351,8 @@ impl UiRenderer {
             pipelines.insert(blend, p);
         }
         let uniforms = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ui uniforms"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-        let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("ui globals"),
-            layout: &globals_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }],
-        });
+        let no_depth = super::depth_view(device, 1, 1);
+        let globals = Self::globals_group(device, &globals_layout, &uniforms, &no_depth);
         // Sprite draws set ADDRESSU/V = WRAP (FUN_1011b290); frame pieces tile 1:1.
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -335,7 +362,20 @@ impl UiRenderer {
             ..Default::default()
         });
         let white = Self::bind(gpu, &texture_layout, &sampler, 1, 1, &[255; 4]);
-        Self { vertices: None, uploaded: Vec::new(), pipelines, texture_layout, sampler, uniforms, globals, textures: HashMap::new(), white, fade: 1.0 }
+        Self { vertices: None, uploaded: Vec::new(), pipelines, texture_layout, sampler, uniforms, globals_layout, globals, no_depth, textures: HashMap::new(), white, fade: 1.0 }
+    }
+
+    fn globals_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, uniforms: &wgpu::Buffer, depth: &wgpu::TextureView) -> wgpu::BindGroup {
+        device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("ui globals"),
+            layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(depth) }],
+        })
+    }
+
+    /// The scene depth that depth-tested quads (name plates) are tested against this frame; None = none.
+    pub fn set_scene_depth(&mut self, gpu: &Gpu, depth: Option<&wgpu::TextureView>) {
+        self.globals = Self::globals_group(&gpu.device, &self.globals_layout, &self.uniforms, depth.unwrap_or(&self.no_depth));
     }
 
     fn bind(gpu: &Gpu, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, w: u32, h: u32, rgba: &[u8]) -> wgpu::BindGroup {
