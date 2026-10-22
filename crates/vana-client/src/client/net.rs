@@ -159,7 +159,7 @@ pub enum NetEvent {
     Entity(EntityUpdate),
     /// Our own status (0x037): LSB Animation @0x30, HP% (u32 @0x28 bits 16-23), and while dead the
     /// seconds until the forced return home (dead_counter1 @0x38, 60 Hz, includes a 6 minute floor).
-    SelfStatus { status: u8, hpp: u8, home_in: Option<u32> },
+    SelfStatus { status: u8, hpp: u8, home_in: Option<u32>, pet: u16 },
     /// Our own HP, MP and TP (0x0DF).
     Vitals { hp: u32, mp: u32, tp: u32, hpp: u8, mpp: u8 },
     Chat { kind: u8, from: String, text: String },
@@ -458,7 +458,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x037 => {
                         let (status, ticks) = (p.u8(0x30), p.u32(0x38));
                         let home_in = matches!(status, 2 | 3).then(|| (ticks / 60).saturating_sub(360));
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, home_in })?;
+                        // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, home_in, pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
                     0x0DF if p.u32(4) == login.char_id => tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?,
                     0x029 => tx.send(NetEvent::Battle(battle_message(&p)))?,

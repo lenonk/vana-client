@@ -1509,6 +1509,9 @@ struct FxActors<'a> {
     actors: &'a HashMap<u32, Actor>,
     places: &'a HashMap<u32, Place>,
     contacts: &'a HashMap<u32, (Vec3, Vec3)>,
+    entities: &'a HashMap<u32, Entity>,
+    me: u32,
+    pet: u16,
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -1554,6 +1557,19 @@ impl crate::fx::Actors for FxActors<'_> {
     fn floor(&self, id: u32) -> Option<Vec3> {
         self.contacts.get(&id).map(|c| c.1)
     }
+
+    // FUN_100ac560: you or your pet, a monster (+0x120 bit 13 = u8 @0x20 bit 0), else not in the party roster
+    // *(the roster is not tracked (s2c 0x0DD), so it holds only you; party members count as others)*.
+    fn fx_class(&self, id: u32) -> u8 {
+        let e = self.entities.get(&id);
+        if id == self.me || (self.pet != 0 && e.is_some_and(|e| e.index == self.pet)) {
+            1
+        } else if e.is_some_and(|e| e.flags & 1 != 0) {
+            2
+        } else {
+            8
+        }
+    }
 }
 
 /// Loaded looks kept while no actor wears them.
@@ -1579,6 +1595,8 @@ struct World {
     feet: HashMap<u32, [f32; 4]>,
     /// Per actor: the last step's foot contact in the world (actor+0x63c) and the floor normal there.
     contacts: HashMap<u32, (Vec3, Vec3)>,
+    /// Our pet's ActIndex (0x037 u32 @0x34 >> 3; 0 = none).
+    my_pet: u16,
     ground: Option<ground::Ground>,
     name: String,
     my_id: u32,
@@ -2445,6 +2463,7 @@ impl App {
                             effects: crate::fx::Effects::new(),
                             feet: HashMap::new(),
                             contacts: HashMap::new(),
+                            my_pet: 0,
                             ground: None,
                             name: login.name.clone(),
                             my_id: login.char_id,
@@ -2883,7 +2902,8 @@ impl App {
                     world.key_items[at..at + 16].copy_from_slice(&bits);
                 }
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, home_in } => {
+                NetEvent::SelfStatus { status, hpp, home_in, pet } => {
+                    world.my_pet = pet;
                     // The server prints the defeat (0x029 #97 / #20).
                     if matches!(status, 2 | 3) && !world.dead() {
                         if let Some(a) = world.actors.get_mut(&world.my_id) {
@@ -4526,13 +4546,14 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, pet: w.my_pet };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
                     if let Some(a) = &self.audio {
                         w.effects.set_alive(a.alive());
                     }
+                    w.effects.filter = (w.game.get(0x92) as u32, matches!(w.my_motion.status, 1 | 3));
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
                     // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.
                     for c in std::mem::take(&mut w.effects.sound_cmds) {

@@ -48,6 +48,10 @@ pub trait Actors {
     fn floor(&self, _id: u32) -> Option<Vec3> {
         None
     }
+    /// FUN_100ac560's class of one actor: 1 you (or your pet), 2 monster, 4 party, 8 not in your party.
+    fn fx_class(&self, _id: u32) -> u8 {
+        8
+    }
 }
 
 /// No actors (offscreen shots).
@@ -524,6 +528,8 @@ pub struct Effects {
     covered: bool,
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
     sounds: Vec<sound::Sound>,
+    /// Config 0x92 (the Effects filter) and whether the player's status is 1 or 3 (FUN_100ac4b0's bit-0 gate).
+    pub filter: (u32, bool),
     /// Footstep dust to start next tick: generator and actor; actors that left a footprint.
     dust: Vec<(Ref, u32)>,
     prints: Vec<u32>,
@@ -582,6 +588,7 @@ impl Effects {
             motion_files: Vec::new(),
             covered: false,
             sounds: Vec::new(),
+            filter: (0, false),
             dust: Vec::new(),
             prints: Vec::new(),
             sound_cmds: Vec::new(),

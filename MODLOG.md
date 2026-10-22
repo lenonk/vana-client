@@ -1492,7 +1492,7 @@ Decompile: ~/ffxi/lab/creatorwork/ghidra/all.c.
 - Enter on a target (FUN_101524e0): an NPC (UniqueNo high byte 0x01) is talked to at once through FUN_1007aac0;
   otherwise the action menu opens (FUN_10127790). FUN_101524e0 takes the menu path for NPCs with actor +0x1cc
   bit 0x100 (actor +0x12c bit 13) unless +0x12c bit 30. FUN_1008cb80 builds +0x1cc (bit 2 NPC, 0x10 pet-like,
-  0x100 from +0x12c bit 13). The client sends monsters (0x00E @0x25 bit 0x08) down the menu path (inferred).
+  0x100 from +0x12c bit 13; correction from the Effects filter decode: 0x04 = in your party, 0x10 = monster). The client sends monsters (0x00E @0x25 bit 0x08) down the menu path (inferred).
 - +0x12c is taken to be u32 @0x25 of 0x00E (inferred from LSB): bit 30 = byte 0x28 bit 0x40, LSB "triggerable".
 - Action menu libraries (FUN_101270a0): +0x14 = FUN_101bf3a0(2) = keytops3 (library 0), +0x18 =
   FUN_101bf3a0(1) = windowps (library 1). Command 6 = Talk (windowps 0x16b, FUN_10127b60 case 5 ->
@@ -3181,3 +3181,20 @@ numbers. zone-shot `--start NAME` starts a zone generator: 102 `--start hat2` pi
 Corrections: S[0] is the keyframe (spec C.4 said spline); gen+0xa0 = op[1] of 0x54 is the KeyFrame; op 0x15's
 corners are its own op[1] (always 0: the unit cube). Not done: who starts f_la/mode/hato (flags 0x40000000, not
 auto), scheduler ops 0x26 / 0x27 (CMoPathDriveActorTask), CMoPathObject.
+
+## Effects filter (config 0x92; FUN_100ac4b0 / FUN_100ac560, fx/tasks.rs effects_allowed) (2026-10-22)
+
+From ~/ffxi/lab/research/effects/effect_filter.md. Scheduler op 0x02 for an action task (task+0x90), off the
+unattached-persistent path, asks FUN_100ac4b0(caster, target, cfg 0x92) with dolls as their owners; no means no
+clone (running ones stay). Bit 0 ("All effects during battle") limits the filter to the player's status 1 or 3
+(DAT_1046e0f8[DAT_10473572] +0x16c); table 0x10324fb4 rows: bit b = 1..16 hides when caster class & (1 << ((b-1)/4))
+and target class & (0x10 << ((b-1)%4)) (you / monster / party / non-party PC -> the same four, labels group 0xb
+message 148 + b); bit 17 "Screen shaking" has no row (the op 0x5f quake reads it via FUN_100ac540, except while an
+event holds the player). Classes (FUN_100ac560; target the same << 4): 1 the player (vtable +0x304 = FUN_100a2cd0)
+or the player's pet (FUN_101c2990 = DAT_1046e0f8[player+0x1f6], +0xa0 its actor); 2 entity +0x120 bit 13 (u8 @0x20
+bit 0 of 0x00D / 0x00E); otherwise 4 when in your party's roster (FUN_100e5dd0 / FUN_100e5ec0, same party number) or
+a dynamic-range entity (ActIndex >= 0x700) whose master (0x067 sub 3 @0x0C, +0x2a0) has +0x1cc & 4; 8 when not in
+the roster. Also read by the Geomancer Indi aura (FUN_1008dfb0: the entity as both caster and target, 0x00D u8
+@0x42). Here: Actors::fx_class, Effects::filter, 0x037 u32 @0x34 >> 3 = our pet's ActIndex (World.my_pet). Not
+done *(party members count as others: the roster, s2c 0x0DD, and the 0x067 masters are not tracked)*: the quake
+(op 0x5f not implemented), the Indi aura. Test filter_rows.

@@ -622,6 +622,14 @@ impl Effects {
         if auto {
             self.stop_generator(g, t.a1, t.a2, true);
         }
+        // The Effects filter, for action tasks off the unattached-persistent path *(the sound-type ok test is not
+        // made)*; dolls count as their owners.
+        if t.action.is_some() && (attached || !persistent) {
+            let class = |w: Who| self.undoll(w).id().map_or(8, |id| actors.fx_class(id));
+            if !effects_allowed(self.filter.0, self.filter.1, class(t.a1) | class(t.a2) << 4) {
+                return;
+            }
+        }
         let Some(i) = self.start(g, Owner::Task(me)) else { return };
         if let Some(x) = self.insts[i].as_mut() {
             x.actors = [t.a1, t.a2];
@@ -904,6 +912,16 @@ impl Effects {
     }
 }
 
+/// FUN_100ac4b0 (effect_filter.md): bit 0 limits the filter to the player's status 1 / 3; rows 1..16 hide when
+/// their config bit is set and the caster class (low nibble) and target class (high) match (table 0x10324fb4:
+/// caster mask 1 << ((b - 1) / 4), target mask 0x10 << ((b - 1) % 4)); bit 17 (screen shaking) has no row.
+pub fn effects_allowed(cfg: u32, battle: bool, class: u8) -> bool {
+    if cfg == 0 || (cfg & 1 != 0 && !battle) {
+        return true;
+    }
+    !(1..=16u32).any(|b| cfg & (1 << b) != 0 && class & (1 << ((b - 1) / 4)) != 0 && class & (0x10 << ((b - 1) % 4)) != 0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1154,5 +1172,26 @@ mod tests {
         for g in ["g006", "g000"] {
             assert!(gens.iter().any(|n| n == g), "{g}: {gens:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod filter_tests {
+    use super::effects_allowed;
+
+    /// effect_filter.md: bit 2 = you -> monster, bit 5 = monster -> you, bit 0 limits it to battle.
+    #[test]
+    fn filter_rows() {
+        let you_hit_mob = 1 | 2 << 4;
+        let mob_hits_you = 2 | 1 << 4;
+        assert!(effects_allowed(0, true, you_hit_mob));
+        assert!(!effects_allowed(1 << 2, false, you_hit_mob));
+        assert!(effects_allowed(1 << 2, false, mob_hits_you));
+        assert!(!effects_allowed(1 << 5, false, mob_hits_you));
+        assert!(effects_allowed(1 << 2 | 1, false, you_hit_mob));
+        assert!(!effects_allowed(1 << 2 | 1, true, you_hit_mob));
+        // Others hitting others: bit 16 (non-party PC -> non-party PC).
+        assert!(!effects_allowed(1 << 16, false, 8 | 8 << 4));
+        assert!(effects_allowed(1 << 17, false, 8 | 8 << 4));
     }
 }
