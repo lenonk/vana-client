@@ -115,10 +115,7 @@ impl MapWin {
     /// Opens the map of the zone (FUN_101f0af0 mode 0). None when the zone has no record.
     pub fn open(w: &World, regions: &[Region], sw: f32, sh: f32) -> Option<Self> {
         let region = Region::find(regions, w.pos_zone)?;
-        let owned = match region.need() {
-            Need::Item(id) => w.key_items.get((id >> 5) as usize).is_some_and(|word| word & (1 << (id & 31)) != 0),
-            _ => true,
-        };
+        let owned = owned(w, &region);
         log::info!("map: zone {} owned {owned}", w.pos_zone);
         Some(Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), sw, sh))
     }
@@ -206,6 +203,115 @@ impl MapWin {
     }
 }
 
+/// The region's key item is held, or it needs none (FUN_101ee560).
+fn owned(w: &World, region: &Region) -> bool {
+    match region.need() {
+        Need::Item(id) => w.key_items.get((id >> 5) as usize).is_some_and(|word| word & (1 << (id & 31)) != 0),
+        _ => true,
+    }
+}
+
+/// Extra (not retail; the Windower / Ashita map overlay): the zone map, translucent, in a box over the scene and
+/// under the windows, toggled with Ctrl / Alt + O while the player keeps moving. Wheel zooms, left-drag pans.
+/// It shows what the map window would: nothing without the map's key item.
+pub struct Overlay {
+    pub zone: u16,
+    region: Option<Region>,
+    texture: Option<String>,
+    rx: Option<Receiver<Loaded>>,
+    /// Screen pixels per map pixel, and the map pixel at the box's top-left (None until the first draw).
+    zoom: f32,
+    view: Option<(f32, f32)>,
+    /// The box as last drawn (x, y, w, h).
+    pub rect: [f32; 4],
+}
+
+/// The box's side as a share of the screen's shorter side, and the zoom range over fitting the whole map.
+const OVERLAY_SIZE: f32 = 0.7;
+const OVERLAY_ZOOM_MAX: f32 = 8.0;
+
+impl Overlay {
+    pub fn open(w: &World, regions: &[Region]) -> Self {
+        let region = Region::find(regions, w.pos_zone).filter(|r| r.need() != Need::Nothing && owned(w, r));
+        Self::new(w.pos_zone, region, w.index.clone())
+    }
+
+    pub fn new(zone: u16, region: Option<Region>, index: Option<Arc<DatIndex>>) -> Self {
+        let rx = region.zip(index).map(|(r, index)| load(index, r.file_id()));
+        Self { zone, region, texture: None, rx, zoom: 1.0, view: None, rect: [0.0; 4] }
+    }
+
+    /// A map to show.
+    pub fn has_map(&self) -> bool {
+        self.region.is_some()
+    }
+
+    /// Waits for the image (offscreen shots).
+    pub fn wait_image(&mut self, gu: &mut GameUi) {
+        if let Some(Some((name, iw, ih, rgba))) = self.rx.take().and_then(|r| r.recv().ok()) {
+            gu.image(&name, iw, ih, rgba);
+            self.texture = Some(name);
+        }
+    }
+
+    fn fit(&self) -> f32 {
+        self.rect[2] / 512.0
+    }
+
+    /// Keeps the image over the whole box.
+    fn clamp(&mut self) {
+        let (Some(r), Some(v)) = (self.region, self.view.as_mut()) else { return };
+        let span = (512.0 - self.rect[2] / self.zoom).max(0.0);
+        v.0 = v.0.clamp(r.ox as f32, r.ox as f32 + span);
+        v.1 = v.1.clamp(r.oy as f32, r.oy as f32 + span);
+    }
+
+    /// Wheel notches (+ in) at screen point `p`: the map pixel under it stays put.
+    pub fn zoom_at(&mut self, p: (f32, f32), notches: f32) {
+        let Some(v) = self.view else { return };
+        let z = (self.zoom * 1.25f32.powf(notches)).clamp(self.fit(), self.fit() * OVERLAY_ZOOM_MAX);
+        let (dx, dy) = (p.0 - self.rect[0], p.1 - self.rect[1]);
+        self.view = Some((v.0 + dx / self.zoom - dx / z, v.1 + dy / self.zoom - dy / z));
+        self.zoom = z;
+        self.clamp();
+    }
+
+    /// A drag of (dx, dy) screen pixels.
+    pub fn pan(&mut self, dx: f32, dy: f32) {
+        if let Some(v) = self.view.as_mut() {
+            *v = (v.0 - dx / self.zoom, v.1 - dy / self.zoom);
+        }
+        self.clamp();
+    }
+
+    /// The box centred on the screen, the image clipped to it at `opacity`, and the player marker.
+    pub fn draw(&mut self, gu: &mut GameUi, pos: (f32, f32), facing: f32, sw: f32, sh: f32, opacity: f32) {
+        if let Some(Ok(Some((name, iw, ih, rgba)))) = self.rx.as_ref().map(|r| r.try_recv()) {
+            gu.image(&name, iw, ih, rgba);
+            self.texture = Some(name);
+            self.rx = None;
+        }
+        let Some(region) = self.region else { return };
+        let side = (sw.min(sh) * OVERLAY_SIZE).round();
+        let rect = [((sw - side) / 2.0).round(), ((sh - side) / 2.0).round(), side, side];
+        if rect != self.rect {
+            // Opened or resized: the whole map.
+            self.rect = rect;
+            self.zoom = self.fit();
+            self.view = Some((region.ox as f32, region.oy as f32));
+        }
+        let (Some(t), Some(v)) = (&self.texture, self.view) else { return };
+        let z = self.zoom;
+        gu.clip(Some(rect));
+        gu.image_rect(t, rect[0] + (region.ox as f32 - v.0) * z, rect[1] + (region.oy as f32 - v.1) * z, 512.0 * z, 512.0 * z, [1.0, 1.0, 1.0, opacity]);
+        let (px, py) = region.px(pos.0, pos.1);
+        let (sx, sy) = (rect[0] + (px as f32 - v.0) * z, rect[1] + (py as f32 - v.1) * z);
+        let (s, c) = facing.sin_cos();
+        gu.sprite_affine("menu    keytops3", MARKER, sx, sy, [c, -s, s, c], 0x8080_8080);
+        gu.clip(None);
+    }
+}
+
 /// Reads and decodes the map DAT off the UI thread: its first image.
 fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
     let (tx, rx) = channel();
@@ -222,6 +328,30 @@ fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The overlay keeps the map pixel under the cursor while zooming, and the image over the whole box.
+    #[test]
+    fn overlay_zoom_and_pan() {
+        let region = Region { zone: 1, key: 0, flags: 0, scale: 1, ki: -1, file: 0, ox: -256, oy: -256 };
+        let mut o = Overlay::new(1, Some(region), None);
+        o.rect = [100.0, 50.0, 512.0, 512.0];
+        o.zoom = 1.0;
+        o.view = Some((-256.0, -256.0));
+        let p = (356.0, 306.0);
+        let under = |o: &Overlay| (o.view.unwrap().0 + (p.0 - o.rect[0]) / o.zoom, o.view.unwrap().1 + (p.1 - o.rect[1]) / o.zoom);
+        let before = under(&o);
+        o.zoom_at(p, 2.0);
+        assert!((o.zoom - 1.5625).abs() < 1e-4);
+        let after = under(&o);
+        assert!((before.0 - after.0).abs() < 1e-3 && (before.1 - after.1).abs() < 1e-3);
+        // Zoomed out past fitting: back to the whole map; panning can't leave the image.
+        o.zoom_at(p, -10.0);
+        assert_eq!((o.zoom, o.view), (1.0, Some((-256.0, -256.0))));
+        o.zoom_at(p, 3.0);
+        o.pan(10_000.0, -10_000.0);
+        let span = 512.0 - 512.0 / o.zoom;
+        assert_eq!(o.view, Some((-256.0, -256.0 + span)));
+    }
 
     /// Jugner Forest (104): record key 0, scale 1, key item 1 (0x181), file 5 -> 5317, origin (-264, -256).
     #[test]

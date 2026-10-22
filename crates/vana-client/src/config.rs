@@ -52,6 +52,8 @@ pub struct Config {
     pub anisotropy: u16,
     /// Party and alliance rows show TP (retail config 0xae bit 0, default off; ours on, as the add-ons do).
     pub party_tp: bool,
+    /// The map overlay's opacity 0..1 (Ctrl / Alt + O; not retail, the add-ons' map overlay).
+    pub map_overlay_opacity: f32,
     /// The "FINAL FANTASY XI Config" tool's values by registry name (HKLM\...\FinalFantasyXI\0000..0043,
     /// read at start-up by FUN_10016c30); missing ones take TOOL_DEFAULTS.
     pub tool: std::collections::BTreeMap<String, u32>,
@@ -116,6 +118,7 @@ impl Default for Config {
             frame_limit: 300,
             anisotropy: 16,
             party_tp: true,
+            map_overlay_opacity: 0.6,
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

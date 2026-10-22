@@ -13,6 +13,7 @@ pub struct Settings {
     pub frame_limit: u32,
     pub anisotropy: u16,
     pub party_tp: bool,
+    pub map_opacity: u32,
     pub music: u32,
     pub effects: u32,
     pub retail_aspect: bool,
@@ -23,7 +24,7 @@ pub struct Settings {
 impl Settings {
     pub fn of(c: &Config) -> Self {
         let pct = |v: f32| (v.clamp(0.0, 1.0) * 100.0).round() as u32;
-        Self { tool: c.tool.clone(), frame_limit: c.frame_limit, anisotropy: c.anisotropy, party_tp: c.party_tp, music: pct(c.music_volume), effects: pct(c.effects_volume), retail_aspect: c.retail_aspect, monitor: c.monitor.clone(), gpu: c.gpu.clone() }
+        Self { tool: c.tool.clone(), frame_limit: c.frame_limit, anisotropy: c.anisotropy, party_tp: c.party_tp, map_opacity: pct(c.map_overlay_opacity), music: pct(c.music_volume), effects: pct(c.effects_volume), retail_aspect: c.retail_aspect, monitor: c.monitor.clone(), gpu: c.gpu.clone() }
     }
 
     pub fn store(&self, c: &mut Config) {
@@ -33,6 +34,7 @@ impl Settings {
         c.frame_limit = self.frame_limit;
         c.anisotropy = self.anisotropy;
         c.party_tp = self.party_tp;
+        c.map_overlay_opacity = self.map_opacity as f32 / 100.0;
         c.music_volume = self.music as f32 / 100.0;
         c.effects_volume = self.effects as f32 / 100.0;
         c.retail_aspect = self.retail_aspect;
@@ -58,6 +60,7 @@ enum Val {
     FrameLimit,
     Aniso,
     PartyTp,
+    MapOpacity,
     Music,
     Effects,
     RetailAspect,
@@ -135,6 +138,7 @@ fn rows(tab: usize) -> &'static [Row] {
         row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),
         row("Anisotropy", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
+        row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen (not retail); its opacity.", MapOpacity, &[], Now),
     ];
     [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)]
 }
@@ -198,6 +202,7 @@ impl SettingsUi {
             Val::FrameLimit => self.s.frame_limit,
             Val::Aniso => self.s.anisotropy as u32,
             Val::PartyTp => self.s.party_tp as u32,
+            Val::MapOpacity => self.s.map_opacity,
             Val::Music => self.s.music,
             Val::Effects => self.s.effects,
             Val::RetailAspect => self.s.retail_aspect as u32,
@@ -251,6 +256,7 @@ impl SettingsUi {
             }
             Val::Music => self.s.music = (self.s.music as i32 + 5 * d).clamp(0, 100) as u32,
             Val::Effects => self.s.effects = (self.s.effects as i32 + 5 * d).clamp(0, 100) as u32,
+            Val::MapOpacity => self.s.map_opacity = (self.s.map_opacity as i32 + 5 * d).clamp(10, 100) as u32,
             v => {
                 let list: Vec<u32> = r.choices.iter().map(|c| c.0).collect();
                 let x = cycle(&list, self.get(v));
@@ -283,6 +289,7 @@ impl SettingsUi {
             Val::FrameLimit => format!("{} fps", self.s.frame_limit),
             Val::Music => format!("{} %", self.s.music),
             Val::Effects => format!("{} %", self.s.effects),
+            Val::MapOpacity => format!("{} %", self.s.map_opacity),
             Val::Monitor => self.monitors.iter().find(|m| m.0 == self.s.monitor).or(self.monitors.first()).map_or_else(|| "Default".into(), |m| m.1.clone()),
             Val::Gpu if self.s.gpu.is_empty() => "Default".into(),
             Val::Gpu => self.s.gpu.clone(),
@@ -392,7 +399,7 @@ impl SettingsUi {
             gu.text(r.label, x + 30.0, v[1], 0, white);
             let on = self.row == i + 1;
             match r.val {
-                Val::Music | Val::Effects => {
+                Val::Music | Val::Effects | Val::MapOpacity => {
                     // The config pages' slider: track windowps 383 and fill 384.
                     let f = self.get(r.val) as f32 / 100.0;
                     gu.sprite_scaled("menu    windowps", 383, v[0], v[1], v[2] / 192.0, 1.0, 0x8080_8080);

@@ -717,6 +717,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 egui::Key::Escape if world.log_active => world.log_active = false,
                 egui::Key::A if modifiers.ctrl || modifiers.alt => send_chat(world, "/attack".into()),
+                // Extra: the map overlay (a free Ctrl / Alt letter in retail's key set).
+                egui::Key::O if modifiers.ctrl || modifiers.alt => {
+                    if world.overlay.take().is_none() {
+                        let o = map::Overlay::open(world, gu.map_regions());
+                        if !o.has_map() {
+                            world.sounds.push(crate::audio::Ui::Error as u32);
+                        }
+                        world.overlay = Some(o);
+                    }
+                }
                 egui::Key::H if modifiers.ctrl || modifiers.alt => send_chat(world, "/heal".into()),
                 egui::Key::C if modifiers.ctrl || modifiers.alt => check_target(world),
                 // FUN_1012ec60 / FUN_101e9f10.
@@ -927,6 +937,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     gu.clear();
     name_plates(gu, world, sw, sh, view_proj);
+    if world.overlay.as_ref().is_some_and(|o| o.zone != world.pos_zone) {
+        world.overlay = Some(map::Overlay::open(world, gu.map_regions()));
+    }
+    if let Some(o) = world.overlay.as_mut() {
+        let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
+        o.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh, world.map_opacity);
+    }
     let mut map = world.map.take();
     if let Some(m) = map.as_mut() {
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
@@ -971,6 +988,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.hud_top = top;
     let party = crate::render::screens::party_menu(st.party.len());
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
+    blockers.extend(world.overlay.as_ref().filter(|o| o.has_map()).map(|o| o.rect));
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
@@ -1698,6 +1716,9 @@ struct World {
     full_log: Option<logwin::FullLog>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
     map: Option<map::MapWin>,
+    /// The map overlay (extra, Ctrl / Alt + O).
+    overlay: Option<map::Overlay>,
+    map_opacity: f32,
     key_items: Vec<u32>,
     /// "Downloading data ..." (menu chdummy in mode 2, FUN_1022eca0): when it opened; up from the lobby's
     /// world entry or the server's zone change until the zone has loaded (FUN_100135c0 closes it).
@@ -2093,6 +2114,7 @@ impl App {
         }
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
+            w.map_opacity = self.cfg.map_overlay_opacity;
         }
         // Applied at the next frame start: during the UI pass the window is out of self.gfx.
         self.window_dirty = true;
@@ -2508,6 +2530,8 @@ impl App {
                             models_loading: HashSet::new(),
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
+                            overlay: None,
+                            map_opacity: self.cfg.map_overlay_opacity,
                             target_since: Instant::now(),
                             cam_turn: (0.0, 0.0),
                             sounds: Vec::new(),
@@ -4886,6 +4910,18 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                // A left-drag that starts on the map overlay pans it instead of turning the camera.
+                let k = self.ui_k;
+                let on_overlay = |w: &World, p: (f64, f64)| w.overlay.as_ref().is_some_and(|o| o.has_map() && inside(&o.rect, (p.0 as f32 * k.0, p.1 as f32 * k.1)));
+                if let (true, Some(a), Some((x, y)), Phase::World(world)) = (self.left_down, self.press_at, self.last_cursor, &mut self.phase)
+                    && on_overlay(world, a)
+                {
+                    if let Some(o) = world.overlay.as_mut() {
+                        o.pan((position.x - x) as f32 * k.0, (position.y - y) as f32 * k.1);
+                    }
+                    self.last_cursor = Some((position.x, position.y));
+                    return;
+                }
                 let looking = self.dragging || self.middle_down || (self.left_down && self.press_at.is_some_and(|a| (a.0 - position.x).abs() + (a.1 - position.y).abs() >= 5.0));
                 if let (true, Some((x, y))) = (looking, self.last_cursor) {
                     match &mut self.phase {
@@ -4911,6 +4947,15 @@ impl ApplicationHandler for App {
                         MouseScrollDelta::LineDelta(_, y) => y,
                         MouseScrollDelta::PixelDelta(p) => p.y as f32 / 40.0,
                     };
+                    let k = self.ui_k;
+                    let at = self.last_cursor.map(|c| (c.0 as f32 * k.0, c.1 as f32 * k.1));
+                    if let (Some(o), Some(p)) = (world.overlay.as_mut(), at)
+                        && o.has_map()
+                        && inside(&o.rect, p)
+                    {
+                        o.zoom_at(p, d);
+                        return;
+                    }
                     // Field of view, as the keys (and retail's wheel on keyboard type 2, FUN_10253af0).
                     if !world.locked {
                         self.wheel += d;
