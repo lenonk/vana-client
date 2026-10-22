@@ -66,6 +66,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Camera while locked on in combat (user, 2026-10-22): it can't be raised / lowered or zoomed. Raising and lowering
   should work (check keys_spec / FUN_1001e030's locked branch); zoom while locked is unconfirmed: check the decomp.
 - Other known gaps:
+  - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop draws black
+    (on zone 133 too, so older); the top-bar rule FUN_10159080 changed a lot; config 0xab default from the desktop
+    size; the gamepad rows (Misc. 4 0xce, the external gamepad tool);
   - magic and ability menus (Ctrl+M/J/W/B);
   - the map's pan, zoom and its actions;
   - collision with characters and moving platforms;
