@@ -3060,3 +3060,14 @@ From ~/ffxi/lab/research/effects/classes2.md section 1:
   half-screens), f = g x 0.5 x (vis >> 3) / 128, colour = op 0x4b's (0 -> 0x80808080) x f per byte, added to the
   whole view after the effects. Op 0x4b's two floats have no reader.
 - Check: `zone-shot 102 --weather fine --hour 9 --eye 0,-5,0 --target 60,-50,10 --effects 30` (lf02).
+
+## D3b morph elements (CMoD3bElem; fx/lib.rs Morph, vs_morph) (2026-10-22)
+
+From classes2.md section 4: chunk 0x25 (byte 2 bit 7 alpha test, low 7 bits signed = K keys; V @4, N @6, index
+table @8 (+ byte 3 << 16), T @0xa, corner colours @0xc, corner UVs @0xe (+0x10000 when not past the colours),
+texture name @0x10, K blocks of V positions and N packed normals from 0x20; position then normal indices). Weights
++0x194.. from update ops 0x1e..0x22 (life t, or the day fraction with parameter bit 4, repeated (param >> 5) &
+0x1ff times), divided by their sum on the GPU (FUN_1003ea60; no weight -> last frame's largest gets 1.0); corners
+blended in vs_morph; colours doubled at load; stages as D3a (texture x diffuse x 2, x TFACTOR x 2 / x 4) with the
+common fog and z write; alpha test GREATER 0x60. Not done: normals / lighting, op 0x6e (camera-distance
+crossfade), the texture warp (elem+0x140..0x148), the distortion-morph variant.

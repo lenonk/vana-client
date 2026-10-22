@@ -44,7 +44,10 @@ pub mod w {
     pub const SFRAMES: usize = 39;
     /// Lens flares: the glare colour of emission op 0x4b (+0x19c, D3DCOLOR; 0 = 0x80808080).
     pub const GLARE: usize = 40;
-    pub const SLOTS: usize = 44;
+    /// D3b morphs: the five weights +0x194.. (ops 0x1e..0x22) and the previous frame's +0x1a8..
+    pub const MORPH_W: usize = 44;
+    pub const MORPH_PREV: usize = 49;
+    pub const SLOTS: usize = 56;
     pub const SLOT_COUNT: usize = 64;
     pub const WORDS: usize = SLOTS + SLOT_COUNT;
 }
@@ -69,6 +72,8 @@ pub mod dk {
     pub const BATCHED: u32 = 3;
     /// CMoLfdElem: a lens flare (its own draw, FUN_10053920).
     pub const FLARE: u32 = 4;
+    /// A D3b morph (CMoD3bElem); FRAMES holds its key count, SFRAMES its first word in the morph data.
+    pub const MORPH: u32 = 5;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -85,7 +90,7 @@ pub const NONE: u32 = u32::MAX;
 /// Per element out of the update pass, for drawing: element-to-view matrix (0..16), the TFACTOR colour (bytes
 /// / 255, alpha per FUN_1003d4f0) (16..20), UV offset (20, 21), frame (22), visible (23), projection depth bias
 /// (24), particles drawn (25), particle t (26), d (27), gravity (28..31), particle placement matrix columns
-/// (32..44).
+/// (32..44); morphs: normalised weights (32..37); flares: screen point (25, 26) and vis (27).
 pub const OUT_WORDS: usize = 44;
 /// Per element back to the CPU (a frame late): sort key +0x12c, status bits, world position, rotation, scale,
 /// colour.
@@ -215,6 +220,9 @@ pub fn wgsl_consts() -> String {
         ("E_SFRAMES", w::SFRAMES),
         ("E_GLARE", w::GLARE),
         ("DK_FLARE", dk::FLARE as usize),
+        ("DK_MORPH", dk::MORPH as usize),
+        ("E_MORPH_W", w::MORPH_W),
+        ("E_MORPH_PREV", w::MORPH_PREV),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),
         ("DK_BATCHED", dk::BATCHED as usize),

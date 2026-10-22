@@ -88,7 +88,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     return None;
                 }
             },
-            // D3b morphs and the rest have their own paths (not drawn yet).
+            0x25 => match reg.resolve(lib, from, 0x25, name) {
+                Some(r) => reg.morph(r).map(Draw::Morph).unwrap_or(Draw::None),
+                None => {
+                    reg.miss(lib, from, name, res_kind);
+                    return None;
+                }
+            },
             _ => Draw::None,
         }
     };
@@ -132,6 +138,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     e.0[w::KIND] = match draw {
         Draw::None => dk::NONE,
         Draw::Mesh(_) => dk::MESH,
+        Draw::Morph(id) => {
+            e.0[w::FRAMES] = reg.morph_data_of(id).map_or(0, |m| m.k);
+            // Byte 2 bit 7: the alpha test, read by vs_morph.
+            e.0[w::GLARE] = reg.morph_data_of(id).is_some_and(|m| m.alpha_test) as u32;
+            e.0[w::SFRAMES] = reg.morph_at[id as usize];
+            dk::MORPH
+        }
         Draw::Sprite(id) => {
             e.0[w::FRAMES] = reg.sprite_frames(id);
             e.0[w::SFRAMES] = reg.sprite_at[id as usize].0;

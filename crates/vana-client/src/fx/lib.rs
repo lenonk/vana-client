@@ -105,6 +105,67 @@ impl Sprite {
     }
 }
 
+/// A D3b morph mesh (chunk 0x25, FUN_1003e600 / FUN_1003ea60; classes2.md 4): K key meshes of V positions and N
+/// packed normals; corners (position index, normal index, colour doubled, uv) of T triangles.
+#[derive(Clone, Debug)]
+pub struct Morph {
+    pub k: u32,
+    pub v: u32,
+    pub n: u32,
+    pub t: u32,
+    /// Per corner: position index, normal index, RGBA (doubled, clamped), u, v (as bits).
+    pub corners: Vec<[u32; 5]>,
+    pub positions: Vec<[f32; 3]>,
+    pub normals: Vec<u32>,
+    pub name: String,
+    pub texture: Option<(usize, usize)>,
+    /// Byte 2 bit 7: alpha test (GREATER 0x60).
+    pub alpha_test: bool,
+}
+
+impl Morph {
+    pub fn parse(d: &[u8]) -> Result<Self> {
+        if d.len() < 0x20 {
+            bail!("d3b: {} bytes", d.len());
+        }
+        let u16_at = |o: usize| u16::from_le_bytes([d[o], d[o + 1]]) as usize;
+        let u32_at = |o: usize| d.get(o..o + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+        let k = (((d[2] << 1) as i8) >> 1).max(0) as usize;
+        let (v, n) = (u16_at(4), u16_at(6));
+        let idx = u16_at(8) + ((d[3] as usize) << 16);
+        let t = u16_at(0x0a);
+        let col = u16_at(0x0c);
+        let mut uv = u16_at(0x0e);
+        if uv <= col {
+            uv += 0x10000;
+        }
+        if idx + t * 12 > d.len() || col + t * 12 > d.len() || uv + t * 24 > d.len() || 0x20 + k * (v * 12 + n * 4) > d.len() {
+            bail!("d3b: tables out of range");
+        }
+        let mut positions = Vec::with_capacity(k * v);
+        let mut normals = Vec::with_capacity(k * n);
+        for key in 0..k {
+            let base = 0x20 + key * (v * 12 + n * 4);
+            for i in 0..v {
+                let f = |o: usize| f32::from_bits(u32_at(base + i * 12 + o));
+                positions.push([f(0), f(4), f(8)]);
+            }
+            for i in 0..n {
+                normals.push(u32_at(base + v * 12 + i * 4));
+            }
+        }
+        let corners = (0..t * 3)
+            .map(|c| {
+                let b = &d[col + c * 4..col + c * 4 + 4];
+                let dbl = |x: u8| (x as u32 * 2).min(255);
+                let rgba = dbl(b[2]) | dbl(b[1]) << 8 | dbl(b[0]) << 16 | dbl(b[3]) << 24;
+                [u16_at(idx + c * 2) as u32, u16_at(idx + t * 6 + c * 2) as u32, rgba, u32_at(uv + c * 8), u32_at(uv + c * 8 + 4)]
+            })
+            .collect();
+        Ok(Self { k: k as u32, v: v as u32, n: n as u32, t: t as u32, corners, positions, normals, name: String::from_utf8_lossy(&d[0x10..0x20]).into_owned(), texture: None, alpha_test: d[2] & 0x80 != 0 })
+    }
+}
+
 pub struct Library {
     pub file_id: u32,
     pub tree: Tree,
@@ -113,6 +174,7 @@ pub struct Library {
     pub keys: HashMap<usize, KeyFrame>,
     pub meshes: HashMap<usize, Mesh>,
     pub sprites: HashMap<usize, Sprite>,
+    pub morphs: HashMap<usize, Morph>,
     pub textures: Vec<zone::Texture>,
     tex_of_node: HashMap<usize, usize>,
     file: Vec<u8>,
@@ -138,7 +200,7 @@ impl Library {
             }
         }
         let keys = tree.of_kind(kind::KEYFRAME).map(|i| (i, KeyFrame::parse(&file[tree.nodes[i].data.clone()]))).collect();
-        Ok(Self { file_id, tree, gens, gen_at, keys, meshes: HashMap::new(), sprites: HashMap::new(), textures: Vec::new(), tex_of_node: HashMap::new(), file })
+        Ok(Self { file_id, tree, gens, gen_at, keys, meshes: HashMap::new(), sprites: HashMap::new(), morphs: HashMap::new(), textures: Vec::new(), tex_of_node: HashMap::new(), file })
     }
 
     pub fn generator(&self, node: usize) -> Option<&Generator> {
@@ -217,6 +279,21 @@ impl Library {
                 }
             }
         }
+    }
+
+    pub fn morph(&mut self, node: usize) -> Option<&mut Morph> {
+        if !self.morphs.contains_key(&node) {
+            match Morph::parse(self.data(node)) {
+                Ok(m) => {
+                    self.morphs.insert(node, m);
+                }
+                Err(e) => {
+                    log::debug!("effects: DAT {} morph {}: {e:#}", self.file_id, self.tree.nodes[node].name());
+                    return None;
+                }
+            }
+        }
+        self.morphs.get_mut(&node)
     }
 
     /// FUN_1003a0d0: the IMG whose 16-byte name matches, from the folder holding `node`: the first IMG of that

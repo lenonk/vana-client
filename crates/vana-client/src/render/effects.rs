@@ -112,6 +112,7 @@ pub struct EffectsGpu {
     tex_layout: wgpu::BindGroupLayout,
     mesh_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     sprite_pipes: HashMap<usize, wgpu::RenderPipeline>,
+    morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     /// Lens flares and their glare: additive, no depth test (FUN_1003ddb0, FUN_100125c0).
     flare_pipe: wgpu::RenderPipeline,
     glare_pipe: wgpu::RenderPipeline,
@@ -131,6 +132,7 @@ pub struct EffectsGpu {
     slots: (wgpu::Buffer, usize),
     sverts: (wgpu::Buffer, usize),
     sframes: (wgpu::Buffer, usize),
+    mdata: (wgpu::Buffer, usize),
     update_group: Option<wgpu::BindGroup>,
     draw_group: Option<wgpu::BindGroup>,
     meshes: Vec<Option<GpuMesh>>,
@@ -179,7 +181,7 @@ impl EffectsGpu {
         let vs = wgpu::ShaderStages::VERTEX;
         let draw_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects draw"),
-            entries: &[uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT), storage(1, true, vs), storage(2, true, vs), storage(3, true, vs), storage(4, true, vs), storage(5, true, vs)],
+            entries: &[uniform(0, wgpu::ShaderStages::VERTEX_FRAGMENT), storage(1, true, vs), storage(2, true, vs), storage(3, true, vs), storage(4, true, vs), storage(5, true, vs), storage(6, true, vs)],
         });
         let tex_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("effects texture"),
@@ -247,9 +249,11 @@ impl EffectsGpu {
         });
         let mut mesh_pipes = HashMap::new();
         let mut sprite_pipes = HashMap::new();
+        let mut morph_pipes = HashMap::new();
         for class in 0..6 {
             for zwrite in [false, true] {
                 mesh_pipes.insert((class, zwrite), pipe("vs_mesh", &vbuf, class, zwrite));
+                morph_pipes.insert((class, zwrite), pipe("vs_morph", &[], class, zwrite));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -276,6 +280,7 @@ impl EffectsGpu {
             tex_layout,
             mesh_pipes,
             sprite_pipes,
+            morph_pipes,
             flare_pipe,
             glare_pipe,
             flare_vis,
@@ -294,6 +299,7 @@ impl EffectsGpu {
             slots: table("effects slots"),
             sverts: table("effects sprite vertices"),
             sframes: table("effects sprite frames"),
+            mdata: table("effects morph data"),
             update_group: None,
             draw_group: None,
             meshes: Vec::new(),
@@ -363,6 +369,11 @@ impl EffectsGpu {
             q.write_buffer(&self.sframes.0, 0, bytemuck::cast_slice(&reg.sprite_frame_table));
             reg.sprites_dirty = false;
         }
+        if reg.morphs_dirty {
+            redraw |= Self::fit(gpu, &mut self.mdata, reg.morph_data.len() * 4, "effects morph data");
+            q.write_buffer(&self.mdata.0, 0, bytemuck::cast_slice(&reg.morph_data));
+            reg.morphs_dirty = false;
+        }
         rebind |= Self::fit(gpu, &mut self.slots, fx.slots.len() * SLOT_WORDS * 4, "effects slots");
         if !fx.slots.is_empty() {
             q.write_buffer(&self.slots.0, 0, bytemuck::cast_slice(&fx.slots));
@@ -373,6 +384,11 @@ impl EffectsGpu {
         for id in std::mem::take(&mut fx.reg.new_sprites) {
             let r = fx.reg.sprites[id as usize];
             if let Some(t) = fx.reg.libs[r.0].sprites.get(&r.1).and_then(|s| s.texture) {
+                self.texture(gpu, fx, t);
+            }
+        }
+        for id in std::mem::take(&mut fx.reg.new_morphs) {
+            if let Some(t) = fx.reg.morph_data_of(id).and_then(|m| m.texture) {
                 self.texture(gpu, fx, t);
             }
         }
@@ -410,6 +426,7 @@ impl EffectsGpu {
                     wgpu::BindGroupEntry { binding: 3, resource: self.parts.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 4, resource: self.sverts.0.as_entire_binding() },
                     wgpu::BindGroupEntry { binding: 5, resource: self.sframes.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 6, resource: self.mdata.0.as_entire_binding() },
                 ],
             }));
         }
@@ -594,6 +611,17 @@ impl EffectsGpu {
                         Some((_, n)) => pass.draw(0..6, base..base + n.min(PER_ELEM)),
                         None => pass.draw(0..6 * quads, base..base + 1),
                     }
+                }
+                Draw::Morph(id) => {
+                    let Some(m) = fx.reg.morph_data_of(id) else { continue };
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    let key = (true, class + 8, c.flags & 0x1000 != 0);
+                    if bound != Some(key) {
+                        pass.set_pipeline(&self.morph_pipes[&(class, key.2)]);
+                        bound = Some(key);
+                    }
+                    pass.set_bind_group(1, m.texture.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
+                    pass.draw(0..m.t * 3, base..base + 1);
                 }
                 Draw::None => {}
             }

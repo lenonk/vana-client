@@ -73,6 +73,8 @@ pub enum Draw {
     Mesh(u32),
     /// A registered D3a sprite animation.
     Sprite(u32),
+    /// A registered D3b morph.
+    Morph(u32),
 }
 
 /// This frame's inputs.
@@ -207,6 +209,13 @@ pub struct Registry {
     pub sprite_frame_table: Vec<[u32; 2]>,
     pub sprite_at: Vec<(u32, u32)>,
     pub sprites_dirty: bool,
+    /// Morphs: their GPU words back to back ([K, V, N, T], corners, key positions, key normals) and first word.
+    pub morphs: Vec<Ref>,
+    morph_id: HashMap<Ref, u32>,
+    pub morph_data: Vec<u32>,
+    pub morph_at: Vec<u32>,
+    pub morphs_dirty: bool,
+    pub new_morphs: Vec<u32>,
     zone: Option<usize>,
     logged: HashSet<(u8, u8)>,
     missed: HashSet<(usize, u32)>,
@@ -236,6 +245,12 @@ impl Registry {
             sprite_frame_table: Vec::new(),
             sprite_at: Vec::new(),
             sprites_dirty: false,
+            morphs: Vec::new(),
+            morph_id: HashMap::new(),
+            morph_data: Vec::new(),
+            morph_at: Vec::new(),
+            morphs_dirty: false,
+            new_morphs: Vec::new(),
             zone: None,
             logged: HashSet::new(),
             missed: HashSet::new(),
@@ -375,6 +390,34 @@ impl Registry {
         self.sprite_id.insert(r, id);
         self.new_sprites.push(id);
         Some(id)
+    }
+
+    /// A D3b's GPU id; its texture resolves as a mesh's.
+    pub fn morph(&mut self, r: Ref) -> Option<u32> {
+        if let Some(&id) = self.morph_id.get(&r) {
+            return Some(id);
+        }
+        let name = self.libs[r.0].morph(r.1)?.name.clone();
+        let tex = self.texture(r.0, r.1, &name);
+        let m = self.libs[r.0].morphs.get_mut(&r.1)?;
+        m.texture = tex;
+        let id = self.morphs.len() as u32;
+        let at = self.morph_data.len() as u32;
+        self.morph_data.extend([m.k, m.v, m.n, m.t]);
+        self.morph_data.extend(m.corners.iter().flatten());
+        self.morph_data.extend(m.positions.iter().flatten().map(|f| f.to_bits()));
+        self.morph_data.extend(&m.normals);
+        self.morph_at.push(at);
+        self.morphs_dirty = true;
+        self.morphs.push(r);
+        self.morph_id.insert(r, id);
+        self.new_morphs.push(id);
+        Some(id)
+    }
+
+    pub fn morph_data_of(&self, id: u32) -> Option<&lib::Morph> {
+        let r = self.morphs[id as usize];
+        self.libs[r.0].morphs.get(&r.1)
     }
 
     pub fn sprite_is_flare(&self, id: u32) -> bool {
@@ -1245,6 +1288,7 @@ impl Effects {
                     format!("mesh {}:{}", self.reg.libs[r.0].file_id, self.reg.libs[r.0].tree.nodes[r.1].name())
                 }
                 Draw::Sprite(id) => format!("sprite {id}"),
+                Draw::Morph(id) => format!("morph {id}"),
                 Draw::None => "none".into(),
             };
             let pos = c.back.map(|b| b.world).unwrap_or_default();

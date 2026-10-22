@@ -244,6 +244,18 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             case 0x1bu: { set_cb(b, 3u, to_byte(key_t(b, s, t))); }
             case 0x1cu, 0x54u: { let v = key_t(b, s, t); set_ef(b, E_UV, v - trunc(v)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_U; }
             case 0x1du, 0x55u: { let v = key_t(b, s, t); set_ef(b, E_UV + 1u, v - trunc(v)); el[b + E_STATE] = el[b + E_STATE] | ST_SCROLL_V; }
+            // D3b morph weights +0x194.. (class 0xf only): the slot keyframe at life t, or the day fraction with
+            // parameter bit 4, repeated (param >> 5) & 0x1ff times.
+            case 0x1eu, 0x1fu, 0x20u, 0x21u, 0x22u: {
+                if (el[b + E_KIND] == DK_MORPH) {
+                    let prm = sl(b, s + 1u);
+                    var x = t;
+                    if ((prm & 0x10u) != 0u) { x = p.time.z; }
+                    let n = (prm >> 5u) & 0x1ffu;
+                    if (n != 0u) { x = fract(x * f32(n)); }
+                    set_ef(b, E_MORPH_W + code - 0x1eu, key_sample(sl(b, s), x, (prm & 0xfu) != 0u));
+                }
+            }
             case 0x26u: {
                 let m = euler(vec3<f32>(opf(r + 2u), opf(r + 1u), opf(r)));
                 set_slv3(b, s, m * slv3(b, s));
@@ -432,6 +444,24 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     outs[ob + 22u] = f32(el[b + E_FRAME]);
     outs[ob + 23u] = select(0.0, 1.0, drawn);
     outs[ob + 24u] = pbias;
+    // FUN_1003ea60: morph weights divided by their sum; none -> the largest of last frame's gets 1.0.
+    if (kind == DK_MORPH) {
+        let kk = min(el[b + E_FRAMES], 5u);
+        var sum = 0.0;
+        for (var q = 0u; q < kk; q = q + 1u) { sum = sum + ef(b, E_MORPH_W + q); }
+        var best = 0u;
+        for (var q = 1u; q < kk; q = q + 1u) {
+            if (ef(b, E_MORPH_PREV + q) > ef(b, E_MORPH_PREV + best)) { best = q; }
+        }
+        for (var q = 0u; q < 5u; q = q + 1u) {
+            var wq = 0.0;
+            if (q < kk) {
+                if (sum < 1.17549435e-38) { wq = select(0.0, 1.0, q == best); } else { wq = ef(b, E_MORPH_W + q) / sum; }
+            }
+            outs[ob + 32u + q] = wq;
+            set_ef(b, E_MORPH_PREV + q, ef(b, E_MORPH_W + q));
+        }
+    }
     // Batched particles (d3a_particles.md 4.4 / 4.5): count, t, placement M1 = parent rotation x inverse(V_b90).
     if (kind == DK_BATCHED) {
         let nn = el[b + E_PART_N];
@@ -488,6 +518,7 @@ struct Draw {
 @group(0) @binding(3) var<storage, read> parts: array<f32>;
 @group(0) @binding(4) var<storage, read> sverts: array<u32>;
 @group(0) @binding(5) var<storage, read> sframes: array<vec2<u32>>;
+@group(0) @binding(6) var<storage, read> mdata: array<u32>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -659,6 +690,36 @@ fn vs_glare(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -
     return out;
 }
 
+// D3b morph (FUN_1003e600): corner k of the element's mesh, its position blended from the key meshes by the
+// normalised weights; colours come doubled from the loader. Variant 7 (8 with the alpha test).
+@vertex
+fn vs_morph(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let eb = e * E_WORDS;
+    let base = dels[eb + E_SFRAMES];
+    let kk = mdata[base];
+    let nv = mdata[base + 1u];
+    let nn = mdata[base + 2u];
+    let nt = mdata[base + 3u];
+    if (k >= nt * 3u) { return hidden(); }
+    let c = base + 4u + k * 5u;
+    let pi = mdata[c];
+    let keys = base + 4u + nt * 15u;
+    var pos = vec3<f32>(0.0);
+    for (var q = 0u; q < min(kk, 5u); q = q + 1u) {
+        let a = keys + (q * nv + pi) * 3u;
+        pos = pos + douts[o + 32u + q] * vec3<f32>(bitcast<f32>(mdata[a]), bitcast<f32>(mdata[a + 1u]), bitcast<f32>(mdata[a + 2u]));
+    }
+    let col = mdata[c + 2u];
+    let color = vec4<f32>(f32(col & 0xffu), f32((col >> 8u) & 0xffu), f32((col >> 16u) & 0xffu), f32(col >> 24u)) / 255.0;
+    let uv = vec2<f32>(bitcast<f32>(mdata[c + 3u]), bitcast<f32>(mdata[c + 4u]));
+    let atest = select(7u, 8u, (dels[eb + E_GLARE] & 1u) != 0u);
+    let vp = (out_mat(o) * vec4<f32>(pos, 1.0)).xyz;
+    return vout(e, vp, color, uv, atest);
+}
+
 fn sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 fn sat3(x: vec3<f32>) -> vec3<f32> { return clamp(x, vec3<f32>(0.0), vec3<f32>(1.0)); }
 
@@ -704,6 +765,13 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
     } else if (variant == 6u) {
         rgb = dd.rgb;
         a = 1.0;
+    } else if (variant == 7u || variant == 8u) {
+        // D3b stages (TSS 0x103470b8): texture x diffuse x 2, then x TFACTOR x 2 (alpha x 4).
+        let t = textureSample(tex, samp, i.uv);
+        let s0 = sat3(2.0 * dd.rgb * t.rgb);
+        rgb = sat3(2.0 * s0 * f.rgb);
+        a = sat(4.0 * sat(dd.a * t.a) * f.a);
+        if (variant == 8u && a <= 96.0 / 255.0) { discard; }
     } else {
         let t = textureSample(tex, samp, i.uv);
         let s0 = sat3(2.0 * dd.rgb * t.rgb);
@@ -714,7 +782,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if (variant < 4u && (flags & 0x2000000u) == 0u) {
+    if ((variant < 4u || variant == 7u || variant == 8u) && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }
