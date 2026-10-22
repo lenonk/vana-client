@@ -9,8 +9,9 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 /// An actor slot of a task or generator: an entity, a doll left where an actor stood (ops 0x15 / 0x16), or none.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub enum Who {
+    #[default]
     None,
     Actor(u32),
     Doll(usize),

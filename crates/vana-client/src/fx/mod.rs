@@ -162,6 +162,9 @@ pub struct Instance {
     pub parent_elem: Option<u32>,
     /// Actor1 / actor2 (gen +0x30: +0x3c / +0x40).
     pub actors: [sched::Who; 2],
+    /// A clone linked to an element (+0x164): not a task of its own; the element runs it (FUN_10048740 from
+    /// emission ops 0x44 / 0x53 / 0x6a once, then update ops 0x25 / 0x33 / 0x46 every frame).
+    pub driven: Option<u32>,
 }
 
 /// A word range of an element for the GPU this frame.
@@ -631,6 +634,7 @@ impl Effects {
             owner,
             parent_elem: None,
             actors: [sched::Who::None; 2],
+            driven: None,
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -763,7 +767,7 @@ impl Effects {
             }
             c.life -= dt;
             if c.life < 1.0 {
-                self.expire(e as u32);
+                self.expire(e as u32, f);
             }
         }
         for i in 0..self.insts.len() {
@@ -775,10 +779,13 @@ impl Effects {
             {
                 self.follow(i, word, f, actors);
             }
+            let driven = self.drive(i, f);
             let Some(inst) = self.insts[i].as_ref() else { continue };
             let (m, a, b, wgt, ss, ms) = (inst.matrix, inst.scale_a, inst.scale_b, inst.weather, inst.size_scaled, inst.mslot);
             self.put_slot(ms, m, a, b, wgt, ss);
-            self.update_instance(i, f);
+            if driven {
+                self.update_instance(i, f);
+            }
         }
         // Finished or stopped instances go once their elements have.
         for i in 0..self.insts.len() {
@@ -790,6 +797,40 @@ impl Effects {
                 self.kill(i);
             }
         }
+    }
+
+    /// Whether instance `i` runs this frame: its own task always; an element's clone while the element lives and its
+    /// update stream has op 0x25 (emit every frame, life != 0), or 0x33 / 0x46 (the clone follows the element:
+    /// its rotation, scale and world position, 0x46 also turned to the camera). The clone of a dead element stops.
+    fn drive(&mut self, i: usize, f: &Frame) -> bool {
+        let Some(e) = self.insts[i].as_ref().and_then(|x| x.driven) else { return true };
+        let elem = self.elems.get(e as usize).and_then(|c| c.as_ref()).filter(|c| c.child == Some(i));
+        let Some(c) = elem else {
+            if let Some(x) = self.insts[i].as_mut() {
+                x.stopping = true;
+            }
+            return false;
+        };
+        let (life, back, owner) = (c.life, c.back, self.insts.get(c.inst).and_then(|x| x.as_ref()).map(|x| x.src));
+        let Some(owner) = owner else { return false };
+        let has = |reg: &Registry, code: u8| reg.update_op_slot(owner, code).is_some();
+        let follow = if has(&self.reg, 0x46) { Some(true) } else if has(&self.reg, 0x33) { Some(false) } else { None };
+        if let (Some(cam), Some(b)) = (follow, back)
+            && let Some(x) = self.insts[i].as_mut()
+        {
+            let mut m = math::euler(b.rot);
+            if cam {
+                let [_, _, _, c10] = crate::render::effects::view_set(f.view);
+                let mut c = c10;
+                c.w_axis = glam::Vec4::W;
+                m = math::then(m, c);
+            }
+            m.w_axis = b.world.extend(1.0);
+            x.matrix = Some(m);
+            x.scale_a = b.scale;
+            return true;
+        }
+        has(&self.reg, 0x25) && life != 0.0
     }
 
     /// FUN_10048740 for one instance.
@@ -913,6 +954,7 @@ impl Effects {
                     if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
                         if let Some(x) = self.insts[ci].as_mut() {
                             x.parent_elem = Some(e);
+                            x.driven = Some(e);
                             x.actors = actors;
                             if op != 0x44 {
                                 let mut m = math::euler(parent.rot);
@@ -939,28 +981,44 @@ impl Effects {
                         self.update_instance(ci, f);
                     }
                 }
-                emit::Child::Burst { src } => {
-                    if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
-                        if let Some(x) = self.insts[ci].as_mut() {
-                            x.parent_elem = Some(e);
-                        }
-                        self.update_instance(ci, f);
-                        if let Some(x) = self.insts[ci].as_mut() {
-                            x.stopping = true;
-                        }
-                    }
-                }
+                emit::Child::Burst { src } => self.burst(src, e, f),
+            }
+        }
+    }
+
+    /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
+    fn burst(&mut self, src: Ref, e: u32, f: &Frame) {
+        let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
+        if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
+            if let Some(x) = self.insts[ci].as_mut() {
+                x.parent_elem = Some(e);
+                x.actors = actors;
+            }
+            self.update_instance(ci, f);
+            if let Some(x) = self.insts[ci].as_mut() {
+                x.stopping = true;
             }
         }
     }
 
     /// FUN_10043ca0 once life < 1: the end stream (FUN_1004d770), then delete unless held.
-    fn expire(&mut self, e: u32) {
+    fn expire(&mut self, e: u32, f: &Frame) {
         let Some(c) = self.elems[e as usize].as_ref() else { return };
         let inst = c.inst;
-        let ops = self.insts.get(inst).and_then(|x| x.as_ref()).map(|x| x.streams[3].clone()).unwrap_or_default();
+        let (ops, src, actors) = self.insts.get(inst).and_then(|x| x.as_ref()).map(|x| (x.streams[3].clone(), x.src, x.actors)).unwrap_or_default();
         for op in &ops {
             match op.code {
+                // Burst a generator at the element / start a scheduler with the element's actor pair.
+                0x01 => {
+                    if let Some(g) = self.reg.resolve(src.0, src.1, kind::GENERATOR, op.u32(2)) {
+                        self.burst(g, e, f);
+                    }
+                }
+                0x02 => {
+                    if let Some(r) = self.reg.resolve(src.0, src.1, kind::SCHEDULER, op.u32(2)) {
+                        self.spawn_task(r, actors[0], actors[1], None, 1.0, None);
+                    }
+                }
                 0x05 => {
                     let c = self.elems[e as usize].as_mut().unwrap();
                     c.life = c.max_life;
