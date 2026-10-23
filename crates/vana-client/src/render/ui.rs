@@ -236,8 +236,8 @@ impl UiBatch {
 }
 
 const SHADER: &str = r#"
-// screen.xy: the layout size the vertices are in; target.xy: the pixels they land on.
-struct U { screen: vec4<f32>, target: vec4<f32> };
+// screen.xy: the layout size the vertices are in; dst.xy: the pixels they land on.
+struct U { screen: vec4<f32>, dst: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var scene_depth: texture_depth_2d;
 @group(1) @binding(0) var tex: texture_2d<f32>;
@@ -255,7 +255,7 @@ struct VOut { @builtin(position) clip: vec4<f32>, @location(0) uv: vec2<f32>, @l
     // Depth-tested quads (name plates) hide behind nearer scenery; the scene may be drawn at another size.
     if i.depth >= 0.0 {
         let dims = vec2<f32>(textureDimensions(scene_depth));
-        let t = vec2<i32>(clamp(i.clip.xy / u.target.xy * dims, vec2<f32>(0.0), dims - 1.0));
+        let t = vec2<i32>(clamp(i.clip.xy / u.dst.xy * dims, vec2<f32>(0.0), dims - 1.0));
         if i.depth > textureLoad(scene_depth, t, 0) {
             discard;
         }
