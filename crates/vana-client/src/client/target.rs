@@ -291,10 +291,10 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let d = (me - tpos).length();
     let e = (me - tpos).normalize_or(Vec3::X);
     let mut dv = c.eye - c.look;
-    // Manual orbit, scaled by 6 / |D| when locked.
+    // Manual orbit, scaled by 6 / |D| when locked (_DAT_1032a3e8 / max(|eye - look|, 0.01)).
     if turn != 0.0 {
-        let len = dv.length().max(0.1);
-        dv = glam::Quat::from_rotation_y(turn * (6.0 / len).min(3.0)) * dv;
+        let len = dv.length().max(0.01);
+        dv = glam::Quat::from_rotation_y(turn * 6.0 / len) * dv;
     }
     dv.y += rise;
     let near = (7.2 + 0.125 * d) * FOCAL * 0.001;
@@ -317,6 +317,20 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let from = me + Vec3::new(0.0, -1.0, 0.0);
     if let Some(hit) = w.ground.as_ref().and_then(|g| g.raycast(from, eye)) {
         eye = from + (eye - from).normalize_or(Vec3::X) * (hit - 0.2).max(0.2);
+    }
+    // FUN_1001ee60's shared tail, after both branches: 0.17 clear of the floor below (within 10), and the eye never
+    // passes through a wall: a sweep from where it was stops 0.2 short (as camera.rs does for the free camera).
+    if let Some(g) = w.ground.as_ref().filter(|g| !g.is_empty()) {
+        if let Some(f) = g.floor(eye.x, eye.z, eye.y, 0.0).filter(|f| f - eye.y <= 10.0)
+            && eye.y > f - 0.17
+        {
+            eye.y = f - 0.17;
+        }
+        if g.raycast(from, c.eye).is_none()
+            && let Some(t) = g.raycast(c.eye, eye)
+        {
+            eye = c.eye + (eye - c.eye).normalize_or(Vec3::X) * (t - 0.2).max(0.0);
+        }
     }
     c.eye = eye;
     w.cam = c;

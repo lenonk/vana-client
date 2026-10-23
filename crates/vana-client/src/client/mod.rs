@@ -3858,8 +3858,11 @@ impl App {
         // Locked: the keys move relative to the target (FUN_100a6210) and the camera follows FUN_1001e030.
         let lock_target = world.target.filter(|_| world.locked).and_then(|t| world.entities.get(&t)).map(|e| e.pos);
         if let Some(tp) = lock_target {
+            // FUN_1001ee60 locked: axis 6 turns at the free rate (scaled 6 / distance in step_camera), axis 7 raises
+            // and lowers the eye at the free rate, unscaled.
             let (dx, dy) = std::mem::take(&mut world.cam_turn);
-            target::step_camera(world, dt * 60.0, dx + turn_keys * 2.0 * dt, dy);
+            let ticks = dt * 60.0;
+            target::step_camera(world, ticks, dx + turn_keys * i6 * camera::YAW_RATE * ticks, dy + cy * i7 * camera::RISE_RATE * ticks);
             let to = tp - world.pos;
             if to.x.abs() + to.z.abs() > 1e-3 {
                 world.yaw = to.x.atan2(to.z);

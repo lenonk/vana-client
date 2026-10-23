@@ -8,8 +8,8 @@ use crate::render::Camera;
 use glam::Vec3;
 
 /// Camera X (rad, about the look point) and Y (eye height) per tick at full input (_DAT_1031f25c, _DAT_1031f254).
-const YAW_RATE: f32 = 0.0279244;
-const RISE_RATE: f32 = 0.1066667;
+pub const YAW_RATE: f32 = 0.0279244;
+pub const RISE_RATE: f32 = 0.1066667;
 /// The eye rests 3..6 from the look; beyond 6 it is reeled in by D (d - 6) 0.012 a tick.
 const REST_NEAR: f32 = 3.0;
 const REST_FAR: f32 = 6.0;
