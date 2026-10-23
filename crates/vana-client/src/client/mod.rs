@@ -4245,7 +4245,7 @@ impl App {
         evs.extend(world.net.events.try_iter());
         for ev in evs {
             if world.battle.is_none()
-                && matches!(ev, NetEvent::Battle(_) | NetEvent::SystemMessage { .. } | NetEvent::Emote { .. } | NetEvent::TrophyList { .. } | NetEvent::TrophySolution { .. })
+                && matches!(ev, NetEvent::Battle(_) | NetEvent::SystemMessage { .. } | NetEvent::MessageStd { .. } | NetEvent::Emote { .. } | NetEvent::TrophyList { .. } | NetEvent::TrophySolution { .. })
             {
                 world.held_text.push(ev);
                 continue;
@@ -4608,6 +4608,7 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
+                NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
                 NetEvent::TrophyList { slot, item, target, gold, container } => treasure::on_list(world, slot, item, target, gold, container),
                 NetEvent::TrophySolution { slot, judge, loot, entry, entry_point, loot_name, entry_name } => {
                     treasure::on_solution(world, slot, judge, loot, entry, entry_point, loot_name, entry_name)

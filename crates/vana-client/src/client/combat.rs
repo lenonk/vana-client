@@ -224,6 +224,23 @@ pub(super) fn on_system_message(w: &mut World, id: u16, work: [i32; 2]) {
     }
 }
 
+/// s2c 0x009 (LAB_100fbd40 -> FUN_100a1ab0): a 7031 line; the actor from CasUniqueNo (none for 0), no target, work
+/// = Para0..3, string slots 2 / 3 = string2 / string3 (e.g. 88 "Dice roll! X rolls N!", 89 "X examines you.").
+/// Not done: the block list (Attr 0x10), SysMesFilterLevel (s2c 0x0B4), the Mode key's event window.
+pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], strings: [String; 2]) {
+    let Some(bt) = w.battle.clone() else { return };
+    let ctx = Ctx { actor: if cas != 0 { who(w, cas) } else { None }, target: None, me: w.name.clone(), work: [para[0], para[1], para[2], para[3], 0], strings };
+    match bt.system(id, &ctx) {
+        Some(line) => {
+            let colour = bt.colour_in(line.mode.unwrap_or(0), &w.game);
+            for l in line.lines.into_iter().filter(|l| !l.is_empty()) {
+                w.chat.push_colour(l, colour);
+            }
+        }
+        None => log::info!("standard message {id} has no text"),
+    }
+}
+
 /// FUN_1007f6d0 on a command that fails: ">> <line>" and group 9 0x78 "...A command error occurred.", mode 0x9d.
 pub(super) fn command_error(w: &mut World, line: &str) {
     let Some(bt) = w.battle.clone() else { return };

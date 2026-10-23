@@ -156,6 +156,8 @@ pub enum NetEvent {
     ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32, mog_zone: bool, send_count: u16 },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
+    /// s2c 0x009 (GP_SERV_COMMAND_MESSAGE): MesNo @0xa, Data @0xd as keys (see std_data).
+    MessageStd { id: u16, cas: u32, para: [i32; 4], strings: [String; 2] },
     /// s2c 0x0D2 (GP_SERV_COMMAND_TROPHY_LIST): TargetUniqueNo @8, Gold @0xc, TrophyItemNo @0x10, TrophyItemIndex @0x14,
     /// IsContainer @0x16.
     TrophyList { slot: u8, item: u16, target: u32, gold: u16, container: bool },
@@ -438,6 +440,22 @@ pub fn action_body(target: u32, index: u16, action: u16) -> Vec<u8> {
     body
 }
 
+/// s2c 0x009's Data (LAB_100fbd40): each key found anywhere (strstr), numbers by atoi, string2 / string3 up to 24
+/// bytes to a space, tab or NUL. TarUniqueNo lands in CasUniqueNo's slot (retail's), so it wins when present.
+/// Returns (cas, Para0..3, [string2, string3]).
+fn std_data(data: &str) -> (u32, [i32; 4], [String; 2]) {
+    let after = |key: &str| data.find(key).map(|i| data[i + key.len()..].trim_start_matches([' ', '\t']));
+    let num = |key: &str| {
+        after(key).map_or(0, |v| {
+            let end = v.char_indices().find(|&(i, c)| !(c.is_ascii_digit() || (i == 0 && c == '-'))).map_or(v.len(), |(i, _)| i);
+            v[..end].parse::<i64>().unwrap_or(0) as i32
+        })
+    };
+    let word = |key: &str| after(key).map_or(String::new(), |v| v.split([' ', '\t', '\0']).next().unwrap_or("").chars().take(24).collect());
+    let cas = if data.contains("TarUniqueNo") { num("TarUniqueNo") } else { num("CasUniqueNo") };
+    (cas as u32, [num("Para0"), num("Para1"), num("Para2"), num("Para3")], [word("string2"), word("string3")])
+}
+
 fn text(p: &SubPacket, at: usize, len: usize) -> String {
     p.str(at, len)
 }
@@ -659,16 +677,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     // s2c 0x009 (LAB_100fbd40): MesNo @0xa, its parameters as "Para0 %u Para1 %u ..." text in Data @0xd.
                     0x009 => {
                         let data = text(&p, 0xd, p.data.len().saturating_sub(0xd));
-                        let mut para = [0u32; 2];
-                        let words: Vec<&str> = data.split_whitespace().collect();
-                        for w in words.windows(2) {
-                            match w[0] {
-                                "Para0" => para[0] = w[1].parse().unwrap_or(0),
-                                "Para1" => para[1] = w[1].parse().unwrap_or(0),
-                                _ => {}
-                            }
-                        }
-                        tx.send(NetEvent::SystemMessage { id: p.u16(0xa), para: para[0], para2: para[1] })?
+                        let d = std_data(&data);
+                        tx.send(NetEvent::MessageStd { id: p.u16(0xa), cas: d.0, para: d.1, strings: d.2 })?
                     }
                     0x053 => tx.send(NetEvent::SystemMessage { id: p.u16(0xc), para: p.u32(4), para2: p.u32(8) })?,
                     0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,
@@ -866,6 +876,14 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// s2c 0x009 Data: LSB's /random ("string2 Lnxtest string3 523") and its Para keys.
+    #[test]
+    fn std_data_keys() {
+        assert_eq!(std_data("string2 Lnxtest string3 523"), (0, [0; 4], ["Lnxtest".into(), "523".into()]));
+        assert_eq!(std_data("CasUniqueNo 77 Para0 5 Para1 -3"), (77, [5, -3, 0, 0], [String::new(), String::new()]));
+        assert_eq!(std_data("CasUniqueNo 1 TarUniqueNo 9"), (9, [0; 4], [String::new(), String::new()]));
+    }
 
     fn sub(id: u16, len: usize, fill: &[(usize, &[u8])]) -> SubPacket {
         let mut data = vec![0u8; len];

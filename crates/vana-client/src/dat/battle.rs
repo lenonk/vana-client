@@ -619,6 +619,14 @@ mod tests {
         Some(Who { name: name.into(), ..Default::default() })
     }
 
+    /// s2c 0x009 /random (7031 88): string slots 2 / 3 = the roller and the roll.
+    #[test]
+    fn random_roll() {
+        let Some(bt) = load() else { return };
+        let ctx = Ctx { strings: ["Lnxtest".into(), "523".into()], ..Default::default() };
+        assert_eq!(bt.system(88, &ctx).unwrap().lines, ["Dice roll! Lnxtest rolls 523!"]);
+    }
+
     /// Treasure pool lines (s2c 0x0D2 / 0x0D3): the find (0x10, target the dropper), a lot (0x11: slot 2 the points,
     /// slot 3 the lotter) and the win (0x12: slot 2 the winner).
     #[test]
