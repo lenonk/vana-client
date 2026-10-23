@@ -668,9 +668,11 @@ impl EffectsGpu {
                 dimension: wgpu::TextureDimension::D2,
                 format: t.format(),
                 usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
+                view_formats: &[t.format().remove_srgb_suffix()],
             });
-            let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &c.create_view(&Default::default()));
+            // Drawing in gamma space (not linearize), the copy is read as stored, without the sRGB decode.
+            let vf = if self.linearize { t.format() } else { t.format().remove_srgb_suffix() };
+            let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &c.create_view(&wgpu::TextureViewDescriptor { format: Some(vf), ..Default::default() }));
             self.scene_copy = Some((c, g));
         }
         let Some(group) = self.draw_group.as_ref() else { return };

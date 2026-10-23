@@ -3179,6 +3179,8 @@ pub struct App {
     ui_drawn: bool,
     /// Event crossfade and fade passes over the scene.
     screen_fx: Option<crate::render::screenfx::ScreenFx>,
+    /// The world's, in the scene's plain format.
+    screen_fx_world: Option<crate::render::screenfx::ScreenFx>,
     effects_gpu: Option<crate::render::effects::EffectsGpu>,
     /// Lobby screen fades, and whether the window has been shown (it stays hidden until the title can draw).
     lobby_fade: LobbyFade,
@@ -3345,6 +3347,7 @@ impl App {
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
             screen_fx: None,
+            screen_fx_world: None,
             effects_gpu: None,
             lobby_fade: LobbyFade::default(),
             shown: false,
@@ -4113,7 +4116,7 @@ impl App {
                         }
                         if let Some(gfx) = &self.gfx {
                             world.effects.reg.light_keys = geometry.light_keys.clone();
-                            world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format));
+                            world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format.remove_srgb_suffix()));
                         }
                         world.ground = Some(ground);
                         world.area.shown = Some(area);
@@ -4153,7 +4156,7 @@ impl App {
                         // Its geometry and textures go up over the next frames; the indicator stays until then.
                         if let Some(gfx) = &self.gfx {
                             world.effects.reg.light_keys = geometry.light_keys.clone();
-                            world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format));
+                            world.renderer = Some(ZoneRenderer::streamed(&gfx.gpu, geometry, std::mem::take(&mut scene.textures), gfx.config.format.remove_srgb_suffix()));
                             world.zone_uploading = Some(Instant::now());
                         }
                         world.ground = Some(ground);
@@ -6699,12 +6702,16 @@ impl App {
             };
             [0x37, 0x38, 0x39].map(|id| ((base + 1.0 + c(id) / 100.0) / 1.5).max(0.01))
         };
-        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3);
+        // The world always draws offscreen: through the plain view, in gamma space.
+        let world_phase = matches!(self.phase, Phase::World(_));
+        let scaled = bg != size || gamma.iter().any(|g| (g - 1.0).abs() > 1e-3) || world_phase;
         let (scene_view, scene_depth, scene_tex) = if scaled {
             self.scene_scale.get_or_insert_with(|| crate::render::scale::SceneScale::new(&gfx.gpu, gfx.config.format)).target(&gfx.gpu, bg)
         } else {
             (view.clone(), gfx.depth.clone(), frame.texture.clone())
         };
+        let scene_raw = if world_phase { self.scene_scale.as_ref().and_then(|s| s.raw_view()) } else { None }.unwrap_or_else(|| scene_view.clone());
+        let scene_fmt = gfx.config.format.remove_srgb_suffix();
         let m_acquire = Instant::now();
         let mut m_actors = m_acquire;
         let mut counts = perf::Counts::default();
@@ -6810,7 +6817,7 @@ impl App {
                 // poses; its own submit so the zone uniforms keep that camera).
                 if let Some(cr) = w.screen.cross.filter(|c| !c.captured) {
                     if let Some(cam) = cr.camera {
-                        let fx = self.screen_fx.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, gfx.config.format));
+                        let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
                         let target = fx.capture_target(&gfx.gpu, bg);
                         let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).collect();
                         let mut enc = gfx.gpu.device.create_command_encoder(&Default::default());
@@ -7038,12 +7045,12 @@ impl App {
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
                 let budget = if w.zone_uploading.is_some() || w.downloading.is_some() { crate::render::MIP_BUDGET } else { crate::render::MIP_BUDGET_WORLD };
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, budget));
-                perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &camera, aspect, &actors));
+                perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
                 r.occl.run(&gfx.gpu, &mut encoder, &scene_depth);
                 // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
                 // first shown frame.
-                let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, gfx.config.format));
+                let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, scene_fmt));
                 if !r.ready(&gfx.gpu) {
                     eg.upload_pending(&gfx.gpu, &mut w.effects);
                 }
@@ -7085,13 +7092,13 @@ impl App {
                     eg.set_lights(&r.lights);
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
-                    eg.draw(&gfx.gpu, &mut encoder, (&scene_view, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                    eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
                 // Event crossfade and fades over the scene, under the 2D layer; the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
                 if cross.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
-                    let fx = self.screen_fx.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, gfx.config.format));
-                    fx.draw(&gfx.gpu, &mut encoder, &scene_view, bg, cross, m);
+                    let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
+                    fx.draw(&gfx.gpu, &mut encoder, &scene_raw, bg, cross, m);
                 }
                 w.last_camera = Some(camera);
                 drew_world = true;

@@ -138,7 +138,8 @@ impl SceneScale {
                 dimension: wgpu::TextureDimension::D2,
                 format: self.format,
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC | wgpu::TextureUsages::COPY_DST,
-                view_formats: &[],
+                // The world draws through a plain view (gamma space, blended as D3D8); the blit reads the sRGB one.
+                view_formats: &[self.format.remove_srgb_suffix()],
             });
             let view = tex.create_view(&Default::default());
             let depth = super::depth_view(&gpu.device, size[0], size[1]);
@@ -155,6 +156,12 @@ impl SceneScale {
         }
         let t = self.target.as_ref().unwrap();
         (t.view.clone(), t.depth.clone(), t.tex.clone())
+    }
+
+    /// The scene texture through a plain (not sRGB) view: written and blended in gamma space.
+    pub fn raw_view(&self) -> Option<wgpu::TextureView> {
+        let t = self.target.as_ref()?;
+        Some(t.tex.create_view(&wgpu::TextureViewDescriptor { format: Some(self.format.remove_srgb_suffix()), ..Default::default() }))
     }
 
     /// Scales the offscreen scene onto `dst` (window size) with a gamma per channel, replacing what is there.

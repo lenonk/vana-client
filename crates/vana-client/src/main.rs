@@ -1054,7 +1054,7 @@ fn main() -> Result<()> {
                     // One renderer for both frames: the zone's meshes and textures upload once.
                     let mut eg_keep: Option<render::effects::EffectsGpu> = None;
                     let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
-                        let eg = eg_keep.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
+                        let eg = eg_keep.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8Unorm));
                         eg.set_lights(&zr.lights);
                         fx.reg.light_keys = zr.light_keys.clone();
                         let view = cam.view();
@@ -1703,7 +1703,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let mut eg: Option<render::effects::EffectsGpu> = None;
     let mut started = false;
     let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
-        let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8UnormSrgb));
+        let eg = eg.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8Unorm));
         eg.set_lights(&zr.lights);
         fx.reg.light_keys = zr.light_keys.clone();
         let view = cam.view();

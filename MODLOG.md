@@ -2965,7 +2965,7 @@ d3a_particles.md). Summary of what the client does, and where it departs from th
   vertex shader (FUN_10062cd0, with the inverse view rotation and the (2n+1)/3 drawn count as coded).
 - **Inferred / left out**: our random sequence is not retail's MT19937 (only the value mappings are); sun / moon
   (modes 0xe / 0xf) lack the rotation of DAT_105ec978; shading is done in gamma space (textures uploaded as plain
-  UNORM) and converted for the sRGB target, so blending happens in linear space unlike D3D8; batched sprites use
+  UNORM) and, since 2026-10-23, blended in gamma space as D3D8 did (the world scene below); batched sprites use
   normalised UVs (retail draws raw UVs there; differs only for D3a with byte 7 = 0); no ZBIAS 15, no MMB
   draw-distance cull, no zone-0xed MMB offset; weather density (config 0x3b) is taken as 1.0; the covered (roof)
   flag is not computed; orientation modes with bit 0 (camera basis) use the plain angles; ops not handled yet are
@@ -5185,3 +5185,13 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   close together) and float counters by real time; now logwin.rs runs FUN_101626e0 in frames of 2 ticks with the
   fraction carried. While typing retail moves the offset up 16 px as well as the clip (y1 and off), leaving a
   row empty above the chat line (confirmed on a retail screenshot, 2026-10-23); ours does the same.
+
+## The world scene blends in gamma space (2026-10-23)
+
+- D3D8 blended the frame buffer as stored (gamma); ours blended in linear space on an sRGB target, which cut faint
+  additive effects to about half (Windurst Waters' canal water: effect generators WT01..WT10, t_wi/effe/mizu, mode
+  0x48 additive, noon colour (0x0a, 0x28, 0x28) alpha 0x50 keyed by rtms / gtms / btms / mztm; it read almost black).
+  Now the world draws offscreen into the scene texture through a plain (not sRGB) view: zone, actors, effects and
+  the screen fades write gamma values and blend on them; the scaling blit reads the sRGB view, so opaque pixels are
+  unchanged. The effects' scene copy (CMoDist) is read through a plain view too. Offscreen tools render to a plain
+  Rgba8Unorm target (the same). Not yet: the title flyover, character select and creator scenes (still sRGB).

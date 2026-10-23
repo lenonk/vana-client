@@ -1641,7 +1641,8 @@ pub fn render_pngs_post(
     post: &mut PostDraw,
 ) -> Result<usize> {
     let gpu = Gpu::headless()?;
-    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    // A plain (not sRGB) target: the scene is written and blended in gamma space, as D3D8 did; its bytes are the PNG's.
+    let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = ZoneRenderer::new(&gpu, scene, format);
     let actors = setup(&gpu, &mut renderer);
     let actor_refs: Vec<&ActorGpu> = actors.iter().collect();
