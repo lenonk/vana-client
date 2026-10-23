@@ -3815,3 +3815,22 @@ From the party spec (scratchpad party/SPEC.md; current addresses).
 - Ours: client/party.rs (Roster, Slots, tests), target::pick / slot_target, self_entity for the target window,
   invalid() keeps a self target. Not done: the party windows' rows (only our row draws), party name colours, battle
   music count, the effects filter's party class.
+
+## Macros (2026-10-23)
+
+From the macro spec (scratchpad macros/SPEC.md; current addresses). Corrections to earlier notes: 40 books
+(mcr.ttl books 1..20, mcr_2.ttl 21..40), and on the palette Down = next set, Up = previous.
+- Files under <game>/USER/<content id, lowercase hex>/ (LSB: content id = char id). Container (FUN_101b9a10 /
+  FUN_101b9bc0): u32 1, u32 (unwritten), MD5 of the payload, payload. mcr.dat / mcr<N>.dat (N = book * 10 + set):
+  20 x 0x17c {u32, 6 x 61-byte lines, 10-byte title}; a record without a NUL in its title's 9 bytes or a line is
+  cleared. Missing: mcr.dat gets 19 defaults (titles in FFXiMain, lines group 9 0x87..0xb5), others are cleared and
+  written back. mcr.sys u32 = book * 20 + 2 * set. Read at every field entry, written when leaving and on a set switch.
+- Keys: Ctrl / Alt + 1..0 (0x6d..0x75, 0x6c / 0x63..0x6b, 0x62) run macros 0..19 at once; Shift + Ctrl / Alt + digit
+  (0x59..0x61, 0x58) picks set 1..10. Gate FUN_101a33e0: field, UI shown, no sub-target, no event hold, alive, no
+  other window. The palette (Ctrl / Alt held 0x76 / 0x77) shows at the next whole-second tick: display only.
+- Runner FUN_101a1cc0: one line a frame (ours a 2-tick frame) through the text-command path in macro mode; the
+  first empty line ends it; "//" lines skipped; "/wait n" (1..60) waits unsent; "<wait n>" (0..60) sends the line cut
+  at the tag, then waits. A new macro replaces the running one; nothing but leaving the field stops it.
+- /macro set|book N (cmd 0x16): three tokens, out of range wraps once.
+- Ours: client/macros.rs (files, defaults, runner, tests), keys and /macro in mod.rs. Not done: the palette windows,
+  <t> / <pos> / <st> expansion, auto-translate bytes, the editor.

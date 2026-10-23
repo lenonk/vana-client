@@ -34,6 +34,7 @@ mod myroom;
 mod doors;
 mod mousecur;
 mod party;
+mod macros;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -404,6 +405,21 @@ fn send_chat(world: &mut World, text: String) {
         if let Some(bt) = world.battle.clone() {
             let line = bt.group9(if off { 0x137 } else { 0x136 }).unwrap_or_default();
             world.chat.push(line);
+        }
+    } else if cmd == "/macro" {
+        // Command 0x16 (FUN_10079f10): "/macro set|book N", exactly three tokens; out of range wraps once.
+        let words: Vec<String> = text.split_whitespace().map(str::to_ascii_lowercase).collect();
+        let n = words.get(2).and_then(|w| w.parse::<usize>().ok()).filter(|n| *n > 0);
+        match (words.len(), words.get(1).map(String::as_str), n, world.macros.as_mut()) {
+            (3, Some("set"), Some(n), Some(m)) => {
+                let book = m.book;
+                m.switch(book, n - 1);
+            }
+            (3, Some("book"), Some(n), Some(m)) => {
+                let set = m.set;
+                m.switch(n - 1, set);
+            }
+            _ => combat::command_error(world, &text),
         }
     } else if cmd == "/lockon" {
         // Command 0x59 (FUN_100793f0): the lock-on toggle.
@@ -1998,6 +2014,8 @@ struct World {
     /// The party / alliance roster (client/party.rs) and whether its names were asked for (c2s 0x076).
     party: party::Roster,
     party_asked: bool,
+    /// The macro files and runner (client/macros.rs), loaded at each zone-in.
+    macros: Option<macros::Macros>,
     /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
     ui_hidden: bool,
     /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
@@ -3016,6 +3034,7 @@ impl App {
                             room_flag: false,
                             party: Default::default(),
                             party_asked: false,
+                            macros: None,
                             ui_hidden: false,
                             shot_request: None,
                             shot_count: (0, -1),
@@ -3356,6 +3375,10 @@ impl App {
         while let Ok(ev) = world.net.events.try_recv() {
             match ev {
                 NetEvent::Zoning => {
+                    // Leaving the field writes the macro files (FUN_101ab7d0) and stops a running macro.
+                    if let Some(m) = world.macros.take() {
+                        m.save();
+                    }
                     self.status = "Zoning...".into();
                     world.zoning_since = Some(Instant::now());
                     world.downloading = Some(Instant::now());
@@ -3364,6 +3387,9 @@ impl App {
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag } => {
                     world.myroom = myroom;
                     world.room_flag = room_flag;
+                    // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
+                    let bt = world.battle.clone();
+                    world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
                     // Any game-state change shows the UI again.
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
@@ -3574,6 +3600,9 @@ impl App {
                 }
                 NetEvent::Logout { state } => {
                     log::info!("logged out of the zone (0x00B state {state})");
+                    if let Some(m) = world.macros.take() {
+                        m.save();
+                    }
                     if world.logging_out {
                         self.status = "Logged out.".into();
                         self.exit_requested = world.shutdown;
@@ -4062,6 +4091,28 @@ impl App {
         // Numpad + / Ctrl or Alt + F / compact F, mode 0 (repeats): FUN_10151550.
         if self.input.test(0x78, input::mode::REPEAT) {
             log_cycle(world);
+        }
+        // Macros (FUN_101a2e80): the runner steps first, one line a 2-tick frame, through the text-command path; then,
+        // when the gate allows (field, UI shown, no event, alive, no window), Ctrl / Alt + digit runs a macro and
+        // Shift + Ctrl / Alt + digit picks a set. The palettes are not drawn yet.
+        if let Some(line) = world.macros.as_mut().and_then(|m| m.step(dt * 60.0)) {
+            send_chat(world, crate::dat::font::decode_sjis(&line));
+        }
+        let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
+        if world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some() {
+            const SETS: [usize; 10] = [0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x58];
+            const CTRL: [usize; 10] = [0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x6c];
+            const ALT: [usize; 10] = [0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x62];
+            if let Some(set) = SETS.iter().position(|&k| self.input.test(k, input::mode::PRESS)) {
+                if let Some(m) = world.macros.as_mut() {
+                    let book = m.book;
+                    m.switch(book, set);
+                }
+            } else if let Some(n) = CTRL.iter().position(|&k| self.input.test(k, input::mode::PRESS)).or_else(|| ALT.iter().position(|&k| self.input.test(k, input::mode::PRESS)).map(|n| n + 10)) {
+                if let Some(m) = world.macros.as_mut() {
+                    m.start(n);
+                }
+            }
         }
         // FUN_100e9550: a listed member with no name asks the roster again (c2s 0x076), once per table.
         if world.party.nameless() && !world.party_asked {
