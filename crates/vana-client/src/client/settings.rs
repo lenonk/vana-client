@@ -133,7 +133,7 @@ fn rows(tab: usize) -> &'static [Row] {
     ];
     const MISC: &[Row] = &[
         row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
-        row("Cursor Size", "The mouse cursor's size; Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
+        row("Cursor Size", "The drawn cursor's size (Hardware Mouse off); Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
         row("Opening Movie", "0022: play the opening movie on start.", Tool("0022"), OFF_ON, Stored),
         row("Simple Creator", "0023: character creation without 3D models.", Tool("0023"), OFF_ON, Stored),
         row("Screenshot Size", "0043: screenshots at the screen size.", Tool("0043"), OFF_ON, Stored),

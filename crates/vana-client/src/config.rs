@@ -54,8 +54,8 @@ pub struct Config {
     pub party_tp: bool,
     /// The map overlay's opacity 0..1 (Ctrl / Alt + O; not retail, the add-ons' map overlay).
     pub map_overlay_opacity: f32,
-    /// Mouse cursor size in percent of retail's pixels on screen; 0 = auto (grows with the window height from
-    /// 720). Not retail: its cursors were sized for 640 x 480.
+    /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
+    /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
     /// The "FINAL FANTASY XI Config" tool's values by registry name (HKLM\...\FinalFantasyXI\0000..0043,
     /// read at start-up by FUN_10016c30); missing ones take TOOL_DEFAULTS.
