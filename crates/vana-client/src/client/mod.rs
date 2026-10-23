@@ -2689,6 +2689,8 @@ struct World {
     party_cursor: Option<target::PartyCursor>,
     /// s2c 0x067 kind 2: the visited Mog House's owner (0 = ours / none, FUN_100f9600) and the 2F / Safe 2 flag
     /// (FUN_100f97a0).
+    /// 0x00A MogZoneFlag (@0xaf bit 0): a zone with a nomad moogle (FUN_101cc070(1), session +0x40dac bit 0x40).
+    mog_zone: bool,
     mh_owner: u32,
     mh_floors: bool,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
@@ -3637,6 +3639,7 @@ impl App {
                             cats: None,
                             prompt: None,
                             party_cursor: None,
+                            mog_zone: false,
                             mh_owner: 0,
                             mh_floors: false,
                             spell_recast: HashMap::new(),
@@ -3965,7 +3968,8 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, mog_zone } => {
+                    world.mog_zone = mog_zone;
                     world.myroom = myroom;
                     world.room_flag = room_flag;
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
