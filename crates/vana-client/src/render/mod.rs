@@ -94,7 +94,8 @@ impl Gpu {
             }))
             .context("no suitable GPU adapter")?,
         };
-        log::info!("GPU: {}", adapter.get_info().name);
+        let info = adapter.get_info();
+        log::info!("GPU: {} ({:?}, {:?})", info.name, info.backend, info.device_type);
         // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3).
         let required_features = adapter.features() & wgpu::Features::TEXTURE_COMPRESSION_BC;
         // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).

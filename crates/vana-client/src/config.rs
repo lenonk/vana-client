@@ -71,6 +71,8 @@ pub struct Config {
     pub monitor: String,
     /// The graphics adapter by name (empty = the high-performance one); read at start-up. Not retail.
     pub gpu: String,
+    /// Set once a software adapter (WARP, llvmpipe) was first seen and the background was halved for it. Not retail.
+    pub software_gpu_seen: bool,
     /// FFXiMain's own options by config id (the in-game and lobby Config menus).
     pub game: crate::gamecfg::GameConfig,
     /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
@@ -150,6 +152,7 @@ impl Default for Config {
             retail_aspect: false,
             monitor: String::new(),
             gpu: String::new(),
+            software_gpu_seen: false,
             game: Default::default(),
         }
     }

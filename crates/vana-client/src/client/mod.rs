@@ -7394,6 +7394,23 @@ impl ApplicationHandler for App {
         self.gpus = crate::render::adapter_names(&instance, Some(&surface));
         let gpu = Gpu::with_adapter(instance, Some(&surface), &self.cfg.gpu).expect("opening the GPU");
         let size = window.inner_size();
+        // A software adapter (a VM without a GPU): the first time, the scene draws at half the window's size.
+        if gpu.adapter.get_info().device_type == wgpu::DeviceType::Cpu && !self.cfg.software_gpu_seen {
+            self.cfg.software_gpu_seen = true;
+            if self.cfg.tool.get("0003").is_none() && self.cfg.tool.get("0004").is_none() {
+                self.cfg.set_tool("0003", (size.width / 2).max(320));
+                self.cfg.set_tool("0004", (size.height / 2).max(240));
+                log::info!("software GPU: background set to {}x{}", self.cfg.tool("0003"), self.cfg.tool("0004"));
+            }
+            // Anisotropic filtering costs a software rasterizer the most per texel.
+            if self.cfg.anisotropy == Config::default().anisotropy {
+                self.cfg.anisotropy = 1;
+                crate::render::ANISOTROPY.store(1, std::sync::atomic::Ordering::Relaxed);
+            }
+            if let Err(e) = self.cfg.save() {
+                log::warn!("saving the config: {e}");
+            }
+        }
         let mut config = surface.get_default_config(&gpu.adapter, size.width.max(1), size.height.max(1)).expect("surface unsupported by the adapter");
         let caps = surface.get_capabilities(&gpu.adapter);
         // egui wants a non-sRGB target; the zone shader encodes gamma itself.
