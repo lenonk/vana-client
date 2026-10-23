@@ -416,6 +416,47 @@ pub fn draw_cast_bar(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     crate::render::screens::push_shape_text(b, ui, b"%", x + 112.0, y + 7.0, 0x8080_8080);
 }
 
+/// Mouse (window messages 9 hover / 5 confirm): hovering a row or category moves the cursor there (SE 0001), a click
+/// on the highlighted one is Enter.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+    if w.prompt.is_some() || !(moved || clicked) {
+        return;
+    }
+    let hit = |name: &str, child: u16| -> bool {
+        let (Some(r), Some(m)) = (gu.window_rect(name, sw, sh), gu.layout(name)) else { return false };
+        m.elements.iter().find(|e| e.id == child).is_some_and(|e| {
+            let (x, y) = (r[0] + e.x as f32, r[1] + e.y as f32);
+            p.0 >= x && p.0 < x + e.w as f32 && p.1 >= y && p.1 < y + e.h as f32
+        })
+    };
+    if let Some(c) = w.cats {
+        let Some(k) = cat_rows(c.menu).iter().position(|r| hit(c.menu, r.0)) else { return };
+        gu.hover.set(true);
+        if clicked && k == c.sel {
+            key(w, egui::Key::Enter);
+        } else if k != c.sel {
+            w.cats = Some(Cats { sel: k, ..c });
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        return;
+    }
+    let Some(win) = w.ability.as_ref().or(w.magic.as_ref()).filter(|x| !x.hidden) else { return };
+    let menu = win.menu();
+    let rows = win.rows.len().saturating_sub(win.scroll).min(VISIBLE);
+    let Some(k) = (0..rows).find(|&k| hit(menu, k as u16 + 1)) else { return };
+    gu.hover.set(true);
+    let same = k == win.cursor;
+    if clicked && same {
+        key(w, egui::Key::Enter);
+    } else if !same {
+        let win = if w.ability.is_some() { w.ability.as_mut() } else { w.magic.as_mut() };
+        if let Some(win) = win {
+            win.cursor = k;
+        }
+        w.sounds.push(Ui::Cursor as u32);
+    }
+}
+
 /// "%d:%02d" (">= 1 h: %d:%02d:%02d", FUN_101c93c0) of the seconds left, rounded up.
 fn clock(secs: f32) -> String {
     let s = secs.ceil() as u32;

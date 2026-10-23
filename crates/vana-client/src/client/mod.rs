@@ -1106,6 +1106,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
+    // Mouse on the magic / ability lists and their category windows.
+    if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
+        magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
         let row = event::choice(world).and_then(|_| {

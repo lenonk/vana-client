@@ -496,6 +496,11 @@ impl GameUi {
     }
 
     /// A lobby menu window (creator steps); returns the label rects.
+    /// A window's layout (menu DAT 39542 and its companions).
+    pub fn layout(&self, name: &str) -> Option<&crate::dat::ui::Menu> {
+        self.data.lobby.menu(name)
+    }
+
     pub fn menu(&mut self, name: &str, w: f32, h: f32, sel: usize) -> Vec<[f32; 4]> {
         screens::push_menu(&mut self.batch, &self.data.lobby, &self.data.style, name, w, h, sel)
     }

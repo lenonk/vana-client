@@ -640,6 +640,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::MAGIC | id::NINJUTSU | id::SONG => magic(w, cid, args, mode),
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
+        c if is_emote(c) => emote(w, c, args, mode),
         _ => {
             log::info!("{}: not supported yet", args[0]);
             Ok(())
@@ -737,6 +738,74 @@ fn attack(w: &mut World, args: &[String], mode: Mode) -> Done {
         }
     }
     Ok(())
+}
+
+/// FUN_1007fcc0's command ids.
+fn is_emote(c: u16) -> bool {
+    matches!(c, 0xa2..=0xc8 | 0xcd | 0xce | 0xe3..=0xe6 | 0xeb | 0xec | 0x102)
+}
+
+/// /bell's notes (table 0x1032ca18, _stricmp): the param, 6..0x1e.
+const BELL: [(&str, u16); 51] = [
+    ("c3", 19), ("c3+", 26), ("d3-", 26), ("d3", 20), ("d3+", 27), ("e3-", 27), ("e3", 21), ("f3-", 21), ("f3", 22), ("e3+", 22),
+    ("f3+", 28), ("g3-", 28), ("g3", 23), ("g3+", 29), ("a3-", 29), ("a3", 24), ("a3+", 30), ("b3-", 30), ("b3", 25), ("c4-", 25),
+    ("b3+", 6), ("c4", 6), ("c4+", 14), ("d4-", 14), ("d4", 7), ("d4+", 15), ("e4-", 15), ("e4", 8), ("f4-", 8), ("e4+", 9),
+    ("f4", 9), ("f4+", 16), ("g4-", 16), ("g4", 10), ("g4+", 17), ("a4-", 17), ("a4", 11), ("a4+", 18), ("b4-", 18), ("b4", 12),
+    ("c5-", 12), ("b4+", 13), ("c5", 13), ("1", 6), ("2", 7), ("3", 8), ("4", 9), ("5", 10), ("6", 11), ("7", 12), ("8", 13),
+];
+
+/// FUN_1007fcc0: emote (command id - 0xa2), an optional mode word ("text" 1, "motion" 2, else 0), then the target
+/// (a tag or a PC, else the current one; ourselves or none sends 0); c2s 0x05D {u32 id, u16 ActIndex, u8 emote,
+/// u8 mode, u16 param}. Nothing plays here: the server's 0x05A does it. /jobemote takes the job first (param job +
+/// 0x1e, mode 0; abbreviations only here, retail also takes group 2's full names).
+fn emote(w: &mut World, cid: u16, args: &[String], mode: Mode) -> Done {
+    let number = ((cid + 0x5e) & 0xff) as u8;
+    let mut rest: Vec<&str> = args.iter().skip(1).map(String::as_str).collect();
+    let mut param: u16 = 0;
+    match number {
+        43 => param = 1,
+        65..=68 => param = (number - 63) as u16,
+        96 => param = 0x35,
+        73 => {
+            param = match rest.first() {
+                None => 6,
+                Some(n) => BELL.iter().find(|(b, _)| b.eq_ignore_ascii_case(n)).map(|b| b.1).ok_or(())?,
+            };
+            let _ = w.net.commands.send(NetCommand::Packet { id: 0x05D, body: emote_body(0, 0, number, 0, param) });
+            return Ok(());
+        }
+        74 => {
+            let job = rest.first().ok_or(())?;
+            let j = super::items::JOBS.iter().position(|n| !n.is_empty() && n.eq_ignore_ascii_case(job)).ok_or(())?;
+            param = j as u16 + 0x1e;
+            rest.remove(0);
+        }
+        _ => {}
+    }
+    let word = |s: &str| match s {
+        _ if s.starts_with("text") => Some(1u8),
+        _ if s.starts_with("motion") => Some(2),
+        _ if s.starts_with("both") => Some(0),
+        _ => None,
+    };
+    let (m, target) = match rest.first().map(|a| (word(a), a)) {
+        Some((Some(m), _)) => (m, rest.get(1).copied()),
+        Some((None, t)) => (0, Some(*t)),
+        None => (0, None),
+    };
+    let m = if number == 74 { 0 } else { m };
+    let t = resolve(w, target, true, false, mode).filter(|t| t.0 != w.my_id).unwrap_or((0, 0));
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x05D, body: emote_body(t.0, t.1, number, m, param) });
+    Ok(())
+}
+
+fn emote_body(target: u32, index: u16, number: u8, mode: u8, param: u16) -> Vec<u8> {
+    let mut b = vec![0u8; 12];
+    b[0..4].copy_from_slice(&target.to_le_bytes());
+    b[4..6].copy_from_slice(&index.to_le_bytes());
+    (b[6], b[7]) = (number, mode);
+    b[8..10].copy_from_slice(&param.to_le_bytes());
+    b
 }
 
 /// FUN_1022b430: a spell by name (case-insensitive, exact) of `kind` (0 any); its id, or Err when unknown, not
@@ -837,6 +906,15 @@ mod tests {
         assert_eq!(tokens("/echo\tx", false), ["/echo\tx"]);
         assert_eq!(tokens("/echo\tx", true), ["/echo", "x"]);
         assert_eq!(tokens("/ma \"Cure", false), ["/ma", "\"Cure"]);
+    }
+
+    /// /wave is emote 8, /dance3 param 4, /bell's notes; the 0x05D body layout.
+    #[test]
+    fn emote_ids() {
+        assert!(is_emote(0xa2) && is_emote(0x102) && !is_emote(0xa1));
+        assert_eq!(((0xaa_u16 + 0x5e) & 0xff) as u8, 8);
+        assert_eq!(BELL.iter().find(|b| b.0 == "a4").map(|b| b.1), Some(11));
+        assert_eq!(emote_body(0x0100_0005, 0x405, 8, 1, 0x35), [5, 0, 0, 1, 5, 4, 8, 1, 0x35, 0, 0, 0]);
     }
 
     #[test]
