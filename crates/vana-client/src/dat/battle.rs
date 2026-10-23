@@ -14,8 +14,8 @@ const SLOT_BASIC: usize = 0x63; // kind 5
 const SLOT_SKILLS: usize = 0x60; // kind 2: combat skills ({05})
 const SLOT_LISTS: usize = 0x61; // kind 3: 7f 84 bit names
 const SLOT_MOB_SKILLS: usize = 0x66; // kind 7: {16} ids from 0x100
-const SLOT_SPELLS: usize = 0x5a; // FUN_10221f40
-const SLOT_ABILITIES: usize = 0x5c; // FUN_10219c20
+pub(crate) const SLOT_SPELLS: usize = 0x5a; // FUN_10221f40
+pub(crate) const SLOT_ABILITIES: usize = 0x5c; // FUN_10219c20
 const SLOT_SYSTEM: usize = 0x65; // kind 6: s2c 0x053 (FUN_10094d20(6, n))
 const SLOT_EMOTES: usize = 0x62; // s2c 0x05A's lines (LAB_100a06e0)
 /// Status names (grammar kind 0x13, FUN_1021d5f0); file inferred from content, slot not traced.

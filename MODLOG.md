@@ -5140,3 +5140,20 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   in push_chat_mode.
 - Not done: input (Tab completion, menu fep, the category list), the item / key item groups built at run time, the
   coloured form in the line being typed, kind 6.
+
+## Auto-translate input: Tab completion and menu fep (2026-10-23)
+
+- The chat line (English direct path, FUN_101b5d10): Tab / Pause opens the list on the word at the end of the line
+  (after the last space, FUN_101b7c20). Candidates (FUN_101b6ee0 -> FUN_101bba90 / FUN_101bbe60): the words whose
+  key starts with the word, ignoring case, sorted by key, a text once, then the typed word and the names starting
+  with it (tell history, party: FUN_1018d7f0); no word or no match: every group's title. Open: Tab / Space / Down
+  next, Shift+Tab / Up back, PgDn / PgUp 7; Enter deletes the word (FUN_101ad0d0) and puts in the candidate (plain
+  text, or the block as one unit when the line stays within 120 raw and 120 expanded bytes; a category reopens the
+  list on its phrases); Escape / Backspace / Delete: from a category back to the root list, else close.
+- With the list closed, Backspace on a phrase leaves its plain text minus the last letter (FUN_101abf40). The line
+  draws phrases in the 7F 69 colour without brackets (FUN_101b5470). Submitting (FUN_101ad4b0): the first word's
+  phrase is expanded; a chat command (table 0x1037ab98) keeps the rest's blocks, other commands get plain text.
+- menu fep (FUN_1018f550): width the widest row, 90..200 + 12; "▲" at (+5) and "%d/%d" at (+0x23) on the header;
+  seven rows 16 px apart; a row too wide cut with "...". Ours places it above the chat line at the word *(inf)*.
+- Not done: the cursor inside the line (ours edits at the end), the item / key item groups (the 200-record item
+  cache), the line history (Up / Down), macros' editor.

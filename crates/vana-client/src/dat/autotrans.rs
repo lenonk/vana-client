@@ -37,13 +37,80 @@ impl Dictionary {
         let file = super::msg::slot_file(ffximain, 1, 0x18).context("auto-translate slot")?;
         let data = index.read(file)?;
         let msgs = |g: u8| super::msg::group_file(ffximain, 1, g).and_then(|f| Messages::load(index, f).ok());
+        let slot = |s: usize| super::msg::slot_file(ffximain, 1, s).and_then(|f| Messages::load(index, f).ok());
         let b = msgs(0xb);
         let title = |id: usize| b.as_ref().and_then(|m| m.get(id)).unwrap_or_default();
         let mut d = Self::parse(&data)?;
         d.jobs = msgs(0x12);
         d.places = msgs(0x14);
         d.titles = [title(0x91), title(0x93)];
+        // FUN_101ba5d0 replaces @ texts by the names at load; the keys follow them.
+        let (spells, abilities) = (slot(super::battle::SLOT_SPELLS), slot(super::battle::SLOT_ABILITIES));
+        let mut groups = std::mem::take(&mut d.groups);
+        for g in &mut groups {
+            for p in &mut g.phrases {
+                if let Some(t) = d.at_name(&p.1, spells.as_ref(), abilities.as_ref()) {
+                    p.1 = t.clone();
+                    p.2 = t;
+                }
+            }
+        }
+        d.groups = groups;
         Ok(d)
+    }
+
+    /// `@A` place, `@C` spell, `@J` job, `@Y` ability by hex id (FUN_101ba5d0); None for other texts.
+    fn at_name(&self, text: &str, spells: Option<&Messages>, abilities: Option<&Messages>) -> Option<String> {
+        let rest = text.strip_prefix('@')?;
+        let (kind, hex) = rest.split_at(rest.len().min(1));
+        let id = usize::from_str_radix(hex, 16).ok()?;
+        match kind {
+            "A" => self.places.as_ref()?.get(id),
+            "J" => self.jobs.as_ref()?.get(id),
+            "C" => spells?.get(id),
+            "Y" => abilities?.get(id),
+            _ => None,
+        }
+        .filter(|n| !n.is_empty())
+    }
+
+    /// FUN_101bba90 / FUN_101bbc60 / FUN_101bbe60 for the candidate list: a group's phrases sorted by key (`filter`);
+    /// else the words (titles and phrases) whose key starts with `word`, ignoring case, sorted by key, a text only once
+    /// and none starting with a space; no word or no match: every group's title (the categories). (text, block id) and
+    /// whether the word matched (not the categories in its place).
+    pub fn query(&self, word: &str, filter: Option<u8>) -> (Vec<(String, [u8; 4])>, bool) {
+        let sorted = |mut v: Vec<(String, String, [u8; 4])>| {
+            v.sort_by_key(|w| w.1.to_lowercase());
+            v
+        };
+        if let Some(g) = filter {
+            let Some(&i) = self.by_id.get(&g) else { return (Vec::new(), false) };
+            let gr = &self.groups[i];
+            return (sorted(gr.phrases.iter().map(|p| (p.1.clone(), p.2.clone(), [GROUP_KIND, LANG_EN, gr.id, p.0])).collect()).into_iter().map(|w| (w.0, w.2)).collect(), false);
+        }
+        let titles = || self.groups.iter().map(|g| (g.title.clone(), [GROUP_KIND, LANG_EN, g.id, 0])).collect::<Vec<_>>();
+        let w = word.to_lowercase();
+        if w.is_empty() {
+            return (titles(), false);
+        }
+        let mut all: Vec<(String, String, [u8; 4])> = Vec::new();
+        for g in &self.groups {
+            all.push((g.title.clone(), g.key.clone(), [GROUP_KIND, LANG_EN, g.id, 0]));
+            all.extend(g.phrases.iter().map(|p| (p.1.clone(), p.2.clone(), [GROUP_KIND, LANG_EN, g.id, p.0])));
+        }
+        let mut seen = std::collections::HashSet::new();
+        let hits: Vec<(String, [u8; 4])> = sorted(all)
+            .into_iter()
+            .filter(|x| !x.0.is_empty() && !x.0.starts_with(' ') && x.1.to_lowercase().starts_with(&w))
+            .filter(|x| seen.insert(x.0.clone()))
+            .map(|x| (x.0, x.2))
+            .collect();
+        if hits.is_empty() { (titles(), false) } else { (hits, true) }
+    }
+
+    /// FUN_101ac990 without braces (a text command's argument, the line being typed): blocks as their plain text.
+    pub fn expand_plain(&self, s: &str, names: Option<&dyn NameSource>) -> String {
+        self.expand(s, names).chars().filter(|&c| c != '\u{E008}' && c != '\u{E009}').collect()
     }
 
     /// Groups (0x4c-byte header: kind, language, group id, 0, title[32], completion[32], u32 count, u32 bytes) then
@@ -79,20 +146,6 @@ impl Dictionary {
         Ok(Dictionary { groups, by_id, jobs: None, places: None, titles: Default::default() })
     }
 
-    /// `@A` place, `@C` spell, `@J` job, `@Y` ability by hex id (FUN_101ba5d0); other texts as they are.
-    fn named(&self, text: &str, names: Option<&dyn NameSource>) -> Option<String> {
-        let Some(rest) = text.strip_prefix('@') else { return Some(text.to_string()) };
-        let (kind, hex) = rest.split_at(rest.len().min(1));
-        let id = u32::from_str_radix(hex, 16).ok()?;
-        match kind {
-            "A" => self.places.as_ref().and_then(|m| m.get(id as usize)),
-            "J" => self.jobs.as_ref().and_then(|m| m.get(id as usize)),
-            "C" => names?.spell(id),
-            "Y" => names?.ability(id),
-            _ => None,
-        }
-    }
-
     /// FUN_101bc100: a block's text (the language byte is ignored: the client's own dictionary answers). Kinds 7..0x12
     /// are items, 0x13.. key items (00 bytes replaced by FF: 8 / 0xc / 0x10 / 0x14 id 0, 9.. lo only, 0xa.. hi only),
     /// id 0 the group's title; else a phrase (id 0 the group's title). None: unknown (the line ends there).
@@ -120,7 +173,7 @@ impl Dictionary {
             return Some(g.title.clone());
         }
         let (_, text, _) = g.phrases.iter().find(|p| p.0 == lo)?;
-        self.named(text, names)
+        Some(text.clone()).filter(|t| !t.starts_with('@'))
     }
 
     /// FUN_101ac990 with braces (the log): each block becomes its text between the green and red auto-translate
@@ -173,5 +226,10 @@ mod tests {
         assert_eq!(d.resolve([2, 2, 0x2a, 0x27], n).as_deref(), Some("Soul Enslavement"));
         let line = decode_sjis(b"Hi \xFD\x02\x02\x01\x01\xFD");
         assert_eq!(d.expand(&line, n), "Hi \u{E008}Nice to meet you.\u{E009}");
+        // Completion: "prot" finds Protect (and its kin) before the categories; no word gives the 42 titles.
+        let (hits, matched) = d.query("prot", None);
+        assert!(matched && hits.iter().any(|c| c.0 == "Protect"));
+        assert_eq!(d.query("", None).0.len(), 42);
+        assert_eq!(d.query("", Some(1)).0.first().map(|c| c.1[2]), Some(1));
     }
 }

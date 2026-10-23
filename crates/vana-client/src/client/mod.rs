@@ -46,6 +46,7 @@ mod post;
 mod synth;
 mod treasure;
 mod servmes;
+mod fep;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -576,6 +577,9 @@ fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) 
     })
 }
 
+/// The 7F 69 colour of a phrase in the line being typed (log colour table entry 0x69: d0 60 c0, BGRA).
+const PHRASE: [u8; 4] = [0xd0, 0x60, 0xc0, 0x80];
+
 /// A chat line in its log mode's colour (the config colour before the message tables load), auto-translate blocks
 /// expanded with their brackets (FUN_10127c00 with param 5).
 fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
@@ -932,24 +936,28 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for ev in input.events.iter().filter(|_| !input_open) {
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
-                world.chat_input.extend(t.chars().filter(|c| !c.is_control()));
+                // Space moves the open candidate list instead (FUN_101b6810 returns -1).
+                let open = world.fep.is_some();
+                world.chat_input.extend(t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')));
             }
             // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events.
             egui::Event::Copy if !world.typing && !event::active(world) => check_target(world),
             egui::Event::Cut => chat_prefix(world, "/linkshell2 "),
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
+                // The auto-translate list takes its keys first (FUN_101b5d10).
+                k if world.typing && world.fep.is_some() && fep::key(world, *k, modifiers.shift) => {}
+                egui::Key::Tab if world.typing => fep::open(world),
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
                     let text = std::mem::take(&mut world.chat_input);
+                    let text = fep::outgoing(world, text);
                     textcmd::run(world, &text, textcmd::Mode::Typed);
                 }
                 egui::Key::Escape if world.typing => {
                     world.typing = false;
                     world.chat_input.clear();
                 }
-                egui::Key::Backspace if world.typing => {
-                    world.chat_input.pop();
-                }
+                egui::Key::Backspace if world.typing => fep::backspace(world),
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
                 k if (modifiers.ctrl || modifiers.alt) && !opened && let Some(p) = chat_shortcut(*k) => {
                     chat_prefix(world, p);
@@ -1549,12 +1557,34 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let (x, y, w) = (16.0, sh - 38.0, tw + 14.0);
         gu.frame(x, y, w, 22.0);
         gu.sprite_from("menu    windowps", 37, 1, x, y, 0x8080_8080);
-        let shown = fit_tail(gu, &world.chat_input, tw - 20.0);
-        gu.text(&shown, x + 2.0 + 2.0, y + 2.0, 0, WHITE);
+        // Phrases in the 7F 69 colour, without brackets (FUN_101b5470); the line's tail when it is too long.
+        let mut pieces = fep::pieces(world, &world.chat_input);
+        let width = |p: &[(String, bool)]| p.iter().map(|(t, _)| gu.text_width(t)).sum::<f32>();
+        while width(&pieces) > tw - 20.0 && !pieces.is_empty() {
+            let t = &mut pieces[0].0;
+            let mut c = t.chars();
+            c.next();
+            *t = c.as_str().to_string();
+            if t.is_empty() {
+                pieces.remove(0);
+            }
+        }
+        let mut cx = x + 2.0 + 2.0;
+        let mut word_x = cx;
+        for (t, phrase) in &pieces {
+            gu.text(t, cx, y + 2.0, 0, if *phrase { PHRASE } else { WHITE });
+            if !*phrase {
+                word_x = cx + t.rfind(' ').map_or(0.0, |i| gu.text_width(&t[..=i]));
+            }
+            cx += gu.text_width(t);
+        }
         if gu.blink() {
-            gu.rect(x + 4.0 + gu.text_width(&shown), y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
+            gu.rect(cx, y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
         }
         blockers.push([x, y, w, 22.0]);
+        if let Some(f) = &world.fep {
+            blockers.push(fep::draw(gu, f, word_x - 8.0, y));
+        }
     }
     if let Some(inp) = event::input(world) {
         let text = String::from_utf8_lossy(&inp.text).into_owned();
@@ -2745,6 +2775,8 @@ struct World {
     zoning_since: Option<Instant>,
     chat: combat::ChatLog,
     chat_input: String,
+    /// The auto-translate candidate list (menu fep) while open.
+    fep: Option<fep::Fep>,
     /// The log window's size and scroll state, and the top bar / Network / compass state.
     log: logwin::LogWin,
     hud_top: hudtop::HudTop,
@@ -3799,6 +3831,7 @@ impl App {
                             zoning_since: None,
                             chat: Default::default(),
                             chat_input: String::new(),
+                            fep: None,
                             log: Default::default(),
                             hud_top: Default::default(),
                             tells: Vec::new(),
