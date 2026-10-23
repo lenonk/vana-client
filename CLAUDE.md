@@ -63,7 +63,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 ## Next up
 - Finish the retail key set from `~/ffxi/lab/research/keys_spec.md`. Done: the input layer (client/input.rs),
   movement keys and the retail free camera (client/camera.rs). Left:
-  - targeting: F1-F12, Ctrl/Alt+F8, screen-order Tab / Shift+Tab, Num0, Enter with no target;
+  - targeting: F1-F7, F11 / F12 (self, party, alliance: need self targets and the party list); done: Tab / Shift+Tab /
+    Num0 (screen order, on-screen and occlusion cull), Enter with no target, F8 / Ctrl+F8 / Alt+F8 / F9 / F10;
   - UI hide, screenshots, the Pause log-out prompt;
   - macros and palettes.
 - Event VM gaps against XiEvents and the current decompile, ranked with site counts:
@@ -74,11 +75,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the
     first, event 0x131 in Port Windurst, ran to its end);
   - Bastok: not reviewed yet.
-- Camera while locked on in combat (user, 2026-10-22): it can't be raised / lowered or zoomed. Raising and lowering
-  should work (check keys_spec / FUN_1001e030's locked branch); zoom while locked is unconfirmed: check the decomp.
 - Other known gaps:
-  - retail mouse cursors (user, 2026-10-22): the game folder's mousenor.cur (normal), mousehit.ani (over something
-    clickable) and arw_* / oarw_* (edge panning arrows) replace the system pointer; we always show the system arrow;
   - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop draws black
     (on zone 133 too, so older); the top-bar rule FUN_10159080 changed a lot; config 0xab default from the desktop
     size; the gamepad rows (Misc. 4 0xce, the external gamepad tool);
