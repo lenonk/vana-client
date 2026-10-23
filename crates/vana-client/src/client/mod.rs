@@ -1655,6 +1655,8 @@ struct World {
     zone: Option<u16>,
     loading: Option<u16>,
     area: AreaSwitch,
+    /// Event op 0xd9: effect sounds get 20 voices while an event runs (FUN_10038330).
+    event_voices: bool,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -2381,6 +2383,10 @@ impl App {
             for (mask, level, ticks) in w.audio_cmds.drain(..) {
                 a.event_volume(mask, level, ticks);
             }
+            if !event::active(w) {
+                w.event_voices = false;
+            }
+            a.max_se = if w.event_voices { 20 } else { self.cfg.tool("0029").clamp(1, 20) };
             // Interface sounds (targeting, menus, prompts).
             for id in w.sounds.drain(..) {
                 a.play_ui_se(id);
@@ -2616,6 +2622,7 @@ impl App {
                             weather: 1,
                             zone_weather: None,
                             area: AreaSwitch::default(),
+                            event_voices: false,
                             typing: false,
                             log_focus: 0,
                             log_active: false,

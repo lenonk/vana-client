@@ -120,6 +120,11 @@ pub trait Host {
     fn player_word(&self) -> u32 {
         0
     }
+    /// A game config value by id (op 0xda reads 0x43, the aspect).
+    fn game_config(&self, _id: u16) -> u32 {
+        0
+    }
+
     /// Config word read by op 0xb1 (*(DAT_10444110 + 0x18)).
     fn config_word(&self) -> u32 {
         0
@@ -1181,8 +1186,9 @@ impl Runtime {
             }
             0x46 => {
                 match sub {
-                    Some(0) | Some(1) => {
-                        self.camera = sub == Some(0);
+                    // Sub 3 also sets the point the camera starts from (not modelled; 4 sites in the data).
+                    Some(0) | Some(1) | Some(3) => {
+                        self.camera = sub != Some(1);
                         host.effect(Effect::Camera { flag: self.camera });
                     }
                     Some(2) => self.set_at(v, 2, 0, self.camera as u32),
@@ -1363,6 +1369,11 @@ impl Runtime {
                 let c = self.thread(v).caller;
                 self.set_at(v, 1, 0, c);
                 self.adv(v, 3);
+            }
+            0xda => {
+                let v32 = host.game_config(0x43);
+                self.set_at(v, 1, 0, v32);
+                self.adv(v, len);
             }
             0x87 | 0x88 | 0x8c | 0xa6 if sub == Some(0) || sub == Some(2) => {
                 host.effect(Effect::Send(Packet::Other { op: opc, sub: sub.unwrap_or(0) }));

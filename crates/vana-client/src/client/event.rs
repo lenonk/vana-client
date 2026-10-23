@@ -598,6 +598,7 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            Effect::Op { op: 0xd9, args, .. } => self.w.event_voices = Self::arg_int(&args, 0) == Some(0),
             // FUN_10184380 with the area: the App loads it (or brings the zone's scene back) and ends the wait.
             Effect::Op { op: 0x34 | 0x35, args, .. } => match args.first() {
                 Some(Arg::Int(v)) if (0..0x10000).contains(v) => self.w.area.want = Some(*v as u16),
@@ -729,6 +730,10 @@ impl Host for LiveHost<'_> {
     /// Hume F, Elvaan F, Tarutaru F, Mithra.
     fn female(&self) -> bool {
         matches!(self.w.my_race, 2 | 4 | 6 | 7)
+    }
+
+    fn game_config(&self, id: u16) -> u32 {
+        self.w.game.get(id)
     }
 
     fn place(&self, actor: u32) -> ([f32; 3], f32) {
