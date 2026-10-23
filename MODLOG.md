@@ -5219,5 +5219,5 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   FUN_10183780; the effect generators already blended by it). Ours switched the zone lighting (fog, sun, ambient,
   area lights) in one frame, so fog vanished at once about a minute after login when the server's change came.
   Now the environment of the old weather blends into the new one over the change's time (Env::lerp; the linear
-  weight is inferred; StartTime not used: the blend starts on arrival). Live: !setweather 3 then 1 in Southern San
-  d'Oria: far wall brightness 77.8 -> 77.7 (1 s) -> 80.1 (15 s) -> 85.6 (after the 26 s).
+  weight is inferred; StartTime not used: the blend starts on arrival). Live, East Ronfaure by the gate: !setweather
+  3 (mist) then 1: still foggy 1 s after, partly clear at 15 s, clear with a blue sky after the 31 s.
