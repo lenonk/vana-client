@@ -336,7 +336,8 @@ impl LogWin {
             let s = if d.abs() <= 16 { d.signum() * 160 / 60 } else { d.signum() * 8 };
             self.h = if d.abs() < s.abs() { target } else { self.h + s };
         }
-        self.off = if self.slide > 0 { (self.slide % 20) * 16 / 20 } else { 0 };
+        // Typing moves the text up a row as well as the clip (asm 0x10162abc: y1 -= 16, off -= 16; user-confirmed on retail).
+        self.off = if self.slide > 0 { (self.slide % 20) * 16 / 20 } else { 0 } - if typing { 16 } else { 0 };
         // The displayed line: one line a frame toward the newest while the slide allows it.
         if self.pending > 0 {
             let n = self.pending as i32;

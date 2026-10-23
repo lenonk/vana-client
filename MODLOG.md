@@ -5183,5 +5183,5 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   16 - 16 k), whole pixels, nothing with no visible lines.
 - Ours had drawn from the newest line with a fractional offset (older lines jumped 16 px whenever two lines came
   close together) and float counters by real time; now logwin.rs runs FUN_101626e0 in frames of 2 ticks with the
-  fraction carried. Unsettled: while typing retail moves the offset up 16 px as well as the clip (y1 and off);
-  ours moves only the clip, pending a retail screenshot.
+  fraction carried. While typing retail moves the offset up 16 px as well as the clip (y1 and off), leaving a
+  row empty above the chat line (confirmed on a retail screenshot, 2026-10-23); ours does the same.
