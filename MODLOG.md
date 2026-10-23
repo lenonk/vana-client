@@ -3642,3 +3642,13 @@ From the door spec (scratchpad doors_spec/SPEC.md).
   Not done: the pet line, the event mode.
 - Names when 0x00E has none (asm 0x1009b666..0x1009b7b5, FUN_10093430): index >= 0x700 with mask 0x08 from @0x34;
   index < 0x400 with @0x34 == 0x01 the text at @0x35; else the zone list by full server id, else "NPC".
+
+## Objects: no target gauge, no name plate (2026-10-22)
+
+- The 0x00E look handler (jump table 0x1009ce88 on u8 @0x30 & 7; EBX = 1, EDI = 8 set at 0x1009c8fd) ORs EDI into
+  actor +0x128 (bit 3) for SubKind 2 doors (0x1009cbc4), SubKind 3 / 4 elevators and ships (0x1009cd26) and SubKind 0
+  model ids 0x32..0x3b, 0x32e..0x331, 0x3c0..0x3c9, 0x737..0x746, 0x974..0x97d, 0x9ba..0x9c3 (0x1009ca3c..0x1009caff).
+  Bit 3 hides the target gauge (FUN_101501a0: +0x128 bit 3 or +0x130 bit 20) and the name plate (FUN_100ce4d0), so the
+  target name wraps in split mode. Nothing in this path clears it.
+- Ours: Entity.object (sticky), forcing no_gauge / no_plate. The earlier note that stub-model NPCs (50 / 52) show a
+  plate while targeted is ours, not retail's: they have none.

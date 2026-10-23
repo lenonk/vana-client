@@ -145,6 +145,8 @@ struct Entity {
     untargetable: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
     door: u32,
+    /// An object (actor +0x128 bit 3 from the 0x00E look): no target gauge, no name plate.
+    object: bool,
 }
 
 impl Entity {
@@ -1448,6 +1450,7 @@ fn place_mogdoor(w: &mut World) {
             no_plate: true,
             untargetable: false,
             door: 0,
+            object: true,
         },
     );
 }
@@ -3280,6 +3283,7 @@ impl App {
                         no_plate: false,
                         untargetable: false,
                         door: 0,
+                        object: false,
                     });
                     if e.mask & 7 != 0 {
                         entry.flags = e.status;
@@ -3352,9 +3356,15 @@ impl App {
                     if let Some((b20, b3)) = e.hp_bits {
                         (entry.no_gauge, entry.no_plate) = (b20 || b3, b3);
                     }
-                    // SubKind 2 makes a door (kind 3, an XiDoorActor), whose plate draw (vtable +0x284) is empty.
-                    if e.kind == EntityKind::Npc && e.look_kind == 2 {
-                        entry.no_plate = true;
+                    // The 0x00E look handler (jump table 0x1009ce88) ORs +0x128 bit 3 for doors, elevators and ships
+                    // (SubKind 2..4) and for SubKind 0 models in fixed id ranges (asm 0x1009ca3c..0x1009caff): no gauge,
+                    // no plate (FUN_101501a0, FUN_100ce4d0). The bit stays.
+                    if e.kind == EntityKind::Npc {
+                        let model_object = |m: u16| matches!(m, 0x32..=0x3b | 0x32e..=0x331 | 0x3c0..=0x3c9 | 0x737..=0x746 | 0x974..=0x97d | 0x9ba..=0x9c3);
+                        entry.object |= matches!(e.look_kind, 2..=4) || (e.look_kind == 0 && matches!(e.npc, Some(crate::dat::npc::NpcLook::Model(m)) if model_object(m)));
+                    }
+                    if entry.object {
+                        (entry.no_gauge, entry.no_plate) = (true, true);
                     }
                     if let Some(d) = e.door {
                         entry.door = d;
