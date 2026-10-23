@@ -5221,3 +5221,25 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   Now the environment of the old weather blends into the new one over the change's time (Env::lerp; the linear
   weight is inferred; StartTime not used: the blend starts on arrival). Live, East Ronfaure by the gate: !setweather
   3 (mist) then 1: still foggy 1 s after, partly clear at 15 s, clear with a blue sky after the 31 s.
+
+## NPC shops: buy and sell (2026-10-23)
+
+Full trace in `~/ffxi/lab/research/shop_spec.md`; ours in client/shop.rs.
+
+- s2c 0x03E (ShopListNum @4) opens "menu    shopmain" (Buy / Sell, stacked on the log) unless a 0x20000 window is
+  open: then group 7 0x45 and nothing (UI LAB_10210ca0). The store zeroes the 80-slot stock table (LAB_100f8c20).
+- s2c 0x03C: Flags @6 bit 0 last; 12-byte entries from @8: price u32, ItemNo u16, ShopIndex u8 (+7 pad), Skill u16,
+  GuildInfo u16. The client ignores ShopItemOffsetIndex @4 and stores by ShopIndex.
+- Buy: "menu    shop" with the stock, Enter -> itemctrl quantity (max = min(stack, gil / price); no free slot:
+  refusal 0x80) -> "menu    shopbuy" (cursor on child 2, Cancel) -> c2s 0x083 (body 0xc: quantity @0, ShopIndex
+  @6). s2c 0x03F (ShopItemIndex @4, Count @8) -> 7031 0xe6 / 0xe7.
+- Sell: the same list over the inventory; unappraised rows show "? G" (0x1038213c). The first Enter on a row sends
+  c2s 0x084 (body 8: quantity 1, slot) as an appraisal; s2c 0x03D Type @9 = 0 fills the price map (Price @4, slot
+  @8). A second Enter: quantity (stacks), "menu    shopsell", then c2s 0x084 (slot, qty) and 0x085 ([1,0,0,0])
+  in the same frame; s2c 0x03D Type != 0 -> 7031 0xe8 / 0xe9. Grey rows (equipped, NoSale 0x1000) do nothing.
+- The windows close when the player is more than 6.0 from where the shop opened (shopmain +0x14..+0x1c) or the
+  zone changes. Item info for the cursor row draws in mode 1 at (130, 240).
+- Live (Lnxcsfix, Ashene in Southern San d'Oria): bought a bronze dagger (gil 5000 -> 4838); appraised and sold a
+  Distilled Water (2 G).
+- Left: the yellow can-equip tint on buy rows (Skill / job lock), guild shops (0x082..0x086), the Up wrap at the
+  list's top (not checked against FUN_101f67c0).

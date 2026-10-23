@@ -46,6 +46,7 @@ mod post;
 mod synth;
 mod treasure;
 mod servmes;
+mod shop;
 mod fep;
 
 use crate::config::Config;
@@ -130,7 +131,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w)
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -652,7 +653,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1091,6 +1092,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
+                _ if shop::active(world) => shop::key(world, *key),
                 _ if synth::active(world) => synth::key(world, gu, *key),
                 _ if post::active(world) => post::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
@@ -1596,6 +1598,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
+    blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
@@ -2022,6 +2025,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     magic::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
+    shop::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
@@ -2451,6 +2455,8 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     let post_item = post::info_source(world).or_else(|| synth::info_source(world));
     let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
+        // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
+        (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
@@ -2965,6 +2971,8 @@ struct World {
     job_cooldown: Option<Instant>,
     /// The delivery box: s2c 0x04B's slots and the send / receive UIs.
     post: post::Session,
+    /// An NPC shop's windows (s2c 0x03E).
+    shop: Option<shop::Shop>,
     /// The mouse pick: actors whose screen rect held the pointer last test (their bones are read back), and the
     /// read-back points (key: bone, or 0x8000 | attach point) relative to the actor root.
     pick_rect: HashSet<u32>,
@@ -3980,6 +3988,7 @@ impl App {
                             job_req: None,
                             job_cooldown: None,
                             post: post::Session::default(),
+                            shop: None,
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
@@ -4346,6 +4355,7 @@ impl App {
                     (world.mogdoor, world.leaving_room) = (None, false);
                     (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
                     world.post = post::Session::default();
+                    world.shop = None;
                     synth::zone_reset(world);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
@@ -4676,6 +4686,10 @@ impl App {
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
                 NetEvent::Fragments(p) => servmes::on_fragment(world, &p),
+                NetEvent::ShopOpen { count } => shop::on_open(world, count),
+                NetEvent::ShopList { last, entries } => shop::on_list(world, last, &entries),
+                NetEvent::ShopBuy { index, count } => shop::on_buy(world, index, count),
+                NetEvent::ShopSell { price, slot, kind, count } => shop::on_sell(world, price, slot, kind, count),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
@@ -6545,6 +6559,7 @@ impl App {
             res_rdy(w);
             moogle::update(w);
             post::update(w);
+            shop::update(w);
             synth::update(w);
             servmes::frame(w);
         }
