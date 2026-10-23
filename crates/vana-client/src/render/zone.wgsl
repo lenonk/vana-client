@@ -57,6 +57,8 @@ struct VertexIn {
     @location(9) flags: u32,
     // x: the placement's area slot (0 = the zone's).
     @location(10) area: vec4<u32>,
+    // Level of detail: drawn while x < d^2 <= y from the eye to the placement's origin; y 0 = always.
+    @location(11) band: vec4<f32>,
 };
 
 struct VertexOut {
@@ -137,6 +139,12 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.lights = v.lights;
     let ev10 = u32(u.area_info.x);
     out.area = select(v.area.x, ev10 | 0x8000u, (v.flags & 1u) != 0u && ev10 != 0u);
+    // FUN_1017c9c0's LOD pick: an instance outside its band collapses to nothing.
+    let d = u.eye.xyz - v.m3.xyz;
+    let d2 = dot(d, d);
+    if (v.band.y > 0.0 && !(d2 > v.band.x && d2 <= v.band.y)) {
+        out.clip = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    }
     return out;
 }
 

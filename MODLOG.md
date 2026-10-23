@@ -3524,3 +3524,22 @@ FUN_100b5620, 0x75 FUN_100b8660).
   position (+0xa0 -> +0x34..+0x40) is tested with FUN_1017ad80 (point twice). Inside: len 7; outside, or no region /
   actor / model: jump to u16@5. Ours always fell through; the headless host keeps that (Host::in_region Some(true)),
   the live host tests Region::contains of the zone RID record whose tag matches. Lower Jeuno (245) uses e6t0 / e6t1.
+
+## Scenery level of detail and the MZB id (2026-10-22)
+
+From the draw-state spec (scratchpad drawstate_spec/SPEC.md). Correction to "Scenery and actors lit by their area's
+environment": FUN_10183da0 draws door groups only (its one caller is FUN_1017ade0); the static scenery draw is
+FUN_1017c9c0 (from FUN_1017b510 and the MZB tree walk FUN_1017c8b0). FUN_1017c9c0 lights by the instance's area
+(inst+0xe0) the same way; the 'ev10' bit-28 path is door groups only, and only door meshes carry bit 28.
+- Slots, FUN_1017afe0: a placement name ending in h / m / l (last byte > 0x20, index > 0) looks for siblings by
+  exact 16-byte name: high = name+h, else name+m, else itself; medium = name+m, else itself; low = name+l, else name+m,
+  else itself (inst+0x18 / +0x14 / +0x10).
+- Pick, FUN_1017c9c0: d^2 = |camera - placement translate|^2; d^2 <= r+0x38 ^2 high, <= max(r+0x38, r+0x3c)^2
+  medium, else low. No setting scales it. Door groups always take high. Typical (10, 100) in cities, (10..70, 100)
+  in La Theine, where every terrain tile and tree has _h / _m / _l meshes.
+- MZB record +0x34 is a group id: '_' doors and '@' platforms form groups (FUN_1017a950); placements with any other
+  nonzero id are not drawn by the scenery pass (Southern San d'Oria's eml0..emlc with ids ent0..entd).
+- Ours: Placement.id / lod / lod_names / drawn, Instance.band (near^2, far^2; far 0 = always); each distinct LOD mesh
+  gets the placement's instance with its band and vs_main collapses instances outside it.
+- Still to do from the spec: alpha blending for bit-31 models (the La Theine pond surface is missing), the 0x60
+  alpha cutoff on '_' placements only, back-face culling (mirrored = scale.x * scale.z < 0), draw distance.

@@ -587,7 +587,7 @@ impl ZonePipes {
             Some(wgpu::VertexBufferLayout {
                 array_stride: INSTANCE_BYTES,
                 step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Uint32x4, 10 => Uint32x4],
+                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Uint32x4, 10 => Uint32x4, 11 => Float32x4],
             }),
         ];
         let make_pipeline = |fragment: &str, blend: Option<wgpu::BlendState>| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -694,6 +694,8 @@ pub struct Instance {
     lights: [u32; 4],
     /// x: the area slot it is lit by (0 = the zone's).
     area: [u32; 4],
+    /// Level of detail: drawn while near² < d² <= far² from the camera to its origin; far 0 = always.
+    band: [f32; 4],
 }
 
 /// Instance stride (actors with a CPU-posed mesh use the same layout, lights 0).
@@ -735,8 +737,9 @@ impl ZoneGeometry {
         };
         // One instance block per mesh, holding the matrices of every placement that uses it.
         let mut area_keys = areas.to_vec();
-        let mut by_mesh: HashMap<&str, Vec<(Instance, u32)>> = HashMap::new();
-        for p in &scene.placements {
+        let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
+        let mut by_mesh: HashMap<String, Vec<(Instance, u32)>> = HashMap::new();
+        for p in scene.placements.iter().filter(|p| p.drawn()) {
             let lights = p.lights.map(slot_of);
             let area = match area_keys.iter().position(|&k| k == p.area) {
                 _ if p.area == 0 => 0,
@@ -747,7 +750,30 @@ impl ZoneGeometry {
                 }
                 None => 0,
             };
-            by_mesh.entry(&p.name).or_default().push((Instance { model: p.matrix(), lights, area: [area, 0, 0, 0] }, p.link));
+            // FUN_1017c9c0: high to near², medium to far², low beyond (near = +0x38, far = max(+0x38, +0x3c)); door
+            // groups always take high (FUN_10183da0).
+            let [l, m, h] = p.lod_names(|n| mesh_names.contains(n));
+            let (near, far) = (p.lod[0] * p.lod[0], p.lod[0].max(p.lod[1]).powi(2));
+            let bands: Vec<(std::borrow::Cow<str>, [f32; 2])> = if p.id != 0 || (l == m && m == h) {
+                vec![(h, [0.0, 0.0])]
+            } else {
+                let mut v: Vec<(std::borrow::Cow<str>, [f32; 2])> = vec![(h, [-1.0, near]), (m, [near, far]), (l, [far, f32::MAX])];
+                // A mesh in two neighbouring slots draws across both bands.
+                let mut k = 1;
+                while k < v.len() {
+                    if v[k].0 == v[k - 1].0 {
+                        v[k - 1].1[1] = v[k].1[1];
+                        v.remove(k);
+                    } else {
+                        k += 1;
+                    }
+                }
+                v
+            };
+            for (name, b) in bands {
+                let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], 0.0, 0.0] };
+                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link));
+            }
         }
         let mut matrices: Vec<Instance> = Vec::new();
         let mut links = Vec::new();
@@ -794,7 +820,7 @@ impl ZoneGeometry {
         }
         // A scene with no scenery (the character screen) still needs a non-empty buffer to bind.
         if matrices.is_empty() {
-            matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4], area: [0; 4] });
+            matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4], area: [0; 4], band: [0.0; 4] });
         }
         if all_verts.is_empty() {
             all_verts.push(GpuVertex::zeroed());

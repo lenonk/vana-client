@@ -230,9 +230,36 @@ pub struct Placement {
     pub link: u32,
     /// Record +0x4c: the area (environment) 4cc it is lit by (inst+0xdc / +0xe0, FUN_10186cb0); 0 = the zone's.
     pub area: u32,
+    /// Record +0x34: a group id (doors '_', platforms '@'; FUN_1017a950); placements with another nonzero id are
+    /// not drawn by the scenery pass.
+    pub id: u32,
+    /// Record +0x38 / +0x3c: level-of-detail distances (high within the first, low beyond the larger; FUN_1017c9c0).
+    pub lod: [f32; 2],
 }
 
 impl Placement {
+    /// The scenery pass draws it (FUN_1017b510 skips nonzero ids; '_' / '@' ids are drawn as door groups).
+    pub fn drawn(&self) -> bool {
+        self.id == 0 || matches!(self.id as u8, b'_' | b'@')
+    }
+
+    /// FUN_1017afe0: the low / medium / high meshes by name: a name ending in h / m / l looks for its siblings
+    /// (high = name+h, else name+m, else itself; medium = name+m, else itself; low = name+l, else name+m, else itself).
+    pub fn lod_names<'a>(&'a self, has: impl Fn(&str) -> bool) -> [std::borrow::Cow<'a, str>; 3] {
+        use std::borrow::Cow;
+        let exact = || Cow::Borrowed(self.name.as_str());
+        let n = self.name.len();
+        let last = self.name.as_bytes().last().copied().unwrap_or(0);
+        if n < 2 || !matches!(last, b'h' | b'm' | b'l') {
+            return [exact(), exact(), exact()];
+        }
+        let base = &self.name[..n - 1];
+        let sib = |c: char| Some(format!("{base}{c}")).filter(|s| has(s)).map(Cow::Owned);
+        let m = sib('m');
+        let h = sib('h').or_else(|| m.clone()).unwrap_or_else(exact);
+        let l = sib('l').or_else(|| m.clone()).unwrap_or_else(exact);
+        [l, m.unwrap_or_else(exact), h]
+    }
     /// Column-major model matrix: scale, then rotate X then Y then Z, then translate.
     pub fn matrix(&self) -> [[f32; 4]; 4] {
         let [rx, ry, rz] = self.rotate;
@@ -277,7 +304,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
                 *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
             }
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c) });
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c), id: u32_at(p, r + 0x34), lod: [f32_at(p, r + 0x38), f32_at(p, r + 0x3c)] });
     }
     Ok(out)
 }
