@@ -61,19 +61,20 @@ impl Macro {
     }
 }
 
-/// The user-file container (FUN_101b9a10 / FUN_101b9bc0): u32 version 1, u32 (0), MD5 of the payload, payload.
-pub(super) fn read_file(path: &Path) -> Option<Vec<u8>> {
+/// The user-file container (FUN_101b9a10 / FUN_101b9bc0): u32 version (as registered: 1 for the macro files, 2
+/// mix.dat, 4 aix.dat), u32 (0), MD5 of the payload, payload.
+pub(super) fn read_file(path: &Path, version: u32) -> Option<Vec<u8>> {
     let b = std::fs::read(path).ok()?;
-    if b.len() < 0x18 || u32::from_le_bytes(b[0..4].try_into().unwrap()) != 1 {
+    if b.len() < 0x18 || u32::from_le_bytes(b[0..4].try_into().unwrap()) != version {
         return None;
     }
     let payload = b[0x18..].to_vec();
     (Md5::digest(&payload).as_slice() == &b[8..0x18]).then_some(payload)
 }
 
-fn write_file(path: &Path, payload: &[u8]) {
+pub(super) fn write_file(path: &Path, version: u32, payload: &[u8]) {
     let mut out = Vec::with_capacity(0x18 + payload.len());
-    out.extend_from_slice(&1u32.to_le_bytes());
+    out.extend_from_slice(&version.to_le_bytes());
     out.extend_from_slice(&[0; 4]);
     out.extend_from_slice(Md5::digest(payload).as_slice());
     out.extend_from_slice(payload);
@@ -100,8 +101,84 @@ struct Running {
     wait: Option<(Instant, Duration)>,
 }
 
+/// A list order file: bits[n / 8], u16 order[n], u32 count (mix.dat n 0x400, aix.dat n 0xb00). Retail keeps it in
+/// memory from field entry to leaving the field and merges it in place with the known bits on every list build.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Order {
+    pub bits: Vec<u8>,
+    pub list: Vec<u16>,
+    pub count: usize,
+}
+
+impl Order {
+    fn empty(n: usize) -> Self {
+        Order { bits: vec![0; n / 8], list: vec![0; n], count: 0 }
+    }
+
+    /// LAB_1022c000 / LAB_10223c00: a bad file, or a count of `max` or more, reads as all zero.
+    fn load(path: &Path, version: u32, n: usize, max: usize) -> Self {
+        let nb = n / 8;
+        let Some(p) = read_file(path, version).filter(|p| p.len() == nb + 2 * n + 4) else { return Self::empty(n) };
+        let count = u32::from_le_bytes(p[nb + 2 * n..].try_into().unwrap()) as usize;
+        if count >= max {
+            return Self::empty(n);
+        }
+        Order { bits: p[..nb].to_vec(), list: (0..n).map(|i| u16::from_le_bytes([p[nb + 2 * i], p[nb + 2 * i + 1]])).collect(), count }
+    }
+
+    fn payload(&self) -> Vec<u8> {
+        let mut p = self.bits.clone();
+        p.extend(self.list.iter().flat_map(|v| v.to_le_bytes()));
+        p.extend_from_slice(&(self.count as u32).to_le_bytes());
+        p
+    }
+
+    /// FUN_1021e550: newly known ids appended in id order, forgotten ones taken out (the tail shifts down).
+    pub fn merge(&mut self, known: &[u8]) {
+        let n = self.list.len();
+        let bit = |b: &[u8], i: usize| b.get(i / 8).is_some_and(|x| x & (1 << (i % 8)) != 0);
+        for id in 1..n {
+            match (bit(known, id), bit(&self.bits, id)) {
+                (true, false) => {
+                    self.bits[id / 8] |= 1 << (id % 8);
+                    if self.count < n {
+                        self.list[self.count] = id as u16;
+                        self.count += 1;
+                    }
+                }
+                (false, true) => {
+                    self.bits[id / 8] &= !(1 << (id % 8));
+                    if let Some(p) = self.list[..self.count].iter().position(|&x| x as usize == id) {
+                        self.list.copy_within(p + 1.., p);
+                        self.list[n - 1] = 0;
+                        self.count -= 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    pub fn ids(&self) -> &[u16] {
+        &self.list[..self.count]
+    }
+
+    /// FUN_1022c8e0 / FUN_10224320: the id at `from` taken out and put in at `to`, the ones between shifting (not a
+    /// swap).
+    pub fn move_to(&mut self, from: usize, to: usize) {
+        if from >= self.count || to >= self.count {
+            return;
+        }
+        let id = self.list.remove(from);
+        self.list.insert(to, id);
+    }
+}
+
 pub struct Macros {
     dir: PathBuf,
+    /// mix.dat (version 2) and aix.dat (version 4): the magic and ability list orders.
+    pub mix: Order,
+    pub aix: Order,
     /// +0x1dc0 book 0..39, +0x1db8 / 2 set 0..9.
     pub book: usize,
     pub set: usize,
@@ -117,16 +194,18 @@ pub struct Macros {
 impl Macros {
     /// FUN_101c3d00: `<game>/USER/<content id, lowercase hex>`; everything is read at field entry.
     pub fn load(game: &Path, content_id: u32, group9: Box<dyn Fn(usize) -> Option<String>>) -> Self {
-        let mut m = Macros { dir: game.join("USER").join(format!("{content_id:x}")), book: 0, set: 0, recs: vec![Macro::default(); 20], titles: vec![[0; 16]; BOOKS], run: None, acc: 0.0, group9 };
+        let dir = game.join("USER").join(format!("{content_id:x}"));
+        let (mix, aix) = (Order::load(&dir.join("mix.dat"), 2, 0x400, 0x400), Order::load(&dir.join("aix.dat"), 4, 0xb00, 0x700));
+        let mut m = Macros { dir, mix, aix, book: 0, set: 0, recs: vec![Macro::default(); 20], titles: vec![[0; 16]; BOOKS], run: None, acc: 0.0, group9 };
         for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
-            if let Some(p) = read_file(&m.dir.join(name)).filter(|p| p.len() == 0x140) {
+            if let Some(p) = read_file(&m.dir.join(name), 1).filter(|p| p.len() == 0x140) {
                 for i in 0..20 {
                     m.titles[k * 20 + i].copy_from_slice(&p[16 * i..16 * i + 16]);
                 }
             }
         }
         // mcr.sys: book * 20 + 2 * set.
-        if let Some(p) = read_file(&m.dir.join("mcr.sys")).filter(|p| p.len() == 4) {
+        if let Some(p) = read_file(&m.dir.join("mcr.sys"), 1).filter(|p| p.len() == 4) {
             let c = u32::from_le_bytes(p[..4].try_into().unwrap()) as usize;
             if c < 800 {
                 (m.book, m.set) = (c / 20, (c % 20) / 2);
@@ -149,7 +228,7 @@ impl Macros {
     /// FUN_101a26c0 / FUN_101a1e20: the set file; missing or bad: mcr.dat takes the defaults, others are cleared
     /// and written back.
     fn load_set(&mut self) {
-        match read_file(&self.set_path()) {
+        match read_file(&self.set_path(), 1) {
             Some(p) if p.len() == SET_PAYLOAD => self.recs = p.chunks(RECORD).map(Macro::parse).collect(),
             Some(_) => self.recs = vec![Macro::default(); 20],
             None if self.book == 0 && self.set == 0 => self.recs = self.defaults(),
@@ -179,15 +258,18 @@ impl Macros {
         for m in &self.recs {
             m.write(&mut p);
         }
-        write_file(&self.set_path(), &p);
+        write_file(&self.set_path(), 1, &p);
     }
 
-    /// FUN_101ab7d0: leaving the field writes mcr.sys, both title files and the current set.
+    /// FUN_101ab7d0: leaving the field writes mcr.sys, both title files, the current set and the list orders (mix.dat
+    /// is skipped in Monstrosity, which we do not have).
     pub fn save(&self) {
-        write_file(&self.dir.join("mcr.sys"), &((self.book * 20 + 2 * self.set) as u32).to_le_bytes());
+        write_file(&self.dir.join("mix.dat"), 2, &self.mix.payload());
+        write_file(&self.dir.join("aix.dat"), 4, &self.aix.payload());
+        write_file(&self.dir.join("mcr.sys"), 1, &((self.book * 20 + 2 * self.set) as u32).to_le_bytes());
         for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
             let p: Vec<u8> = self.titles[k * 20..k * 20 + 20].iter().flatten().copied().collect();
-            write_file(&self.dir.join(name), &p);
+            write_file(&self.dir.join(name), 1, &p);
         }
         self.save_set();
     }
@@ -325,5 +407,57 @@ mod tests {
         }
         assert_eq!(sent, vec!["/say a", "/say b", "/say c"]);
         let _ = std::fs::remove_dir_all(&game);
+    }
+}
+
+#[cfg(test)]
+mod order_tests {
+    use super::Order;
+
+    fn known(ids: &[u16]) -> Vec<u8> {
+        let mut k = vec![0u8; 128];
+        for id in ids {
+            k[(*id / 8) as usize] |= 1 << (id % 8);
+        }
+        k
+    }
+
+    /// Saved ids still known keep their places, a forgotten one goes, newly known ones follow in id order.
+    #[test]
+    fn merge_in_place() {
+        let mut o = Order::empty(1024);
+        for (i, id) in [7u16, 3, 5].iter().enumerate() {
+            o.bits[(*id / 8) as usize] |= 1 << (id % 8);
+            o.list[i] = *id;
+        }
+        o.count = 3;
+        o.merge(&known(&[3, 7, 9, 2]));
+        assert_eq!(o.ids(), [7, 3, 2, 9]);
+        let mut e = Order::empty(1024);
+        e.merge(&known(&[3, 7, 9, 2]));
+        assert_eq!(e.ids(), [2, 3, 7, 9]);
+    }
+
+    #[test]
+    fn move_inserts() {
+        let mut o = Order::empty(16);
+        o.list[..5].copy_from_slice(&[1, 2, 3, 4, 5]);
+        o.count = 5;
+        o.move_to(0, 3);
+        assert_eq!(o.ids(), [2, 3, 4, 1, 5]);
+        o.move_to(4, 1);
+        assert_eq!(o.ids(), [2, 5, 3, 4, 1]);
+    }
+
+    #[test]
+    fn version_and_round_trip() {
+        let dir = std::env::temp_dir().join(format!("vana-order-test-{}", std::process::id()));
+        let path = dir.join("mix.dat");
+        let mut o = Order::empty(0x400);
+        o.merge(&known(&[4, 9]));
+        super::write_file(&path, 2, &o.payload());
+        assert_eq!(Order::load(&path, 2, 0x400, 0x400), o);
+        assert_eq!(Order::load(&path, 1, 0x400, 0x400), Order::empty(0x400));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -4484,3 +4484,35 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Name = adjective + noun when shorter than 16 letters (else truncated to 16, then dropped by the < 16 test), then
   FUN_101ba240 (a validity check, not traced; ours skips it) and into the text input, which capitalises it.
 - Ours: creator::random_name with getrandom standing in for rand(). Live: "Attentivepond", "Lovelessharrier".
+
+## Magic / ability sort windows and the order files (2026-10-23; spec: scratchpad magsort/SPEC.md of that session)
+
+- Order files are USER files registered by FUN_101b9f20(version, ...): mix.dat version **2** (0x884: bits[0x80], u16
+  order[0x400], u32 count; count >= 0x400 reads as all zero), aix.dat version **4** (0x1764: bits[0x160], u16
+  order[0xb00], u32 count; count >= 0x700 zero), eix.dat / moix.dat version 1 (emote / mount order, not ours yet).
+  Container as the macro files (u32 version, u32, MD5, payload). Our reader took only version 1, so it never read a
+  retail mix.dat / aix.dat; read_file / write_file now take the version.
+- Read once at field entry (FUN_101ba030, with the macro files), merged in place with the known bits on every list
+  build (FUN_1021e550), written only when leaving the field (FUN_101ab7d0 -> FUN_101b9ff0; mix.dat not in
+  Monstrosity). Ours: Macros.mix / Macros.aix (macros::Order), merged before saving on Zoning / Logout.
+- Sort windows at (384, 48), shown unfocused beside the list: mgcsortw (Auto-sort, Manual Sort) for main menu
+  Magic lists (mgcmenu, list mode: FUN_1022c3a0 tail), blusortw (with row 3 Blue Magic) for type 6; abisortw
+  (Manual Sort only) for abimenu's Job Abilities / Weapon Skills, passed on to sub-lists and the Escape back to the
+  parent. Cast-mode lists (action menu, magselec, abiselec) have none. Num+ (message 8): list (rows, not in Manual)
+  to the sort window and back, SE 0013; Escape on the sort window back to the list.
+- Auto-sort: sortyn 0xe 0x50 "Sort list?" (16 px lower under blusortw, inferred), Yes = FUN_1022c070: every known id
+  by record +0x3e (SE's family order) with the other types zeroed, then the other types' ids refill the holes in
+  their old relative order; count kept; no packet, no write. Manual Sort: Enter picks (state 2, the row in
+  0x80804020), Enter on another row takes the picked id out and inserts it there (FUN_1022c8e0, not a swap); Escape
+  drops the pick, then returns to the sort window. Help 0xe 8 / 9 (magic), 0xa / 0xb (abilities); sort rows 0x15a /
+  0x3f, 0x10e / 0x40, blusortw row 3 0x283 / 0x8d (disabled look without 0x119 and BLU: keytops3 89 at 0x30808080,
+  refused with group 7 0x57; the set screen is not done).
+- Num+ also fires key function 0x78 (log focus cycle). FUN_10151550 skips it, with no focus yet, while a window
+  flagged 0x20000 / 0x20000000 in the window registry (0x103722f8: 0x2c-byte entries, flags u32 @4, name @0xc) is
+  open: mgcmenu 0x20001a00, abimenu 0x20201200, magselec, abiselec, sortyn 0x20001002, money, persona, iteminfo,
+  the party windows, many others (inventor 0x10000, magic / ability 0x80002 are not). Ours skips it while a list,
+  category window, item window or prompt is up (the item windows: inferred). Before, Num+ in the magic list put the
+  focus on the log and the next Enter opened the full log.
+- Not done: cursor memory per type (+0x74 / +0x98 / +0x70 tables), the mouse on the sort windows, emotes / mounts.
+- Live (Lnxcsfix, White Magic after !addallspells): Auto put Cura after Curaga V and Raise later; Manual moved Cure
+  two rows down (Cure II, Cure III, Cure).

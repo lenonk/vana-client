@@ -546,6 +546,12 @@ fn log_cycle(w: &mut World) {
     if w.full_log.is_some() || w.typing || event::active(w) {
         return;
     }
+    // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
+    // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
+    // share of this is inferred (Num+ is their list's message 8 there).
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some()) {
+        return;
+    }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
     if w.log_focus != 0 && !active {
         w.log_focus = 0;
@@ -913,9 +919,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // abilities, weapon skills, pet commands; in the field, alive, no prompt.
                 egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B if (modifiers.ctrl || modifiers.alt) && !event::active(world) && !world.dead() && world.prompt.is_none() => match key {
                     egui::Key::M => magic::open_magic(world, 0, true, 0x100),
-                    egui::Key::J => magic::open_ability(world, 1),
-                    egui::Key::W => magic::open_ability(world, 3),
-                    _ => magic::open_ability(world, 2),
+                    egui::Key::J => magic::open_ability(world, 1, false),
+                    egui::Key::W => magic::open_ability(world, 3, false),
+                    _ => magic::open_ability(world, 2, false),
                 },
                 _ if world.prompt.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
                     magic::key(world, *key);
@@ -3924,8 +3930,11 @@ impl App {
         while let Ok(ev) = world.net.events.try_recv() {
             match ev {
                 NetEvent::Zoning => {
-                    // Leaving the field writes the macro files (FUN_101ab7d0) and stops a running macro.
-                    if let Some(m) = world.macros.take() {
+                    // Leaving the field writes the macro files and the list orders (FUN_101ab7d0) and stops a running
+                    // macro.
+                    if let Some(mut m) = world.macros.take() {
+                        m.mix.merge(&world.spells_known);
+                        m.aix.merge(&world.commands_known);
                         m.save();
                     }
                     self.status = "Zoning...".into();
@@ -4179,7 +4188,9 @@ impl App {
                 }
                 NetEvent::Logout { state } => {
                     log::info!("logged out of the zone (0x00B state {state})");
-                    if let Some(m) = world.macros.take() {
+                    if let Some(mut m) = world.macros.take() {
+                        m.mix.merge(&world.spells_known);
+                        m.aix.merge(&world.commands_known);
                         m.save();
                     }
                     if world.logging_out {
@@ -4795,6 +4806,9 @@ impl App {
             world.info_page.set(p);
         }
         items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
+        if self.input.test(0x11, input::mode::PRESS) && (world.magic.is_some() || world.ability.is_some()) {
+            magic::num_plus(world);
+        }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)
             && let Some(items::Win::Items { direct: false, sub: None, manual: None, bin: None, sort, .. }) = &mut world.win

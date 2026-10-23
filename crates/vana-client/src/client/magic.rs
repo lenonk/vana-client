@@ -35,6 +35,14 @@ pub struct ListWin {
     pub cursor: usize,
     /// While the target prompt is up (FUN_1015e6e0 hides, the cancel callback shows it again).
     pub hidden: bool,
+    /// The sort window beside the list (list +0xc0 / +0xd1): "menu    mgcsortw", "menu    blusortw" or
+    /// "menu    abisortw"; `sort_focus` its cursor child while it has the focus, `ask` the Auto-sort sortyn.
+    pub sort: Option<&'static str>,
+    pub sort_focus: Option<u16>,
+    pub ask: Option<bool>,
+    /// Manual Sort (+0x6c / +0x68): 0 off, 1 pick, 2 picked (`picked` = its row).
+    pub manual: u8,
+    pub picked: usize,
 }
 
 impl ListWin {
@@ -106,33 +114,29 @@ pub fn set_recast(w: &mut World, spell: u16, info: u32) {
     w.spell_recast.insert(spell, Instant::now() + std::time::Duration::from_secs_f32(secs));
 }
 
-/// The list order (FUN_1022c030 / FUN_10223c90): the USER file's {bits[n / 8], u16 order[n], u32 count} merged with
-/// the known bits by FUN_1021e550: saved ids still known keep their places, newly known ones are appended in id order
-/// (with no file: id order). Ours reads it and does not write it back.
-fn order(w: &World, file: &str, n: usize, known: &[u8]) -> Vec<u16> {
-    let saved = w.macros.as_ref().and_then(|m| super::macros::read_file(&m.dir().join(file)));
-    merge(saved.as_deref(), n, known)
+/// The list order (FUN_1022c030 / FUN_10223c90): mix.dat / aix.dat as read at field entry (Macros), merged in place
+/// with the known bits (FUN_1021e550; with no file: id order).
+fn order(w: &World, aix: bool, known: &[u8]) -> Vec<u16> {
+    let n = if aix { 0xb00 } else { 0x400 };
+    let mut o = w.macros.as_ref().map(|m| if aix { m.aix.clone() } else { m.mix.clone() }).unwrap_or_else(|| super::macros::Order { bits: vec![0; n / 8], list: vec![0; n], count: 0 });
+    o.merge(known);
+    o.ids().to_vec()
 }
 
-fn merge(saved: Option<&[u8]>, n: usize, known: &[u8]) -> Vec<u16> {
-    let nb = n / 8;
-    let (bits, mut list): (Vec<u8>, Vec<u16>) = match saved.filter(|p| p.len() == nb + 2 * n + 4) {
-        Some(p) => {
-            let count = (u32::from_le_bytes(p[nb + 2 * n..].try_into().unwrap()) as usize).min(n);
-            (p[..nb].to_vec(), (0..count).map(|i| u16::from_le_bytes([p[nb + 2 * i], p[nb + 2 * i + 1]])).collect())
-        }
-        None => (vec![0; nb], Vec::new()),
-    };
-    list.retain(|&id| bit(known, id as usize));
-    list.extend((1..n as u16).filter(|&id| bit(known, id as usize) && !bit(&bits, id as usize)));
-    list
+/// The merged order itself, for a sort: merged in place in Macros first.
+fn order_mut<'a>(w: &'a mut World, aix: bool) -> Option<&'a mut super::macros::Order> {
+    let known = if aix { w.commands_known.clone() } else { w.spells_known.clone() };
+    let m = w.macros.as_mut()?;
+    let o = if aix { &mut m.aix } else { &mut m.mix };
+    o.merge(&known);
+    Some(o)
 }
 
 /// FUN_1022c3a0's rows: known spells (0x0AA) in the mix.dat order, by type and exclusion; cast mode needs 0x119 seen, the job / level rule, SCH / GEO main for flags 8 /
 /// 0x20, and leaves out blue magic (needs the set spells, s2c 0x044, not read yet).
 fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
     let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref()) else { return Vec::new() };
-    order(w, "mix.dat", 1024, &w.spells_known)
+    order(w, false, &w.spells_known)
         .into_iter()
         .filter(|&s| {
             let Some(r) = acts.spell(s) else { return false };
@@ -154,22 +158,24 @@ fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     if ty == 2 && w.my_pet == 0 {
         return Vec::new();
     }
-    order(w, "aix.dat", 0xb00, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
+    order(w, true, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
 }
 
 /// FUN_1022b220: the magic list, built and opened.
 pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     let rows = magic_rows(w, ty, list_mode, exclude);
-    w.magic = Some(ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false });
+    w.magic = Some(ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false, sort: None, sort_focus: None, ask: None, manual: 0, picked: 0 });
     w.menu = None;
     w.action_menu = None;
     w.cats = None;
 }
 
-/// FUN_10222b90: the ability list of a type.
-pub fn open_ability(w: &mut World, ty: u16) {
+/// FUN_10222b90: the ability list of a type; `sortable` attaches abisortw (abimenu's Job Abilities / Weapon Skills,
+/// passed on to sub-lists and the Escape back to the parent).
+pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     let rows = ability_rows(w, ty);
-    w.ability = Some(ListWin { kind: Kind::Ability, ty, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false });
+    let sort = sortable.then_some("menu    abisortw");
+    w.ability = Some(ListWin { kind: Kind::Ability, ty, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 });
     w.menu = None;
     w.action_menu = None;
     w.cats = None;
@@ -303,7 +309,8 @@ fn enter(w: &mut World, kind: Kind) {
         Kind::Ability => {
             let Some(a) = w.actions.as_ref().and_then(|x| x.abilities.get(id as usize)).cloned() else { return };
             if a.sub != 0 {
-                open_ability(w, a.sub as u16);
+                let sortable = win.sort.is_some();
+                open_ability(w, a.sub as u16, sortable);
                 return;
             }
             if let Some(m) = ability_check(w, id) {
@@ -365,8 +372,14 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
             }
             egui::Key::Enter => {
                 match rows.get(c.sel).map(|r| r.1) {
-                    Some(Cat::Magic(ty, list)) => open_magic(w, ty, list, 0),
-                    Some(Cat::Ability(ty)) => open_ability(w, ty),
+                    // FUN_1022c3a0's tail: list mode (mgcmenu) attaches mgcsortw, blusortw for blue magic.
+                    Some(Cat::Magic(ty, list)) => {
+                        open_magic(w, ty, list, 0);
+                        if let Some(m) = w.magic.as_mut().filter(|_| list) {
+                            m.sort = Some(if ty == 6 { "menu    blusortw" } else { "menu    mgcsortw" });
+                        }
+                    }
+                    Some(Cat::Ability(ty)) => open_ability(w, ty, c.menu == "menu    abimenu" && matches!(ty, 1 | 3)),
                     // FUN_1013f880: Ranged Attack through the prompt for enemies, as `/ra`.
                     Some(Cat::Ranged) => {
                         w.cats = None;
@@ -386,17 +399,21 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         return true;
     }
     let kind = if w.ability.is_some() { Kind::Ability } else if w.magic.is_some() { Kind::Magic } else { return false };
+    if sort_key(w, kind, key) {
+        return true;
+    }
     match key {
         egui::Key::Enter => enter(w, kind),
         egui::Key::Escape => {
             // Esc on an ability sub-list goes back to its parent type (not Monstrosity's).
             let parent = w.ability.as_ref().filter(|_| kind == Kind::Ability).map(|a| ABILITY_TYPES.get(a.ty as usize).map_or(0, |t| t.0)).filter(|&p| p != 0 && p != 0x14);
+            let sortable = w.ability.as_ref().is_some_and(|a| a.sort.is_some());
             match kind {
                 Kind::Magic => w.magic = None,
                 Kind::Ability => w.ability = None,
             }
             if let Some(p) = parent {
-                open_ability(w, p as u16);
+                open_ability(w, p as u16, sortable);
             }
             w.sounds.push(Ui::Cancel as u32);
         }
@@ -411,6 +428,200 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         }
     }
     true
+}
+
+fn list_mut(w: &mut World, kind: Kind) -> Option<&mut ListWin> {
+    match kind {
+        Kind::Magic => w.magic.as_mut(),
+        Kind::Ability => w.ability.as_mut(),
+    }
+}
+
+/// Key function 0x11 (Num+, message 8): from the list (rows, a sort window attached, not in Manual) to the sort
+/// window and back (FUN_1022ca30 / FUN_1022c290, abilities FUN_10224460 / FUN_10223cf0), SE 0013.
+pub fn num_plus(w: &mut World) {
+    if w.prompt.is_some() || w.cats.is_some() {
+        return;
+    }
+    let kind = if w.ability.is_some() { Kind::Ability } else { Kind::Magic };
+    let Some(win) = list_mut(w, kind).filter(|x| !x.hidden && x.sort.is_some() && x.ask.is_none() && x.manual == 0) else { return };
+    if win.sort_focus.is_some() {
+        win.sort_focus = None;
+    } else if !win.rows.is_empty() {
+        // The sort window's own cursor starts on child 1 (inferred).
+        win.sort_focus = Some(1);
+    } else {
+        return;
+    }
+    w.sounds.push(Ui::Close as u32);
+}
+
+/// FUN_1022c070: the current list (record valid, type, exclusion) sorted by record +0x3e; the other spells keep
+/// their relative order and fill the holes after it; the count is kept.
+fn auto_sort(o: &mut super::macros::Order, known: &[u8], in_list: impl Fn(u16) -> bool, key: impl Fn(u16) -> Option<u16>) {
+    let n = o.list.len();
+    let mut local = o.list.clone();
+    for x in local.iter_mut().filter(|x| **x != 0 && in_list(**x)) {
+        *x = 0;
+    }
+    let mut by_key = vec![0u16; n];
+    for id in 1..n as u16 {
+        if bit(known, id as usize)
+            && let Some(k) = key(id).filter(|&k| (k as usize) < n)
+        {
+            by_key[k as usize] = id;
+        }
+    }
+    let mut out: Vec<u16> = by_key[1..].iter().copied().filter(|&x| x != 0).map(|x| if in_list(x) { x } else { 0 }).collect();
+    out.resize(n, 0);
+    let mut at = 0;
+    for &x in local.iter().filter(|&&x| x != 0) {
+        while at < n && out[at] != 0 {
+            at += 1;
+        }
+        if at < n {
+            out[at] = x;
+            at += 1;
+        }
+    }
+    o.list = out;
+    o.bits = known.iter().copied().chain(std::iter::repeat(0)).take(n / 8).collect();
+}
+
+/// The sort window, its sortyn and Manual Sort on the list. True when the key was taken.
+fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
+    use egui::Key as K;
+    let win = match kind {
+        Kind::Magic => w.magic.as_mut(),
+        Kind::Ability => w.ability.as_mut(),
+    };
+    let Some(win) = win else { return false };
+    let Some(menu) = win.sort else { return false };
+    // Auto-sort's sortyn (default No): Yes sorts the type by record +0x3e and rebuilds the list, focused.
+    if let Some(yes) = win.ask {
+        match key {
+            K::ArrowUp | K::ArrowDown => {
+                win.ask = Some(!yes);
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            K::Enter | K::Escape => {
+                let yes = yes && key == K::Enter;
+                win.ask = None;
+                w.sounds.push(if yes { Ui::Select } else { Ui::Cancel } as u32);
+                if yes {
+                    win.sort_focus = None;
+                    let (ty, exclude) = (win.ty, win.exclude);
+                    let known = w.spells_known.clone();
+                    let acts = w.actions.clone();
+                    if let (Some(o), Some(acts)) = (order_mut(w, false), acts) {
+                        let in_list = |id: u16| acts.spell(id).is_some_and(|r| exclude & (1 << (r.kind & 0x1f)) == 0 && (ty == 0 || r.kind == ty));
+                        auto_sort(o, &known, in_list, |id| acts.spell(id).map(|r| r.sort));
+                    }
+                    rebuild(w, kind);
+                }
+            }
+            _ => {}
+        }
+        return true;
+    }
+    if let Some(c) = win.sort_focus {
+        let n = match menu {
+            "menu    blusortw" => 3,
+            "menu    mgcsortw" => 2,
+            _ => 1,
+        };
+        match key {
+            K::ArrowDown => win.sort_focus = Some(c % n + 1),
+            K::ArrowUp => win.sort_focus = Some(if c <= 1 { n } else { c - 1 }),
+            K::Escape => {
+                win.sort_focus = None;
+                w.sounds.push(Ui::Close as u32);
+                return true;
+            }
+            // Row 1 of mgcsortw / blusortw: Auto-sort; their row 2 and abisortw's row 1: Manual Sort on the list.
+            K::Enter if c == 1 && n > 1 => {
+                win.ask = Some(false);
+                w.sounds.push(Ui::Select as u32);
+                return true;
+            }
+            K::Enter if c <= 2 => {
+                (win.manual, win.sort_focus) = (1, None);
+                w.sounds.push(Ui::Select as u32);
+                return true;
+            }
+            // blusortw row 3 (FUN_101df020): 0x119 seen and BLU main or sub, else group 7 0x57; the set screen is
+            // not done.
+            K::Enter => {
+                let blu = w.recasts_seen && w.stats.as_ref().is_some_and(|s| s.main.0 == 16 || s.sub.0 == 16);
+                if blu {
+                    log::info!("the blue magic set screen is not implemented");
+                    w.sounds.push(Ui::Error as u32);
+                } else {
+                    refuse(w, 0x57);
+                }
+                return true;
+            }
+            _ => return true,
+        }
+        w.sounds.push(Ui::Cursor as u32);
+        return true;
+    }
+    if win.manual == 0 {
+        return false;
+    }
+    match key {
+        K::Enter if win.manual == 1 => {
+            (win.manual, win.picked) = (2, win.scroll + win.cursor);
+            w.sounds.push(Ui::Select as u32);
+        }
+        K::Enter => {
+            let (from, to) = (win.rows.get(win.picked).copied(), win.rows.get(win.scroll + win.cursor).copied());
+            win.manual = 1;
+            w.sounds.push(Ui::Select as u32);
+            if let (Some(a), Some(b)) = (from, to)
+                && let Some(o) = order_mut(w, kind == Kind::Ability)
+                && let (Some(p), Some(t)) = (o.ids().iter().position(|&x| x == a), o.ids().iter().position(|&x| x == b))
+            {
+                o.move_to(p, t);
+            }
+            let keep = list_mut(w, kind).map(|x| (x.scroll, x.cursor));
+            rebuild(w, kind);
+            if let (Some(x), Some((s, c))) = (list_mut(w, kind), keep) {
+                (x.scroll, x.cursor, x.manual) = (s, c, 1);
+            }
+        }
+        K::Escape if win.manual == 2 => win.manual = 1,
+        K::Escape => {
+            // Back to the sort window, on its Manual Sort row (inferred).
+            (win.manual, win.sort_focus) = (0, Some(if menu == "menu    abisortw" { 1 } else { 2 }));
+            w.sounds.push(Ui::Close as u32);
+        }
+        k => {
+            if step(win, k) {
+                w.sounds.push(Ui::Cursor as u32);
+            }
+        }
+    }
+    true
+}
+
+/// The rows again after a sort, the window state kept but Manual and the sort focus.
+fn rebuild(w: &mut World, kind: Kind) {
+    let Some(win) = list_mut(w, kind) else { return };
+    let (ty, list_mode, exclude) = (win.ty, win.list_mode, win.exclude);
+    let rows = match kind {
+        Kind::Magic => magic_rows(w, ty, list_mode, exclude),
+        Kind::Ability => ability_rows(w, ty),
+    };
+    if let Some(win) = list_mut(w, kind) {
+        let n = rows.len();
+        win.rows = rows;
+        win.manual = 0;
+        win.sort_focus = None;
+        if win.scroll + win.cursor >= n {
+            (win.scroll, win.cursor) = (0, 0);
+        }
+    }
 }
 
 /// FUN_1022b3d0 -> FUN_1012c1d0(0, record +0xc * 20): the bar runs for the cast byte times 20 ticks (Cure's 8: 2.67 s,
@@ -510,7 +721,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 Kind::Magic => (spell_name(w, id), magic_check(w, id).is_some()),
                 Kind::Ability => (ability_name(w, id), w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).is_some_and(|a| a.kind != 4) && ability_check(w, id).is_some()),
             };
-            let tint = if k == win.cursor { 0x8080_3040 } else if refused { 0x8040_4040 } else { 0x8080_8080 };
+            // Manual's picked row (colour 3) when not under the cursor.
+            let picked = win.manual == 2 && win.scroll + k == win.picked;
+            let tint = if k == win.cursor { 0x8080_3040 } else if picked { 0x8080_4020 } else if refused { 0x8040_4040 } else { 0x8080_8080 };
             ActionRow { icon: row_icon(w, win.kind, id), name, tint }
         })
         .collect();
@@ -525,6 +738,25 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame);
     }
     rects.extend(gu.window_rect(menu, sw, sh));
+    // The sort window at its layout (384, 48), highlighted while focused; blusortw's row 3 disabled (no disabled
+    // sprite: keytops3 89 at 0x30808080, under the cursor 0x40402810 at (+1, +1)) without 0x119 and BLU.
+    if let Some(sort) = win.sort {
+        let off = sort == "menu    blusortw" && !(w.recasts_seen && w.stats.as_ref().is_some_and(|s| s.main.0 == 16 || s.sub.0 == 16));
+        let hide: &[u16] = if off { &[3] } else { &[] };
+        if let Some(sw_) = gu.lobby_window_off(sort, sw, sh, (0.0, 0.0), win.sort_focus, win.sort_focus.is_some(), hide) {
+            rects.push(sw_.frame);
+            if off && let Some(&(_, r)) = sw_.children.iter().find(|ch| ch.0 == 2) {
+                let on = win.sort_focus == Some(3);
+                let d = if on { 1.0 } else { 0.0 };
+                gu.sprite("menu    keytops3", 89, r[0] + d, r[1] + 16.0 + d, if on { 0x4040_2810 } else { 0x3080_8080 });
+            }
+        }
+        // sortyn 16 px lower under blusortw (FUN_102227d0, inferred from its child count).
+        if let Some(yes) = win.ask {
+            let dy = if sort == "menu    blusortw" { 16.0 } else { 0.0 };
+            rects.extend(gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, dy), Some(if yes { 1 } else { 2 }), true, &[]).map(|x| x.frame));
+        }
+    }
     // subwindo for the cursor row: magic "MP Cost" (9 0xe6) and "Next" (9 0xe7); abilities by their kind.
     let lines: Vec<(String, String)> = match (win.kind, win.at()) {
         (Kind::Magic, Some(s)) => {
@@ -569,7 +801,23 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     let Some(win) = w.ability.as_ref().or(w.magic.as_ref()).filter(|x| !x.hidden) else { return };
+    // sortyn: 0xe 0x50 "Sort list?", no title; the sort window: its rows' strings.
+    if win.ask.is_some() {
+        (bars.help[1], bars.title[1]) = (gu.menu_msg(0x50, ""), String::new());
+        return;
+    }
+    if let (Some(menu), Some(c)) = (win.sort, win.sort_focus) {
+        let [help, title] = gu.focus_text(menu, c);
+        (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+        return;
+    }
     bars.title[1] = gu.title_msg(if win.kind == Kind::Magic { 76 } else { 68 }).unwrap_or_default();
+    // Manual Sort: magic 0xe 8 / 9, abilities 0xa / 0xb (FUN_1022cb90 / FUN_10224640).
+    if win.manual != 0 {
+        let base = if win.kind == Kind::Magic { 8 } else { 0xa };
+        bars.help[1] = gu.menu_msg(base + (win.manual as usize - 1), "");
+        return;
+    }
     bars.help[1] = match (win.kind, win.at(), w.names.as_ref()) {
         (Kind::Magic, Some(s), Some(n)) => n.spell_description(s as u32).unwrap_or_default(),
         (Kind::Ability, Some(i), Some(n)) => n.ability_description(i as u32).unwrap_or_default(),
@@ -581,22 +829,21 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 mod tests {
     use super::*;
 
-    /// Saved order kept for spells still known, a forgotten one dropped, a newly learned one appended.
+    /// Auto-sort (FUN_1022c070 steps 1..7): the type's spells by key, the others keep their order in the holes.
     #[test]
-    fn saved_order_merge() {
-        let n = 1024;
-        let mut file = vec![0u8; n / 8 + 2 * n + 4];
-        for (i, id) in [7u16, 3, 5].iter().enumerate() {
-            file[(*id / 8) as usize] |= 1 << (id % 8);
-            file[n / 8 + 2 * i..n / 8 + 2 * i + 2].copy_from_slice(&id.to_le_bytes());
-        }
-        file[n / 8 + 2 * n..].copy_from_slice(&3u32.to_le_bytes());
-        let mut known = vec![0u8; 128];
-        for id in [3u16, 7, 9, 2] {
+    fn auto_sort_keeps_others() {
+        let mut o = crate::client::macros::Order { bits: vec![0; 2], list: vec![0; 16], count: 5 };
+        o.list[..5].copy_from_slice(&[5, 1, 9, 3, 7]);
+        let mut known = vec![0u8; 2];
+        for id in [1u16, 3, 5, 7, 9] {
             known[(id / 8) as usize] |= 1 << (id % 8);
         }
-        assert_eq!(merge(Some(&file), n, &known), [7, 3, 2, 9]);
-        assert_eq!(merge(None, n, &known), [2, 3, 7, 9]);
+        // Odd ids below 6 are the type; keys reverse them.
+        let in_list = |id: u16| id < 6;
+        auto_sort(&mut o, &known, in_list, |id| Some(10 - id));
+        // All known ids by key: 9 7 5 3 1; the others (9, 7) zeroed, then refilled in their old order.
+        assert_eq!(&o.list[..5], &[9, 7, 5, 3, 1]);
+        assert_eq!(o.count, 5);
     }
 
     #[test]
@@ -608,7 +855,7 @@ mod tests {
 
     #[test]
     fn list_paging() {
-        let mut win = ListWin { kind: Kind::Magic, ty: 0, exclude: 0, list_mode: true, rows: (1..=30).collect(), scroll: 0, cursor: 0, hidden: false };
+        let mut win = ListWin { kind: Kind::Magic, ty: 0, exclude: 0, list_mode: true, rows: (1..=30).collect(), scroll: 0, cursor: 0, hidden: false, sort: None, sort_focus: None, ask: None, manual: 0, picked: 0 };
         step(&mut win, egui::Key::ArrowUp);
         assert_eq!((win.scroll, win.cursor, win.at()), (18, 11, Some(30)));
         step(&mut win, egui::Key::ArrowDown);
