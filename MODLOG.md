@@ -4769,3 +4769,21 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - FUN_100a1860 now prints nothing without a moogle actor, as retail.
 - Live (Lnxcsfix, Mog House 1F): the moogle appears; Change Jobs WAR -> MNK -> WAR, each with the moogle's dance
   (file 5038 'main' on the moogle and us) before c2s 0x100.
+
+## Name plates under the screen fade (2026-10-23)
+
+- Frame order in FUN_10010d20 (30261006_0): the scene target is bound (FUN_1000a800, 0x10011b50); every scheduler
+  task runs into it (FUN_10074c30, 0x10011ca2): the actor draw at priority 6, then CXiActorNameDraw (FUN_100817f0,
+  vtable 0x10329c18, priority 0xc), which draws the plates at once (DrawPrimitiveUP, no deferred queue); the op 0x10
+  crossfade and the op 0x72 flash also go into the target. Then the back buffer (FUN_1000a1d0, 0x100126a1), the
+  target copied with the op 0x0f colour as MODULATE2X (FUN_1000c0b0, 0x10012745), then the 2D windows (FUN_101604b0
+  .. FUN_10160650; the target arrow is a window too *(inf)*), then the op 0x51 level over everything (FUN_1000a820,
+  0x100129ea). The fade colours are stored by the scheduler tasks (renderer +0x338 / +0x334 / +0x328) and copied to
+  the draw copies at the frame end, so they apply one frame late.
+- So op 0x0f darkens the plates but not the windows. Ours draws plates in the HUD batch after ScreenFx; their colour
+  is now scaled by the same multiply (and the zoning fade), which equals retail for an alpha-blended plate *(inf:
+  up to the clamp of MODULATE4X)*. Seen before: a "Moogle" plate bright over the fdo1 black in the AMK cutscene.
+- Not done: op 0x51 multiplies the scene too in retail (ours only the 2D layer); the one-frame delay.
+- MODLOG's FUN_10080100 / FUN_10084b20 / FUN_100ce4d0 / FUN_1005f630 names are the 2019 build's.
+- Also live 2026-10-23: talking to the Mog House moogle with AMK on starts LSB's AMK mission 1 cutscene (event
+  30023); it played to its end, and talking again opened myroom through s2c 0x02E.

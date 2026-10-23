@@ -739,6 +739,13 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         (x.abs() <= sw + 100.0 && y.abs() <= sh + 100.0).then_some((x, y, [sw * 0.00234375 * s, sh * 0.00234375 * s], ndc.z))
     };
     let hidden = event::hidden(world);
+    // Retail draws plates into the scene target before the op 0x0f multiply (FUN_10010d20, MODLOG "Name plates under
+    // the screen fade"); ours scale their colour by it, which is the same for an alpha-blended plate.
+    let m = world.screen.multiply().map(|c| c * (1.0 - world.fade));
+    let faded = |tint: u32| -> u32 {
+        let ch = |sh: u32, k: usize| (((tint >> sh & 0xff) as f32 * m[k]).round().min(255.0) as u32) << sh;
+        tint & 0xff00_0000 | ch(16, 0) | ch(8, 1) | ch(0, 2)
+    };
     // Invisible helpers (no model or a stub one) only show a name while targeted; faded actors none.
     let visible = |id: &u32, e: &Entity| {
         let faded = world.actors.get(id).is_some_and(|a| a.vanished());
@@ -756,14 +763,14 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             // Pre-transformed quads at the projected depth (FUN_10080100): walls in front hide them.
             gu.depth(Some(z));
             let tint = name_colour(*id, e, world, |i| gu.ncol(i));
-            gu.name_plate(&e.name, x, y, scale, tint, pulse);
+            gu.name_plate(&e.name, x, y, scale, faded(tint), pulse);
         }
     }
     if !hidden.contains(&world.my_id)
         && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
         gu.depth(Some(z));
-        let tint = gu.ncol(0);
+        let tint = faded(gu.ncol(0));
         gu.name_plate(&world.name, x, y, scale, tint, 1.0);
     }
     gu.depth(None);
