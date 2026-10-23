@@ -5098,3 +5098,21 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   (atoi), string2 / string3 (24 bytes to a space / tab / NUL). 7031 line: actor from Cas (none for 0), target none,
   work Para0..3, string slots 2 / 3. /random: 88 "Dice roll! X rolls N!". Not done: the block list (Attr 0x10),
   SysMesFilterLevel (s2c 0x0B4 ConfData byte 1 bits 3..4 against table 0x1035b950), the Mode key.
+
+## The server message: c2s 0x04B / s2c 0x04D, /servmes (2026-10-23; spec ~/ffxi/lab/research/chat_audit/servmes_SPEC.md)
+
+- FUN_100955d0 (all.c 114627) runs "/servmes" once per lobby login, on the first zone (DAT_10487e90 per zone, and
+  *(0x1048fe10 + 0x10), set on the lobby -> game step, cleared by a zone change or logout), from the zone set-up
+  (FUN_10094190, EventNum 0) or the event's end (FUN_100ae3f0). /servmes and /smes (id 0x107, flags 0x61) ->
+  FUN_10080340 -> FUN_100a3040: a transfer unless one runs (DAT_10487f08), kind 1, a 0x400 buffer, language 2.
+- c2s 0x04B (FUN_100a2aa0), 0x18 bytes: Command (1 first, 2 the rest), Result 0, kind 1, language 2, i32 timestamp,
+  size_total, offset, data_size (0xec pieces). After the first reply up to 4 pieces at once (FUN_100a2b20); a piece is
+  asked twice at most, again after 3 s; 450 ticks without a reply start over, twice at most, then silence.
+- s2c 0x04D (LAB_100a2f70 -> FUN_100a2dd0 for Command 1 / 2): Command @4, Result @5, kind @6, language @7, timestamp
+  @8, size_total @0xc, offset @0x10, data_size @0x14, data @0x18; any check failing (timestamp, kind, language, the
+  piece's offset, size_total over 0x400) ends it silently.
+- FUN_100a3160: group 0xa 0x22 "<<< Welcome to %s! >>>" (the world's name), then the text by FUN_100a3240 (segments
+  ending after BEL / CR / LF), all mode 200; printed every time, no "seen" check. LSB: one 236-byte piece per
+  request, a repeated offset unanswered (servmesLastOffset_).
+- Ours: the request also waits for the message tables; real time for the timeouts (retail counts ticks, at least
+  one a frame).

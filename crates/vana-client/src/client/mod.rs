@@ -45,6 +45,7 @@ mod moogle;
 mod post;
 mod synth;
 mod treasure;
+mod servmes;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -2929,6 +2930,11 @@ struct World {
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     /// Synthesis: tskill1, the request state, the result lines and the animations.
     synth: synth::State,
+    /// The server message's transfer, its one request per lobby login (first zone) still to come, and the world's
+    /// name for its header.
+    servmes: Option<servmes::Transfer>,
+    servmes_armed: bool,
+    world_name: String,
     /// The zone's ambient loop chosen this frame (Effects::ambient).
     ambient: Option<u32>,
     /// Message events that came before the message tables loaded (poll_network replays them).
@@ -3761,6 +3767,10 @@ impl App {
                         let net = net::spawn(login.clone(), self.cfg.username.clone(), codec);
                         self.status = format!("Connecting to {}:{}...", login.map.0, login.map.1);
                         let features = if let Phase::Characters { lobby: Some(l), .. } = &self.phase { l.features } else { 0 };
+                        let world_name = match &self.phase {
+                            Phase::Characters { chars, selected: Some(s), .. } => chars.get(*s).map(|c| c.world.clone()).unwrap_or_default(),
+                            _ => String::new(),
+                        };
                         self.phase = Phase::World(Box::new(World {
                             features,
                             net,
@@ -3928,6 +3938,9 @@ impl App {
                             treasure: Default::default(),
                             held_text: Vec::new(),
                             ambient: None,
+                            servmes: None,
+                            servmes_armed: true,
+                            world_name,
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -4252,6 +4265,8 @@ impl App {
             }
             match ev {
                 NetEvent::Zoning => {
+                    // FUN_100955d0 asks only on the lobby login's first zone (state +0x10 cleared by a zone change).
+                    world.servmes_armed = false;
                     // Leaving the field writes the macro files and the list orders (FUN_101ab7d0) and stops a running
                     // macro.
                     if let Some(mut m) = world.macros.take() {
@@ -4608,6 +4623,7 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
+                NetEvent::Fragments(p) => servmes::on_fragment(world, &p),
                 NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
                 NetEvent::TrophyList { slot, item, target, gold, container } => treasure::on_list(world, slot, item, target, gold, container),
                 NetEvent::TrophySolution { slot, judge, loot, entry, entry_point, loot_name, entry_name } => {
@@ -6456,6 +6472,7 @@ impl App {
             moogle::update(w);
             post::update(w);
             synth::update(w);
+            servmes::frame(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {

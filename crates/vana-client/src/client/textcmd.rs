@@ -86,6 +86,7 @@ mod id {
     pub const AWAY: u16 = 0x6a;
     pub const TIMESTAMP: u16 = 0x9f;
     pub const RECAST: u16 = 0x2e;
+    pub const SERVMES: u16 = 0x107;
     pub const LOCKON: u16 = 0x5c;
     pub const CHARAEFFECT: u16 = 0x8a;
     pub const WAIT: u16 = 0x10a;
@@ -833,6 +834,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::RECAST => recast(w, args),
+        // FUN_10080340 (/servmes, /smes): a transfer unless one runs; no line of its own.
+        id::SERVMES => {
+            super::servmes::start(w);
+            Ok(())
+        }
         id::TIMESTAMP => {
             // FUN_1007b620: "off" / "min" / "sec" set config 0xb5 = 0 / 1 / 2, none cycles; group 9 0x122 + it.
             let v = match args.get(1).map(String::as_str) {
