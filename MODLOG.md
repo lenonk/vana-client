@@ -4578,3 +4578,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Not done: the hand on raid1 / raid2 rows (we do not draw those windows yet), the fellow row, the mouse.
 - Live (Lnxcsfix, solo): F1 put the white hand on our row; `/ta <stpt>` + Enter targeted us (0x5); `/ma Cure <stpt>`
   showed the blue hand and sent `/ma Cure 5`.
+
+- List cursor memory (FUN_10221b90; magic +0x74 / +0x98 + 4 x type for list / cast mode, abilities +0x70 + 4 x type,
+  written by the close hooks FUN_1022c990 / FUN_102243d0): the list reopens on the remembered row (scrolled into
+  view: inferred). Ours records it as the cursor moves. Live: Ctrl+M, three rows down, Escape, Ctrl+M: back on the
+  fourth row; the Manual order from the earlier session came back from mix.dat (written at logout).

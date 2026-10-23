@@ -2678,6 +2678,9 @@ struct World {
     commands_known: Vec<u8>,
     /// The magic / ability lists, their category windows and the target prompt (client/magic.rs, target.rs).
     magic: Option<magic::ListWin>,
+    /// The lists' remembered rows (magic +0x74 / +0x98 + 4 x type, abilities +0x70 + 4 x type): (ability, list mode,
+    /// type) -> id.
+    list_memory: HashMap<(bool, bool, u16), u16>,
     ability: Option<magic::ListWin>,
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
@@ -3619,6 +3622,7 @@ impl App {
                             spells_known: Vec::new(),
                             commands_known: Vec::new(),
                             magic: None,
+                            list_memory: HashMap::new(),
                             ability: None,
                             cats: None,
                             prompt: None,

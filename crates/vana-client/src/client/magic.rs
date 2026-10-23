@@ -161,10 +161,30 @@ fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     order(w, true, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
 }
 
+/// FUN_10221b90: the cursor on the row of the id remembered for this list (scrolled into view, inferred).
+fn recall(w: &World, win: &mut ListWin) {
+    let key = (win.kind == Kind::Ability, win.list_mode && win.kind == Kind::Magic, win.ty);
+    if let Some(at) = w.list_memory.get(&key).and_then(|id| win.rows.iter().position(|r| r == id)) {
+        win.scroll = at.saturating_sub(VISIBLE - 1);
+        win.cursor = at - win.scroll;
+    }
+}
+
+/// FUN_1022c990 / FUN_102243d0 store the cursor row's id at close; ours keeps it as the cursor moves.
+fn remember(w: &mut World) {
+    let Some(win) = w.ability.as_ref().or(w.magic.as_ref()) else { return };
+    let key = (win.kind == Kind::Ability, win.list_mode && win.kind == Kind::Magic, win.ty);
+    if let Some(id) = win.at() {
+        w.list_memory.insert(key, id);
+    }
+}
+
 /// FUN_1022b220: the magic list, built and opened.
 pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     let rows = magic_rows(w, ty, list_mode, exclude);
-    w.magic = Some(ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false, sort: None, sort_focus: None, ask: None, manual: 0, picked: 0 });
+    let mut win = ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false, sort: None, sort_focus: None, ask: None, manual: 0, picked: 0 };
+    recall(w, &mut win);
+    w.magic = Some(win);
     w.menu = None;
     w.action_menu = None;
     w.cats = None;
@@ -175,7 +195,9 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
 pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     let rows = ability_rows(w, ty);
     let sort = sortable.then_some("menu    abisortw");
-    w.ability = Some(ListWin { kind: Kind::Ability, ty, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 });
+    let mut win = ListWin { kind: Kind::Ability, ty, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 };
+    recall(w, &mut win);
+    w.ability = Some(win);
     w.menu = None;
     w.action_menu = None;
     w.cats = None;
@@ -424,6 +446,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
             };
             if win.is_some_and(|win| step(win, k)) {
                 w.sounds.push(Ui::Cursor as u32);
+                remember(w);
             }
         }
     }
