@@ -124,8 +124,9 @@ impl ItemInfo for ItemCache {
 
 /// An open window and its cursor.
 pub enum Win {
-    /// Main menu / action menu Items: the inventory list, and iuse / sortyn over it.
-    Items { scroll: usize, cursor: usize, sub: Option<Sub> },
+    /// Main menu Items: the inventory list, and iuse / sortyn over it. `direct`: the action menu's list of usable items,
+    /// where Enter uses at once (FUN_1012b880 case 8, FUN_101f0a10).
+    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool },
     /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
     Equip { row: usize, col: usize, pick: Option<Pick> },
 }
@@ -146,9 +147,33 @@ pub struct Pick {
 }
 
 pub fn open_items(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false });
     w.menu = None;
     w.action_menu = None;
+}
+
+/// The action menu's Items: only usable items, no iuse or sort window.
+pub fn open_direct(w: &mut World) {
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true });
+    w.menu = None;
+    w.action_menu = None;
+}
+
+/// The list's rows: the occupied inventory slots but gil; for the direct list only those FUN_101f0810 colours
+/// (crystals, maze tabulae, usable non-equipment, equipped charged gear).
+fn listed(w: &World, direct: bool) -> Vec<Slot> {
+    let info = w.item_info.as_ref();
+    w.inv
+        .slots_of(INVENTORY)
+        .into_iter()
+        .filter(|s| s.index != 0 && s.id != 0)
+        .filter(|s| {
+            !direct
+                || info.and_then(|c| c.item(s.id)).is_some_and(|it| {
+                    matches!(it.item_type, 8 | 0x16 | 0x17) || (!matches!(it.item_type, 4 | 5) && it.flags & 0x400 != 0) || (matches!(it.item_type, 4 | 5) && it.max_charges != 0 && s.equipped)
+                })
+        })
+        .collect()
 }
 
 pub fn open_equipment(w: &mut World) {
@@ -203,7 +228,9 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         }
         return w.win.is_some() || key == egui::Key::Escape;
     };
-    let rows = w.inv.slots_of(INVENTORY).iter().filter(|s| s.index != 0).count();
+    let direct = matches!(w.win, Some(Win::Items { direct: true, .. }));
+    let rows = listed(w, direct).len();
+    let shown = listed(w, direct);
     let mut send = None;
     let mut close = false;
     match &mut w.win {
@@ -258,12 +285,18 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                 },
             }
         }
-        Some(Win::Items { scroll, cursor, sub }) => match key {
+        Some(Win::Items { scroll, cursor, sub, direct }) => match key {
             egui::Key::Escape => close = true,
+            // FUN_101f0a10: the direct list uses at once, SE 0002.
+            egui::Key::Enter if *direct => {
+                if let Some(s) = shown.get(*scroll + *cursor).cloned() {
+                    w.sounds.push(crate::audio::Ui::Select as u32);
+                    use_entry(w, s.index, s.id);
+                }
+            }
             // FUN_101f2bb0: iuse for the row (not for lock 0x19), SE 0002.
             egui::Key::Enter => {
-                let at = *scroll + *cursor;
-                if let Some(s) = w.inv.slots_of(INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).nth(at)
+                if let Some(s) = shown.get(*scroll + *cursor)
                     && w.inv.locks.get(&(INVENTORY, s.index)).copied().unwrap_or(0) != 0x19
                 {
                     *sub = Some(Sub::Use { child: 1, index: s.index, id: s.id });
@@ -357,11 +390,10 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// mode).
 pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8)> {
     let slots = w.inv.slots_of(INVENTORY);
-    let listed = |at: usize| slots.iter().filter(|s| s.index != 0 && s.id != 0).nth(at).cloned();
     let (slot, container, mode) = match w.win.as_ref()? {
         // FUN_101f2740: the list and iteminfo are hidden while the item's target prompt is up.
         Win::Items { .. } if item_prompt(w) => return None,
-        Win::Items { scroll, cursor, .. } => (listed(scroll + cursor)?, INVENTORY, 0),
+        Win::Items { scroll, cursor, direct, .. } => (listed(w, *direct).get(scroll + cursor)?.clone(), INVENTORY, 0),
         Win::Equip { pick: Some(p), .. } => {
             let i = *p.indexes.get(p.scroll + p.cursor)?;
             (slots.iter().find(|s| s.index == i)?.clone(), INVENTORY, 1)
@@ -424,11 +456,11 @@ fn draw_iuse(gu: &mut GameUi, w: &World, s: Sub, sw: f32, sh: f32) -> Vec<[f32; 
 
 /// FUN_101f2ec0: iuse closes when the list cursor no longer rests on the slot it opened for.
 pub fn check_iuse(w: &mut World) {
-    let Some(Win::Items { scroll, cursor, sub: Some(s) }) = &w.win else { return };
+    let Some(Win::Items { scroll, cursor, sub: Some(s), direct }) = &w.win else { return };
     let (index, id) = match *s {
         Sub::Use { index, id, .. } | Sub::Drop { index, id, .. } => (index, id),
     };
-    let here = w.inv.slots_of(INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).nth(scroll + cursor);
+    let here = listed(w, *direct).get(scroll + cursor).cloned();
     if here.is_none_or(|s| s.index != index || s.id != id)
         && let Some(Win::Items { sub, .. }) = &mut w.win
     {
@@ -536,8 +568,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let slots = w.inv.slots_of(INVENTORY);
     match win {
         Win::Items { .. } if item_prompt(w) => {}
-        Win::Items { scroll, cursor, sub } => {
-            let list = ItemList { rows: build_rows(&slots, info.as_ref(), false), scroll: *scroll, cursor: *cursor };
+        Win::Items { scroll, cursor, sub, direct } => {
+            let list = ItemList { rows: build_rows(&listed(w, *direct), info.as_ref(), false), scroll: *scroll, cursor: *cursor };
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let (b, ui, style, font) = gu.parts();
             if let Some(m) = ui.menu("menu    inventor") {

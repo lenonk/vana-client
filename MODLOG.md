@@ -4333,3 +4333,7 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   - Data tables found by hint + MD5 in the packed install DLL (attribute / pet / element masks, prefix, evolith,
     mezzotint index and RP, no-mark ids); the nearly empty 0x280 / 0x480 tables and the shape glyphs as constants.
   - Not seen live (no augmented gear on the test characters); offscreen Kupofried's Ring with vector 5 matches.
+- The direct-use list (action menu Items, FUN_1012b880 case 8 / FUN_101f0a10): the inventory list with only the rows
+  FUN_101f0810 colours (crystals, maze tabulae, usable non-equipment with flag 0x400, equipped charged gear), no iuse
+  and no sort window; Enter uses at once (the same per-type branches and target prompt as iuse Use), SE 0002. Ours:
+  Win::Items direct; the row tints are still the main list ones (the blue / grey for gear is not done). Not seen live.

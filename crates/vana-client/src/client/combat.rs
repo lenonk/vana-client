@@ -618,7 +618,8 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             super::event::talk(w, t);
         }
         // Case 8: the item list (FUN_101e9f10).
-        (cmd::ITEMS, _) => super::items::open_items(w),
+        // FUN_1012b880 case 8: the direct-use list.
+        (cmd::ITEMS, _) => super::items::open_direct(w),
         _ => return false,
     }
     true
