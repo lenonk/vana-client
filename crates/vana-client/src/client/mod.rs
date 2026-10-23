@@ -3395,7 +3395,7 @@ impl App {
         crate::render::UNCOMPRESSED.store(self.cfg.tool("0018") >= 2, std::sync::atomic::Ordering::Relaxed);
         let (m, e) = self.volume_factors();
         if let Some(a) = self.audio.as_mut() {
-            a.set_volumes(self.cfg.music_volume * m, self.cfg.effects_volume * e);
+            a.set_volumes(m, e);
             a.max_se = self.cfg.tool("0029").clamp(1, 20);
         }
         // 0007: sound off drops the device; on opens it again.
@@ -3581,7 +3581,7 @@ impl App {
             // FFXI_AUDIO_DEVICE overrides the config's device (test runs into a null sink).
             let device = std::env::var("FFXI_AUDIO_DEVICE").unwrap_or_else(|_| self.cfg.audio_device.clone());
             let (m, e) = self.volume_factors();
-            self.audio = crate::audio::Audio::open(self.cfg.ffxi_dir(), Some(&device), self.cfg.music_volume * m, self.cfg.effects_volume * e);
+            self.audio = crate::audio::Audio::open(self.cfg.ffxi_dir(), Some(&device), m, e);
             if let Some(a) = self.audio.as_mut() {
                 a.max_se = self.cfg.tool("0029").clamp(1, 20);
             }
@@ -5807,6 +5807,8 @@ impl App {
                                             let mut s = settings::SettingsUi::open(&self.cfg, window);
                                             s.monitors = self.monitors.clone();
                                             s.gpus = self.gpus.clone();
+                                            let v = self.lobby_values.get(0xa8);
+                                            (s.s.music, s.s.effects) = (v, v);
                                             self.lobby_settings = Some(s);
                                             settings_new = true;
                                         }
@@ -5849,6 +5851,13 @@ impl App {
                                 if s.dirty {
                                     s.dirty = false;
                                     s.s.store(&mut self.cfg);
+                                    // The lobby has one volume (0xa8): the row changed sets both.
+                                    let old = self.lobby_values.get(0xa8);
+                                    let v = if s.s.music != old { s.s.music } else { s.s.effects };
+                                    (s.s.music, s.s.effects) = (v, v);
+                                    self.lobby_values.set(0xa8, v);
+                                    self.cfg.game.store(None, &self.lobby_values);
+                                    lobby_changes(&[0xa8], &mut lobby_apply);
                                     apply = true;
                                     save = true;
                                 }
@@ -7432,7 +7441,7 @@ impl ApplicationHandler for App {
                     && let Some(a) = self.audio.as_mut()
                 {
                     if f {
-                        a.set_volumes(self.cfg.music_volume * m, self.cfg.effects_volume * e);
+                        a.set_volumes(m, e);
                     } else {
                         a.set_volumes(0.0, 0.0);
                     }

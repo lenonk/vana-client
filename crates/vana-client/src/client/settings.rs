@@ -41,8 +41,9 @@ impl Settings {
             map_opacity: pct(c.map_overlay_opacity),
             synth_amount: c.synth_amount,
             stamp_all_lines: c.stamp_all_lines,
-            music: pct(c.music_volume),
-            effects: pct(c.effects_volume),
+            // The game's own volumes (Gameplay page, config 10 / 9; the lobby's 0xa8): set by the opener.
+            music: 100,
+            effects: 100,
             retail_aspect: c.retail_aspect,
             monitor: c.monitor.clone(),
             gpu: c.gpu.clone(),
@@ -61,8 +62,6 @@ impl Settings {
         c.map_overlay_opacity = self.map_opacity as f32 / 100.0;
         c.synth_amount = self.synth_amount;
         c.stamp_all_lines = self.stamp_all_lines;
-        c.music_volume = self.music as f32 / 100.0;
-        c.effects_volume = self.effects as f32 / 100.0;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
     }
@@ -132,7 +131,8 @@ const fn row(label: &'static str, help: &'static str, val: Val, choices: &'stati
 
 const TABS: [&str; 7] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Linux"];
 
-fn rows(kind: Kind, tab: usize) -> &'static [Row] {
+/// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out.
+fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
     use Val::*;
     use When::*;
     const GENERAL: &[Row] = &[
@@ -163,8 +163,9 @@ fn rows(kind: Kind, tab: usize) -> &'static [Row] {
         row("Sound", "0007: sound on or off.", Tool("0007"), OFF_ON, Now),
         row("Sound Effect Channels", "0029: sound effects playing at once.", Tool("0029"), &[(12, "12"), (13, "13"), (14, "14"), (15, "15"), (16, "16"), (17, "17"), (18, "18"), (19, "19"), (20, "20")], Now),
         row("Sound in Background", "0035: keep playing sound while the window is not focused.", Tool("0035"), OFF_ON, Now),
-        row("Music Volume", "Our music level, under the Gameplay page's.", Music, &[], Now),
-        row("Sound Effects Volume", "Our sound effects level, under the Gameplay page's.", Effects, &[], Now),
+        // The title's one volume (lobby config 0xa8); in game the Gameplay page has them (rows left out there).
+        row("Music Volume", "The volume before you are in game (the lobby's; in game, the Gameplay page's sliders).", Music, &[], Now),
+        row("Sound Effects Volume", "The volume before you are in game (the lobby's; in game, the Gameplay page's sliders).", Effects, &[], Now),
     ];
     const MISC: &[Row] = &[
         row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
@@ -186,6 +187,7 @@ fn rows(kind: Kind, tab: usize) -> &'static [Row] {
     ];
     match kind {
         Kind::Extras => EXTRAS,
+        Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
     }
 }
@@ -259,7 +261,7 @@ impl SettingsUi {
     }
 
     fn rows(&self) -> &'static [Row] {
-        rows(self.kind, self.tab)
+        rows(self.kind, self.tab, self.in_game)
     }
 
     fn ctl(r: &Row) -> Ctl {

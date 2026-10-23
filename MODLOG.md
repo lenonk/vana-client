@@ -5208,5 +5208,6 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   channel changes (retail compares the level after the factors); the event channels go back to 1.0 at zone-in
   (FUN_1008abe0). Not done: the resets at event end / an SE slider change (FUN_100ae3f0 / FUN_10035e80), retail's
   ambient crossfade (FUN_1024a1b0).
-- Ours only: the Settings page's Music / Effects Volume multiply the level index on top of the in-game sliders;
-  at 100 % the output is retail's.
+- Our own volume factors are gone (the user's call): the game's values alone set the levels, as retail. In game
+  the Gameplay page's sliders (config 10 / 9) are the only volume controls (Settings' Sound page leaves them out);
+  on the title Settings' two volume rows edit the lobby's one volume (0xa8).

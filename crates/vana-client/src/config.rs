@@ -40,9 +40,6 @@ pub struct Config {
     pub irc_port: u16,
     /// Version string sent to the lobby; LSB rejects clients older than its CLIENT_VER.
     pub client_version: String,
-    /// Music and effect volume factors 0..1 (the client's 0..127 levels are scaled by these).
-    pub music_volume: f32,
-    pub effects_volume: f32,
     /// cpal output device id ("pipewire:..."); empty = the system default.
     pub audio_device: String,
     /// Frame limit in frames per second (one of FRAME_LIMITS), 0 = unlimited. Not a retail option;
@@ -139,8 +136,6 @@ impl Default for Config {
             profile_port: 51220,
             irc_port: 51240,
             client_version: "30261006_0".into(),
-            music_volume: 1.0,
-            effects_volume: 1.0,
             audio_device: String::new(),
             frame_limit: 300,
             anisotropy: 16,

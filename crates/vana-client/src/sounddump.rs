@@ -60,7 +60,7 @@ pub fn audio_test(id: u32, seconds: f32, se: bool, fade: i32, device: Option<Str
     }
     let cfg = Config::load();
     let device = device.unwrap_or(cfg.audio_device.clone());
-    let mut a = audio::Audio::open(cfg.ffxi_dir(), Some(&device), cfg.music_volume, cfg.effects_volume).context("no audio output")?;
+    let mut a = audio::Audio::open(cfg.ffxi_dir(), Some(&device), 1.0, 1.0).context("no audio output")?;
     if se {
         a.play_se(id, 127);
     } else {
