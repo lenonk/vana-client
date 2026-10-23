@@ -961,7 +961,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     _ => {}
                 },
                 _ if world.win.is_some() => {
-                    items::key(world, *key);
+                    items::key(world, *key, modifiers.ctrl || modifiers.alt);
                 }
                 // FUN_101d6540: the Mog House door menu.
                 _ if world.mogdoor.is_some() => {

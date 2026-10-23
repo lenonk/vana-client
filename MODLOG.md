@@ -4450,3 +4450,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - mapscan / map0 disabled looks (FUN_101177d0): Track for an untrackable row keytops3 300 at 0x30808080, under the
   cursor 0x40402810 at (+1, +1); map0 Wide Scan disabled under the cursor keytops3 20 at (+1, +1) in 0x80805020.
   Live: the busy strip while scanning, and scanlist paging (Right, Right, Left) in Southern San d\x27Oria.
+
+- Item list paging (list base FUN_101f6c70 messages 3 / 4): a list pages with plain Right / Left when +0x47 is set,
+  else only with key function 0xa8 (Ctrl / Alt held). +0x47 comes from the source vtable +0x1c: the main inventory
+  sources FUN_1012e470 = 1, the storage view sources (bank and its inventory partner) FUN_101dc590 = 0 (there plain
+  Right / Left switch lists). A page keeps the cursor row; on the last / first page the cursor goes to the last /
+  first row; SE 0001 when something moved. Ours: page_keys for the main list and Manual, Ctrl / Alt in the bin
+  view (egui modifiers taken as 0xa8). Live: a 10-row list (one page) moved to the last and first rows.

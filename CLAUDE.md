@@ -63,11 +63,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 ## Next up
 - The retail key set (`~/ffxi/lab/research/keys_spec.md`; its status column is out of date): done, including
   F1-F12 targeting, UI hide, screenshots, the Pause log-out prompt, macros and palettes. Left: Mog House layout
-  mode keys, Ctrl / Alt page modifier (0xa8) in lists, Shift selection in the chat line.
+  mode keys, Ctrl / Alt page modifier (0xa8) in the lists other than items (done there), Shift selection in the
+  chat line.
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R7, R10, R14, R16..R18, R21. Left: R8 0xd4 subs 1 / 3 / 4 / 5 (option data) and
   the map preview, R9 0x20 / 0x30 control lock, R11 0xae, R12 0xab toggles, R13 0x7e mounts (needs the chocobo /
-  mount model), R15 0xb6 0xd / 0xe (race 0x20+ looks), R20 0xd8 body rotation, 0x46/3 camera seed, 0xb3 mini-game.
+  mount model; subs 0 / 5 / 8 done), R15 0xb6 0x11 / 0x12..0x15 (0xd / 0xe chocobo looks done), R20 0xd8 body rotation, 0x46/3 camera seed, 0xb3 mini-game.
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the

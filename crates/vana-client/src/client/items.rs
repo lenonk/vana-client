@@ -287,8 +287,26 @@ fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) {
     *cursor = at - *scroll;
 }
 
-/// Keys while a window is open. Returns true when the key was used.
-pub fn key(w: &mut World, key: egui::Key) -> bool {
+/// FUN_101f6c70 messages 3 / 4: Right / Left turn a page of 10 keeping the cursor row; on the last / first page the
+/// cursor goes to the last / first row instead. True when something moved (SE 0001).
+fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right: bool) -> bool {
+    if n == 0 {
+        return false;
+    }
+    let max = n.saturating_sub(VISIBLE_ROWS);
+    let before = (*scroll, *cursor);
+    match right {
+        true if *scroll == max => *cursor = (n - *scroll).min(VISIBLE_ROWS) - 1,
+        true => *scroll = (*scroll + VISIBLE_ROWS).min(max),
+        false if *scroll == 0 => *cursor = 0,
+        false => *scroll = scroll.saturating_sub(VISIBLE_ROWS),
+    }
+    *cursor = (*cursor).min(n - 1 - *scroll);
+    (*scroll, *cursor) != before
+}
+
+/// Keys while a window is open; `page` is key function 0xa8 (Ctrl / Alt held). Returns true when the key was used.
+pub fn key(w: &mut World, key: egui::Key, page: bool) -> bool {
     let Some(info) = w.item_info.clone() else {
         if key == egui::Key::Escape {
             w.win = None;
@@ -299,7 +317,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
     if matches!(w.win, Some(Win::Items { bin: Some(_), .. })) {
-        bin_key(w, &info, key);
+        bin_key(w, &info, key, page);
         return true;
     }
     let mut send = None;
@@ -429,6 +447,11 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                     *manual = None;
                     *sort = Some(SortWin { cursor: 2, ask: None });
                 }
+                egui::Key::ArrowRight | egui::Key::ArrowLeft => {
+                    if page_keys(scroll, cursor, rows, key == egui::Key::ArrowRight) {
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
+                }
                 k => list_keys(scroll, cursor, rows, k),
             }
         }
@@ -448,6 +471,12 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                 {
                     *sub = Some(Sub::Use { child: 1, index: s.index, id: s.id });
                     w.sounds.push(crate::audio::Ui::Select as u32);
+                }
+            }
+            // The main source's +0x1c (FUN_1012e470) is 1, so plain Right / Left page.
+            egui::Key::ArrowRight | egui::Key::ArrowLeft => {
+                if page_keys(scroll, cursor, rows, key == egui::Key::ArrowRight) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
                 }
             }
             k => list_keys(scroll, cursor, rows, k),
@@ -984,7 +1013,7 @@ fn send_bin(w: &World, index: u8, n: u32) {
 /// moves the focus (SE 0013); Enter on a bin row sends one item at once or opens itemctrl for a stack (SE 0002), on a
 /// grey row or the inventory side SE 0004; Escape leaves (to itmsort2 when it came from there). itemctrl: Up / Down
 /// +-1 (the step of 10 after a long hold is not done), Right 1, Left the count, Enter sends, Escape drops it.
-fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key) {
+fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
     use crate::audio::Ui;
     let Some(Win::Items { bin: Some(b), scroll, cursor, .. }) = &w.win else { return };
     let (mut b, mut scroll, mut cursor) = (*b, *scroll, *cursor);
@@ -1017,6 +1046,14 @@ fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key) {
         match key {
             egui::Key::ArrowUp | egui::Key::ArrowDown if b.on_bin => list_keys(&mut b.scroll, &mut b.cursor, bins.len(), key),
             egui::Key::ArrowUp | egui::Key::ArrowDown => list_keys(&mut scroll, &mut cursor, inv, key),
+            // Both sources' +0x1c (FUN_101dc590) is 0: Right / Left page only with 0xa8 held.
+            egui::Key::ArrowRight | egui::Key::ArrowLeft if page => {
+                let right = key == egui::Key::ArrowRight;
+                let moved = if b.on_bin { page_keys(&mut b.scroll, &mut b.cursor, bins.len(), right) } else { page_keys(&mut scroll, &mut cursor, inv, right) };
+                if moved {
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+            }
             egui::Key::ArrowRight if b.on_bin => {
                 b.on_bin = false;
                 w.sounds.push(Ui::Close as u32);
@@ -1131,7 +1168,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     let same = *cur == row;
     *cur = row;
     if clicked && same && enter {
-        key(w, egui::Key::Enter);
+        key(w, egui::Key::Enter, false);
     }
 }
 
