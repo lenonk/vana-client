@@ -4764,6 +4764,16 @@ impl App {
             p.0 = if p.0 + 1 >= p.2.min(3) { 0 } else { p.0 + 1 };
             world.info_page.set(p);
         }
+        // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
+        if self.input.test(0x11, input::mode::PRESS)
+            && let Some(items::Win::Items { direct: false, sub: None, manual: None, sort, .. }) = &mut world.win
+        {
+            *sort = match sort {
+                Some(_) => None,
+                None => Some(items::SortWin { cursor: 1, ask: None }),
+            };
+            world.sounds.push(crate::audio::Ui::Close as u32);
+        }
         // Numpad * / compact H: 0x44 (/heal) and 0x30 (lock-on) read the same press; FUN_101516d0 picks.
         if self.input.test(0x44, input::mode::PRESS) {
             target::numpad_star(world);

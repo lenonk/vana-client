@@ -4337,3 +4337,20 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   FUN_101f0810 colours (crystals, maze tabulae, usable non-equipment with flag 0x400, equipped charged gear), no iuse
   and no sort window; Enter uses at once (the same per-type branches and target prompt as iuse Use), SE 0002. Ours:
   Win::Items direct; the row tints are still the main list ones (the blue / grey for gear is not done). Not seen live.
+
+## Item sort window: "menu    itmsort2", Auto and Manual (2026-10-23)
+
+- Item sort window ("menu    itmsort2", FUN_101f0600 / FUN_101f36d0): drawn beside the main inventory list (not the
+  direct-use list); key function 0x11 (Num+) moves the focus there and back (FUN_101f3740, SE 0013). Rows: 1 Auto,
+  2 Manual, 3 Recycle Bin (not done here).
+  - The list has a view order per container, separate from the slot indexes (FUN_1021c210 / FUN_1021c5b0 append a
+    newly filled slot, FUN_1021c680 drops an emptied one). Ours: Inventory.order, Inventory::viewed.
+  - Auto (FUN_1021c7e0): sortyn "Sort items?" (group 0xc 0x3d); Yes reorders the view by the item record key at +0xc
+    and then the id, or with config 0xca == 1 pulls identical ids up beside their first row; then c2s 0x03A
+    {u32 container} and the server merges stacks. Seen live: Distilled Water 3 + 2 merged to 5.
+  - Manual (FUN_101f0b30): help group 0xe 5 "Select item to move." / 6 with one picked. The second pick moves the
+    first row to the second row's place, shifting the rows between (FUN_1021cac0, client side only; not a swap,
+    although the help text says "switch"). The same row splits one off with c2s 0x029 {1, inv, inv, index, 0x52} when
+    the stack holds more than one and stacks (0x52 as the target index is inferred to mean the first free slot).
+    Another row of the same item takes the whole stack (c2s 0x029). Seen live (the move; the split was not tried).
+- Test drives: egui Key::Plus maps to DIK 0x4e (Num+), because egui does not tell the numpad apart.

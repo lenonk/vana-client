@@ -47,6 +47,9 @@ pub struct Inventory {
     pub locks: BTreeMap<(u8, u8), u8>,
     /// (container, index) -> the item's 24-byte extdata (s2c 0x020 Attr).
     pub ext: BTreeMap<(u8, u8), [u8; 24]>,
+    /// The list's view per container (FUN_1021c210 / FUN_1021c5b0 append a new slot, FUN_1021c680 drops an emptied
+    /// one; sorting reorders it): slot indexes.
+    pub order: BTreeMap<u8, Vec<u8>>,
 }
 
 impl Inventory {
@@ -55,14 +58,33 @@ impl Inventory {
             self.slots.remove(&(container, index));
             self.ext.remove(&(container, index));
             self.locks.remove(&(container, index));
+            self.unlist(container, index);
         } else {
             self.slots.insert((container, index), (id, count));
+            let o = self.order.entry(container).or_default();
+            if !o.contains(&index) {
+                o.push(index);
+            }
         }
+    }
+
+    fn unlist(&mut self, container: u8, index: u8) {
+        if let Some(o) = self.order.get_mut(&container) {
+            o.retain(|&i| i != index);
+        }
+    }
+
+    /// The occupied slots in the view's order.
+    pub fn viewed(&self, container: u8) -> Vec<Slot> {
+        let slots = self.slots_of(container);
+        let o = self.order.get(&container).map(Vec::as_slice).unwrap_or_default();
+        o.iter().filter_map(|i| slots.iter().find(|s| s.index == *i).cloned()).collect()
     }
 
     pub fn count(&mut self, container: u8, index: u8, count: u32) {
         if count == 0 {
             self.slots.remove(&(container, index));
+            self.unlist(container, index);
         } else if let Some(s) = self.slots.get_mut(&(container, index)) {
             s.1 = count;
         }
@@ -126,9 +148,17 @@ impl ItemInfo for ItemCache {
 pub enum Win {
     /// Main menu Items: the inventory list, and iuse / sortyn over it. `direct`: the action menu's list of usable items,
     /// where Enter uses at once (FUN_1012b880 case 8, FUN_101f0a10).
-    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool },
+    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>> },
     /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
     Equip { row: usize, col: usize, pick: Option<Pick> },
+}
+
+/// "menu    itmsort2" with the focus (FUN_101f36b0 / FUN_101f3740): 1 Auto, 2 Manual, 3 Recycle Bin; `ask` is the
+/// Auto prompt (sortyn "Sort items?", Yes / No).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SortWin {
+    pub cursor: u16,
+    pub ask: Option<bool>,
 }
 
 /// The windows over the list: "menu    iuse" (FUN_101f2bb0: 1 Use, 2 Drop) for the slot it opened on, and
@@ -147,14 +177,14 @@ pub struct Pick {
 }
 
 pub fn open_items(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None });
     w.menu = None;
     w.action_menu = None;
 }
 
 /// The action menu's Items: only usable items, no iuse or sort window.
 pub fn open_direct(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true, sort: None, manual: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -164,7 +194,7 @@ pub fn open_direct(w: &mut World) {
 fn listed(w: &World, direct: bool) -> Vec<Slot> {
     let info = w.item_info.as_ref();
     w.inv
-        .slots_of(INVENTORY)
+        .viewed(INVENTORY)
         .into_iter()
         .filter(|s| s.index != 0 && s.id != 0)
         .filter(|s| {
@@ -190,6 +220,8 @@ pub fn focus(w: &World) -> Option<(&'static str, u16)> {
     match w.win.as_ref()? {
         Win::Items { sub: Some(Sub::Use { child, .. }), .. } => Some(("menu    iuse", *child)),
         Win::Items { sub: Some(Sub::Drop { yes, .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
+        Win::Items { sort: Some(SortWin { ask: Some(yes), .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
+        Win::Items { sort: Some(s), .. } => Some(("menu    itmsort2", s.cursor)),
         Win::Items { cursor, .. } => Some(("menu    inventor", *cursor as u16 + 1)),
         Win::Equip { pick: Some(p), .. } => Some(("menu    inventor", p.cursor as u16 + 1)),
         Win::Equip { row, col, pick: None } => Some(("menu    equip", (1 + col * 4 + row) as u16)),
@@ -285,7 +317,84 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                 },
             }
         }
-        Some(Win::Items { scroll, cursor, sub, direct }) => match key {
+        // itmsort2 focused (FUN_101f36d0 / its messages): Up / Down over the three, Enter Auto (sortyn) / Manual / the
+        // Recycle Bin (not done), Escape back to the list (SE 0013).
+        Some(Win::Items { sort: sort @ Some(_), manual, .. }) => {
+            use crate::audio::Ui;
+            let mut s = sort.unwrap();
+            match (s.ask, key) {
+                (Some(yes), egui::Key::ArrowUp | egui::Key::ArrowDown) => {
+                    s.ask = Some(!yes);
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+                (Some(yes), egui::Key::Enter | egui::Key::Escape) => {
+                    let yes = yes && key == egui::Key::Enter;
+                    s.ask = None;
+                    w.sounds.push(if yes { Ui::Select } else { Ui::Cancel } as u32);
+                    if yes {
+                        *sort = None;
+                        auto_sort(w);
+                        return true;
+                    }
+                }
+                (None, egui::Key::ArrowUp) => s.cursor = if s.cursor <= 1 { 3 } else { s.cursor - 1 },
+                (None, egui::Key::ArrowDown) => s.cursor = if s.cursor >= 3 { 1 } else { s.cursor + 1 },
+                (None, egui::Key::Enter) if s.cursor == 1 => {
+                    s.ask = Some(false);
+                    w.sounds.push(Ui::Select as u32);
+                }
+                (None, egui::Key::Enter) if s.cursor == 2 => {
+                    *manual = Some(None);
+                    *sort = None;
+                    w.sounds.push(Ui::Select as u32);
+                    return true;
+                }
+                (None, egui::Key::Enter) => {
+                    log::info!("the recycle bin list is not implemented");
+                    w.sounds.push(Ui::Error as u32);
+                }
+                (None, egui::Key::Escape) => {
+                    *sort = None;
+                    w.sounds.push(Ui::Close as u32);
+                    return true;
+                }
+                _ => {}
+            }
+            *sort = Some(s);
+        }
+        // Manual (FUN_101f0b30): Enter picks a row, Enter on a second one moves it there (the same row splits one off a
+        // stack, a row of the same item takes the whole first stack: c2s 0x029); Escape drops the pick, else leaves
+        // to itmsort2.
+        Some(Win::Items { scroll, cursor, manual: manual @ Some(_), sort, .. }) => {
+            use crate::audio::Ui;
+            let held = manual.unwrap();
+            match key {
+                egui::Key::Enter => {
+                    let at = *scroll + *cursor;
+                    match (held, shown.get(at)) {
+                        (None, Some(s)) => {
+                            *manual = Some(Some(s.index));
+                            w.sounds.push(Ui::Select as u32);
+                        }
+                        (Some(from), Some(to)) => {
+                            let to = to.clone();
+                            *manual = Some(None);
+                            w.sounds.push(Ui::Select as u32);
+                            manual_move(w, from, &to);
+                            return true;
+                        }
+                        _ => {}
+                    }
+                }
+                egui::Key::Escape if held.is_some() => *manual = Some(None),
+                egui::Key::Escape => {
+                    *manual = None;
+                    *sort = Some(SortWin { cursor: 2, ask: None });
+                }
+                k => list_keys(scroll, cursor, rows, k),
+            }
+        }
+        Some(Win::Items { scroll, cursor, sub, direct, .. }) => match key {
             egui::Key::Escape => close = true,
             // FUN_101f0a10: the direct list uses at once, SE 0002.
             egui::Key::Enter if *direct => {
@@ -379,9 +488,21 @@ pub(super) fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator
 
 /// sortyn (FUN_10221740 / its open hook): help slot 1 group 0xc 0x3e "Dispose of item?", title slot 2 "Items".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    if let Some(Win::Items { sub: Some(Sub::Drop { .. }), .. }) = &w.win {
-        bars.help[1] = gu.lobby_msg(0x0c, 0x3e, "");
-        bars.title[2] = gu.title_msg(2).unwrap_or_default();
+    match &w.win {
+        Some(Win::Items { sub: Some(Sub::Drop { .. }), .. }) => {
+            bars.help[1] = gu.lobby_msg(0x0c, 0x3e, "");
+            bars.title[2] = gu.title_msg(2).unwrap_or_default();
+        }
+        // Auto's sortyn: group 0xc 0x3d "Sort items?".
+        Some(Win::Items { sort: Some(SortWin { ask: Some(_), .. }), .. }) => {
+            bars.help[1] = gu.lobby_msg(0x0c, 0x3d, "");
+            bars.title[2] = gu.title_msg(2).unwrap_or_default();
+        }
+        // Manual (FUN_101f0690 / FUN_101f0b30): group 0xe 5 "Select item to move.", 6 with one held.
+        Some(Win::Items { manual: Some(held), sort: None, .. }) => {
+            bars.help[2] = gu.menu_msg(if held.is_some() { 6 } else { 5 }, "");
+        }
+        _ => {}
     }
 }
 
@@ -456,7 +577,7 @@ fn draw_iuse(gu: &mut GameUi, w: &World, s: Sub, sw: f32, sh: f32) -> Vec<[f32; 
 
 /// FUN_101f2ec0: iuse closes when the list cursor no longer rests on the slot it opened for.
 pub fn check_iuse(w: &mut World) {
-    let Some(Win::Items { scroll, cursor, sub: Some(s), direct }) = &w.win else { return };
+    let Some(Win::Items { scroll, cursor, sub: Some(s), direct, .. }) = &w.win else { return };
     let (index, id) = match *s {
         Sub::Use { index, id, .. } | Sub::Drop { index, id, .. } => (index, id),
     };
@@ -486,6 +607,60 @@ fn use_entry(w: &mut World, index: u8, id: u16) {
                 super::target::open_sub(w, targets, super::target::SubThen::Item { container: INVENTORY, index }, None, String::new(), 4);
             }
         }
+    }
+}
+
+/// FUN_1021c7e0 (sort type config 0xca): 0 sorts the view by the record's key (+0xc, our `resource`) then id, 1 pulls
+/// identical ids next to their first; then c2s 0x03A {container} merges the stacks.
+fn auto_sort(w: &mut World) {
+    let grouped = w.game.get(0xca) == 1;
+    let info = w.item_info.clone();
+    let key = |s: &Slot| (info.as_ref().and_then(|c| c.item(s.id)).map_or(0xffff, |it| it.resource), s.id);
+    let mut v = w.inv.viewed(INVENTORY).into_iter().filter(|s| s.index != 0).collect::<Vec<_>>();
+    if grouped {
+        let mut out: Vec<Slot> = Vec::new();
+        for s in v {
+            match out.iter().rposition(|o| o.id == s.id) {
+                Some(p) => out.insert(p + 1, s),
+                None => out.push(s),
+            }
+        }
+        v = out;
+    } else {
+        v.sort_by_key(key);
+    }
+    let gil = w.inv.order.get(&INVENTORY).is_some_and(|o| o.contains(&0));
+    let order: Vec<u8> = gil.then_some(0).into_iter().chain(v.iter().map(|s| s.index)).collect();
+    w.inv.order.insert(INVENTORY, order);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: 0u32.to_le_bytes().to_vec() });
+}
+
+/// FUN_101f0b30's second pick: the same row splits one off (to index 0x52, inf: the server's first free slot) when
+/// the stack holds more than one and stacks; another row of the same item takes the whole first stack; then the view
+/// entry moves (FUN_1021cac0, client only).
+fn manual_move(w: &mut World, from: u8, to: &Slot) {
+    let Some(&(id, count)) = w.inv.slots.get(&(INVENTORY, from)) else { return };
+    let stack = w.item_info.as_ref().and_then(|c| c.item(id)).map_or(1, |it| it.stack);
+    let mv = |w: &World, n: u32, i1: u8, i2: u8| {
+        let mut b = vec![0u8; 8];
+        b[0..4].copy_from_slice(&n.to_le_bytes());
+        (b[4], b[5], b[6], b[7]) = (INVENTORY, INVENTORY, i1, i2);
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x029, body: b });
+    };
+    if to.index == from {
+        if count > 1 && stack > 1 {
+            mv(w, 1, from, 0x52);
+        }
+        return;
+    }
+    if to.id == id {
+        mv(w, count, from, to.index);
+    }
+    if let Some(o) = w.inv.order.get_mut(&INVENTORY)
+        && let (Some(a), Some(b)) = (o.iter().position(|&i| i == from), o.iter().position(|&i| i == to.index))
+    {
+        let x = o.remove(a);
+        o.insert(b, x);
     }
 }
 
@@ -568,7 +743,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let slots = w.inv.slots_of(INVENTORY);
     match win {
         Win::Items { .. } if item_prompt(w) => {}
-        Win::Items { scroll, cursor, sub, direct } => {
+        Win::Items { scroll, cursor, sub, direct, sort, manual } => {
             let list = ItemList { rows: build_rows(&listed(w, *direct), info.as_ref(), false), scroll: *scroll, cursor: *cursor };
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let (b, ui, style, font) = gu.parts();
@@ -576,6 +751,15 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame);
             }
             rects.extend(gu.window_rect("menu    inventor", sw, sh));
+            // itmsort2 beside the list (FUN_101f0600), focused or not; iuse sits on top of it.
+            if !*direct && sub.is_none() {
+                let sel = sort.map(|s| s.cursor);
+                rects.extend(gu.lobby_window_off("menu    itmsort2", sw, sh, (0.0, 0.0), sel, sel.is_some(), &[]).map(|w| w.frame));
+                if let Some(yes) = sort.and_then(|s| s.ask) {
+                    rects.extend(gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, 0.0), Some(if yes { 1 } else { 2 }), true, &[]).map(|w| w.frame));
+                }
+            }
+            let _ = manual;
             if let Some(s) = sub {
                 rects.extend(draw_iuse(gu, w, *s, sw, sh));
             }

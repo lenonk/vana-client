@@ -84,7 +84,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     compass pointer; done: pan, left-drag pan, zoom, fades, /map, event maps and views, markers and the .MRK file,
     Change Map, Wide Scan and tracking;
   - the item info window: the compare windows (itemxinf / itemyinf);
-  - items: "menu    iuse" Use and Drop and the direct-use list done; left the sort windows (itmsort2, manual sort),
+  - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual done; left the Recycle Bin,
     synthesis, the Mog Garden use rule;
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
