@@ -1,6 +1,6 @@
 //! Scripted input for test drives: synthetic egui events fed in before each frame, so the client's
 //! own input handling runs without OS-level injection. Steps are separated by ';':
-//! `wait:SECS`, `until:PHASE` (login, title, lobby, event, world; also `cam:TAG` while an event shot plays and
+//! `wait:SECS`, `until:PHASE[,SECS]` (go on after SECS anyway; login, title, lobby, event, world; also `cam:TAG` while an event shot plays and
 //! `msg:ID` while that event message is open, `noevent` while none runs), `type:TEXT`, `user`, `pass`,
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
 //! `move:X,Y`, `click:X,Y` and `rclick:X,Y` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
@@ -13,7 +13,8 @@ use std::time::Instant;
 
 enum Step {
     Wait(f32),
-    Until(String),
+    /// A phase or probe, and an optional limit in seconds after which the script goes on anyway.
+    Until(String, Option<f32>),
     Text(String),
     Key(egui::Key, egui::Modifiers),
     Move(f32, f32),
@@ -50,7 +51,13 @@ impl Script {
             };
             match op {
                 "wait" => steps.push(Step::Wait(arg.parse()?)),
-                "until" => steps.push(Step::Until(arg.to_string())),
+                "until" => {
+                    let (p, secs) = match arg.split_once(',') {
+                        Some((p, s)) => (p, Some(s.parse()?)),
+                        None => (arg, None),
+                    };
+                    steps.push(Step::Until(p.to_string(), secs));
+                }
                 "type" => steps.push(Step::Text(arg.to_string())),
                 "user" | "pass" => {
                     let (u, p) = creds.ok_or_else(|| anyhow!("{op} needs --credentials"))?;
@@ -116,7 +123,14 @@ impl Script {
         let Some(step) = self.steps.get_mut(self.at) else { return (events, shot, action) };
         let done = match step {
             Step::Wait(s) => self.since.elapsed().as_secs_f32() >= *s,
-            Step::Until(p) => phase == p || probes.iter().any(|x| x == p),
+            Step::Until(p, limit) => {
+                let hit = phase == p || probes.iter().any(|x| x == p);
+                let out = limit.is_some_and(|l| self.since.elapsed().as_secs_f32() >= l);
+                if out && !hit {
+                    log::info!("script: until {p} gave up after {:.0} s", limit.unwrap_or(0.0));
+                }
+                hit || out
+            }
             Step::Text(t) => {
                 events.push(egui::Event::Text(t.clone()));
                 true
