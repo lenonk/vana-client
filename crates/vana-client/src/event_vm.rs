@@ -1080,6 +1080,21 @@ impl Runtime {
                 host.effect(Effect::Position { op: opc, actor, pos: [x, y, z], dir });
                 self.adv(v, len);
             }
+            // FUN_100b5f70: 0x37 on actor@1's event body (x val@5, z val@7, height val@9, direction val@0xb), drawn
+            // there at once; nothing when the actor has no event VM.
+            0xba => {
+                let t = self.actor_at(v, 1);
+                if let Some(tv) = self.vm_of(t) {
+                    let tb = self.vms[tv].body;
+                    let (x, z, y) = (self.val(v, 5) as f32 * POS, self.val(v, 7) as f32 * POS, self.val(v, 9) as f32 * POS);
+                    self.bodies[tb].dir = self.val(v, 11) as f32 * DIR;
+                    let y = if self.bodies[tb].no_ground { y } else { host.ground(t, [x, y, z]).unwrap_or(y) };
+                    self.bodies[tb].pos = [x, y, z];
+                    let dir = self.bodies[tb].dir;
+                    host.effect(Effect::Position { op: 0x37, actor: t, pos: [x, y, z], dir });
+                }
+                self.adv(v, len);
+            }
             0x39 => {
                 self.bodies[body].dir = self.val(v, 1) as f32 * DIR;
                 let (pos, dir) = (self.bodies[body].pos, self.bodies[body].dir);
