@@ -119,6 +119,16 @@ enum Task {
     Actions(Result<crate::dat::actions::Actions>),
 }
 
+/// A pick read-back key: bit 63, the actor, a bone or 0x8000 | attach point.
+fn pick_key(id: u32, k: u16) -> u64 {
+    1 << 63 | (id as u64) << 16 | k as u64
+}
+
+/// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
+fn world_window_open(w: &World) -> bool {
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w)
+}
+
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
 fn start_jump(w: &mut World, id: u32) {
     if let Some(a) = w.actors.get_mut(&id)
@@ -1111,16 +1121,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // With no target it first targets the nearest actor in front (FUN_101587f0 case 0); only with none
                 // does the menu ("menu playermo") open.
                 egui::Key::Enter if !dead => {
-                    let npc = world.target.filter(|t| t >> 24 != 0 && world.entities.get(t).is_some_and(|e| !e.mob));
-                    match npc {
-                        Some(t) => {
-                            event::talk(world, t);
-                        }
-                        None if world.target.is_none() && !event::active(world) && target::enter_nearest(world) => {}
-                        None => {
-                            world.action_menu = Some(combat::open_menu(world));
-                            world.menu = None;
-                        }
+                    if !(world.target.is_none() && !event::active(world) && target::enter_nearest(world)) {
+                        target::confirm_target(world);
                     }
                 }
                 egui::Key::Space => {
@@ -2212,6 +2214,8 @@ struct Actor {
     rest: Vec<(glam::Quat, Vec3)>,
     /// /jump (draw actor +0x8bc): ticks left of the jump motion, below 0 none.
     jump: f32,
+    /// The pick's bones (FUN_100cff40): those with geometry whose parent has some too, once per model.
+    pick_bones: Option<Vec<u16>>,
 }
 
 impl Actor {
@@ -2253,6 +2257,7 @@ impl Actor {
             emote: None,
             rest: Vec::new(),
             jump: -1.0,
+            pick_bones: None,
         }
     }
 
@@ -2868,6 +2873,10 @@ struct World {
     job_cooldown: Option<Instant>,
     /// The delivery box: s2c 0x04B's slots and the send / receive UIs.
     post: post::Session,
+    /// The mouse pick: actors whose screen rect held the pointer last test (their bones are read back), and the
+    /// read-back points (key: bone, or 0x8000 | attach point) relative to the actor root.
+    pick_rect: HashSet<u32>,
+    pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
@@ -3024,6 +3033,13 @@ pub struct App {
     wheel: f32,
     mods: winit::keyboard::ModifiersState,
     press_at: Option<(f64, f64)>,
+    /// When the left button went down, and the right one (where and when): the drag rule (FUN_10125040).
+    press_time: Option<Instant>,
+    right_press: Option<((f64, f64), Instant)>,
+    /// A world click confirmed or opened a window: this frame's click is not the windows' (FUN_10123ea0).
+    swallow_click: bool,
+    /// The window size the last frame drew at (the mouse pick's projection).
+    window_size: [u32; 2],
     last_cursor: Option<(f64, f64)>,
     last_frame: Instant,
     /// The creator's nation step backdrop.
@@ -3200,6 +3216,10 @@ impl App {
             wheel: 0.0,
             mods: Default::default(),
             press_at: None,
+            press_time: None,
+            right_press: None,
+            swallow_click: false,
+            window_size: [1, 1],
             last_cursor: None,
             last_frame: Instant::now(),
             next_frame: None,
@@ -3836,6 +3856,8 @@ impl App {
                             job_req: None,
                             job_cooldown: None,
                             post: post::Session::default(),
+                            pick_rect: HashSet::new(),
+                            pick_points: HashMap::new(),
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -5212,13 +5234,68 @@ impl App {
             self.mouse.kind = mousecur::OVER_ITEM;
             return;
         }
-        let Phase::World(world) = &self.phase else { return };
-        let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
+        let Phase::World(world) = &mut self.phase else { return };
+        // FUN_10126270: the hit cursor only while no window has the focus (a sub-target prompt picks anyway).
+        let window = world_window_open(world) && world.prompt.is_none();
         if let Some(p) = at.filter(|_| !window && self.mouse.visible) {
             let aspect = cfgapply::aspect(size, self.cfg.retail_aspect, world.game.get(0x43));
-            if Self::pick(world, p, size, aspect).is_some() {
+            let (picked, rect) = Self::under_pointer(world, p, size, aspect);
+            world.pick_rect = rect;
+            if picked.is_some() {
                 self.mouse.kind = mousecur::OVER_ACTOR;
             }
+        } else {
+            world.pick_rect.clear();
+        }
+    }
+
+    /// A mouse button (from the window or a test script): presses, drags, and the world click on releases
+    /// (FUN_101585f0: key functions 0x8b / 0x8c -> results 0x16 / 0x17); a drag is 65 UI px^2 from the press or 25
+    /// ticks held (FUN_10125040).
+    fn mouse_button(&mut self, button: MouseButton, pressed: bool, consumed: bool) {
+        self.mouse.visible = true;
+        if pressed && button == MouseButton::Right {
+            self.drag_from = self.last_cursor;
+        }
+        let release = |from: Option<((f64, f64), Instant)>, at: Option<(f64, f64)>, k: (f32, f32)| -> Option<((f64, f64), bool)> {
+            let ((a, t), b) = (from?, at?);
+            let (dx, dy) = ((b.0 - a.0) as f32 * k.0, (b.1 - a.1) as f32 * k.1);
+            Some((b, dx * dx + dy * dy >= 65.0 || t.elapsed().as_secs_f32() * 60.0 >= 25.0))
+        };
+        let size = self.window_size;
+        let (k, retail_aspect) = (self.ui_k, self.cfg.retail_aspect);
+        let hud = &self.hud_blockers;
+        let world_click = |phase: &mut Phase, b: (f64, f64), left: bool, drag: bool| -> bool {
+            let on_hud = hud.iter().any(|r| inside(r, (b.0 as f32 * k.0, b.1 as f32 * k.1)));
+            let Phase::World(world) = phase else { return false };
+            let gated = consumed || event::active(world) || world.typing || world.ui_hidden || (world_window_open(world) && world.prompt.is_none());
+            if on_hud || gated {
+                return false;
+            }
+            let aspect = cfgapply::aspect(size, retail_aspect, world.game.get(0x43));
+            let picked = if left { Self::under_pointer(world, b, size, aspect).0 } else { None };
+            target::click(world, picked, left, drag)
+        };
+        match button {
+            MouseButton::Left => {
+                if pressed {
+                    self.press_at = self.last_cursor;
+                    self.press_time = Some(Instant::now());
+                } else if let Some((b, drag)) = release(self.press_at.take().zip(self.press_time.take()), self.last_cursor, self.ui_k) {
+                    self.swallow_click |= world_click(&mut self.phase, b, true, drag);
+                }
+                self.left_down = pressed;
+            }
+            MouseButton::Right => {
+                if pressed {
+                    self.right_press = self.last_cursor.map(|c| (c, Instant::now()));
+                } else if let Some((b, drag)) = release(self.right_press.take(), self.last_cursor, self.ui_k) {
+                    self.swallow_click |= world_click(&mut self.phase, b, false, drag);
+                }
+                self.dragging = pressed;
+            }
+            MouseButton::Middle => self.middle_down = pressed,
+            _ => {}
         }
     }
 
@@ -5226,27 +5303,112 @@ impl App {
         event::camera(world).unwrap_or_else(|| camera::view(world))
     }
 
-    /// The entity under a cursor position, nearest first: each is a body-sized screen box.
-    fn pick(world: &World, cursor: (f64, f64), size: [u32; 2], aspect: f32) -> Option<u32> {
-        let vp = Self::camera(world).view_proj(aspect);
+    /// FUN_10083750: the actor under a cursor position and the actors whose screen rect holds it. Candidates
+    /// (FUN_10083430 with self) near-first by the box's farthest corner; the first whose rect (vtable +0x3d0) holds
+    /// the pointer and whose fine test (+0x3d4) hits wins.
+    fn under_pointer(world: &World, cursor: (f64, f64), size: [u32; 2], aspect: f32) -> (Option<u32>, HashSet<u32>) {
+        let cam = Self::camera(world);
+        let (view, proj) = (cam.view(), cam.proj(aspect));
+        let vp = proj * view;
+        let ndc = glam::Vec2::new(2.0 * cursor.0 as f32 / size[0].max(1) as f32 - 1.0, 1.0 - 2.0 * cursor.1 as f32 / size[1].max(1) as f32);
         let hidden = event::hidden(world);
-        let to_screen = |p: Vec3| {
-            let c = vp * p.extend(1.0);
-            (c.w > 0.1).then(|| (((c.x / c.w + 1.0) / 2.0 * size[0] as f32), ((1.0 - c.y / c.w) / 2.0 * size[1] as f32), c.w))
+        let my_dir = world.net.me.lock().map(|m| m.dir).unwrap_or(0);
+        let rect = |corners: &[Vec3], m: glam::Mat4| -> Option<(glam::Vec2, glam::Vec2, f32)> {
+            let (mut lo, mut hi, mut far) = (glam::Vec2::splat(f32::MAX), glam::Vec2::splat(f32::MIN), 0.0f32);
+            for c in corners {
+                let p = m * c.extend(1.0);
+                if p.w <= 0.0 {
+                    return None;
+                }
+                let q = glam::Vec2::new(p.x / p.w, p.y / p.w);
+                (lo, hi, far) = (lo.min(q), hi.max(q), far.max(p.w));
+            }
+            Some((lo, hi, far))
         };
-        let (mx, my) = (cursor.0 as f32, cursor.1 as f32);
-        world
-            .entities
-            .iter()
-            .filter(|(id, e)| !e.name.starts_with('_') && e.targetable() && !hidden.contains(id))
-            .filter_map(|(id, e)| {
-                let (fx, fy, depth) = to_screen(e.pos)?;
-                let (_, hy, _) = to_screen(e.pos + Vec3::new(0.0, -2.0, 0.0))?;
-                let half_w = ((fy - hy).abs() * 0.25).max(6.0);
-                (mx >= fx - half_w && mx <= fx + half_w && my >= hy.min(fy) && my <= hy.max(fy)).then_some((*id, depth))
-            })
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(id, _)| id)
+        let inside = |lo: glam::Vec2, hi: glam::Vec2| ndc.x >= lo.x && ndc.x <= hi.x && ndc.y >= lo.y && ndc.y <= hi.y;
+        let mut hits: Vec<(f32, u32, bool)> = Vec::new();
+        for (id, a) in &world.actors {
+            let Some(ch) = &a.character else { continue };
+            if !target::mouse_candidate(world, &hidden, *id) || a.alpha / actmotion::OPAQUE < 0.01 {
+                continue;
+            }
+            let Some(place) = actor_place(world, *id, my_dir) else { continue };
+            // FUN_100cfc10: the status box as a plain box (x b2 / b3), b0 == b1 widened, then b2 == b0 (sic); no scale.
+            let Some(&[mut b0, mut b1, mut b2, mut b3, b4, b5]) = ch.skeleton.boxes.get(box_index(place.status)) else { continue };
+            if b0 == b1 {
+                (b0, b1) = (b0 - 1.0, b1 + 1.0);
+            }
+            if b2 == b0 {
+                (b2, b3) = (b2 - 1.0, b3 + 1.0);
+            }
+            let mut corners = Vec::with_capacity(8);
+            for x in [b2, b3] {
+                for y in [b0, b1] {
+                    for z in [b4, b5] {
+                        corners.push(Vec3::new(x, y, z));
+                    }
+                }
+            }
+            if let Some((lo, hi, far)) = rect(&corners, vp * actor_matrix(place.pos, place.forward))
+                && inside(lo, hi)
+            {
+                hits.push((far, *id, true));
+            }
+        }
+        // Doors without a region box (FUN_100ad320): a 0.5-tall box at the door, always a hit inside it.
+        for (id, e) in world.entities.iter().filter(|(id, e)| e.door != 0 && target::mouse_candidate(world, &hidden, **id)) {
+            let (Some(a), Some(b)) = (rect(&[e.pos], vp), rect(&[e.pos + Vec3::new(0.0, -0.5, 0.0)], vp)) else { continue };
+            let h = (b.0.y - a.0.y).abs() * 0.5;
+            let (lo, hi) = (glam::Vec2::new(a.0.x - h, a.0.y.min(b.0.y)), glam::Vec2::new(a.0.x + h, a.0.y.max(b.0.y)));
+            if inside(lo, hi) {
+                hits.push((a.2, *id, false));
+            }
+        }
+        hits.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let in_rect: HashSet<u32> = hits.iter().map(|h| h.1).collect();
+        let picked = hits.iter().find(|&&(_, id, skinned)| !skinned || Self::fine_hit(world, id, view, proj, ndc)).map(|h| h.1);
+        (picked, in_rect)
+    }
+
+    /// FUN_100cff40: circles at each geometry bone, its parent and the midpoint (radius 0.4 x the segment on screen),
+    /// else around attach points 1 and 3 (world radius from points 13 / 15). From the read-back points; before any
+    /// came back the rect alone decides (inferred).
+    fn fine_hit(world: &World, id: u32, view: glam::Mat4, proj: glam::Mat4, ndc: glam::Vec2) -> bool {
+        let Some(a) = world.actors.get(&id) else { return false };
+        let Some(ch) = &a.character else { return false };
+        if ch.skeleton.bones.len() <= 2 {
+            return true;
+        }
+        let Some(pts) = world.pick_points.get(&id) else { return true };
+        let my_dir = world.net.me.lock().map(|m| m.dir).unwrap_or(0);
+        let Some(root) = actor_place(world, id, my_dir).map(|p| p.pos) else { return false };
+        let vp = proj * view;
+        let screen = |p: Vec3| {
+            let c = vp * (root + p).extend(1.0);
+            (c.w > 1e-3).then(|| glam::Vec2::new(c.x / c.w, c.y / c.w))
+        };
+        for &b in a.pick_bones.iter().flatten() {
+            let parent = ch.skeleton.bones[b as usize].parent as u16;
+            let (Some(pa), Some(pb)) = (pts.get(&b).and_then(|p| screen(*p)), pts.get(&parent).and_then(|p| screen(*p))) else { continue };
+            let r = 0.4 * (pa - pb).length();
+            if r >= 0.01 && [pa, pb, (pa + pb) * 0.5].iter().any(|c| (ndc - *c).length() < r) {
+                return true;
+            }
+        }
+        let horiz = |k: u16| pts.get(&(0x8000 | k)).map_or(0.0, |p| glam::Vec2::new(p.x, p.z).length());
+        let (l13, l15) = (horiz(13), horiz(15));
+        let big_r = 0.75 * l13.min(l15) + 0.25 * l13.max(l15);
+        [1u16, 3].iter().any(|&k| {
+            let Some(p) = pts.get(&(0x8000 | k)) else { return false };
+            let v = view.transform_point3(root + *p);
+            let clip = |q: Vec3| {
+                let c = proj * q.extend(1.0);
+                glam::Vec2::new(c.x, c.y) / c.w.max(0.001)
+            };
+            let (c, e) = (clip(v), clip(v + Vec3::new(big_r, 0.0, 0.0)));
+            let r = e.x - c.x;
+            (ndc - c).length_squared() < r * r
+        })
     }
 
     fn ui(&mut self, ctx: &egui::Context, window: [u32; 2]) {
@@ -5261,7 +5423,7 @@ impl App {
         let input = ctx.input(|i| UiInput {
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
-            clicked: i.pointer.primary_clicked(),
+            clicked: i.pointer.primary_clicked() && !std::mem::take(&mut self.swallow_click),
             events: i.events.clone(),
         });
         if input.moved
@@ -6258,6 +6420,18 @@ impl App {
             for e in &events {
                 self.input.drive_event(e);
             }
+            // Script pointer steps go through the same world mouse path as the window's (physical pixels).
+            let ppp = gfx.window.scale_factor();
+            for e in &events {
+                match e {
+                    egui::Event::PointerMoved(p) => self.last_cursor = Some((p.x as f64 * ppp, p.y as f64 * ppp)),
+                    egui::Event::PointerButton { button, pressed, .. } => {
+                        let b = if *button == egui::PointerButton::Secondary { MouseButton::Right } else { MouseButton::Left };
+                        self.mouse_button(b, *pressed, false);
+                    }
+                    _ => {}
+                }
+            }
             raw.events.extend(events);
             script_shot = shot;
             // Keys egui has no name for.
@@ -6421,7 +6595,14 @@ impl App {
                 .collect();
             // Foot points that came back from earlier frames: steps (FUN_100d2970).
             if let Some(pts) = w.renderer.as_mut().map(|r| r.points.take()) {
-                footsteps::steps(w, &places, pts);
+                let (pick, steps): (Vec<_>, Vec<_>) = pts.into_iter().partition(|(k, _)| k >> 63 != 0);
+                let mut fresh: HashMap<u32, HashMap<u16, Vec3>> = HashMap::new();
+                for (k, p) in pick {
+                    fresh.entry((k >> 16) as u32).or_default().insert(k as u16, p);
+                }
+                w.pick_points.extend(fresh);
+                w.pick_points.retain(|id, _| w.pick_rect.contains(id));
+                footsteps::steps(w, &places, steps);
             }
             // Door parts animate against the zone's tick clock; the frame's scheduler moves go in first.
             if let Some(r) = w.renderer.as_mut() {
@@ -6650,6 +6831,25 @@ impl App {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look, overlay);
                         counts.posed += 1;
+                        // The pick's fine test: the geometry bones and attach points 1 / 3 / 13 / 15 of an actor whose rect
+                        // held the pointer, read back a frame or two late.
+                        if w.pick_rect.contains(id) {
+                            let bones = a.pick_bones.get_or_insert_with(|| {
+                                let f = ch.geometry_bones();
+                                (1..f.len()).filter(|&b| f[b] && f[ch.skeleton.bones[b].parent]).map(|b| b as u16).collect()
+                            });
+                            let mut wanted: Vec<u16> = bones.iter().flat_map(|&b| [b, ch.skeleton.bones[b as usize].parent as u16]).collect();
+                            wanted.sort_unstable();
+                            wanted.dedup();
+                            for b in wanted {
+                                r.query_point(g, pick_key(*id, b), b, Vec3::ZERO);
+                            }
+                            for k in [1usize, 3, 13, 15] {
+                                if let Some(&(bone, off)) = ch.skeleton.points.get(k) {
+                                    r.query_point(g, pick_key(*id, 0x8000 | k as u16), bone as u16, off);
+                                }
+                            }
+                        }
                         if footsteps::wanted(&ch, status, pos, camera.eye) {
                             for (slot, &k) in footsteps::POINTS.iter().enumerate().take(if ch.cib[0] == 2 { 4 } else { 2 }) {
                                 if let Some(&(bone, off)) = ch.skeleton.points.get(k) {
@@ -6790,6 +6990,7 @@ impl App {
         {
             sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma);
         }
+        self.window_size = size;
         self.mouse_kind(size);
         // Config 0xa4 (Window Settings): windows open without the zoom (N = 0, FUN_10199500).
         let no_zoom = match &self.phase {
@@ -7056,41 +7257,7 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::MouseInput { state, button, .. } if !consumed || state == ElementState::Released => {
-                let pressed = state == ElementState::Pressed;
-                self.mouse.visible = true;
-                if pressed && button == MouseButton::Right {
-                    self.drag_from = self.last_cursor;
-                }
-                match button {
-                    MouseButton::Left => {
-                        if pressed {
-                            self.press_at = self.last_cursor;
-                        } else if let (Some(a), Some(b), Phase::World(world)) = (self.press_at.take(), self.last_cursor, &mut self.phase) {
-                            // A click (not a drag) selects whatever is under the cursor.
-                            let on_hud = self.hud_blockers.iter().any(|r| inside(r, (b.0 as f32 * self.ui_k.0, b.1 as f32 * self.ui_k.1)));
-                            if (a.0 - b.0).abs() + (a.1 - b.1).abs() < 5.0 && !consumed && !on_hud && !event::active(world) {
-                                let size = [gfx.config.width, gfx.config.height];
-                                let aspect = cfgapply::aspect(size, self.cfg.retail_aspect, world.game.get(0x43));
-                                // Key 0x8b (FUN_101524c0): no pick while locked (FUN_10151f20); a click on nothing keeps the
-                                // target (FUN_10151d20). A click that leaves the target as it was is the confirm key on it
-                                // (FUN_101524e0): talk to an NPC *(inf: monsters take no action here)*.
-                                let picked = if target::picks_allowed(world) { Self::pick(world, b, size, aspect) } else { None };
-                                match picked.or(world.target) {
-                                    Some(t) if world.target == Some(t) => {
-                                        if t >> 24 != 0 && world.entities.get(&t).is_some_and(|e| !e.mob) {
-                                            event::talk(world, t);
-                                        }
-                                    }
-                                    t => target::set(world, t),
-                                }
-                            }
-                        }
-                        self.left_down = pressed;
-                    }
-                    MouseButton::Right => self.dragging = pressed,
-                    MouseButton::Middle => self.middle_down = pressed,
-                    _ => {}
-                }
+                self.mouse_button(button, state == ElementState::Pressed, consumed);
             }
             WindowEvent::CursorMoved { position, .. } => {
                 // FUN_100016c0: window-message motion shows the cursor only past 2 px.

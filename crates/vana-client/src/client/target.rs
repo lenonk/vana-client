@@ -440,6 +440,67 @@ fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &su
     id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id)))
 }
 
+/// FUN_10083430 as the mouse pick calls it (FUN_10083750): self too, unless a prompt's kinds leave out 0x200.
+pub fn mouse_candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32) -> bool {
+    if id == w.my_id {
+        return w.visible.contains(&id) && !hidden.contains(&id) && w.prompt.as_ref().is_none_or(|s| s.takes(0x200));
+    }
+    w.entities.get(&id).is_some_and(|e| candidate(w, hidden, id, e))
+}
+
+/// FUN_10158db0(0), the confirm on the target (Enter, a click on the target): an NPC is talked to; anything else,
+/// or no target, opens the action menu ("menu    playermo").
+pub fn confirm_target(w: &mut World) {
+    match w.target.filter(|t| t >> 24 != 0 && w.entities.get(t).is_some_and(|e| !e.mob)) {
+        Some(t) => {
+            super::event::talk(w, t);
+        }
+        None => {
+            w.action_menu = Some(super::combat::open_menu(w));
+            w.menu = None;
+        }
+    }
+}
+
+/// FUN_101585f0 for a mouse release (results 0x16 left / 0x17 right). Left: locked (no prompt) confirms without a
+/// pick; else the actor under the pointer becomes the target / the prompt's pick, and a click that leaves it as it
+/// was confirms (the prompt, the target, or with none the action menu). After a drag only the pick runs. Right:
+/// cancels the prompt, clears an unlocked target, or with none stops autorun. True when it confirmed.
+pub fn click(w: &mut World, picked: Option<u32>, left: bool, drag: bool) -> bool {
+    log::debug!("world click left {left} drag {drag} picked {picked:?} target {:?}", w.target);
+    if !left {
+        if sub_up(w) {
+            cancel_sub(w);
+        } else if w.target.is_some() {
+            if picks_allowed(w) {
+                set(w, None);
+            }
+        } else if w.autorun {
+            w.autorun = false;
+        }
+        return false;
+    }
+    if w.locked && !sub_up(w) {
+        if !drag {
+            confirm_target(w);
+        }
+        return !drag;
+    }
+    let old = w.target;
+    if let Some(p) = picked.filter(|p| Some(*p) != old) {
+        set(w, Some(p));
+    }
+    if drag || w.target != old {
+        return false;
+    }
+    if sub_up(w) {
+        confirm_sub(w);
+    } else {
+        confirm_target(w);
+    }
+    true
+}
+
 /// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its own frame, local forward
 /// >= 0) within 50 units (distance^2 < 2500), optionally of some kinds.
 fn nearest(w: &World, keep: impl Fn(u32, &super::Entity) -> bool) -> Option<u32> {

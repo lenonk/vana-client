@@ -4854,3 +4854,35 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   again every time, so ours ignores our own index *(inf: retail's server likely does not echo)*.
 - Ours: Actor.jump, the motion "jmp" (prefix); the landing flag is not used. Live: Lnxcsfix in the Mog House,
   /jump twice, "idl -> jmp -> idl" after 32 ticks.
+
+## Mouse picking in the world (2026-10-23; spec: scratchpad mousepick/SPEC.md)
+
+- FUN_10083750 (the hover via FUN_10126270 every frame, the click via FUN_10158d90): pointer in NDC from UI pixels;
+  the actor list near-first (FUN_10082d70: the box's farthest corner depth); filter FUN_10083430 with the target
+  object's kinds, **self allowed** outside a prompt (T+0x60 = all, bit 0x200), inside one only with 0x200; no name
+  test, no distance limit. First candidate whose rect holds the pointer (inclusive) with every corner in front, then
+  whose fine test hits, wins (the fine test's depth is never written: in effect the first hit near-first).
+- Rect (FUN_100cfc10): the status box (FUN_100cfad0) as a plain box, x {b2, b3}, y {b0, b1}, z {b4, b5}; b0 == b1
+  widened by 1, then b2 == b0 (sic) widens b2 / b3; RotY(yaw) x Translate(pos), no scale, no tilt. No box: not
+  pickable. Doors without a region box (FUN_100ad320): a 0.5-tall box at the door, always a hit inside it (the RID
+  box path is not done; "StreetLamp" without one is not pickable).
+- Fine test (FUN_100cff40): fading-in actors (+0x59c < 0.01) miss; <= 2 bones hit; circles at each geometry bone
+  (skeleton byte bit 0x80: bones a loaded mesh weights and their ancestors) whose parent has geometry too, the parent
+  and the midpoint, radius 0.4 x the segment's NDC length (no aspect correction); else circles around attach points 1
+  and 3 of world radius 0.75 x min(L13, L15) + 0.25 x max(L13, L15) (horizontal offsets of points 13 / 15).
+  Ours reads the bones back from the GPU pose (render/points.rs) for the actors whose rect held the pointer, a
+  frame or two late; before any came back the rect decides *(inf)*.
+- Clicks (FUN_101585f0, results 0x16 left / 0x17 right from key functions 0x8b / 0x8c): left on another actor
+  targets it; on the target, on nothing with a target, or on a refused actor: the confirm FUN_10158db0 (talk to an
+  NPC, else "menu    playermo"); on nothing without a target: playermo (no nearest search, unlike Enter). Locked
+  (no prompt): no pick, every click is the confirm, so a locked monster opens the action menu (the earlier note
+  "monsters take no action" was wrong). Right: cancels the prompt, clears an unlocked target, or with none stops
+  autorun. A drag (65 UI px^2 from the press or 25 ticks held, FUN_10125040) release only picks. After a confirm
+  the rest of the frame's keys fail (FUN_10123ea0); ours swallows the click for the windows. In a prompt the click
+  moves the pick or, unchanged, confirms it (confirm_sub). Blocked during an event, typing, a focused window
+  (unless a prompt is up), the UI hidden.
+- Ours: App::under_pointer / fine_hit, target::mouse_candidate / click / confirm_target (Enter uses it too),
+  App::mouse_button (window and test-script pointer events alike). Not done: the hover's frame lag, the talk lock,
+  the Num+ focus mode gate, the ground point (T+0x22).
+- Live (Lnxcsfix, Mog House): a click on ourselves targets us, a second opens the action menu; right click clears;
+  a click on the moogle targets it, a second talks (myroom through s2c 0x02E).

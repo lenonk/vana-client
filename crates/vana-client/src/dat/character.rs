@@ -653,6 +653,22 @@ pub struct Character {
 
 impl Character {
     /// Loader-thread work for a world actor: the packed animations and skinned vertices (mips are made on the GPU).
+    /// Skeleton +0x14 bit 0x80 (FUN_100251a0 / FUN_10035330): the bones a loaded mesh weights, and their ancestors.
+    pub fn geometry_bones(&self) -> Vec<bool> {
+        let mut flags = vec![false; self.skeleton.bones.len()];
+        for v in self.parts.iter().flat_map(|p| p.vertices.iter()).flatten() {
+            let mut b = v.bone;
+            while b < flags.len() && !flags[b] {
+                flags[b] = true;
+                if b == 0 {
+                    break;
+                }
+                b = self.skeleton.bones[b].parent;
+            }
+        }
+        flags
+    }
+
     pub fn prepare(&mut self) {
         self.packed = Some(std::sync::Arc::new(super::animpack::pack(&self.animations)));
         self.skin = Some(std::sync::Arc::new(crate::render::SkinMesh::build(self)));
