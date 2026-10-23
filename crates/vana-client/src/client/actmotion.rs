@@ -333,7 +333,7 @@ pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bo
     };
     // Blend from whatever plays now, even into a motion of the same name; the newest motion wins over a one-shot.
     if !a.motion.is_empty() {
-        a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
+        a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
         a.blend = 0.0;
     }
     a.oneshot = None;
@@ -351,7 +351,7 @@ pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
         Some(m) if !find(&a.extra, &ch, &m.name).is_empty() => {
             let len = if m.ticks > 0 { m.ticks as f32 } else { find(&a.extra, &ch, &m.name).iter().map(|x| x.frames as f32 / (x.speed * m.speed * 0.5).max(1e-3)).fold(0.0, f32::max) };
             if !a.motion.is_empty() {
-                a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
+                a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                 a.blend = 0.0;
             }
             a.play = Some(Play { name: m.name.clone(), motions: vec![m], length: len, ticks: 0.0, base, cut: -1.0, stance_at: None });

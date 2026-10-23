@@ -1756,8 +1756,11 @@ struct Actor {
     /// Motion playing, and ticks (1/60 s, scaled by its rate) since it started.
     motion: String,
     ticks: f32,
-    /// The motion being blended out, its ticks, and blend progress in ticks (16 = done).
-    prev: Option<(String, f32)>,
+    /// The motion being blended out, its ticks and whether it played once, and blend progress in ticks (16 = done).
+    prev: Option<(String, f32, bool)>,
+    /// The current motion plays once (a one-shot or a single-count scheduler motion): it holds its last frame,
+    /// also as the pose a switch blends from (FUN_1001a8e0: regions < 3 hold the last frame when the count ends).
+    once: bool,
     blend: f32,
     /// Height of the posed model's top above its feet (world units, y down so negative).
     top: f32,
@@ -1812,6 +1815,7 @@ impl Actor {
             motion: String::new(),
             ticks: 0.0,
             prev: None,
+            once: false,
             blend: 0.0,
             top: -2.0,
             oneshot: None,
@@ -5704,13 +5708,14 @@ impl App {
                     if name != a.motion || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
                         log::debug!(target: "motion", "actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
                         if !a.motion.is_empty() {
-                            a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
+                            a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                             a.blend = 0.0;
                         }
                         a.blend_len = blend;
                         a.motion = name.clone();
                         a.ticks = 0.0;
                     }
+                    a.once = once;
                     a.ticks += dt * 60.0 * rate;
                     if let Some(o) = &mut a.oneshot {
                         o.ticks = a.ticks;
@@ -5758,7 +5763,7 @@ impl App {
                         a.prev = None;
                     }
                     // Motions are evaluated and skinned on the GPU (render/anim.rs, vs_skinned).
-                    let from = a.prev.as_ref().map(|(old, old_ticks)| frames_of(old, *old_ticks, false)).unwrap_or_default();
+                    let from = a.prev.as_ref().map(|(old, old_ticks, old_once)| frames_of(old, *old_ticks, *old_once)).unwrap_or_default();
                     // The reaction overlay, its first animation found; dropped once faded out.
                     let overlay = a.overlay.as_mut().and_then(|o| {
                         o.ticks += dt * 60.0;

@@ -3993,3 +3993,13 @@ LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed 
   closes it (FUN_1022b420). Draw FUN_1012bf60: windowps 38 / 97 gauge at (+8, +9) by the fraction done, "%d" right-
   aligned at +0x6a and '%' at +0x70, y + 7, sprite font. Not done: Chainspell (status 48) skipping it, items (mode 1,
   item +0x26 x 20), the event mode 4, gaugewin.
+
+## The mid-fight "flinch" (2026-10-23)
+
+- Cause (ours): a swing one-shot runs for its scheduler length (op 0x05 u16 @6), which can exceed its animation: an
+  Elvaan's dagger at0 is 110 ticks over a 46-frame (92-tick) motion, at1 100 over 46 frames. During the swing the frame
+  clamps, but when the stance took over, the blend's "from" pose evaluated the finished swing as a loop, so it jumped
+  back to frame 9 / 4 (the wind-up) and blended into btl over 8 ticks: a swing starting and stopping at once, after
+  every at0 / at1, never after at2 (56 frames, 112 ticks) nor on Hume swings (all within their animations). Retail's
+  queue (FUN_1001a8e0) holds the last frame of a region < 3 entry whose count ran out; the from pose now holds it too.
+- Also from this hunt: hit reactions were not the cause (reactions fire only on hits; misses play nothing).

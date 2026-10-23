@@ -220,6 +220,10 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
         }
     }
     let messages: Vec<Msg> = action_messages(a).into_iter().map(|(id, target, work)| Msg { id, actor: a.actor, target, work }).collect();
+    if a.actor == w.my_id || a.targets.iter().any(|t| t.id == w.my_id) {
+        let recs: Vec<String> = a.records().iter().map(|(t, r)| format!("{t:#x} miss {} kind {} anim {} info {} scale {} value {} msg {}", r.miss, r.kind, r.animation, r.info, r.scale, r.value, r.message)).collect();
+        log::debug!(target: "motion", "0x028 category {} arg {:#x} from {:#x}: {recs:?}", a.category, a.arg, a.actor);
+    }
     let mut reactions = Vec::new();
     for (target, r) in a.records() {
         let hits = matches!(a.category, category::BASIC_ATTACK | category::RANGED_FINISH | category::SKILL_FINISH | category::MOB_SKILL_FINISH);
@@ -394,6 +398,7 @@ fn react(w: &mut World, target: u32, attacker: u32, miss: u8, level: u8) {
             2..=4 => (1.0, 4, 16.0),
             _ => ([0.0, 0.25, 0.5, 1.0][level.min(3) as usize], 2, 24.0),
         };
+        log::debug!(target: "motion", "actor {target:#x}: reaction {name} weight {weight} (miss {miss}, level {level}) from {attacker:#x}");
         a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles, fade });
     }
 }
