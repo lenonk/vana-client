@@ -4387,3 +4387,9 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - 0xab 9 / 0xa set / clear DAT_10487ef5. Its only reader, FUN_10002d80, returns the effect-time multiplier: 1.0
   (_DAT_1032961c) while it is set, else _DAT_10456a68, a config value (setter FUN_10002d70, called from the config
   switch at 0x101aa703). Our effects always step at 1.0, so these subs change nothing here.
+
+- 0xb6 0xd / 0xe (FUN_100b1150): the event actor becomes a chocobo: race +0xef = val@4 + 0x20 (our NPC race
+  tables 32..36 are the chocobos), body +0x100 = val@6, head +0xfe = val@8, feet +0x106 = val@10, hands +0x102 =
+  val@12, legs +0x104 = val@14 (0xe) or 0; face, main, sub and range cleared; +0x120 bit 30 = val@2 in {3, 4, 8}
+  (meaning not traced). Sites take their values from Z registers (e.g. Bastok Mines actor 0x010ea097), i.e. the
+  server: not seen live.

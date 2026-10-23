@@ -484,6 +484,18 @@ impl LiveHost<'_> {
                 super::Source::Pc(look)
             }
             0xc => super::Source::Npc(NpcLook::Model(v(0))),
+            // A chocobo: race val@4 + 0x20 (tables 32..36), body / head / feet / hands, legs for 0xe only; face and
+            // weapons cleared. +0x120 bit 30 = val@2 in 3, 4, 8 is not used here.
+            0xd | 0xe => {
+                let mut l = crate::dat::character::Look { race: v(1) as u8 + 0x20, ..Default::default() };
+                for (slot, k) in [(2, 2), (1, 3), (5, 4), (3, 5)] {
+                    set(&mut l, slot, v(k));
+                }
+                if sub == 0xe {
+                    set(&mut l, 4, v(6));
+                }
+                super::Source::Pc(l)
+            }
             0x16 => {
                 look.race = v(0) as u8;
                 (0..9).for_each(|k| set(&mut look, k, v(k + 1)));
