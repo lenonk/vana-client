@@ -4659,7 +4659,7 @@ impl App {
                     let ev_time = w.event.as_ref().and_then(|l| l.st.time);
                     let clock = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32());
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
-                    let weather = ev_time.map_or(w.weather, |(_, x)| x);
+                    let weather = ev_time.and_then(|(_, x)| x).unwrap_or(w.weather);
                     r.lighting = zw.at(crate::dat::weather::weather_tag(weather), minute).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
                     w.area_lights = zw.areas.iter().filter_map(|(&id, a)| Some((id, a.at(crate::dat::weather::weather_tag(weather), minute)?.area_light()))).collect();
                 }

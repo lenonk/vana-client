@@ -913,7 +913,8 @@ impl Runtime {
             }
             0x16 | 0x17 => {
                 let (a, m) = (self.val(v, 3) as f32 * DIR, self.val(v, 5) as f32);
-                let r = if opc == 0x16 { a.sin() } else { a.cos() } * m;
+                // 0x16 is -(m sin a): FCHS in both builds (XiEvents agrees); 0x17 is m cos a.
+                let r = if opc == 0x16 { -a.sin() } else { a.cos() } * m;
                 self.set_at(v, 1, 0, r as i32 as u32);
                 self.adv(v, 7);
             }

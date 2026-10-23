@@ -312,8 +312,8 @@ pub struct State {
     flags_df04: u32,
     idle_since: Option<Instant>,
     rng: u32,
-    /// Op 0x77: hour (None = 0xff, the clock stays) and weather while the event runs; 0x78 drops it.
-    pub time: Option<(Option<u32>, u16)>,
+    /// Op 0x77: hour and weather while the event runs (None = 0xff: that one stays); 0x78 drops it.
+    pub time: Option<(Option<u32>, Option<u16>)>,
     /// FUN_10132030 on the event message windows: +0x48 on, +0x4a x, +0x4c y (ops 0x67 / 0x68), and the text
     /// codes' x / y (DAT_10476f98 / 9a).
     place_on: bool,
@@ -652,7 +652,7 @@ impl Host for LiveHost<'_> {
             // FUN_100b6880: the weather applies even with hour 0xff (the clock then stays); FUN_100b6920 restores.
             Effect::Op { op: 0x77, args, .. } => {
                 if let (Some(h), Some(wt)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
-                    self.st.time = Some(((h != 0xff).then_some(h as u32), wt as u16));
+                    self.st.time = Some(((h != 0xff).then_some(h as u32), (wt != 0xff).then_some(wt as u16)));
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
