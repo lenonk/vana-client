@@ -24,6 +24,9 @@ pub struct HudTop {
     help_off: f32,
     /// Compass open fraction k 0..1 (24 ticks, DAT_10379934).
     compass: f32,
+    /// The clock's grid suffix (FUN_10220350): rebuilt when the countdown drops below 0, then 30 ticks on.
+    grid: String,
+    grid_wait: f32,
     last: Option<Instant>,
     /// The 0x8000 windows' fade (titlewin, helpwind, netstat).
     pub fade: TopFade,
@@ -251,6 +254,9 @@ impl HudTop {
         self.compass = if show { (self.compass + step).min(1.0) } else { (self.compass - step).max(0.0) };
         let k = self.compass;
         if k <= 0.0 {
+            // Opening clears the suffix and its countdown, so the first draw builds it.
+            self.grid.clear();
+            self.grid_wait = 0.0;
             return;
         }
         // Centre (0x58, log top - 0x2a) (FUN_10215170 / object +0x28 .. +0x2c).
@@ -275,7 +281,12 @@ impl HudTop {
         }
         if let Some((t, at)) = w.clock {
             let m = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32;
-            gu.shape_text(&format!("{}:{:02}", m / 60, m % 60), cx - 50.0, cy + 26.0, tint, false);
+            self.grid_wait -= ticks.max(1.0);
+            if self.grid_wait < 0.0 {
+                self.grid_wait = 30.0;
+                self.grid = super::map::grid_text(w, gu.map_regions());
+            }
+            gu.shape_text(&format!("{}:{:02}  {}", m / 60, m % 60, self.grid), cx - 50.0, cy + 26.0, tint, false);
             // Day orb: framesus table 0x10379950 by weekday ((t % 27648) / 3456).
             let secs = t as u64 + at.elapsed().as_secs();
             let day = ((secs % 27648) / 3456) as usize;

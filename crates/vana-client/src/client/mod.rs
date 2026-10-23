@@ -1858,6 +1858,8 @@ struct World {
     doors: doors::Doors,
     /// In the Mog House (0x00A LoginState 1), its door menu, and a leave request sent.
     myroom: Option<net::MyRoom>,
+    /// Zone flag 0x100 (0x00A LoginState 1, 4 or 5): no grid position by the clock.
+    room_flag: bool,
     mogdoor: Option<myroom::Menu>,
     leaving_room: bool,
     area: AreaSwitch,
@@ -2858,6 +2860,7 @@ impl App {
                             scene: None,
                             loading_scene: 0,
                             myroom: None,
+                            room_flag: false,
                             mogdoor: None,
                             leaving_room: false,
                             doors: Default::default(),
@@ -3200,8 +3203,9 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag } => {
                     world.myroom = myroom;
+                    world.room_flag = room_flag;
                     (world.mogdoor, world.leaving_room) = (None, false);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));

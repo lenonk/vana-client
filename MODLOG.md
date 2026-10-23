@@ -3712,3 +3712,19 @@ From the cursor spec (scratchpad cursor_spec/SPEC.md; current build).
 - Ours: dat/cursor.rs (.ani / .cur), client/mousecur.rs. Our mouse scheme differs (both drags turn the camera, both
   buttons run), so a drag shows the camera arrow and both buttons the move arrow pointing ahead. Not done: kind 1 over
   menu items, 3 / 6, hiding with the UI.
+
+## Clock grid position and map sub-keys (2026-10-23)
+
+From the grid spec (scratchpad gridpos/SPEC.md; current [2019] addresses there).
+- FUN_102201f0: "%d:%02d  %s" (two spaces) at the time's place; the suffix (FUN_10220350) is cached and rebuilt
+  when its countdown drops below 0, then every 31 ticks (DAT_10385ed0 = 30); opening the compass clears it.
+- FUN_101f7600(1): "" with no player or with zone flag 0x100 (0x00A LoginState 1, 4, 5); "(?-?)" with no record
+  for exactly (ZoneNo, sub-key) or one needing no map (key item byte 0, 0x180); else "(%c-%d)" from the map pixel
+  (Region::px, origin, 16 / 32 cells). No key-item check: unowned maps show the grid.
+- Sub-key, FUN_101811d0: a vertical ray from y - 0.51 10 down, else from y + 0.51 15 up; the hit face's MZB object
+  flags @0xa4 give ((f >> 26) & 3) << 3 | ((f >> 3) & 7) (collision +0x34154). Checked: Pso'Xja keys 1..16 with no
+  key-0 record, Palborough Mines 1..3, Jugner 0. The region table's key is this (the old "not decoded" note is wrong).
+- /clock (text command 0x3c) toggles the time line: not done.
+- Ours: Ground::map_key, map::Region::find_key / here, map::grid_text, hudtop's cached suffix. The map window and
+  overlay now open the record under the player (else key 0), so the 40 zones without a key-0 record open a map and
+  multi-floor zones show the floor you are on.

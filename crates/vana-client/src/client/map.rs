@@ -55,6 +55,17 @@ impl Region {
         regions.iter().find(|r| r.zone == zone as i16 && r.key == 0).copied()
     }
 
+    /// FUN_101f7430(zone, key, 0): the record for exactly this zone and sub-key.
+    pub fn find_key(regions: &[Region], zone: u16, key: u8) -> Option<Region> {
+        regions.iter().find(|r| r.zone == zone as i16 && r.key == key as i8).copied()
+    }
+
+    /// The record for where `w` stands (the sub-key under the player), else the zone's key-0 map.
+    pub fn here(regions: &[Region], w: &World) -> Option<Region> {
+        let key = w.ground.as_ref().map_or(0, |g| g.map_key(w.pos));
+        Self::find_key(regions, w.pos_zone, key).or_else(|| Self::find(regions, w.pos_zone))
+    }
+
     /// FUN_101ef690: the map DAT by the low nibble of the flags.
     pub fn file_id(&self) -> u32 {
         let i = self.file as i32;
@@ -114,7 +125,7 @@ pub struct MapWin {
 impl MapWin {
     /// Opens the map of the zone (FUN_101f0af0 mode 0). None when the zone has no record.
     pub fn open(w: &World, regions: &[Region], sw: f32, sh: f32) -> Option<Self> {
-        let region = Region::find(regions, w.pos_zone)?;
+        let region = Region::here(regions, w)?;
         let owned = owned(w, &region);
         log::info!("map: zone {} owned {owned}", w.pos_zone);
         Some(Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), sw, sh))
@@ -204,6 +215,19 @@ impl MapWin {
 }
 
 /// The region's key item is held, or it needs none (FUN_101ee560).
+/// FUN_101f7600(1): the grid position after the clock. Empty without ground or in a room (zone flag 0x100); "(?-?)"
+/// with no record for exactly the sub-key under the player, or one that needs no map; no key-item test.
+pub fn grid_text(w: &World, regions: &[Region]) -> String {
+    let Some(g) = w.ground.as_ref().filter(|_| !w.room_flag) else { return String::new() };
+    match Region::find_key(regions, w.pos_zone, g.map_key(w.pos)).filter(|r| r.need() != Need::Nothing) {
+        Some(r) => {
+            let (px, py) = r.px(w.pos.x, w.pos.z);
+            r.grid(px, py)
+        }
+        None => "(?-?)".into(),
+    }
+}
+
 fn owned(w: &World, region: &Region) -> bool {
     match region.need() {
         Need::Item(id) => w.key_items.get((id >> 5) as usize).is_some_and(|word| word & (1 << (id & 31)) != 0),
@@ -232,7 +256,7 @@ const OVERLAY_ZOOM_MAX: f32 = 8.0;
 
 impl Overlay {
     pub fn open(w: &World, regions: &[Region]) -> Self {
-        let region = Region::find(regions, w.pos_zone).filter(|r| r.need() != Need::Nothing && owned(w, r));
+        let region = Region::here(regions, w).filter(|r| r.need() != Need::Nothing && owned(w, r));
         Self::new(w.pos_zone, region, w.index.clone())
     }
 
@@ -351,6 +375,17 @@ mod tests {
         o.pan(10_000.0, -10_000.0);
         let span = 512.0 - 512.0 / o.zoom;
         assert_eq!(o.view, Some((-256.0, -256.0 + span)));
+    }
+
+    /// Sub-keys from MZB object flags, and Pso'Xja (9): records for keys 1..16, none for key 0.
+    #[test]
+    fn sub_keys() {
+        use crate::client::ground::map_key_of;
+        assert_eq!([0xe, 0x3e, 0x400_0004, 0x400_003c, 0x800_0004].map(map_key_of), [1, 7, 8, 15, 16]);
+        let Ok(dll) = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")) else { return };
+        let regs = regions(&dll);
+        assert!(Region::find_key(&regs, 9, 0).is_none());
+        assert!((1..=16).all(|k| Region::find_key(&regs, 9, k).is_some()));
     }
 
     /// Jugner Forest (104): record key 0, scale 1, key item 1 (0x181), file 5 -> 5317, origin (-264, -256).

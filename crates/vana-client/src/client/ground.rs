@@ -57,6 +57,8 @@ pub struct Ground {
     body: Cell<Body>,
     /// Per triangle: its object is covered (+0xa4 bit 2), and its surface type (the four bit-15s).
     covers: Vec<bool>,
+    /// Per triangle: its object's map sub-key (map_key_of).
+    map_keys: Vec<u8>,
     kinds: Vec<u8>,
     /// Per triangle: its object's area 4cc (+0xb0), and its object's index.
     areas: Vec<u32>,
@@ -196,11 +198,17 @@ impl Sweep {
     }
 }
 
+/// The map sub-key in an MZB object's flags (@0xa4): ((f >> 26) & 3) << 3 | ((f >> 3) & 7), matched against the
+/// region table's key (the floor or sub-map).
+pub fn map_key_of(flags: u32) -> u8 {
+    ((((flags >> 26) & 3) << 3) | ((flags >> 3) & 7)) as u8
+}
+
 impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default() },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default() },
         }
     }
 
@@ -214,6 +222,7 @@ impl Ground {
         let tris = c.tris.clone();
         let y_range = c.object.iter().map(|&o| c.objects[o as usize].y_range).collect();
         let covers = c.object.iter().map(|&o| c.objects[o as usize].flags & 4 != 0).collect();
+        let map_keys = c.object.iter().map(|&o| map_key_of(c.objects[o as usize].flags)).collect();
         let areas = c.object.iter().map(|&o| c.objects[o as usize].area).collect();
         // FUN_1017aba0: keys with bytes 1..3 'lgb' are skipped.
         let slot = |key: u32| match light_keys.iter().position(|&k| k == key) {
@@ -236,7 +245,7 @@ impl Ground {
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default() }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default() }
     }
 
     /// FUN_1017ac40: a door's box is skipped while it is open (state 0), solid while closed.
@@ -300,6 +309,15 @@ impl Ground {
         let down = hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
         let up = || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
         down.or_else(up).is_some_and(|h| self.covers.get(h.1).copied().unwrap_or(false))
+    }
+
+    /// FUN_101811d0: the map sub-key under a point, from the nearest face a ray from 0.51 above it 10 down hits,
+    /// else one from 0.51 below it 15 up; 0 when both miss.
+    pub fn map_key(&self, p: Vec3) -> u8 {
+        let hits = self.heights(p.x, p.z);
+        let down = hits.iter().filter(|h| h.0 >= p.y - 0.51 && h.0 <= p.y - 0.51 + 10.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits.iter().filter(|h| h.0 <= p.y + 0.51 && h.0 >= p.y + 0.51 - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        down.or_else(up).and_then(|h| self.map_keys.get(h.1).copied()).unwrap_or(0)
     }
 
     fn near(&self, x: f32, z: f32) -> impl Iterator<Item = usize> + '_ {
@@ -623,7 +641,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default() }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default() }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
