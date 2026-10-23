@@ -4600,3 +4600,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Storage colour rule 4 now: the lobby reply\x27s feature bits (u32 @0x24, World.features) 0x04 << (c - 0xb) gate
   Wardrobe 3..8; without the bit every row of that view is grey. Live: /wardrobe3 with LSB defaults left a dagger
   white (gear) and the rest grey.
+
+- The window registry (records 0x2c apart from "menu    menuwind", flags u32 @0x24) was keyed with retail\x27s space
+  padding, so a lookup by a short layout name ("menu    raid1") missed and read flags 0. Keys and lookups are
+  normalised now (trimmed, lower case). No visible change yet: the short names with flag 8 (no open zoom: inline,
+  fep, cnttime, quest01, guide01) are not drawn through the gate.

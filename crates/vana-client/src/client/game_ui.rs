@@ -73,7 +73,8 @@ fn menu_registry(ffximain: &[u8]) -> std::collections::HashMap<String, u32> {
         if len == 0 {
             break;
         }
-        out.insert(String::from_utf8_lossy(&name[..len]).into_owned(), u32::from_le_bytes(e[0x24..0x28].try_into().unwrap()));
+        // Keyed like the layout names (trimmed, lower case), so the padded short names match too.
+        out.insert(crate::dat::ui::norm_name(&name[..len]), u32::from_le_bytes(e[0x24..0x28].try_into().unwrap()));
     }
     out
 }
@@ -232,7 +233,7 @@ impl GameUi {
 
     fn gate(&mut self, name: &str, shape: Shape) -> bool {
         let n = self.open_ticks;
-        let animates = n > 0.0 && self.data.registry.get(name).copied().unwrap_or(0) & 8 == 0;
+        let animates = n > 0.0 && self.data.registry.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0) & 8 == 0;
         let frame = self.anim_frame;
         let a = self.anims.entry(name.to_string()).or_insert(WinAnim { open: 0.0, close: 0.0, animated: false, shape: shape.clone(), seen: 0 });
         if a.seen == 0 || a.seen + 1 < frame {
