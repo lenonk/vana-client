@@ -3887,3 +3887,12 @@ From the text command spec (scratchpad textcmd/SPEC.md); client/textcmd.rs.
   MP, +0xc cast, +0xd recast, +0xe 24 x i16 job levels (job 0..23, -1 none), +0x5c job point mask.
 - LSB's !addalltrusts adds with sendUpdate false: no new 0x0AA until the next zone-in, so the client refuses them
   until then (retail would too). Trusts can't be called in towns (the server refuses).
+
+## Dolls take only their task's clones (2026-10-23)
+
+- Scheduler ops 0x15 / 0x16 / 0x22 / 0x23 (FUN_10057fb0 cases; doll FUN_100abea0) call FUN_10062d50 with ECX = the
+  running task (asm 0x10058b82 MOV ECX,ESI): it walks the actor's attached list and moves only CMoGeneratorClones
+  whose +0xf0 is that task. Ops 0x17 / 0x18 move them back (list +0x68, FUN_1003b7b0). Ours moved every instance on
+  the actor: a trust's appearance scheduler (eifa, from the cast finish's shfa) dolled the caster and took the
+  cast's own fa01 / fa02 / 5061 with it, so stfa's stops (0x5f nefa, 0x2d fa02 / fa01, 0x1e 5061) missed them and the
+  casting sparkles never ended.

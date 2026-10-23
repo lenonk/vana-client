@@ -398,6 +398,7 @@ impl Effects {
 
     fn run_op(&mut self, me: usize, t: &mut Task, op: &SOp, actors: &dyn Actors) -> Flow {
         let scope = |s: &Self, k: u8| s.reg.resolve(t.res.0, t.res.1, k, op.name());
+        log::trace!("effects: task {:?} op {:#04x} {}", t.res, op.code, String::from_utf8_lossy(&op.name().to_le_bytes()));
         match op.code {
             0x00 => Flow::End,
             0x02 => {
@@ -479,19 +480,19 @@ impl Effects {
                 }
             }
             0x15 | 0x22 => {
-                t.a1 = self.doll(t.a1, actors);
+                t.a1 = self.doll(t.a1, actors, me);
                 Flow::Next
             }
             0x16 | 0x23 => {
-                t.a2 = self.doll(t.a2, actors);
+                t.a2 = self.doll(t.a2, actors, me);
                 Flow::Next
             }
             0x17 => {
-                t.a1 = self.undoll(t.a1);
+                t.a1 = self.undoll(t.a1, me);
                 Flow::Next
             }
             0x18 => {
-                t.a2 = self.undoll(t.a2);
+                t.a2 = self.undoll(t.a2, me);
                 Flow::Next
             }
             0x31 => {
@@ -702,7 +703,7 @@ impl Effects {
         // The Effects filter, for action tasks off the unattached-persistent path *(the sound-type ok test is not
         // made)*; dolls count as their owners.
         if t.action.is_some() && (attached || !persistent) {
-            let class = |w: Who| self.undoll(w).id().map_or(8, |id| actors.fx_class(id));
+            let class = |w: Who| self.doll_of(w).id().map_or(8, |id| actors.fx_class(id));
             if !effects_allowed(self.filter.0, self.filter.1, class(t.a1) | class(t.a2) << 4) {
                 return;
             }
@@ -746,26 +747,41 @@ impl Effects {
         }
     }
 
-    /// FUN_100aa470: a doll where the actor stands now; its generator clones move to the doll (FUN_10061da0).
-    fn doll(&mut self, w: Who, actors: &dyn Actors) -> Who {
+    /// FUN_100abea0: a doll where the actor stands now; FUN_10062d50 moves the clones this task started (clone
+    /// +0xf0 == the task) to it, others stay on the actor.
+    fn doll(&mut self, w: Who, actors: &dyn Actors, me: usize) -> Who {
         let Who::Actor(id) = w else { return w };
         let Some(m) = actors.matrix(id) else { return w };
         let d = Who::Doll(self.dolls.len());
         self.dolls.push(Doll { of: id, matrix: m });
-        for x in self.insts.iter_mut().flatten() {
-            for a in x.actors.iter_mut() {
-                if *a == w {
-                    *a = d;
-                }
-            }
-        }
+        self.move_clones(w, d, me);
         d
     }
 
-    fn undoll(&self, w: Who) -> Who {
+    /// Ops 0x17 / 0x18: back to the actor, with the clones of this task.
+    fn undoll(&mut self, w: Who, me: usize) -> Who {
+        let back = self.doll_of(w);
+        if back != w {
+            self.move_clones(w, back, me);
+        }
+        back
+    }
+
+    /// The actor a doll stands for.
+    fn doll_of(&self, w: Who) -> Who {
         match w {
             Who::Doll(k) => self.dolls.get(k).map_or(w, |d| Who::Actor(d.of)),
             _ => w,
+        }
+    }
+
+    fn move_clones(&mut self, from: Who, to: Who, me: usize) {
+        for x in self.insts.iter_mut().flatten().filter(|x| x.owner == Owner::Task(me)) {
+            for a in x.actors.iter_mut() {
+                if *a == from {
+                    *a = to;
+                }
+            }
         }
     }
 
