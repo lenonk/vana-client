@@ -166,6 +166,10 @@ pub enum NetEvent {
     SelfStatus { status: u8, hpp: u8, home_in: Option<u32>, pet: u16 },
     /// Our own HP, MP and TP (0x0DF).
     Vitals { hp: u32, mp: u32, tp: u32, hpp: u8, mpp: u8 },
+    /// s2c 0x0C8 GROUP_TBL (kind 0 party / 5 alliance), 0x0DD / 0x0E2 GROUP_LIST (0x0E2 creates), 0x0DF GROUP_ATTR.
+    PartyTable(Vec<super::party::TableEntry>),
+    PartyList(super::party::ListUpdate, bool),
+    PartyAttr(super::party::AttrUpdate),
     Chat { kind: u8, from: String, text: String },
     Battle(BattleMessage),
     Action(crate::net::action::Action),
@@ -236,6 +240,8 @@ pub enum NetCommand {
     Act { target: u32, index: u16, action: u16 },
     /// 0x0DD check (equip inspect, kind 0 = check).
     Check { target: u32, index: u16 },
+    /// c2s 0x076 {u8 Kind = 0}: the roster's names (FUN_100e9550); LSB answers with 0x0C8 and 0x0DD.
+    GroupListReq,
     /// Touched a zone line: its tag, and where we are.
     ZoneLine { tag: u32, pos: [f32; 3] },
     /// c2s 0x05B: mode 0 end, 1 update.
@@ -503,7 +509,23 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
                         tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, home_in, pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
-                    0x0DF if p.u32(4) == login.char_id => tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?,
+                    0x0DF => {
+                        if p.u32(4) == login.char_id {
+                            tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?;
+                        }
+                        let jobs = std::array::from_fn(|i| p.u8(0x20 + i));
+                        tx.send(NetEvent::PartyAttr(super::party::AttrUpdate { id: p.u32(4), index: p.u16(0x14), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17), jobs }))?;
+                    }
+                    // Kinds 0 (party) and 5 (alliance) share list 0; LSB sends no others.
+                    0x0C8 if matches!(p.u8(4), 0 | 5) => {
+                        let entries = (0..20).map(|k| (p.u32(8 + 12 * k), p.u16(12 + 12 * k), p.u8(14 + 12 * k), p.u16(16 + 12 * k))).collect();
+                        tx.send(NetEvent::PartyTable(entries))?;
+                    }
+                    0x0DD | 0x0E2 if matches!(p.u8(0x1C), 0 | 5) => {
+                        let jobs = std::array::from_fn(|i| p.u8(0x22 + i));
+                        let u = super::party::ListUpdate { id: p.u32(4), index: p.u16(0x18), number: p.u8(0x1A), name: text(&p, 0x28, 16), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x1D), mpp: p.u8(0x1E), zone: p.u16(0x20), flags: p.u32(0x14), jobs };
+                        tx.send(NetEvent::PartyList(u, p.id == 0x0E2))?;
+                    }
                     0x029 => tx.send(NetEvent::Battle(battle_message(&p)))?,
                     0x02D => tx.send(NetEvent::Battle(battle_message2(&p)))?,
                     0x028 => tx.send(NetEvent::Action(crate::net::action::parse(&p.data)))?,
@@ -590,6 +612,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     queue.push(build(0x01A, &body));
                 }
                 NetCommand::Act { target, index, action } => queue.push(build(0x01A, &action_body(target, index, action))),
+                NetCommand::GroupListReq => queue.push(build(0x076, &[0u8; 4])),
                 NetCommand::Check { target, index } => {
                     let mut body = vec![0u8; 12];
                     body[0..4].copy_from_slice(&target.to_le_bytes());

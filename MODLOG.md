@@ -3795,3 +3795,23 @@ From the yes / no spec (scratchpad yesno/SPEC.md). Correction to the 2026-10-22 
 - Key function 0x13 (Pause, FUN_101609f0): the Log out prompt (comyn), in the field, not engaged, UI shown, no event.
 - Correction to "First person": the eye uses attach point 12 (point 6 resting / seated) through vt+0x1c4, not bone
   12 (FUN_10020ba0); point 12 is on the root at head height.
+
+## Party roster and F-key targets (2026-10-23)
+
+From the party spec (scratchpad party/SPEC.md; current addresses).
+- Roster G+0x57d8 (G = DAT_104dfd98): list 0, 20 records x 0x70, record 0 ourselves (refreshed with our name, id,
+  ActIndex and zone by FUN_100e8b80). Kinds 0 / 5 both use list 0.
+- s2c 0x0C8 GROUP_TBL (LAB_100e9ee0): 20 x {id, ActIndex u16, flags u8, zone u16} from @8; present ids updated or
+  allocated (FUN_100ea140: first free, else the oldest update), zone and marker set on a change; every other record
+  zeroed (the only removal). 0x0DD (100ea390): updates only listed ids (ours = record 0), marker +0x30 = ZoneNo @0x20
+  (LSB: only when elsewhere); own GAttr G+0x97f8. 0x0E2 (100ea570): same, creates, zone set, marker 0 (LSB never
+  sends it). 0x0DF (100e9cc0): HP / MP / TP / jobs of listed ids. A nameless member asks c2s 0x076 {u8 0}.
+- Slots DAT_10663ad8 (18 x 0x7c, FUN_10201fb0 / FUN_10202b80): self first in party 0, our party number's members
+  0..5, other numbers 6..11 then 12..17; leaders per party (flag 4) and the alliance leader (flag 8); "ptw0" iff our
+  party has no leader, else "ptwN".
+- F1 / F7 (0x46 / 0x4c) target ourselves (we are an ordinary entity in retail); F2..F6 (0x47..0x4b) slots 1..5, F11
+  (0x53) slot 6, F12 (0x54) slot 12 (FUN_102033c0: used, in our zone, no marker, model loaded; no distance). A re-pick
+  of the same target plays "0010" again. Lock-on refuses self; Enter on self opens playermo.
+- Ours: client/party.rs (Roster, Slots, tests), target::pick / slot_target, self_entity for the target window,
+  invalid() keeps a self target. Not done: the party windows' rows (only our row draws), party name colours, battle
+  music count, the effects filter's party class.

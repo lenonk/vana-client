@@ -33,6 +33,7 @@ mod subarea;
 mod myroom;
 mod doors;
 mod mousecur;
+mod party;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -584,6 +585,40 @@ fn check_target(world: &mut World) {
 
 /// Name colour index into "menu    ncol" (a subset of FUN_1008c430): players white, NPCs green,
 /// monsters pale yellow, red when we claimed them, magenta when someone else did.
+/// Ourselves as a target (retail keeps the player in the entity array): what the target window and the target code
+/// read from an entity.
+fn self_entity(w: &World) -> Entity {
+    Entity {
+        name: w.name.clone(),
+        pos: w.pos,
+        kind: EntityKind::Player,
+        hpp: w.vitals.map_or(100, |v| v.3),
+        dir: 0,
+        target: w.pos,
+        motion: w.my_motion,
+        ratio: 0.0,
+        last_pos: w.pos,
+        claim: 0,
+        mob: false,
+        index: w.my_index,
+        named: false,
+        plural: false,
+        slide: w.pos,
+        remain: 0.0,
+        counter: 0,
+        yaw: w.yaw,
+        dir_seen: 0,
+        grounded: false,
+        flags: 0,
+        no_gauge: false,
+        no_plate: false,
+        untargetable: false,
+        door: 0,
+        object: false,
+        face: 0,
+    }
+}
+
 fn name_colour(e: &Entity, me: u32) -> usize {
     match (e.kind, e.mob, e.claim) {
         (EntityKind::Player, _, _) => 0,
@@ -1027,7 +1062,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for l in page_lines {
         world.chat.push(l);
     }
-    let target = world.target.and_then(|t| world.entities.get(&t));
+    let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
+    let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
     let st = crate::render::screens::HudState {
         party: world.vitals.map(|v| vec![(v.3 as f32 / 100.0, v.4 as f32 / 100.0)]).unwrap_or_default(),
         target: target.filter(|_| event::keeps_target(world)).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
@@ -1929,6 +1965,9 @@ struct World {
     doors: doors::Doors,
     /// In the Mog House (0x00A LoginState 1), its door menu, and a leave request sent.
     myroom: Option<net::MyRoom>,
+    /// The party / alliance roster (client/party.rs) and whether its names were asked for (c2s 0x076).
+    party: party::Roster,
+    party_asked: bool,
     /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
     ui_hidden: bool,
     /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
@@ -2945,6 +2984,8 @@ impl App {
                             loading_scene: 0,
                             myroom: None,
                             room_flag: false,
+                            party: Default::default(),
+                            party_asked: false,
                             ui_hidden: false,
                             shot_request: None,
                             shot_count: (0, -1),
@@ -3571,6 +3612,16 @@ impl App {
                     }
                 }
                 NetEvent::Vitals { hp, mp, tp, hpp, mpp } => world.vitals = Some((hp, mp, tp, hpp, mpp)),
+                NetEvent::PartyTable(entries) => {
+                    world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
+                    world.party.table(&entries);
+                    world.party_asked = false;
+                }
+                NetEvent::PartyList(u, create) => {
+                    world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
+                    world.party.list(&u, world.my_id, create);
+                }
+                NetEvent::PartyAttr(u) => world.party.attr(&u),
                 NetEvent::Error(e) => {
                     self.status = format!("Disconnected: {e}");
                     self.to_login(true);
@@ -3982,6 +4033,11 @@ impl App {
         if self.input.test(0x78, input::mode::REPEAT) {
             log_cycle(world);
         }
+        // FUN_100e9550: a listed member with no name asks the roster again (c2s 0x076), once per table.
+        if world.party.nameless() && !world.party_asked {
+            world.party_asked = true;
+            let _ = world.net.commands.send(NetCommand::GroupListReq);
+        }
         // Key function 0x56 (Scroll Lock, FUN_10160710): hide / show the UI, also while typing.
         if self.input.test(0x56, input::mode::PRESS) && !event::active(world) {
             world.ui_hidden = !world.ui_hidden;
@@ -4018,6 +4074,15 @@ impl App {
                 target::nearest_kind(world, 0x12, false, false);
             } else if self.input.test(0x4e, input::mode::PRESS) {
                 target::nearest_kind(world, 0, false, true);
+            } else if self.input.test(0x46, input::mode::PRESS) || self.input.test(0x4c, input::mode::PRESS) {
+                // F1 / F7: ourselves.
+                target::pick(world, Some(world.my_id));
+            } else if let Some(slot) = [(0x47, 1), (0x48, 2), (0x49, 3), (0x4a, 4), (0x4b, 5), (0x53, 6), (0x54, 12)].into_iter().find(|(k, _)| self.input.test(*k, input::mode::PRESS)).map(|(_, s)| s) {
+                // F2..F6 party slots 1..5, F11 / F12 the other parties' first members (FUN_102033c0 / FUN_102034a0).
+                let t = target::slot_target(world, slot);
+                if t.is_some() {
+                    target::pick(world, t);
+                }
             }
         }
     }

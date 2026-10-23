@@ -70,6 +70,10 @@ pub fn lock(w: &mut World, on: bool, why: &str) {
 /// Why the target goes (FUN_10151bb0 -> FUN_10152c70), checked every frame; Some(true) also sends /attackoff
 /// (FUN_10151c40, +0x130 bit 7).
 fn invalid(w: &World, t: u32) -> Option<bool> {
+    // Ourselves: only an event hiding us drops it (distance 0, never attackable).
+    if t == w.my_id {
+        return super::event::hidden(w).contains(&t).then_some(false);
+    }
     let Some(e) = w.entities.get(&t) else { return Some(false) };
     let hidden = e.flags & 2 != 0 || super::event::hidden(w).contains(&t);
     drop_rule(e.flags, e.untargetable, e.motion.status, (e.pos - w.pos).length(), hidden)
@@ -189,6 +193,30 @@ pub fn nearest_kind(w: &mut World, prefer: u32, enemies: bool, pcs: bool) {
     if t.is_some() {
         set(w, t);
     }
+}
+
+/// A target key's pick (FUN_10157b40 from FUN_101587f0): nothing while locked; picking the target already held
+/// plays "0010" again (FUN_10037dd0).
+pub fn pick(w: &mut World, t: Option<u32>) {
+    if !picks_allowed(w) || super::event::active(w) {
+        return;
+    }
+    if t.is_some() && w.target == t {
+        w.sounds.push(SE_SWITCH);
+        return;
+    }
+    set(w, t);
+}
+
+/// FUN_102033c0 / FUN_102034a0: the party window slot's member when it is in our zone, not marked elsewhere, and
+/// its model is loaded (no distance test).
+pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
+    let m = w.party.slots().here(slot, w.pos_zone)?.clone();
+    if m.id == w.my_id {
+        return Some(m.id);
+    }
+    let id = w.entities.iter().find(|(_, e)| e.index == m.index).map(|(id, _)| *id)?;
+    w.actors.get(&id).is_some_and(|a| a.character.is_some()).then_some(id)
 }
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
