@@ -4462,3 +4462,11 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   +0x10 / +0x12 (FUN_10015600 / FUN_10015610; taken as the desktop, inferred): the index of table 0x1034f4a0 (4:3,
   15:9, 15:10, 16:9, 16:10, 5:4 as float pairs) with the smallest |a - r| / r, -1 for a zero size. Ours:
   gamecfg::set_desktop from the window\x27s monitor at start, used as 0xab\x27s default in get / set.
+
+- Top-bar rule in 30261006_0 (asm 0x1015feb0, in the manager update with the window loop; was FUN_10159080):
+  the same timer (180 / count 20, states 3 / 2 for the 0x8000 windows) in game state 0x60. Inactive needs all of:
+  titlewin text empty (FUN_10221740 on 0x1057847c + 0xa4), titlewin +0x448 == 0 (HN mode), window DAT_10578480
+  not open (FUN_10150d90; class vtable 0x103365d0, draw FUN_10150da0: two strings from FUN_100f1a60 /
+  FUN_100f1ac0 at its corner; not identified), helpwind text empty (0x105781f8 + 0x20, busy bits count as text).
+  Ours matches for the windows we have (titlewin / helpwind text, the busy strip); HN mode and that window are not
+  modelled.
