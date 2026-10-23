@@ -260,6 +260,23 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
                 noun(lines, pending, n, k % 3);
             }
         }
+        // 0x29 / 0x2a (FUN_100be760): a count index then an item index, both from num (0x29) or work (0x2a); one is
+        // the singular, else the plural.
+        0x29 | 0x2a => {
+            let idx = |b: &[u8]| match b {
+                [b0, b1, b2, b3, ..] if b0 & 0x40 == 0 && b0 & 0x3f == 2 => Some((((((b2 & 0x7f) as u16) | (*b3 as u16) << 7) << 7) | (b1 & 0x7f) as u16) as usize),
+                _ => None,
+            };
+            let val = |i: Option<usize>| -> Option<u32> {
+                let i = i?;
+                if kind == 0x29 { ctx.num.get(i).map(|&v| v as u32) } else { ctx.work.get(i).map(|&v| v as u32) }
+            };
+            let count = val(idx(args));
+            let item = val(args.get(4..).and_then(idx));
+            if let Some(n) = item.and_then(|id| names?.item(id)) {
+                noun(lines, pending, n, if count == Some(1) { 1 } else { 2 });
+            }
+        }
         0x30..=0x35 | 0x42..=0x44 => {
             let k = if kind >= 0x42 { kind - 0x42 + 6 } else { kind - 0x30 };
             if let Some(n) = at(k / 3).and_then(|id| names?.key_item(id)) {

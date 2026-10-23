@@ -228,14 +228,12 @@ fn plain(name: String) -> Noun {
     Noun { bare: name.clone(), singular: name.clone(), plural: name, an: false, singular_an: false, mode: 3 }
 }
 
-impl NameSource for Names {
-    fn item(&self, id: u32) -> Option<Noun> {
-        let it = self.items.item(id)?;
-        if self.lang != Lang::En || it.singular.is_empty() {
-            return Some(plain(it.name));
-        }
-        // FUN_1014fda0 and its vtable 0x10329b1c.
-        let pair = matches!(it.article, 2 | 3);
+/// An item's English noun (FUN_1014fda0 and its vtable 0x10329b1c): "pair of" / "suit of" singulars, a / an.
+pub fn item_noun(it: super::items::Item) -> Noun {
+    if it.singular.is_empty() {
+        return plain(it.name);
+    }
+    let pair = matches!(it.article, 2 | 3);
         let an = match it.article {
             0 => false,
             1 => true,
@@ -246,14 +244,23 @@ impl NameSource for Names {
             3 => "suit of ",
             _ => "",
         };
-        Some(Noun {
-            bare: it.singular.clone(),
-            singular: format!("{prefix}{}", it.singular),
-            plural: it.plural,
-            an,
-            singular_an: if pair { false } else { an },
-            mode: if pair { 2 } else { 3 },
-        })
+    Noun {
+        bare: it.singular.clone(),
+        singular: format!("{prefix}{}", it.singular),
+        plural: it.plural,
+        an,
+        singular_an: if pair { false } else { an },
+        mode: if pair { 2 } else { 3 },
+    }
+}
+
+impl NameSource for Names {
+    fn item(&self, id: u32) -> Option<Noun> {
+        let it = self.items.item(id)?;
+        if self.lang != Lang::En {
+            return Some(plain(it.name));
+        }
+        Some(item_noun(it))
     }
 
     fn key_item(&self, id: u32) -> Option<Noun> {

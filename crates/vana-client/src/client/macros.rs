@@ -359,15 +359,15 @@ impl Macros {
 mod tests {
     use super::*;
 
-    fn scratch() -> PathBuf {
-        let d = std::env::temp_dir().join(format!("vana-macros-{}", std::process::id()));
+    fn scratch(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("vana-macros-{}-{name}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
 
     #[test]
     fn files_round_trip_and_defaults() {
-        let game = scratch();
+        let game = scratch("t1");
         let g9 = |id: usize| match id {
             0x99 => Some("/yes".to_string()),
             0xa1 => Some("/join".to_string()),
@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn runner_lines_and_waits() {
-        let game = scratch();
+        let game = scratch("t2");
         let mut m = Macros::load(&game, 1, Box::new(|_| None));
         let mut mac = Macro::default();
         for (k, l) in [&b"// note"[..], b"/say a", b"/wait 1", b"/say b<wait 0>junk", b"/say c", b"", ].iter().enumerate() {

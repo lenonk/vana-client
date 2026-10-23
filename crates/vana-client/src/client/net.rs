@@ -693,6 +693,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             item: p.u16(8),
                             breaks: std::array::from_fn(|i| p.u16(0xa + 2 * i)),
                             name: if p.id == 0x070 { text(&p, 0x1e, 16) } else { String::new() },
+                            crystal: if p.id == 0x06F { p.u16(0x22) } else { 0 },
+                            materials: std::array::from_fn(|i| if p.id == 0x06F { p.u16(0x24 + 2 * i) } else { 0 }),
                         };
                         tx.send(if p.id == 0x06F { NetEvent::SynthResult(a) } else { NetEvent::SynthOthers(a) })?
                     }

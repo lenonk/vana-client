@@ -4917,3 +4917,35 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   space after it (FUN_1025a400(0), as a count of one). "An ash log was lost.", "<name> lost an ash log."
 - Live (Lnxcsfix, Mog House): !additem Wind Crystal + Ash Log, Use on the crystal, the log placed, Synthesize:
   res0 / frst (DAT 4929) / edmm / res2, "Synthesis failed. You lost the crystal you were using." and the lost log.
+
+## Synthesis menu, history, /lastsynth; message expander fixes (2026-10-23)
+
+- Main menu child 10 (drawn fifth, y 70) opens "menu    cmbmenu" (384, 48): 1 Synthesize (the inventory list on
+  the crystal source: crystals only, yellow 0x80909040; Enter: gate 0x77, tskill1 mode 1), 2 History (FUN_101e1000:
+  cmbhwin, cmbhlst moved to (200, 48), tskill1 mode 2). Both rows disabled while a request is younger than 23 s.
+- History (DAT_106634b8, newest first, ten): added on Result 0 / 1 / 0xc (FUN_101e1d70 at the head; the same crystal
+  and materials replace their record, a failure does not replace a success, the favourite bit stays; a full list
+  drops its oldest non-favourite). Files USER/<id>/cmb0..9.dat (cmb0 newest), container version 1, payload 0x20: u32
+  state (3 dirty / 2 saved), u8 Result, s8 Grade, u16 ItemNo, u16 CrystalNo (bit 15 favourite), u16 MaterialNo[8],
+  u16 0, u32 valid 1. Loaded once per login at the first zone-in (FUN_1015d860 broadcast with manager +0xaa), saved on
+  every s2c 0x00B (FUN_1015d880) and at teardown; never after an add.
+- cmbhlst rows (list FUN_101f6a60, columns {0, 18, 170, 200}, row step 18, origin (0, 3)): the icon at half size
+  at (+3, +6), the name in the game font at (+21, +5), white; the favourite keytops3 101 at (+166, +5); the bar
+  keytops3 428 at (0, +6 + 18 k) while focused. Moves refresh tskill1 (FUN_101e27d0: crystal and materials from
+  the inventory; a material not held keeps its id, count 0); Enter focuses tskill1 on Synthesize (disabled unless
+  everything is held, FUN_101e1200); Escape back to cmbmenu; Num+ (key 0x11, list message 8) swaps with cmbhwin
+  (1 register / 2 unregister the favourite, help "%s" = the item name). tskill1 mode 2: missing marks keytops3 515
+  (red cross) at 0.3 over the crystal (element dimmed 0x80585858) and 0.32 at a slot's (+0x14, +0x14); Cancel
+  returns to cmbhlst; no picker.
+- /lastsynth (id 0x9d): the newest record's crystal and materials from unlocked stacks, sent as tskill1 would, or
+  group 9 0xe; "check": 0x10f item, 0x110 crystal, 0x111 per material with its count.
+- Expander (FUN_100c1650 / FUN_100be760): grammar kinds 1 / 2 and a count of one are article tokens (FUN_1025a400(0 /
+  1)): the next noun token (FUN_1025a2f0, mode 3 singular / 4 plural) takes "a" / "an", "the", or "some" in front;
+  the singular form has no article of its own (it used to: "1 an ash log."). 0a n = num[n] "%d". 7f codes: 94 / 98
+  / 99 / 9a = %02d / %03d / %04d / %05d of num[n], 95 "$%x" num[n], 96 "%" + binary, 97 "$%x" work[n] (was decimal),
+  9b work[n] x 0.1 "%.1f" (skill ups: "skill rises 0.1 points."); every handler 0x80..0xb7 is 3 bytes but 0x8f..0x93,
+  codes past the table (fb, fc markers) 2. Zone dialogue: grammar 0x29 / 0x2a (count index then item index from num
+  / work) added ("You obtain 3 wind crystals!").
+- Live (Lnxcsfix, Mog House): menu Synthesize and History, /lastsynth check, /lastsynth twice, a favourite set,
+  cmb0.dat written; chat lines "You obtain 3 ash logs!", "1 ash log.", "Lnxcsfix's woodworking skill rises 0.1
+  points.", "You synthesized a piece of ash lumber.".

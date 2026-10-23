@@ -5,12 +5,15 @@
 use super::World;
 use super::game_ui::GameUi;
 use super::net::NetCommand;
-use super::post::{draw_list, draw_slots, link, log_group9, picker_rows, system_line};
+use super::post::{draw_list, draw_rows, draw_slots, link, log_group9, picker_rows, system_line};
 use crate::audio::Ui;
 use crate::fx::sched::Who;
 use std::time::{Duration, Instant};
 
 const TSKILL1: &str = "menu    tskill1";
+const CMBMENU: &str = "menu    cmbmenu";
+const CMBHLST: &str = "menu    cmbhlst";
+const CMBHWIN: &str = "menu    cmbhwin";
 const ITEMCTRL: &str = "menu    itemctrl";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -18,6 +21,35 @@ enum Focus {
     Slots,
     List,
     Qty,
+    /// The history list or the favourites window has the focus (tskill1 stays open, mode 2).
+    Away,
+}
+
+/// Where tskill1 was opened from (window +0x70 mode and the list source +0x4c): Cancel goes back there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum From {
+    Items,
+    Direct,
+    Crystals,
+    History,
+}
+
+/// "menu    cmbmenu" (FUN_101e2950): its cursor and the crystal list over it (the crystal source DAT_106634c0).
+pub struct Menu {
+    sel: u16,
+    crystals: Option<(usize, usize)>,
+    /// cmbhlst's cursor and cmbhwin's when it has the focus.
+    history: Option<(u16, Option<u16>)>,
+}
+
+/// A history record (FUN_101e1b40): Result, Grade, ItemNo, CrystalNo (bit 15 the favourite), MaterialNo[8].
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Record {
+    pub result: u8,
+    pub grade: i8,
+    pub item: u16,
+    pub crystal: u16,
+    pub materials: [u16; 8],
 }
 
 /// tskill1 (DAT_106634ac): +0x14 the request {crystal index / id, ten slots of index, id, count}, its cursor, the
@@ -29,7 +61,10 @@ pub struct Win {
     focus: Focus,
     list: (usize, usize),
     qty: Option<(u8, u16, u32, u32)>,
-    direct: bool,
+    from: From,
+    /// Mode 2 (the refresh struct DAT_106634d4): the crystal found, the materials missing.
+    found: bool,
+    missing: [bool; 10],
 }
 
 /// trddummy (DAT_106634b4): the answer's lines over 300 ticks, one a frame, and the result item in iteminfo.
@@ -56,6 +91,10 @@ pub struct Anim {
 #[derive(Default)]
 pub struct State {
     pub win: Option<Win>,
+    pub menu: Option<Menu>,
+    /// DAT_106634b8: the last ten synthesises, newest first; read once per login.
+    pub history: Vec<Record>,
+    pub loaded: bool,
     request: Option<(u8, Instant)>,
     shown: Option<Shown>,
     anims: std::collections::HashMap<u32, Anim>,
@@ -71,10 +110,13 @@ pub struct Answer {
     pub item: u16,
     pub breaks: [u16; 8],
     pub name: String,
+    /// 0x06F CrystalNo @0x22, MaterialNo[8] @0x24.
+    pub crystal: u16,
+    pub materials: [u16; 8],
 }
 
 pub fn active(w: &World) -> bool {
-    w.synth.win.is_some()
+    w.synth.win.is_some() || w.synth.menu.is_some()
 }
 
 /// FUN_101e0e30: refused silently while the cast bar is up, with group 7 0x8c with no free inventory slot; else the
@@ -87,10 +129,331 @@ pub fn open(w: &mut World, index: u8, id: u16) -> bool {
         super::textcmd::refuse(w, 0x8c);
         return false;
     }
-    let direct = matches!(w.win, Some(super::items::Win::Items { direct: true, .. }));
+    let from = if w.synth.menu.as_ref().is_some_and(|m| m.crystals.is_some()) {
+        From::Crystals
+    } else if matches!(w.win, Some(super::items::Win::Items { direct: true, .. })) {
+        From::Direct
+    } else {
+        From::Items
+    };
     w.win = None;
-    w.synth.win = Some(Win { crystal: (index, id), slots: [(0, 0, 0); 10], cursor: 1, focus: Focus::Slots, list: (0, 0), qty: None, direct });
+    w.synth.win = Some(Win { crystal: (index, id), slots: [(0, 0, 0); 10], cursor: 1, focus: Focus::Slots, list: (0, 0), qty: None, from, found: true, missing: [false; 10] });
     true
+}
+
+/// A zone change drops the windows, the request and the animations; the history stays for the login.
+pub fn zone_reset(w: &mut World) {
+    let (history, loaded) = (std::mem::take(&mut w.synth.history), w.synth.loaded);
+    w.synth = State { history, loaded, ..Default::default() };
+}
+
+/// Main menu row 10 (FUN_10140400 case 10): "menu    cmbmenu", SE 0002.
+pub fn open_menu(w: &mut World) {
+    w.synth.menu = Some(Menu { sel: 1, crystals: None, history: None });
+    w.menu = None;
+    w.sounds.push(Ui::Select as u32);
+}
+
+/// FUN_101e2950: both rows are disabled while a request from tskill1 is younger than 23 s (+0x74).
+fn menu_off(w: &World) -> bool {
+    w.synth.request.is_some_and(|(s, t)| s == 2 && t.elapsed() < Duration::from_secs(23))
+}
+
+/// The crystal source's rows: crystals only (FUN_101e2a40 colours type 8 yellow; the others are not listed, inferred).
+fn crystal_rows(w: &World) -> Vec<crate::inventory::Slot> {
+    let info = w.item_info.as_ref();
+    picker_rows(w).into_iter().filter(|r| info.and_then(|c| c.item(r.id)).is_some_and(|it| it.item_type == 8)).collect()
+}
+
+/// cmbmenu (FUN_101e29a0) and its crystal list (FUN_101e2ac0 -> FUN_101e2a60: gate 0x77, then tskill1 mode 1).
+fn menu_key(w: &mut World, gu: &GameUi, key: egui::Key) {
+    use egui::Key as K;
+    let Some(mut m) = w.synth.menu.take() else { return };
+    if let Some((cur, fav)) = m.history {
+        let n = w.synth.history.len() as u16;
+        match (fav, key) {
+            // cmbhwin (FUN_101e32a0): 1 marks the row a favourite, 2 unmarks it; both disabled with no row.
+            (Some(f), K::ArrowUp | K::ArrowDown) => {
+                m.history = Some((cur, Some(3 - f)));
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            (Some(_), K::Enter) if n == 0 => w.sounds.push(Ui::Error as u32),
+            (Some(f), K::Enter) => {
+                if let Some(r) = w.synth.history.get_mut(cur as usize - 1) {
+                    r.crystal = if f == 1 { r.crystal | 0x8000 } else { r.crystal & 0x7fff };
+                }
+                m.history = Some((cur, None));
+                w.sounds.push(Ui::Select as u32);
+            }
+            (Some(_), K::Escape) => {
+                m.history = Some((cur, None));
+                w.sounds.push(Ui::Close as u32);
+            }
+            // cmbhlst (FUN_101e2cb0): moves refresh tskill1; Enter focuses it on Synthesize; Escape back to cmbmenu.
+            (None, K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft) => {
+                let to = link(gu, CMBHLST, cur, key);
+                if to != cur && to != 0 && to <= n {
+                    m.history = Some((to, None));
+                    w.sounds.push(Ui::Cursor as u32);
+                    w.synth.menu = Some(m);
+                    refresh(w);
+                    return;
+                }
+            }
+            (None, K::Enter) if n > 0 => {
+                if let Some(s) = w.synth.win.as_mut() {
+                    (s.focus, s.cursor) = (Focus::Slots, 9);
+                }
+                w.sounds.push(Ui::Select as u32);
+            }
+            (None, K::Escape) => {
+                m.history = None;
+                w.synth.win = None;
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            _ => {}
+        }
+        w.synth.menu = Some(m);
+        return;
+    }
+    if let Some((mut sc, mut cu)) = m.crystals {
+        let rows = crystal_rows(w);
+        match key {
+            K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+            K::ArrowRight | K::ArrowLeft => {
+                if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+            }
+            K::Enter => {
+                if let Some(r) = rows.get(sc + cu).cloned() {
+                    m.crystals = Some((sc, cu));
+                    w.synth.menu = Some(m);
+                    if super::textcmd::status_gate(w, 0x77) && open(w, r.index, r.id) {
+                        w.sounds.push(Ui::Select as u32);
+                    } else {
+                        w.sounds.push(Ui::Error as u32);
+                    }
+                    return;
+                }
+            }
+            K::Escape => {
+                w.sounds.push(Ui::Cancel as u32);
+                m.crystals = None;
+                w.synth.menu = Some(m);
+                return;
+            }
+            _ => {}
+        }
+        m.crystals = Some((sc, cu));
+        w.synth.menu = Some(m);
+        return;
+    }
+    match key {
+        K::ArrowUp | K::ArrowDown => {
+            let to = link(gu, CMBMENU, m.sel, key);
+            if to != m.sel && to != 0 {
+                m.sel = to;
+                w.sounds.push(Ui::Cursor as u32);
+            }
+        }
+        K::Enter if menu_off(w) => w.sounds.push(Ui::Error as u32),
+        K::Enter if m.sel == 1 => {
+            w.sounds.push(Ui::Select as u32);
+            m.crystals = Some((0, 0));
+        }
+        // Row 2 (FUN_101e1000): cmbhwin, cmbhlst at (200, 48) focused, tskill1 in mode 2 on the newest record.
+        K::Enter => {
+            w.sounds.push(Ui::Select as u32);
+            m.history = Some((1, None));
+            w.synth.menu = Some(m);
+            w.synth.win = Some(Win { crystal: (0, 0), slots: [(0, 0, 0); 10], cursor: 9, focus: Focus::Away, list: (0, 0), qty: None, from: From::History, found: false, missing: [false; 10] });
+            refresh(w);
+            return;
+        }
+        K::Escape => {
+            w.sounds.push(Ui::Cancel as u32);
+            return;
+        }
+        _ => {}
+    }
+    w.synth.menu = Some(m);
+}
+
+/// Key function 0x11 (Num+, list message 8): cmbhlst and cmbhwin swap the focus, SE 0013.
+pub fn num_plus(w: &mut World) {
+    let away = w.synth.win.as_ref().is_some_and(|s| s.focus == Focus::Away);
+    if let Some(m) = w.synth.menu.as_mut()
+        && let Some((cur, fav)) = m.history
+        && away
+    {
+        m.history = Some((cur, if fav.is_some() { None } else { Some(1) }));
+        w.sounds.push(Ui::Close as u32);
+    }
+}
+
+/// FUN_101e27d0 (FUN_101e2040 / FUN_101e2320): tskill1 takes the cursor record's crystal and materials from the
+/// inventory; a material not held keeps its id with no stack (index -1 - i), the same stacks merged.
+fn refresh(w: &mut World) {
+    let Some(cur) = w.synth.menu.as_ref().and_then(|m| m.history).map(|h| h.0) else { return };
+    let Some(r) = w.synth.history.get(cur as usize - 1).copied() else { return };
+    let unlocked = |i: u8| w.inv.locks.get(&(0, i)).copied().unwrap_or(0) == 0;
+    let crystal_id = r.crystal & 0x7fff;
+    let crystal = w.inv.slots.iter().find(|((c, i), (id, n))| *c == 0 && *i != 0 && *id == crystal_id && *n > 0 && unlocked(*i)).map(|(&(_, i), _)| i);
+    let mut slots = [(0u8, 0u16, 0u32); 10];
+    let mut missing = [false; 10];
+    let mut k = 0;
+    for m in r.materials.iter().copied().filter(|m| *m != 0) {
+        let used = |slots: &[(u8, u16, u32); 10], i: u8| slots.iter().find(|s| s.0 == i).map_or(0, |s| s.2);
+        let at = w.inv.slots.iter().find(|((c, i), (id, n))| *c == 0 && *i != 0 && *id == m && unlocked(*i) && Some(*i) != crystal && used(&slots, *i) < *n).map(|(&(_, i), _)| i);
+        match at {
+            Some(i) if slots.iter().any(|s| s.0 == i) => {
+                if let Some(s) = slots.iter_mut().find(|s| s.0 == i) {
+                    s.2 += 1;
+                }
+            }
+            Some(i) if k < 10 => {
+                slots[k] = (i, m, 1);
+                k += 1;
+            }
+            None if k < 10 => {
+                (slots[k], missing[k]) = ((0, m, 0), true);
+                k += 1;
+            }
+            _ => {}
+        }
+    }
+    if let Some(s) = w.synth.win.as_mut() {
+        (s.crystal, s.found, s.slots, s.missing) = ((crystal.unwrap_or(0), crystal_id), crystal.is_some(), slots, missing);
+    }
+}
+
+/// FUN_101e1200: Synthesize is enabled in mode 2 only with the crystal and every material held.
+fn complete(s: &Win) -> bool {
+    s.from != From::History || (s.found && s.crystal.0 != 0 && !s.missing.iter().any(|m| *m))
+}
+
+/// FUN_101e1a70: cmb0.dat (newest) .. cmb9.dat, version 1, 0x20 bytes each; an unreadable or invalid one is skipped,
+/// the others appended in order (with the dedupe).
+pub fn load_history(w: &mut World, dir: &std::path::Path) {
+    w.synth.loaded = true;
+    w.synth.history.clear();
+    for n in 0..10 {
+        let Some(b) = super::macros::read_file(&dir.join(format!("cmb{n}.dat")), 1) else { continue };
+        if b.len() < 0x20 || u32::from_le_bytes([b[0x1c], b[0x1d], b[0x1e], b[0x1f]]) == 0 {
+            continue;
+        }
+        let u16_at = |o: usize| u16::from_le_bytes([b[o], b[o + 1]]);
+        let r = Record { result: b[4], grade: b[5] as i8, item: u16_at(6), crystal: u16_at(8), materials: std::array::from_fn(|i| u16_at(0xa + 2 * i)) };
+        if !w.synth.history.iter().any(|x| x.crystal & 0x7fff == r.crystal & 0x7fff && x.materials == r.materials) && w.synth.history.len() < 10 {
+            w.synth.history.push(r);
+        }
+    }
+}
+
+/// FUN_101e1ae0 (on every s2c 0x00B and at teardown): record i to cmb{i}.dat, state 2, valid 1.
+pub fn save_history(w: &World, dir: &std::path::Path) {
+    if !w.synth.loaded {
+        return;
+    }
+    for (n, r) in w.synth.history.iter().enumerate() {
+        let mut b = vec![0u8; 0x20];
+        b[0] = 2;
+        (b[4], b[5]) = (r.result, r.grade as u8);
+        b[6..8].copy_from_slice(&r.item.to_le_bytes());
+        b[8..10].copy_from_slice(&r.crystal.to_le_bytes());
+        for (i, m) in r.materials.iter().enumerate() {
+            b[0xa + 2 * i..0xc + 2 * i].copy_from_slice(&m.to_le_bytes());
+        }
+        b[0x1c] = 1;
+        super::macros::write_file(&dir.join(format!("cmb{n}.dat")), 1, &b);
+    }
+}
+
+/// FUN_101e1b40 / FUN_101e1bd0 / FUN_101e1d40: the answer goes to the front; the same crystal and materials replace
+/// their record (a failure does not replace a success; the favourite stays); a full list loses its oldest record
+/// that is not a favourite.
+fn add_history(w: &mut World, a: &Answer) {
+    let mut r = Record { result: a.result, grade: a.grade, item: a.item, crystal: a.crystal & 0x7fff, materials: a.materials };
+    let h = &mut w.synth.history;
+    if let Some(k) = h.iter().position(|x| x.crystal & 0x7fff == r.crystal && x.materials == r.materials) {
+        let old = h.remove(k);
+        r.crystal |= old.crystal & 0x8000;
+        if r.item == 0x73ff && old.item != 0x73ff {
+            (r.result, r.grade, r.item) = (old.result, old.grade, old.item);
+        }
+    } else if h.len() >= 10 {
+        match h.iter().rposition(|x| x.crystal & 0x8000 == 0) {
+            Some(k) => {
+                h.remove(k);
+            }
+            None => return,
+        }
+    }
+    h.insert(0, r);
+}
+
+/// /lastsynth (FUN_1007f990): after SendResRdy; no history: group 7 0xc0. Alone: refused with tskill1 open (0x45),
+/// the gate 0x77, engaged nothing; then the newest record's crystal and materials are looked up in the inventory
+/// (unlocked, a unit per count) and sent as tskill1 would, or group 9 0xe "Synthesis canceled.". "check" prints the
+/// record (file 7031 0x10f item, 0x110 crystal, 0x111 per material with its count).
+pub fn lastsynth(w: &mut World, args: &[&str]) -> std::result::Result<(), ()> {
+    if !w.res_rdy.sent {
+        return Ok(());
+    }
+    let Some(r) = w.synth.history.first().copied() else {
+        super::textcmd::refuse(w, 0xc0);
+        return Ok(());
+    };
+    match args {
+        [_] => {
+            if w.synth.win.is_some() {
+                super::textcmd::refuse(w, 0x45);
+                return Ok(());
+            }
+            if !super::textcmd::status_gate(w, 0x77) || w.my_motion.status == 1 {
+                return Ok(());
+            }
+            match find_units(w, &r) {
+                Some((crystal, slots)) => {
+                    send(w, crystal, &slots);
+                }
+                None => log_group9(w, 0xe, 0x79),
+            }
+            Ok(())
+        }
+        [_, c] if c.eq_ignore_ascii_case("check") => {
+            system_line(w, 0x10f, [r.item as i32, 0, 0, 0, 0], String::new());
+            system_line(w, 0x110, [(r.crystal & 0x7fff) as i32, 0, 0, 0, 0], String::new());
+            let mut seen: Vec<u16> = Vec::new();
+            for m in r.materials.iter().copied().filter(|m| *m != 0) {
+                if !seen.contains(&m) {
+                    seen.push(m);
+                    let n = r.materials.iter().filter(|x| **x == m).count();
+                    system_line(w, 0x111, [m as i32, n as i32, 0, 0, 0], String::new());
+                }
+            }
+            Ok(())
+        }
+        _ => Err(()),
+    }
+}
+
+/// FUN_101e2040 / FUN_101e2300: each unit from an unlocked stack with uses left, merged per stack.
+fn find_units(w: &World, r: &Record) -> Option<((u8, u16), [(u8, u16, u32); 10])> {
+    let unlocked = |i: u8| w.inv.locks.get(&(0, i)).copied().unwrap_or(0) == 0;
+    let crystal_id = r.crystal & 0x7fff;
+    let crystal = w.inv.slots.iter().find(|((c, i), (id, n))| *c == 0 && *i != 0 && *id == crystal_id && *n > 0 && unlocked(*i)).map(|(&(_, i), _)| i)?;
+    let mut slots = [(0u8, 0u16, 0u32); 10];
+    for m in r.materials.iter().copied().filter(|m| *m != 0) {
+        let used = |i: u8| slots.iter().find(|s| s.0 == i).map_or(0, |s| s.2);
+        let (&(_, i), _) = w.inv.slots.iter().find(|((c, i), (id, n))| *c == 0 && *i != 0 && *id == m && unlocked(*i) && (*i != crystal || *id != crystal_id) && used(*i) < *n)?;
+        match slots.iter_mut().find(|s| s.0 == i) {
+            Some(s) => s.2 += 1,
+            None => *slots.iter_mut().find(|s| s.0 == 0)? = (i, m, 1),
+        }
+    }
+    Some(((crystal, crystal_id), slots))
 }
 
 /// FUN_100eb800: an empty inventory entry 1..size - 1.
@@ -102,10 +465,10 @@ fn free_slot(w: &World) -> bool {
 /// FUN_101e0f20(1): Cancel goes back to the list it came from.
 fn cancel(w: &mut World) {
     let Some(s) = w.synth.win.take() else { return };
-    if s.direct {
-        super::items::open_direct(w);
-    } else {
-        super::items::open_items(w);
+    match s.from {
+        From::Direct => super::items::open_direct(w),
+        From::Items => super::items::open_items(w),
+        From::Crystals | From::History => {}
     }
 }
 
@@ -217,8 +580,13 @@ fn send(w: &mut World, crystal: (u8, u16), slots: &[(u8, u16, u32); 10]) -> bool
 /// tskill1 (FUN_101e1530), the picker (FUN_101e0600) and itemctrl.
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     use egui::Key as K;
-    let Some(mut s) = w.synth.win.take() else { return };
+    let Some(mut s) = w.synth.win.take() else { return menu_key(w, gu, key) };
+    if s.focus == Focus::Away {
+        w.synth.win = Some(s);
+        return menu_key(w, gu, key);
+    }
     match s.focus {
+        Focus::Away => {}
         Focus::Slots => match key {
             K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => {
                 let to = link(gu, TSKILL1, s.cursor, key);
@@ -229,12 +597,21 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             // FUN_101e08e0: the gate (0x77), the inventory check (silent), the send; then everything closes.
             K::Enter if s.cursor == 9 => {
-                let ok = super::textcmd::status_gate(w, 0x77) && still_held(w, &s) && send(w, s.crystal, &s.slots);
+                let ok = complete(&s) && super::textcmd::status_gate(w, 0x77) && still_held(w, &s) && send(w, s.crystal, &s.slots);
                 if ok {
                     w.sounds.push(Ui::Select as u32);
+                    // Modes 1 and 2 also close the cmbmenu chain (FUN_1015e910 / cmbhlst).
+                    if matches!(s.from, From::Crystals | From::History) {
+                        w.synth.menu = None;
+                    }
                     return;
                 }
                 w.sounds.push(Ui::Error as u32);
+            }
+            // Mode 2's Cancel gives the history list the focus back.
+            K::Enter if s.cursor == 10 && s.from == From::History => {
+                w.sounds.push(Ui::Select as u32);
+                s.focus = Focus::Away;
             }
             K::Enter if s.cursor == 10 => {
                 w.sounds.push(Ui::Select as u32);
@@ -242,6 +619,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 cancel(w);
                 return;
             }
+            K::Enter if s.from == From::History => {}
             K::Enter => {
                 w.sounds.push(Ui::Select as u32);
                 s.focus = Focus::List;
@@ -327,6 +705,7 @@ pub fn on_result(w: &mut World, a: Answer) {
             if a.result == 1 {
                 line9(w, 0xa);
             }
+            add_history(w, &a);
             w.synth.shown = Some(Shown { result: a.result, grade: a.grade, count: a.count, item: a.item, breaks: a.breaks, timer: 300.0, line: 0 });
         }
         2 | 0xe => line9(w, 0xc),
@@ -486,13 +865,37 @@ fn anim_frame(w: &mut World, id: u32, ticks: f32) {
 
 /// The bars: tskill1's child strings, the picker's help (0xe 7), itemctrl's.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    let Some(s) = &w.synth.win else { return };
+    let Some(s) = &w.synth.win else {
+        if let Some(m) = &w.synth.menu {
+            let [help, title] = gu.focus_text(CMBMENU, m.sel);
+            (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+            if m.crystals.is_some() {
+                bars.help[1] = gu.menu_msg(3, "");
+            }
+        }
+        return;
+    };
     let focus = |name: &str, child: u16, bars: &mut super::hudtop::BarText| {
         let [help, title] = gu.focus_text(name, child);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     };
     match s.focus {
         Focus::Slots => focus(TSKILL1, s.cursor, bars),
+        Focus::Away => {
+            if let Some((cur, fav)) = w.synth.menu.as_ref().and_then(|m| m.history) {
+                match fav {
+                    Some(f) => {
+                        let name = w.synth.history.get(cur as usize - 1).and_then(|r| w.item_info.as_ref()?.item(r.item)).map(|it| it.name.clone()).unwrap_or_default();
+                        focus(CMBHWIN, f, bars);
+                        bars.help[1] = bars.help[1].replacen("%s", &name, 1);
+                    }
+                    None => {
+                        focus(CMBHLST, cur, bars);
+                        bars.help[1] = gu.menu_msg(0x1ed, "");
+                    }
+                }
+            }
+        }
         Focus::List => {
             focus("menu    inventor", s.list.1 as u16 + 1, bars);
             bars.help[1] = gu.menu_msg(7, "");
@@ -510,6 +913,11 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
         let index = match s.focus {
             Focus::List | Focus::Qty => picker_rows(w).get(s.list.0 + s.list.1)?.index,
             Focus::Slots => s.slots.get((s.cursor as usize).checked_sub(1)?)?.0,
+            // FUN_101e2e90: the history row's ItemNo.
+            Focus::Away => {
+                let (cur, _) = w.synth.menu.as_ref()?.history?;
+                return w.synth.history.get(cur as usize - 1).map(|r| (r.item, None));
+            }
         };
         let &(id, _) = w.inv.slots.get(&(0, index)).filter(|_| index != 0)?;
         return Some((id, w.inv.ext.get(&(0, index)).copied()));
@@ -517,17 +925,78 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     w.synth.shown.as_ref().filter(|s| matches!(s.result, 0 | 0xc) && s.item != 0).map(|s| (s.item, None))
 }
 
+/// cmbhlst moved to (200, 48) (FUN_101e2b60): per record newest first the icon at half size at (+3, +6 + 18k), the
+/// name in the game font at (+21, +5 + 18k), the favourite (keytops3 101) at (+166, +5 + 18k); the bar keytops3 428 at
+/// (0, +6) on the cursor row while focused. cmbhwin at (384, 48), its rows disabled with no record.
+#[allow(clippy::too_many_arguments)]
+fn draw_history(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, cur: u16, fav: Option<u16>, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    let mut rects = Vec::new();
+    let away = w.synth.win.as_ref().is_some_and(|s| s.focus == Focus::Away) && w.confirm.is_none();
+    let list_focus = away && fav.is_none();
+    if let Some(win) = gu.lobby_window_off(CMBHLST, sw, sh, (184.0, 0.0), list_focus.then_some(cur), list_focus, &[]) {
+        let [x, y, ..] = win.frame;
+        if list_focus {
+            gu.sprite("menu    keytops3", 428, x, y + 6.0 + 18.0 * (cur as f32 - 1.0), 0x8080_8080);
+        }
+        super::items::upload_icons(gu, info, w.synth.history.iter().map(|r| r.item));
+        for (k, r) in w.synth.history.iter().enumerate() {
+            let ry = y + 18.0 * k as f32;
+            let icon = crate::render::invwin::icon_texture(r.item);
+            if gu.has_image(&icon) {
+                gu.image_rect(&icon, x + 3.0, ry + 6.0, 16.0, 16.0, [1.0; 4]);
+            }
+            let name = info.item(r.item).map(|it| it.name.clone()).unwrap_or_default();
+            gu.text(&name, x + 21.0, ry + 5.0, 0, 0x8080_8080u32.to_le_bytes());
+            if r.crystal & 0x8000 != 0 {
+                gu.sprite("menu    keytops3", 101, x + 166.0, ry + 5.0, 0x8080_8080);
+            }
+        }
+        rects.push(win.frame);
+    }
+    let off: &[u16] = if w.synth.history.is_empty() { &[1, 2] } else { &[] };
+    let fav_focus = away && fav.is_some();
+    if let Some(win) = gu.lobby_window_off(CMBHWIN, sw, sh, (0.0, 0.0), fav.filter(|_| fav_focus), fav_focus, off) {
+        let [x, y, ..] = win.frame;
+        gu.disabled_children(CMBHWIN, x, y, off, fav.filter(|_| fav_focus));
+        rects.push(win.frame);
+    }
+    rects
+}
+
 /// tskill1 (FUN_101e12e0): the crystal at half size at (+0x12, +4) and its element (keytops3 0xb9 + element) at
 /// (+0x24, +4), the slots' icons and counts; the picker list at (200, 48) and itemctrl.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
-    let (Some(s), Some(info)) = (&w.synth.win, w.item_info.clone()) else { return rects };
+    let Some(info) = w.item_info.clone() else { return rects };
+    if let Some((cur, fav)) = w.synth.menu.as_ref().and_then(|m| m.history) {
+        rects.extend(draw_history(gu, w, &info, cur, fav, sw, sh));
+    } else if let Some(m) = &w.synth.menu
+        && w.synth.win.is_none()
+    {
+        let off: &[u16] = if menu_off(w) { &[1, 2] } else { &[] };
+        let focused = m.crystals.is_none();
+        if let Some(win) = gu.lobby_window_off(CMBMENU, sw, sh, (0.0, 0.0), focused.then_some(m.sel), focused, off) {
+            let [x, y, ..] = win.frame;
+            gu.disabled_children(CMBMENU, x, y, off, focused.then_some(m.sel));
+            rects.push(win.frame);
+        }
+        if let Some(list) = m.crystals {
+            let rows = crystal_rows(w);
+            let tints = vec![0x8090_9040; rows.len()];
+            rects.extend(draw_rows(gu, &rows, &info, list, true, Some(&tints), sw, sh));
+        }
+    }
+    let Some(s) = &w.synth.win else { return rects };
     let focused = |f: Focus| s.focus == f && w.confirm.is_none();
-    let rows = picker_rows(w);
-    let tints: Vec<u32> = rows.iter().map(|r| tint(w, s, r)).collect();
-    rects.extend(draw_list(gu, w, &info, s.list, focused(Focus::List), Some(&tints), sw, sh));
+    // Mode 2 has no picker: cmbhlst sits where the list would be.
+    if s.from != From::History {
+        let rows = picker_rows(w);
+        let tints: Vec<u32> = rows.iter().map(|r| tint(w, s, r)).collect();
+        rects.extend(draw_list(gu, w, &info, s.list, focused(Focus::List), Some(&tints), sw, sh));
+    }
     if let Some(win) = gu.lobby_window_off(TSKILL1, sw, sh, (0.0, 0.0), focused(Focus::Slots).then_some(s.cursor), focused(Focus::Slots), &[]) {
         let [x, y, ..] = win.frame;
+        let hist = s.from == From::History;
         let element = match s.crystal.1 {
             0x1000..=0x1007 => Some(s.crystal.1 - 0x1000),
             0x108e..=0x1095 => Some(s.crystal.1 - 0x108e),
@@ -535,15 +1004,28 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             _ => None,
         };
         if let Some(e) = element {
-            gu.sprite("menu    keytops3", 0xb9 + e as usize, x + 36.0, y + 4.0, 0x8080_8080);
+            // Mode 2 with the crystal not held: the element dims, a red cross (keytops3 515) at 0.3 over it.
+            let dim = hist && !s.found;
+            gu.sprite("menu    keytops3", 0xb9 + e as usize, x + 36.0, y + 4.0, if dim { 0x8058_5858 } else { 0x8080_8080 });
             super::items::upload_icons(gu, &info, std::iter::once(s.crystal.1));
             let icon = crate::render::invwin::icon_texture(s.crystal.1);
             if gu.has_image(&icon) {
                 gu.image_rect(&icon, x + 18.0, y + 4.0, 16.0, 16.0, [1.0; 4]);
             }
         }
-        let slots: Vec<(u16, u32, bool)> = s.slots[..8].iter().map(|x| (x.1, x.2, x.0 != 0)).collect();
+        if hist && !s.found && s.crystal.1 != 0 {
+            gu.sprite_scaled("menu    keytops3", 515, x + 29.0, y + 10.0, 0.3, 0.3, 0x8080_8080);
+        }
+        let slots: Vec<(u16, u32, bool)> = (0..8).map(|i| (s.slots[i].1, s.slots[i].2, s.slots[i].0 != 0 || s.missing[i])).collect();
         draw_slots(gu, &info, TSKILL1, win.frame, &slots, None, focused(Focus::Slots).then_some(s.cursor), |_| [1.0; 4]);
+        if let Some(l) = gu.layout(TSKILL1).cloned() {
+            for e in l.elements.iter().filter(|e| (1..=8).contains(&e.id) && s.missing[e.id as usize - 1]) {
+                gu.sprite_scaled("menu    keytops3", 515, x + e.x as f32 + 20.0, y + e.y as f32 + 20.0, 0.32, 0.32, 0x8080_8080);
+            }
+        }
+        if !complete(s) {
+            gu.disabled_children(TSKILL1, x, y, &[9], focused(Focus::Slots).then_some(s.cursor));
+        }
         rects.push(win.frame);
     }
     if let Some((_, _, v, max)) = s.qty

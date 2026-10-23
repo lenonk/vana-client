@@ -608,7 +608,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1167,6 +1167,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
+            // Child 10 Synthesis (FUN_10140400 case 10): cmbmenu.
+            (0, 10) => synth::open_menu(world),
             // Item 12 in the Mog House (FUN_10140400 case 0xc): myroom, SE 0002, unless visiting another's (the row is
             // disabled then: help 0xe 0x2a).
             (0, 12) if world.myroom.is_some() => {
@@ -4200,12 +4202,17 @@ impl App {
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
+                    if !world.synth.loaded
+                        && let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf())
+                    {
+                        synth::load_history(world, &dir);
+                    }
                     // Any game-state change shows the UI again.
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
                     (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
                     world.post = post::Session::default();
-                    world.synth = synth::State::default();
+                    synth::zone_reset(world);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -4446,6 +4453,9 @@ impl App {
                 }
                 NetEvent::Logout { state } => {
                     log::info!("logged out of the zone (0x00B state {state})");
+                    if let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf()) {
+                        synth::save_history(world, &dir);
+                    }
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
                         m.aix.merge(&world.commands_known);
@@ -5105,6 +5115,9 @@ impl App {
         }
         if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Items { store: Some(_), .. })) {
             items::store_num_plus(world);
+        }
+        if self.input.test(0x11, input::mode::PRESS) && synth::active(world) {
+            synth::num_plus(world);
         }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)

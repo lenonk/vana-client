@@ -1380,10 +1380,15 @@ fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> 
 
 /// The inventory list moved to x 200 (the source's +4): the picker with its colours, or look-only.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, (scroll, cursor): (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
-    let rows = picker_rows(w);
-    let mut built = crate::inventory::build_rows(&rows, info, false);
-    for (k, (r, s)) in built.iter_mut().zip(&rows).enumerate() {
+pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, list: (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    draw_rows(gu, &picker_rows(w), info, list, focused, tints, sw, sh)
+}
+
+/// The inventory list at x 200 over some rows.
+#[allow(clippy::too_many_arguments)]
+pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: &super::items::ItemCache, (scroll, cursor): (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    let mut built = crate::inventory::build_rows(rows, info, false);
+    for (k, (r, s)) in built.iter_mut().zip(rows).enumerate() {
         r.tint = match tints {
             Some(t) => t[k],
             // FUN_1014c690: NoDelivery or equipped grey.

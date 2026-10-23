@@ -40,6 +40,7 @@ mod id {
     pub const SATCHEL: u16 = 0x6f;
     pub const BANK2: u16 = 0x7b;
     pub const MAILBOX: u16 = 0x7c;
+    pub const LASTSYNTH: u16 = 0x9d;
     pub const SENDPOST: u16 = 0x7e;
     pub const SHOUT: u16 = 0x02;
     pub const YELL: u16 = 0x03;
@@ -655,6 +656,10 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0) group 7 0xa8, counted as done.
         // FUN_1007e490 / FUN_1007e560 (/mailbox, /deliverybox, /sendpost): one's own Mog House, not visiting (0xbc),
         // the status gate, the job-change cooldown, the moogle home (0x48); then c2s 0x04D PostOpen / DeliOpen.
+        id::LASTSYNTH => {
+            let a: Vec<&str> = args.iter().map(String::as_str).collect();
+            super::synth::lastsynth(w, &a)
+        }
         id::MAILBOX | id::SENDPOST => {
             if w.myroom.is_none() {
                 return Err(());

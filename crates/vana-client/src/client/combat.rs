@@ -19,10 +19,13 @@ pub struct ChatLog {
 
 impl ChatLog {
     pub fn push(&mut self, s: impl Into<String>) {
-        self.lines.push((s.into(), super::WHITE));
+        let s = s.into();
+        log::debug!(target: "chat", "{s}");
+        self.lines.push((s, super::WHITE));
     }
 
     pub fn push_colour(&mut self, s: String, colour: [u8; 4]) {
+        log::debug!(target: "chat", "{s}");
         self.lines.push((s, colour));
     }
 

@@ -227,13 +227,14 @@ impl BattleText {
     }
 
     /// English item name: form 0 singular, 1 with its article, 2 plural.
-    fn item_name(&self, id: u32, form: u8) -> String {
-        let Some(it) = self.items.as_ref().and_then(|t| t.item(id)) else { return String::new() };
-        match form {
-            0 => it.singular,
-            1 => format!("{} {}", if it.article == 1 { "an" } else { "a" }, it.singular),
-            _ => it.plural,
-        }
+    /// The noun of form 0 (bare), 1 (singular, mode 3) or 2 (plural, mode 4) and whether it takes "an".
+    fn item_noun(&self, id: u32, form: u8) -> Option<(String, u8, bool)> {
+        let n = super::names::item_noun(self.items.as_ref()?.item(id)?);
+        Some(match form {
+            0 => (n.bare, n.mode, n.an),
+            1 => (n.singular, 3, n.singular_an),
+            _ => (n.plural, 4, false),
+        })
     }
 
     /// A 0x053 system message expanded for `ctx`.
@@ -279,7 +280,10 @@ impl BattleText {
         let mut eat_space = false;
         // 7f 80 n (expander +0xc): the case of the next grammar block's text (FUN_100c2bf0).
         let mut case_mode = 0u8;
+        // An article token (FUN_1025a400: kind 1 a / an, 2 the, a count of one) waits for the next noun (line, byte).
+        let mut pending: Option<(usize, usize, bool)> = None;
         while i < s.len() {
+            let line_no = lines.len() - 1;
             let c = s[i];
             let a = s.get(i + 1).copied().unwrap_or(0);
             let out = lines.last_mut().unwrap();
@@ -302,27 +306,45 @@ impl BattleText {
                     let body = s.get(i + 2..(i + 2 + a as usize).min(s.len())).unwrap_or_default();
                     let idx = grammar_index(body.get(1..).unwrap_or_default());
                     let slot = idx as u8;
-                    let start = out.len();
+                    let mut start = out.len();
+                    // FUN_1025a2f0's noun token: the waiting article goes in front (a / an for mode 3, the, some).
+                    let mut noun = |out: &mut Vec<u8>, start: &mut usize, n: Option<(String, u8, bool)>| {
+                        let Some((text, mode, an)) = n else { return };
+                        if let Some((l, pos, definite)) = pending.take()
+                            && l == line_no
+                            && pos <= out.len()
+                        {
+                            let art = match (definite, mode) {
+                                (true, _) => "the",
+                                (false, 3) => if an { "an" } else { "a" },
+                                (false, _) => "some",
+                            };
+                            out.splice(pos..pos, art.bytes());
+                            *start = (*start).min(pos);
+                        }
+                        out.extend(encode_sjis(&text));
+                    };
                     match body.first() {
-                        // Kind 1 (FUN_100be760: FUN_1025a400(0)): nothing, nor the space after it.
-                        Some(0x01) => eat_space = true,
+                        // Kinds 1 / 2 (FUN_1025a400(0 / 1)): an article for the next noun.
+                        Some(&k @ (0x01 | 0x02)) => pending = Some((line_no, out.len(), k == 0x02)),
                         Some(0x10) => out.extend(encode_sjis(&ctx.actor.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
-                        Some(0x04) if work(slot) != 1 => out.extend(work(slot).to_string().bytes()),
-                        Some(0x04) => eat_space = true,
-                        // Items (FUN_100bc8a0): form (k % 3) name / article / plural; the id is the index itself (0x20..0x22),
-                        // or from the tables +0xc64 (0x23..0x25) / +0xc50 (0x26..0x28), both taken as the work values *(inf)*.
+                        // Kinds 3 / 4: the count, or for one the indefinite article.
+                        Some(0x03 | 0x04) if work(slot) != 1 => out.extend(work(slot).to_string().bytes()),
+                        Some(0x03 | 0x04) => pending = Some((line_no, out.len(), false)),
+                        // Items (FUN_100be760): form (k % 3) bare / singular / plural; the id is the index itself (0x20..0x22),
+                        // num (0x23..0x25) or work (0x26..0x28), num read as work here (equal for FUN_100a1ab0 lines).
                         Some(&k @ 0x20..=0x28) => {
                             let id = if k < 0x23 { idx as i32 } else { work(slot) };
-                            out.extend(encode_sjis(&self.item_name(id as u32, (k - 0x20) % 3)));
+                            noun(out, &mut start, self.item_noun(id as u32, (k - 0x20) % 3));
                         }
-                        // 0x29 / 0x2a: a count index, then an item index; "a <item>" for one, else the plural.
+                        // 0x29 / 0x2a: a count index, then an item index; the singular for one, else the plural.
                         Some(0x29 | 0x2a) => {
                             let first = body.get(1..).unwrap_or_default();
                             let item = grammar_index(first.get(grammar_len(first)..).unwrap_or_default()) as u8;
                             let n = work(slot);
-                            out.extend(encode_sjis(&self.item_name(work(item) as u32, if n == 1 { 1 } else { 2 })));
+                            noun(out, &mut start, self.item_noun(work(item) as u32, if n == 1 { 1 } else { 2 }));
                         }
                         _ => {}
                     }
@@ -374,7 +396,12 @@ impl BattleText {
                     out.extend(encode_sjis(&s.unwrap_or_default()));
                     2
                 }
-                0x0a | 0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1e => 2,
+                // 0a n (0x100c24aa): num[n] as "%d" (the queue entry +0xc64; equal to work for FUN_100a1ab0 lines).
+                0x0a => {
+                    out.extend(work(a).to_string().bytes());
+                    2
+                }
+                0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1e => 2,
                 0x7f => match a {
                     0x80 => {
                         case_mode = s.get(i + 2).copied().unwrap_or(0);
@@ -387,7 +414,7 @@ impl BattleText {
                         out.extend(format!("{} gil", separated(v as u32)).bytes());
                         3
                     }
-                    0x34..=0x36 | 0x81 | 0x94..=0x96 | 0xa0..=0xb5 => 3,
+                    0x34..=0x36 | 0x81 | 0xa0..=0xb5 => 3,
                     0x38 => 4,
                     0x84 => {
                         // Names of the set bits of work[4], kind 3 entries n * 0x20 + bit, space separated.
@@ -406,8 +433,20 @@ impl BattleText {
                         out.extend(Self::msg_of(&self.abilities, work(s.get(i + 2).copied().unwrap_or(0)) as u16 as i32 + 0x200));
                         3
                     }
-                    0x97 => {
-                        out.extend(work(s.get(i + 2).copied().unwrap_or(0)).to_string().bytes());
+                    // 7f 94 / 98 / 99 / 9a n: num[n] as %02d / %03d / %04d / %05d; 95 "$%x" of num[n]; 96 "%" and its binary
+                    // digits; 97 "$%x" of work[n]; 9b work[n] x 0.1 as %.1f (FUN_100c1650; num read as work here).
+                    0x94..=0x9b => {
+                        let v = work(s.get(i + 2).copied().unwrap_or(0));
+                        let t = match a {
+                            0x94 => format!("{v:02}"),
+                            0x98 => format!("{v:03}"),
+                            0x99 => format!("{v:04}"),
+                            0x9a => format!("{v:05}"),
+                            0x95 | 0x97 => format!("${:x}", v),
+                            0x96 => format!("%{:b}", v),
+                            _ => format!("{:.1}", v as f32 * 0.1),
+                        };
+                        out.extend(t.bytes());
                         3
                     }
                     // Alternatives [a/b] (FUN_100bbc10); 99 picks none.
@@ -430,6 +469,9 @@ impl BattleText {
                         out.extend(text);
                         len
                     }
+                    // The handlers 0x80..0xb7 read an operand (3 bytes) but 0x8f..0x93; past the table (0x100c2b38) markers such as fb / fc are 2.
+                    0x93 => 2,
+                    0x80..=0xb7 => 3,
                     _ => 2,
                 },
                 0x20..0x7f => {
@@ -545,7 +587,22 @@ mod tests {
         assert_eq!(bt.system(0xaa, &ctx).unwrap().lines, vec!["Slot 3:".to_string(), "1 gil, sent to you by Lnxcsfix.".to_string()]);
     }
 
-    /// Synthesis lines (7031 0xa4 / 0xcc): 7f 80 1 capitalises the article; grammar kind 1 takes its space with it.
+    /// A skill up (message 38): 7f 9b prints work[1] x 0.1 as "%.1f"; /lastsynth check's material: 0a, then the
+    /// singular with no article (0x111).
+    #[test]
+    fn skill_up_and_counts() {
+        let Some(b) = load() else { return };
+        let ctx = Ctx { target: pc("Lnxcsfix"), work: [49, 1, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.expand(38, &ctx).unwrap().lines, ["Lnxcsfix's woodworking skill rises 0.1 points."]);
+        let ctx = Ctx { work: [698, 1, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.system(0x111, &ctx).unwrap().lines, ["1 ash log."]);
+        let ctx = Ctx { work: [698, 2, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.system(0x111, &ctx).unwrap().lines, ["2 ash logs."]);
+        let ctx = Ctx { work: [715, 1, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.system(0xa0, &ctx).unwrap().lines, ["You synthesized a piece of ash lumber."]);
+    }
+
+    /// Synthesis lines (7031 0xa4 / 0xcc): 7f 80 1 capitalises the article; grammar kind 1 is the article token.
     #[test]
     fn synthesis_lost_lines() {
         let Some(bt) = load() else { return };
