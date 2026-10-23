@@ -163,7 +163,7 @@ pub enum NetEvent {
     Wpos { id: u32, pos: [f32; 3], dir: u8, mode: u8 },
     ZoneText(ZoneText),
     /// 0x01C: container sizes (ItemNum, 1 + size).
-    ItemMax([u8; 18]),
+    ItemMax([u8; 18], [u16; 18]),
     /// 0x01E: count of a slot (0 = emptied).
     ItemNum { container: u8, index: u8, count: u32 },
     /// 0x01F / 0x020: item in a slot.
@@ -652,7 +652,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         kind: p.u8(0x1c),
                         name: text(&p, 0x1e, 32),
                     }))?,
-                    0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i))))?,
+                    0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
                     0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc) })?,
                     0x020 => {

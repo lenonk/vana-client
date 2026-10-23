@@ -29,6 +29,11 @@ mod id {
     pub const SAY: u16 = 0x01;
     pub const MAP: u16 = 0x4f;
     pub const RECYCLE: u16 = 0x7a;
+    pub const BANK: u16 = 0x6c;
+    pub const LOCKER: u16 = 0x6d;
+    pub const STORAGE: u16 = 0x6e;
+    pub const SATCHEL: u16 = 0x6f;
+    pub const BANK2: u16 = 0x7b;
     pub const SHOUT: u16 = 0x02;
     pub const YELL: u16 = 0x03;
     pub const TELL: u16 = 0x04;
@@ -559,9 +564,27 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
-        // FUN_1007e420: FUN_101daf70(0x11), the bin beside the inventory; Escape closes both.
-        id::RECYCLE => {
-            super::items::open_bin(w, false);
+        // FUN_1007e250 .. FUN_1007e440 (flags 0x51): the storage views; a 0 from the opener is the failure path.
+        id::BANK | id::LOCKER | id::STORAGE => {
+            let c = match cid {
+                id::BANK => 1,
+                id::LOCKER => 4,
+                _ => 2,
+            };
+            if super::items::open_dae10(w, c) { Ok(()) } else { Err(()) }
+        }
+        // /satchel needs ItemNum[5] >= 30; /sack, /case, /wardrobe, /wardrobe2..8, /recycle (0x7a, the bin).
+        id::SATCHEL..=id::RECYCLE => {
+            let c = match cid {
+                0x6f..=0x72 => (cid - 0x6a) as u8,
+                0x73..=0x79 => (cid - 0x69) as u8,
+                _ => 17,
+            };
+            if super::items::open_daf70(w, c, c == 5) { Ok(()) } else { Err(()) }
+        }
+        // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0, not parsed) group 7 0xa8, counted as done.
+        id::BANK2 => {
+            refuse(w, 0xa8);
             Ok(())
         }
         id::RANDOM => {

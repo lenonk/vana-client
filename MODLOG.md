@@ -4516,3 +4516,34 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Not done: cursor memory per type (+0x74 / +0x98 / +0x70 tables), the mouse on the sort windows, emotes / mounts.
 - Live (Lnxcsfix, White Magic after !addallspells): Auto put Cura after Curaga V and Raise later; Manual moved Cure
   two rows down (Cure II, Cure III, Cure).
+
+## Storage views (2026-10-23; spec: scratchpad storage/SPEC.md of that session)
+
+- Every container uses the bin's two-list view: "menu    bank" (16, 48) on the storage container, the inventory list
+  at (200, 48), "menu    itmsortw" (384, 48) but for the bin. Text commands (table 0x10355408, handlers 0x10356e30,
+  flags 0x51): /bank 0x6c, /locker 0x6d, /storage 0x6e -> FUN_101dae10 (containers 1, 4, 2); /satchel 0x6f, /sack,
+  /case, /wardrobe 0x72, /wardrobe2..8 0x73..0x79, /recycle 0x7a -> FUN_101daf70 (5, 6, 7, 8, 10..16, 17); /bank2 0x7b
+  checks Safe 2 (s2c 0x067 @0x27 bit 0) first, else group 7 0xa8 counted as success.
+- FUN_101dae10: outside the Mog House a read-only list of the container (the item list at (16, 48), every row
+  0x80404040, title in top-bar slot 2); the Locker without a lease (0x01C ItemNum2[4] == 0) read-only plus group 7
+  0xb6; the moogle away (zone not in table 0x1035b680: 230-232, 234-236, 238-241, 243-246, 48, 50, 80, 87, 94, 256,
+  257, 280) read-only plus 0x48; visiting another's Mog House 0xbc (not parsed); else the view at the moogle (bank
+  +0x70). FUN_101daf70: gate 0x44; Satchel needs ItemNum[5] >= 30 (else a silent failure, the command error path);
+  opens anywhere, at the moogle only in the Mog House of a residential zone.
+- Row colours (FUN_101db220, first match): the bin's inventory side; destination full; bin rules; installed
+  furniture in the Safe (grey on this floor, 0x80602020 on another); equipped (0, wardrobes); a wardrobe takes only
+  records with level and races; no furniture into Storage; containers 1 / 2 / 4 / 9 away from the moogle; the picked
+  row orange; else white. Not done: wardrobe 3..8 feature bits, mannequin-worn Storage items, the equipped linkshell
+  (s2c 0x0E0).
+- Enter works on both sides: from / to by side, a stack through itemctrl, c2s 0x029 {n, from, to, index, 0x52};
+  the inventory side refuses lock 0x19. Right on the bank / Left on the inventory side move the focus with the
+  visible row (SE 0013); Ctrl / Alt + Right / Left page. Titles by container (0xd: 3 Mog Safe, 0x25, 0x8b Locker,
+  0x97, 0x9e, 0xa6, 0xa8, 0xb5, 0xb9.., 0xbf.., 0xc5), row help names the destination (0xe 0x42d..0x43c).
+- itmsortw (Num+ from the focused side, SE 0013): Auto (sortyn 0xc 0x3d; c2s 0x03A {c} sent twice for a storage
+  container, as retail) and Manual (FUN_101dbed0 = itmsort2's Manual with the container; equipped rows green
+  0x80509050). Row 3 Switch (itmstora) and the Alt+Right / Alt+Left container cycle are not done yet.
+- 0x01C ItemNum2 (u16 x 18 @0x24) is parsed now. Escape closes the view (the bin returns to itmsort2 when it came
+  from there).
+- Live (Lnxcsfix, Southern San d'Oria): /case moved 2 of 3 Distilled Water in through itemctrl and all back;
+  /wardrobe greyed the non-gear rows; /bank read-only "Mog Safe"; /bank2 "That cannot be used right now."; /satchel
+  "...A command error occurred.".

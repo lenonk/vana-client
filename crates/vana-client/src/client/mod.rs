@@ -3967,7 +3967,7 @@ impl App {
                     world.scan = Default::default();
                     // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
                     // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
-                    world.inv = items::Inventory { sizes: world.inv.sizes, ..Default::default() };
+                    world.inv = items::Inventory { sizes: world.inv.sizes, sizes2: world.inv.sizes2, ..Default::default() };
                     if let Some(ev) = login_event {
                         event::queue(world, ev);
                     }
@@ -4220,7 +4220,7 @@ impl App {
                     event::position_ack(world, mode);
                 }
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
-                NetEvent::ItemMax(s) => world.inv.sizes = s,
+                NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
@@ -4809,9 +4809,12 @@ impl App {
         if self.input.test(0x11, input::mode::PRESS) && (world.magic.is_some() || world.ability.is_some()) {
             magic::num_plus(world);
         }
+        if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Items { store: Some(_), .. })) {
+            items::store_num_plus(world);
+        }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)
-            && let Some(items::Win::Items { direct: false, sub: None, manual: None, bin: None, sort, .. }) = &mut world.win
+            && let Some(items::Win::Items { direct: false, sub: None, manual: None, store: None, sort, .. }) = &mut world.win
         {
             *sort = match sort {
                 Some(_) => None,

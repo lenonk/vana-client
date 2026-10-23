@@ -43,6 +43,8 @@ pub struct CharStats {
 pub struct Inventory {
     /// 0x01C ItemNum: 1 + size per container.
     pub sizes: [u8; 18],
+    /// 0x01C ItemNum2 (u16 @0x24): the Locker's is 0 without a lease (FUN_101cc470).
+    pub sizes2: [u16; 18],
     /// (container, index) -> (item id, count).
     pub slots: BTreeMap<(u8, u8), (u16, u32)>,
     /// Equipment slot -> (container, index).
@@ -152,7 +154,7 @@ impl ItemInfo for ItemCache {
 pub enum Win {
     /// Main menu Items: the inventory list, and iuse / sortyn over it. `direct`: the action menu's list of usable items,
     /// where Enter uses at once (FUN_1012b880 case 8, FUN_101f0a10).
-    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>>, bin: Option<Bin> },
+    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>>, store: Option<Storage> },
     /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
     Equip { row: usize, col: usize, pick: Option<Pick> },
 }
@@ -165,26 +167,45 @@ pub struct SortWin {
     pub ask: Option<bool>,
 }
 
-/// The recycle bin view (FUN_101daf70(0x11) -> FUN_101dc880 / FUN_101dc700): "menu    bank" on container 17 at (16, 48)
-/// beside the inventory list at (200, 48), its rows all grey; the list's scroll / cursor stay the inventory side's.
+/// The storage view (FUN_101dc880 / FUN_101dc700): "menu    bank" on a container at (16, 48) beside the inventory list
+/// at (200, 48), itmsortw at (384, 48) but for the recycle bin; or, `read_only`, the container alone in the item list
+/// with every row grey (FUN_101dae10 away from the moogle). The inventory side keeps the list's scroll / cursor.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Bin {
+pub struct Storage {
+    /// The bank side's container (17 = the recycle bin).
+    pub bank: u8,
     pub scroll: usize,
     pub cursor: usize,
-    /// Focus on the bin (else the inventory side).
-    pub on_bin: bool,
+    /// Focus on the bank side (else the inventory side).
+    pub on_bank: bool,
     /// "menu    itemctrl" for a stack.
     pub qty: Option<Qty>,
-    /// Opened from itmsort2 (list +0x90): Escape returns there, else the view closes.
+    /// The bin opened from itmsort2 (list +0x90): Escape returns there, else the view closes.
     pub from_menu: bool,
+    /// Bank +0x70: at a moogle (Mog Safe, Storage, Locker and Safe 2 rows are grey without it).
+    pub at_moogle: bool,
+    pub read_only: bool,
+    /// itmsortw focused: its cursor, the side it serves, Auto's sortyn.
+    pub sortw: Option<SortW>,
+    /// Manual Sort (FUN_101dbed0) on a side (true: the bank), with the held slot.
+    pub manual: Option<(bool, Option<u8>)>,
 }
 
-/// The quantity window's pick: the bin slot, the value 1..max.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SortW {
+    pub cursor: u16,
+    pub bank_side: bool,
+    pub ask: Option<bool>,
+}
+
+/// The quantity window's pick: the slot, the value 1..max, the move's containers.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Qty {
     pub index: u8,
     pub value: u32,
     pub max: u32,
+    pub from: u8,
+    pub to: u8,
 }
 
 /// The windows over the list: "menu    iuse" (FUN_101f2bb0: 1 Use, 2 Drop) for the slot it opened on, and
@@ -207,14 +228,14 @@ pub struct Pick {
 }
 
 pub fn open_items(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, bin: None });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, store: None });
     w.menu = None;
     w.action_menu = None;
 }
 
 /// The action menu's Items: only usable items, no iuse or sort window.
 pub fn open_direct(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true, sort: None, manual: None, bin: None });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true, sort: None, manual: None, store: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -252,10 +273,13 @@ pub fn focus(w: &World) -> Option<(&'static str, u16)> {
         Win::Items { sub: Some(Sub::Drop { yes, .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
         Win::Items { sort: Some(SortWin { ask: Some(yes), .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
         Win::Items { sort: Some(s), .. } => Some(("menu    itmsort2", s.cursor)),
-        Win::Items { bin: Some(b), cursor, .. } => Some(match (b.qty, b.on_bin) {
-            (Some(_), _) => ("menu    itemctrl", 1),
-            (None, true) => ("menu    bank", b.cursor as u16 + 1),
-            (None, false) => ("menu    inventor", *cursor as u16 + 1),
+        Win::Items { store: Some(b), cursor, .. } => Some(match (b.qty, b.sortw, b.on_bank) {
+            (Some(_), ..) => ("menu    itemctrl", 1),
+            (None, Some(sw), _) if sw.ask.is_some() => ("menu    sortyn", if sw.ask == Some(true) { 1 } else { 2 }),
+            (None, Some(sw), _) => ("menu    itmsortw", sw.cursor),
+            _ if b.read_only => ("menu    inventor", b.cursor as u16 + 1),
+            (None, None, true) => ("menu    bank", b.cursor as u16 + 1),
+            (None, None, false) => ("menu    inventor", *cursor as u16 + 1),
         }),
         Win::Items { cursor, .. } => Some(("menu    inventor", *cursor as u16 + 1)),
         Win::Equip { pick: Some(p), .. } => Some(("menu    inventor", p.cursor as u16 + 1)),
@@ -316,8 +340,8 @@ pub fn key(w: &mut World, key: egui::Key, page: bool) -> bool {
     let direct = matches!(w.win, Some(Win::Items { direct: true, .. }));
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
-    if matches!(w.win, Some(Win::Items { bin: Some(_), .. })) {
-        bin_key(w, &info, key, page);
+    if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
+        store_key(w, &info, key, page);
         return true;
     }
     let mut send = None;
@@ -600,15 +624,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     match &w.win {
         // The bin (group 0xd 0xc5 "Recycling Bin", rows 0xe 0x42d), the inventory side ("Items", rows without help),
         // itemctrl (0xe 0x10c, 0xd 0x3e).
-        Some(Win::Items { bin: Some(b), .. }) => {
-            let (help, title) = match (b.qty, b.on_bin) {
-                (Some(_), _) => (gu.menu_msg(0x10c, ""), 0x3e),
-                (None, true) => (gu.menu_msg(0x42d, ""), 0xc5),
-                (None, false) => (String::new(), 2),
-            };
-            bars.help[1] = help;
-            bars.title[1] = gu.title_msg(title).unwrap_or_default();
-        }
+        Some(Win::Items { store: Some(b), .. }) => store_bars(gu, b, bars),
         Some(Win::Items { sub: Some(Sub::Drop { .. }), .. }) => {
             bars.help[1] = gu.lobby_msg(0x0c, 0x3e, "");
             bars.title[2] = gu.title_msg(2).unwrap_or_default();
@@ -635,7 +651,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
         // FUN_101f2740: the list and iteminfo are hidden while the item's target prompt is up.
         Win::Items { .. } if item_prompt(w) => return None,
         // FUN_101dca80: the bin side shows its cursor row; mode 1 (130, 240) clears itemctrl.
-        Win::Items { bin: Some(b), .. } if b.on_bin => (bin_rows(w).get(b.scroll + b.cursor)?.clone(), BIN, if b.qty.is_some() { 1 } else { 0 }),
+        Win::Items { store: Some(b), .. } if b.on_bank || b.read_only => (store_rows(w, b.bank).get(b.scroll + b.cursor)?.clone(), b.bank, if b.qty.is_some() { 1 } else { 0 }),
         Win::Items { scroll, cursor, direct, .. } => (listed(w, *direct).get(scroll + cursor)?.clone(), INVENTORY, 0),
         Win::Equip { pick: Some(p), .. } => {
             let i = *p.indexes.get(p.scroll + p.cursor)?;
@@ -735,10 +751,15 @@ fn use_entry(w: &mut World, index: u8, id: u16) {
 /// FUN_1021c7e0 (sort type config 0xca): 0 sorts the view by the record's key (+0xc, our `resource`) then id, 1 pulls
 /// identical ids next to their first; then c2s 0x03A {container} merges the stacks.
 fn auto_sort(w: &mut World) {
+    auto_sort_c(w, INVENTORY);
+}
+
+/// FUN_1021c7e0 on a container; 0x03A {c} is sent again by the storage view's itmsortw (LAB_101f3780: two in all).
+fn auto_sort_c(w: &mut World, c: u8) {
     let grouped = w.game.get(0xca) == 1;
     let info = w.item_info.clone();
     let key = |s: &Slot| (info.as_ref().and_then(|c| c.item(s.id)).map_or(0xffff, |it| it.resource), s.id);
-    let mut v = w.inv.viewed(INVENTORY).into_iter().filter(|s| s.index != 0).collect::<Vec<_>>();
+    let mut v = w.inv.viewed(c).into_iter().filter(|s| s.index != 0).collect::<Vec<_>>();
     if grouped {
         let mut out: Vec<Slot> = Vec::new();
         for s in v {
@@ -751,22 +772,27 @@ fn auto_sort(w: &mut World) {
     } else {
         v.sort_by_key(key);
     }
-    let gil = w.inv.order.get(&INVENTORY).is_some_and(|o| o.contains(&0));
+    let gil = w.inv.order.get(&c).is_some_and(|o| o.contains(&0));
     let order: Vec<u8> = gil.then_some(0).into_iter().chain(v.iter().map(|s| s.index)).collect();
-    w.inv.order.insert(INVENTORY, order);
-    let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: 0u32.to_le_bytes().to_vec() });
+    w.inv.order.insert(c, order);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: (c as u32).to_le_bytes().to_vec() });
 }
 
 /// FUN_101f0b30's second pick: the same row splits one off (to index 0x52, inf: the server's first free slot) when
 /// the stack holds more than one and stacks; another row of the same item takes the whole first stack; then the view
 /// entry moves (FUN_1021cac0, client only).
 fn manual_move(w: &mut World, from: u8, to: &Slot) {
-    let Some(&(id, count)) = w.inv.slots.get(&(INVENTORY, from)) else { return };
+    manual_move_c(w, INVENTORY, from, to);
+}
+
+/// FUN_101dbed0: the same in a storage container.
+fn manual_move_c(w: &mut World, c: u8, from: u8, to: &Slot) {
+    let Some(&(id, count)) = w.inv.slots.get(&(c, from)) else { return };
     let stack = w.item_info.as_ref().and_then(|c| c.item(id)).map_or(1, |it| it.stack);
     let mv = |w: &World, n: u32, i1: u8, i2: u8| {
         let mut b = vec![0u8; 8];
         b[0..4].copy_from_slice(&n.to_le_bytes());
-        (b[4], b[5], b[6], b[7]) = (INVENTORY, INVENTORY, i1, i2);
+        (b[4], b[5], b[6], b[7]) = (c, c, i1, i2);
         let _ = w.net.commands.send(NetCommand::Packet { id: 0x029, body: b });
     };
     if to.index == from {
@@ -778,7 +804,7 @@ fn manual_move(w: &mut World, from: u8, to: &Slot) {
     if to.id == id {
         mv(w, count, from, to.index);
     }
-    if let Some(o) = w.inv.order.get_mut(&INVENTORY)
+    if let Some(o) = w.inv.order.get_mut(&c)
         && let (Some(a), Some(b)) = (o.iter().position(|&i| i == from), o.iter().position(|&i| i == to.index))
     {
         let x = o.remove(a);
@@ -865,7 +891,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let slots = w.inv.slots_of(INVENTORY);
     match win {
         Win::Items { .. } if item_prompt(w) => {}
-        Win::Items { scroll, cursor, bin: Some(b), .. } => rects.extend(draw_bin(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
+        Win::Items { scroll, cursor, store: Some(b), .. } => rects.extend(draw_storage(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
         Win::Items { scroll, cursor, sub, direct, sort, manual, .. } => {
             let shown = listed(w, *direct);
             let mut rows = build_rows(&shown, info.as_ref(), false);
@@ -961,124 +987,378 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
-/// FUN_101daf70(0x11): status gate 0x44 (synthesis; the costume bit is not tracked here), then the bin beside the
-/// inventory, from itmsort2 (`from_menu`) or `/recycle`. No zone or Mog House rule.
-pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
-    if !super::textcmd::status_gate(w, 0x44) {
-        return false;
+/// Bank-side titles by container (FUN_1011ae30's table, also the inventory side's): group 0xd.
+fn title_id(c: u8) -> usize {
+    match c {
+        1 => 3,
+        2 => 0x25,
+        4 => 0x8b,
+        5 => 0x97,
+        6 => 0x9e,
+        7 => 0xa6,
+        8 => 0xa8,
+        9 => 0xb5,
+        10..=12 => 0xb9 + (c as usize - 10),
+        13..=16 => 0xbf + (c as usize - 13),
+        17 => 0xc5,
+        _ => 2,
     }
-    let b = Bin { scroll: 0, cursor: 0, on_bin: true, qty: None, from_menu };
+}
+
+/// FUN_101db0a0: a row's help names where it goes (group 0xe), 0 for none.
+fn dest_help(c: u8) -> usize {
+    match c {
+        0 => 0x42d,
+        1 => 0x42e,
+        9 => 0x42f,
+        2 => 0x430,
+        4 => 0x431,
+        5 => 0x432,
+        6 => 0x433,
+        7 => 0x434,
+        8 => 0x435,
+        10..=16 => 0x436 + (c as usize - 10),
+        _ => 0,
+    }
+}
+
+/// FUN_10097b50: the residential zones where the moogle is at hand (table 0x1035b680).
+fn moogle_zone(zone: u16) -> bool {
+    matches!(zone, 230..=232 | 234..=236 | 238..=241 | 243..=246 | 48 | 50 | 80 | 87 | 94 | 256 | 257 | 280)
+}
+
+fn wardrobe(c: u8) -> bool {
+    matches!(c, 8 | 10..=16)
+}
+
+/// A container's rows in view order (the inventory as the item list shows it).
+fn store_rows(w: &World, c: u8) -> Vec<Slot> {
+    if c == INVENTORY {
+        return listed(w, false);
+    }
+    w.inv.viewed(c).into_iter().filter(|s| s.index != 0 && s.id != 0).collect()
+}
+
+/// FUN_1021cc60: an empty slot in 1..size.
+fn has_free(w: &World, c: u8) -> bool {
+    (w.inv.sizes[c as usize] as usize).saturating_sub(1) > w.inv.slots_of(c).iter().filter(|x| x.index != 0).count()
+}
+
+/// The two-list view on `bank` (FUN_101dc880): focused on the bank side.
+fn open_view(w: &mut World, bank: u8, at_moogle: bool, read_only: bool, from_menu: bool) {
+    let st = Storage { bank, scroll: 0, cursor: 0, on_bank: true, qty: None, from_menu, at_moogle, read_only, sortw: None, manual: None };
     match &mut w.win {
-        Some(Win::Items { bin, sort, direct: false, .. }) if from_menu => {
-            *bin = Some(b);
+        Some(Win::Items { store, sort, direct: false, .. }) if from_menu => {
+            *store = Some(st);
             *sort = None;
         }
         _ => {
-            w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, bin: Some(b) });
+            w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, store: Some(st) });
             w.menu = None;
             w.action_menu = None;
         }
     }
+}
+
+/// FUN_101daf70(0x11): the recycle bin, from itmsort2 (`from_menu`) or `/recycle`.
+pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
+    if !super::textcmd::status_gate(w, 0x44) {
+        return false;
+    }
+    open_view(w, BIN, false, false, from_menu);
     true
 }
 
-/// The bin's rows: container 17 in view order.
-fn bin_rows(w: &World) -> Vec<Slot> {
-    w.inv.viewed(BIN).into_iter().filter(|s| s.index != 0 && s.id != 0).collect()
+/// FUN_101daf70(c, need_satchel, 0): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the costume bit and the job
+/// change cooldown are not tracked); a missing Satchel (ItemNum < 30) fails silently; at a moogle only in the Mog
+/// House of a residential zone, else the Safe / Storage / Locker rows stay grey. Opens anywhere.
+pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool) -> bool {
+    if c == BIN {
+        return open_bin(w, false);
+    }
+    if !super::textcmd::status_gate(w, 0x44) || (need_satchel && w.inv.sizes[5] < 0x1e) {
+        return false;
+    }
+    let at_moogle = w.myroom.is_some() && w.zone.is_some_and(moogle_zone);
+    open_view(w, c, at_moogle, false, false);
+    true
 }
 
-/// FUN_101db220 for a bin row: grey with no free inventory slot, or a Rare item already held (but in containers 3 /
-/// 17); orange for the row whose quantity is being set; else white.
-fn bin_tint(w: &World, info: &ItemCache, s: &Slot, picked: Option<u8>) -> u32 {
-    let free = (w.inv.sizes[0] as usize).saturating_sub(1) > w.inv.slots_of(INVENTORY).iter().filter(|x| x.index != 0).count();
-    let rare = info.item(s.id).is_some_and(|it| it.flags & 0x8000 != 0) && w.inv.slots.iter().any(|(&(c, _), &(id, _))| id == s.id && c != 3 && c != BIN);
-    if !free || rare {
-        crate::inventory::TINT_DIM
-    } else if picked == Some(s.index) {
+/// FUN_101dae10(src, c, fn, 0): Mog Safe 1, Storage 2, Locker 4, Safe 2 9. Outside the Mog House the container alone
+/// in a read-only list; the Locker without a lease (ItemNum2[4] == 0) read-only with group 7 0xb6; the moogle away
+/// read-only with 0x48; else the view at the moogle. (Visiting another's Mog House, 0xbc, needs s2c 0x067 @0x20:
+/// not parsed.)
+pub fn open_dae10(w: &mut World, c: u8) -> bool {
+    if !super::textcmd::status_gate(w, 0x44) {
+        return false;
+    }
+    let refuse = if w.myroom.is_none() {
+        None
+    } else if c == 4 && w.inv.sizes2[4] == 0 {
+        Some(0xb6)
+    } else if !w.zone.is_some_and(moogle_zone) {
+        Some(0x48)
+    } else {
+        open_view(w, c, true, false, false);
+        return true;
+    };
+    open_view(w, c, false, true, false);
+    if let Some(id) = refuse {
+        super::textcmd::refuse(w, id);
+    }
+    true
+}
+
+/// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
+/// Not done: the wardrobe 3..8 feature bits (rule 4, LSB enables them), the mannequin rule (6b), the equipped
+/// linkshell (7, s2c 0x0E0).
+fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
+    use crate::inventory::{TINT_DIM, TINT_WHITE};
+    let (own, dest) = if bank_side { (st.bank, INVENTORY) } else { (INVENTORY, st.bank) };
+    let it = info.item(s.id);
+    let furniture = it.as_ref().is_some_and(|it| matches!(it.item_type, 10 | 12 | 14));
+    if (!bank_side && st.bank == BIN) || !has_free(w, dest) {
+        return TINT_DIM;
+    }
+    if own == BIN {
+        let rare = it.as_ref().is_some_and(|it| it.flags & 0x8000 != 0) && w.inv.slots.iter().any(|(&(c, _), &(id, _))| id == s.id && c != 3 && c != BIN);
+        if s.id == 0 || rare {
+            return TINT_DIM;
+        }
+    }
+    // Installed furniture in the Safe: grey on this floor, dark red on another.
+    if matches!(own, 1 | 9)
+        && furniture
+        && let Some(e) = w.inv.ext.get(&(own, s.index)).filter(|e| e[1] & 0x40 != 0)
+    {
+        if w.myroom.as_ref().is_some_and(|r| r.floor == e[1] & 3) {
+            return TINT_DIM;
+        }
+        return 0x8060_2020;
+    }
+    let equipped = (own == INVENTORY || wardrobe(own)) && w.inv.equip.contains(&Some((own, s.index)));
+    let gear = it.as_ref().is_some_and(|it| it.level != 0 && it.races != 0);
+    let moogle_only = |c: u8| matches!(c, 1 | 2 | 4 | 9);
+    if equipped || (wardrobe(dest) && !gear) || (dest == 2 && furniture) || (!st.at_moogle && (moogle_only(own) || moogle_only(dest))) {
+        return TINT_DIM;
+    }
+    if st.qty.is_some_and(|q| q.index == s.index && q.from == own) {
+        return 0x8080_4020;
+    }
+    TINT_WHITE
+}
+
+/// FUN_101dbdb0, Manual's colours: the held row orange, equipped gear green (still movable), else white.
+fn manual_tint(w: &World, c: u8, held: Option<u8>, s: &Slot) -> u32 {
+    if held == Some(s.index) {
         0x8080_4020
+    } else if (c == INVENTORY || wardrobe(c)) && w.inv.equip.contains(&Some((c, s.index))) {
+        0x8050_9050
     } else {
         crate::inventory::TINT_WHITE
     }
 }
 
-/// FUN_100eb710 from the bin: c2s 0x029 {n, 17, 0, slot, 0x52} (the inventory's first free slot).
-fn send_bin(w: &World, index: u8, n: u32) {
+/// FUN_100eb710: c2s 0x029 {n, from, to, slot, 0x52} (0x52: the destination's first free slot).
+fn send_move(w: &World, from: u8, to: u8, index: u8, n: u32) {
     let mut b = vec![0u8; 8];
     b[0..4].copy_from_slice(&n.to_le_bytes());
-    (b[4], b[5], b[6], b[7]) = (BIN, INVENTORY, index, 0x52);
+    (b[4], b[5], b[6], b[7]) = (from, to, index, 0x52);
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x029, body: b });
 }
 
-/// The bin view's keys (FUN_101db690, FUN_101dcb80, itemctrl FUN_1013a6c0): Right on the bin / Left on the inventory
-/// moves the focus (SE 0013); Enter on a bin row sends one item at once or opens itemctrl for a stack (SE 0002), on a
-/// grey row or the inventory side SE 0004; Escape leaves (to itmsort2 when it came from there). itemctrl: Up / Down
-/// +-1 (the step of 10 after a long hold is not done), Right 1, Left the count, Enter sends, Escape drops it.
-fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
+/// Num+ in the storage view (FUN_101db690 case 8): itmsortw for the focused side, SE 0013; nothing for the bin or the
+/// read-only list.
+pub fn store_num_plus(w: &mut World) {
+    let Some(Win::Items { store: Some(st), .. }) = &mut w.win else { return };
+    if st.bank == BIN || st.read_only || st.qty.is_some() || st.manual.is_some() {
+        return;
+    }
+    st.sortw = match st.sortw {
+        Some(_) => None,
+        None => Some(SortW { cursor: 1, bank_side: st.on_bank, ask: None }),
+    };
+    w.sounds.push(crate::audio::Ui::Close as u32);
+}
+
+/// The storage view's keys: FUN_101db690 (both sides), FUN_101dcb80 / FUN_101f2bb0 (Enter), itemctrl FUN_1013a6c0,
+/// itmsortw FUN_101f3a50, Manual FUN_101dbed0.
+fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
     use crate::audio::Ui;
-    let Some(Win::Items { bin: Some(b), scroll, cursor, .. }) = &w.win else { return };
+    use egui::Key as K;
+    let Some(Win::Items { store: Some(b), scroll, cursor, .. }) = &w.win else { return };
     let (mut b, mut scroll, mut cursor) = (*b, *scroll, *cursor);
-    let bins = bin_rows(w);
-    let inv = listed(w, false).len();
+    let banks = store_rows(w, b.bank);
+    let inv = listed(w, false);
     let (mut close, mut back) = (false, false);
     if let Some(mut q) = b.qty {
+        // itemctrl: Up / Down +-1 (the step of 10 after a long hold is not done), Right 1, Left the count.
         match key {
-            egui::Key::ArrowUp => q.value = (q.value + 1).min(q.max),
-            egui::Key::ArrowDown => q.value = q.value.saturating_sub(1).max(1),
-            egui::Key::ArrowRight => q.value = 1,
-            egui::Key::ArrowLeft => q.value = q.max,
+            K::ArrowUp => q.value = (q.value + 1).min(q.max),
+            K::ArrowDown => q.value = q.value.saturating_sub(1).max(1),
+            K::ArrowRight => q.value = 1,
+            K::ArrowLeft => q.value = q.max,
             _ => {}
         }
         b.qty = Some(q);
         match key {
-            egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowRight | egui::Key::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
-            egui::Key::Enter => {
-                send_bin(w, q.index, q.value);
+            K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+            K::Enter => {
+                send_move(w, q.from, q.to, q.index, q.value);
                 b.qty = None;
                 w.sounds.push(Ui::Select as u32);
             }
-            egui::Key::Escape => {
+            K::Escape => {
                 b.qty = None;
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            _ => {}
+        }
+    } else if let Some(mut sw) = b.sortw {
+        let c = if sw.bank_side { b.bank } else { INVENTORY };
+        if let Some(yes) = sw.ask {
+            match key {
+                K::ArrowUp | K::ArrowDown => {
+                    sw.ask = Some(!yes);
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+                // LAB_101f3780: Yes sorts the side's container (0x03A {c} here and again in the sort), focus back.
+                K::Enter | K::Escape => {
+                    let yes = yes && key == K::Enter;
+                    sw.ask = None;
+                    w.sounds.push(if yes { Ui::Select } else { Ui::Cancel } as u32);
+                    if yes {
+                        if c != INVENTORY {
+                            let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: (c as u32).to_le_bytes().to_vec() });
+                        }
+                        auto_sort_c(w, c);
+                        b.sortw = None;
+                        b.on_bank = sw.bank_side;
+                        write_store(w, b, scroll, cursor);
+                        return;
+                    }
+                }
+                _ => {}
+            }
+            b.sortw = Some(sw);
+        } else {
+            match key {
+                K::ArrowUp => sw.cursor = if sw.cursor <= 1 { 3 } else { sw.cursor - 1 },
+                K::ArrowDown => sw.cursor = if sw.cursor >= 3 { 1 } else { sw.cursor + 1 },
+                K::Enter if sw.cursor == 1 => {
+                    sw.ask = Some(false);
+                    w.sounds.push(Ui::Select as u32);
+                }
+                K::Enter if sw.cursor == 2 => {
+                    b.manual = Some((sw.bank_side, None));
+                    b.on_bank = sw.bank_side;
+                    w.sounds.push(Ui::Select as u32);
+                    b.sortw = None;
+                    write_store(w, b, scroll, cursor);
+                    return;
+                }
+                // Row 3 Switch (itmstora) is not done.
+                K::Enter => {
+                    log::info!("itmstora (Switch) is not implemented");
+                    w.sounds.push(Ui::Error as u32);
+                }
+                K::Escape => {
+                    b.sortw = None;
+                    b.on_bank = sw.bank_side;
+                    w.sounds.push(Ui::Close as u32);
+                    write_store(w, b, scroll, cursor);
+                    return;
+                }
+                _ => {}
+            }
+            if matches!(key, K::ArrowUp | K::ArrowDown) {
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            b.sortw = Some(sw);
+        }
+    } else if let Some((bank_side, held)) = b.manual {
+        let c = if bank_side { b.bank } else { INVENTORY };
+        let rows = if bank_side { &banks } else { &inv };
+        let (sc, cu) = if bank_side { (&mut b.scroll, &mut b.cursor) } else { (&mut scroll, &mut cursor) };
+        match key {
+            K::Enter => {
+                if let Some(s) = rows.get(*sc + *cu).cloned() {
+                    w.sounds.push(Ui::Select as u32);
+                    match held {
+                        None => b.manual = Some((bank_side, Some(s.index))),
+                        Some(from) => {
+                            b.manual = Some((bank_side, None));
+                            manual_move_c(w, c, from, &s);
+                        }
+                    }
+                }
+            }
+            K::Escape if held.is_some() => b.manual = Some((bank_side, None)),
+            K::Escape => {
+                b.manual = None;
+                b.sortw = Some(SortW { cursor: 2, bank_side, ask: None });
+            }
+            k => list_keys(sc, cu, rows.len(), k),
+        }
+    } else if b.read_only {
+        match key {
+            K::ArrowUp | K::ArrowDown => list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key),
+            K::ArrowRight | K::ArrowLeft => {
+                if page_keys(&mut b.scroll, &mut b.cursor, banks.len(), key == K::ArrowRight) {
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+            }
+            K::Enter => w.sounds.push(Ui::Error as u32),
+            K::Escape => {
+                close = true;
                 w.sounds.push(Ui::Cancel as u32);
             }
             _ => {}
         }
     } else {
         match key {
-            egui::Key::ArrowUp | egui::Key::ArrowDown if b.on_bin => list_keys(&mut b.scroll, &mut b.cursor, bins.len(), key),
-            egui::Key::ArrowUp | egui::Key::ArrowDown => list_keys(&mut scroll, &mut cursor, inv, key),
-            // Both sources' +0x1c (FUN_101dc590) is 0: Right / Left page only with 0xa8 held.
-            egui::Key::ArrowRight | egui::Key::ArrowLeft if page => {
-                let right = key == egui::Key::ArrowRight;
-                let moved = if b.on_bin { page_keys(&mut b.scroll, &mut b.cursor, bins.len(), right) } else { page_keys(&mut scroll, &mut cursor, inv, right) };
+            K::ArrowUp | K::ArrowDown if b.on_bank => list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key),
+            K::ArrowUp | K::ArrowDown => list_keys(&mut scroll, &mut cursor, inv.len(), key),
+            // Both sources' +0x1c is 0: Right / Left page only with 0xa8 held.
+            K::ArrowRight | K::ArrowLeft if page => {
+                let right = key == K::ArrowRight;
+                let moved = if b.on_bank { page_keys(&mut b.scroll, &mut b.cursor, banks.len(), right) } else { page_keys(&mut scroll, &mut cursor, inv.len(), right) };
                 if moved {
                     w.sounds.push(Ui::Cursor as u32);
                 }
             }
-            egui::Key::ArrowRight if b.on_bin => {
-                b.on_bin = false;
+            // FUN_101f7080(-1, child): the focus moves with the visible row (clamped), SE 0013.
+            K::ArrowRight if b.on_bank => {
+                b.on_bank = false;
+                cursor = b.cursor.min(inv.len().saturating_sub(scroll + 1)).min(VISIBLE_ROWS - 1);
                 w.sounds.push(Ui::Close as u32);
             }
-            egui::Key::ArrowLeft if !b.on_bin => {
-                b.on_bin = true;
+            K::ArrowLeft if !b.on_bank => {
+                b.on_bank = true;
+                b.cursor = cursor.min(banks.len().saturating_sub(b.scroll + 1)).min(VISIBLE_ROWS - 1);
                 w.sounds.push(Ui::Close as u32);
             }
-            egui::Key::Enter if b.on_bin => {
-                if let Some(s) = bins.get(b.scroll + b.cursor) {
-                    if bin_tint(w, info, s, None) == crate::inventory::TINT_DIM {
+            K::Enter => {
+                let (s, bank_side) = if b.on_bank { (banks.get(b.scroll + b.cursor), true) } else { (inv.get(scroll + cursor), false) };
+                if let Some(s) = s.cloned() {
+                    let t = tint(w, info, &b, bank_side, &s);
+                    let locked = !bank_side && w.inv.locks.get(&(INVENTORY, s.index)).copied().unwrap_or(0) == 0x19;
+                    if locked || t == crate::inventory::TINT_DIM || t == 0x8060_2020 {
                         w.sounds.push(Ui::Error as u32);
                     } else {
                         w.sounds.push(Ui::Select as u32);
+                        let (from, to) = if bank_side { (b.bank, INVENTORY) } else { (INVENTORY, b.bank) };
                         if s.count > 1 {
-                            b.qty = Some(Qty { index: s.index, value: 1, max: s.count });
+                            b.qty = Some(Qty { index: s.index, value: 1, max: s.count, from, to });
                         } else {
-                            send_bin(w, s.index, 1);
+                            send_move(w, from, to, s.index, 1);
                         }
                     }
                 }
             }
-            egui::Key::Enter => w.sounds.push(Ui::Error as u32),
-            // FUN_101dca30 / FUN_101f2640 (no SE in that code: the cancel sound is inferred).
-            egui::Key::Escape => {
+            // FUN_101dca30, then FUN_101dc830: the bin back to itmsort2 (FUN_101f2640) when it came from there; the
+            // view closes otherwise (FUN_101f2600; no SE in that code: the cancel sound is inferred).
+            K::Escape => {
                 (close, back) = (!b.from_menu, b.from_menu);
                 w.sounds.push(Ui::Cancel as u32);
             }
@@ -1089,46 +1369,114 @@ fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
         w.win = None;
         return;
     }
-    if let Some(Win::Items { bin, scroll: s, cursor: c, sort, .. }) = &mut w.win {
-        (*s, *c) = (scroll, cursor);
-        if back {
-            *bin = None;
+    if back {
+        if let Some(Win::Items { store, scroll: s, cursor: c, sort, .. }) = &mut w.win {
+            (*s, *c) = (scroll, cursor);
+            *store = None;
             *sort = Some(SortWin { cursor: 3, ask: None });
-        } else {
-            *bin = Some(b);
         }
+        return;
+    }
+    write_store(w, b, scroll, cursor);
+}
+
+fn write_store(w: &mut World, b: Storage, scroll: usize, cursor: usize) {
+    if let Some(Win::Items { store, scroll: s, cursor: c, .. }) = &mut w.win {
+        (*s, *c) = (scroll, cursor);
+        *store = Some(b);
     }
 }
 
-/// The bin view: "menu    bank" with the bin rows at its layout (16, 48), the inventory list moved to (200, 48) with
-/// every row grey, the cursor on the focused one; "menu    itemctrl" over them for a stack ("%2d" right-aligned at
-/// (+0x34, +0x16), "/%2d" at (+0x3a, +0x16), FUN_1013a520).
-#[allow(clippy::too_many_arguments)]
-fn draw_bin(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cursor: usize, b: &Bin, sw: f32, sh: f32, frame: usize) -> Vec<[f32; 4]> {
-    let mut rects = Vec::new();
-    let bins = bin_rows(w);
-    let mut rows = build_rows(&bins, info, false);
-    for (r, s) in rows.iter_mut().zip(&bins) {
-        r.tint = bin_tint(w, info, s, b.qty.map(|q| q.index));
+/// The bars in the storage view: itemctrl (0xe 0x10c / 0xd 0x3e), itmsortw's rows and sortyn (0xc 0x3d), Manual
+/// (0xe 5 / 6), else the focused list's container title and the row help naming the destination; the read-only list
+/// puts its title in slot 2.
+fn store_bars(gu: &GameUi, b: &Storage, bars: &mut super::hudtop::BarText) {
+    if b.qty.is_some() {
+        bars.help[1] = gu.menu_msg(0x10c, "");
+        bars.title[1] = gu.title_msg(0x3e).unwrap_or_default();
+        return;
     }
-    let blist = ItemList { rows, scroll: b.scroll, cursor: b.cursor };
-    let ilist = ItemList { rows: build_rows(&listed(w, false), info, true), scroll, cursor };
+    if let Some(sw) = b.sortw {
+        if sw.ask.is_some() {
+            bars.help[1] = gu.lobby_msg(0x0c, 0x3d, "");
+            bars.title[1] = gu.title_msg(2).unwrap_or_default();
+        } else {
+            let [help, title] = gu.focus_text("menu    itmsortw", sw.cursor);
+            (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+        }
+        return;
+    }
+    if b.read_only {
+        bars.title[2] = gu.title_msg(title_id(b.bank)).unwrap_or_default();
+        return;
+    }
+    let (own, dest) = if b.on_bank { (b.bank, INVENTORY) } else { (INVENTORY, b.bank) };
+    bars.title[1] = gu.title_msg(title_id(own)).unwrap_or_default();
+    bars.help[1] = match b.manual {
+        Some((_, held)) => gu.menu_msg(if held.is_some() { 6 } else { 5 }, ""),
+        None => match dest_help(dest) {
+            0 => String::new(),
+            id => gu.menu_msg(id, ""),
+        },
+    };
+}
+
+/// The storage view's windows: "menu    bank" at its layout (16, 48), the inventory list moved to (200, 48), the
+/// cursor on the focused one; itmsortw at (384, 48) (not for the bin) with sortyn; itemctrl over them for a stack
+/// ("%2d" right-aligned at (+0x34, +0x16), "/%2d" at (+0x3a, +0x16), FUN_1013a520). Read-only: the item list alone.
+#[allow(clippy::too_many_arguments)]
+fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cursor: usize, b: &Storage, sw: f32, sh: f32, frame: usize) -> Vec<[f32; 4]> {
+    let mut rects = Vec::new();
+    let banks = store_rows(w, b.bank);
+    if b.read_only {
+        let list = ItemList { rows: build_rows(&banks, info, true), scroll: b.scroll, cursor: b.cursor };
+        upload_icons(gu, info, list.visible().iter().map(|r| r.id));
+        let (bt, ui, style, font) = gu.parts();
+        if let Some(m) = ui.menu("menu    inventor") {
+            push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame, 3.0, true);
+        }
+        rects.extend(gu.window_rect("menu    inventor", sw, sh));
+        return rects;
+    }
+    let inv = listed(w, false);
+    let manual = |bank_side: bool| b.manual.filter(|m| m.0 == bank_side).map(|m| m.1);
+    let tinted = |rows: &[Slot], bank_side: bool| {
+        let mut out = build_rows(rows, info, false);
+        let c = if bank_side { b.bank } else { INVENTORY };
+        for (r, s) in out.iter_mut().zip(rows) {
+            r.tint = match manual(bank_side) {
+                Some(held) => manual_tint(w, c, held, s),
+                None => tint(w, info, b, bank_side, s),
+            };
+        }
+        out
+    };
+    let blist = ItemList { rows: tinted(&banks, true), scroll: b.scroll, cursor: b.cursor };
+    let ilist = ItemList { rows: tinted(&inv, false), scroll, cursor };
     upload_icons(gu, info, blist.visible().iter().chain(ilist.visible()).map(|r| r.id));
+    let free = b.qty.is_none() && b.sortw.is_none();
     let (bt, ui, style, font) = gu.parts();
     if let Some(m) = ui.menu("menu    bank") {
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, b.on_bin && b.qty.is_none());
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank);
     }
     if let Some(m) = ui.menu("menu    inventor") {
         let mut m = m.clone();
         if let Some(e) = m.elements.first_mut() {
             e.x = BIN_LIST_X;
         }
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, !b.on_bin);
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, free && !b.on_bank);
     }
     rects.extend(gu.window_rect("menu    bank", sw, sh));
     if let Some(mut r) = gu.window_rect("menu    inventor", sw, sh) {
         r[0] += BIN_LIST_X as f32 - gu.window_rect_x("menu    inventor");
         rects.push(r);
+    }
+    if b.bank != BIN {
+        let sel = b.sortw.map(|s| s.cursor);
+        rects.extend(gu.lobby_window_off("menu    itmsortw", sw, sh, (0.0, 0.0), sel, sel.is_some(), &[]).map(|x| x.frame));
+        if let Some(yes) = b.sortw.and_then(|s| s.ask) {
+            rects.extend(gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, 0.0), Some(if yes { 1 } else { 2 }), true, &[]).map(|x| x.frame));
+        }
     }
     if let Some(q) = b.qty
         && let Some(win) = gu.lobby_window_off("menu    itemctrl", sw, sh, (0.0, 0.0), Some(1), true, &[])
@@ -1147,7 +1495,7 @@ fn draw_bin(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cursor:
 /// Mouse on the item list: hover moves the cursor, a click on the highlighted row acts as Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
     // The bin view moves the list; its mouse handling (hover messages 3 / 4) is not done.
-    if matches!(w.win, Some(Win::Items { bin: Some(_), .. })) {
+    if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
         return;
     }
     let Some(r) = gu.window_rect("menu    inventor", sw, sh) else { return };
