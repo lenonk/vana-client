@@ -4056,3 +4056,9 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
 - Op 0x92 (FUN_100b7d10, actor@2 +0x12c bit 16 = u8@1) is NOT "hide in the event": scripts set it to 1 on the
   actors that then speak (Southern San d'Oria event 0x17: npc05f, npc0ed, each with op 0x94 beside it). Its reader
   FUN_100977f0 gates something in FUN_10097840 for PCs (not traced); left alone.
+- Op 0xb4 (FUN_100b0a00; 5,146 sites): every sub ends the frame. 0 / 0x13 write the 16 literal bytes at pc + 4 into
+  str@2 (byte 15 zeroed; 0x13 '@' -> ' '); 1 reads event string slot val@4 (0..3) into str@2, 4 writes it (DAT_104882b8
+  / DAT_10488d08; ours: Start::strings, which the message string codes read); 9 / 0xc read the cast bar's / event
+  timer's progress (ours 0: those windows aren't modelled); 0x15 waits while the map window is open. 2 / 3 target
+  window, 7 / 8 casttime, 0xa / 0xb eventtim, 0xf..0x12 chocobo race windows, 0x14 map view: host effects only so far.
+  Sweep of zones 230 / 240 after: 1,450 of 1,489 events finish headless, 0 faults.

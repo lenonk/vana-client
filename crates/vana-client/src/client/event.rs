@@ -853,6 +853,10 @@ impl Host for LiveHost<'_> {
     }
 
     fn busy(&mut self, b: &Busy) -> bool {
+        // Op 0xb4 sub 0x15: the map window an event opened is still up.
+        if let Busy::Op { op: 0xb4, sub: Some(0x15), .. } = b {
+            return self.w.map_open.is_some() || self.w.map.is_some();
+        }
         match b {
             Busy::Scheduler { file, tag, actor, target } => self.w.screen.scheds.iter().any(|s| s.file == *file && &s.tag == tag && s.actor == *actor && s.target == *target),
             // Done turning: FUN_10089810 stops the step schedulers.

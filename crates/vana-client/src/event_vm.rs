@@ -1629,6 +1629,58 @@ impl Runtime {
                 }
                 self.adv(v, len);
             }
+            // FUN_100b0a00: string slots and literals (feeding the 0x9d compares and message string codes), timers and
+            // windows. Every sub ends the frame (+0x25a). 0 / 0x13: str@2 = the 16 literal bytes at pc + 4 (byte 15
+            // zeroed; 0x13 turns '@' into spaces); 1: str@2 = event string slot val@4 (0..3, else 0); 4: that slot =
+            // str@2; 9 / 0xc: the cast bar's / event timer's progress (windows not modelled: 0); 0x15: waits while the
+            // map window is open. The other subs (window and timer opens / closes, the map view) go to the host.
+            0xb4 => {
+                let s = sub.unwrap_or(0xff);
+                match s {
+                    0 | 0x13 => {
+                        let pc = self.vms[v].pc as usize + 4;
+                        let mut b = [0u8; 16];
+                        b.copy_from_slice(self.code(v).get(pc..pc + 16).unwrap_or(&[0; 16]));
+                        b[15] = 0;
+                        if s == 0x13 {
+                            b[..15].iter_mut().filter(|c| **c == b'@').for_each(|c| *c = b' ');
+                        }
+                        let raw = self.u16_at(v, 2);
+                        self.set4(v, raw, 0, std::array::from_fn(|i| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap())));
+                    }
+                    1 => {
+                        let slot = (self.val(v, 4) as usize).min(4) % 4;
+                        let mut b = [0u8; 16];
+                        if let Some(t) = self.start.strings.get(slot) {
+                            let n = t.len().min(15);
+                            b[..n].copy_from_slice(&t.as_bytes()[..n]);
+                        }
+                        let raw = self.u16_at(v, 2);
+                        self.set4(v, raw, 0, std::array::from_fn(|i| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap())));
+                    }
+                    4 => {
+                        let slot = (self.val(v, 4) as usize).min(4) % 4;
+                        let b = self.str_at(v, 2);
+                        let text = String::from_utf8_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(15)]).into_owned();
+                        if self.start.strings.len() <= slot {
+                            self.start.strings.resize(slot + 1, String::new());
+                        }
+                        self.start.strings[slot] = text;
+                    }
+                    9 | 0xc => self.set_at(v, 2, 0, 0),
+                    0x15 if host.busy(&Busy::Op { op: opc, sub, actor }) => {
+                        self.yield_(v);
+                        return;
+                    }
+                    0x15 => {}
+                    _ => {
+                        let a = self.args(v, op, sub);
+                        host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                    }
+                }
+                self.adv(v, len);
+                self.yield_(v);
+            }
             0xda => {
                 let v32 = host.game_config(0x43);
                 self.set_at(v, 1, 0, v32);
