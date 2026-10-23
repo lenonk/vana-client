@@ -378,8 +378,8 @@ impl Library {
     }
 }
 
-/// FUN_1003f3e0's groups: formats 5..7 give triangles per texture (textured first, then the untextured tail);
-/// other formats draw everything untextured.
+/// FUN_10040220's groups: triangles per texture (u16s at +8, any format), then the untextured tail when header
+/// byte 5 is set or there is no texture.
 fn from_d3m(m: &D3m) -> Mesh {
     let verts: Vec<MeshVertex> = m.vertices.iter().map(|v| MeshVertex { pos: v.pos, normal: v.normal, rgba: [v.bgra[2], v.bgra[1], v.bgra[0], v.bgra[3]], uv: v.uv }).collect();
     let total = verts.len() as u32;
@@ -392,7 +392,7 @@ fn from_d3m(m: &D3m) -> Mesh {
         }
         at = end;
     }
-    if at < total {
+    if (m.textures.is_empty() || m.untextured_tail) && at < total {
         groups.push(MeshGroup { name: None, texture: None, range: at..total });
     }
     Mesh { verts, groups, mmb: false }

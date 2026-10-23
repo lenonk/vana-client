@@ -1546,7 +1546,7 @@ impl Effects {
                     let r = self.reg.meshes[id as usize];
                     format!("mesh {}:{}", self.reg.libs[r.0].file_id, self.reg.libs[r.0].tree.nodes[r.1].name())
                 }
-                Draw::Sprite(id) => format!("sprite {id}"),
+                Draw::Sprite(id) => format!("sprite {id}{}", if self.reg.sprite_is_flare(id) { " (flare)" } else { "" }),
                 Draw::Morph(id) => format!("morph {id}"),
                 Draw::Dist => "dist".into(),
                 Draw::None => "none".into(),

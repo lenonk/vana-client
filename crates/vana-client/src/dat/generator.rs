@@ -330,8 +330,10 @@ impl KeyFrame {
 pub struct D3m {
     pub format: u8,
     pub textures: Vec<String>,
-    /// Triangles per texture (formats 5..7); empty means all triangles use texture 0.
+    /// Triangles per texture (u16s at +8 in every format, FUN_1003fce0).
     pub per_texture: Vec<u16>,
+    /// Header byte 5 (res+0x35): the triangles after the textured runs are drawn untextured.
+    pub untextured_tail: bool,
     pub vertices: Vec<D3mVertex>,
 }
 
@@ -350,18 +352,17 @@ impl D3m {
         }
         let format = (d[0] & 0xf) as u8;
         let (n, m, tris) = (d[4] as usize, d[5] as usize, u16::from_le_bytes([d[6], d[7]]) as usize);
-        let (per_texture, table) = if (5..=7).contains(&format) {
-            let counts = (0..n + m).map(|k| d.get(8 + 2 * k..10 + 2 * k).map_or(0, |b| u16::from_le_bytes([b[0], b[1]]))).collect();
-            let at = if format == 7 && n == 0 {
+        let counts: Vec<u16> = (0..n).map(|k| d.get(8 + 2 * k..10 + 2 * k).map_or(0, |b| u16::from_le_bytes([b[0], b[1]]))).collect();
+        let table = if (5..=7).contains(&format) {
+            if format == 7 && n == 0 {
                 8
             } else if (n + m) & 3 != 0 {
                 8 + ((n + m) & !3) * 2 + 6
             } else {
                 8 + (n + m) * 2
-            };
-            (counts, at)
+            }
         } else {
-            (Vec::new(), 0x10)
+            0x10
         };
         let textures: Vec<String> = (0..n).map(|k| d.get(table + 16 * k..table + 16 * k + 16).map_or(String::new(), |b| String::from_utf8_lossy(b).into_owned())).collect();
         let first = if (5..=7).contains(&format) { table + 16 * n } else { 0x50 };
@@ -376,7 +377,7 @@ impl D3m {
                 D3mVertex { pos: [f(o), f(o + 4), f(o + 8)], normal: [f(o + 12), f(o + 16), f(o + 20)], bgra: d[o + 24..o + 28].try_into().unwrap(), uv: [f(o + 28), f(o + 32)] }
             })
             .collect();
-        Ok(Self { format, textures, per_texture, vertices })
+        Ok(Self { format, textures, per_texture: counts, untextured_tail: m != 0, vertices })
     }
 }
 

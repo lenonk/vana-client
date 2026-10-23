@@ -1005,9 +1005,7 @@ fn main() -> Result<()> {
                 _ => (centre + Vec3::new(0.0, -(hi - lo).max_element() * 0.9, 0.01), centre, Vec3::Z),
             };
             let camera = render::Camera { eye, target, up, fov_y: 60f32.to_radians() };
-            let draws = match effects {
-                None => {
-                    let sub_file = sub.map(|id| index.read(dat::zone::file_id(id)).map(|f| (id, f))).transpose()?;
+            let sub_file = sub.map(|id| index.read(dat::zone::file_id(id)).map(|f| (id, f))).transpose()?;
                     let sub_scene = sub_file.as_ref().map(|(id, f)| dat::zone::load_scene(&keys, f).map(|s| (*id, s))).transpose()?;
                     let weathers: Vec<dat::weather::ZoneWeather> = sub_file.iter().map(|(_, f)| f).chain([&file]).filter_map(|f| dat::weather::ZoneWeather::parse(f).ok()).collect();
                     let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
@@ -1026,13 +1024,16 @@ fn main() -> Result<()> {
                         }
                         Vec::new()
                     };
-                    render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &setup)?
-                }
+            let draws = match effects {
+                None => render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &setup)?,
                 Some(ticks) => {
                     let mut fx = fx::Effects::new();
                     fx.set_keys(std::sync::Arc::new(keys));
                     fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
                     fx.load_zone(fx::lib::Library::load(dat::zone::file_id(zone), file.clone())?);
+                    if let Some((id, f)) = &sub_file {
+                        fx.load_sub_area(fx::lib::Library::load(dat::zone::file_id(*id), f.clone())?);
+                    }
                     fx.set_weather(&weather, 0.0);
                     if let Some(name) = start.as_deref().and_then(|s| <[u8; 4]>::try_from(s.as_bytes()).ok())
                         && let Some(l) = fx.reg.lib_of(dat::zone::file_id(zone))
@@ -1113,7 +1114,7 @@ fn main() -> Result<()> {
                         eg.draw(gpu, enc, (color, depth, [1600, 900]), Some(color_tex), &fx, (cam.proj(1600.0 / 900.0), cam.view(), cam.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                     };
                     // Twice: the effects write the point lights the scenery reads on the next frame.
-                    render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting), (&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new(), &mut post)?
+                    render::render_pngs_post(&scene, &[(&camera, out.as_path(), lighting), (&camera, out.as_path(), lighting)], 1600, 900, &setup, &mut post)?
                 }
             };
             println!("rendered {draws} draws from {eye} towards {target} into {}", out.display());
