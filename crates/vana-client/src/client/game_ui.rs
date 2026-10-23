@@ -150,8 +150,15 @@ struct WinAnim {
     open: f32,
     close: f32,
     animated: bool,
-    rect: [f32; 4],
+    shape: Shape,
     seen: u64,
+}
+
+/// What zooms: a framed window's frame rect, or a frameless window's sprite (library, index) at its position.
+#[derive(Clone)]
+enum Shape {
+    Frame([f32; 4]),
+    Sprite(String, usize, f32, f32),
 }
 
 /// The lobby help line's scroll state (lobyhelp draw FUN_10236b40).
@@ -193,20 +200,51 @@ impl GameUi {
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
     /// zooming frame is drawn, nothing of its contents), true once it is open.
     fn win_gate(&mut self, name: &str, r: [f32; 4]) -> bool {
+        self.gate(name, Shape::Frame(r))
+    }
+
+    fn gate(&mut self, name: &str, shape: Shape) -> bool {
         let n = self.open_ticks;
         let animates = n > 0.0 && self.data.registry.get(name).copied().unwrap_or(0) & 8 == 0;
         let frame = self.anim_frame;
-        let a = self.anims.entry(name.to_string()).or_insert(WinAnim { open: 0.0, close: 0.0, animated: false, rect: r, seen: 0 });
+        let a = self.anims.entry(name.to_string()).or_insert(WinAnim { open: 0.0, close: 0.0, animated: false, shape: shape.clone(), seen: 0 });
         if a.seen == 0 || a.seen + 1 < frame {
             (a.open, a.close, a.animated) = (if animates { n } else { 0.0 }, 0.0, animates);
         }
-        (a.seen, a.rect) = (frame, r);
+        (a.seen, a.shape) = (frame, shape.clone());
         if a.open <= 0.0 {
             return true;
         }
         let f = ((n - a.open) / n).max(0.0);
-        self.zoom_frame(r, f);
+        self.zoom(&shape, f);
         false
+    }
+
+    fn zoom(&mut self, shape: &Shape, f: f32) {
+        match shape {
+            Shape::Frame(r) => self.zoom_frame(*r, f),
+            Shape::Sprite(lib, k, x, y) => self.zoom_sprite(lib, *k, *x, *y, f),
+        }
+    }
+
+    /// FUN_1011a150: a frameless window's sprite, every cell, at scale f^2 and an echo at 1.6 f with alpha
+    /// min(0x80, ftol(128 - 128 f)), each moved by |bounds| (s - 1) / 2 (FUN_1011fc80's centring).
+    fn zoom_sprite(&mut self, lib: &str, k: usize, x: f32, y: f32, f: f32) {
+        let Some(l) = self.data.lobby.lib(lib) else { return };
+        let Some(sp) = l.sprites.get(k) else { return };
+        let (mut x0, mut y0, mut x1, mut y1) = (i16::MAX, i16::MAX, i16::MIN, i16::MIN);
+        for c in sp.cells.iter().flat_map(|c| c.corners) {
+            (x0, y0, x1, y1) = (x0.min(c[0]), y0.min(c[1]), x1.max(c[0]), y1.max(c[1]));
+        }
+        let (bw, bh) = ((x1 as f32 - x0 as f32).abs(), (y1 as f32 - y0 as f32).abs());
+        let at = |s: f32| (x - (bw * (s - 1.0) * 0.5).trunc(), y - (bh * (s - 1.0) * 0.5).trunc());
+        let s = f * f;
+        let (ax, ay) = at(s);
+        self.batch.push_sprite(&self.data.lobby, l, k, ax, ay, s, s, 0x8080_8080, 0);
+        let g = 1.6 * f;
+        let alpha = ((128.0 - 128.0 * f) as i32).clamp(0, 0x80) as u32;
+        let (bx, by) = at(g);
+        self.batch.push_sprite(&self.data.lobby, l, k, bx, by, g, g, alpha << 24 | 0x80_8080, 0x44);
     }
 
     /// FUN_1011a250: the style frame at scale f^2 about its centre, then an echo at 1.6 f, alpha blended with alpha
@@ -241,12 +279,12 @@ impl GameUi {
                 a.close = n;
             }
             if a.close > 0.0 {
-                closing.push((a.rect, a.close / n));
+                closing.push((a.shape.clone(), a.close / n));
                 a.close -= ticks;
             }
         }
-        for (r, f) in closing {
-            self.zoom_frame(r, f);
+        for (shape, f) in closing {
+            self.zoom(&shape, f);
         }
         self.anims.retain(|_, a| a.seen == frame || a.close > 0.0);
         self.anim_frame += 1;
@@ -980,6 +1018,11 @@ impl GameUi {
     pub fn bare_window(&mut self, name: &str, w: f32, h: f32) {
         let Some(m) = self.data.lobby.menu(name) else { return };
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
+        let Some((lib_name, k)) = m.elements[0].refs.iter().find(|r| r.kind == 0).map(|r| (r.lib.clone(), r.index as usize)) else { return };
+        if !self.gate(name, Shape::Sprite(lib_name, k, x, y)) {
+            return;
+        }
+        let Some(m) = self.data.lobby.menu(name) else { return };
         if let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 0)
             && let Some(lib) = self.data.lobby.lib(&r.lib)
         {
