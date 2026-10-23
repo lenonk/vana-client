@@ -48,6 +48,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   commit or change the tree; `git status` / `git diff` are fine.
 - Live tests use only account lnxtest01 (characters Lnxtest, Lnxcsfix, Tuxedo). Never touch the user's account
   (lenon) or the server DB or settings without asking.
+  - Lnxcsfix has GM level 5 (user's OK, 2026-10-22): `key:Space;type:!pos X Y Z;key:Enter` in a script moves it.
+  - Tuxedo logs in to the "Start Seekers of Adoulin?" prompt (login event 0x36e); a script must answer it.
   - For DB reads, use a 0600 defaults file (`~/ffxi/lab/tools/mkcnf.py`) and delete it afterwards.
 - Every live world run ends with a clean logout (`--quit`), with a timeout long enough for the 30 s logout.
   - Never kill a logged-in client: stale sessions cause "already logged in".
