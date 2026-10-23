@@ -245,6 +245,11 @@ pub enum NetEvent {
     Scheduler { actor: u32, target: u32, name: [u8; 4] },
     /// s2c 0x11E: ActIndex @4 used /jump.
     Jump(u16),
+    /// s2c 0x030 (GP_SERV_COMMAND_EFFECT): UniqueNo @4, ActIndex @8, EffectNum @0xa, Type @0xc, Status @0xd, Timer @0xe.
+    SynthEffect { id: u32, index: u16, effect: i16, kind: i8, status: i8, timer: u16 },
+    /// s2c 0x06F / 0x070 (COMBINE_ANS / COMBINE_INF).
+    SynthResult(super::synth::Answer),
+    SynthOthers(super::synth::Answer),
     Logout { state: u32 },
     Status(String),
     Error(String),
@@ -679,6 +684,18 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
                     0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,
+                    0x030 => tx.send(NetEvent::SynthEffect { id: p.u32(4), index: p.u16(8), effect: p.u16(0xa) as i16, kind: p.u8(0xc) as i8, status: p.u8(0xd) as i8, timer: p.u16(0xe) })?,
+                    0x06F | 0x070 => {
+                        let a = super::synth::Answer {
+                            result: p.u8(4),
+                            grade: p.u8(5) as i8,
+                            count: p.u8(6),
+                            item: p.u16(8),
+                            breaks: std::array::from_fn(|i| p.u16(0xa + 2 * i)),
+                            name: if p.id == 0x070 { text(&p, 0x1e, 16) } else { String::new() },
+                        };
+                        tx.send(if p.id == 0x06F { NetEvent::SynthResult(a) } else { NetEvent::SynthOthers(a) })?
+                    }
                     0x04B => tx.send(NetEvent::Pbx(super::post::Pbx {
                         cmd: p.u8(4),
                         box_no: p.u8(5) as i8,

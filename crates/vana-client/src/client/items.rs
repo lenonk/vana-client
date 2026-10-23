@@ -728,16 +728,17 @@ pub fn check_iuse(w: &mut World) {
     }
 }
 
-/// iuse Use (FUN_101f33a0 case 1): tabulae and crystals open windows we do not have yet; anything else passes the
+/// iuse Use (FUN_101f33a0 case 1): tabulae open a window we do not have yet, crystals the synthesis; anything else passes the
 /// status gate (0x7f; the Mog Garden's 0x77 / flag 0x08 rule not done) and opens the target prompt with the item's
 /// targets (0x7f with no record), title "Items", help 0xe 4.
 fn use_entry(w: &mut World, index: u8, id: u16) {
     let it = w.item_info.as_ref().and_then(|c| c.item(id));
     match it.as_ref().map(|i| i.item_type) {
         Some(0x16 | 0x17) => log::info!("iuse: the maze tabula window is not implemented"),
+        // A crystal (type 8): the status gate 0x77, then the synthesis window (FUN_101e0e30); a refusal plays SE 0004.
         Some(8) => {
-            if super::textcmd::status_gate(w, 0x77) {
-                log::info!("iuse: synthesis (tskill1) is not implemented");
+            if !super::textcmd::status_gate(w, 0x77) || !super::synth::open(w, index, id) {
+                w.sounds.push(crate::audio::Ui::Error as u32);
             }
         }
         _ => {

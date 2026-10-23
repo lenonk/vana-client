@@ -4886,3 +4886,34 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   the Num+ focus mode gate, the ground point (T+0x22).
 - Live (Lnxcsfix, Mog House): a click on ourselves targets us, a second opens the action menu; right click clears;
   a click on the moogle targets it, a second talks (myroom through s2c 0x02E).
+
+## Synthesis (2026-10-23; spec: scratchpad synth/SPEC.md)
+
+- Entry: iuse Use or the direct-use list on a crystal (type 8): status gate 0x77, then FUN_101e0e30(index, id, mode):
+  refused silently while the cast bar is up, group 7 0x8c with no free inventory slot; the inventory list is
+  re-sourced as the material picker at (200, 48) and "menu    tskill1" (16, 48) opens, cursor child 1. (Main menu
+  row 10 "menu    cmbmenu", the history and favourites, /lastsynth (id 0x9d) and the cmb%d.dat files are not done.)
+- tskill1 (FUN_101e12e0): the crystal icon at half size at (+0x12, +4), its element sprite keytops3 0xb9 + element
+  at (+0x24, +4) (0x1000.. / 0x108e.. / 0x196a.. ranges), eight slots by FUN_1015bd70. Keys (FUN_101e1530): slots
+  focus the picker; 9 Synthesize; 10 Cancel (back to the list it came from); Escape moves the cursor to Cancel.
+- Picker (DAT_106634d0): help 0xe 7; grey for linkshells (0x201..0x203), equipped items and the crystal; a stack
+  already in a slot orange 0x80804020. Enter: itemctrl for a stack; FUN_101e0d30 puts it in the cursor slot (the
+  same stack in another slot moves; on this slot it is taken out).
+- Synthesize (FUN_101e08e0): gate 0x77; FUN_101e1f40 (crystal and slots up to the first empty one still held,
+  unlocked, enough); FUN_101e0770: the units (more than 8: group 9 0xf; none: group 7 0x63), a free slot (0x8c), not
+  healing (0x51), no request in flight (0x64). c2s 0x096 {HashNo, 0, u16 crystal, u8 index, u8 n, u16 ItemNo[8]
+  sorted ascending, u8 TableNo[8], u16 0}; HashNo = ((n + 5) x (ItemNo[0] + 7) x (crystal' + 3)) % 0x7f with the
+  cluster ids folded. Everything closes at once. The request waits 30 s for 0x06F, then answered 2 s.
+- s2c 0x06F (a pre-hook calling LAB_101e0940): Result 0 / 0xc the result (trddummy: 300 ticks, one line a frame:
+  0xa0 + Grade {item, count}, 0xa9; Result 1 group 9 0xa then one 0xa4 per lost item), 2 / 0xe group 9 0xc, 3 0x9,
+  4 0xe, 6 0xd, 7 0x10, 0xd group 7 0x64, others group 9 0xb. s2c 0x070: 0xc8 + Grade / 0xcc per lost item / 0xcd
+  with the name in string slot 2.
+- s2c 0x030 (FUN_1009f990, @4 UniqueNo, @8 ActIndex, @0xa EffectNum, @0xc Type, @0xd Status, @0xe Timer): the
+  actor's status takes Status; FUN_1009f4c0 per frame: motion scheduler res0 (rx0 / rx1), the effect file 0x1330 +
+  EffectNum's frst (motion ri0), then ednn / edmm / edxx by Type, motion res2 (rx2), and for us c2s 0x059 {u32 0}.
+  Status leaving 0x2c during frst: stcr, res2, 0x059 {1}. FUN_100964f0: no movement in status 0x2c.
+- Expander: 7f 80 n sets the case of the next grammar block's text (FUN_100c2bf0: 1 first letter upper, 2 all upper,
+  3 all lower, 4 each word's first; a block with no text keeps it); grammar kind 1 prints nothing and takes the
+  space after it (FUN_1025a400(0), as a count of one). "An ash log was lost.", "<name> lost an ash log."
+- Live (Lnxcsfix, Mog House): !additem Wind Crystal + Ash Log, Use on the crystal, the log placed, Synthesize:
+  res0 / frst (DAT 4929) / edmm / res2, "Synthesis failed. You lost the crystal you were using." and the lost log.

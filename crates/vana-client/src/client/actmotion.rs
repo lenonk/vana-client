@@ -369,7 +369,7 @@ pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
 }
 
 /// The status motion an actor would play now (FUN_100c6b70), for ending looping holds.
-fn status_motion(w: &World, id: u32, ch: &Character) -> String {
+pub(super) fn status_motion(w: &World, id: u32, ch: &Character) -> String {
     let (status, ratio) = if let Some(p) = super::event::pose(w, id) {
         (0, p.ratio)
     } else if id == w.my_id {

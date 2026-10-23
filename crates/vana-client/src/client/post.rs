@@ -252,7 +252,7 @@ fn store(w: &mut World, recv: bool, p: &Pbx) {
     }
 }
 
-fn log_group9(w: &mut World, id: usize, mode: u8) {
+pub(super) fn log_group9(w: &mut World, id: usize, mode: u8) {
     let Some(bt) = w.battle.clone() else { return };
     let colour = bt.colour_in(mode, &w.game);
     if let Some(l) = bt.group9(id) {
@@ -261,7 +261,7 @@ fn log_group9(w: &mut World, id: usize, mode: u8) {
 }
 
 /// A file 7031 line with work {slot + 1 or slot, ...} and the string parameter (FUN_100a1ab0).
-fn system_line(w: &mut World, id: u16, work: [i32; 5], text: String) {
+pub(super) fn system_line(w: &mut World, id: u16, work: [i32; 5], text: String) {
     let Some(bt) = w.battle.clone() else { return };
     let ctx = crate::dat::battle::Ctx { me: w.name.clone(), work, strings: [text, String::new()], ..Default::default() };
     if let Some(line) = bt.system(id, &ctx) {
@@ -611,7 +611,7 @@ fn close_send(w: &mut World) {
 }
 
 /// The picker's rows: the occupied inventory slots but gil, in the view order.
-fn picker_rows(w: &World) -> Vec<crate::inventory::Slot> {
+pub(super) fn picker_rows(w: &World) -> Vec<crate::inventory::Slot> {
     w.inv.viewed(super::items::INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).collect()
 }
 
@@ -1105,7 +1105,7 @@ pub fn text_events(w: &mut World, events: &[egui::Event]) {
     }
 }
 
-fn link(gu: &GameUi, name: &str, from: u16, key: egui::Key) -> u16 {
+pub(super) fn link(gu: &GameUi, name: &str, from: u16, key: egui::Key) -> u16 {
     let k = match key {
         egui::Key::ArrowUp => 2,
         egui::Key::ArrowDown => 3,
@@ -1231,7 +1231,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         if let Some(win) = gu.lobby_window_off(POST1, sw, sh, (0.0, 0.0), focused(RFocus::Post1).then_some(r.cursor), focused(RFocus::Post1), &[]) {
             let slots: Vec<(u16, u32, bool)> = w.post.recv.iter().map(|s| (s.item, s.stack, matches!(s.stat, 6 | 7 | 0xa..=0xe))).collect();
             let cursor = focused(RFocus::Post1).then_some(r.cursor);
-            draw_slots(gu, &info, POST1, win.frame, &slots, 9, cursor, |_| [1.0, 1.0, 1.0, 0.75]);
+            draw_slots(gu, &info, POST1, win.frame, &slots, Some(9), cursor, |_| [1.0, 1.0, 1.0, 0.75]);
             rects.push(win.frame);
         }
         return rects;
@@ -1252,7 +1252,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             .collect();
         let stats: Vec<u32> = w.post.send.iter().map(|x| x.stat).collect();
         let cursor = focused(SFocus::Delivery).then_some(s.cursor);
-        draw_slots(gu, &info, DELIVERY, win.frame, &slots, 11, cursor, |i| if matches!(stats[i], 2..=4 | 8 | 0xe | 0xf) { [0.5, 0.5, 0.5, 1.0] } else { [1.0; 4] });
+        draw_slots(gu, &info, DELIVERY, win.frame, &slots, Some(11), cursor, |i| if matches!(stats[i], 2..=4 | 8 | 0xe | 0xf) { [0.5, 0.5, 0.5, 1.0] } else { [1.0; 4] });
         rects.push(win.frame);
     }
     // stringdl at (16, 144) (FUN_1014ef20); its buttons are drawn by code (FUN_1014f080): mode 1 keytops3 53 / 59,
@@ -1337,7 +1337,7 @@ fn clipped(gu: &mut GameUi, s: &str, x: f32, y: f32, max: f32, tint: u32) {
 /// items but gil; the cursor cell shifted by (-1, -1)) and the gil total (FUN_10140910: "N  G" right-aligned at the gil
 /// child's right edge + 10, always drawn).
 #[allow(clippy::too_many_arguments)]
-fn draw_slots(gu: &mut GameUi, info: &super::items::ItemCache, name: &str, frame: [f32; 4], slots: &[(u16, u32, bool)], gil_child: u16, cursor: Option<u16>, tint: impl Fn(usize) -> [f32; 4]) {
+pub(super) fn draw_slots(gu: &mut GameUi, info: &super::items::ItemCache, name: &str, frame: [f32; 4], slots: &[(u16, u32, bool)], gil_child: Option<u16>, cursor: Option<u16>, tint: impl Fn(usize) -> [f32; 4]) {
     let Some(l) = gu.layout(name).cloned() else { return };
     let [x, y, ..] = frame;
     super::items::upload_icons(gu, info, slots.iter().filter(|s| s.2 && s.0 != 0).map(|s| s.0));
@@ -1362,7 +1362,7 @@ fn draw_slots(gu: &mut GameUi, info: &super::items::ItemCache, name: &str, frame
             gu.shape_text(&format!("{:2}", stack.min(99)), cx + 30.0, cy + 22.0, 0x8080_8080, true);
         }
     }
-    if let Some(e) = l.elements.iter().find(|e| e.id == gil_child) {
+    if let Some(e) = gil_child.and_then(|g| l.elements.iter().find(|e| e.id == g)) {
         let g = crate::inventory::gil_text(gil.min(999_999_999) as i64);
         gu.shape_text(&g, x + e.x as f32 + e.w as f32 + 10.0, y + e.y as f32, 0x8080_8080, true);
     }
@@ -1380,7 +1380,7 @@ fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> 
 
 /// The inventory list moved to x 200 (the source's +4): the picker with its colours, or look-only.
 #[allow(clippy::too_many_arguments)]
-fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, (scroll, cursor): (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
+pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, (scroll, cursor): (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let rows = picker_rows(w);
     let mut built = crate::inventory::build_rows(&rows, info, false);
     for (k, (r, s)) in built.iter_mut().zip(&rows).enumerate() {

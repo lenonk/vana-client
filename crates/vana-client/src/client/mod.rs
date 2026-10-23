@@ -43,6 +43,7 @@ mod textcmd;
 mod magic;
 mod moogle;
 mod post;
+mod synth;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -126,7 +127,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w)
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -139,7 +140,7 @@ fn start_jump(w: &mut World, id: u32) {
 }
 
 /// /jump (FUN_1007c4f0 -> FUN_1008b410): our jump and c2s 0x11D {UniqueNo, ActIndex}.
-pub(super) fn jump(w: &mut World) {
+fn jump(w: &mut World) {
     let me = w.my_id;
     start_jump(w, me);
     let mut b = vec![0u8; 8];
@@ -1042,6 +1043,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
+                _ if synth::active(world) => synth::key(world, gu, *key),
                 _ if post::active(world) => post::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
@@ -1522,6 +1524,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
+    blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -1941,6 +1944,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     magic::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
+    synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -2366,7 +2370,7 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
 /// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
 fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
     let cache = world.item_info.clone()?;
-    let post_item = post::info_source(world);
+    let post_item = post::info_source(world).or_else(|| synth::info_source(world));
     let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
@@ -2877,6 +2881,8 @@ struct World {
     /// read-back points (key: bone, or 0x8000 | attach point) relative to the actor root.
     pick_rect: HashSet<u32>,
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
+    /// Synthesis: tskill1, the request state, the result lines and the animations.
+    synth: synth::State,
     res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
@@ -3858,6 +3864,7 @@ impl App {
                             post: post::Session::default(),
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
+                            synth: synth::State::default(),
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -4198,6 +4205,7 @@ impl App {
                     (world.mogdoor, world.leaving_room) = (None, false);
                     (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
                     world.post = post::Session::default();
+                    world.synth = synth::State::default();
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -4494,6 +4502,9 @@ impl App {
                     }
                 }
                 NetEvent::Jump(_) => {}
+                NetEvent::SynthEffect { id, index, effect, kind, status, timer } => synth::on_effect(world, id, index, effect, kind, status, timer),
+                NetEvent::SynthResult(a) => synth::on_result(world, a),
+                NetEvent::SynthOthers(a) => synth::on_others(world, a),
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
@@ -4917,6 +4928,10 @@ impl App {
         let mut tier = if mag > 0.9 { 1.0 } else if mag >= 0.05 { 1.0 / 3.0 } else { 0.0 };
         if world.walk {
             tier = f32::min(tier, 1.0 / 3.0);
+        }
+        // FUN_100964f0: no movement during a synthesis (status 0x2c).
+        if world.my_motion.status == 0x2c {
+            tier = 0.0;
         }
         if tier == 0.0 {
             step = Vec3::ZERO;
@@ -6344,6 +6359,7 @@ impl App {
             res_rdy(w);
             moogle::update(w);
             post::update(w);
+            synth::update(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {

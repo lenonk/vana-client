@@ -277,6 +277,8 @@ impl BattleText {
         let mut i = 0;
         // A count of one prints nothing, nor the space after it (FUN_1024fcd0(0) *(inf)*).
         let mut eat_space = false;
+        // 7f 80 n (expander +0xc): the case of the next grammar block's text (FUN_100c2bf0).
+        let mut case_mode = 0u8;
         while i < s.len() {
             let c = s[i];
             let a = s.get(i + 1).copied().unwrap_or(0);
@@ -300,7 +302,10 @@ impl BattleText {
                     let body = s.get(i + 2..(i + 2 + a as usize).min(s.len())).unwrap_or_default();
                     let idx = grammar_index(body.get(1..).unwrap_or_default());
                     let slot = idx as u8;
+                    let start = out.len();
                     match body.first() {
+                        // Kind 1 (FUN_100be760: FUN_1025a400(0)): nothing, nor the space after it.
+                        Some(0x01) => eat_space = true,
                         Some(0x10) => out.extend(encode_sjis(&ctx.actor.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
@@ -320,6 +325,10 @@ impl BattleText {
                             out.extend(encode_sjis(&self.item_name(work(item) as u32, if n == 1 { 1 } else { 2 })));
                         }
                         _ => {}
+                    }
+                    // Only a block that wrote text takes the case (FUN_100be760: FUN_10259f40 then +0xc = 0).
+                    if out.len() > start {
+                        apply_case(&mut out[start..], std::mem::take(&mut case_mode));
                     }
                     2 + a as usize
                 }
@@ -367,6 +376,10 @@ impl BattleText {
                 }
                 0x0a | 0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1e => 2,
                 0x7f => match a {
+                    0x80 => {
+                        case_mode = s.get(i + 2).copied().unwrap_or(0);
+                        3
+                    }
                     // 7f b4 n (0x100c20b9): work[n] clamped to 0..999999999 with separators (FUN_101c9440; ',' in
                     // English), then group 10 0x5f "%s gil" (English text).
                     0xb4 => {
@@ -374,7 +387,7 @@ impl BattleText {
                         out.extend(format!("{} gil", separated(v as u32)).bytes());
                         3
                     }
-                    0x34..=0x36 | 0x80 | 0x81 | 0x94..=0x96 | 0xa0..=0xb5 => 3,
+                    0x34..=0x36 | 0x81 | 0x94..=0x96 | 0xa0..=0xb5 => 3,
                     0x38 => 4,
                     0x84 => {
                         // Names of the set bits of work[4], kind 3 entries n * 0x20 + bit, space separated.
@@ -431,6 +444,33 @@ impl BattleText {
             lines.pop();
         }
         Line { lines: lines.iter().map(|l| decode_sjis(l)).collect(), mode }
+    }
+}
+
+/// FUN_100c2bf0's modes on ASCII text: 1 the first letter upper case, 2 all upper, 3 all lower, 4 each word's first.
+fn apply_case(t: &mut [u8], mode: u8) {
+    let mut word_start = true;
+    let mut first = true;
+    let mut i = 0;
+    while i < t.len() {
+        let c = t[i];
+        if c >= 0x80 {
+            i += 2;
+            (first, word_start) = (false, false);
+            continue;
+        }
+        match mode {
+            1 if first && c.is_ascii_alphabetic() => t[i] = c.to_ascii_uppercase(),
+            2 => t[i] = c.to_ascii_uppercase(),
+            3 => t[i] = c.to_ascii_lowercase(),
+            4 if word_start => t[i] = c.to_ascii_uppercase(),
+            _ => {}
+        }
+        if c.is_ascii_alphabetic() {
+            first = false;
+        }
+        word_start = c == b' ';
+        i += 1;
     }
 }
 
@@ -503,6 +543,16 @@ mod tests {
         assert_eq!(bt.system(0xbe, &ctx).unwrap().lines, vec!["You take the 12,345 gil out of delivery slot 2.".to_string()]);
         let ctx = Ctx { work: [3, 1, 0, 0, 0], strings: ["Lnxcsfix".into(), String::new()], ..Default::default() };
         assert_eq!(bt.system(0xaa, &ctx).unwrap().lines, vec!["Slot 3:".to_string(), "1 gil, sent to you by Lnxcsfix.".to_string()]);
+    }
+
+    /// Synthesis lines (7031 0xa4 / 0xcc): 7f 80 1 capitalises the article; grammar kind 1 takes its space with it.
+    #[test]
+    fn synthesis_lost_lines() {
+        let Some(bt) = load() else { return };
+        let ctx = Ctx { work: [698, 0, 0, 0, 0], ..Default::default() };
+        assert_eq!(bt.system(0xa4, &ctx).unwrap().lines, vec!["An ash log was lost.".to_string()]);
+        let ctx = Ctx { work: [698, 0, 0, 0, 0], strings: ["Lnxcsfix".into(), String::new()], ..Default::default() };
+        assert_eq!(bt.system(0xcc, &ctx).unwrap().lines, vec!["Lnxcsfix lost an ash log.".to_string()]);
     }
 
     fn mob(name: &str) -> Option<Who> {
