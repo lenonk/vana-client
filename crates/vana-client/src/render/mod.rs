@@ -64,7 +64,9 @@ pub fn adapter_names(instance: &wgpu::Instance, surface: Option<&wgpu::Surface>)
         .filter(|a| surface.is_none_or(|s| a.is_surface_supported(s)))
         .map(|a| a.get_info().name)
         .collect();
-    names.dedup();
+    // One per name: each backend (Vulkan, GL, ...) lists the same card.
+    let mut seen = std::collections::HashSet::new();
+    names.retain(|n| seen.insert(n.clone()));
     names
 }
 

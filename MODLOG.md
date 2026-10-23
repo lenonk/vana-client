@@ -4984,8 +4984,13 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   the slider tracks (gauge caps 4 x 8 and a 64 x 8 middle, alpha 49) and, under each button, a dark copy of its
   buttonto cells at (+2, +2) coloured (1, 1, 1, 169), alpha blended. The children (buttons) are additive
   (b[1, 0, 2, 1], colour 97, 97, 128, 169): over that dark copy they read dark slate; without it, pale lavender.
-  A button's caption is its glyphs twice: at (+2, +2) alpha 49 subtracted (b[1, 2, 0, 1]), then alpha 192.
-  Captions start at (+5, +1) in an 88 x 16 button. Markers: windowps 387 (88 px) / 412 (64 px) at (+37, +4).
+  A button's caption is its glyphs twice: at (+2, +2) alpha 49 subtracted (b[1, 2, 0, 1]), then alpha 192
+  additive (b[1, 0, 2, 1]); headings once, alpha blended (b[1, 0, 1, 1]). Captions start at (+5, +1) in an 88 x 16
+  button. Markers: windowps 387 (88 px) / 412 (64 px) at (+37, +4).
+- The caption glyphs are the small bold set at the top of "font    font" (rows 13 px apart from y 0, ASCII order
+  from '!'), not fontshp's (the larger set lower down, drawn at half size, thinner). Our table (screens.rs
+  CAPTION_GLYPHS) takes each glyph's rect from retail's own label cells where one exists (all but ','), its top
+  within the line from the rect; each glyph advances its width, a space 5 ("Game Settings" in 465).
 - Ours (not retail): configwi gets rows Extras and Settings under Gamepad (y 214, 230, its 16-px pitch; the frame
   32 px taller), drawn as its rows (windowps 105's buttonto cells over the dark copy, the caption as above);
   Global -> Extras -> Settings -> Gameplay with Down, back with Up. Enter opens our page at conf2win's place
@@ -4993,8 +4998,11 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   conf2win's 88-px or conf3win's 64-px buttons (up to three choices) or a slider (track from 465's cells, fill
   windowps 384; Enter then Left / Right, as the pages' sliders) under it, the slider's value at the heading's end.
   Settings has seven pages, turned as miss00 turns nations (children 9 / 10: menu frames 25 / 26, 18 x 9, at (9, 11) /
-  (343, 11); the page name in the game font at (+60, +10), FUN_1022de70): Left / Right turn it on a slider row (move
-  between buttons on a buttons row), Ctrl / Alt + Left / Right and Tab always, or a click on an arrow. Extras (off
+  (343, 11); the page name in the game font at (+60, +10), FUN_1022de70). Ours (the user's rule for every paged
+  window, retail's included when built): the page name is a cursor stop (the page opens on it; Up from the first
+  row reaches it) where Left / Right turn the page; elsewhere Left / Right move between a row's buttons (a slider
+  row turns the page), Ctrl / Alt + Left / Right and Tab always turn it, and so does a click on an arrow. Buttons
+  whose captions do not fit 88 / 64 px widen together, from x 32. Extras (off
   by default): the map overlay (Ctrl / Alt + O) and its opacity, the synthesis amount, timestamps on all lines.
   The lobby's lobycwin keeps its Settings button; the page is centred there.
 - Timestamps: retail's /timestamp (config 0xb5) stamps chat lines only (12-hour, FUN_101bf740) in colour 0x31; the

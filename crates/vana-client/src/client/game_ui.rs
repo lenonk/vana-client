@@ -653,9 +653,14 @@ impl GameUi {
     /// Cell `cell` of sprite `k` stretched over (x, y, w, h), keeping its texture rect.
     #[allow(clippy::too_many_arguments)]
     pub fn cell_stretch(&mut self, lib: &str, k: usize, cell: usize, x: f32, y: f32, w: f32, h: f32, tint: u32) {
+        self.cell_stretch_blend(lib, k, cell, x, y, w, h, tint, 0);
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn cell_stretch_blend(&mut self, lib: &str, k: usize, cell: usize, x: f32, y: f32, w: f32, h: f32, tint: u32, blend_word: u32) {
         let Some(c) = self.data.lobby.lib(lib).and_then(|l| l.sprites.get(k)).and_then(|s| s.cells.get(cell)) else { return };
         let (cw, ch) = (c.size[0] as f32, c.size[1] as f32);
-        self.batch.push_cell_rect(&self.data.lobby, c, x, y, cw, ch, w / cw.max(1.0), h / ch.max(1.0), tint, 0);
+        self.batch.push_cell_rect(&self.data.lobby, c, x, y, cw, ch, w / cw.max(1.0), h / ch.max(1.0), tint, blend_word);
     }
 
     /// A menu layout by name (window element first, then the children).
@@ -816,11 +821,11 @@ impl GameUi {
 
     /// A Config page caption in fontshp (see screens::push_label); returns the end x.
     pub fn label(&mut self, s: &str, x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
-        screens::push_label(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, tint, shadow)
+        screens::push_label(&mut self.batch, &self.data.lobby, s, x, y, tint, shadow)
     }
 
     pub fn label_width(&self, s: &str) -> f32 {
-        screens::label_width(&self.data.lobby, &encode_sjis(s))
+        screens::label_width(s)
     }
 
     /// A sprite without its caption: the cells not taken from the font texture (a button's blank body).

@@ -143,7 +143,7 @@ fn rows(kind: Kind, tab: usize) -> &'static [Row] {
     const SCREEN: &[Row] = &[
         row("Resolution", "0001 / 0002: the window's size.", Size("0001", "0002", Sizes::Window), &[], Now),
         row("Monitor", "The monitor full screen and borderless use (not retail).", Monitor, &[], Now),
-        row("Graphics Card", "The GPU to draw with; Default is the high-performance one (not retail).", Gpu, &[], Restart),
+        row("GPU", "The graphics card to draw with; Default is the high-performance one (not retail).", Gpu, &[], Restart),
         row("Background", "0003 / 0004: the 3D scene's resolution, scaled to the window.", Size("0003", "0004", Sizes::Background), &[], Now),
         row("Menu Size", "0037 / 0038: the resolution menus and text are laid out at, then stretched.", Size("0037", "0038", Sizes::Ui), &[], Now),
         row("3D Aspect", "Window: the window's shape. Config: retail's ratio from Misc. 2 / the lobby Config.", RetailAspect, &[(0, "Window"), (1, "Config")], Now),
@@ -204,6 +204,8 @@ const PITCH: f32 = 34.0;
 const WIDE: [f32; 2] = [78.0, 190.0];
 const NARROW: [f32; 3] = [78.0, 174.0, 270.0];
 const SLIDER_X: f32 = 88.0;
+/// Where buttons widened for their captions start.
+const WIDE_X: f32 = 32.0;
 const SLIDER_W: f32 = 192.0;
 /// miss00's page arrows (children 9 / 10: menu frames 25 / 26, 18 x 9) and its page name (FUN_1022de70, game font).
 const ARROWS: [f32; 2] = [9.0, 343.0];
@@ -222,7 +224,7 @@ pub struct SettingsUi {
     pub in_game: bool,
     /// The page (Settings).
     tab: usize,
-    /// The cursor's row (from 1) and column within it.
+    /// The cursor's row: 0 the page name (paged pages), then the rows from 1; the column within it.
     row: usize,
     col: usize,
     /// A slider being edited (Enter, then Left / Right, as the Config pages' sliders).
@@ -246,7 +248,8 @@ impl SettingsUi {
     }
 
     pub fn open_kind(c: &Config, window: [u32; 2], kind: Kind) -> Self {
-        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row: 1, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false };
+        let row = if kind == Kind::Settings { 0 } else { 1 };
+        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false };
         s.col = s.marked_col();
         s
     }
@@ -408,7 +411,8 @@ impl SettingsUi {
             Val::MapOpacity => format!("{}%", self.s.map_opacity),
             Val::Monitor => self.monitors.iter().find(|m| m.0 == self.s.monitor).or(self.monitors.first()).map_or_else(|| "Default".into(), |m| m.0.clone()),
             Val::Gpu if self.s.gpu.is_empty() => "Default".into(),
-            Val::Gpu => self.s.gpu.clone(),
+            // The name without the driver's part ("AMD Radeon RX 6800 XT (RADV NAVI21)").
+            Val::Gpu => self.s.gpu.split(" (").next().unwrap_or_default().to_string(),
             v => {
                 let x = self.get(v);
                 r.choices.iter().find(|c| c.0 == x).map_or(x.to_string(), |c| c.1.to_string())
@@ -441,7 +445,7 @@ impl SettingsUi {
             return;
         }
         self.tab = (self.tab as i32 + d).rem_euclid(TABS.len() as i32) as usize;
-        self.row = self.row.clamp(1, self.rows().len());
+        self.row = self.row.min(self.rows().len());
         self.col = self.marked_col();
         self.sounds.push(Se::Cursor);
     }
@@ -465,8 +469,9 @@ impl SettingsUi {
         }
     }
 
-    /// A key; returns true when the page closes (Escape). Left / Right move between a row's buttons, else turn the
-    /// page; with Ctrl / Alt (the lists' page modifier) they always turn it.
+    /// A key; returns true when the page closes (Escape). Left / Right move between a row's buttons; on the page name
+    /// (a stop of ours above the rows) or a slider row, or with Ctrl / Alt (the lists' page modifier), they turn the
+    /// page.
     pub fn key(&mut self, key: egui::Key) -> bool {
         self.key_mod(key, false)
     }
@@ -487,11 +492,12 @@ impl SettingsUi {
             }
             return false;
         }
-        let n = self.rows().len();
+        let first = if self.paged() { 0 } else { 1 };
+        let span = self.rows().len() + 1 - first;
         match key {
             egui::Key::ArrowDown | egui::Key::ArrowUp => {
-                let d = if key == egui::Key::ArrowDown { 1 } else { n - 1 };
-                self.row = 1 + (self.row - 1 + d) % n;
+                let d = if key == egui::Key::ArrowDown { 1 } else { span - 1 };
+                self.row = first + (self.row - first + d) % span;
                 self.col = self.marked_col().min(self.cols(self.row) - 1);
                 self.sounds.push(Se::Cursor);
             }
@@ -538,15 +544,24 @@ impl SettingsUi {
         let mut out = Vec::new();
         for (i, r) in self.rows().iter().enumerate() {
             let y = self.top() + PITCH * i as f32 + 14.0;
+            // conf2win's two 88-px and conf3win's three 64-px columns; a caption that does not fit (12 px of the
+            // button are its ends) widens every button of the row, from the bullets' column.
+            let need = r.choices.iter().map(|c| super::super::render::screens::label_width(c.1) + 12.0).fold(0.0, f32::max);
             match Self::ctl(r) {
-                Ctl::Buttons(2) | Ctl::Buttons(1) => {
-                    for (c, x) in WIDE.iter().enumerate().take(r.choices.len()) {
+                Ctl::Buttons(n) if n <= 2 && need <= 88.0 => {
+                    for (c, x) in WIDE.iter().enumerate().take(n) {
                         out.push((i + 1, c, [*x, y, 88.0, 16.0]));
                     }
                 }
-                Ctl::Buttons(_) => {
-                    for (c, x) in NARROW.iter().enumerate().take(r.choices.len()) {
+                Ctl::Buttons(n) if n == 3 && need <= 64.0 => {
+                    for (c, x) in NARROW.iter().enumerate().take(n) {
                         out.push((i + 1, c, [*x, y, 64.0, 16.0]));
+                    }
+                }
+                Ctl::Buttons(n) => {
+                    let w = need.ceil();
+                    for c in 0..n {
+                        out.push((i + 1, c, [WIDE_X + (w + 8.0) * c as f32, y, w, 16.0]));
                     }
                 }
                 Ctl::Slider => out.push((i + 1, 0, [SLIDER_X, y, SLIDER_W, 16.0])),
@@ -605,6 +620,9 @@ impl SettingsUi {
             gu.sprite("menu    frames", 25, x + ARROWS[0], y + ARROW_Y, N);
             gu.sprite("menu    frames", 26, x + ARROWS[1], y + ARROW_Y, N);
             gu.text(TABS[self.tab], x + NAME_XY.0, y + NAME_XY.1, 0, [0x80; 4]);
+            if self.row == 0 {
+                gu.cursor(x + NAME_XY.0 - 4.0, y + NAME_XY.1);
+            }
         } else {
             // A Config page: windowps 465's header strip (FUN_101144b0 skips its first cell, the backing), the title.
             gu.sprite_cells("menu    windowps", 465, 1..2, x, y, N);
@@ -662,18 +680,20 @@ impl SettingsUi {
         [x, y, W, H]
     }
 
-    /// Puts the cursor on a page and row (offscreen shots).
+    /// Puts the cursor on a page and row (offscreen shots; 0 the page name).
     pub fn goto(&mut self, tab: usize, row: usize) {
         if self.paged() {
             self.tab = tab.min(TABS.len() - 1);
         }
-        self.row = row.clamp(1, self.rows().len());
+        self.row = row.clamp(if self.paged() { 0 } else { 1 }, self.rows().len());
         self.col = self.marked_col();
     }
 
     /// The help bar's text for the cursor's row, with when a change shows.
     pub fn help(&self) -> String {
-        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return String::new() };
+        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else {
+            return "Left / Right: another page of settings.".into();
+        };
         let when = match r.when {
             When::Now => "",
             When::NextZone => " Takes effect at the next zone load.",
@@ -704,12 +724,11 @@ pub(super) fn button(gu: &mut GameUi, r: [f32; 4], tint: u32) {
         gu.sprite_base("menu    windowps", k, r[0], r[1], tint, 0);
         return;
     }
-    match r[2] as u32 {
-        _ => {
-            let left = (r[2] * 48.0 / 88.0).round();
-            gu.cell_stretch("menu    windowps", 105, 0, r[0], r[1], left, r[3], tint);
-            gu.cell_stretch("menu    windowps", 105, 1, r[0] + left, r[1], r[2] - left, r[3], tint);
-        }
+    // Other widths: 105's two buttonto cells stretched (the left one to all but the right end's 40 px), base first.
+    let left = (r[2] - 40.0).max(8.0);
+    for (dx, t, blend) in [(2.0, 0x8001_0101, 0x44), (0.0, tint, 0)] {
+        gu.cell_stretch_blend("menu    windowps", 105, 0, r[0] + dx, r[1] + dx, left, r[3], t, blend);
+        gu.cell_stretch_blend("menu    windowps", 105, 1, r[0] + dx + left, r[1] + dx, r[2] - left, r[3], t, blend);
     }
 }
 
@@ -797,5 +816,14 @@ mod tests {
         assert_eq!((ui.tab, ui.col), (0, 1));
         ui.key_mod(egui::Key::ArrowRight, true);
         assert_eq!((ui.tab, ui.row), (1, 2));
+        // The page name: opened on it, Up from the first row reaches it, Left / Right there turn the page.
+        let mut ui = SettingsUi::open(&c, [1280, 800]);
+        assert_eq!(ui.row, 0);
+        ui.goto(2, 1);
+        ui.key(egui::Key::ArrowUp);
+        assert_eq!(ui.row, 0);
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::ArrowRight);
+        assert_eq!(ui.tab, 4);
     }
 }

@@ -1,7 +1,7 @@
 //! Whole screens laid out as FFXiMain does: the lobby title menu, and the core HUD windows.
 
 use super::ui::UiBatch;
-use crate::dat::ui::{Menu, SpriteLib, UiFile};
+use crate::dat::ui::{Cell, Menu, SpriteLib, UiFile};
 
 /// Title buttons, top to bottom, as children 1..5 of "menu    loby2win" (1-based sprite ids,
 /// FFXiMain .data 0x1037beec enabled / 0x1037bef4 disabled).
@@ -534,30 +534,78 @@ pub fn push_shape_text(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, t
     x
 }
 
-/// fontshp text as the Config pages' captions are built: each glyph a full width on (no overlap), optionally under
-/// its shadow (the glyphs again at +2, +2, alpha 49, subtracted: the buttons' captions). Returns the end x.
-pub fn push_label(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
-    let Some(lib) = ui.lib("font    fontshp") else { return x };
-    let glyphs = shape_glyphs(s);
-    if shadow {
-        let mut sx = x + 2.0;
-        for &g in &glyphs {
-            // Cell alpha 192 x 0x21 >> 7 = 49; blend word 0x42 = PS2 (0 - Cs) * As + Cd.
-            b.push_sprite(ui, lib, g, sx, y + 2.0, 1.0, 1.0, 0x2180_8080, 0x42);
-            sx += sprite_width(lib, g);
+/// The Config pages' caption glyphs: the bold set at the top of "font    font" (ASCII order), cut as retail cuts
+/// them in its label sprites: (char, u, v, w, h, top within the 13-px line).
+const CAPTION_GLYPHS: [(char, u8, u8, u8, u8, u8); 92] = [
+    ('!', 12, 0, 6, 11, 0), ('"', 21, 0, 8, 5, 0), ('#', 30, 0, 10, 11, 0), ('$', 40, 0, 10, 11, 0),
+    ('%', 50, 0, 10, 11, 0), ('&', 60, 0, 10, 11, 0), ('\'', 73, 1, 4, 6, 1), ('(', 80, 0, 6, 12, 0),
+    (')', 93, 0, 6, 12, 0), ('*', 100, 0, 10, 11, 0), ('+', 111, 1, 8, 10, 1), (',', 2, 17, 5, 7, 4),
+    ('-', 11, 13, 8, 11, 0), ('.', 23, 13, 4, 11, 0), ('/', 30, 16, 9, 8, 3), ('0', 40, 13, 9, 12, 0),
+    ('1', 51, 13, 7, 11, 0), ('2', 61, 13, 8, 11, 0), ('3', 70, 13, 9, 11, 0), ('4', 80, 13, 9, 11, 0),
+    ('5', 91, 13, 8, 11, 0), ('6', 101, 13, 8, 11, 0), ('7', 111, 13, 8, 11, 0), ('8', 0, 26, 9, 11, 0),
+    ('9', 10, 26, 8, 11, 0), (':', 19, 28, 4, 8, 2), (';', 24, 26, 6, 11, 0), ('<', 30, 26, 8, 11, 0),
+    ('=', 39, 26, 8, 10, 0), ('>', 48, 26, 8, 11, 0), ('?', 56, 26, 9, 11, 0), ('@', 66, 26, 9, 11, 0),
+    ('A', 77, 26, 9, 11, 0), ('B', 87, 26, 9, 11, 0), ('C', 97, 26, 9, 12, 0), ('D', 107, 26, 9, 11, 0),
+    ('E', 0, 39, 9, 11, 0), ('F', 10, 39, 9, 11, 0), ('G', 20, 39, 9, 12, 0), ('H', 31, 39, 9, 11, 0),
+    ('I', 42, 39, 6, 11, 0), ('J', 48, 39, 9, 12, 0), ('K', 58, 39, 9, 11, 0), ('L', 69, 39, 9, 11, 0),
+    ('M', 80, 39, 9, 11, 0), ('N', 91, 39, 9, 11, 0), ('O', 102, 39, 9, 12, 0), ('P', 113, 39, 9, 11, 0),
+    ('Q', 0, 52, 9, 12, 0), ('R', 11, 52, 10, 11, 0), ('S', 22, 52, 9, 12, 0), ('T', 31, 52, 9, 11, 0),
+    ('U', 41, 52, 9, 12, 0), ('V', 52, 52, 10, 11, 0), ('W', 63, 52, 9, 11, 0), ('X', 76, 52, 9, 11, 0),
+    ('Y', 88, 52, 9, 11, 0), ('Z', 99, 52, 9, 11, 0), ('[', 114, 52, 7, 11, 0), ('\\', 1, 65, 9, 11, 0),
+    (']', 12, 65, 7, 11, 0), ('^', 21, 65, 8, 7, 0), ('_', 31, 65, 8, 11, 0), ('`', 42, 65, 5, 7, 0),
+    ('a', 49, 67, 8, 9, 2), ('b', 58, 65, 9, 11, 0), ('c', 68, 67, 9, 9, 2), ('d', 78, 65, 9, 11, 0),
+    ('e', 89, 67, 9, 9, 2), ('f', 99, 65, 7, 11, 0), ('g', 107, 67, 9, 12, 2), ('h', 0, 78, 9, 11, 0),
+    ('i', 10, 78, 5, 11, 0), ('j', 16, 78, 8, 14, 0), ('k', 25, 78, 9, 11, 0), ('l', 35, 78, 6, 11, 0),
+    ('m', 42, 80, 9, 9, 2), ('n', 56, 80, 9, 9, 2), ('o', 66, 80, 9, 9, 2), ('p', 76, 80, 9, 12, 2),
+    ('q', 87, 80, 9, 13, 2), ('r', 98, 80, 7, 9, 2), ('s', 106, 80, 9, 9, 2), ('t', 0, 92, 6, 10, 1),
+    ('u', 7, 93, 9, 9, 2), ('v', 17, 93, 9, 9, 2), ('w', 27, 93, 9, 9, 2), ('x', 39, 93, 9, 9, 2),
+    ('y', 50, 93, 9, 12, 2), ('z', 60, 93, 8, 9, 2), ('{', 70, 92, 8, 11, 1), ('}', 91, 92, 8, 11, 1),
+];
+
+/// A space between caption words ("Game Settings" in windowps 465).
+const CAPTION_SPACE: f32 = 5.0;
+
+/// A caption as the Config pages' sprites build theirs from CAPTION_GLYPHS, each glyph its width on, from the top of
+/// its 13-px line at y. Headings: one pass, alpha blended (465's text, b[1, 0, 1, 1]). Button captions (`shadow`):
+/// the glyphs at (+2, +2), alpha 49, subtracted (b[1, 2, 0, 1]), then additive (b[1, 0, 2, 1]). Returns the end x.
+pub fn push_label(b: &mut UiBatch, ui: &UiFile, s: &str, x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
+    let glyph = |c: char| CAPTION_GLYPHS.iter().find(|g| g.0 == c);
+    let cell = |g: &(char, u8, u8, u8, u8, u8), alpha: u8, blend: [u8; 4]| {
+        let (w, h) = (g.3 as i16, g.4 as i16);
+        Cell {
+            corners: [[0, 0], [w, 0], [0, h], [w, h]],
+            size: [g.3 as u16, g.4 as u16],
+            uv: [g.1 as u16, g.2 as u16],
+            flip: 0,
+            colors: [[0x80, 0x80, 0x80, alpha]; 4],
+            blend,
+            texture: "font    font".into(),
         }
+    };
+    let pass = |b: &mut UiBatch, ox: f32, oy: f32, alpha: u8, blend: [u8; 4], tint: u32| {
+        let mut cx = x + ox;
+        for c in s.chars() {
+            match glyph(c) {
+                Some(g) => {
+                    b.push_cell(ui, &cell(g, alpha, blend), cx, y + oy + g.5 as f32, 1.0, 1.0, tint, 0);
+                    cx += g.3 as f32;
+                }
+                None => cx += CAPTION_SPACE,
+            }
+        }
+        cx
+    };
+    if shadow {
+        pass(b, 2.0, 2.0, 49, [1, 2, 0, 1], 0x8080_8080);
+        pass(b, 0.0, 0.0, 192, [1, 0, 2, 1], tint)
+    } else {
+        pass(b, 0.0, 0.0, 192, [1, 0, 1, 1], tint)
     }
-    let mut x = x;
-    for g in glyphs {
-        b.push_sprite(ui, lib, g, x, y, 1.0, 1.0, tint, 0);
-        x += sprite_width(lib, g);
-    }
-    x
 }
 
 /// The width push_label takes.
-pub fn label_width(ui: &UiFile, s: &[u8]) -> f32 {
-    ui.lib("font    fontshp").map_or(0.0, |lib| shape_glyphs(s).into_iter().map(|g| sprite_width(lib, g)).sum())
+pub fn label_width(s: &str) -> f32 {
+    s.chars().map(|c| CAPTION_GLYPHS.iter().find(|g| g.0 == c).map_or(CAPTION_SPACE, |g| g.3 as f32)).sum()
 }
 
 /// Sprite-font text ending at x, drawn from its last glyph back (FUN_101c02c0, used for numbers).
