@@ -1248,9 +1248,36 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         for (g, id) in world.party_gauges.iter_mut().zip(&ids) {
             (g.1, g.2) = (ease(g.1, id.1), ease(g.2, id.2));
         }
+        for (k, g) in world.ally_gauges.iter_mut().enumerate() {
+            if let Some(m) = party_slots.slots.get(6 + k).and_then(|m| m.as_ref()) {
+                g.1 = ease(g.1, m.hpp);
+            }
+        }
         if let Some((_, hpp)) = tgt {
             world.target_gauge.1 = ease(world.target_gauge.1, hpp);
         }
+    }
+    // raid1 / raid2 (FUN_10203c80): shown while their party exists and no window of the registry +0x2a 0x01 / 0x80
+    // set is up (main and social menus, item / equipment windows, magic / ability lists, map, config, palettes) nor an
+    // event holds us (the mapping to our state: inferred). Closing them drops a party-list cursor silently.
+    let hide = world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world);
+    world.ally_gauges.resize(12, (0, 0));
+    let alliance: [Option<[Option<crate::render::screens::AllyRow>; 6]>; 2] = std::array::from_fn(|k| {
+        (party_slots.counts[k + 1] > 0 && !hide).then(|| {
+            std::array::from_fn(|i| {
+                let s = 6 * (k + 1) + i;
+                let m = party_slots.slots[s].as_ref()?;
+                let g = &mut world.ally_gauges[s - 6];
+                if g.0 != m.id {
+                    *g = (m.id, m.hpp);
+                }
+                let leader = (m.id == party_slots.leaders[k + 1]) as u8 | ((m.id == party_slots.alliance_leader) as u8) << 1;
+                Some(crate::render::screens::AllyRow { hp: m.hpp as f32 / 100.0, hp_anim: g.1 as f32 / 100.0, away: m.away != 0 || m.zone != world.pos_zone, marks: leader })
+            })
+        })
+    });
+    if hide && world.party_cursor.as_ref().is_some_and(|c| c.index >= 6) {
+        world.party_cursor = None;
     }
     let st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
@@ -1260,7 +1287,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
         }).collect(),
         party_window: if rows.len() > 1 || party_slots.leaders[0] != 0 { party_slots.window() } else { "menu    ptw0".into() },
-        party_hand: target::party_hand(world).filter(|h| h.0 < rows.len()).map(|(row, tint, _)| (row, tint, gu.cursor_frame())),
+        party_hand: target::party_hand(world).filter(|h| if h.0 < 6 { h.0 < rows.len() } else { alliance[h.0 / 6 - 1].is_some_and(|r| r[h.0 % 6].is_some()) }).map(|(row, tint, _)| (row, tint, gu.cursor_frame())),
+        alliance,
         party_away: rows.iter().map(|m| m.as_ref().is_some_and(|m| m.away != 0 || m.zone != world.pos_zone)).collect(),
         party_marks: rows.iter().enumerate().map(|(k, m)| {
             let id = if k == 0 { world.my_id } else { m.as_ref().map_or(0, |m| m.id) };
@@ -1362,6 +1390,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.hud_top = top;
     let party = st.party_window.clone();
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
+    for (k, n) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
+        if st.alliance[k].is_some() {
+            blockers.extend(gu.window_rect(n, sw, sh));
+        }
+    }
     blockers.extend(world.overlay.as_ref().filter(|o| o.has_map()).map(|o| o.rect));
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
@@ -1574,6 +1607,27 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     let tid = world.target.unwrap_or(0);
                     let tint = name_colour(tid, e, world, |i| gu.ncol(i));
                     gu.wrapped_name(&e.name, max, t.x, t.y, tint, true, e.no_gauge);
+                }
+            }
+            // Alliance rows (FUN_10202720) by their window slot: name (TP as on party rows), HP in the HP colour, MP,
+            // out of zone the name alone in 0x80606060.
+            "ally name" | "ally HP" | "ally MP" | "ally away" => {
+                let Some(m) = party_slots.slots.get(t.align as usize).and_then(|m| m.as_ref()) else { continue };
+                match t.what {
+                    "ally name" => {
+                        gu.shape_name(&m.name, t.x, t.y, 0x8080_8080);
+                        if world.party_tp && m.index < 0x700 {
+                            gu.shape_text(&m.tp.to_string(), t.x + 48.0, t.y + 10.0, if m.tp > 999 { 0x8020_60d0 } else { 0x8060_6060 }, true);
+                        }
+                    }
+                    "ally HP" => {
+                        let tint = gu.hp_tint(m.hpp);
+                        gu.shape_text(&m.hp.to_string(), t.x, t.y, tint, true);
+                    }
+                    "ally MP" => {
+                        gu.shape_text(&m.mp.to_string(), t.x, t.y, 0x8080_8080, true);
+                    }
+                    _ => gu.shape_name(&m.name, t.x, t.y, 0x8060_6060),
                 }
             }
             "member name" | "HP" | "MP" | "member away" => {
@@ -2687,6 +2741,8 @@ struct World {
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
     party_cursor: Option<target::PartyCursor>,
+    /// Alliance rows' eased HP per slot 6..17 (id, HPP), as party_gauges.
+    ally_gauges: Vec<(u32, u8)>,
     /// s2c 0x067 kind 2: the visited Mog House's owner (0 = ours / none, FUN_100f9600) and the 2F / Safe 2 flag
     /// (FUN_100f97a0).
     /// 0x00A MogZoneFlag (@0xaf bit 0): a zone with a nomad moogle (FUN_101cc070(1), session +0x40dac bit 0x40).
@@ -3639,6 +3695,7 @@ impl App {
                             cats: None,
                             prompt: None,
                             party_cursor: None,
+                            ally_gauges: Vec::new(),
                             mog_zone: false,
                             mh_owner: 0,
                             mh_floors: false,

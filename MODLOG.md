@@ -4605,3 +4605,26 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   padding, so a lookup by a short layout name ("menu    raid1") missed and read flags 0. Keys and lookups are
   normalised now (trimmed, lower case). No visible change yet: the short names with flag 8 (no open zoom: inline,
   fep, cnttime, quest01, guide01) are not drawn through the gate.
+
+## Alliance windows: "menu    raid1" / "menu    raid2" (2026-10-23; spec: scratchpad raid/SPEC.md of that session)
+
+- Handlers DAT_106643ac / DAT_106643b0 (vtables 0x1033b028 / 0x1033afd8), draws FUN_10204660 / FUN_10204770, rows
+  FUN_10202720 (2019: FUN_101f9750). raid1 = window slots 6..11 (the first other party met in roster order), raid2
+  = 12..17 (FUN_10202b80, as our party::Slots). Layouts 112x100, places (384, 48) / (384, 150) anchored right and
+  bottom: (W - 128, H - 400) / (W - 128, H - 298); six row children at (3, 4 + 16 (k - 1)), 106x14; frame framesus
+  16 (only the style frame shows). Always six rows (no layout swap); empty rows blank. Registry flags 3 (they zoom
+  open; no stacking flags).
+- FUN_10203c80: shown while their party exists and none of the windows with registry word +0x2a bit 0x01 / 0x80 is
+  up (main / social menu, magic / ability lists, map, config, party menus, auction, search, ...), nor the equipment
+  window, the macro palettes, an event holding the player (FUN_10087070(1)) or text-input +0xf100 (inf: the
+  auto-translate list); a party-menu member pick keeps them. Closing them turns the party-list cursor off without its
+  callback. Ours maps that to world.menu / win / config / map / magic / ability / palette / event (inferred).
+- Rows (FUN_10202720): in zone the HP gauge (windowps 38 / 97, eased) at (+26, +7), the name (fontshp, 8-character
+  ellipsis) at the row, HP right-aligned (+88, +1) in the HP colour, MP right-aligned (+104, +8); TP (+48, +10) with
+  config 0xae, not for trusts; no MP gauge. Out of zone the name alone in 0x80606060 (no "(zone)" text, unlike the
+  party rows). Marks as on the party rows (FUN_10201ff0; the quartermaster 433 / level-sync 493 marks are not done
+  on either). The hand (anc2s) on these rows as on the party window: passive grey for an alliance-member target,
+  range-tinted under `<stal>`.
+- Not done: the lot column and the lnowin shift (FUN_10202440, FUN_1013f1c0: no loot window yet). Not testable live
+  with lnxtest01 (three characters, one session); checked offscreen: `FFXI_UISHOT_MEMBERS=6 FFXI_UISHOT_ALLIANCE=6,4
+  ui-shot`.

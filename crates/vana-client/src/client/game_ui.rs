@@ -760,7 +760,17 @@ impl GameUi {
     /// The HUD windows (chat log, party, target, main menu), after what is already in the frame.
     pub fn hud(&mut self, w: f32, h: f32, st: &HudState) -> Vec<TextSlot> {
         self.party_window = st.party_window.clone();
-        let (b, text) = screens::hud_screen(&self.data.lobby, &self.data.style, w, h, st);
+        // raid1 / raid2 open with the zoom (registry flags 3, no 8): nothing of them until it is done.
+        let mut st = st.clone();
+        for (k, name) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
+            if st.alliance[k].is_some()
+                && let Some(r) = self.window_rect(name, w, h)
+                && !self.win_gate(name, r)
+            {
+                st.alliance[k] = None;
+            }
+        }
+        let (b, text) = screens::hud_screen(&self.data.lobby, &self.data.style, w, h, &st);
         self.batch.append(b);
         text
     }

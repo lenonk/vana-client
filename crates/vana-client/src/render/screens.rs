@@ -461,6 +461,17 @@ pub fn push_gauge_eased(b: &mut UiBatch, ui: &UiFile, lib: &SpriteLib, x: f32, y
     b.push_sprite(ui, lib, frame, x, y, 1.0, 1.0, if lo == 0.0 { 0x3050_5050 } else { 0x8080_8080 }, 0);
 }
 
+/// An alliance window row (FUN_10202720): HP fraction and its eased value, out of zone, marks (bit 0 party leader,
+/// bit 1 alliance leader).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AllyRow {
+    pub hp: f32,
+    pub hp_anim: f32,
+    pub away: bool,
+    pub marks: u8,
+}
+
+#[derive(Clone)]
 pub struct HudState {
     /// HP / MP fraction per party member (first is the player), and the gauges' eased values (FUN_101cad00's anim
     /// bytes, row +0x78 / +0x79; missing = the value itself).
@@ -469,8 +480,11 @@ pub struct HudState {
     /// The party window ("menu    ptw0" solo, else "ptwN"), and per row: in another zone (no gauges), and marks
     /// (bit 0 party leader, bit 1 alliance leader).
     pub party_window: String,
-    /// FUN_10202110's hand (anc2s): the party row, its tint and the animation frame.
+    /// FUN_10202110's hand (anc2s): the window slot (0..5 the party window, 6..17 raid1 / raid2), its tint and the
+    /// animation frame.
     pub party_hand: Option<(usize, u32, usize)>,
+    /// raid1 / raid2 (FUN_10204660 / FUN_10204770): None = not shown; per row None = an empty slot.
+    pub alliance: [Option<[Option<AllyRow>; 6]>; 2],
     pub party_away: Vec<bool>,
     pub party_marks: Vec<u8>,
     /// The target window: Some(HP fraction) with a gauge, Some(None) without one; its gauge's eased value (+0x64).
@@ -683,6 +697,19 @@ pub const GAUGE_MP: (usize, usize) = (39, 98);
 
 /// The core HUD: chat log, party, target and the main menu, in FFXiMain's 512x448 layout
 /// anchored to the UI area's edges (no scaling).
+/// FUN_10201ff0: party leader windowps 71, alliance leader 70, at (-3, +10); both: the party mark at +3.
+fn push_marks(b: &mut UiBatch, ui: &UiFile, wps: &SpriteLib, marks: u8, rx: f32, ry: f32) {
+    match marks & 3 {
+        1 => b.push_sprite(ui, wps, 71, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
+        2 => b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
+        3 => {
+            b.push_sprite(ui, wps, 71, rx + 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
+            b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
+        }
+        _ => {}
+    }
+}
+
 pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState) -> (UiBatch, Vec<TextSlot>) {
     let mut b = UiBatch::default();
     let mut text = Vec::new();
@@ -727,15 +754,35 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                 let _ = row;
                 b.push_sprite(ui, anc, frame % 6, rx, ry, 1.0, 1.0, tint, 0);
             }
-            // FUN_10201ff0: party leader windowps 71, alliance leader 70, at (-3, +10); both: the party mark at +3.
-            match st.party_marks.get(i).copied().unwrap_or(0) & 3 {
-                1 => b.push_sprite(ui, wps, 71, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
-                2 => b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
-                3 => {
-                    b.push_sprite(ui, wps, 71, rx + 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
-                    b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
+            push_marks(&mut b, ui, wps, st.party_marks.get(i).copied().unwrap_or(0), rx, ry);
+        }
+    }
+    // raid1 / raid2 (FUN_10204660 / FUN_10204770 -> FUN_10202720 per row, children 1..6): in zone the HP gauge (+26,
+    // +7), the name at the row, HP right-aligned (+88, +1), MP right-aligned (+104, +8); out of zone the name alone.
+    // No MP gauge. Text slots carry the window slot (6..17) in `align`.
+    for (k, rows) in st.alliance.iter().enumerate() {
+        let Some(rows) = rows else { continue };
+        let Some(m) = ui.menu(if k == 0 { "menu    raid1" } else { "menu    raid2" }) else { continue };
+        let (x, y) = push_window(&mut b, ui, style, m, w, h);
+        for (i, row) in rows.iter().enumerate() {
+            let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
+            let (rx, ry) = (x + c.x as f32, y + c.y as f32);
+            let slot = 6 * (k + 1) + i;
+            if let Some(r) = row {
+                if r.away {
+                    text.push(TextSlot { what: "ally away", x: rx, y: ry, align: slot as u8 });
+                } else {
+                    push_gauge_eased(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, r.hp, r.hp_anim);
+                    text.push(TextSlot { what: "ally name", x: rx, y: ry, align: slot as u8 });
+                    text.push(TextSlot { what: "ally HP", x: rx + 88.0, y: ry + 1.0, align: slot as u8 });
+                    text.push(TextSlot { what: "ally MP", x: rx + 104.0, y: ry + 8.0, align: slot as u8 });
                 }
-                _ => {}
+                push_marks(&mut b, ui, wps, r.marks, rx, ry);
+            }
+            if let Some((_, tint, frame)) = st.party_hand.filter(|h| h.0 == slot)
+                && let Some(anc) = ui.lib("anc     anc2s")
+            {
+                b.push_sprite(ui, anc, frame % 6, rx, ry, 1.0, 1.0, tint, 0);
             }
         }
     }

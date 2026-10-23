@@ -129,7 +129,15 @@ pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     let n = std::env::var("FFXI_UISHOT_MEMBERS").ok().and_then(|v| v.parse().ok()).unwrap_or(3usize).clamp(1, 6);
     let party = [(1.0, 0.0), (0.55, 1.0), (0.2, 0.35), (0.9, 0.5), (0.4, 0.8), (0.7, 0.2)][..n].to_vec();
     let party_window = crate::render::screens::party_menu(party.len());
-    let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_hand: None, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_focused: true, chat_log: true };
+    // FFXI_UISHOT_ALLIANCE=N,M: raid1 / raid2 with N / M rows (the second out of zone, the first a leader) and the hand
+    // on slot 7.
+    let ally: Vec<usize> = std::env::var("FFXI_UISHOT_ALLIANCE").ok().map(|v| v.split(',').filter_map(|n| n.parse().ok()).collect()).unwrap_or_default();
+    let alliance = std::array::from_fn(|k| {
+        let n = ally.get(k).copied().unwrap_or(0).min(6);
+        (n > 0).then(|| std::array::from_fn(|i| (i < n).then(|| crate::render::screens::AllyRow { hp: 0.3 + 0.1 * i as f32, hp_anim: 0.3 + 0.1 * i as f32, away: i == 1, marks: (i == 0) as u8 })))
+    });
+    let hand = (!ally.is_empty()).then_some((7, 0xa040_40d0u32, 0usize));
+    let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_hand: hand, alliance, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_focused: true, chat_log: true };
     let (batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
     for t in &text {
         println!("text slot {:?} at ({:.0}, {:.0})", t.what, t.x, t.y);

@@ -388,6 +388,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         party: vec![(hpp as f32 / 100.0, 0.0)],
         party_window: "menu    ptw0".into(),
         party_hand: None,
+        alliance: [None, None],
         party_away: Vec::new(),
         party_marks: Vec::new(),
         target: target.map(|t| (t != "npc").then_some(0.7)),

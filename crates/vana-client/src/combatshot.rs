@@ -85,7 +85,7 @@ pub fn combat_shot(out: &Path, mob: &str, menu_layout: usize, width: u32, height
     let font = Font::load(&index, &dll, 1, Quality::Compressed)?;
     let bt = BattleText::load(&index, &dll)?;
     let (w, h) = (width as f32, height as f32);
-    let st = HudState { party: vec![(0.62, 1.0)], party_anim: Vec::new(), target_anim: None, party_window: "menu    ptw0".into(), party_hand: None, party_away: Vec::new(), party_marks: Vec::new(), target: Some(Some(0.4)), menu_selected: None, menu_page: 0, menu_focused: true, chat_log: true };
+    let st = HudState { party: vec![(0.62, 1.0)], party_anim: Vec::new(), target_anim: None, party_window: "menu    ptw0".into(), party_hand: None, alliance: [None, None], party_away: Vec::new(), party_marks: Vec::new(), target: Some(Some(0.4)), menu_selected: None, menu_page: 0, menu_focused: true, chat_log: true };
     let (mut b, _) = hud_screen(&menu, style, w, h, &st);
 
     // Chat log as world_hud draws it: newest at the bottom, 16 px rows from bottom - 22, x + 4.
