@@ -43,12 +43,15 @@ pub struct Inventory {
     pub slots: BTreeMap<(u8, u8), (u16, u32)>,
     /// Equipment slot -> (container, index).
     pub equip: [Option<(u8, u8)>; 16],
+    /// (container, index) -> the item's 24-byte extdata (s2c 0x020 Attr).
+    pub ext: BTreeMap<(u8, u8), [u8; 24]>,
 }
 
 impl Inventory {
     pub fn set(&mut self, container: u8, index: u8, id: u16, count: u32) {
         if id == 0 {
             self.slots.remove(&(container, index));
+            self.ext.remove(&(container, index));
         } else {
             self.slots.insert((container, index), (id, count));
         }
@@ -258,7 +261,7 @@ fn candidates_world(inv: &Inventory, st: Option<&CharStats>, race: u8, info: &It
         .collect()
 }
 
-fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator<Item = u16>) {
+pub(super) fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator<Item = u16>) {
     for id in ids {
         let name = icon_texture(id);
         if !gu.has_image(&name)
@@ -267,6 +270,27 @@ fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator<Item = u16
             gu.image(&name, 32, 32, rgba);
         }
     }
+}
+
+/// The item info window's item from the open list (FUN_101f27a0 / FUN_101321d0): the slot under the cursor, mode 0
+/// for the inventory, mode 1 for the equipment grid or its candidates; (item, extdata, container, index, equipped,
+/// mode).
+pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8)> {
+    let slots = w.inv.slots_of(INVENTORY);
+    let listed = |at: usize| slots.iter().filter(|s| s.index != 0 && s.id != 0).nth(at).cloned();
+    let (slot, container, mode) = match w.win.as_ref()? {
+        Win::Items { scroll, cursor } => (listed(scroll + cursor)?, INVENTORY, 0),
+        Win::Equip { pick: Some(p), .. } => {
+            let i = *p.indexes.get(p.scroll + p.cursor)?;
+            (slots.iter().find(|s| s.index == i)?.clone(), INVENTORY, 1)
+        }
+        Win::Equip { row, col, pick: None } => {
+            let (c, i) = w.inv.equip[slot_at(*row, *col)]?;
+            let &(id, count) = w.inv.slots.get(&(c, i))?;
+            (Slot { index: i, id, count, equipped: true, equipped_ex: false }, c, 1)
+        }
+    };
+    Some((slot.id, w.inv.ext.get(&(container, slot.index)).copied(), container, slot.index, slot.equipped, mode))
 }
 
 /// Draws the open window. Returns the rects that take clicks.

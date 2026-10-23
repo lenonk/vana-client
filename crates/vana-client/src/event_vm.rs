@@ -1888,6 +1888,17 @@ impl Runtime {
                 }
                 self.yield_(v);
             }
+            // FUN_100b9d90 0..3 (the item info window): item and values; sub 2 adds the string operand's bytes as words.
+            0xcc if matches!(sub, Some(0..=3)) => {
+                let offs: &[usize] = if sub == Some(2) { &[2, 4, 6, 8, 10] } else { &[2, 4, 6, 8] };
+                let mut a: Vec<Arg> = offs.iter().map(|&o| Arg::Int(self.val(v, o))).collect();
+                if sub == Some(2) {
+                    let b = self.str_at(v, 0xc);
+                    a.extend((0..4).map(|k| Arg::Int(i32::from_le_bytes(b[k * 4..k * 4 + 4].try_into().unwrap()))));
+                }
+                host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                self.adv(v, len);
+            }
             // FUN_100b98e0: c2s 0x058 RECIPE {skill +4, level +6, +8, mode +0xa = sub (1 for sub 0), +0xc..+0x12} from
             // the operands; sub 1 waits for s2c 0x031. Sub 5 arms no wait. Every call ends the frame.
             0x8c => {

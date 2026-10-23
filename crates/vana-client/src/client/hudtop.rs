@@ -425,6 +425,27 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         }
     }
     for w in window.unwrap_or_default().split(',').filter(|w| !w.is_empty()) {
+        // "iteminfo:ID[:PAGE[:EXTHEX]]": the item info window as an event opens it.
+        if let Some(rest) = w.strip_prefix("iteminfo:") {
+            let f: Vec<&str> = rest.split(':').collect();
+            let id = f[0].strip_prefix("0x").map_or_else(|| f[0].parse().ok(), |h| u32::from_str_radix(h, 16).ok()).unwrap_or(0);
+            let page = f.get(1).and_then(|p| p.parse().ok()).unwrap_or(0);
+            let ext: Option<[u8; 24]> = f.get(2).map(|h| std::array::from_fn(|k| h.get(k * 2..k * 2 + 2).and_then(|b| u8::from_str_radix(b, 16).ok()).unwrap_or(0)));
+            gu.open_ticks = 0.0;
+            if let Some(it) = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok().and_then(|i| crate::dat::items::Items::load(&i, crate::dat::items::Lang::En).ok()).and_then(|t| t.item(id)) {
+                let info = super::iteminfo::build(&it, ext.as_ref(), &Default::default(), &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s));
+                println!("pages {:?}", info.pages);
+                let layout = super::iteminfo::LAYOUTS[super::iteminfo::rows(&info, page) - 3];
+                if let Some(r) = gu.window_swapped("menu    iteminfo", layout, sw, sh, (0.0, 0.0)) {
+                    let icon = crate::render::invwin::icon_texture(id as u16);
+                    if let Some(rgba) = it.icon_rgba().map(|i| i.2) {
+                        gu.image(&icon, 32, 32, rgba);
+                    }
+                    super::iteminfo::draw(&mut gu, &info, page, Some(icon.as_str()), r[0], r[1]);
+                }
+            }
+            continue;
+        }
         // "passinpu:KIND:TEXT": the event input window with the caret at the end.
         if let Some(rest) = w.strip_prefix("passinpu:") {
             let (kind, text) = rest.split_once(':').unwrap_or((rest, ""));

@@ -10,6 +10,7 @@ pub use hudtop::topbar_shot;
 mod event;
 mod game_ui;
 mod hudtop;
+mod iteminfo;
 mod map;
 mod mapmark;
 mod logwin;
@@ -1367,6 +1368,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     blockers.extend(items::draw(gu, world, sw, sh));
+    blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = &world.config {
@@ -2136,6 +2138,34 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
     Some(win.frame)
 }
 
+/// The item info window (FUN_1013cba0 / FUN_1013d760) for the open list's cursor item, else the event's: mode 0 at
+/// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
+fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
+    let cache = world.item_info.clone()?;
+    let (id, ext, container, equipped, mode, flags) = match items::info_source(world) {
+        Some((id, ext, c, _, eq, mode)) => (id, ext, Some(c), eq, mode, 0),
+        None => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
+    };
+    let it = cache.item(id)?;
+    let mut p = world.info_page.get();
+    if p.1 != id {
+        p = (0, id, 1);
+    }
+    let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped, shop: false, container, flags };
+    let info = iteminfo::build(&it, ext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s));
+    p.2 = info.pages.len();
+    world.info_page.set(p);
+    let page = p.0.min(info.pages.len().saturating_sub(1));
+    let layout = iteminfo::LAYOUTS[iteminfo::rows(&info, page) - 3];
+    let [_, fy, _, fh] = gu.window_rect(layout, sw, sh)?;
+    let off = if mode == 1 { (114.0, 0.0) } else { (0.0, (log_top - fh - 2.0).max(16.0) - fy) };
+    let r = gu.window_swapped("menu    iteminfo", layout, sw, sh, off)?;
+    items::upload_icons(gu, &cache, std::iter::once(id));
+    let icon = crate::render::invwin::icon_texture(id);
+    iteminfo::draw(gu, &info, page, gu.has_image(&icon).then_some(icon.as_str()), r[0], r[1]);
+    Some(r)
+}
+
 /// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an
 /// event.
 fn turn_rate(a: &Actor, in_event: bool) -> f32 {
@@ -2524,6 +2554,12 @@ struct World {
     map_open: Option<u16>,
     /// Event map requests for the next HUD frame (map::apply).
     map_cmds: Vec<map::Cmd>,
+    /// The item info window opened by event ops 0x93 / 0xcc (FUN_1013e520): item, extdata, flags (+0x374).
+    info_win: Option<(u16, Option<[u8; 24]>, u32)>,
+    /// Its page (+0x380), the item the page is for, and the page count last built.
+    info_page: std::cell::Cell<(usize, u16, usize)>,
+    /// The ops' shared extdata buffer (DAT_104886bc).
+    event_ext: [u8; 24],
     event_mem: crate::event_vm::Memory,
     event_end_at: Option<Instant>,
     /// Talk sent, waiting for the server (DAT_10470520).
@@ -3460,6 +3496,9 @@ impl App {
                             self_lock: None,
                             map_open: None,
                             map_cmds: Vec::new(),
+                            info_win: None,
+                            info_page: std::cell::Cell::new((0, 0, 1)),
+                            event_ext: [0; 24],
                             event_mem: Default::default(),
                             event_end_at: None,
                             talk_lock: None,
@@ -4069,7 +4108,12 @@ impl App {
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s) => world.inv.sizes = s,
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
-                NetEvent::Item { container, index, id, count } => world.inv.set(container, index, id, count),
+                NetEvent::Item { container, index, id, count, ext } => {
+                    world.inv.set(container, index, id, count);
+                    if let Some(e) = ext.filter(|_| id != 0) {
+                        world.inv.ext.insert((container, index), e);
+                    }
+                }
                 NetEvent::Equip { slot, index, container } => world.inv.set_equip(slot, index, container),
                 NetEvent::CharStats(s) => world.stats = Some(s),
                 NetEvent::Action(a) => combat::on_action(world, &a),
@@ -4608,6 +4652,12 @@ impl App {
             if back.is_some() {
                 world.menu = back;
             }
+        }
+        // FUN_1013c220: key function 0x18 (Num- / -) turns the item info window's page; past the last, back to 0.
+        if self.input.test(0x18, input::mode::PRESS) && (world.info_win.is_some() || items::info_source(world).is_some()) {
+            let mut p = world.info_page.get();
+            p.0 = if p.0 + 1 >= p.2.min(3) { 0 } else { p.0 + 1 };
+            world.info_page.set(p);
         }
         // Numpad * / compact H: 0x44 (/heal) and 0x30 (lock-on) read the same press; FUN_101516d0 picks.
         if self.input.test(0x44, input::mode::PRESS) {

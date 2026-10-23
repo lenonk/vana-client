@@ -875,6 +875,36 @@ impl Host for LiveHost<'_> {
                     let _ = super::actmotion::emote(a, n as u32 & 0xff, (n as u32 >> 8) as u16, 0, 6);
                 }
             }
+            // FUN_100b9d30: the item info window for val@1 (FUN_1013e520); 0 closes it.
+            Effect::Op { op: 0x93, args, .. } => {
+                let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
+                self.w.info_win = (id != 0).then_some((id, None, 0));
+            }
+            // FUN_100b9d90 0 / 1 / 3: the same with extdata bytes 0..12 = val@4 / @6 / @8 (the rest kept; sub 3 hides
+            // the signature); 2: a linkshell, [6] = r | g << 4, [7] = b, [8] = status, [9..24] the name's 15 bytes.
+            Effect::Op { op: 0xcc, sub: Some(s @ 0..=3), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                let id = int(0) as u16;
+                if id == 0 {
+                    self.w.info_win = None;
+                } else {
+                    let e = &mut self.w.event_ext;
+                    if s == 2 {
+                        *e = [0; 24];
+                        e[6] = ((int(1) & 0xf) | (int(2) & 0xf) << 4) as u8;
+                        e[7] = (int(3) & 0xf) as u8;
+                        e[8] = int(4) as u8;
+                        let name: Vec<u8> = (5..9).flat_map(|k| int(k).to_le_bytes()).collect();
+                        e[9..24].copy_from_slice(&name[..15]);
+                    } else {
+                        for k in 0..3 {
+                            e[k * 4..k * 4 + 4].copy_from_slice(&int(1 + k).to_le_bytes());
+                        }
+                    }
+                    let ext = *e;
+                    self.w.info_win = Some((id, Some(ext), if s == 3 { 2 } else { 0 }));
+                }
+            }
             // FUN_100b08e0(1, zone, map, flag, 0): 0x89 (key -1), 0x8d (key val@3) and 0xc8 (the arrow with val@5) open the
             // map; FUN_100b0dd0 closes it.
             Effect::Op { op: op @ (0x89 | 0x8d | 0xc8), args, .. } => {
@@ -1098,6 +1128,8 @@ pub fn queue(w: &mut World, s: EventStart) {
     w.menu = None;
     w.action_menu = None;
     w.win = None;
+    // Menu broadcast 0x800 (event start) closes the item info window.
+    w.info_win = None;
     w.confirm = None;
     w.typing = false;
 }
@@ -1394,6 +1426,8 @@ fn motion_files(op: u8, file: i32, id: u32, a: &super::Actor) -> Vec<u32> {
 /// FUN_100ac9c0 / FUN_100bb750 / FUN_1008d710: the bound actors go back to their own transforms and status
 /// bits, event motions and looks end, deferred despawns happen.
 fn finish(w: &mut World, live: Box<Live>) {
+    // Menu broadcast 0x1000 (event end): what 0x93 / 0xcc opened closes.
+    w.info_win = None;
     for a in w.actors.values_mut() {
         if a.extra.iter().any(|(k, _)| *k == super::actmotion::Kind::Event) || a.pending.is_some() {
             super::actmotion::drop_kind(&mut a.extra, super::actmotion::Kind::Event);

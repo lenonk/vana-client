@@ -33,6 +33,8 @@ pub struct GameUiData {
     cmd_help: Vec<u16>,
     /// The map region table (0x10376010).
     map_regions: Vec<super::map::Region>,
+    /// File slot 0x1c (55688 in English): item info formats.
+    item_fmt: Option<Messages>,
     /// Lobby message groups 1 (Face/Hair/Size), 6 (race names), 8 (lobby help), 0x1b (name help).
     lobby_msgs: std::collections::HashMap<u8, Messages>,
     /// Creator base stats, 8 races x 6 jobs x 7 bytes (FFXiMain 0x1037bb10, FUN_102306d0).
@@ -117,6 +119,7 @@ impl GameUiData {
             .collect();
         let stats = crate::dat::battle::va_bytes(ffximain, t.stats, 8 * 6 * 7).map(<[u8]>::to_vec).unwrap_or_default();
         let map_regions = super::map::regions(ffximain);
+        let item_fmt = crate::dat::msg::slot_file(ffximain, 1, 0x1c).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("item info formats: {e:#}")).ok());
         let area_names = Messages::load(index, 0xd8aa).map_err(|e| log::error!("area names (group 4): {e:#}")).ok();
         let errors = crate::dat::battle::va_bytes(ffximain, t.errors, 16 * 128)
             .map(|b| b.chunks(16).map(|r| std::array::from_fn(|k| u32::from_le_bytes(r[k * 4..k * 4 + 4].try_into().unwrap()))).take_while(|r: &[u32; 4]| r[0] != 9999).collect())
@@ -124,7 +127,7 @@ impl GameUiData {
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let registry = menu_registry(ffximain);
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, item_fmt, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
     }
 }
 
@@ -385,6 +388,33 @@ impl GameUi {
 
     /// `lobby_window` moved by `off` (region stacking).
     #[allow(clippy::too_many_arguments)]
+    /// A window drawn from `layout` but opened and animated as `gate`: a window that swaps its layout in place
+    /// (FUN_1011a8f0). Returns the frame rect.
+    pub fn window_swapped(&mut self, gate: &str, layout: &str, w: f32, h: f32, off: (f32, f32)) -> Option<[f32; 4]> {
+        let m = self.data.lobby.menu(layout)?;
+        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let r = [fx + off.0, fy + off.1, fw, fh];
+        if !self.win_gate(gate, r) {
+            return None;
+        }
+        let ui = &self.data.lobby;
+        let m = ui.menu(layout)?;
+        let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
+        self.batch.push_frame(ui, &self.data.style, r[0], r[1], fw, fh, 1.0, 1.0, 0x8080_8080, 0, false, false);
+        if let Some(rf) = m.elements[0].refs.iter().find(|r| r.kind == 0)
+            && let Some(lib) = ui.lib(&rf.lib)
+        {
+            self.batch.push_sprite_from(ui, lib, rf.index as usize, 1, x + off.0, y + off.1, 1.0, 1.0, 0x8080_8080, 0);
+        }
+        Some(r)
+    }
+
+    /// Item info texts: groups 9..0xc, and 0x1c for file slot 0x1c (55688 in English).
+    pub fn item_msg(&self, group: u8, id: usize) -> Option<String> {
+        let m = if group == 0x1c { self.data.item_fmt.as_ref() } else { self.data.lobby_msgs.get(&group) };
+        m.and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+    }
+
     pub fn lobby_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
         let (dx, dy) = off;

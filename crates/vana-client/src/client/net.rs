@@ -167,7 +167,8 @@ pub enum NetEvent {
     /// 0x01E: count of a slot (0 = emptied).
     ItemNum { container: u8, index: u8, count: u32 },
     /// 0x01F / 0x020: item in a slot.
-    Item { container: u8, index: u8, id: u16, count: u32 },
+    /// 0x01F / 0x020; 0x020 carries the 24-byte extdata (Attr @0x11).
+    Item { container: u8, index: u8, id: u16, count: u32, ext: Option<[u8; 24]> },
     /// 0x050: equipment slot -> container slot (index 0 = removed).
     Equip { slot: u8, index: u8, container: u8 },
     /// 0x061: our stats.
@@ -619,8 +620,11 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
-                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4) })?,
-                    0x020 => tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4) })?,
+                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None })?,
+                    0x020 => {
+                        let ext = std::array::from_fn(|k| p.u8(0x11 + k));
+                        tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext) })?
+                    }
                     0x050 => tx.send(NetEvent::Equip { index: p.u8(4), slot: p.u8(5), container: p.u8(6) })?,
                     // CLISTATUS: hpmax @4, mpmax @8, jobs @0xc..0xf, bp_base @0x14, bp_adj @0x22, atk @0x30,
                     // def @0x32, def_elem @0x34, su_lv @0x52, ilvl @0x55.

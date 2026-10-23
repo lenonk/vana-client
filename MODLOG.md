@@ -4185,3 +4185,35 @@ update FUN_101ef0a0 [101e7170]). Done so far:
   load of the file, the change, then FUN_100b2a60 closes and saves. 0xa8 / 0xb9 sub 0 the same way, sub 1 only on the
   loaded data. 0x8b and 0xa8 pass key -1.
 - Live (Lnxcsfix): /map, Markers, slot 1, Place, Enter, "Westgate": the marker drew and USER/5/M23000.MRK held it.
+
+## Item info window: "menu    iteminfo" (2026-10-23)
+
+Full spec: scratchpad iteminfo/SPEC.md of that session. CTkItemInfo DAT_10578204 (vtable 0x10333e20, registry flags
+0x01400003): strings FUN_1013d790 and rows FUN_1013c500 rebuilt every frame (charge timers count live), draw
+FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, items::info_source.
+- Openers: event 0x93 (FUN_100b9d30, item val@1, 0 closes) and 0xcc (FUN_100b9d90) subs 0 / 1 / 3 (item val@2; the
+  shared buffer DAT_104886bc bytes 0..12 = val@4 / @6 / @8, the rest kept; sub 3 flags 2 = no signature) and sub 2 (a
+  linkshell: zeroed, [6] = r | g << 4, [7] = b, [8] = status, [9..24] the string operand's 15 bytes). Mode 0 at (16, 240)
+  stacked on the log like comyn. The item list (FUN_101f27a0) shows the slot under the cursor (mode 0); the equipment
+  grid the piece in the cursor's slot and its candidate list the candidate (mode 1, (130, 240), not stacked). Enter in
+  the list opens "menu    iuse", not this. Event start (menu broadcast 0x800) and end (0x1000) close what the ops opened.
+- Layouts by rows 3..12 (table 0x1036fa70): iteminfo, item4inf .. item9inf, item10in .. item12in, 366 x (8 + 16 rows);
+  FUN_1011a8f0 swaps the layout in place (ours: GameUi::window_swapped, one open animation under "menu    iteminfo").
+- Header: icon 32 x 32 at (8, 12) with tint +0x28; the singular log name with its first letter upper-cased at (51, 4)
+  (green 0x80509050 when equipped, yellow 0x80909040 in shop style); marks windowps 293 Aug / 294 Rare (flags 0x8000) /
+  295 Ex (0x4000) / 296 Tmp (container 3) from (314, 4) +16 each, 842 Alt at -16 (flags 0x10 ...); line 2 at (51, 20):
+  weapon skill (group 12 by FUN_1015aab0: skill 1..12 -> 0x18..0x23, 25 / 26 / 27 -> 0x24..0x26, 41 / 42 / 45 / 48 ->
+  0x27..0x2a) or slot (first of 0x10 Head .. 0x100 Feet, #0xe..0x17), races (#0..0xd), "Su%d" (#0x1bc).
+- Rows at y + 4 + 16 k: description lines (pre-wrapped 316 px) at x + 51; jobs "Lv.%d " (group 10 #0x53) + "All Jobs"
+  (group 9 #0xe2, mask 0x7ffffe) or "WAR/MNK/..." wrapped at 309 px after " \t,/"; the extra line (charges "<11/11
+  0:05/[0:05, 15:00]>" blue 0x80407090 full / orange 0x80804020 empty; fish "%d[Im]/%d[Pz]"; linkshell name; furnishing
+  "%s STG:%d"), signature "[name]" (6-bit, ext +0xc) and "<Item Level:%d>" (slot 0x1c #0x3e) right-aligned at x + 360;
+  with more pages the last line moves to x + 340 and "▼" (81 A5) sits at x + 360. Key function 0x18 (Num- / -) turns the
+  page; past the last, back to 0.
+- Linkshell tint (FUN_101cbac0 / FUN_101cbb80): ARGB 0x80RRGGBB with R = [6] low nibble, G = [6] high, B = [7] low,
+  each x 13 + 0x38 (the spec's "0x80BBGGRR" was wrong; the decompile puts [6] & 0xf at bits 16..23). Name 6-bit
+  MSB-first from [9] (1..0x1a 'a'..'z', 0x1b..0x34 'A'..'Z', 0x3e ' ', 0x3f end).
+- s2c 0x020's Attr (24 bytes @0x11) is kept per slot (Inventory::ext).
+- Not done: augment decoding (FUN_100ff140 / FUN_1013b280: the Aug lines and pages), item types 0xf / 0x11..0x15 /
+  0x1a, the itemxinf / itemyinf compare windows, the de / fr layout and ja rows.
+- Live (Lnxcsfix): the inventory list shows "Hume tunic", [Body] H♂, DEF:2, Lv.1 All Jobs with Rare / Ex.
