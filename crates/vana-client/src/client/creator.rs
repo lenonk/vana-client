@@ -492,3 +492,53 @@ mod tests {
         assert!((c.up - Vec3::NEG_Y).length() < 1e-4);
     }
 }
+
+/// The name step's random name (FUN_10235310, composed by FUN_10238330): a noun from file 0x7c07 (16-byte records,
+/// rand % 981, grouped by length: weights 0x103873f8) and an adjective from 0x7c06 (class = floor(log2(rand % (2 ^
+/// (11 - noun class) - 1))), 1 for 0; rand % count + offset, tables 0x10387424 / 0x10387450); adjective + noun, kept
+/// only under 16 letters. `rand` stands in for the CRT's rand() (0..32767).
+pub fn random_name(index: &crate::dat::DatIndex, mut rand: impl FnMut() -> u32) -> Option<String> {
+    const WEIGHT: [u32; 11] = [2, 56, 149, 171, 173, 169, 127, 81, 34, 17, 2];
+    const COUNT: [u32; 11] = [21, 74, 153, 220, 264, 317, 190, 99, 51, 12, 9];
+    const OFFSET: [u32; 11] = [0, 21, 95, 248, 468, 732, 1049, 1239, 1338, 1389, 1401];
+    let word = |file: &[u8], i: u32| -> Option<String> {
+        let r = file.get(i as usize * 16..i as usize * 16 + 16)?;
+        let s: String = r.iter().take_while(|&&c| c != 0).map(|&c| c as char).collect();
+        Some(s)
+    };
+    let nouns = index.read(0x7c07).ok()?;
+    let adjectives = index.read(0x7c06).ok()?;
+    let n = rand() % 981;
+    let mut acc = 0;
+    let class = WEIGHT.iter().position(|w| {
+        acc += w;
+        acc > n
+    })?;
+    let budget = 10 - class as u32;
+    let r = rand() % ((1u32 << (budget + 1)) - 1);
+    let k = if r == 0 { 1 } else { (r as f64).log2() as usize };
+    let a = rand() % COUNT.get(k)? + OFFSET[k];
+    let name = word(&adjectives, a)? + &word(&nouns, n)?;
+    // FUN_1022dc60 on entry: first letter upper case, the rest lower.
+    (name.len() < 16 && !name.is_empty()).then(|| name.chars().enumerate().map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }).collect())
+}
+
+#[cfg(test)]
+mod random_name_tests {
+    #[test]
+    fn names_from_the_install() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut seed = 12345u32;
+        let mut rand = move || {
+            seed = seed.wrapping_mul(214013).wrapping_add(2531011);
+            (seed >> 16) & 0x7fff
+        };
+        let names: Vec<String> = (0..20).filter_map(|_| super::random_name(&index, &mut rand)).collect();
+        assert!(names.len() >= 18, "{names:?}");
+        for n in &names {
+            assert!((3..16).contains(&n.len()) && n.chars().all(|c| c.is_ascii_alphabetic()), "{n}");
+            assert!(n.chars().next().unwrap().is_ascii_uppercase());
+        }
+    }
+}

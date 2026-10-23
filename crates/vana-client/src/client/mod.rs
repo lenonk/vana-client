@@ -5405,6 +5405,20 @@ impl App {
                             _ => 0,
                         };
                         let (mut next, back, mut answer) = (false, escape, None);
+                        // FUN_102384d0: Num+ (DIK 0x4e) on the name step asks for a random name.
+                        if step == 5
+                            && self.input.pressed(0x4e)
+                            && let Some(index) = self.index.as_ref()
+                        {
+                            let mut b = [0u8; 4];
+                            let mut rand = || {
+                                let _ = getrandom::fill(&mut b);
+                                u32::from_le_bytes(b) & 0x7fff
+                            };
+                            if let Some(n) = creator::random_name(index, &mut rand) {
+                                *new_name = n;
+                            }
+                        }
                         for ev in &input.events {
                             match ev {
                                 egui::Event::Text(t) | egui::Event::Paste(t) if step == 5 => {

@@ -1905,7 +1905,7 @@ dancer, 2D layer; `--step 0..7 --nation --name --help-time --bench N`). Inferred
 - Name at window + (0x10, 4) via the text input FUN_101bc850, caret on when frame % 30 > 15; FUN_1022dc60 makes the
   first letter upper case and the rest lower. While the window is active, lobbywin sprite 140 (0x230 / 4) at child 2:
   the slant line, chmkfnt "Namingway" and font cells "Press the + Key to / generate a random name." (the PC text).
-  The random name itself (FUN_1022db10, tables DAT_10623958 / 70) is not implemented.
+  The random name: see "Random names" below.
 
 ### Backdrop camera = the dancer camera (FUN_102451f0, every dancer update)
 - Game view = dancer camera node matrix A (row-major, translation [3] [7] [11]) rebuilt as D3D rows
@@ -4470,3 +4470,17 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   FUN_100f1ac0 at its corner; not identified), helpwind text empty (0x105781f8 + 0x20, busy bits count as text).
   Ours matches for the windows we have (titlewin / helpwind text, the busy strip); HN mode and that window are not
   modelled.
+
+## Random names in the creator (2026-10-23; 30261006_0: FUN_10235310, FUN_10238330, trigger FUN_102384d0)
+
+- Num+ (DIK 0x4e, FUN_10124070 press bit) on the name step sends the window message that asks for a name. Two raw
+  DAT files of 16-byte NUL-padded lowercase words, grouped by length: 0x7c06 (31750, ROM/68/2.DAT) 1410 adjectives,
+  0x7c07 (31751, ROM/68/3.DAT) 981 nouns, read asynchronously (FUN_101c4820, callbacks 0x102374a0 / 0x102374f0 set
+  the done flags DAT_10668fdc / fe0; buffers DAT_10668f00 noun, DAT_10668ee8 adjective).
+- Noun = record rand() % 981; its length class = the first index where the running sum of weights 0x103873f8 {2, 56,
+  149, 171, 173, 169, 127, 81, 34, 17, 2} exceeds it; budget = 10 - class. r = rand() % (2^(budget+1) - 1);
+  adjective class = 1 when r == 0, else ftol(ln r x 1/ln 2); adjective = rand() % counts[class] + offsets[class]
+  (0x10387424 {21, 74, 153, 220, 264, 317, 190, 99, 51, 12, 9}, 0x10387450 {0, 21, 95, ..., 1401}).
+- Name = adjective + noun when shorter than 16 letters (else truncated to 16, then dropped by the < 16 test), then
+  FUN_101ba240 (a validity check, not traced; ours skips it) and into the text input, which capitalises it.
+- Ours: creator::random_name with getrandom standing in for rand(). Live: "Attentivepond", "Lovelessharrier".

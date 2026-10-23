@@ -95,7 +95,6 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     run, and point lights on scenery and actors; left: the party roster for the filter, moving-part lights;
     parked (user's call, 2026-10-22): replace baked lamp shells with real lights plus soft particles (MODLOG
     "Effect fixes from the San d'Oria gate lamps", "Parked");
-  - random names in the creator;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
 - Updates (user's design, 2026-10-22). Never required, always offered:
   - After login, character select gets an "Update" button above Select Character when anything is out of date

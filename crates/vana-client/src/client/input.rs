@@ -224,6 +224,11 @@ impl Input {
         }
     }
 
+    /// FUN_10124070: a raw key's press bit this frame, by DIK code.
+    pub fn pressed(&self, k: u8) -> bool {
+        self.keys[k as usize] & PRESS != 0
+    }
+
     /// A press and release within one frame (test drives, `act:` keys).
     pub fn tap(&mut self, k: u8) {
         self.tapped[k as usize] = true;
