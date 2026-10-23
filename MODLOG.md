@@ -3780,3 +3780,18 @@ From the yes / no spec (scratchpad yesno/SPEC.md). Correction to the 2026-10-22 
 - Default No (FUN_10118e90(2)); only Left / Right move (its links); Enter answers (SE 0002), a move plays 0001,
   Escape is No. The main menu stays open under it, unfocused: highlight kept (socialme lacks flag 0x80000), no hand.
 - Not done: conf6win's key-reset prompt still draws 39542's yesno (configui2.rs).
+
+## UI hide, screenshots, Pause (2026-10-23)
+
+- Key function 0x56 (Scroll Lock / ], FUN_10160710): menu manager +0xb4 toggles the UI; nothing draws (cursor
+  too); Esc shows it again (consumed); any game-state change (zoning) shows it.
+- Key function 0x55 (Print Screen, FUN_101d0c70 state machine -> FUN_101d0ab0 / FUN_101d0ea0): only with the UI
+  hidden, in the field (game state 0x60), map closed. Shutter SE "0016" (FUN_10037fb0), then the capture next frame.
+  Name "%c%c%c%02d%02d%02d%02d%02d%02d%c": the first three letters of the player's name (zone object +0x3c3a4, the
+  chat name), local yy mm dd hh mm ss, 'a' + a same-second counter % 10; ".jpg" in the working folder, or
+  "screenshots\%s.jpg" under a setting (DAT_10456ae0 / DAT_10456a84). Success: group 9 0x42 (with a remaining-count
+  part from group 10 0x6e, 200 - n); failure: SE "0004" and group 7 0x8d. Ours: PNG in the game folder's
+  screenshots, the count part left out, group 7 not loaded.
+- Key function 0x13 (Pause, FUN_101609f0): the Log out prompt (comyn), in the field, not engaged, UI shown, no event.
+- Correction to "First person": the eye uses attach point 12 (point 6 resting / seated) through vt+0x1c4, not bone
+  12 (FUN_10020ba0); point 12 is on the root at head height.

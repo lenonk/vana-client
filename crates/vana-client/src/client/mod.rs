@@ -699,6 +699,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         downloading(gu, (t.elapsed().as_secs_f32() * 30.0) as usize + 1, sw, sh);
         return Vec::new();
     }
+    // Scroll Lock hid the UI: nothing draws; Esc shows it again (FUN_101202a0 consumes the key).
+    if world.ui_hidden {
+        gu.clear();
+        if input.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::Escape, pressed: true, .. })) {
+            world.ui_hidden = false;
+        }
+        return Vec::new();
+    }
     let items = gu.menu_items(sw, sh, world.menu_page);
     let dead = world.dead();
     let mut home = false;
@@ -1921,6 +1929,12 @@ struct World {
     doors: doors::Doors,
     /// In the Mog House (0x00A LoginState 1), its door menu, and a leave request sent.
     myroom: Option<net::MyRoom>,
+    /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
+    ui_hidden: bool,
+    /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
+    shot_request: Option<std::path::PathBuf>,
+    /// FUN_101d0ea0's same-second counter (the name's last letter, 'a' + n % 10) and the second it counts.
+    shot_count: (u8, i8),
     /// Zone flag 0x100 (0x00A LoginState 1, 4 or 5): no grid position by the clock.
     room_flag: bool,
     mogdoor: Option<myroom::Menu>,
@@ -2931,6 +2945,9 @@ impl App {
                             loading_scene: 0,
                             myroom: None,
                             room_flag: false,
+                            ui_hidden: false,
+                            shot_request: None,
+                            shot_count: (0, -1),
                             mogdoor: None,
                             leaving_room: false,
                             doors: Default::default(),
@@ -3276,6 +3293,8 @@ impl App {
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag } => {
                     world.myroom = myroom;
                     world.room_flag = room_flag;
+                    // Any game-state change shows the UI again.
+                    world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
@@ -3963,6 +3982,27 @@ impl App {
         if self.input.test(0x78, input::mode::REPEAT) {
             log_cycle(world);
         }
+        // Key function 0x56 (Scroll Lock, FUN_10160710): hide / show the UI, also while typing.
+        if self.input.test(0x56, input::mode::PRESS) && !event::active(world) {
+            world.ui_hidden = !world.ui_hidden;
+        }
+        // Key function 0x55 (Print Screen, FUN_101d0ab0): a screenshot, only with the UI hidden, in the field with the
+        // map closed; the shutter SE "0016". Saved as FUN_101d0ea0 names it: the name's first three letters,
+        // yymmddhhmmss and a letter for shots in the same second, in the game folder's screenshots (PNG here, retail
+        // JPG).
+        if self.input.test(0x55, input::mode::PRESS) && world.ui_hidden && world.map.is_none() && world.in_scene() {
+            let t = jiff::Zoned::now();
+            let sec = t.second();
+            world.shot_count = if world.shot_count.1 == sec { (world.shot_count.0.wrapping_add(1), sec) } else { (0, sec) };
+            let initials: String = world.name.chars().take(3).collect();
+            let name = format!("{initials}{:02}{:02}{:02}{:02}{:02}{:02}{}.png", t.year() % 100, t.month(), t.day(), t.hour(), t.minute(), sec, (b'a' + world.shot_count.0 % 10) as char);
+            world.shot_request = Some(self.cfg.ffxi_dir().join("screenshots").join(name));
+            world.sounds.push(16);
+        }
+        // Key function 0x13 (Pause, FUN_101609f0): the log-out prompt, in the field, not engaged, with the UI shown.
+        if self.input.test(0x13, input::mode::PRESS) && !event::active(world) && !world.ui_hidden && world.my_motion.status != 1 && world.confirm.is_none() {
+            world.confirm = Some((Confirm::Logout, false));
+        }
         // Target keys (FUN_101587f0): Tab / Num0 and with Shift (0x84 / 0x97), F8 / Ctrl+F8 / Alt+F8 / F9 / F10.
         if !event::active(world) {
             let view = Self::camera(world).view();
@@ -3986,6 +4026,12 @@ impl App {
     /// otherwise the camera arrow along the drag), an actor under the pointer in the field the hit cursor.
     /// Over an enabled menu item, kind 1. Not done: 3 / 6 (scroll thumb, autoscroll).
     fn mouse_kind(&mut self, size: [u32; 2]) {
+        // FUN_10125360: with the UI hidden the cursor is hidden too.
+        if let Phase::World(w) = &self.phase
+            && w.ui_hidden
+        {
+            self.mouse.visible = false;
+        }
         let at = self.last_cursor;
         let moved = self.left_down && self.press_at.zip(at).is_some_and(|(a, b)| (a.0 - b.0).abs() + (a.1 - b.1).abs() >= 5.0);
         self.mouse.kind = mousecur::NORMAL;
@@ -5071,6 +5117,18 @@ impl App {
                 }
             }
         }
+        // A Print Screen shot from the game (key function 0x55).
+        let mut game_shot = false;
+        if script_shot.is_none()
+            && let Phase::World(w) = &mut self.phase
+            && let Some(p) = w.shot_request.take()
+        {
+            if let Some(dir) = p.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            script_shot = Some(p);
+            game_shot = true;
+        }
         let shoot = shoot || script_shot.is_some();
         let ctx = gfx.egui_ctx.clone();
         let before = self.ui_snap();
@@ -5613,10 +5671,23 @@ impl App {
             r.occl.after_submit(&gfx.gpu);
         }
         if let (Some(buf), Some(path)) = (capture, script_shot.or_else(|| self.drive.screenshot.clone())) {
-            if let Err(e) = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path) {
-                log::error!("screenshot failed: {e:#}");
-            } else {
-                log::info!("screenshot written to {}", path.display());
+            let saved = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path);
+            match &saved {
+                Err(e) => log::error!("screenshot failed: {e:#}"),
+                Ok(()) => log::info!("screenshot written to {}", path.display()),
+            }
+            // FUN_101d0c70 states 3 / 4: group 9 0x42 on success, SE "0004" (and group 7 0x8d, not loaded) on failure.
+            if game_shot
+                && let Phase::World(w) = &mut self.phase
+                && let Some(bt) = w.battle.clone()
+            {
+                let line = if saved.is_ok() { bt.group9(0x42) } else { None };
+                if saved.is_err() {
+                    w.sounds.push(4);
+                }
+                if let Some(l) = line {
+                    w.chat.push(l.replace("%s", "").trim().to_string());
+                }
             }
         }
         let m_encode = Instant::now();
