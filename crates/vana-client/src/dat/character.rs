@@ -43,6 +43,9 @@ pub struct Skeleton {
     /// Attach points after the bones (FUN_100343f0): (bone, translation); point 2 anchors the name plate and
     /// the target arrow (actor +0x8a6 / +0x8a7 default 2).
     pub points: Vec<(u16, Vec3)>,
+    /// Head look limits (FUN_10035270): {horizontal, vertical, depth} for the bones of points 3 and 7, at the end
+    /// of the point table + 0x48.
+    pub look_limits: [[f32; 3]; 2],
 }
 
 /// u16 ?, u16 bone count, then 30-byte bones: parent u8, term u8, quat xyzw, translation xyz.
@@ -72,7 +75,9 @@ pub fn parse_skeleton(name: String, d: &[u8]) -> Result<Skeleton> {
         let o = at + 4 + i * 26;
         (o + 26 <= d.len()).then(|| (u16_at(d, o), vec3_at(d, o + 14)))
     }).collect();
-    Ok(Skeleton { name, bones, points })
+    let lim = at + 4 + count * 26 + 0x48;
+    let look_limits = [0, 1].map(|i| [0, 1, 2].map(|k| if lim + 12 * i + 4 * k + 4 <= d.len() { f32_at(d, lim + 12 * i + 4 * k) } else { 0.0 }));
+    Ok(Skeleton { name, bones, points, look_limits })
 }
 
 /// One bone's share of a vertex. `pos`/`normal` are pre-scaled by `weight` in the file.
@@ -703,6 +708,18 @@ mod tests {
             let (bone, t) = skel.points[2];
             assert_eq!(bone, 0, "file {file}");
             assert!((t.y + h).abs() < 1e-3 && t.x.abs() < 1e-3, "file {file}: {t}");
+        }
+    }
+
+    /// Every PC skeleton's head look: head (0.24, 0.16, 0.5), neck (0.16, 0.06, 0.5); points 3 / 7 head / neck.
+    #[test]
+    fn look_limits() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        for (file, head) in [(7072u32, 51u16), (10248, 29), (19776, 6), (26352, 39)] {
+            let Ok(d) = index.read(file) else { return };
+            let skel = super::load_file(&d).unwrap().skeleton.unwrap();
+            assert_eq!(skel.look_limits, [[0.24, 0.16, 0.5], [0.16, 0.06, 0.5]], "file {file}");
+            assert_eq!((skel.points[3].0, skel.points[7].0), (head, head - 1), "file {file}");
         }
     }
 }

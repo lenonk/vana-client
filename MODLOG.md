@@ -3671,3 +3671,23 @@ From the targeting spec (scratchpad target_spec/SPEC.md; current-build addresses
   alliance) wait on self targets and the party list.
 - Ours: client/target.rs cycle / nearest / nearest_kind / enter_nearest. Entity kind bits inferred from ours: PC by
   id, door, monster, else NPC.
+
+## Head look toward the target (2026-10-22)
+
+From the targeting spec section 3 (FUN_100d5b10, FUN_1002a140, FUN_1002ac60, FUN_1002b140).
+- Who: the local player looks at its target; every other actor at its face target, 0x00E / 0x00D
+  (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget). No client-side "look at the player".
+  Looker status 0, 5, 0x2f, 0x30, 0x55 or 0x3f..0x53 only; target type +0xee not 3 / 4 / 5 (ours: not a door); aim
+  at the target's point 3, 1.2 higher (y - 1.2) when it is hidden. Event looks (ops 0x1e / 0x4a / 0x79) win.
+- Weight K+0xbc ramps 0.04 a frame (30 fps: 0.02 a tick, inf), fading with no target, a target at local x < -0.1 or
+  nearer than 0.3 across; at 0 the look point K+0xb0 goes 20 ahead, in world space. The look direction about P3
+  eases 1/32 a tick, keeping its distance. Ours runs both twice as fast (user's call: retail is too slow).
+- Turn: d = normalize(P4 - P3) (point 4: a body point, bone 0 except the Taru's head bone 6); per bone (point 3's,
+  then point 7's) the look direction is clamped to a tangent ellipse in LookAt(0, d, +y): |X| <= a, |Y| <= b at
+  depth c, limits from the skeleton at the end of the point table + 0x48 + 12 i; every PC skeleton head
+  (0.24, 0.16, 0.5), neck (0.16, 0.06, 0.5). Q_i = arc(d, dir_i) x weight; the residual goes on to the neck. The neck
+  turns by Q7, the head by Q7 Q3 (locals turned against the pre-look neck). One bone (head) when riding or sitting
+  (status 5, 0x55, 0x2f, 0x30, 0x3f..0x53); point 4 a unit higher on a chocobo / mount.
+- Ours: client/actmotion.rs Look (world point), render/anim.rs look_clamp and the two-bone turn in pose_actors
+  (test head_look_limits: side look gives neck 17.7, head 43.4 deg). Not done: scheduler op 0x89 suppression, the
+  +0x120 bit 5 freeze, the event rate scale E+0xe0.

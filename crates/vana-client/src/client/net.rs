@@ -54,6 +54,8 @@ pub struct EntityUpdate {
     pub hp_bits: Option<(bool, bool)>,
     /// u8 @0x2B bit 0x08 with mask 0x04 (actor +0x130 bit 7, 0x1009ad2e): an attackable target is dropped.
     pub untargetable: Option<bool>,
+    /// The face target's ActIndex, (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget).
+    pub face: Option<u16>,
 }
 
 /// A battle message packet: 0x029 (FUN_1009cf70) or 0x02D (FUN_1009d1b0).
@@ -391,6 +393,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         door: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 2 && p.data.len() >= 0x38).then(|| p.u32(0x34)).filter(|d| *d != 0),
         untargetable: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u8(0x2B) & 0x08 != 0),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
+        face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
     }
 }
 

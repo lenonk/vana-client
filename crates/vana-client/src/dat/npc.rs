@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn size_info_order() {
-        let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new() };
+        let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new(), look_limits: [[0.0; 3]; 2] };
         let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3] };
         let mut later = [0xFFu8; 16];
         later[10..14].copy_from_slice(&[85, 100, 115, 140]);

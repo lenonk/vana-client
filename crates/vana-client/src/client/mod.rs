@@ -147,6 +147,8 @@ struct Entity {
     door: u32,
     /// An object (actor +0x128 bit 3 from the 0x00E look): no target gauge, no name plate.
     object: bool,
+    /// The ActIndex its head looks at (0x00E / 0x00D facetarget, actor +0x1f8); 0 = none.
+    face: u16,
 }
 
 impl Entity {
@@ -1453,6 +1455,7 @@ fn place_mogdoor(w: &mut World) {
             untargetable: false,
             door: 0,
             object: true,
+            face: 0,
         },
     );
 }
@@ -3286,6 +3289,7 @@ impl App {
                         untargetable: false,
                         door: 0,
                         object: false,
+                        face: 0,
                     });
                     if e.mask & 7 != 0 {
                         entry.flags = e.status;
@@ -3303,6 +3307,9 @@ impl App {
                     let died = !fresh && matches!(motion.status, 2 | 3) && !matches!(entry.motion.status, 2 | 3);
                     entry.motion = motion;
                     entry.index = e.index;
+                    if let Some(f) = e.face {
+                        entry.face = f;
+                    }
                     if let Some((named, plural)) = e.name_flags {
                         (entry.named, entry.plural) = (named, plural);
                     }
@@ -4982,6 +4989,29 @@ impl App {
                     _ => None,
                 })
                 .collect();
+            // FUN_100d5b10: we look at our target, everyone else at its server face target, only in the statuses
+            // that allow it (FUN_10095790), never at doors; the target's point 3, 1.2 higher when it is hidden.
+            let mut by_index: HashMap<u16, u32> = w.entities.iter().filter(|(_, e)| e.index != 0).map(|(id, e)| (e.index, *id)).collect();
+            by_index.insert(w.my_index, w.my_id);
+            let face_points: HashMap<u32, Vec3> = w
+                .actors
+                .keys()
+                .filter_map(|id| {
+                    let st = places.get(id)?.status;
+                    if !matches!(st, 0 | 5 | 0x2f | 0x30 | 0x55 | 0x3f..=0x53) {
+                        return None;
+                    }
+                    let t = if *id == w.my_id { w.target? } else { *by_index.get(&w.entities.get(id).map(|e| e.face).filter(|f| *f != 0)?)? };
+                    if t == *id || w.entities.get(&t).is_some_and(|e| e.door != 0) {
+                        return None;
+                    }
+                    let mut q = attach_point(w, &places, t, 3)?;
+                    if hidden.contains(&t) {
+                        q.y -= 1.2;
+                    }
+                    Some((*id, q))
+                })
+                .collect();
             // Foot points that came back from earlier frames: steps (FUN_100d2970).
             if let Some(pts) = w.renderer.as_mut().map(|r| r.points.take()) {
                 footsteps::steps(w, &places, pts);
@@ -5128,22 +5158,31 @@ impl App {
                     if w.locked && (*id == w.my_id || w.target == Some(*id)) {
                         a.bones = if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
                     }
-                    let model = actor_matrix(pos, forward) * glam::Mat4::from_scale(Vec3::splat(a.scale));
-                    // FUN_100d38c0: the look point in actor space (x forward), eased and weighted.
+                    let frame = actor_matrix(pos, forward);
+                    let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));
+                    // FUN_100d5b10: an event's look, else the target / face target; eased and weighted in world space.
+                    let point = |k: usize| ch.skeleton.points.get(k).copied().unwrap_or((0, Vec3::ZERO));
+                    let p3 = model.transform_point3(a.rest.get(point(3).0 as usize).map_or(Vec3::ZERO, |(q, t)| *t + *q * point(3).1));
                     let target = match a.look.mode {
-                        actmotion::LookMode::Actor(..) => look_points.get(id).map(|p| model.inverse().transform_point3(*p)),
+                        actmotion::LookMode::Actor(..) => look_points.get(id).copied(),
                         actmotion::LookMode::Facing(pitch, yaw) => {
                             let (p, y) = (pitch as f32 * TAU_4096, yaw as f32 * TAU_4096);
-                            let head = a.rest.get(ch.skeleton.points.get(7).map_or(0, |q| q.0 as usize)).map_or(Vec3::ZERO, |b| b.1);
-                            Some(head + Vec3::new(p.cos() * y.cos(), -p.sin(), -p.cos() * y.sin()) * 20.0)
+                            let head = a.rest.get(point(7).0 as usize).map_or(Vec3::ZERO, |b| b.1);
+                            Some(model.transform_point3(head + Vec3::new(p.cos() * y.cos(), -p.sin(), -p.cos() * y.sin()) * 20.0))
                         }
-                        actmotion::LookMode::Off => None,
+                        actmotion::LookMode::Off => face_points.get(id).copied(),
                     };
-                    a.look.step(target, dt * 60.0);
+                    a.look.step(frame, p3, target, dt * 60.0);
+                    // One bone (the head) when riding or sitting; point 4 a unit higher on a chocobo or a mount.
                     let look = (a.look.weight > 0.0).then(|| crate::render::anim::HeadLook {
                         bones: [3usize, 7].map(|k| ch.skeleton.points.get(k).map(|p| p.0)),
+                        two: !matches!(status, 5 | 0x55 | 0x2f | 0x30 | 0x3f..=0x53),
                         weight: a.look.weight,
-                        point: a.look.point,
+                        point: model.inverse().transform_point3(a.look.point.unwrap_or(p3)),
+                        p3: point(3).1,
+                        p4: point(4),
+                        drop: if matches!(status, 5 | 0x55) { 1.0 / a.scale.max(1e-3) } else { 0.0 },
+                        limits: ch.skeleton.look_limits,
                     });
                     let drawn = !a.vanished() && !hidden.contains(id) && !(*id == w.my_id && w.camst.self_alpha <= 0.0);
                     let g = a.gpu.as_mut().unwrap();

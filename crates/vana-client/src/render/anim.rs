@@ -12,19 +12,26 @@ use std::sync::Arc;
 const TABLE: usize = crate::dat::animpack::TABLE;
 /// (animation, frame) pairs per pose; regions are filled by later files first, so a few suffice.
 pub const MAX_SET: usize = 8;
-/// Job header: skeleton, output, counts, blend, then the head look (weight, two bones, model-space point).
-const HEAD: usize = 12;
+/// Job header: skeleton, output, counts, blend, then the head look (weight, two bones, model-space point, bones
+/// used, point 4, limits, point 4 drop, point 3 offset).
+const HEAD: usize = 28;
 const JOB_WORDS: usize = HEAD + 4 * MAX_SET;
 const NO_BONE: u32 = u32::MAX;
 
-/// A head look for the compute pass (FUN_100d38c0 / FUN_10029e40): the bones of attach points 3 and 7 turn
-/// toward a model-space point, half each, at `weight` *(inf: retail's per-bone aim is not decoded; the turn
-/// from the body's forward is shared out)*.
+/// A head look for the compute pass (FUN_1002a140 / FUN_1002ac60): from the body reference point 4 - point 3,
+/// the head (point 3's bone) turns toward the point as far as its tangent ellipse allows and the neck (point 7's)
+/// takes the rest, at `weight`; one bone only when sitting or riding.
 #[derive(Clone, Copy, Debug)]
 pub struct HeadLook {
     pub bones: [Option<u16>; 2],
+    pub two: bool,
     pub weight: f32,
     pub point: glam::Vec3,
+    pub p3: glam::Vec3,
+    pub p4: (u16, glam::Vec3),
+    /// Point 4 raised (model y) on a chocobo or a mount.
+    pub drop: f32,
+    pub limits: [[f32; 3]; 2],
 }
 /// Scratch vec4s per job: local rotation and translation for the target and the blended-from pose.
 const SCRATCH: usize = TABLE * 4;
@@ -87,6 +94,29 @@ fn arc(u: vec3<f32>, v: vec3<f32>) -> vec4<f32> {
     return normalize(vec4<f32>(cross(u, v), 1.0 + c));
 }
 
+fn qconj(q: vec4<f32>) -> vec4<f32> { return vec4<f32>(-q.xyz, q.w); }
+
+fn jf(i: u32) -> f32 { return bitcast<f32>(jobs[i]); }
+
+// FUN_1002b140: v clamped to the ellipse |X| <= a, |Y| <= b at depth c in the tangent frame LookAt(0, d, +y).
+fn look_clamp(d: vec3<f32>, v: vec3<f32>, a0: f32, b0: f32, c: f32) -> vec3<f32> {
+    let a = select(a0, 0.001, a0 == 0.0);
+    let b = select(b0, 0.001, b0 == 0.0);
+    var xa = cross(vec3<f32>(0.0, 1.0, 0.0), d);
+    if (length(xa) < 1e-5) { xa = vec3<f32>(1.0, 0.0, 0.0); }
+    xa = normalize(xa);
+    let ya = cross(d, xa);
+    var l = vec3<f32>(dot(v, xa), dot(v, ya), dot(v, d));
+    var m = b;
+    if (a > b) { l.y = l.y * (a / b); m = a; } else { l.x = l.x * (b / a); }
+    var xy = select(vec2<f32>(c * l.x, c * l.y) * 200.0, vec2<f32>(c * l.x, c * l.y) / l.z, l.z > 0.0);
+    if (length(xy) <= m) { return v; }
+    let th = atan2(xy.y, xy.x);
+    xy = vec2<f32>(m * cos(th), m * sin(th));
+    if (a > b) { xy.y = xy.y / (a / b); } else { xy.x = xy.x / (b / a); }
+    return normalize(xy.x * xa + xy.y * ya + c * d);
+}
+
 // glam Quat::slerp.
 fn slerp(a: vec4<f32>, b0: vec4<f32>, s: f32) -> vec4<f32> {
     var b = b0;
@@ -130,6 +160,13 @@ fn pose_actors(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_i
     let look_a = jobs[job + 6u];
     let look_b = jobs[job + 7u];
     let look_p = vec3<f32>(bitcast<f32>(jobs[job + 8u]), bitcast<f32>(jobs[job + 9u]), bitcast<f32>(jobs[job + 10u]));
+    let look_n = jobs[job + 11u];
+    let p4_bone = jobs[job + 12u];
+    let p4_off = vec3<f32>(jf(job + 13u), jf(job + 14u), jf(job + 15u));
+    let p3_off = vec3<f32>(jf(job + 23u), jf(job + 24u), jf(job + 25u));
+    let lo = min(look_a, look_b);
+    var q3 = vec4<f32>(0.0, 0.0, 0.0, 1.0);
+    var q7 = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     let n = data[skel];
     let sc = wg.x * SCRATCHu;
     for (var b = lid; b < n; b = b + 64u) {
@@ -161,17 +198,40 @@ fn pose_actors(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_i
                 scratch[sc + 4u * b + k + 1u] = vec4<f32>(pt + qrot(pq, lt), 0.0);
             }
         }
-        // Head look: turn this bone (and so its children) toward the point, its share of the way.
+        // Head look (FUN_1002ac60), worked out at the lower of the two bones from the target pose: the head's
+        // world place from the neck (its parent) and its local, point 4 for the body's reference direction.
+        if (look_w > 0.0 && b == lo && data[skel + 1u + look_a * 8u] == look_b) {
+            let nq = scratch[sc + 4u * b];
+            let nt = scratch[sc + 4u * b + 1u].xyz;
+            let hq = qmul(nq, scratch[sc + 4u * look_a]);
+            let ht = nt + qrot(nq, scratch[sc + 4u * look_a + 1u].xyz);
+            let p3 = ht + qrot(hq, p3_off);
+            var p4: vec3<f32>;
+            if (p4_bone == look_a) {
+                p4 = ht + qrot(hq, p4_off);
+            } else {
+                p4 = scratch[sc + 4u * p4_bone + 1u].xyz + qrot(scratch[sc + 4u * p4_bone], p4_off);
+            }
+            p4.y = p4.y - jf(job + 22u);
+            let d = normalize(p4 - p3);
+            var v = normalize(look_p - p3);
+            for (var i = 0u; i < look_n; i = i + 1u) {
+                let la = jf(job + 16u + 3u * i);
+                let lb = jf(job + 17u + 3u * i);
+                if (la == 0.0 && lb == 0.0) { continue; }
+                let dir = look_clamp(d, v, la, lb, jf(job + 18u + 3u * i));
+                let qi = slerp(vec4<f32>(0.0, 0.0, 0.0, 1.0), arc(d, dir), look_w);
+                v = qrot(qconj(qi), v);
+                if (i == 0u) { q3 = qi; } else { q7 = qi; }
+            }
+        }
+        // The neck turns by its share; the head by both, about its own pivot (bone locals turned against the neck's
+        // pre-look rotation, FUN_1002ac60's second loop).
         if (look_w > 0.0 && (b == look_a || b == look_b)) {
-            let share = select(1.0, 0.5, look_a != 0xffffffffu && look_b != 0xffffffffu);
             for (var k = 0u; k < 4u; k = k + 2u) {
                 if (k == 2u && n_from == 0u) { break; }
-                let hp = scratch[sc + 4u * b + k + 1u].xyz;
-                let d = look_p - hp;
-                if (length(d) > 1e-4) {
-                    let dq = slerp(vec4<f32>(0.0, 0.0, 0.0, 1.0), arc(vec3<f32>(1.0, 0.0, 0.0), normalize(d)), look_w * share);
-                    scratch[sc + 4u * b + k] = normalize(qmul(dq, scratch[sc + 4u * b + k]));
-                }
+                let r = select(qmul(qmul(q7, q3), qconj(q7)), q7, b == look_b);
+                scratch[sc + 4u * b + k] = normalize(qmul(r, scratch[sc + 4u * b + k]));
             }
         }
         var q = scratch[sc + 4u * b];
@@ -209,6 +269,48 @@ mod tests {
         let idle: Vec<(&Animation, f32)> = pugil.find_animations("idl").into_iter().map(|a| (a, 4.5)).collect();
         assert!(!idle.is_empty());
         check(&gpu, &pugil, &idle, &[]);
+    }
+
+    fn posed(gpu: &Gpu, ch: &Arc<Character>, to: &[(&Animation, f32)], look: Option<HeadLook>) -> Vec<glam::Quat> {
+        let n = ch.skeleton.bones.len().min(TABLE - 1);
+        let mut ga = GpuAnim::new(gpu);
+        ga.begin();
+        ga.job(ch, &[], to, &[], 0.0, 0, look);
+        let size = (n * 32) as u64;
+        let out = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+        let rb = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let mut enc = gpu.device.create_command_encoder(&Default::default());
+        ga.dispatch(gpu, &mut enc, &out, true);
+        enc.copy_buffer_to_buffer(&out, 0, &rb, 0, size);
+        gpu.queue.submit([enc.finish()]);
+        rb.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+        gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+        let data = rb.slice(..).get_mapped_range().unwrap();
+        let v: &[f32] = bytemuck::cast_slice(&data);
+        (0..n).map(|i| glam::Quat::from_slice(&v[i * 8..i * 8 + 4])).collect()
+    }
+
+    /// Hume M idle looking far to one side: the neck turns about its 17.7 deg limit and the head, which carries
+    /// the neck's turn, about 43 deg in all; a point straight ahead barely moves them.
+    #[test]
+    fn head_look_limits() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let look = Look { race: 1, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
+        let Ok(ch) = load_character(&index, &look) else { return };
+        let ch = Arc::new(ch);
+        let Ok(gpu) = Gpu::headless() else { return };
+        let idle: Vec<(&Animation, f32)> = ch.find_animations("idl").into_iter().map(|a| (a, 0.0)).collect();
+        let pt = |k: usize| ch.skeleton.points[k];
+        let hl = |point: glam::Vec3| HeadLook { bones: [Some(pt(3).0), Some(pt(7).0)], two: true, weight: 1.0, point, p3: pt(3).1, p4: pt(4), drop: 0.0, limits: ch.skeleton.look_limits };
+        let base = posed(&gpu, &ch, &idle, None);
+        let side = posed(&gpu, &ch, &idle, Some(hl(glam::Vec3::new(0.0, -1.6, 20.0))));
+        let ahead = posed(&gpu, &ch, &idle, Some(hl(glam::Vec3::new(20.0, -1.6, 0.0))));
+        let turn = |a: &[glam::Quat], b: usize| (a[b] * base[b].inverse()).to_axis_angle().1.to_degrees();
+        let (head, neck) = (pt(3).0 as usize, pt(7).0 as usize);
+        println!("side: head {:.1} neck {:.1}; ahead: head {:.1} neck {:.1}", turn(&side, head), turn(&side, neck), turn(&ahead, head), turn(&ahead, neck));
+        assert!((turn(&side, neck) - 17.7).abs() < 3.0);
+        assert!((turn(&side, head) - 43.3).abs() < 5.0);
+        assert!(turn(&ahead, head) < 15.0);
     }
 
     fn check(gpu: &Gpu, ch: &Arc<Character>, to: &[(&Animation, f32)], from: &[(&Animation, f32)]) {
@@ -372,12 +474,20 @@ impl GpuAnim {
         words[4] = t.to_bits();
         words[6] = NO_BONE;
         words[7] = NO_BONE;
-        if let Some(l) = look.filter(|l| l.weight > 0.0) {
+        if let Some(l) = look.filter(|l| l.weight > 0.0 && l.bones.iter().all(|b| b.is_some_and(|b| b != 0))) {
             words[5] = l.weight.to_bits();
             for (i, b) in l.bones.iter().enumerate() {
                 words[6 + i] = b.map_or(NO_BONE, |b| b as u32);
             }
             words[8..11].copy_from_slice(&l.point.to_array().map(f32::to_bits));
+            words[11] = if l.two { 2 } else { 1 };
+            words[12] = l.p4.0 as u32;
+            words[13..16].copy_from_slice(&l.p4.1.to_array().map(f32::to_bits));
+            for (i, lim) in l.limits.iter().enumerate() {
+                words[16 + 3 * i..19 + 3 * i].copy_from_slice(&lim.map(f32::to_bits));
+            }
+            words[22] = l.drop.to_bits();
+            words[23..26].copy_from_slice(&l.p3.to_array().map(f32::to_bits));
         }
         for (set, list, count_at) in [(HEAD, to, 2usize), (HEAD + 2 * MAX_SET, from, 3)] {
             let mut k = 0;

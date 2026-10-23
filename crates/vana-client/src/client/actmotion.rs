@@ -62,38 +62,47 @@ pub enum LookMode {
     Facing(i16, i16),
 }
 
-/// The look as the skeleton holds it (+0xb0 point in actor space, +0xbc weight ramped 0.04 a tick).
-#[derive(Clone, Copy, Debug)]
+/// Weight ramp and direction ease a 1/60 s tick: twice retail's (0.04 a 30 fps frame *(inf)*, 1/32 a tick), the
+/// user's call (2026-10-22): retail's turn is too slow.
+const LOOK_RATE: f32 = 0.04;
+const LOOK_EASE: f32 = 1.0 / 16.0;
+
+/// The look as the skeleton holds it: K+0xb0, the look point in world space (None until placed 20 ahead), and
+/// K+0xbc, the weight.
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Look {
     pub mode: LookMode,
-    pub point: glam::Vec3,
+    pub point: Option<glam::Vec3>,
     pub weight: f32,
 }
 
-impl Default for Look {
-    fn default() -> Self {
-        Look { mode: LookMode::Off, point: glam::Vec3::new(20.0, 0.0, 0.0), weight: 0.0 }
-    }
-}
-
 impl Look {
-    /// FUN_100d38c0 / FUN_10029e40 for one step: `target` is the look point in actor space (x forward), None
-    /// when there is nothing to look at. The point eases 1/32 a tick toward it; the weight ramps 0.04 a tick
-    /// and fades out when the point is behind (x < -0.5), off to the side (cos < -0.1) or nearer than 0.3.
-    pub fn step(&mut self, target: Option<glam::Vec3>, ticks: f32) {
+    /// FUN_100d5b10 / FUN_1002ac60 for one step. `frame` is the actor's matrix (x forward), `p3` the world head
+    /// point, `target` the world point to look at. The weight fades in, or out with no target, a target behind
+    /// (local x < -0.1) or one nearer than 0.3 across; at 0 the point goes back 20 ahead. With a target the look
+    /// direction about the head eases toward it, keeping its distance.
+    pub fn step(&mut self, frame: glam::Mat4, p3: glam::Vec3, target: Option<glam::Vec3>, ticks: f32) {
+        let ahead = frame.transform_point3(glam::Vec3::new(20.0, 0.0, 0.0));
+        let point = *self.point.get_or_insert(ahead);
+        let inv = frame.inverse();
         let ok = target.filter(|t| {
-            let flat = glam::Vec2::new(t.x, t.z).length();
-            t.x >= -0.5 && t.normalize_or_zero().x >= -0.1 && flat >= 0.3
+            let l = inv.transform_point3(*t);
+            l.x >= -0.1 && glam::Vec2::new(l.x, l.z).length() >= 0.3
         });
         match ok {
             Some(t) => {
-                self.point += (t - self.point) * (1.0 - (31.0f32 / 32.0).powf(ticks));
-                self.weight = (self.weight + 0.04 * ticks).min(1.0);
+                let v = point - p3;
+                let len = v.length().max(1e-3);
+                let want = (t - p3).normalize_or(v / len);
+                let dir = (v / len).lerp(want, 1.0 - (1.0 - LOOK_EASE).powf(ticks)).normalize_or(want);
+                self.point = Some(p3 + dir * len);
+                self.weight = (self.weight + LOOK_RATE * ticks).min(1.0);
             }
             None => {
-                self.weight -= 0.04 * ticks;
+                self.weight -= LOOK_RATE * ticks;
                 if self.weight < 0.0 {
-                    *self = Look { mode: self.mode, ..Look::default() };
+                    self.weight = 0.0;
+                    self.point = Some(ahead);
                 }
             }
         }
@@ -507,16 +516,18 @@ mod tests {
             assert!(mouth.is_some(), "{look:?} has no mou4 / mou6");
             assert!(ch.skeleton.points.len() > 7);
         }
-        let mut l = Look::default();
-        for _ in 0..30 {
-            l.step(Some(glam::Vec3::new(3.0, -1.5, 2.0)), 1.0);
+        let (mut l, head) = (Look::default(), glam::Vec3::new(0.0, -1.5, 0.0));
+        let want = glam::Vec3::new(3.0, -1.5, 2.0);
+        for _ in 0..200 {
+            l.step(glam::Mat4::IDENTITY, head, Some(want), 1.0);
         }
-        assert!((l.weight - 1.0).abs() < 1e-6 && (l.point - glam::Vec3::new(3.0, -1.5, 2.0)).length() < 13.0);
+        let dir = (l.point.unwrap() - head).normalize();
+        assert!((l.weight - 1.0).abs() < 1e-6 && dir.dot((want - head).normalize()) > 0.99);
         // Behind the actor: the weight ramps down and the point goes back ahead.
-        for _ in 0..30 {
-            l.step(Some(glam::Vec3::new(-3.0, 0.0, 0.0)), 1.0);
+        for _ in 0..60 {
+            l.step(glam::Mat4::IDENTITY, head, Some(glam::Vec3::new(-3.0, 0.0, 0.0)), 1.0);
         }
-        assert_eq!((l.weight, l.point), (0.0, glam::Vec3::new(20.0, 0.0, 0.0)));
+        assert_eq!((l.weight, l.point), (0.0, Some(glam::Vec3::new(20.0, 0.0, 0.0))));
     }
 
     fn hex(s: &str) -> Vec<u8> {
