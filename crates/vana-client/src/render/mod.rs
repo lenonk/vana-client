@@ -225,6 +225,10 @@ struct Draw {
     base_vertex: i32,
     instances: std::ops::Range<u32>,
     texture: usize,
+    /// Instances placed mirrored (scale.x * scale.z < 0, inst+0xd4): culled the other way.
+    mirrored: std::ops::Range<u32>,
+    /// Back faces culled (CCW, or CW when mirrored); MMB model bit 29 draws both sides.
+    cull: bool,
     /// FUN_1017c9c0's states: bit 0 alpha test (placements named '_', inst+0xd6), bit 1 alpha blend (MMB model bit 31:
     /// no depth write, ZBIAS 8). Drawn in that order: opaque, cut out, blended.
     mode: u8,
@@ -260,9 +264,7 @@ pub struct ZoneRenderer {
     /// The point-light table the scenery reads, and its keys by slot.
     pub lights: wgpu::Buffer,
     pub light_keys: Vec<u32>,
-    pipeline: wgpu::RenderPipeline,
-    alpha_pipeline: wgpu::RenderPipeline,
-    blend_pipelines: [wgpu::RenderPipeline; 2],
+    scenery: [[wgpu::RenderPipeline; 3]; 4],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     texture_layout: wgpu::BindGroupLayout,
@@ -547,9 +549,8 @@ pub struct ZonePipes {
     globals_layout: wgpu::BindGroupLayout,
     texture_layout: wgpu::BindGroupLayout,
     pose_layout: wgpu::BindGroupLayout,
-    pipeline: wgpu::RenderPipeline,
-    alpha_pipeline: wgpu::RenderPipeline,
-    blend_pipelines: [wgpu::RenderPipeline; 2],
+    /// Scenery by Draw::mode (opaque, cut out, blend, blend + cut out) and cull (none, back, front).
+    scenery: [[wgpu::RenderPipeline; 3]; 4],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
@@ -696,33 +697,33 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        let pipeline = make_pipeline("fs_opaque", None);
-        let alpha_pipeline = make_pipeline("fs_alpha_test", None);
+        // Scenery: front faces clockwise as D3D's; normal placements cull CCW (back), mirrored ones CW (front).
         // Bit-31 models: SRCALPHA / INVSRCALPHA, depth tested (LESSEQUAL) but not written, ZBIAS 8 *(inf: as a constant
         // depth bias of -8)*.
-        let make_blend = |fragment: &str| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        let make_scenery = |fragment: &str, blend: bool, cull: Option<wgpu::Face>| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(fragment),
             layout: Some(&layout),
             vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &vertex_layouts },
-            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            primitive: wgpu::PrimitiveState { front_face: wgpu::FrontFace::Cw, cull_mode: cull, ..Default::default() },
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: DEPTH_FORMAT,
-                depth_write_enabled: Some(false),
-                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                depth_write_enabled: Some(!blend),
+                depth_compare: Some(if blend { wgpu::CompareFunction::LessEqual } else { wgpu::CompareFunction::Less }),
                 stencil: Default::default(),
-                bias: wgpu::DepthBiasState { constant: -8, slope_scale: 0.0, clamp: 0.0 },
+                bias: if blend { wgpu::DepthBiasState { constant: -8, slope_scale: 0.0, clamp: 0.0 } } else { Default::default() },
             }),
             multisample: Default::default(),
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some(fragment),
                 compilation_options: Default::default(),
-                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: blend.then_some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
             }),
             multiview_mask: None,
             cache: None,
         });
-        let blend_pipelines = [make_blend("fs_blend"), make_blend("fs_blend_test")];
+        let culls = [None, Some(wgpu::Face::Back), Some(wgpu::Face::Front)];
+        let scenery = [("fs_opaque", false), ("fs_alpha_test", false), ("fs_blend", true), ("fs_blend_test", true)].map(|(f, b)| culls.map(|c| make_scenery(f, b, c)));
         // Actors blend by their model alpha (fades); opaque ones output alpha 1.
         let actor_pipeline = make_pipeline("fs_actor", Some(wgpu::BlendState::ALPHA_BLENDING));
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -742,7 +743,7 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, pipeline, alpha_pipeline, blend_pipelines, actor_pipeline, sky_pipeline, skin_pipeline }
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline }
     }
 }
 
@@ -806,7 +807,7 @@ impl ZoneGeometry {
         let mut door_parts: HashMap<u32, Vec<u32>> = HashMap::new();
         let mut next_part = 1u32;
         let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
-        let mut by_mesh: HashMap<String, Vec<(Instance, u32)>> = HashMap::new();
+        let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool)>> = HashMap::new();
         for p in scene.placements.iter().filter(|p| p.drawn()) {
             let lights = p.lights.map(slot_of);
             let area = match area_keys.iter().position(|&k| k == p.area) {
@@ -849,7 +850,7 @@ impl ZoneGeometry {
             }
             for (name, b) in bands {
                 let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, 0.0] };
-                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link));
+                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0));
             }
         }
         let mut matrices: Vec<Instance> = Vec::new();
@@ -858,15 +859,18 @@ impl ZoneGeometry {
         let mut all_verts: Vec<GpuVertex> = Vec::new();
         let mut all_indices: Vec<u16> = Vec::new();
         for mesh in &scene.meshes {
-            let Some(mats) = by_mesh.remove(mesh.name.as_str()) else { continue };
+            let Some(mut mats) = by_mesh.remove(mesh.name.as_str()) else { continue };
+            // Normal placements first, then the mirrored ones (culled the other way).
+            mats.sort_by_key(|m| m.2);
             let start = matrices.len() as u32;
-            for (inst, link) in mats {
+            let split = start + mats.iter().filter(|m| !m.2).count() as u32;
+            for (inst, link, _) in mats {
                 if link != 0 {
                     links.push((matrices.len() as u32, link, inst));
                 }
                 matrices.push(inst);
             }
-            let instances = start..matrices.len() as u32;
+            let (instances, mirrored) = (start..split, split..matrices.len() as u32);
             for model in &mesh.models {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
                 if indices.is_empty() || model.vertices.is_empty() {
@@ -889,6 +893,8 @@ impl ZoneGeometry {
                     index_count: count,
                     base_vertex,
                     instances: instances.clone(),
+                    mirrored: mirrored.clone(),
+                    cull: model.blending & 0x2000 == 0,
                     texture: texture_slot.get(model.texture.as_str()).copied().unwrap_or(0),
                     // Same rule as the reference viewer: '_' meshes and blend bit 0x8000 are cut out.
                     mode: mesh.name.starts_with('_') as u8 | ((model.blending & 0x8000 != 0) as u8) << 1,
@@ -971,9 +977,7 @@ impl ZoneRenderer {
         let [v, i, m] = geo.parts().map(|b| b.len() as u64);
         let buffer = |label, size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self {
-            pipeline: p.pipeline,
-            alpha_pipeline: p.alpha_pipeline,
-            blend_pipelines: p.blend_pipelines,
+            scenery: p.scenery,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
             texture_layout: p.texture_layout,
@@ -1062,7 +1066,7 @@ impl ZoneRenderer {
         let white = self.textures[0].clone();
         self.textures.extend(std::iter::repeat_n(white, textures.len()));
         self.pending.extend(textures.into_iter().enumerate().map(|(k, t)| (tex_base + k, t, None)));
-        let draws = geo.draws.iter().map(|d| Draw { texture: if d.texture == 0 { 0 } else { tex_base + d.texture - 1 }, instances: d.instances.clone(), ..*d }).collect();
+        let draws = geo.draws.iter().map(|d| Draw { texture: if d.texture == 0 { 0 } else { tex_base + d.texture - 1 }, instances: d.instances.clone(), mirrored: d.mirrored.clone(), ..*d }).collect();
         self.sub = Some(SubGeometry {
             vertices: buffer("sub-area vertices", v, wgpu::BufferUsages::VERTEX),
             indices: buffer("sub-area indices", i, wgpu::BufferUsages::INDEX),
@@ -1498,26 +1502,18 @@ impl ZoneRenderer {
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-        for (pipeline, mode) in [(&self.pipeline, 0), (&self.alpha_pipeline, 1), (&self.blend_pipelines[0], 2), (&self.blend_pipelines[1], 3)] {
-            pass.set_pipeline(pipeline);
+        for mode in 0..4u8 {
             let mut bound = usize::MAX;
+            let mut pipe = usize::MAX;
             for d in self.draws.iter().filter(|d| d.mode == mode) {
-                if d.texture != bound {
-                    pass.set_bind_group(1, &self.textures[d.texture], &[]);
-                    bound = d.texture;
-                }
-                pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, d.instances.clone());
+                self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
             }
             if let Some(s) = self.sub.as_ref().filter(|s| s.shown) {
                 pass.set_vertex_buffer(1, s.instances.slice(..));
                 pass.set_vertex_buffer(0, s.vertices.slice(..));
                 pass.set_index_buffer(s.indices.slice(..), wgpu::IndexFormat::Uint16);
                 for d in s.draws.iter().filter(|d| d.mode == mode) {
-                    if d.texture != bound {
-                        pass.set_bind_group(1, &self.textures[d.texture], &[]);
-                        bound = d.texture;
-                    }
-                    pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, d.instances.clone());
+                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
                 }
                 pass.set_vertex_buffer(1, self.instances.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
@@ -1545,6 +1541,27 @@ impl ZoneRenderer {
                 pass.set_bind_group(1, &a.textures[*tex], &[]);
                 pass.draw(range.clone(), 0..1);
             }
+        }
+    }
+}
+
+impl ZoneRenderer {
+    /// One model: both-sided models in one draw; otherwise the normal instances culled back, the mirrored front.
+    fn draw_scenery(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize) {
+        if d.texture != *bound {
+            pass.set_bind_group(1, &self.textures[d.texture], &[]);
+            *bound = d.texture;
+        }
+        let runs = if d.cull { [(1, d.instances.clone()), (2, d.mirrored.clone())] } else { [(0, d.instances.start..d.mirrored.end), (0, 0..0)] };
+        for (c, range) in runs {
+            if range.is_empty() {
+                continue;
+            }
+            if *pipe != c {
+                pass.set_pipeline(&self.scenery[mode as usize][c]);
+                *pipe = c;
+            }
+            pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range);
         }
     }
 }

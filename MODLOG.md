@@ -3615,3 +3615,13 @@ From the door spec (scratchpad doors_spec/SPEC.md).
 - A dark hollow in La Theine near (-10, 35) looked like a pond without water. It is not a blending or LOD issue; the
   zone's spring effects (f_la/effe/izum: izu1 / izu2 water meshes, colour 0x30, alpha ~0x30) sit elsewhere ((13, 104),
   (-59, 136)). Whether retail shows water in that hollow is not checked (open).
+
+## Scenery back-face culling (2026-10-22)
+
+- FUN_1017c9c0: D3DRS_CULLMODE CCW for instances with inst+0xd4 = 0, CW for mirrored ones (inst+0xd4 set when the
+  placement's scale.x * scale.z < 0); models with MMB header bit 29 draw with CULL_NONE (record +0x24 compared with the
+  cached state; the earlier "vs the texture +0x40 / +0x44" reading was a decompiler artefact).
+- Ours: front faces clockwise (as the character pipeline), each mesh's instances split into a normal and a mirrored
+  range (Draw.instances / mirrored), cull back / front / none by Draw.cull (bit 29 clear); scenery pipelines are a 4 x 3
+  table (opaque, cut out, blend, blend + cut out) x (none, back, front). 230 has 136 mirrored placements (e.g. the
+  left leaf of every double door); the 335 interior's upper wall ornaments, hidden behind a back face before, show.
