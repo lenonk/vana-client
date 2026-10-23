@@ -2076,12 +2076,12 @@ fn drawn_between_steps(h: &[Vec3; 4], t: f32) -> Vec3 {
     a.lerp(b, t)
 }
 
-/// A bound actor draws from its VM body while the event runs (status taken as 0 *(inf)*); otherwise ourselves
-/// from the session, others from their entity.
+/// A bound actor draws from its VM body while the event runs, posing with its event status (+0x174, op 0xac 1);
+/// otherwise ourselves from the session, others from their entity.
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     let size = if id == w.my_id { w.my_motion.graph_size } else { w.entities.get(&id)?.motion.graph_size };
     if let Some(p) = event::pose(w, id) {
-        return Some(Place { pos: p.pos, forward: Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin()), status: 0, ratio: p.ratio, size });
+        return Some(Place { pos: p.pos, forward: Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin()), status: event::event_status(w, id), ratio: p.ratio, size });
     }
     if id == w.my_id {
         let m = w.my_motion;

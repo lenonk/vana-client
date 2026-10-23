@@ -296,6 +296,8 @@ pub struct State {
     /// World ids of the bound actors (+0x120 bit 7) and how each is drawn.
     pub bound: HashSet<u32>,
     pub poses: HashMap<u32, Pose>,
+    /// Event status (+0x174) by actor, set by op 0xac sub 1: the status a bound actor poses with (+0x170).
+    pub event_status: HashMap<u32, u8>,
     /// Snapped by 0x36 / 0x37 this frame (FUN_100917e0).
     snap: HashSet<u32>,
     /// Despawned while bound (0x1009a04d keeps an event participant); removed at the end.
@@ -351,6 +353,7 @@ impl State {
             idle: HashMap::new(),
             bound: HashSet::new(),
             poses: HashMap::new(),
+            event_status: HashMap::new(),
             snap: HashSet::new(),
             despawned: HashSet::new(),
             camera_flag: false,
@@ -676,6 +679,14 @@ impl Host for LiveHost<'_> {
                 if let Some(Arg::Actor(a)) = args.get(1) {
                     let id = self.wid(*a);
                     self.hide(id, &args, 0);
+                }
+            }
+            // FUN_100bb180 sub 1: the event actor's event status +0x174 = val@2, which a bound actor poses with. Riding
+            // (5 / 0x55) is left out: the chocobo / mount model isn't spawned here.
+            Effect::Op { op: 0xac, sub: Some(1), actor, args } => {
+                let id = self.wid(actor);
+                if let Some(s) = Self::arg_int(&args, 0).filter(|s| !matches!(s, 5 | 0x55)) {
+                    self.st.event_status.insert(id, s as u8);
                 }
             }
             // FUN_100b3540: the event actor hidden as op 0x22 1 (+0x120 bit 17).
@@ -1417,6 +1428,11 @@ pub fn holds(w: &mut World, id: u32) -> bool {
 /// A bound actor's drawn transform while the event runs.
 pub fn pose(w: &World, id: u32) -> Option<Pose> {
     w.event.as_ref()?.st.poses.get(&id).copied()
+}
+
+/// A bound actor's event status (+0x174, op 0xac sub 1); 0 when none was set.
+pub fn event_status(w: &World, id: u32) -> u8 {
+    w.event.as_ref().and_then(|l| l.st.event_status.get(&id).copied()).unwrap_or(0)
 }
 
 /// The cutscene camera: the scheduler's path while the 0x46 flag is 0.

@@ -4066,3 +4066,7 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   0xbe stores the caller's real server id; a 0x5b / 0x66 / 0x5f motion named 0 or 'xxxx' only loads its file; 0xb6
   0xf / 0x17 set the event actor's / player's scale (+0x204 = val@2 * 0.01, Actor::event_scale); frame ends after b5,
   c1, 7e, 71, a7, b3 and the 0x87 / 0x88 / 0x8c / 0xa6 sends. Sweep 230 / 240 unchanged (1,450 / 1,489, 0 faults).
+- Op 0xac sub 1 (FUN_100bb180): the event actor's event status +0x174 = val@2; a bound actor poses with it (+0x170)
+  while the event runs. City zones 231..246 use 0 (13), 1 (battle stance, 11), 34 (2), 2 (corpse, 1). Ours:
+  State::event_status, read by actor_place; riding 5 / 0x55 skipped until the chocobo / mount model is spawned
+  (0x7e waits for that too). Subs 0 (server status), 2 / 3 (update freeze, c2s 0x016), 4 not done.
