@@ -787,6 +787,12 @@ impl Host for LiveHost<'_> {
                 let n = u32::from_le_bytes(crate::dat::generator::fourcc(name));
                 self.w.effects.zone_file().is_some_and(|f| self.w.effects.event_scheduler_running(f, n, who(a), who(b)))
             }
+            // FUN_100b8e90: an actor of the event waits for its model and resources; ours waits while that load or its
+            // motion files are in flight (an actor that never gets a model does not hold the event).
+            Busy::Op { op: 0x80, actor, .. } => {
+                let id = self.wid(*actor);
+                self.w.actors.get(&id).is_some_and(|a| (a.character.is_none() && self.w.models_loading.contains(&a.key)) || a.pending.is_some())
+            }
             // Op 0xb6 sub 0x10: until the player's model is up.
             Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {
