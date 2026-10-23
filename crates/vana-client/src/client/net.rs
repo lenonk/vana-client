@@ -171,6 +171,13 @@ pub enum NetEvent {
     ShopBuy { index: u16, count: u32 },
     /// s2c 0x03D (SHOP_SELL): Price @4, slot @8, Type @9 (0 appraisal), Count @0xc.
     ShopSell { price: u32, slot: u8, kind: u8, count: u32 },
+    /// s2c 0x086 (GUILD_OPEN): Stat @4 (0 open, 1 closed, 2 holiday), Time @8 (open hour bits / weekday; bit 31 passive).
+    GuildOpen { stat: u8, time: u32 },
+    /// s2c 0x083 / 0x085 (GUILD_BUYLIST / GUILD_SELLLIST): up to 30 {ItemNo u16, Count u8, Max u8, Price i32} from @4,
+    /// Count @0xf4, Stat @0xf5 (0x40 first, 0x80 last).
+    GuildList { sell: bool, stat: u8, entries: Vec<(u16, u8, u8, u32)> },
+    /// s2c 0x082 / 0x084 (GUILD_BUY / GUILD_SELL): ItemNo @4 (0 refused), Count @6 (the guild's stock), Trade @7.
+    GuildResult { sell: bool, item: u16, count: u8, trade: i8 },
     /// s2c 0x0E0 (GP_SERV_COMMAND_GROUP_COMLINK): LinkshellNum @4, ItemIndex @5, Category (bag) @6.
     LinkshellEquip { num: u8, index: u8, bag: u8 },
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
@@ -735,6 +742,16 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x03F => tx.send(NetEvent::ShopBuy { index: p.u16(4), count: p.u32(8) })?,
                     0x03D => tx.send(NetEvent::ShopSell { price: p.u32(4), slot: p.u8(8), kind: p.u8(9), count: p.u32(0xc) })?,
+                    0x086 => tx.send(NetEvent::GuildOpen { stat: p.u8(4), time: p.u32(8) })?,
+                    0x083 | 0x085 => {
+                        let n = (p.u8(0xf4) as usize).min(30);
+                        let entries = (0..n).map(|k| {
+                            let o = 4 + 8 * k;
+                            (p.u16(o), p.u8(o + 2), p.u8(o + 3), p.u32(o + 4))
+                        }).collect();
+                        tx.send(NetEvent::GuildList { sell: p.id == 0x085, stat: p.u8(0xf5), entries })?
+                    }
+                    0x082 | 0x084 => tx.send(NetEvent::GuildResult { sell: p.id == 0x084, item: p.u16(4), count: p.u8(6), trade: p.u8(7) as i8 })?,
                     0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,
                     0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,

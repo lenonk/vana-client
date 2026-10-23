@@ -3001,6 +3001,8 @@ struct World {
     post: post::Session,
     /// An NPC shop's windows (s2c 0x03E).
     shop: Option<shop::Shop>,
+    /// The guild shop's buy / sell lists (s2c 0x083 / 0x085), cleared by 0x086 only.
+    guild: [shop::GuildTable; 2],
     /// The mouse pick: actors whose screen rect held the pointer last test (their bones are read back), and the
     /// read-back points (key: bone, or 0x8000 | attach point) relative to the actor root.
     pick_rect: HashSet<u32>,
@@ -4024,6 +4026,7 @@ impl App {
                             job_cooldown: None,
                             post: post::Session::default(),
                             shop: None,
+                            guild: Default::default(),
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
@@ -4725,6 +4728,9 @@ impl App {
                 NetEvent::ShopList { last, entries } => shop::on_list(world, last, &entries),
                 NetEvent::ShopBuy { index, count } => shop::on_buy(world, index, count),
                 NetEvent::ShopSell { price, slot, kind, count } => shop::on_sell(world, price, slot, kind, count),
+                NetEvent::GuildOpen { stat, time } => shop::on_guild_open(world, stat, time),
+                NetEvent::GuildList { sell, stat, entries } => shop::on_guild_list(world, sell, stat, &entries),
+                NetEvent::GuildResult { sell, item, count, trade } => shop::on_guild_result(world, sell, item, count, trade),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {

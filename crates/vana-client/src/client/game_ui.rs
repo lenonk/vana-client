@@ -17,8 +17,6 @@ const ATLAS: &str = "\0font atlas";
 pub const WHITE: [u8; 4] = [0x80; 4];
 pub const YELLOW: [u8; 4] = [0x30, 0x78, 0x80, 0x80];
 pub const GREY: [u8; 4] = [0x58, 0x58, 0x58, 0x80];
-/// A menu's selected item tint, 0x80805020 (FUN_101155e0).
-pub const GOLD: [u8; 4] = [0x20, 0x50, 0x80, 0x80];
 
 /// Parsed resources; loaded off the UI thread.
 pub struct GameUiData {
@@ -940,8 +938,12 @@ impl GameUi {
         screens::window_rect(&self.data.lobby, name, w, h).map(|[x, y, rw, rh]| [x, y + dy, rw, rh])
     }
 
-    /// Splits a line into pieces no wider than `max`, at spaces where possible.
+    /// Splits a line into pieces no wider than `max`, at each '\n' and at spaces where possible.
     pub fn wrap(&self, line: &str, max: f32) -> Vec<String> {
+        line.split('\n').flat_map(|part| self.wrap_part(part, max)).collect()
+    }
+
+    fn wrap_part(&self, line: &str, max: f32) -> Vec<String> {
         let mut out = Vec::new();
         let mut cur = String::new();
         for word in line.split_inclusive(' ') {

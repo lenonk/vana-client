@@ -5277,3 +5277,29 @@ Notes: `~/ffxi/lab/research/shop_spec2.md`.
   - DX12 (its vkd3d path, "Helios vGPU", Dx12, DiscreteGpu): the device is lost while wgpu creates its 2048-sampler
     shader-visible heap (DXGI 0x887A0005), about 1 s after creation.
 - WGPU_BACKEND (vulkan, dx12, ...) picks the backend; the Windows build logs to %APPDATA%\vana-client\vana-client.log.
+
+## Guild shops (2026-10-23)
+
+Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (the NPC shop's windows reused).
+
+- s2c 0x086 {Stat @4, Time @8}: both guild tables' counts go to 0 first (store LAB_100eae80, even when refused).
+  Stat 0 opens "menu    guildsho" (shopmain's layout) unless a 0x20000 window is open (guildsho itself included):
+  group 7 0x45. Stat 1: group 10 0x19 "The shop is closed.\nThis shop's hours are %d to %d." (open = the lowest set
+  hour bit, close = the first clear bit after it), Stat 2: group 10 0x1a with the group 0x10 weekday; both in chat mode
+  0x79, silent when bit 31 (passive) is set and no guild window is open; then everything closes.
+- Buy / Sell on guildsho fetch the list once per 0x086 (c2s 0x0AB / 0x0AD, header only) when the table has no rows;
+  refused (SE 0004) within 5 s of the last 0x40 packet. s2c 0x083 / 0x085: 30 x {u16 ItemNo, u8 Count, u8 Max, i32
+  Price} from @4, Count @0xf4, Stat @0xf5 (0x40 resets, 0x80 completes); duplicates dropped, server order.
+- Buy rows: grey past the gil or at stock 0, else the NPC shop's name colours; orange while busy. Enter: affordable, in
+  stock, a known item (no free-slot check); quantity up to min(stack, gil / price, stock); c2s 0x0AA {ItemNo, 0, qty}.
+- Sell: the wanted list (title group 0xd 0xd "Guild Shop", help 0xe 0x33), row 0 group 9 0x2c "Select from your
+  inventory." then the sell table without price-bit-31 entries, white only when held and Count < Max. Enter opens the
+  inventory (row 0: all; an item row: that item only); there grey = unsellable or not on the guild's list; quantity
+  up to the slot's count; c2s 0x0AC {ItemNo, slot, qty}; Escape goes back to the wanted row.
+- s2c 0x082 / 0x084 {ItemNo, Count, i8 Trade}: the entry's stock takes Count (never re-requested); ItemNo 0 refusals
+  (0xa3 / 0x9a / 0x9b), Trade 0 (0x81 / 0x82), else 7031 0xa5 / 0xa6 bought, 0xa7 / 0xa8 sold, a negative Trade adds
+  group 7 0x83 / 0x84.
+- Log lines break at '\n' (GameUi::wrap): group 7 / 10 lines such as 0x19 and 0x80 are two lines.
+- Live (Lnxcsfix): Kueh Igunahmori (Southern San d'Oria, 3..18): all four views; bought 2 Distilled Water, sold 1
+  through "Select from your inventory." (gil 4840 -> 4825). Doggomehr (Northern San d'Oria, 8..23) closed: "The shop
+  is closed." / "This shop's hours are 8 to 23."

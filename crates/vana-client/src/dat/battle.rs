@@ -89,6 +89,9 @@ pub struct BattleText {
     /// Group 0x17: equipment slot names for /equip ("main" .. "feet").
     slot_names: Option<Messages>,
     group9: Option<Messages>,
+    /// Group 10: formatted client lines (the guild shop's hours, ...); group 0x10: the weekday names.
+    group10: Option<Messages>,
+    days: Option<Messages>,
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
     palette: Vec<(u8, [u8; 4])>,
@@ -174,6 +177,8 @@ impl BattleText {
             emotes: dialog(SLOT_EMOTES).map_err(|e| log::warn!("emote messages: {e:#}")).ok(),
             slot_names: super::msg::group_file(ffximain, 1, 0x17).and_then(msgs),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
+            group10: super::msg::group_file(ffximain, 1, 10).and_then(msgs),
+            days: super::msg::group_file(ffximain, 1, 0x10).and_then(msgs),
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
             mode_colours,
@@ -268,6 +273,15 @@ impl BattleText {
 
     pub fn group9(&self, id: usize) -> Option<String> {
         self.group9.as_ref()?.get(id)
+    }
+
+    pub fn group10(&self, id: usize) -> Option<String> {
+        self.group10.as_ref()?.get(id)
+    }
+
+    /// Group 0x10 entry `day`: 0 Firesday .. 7 Darksday.
+    pub fn day_name(&self, day: usize) -> Option<String> {
+        self.days.as_ref()?.get(day)
     }
 
     /// Message `id` expanded for `ctx`; None when the id has no text.
