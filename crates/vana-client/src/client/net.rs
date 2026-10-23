@@ -363,8 +363,17 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         pos: (flags & 1 != 0).then(|| [p.f32(12), p.f32(16), p.f32(20)]),
         dir: p.u8(11),
         hpp: (flags & 0x04 != 0).then(|| p.u8(0x1E)),
-        // Doors carry their door id where the name goes (LSB MODEL_DOOR): not a name.
-        name: (flags & 0x08 != 0 && p.data.len() > name_at).then(|| text(p, name_at, 16)).filter(|n| !n.is_empty() && n.chars().all(|c| !c.is_control() && c != '\u{fffd}')),
+        // 0x00E (asm 0x1009b666..): index >= 0x700 takes @0x34; below 0x400 only text marked 0x01 at @0x34 (from @0x35);
+        // other NPCs are named from the zone list (the client side). Doors carry their door id there: not a name.
+        name: (flags & 0x08 != 0 && p.data.len() > name_at)
+            .then(|| match kind {
+                EntityKind::Npc if p.u16(8) >= 0x700 => Some(text(p, name_at, 16)),
+                EntityKind::Npc if p.u16(8) < 0x400 && p.u8(name_at) == 0x01 && p.u8(name_at + 1) > 0x20 => Some(text(p, name_at + 1, 15)),
+                EntityKind::Npc => None,
+                _ => Some(text(p, name_at, 16)),
+            })
+            .flatten()
+            .filter(|n| !n.is_empty() && n.chars().all(|c| !c.is_control() && c != '\u{fffd}')),
         despawn: flags & 0x20 != 0,
         look: (kind == EntityKind::Player && flags & 0x10 != 0 && p.data.len() >= 0x48 + 18).then(|| look_at(p, 0x48)),
         motion: motion_state(p),

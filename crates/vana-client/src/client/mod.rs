@@ -3326,13 +3326,16 @@ impl App {
                         entry.dir = e.dir;
                         entry.dir_seen = e.dir;
                     }
-                    // The zone list wins: LSB sends database names ("Tunnel_Worm").
-                    if let Some(n) = world.npc_names.get(&e.id) {
+                    // FUN_10093430 via the 0x00E handler: the packet's name where it carries one (players, index >= 0x700,
+                    // text marked 0x01), else the zone list by server id (FUN_1008a930), else "NPC" (0x1035bb44).
+                    if let Some(n) = e.name {
+                        entry.name = n;
+                    } else if let Some(n) = world.npc_names.get(&e.id) {
                         if entry.name != *n {
                             entry.name = n.clone();
                         }
-                    } else if let Some(n) = e.name {
-                        entry.name = n;
+                    } else if e.kind == EntityKind::Npc && e.index < 0x700 && entry.name.is_empty() {
+                        entry.name = "NPC".into();
                     }
                     if let Some(h) = e.hpp {
                         entry.hpp = h;
