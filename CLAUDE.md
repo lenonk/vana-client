@@ -81,7 +81,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     size; the gamepad rows (Misc. 4 0xce, the external gamepad tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar; left: mix.dat / aix.dat order and the sort
     windows, blue magic sets (s2c 0x044), mouse in the lists and prompt, <stpt> / <stal> party cursors, the mount list);
-  - the map's pan, zoom and its actions;
+  - the map (spec: MODLOG "Map window: pan, zoom, fades, event maps"): left are Change Map (maplist), Wide Scan,
+    party positions (c2s 0x0D2 / s2c 0x0A0), the left-drag pan; done: pan, zoom, fades, /map, event maps and
+    views, markers and the .MRK file;
+  - the item info window: augment lines, the compare windows (itemxinf / itemyinf); "menu    iuse" (Enter in
+    the item list: using, dropping, sorting items) is not started;
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
