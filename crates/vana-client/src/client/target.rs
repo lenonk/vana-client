@@ -32,6 +32,7 @@ pub fn set(w: &mut World, t: Option<u32>) {
         (Some(_), Some(_)) => w.sounds.push(SE_SWITCH),
         _ => {}
     }
+    log::info!("target {:#x} {:?}", t.unwrap_or(0), t.and_then(|t| w.entities.get(&t)).map(|e| e.name.as_str()));
     w.target = t;
     w.target_since = std::time::Instant::now();
     if w.locked {
@@ -90,6 +91,104 @@ fn drop_rule(flags: u8, untargetable: bool, status: u8, dist: f32, hidden: bool)
         }
     }
     (dist > 50.0).then_some(false)
+}
+
+/// Kind mask bits (FUN_1008e290): 1 PC, 2 NPC, 0x10 monster, 0x20 door.
+fn kind_bits(id: u32, e: &super::Entity) -> u32 {
+    if id >> 24 == 0 {
+        1
+    } else if e.door != 0 {
+        0x20
+    } else if e.mob {
+        0x10
+    } else {
+        2
+    }
+}
+
+/// FUN_10083430 with no sub-target prompt: drawn (a model, or a door), not hidden, not ourselves, and not a dead
+/// or despawning monster. No name test. Not done: the event untargetable bit (ops 0x12..0x15, +0x128 bit 4).
+fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &super::Entity) -> bool {
+    let drawn = e.door != 0 || w.actors.get(&id).is_some_and(|a| a.gpu.is_some() || a.character.is_some());
+    id != w.my_id && drawn && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3))
+}
+
+/// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its own frame, local forward
+/// >= 0) within 50 units (distance^2 < 2500), optionally of some kinds.
+fn nearest(w: &World, keep: impl Fn(u32, &super::Entity) -> bool) -> Option<u32> {
+    let hidden = super::event::hidden(w);
+    let forward = Vec3::new(w.yaw.sin(), 0.0, w.yaw.cos());
+    w.entities
+        .iter()
+        .filter(|(id, e)| candidate(w, &hidden, **id, e) && keep(**id, e))
+        .map(|(id, e)| (*id, e.pos - w.pos))
+        .filter(|(_, d)| d.dot(forward) >= 0.0 && d.length_squared() < 2500.0)
+        .min_by(|a, b| a.1.length_squared().total_cmp(&b.1.length_squared()))
+        .map(|(id, _)| id)
+}
+
+/// FUN_10083d00 / FUN_10083b40 order: from the target's screen key, the nearest key to that side (under 3600);
+/// none, the far end the other way (Tab wraps to the leftmost, Shift+Tab to the rightmost).
+fn screen_step(keys: &[(u32, f32)], from: f32, right: bool) -> Option<u32> {
+    let side = |k: f32| if right { k - from } else { from - k };
+    let next = keys.iter().filter(|(_, k)| side(*k) > 0.0 && side(*k) < 3600.0).min_by(|a, b| side(a.1).total_cmp(&side(b.1)));
+    let wrap = || keys.iter().filter(|(_, k)| side(*k) < 0.0).max_by(|a, b| side(a.1).abs().total_cmp(&side(b.1).abs()));
+    next.or_else(wrap).map(|(id, _)| *id)
+}
+
+/// Key functions 0x84 / 0x97 (Tab, Num0 / with Shift): FUN_10158ca0. No valid target: the nearest in front;
+/// else screen order by x_view / max(|z_view|, 1) x focal among candidates within 50 of the camera (no line of
+/// sight, behind-camera actors included as retail), else the nearest.
+pub fn cycle(w: &mut World, view: glam::Mat4, right: bool) {
+    if !picks_allowed(w) {
+        return;
+    }
+    let focal = super::camera::focal(w);
+    let raw = |p: Vec3| {
+        let v = view.transform_point3(p);
+        (v.x / v.z.abs().max(1.0) * focal, v.length())
+    };
+    let cur = w.target.filter(|t| w.entities.contains_key(t));
+    let pick = cur.and_then(|t| {
+        let from = raw(w.entities[&t].pos).0;
+        let key = |p: Vec3| Some(raw(p)).filter(|k| k.1 < 50.0).map(|k| k.0);
+        let hidden = super::event::hidden(w);
+        let keys: Vec<(u32, f32)> = w.entities.iter().filter(|(id, e)| **id != t && candidate(w, &hidden, **id, e)).filter_map(|(id, e)| key(e.pos).map(|k| (*id, k))).collect();
+        screen_step(&keys, from, right)
+    });
+    let pick = pick.or_else(|| nearest(w, |_, _| true));
+    if pick.is_some() {
+        set(w, pick);
+    }
+}
+
+/// Enter with no target (FUN_101587f0 case 0): the nearest in front, only targeted. False when there is none
+/// (the caller opens "menu playermo", the action menu).
+pub fn enter_nearest(w: &mut World) -> bool {
+    let t = nearest(w, |_, _| true);
+    if t.is_some() {
+        set(w, t);
+    }
+    t.is_some()
+}
+
+/// F8 / Ctrl+F8 / Alt+F8 / F9 / F10 (FUN_10083ec0 / FUN_10083ee0 / FUN_10083f00): the nearest in front by kind.
+/// `prefer` is the kind mask tried first (F8 monsters, F10 / Alt+F8 NPCs or monsters), then any non-PC; Ctrl+F8
+/// (`enemies`) only monsters; F9 (`pcs`) only players.
+pub fn nearest_kind(w: &mut World, prefer: u32, enemies: bool, pcs: bool) {
+    if !picks_allowed(w) {
+        return;
+    }
+    let t = if pcs {
+        nearest(w, |id, _| id >> 24 == 0)
+    } else if enemies {
+        nearest(w, |id, e| id >> 24 != 0 && e.mob)
+    } else {
+        nearest(w, |id, e| id >> 24 != 0 && kind_bits(id, e) & prefer != 0).or_else(|| nearest(w, |id, _| id >> 24 != 0))
+    };
+    if t.is_some() {
+        set(w, t);
+    }
 }
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
@@ -226,6 +325,17 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Tab steps to the next screen key to the right and wraps to the leftmost; Shift+Tab mirrors it.
+    #[test]
+    fn screen_order() {
+        let keys = [(1, -200.0), (2, -50.0), (3, 40.0), (4, 300.0)];
+        assert_eq!(screen_step(&keys, 0.0, true), Some(3));
+        assert_eq!(screen_step(&keys, 0.0, false), Some(2));
+        assert_eq!(screen_step(&keys, 500.0, true), Some(1));
+        assert_eq!(screen_step(&keys, -500.0, false), Some(4));
+        assert_eq!(screen_step(&[], 0.0, true), None);
+    }
 
     /// Attackable targets go when dead, despawning or flagged off (with /attackoff); NPCs only when hidden or
     /// more than 50 away.

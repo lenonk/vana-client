@@ -3652,3 +3652,22 @@ From the door spec (scratchpad doors_spec/SPEC.md).
   target name wraps in split mode. Nothing in this path clears it.
 - Ours: Entity.object (sticky), forcing no_gauge / no_plate. The earlier note that stub-model NPCs (50 / 52) show a
   plate while targeted is ours, not retail's: they have none.
+
+## Targeting keys (2026-10-22)
+
+From the targeting spec (scratchpad target_spec/SPEC.md; current-build addresses, old -> new in
+~/ffxi/lab/current/tables_port/funcmap.json).
+- Tab / Num0 (key fn 0x84) and with Shift (0x97): FUN_10158ca0. No valid target: FUN_10083620, the nearest actor in
+  front of the character's own facing (local forward >= 0, distance^2 < 2500). With a target: screen order,
+  FUN_10083d00 right / FUN_10083b40 left, key x_view / max(|z_view|, 1) x focal (DAT_104568fc+0x2f4), candidates
+  within 50 of the camera, smallest step under 3600; none that way wraps to the far end the other way (Tab: the
+  leftmost); nothing else: the nearest. No line of sight, no height test, behind-camera actors included.
+- Filter FUN_10083430 (no prompt): no name test; rejects self, actors not drawn (+0xb2 != 0, +0x8c < 0), dead or
+  despawning monsters (status 2 / 3), event-untargetable (+0x128 bit 4, event ops 0x12..0x15: not done), Mog House
+  layout furniture (+0xc0 == 2), and two options off by default (config 0x97, 0xaa). Doors are candidates.
+- Enter with no target: the same nearest pick, only targeted; with none, "menu playermo" (the action menu).
+- F8 (0x4d) nearest monster else non-PC; Ctrl+F8 (0xab) monsters only; F10 (0x52) / Alt+F8 (0xac) NPC or monster
+  else non-PC; F9 (0x4e) nearest PC. All FUN_10083f20 in the nearest frame. F1 / F2..F6 / F11 / F12 (self, party,
+  alliance) wait on self targets and the party list.
+- Ours: client/target.rs cycle / nearest / nearest_kind / enter_nearest. Entity kind bits inferred from ours: PC by
+  id, door, monster, else NPC.

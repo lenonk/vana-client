@@ -36,7 +36,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Offscreen tools for checking without a window: `npc-shot`, `char-shot`, `select-shot`, `creator-shot`,
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
 - Live test runs: `play --credentials ~/ffxi/lab/lnxtest01.json --input '<script>'` (steps in client/script.rs).
-  Driven windows are titled "[test]" and ignore real input.
+  Driven windows are titled "[test]" and take real input too.
 
 ## Rules
 - Decompile, don't guess. Mark anything inferred as inferred in MODLOG.

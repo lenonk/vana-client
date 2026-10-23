@@ -844,12 +844,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Enter if dead && !world.homing => home = true,
                 // Enter on an NPC target talks to it (FUN_101524e0); otherwise it opens the action menu
                 // (FUN_10127790). Inferred: monsters (0x00E @0x25 bit 0x08) take the menu path.
+                // With no target it first targets the nearest actor in front (FUN_101587f0 case 0); only with none
+                // does the menu ("menu playermo") open.
                 egui::Key::Enter if !dead => {
                     let npc = world.target.filter(|t| t >> 24 != 0 && world.entities.get(t).is_some_and(|e| !e.mob));
                     match npc {
                         Some(t) => {
                             event::talk(world, t);
                         }
+                        None if world.target.is_none() && !event::active(world) && target::enter_nearest(world) => {}
                         None => {
                             world.action_menu = Some(combat::open_menu(world));
                             world.menu = None;
@@ -867,7 +870,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.typing = true;
                     keys.clear();
                 }
-                egui::Key::Tab if !modifiers.any() => App::cycle_target(world),
                 _ => {}
             },
             _ => {}
@@ -3837,6 +3839,23 @@ impl App {
         if self.input.test(0x78, input::mode::REPEAT) {
             log_cycle(world);
         }
+        // Target keys (FUN_101587f0): Tab / Num0 and with Shift (0x84 / 0x97), F8 / Ctrl+F8 / Alt+F8 / F9 / F10.
+        if !event::active(world) {
+            let view = Self::camera(world).view();
+            if self.input.test(0x84, input::mode::PRESS) {
+                target::cycle(world, view, true);
+            } else if self.input.test(0x97, input::mode::PRESS) {
+                target::cycle(world, view, false);
+            } else if self.input.test(0x4d, input::mode::PRESS) {
+                target::nearest_kind(world, 0x10, false, false);
+            } else if self.input.test(0xab, input::mode::PRESS) {
+                target::nearest_kind(world, 0x10, true, false);
+            } else if self.input.test(0x52, input::mode::PRESS) || self.input.test(0xac, input::mode::PRESS) {
+                target::nearest_kind(world, 0x12, false, false);
+            } else if self.input.test(0x4e, input::mode::PRESS) {
+                target::nearest_kind(world, 0, false, true);
+            }
+        }
     }
 
     fn camera(world: &World) -> Camera {
@@ -3864,28 +3883,6 @@ impl App {
             })
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map(|(id, _)| id)
-    }
-
-    /// Tab targeting: the next entity by distance after the current target, within 30 units.
-    fn cycle_target(world: &mut World) {
-        if !target::picks_allowed(world) {
-            return;
-        }
-        let hidden = event::hidden(world);
-        let mut near: Vec<(u32, f32)> = world
-            .entities
-            .iter()
-            .filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && e.targetable() && !hidden.contains(id))
-            .map(|(id, e)| (*id, (e.pos - world.pos).length()))
-            .filter(|(_, d)| *d < 30.0)
-            .collect();
-        near.sort_by(|a, b| a.1.total_cmp(&b.1));
-        let next = match world.target.and_then(|t| near.iter().position(|(id, _)| *id == t)) {
-            Some(i) => near.get(i + 1).or(near.first()),
-            None => near.first(),
-        };
-        let t = next.map(|(id, _)| *id);
-        target::set(world, t);
     }
 
     fn ui(&mut self, ctx: &egui::Context, window: [u32; 2]) {
@@ -5465,12 +5462,6 @@ impl ApplicationHandler for App {
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         let Some(gfx) = &mut self.gfx else { return };
-        // A driven run takes its input from the script only; real keys and the mouse are ignored.
-        if self.drive.driven()
-            && matches!(event, WindowEvent::KeyboardInput { .. } | WindowEvent::ModifiersChanged(_) | WindowEvent::Ime(_) | WindowEvent::MouseInput { .. } | WindowEvent::MouseWheel { .. } | WindowEvent::CursorMoved { .. })
-        {
-            return;
-        }
         let consumed = gfx.egui_state.on_window_event(&gfx.window, &event).consumed;
         match event {
             WindowEvent::CloseRequested => event_loop.exit(),
