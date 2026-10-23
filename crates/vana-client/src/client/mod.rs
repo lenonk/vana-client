@@ -6666,6 +6666,9 @@ impl ApplicationHandler for App {
             WindowAttributesExtX11::with_name(attrs, "vana-client", "vana-client")
         };
         let window = Arc::new(event_loop.create_window(attrs).expect("creating the window"));
+        if let Some(m) = window.current_monitor() {
+            crate::gamecfg::set_desktop(m.size().width, m.size().height);
+        }
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(event_loop.owned_display_handle())));
         let surface = instance.create_surface(window.clone()).expect("creating the surface");
         self.gpus = crate::render::adapter_names(&instance, Some(&surface));

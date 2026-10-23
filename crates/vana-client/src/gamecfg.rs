@@ -5,6 +5,39 @@
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU32, Ordering};
+
+/// Config 0xab's default (FUN_100156a0 at start-up): the ratio of table 0x1034f4a0 (4:3, 15:9, 15:10, 16:9, 16:10,
+/// 5:4) nearest the display's width / height by relative error; u32::MAX until the size is known.
+static DESKTOP_RATIO: AtomicU32 = AtomicU32::new(u32::MAX);
+
+/// Sets 0xab's default from the display size (the size source, +0x10 / +0x12 of DAT_104568fc, taken as the desktop:
+/// inferred).
+pub fn set_desktop(w: u32, h: u32) {
+    if let Some(i) = nearest_ratio(w, h) {
+        DESKTOP_RATIO.store(i as u32, Ordering::Relaxed);
+    }
+}
+
+fn nearest_ratio(w: u32, h: u32) -> Option<usize> {
+    if w == 0 || h == 0 {
+        return None;
+    }
+    const R: [(f32, f32); 6] = [(4.0, 3.0), (15.0, 9.0), (15.0, 10.0), (16.0, 9.0), (16.0, 10.0), (5.0, 4.0)];
+    let a = w as f32 / h as f32;
+    (0..6).min_by(|&i, &j| {
+        let e = |k: usize| ((a - R[k].0 / R[k].1) / (R[k].0 / R[k].1)).abs();
+        e(i).total_cmp(&e(j))
+    })
+}
+
+/// An id's default, with 0xab's from the display.
+fn default_of(d: &Def) -> u32 {
+    match DESKTOP_RATIO.load(Ordering::Relaxed) {
+        r if d.id == 0xab && r != u32::MAX => r,
+        _ => d.default,
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Def {
@@ -189,7 +222,7 @@ pub const TABLE: &[Def] = &[
     d(0xa8, 0x64, 6, 0x0, 0x64, 1),
     d(0xa9, 0x0, 4, 0x0, 0x1, 0),
     d(0xaa, 0x0, 4, 0x0, 0x1, 0),
-    d(0xab, 0x0, 6, 0x0, 0x5, 1),  // retail computes the default from the desktop size (inferred)
+    d(0xab, 0x0, 6, 0x0, 0x5, 1),  // default from the display size: set_desktop
     d(0xac, 0x0, 6, 0x0, 0x1, 1),
     d(0xad, 0x0, 6, 0x0, 0x1, 1),
     d(0xae, 0x0, 4, 0x0, 0x1, 0),
@@ -243,7 +276,7 @@ pub struct Values(BTreeMap<u16, u32>);
 impl Values {
     /// FUN_1018e200; unknown ids read 0xffffffff as retail's -1.
     pub fn get(&self, id: u16) -> u32 {
-        self.0.get(&id).copied().or_else(|| def(id).map(|d| d.default)).unwrap_or(u32::MAX)
+        self.0.get(&id).copied().or_else(|| def(id).map(default_of)).unwrap_or(u32::MAX)
     }
 
     pub fn get_i(&self, id: u16) -> i32 {
@@ -257,9 +290,9 @@ impl Values {
     /// FUN_1018ecb0: out of range resets to the default. Returns whether the stored value changed.
     pub fn set(&mut self, id: u16, v: u32) -> bool {
         let Some(d) = def(id) else { return false };
-        let v = if d.max != u32::MAX && ((v as i32) < d.min as i32 || (v as i32) > d.max as i32) { d.default } else { v };
+        let v = if d.max != u32::MAX && ((v as i32) < d.min as i32 || (v as i32) > d.max as i32) { default_of(d) } else { v };
         let old = self.get(id);
-        if v == d.default {
+        if v == default_of(d) {
             self.0.remove(&id);
         } else {
             self.0.insert(id, v);
@@ -358,6 +391,15 @@ impl GameConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn desktop_ratio() {
+        assert_eq!(nearest_ratio(2560, 1440), Some(3));
+        assert_eq!(nearest_ratio(1920, 1200), Some(4));
+        assert_eq!(nearest_ratio(1280, 1024), Some(5));
+        assert_eq!(nearest_ratio(1024, 768), Some(0));
+        assert_eq!(nearest_ratio(0, 768), None);
+    }
 
     #[test]
     fn table_is_sorted_and_retail() {

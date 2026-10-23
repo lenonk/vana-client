@@ -4457,3 +4457,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   Right / Left switch lists). A page keeps the cursor row; on the last / first page the cursor goes to the last /
   first row; SE 0001 when something moved. Ours: page_keys for the main list and Manual, Ctrl / Alt in the bin
   view (egui modifiers taken as 0xa8). Live: a 10-row list (one page) moved to the last and first rows.
+
+- Config 0xab default (FUN_10195460 call after 0xa8): FUN_100156a0(width, height) with the size from DAT_104568fc
+  +0x10 / +0x12 (FUN_10015600 / FUN_10015610; taken as the desktop, inferred): the index of table 0x1034f4a0 (4:3,
+  15:9, 15:10, 16:9, 16:10, 5:4 as float pairs) with the smallest |a - r| / r, -1 for a zero size. Ours:
+  gamecfg::set_desktop from the window\x27s monitor at start, used as 0xab\x27s default in get / set.

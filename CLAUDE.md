@@ -76,8 +76,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Bastok: not reviewed yet.
 - Other known gaps:
   - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop drew black
-    (on zone 133 too; not reproduced 2026-10-23: the lobby and the creator race step draw it live and offscreen); the top-bar rule FUN_10159080 changed a lot; config 0xab default from the desktop
-    size; the gamepad rows (Misc. 4 0xce, the external gamepad tool);
+    (on zone 133 too; not reproduced 2026-10-23: the lobby and the creator race step draw it live and offscreen); the top-bar rule FUN_10159080 changed a lot; the gamepad rows (Misc. 4 0xce, the external gamepad tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mix.dat / aix.dat order (read only), mouse
     in the lists; left: the sort windows, blue magic sets (s2c 0x044), mouse in the prompt, <stpt> / <stal> party
     cursors, the mount list);
