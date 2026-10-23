@@ -62,7 +62,7 @@ impl Macro {
 }
 
 /// The user-file container (FUN_101b9a10 / FUN_101b9bc0): u32 version 1, u32 (0), MD5 of the payload, payload.
-fn read_file(path: &Path) -> Option<Vec<u8>> {
+pub(super) fn read_file(path: &Path) -> Option<Vec<u8>> {
     let b = std::fs::read(path).ok()?;
     if b.len() < 0x18 || u32::from_le_bytes(b[0..4].try_into().unwrap()) != 1 {
         return None;
@@ -134,6 +134,11 @@ impl Macros {
         }
         m.load_set();
         m
+    }
+
+    /// The character's USER folder.
+    pub fn dir(&self) -> &Path {
+        &self.dir
     }
 
     fn set_path(&self) -> PathBuf {

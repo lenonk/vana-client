@@ -106,13 +106,34 @@ pub fn set_recast(w: &mut World, spell: u16, info: u32) {
     w.spell_recast.insert(spell, Instant::now() + std::time::Duration::from_secs_f32(secs));
 }
 
-/// FUN_1022c3a0's rows: known spells (0x0AA) in id order (ours has no mix.dat order yet: retail's order with no
-/// file), by type and exclusion; cast mode needs 0x119 seen, the job / level rule, SCH / GEO main for flags 8 /
+/// The list order (FUN_1022c030 / FUN_10223c90): the USER file's {bits[n / 8], u16 order[n], u32 count} merged with
+/// the known bits by FUN_1021e550: saved ids still known keep their places, newly known ones are appended in id order
+/// (with no file: id order). Ours reads it and does not write it back.
+fn order(w: &World, file: &str, n: usize, known: &[u8]) -> Vec<u16> {
+    let saved = w.macros.as_ref().and_then(|m| super::macros::read_file(&m.dir().join(file)));
+    merge(saved.as_deref(), n, known)
+}
+
+fn merge(saved: Option<&[u8]>, n: usize, known: &[u8]) -> Vec<u16> {
+    let nb = n / 8;
+    let (bits, mut list): (Vec<u8>, Vec<u16>) = match saved.filter(|p| p.len() == nb + 2 * n + 4) {
+        Some(p) => {
+            let count = (u32::from_le_bytes(p[nb + 2 * n..].try_into().unwrap()) as usize).min(n);
+            (p[..nb].to_vec(), (0..count).map(|i| u16::from_le_bytes([p[nb + 2 * i], p[nb + 2 * i + 1]])).collect())
+        }
+        None => (vec![0; nb], Vec::new()),
+    };
+    list.retain(|&id| bit(known, id as usize));
+    list.extend((1..n as u16).filter(|&id| bit(known, id as usize) && !bit(&bits, id as usize)));
+    list
+}
+
+/// FUN_1022c3a0's rows: known spells (0x0AA) in the mix.dat order, by type and exclusion; cast mode needs 0x119 seen, the job / level rule, SCH / GEO main for flags 8 /
 /// 0x20, and leaves out blue magic (needs the set spells, s2c 0x044, not read yet).
 fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
     let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref()) else { return Vec::new() };
-    (1..1024u16)
-        .filter(|&s| bit(&w.spells_known, s as usize))
+    order(w, "mix.dat", 1024, &w.spells_known)
+        .into_iter()
         .filter(|&s| {
             let Some(r) = acts.spell(s) else { return false };
             let shown = exclude & (1 << (r.kind & 0x1f)) == 0 && (ty == 0 || r.kind == ty);
@@ -126,13 +147,14 @@ fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
         .collect()
 }
 
-/// FUN_10223ec0's rows: known abilities (0x0AC bits by table index) of the type; pet commands only with a pet.
+/// FUN_10223ec0's rows: known abilities (0x0AC bits by table index) in the aix.dat order, of the type; pet commands
+/// only with a pet.
 fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     let Some(acts) = w.actions.as_ref() else { return Vec::new() };
     if ty == 2 && w.my_pet == 0 {
         return Vec::new();
     }
-    (0..0x700u16).filter(|&i| bit(&w.commands_known, i as usize)).filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
+    order(w, "aix.dat", 0xb00, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
 }
 
 /// FUN_1022b220: the magic list, built and opened.
@@ -558,6 +580,24 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Saved order kept for spells still known, a forgotten one dropped, a newly learned one appended.
+    #[test]
+    fn saved_order_merge() {
+        let n = 1024;
+        let mut file = vec![0u8; n / 8 + 2 * n + 4];
+        for (i, id) in [7u16, 3, 5].iter().enumerate() {
+            file[(*id / 8) as usize] |= 1 << (id % 8);
+            file[n / 8 + 2 * i..n / 8 + 2 * i + 2].copy_from_slice(&id.to_le_bytes());
+        }
+        file[n / 8 + 2 * n..].copy_from_slice(&3u32.to_le_bytes());
+        let mut known = vec![0u8; 128];
+        for id in [3u16, 7, 9, 2] {
+            known[(id / 8) as usize] |= 1 << (id % 8);
+        }
+        assert_eq!(merge(Some(&file), n, &known), [7, 3, 2, 9]);
+        assert_eq!(merge(None, n, &known), [2, 3, 7, 9]);
+    }
 
     #[test]
     fn recast_clock() {
