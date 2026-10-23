@@ -321,6 +321,7 @@ impl Audio {
         if self.ambient_se == se {
             return;
         }
+        log::info!("ambient loop: {se:?}");
         if self.ambient_se.is_some() {
             self.send(Cmd::SeStop { handle: AMBIENT, ticks: 0 });
         }
