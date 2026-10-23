@@ -295,10 +295,11 @@ mod tests {
     #[test]
     fn head_look_limits() {
         let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
-        let look = Look { race: 1, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
+        let Ok(gpu) = Gpu::headless() else { return };
+        for race in 1..=8u8 {
+        let look = Look { race, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
         let Ok(ch) = load_character(&index, &look) else { return };
         let ch = Arc::new(ch);
-        let Ok(gpu) = Gpu::headless() else { return };
         let idle: Vec<(&Animation, f32)> = ch.find_animations("idl").into_iter().map(|a| (a, 0.0)).collect();
         let pt = |k: usize| ch.skeleton.points[k];
         let hl = |point: glam::Vec3| HeadLook { bones: [Some(pt(3).0), Some(pt(7).0)], two: true, weight: 1.0, point, p3: pt(3).1, p4: pt(4), drop: 0.0, limits: ch.skeleton.look_limits };
@@ -307,10 +308,11 @@ mod tests {
         let ahead = posed(&gpu, &ch, &idle, Some(hl(glam::Vec3::new(20.0, -1.6, 0.0))));
         let turn = |a: &[glam::Quat], b: usize| (a[b] * base[b].inverse()).to_axis_angle().1.to_degrees();
         let (head, neck) = (pt(3).0 as usize, pt(7).0 as usize);
-        println!("side: head {:.1} neck {:.1}; ahead: head {:.1} neck {:.1}", turn(&side, head), turn(&side, neck), turn(&ahead, head), turn(&ahead, neck));
-        assert!((turn(&side, neck) - 17.7).abs() < 3.0);
-        assert!((turn(&side, head) - 43.3).abs() < 5.0);
-        assert!(turn(&ahead, head) < 15.0);
+        println!("race {race} side: head {:.1} neck {:.1}; ahead: head {:.1} neck {:.1}", turn(&side, head), turn(&side, neck), turn(&ahead, head), turn(&ahead, neck));
+        assert!((turn(&side, neck) - 17.7).abs() < 3.0, "race {race}");
+        assert!((turn(&side, head) - 43.3).abs() < 5.0, "race {race}");
+        assert!(turn(&ahead, head) < 15.0, "race {race}");
+        }
     }
 
     fn check(gpu: &Gpu, ch: &Arc<Character>, to: &[(&Animation, f32)], from: &[(&Animation, f32)]) {

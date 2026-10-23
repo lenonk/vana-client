@@ -94,7 +94,7 @@ impl MouseCursor {
             let name = format!("cursor {idx} {k}");
             gu.image(&name, fr.width, fr.height, fr.rgba.clone());
             let (hx, hy) = (fr.hotspot.0 as f32 * file_size, fr.hotspot.1 as f32 * file_size);
-            gu.image_rect(&name, x - hx, y - hy, fr.width as f32 * file_size, fr.height as f32 * file_size, [0.5, 0.5, 0.5, 1.0]);
+            gu.image_rect(&name, x - hx, y - hy, fr.width as f32 * file_size, fr.height as f32 * file_size, [1.0; 4]);
             return;
         }
         let k = self.kind.min(6) as usize;
