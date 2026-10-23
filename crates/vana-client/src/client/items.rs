@@ -1120,8 +1120,7 @@ pub fn open_dae10(w: &mut World, c: u8) -> bool {
 }
 
 /// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
-/// Not done: the wardrobe 3..8 feature bits (rule 4, LSB enables them), the mannequin rule (6b), the equipped
-/// linkshell (7, s2c 0x0E0).
+/// Not done: the mannequin rule (6b), the equipped linkshell (7, s2c 0x0E0).
 fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
     let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
@@ -1135,6 +1134,12 @@ fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) ->
         if s.id == 0 || rare {
             return TINT_DIM;
         }
+    }
+    // Rule 4: Wardrobe 3..8 (0xb..0x10) need lobby feature bit 0x04 << (c - 0xb); the lower of own / dest decides.
+    if let Some(c) = [own, dest].into_iter().filter(|c| (0xb..=0x10).contains(c)).min()
+        && w.features & (0x04 << (c - 0xb)) == 0
+    {
+        return TINT_DIM;
     }
     // Installed furniture in the Safe: grey on this floor, dark red on another.
     if matches!(own, 1 | 9)

@@ -2691,6 +2691,8 @@ struct World {
     /// (FUN_100f97a0).
     mh_owner: u32,
     mh_floors: bool,
+    /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
+    features: u32,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
@@ -3493,7 +3495,9 @@ impl App {
                     Ok(codec) => {
                         let net = net::spawn(login.clone(), self.cfg.username.clone(), codec);
                         self.status = format!("Connecting to {}:{}...", login.map.0, login.map.1);
+                        let features = if let Phase::Characters { lobby: Some(l), .. } = &self.phase { l.features } else { 0 };
                         self.phase = Phase::World(Box::new(World {
+                            features,
                             net,
                             zone: None,
                             loading: None,

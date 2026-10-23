@@ -4596,3 +4596,7 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   (World.mh_owner / mh_floors): /bank2 opens Safe 2 when set (else group 7 0xa8), itmstora / the Alt cycle offer
   Safe 2, FUN_101dae10 refuses with 0xbc while visiting, and the Mog House door menu takes its 2F and owner tests
   from it (myroom::OWNER and the "2F off" placeholder are gone).
+
+- Storage colour rule 4 now: the lobby reply\x27s feature bits (u32 @0x24, World.features) 0x04 << (c - 0xb) gate
+  Wardrobe 3..8; without the bit every row of that view is grey. Live: /wardrobe3 with LSB defaults left a dagger
+  white (gear) and the rest grey.
