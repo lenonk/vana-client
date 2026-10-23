@@ -1259,7 +1259,8 @@ impl Runtime {
                 self.adv(v, len);
             }
             // FUN_100b6a60: sub 4 actor@2's walk speed (+0x168 = val@6 x 0.1), 5 its no-ground bit (u8@6), 6 waits
-            // while its motion plays; 0..3 (+0xdc / +0xe0 speeds), 7 and 8 go to the host. Always advances.
+            // while its motion plays; 0 / 2 the event actor's turn / look percent (+0xdc / +0xe0 = val@2), 1 / 3
+            // actor@2's (val@6); 7 and 8 go to the host. Always advances.
             0x59 => {
                 let t = self.actor_at(v, 2);
                 match sub {
@@ -1278,6 +1279,10 @@ impl Runtime {
                             self.yield_(v);
                             return;
                         }
+                    }
+                    Some(s @ 0..=3) => {
+                        let (who, x) = if s & 1 == 0 { (actor, self.val(v, 2)) } else { (t, self.val(v, 6)) };
+                        host.effect(Effect::Op { op: opc, sub, actor: who, args: vec![Arg::Int(x)] });
                     }
                     _ => {
                         let a = self.args(v, op, sub);

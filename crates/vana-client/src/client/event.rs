@@ -681,6 +681,17 @@ impl Host for LiveHost<'_> {
                     self.hide(id, &args, 0);
                 }
             }
+            // FUN_100b6a60 0..3: the actor's turn (+0xdc) / look (+0xe0) percent, read while an event runs.
+            Effect::Op { op: 0x59, sub: Some(s @ 0..=3), actor, args } => {
+                let id = self.wid(actor);
+                if let (Some(a), Some(x)) = (self.w.actors.get_mut(&id), Self::arg_int(&args, 0)) {
+                    if s < 2 {
+                        a.turn_pct = x;
+                    } else {
+                        a.look_pct = x;
+                    }
+                }
+            }
             // FUN_100bb180 sub 1: the event actor's event status +0x174 = val@2, which a bound actor poses with. Riding
             // (5 / 0x55) is left out: the chocobo / mount model isn't spawned here.
             Effect::Op { op: 0xac, sub: Some(1), actor, args } => {
@@ -1279,7 +1290,8 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
         if snap {
             pose.yaw = b.dir;
         } else {
-            pose.yaw += angle_to(pose.yaw, want) * (1.0 - 0.875f32.powf(ticks));
+            let rate = w.actors.get(&id).map_or(0.125, |a| super::turn_rate(a, true));
+            pose.yaw += angle_to(pose.yaw, want) * (1.0 - (1.0 - rate).powf(ticks));
         }
         pose.turning = angle_to(pose.yaw, b.dir).abs() > TURN_GAP;
         // A placement (snap, or a jump of over 2 a tick) is not walking *(inf)*: it set the ratio near its cap and the

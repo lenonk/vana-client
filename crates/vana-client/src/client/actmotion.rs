@@ -81,7 +81,8 @@ impl Look {
     /// point, `target` the world point to look at. The weight fades in, or out with no target, a target behind
     /// (local x < -0.1) or one nearer than 0.3 across; at 0 the point goes back 20 ahead. With a target the look
     /// direction about the head eases toward it, keeping its distance.
-    pub fn step(&mut self, frame: glam::Mat4, p3: glam::Vec3, target: Option<glam::Vec3>, ticks: f32) {
+    /// `rate` scales the weight's step (op 0x59 +0xe0).
+    pub fn step(&mut self, frame: glam::Mat4, p3: glam::Vec3, target: Option<glam::Vec3>, ticks: f32, rate: f32) {
         let ahead = frame.transform_point3(glam::Vec3::new(20.0, 0.0, 0.0));
         let point = *self.point.get_or_insert(ahead);
         let inv = frame.inverse();
@@ -96,10 +97,10 @@ impl Look {
                 let want = (t - p3).normalize_or(v / len);
                 let dir = (v / len).lerp(want, 1.0 - (1.0 - LOOK_EASE).powf(ticks)).normalize_or(want);
                 self.point = Some(p3 + dir * len);
-                self.weight = (self.weight + LOOK_RATE * ticks).min(1.0);
+                self.weight = (self.weight + LOOK_RATE * rate * ticks).min(1.0);
             }
             None => {
-                self.weight -= LOOK_RATE * ticks;
+                self.weight -= LOOK_RATE * rate * ticks;
                 if self.weight < 0.0 {
                     self.weight = 0.0;
                     self.point = Some(ahead);
@@ -568,13 +569,13 @@ mod tests {
         let (mut l, head) = (Look::default(), glam::Vec3::new(0.0, -1.5, 0.0));
         let want = glam::Vec3::new(3.0, -1.5, 2.0);
         for _ in 0..200 {
-            l.step(glam::Mat4::IDENTITY, head, Some(want), 1.0);
+            l.step(glam::Mat4::IDENTITY, head, Some(want), 1.0, 1.0);
         }
         let dir = (l.point.unwrap() - head).normalize();
         assert!((l.weight - 1.0).abs() < 1e-6 && dir.dot((want - head).normalize()) > 0.99);
         // Behind the actor: the weight ramps down and the point goes back ahead.
         for _ in 0..60 {
-            l.step(glam::Mat4::IDENTITY, head, Some(glam::Vec3::new(-3.0, 0.0, 0.0)), 1.0);
+            l.step(glam::Mat4::IDENTITY, head, Some(glam::Vec3::new(-3.0, 0.0, 0.0)), 1.0, 1.0);
         }
         assert_eq!((l.weight, l.point), (0.0, Some(glam::Vec3::new(20.0, 0.0, 0.0))));
     }

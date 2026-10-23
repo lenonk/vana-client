@@ -4098,3 +4098,12 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   channel setters multiply by DAT_103516fc * DAT_103516f8 (config) while the task starts from the multiplied level,
   so retail compounds the config factor during a fade (not copied). Channel 4 (zone ambient loop) re-levels its
   voice DAT_10463910 when it changes; the others are read when a voice starts. Ours: Audio::fades, step_fades.
+- Op 0x59 subs 0..3 (FUN_100b6a60, audit R18): 0 / 2 the event actor's +0xdc / +0xe0 = val@2 (len 4), 1 / 3 actor@2's
+  = val@6 (len 8; no advance while actor@2 is missing). Both live on the actor (getters FUN_10084b40 / FUN_10084b80,
+  vtable slots +0x13c / +0x144 of 0x1032cfe0, 100 when unset) and are read only while FUN_10087060 holds (event
+  running, DAT_10487e48 *(inf)*), and only when not 0:
+  - +0xdc, the turn speed: FUN_100c63d0 eases the model's drawn rotation (+0x61c..+0x624) toward the actor's (+0xe4)
+    once a tick, angles wrapped, by 0.125 or +0xdc x 0.00125 (0x10331364; 100 = the default).
+  - +0xe0, the head-look speed: FUN_100d5b10 steps the look weight (K+0xbc) by 0.04 or +0xe0 x 0.01 x 0.04
+    (0x10329a18 / 0x1032a85c).
+  - Ours: Actor::turn_pct / look_pct, turn_rate() for entities and event poses, Look::step's rate.

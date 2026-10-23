@@ -1934,6 +1934,9 @@ struct Actor {
     base_ticks: f32,
     /// Event op 0xb6 0xf / 0x17: a scale set by a script (+0x204), over the model's own.
     event_scale: Option<f32>,
+    /// Event op 0x59: turn (+0xdc) and head-look (+0xe0) speed percents, used while an event runs; 0 = default.
+    turn_pct: i32,
+    look_pct: i32,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
@@ -1986,6 +1989,8 @@ impl Actor {
             overlay: None,
             base_ticks: 0.0,
             event_scale: None,
+            turn_pct: 0,
+            look_pct: 0,
             last_attack: String::new(),
             extra: Vec::new(),
             play: None,
@@ -2074,6 +2079,12 @@ fn drawn_between_steps(h: &[Vec3; 4], t: f32) -> Vec3 {
     let a = (h[0] + h[1] + h[2]) / 3.0;
     let b = (h[1] + h[2] + h[3]) / 3.0;
     a.lerp(b, t)
+}
+
+/// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an
+/// event.
+fn turn_rate(a: &Actor, in_event: bool) -> f32 {
+    if in_event && a.turn_pct != 0 { (a.turn_pct as f32 * 0.00125).clamp(0.0, 1.0) } else { 0.125 }
 }
 
 /// A bound actor draws from its VM body while the event runs, posing with its event status (+0x174, op 0xac 1);
@@ -4230,7 +4241,7 @@ impl App {
         // FUN_1008dfb0 / FUN_100a3560: grounded actors follow the collision floor every frame (also those that
         // arrived before the zone had loaded).
         let floor = world.ground.as_ref().filter(|_| world.in_scene() && !in_event);
-        for e in world.entities.values_mut() {
+        for (eid, e) in world.entities.iter_mut() {
             // Moved by someone else since last frame (an event script): take that as the slide and drawn spot.
             if e.pos != e.last_pos {
                 e.slide = e.pos;
@@ -4273,7 +4284,8 @@ impl App {
             let want = if moved > 0.0 { (-flat.z).atan2(flat.x) } else { event::rad_of(e.dir) };
             let tau = std::f32::consts::TAU;
             let diff = (want - e.yaw + std::f32::consts::PI).rem_euclid(tau) - std::f32::consts::PI;
-            e.yaw += diff * (1.0 - 0.875f32.powf(ticks));
+            let rate = world.actors.get(eid).map_or(0.125, |a| turn_rate(a, in_event));
+            e.yaw += diff * (1.0 - (1.0 - rate).powf(ticks));
             e.ratio = crate::motion::move_ratio(e.ratio, moved, dt, e.motion.speed, e.motion.speed_base, e.motion.status);
             e.last_pos = e.pos;
         }
@@ -5916,6 +5928,7 @@ impl App {
                         r.occl.query(*id, rect, z);
                     }
                 }
+                let in_event = w.event.is_some() || w.event_pending.is_some();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, status, ratio, size }) = places.get(id) else { continue };
@@ -6039,7 +6052,9 @@ impl App {
                         }
                         actmotion::LookMode::Off => face_points.get(id).copied(),
                     };
-                    a.look.step(frame, p3, target, dt * 60.0);
+                    // FUN_100d5b10: op 0x59's look percent replaces the 0.04 step during an event.
+                    let rate = if in_event && a.look_pct != 0 { a.look_pct as f32 * 0.01 } else { 1.0 };
+                    a.look.step(frame, p3, target, dt * 60.0, rate);
                     // One bone (the head) when riding or sitting; point 4 a unit higher on a chocobo or a mount.
                     let look = (a.look.weight > 0.0).then(|| crate::render::anim::HeadLook {
                         bones: [3usize, 7].map(|k| ch.skeleton.points.get(k).map(|p| p.0)),
