@@ -4,6 +4,7 @@
 use super::World;
 use super::game_ui::GameUi;
 use crate::dat::DatIndex;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
 
@@ -214,7 +215,18 @@ pub struct MapWin {
     pub sounds: Vec<u32>,
     /// Party positions (c2s 0x0D2) asked for this map (+0xa45), and an ask waiting to be sent.
     party_asked: bool,
-    pub ask_party: bool,
+    /// Requests for the caller: packets and prompts.
+    pub outs: Vec<Out>,
+    /// Wide Scan: map0 item 2 enabled (FUN_101f7c00: s2c 0x119 seen, our own zone's map), its list, results kept for
+    /// this map session (scanlist +0x66), the scan origin (world x / z at the scan), tracking at open and the tracked
+    /// ring's pixel (record +0x694, taken at open).
+    scan_ok: bool,
+    pub scan: Option<ScanList>,
+    scan_kept: bool,
+    origin: (i16, i16),
+    player_xz: (f32, f32),
+    tracking: bool,
+    tracked: Option<(f32, f32)>,
     pub mode: Mode,
     /// map0's cursor child (1..3).
     pub cursor: u16,
@@ -274,6 +286,12 @@ impl MapWin {
         if let Some(d) = &self.mark_dir {
             self.marks = super::mapmark::MarkFile::load(d, self.region.zone as u16, self.region.key as u8, w.my_id);
         }
+        self.scan_ok = w.recasts_seen && self.region.zone == w.pos_zone as i16;
+        self.tracking = w.scan.tracking().is_some();
+        self.tracked = w.scan.tracking().map(|t| {
+            let (x, y) = self.region.px(t.pos[0], t.pos[2]);
+            (x as f32, y as f32)
+        });
         let own = w.party.own_flags;
         for m in w.party.members().skip(1).filter(|m| m.zone == w.pos_zone && m.away == 0) {
             let Some(e) = w.entities.get(&m.id) else { continue };
@@ -316,7 +334,8 @@ impl MapWin {
     /// FUN_101f9070: c2s 0x0D2 for the map's zone, once per map, when a party set is about to show.
     fn want_party(&mut self) {
         if self.set > 1 && !self.party_asked {
-            (self.party_asked, self.ask_party) = (true, true);
+            self.party_asked = true;
+            self.outs.push(Out::AskParty);
         }
     }
 
@@ -464,7 +483,14 @@ impl MapWin {
             set: 0,
             sounds: Vec::new(),
             party_asked: false,
-            ask_party: false,
+            outs: Vec::new(),
+            scan_ok: false,
+            scan: None,
+            scan_kept: false,
+            origin: (0, 0),
+            player_xz: pos,
+            tracking: false,
+            tracked: None,
             mode,
             cursor: 1,
             return_menu: None,
@@ -517,11 +543,69 @@ impl MapWin {
     /// map0 is open: modes 0 / 5 with a map (not for a zone with no map, as FUN_101f0af0 decompiles), not while
     /// closing (FUN_101fa420 closes the sub-windows at once).
     pub fn has_menu(&self) -> bool {
-        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none() && self.list.is_none() && self.maplist.is_none()
+        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none() && self.list.is_none() && self.maplist.is_none() && self.scan.is_none()
+    }
+
+    /// FUN_101fb910 / FUN_101fb7d0: scanlist opens; a new scan unless this map session kept results.
+    fn open_scan(&mut self) {
+        let mut s = ScanList::default();
+        if !self.scan_kept {
+            self.origin = (self.player_xz.0 as i16, self.player_xz.1 as i16);
+            (s.scanning, s.timer) = (true, 1800.0);
+            self.outs.push(Out::Scan);
+        }
+        self.scan = Some(s);
+    }
+
+    /// The list ended (s2c 0x0F6 state 2, LAB_101fb790): not scanning, results kept.
+    pub fn scan_done(&mut self) {
+        self.scan_kept = true;
+        if let Some(s) = self.scan.as_mut() {
+            s.scanning = false;
+        }
+    }
+
+    /// LAB_101f7d40 after the stop prompt's Yes: the ring goes, scanlist opens.
+    pub fn after_stop(&mut self) {
+        (self.tracked, self.tracking) = (None, false);
+        self.open_scan();
+    }
+
+    /// FUN_101fb4b0: the rows and their markers from the results (rebuilt every frame while the list shows): PCs
+    /// (not ourselves) with their own name, NPCs and monsters named from the zone NPC list by index & 0x3ff; those
+    /// without a name or outside the narrowed circle are left out.
+    pub(super) fn rebuild_scan(&mut self, w: &World) {
+        let Some(s) = self.scan.as_mut().filter(|s| !s.hidden) else { return };
+        let names: HashMap<u16, &String> = w.npc_names.iter().map(|(id, n)| ((id & 0x3ff) as u16, n)).collect();
+        s.rows = w
+            .scan
+            .entries
+            .values()
+            .filter(|e| !(e.kind == 0 && e.index == w.my_index))
+            .filter_map(|e| {
+                let (sprite, name) = match e.kind {
+                    0 => (363, e.name.clone()),
+                    1 => (326, names.get(&(e.index & 0x3ff)).map(|n| n.to_string()).unwrap_or_default()),
+                    2 => (327, names.get(&(e.index & 0x3ff)).map(|n| n.to_string()).unwrap_or_default()),
+                    _ => return None,
+                };
+                let (px, py) = self.region.px(self.origin.0 as f32 + e.dx as f32, self.origin.1 as f32 + e.dz as f32);
+                let inside = s.filter.is_none_or(|((cx, cy), r2)| (px - cx).pow(2) + (py - cy).pow(2) < r2);
+                (!name.is_empty() && inside).then_some(ScanRow { index: e.index, px: (px as f32, py as f32), sprite, name, trackable: e.kind != 0 })
+            })
+            .collect();
+        s.cursor = s.cursor.min(s.rows.len().saturating_sub(1));
+        s.scroll = s.scroll.min(s.cursor);
     }
 
     /// The focused sub-window and its cursor child, for the bars.
     pub fn focus(&self) -> Option<(&'static str, u16)> {
+        if let Some(s) = self.scan.as_ref().filter(|s| !s.hidden) {
+            return Some(match s.mapscan {
+                Some(c) => ("menu    mapscan", c),
+                None => ("menu    scanlist", (s.cursor - s.scroll + 1) as u16),
+            });
+        }
         if let Some(l) = &self.maplist {
             return Some(("menu    maplist", (l.cursor - l.scroll + 1) as u16));
         }
@@ -564,6 +648,9 @@ impl MapWin {
             self.list_key(key);
             return true;
         }
+        if self.scan.is_some() {
+            return self.scan_key(key);
+        }
         if let Some(l) = self.maplist.as_mut() {
             match l.key(key) {
                 ListOut::Keep => {}
@@ -591,6 +678,17 @@ impl MapWin {
                 self.list = Some(List { cursor: 1, ..Default::default() });
                 self.sounds.push(Ui::Select as u32);
             }
+            // FUN_101f7c60 2: Wide Scan (disabled: SE 0004); while tracking, the stop prompt first (group 0xe 0x45).
+            egui::Key::Enter if self.cursor == 2 => {
+                if !self.scan_ok {
+                    self.sounds.push(Ui::Error as u32);
+                } else if self.tracking {
+                    self.outs.push(Out::AskStop);
+                } else {
+                    self.open_scan();
+                    self.sounds.push(Ui::Select as u32);
+                }
+            }
             // FUN_101f7c60 3: Change Map (maplist, built where the records are).
             egui::Key::Enter if self.cursor == 3 => {
                 self.maplist = Some(MapList::default());
@@ -599,6 +697,77 @@ impl MapWin {
             egui::Key::Enter => log::info!("map0 item {} is not implemented yet", self.cursor),
             _ => {}
         }
+        true
+    }
+
+    /// The narrow cursor (sub-mode 7, FUN_101fae40), mapscan (FUN_101fbb30), scanlist (FUN_101f6c70 / FUN_101fba50).
+    /// False when the map closes (Track target).
+    fn scan_key(&mut self, key: egui::Key) -> bool {
+        use crate::audio::Ui;
+        use egui::Key as K;
+        let Some(mut s) = self.scan.take() else { return true };
+        if let Some(c) = s.narrow {
+            match key {
+                // Centre = the map pixel under the cursor, radius 0.65 x the anc_scan ring's 128 px / zoom.
+                K::Enter => {
+                    let k = 1.0 / self.zoom;
+                    let r = (128.0 * 0.65 * k + 0.5) as i32;
+                    let centre = ((c.0 * k + self.view.0 + 0.5) as i32, (c.1 * k + self.view.1 + 0.5) as i32);
+                    (s.filter, s.narrow, s.hidden) = (Some((centre, r * r)), None, false);
+                    self.sounds.push(Ui::Select as u32);
+                }
+                K::Escape => (s.narrow, s.hidden) = (None, false),
+                _ => {}
+            }
+        } else if let Some(c) = s.mapscan {
+            let row = s.rows.get(s.cursor).cloned();
+            match key {
+                K::ArrowUp | K::ArrowDown => s.mapscan = Some(3 - c),
+                K::Escape => s.mapscan = None,
+                // FUN_100f93c0: c2s 0x0F5, then map0, scanlist and the map close.
+                K::Enter if c == 1 => match row.filter(|r| r.trackable) {
+                    Some(r) => {
+                        self.outs.push(Out::Track(r.index));
+                        self.sounds.push(Ui::Select as u32);
+                        return false;
+                    }
+                    None => self.sounds.push(Ui::Error as u32),
+                },
+                K::Enter => {
+                    (s.filter, s.hidden, s.mapscan, s.narrow) = (None, true, None, Some(self.point));
+                    self.sounds.push(Ui::Select as u32);
+                }
+                _ => {}
+            }
+        } else {
+            let n = s.rows.len();
+            match key {
+                K::ArrowDown if s.cursor + 1 < n => {
+                    s.cursor += 1;
+                    self.sounds.push(Ui::Cursor as u32);
+                }
+                K::ArrowUp if s.cursor > 0 => {
+                    s.cursor -= 1;
+                    self.sounds.push(Ui::Cursor as u32);
+                }
+                K::Enter => {
+                    if let Some(r) = s.rows.get(s.cursor) {
+                        self.scroll_to_px(r.px);
+                        s.mapscan = Some(1);
+                        self.sounds.push(Ui::Select as u32);
+                    }
+                }
+                // FUN_101fb890: the list closes, results kept; the busy strip goes.
+                K::Escape => {
+                    self.outs.push(Out::NotBusy);
+                    self.sounds.push(Ui::Cancel as u32);
+                    return true;
+                }
+                _ => {}
+            }
+            s.scroll = s.scroll.min(s.cursor).max((s.cursor + 1).saturating_sub(SCAN_ROWS));
+        }
+        self.scan = Some(s);
         true
     }
 
@@ -834,17 +1003,32 @@ impl MapWin {
             self.acc -= 2.0;
             self.frame();
         }
-        if let Some((_, cur)) = self.list.as_mut().and_then(|l| l.placing.as_mut()) {
-            // Cursor mode: axes 0x9d / 0x9e x the cursor speed 8, inside the cursor box; past it the view scrolls.
+        // Cursor mode (placing a marker, narrowing a scan): axes 0x9d / 0x9e x the cursor speed 8, inside the cursor
+        // box; past it the view scrolls.
+        let cur = self.list.as_ref().and_then(|l| l.placing.map(|p| p.1)).or(self.scan.as_ref().and_then(|s| s.narrow));
+        if let Some(cur) = cur {
             let (sw, sh) = self.screen;
             let dead = |v: f32| if (v * fast).abs() < 2.0 { 0.0 } else { v };
             let v = (dead(input.axis(0x9d) * 8.0) * fast * ticks * 0.5, dead(input.axis(0x9e) * 8.0) * fast * ticks * 0.5);
             let (bx, by) = ([sw / 512.0 * 40.0, sw - sw / 512.0 * 150.0], [sh / 448.0 * 65.0, sh - sh / 448.0 * 180.0]);
             let want = (cur.0 + v.0, cur.1 + v.1);
-            *cur = (want.0.clamp(bx[0], bx[1]), want.1.clamp(by[0], by[1]));
-            let over = (want.0 - cur.0, want.1 - cur.1);
+            let moved = (want.0.clamp(bx[0], bx[1]), want.1.clamp(by[0], by[1]));
+            let over = (want.0 - moved.0, want.1 - moved.1);
             if over != (0.0, 0.0) {
                 self.scroll_by(over);
+            }
+            if let Some(p) = self.list.as_mut().and_then(|l| l.placing.as_mut()) {
+                p.1 = moved;
+            } else if let Some(s) = self.scan.as_mut() {
+                s.narrow = Some(moved);
+            }
+        }
+        // The scan's 30 s timer (scanlist +0x62) ends the busy strip.
+        if let Some(s) = self.scan.as_mut().filter(|s| s.scanning) {
+            s.timer -= ticks;
+            if s.timer < 0.0 {
+                s.scanning = false;
+                self.outs.push(Out::NotBusy);
             }
         }
         if self.fade.0 == 0.0 {
@@ -918,7 +1102,11 @@ impl MapWin {
             gu.image_rect(t, (self.base.0 - self.view.0) * z + 0.5, (self.base.1 - self.view.1) * z + 0.5, 512.0 * z, 512.0 * z, [0.5, 0.5, 0.5, a.min(1.0)]);
         }
         if level == 0.0 {
-            self.draw_markers(gu);
+            if self.scan.is_some() {
+                self.draw_scan_markers(gu);
+            } else {
+                self.draw_markers(gu);
+            }
         }
         if level == 0.0 && self.show_player {
             let (px, py) = self.home;
@@ -930,12 +1118,61 @@ impl MapWin {
             // FUN_101fa9c0: "(G-9)" at (titlewin x0, titlewin y1 + 3) in fontshp.
             gu.shape_text(&self.region.grid(px as i32, py as i32), 16.0, 49.0, 0x8080_8080, false);
         }
-        if self.has_menu() {
-            gu.menu_sel("menu    map0", sw, sh, self.cursor);
+        // The tracked target's ring (keytops3 105, centred by its own bounds).
+        if let Some((px, py)) = self.tracked.filter(|_| level == 0.0) {
+            gu.sprite("menu    keytops3", 105, (px - self.shift.0 - self.view.0) * z + 0.5, (py - self.shift.1 - self.view.1) * z + 0.5, 0x8080_8080);
         }
+        if self.has_menu() {
+            let hide: &[u16] = if self.scan_ok { &[] } else { &[2] };
+            if let Some(win) = gu.lobby_window_off("menu    map0", sw, sh, (0.0, 0.0), Some(self.cursor), true, hide)
+                && !self.scan_ok
+                && let Some(&(_, r)) = win.children.iter().find(|c| c.0 == 1)
+            {
+                // Item 2 disabled: its state-4 sprite (keytops3 20) in place of 3.
+                gu.sprite("menu    keytops3", 20, r[0], r[1] + 16.0, 0x8080_8080);
+            }
+        }
+        self.draw_scan(gu, sw, sh);
         self.draw_list(gu, sw, sh);
         if let Some(l) = &self.maplist {
             l.draw(gu, sw, sh);
+        }
+    }
+
+    /// Scan markers (flags 0x99, not centred, alpha 0x80): markblue / markgree / markred; the cursor row's as the ring
+    /// keytops3 105.
+    fn draw_scan_markers(&self, gu: &mut GameUi) {
+        let Some(s) = &self.scan else { return };
+        let z = self.zoom;
+        for (k, r) in s.rows.iter().enumerate() {
+            let sprite = if k == s.cursor { 105 } else { r.sprite };
+            gu.sprite("menu    keytops3", sprite, (r.px.0 - self.shift.0 - self.view.0) * z + 0.5, (r.px.1 - self.shift.1 - self.view.1) * z + 0.5, 0x8080_8080);
+        }
+    }
+
+    /// scanlist (16, 48), 10 rows of 24 with the anc_trac cursor, names fitted like the target window's (width 88 at
+    /// +7, +6); mapscan over map0's place; the narrow cursor (anc_scan) at the cursor point.
+    fn draw_scan(&self, gu: &mut GameUi, sw: f32, sh: f32) {
+        let Some(s) = &self.scan else { return };
+        let frame = gu.cursor_frame();
+        if let Some(c) = s.narrow {
+            let n = gu.lib_len("anc     anc_scan").max(1);
+            gu.sprite("anc     anc_scan", frame % n, c.0, c.1, 0x8080_8080);
+            return;
+        }
+        if let Some(win) = gu.lobby_window_off("menu    scanlist", sw, sh, (0.0, 0.0), None, false, &[]) {
+            let [x, y, ..] = win.frame;
+            for (k, r) in s.rows.iter().enumerate().skip(s.scroll).take(SCAN_ROWS) {
+                let ry = y + 4.0 + 24.0 * (k - s.scroll) as f32;
+                gu.wrapped_name(&r.name, 88.0, x + 7.0, ry + 2.0, 0x8080_8080, true, false);
+                if k == s.cursor && s.mapscan.is_none() {
+                    let n = gu.lib_len("anc     anc_trac").max(1);
+                    gu.sprite("anc     anc_trac", frame % n, x, ry, 0x8080_8080);
+                }
+            }
+        }
+        if let Some(c) = s.mapscan {
+            gu.lobby_window_off("menu    mapscan", sw, sh, (0.0, 0.0), Some(c), true, &[]);
         }
     }
 
@@ -998,6 +1235,49 @@ impl MapWin {
             gu.lobby_window_off("menu    mapv2", sw, sh, (x - 112.0, y + 16.0 * row as f32), Some(c), true, &[]);
         }
     }
+}
+
+/// What the map asks of its caller.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Out {
+    /// c2s 0x0D2 for party positions.
+    AskParty,
+    /// FUN_100f9360: a Wide Scan (c2s 0x0F4, or 0x0F6 while the server's list is still open).
+    Scan,
+    /// FUN_100f93c0: c2s 0x0F5 for an ActIndex.
+    Track(u16),
+    /// The stop-tracking prompt (comyn, group 0xe 0x45, default No).
+    AskStop,
+    /// The help bar's busy strip ends.
+    NotBusy,
+}
+
+const SCAN_ROWS: usize = 10;
+
+/// Wide Scan's list (scanlist) with mapscan and the narrow cursor.
+#[derive(Clone, Debug, Default)]
+pub struct ScanList {
+    cursor: usize,
+    scroll: usize,
+    /// A scan pending (+0x65) and its timer in ticks (+0x62).
+    scanning: bool,
+    timer: f32,
+    /// The narrowed circle: centre map pixel, radius squared (+0x6c..+0x70).
+    filter: Option<((i32, i32), i32)>,
+    /// Hidden while narrowing.
+    hidden: bool,
+    rows: Vec<ScanRow>,
+    mapscan: Option<u16>,
+    narrow: Option<(f32, f32)>,
+}
+
+#[derive(Clone, Debug)]
+struct ScanRow {
+    index: u16,
+    px: (f32, f32),
+    sprite: usize,
+    name: String,
+    trackable: bool,
 }
 
 /// A maplist row: its id (a zone, -2 - region group, -zone - 2 for a floor list, 0x7fffffff none), the sub-key, and
@@ -1142,6 +1422,10 @@ impl MapList {
 
 /// Builds Change Map's rows when its level changed (needs the records, names and key items).
 pub(super) fn refresh(w: &mut World, gu: &GameUi) {
+    if let Some(mut m) = w.map.take() {
+        m.rebuild_scan(w);
+        w.map = Some(m);
+    }
     let Some(mut l) = w.map.as_mut().and_then(|m| m.maplist.take()) else { return };
     if !l.built {
         l.build(w, gu);

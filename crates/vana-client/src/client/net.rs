@@ -204,6 +204,12 @@ pub enum NetEvent {
     Registration { index: u32, result: u16 },
     /// s2c 0x0A0 MAP_GROUP: a party member's position for the map.
     MapGroup { id: u32, zone: u16, pos: [f32; 3] },
+    /// s2c 0x0F4 TRACKING_LIST: a Wide Scan result.
+    TrackEntry(super::widescan::Entry),
+    /// s2c 0x0F5 TRACKING_POS: the tracked target's position and state.
+    TrackPos { index: u16, level: u8, pos: [f32; 3], state: u32 },
+    /// s2c 0x0F6 TRACKING_STATE: the list state (1 start, 2 end).
+    TrackState(u32),
     /// s2c 0x031 RECIPE, 0x059 FRIENDPASS, 0x10E REQSUBMAPNUM: answers to event ops, whole packet with its header.
     EventAnswer { id: u16, data: Vec<u8> },
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
@@ -574,6 +580,16 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x05A => tx.send(NetEvent::Emote { caster: p.u32(4), target: p.u32(8), emote: p.u16(0x10), param: p.u16(0x12), mode: p.u8(0x16) })?,
                     0x031 | 0x059 | 0x10E => tx.send(NetEvent::EventAnswer { id: p.id, data: p.data.clone() })?,
+                    0x0F4 => tx.send(NetEvent::TrackEntry(super::widescan::Entry {
+                        index: p.u16(4),
+                        level: p.u8(6),
+                        kind: p.u8(7) & 7,
+                        dx: p.u16(8) as i16,
+                        dz: p.u16(0xa) as i16,
+                        name: text(&p, 0xc, 16),
+                    }))?,
+                    0x0F5 => tx.send(NetEvent::TrackPos { index: p.u16(0x12), level: p.u8(0x10), pos: [p.f32(4), p.f32(8), p.f32(0xc)], state: p.u32(0x14) })?,
+                    0x0F6 => tx.send(NetEvent::TrackState(p.u32(4)))?,
                     0x0A0 => tx.send(NetEvent::MapGroup { id: p.u32(4), zone: p.u16(8), pos: [p.f32(0xc), p.f32(0x10), p.f32(0x14)] })?,
                     0x0BF => tx.send(NetEvent::Registration { index: p.u32(0xC), result: p.u16(6) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,

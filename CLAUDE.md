@@ -80,9 +80,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mix.dat / aix.dat order (read only), mouse
     in the lists; left: the sort windows, blue magic sets (s2c 0x044), mouse in the prompt, <stpt> / <stal> party
     cursors, the mount list);
-  - the map (spec: MODLOG "Map window: pan, zoom, fades, event maps"): left is Wide Scan;
+  - the map (spec: MODLOG "Map window: pan, zoom, fades, event maps"): left are the scan busy strip and the untracked compass pointer;
     done: pan, left-drag pan, zoom, fades, /map, event maps and
-    views, markers and the .MRK file, Change Map;
+    views, markers and the .MRK file, Change Map, Wide Scan and tracking;
   - the item info window: augment lines, the compare windows (itemxinf / itemyinf);
   - items: "menu    iuse" Use and Drop done; left the sort windows (itmsort2, manual sort), the direct-use list
     (action menu Items), synthesis, the Mog Garden use rule;

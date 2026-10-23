@@ -13,6 +13,7 @@ mod hudtop;
 mod iteminfo;
 mod map;
 mod mapmark;
+mod widescan;
 mod logwin;
 pub(crate) mod perf;
 mod cfgapply;
@@ -1271,8 +1272,25 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(m) = world.map.as_mut() {
         m.draw(gu, sw, sh);
         world.sounds.append(&mut m.sounds);
-        if std::mem::take(&mut m.ask_party) {
-            let _ = world.net.commands.send(NetCommand::Packet { id: 0x0D2, body: (m.zone() as u32).to_le_bytes().to_vec() });
+        let zone = m.zone();
+        for out in std::mem::take(&mut m.outs) {
+            let send = |w: &World, id: u16, v: u32| {
+                let _ = w.net.commands.send(NetCommand::Packet { id, body: v.to_le_bytes().to_vec() });
+            };
+            match out {
+                map::Out::AskParty => send(world, 0x0D2, zone as u32),
+                map::Out::Scan => {
+                    let id = world.scan.start();
+                    send(world, id, (id == 0x0F4) as u32);
+                    world.scan.busy = id == 0x0F4;
+                }
+                map::Out::Track(i) => {
+                    send(world, 0x0F5, i as u32);
+                    world.scan.track(i);
+                }
+                map::Out::AskStop => world.confirm = Some((Confirm::StopTracking, false)),
+                map::Out::NotBusy => world.scan.busy = false,
+            }
         }
     }
     let slots = gu.hud(sw, sh, &st);
@@ -1639,6 +1657,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        // LAB_101f7d40: c2s 0x0F6, the ring goes, scanlist opens.
+        (Some(true), Some((Confirm::StopTracking, _))) => {
+            world.confirm = None;
+            let _ = world.net.commands.send(NetCommand::Packet { id: 0x0F6, body: vec![0; 4] });
+            world.scan.stop();
+            if let Some(m) = world.map.as_mut() {
+                m.after_stop();
+            }
+        }
         (Some(true), Some((Confirm::LeaveRoom, _))) => {
             world.confirm = None;
             leave_room(world, 0);
@@ -1769,6 +1796,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
         (Confirm::HomePoint, _) => gu.menu_msg(0x46, "Return to Home Point?"),
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
+        (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -2591,6 +2619,8 @@ struct World {
     map_open: Option<u16>,
     /// Event map requests for the next HUD frame (map::apply).
     map_cmds: Vec<map::Cmd>,
+    /// Wide Scan results and tracking (the session store, lost on zoning).
+    scan: widescan::Scan,
     /// The item info window opened by event ops 0x93 / 0xcc (FUN_1013e520): item, extdata, flags (+0x374).
     info_win: Option<(u16, Option<[u8; 24]>, u32)>,
     /// Its page (+0x380), the item the page is for, and the page count last built.
@@ -2651,6 +2681,8 @@ enum Confirm {
     HomePoint,
     /// FUN_10096c90 mode 3: group 0xe 0x60 "Accept Tractor?".
     Tractor,
+    /// map0 Wide Scan while tracking: group 0xe 0x45 "Stop tracking current target\nand proceed with wide area scan?".
+    StopTracking,
     /// Drop of an Ex / Rare / augmented item (group 0xa 0x30), the Linkshell's two more (group 9 0x157 / 0x158).
     Drop { index: u8, id: u16, stage: u8 },
 }
@@ -3535,6 +3567,7 @@ impl App {
                             self_lock: None,
                             map_open: None,
                             map_cmds: Vec::new(),
+                            scan: Default::default(),
                             info_win: None,
                             info_page: std::cell::Cell::new((0, 0, 1)),
                             event_ext: [0; 24],
@@ -3895,6 +3928,7 @@ impl App {
                     world.talk_lock = None;
                     world.hud_top.enter();
                     world.map = None;
+                    world.scan = Default::default();
                     if let Some(ev) = login_event {
                         event::queue(world, ev);
                     }
@@ -4226,6 +4260,17 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::TrackEntry(e) => world.scan.on_entry(e),
+                NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
+                NetEvent::TrackState(s) => {
+                    // LAB_101fb790: the list's end clears the busy strip and keeps the results.
+                    if world.scan.on_state(s) {
+                        world.scan.busy = false;
+                        if let Some(m) = world.map.as_mut() {
+                            m.scan_done();
+                        }
+                    }
+                }
                 NetEvent::MapGroup { id, zone, pos } => {
                     let own = world.party.own_flags;
                     let member = world.party.members().skip(1).find(|m| m.id == id).map(|m| (m.name.clone(), (m.flags ^ own) & 3 != 0));

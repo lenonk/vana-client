@@ -249,6 +249,8 @@ fn tag(w: &World, tag: &str, target_cmd: bool) -> Option<String> {
             })
         }
         "<pos>" if !w.room_flag => Some(w.hud_top.grid().to_string()).filter(|g| !g.is_empty()),
+        // FUN_10076ff0 type 0x15: the tracked target's name from the zone NPC list.
+        "<scan>" => w.scan.tracking().and_then(|t| w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == t.index & 0x3ff).map(|(_, n)| n.clone())),
         _ => {
             // <p0>..<p5>, <a10>..<a15>, <a20>..<a25>: party window slots 0..17.
             let inner = tag.strip_prefix('<')?.strip_suffix('>')?;
@@ -307,6 +309,8 @@ fn resolve(w: &World, text: Option<&str>, fallback: bool, wide: bool, mode: Mode
             "<t>" => current_target(w),
             "<me>" => Some((w.my_id, w.my_index)),
             "<bt>" => battle_target(w),
+            // FUN_1007a1c0: the tracked actor while tracking, when it is here.
+            "<scan>" => w.scan.tracking().and_then(|t| w.entities.iter().find(|(_, e)| e.index == t.index).map(|(id, e)| (*id, e.index))),
             "<pet>" => pet(w),
             _ => None,
         };

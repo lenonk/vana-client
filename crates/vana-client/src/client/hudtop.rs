@@ -283,6 +283,24 @@ impl HudTop {
                 let (dx, dy) = to_screen(dir, 140.0);
                 gu.sprite("menu    compass", sprite, cx + dx, cy + dy, tint);
             }
+            // FUN_102203b0: while tracking, the kaipage arrow on the rim toward the target (radius 28.8 x 0.8, 36 x 0.8
+            // with NIN main or sub, through the 2k matrix), colour 0x802080f0, its bottom centre on the point; the
+            // name at (+36, +26). The untracked pointer (nearest flagged actor) is not done.
+            if let Some(t) = w.scan.tracking() {
+                let d = Vec3::new(t.pos[0] - w.pos.x, 0.0, t.pos[2] - w.pos.z).normalize_or_zero();
+                if d != Vec3::ZERO {
+                    let nin = w.stats.as_ref().is_some_and(|s| s.main.0 == 13 || s.sub.0 == 13);
+                    let radius = if nin { 36.0 } else { 28.8 } * 0.8 * 2.0 * k;
+                    let (sx, sy) = (d.dot(r) * radius, -d.dot(f) * radius * tilt);
+                    let n = gu.lib_len("anc     kaipage").max(1);
+                    let fr = (w.started.elapsed().as_secs_f32() * 10.0) as usize % n;
+                    let b = gu.cell_bounds("anc     kaipage", fr, 0).unwrap_or([0.0; 4]);
+                    gu.sprite("anc     kaipage", fr, cx + sx - (b[2] - b[0]) / 2.0, cy + sy - (b[3] - b[1]), (alpha << 24) | 0x20_80f0);
+                    if let Some((_, name)) = w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == t.index & 0x3ff) {
+                        gu.shape_text(name, cx + 36.0, cy + 26.0, tint, false);
+                    }
+                }
+            }
         }
         if let Some((t, at)) = w.clock {
             let m = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32;

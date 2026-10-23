@@ -4282,3 +4282,31 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   FUN_1024fcd0(0); ours also drops the space after it *(inf)*. Message 180 now reads "You throw away a potion.".
 - Live (Lnxcsfix, !additem 4112 2): iuse showed Use / Drop; Use -> prompt -> the server's "Unable to use item." (the
   potion script refuses at full HP); Drop -> sortyn -> Yes threw the stack away.
+- Wide Scan and tracking (full spec: scratchpad widescan/SPEC.md of that session; corrects the map spec's 7.6):
+  - map0 item 2 is enabled (FUN_101f7c00, at open) when s2c 0x119 was seen (DAT_10485824 bit 0; ours recasts_seen)
+    and the map is our own zone; disabled it draws keytops3 20 and Enter plays SE 0004. LSB lets every job scan
+    (map.ALL_JOBS_WIDESCAN).
+  - Store (session object, zeroed on every map server connect, so zoning loses results and tracking): s2c 0x0F4 {index
+    u16 @4, level u8 @6, type @7 & 7 (0 PC, 1 NPC, 2 mob), dx / dz s16 @8 / @0xa from the player's world x / z at the
+    scan, name[16] @0xc (PCs only)} into record[index] (< 0x900); s2c 0x0F5 {x, y, z f32 @4.., level @0x10, index u16
+    @0x12, state u32 @0x14}: state 1 for the tracked index updates it, another state for it or index 0 clears tracking;
+    s2c 0x0F6 {state u32 @4}: 2 = list end (scan done, results kept). Tracking counts once state 1 with a level came.
+    c2s 0x0F4 {1} (but 0x0F6 while the last list is still open), 0x0F5 {ActIndex}, 0x0F6 {0}, 8-byte packets.
+  - scanlist (16, 48) 112 x 248, 10 rows of 24, cursor anc_trac, title 0xd 78 "Wide Scan": one scan per map opening
+    (results kept within it), origin = the player's world x / z; rows and markers rebuilt every frame in index order:
+    PCs (not ourselves) with their packet name (markblue, keytops3 363, untrackable), NPCs (markgree 326) and mobs
+    (markred 327) named from the zone NPC list by index & 0x3ff, empty names dropped; markers not centred, the cursor
+    row's as the ring keytops3 105; names fitted like the target window's (88 px at +7, +6). Enter scrolls the map to
+    the row and opens mapscan; Escape closes the list.
+  - mapscan: "Track target." (c2s 0x0F5; map0, scanlist and the map close; untrackable -> SE 0004) and "Narrow down
+    range ..." (scanlist hidden, cursor mode with the anc_scan cursor; mapframe Enter: centre = the map pixel under the
+    cursor, radius = ftol(128 x 0.65 / zoom + 0.5), rows outside dropped; Escape: unfiltered). No packet for narrowing.
+  - map0 Wide Scan while tracking: comyn group 0xe 0x45 (default No); Yes sends 0x0F6, drops the ring and opens the
+    list. The tracked ring (keytops3 105) is taken at map open only.
+  - Compass (FUN_102203b0): while tracking, the kaipage arrow on the rim toward the target (radius 28.8 x 0.8, 36 x 0.8
+    with NIN main / sub, scale 2k, the disk's tilt), colour 0x802080f0, bottom centre on the point; the name at (cx +
+    36, cy + 26). Tags: `<scan>` = the tracked name in text, the tracked actor as a command target.
+  - Not done: the help bar's busy strip (keytops3 165..169 while a scan is pending), the untracked compass pointer
+    (nearest flagged actor, also `<ht>`), mapscan's disabled look, list paging keys.
+  - Live (Lnxcsfix, Southern San d'Oria): the list filled with NPCs, Track on Ephauge closed the map, the compass
+    arrow and name showed, `/echo tracking <scan>` printed "tracking Ephauge".
