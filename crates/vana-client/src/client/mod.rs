@@ -2297,6 +2297,8 @@ struct World {
     /// Swing holds (scheduler ops 0x20 / 0x59): until when an actor's server status changes wait (the applied status
     /// +0x170 vs the raw +0x16c), the waiting status, and until when it plays no hit reactions (op 0x59).
     holds: HashMap<u32, Instant>,
+    /// The rest of a melee round by attacker: when the next swing starts, and its records (combat::on_action).
+    rounds: HashMap<u32, (Instant, std::collections::VecDeque<crate::net::action::Action>)>,
     held_status: HashMap<u32, u8>,
     noreact: HashMap<u32, Instant>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
@@ -3246,6 +3248,7 @@ impl App {
                             tells: Vec::new(),
                             battle: None,
                             pending: Vec::new(),
+                            rounds: HashMap::new(),
                             holds: HashMap::new(),
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),

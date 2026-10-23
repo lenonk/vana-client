@@ -4017,3 +4017,11 @@ from child 1's strings. Enter / click: comyn 0xe 0x46 "Return to Home Point?", d
 machine sends 0x01A 0x0B, again every 600 ticks while dead; the deadline passing does the same and closes the window.
 Escape is not taken (the log shrinks). Alive again: all of it goes. Not done: raise / tractor offers (s2c 0x0F9 ->
 resynus / comyn 0x60, 0x01A 0x0D / 0x13), camp mode, mp_dead.
+
+## Multi-hit melee rounds (2026-10-23)
+
+- A 0x028 category 1 with several records (double attack, dual wield, kicks): retail's "atk0" plays the swing for
+  record 0, then op 0x32 moves actor2 to the next record's target and jumps back: one full swing, its dada (message,
+  reaction) per record, each starting when the previous swing's call returns. Ours (combat::on_action) splits the
+  round into one-record actions, plays the first and queues the rest (World::rounds) to start when the attacker's swing
+  one-shot ends; a new round flushes a queued remainder at once. Not seen live yet (no double attack in the test fight).

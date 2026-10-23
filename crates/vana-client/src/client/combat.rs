@@ -202,9 +202,34 @@ pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
     print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0] });
 }
 
+/// 0x028. A melee round of several records replays "atk0" per record (op 0x32 jumps back for the next one): one swing,
+/// message and reaction per hit, each after the last swing ends; ours splits the round and queues the rest.
+pub(super) fn on_action(w: &mut World, a: &Action) {
+    // A new round flushes what is left of the last one at once.
+    if let Some((_, rest)) = w.rounds.remove(&a.actor) {
+        for r in rest {
+            one_action(w, &r);
+        }
+    }
+    if a.category != category::BASIC_ATTACK || a.records().len() < 2 {
+        one_action(w, a);
+        return;
+    }
+    let mut subs: std::collections::VecDeque<Action> = a.records().into_iter().map(|(id, r)| Action { targets: vec![crate::net::action::ActionTarget { id, results: vec![r.clone()] }], ..a.clone() }).collect();
+    let first = subs.pop_front().unwrap();
+    one_action(w, &first);
+    w.rounds.insert(a.actor, (Instant::now() + swing_left(w, a.actor), subs));
+}
+
+/// What is left of the actor's swing one-shot (the next swing of a round starts after it).
+fn swing_left(w: &World, actor: u32) -> Duration {
+    let ticks = w.actors.get(&actor).and_then(|x| x.oneshot.as_ref()).map_or(0.0, |o| (o.len - o.ticks).max(0.0));
+    Duration::from_secs_f32(ticks / 60.0)
+}
+
 /// 0x028: messages per (target, result) record (FUN_1009c730: main, additional effect, reaction) with
 /// work = [cmd_arg, value, proc value, react value, bit]; melee waits for the attacker's hit.
-pub(super) fn on_action(w: &mut World, a: &Action) {
+fn one_action(w: &mut World, a: &Action) {
     // Our cast finished (category 4, magic file 0xaf0): the spell's recast (asm 0x100a900d).
     if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
         super::magic::set_recast(w, a.arg as u16, a.info);
@@ -296,6 +321,17 @@ pub(super) fn apply_status(w: &mut World, id: u32, status: u8) {
 /// Fires pending hits whose time has come, and applies statuses whose swing hold has ended.
 pub(super) fn tick(w: &mut World) {
     let now = Instant::now();
+    // The next swing of a round whose last swing has ended.
+    let due: Vec<u32> = w.rounds.iter().filter(|(_, (at, _))| *at <= now).map(|(id, _)| *id).collect();
+    for actor in due {
+        let Some((_, mut rest)) = w.rounds.remove(&actor) else { continue };
+        if let Some(next) = rest.pop_front() {
+            one_action(w, &next);
+            if !rest.is_empty() {
+                w.rounds.insert(actor, (Instant::now() + swing_left(w, actor), rest));
+            }
+        }
+    }
     let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, _)| w.holds.get(id).is_none_or(|t| *t <= now)).map(|(id, s)| (*id, *s)).collect();
     for (id, s) in released {
         w.held_status.remove(&id);
