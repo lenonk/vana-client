@@ -1898,18 +1898,36 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         log::info!("zone text {lsb} is not in this install's zone {zone} dialogue");
         return;
     };
-    let speaker = if t.name.is_empty() { w.entities.get(&t.actor).map(|e| e.name.clone()).unwrap_or_default() } else { t.name.clone() };
-    let mut num = [0i32; 8];
-    num[..4].copy_from_slice(&t.num);
-    let ctx = dialog::Ctx { player: w.name.clone(), speaker: speaker.clone(), num, female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), ..Default::default() };
+    let named = t.mes & 0x8000 == 0;
+    let entity = w.entities.get(&t.actor).filter(|e| e.index == t.index).map(|e| e.name.clone());
+    // Bit 15 clear: the speaker must be here with that id and index, else the line is dropped (0x02A naming its
+    // speaker excepted, inf).
+    if named && entity.is_none() && t.name.is_empty() {
+        log::info!("zone text {lsb}: speaker {:#x} ({}) not here", t.actor, t.index);
+        return;
+    }
+    let speaker = if t.name.is_empty() { entity.clone().unwrap_or_default() } else { t.name.clone() };
+    // The "%s : " prefix (FUN_100abbb0; MesNum bit 15 none). 0x027: String1's, or with String2 / Flags 1 the NPC's
+    // own name (a PC: String2); bit 15 set: String2 when set and Flags 2.
+    let prefix = match t.packet {
+        0x027 if named && (!t.name2.is_empty() || t.flags & 1 != 0) => if t.actor >> 24 != 0 { entity.unwrap_or_default() } else { t.name2.clone() },
+        0x027 if named => t.strings.first().cloned().unwrap_or_default(),
+        0x027 if !t.name2.is_empty() && t.flags & 2 != 0 => t.name2.clone(),
+        _ if named => speaker.clone(),
+        _ => String::new(),
+    };
+    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), ..Default::default() };
     let e = dialog::expand(&raw, &ctx);
+    // The log mode: Type below 8 by table 0x1035b944, else 0; a 1f code in the text overrides it.
+    const MODES: [u8; 8] = [0x8e, 0xa1, 0x90, 0x91, 0x92, 0xa1, 0x94, 0x95];
+    let mode = e.mode.unwrap_or(MODES.get(t.kind as usize).copied().unwrap_or(0));
+    let colour = w.battle.as_ref().map_or(super::WHITE, |bt| bt.colour_in(mode, &w.game));
     for (k, l) in e.lines.iter().enumerate() {
         let text = decode_sjis(l);
-        // FUN_100abbb0 prefixes "%s : "; MesNum bit 15 (FUN_100abc30) has no name.
-        if k == 0 && t.mes & 0x8000 == 0 && !speaker.is_empty() {
-            w.chat.push(format!("{speaker} : {text}"));
+        if k == 0 && !prefix.is_empty() {
+            w.chat.push_colour(format!("{prefix} : {text}"), colour);
         } else {
-            w.chat.push(text);
+            w.chat.push_colour(text, colour);
         }
     }
 }

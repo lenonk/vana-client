@@ -5078,3 +5078,23 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Not done: the block list (FUN_100e0a50), config 0xce's spam filter (kinds 1, 0x1a, 0x22, 0x23), PvP (s2c 0x0B4
   u16 @0x10), the echoes' rank icon, the profanity mask, the line cut at a control byte, Shift-JIS text (we decode
   UTF-8), c2s 0x0B5 / 0x0B6 at 150 bytes (ours 127).
+
+## s2c 0x027 / 0x043, zone text colours, 0x009 keys (2026-10-23; spec ~/ffxi/lab/research/chat_audit/c027_SPEC.md)
+
+- Current handlers (FUN_10094190, all.c 114176..114187): 0x036 100a0ef0, 0x043 100a1070, 0x02A 100a12a0, 0x027
+  100a1dc0, 0x053 100a2000; 0x009 LAB_100fbd40 (FUN_100f9b20, all.c 183449). Older MODLOG addresses for these are
+  the 2019 build's.
+- 0x027: UniqueNo @4, ActIndex @8, MesNum @0xa, Type u16 @0xc, Flags @0xe, Num1[4] @0x10, String1[32] @0x20,
+  String2[16] @0x40, Num2[8] @0x50. Zone dialogue by MesNum as 0x036; String1 -> string slot 0, Num1 -> num 0..3,
+  Num2[4..7] -> num 4..7 (Num2[0..3] unread). Prefix "%s : ": bit 15 clear String1's, or with String2 / Flags 1 the
+  NPC's own name (a PC id: String2); bit 15 set: String2 when set and Flags 2. LSB: messageName (Type 4), fishing
+  catches (Type 0), caskets / treasure / assault / nyzul loot. E.g. 236 #7164 "Lnxtest caught a moat carp!".
+- 0x043: UniqueNo @4, ActIndex @8, MesNum @0xa, Type u8 @0xc, sName[16] @0x10 -> string slot 0; else 0x036's path
+  (LSB: fishing's monster / large box).
+- Every zone line's mode: Type below 8 by table 0x1035b944 (8e a1 90 91 92 a1 94 95), else 0; a `1f xx` in the text
+  overrides it. Bit 15 clear needs the speaker here with that id and index, else the line is dropped (ours keeps a
+  0x02A line that names its speaker). Not done: the event-lock drop ((DAT_104808fc | DAT_1047fb40) & 0x40).
+- 0x009 Data @0xd: keys found anywhere (strstr): CasUniqueNo, TarUniqueNo (stored over CasUniqueNo), Para0..3, Mode
+  (atoi), string2 / string3 (24 bytes to a space / tab / NUL). 7031 line: actor from Cas (none for 0), target none,
+  work Para0..3, string slots 2 / 3. /random: 88 "Dice roll! X rolls N!". Not done: the block list (Attr 0x10),
+  SysMesFilterLevel (s2c 0x0B4 ConfData byte 1 bits 3..4 against table 0x1035b950), the Mode key.

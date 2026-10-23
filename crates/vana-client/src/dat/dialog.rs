@@ -320,6 +320,8 @@ pub struct Expanded {
     pub wait: Option<u32>,
     /// `02 lo hi` / `03 lo hi`: event message window x / y (DAT_10476f98 / 9a, FUN_100bf790 -> FUN_10132030).
     pub place: [Option<i16>; 2],
+    /// A `1f xx` code: the log mode the line takes (overrides the packet's).
+    pub mode: Option<u8>,
 }
 
 /// Expands the codes a plain NPC line uses; others are dropped. Not the full FUN_100bf790.
@@ -328,6 +330,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     let mut lines = vec![Vec::new()];
     let (mut prompt, mut choice, mut wait) = (false, None, None);
     let mut place = [None; 2];
+    let mut mode = None;
     let mut pending: Pending = None;
     let mut i = 0;
     let push = |lines: &mut Vec<Vec<u8>>, b: &[u8]| lines.last_mut().unwrap().extend_from_slice(b);
@@ -399,7 +402,11 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 }
                 2
             }
-            0x1e | 0x1f | 0x05 | 0x0d | 0x0e | 0x10..=0x19 | 0x1b => 2,
+            0x1f => {
+                mode.get_or_insert(a as u8);
+                2
+            }
+            0x1e | 0x05 | 0x0d | 0x0e | 0x10..=0x19 | 0x1b => 2,
             0x7f => match a as u8 {
                 0x31 => {
                     prompt = true;
@@ -433,12 +440,28 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
-    Expanded { lines, prompt, choice, wait, place }
+    Expanded { lines, prompt, choice, wait, place, mode }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// s2c 0x027 lines: Port Bastok 7164 (fishing, String1 = the player, Num1 = item, count) and Valkurm Dunes 8099
+    /// (a 1f mode code).
+    #[test]
+    fn talknumwork2_lines() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let names = crate::dat::names::Names::load(&index, crate::dat::items::Lang::En).ok().map(|n| std::sync::Arc::new(n) as std::sync::Arc<dyn crate::dat::names::NameSource>);
+        let ctx = |num0| Ctx { strings: vec!["Lnxtest".into()], num: [num0, 1, 0, 0, 0, 0, 0, 0], names: names.clone(), ..Default::default() };
+        let d = Dialog::load(&index, 236).unwrap();
+        let e = expand(&d.raw(7164).unwrap(), &ctx(4401));
+        assert_eq!(crate::dat::font::decode_sjis(&e.lines[0]), "Lnxtest caught a moat carp!");
+        let d = Dialog::load(&index, 103).unwrap();
+        let e = expand(&d.raw(8099).unwrap(), &ctx(4112));
+        assert_eq!((crate::dat::font::decode_sjis(&e.lines[0]).as_str(), e.mode), ("Lnxtest obtains a potion!", Some(0x79)));
+    }
 
     #[test]
     fn readable_codes() {

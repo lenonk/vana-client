@@ -140,14 +140,21 @@ pub struct EventStart {
 /// A zone dialogue line sent by the server: 0x036 (talk) or 0x02A (with num[4]).
 #[derive(Clone, Debug, Default)]
 pub struct ZoneText {
+    /// The packet: 0x036, 0x02A, 0x027 or 0x043.
+    pub packet: u16,
     pub actor: u32,
     pub index: u16,
     /// MesNum; bit 15 = no speaker name.
     pub mes: u16,
+    /// Type: the log mode by table 0x1035b944 below 8.
     pub kind: u8,
-    pub num: [i32; 4],
+    pub num: [i32; 8],
     /// 0x02A String: the speaker name when the server sends it.
     pub name: String,
+    /// String slots from 0 (0x027 String1, 0x043 sName); 0x027's String2 and Flags.
+    pub strings: Vec<String>,
+    pub name2: String,
+    pub flags: u8,
 }
 
 #[derive(Clone, Debug)]
@@ -699,14 +706,40 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x05C => tx.send(NetEvent::EventParams(std::array::from_fn(|i| p.u32(4 + 4 * i))))?,
                     0x052 => tx.send(NetEvent::EventRelease { mode: p.u8(4), event: (p.u32(4) >> 8) as u16 })?,
                     0x05B | 0x065 => tx.send(NetEvent::Wpos { id: p.u32(0x10), pos: [p.f32(4), p.f32(8), p.f32(0xc)], dir: p.u8(0x17), mode: p.u8(0x16) })?,
-                    0x036 => tx.send(NetEvent::ZoneText(ZoneText { actor: p.u32(4), index: p.u16(8), mes: p.u16(0xa), kind: p.u8(0xc), ..Default::default() }))?,
+                    0x036 => tx.send(NetEvent::ZoneText(ZoneText { packet: 0x036, actor: p.u32(4), index: p.u16(8), mes: p.u16(0xa), kind: p.u8(0xc), ..Default::default() }))?,
                     0x02A => tx.send(NetEvent::ZoneText(ZoneText {
+                        packet: 0x02A,
                         actor: p.u32(4),
-                        num: std::array::from_fn(|i| p.u32(8 + 4 * i) as i32),
+                        num: std::array::from_fn(|i| if i < 4 { p.u32(8 + 4 * i) as i32 } else { 0 }),
                         index: p.u16(0x18),
                         mes: p.u16(0x1a),
                         kind: p.u8(0x1c),
                         name: text(&p, 0x1e, 32),
+                        ..Default::default()
+                    }))?,
+                    // 0x027 (handler 0x100a1dc0): Num1[4] @0x10 -> num 0..3, Num2[4..7] @0x60 -> num 4..7 (Num2[0..3] unread),
+                    // String1 @0x20 -> string 0, String2 @0x40, Flags @0xe.
+                    0x027 => tx.send(NetEvent::ZoneText(ZoneText {
+                        packet: 0x027,
+                        actor: p.u32(4),
+                        index: p.u16(8),
+                        mes: p.u16(0xa),
+                        kind: p.u16(0xc).min(255) as u8,
+                        flags: p.u8(0xe),
+                        num: std::array::from_fn(|i| if i < 4 { p.u32(0x10 + 4 * i) as i32 } else { p.u32(0x50 + 4 * i) as i32 }),
+                        strings: vec![text(&p, 0x20, 32)],
+                        name2: text(&p, 0x40, 16),
+                        ..Default::default()
+                    }))?,
+                    // 0x043 (handler 0x100a1070): fishing's monster / chest; sName @0x10 -> string 0.
+                    0x043 => tx.send(NetEvent::ZoneText(ZoneText {
+                        packet: 0x043,
+                        actor: p.u32(4),
+                        index: p.u16(8),
+                        mes: p.u16(0xa),
+                        kind: p.u8(0xc),
+                        strings: vec![text(&p, 0x10, 16)],
+                        ..Default::default()
                     }))?,
                     0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0 })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
