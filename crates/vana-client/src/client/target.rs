@@ -51,6 +51,137 @@ pub enum SubThen {
     Item { container: u8, index: u8 },
 }
 
+/// The party-list cursor of `<stpt>` / `<stal>` (FUN_10202d80, DAT_106643e0): a window slot below `count` (6 / 18)
+/// over the used slots; no candidate filter, the world target and lock untouched. The fellow row (-1) is not modelled.
+pub struct PartyCursor {
+    pub index: usize,
+    pub count: usize,
+    pub then: SubThen,
+    pub range: Option<f32>,
+}
+
+/// "Sub-target up" (T+0x59 || T+0xc4): the 3D prompt or the party-list cursor.
+pub fn sub_up(w: &World) -> bool {
+    w.prompt.is_some() || w.party_cursor.is_some()
+}
+
+/// FUN_10202d80: the cursor opens on the current target's slot when it is below `count`, else on us (slot 0).
+pub fn open_party_cursor(w: &mut World, count: usize, then: SubThen, range: Option<f32>) {
+    let slots = w.party.slots();
+    let index = w.target.and_then(|t| slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == t))).filter(|&i| i < count).unwrap_or(0);
+    w.party_cursor = Some(PartyCursor { index, count, then, range });
+}
+
+/// FUN_10203570 / FUN_10203630: the next / previous used slot below the count, wrapping.
+fn party_step(used: &[bool], index: usize, count: usize, down: bool) -> usize {
+    let n = count.min(used.len()).max(1);
+    let mut i = index;
+    for _ in 0..n {
+        i = if down { (i + 1) % n } else { (i + n - 1) % n };
+        if used[i] {
+            return i;
+        }
+    }
+    index
+}
+
+/// The cursor's keys (FUN_102036f0 through the window events): Down / Up over the used slots (SE 0001), Enter runs
+/// the line with the slot's id or quoted roster name (SE 0002), Escape cancels (SE 0003; a macro line stops the
+/// macro). Left / Right do nothing. True when the key was taken.
+pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
+    use egui::Key as K;
+    let mut used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
+    // Slot 0 is always us.
+    used[0] = true;
+    let Some(pc) = w.party_cursor.as_mut() else { return false };
+    match key {
+        K::ArrowDown | K::ArrowUp => {
+            let i = party_step(&used, pc.index, pc.count, key == K::ArrowDown);
+            if i != pc.index {
+                pc.index = i;
+                w.sounds.push(crate::audio::Ui::Cursor as u32);
+            }
+        }
+        K::Enter => {
+            let pc = w.party_cursor.take().unwrap();
+            w.sounds.push(crate::audio::Ui::Select as u32);
+            let (id, name) = match pc.index {
+                0 => (w.my_id, w.name.clone()),
+                i => match w.party.slots().slots.get(i).cloned().flatten() {
+                    Some(m) => (m.id, m.name),
+                    None => return true,
+                },
+            };
+            let line = match &pc.then {
+                SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{name}\""),
+                SubThen::Line { stash, .. } => format!("{stash}{id}"),
+                _ => return true,
+            };
+            super::textcmd::run(w, &line, super::textcmd::Mode::SubTarget);
+        }
+        K::Escape => {
+            let pc = w.party_cursor.take().unwrap();
+            w.sounds.push(crate::audio::Ui::Cancel as u32);
+            if let SubThen::Line { from_macro: true, .. } = pc.then
+                && let Some(m) = w.macros.as_mut()
+            {
+                m.stop();
+            }
+        }
+        _ => {}
+    }
+    true
+}
+
+/// FUN_10203c80: a slot that emptied under the cursor steps it back to the previous used one (0 at the least).
+pub fn party_cursor_update(w: &mut World) {
+    let used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
+    if let Some(pc) = w.party_cursor.as_mut() {
+        while pc.index > 0 && !used.get(pc.index).copied().unwrap_or(false) {
+            pc.index -= 1;
+        }
+    }
+}
+
+/// FUN_10202110: the party window's hand: the cursor's slot, tinted by range from base 0xa04040d0 (red 0xe0d04040,
+/// yellow 0xe0d0d040; flashing the pick unless red), or with no cursor the current target's slot in 0x80808080. The
+/// slot, its tint and the entity to flash.
+pub fn party_hand(w: &World) -> Option<(usize, u32, Option<u32>)> {
+    let slots = w.party.slots();
+    match &w.party_cursor {
+        Some(pc) => {
+            let id = match pc.index {
+                0 => Some(w.my_id),
+                i => {
+                    let m = slots.slots.get(i).cloned().flatten()?;
+                    w.entities.iter().find(|(_, e)| e.index == m.index).map(|(id, _)| *id)
+                }
+            };
+            let tint = match (id, pc.range) {
+                (Some(id), Some(r)) => {
+                    let p = if id == w.my_id { w.pos } else { w.entities.get(&id).map_or(w.pos, |e| e.pos) };
+                    let raw = (p - w.pos).length();
+                    let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length();
+                    if d > r + 0.5 || raw >= 25.0 {
+                        0xe0d0_4040
+                    } else if d > r - 0.5 {
+                        0xe0d0_d040
+                    } else {
+                        0xa040_40d0
+                    }
+                }
+                _ => 0xa040_40d0,
+            };
+            Some((pc.index, tint, id.filter(|_| tint != 0xe0d0_4040)))
+        }
+        None => {
+            let t = w.target?;
+            let i = if t == w.my_id { 0 } else { slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == t))? };
+            Some((i, 0x8080_8080, None))
+        }
+    }
+}
+
 /// The sub-target prompt (T+0x28 slot B, +0x5c bits 2-3, +0x60 / +0x64, +0x6c range, +0xc4 / +200 callbacks).
 #[derive(Clone, Debug)]
 pub struct Sub {
@@ -227,7 +358,7 @@ pub fn set(w: &mut World, t: Option<u32>) {
 /// FUN_10151f20: the player's own target inputs (Tab, Escape, a mouse pick) do nothing while locked; only the
 /// lock toggle and the server move a locked target. A sub-target prompt bypasses the lock (+0xc4 set).
 pub fn picks_allowed(w: &World) -> bool {
-    !w.locked || w.prompt.is_some()
+    !w.locked || sub_up(w)
 }
 
 /// FUN_10150da0: lock needs a target, a living player and a target that is not us. `why` goes in the log.

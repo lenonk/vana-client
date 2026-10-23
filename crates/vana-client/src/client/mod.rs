@@ -907,6 +907,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                 }
                 // The target prompt (key table 0x10371ee0 with +0xc4 set): Enter confirms, Escape cancels.
+                // The party-list cursor takes the window keys (its window is raised to the top).
+                _ if world.party_cursor.is_some() => {
+                    target::party_cursor_key(world, *key);
+                }
                 _ if world.prompt.is_some() && matches!(key, egui::Key::Enter | egui::Key::Escape) => {
                     if *key == egui::Key::Enter {
                         target::confirm_sub(world);
@@ -917,7 +921,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 // Ctrl / Alt + M, J, W, B (key functions 0x41, 0x7f, 0x80, 0x9f): magic in list mode without trusts, job
                 // abilities, weapon skills, pet commands; in the field, alive, no prompt.
-                egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B if (modifiers.ctrl || modifiers.alt) && !event::active(world) && !world.dead() && world.prompt.is_none() => match key {
+                egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B if (modifiers.ctrl || modifiers.alt) && !event::active(world) && !world.dead() && !target::sub_up(world) => match key {
                     egui::Key::M => magic::open_magic(world, 0, true, 0x100),
                     egui::Key::J => magic::open_ability(world, 1, false),
                     egui::Key::W => magic::open_ability(world, 3, false),
@@ -1256,6 +1260,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
         }).collect(),
         party_window: if rows.len() > 1 || party_slots.leaders[0] != 0 { party_slots.window() } else { "menu    ptw0".into() },
+        party_hand: target::party_hand(world).filter(|h| h.0 < rows.len()).map(|(row, tint, _)| (row, tint, gu.cursor_frame())),
         party_away: rows.iter().map(|m| m.as_ref().is_some_and(|m| m.away != 0 || m.zone != world.pos_zone)).collect(),
         party_marks: rows.iter().enumerate().map(|(k, m)| {
             let id = if k == 0 { world.my_id } else { m.as_ref().map_or(0, |m| m.id) };
@@ -2676,6 +2681,7 @@ struct World {
     ability: Option<magic::ListWin>,
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
+    party_cursor: Option<target::PartyCursor>,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
@@ -3616,6 +3622,7 @@ impl App {
                             ability: None,
                             cats: None,
                             prompt: None,
+                            party_cursor: None,
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
@@ -4471,11 +4478,17 @@ impl App {
         }
         let in_event = event::active(world);
         target::update(world);
-        // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red.
+        // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red; so does the party cursor's.
         if let Some(t) = world.target.filter(|_| world.prompt.is_some())
             && target::range_tint(world, t) != 0xe0d0_4040
         {
             target::force_flash(world, t);
+        }
+        target::party_cursor_update(world);
+        if world.party_cursor.is_some()
+            && let Some((_, _, Some(id))) = target::party_hand(world)
+        {
+            target::force_flash(world, id);
         }
         combat::area_line(world);
         let ticks = dt * 60.0;
@@ -4833,7 +4846,8 @@ impl App {
         // Macros (FUN_101a2e80): the runner steps first, one line a 2-tick frame, through the text-command path; then,
         // when the gate allows (field, UI shown, no event, alive, no window), Ctrl / Alt + digit runs a macro and
         // Shift + Ctrl / Alt + digit picks a set. The palettes are not drawn yet.
-        if let Some(line) = world.macros.as_mut().filter(|_| world.prompt.is_none()).and_then(|m| m.step(dt * 60.0)) {
+        let sub_up = target::sub_up(world);
+        if let Some(line) = world.macros.as_mut().filter(|_| !sub_up).and_then(|m| m.step(dt * 60.0)) {
             textcmd::run(world, &crate::dat::font::decode_sjis(&line), textcmd::Mode::Macro);
         }
         let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();

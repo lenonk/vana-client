@@ -3953,7 +3953,8 @@ From scratchpad magicmenu/SPEC.md and icons/SPEC.md; client/magic.rs, target.rs 
   0x08); refused in an event (7 0x43) or zone flag 0x100 (0x44); nothing fits 0x46 and a macro stops. While the prompt
   is up a typed line needs flag 0x02 (else 7 0xa4), macro lines wait. A /ma line's dry run gives the arrow its range.
 - Not done: mix.dat / aix.dat order and the sort windows, the Right-key magselec pop-out, blue magic sets, mouse in the
-  lists and prompt, `<stpt>` / `<stal>` party-list cursors, the mount list, subwindo pet lines and charges, the cast bar.
+  lists and prompt, the mount list, subwindo pet lines and charges, the cast bar. (`<stpt>` / `<stal>`: see "Party-list
+  cursor" below; correction: they do not open this prompt, and their flags 5 / 0xd are never read.)
 
 ## Name colours: the rule (2026-10-23)
 
@@ -4556,3 +4557,24 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   Alt are told apart now (Alt alone for the cycle; either for the 0xa8 page). Up / Down in itmstora skip the
   disabled rows, and it opens on the first enabled one (both inferred).
 - Live: Switch from Mog Case to Mog Wardrobe, Alt+Right to M.Ward. 2 and Alt+Left back.
+
+## Party-list cursor: `<stpt>` / `<stal>` (2026-10-23; spec: scratchpad stpt/SPEC.md of that session)
+
+- FUN_10076ab0 modes 6 / 7 call FUN_10202d30(LAB_10077a20, .., 2 / 3), not the 3D prompt: a cursor on the party
+  window's slots (DAT_106643e0) below a count of 6 (`<stpt>`) or 18 (`<stal>`, through raid1 / raid2), no candidate
+  filter, the world target and lock untouched, nothing refused (slot 0 = us always exists). Opens on the current
+  target's slot when below the count, else on us; then one preview run of the line gives the hand its range.
+- Keys (FUN_102036f0 via the window events; its window is raised and takes them): Down / Up the next / previous used
+  slot, wrapping (FUN_10203570 / FUN_10203630; the fellow row -1 between is not modelled), SE 0001; Left / Right
+  nothing; Enter SE 0002, the line with the slot's id (or quoted roster name for flag 0x08), then closed; Escape SE
+  0003, a macro line stops the macro. F-keys / Tab still change the world target (the lock is bypassed). A slot that
+  empties steps the cursor back (FUN_10203c80).
+- The hand (FUN_10202110 -> FUN_102022b0): the window's kind-6 cursor ref `anc     anc2s` (6 frames, half size) at the
+  row child's top-left; tint from base 0xa04040d0 by the range (red 0xe0d04040 past range + 0.5 or at 25, yellow
+  0xe0d0d040 past range - 0.5), the pick flashing unless red. With no cursor, the current target's slot gets the hand
+  in 0x80808080 (so targeting a party member, or a 3D prompt's pick, marks their row). No second world arrow.
+- "Sub-target up" (T+0x59 || T+0xc4) gates: typed lines need flag 0x02, macros wait, Ctrl / Alt list shortcuts, the
+  lock bypass. Ours: target::sub_up.
+- Not done: the hand on raid1 / raid2 rows (we do not draw those windows yet), the fellow row, the mouse.
+- Live (Lnxcsfix, solo): F1 put the white hand on our row; `/ta <stpt>` + Enter targeted us (0x5); `/ma Cure <stpt>`
+  showed the blue hand and sent `/ma Cure 5`.

@@ -437,7 +437,7 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     let first_flags = table().get(first).map_or(0, |e| e.1);
     let target_cmd = first_flags & flag::TARGET != 0;
     // With the prompt up a typed line runs only with flag 0x02 (else group 7 0xa4); a macro line is dropped.
-    if w.prompt.is_some() && matches!(mode, Mode::Typed | Mode::Macro) && first_flags & flag::IN_PROMPT == 0 {
+    if target::sub_up(w) && matches!(mode, Mode::Typed | Mode::Macro) && first_flags & flag::IN_PROMPT == 0 {
         if mode == Mode::Typed {
             refuse(w, 0xa4);
         }
@@ -477,8 +477,9 @@ fn sub_tag(line: &str) -> Option<(usize, u32)> {
 }
 
 /// The tag's prompt: refused in an event (group 7 0x43) or a place without actions (0x44); the stash must be a
-/// command. A /ma line's dry run gives the arrow its spell range. Nothing fits: 0x46 "You must specify a valid
-/// target." and a macro stops. (`<stpt>` / `<stal>` use the 3D prompt here, not the party list cursor.)
+/// command. A /ma line's dry run gives the arrow (or the party hand) its spell range. Nothing fits: 0x46 "You must
+/// specify a valid target." and a macro stops. `<stpt>` / `<stal>` (masks 5 / 0xd, which retail never reads) open
+/// the party-list cursor instead of the 3D prompt (FUN_10076ab0 modes 6 / 7 -> FUN_10202d30).
 fn open_prompt(w: &mut World, stash: &str, mask: u32, target_cmd: bool, quoted: bool, mode: Mode) {
     if event::active(w) {
         refuse(w, 0x43);
@@ -499,6 +500,10 @@ fn open_prompt(w: &mut World, stash: &str, mask: u32, target_cmd: bool, quoted: 
     };
     let range = spell.and_then(|s| w.actions.as_ref()?.spell(s)).map(|r| crate::dat::actions::RANGES[(r.range & 0xf) as usize] as f32);
     let then = target::SubThen::Line { stash, quoted, from_macro: mode == Mode::Macro };
+    if matches!(mask, 5 | 0xd) {
+        target::open_party_cursor(w, if mask == 5 { 6 } else { 18 }, then, range);
+        return;
+    }
     if !target::open_sub(w, mask, then, range, String::new(), 0) {
         refuse(w, 0x46);
         if mode == Mode::Macro

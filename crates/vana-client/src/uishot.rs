@@ -129,7 +129,7 @@ pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     let n = std::env::var("FFXI_UISHOT_MEMBERS").ok().and_then(|v| v.parse().ok()).unwrap_or(3usize).clamp(1, 6);
     let party = [(1.0, 0.0), (0.55, 1.0), (0.2, 0.35), (0.9, 0.5), (0.4, 0.8), (0.7, 0.2)][..n].to_vec();
     let party_window = crate::render::screens::party_menu(party.len());
-    let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_focused: true, chat_log: true };
+    let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_hand: None, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_focused: true, chat_log: true };
     let (batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
     for t in &text {
         println!("text slot {:?} at ({:.0}, {:.0})", t.what, t.x, t.y);

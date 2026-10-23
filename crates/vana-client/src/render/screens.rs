@@ -469,6 +469,8 @@ pub struct HudState {
     /// The party window ("menu    ptw0" solo, else "ptwN"), and per row: in another zone (no gauges), and marks
     /// (bit 0 party leader, bit 1 alliance leader).
     pub party_window: String,
+    /// FUN_10202110's hand (anc2s): the party row, its tint and the animation frame.
+    pub party_hand: Option<(usize, u32, usize)>,
     pub party_away: Vec<bool>,
     pub party_marks: Vec<u8>,
     /// The target window: Some(HP fraction) with a gauge, Some(None) without one; its gauge's eased value (+0x64).
@@ -717,6 +719,13 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                 text.push(TextSlot { what: "member name", x: rx, y: ry, align: 0 });
                 text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: 0 });
                 text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: 0 });
+            }
+            // FUN_10202110: the half-size hand (anc2s, 6 frames) anchored at the row's top-left.
+            if let Some((row, tint, frame)) = st.party_hand.filter(|h| h.0 == i)
+                && let Some(anc) = ui.lib("anc     anc2s")
+            {
+                let _ = row;
+                b.push_sprite(ui, anc, frame % 6, rx, ry, 1.0, 1.0, tint, 0);
             }
             // FUN_10201ff0: party leader windowps 71, alliance leader 70, at (-3, +10); both: the party mark at +3.
             match st.party_marks.get(i).copied().unwrap_or(0) & 3 {
