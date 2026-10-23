@@ -1662,6 +1662,10 @@ struct World {
     event_voices: bool,
     /// Looks set by event op 0xb6, for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
+    music_fades: Vec<(i32, i32)>,
+    /// The audio still changing music (event op 0x9a waits), as of the last frame.
+    music_changing: bool,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -2391,6 +2395,10 @@ impl App {
             if !event::active(w) {
                 w.event_voices = false;
             }
+            for (v, t) in w.music_fades.drain(..) {
+                a.music_fade(v, t);
+            }
+            w.music_changing = a.music_changing();
             a.max_se = if w.event_voices { 20 } else { self.cfg.tool("0029").clamp(1, 20) };
             // Interface sounds (targeting, menus, prompts).
             for id in w.sounds.drain(..) {
@@ -2629,6 +2637,8 @@ impl App {
                             area: AreaSwitch::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            music_fades: Vec::new(),
+                            music_changing: false,
                             typing: false,
                             log_focus: 0,
                             log_active: false,

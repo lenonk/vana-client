@@ -248,6 +248,18 @@ impl Audio {
         }
     }
 
+    /// Event ops 0x5d and 0x5c 0xa0 / 0xa1 (FUN_10037a30): the music fades to `vol` over `ticks`.
+    pub fn music_fade(&mut self, vol: i32, ticks: i32) {
+        self.cur_vol = vol;
+        let level = self.level(vol);
+        self.send(Cmd::BgmVolume { level, ticks: ticks.max(0) });
+    }
+
+    /// A music change is still under way (event op 0x9a waits for it).
+    pub fn music_changing(&self) -> bool {
+        self.task.is_some()
+    }
+
     pub fn ui(&mut self, s: Ui) {
         self.play_ui_se(s as u32);
     }
@@ -461,6 +473,15 @@ impl ZoneMusic {
         self.slots[..5].copy_from_slice(&music);
         self.slots[5] = 0x6f;
         self.ready = true;
+    }
+
+    /// Event op 0x5c (FUN_100b6e30): slot `slot` plays `id`, started at `vol` (0x7f, or the 0x80..0x87 forms' operand,
+    /// at most 0xff); any 0x5c makes the selector choose again.
+    pub fn set_slot_vol(&mut self, slot: u16, id: u16, vol: u16) {
+        if slot < 8 {
+            self.vols[slot as usize] = vol.min(0xff);
+        }
+        self.set_slot(slot, id);
     }
 
     /// 0x05F {u16 slot @4, u16 track @6} (handler 0x10098150).

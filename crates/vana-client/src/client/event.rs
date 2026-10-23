@@ -646,7 +646,18 @@ impl Host for LiveHost<'_> {
             // FUN_100b5070: sub 0..7 music slot = val@2; 0x80..0x87 the same with a volume.
             Effect::Op { op: 0x5c, sub: Some(sub), args, .. } if sub < 8 || (0x80..0x88).contains(&sub) => {
                 if let Some(Arg::Int(id)) = args.get(1) {
-                    self.w.music.set_slot((sub & 7) as u16, *id as u16);
+                    let vol = if sub >= 0x80 { Self::arg_int(&args, 2).unwrap_or(0x7f) } else { 0x7f };
+                    self.w.music.set_slot_vol((sub & 7) as u16, *id as u16, vol.clamp(0, 0xff) as u16);
+                }
+            }
+            Effect::Op { op: 0x5c, sub: Some(0xa0 | 0xa1), args, .. } => {
+                if let (Some(v), Some(t)) = (Self::arg_int(&args, 1), Self::arg_int(&args, 2)) {
+                    self.w.music_fades.push((v, t));
+                }
+            }
+            Effect::Op { op: 0x5d, args, .. } => {
+                if let (Some(v), Some(t)) = (Self::arg_int(&args, 0), Self::arg_int(&args, 1)) {
+                    self.w.music_fades.push((v, t));
                 }
             }
             // FUN_100b6880: the weather applies even with hour 0xff (the clock then stays); FUN_100b6920 restores.
@@ -793,6 +804,8 @@ impl Host for LiveHost<'_> {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(|a| (a.character.is_none() && self.w.models_loading.contains(&a.key)) || a.pending.is_some())
             }
+            // 0x9a: until the music change has loaded.
+            Busy::Op { op: 0x9a, .. } => self.w.music_changing,
             // Op 0xb6 sub 0x10: until the player's model is up.
             Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {
