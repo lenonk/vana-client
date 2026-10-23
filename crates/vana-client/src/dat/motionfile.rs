@@ -109,6 +109,29 @@ pub fn emote_motion(n: u32) -> Option<u32> {
     (0..0x7a).contains(&m).then_some(m as u32).or_else(|| (m >= 0x80).then_some(m as u32))
 }
 
+/// FUN_100a0b90's motion index for emote `n` with the packet's Param: sitting (status 0x2f) or in a chair (0x3f..0x53)
+/// only emotes 4..9, 13 and 37 move (tables 0x1035b7b8 / 0x1035b6f0: 64.. / 232..); else table 0x1035b880 with the
+/// computed forms: salute Param + 2 (nation), /hurray 0x48 + the main weapon's motion class (6 bare-handed), /bell
+/// Param + 0x68, /jobemote (Param & 1) + 0x88 + (Param >> 1) * 8, /aim 0xe0 + the ranged class. Err: /aim failed
+/// (Param 0xffff). Not done: /aim's ranged class (taken as 0).
+pub fn emote_index(n: u32, param: u16, status: u8, weapon_class: u8) -> Result<Option<u32>, ()> {
+    const SEATED: [u32; 8] = [4, 5, 6, 7, 8, 9, 13, 37];
+    if status == 0x2f || (0x3f..=0x53).contains(&status) {
+        let base = if status == 0x2f { 64 } else { 232 };
+        return Ok(SEATED.iter().position(|&e| e == n).map(|k| base + k as u32));
+    }
+    let Some(&m) = EMOTE_MOTION.get(n as usize) else { return Ok(None) };
+    Ok(match m {
+        0x7f => Some(param as u32 + 2),
+        0x7e => Some(0x48 + weapon_class as u32),
+        0x7c => Some(param as u32 + 0x68),
+        0x7b => Some((param as u32 & 1) + 0x88 + (param as u32 >> 1) * 8),
+        0x7a if param == 0xffff => return Err(()),
+        0x7a => Some(0xe0),
+        _ => emote_motion(n),
+    })
+}
+
 /// The files (state 0xc: FUN_100cfbc0(index >> 3)) and scheduler "em0" + (index & 7) (FUN_100d0ea0) of a motion.
 pub fn emote_files(pc: &PcMotion, motion: u32) -> (Vec<u32>, String) {
     let group = motion >> 3;
@@ -130,6 +153,18 @@ pub fn draw_scheduler(pc: &PcMotion, out: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FUN_100a0b90's forms: /wave 10; salute 2 + nation; /hurray bare-handed 0x4e; /jobemote WAR (Param 0) 0x88; /aim
+    /// without a ranged weapon fails; seated emotes from their own tables.
+    #[test]
+    fn emote_indices() {
+        assert_eq!(emote_index(8, 0, 0, 6), Ok(Some(10)));
+        assert_eq!(emote_index(2, 1, 0, 6), Ok(Some(3)));
+        assert_eq!(emote_index(43, 0, 0, 6), Ok(Some(0x4e)));
+        assert_eq!(emote_index(74, 0, 0, 6), Ok(Some(0x88)));
+        assert_eq!(emote_index(96, 0xffff, 0, 6), Err(()));
+        assert_eq!((emote_index(4, 0, 0x2f, 6), emote_index(37, 0, 0x40, 6), emote_index(10, 0, 0x2f, 6)), (Ok(Some(64)), Ok(Some(239)), Ok(None)));
+    }
 
     fn index() -> Option<DatIndex> {
         DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok()

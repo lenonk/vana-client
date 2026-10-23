@@ -109,21 +109,23 @@ impl Look {
     }
 }
 
-/// Op 0x6e (FUN_1009f200): emote `n` loads its files and plays "em0x" (states 0xc, 0xd, 0xb). PC looks only;
-/// the standard-model table (0x10352414 by FUN_10082d70) is not traced.
-pub fn emote(a: &mut Actor, n: u32) {
+/// FUN_100a0b60 / FUN_100a0b90 (op 0x6e, s2c 0x05A): emote `n` with Param loads its files and plays "em0x" (states
+/// 0xc, 0xd, 0xb). PC looks only; the standard-model table (0x10352414 by FUN_10082d70) is not traced. Err: /aim
+/// failed.
+pub fn emote(a: &mut Actor, n: u32, param: u16, status: u8, weapon_class: u8) -> Result<(), ()> {
     let Some(pc) = a.character.as_ref().and_then(|c| c.pc) else {
         log::info!("emote {n}: not a PC look");
-        return;
+        return Ok(());
     };
-    let Some(m) = crate::dat::motionfile::emote_motion(n) else {
+    let Some(m) = crate::dat::motionfile::emote_index(n, param, status, weapon_class)? else {
         log::info!("emote {n}: no motion");
-        return;
+        return Ok(());
     };
     let (files, name) = crate::dat::motionfile::emote_files(&pc, m);
     log::info!("emote {n}: motion {m}, files {files:?}, {name}");
     a.pending = Some(Pending { files, name: name.clone(), kind: Kind::Emote });
     a.emote = Some(name);
+    Ok(())
 }
 
 /// Actor +0x1b8 is nonzero: an emote loads or plays (0x6e / 0x99 wait on it).

@@ -17,6 +17,7 @@ const SLOT_MOB_SKILLS: usize = 0x66; // kind 7: {16} ids from 0x100
 const SLOT_SPELLS: usize = 0x5a; // FUN_10221f40
 const SLOT_ABILITIES: usize = 0x5c; // FUN_10219c20
 const SLOT_SYSTEM: usize = 0x65; // kind 6: s2c 0x053 (FUN_10094d20(6, n))
+const SLOT_EMOTES: usize = 0x62; // s2c 0x05A's lines (LAB_100a06e0)
 /// Status names (grammar kind 0x13, FUN_1021d5f0); file inferred from content, slot not traced.
 const STATUS_FILE: u32 = 55725;
 
@@ -47,6 +48,8 @@ pub struct Who {
     pub named: bool,
     /// u32 @0x24 bit 30 (FUN_10089320): plural verb forms.
     pub plural: bool,
+    /// 0x00D u32 @0x20 bit 15 clear (our own: the race): [his/her] (7f 90 / 91).
+    pub female: bool,
 }
 
 /// What the codes read: the two actors, our own name and work[5] (message object +0xc50).
@@ -77,6 +80,8 @@ pub struct BattleText {
     /// File 7031 (language slot 0x65): s2c 0x053 system messages; group 9 (file 55648) client messages.
     system: Option<Dialog>,
     group7: Option<Messages>,
+    /// Emote lines (base slot 0x62, file 7025): entry emote * 2 with a target, + 1 without.
+    emotes: Option<Dialog>,
     group9: Option<Messages>,
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
@@ -157,6 +162,7 @@ impl BattleText {
             items: super::items::Items::load(index, super::items::Lang::En).ok(),
             system: dialog(SLOT_SYSTEM).map_err(|e| log::warn!("system messages: {e:#}")).ok(),
             group7: super::msg::group_file(ffximain, 1, 7).and_then(msgs),
+            emotes: dialog(SLOT_EMOTES).map_err(|e| log::warn!("emote messages: {e:#}")).ok(),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
             modes,
             mode_colours,
@@ -226,6 +232,12 @@ impl BattleText {
     }
 
     /// A 0x053 system message expanded for `ctx`.
+    /// An emote's log line (LAB_100a06e0): entry emote * 2, + 1 without a target.
+    pub fn emote(&self, entry: u32, ctx: &Ctx) -> Option<Line> {
+        let raw = self.emotes.as_ref()?.raw(entry)?;
+        Some(self.expand_raw(&raw, ctx))
+    }
+
     pub fn system(&self, id: u16, ctx: &Ctx) -> Option<Line> {
         let raw = self.system.as_ref()?.raw(id as u32)?;
         Some(self.expand_raw(&raw, ctx))
@@ -353,6 +365,9 @@ impl BattleText {
                         let k = match a {
                             0x86 => (work(n) != 1) as usize,
                             0x87 => who(n).is_some_and(|w| w.plural) as usize,
+                            // No operand: 90 the caster, 91 the target.
+                            0x90 => who(0).is_some_and(|w| w.female) as usize,
+                            0x91 => who(1).is_some_and(|w| w.female) as usize,
                             0x88 => match who(n) {
                                 Some(w) if w.pc => 99,
                                 Some(w) => w.named as usize,
@@ -416,6 +431,18 @@ mod tests {
         Some(Who { name: name.into(), ..Default::default() })
     }
 
+    /// File 7025: /wave is entries 16 (a target) and 17; /no takes the caster's [his/her].
+    #[test]
+    fn emote_lines() {
+        let Some(bt) = load() else { return };
+        let me = |female| Some(Who { name: "Lnxtest".into(), pc: true, female, ..Default::default() });
+        let ctx = Ctx { actor: me(false), target: Some(Who { name: "Rahal".into(), named: true, ..Default::default() }), ..Default::default() };
+        assert_eq!(bt.emote(17, &ctx).unwrap().lines, ["Lnxtest waves."]);
+        assert_eq!(bt.emote(16, &ctx).unwrap().lines, ["Lnxtest waves to Rahal."]);
+        let line = |female| bt.emote(13, &Ctx { actor: me(female), ..Default::default() }).unwrap().lines.join(" ");
+        assert!(line(false).contains("his") && line(true).contains("her"));
+    }
+
     fn pc(name: &str) -> Option<Who> {
         Some(Who { name: name.into(), pc: true, ..Default::default() })
     }
@@ -432,7 +459,7 @@ mod tests {
         assert_eq!(b.expand(15, &back).unwrap().lines, ["The Wild Rabbit misses Tuxedo."]);
         assert_eq!(b.expand(6, &ctx).unwrap().lines, ["Tuxedo defeats the Wild Rabbit."]);
         // Named (proper noun) and plural monsters: "Ding Bats hit".
-        let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, pc: false }), target: pc("Tuxedo"), ..ctx.clone() };
+        let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, pc: false, female: false }), target: pc("Tuxedo"), ..ctx.clone() };
         assert_eq!(b.expand(1, &bats).unwrap().lines, ["Ding Bats hit Tuxedo for 5 points of damage."]);
         // Experience (0x02D work[0]) and level up, which sets mode 0x79 with 1f 'y'.
         let exp = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [50, 0, 0, 0, 0], ..Default::default() };

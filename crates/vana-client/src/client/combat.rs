@@ -66,9 +66,53 @@ pub(super) struct Pending {
 
 fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
-        return Some(Who { name: w.name.clone(), pc: true, ..Default::default() });
+        // Our own gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
+        return Some(Who { name: w.name.clone(), pc: true, female: matches!(w.my_race, 2 | 4 | 6 | 7), ..Default::default() });
     }
-    w.entities.get(&id).map(|e| Who { name: e.name.clone(), pc: id < 0x0100_0000, named: e.named, plural: e.plural })
+    w.entities.get(&id).map(|e| Who { name: e.name.clone(), pc: id < 0x0100_0000, named: e.named, plural: e.plural, female: e.female })
+}
+
+/// s2c 0x05A (LAB_100a06e0): dropped for emote 0x61+ or a caster / target not here. The caster plays it (FUN_100a0b90)
+/// unless busy with one, not idle / sitting / seated, or Mode 1; /aim failing prints group 9 0x66 instead. The line
+/// (file 7025, emote * 2 + no target) in mode 7 for our own untargeted emote, else 0x0f, unless Mode 2 or the Emotes
+/// filter (config 0x32 bit 3). Not done: the block list, the pet copying the motion, trusts copying it.
+pub(super) fn on_emote(w: &mut World, caster: u32, target: u32, emote: u16, param: u16, mode: u8) {
+    let here = |id: u32| id == w.my_id || w.entities.contains_key(&id);
+    if emote >= 0x61 || !here(caster) || (target != 0 && !here(target)) {
+        return;
+    }
+    let status = if caster == w.my_id { w.my_motion.status } else { w.entities.get(&caster).map_or(0, |e| e.motion.status) };
+    let class = if caster == w.my_id { main_weapon_class(w) } else { 6 };
+    let mut failed = false;
+    if mode != 1
+        && matches!(status, 0 | 4 | 0x2f | 0x30 | 0x3f..=0x53)
+        && let Some(a) = w.actors.get_mut(&caster).filter(|a| !actmotion::emoting(a) && a.pending.is_none() && a.character.is_some())
+    {
+        failed = actmotion::emote(a, emote as u32, param, status, class).is_err();
+    }
+    let Some(bt) = w.battle.clone() else { return };
+    if failed {
+        let colour = bt.colour_in(0x79, &w.game);
+        w.chat.push_colour(bt.group9(0x66).unwrap_or_default(), colour);
+        return;
+    }
+    if mode > 1 || w.game.get(0x32) & 8 != 0 {
+        return;
+    }
+    let ctx = Ctx { actor: who(w, caster), target: (target != 0).then(|| who(w, target)).flatten(), me: w.name.clone(), work: [0; 5] };
+    let entry = emote as u32 * 2 + (target == 0) as u32;
+    let Some(line) = bt.emote(entry, &ctx) else { return };
+    let colour = bt.colour_in(if target == 0 && caster == w.my_id { 7 } else { 0x0f }, &w.game);
+    for l in line.lines.into_iter().filter(|l| !l.is_empty()) {
+        w.chat.push_colour(l, colour);
+    }
+}
+
+/// The main weapon's motion class (item record byte 0x28, read by /hurray); 6 bare-handed.
+fn main_weapon_class(w: &World) -> u8 {
+    let Some((c, i)) = w.inv.equip[0] else { return 6 };
+    let Some(&(id, _)) = w.inv.slots.get(&(c, i)) else { return 6 };
+    w.names.as_ref().and_then(|n| n.items.record(id as u32)).and_then(|(_, r)| r.get(0x28).copied()).unwrap_or(6)
 }
 
 /// FUN_1009cda0 without party or alliance (we are never in one yet); a missing actor counts as others.

@@ -38,6 +38,8 @@ pub struct EntityUpdate {
     pub mob: Option<bool>,
     /// Name-colour marks (mask 0x04), FUN_1008db40's inputs.
     pub marks: Option<Marks>,
+    /// 0x00D mask 0x04, u32 @0x20 bit 15: male (the emote lines' [his/her]).
+    pub male: Option<bool>,
     /// u32 @0x24 bits 29 (named: no article) and 30 (plural verbs), read by the 0x00D/0x00E handlers.
     pub name_flags: Option<(bool, bool)>,
     /// u16 @0x18 & 0x1fff, the movement counter (FUN_1008b610), and whether y is snapped to the ground:
@@ -194,6 +196,8 @@ pub enum NetEvent {
     PartyTable(Vec<super::party::TableEntry>),
     PartyList(super::party::ListUpdate, bool),
     PartyAttr(super::party::AttrUpdate),
+    /// s2c 0x05A MOTIONMES (LAB_100a06e0): caster @4, target @8 (0 none), emote u16 @0x10, Param @0x12, Mode @0x16.
+    Emote { caster: u32, target: u32, emote: u16, param: u16, mode: u8 },
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
     ResOffer { id: u32, kind: u16 },
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
@@ -424,6 +428,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         npc: (kind == EntityKind::Npc && flags & 0x20 == 0 && p.data.len() >= 0x30 + 20).then(|| crate::dat::npc::parse_look(&p.data[0x30..0x44]).ok()).flatten(),
         claim: (kind == EntityKind::Npc && flags & 0x02 != 0).then(|| p.u32(0x2C)),
         mob: (kind == EntityKind::Npc && flags & 7 != 0).then(|| p.u8(0x20) & 1 != 0),
+        male: (kind == EntityKind::Player && flags & 0x04 != 0).then(|| p.u32(0x20) >> 15 & 1 != 0),
         marks: (flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| {
             let pc = kind == EntityKind::Player;
             Marks {
@@ -559,6 +564,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
                         tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
+                    0x05A => tx.send(NetEvent::Emote { caster: p.u32(4), target: p.u32(8), emote: p.u16(0x10), param: p.u16(0x12), mode: p.u8(0x16) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,

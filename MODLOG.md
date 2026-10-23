@@ -4025,3 +4025,19 @@ resynus / comyn 0x60, 0x01A 0x0D / 0x13), camp mode, mp_dead.
   reaction) per record, each starting when the previous swing's call returns. Ours (combat::on_action) splits the
   round into one-record actions, plays the first and queues the rest (World::rounds) to start when the attacker's swing
   one-shot ends; a new round flushes a queued remainder at once. Not seen live yet (no double attack in the test fight).
+
+## Emotes: s2c 0x05A (2026-10-23)
+
+From scratchpad emote/SPEC.md. Handler LAB_100a06e0 (not a function in all.c; all.asm ~172896): caster @4, target @8
+(0 none), indices @0xc / @0xe, emote u16 @0x10, Param @0x12, Mode @0x16, five trust ids @0x18 / indices @0x2c.
+Dropped for emote 0x61+, a caster / target not in the actor table, or a caster on the block list.
+- Motion (FUN_100a0b90, op 0x6e's wrapper FUN_100a0b60 passes val >> 8 as Param): sitting (0x2f) / seated
+  (0x3f..0x53) only emotes 4..9, 13, 37 move (tables 0x1035b7b8 / 0x1035b6f0: 64.. / 232..); else table 0x1035b880
+  with the forms salute Param + 2 (nation), /hurray 0x48 + the main weapon's motion class (item record byte 0x28; 6
+  bare-handed), /bell Param + 0x68, /jobemote (Param & 1) + 0x88 + (Param >> 1) * 8, /aim 0xe0 + the ranged class
+  (Param 0xffff fails: group 9 0x66 in mode 0x79 instead of the line). Skipped (not queued) while the caster emotes,
+  isn't idle / sitting / seated, or Mode 1. The pet copies it; trusts copy unless config 0x99 bit 9.
+- Line: file 7025 (base slot 0x62, dialog format), entry emote * 2 with a target, + 1 without; 7f 90 / 91 [his/her]
+  of the caster / target (0x00D u32 @0x20 bit 15 = male; no operand byte), 7f 88 the article. Mode 7 for our own
+  untargeted emote, else 0x0f (both config 0x20's colour); not with Mode 2 or the Emotes filter (config 0x32 bit 3).
+- Ours: the above but the block list, pet / trust copies, /aim's ranged class (0), our gender from the race (inf).

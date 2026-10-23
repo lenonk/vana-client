@@ -804,7 +804,8 @@ impl Host for LiveHost<'_> {
                 if let (Some(who), Some(n)) = (self.arg_actor(&args, 0), Self::arg_int(&args, 1))
                     && let Some(a) = self.w.actors.get_mut(&who)
                 {
-                    super::actmotion::emote(a, n as u32 & 0xff);
+                    // FUN_100a0b60: the high byte is Param (flag 1).
+                    let _ = super::actmotion::emote(a, n as u32 & 0xff, (n as u32 >> 8) as u16, 0, 6);
                 }
             }
             // FUN_100b08e0(1, zone, map, flag, 0) opens the map; FUN_100b0dd0 closes it.

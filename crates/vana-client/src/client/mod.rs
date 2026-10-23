@@ -159,8 +159,9 @@ struct Entity {
     face: u16,
     /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
     spawn_fx: bool,
-    /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships).
+    /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
     marks: net::Marks,
+    female: bool,
     sub_kind: u8,
 }
 
@@ -616,6 +617,7 @@ fn self_entity(w: &World) -> Entity {
         face: 0,
         spawn_fx: false,
         marks: net::Marks::default(),
+        female: false,
         sub_kind: 0,
     }
 }
@@ -1813,6 +1815,7 @@ fn place_mogdoor(w: &mut World) {
             face: 0,
             spawn_fx: false,
             marks: net::Marks::default(),
+            female: false,
             sub_kind: 3,
         },
     );
@@ -3841,6 +3844,7 @@ impl App {
                         face: 0,
                         spawn_fx: false,
                         marks: net::Marks::default(),
+                        female: false,
                         sub_kind: 0,
                     });
                     if e.mask & 7 != 0 {
@@ -3873,6 +3877,9 @@ impl App {
                     }
                     if let Some(m) = e.marks {
                         entry.marks = m;
+                    }
+                    if let Some(m) = e.male {
+                        entry.female = !m;
                     }
                     if let Some((named, plural)) = e.name_flags {
                         (entry.named, entry.plural) = (named, plural);
@@ -4059,6 +4066,7 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::Emote { caster, target, emote, param, mode } => combat::on_emote(world, caster, target, emote, param, mode),
                 NetEvent::AbilityRecasts(timers) => {
                     world.recasts_seen = true;
                     let now = Instant::now();
