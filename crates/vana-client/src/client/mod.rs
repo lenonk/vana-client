@@ -1181,7 +1181,43 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let party_slots = world.party.slots();
     let rows: Vec<Option<party::Member>> = std::iter::once(None).chain(party_slots.slots[1..6].iter().take_while(|m| m.is_some()).cloned()).collect();
     let mine = world.vitals.map(|v| (v.3 as f32 / 100.0, v.4 as f32 / 100.0));
+    // FUN_101cad00 per draw at retail's 30 fps: a += trunc((t - a) * 0.15), or a = t once that is 0. A row whose member
+    // changed starts from 0 (its bars sweep up); a new target starts at its HP.
+    let ids: Vec<(u32, u8, u8)> = rows.iter().map(|m| match m {
+        None => (world.my_id, world.vitals.map_or(100, |v| v.3), world.vitals.map_or(100, |v| v.4)),
+        Some(m) => (m.id, m.hpp, m.mpp),
+    }).collect();
+    world.party_gauges.resize(ids.len(), (0, 0, 0));
+    for (g, id) in world.party_gauges.iter_mut().zip(&ids) {
+        if g.0 != id.0 {
+            *g = (id.0, 0, 0);
+        }
+    }
+    let tgt = target.map(|t| (world.target.unwrap_or(0), t.hpp));
+    if let Some((id, hpp)) = tgt
+        && world.target_gauge.0 != id
+    {
+        world.target_gauge = (id, hpp);
+    }
+    let now = Instant::now();
+    world.gauge_acc += world.gauge_last.map_or(0.0, |t| (now - t).as_secs_f32()).min(1.0);
+    world.gauge_last = Some(now);
+    let ease = |a: u8, t: u8| -> u8 {
+        let d = ((t as f32 - a as f32) * 0.15) as i32;
+        if d == 0 { t } else { (a as i32 + d) as u8 }
+    };
+    while world.gauge_acc >= 1.0 / 30.0 {
+        world.gauge_acc -= 1.0 / 30.0;
+        for (g, id) in world.party_gauges.iter_mut().zip(&ids) {
+            (g.1, g.2) = (ease(g.1, id.1), ease(g.2, id.2));
+        }
+        if let Some((_, hpp)) = tgt {
+            world.target_gauge.1 = ease(world.target_gauge.1, hpp);
+        }
+    }
     let st = crate::render::screens::HudState {
+        party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
+        target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
         party: rows.iter().filter_map(|m| match m {
             None => mine,
             Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
@@ -2232,6 +2268,12 @@ struct World {
     /// The party / alliance roster (client/party.rs) and whether its names were asked for (c2s 0x076).
     party: party::Roster,
     party_asked: bool,
+    /// The gauges' eased values (FUN_101cad00, a 30 Hz step): per party row (member id, HP, MP), the target's (id,
+    /// HP), and the unstepped time.
+    party_gauges: Vec<(u32, u8, u8)>,
+    target_gauge: (u32, u8),
+    gauge_acc: f32,
+    gauge_last: Option<Instant>,
     /// The macro files and runner (client/macros.rs), loaded at each zone-in.
     macros: Option<macros::Macros>,
     /// The macro palette controller (DAT_1066279c): +0xc open (0, 1 Ctrl, 2 Alt), +0xd pending, +0x10 the hold's
@@ -3305,6 +3347,10 @@ impl App {
                             myroom: None,
                             room_flag: false,
                             party: Default::default(),
+                            party_gauges: Vec::new(),
+                            target_gauge: (0, 0),
+                            gauge_acc: 0.0,
+                            gauge_last: None,
                             party_asked: false,
                             macros: None,
                             palette: (0, 0, 0, [0, 0]),

@@ -446,16 +446,34 @@ pub fn push_gauge(b: &mut UiBatch, ui: &UiFile, lib: &SpriteLib, x: f32, y: f32,
     b.push_sprite(ui, lib, frame, x, y, 1.0, 1.0, if f == 0.0 { 0x3050_5050 } else { 0x8080_8080 }, 0);
 }
 
+/// FUN_101caf00 -> FUN_101cad00: the fill to min(value, eased), a ghost (0x30808080) from there to the max, the frame
+/// dimmed 0x30505050 when the fill is empty.
+#[allow(clippy::too_many_arguments)]
+pub fn push_gauge_eased(b: &mut UiBatch, ui: &UiFile, lib: &SpriteLib, x: f32, y: f32, frame: usize, fill: usize, value: f32, anim: f32) {
+    let (lo, hi) = (value.min(anim).clamp(0.0, 1.0), value.max(anim).clamp(0.0, 1.0));
+    if lo > 0.0 {
+        b.push_sprite(ui, lib, fill, x + 4.0, y + 1.0, lo, 1.0, 0x8080_8080, 8);
+    }
+    if hi > lo {
+        let w = lib.sprites.get(fill).and_then(|s| s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[0])).max()).unwrap_or(0) as f32;
+        b.push_sprite(ui, lib, fill, x + 4.0 + w * lo, y + 1.0, hi - lo, 1.0, 0x3080_8080, 8);
+    }
+    b.push_sprite(ui, lib, frame, x, y, 1.0, 1.0, if lo == 0.0 { 0x3050_5050 } else { 0x8080_8080 }, 0);
+}
+
 pub struct HudState {
-    /// HP / MP fraction per party member (first is the player).
+    /// HP / MP fraction per party member (first is the player), and the gauges' eased values (FUN_101cad00's anim
+    /// bytes, row +0x78 / +0x79; missing = the value itself).
     pub party: Vec<(f32, f32)>,
+    pub party_anim: Vec<(f32, f32)>,
     /// The party window ("menu    ptw0" solo, else "ptwN"), and per row: in another zone (no gauges), and marks
     /// (bit 0 party leader, bit 1 alliance leader).
     pub party_window: String,
     pub party_away: Vec<bool>,
     pub party_marks: Vec<u8>,
-    /// The target window: Some(HP fraction) with a gauge, Some(None) without one.
+    /// The target window: Some(HP fraction) with a gauge, Some(None) without one; its gauge's eased value (+0x64).
     pub target: Option<Option<f32>>,
+    pub target_anim: Option<f32>,
     /// Highlighted main menu item (child index from 0), None = menu closed.
     pub menu_selected: Option<usize>,
     /// Main menu page: 0 commands (menuwind), 1 social (socialme); the arrows swap them.
@@ -679,7 +697,7 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
         // FUN_10149900: name at (+5, +6), HP gauge at (+0x1c, +0x1d) unless the actor hides it.
         text.push(TextSlot { what: "target name", x: x + 5.0, y: y + 6.0, align: 0 });
         if let Some(hp) = hp {
-            push_gauge(&mut b, ui, wps, x + 28.0, y + 29.0, GAUGE_HP.0, GAUGE_HP.1, hp);
+            push_gauge_eased(&mut b, ui, wps, x + 28.0, y + 29.0, GAUGE_HP.0, GAUGE_HP.1, hp, st.target_anim.unwrap_or(hp));
         }
     }
     if let Some(m) = ui.menu(&st.party_window) {
@@ -693,8 +711,9 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
             if st.party_away.get(i).copied().unwrap_or(false) {
                 text.push(TextSlot { what: "member away", x: rx, y: ry, align: 0 });
             } else {
-                push_gauge(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, hp);
-                push_gauge(&mut b, ui, wps, rx + 49.0, ry + 17.0, GAUGE_MP.0, GAUGE_MP.1, mp);
+                let (ha, ma) = st.party_anim.get(i).copied().unwrap_or((hp, mp));
+                push_gauge_eased(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, hp, ha);
+                push_gauge_eased(&mut b, ui, wps, rx + 49.0, ry + 17.0, GAUGE_MP.0, GAUGE_MP.1, mp, ma);
                 text.push(TextSlot { what: "member name", x: rx, y: ry, align: 0 });
                 text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: 0 });
                 text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: 0 });

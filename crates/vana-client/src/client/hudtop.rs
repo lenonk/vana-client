@@ -336,6 +336,8 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     let st = HudState {
+        party_anim: Vec::new(),
+        target_anim: None,
         party: vec![(hpp as f32 / 100.0, 0.0)],
         party_window: "menu    ptw0".into(),
         party_away: Vec::new(),
