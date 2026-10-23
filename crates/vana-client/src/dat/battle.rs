@@ -82,6 +82,8 @@ pub struct BattleText {
     group7: Option<Messages>,
     /// Emote lines (base slot 0x62, file 7025): entry emote * 2 with a target, + 1 without.
     emotes: Option<Dialog>,
+    /// Group 0x17: equipment slot names for /equip ("main" .. "feet").
+    slot_names: Option<Messages>,
     group9: Option<Messages>,
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
@@ -163,6 +165,7 @@ impl BattleText {
             system: dialog(SLOT_SYSTEM).map_err(|e| log::warn!("system messages: {e:#}")).ok(),
             group7: super::msg::group_file(ffximain, 1, 7).and_then(msgs),
             emotes: dialog(SLOT_EMOTES).map_err(|e| log::warn!("emote messages: {e:#}")).ok(),
+            slot_names: super::msg::group_file(ffximain, 1, 0x17).and_then(msgs),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
             modes,
             mode_colours,
@@ -247,6 +250,11 @@ impl BattleText {
     /// Group 7: command refusals (FUN_10129d90 / FUN_10129e30).
     pub fn group7(&self, id: usize) -> Option<String> {
         self.group7.as_ref()?.get(id)
+    }
+
+    /// Group 0x17 entry `id` (an /equip slot name).
+    pub fn slot_name(&self, id: usize) -> Option<String> {
+        self.slot_names.as_ref()?.get(id)
     }
 
     pub fn group9(&self, id: usize) -> Option<String> {

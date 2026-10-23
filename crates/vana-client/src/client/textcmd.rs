@@ -45,6 +45,8 @@ mod id {
     pub const ATTACKOFF: u16 = 0x1e;
     pub const ASSIST: u16 = 0x20;
     pub const HELP: u16 = 0x21;
+    pub const ITEM: u16 = 0x22;
+    pub const EQUIP: u16 = 0x24;
     pub const MAGIC: u16 = 0x25;
     pub const WS: u16 = 0x26;
     pub const NINJUTSU: u16 = 0x29;
@@ -638,6 +640,8 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::MAGIC | id::NINJUTSU | id::SONG => magic(w, cid, args, mode),
+        id::EQUIP => equip(w, args),
+        id::ITEM => item(w, args, mode),
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
         c if is_emote(c) => emote(w, c, args, mode),
@@ -737,6 +741,98 @@ fn attack(w: &mut World, args: &[String], mode: Mode) -> Done {
             }
         }
     }
+    Ok(())
+}
+
+/// Table 0x1036f7a8 {group, id, slot}, group 0x17's rows: slot name id -> equipment slot. (Group 0x18's alternate
+/// spellings, ids 0..0x13, have no file mapped in ours.)
+const SLOT_OF: [u8; 16] = [0, 1, 2, 3, 4, 9, 11, 12, 5, 6, 13, 14, 15, 10, 7, 8];
+
+/// The bags /equip looks in, and its third argument's choices ("0" inventory, "1" wardrobe 8, "2".."8" 10..16).
+const EQUIP_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
+
+/// A bag slot holding an item named `name` (record name, case-insensitive), in the bags' order.
+fn find_item(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
+    let info = w.item_info.as_ref()?;
+    bags.iter().find_map(|&bag| w.inv.slots.iter().filter(|((c, i), _)| *c == bag && *i != 0).find(|(_, (id, _))| info.item(*id).is_some_and(|it| it.name.eq_ignore_ascii_case(name))).map(|((c, i), (id, _))| (*c, *i, *id)))
+}
+
+fn log9(w: &mut World, id: usize) {
+    if let Some(bt) = w.battle.clone() {
+        let colour = bt.colour_in(0x79, &w.game);
+        w.chat.push_colour(bt.group9(id).unwrap_or_default(), colour);
+    }
+}
+
+/// FUN_1007b390: /equip slot (unequip, group 9 0x44 "Equipment removed.") or /equip slot item [bag] (c2s 0x050, 0x43
+/// "Equipment changed."); gate 0x46; already worn: nothing. Not done: the client's job / Dual Wield checks (group 7
+/// 0x8b / 0x98 / 0x99, the server refuses those too), the equipment-message setting.
+fn equip(w: &mut World, args: &[String]) -> Done {
+    if !status_gate(w, 0x46) {
+        return Ok(());
+    }
+    let bt = w.battle.clone().ok_or(())?;
+    let want = args.get(1).ok_or(())?;
+    let k = (0..16).find(|&k| bt.slot_name(k).is_some_and(|n| n.eq_ignore_ascii_case(want))).ok_or(())?;
+    let slot = SLOT_OF[k];
+    let Some(name) = args.get(2) else {
+        if let Some((c, i)) = w.inv.equip[slot as usize] {
+            let name = w.inv.slots.get(&(c, i)).and_then(|(id, _)| w.item_info.as_ref()?.item(*id)).map(|it| it.name.clone());
+            log::info!("/equip: removing {name:?} from slot {slot}");
+            send(w, NetCommand::Equip { index: 0, slot, container: c });
+            log9(w, 0x44);
+        }
+        return Ok(());
+    };
+    let bags: Vec<u8> = match args.get(3).map(String::as_str) {
+        None => EQUIP_BAGS.to_vec(),
+        Some(b) if b.len() == 1 && b.as_bytes()[0].is_ascii_digit() && b.as_bytes()[0] <= b'8' => vec![EQUIP_BAGS[(b.as_bytes()[0] - b'0') as usize]],
+        Some(_) => return Err(()),
+    };
+    let Some((bag, index, _)) = find_item(w, name, &bags) else { return Ok(()) };
+    if w.inv.equip[slot as usize] == Some((bag, index)) {
+        return Ok(());
+    }
+    send(w, NetCommand::Equip { index, slot, container: bag });
+    log9(w, 0x43);
+    Ok(())
+}
+
+/// FUN_1007adc0: /item name target, from the temporary bag, the inventory, then the wardrobes; the target is required.
+/// An item that isn't usable given to an NPC is a trade (c2s 0x036, inventory only), else c2s 0x037 {target, 0,
+/// ActIndex, slot, bag}, with the cast bar for an item with a use time (mode 1, its byte x 20).
+fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
+    if !status_gate(w, 0x7f) {
+        return Ok(());
+    }
+    let name = args.get(1).ok_or(())?;
+    let (bag, slot, id) = find_item(w, name, &[3, 0, 8, 10, 11, 12, 13, 14, 15, 16]).ok_or(())?;
+    let t = resolve(w, args.get(2).map(String::as_str), false, false, mode).ok_or(())?;
+    let it = w.item_info.as_ref().and_then(|i| i.item(id)).ok_or(())?;
+    let usable = it.targets != 0;
+    if !usable && t.0 >> 24 == 1 {
+        if bag != 0 {
+            return Ok(());
+        }
+        let mut b = vec![0u8; 0x3c];
+        b[0..4].copy_from_slice(&t.0.to_le_bytes());
+        b[4..8].copy_from_slice(&1u32.to_le_bytes());
+        b[0x2c] = slot;
+        b[0x36..0x38].copy_from_slice(&t.1.to_le_bytes());
+        b[0x38] = 1;
+        send(w, NetCommand::Packet { id: 0x036, body: b });
+        return Ok(());
+    }
+    if it.cast_time > 0 {
+        let total = it.cast_time as f32 * 20.0;
+        w.cast_bar = Some((total, total));
+    }
+    let mut b = vec![0u8; 16];
+    b[0..4].copy_from_slice(&t.0.to_le_bytes());
+    b[8..10].copy_from_slice(&t.1.to_le_bytes());
+    b[10] = slot;
+    b[12..16].copy_from_slice(&(bag as u32).to_le_bytes());
+    send(w, NetCommand::Packet { id: 0x037, body: b });
     Ok(())
 }
 
