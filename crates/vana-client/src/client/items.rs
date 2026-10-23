@@ -914,6 +914,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 }
             }
             let list = ItemList { rows, scroll: *scroll, cursor: *cursor };
+            if !*direct && sub.is_none() && sort.is_none() {
+                draw_count(gu, shown.len(), w.inv.sizes[INVENTORY as usize], sw, sh);
+            }
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let (b, ui, style, font) = gu.parts();
             if let Some(m) = ui.menu("menu    inventor") {
@@ -1558,6 +1561,11 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
     let ilist = ItemList { rows: tinted(&inv, false), scroll, cursor };
     upload_icons(gu, info, blist.visible().iter().chain(ilist.visible()).map(|r| r.id));
     let free = b.qty.is_none() && b.sortw.is_none() && b.stora.is_none();
+    // FUN_101dcb40 for the bank side; the inventory side's own list draws it the same way (inferred).
+    if free {
+        let (n, c) = if b.on_bank { (banks.len(), b.bank) } else { (inv.len(), b.side) };
+        draw_count(gu, n, w.inv.sizes[c as usize], sw, sh);
+    }
     let (bt, ui, style, font) = gu.parts();
     if let Some(m) = ui.menu("menu    bank") {
         push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank);
@@ -1609,6 +1617,18 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         }
     }
     rects
+}
+
+/// FUN_101cb590: "items/size" at titlewin's right edge while an item list is focused: "/" at (x1 - 0x16, y0 + 8), the
+/// count right-aligned at (x1 - 0x13, y0 + 4), the size right-aligned at (x1 - 1, y1 - 0x10), all 0x80808080.
+/// Retail takes temporary items and a few table counts off (FUN_101f2740 tail, not traced); ours counts the rows.
+fn draw_count(gu: &mut GameUi, n: usize, size: u8, sw: f32, sh: f32) {
+    let Some([x0, y0, w, h]) = gu.window_rect("menu    titlewin", sw, sh) else { return };
+    let (x1, y1) = (x0 + w, y0 + h);
+    let white = 0x8080_8080;
+    gu.shape_text("/", x1 - 22.0, y0 + 8.0, white, false);
+    gu.shape_text(&n.to_string(), x1 - 19.0, y0 + 4.0, white, true);
+    gu.shape_text(&(size.saturating_sub(1)).to_string(), x1 - 1.0, y1 - 16.0, white, true);
 }
 
 /// Mouse on the item list: hover moves the cursor, a click on the highlighted row acts as Enter.

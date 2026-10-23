@@ -4583,3 +4583,9 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   written by the close hooks FUN_1022c990 / FUN_102243d0): the list reopens on the remembered row (scrolled into
   view: inferred). Ours records it as the cursor moves. Live: Ctrl+M, three rows down, Escape, Ctrl+M: back on the
   fourth row; the Manual order from the earlier session came back from mix.dat (written at logout).
+
+- The item count (FUN_101cb590, from the main list\x27s update FUN_101f2740 tail and the bank\x27s FUN_101dcb40): while an
+  item list is focused, titlewin\x27s right edge shows "items/size": "/" at (x1 - 0x16, y0 + 8), the count
+  right-aligned at (x1 - 0x13, y0 + 4), the size (ItemNum - 1) right-aligned at (x1 - 1, y1 - 0x10), 0x80808080
+  (Japanese: x1 - 0x1c / 0x1e / 6). Retail takes temporary items and a few table counts off the main list\x27s count
+  (not traced); ours counts the rows. Live: "11/30" in Items, "0/80" in the Mog Case.
