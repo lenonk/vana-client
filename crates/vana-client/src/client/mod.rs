@@ -2960,11 +2960,15 @@ impl App {
                         }
                         w.ground = Some(l.ground);
                         w.sub.current = Some(id);
+                        doors::reapply(w);
                         if !from_event {
                             let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: id as u16 });
                         }
                     }
-                    Err(e) => log::warn!("sub-area {id}: {e:#}"),
+                    Err(e) => {
+                        log::warn!("sub-area {id}: {e:#}");
+                        doors::reapply(w);
+                    }
                 }
             }
             Task::AreaLoaded(area, result) => {
@@ -3074,6 +3078,7 @@ impl App {
                     }
                     w.ground = Some(home);
                 }
+                doors::reapply(w);
                 (w.sub.current, w.sub.weather) = (None, None);
                 let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: 0 });
             }
@@ -3081,6 +3086,10 @@ impl App {
                 let Some(zone_id) = w.zone else { return };
                 log::info!("sub-area {id} loading (zone {zone_id})");
                 w.sub.loading = Some((id, from_event));
+                // FUN_10176dd0(0): doors are solid while it loads.
+                if let Some(g) = &w.ground {
+                    g.close_all_doors();
+                }
                 let (collision, keys, areas) = (w.sub.zone_collision.clone(), w.sub.zone_keys.clone(), w.sub.zone_areas.clone());
                 match self.game_data() {
                     Ok((index, zkeys)) => {

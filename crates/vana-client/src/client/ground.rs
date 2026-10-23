@@ -245,6 +245,11 @@ impl Ground {
         if solid { open.remove(&door) } else { open.insert(door) };
     }
 
+    /// FUN_10176dd0(0): every door box solid (a sub-area load starts).
+    pub fn close_all_doors(&self) {
+        self.open.borrow_mut().clear();
+    }
+
     /// Triangle `i` counts: not the box of an open door.
     fn live(&self, i: usize) -> bool {
         match self.doors.get(i) {

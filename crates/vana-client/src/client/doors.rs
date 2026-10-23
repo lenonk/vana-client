@@ -72,6 +72,18 @@ pub fn update(w: &mut World) {
     }
 }
 
+/// FUN_10176dd0(1): a new ground (a sub-area came or went) takes the doors' states; open doors stop blocking.
+pub fn reapply(w: &World) {
+    for (id, s) in &w.doors.state {
+        if let Some(e) = w.entities.get(id)
+            && e.door != 0
+            && matches!(s, 8 | 0x1a | 0x1d)
+        {
+            set_solid(w, e.door, false);
+        }
+    }
+}
+
 /// FUN_1017ac40 on the ground in use and, while a sub-area is in, the zone's own kept ground.
 fn set_solid(w: &World, door: u32, solid: bool) {
     for g in w.ground.iter().chain(w.sub.home.iter()) {
