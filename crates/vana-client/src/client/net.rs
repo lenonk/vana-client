@@ -56,6 +56,8 @@ pub struct EntityUpdate {
     pub untargetable: Option<bool>,
     /// The face target's ActIndex, (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget).
     pub face: Option<u16>,
+    /// Mask 0x04, u8 @0x28 bit 0x04 (LSB PetNewFlag; actor +0x12c bit 23): the model is made with 'spop'.
+    pub spawn_fx: Option<bool>,
 }
 
 /// A battle message packet: 0x029 (FUN_1009cf70) or 0x02D (FUN_1009d1b0).
@@ -406,6 +408,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         untargetable: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u8(0x2B) & 0x08 != 0),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
+        spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
     }
 }
 

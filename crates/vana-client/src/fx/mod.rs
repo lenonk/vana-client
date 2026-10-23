@@ -551,6 +551,8 @@ pub struct Effects {
     models: HashMap<u32, Vec<u32>>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
+    /// Op 0x29 colour drives for the client: actor, target alpha, frames.
+    pub fades: Vec<(u32, u8, f32)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -616,6 +618,7 @@ impl Effects {
             load_rx,
             models: HashMap::new(),
             motions: Vec::new(),
+            fades: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),
             sub_lib: None,

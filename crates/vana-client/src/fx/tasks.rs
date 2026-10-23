@@ -598,6 +598,13 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_1005f6c0: the real actor's model colour toward u32 @8 over dur * speed ticks (alpha = high byte).
+            0x29 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.fades.push((id, (op.u32_at(8) >> 24) as u8, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
             0x28 if t.motions => {
                 if let Some(id) = t.a1.id() {
                     self.motions.push((id, None));

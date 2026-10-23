@@ -393,15 +393,9 @@ pub(super) fn die(actor: &mut Actor) {
     }
 }
 
-/// 0x038 "kesu" (LSB FadeOut before a despawn): DAT 0's scheduler fades the actor to colour 0x808080
-/// alpha 0 over 90 ticks (op 0x29).
+/// 0x038: a scheduler by name on an actor ("kesu", LSB FadeOut before a despawn: its op 0x29 fades to alpha 0).
 pub(super) fn on_scheduler(w: &mut World, actor: u32, name: [u8; 4]) {
     w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
-    if &name == b"kesu"
-        && let Some(a) = w.actors.get_mut(&actor)
-    {
-        a.fade = Some(actmotion::Fade::to(a.alpha, 0, 90));
-    }
 }
 
 // --- Action menu (FUN_10127790 / FUN_101275b0 / FUN_10127230) ---

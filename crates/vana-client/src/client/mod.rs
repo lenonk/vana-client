@@ -156,6 +156,8 @@ struct Entity {
     object: bool,
     /// The ActIndex its head looks at (0x00E / 0x00D facetarget, actor +0x1f8); 0 = none.
     face: u16,
+    /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
+    spawn_fx: bool,
 }
 
 impl Entity {
@@ -541,6 +543,7 @@ fn self_entity(w: &World) -> Entity {
         door: 0,
         object: false,
         face: 0,
+        spawn_fx: false,
     }
 }
 
@@ -1561,6 +1564,7 @@ fn place_mogdoor(w: &mut World) {
             door: 0,
             object: true,
             face: 0,
+            spawn_fx: false,
         },
     );
 }
@@ -1685,6 +1689,8 @@ struct Actor {
     /// The target flash state (FUN_100c94a0).
     flash: flash::Flash,
     fade: Option<actmotion::Fade>,
+    /// FUN_100c56e0 with 'spop': the scheduler to run once the model's files are in (model +0x8c4).
+    spop: bool,
     /// Last frame's bone transforms (model space) and model scale, for look points.
     bones: Vec<(glam::Quat, Vec3)>,
     scale: f32,
@@ -1724,6 +1730,7 @@ impl Actor {
             alpha: actmotion::OPAQUE,
             flash: Default::default(),
             fade: None,
+            spop: false,
             bones: Vec::new(),
             scale: 1.0,
             top_key: String::new(),
@@ -1868,8 +1875,9 @@ impl crate::fx::Actors for FxActors<'_> {
         (ch.part_files.clone(), a.extra.iter().rev().map(|(_, f)| f.id).chain(ch.files.iter().copied()).collect())
     }
 
+    /// Actor +0xb2 bit 1 (the server's hide bits), not alpha: a 'spop' actor at alpha 0 still takes generators.
     fn hidden(&self, id: u32) -> bool {
-        self.actors.get(&id).is_none_or(|a| a.vanished())
+        !self.actors.contains_key(&id) || self.entities.get(&id).is_some_and(|e| e.flags & 2 != 0)
     }
 
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
@@ -3519,6 +3527,7 @@ impl App {
                         door: 0,
                         object: false,
                         face: 0,
+                        spawn_fx: false,
                     });
                     if e.mask & 7 != 0 {
                         entry.flags = e.status;
@@ -3544,6 +3553,9 @@ impl App {
                     entry.index = e.index;
                     if let Some(f) = e.face {
                         entry.face = f;
+                    }
+                    if let Some(s) = e.spawn_fx {
+                        entry.spawn_fx = s;
                     }
                     if let Some((named, plural)) = e.name_flags {
                         (entry.named, entry.plural) = (named, plural);
@@ -3724,11 +3736,16 @@ impl App {
                 continue;
             }
             let key = format!("{source:?}");
+            let spawn_fx = world.entities.get(&id).is_some_and(|e| e.spawn_fx);
             let actor = world.actors.entry(id).or_insert_with(Actor::new);
             if actor.key == key {
                 continue;
             }
             actor.key = key.clone();
+            // FUN_1008f740 / FUN_100c56e0: a 'spop' model starts at colour 0x00808080, invisible.
+            if spawn_fx {
+                (actor.alpha, actor.fade, actor.spop) = (0.0, None, true);
+            }
             actor.source = Some(source);
             // A look already loaded is shared at once; one load serves every actor waiting for it.
             if let Some(m) = world.models.get(&key) {
@@ -3794,6 +3811,24 @@ impl App {
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
             if let Some(a) = world.actors.get_mut(&id) {
                 a.pending = Some(actmotion::Pending { files, name: String::new(), kind: actmotion::Kind::Skill });
+            }
+        }
+        // FUN_100d1070: once the model's files are in, its 'spop' runs on it (actor files, then DAT 0).
+        let spops: Vec<u32> = world.actors.iter_mut().filter(|(_, a)| a.spop && a.character.is_some()).map(|(id, a)| {
+            a.spop = false;
+            *id
+        }).collect();
+        for id in spops {
+            world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"spop"));
+        }
+        // Scheduler op 0x29: the model colour's alpha toward a target.
+        for (id, alpha, frames) in std::mem::take(&mut world.effects.fades) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                if frames <= 0.0 {
+                    (a.alpha, a.fade) = (alpha as f32, None);
+                } else {
+                    a.fade = Some(actmotion::Fade::to(a.alpha, alpha, frames.round() as i32));
+                }
             }
         }
         for (id, m) in std::mem::take(&mut world.effects.motions) {

@@ -3896,3 +3896,21 @@ From the text command spec (scratchpad textcmd/SPEC.md); client/textcmd.rs.
   the actor: a trust's appearance scheduler (eifa, from the cast finish's shfa) dolled the caster and took the
   cast's own fa01 / fa02 / 5061 with it, so stfa's stops (0x5f nefa, 0x2d fa02 / fa01, 0x1e 5061) missed them and the
   casting sparkles never ended.
+
+## Spawn-in: 'spop' (2026-10-23)
+
+From scratchpad spawnin/SPEC.md (the 0x00E handler is FUN_1009b550, pushed at 0x1009443c; not a function in all.c).
+- 0x00E (and 0x00D) mask 0x04, u32 @0x28 bit 2 -> actor +0x12c bit 23 (LSB PetNewFlag; trusts always, pets on their
+  first spawn, mobs with specialSpawnAnimation). Only FUN_1008f740 reads it: the model is made by FUN_100c56e0(pos,
+  actor, 'spop'), whose colour starts at 0x00808080 (alpha 0) unless +0xee is 0 (PetFlag @0x28 bit 6). FUN_100d1070
+  runs model +0x8c4 ('spop') through vtable +0x298 (FUN_100cee40: the actor's files, then DAT 0) once every file is
+  in, retrying each frame. Trusts carry their own 'spop' (Kupipi: in DAT 99909, running file 3721's main: sound,
+  16 generators, the fade); DAT 0's runs file 0xaf0 + 0x268 = 3416: op 0x29 alpha 0, ops 0x59 / 0x07 / 0x2e motion
+  locks 80 ticks, a doll, sound 7088, ds00 / ln00 / gp00, op 0x29 fade to 0x80 over 40 ticks from t 31.
+- Op 0x29 (FUN_1005f6c0 / FUN_1005f820): the real actor's (doll unwrapped) model colour from its current value to
+  u32 @8 over dur * speed ticks, linear per byte; dur 0 = at once. 'kesu' is this op (wait 90, dur 90 to alpha 0);
+  our hand-made 90-tick kesu fade is gone.
+- Effects on a hidden actor: the test is +0xb2 bit 1 (server hide bits), not alpha; a spop actor at alpha 0 still
+  takes its generators.
+- Despawn (mask 0x20): the client plays nothing; the fade is the server's earlier 0x038 'kesu'.
+- Not done: ops 0x07 / 0x59 / 0x2e motion locks (model +0x80 / +0xfc counters, actor +0x11c).
