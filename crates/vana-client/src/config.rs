@@ -54,6 +54,9 @@ pub struct Config {
     pub party_tp: bool,
     /// The map overlay's opacity 0..1 (Ctrl / Alt + O; not retail, the add-ons' map overlay).
     pub map_overlay_opacity: f32,
+    /// Mouse cursor size in percent of retail's pixels on screen; 0 = auto (grows with the window height from
+    /// 720). Not retail: its cursors were sized for 640 x 480.
+    pub cursor_size: u32,
     /// The "FINAL FANTASY XI Config" tool's values by registry name (HKLM\...\FinalFantasyXI\0000..0043,
     /// read at start-up by FUN_10016c30); missing ones take TOOL_DEFAULTS.
     pub tool: std::collections::BTreeMap<String, u32>,
@@ -137,6 +140,7 @@ impl Default for Config {
             anisotropy: 16,
             party_tp: true,
             map_overlay_opacity: 0.6,
+            cursor_size: 0,
             mods: Vec::new(),
             tool: Default::default(),
             retail_aspect: false,
@@ -148,6 +152,14 @@ impl Default for Config {
 }
 
 impl Config {
+    /// The cursor's on-screen scale for a window `height` pixels high.
+    pub fn cursor_scale(&self, height: u32) -> f32 {
+        match self.cursor_size {
+            0 => ((height as f32 / 720.0) * 2.0).round().max(2.0) / 2.0,
+            n => n as f32 / 100.0,
+        }
+    }
+
     pub fn load() -> Self {
         std::fs::read(config_path()).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
     }

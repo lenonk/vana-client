@@ -5412,7 +5412,9 @@ impl App {
                 && self.cursor_in
                 && let Some((x, y)) = self.last_cursor
             {
-                self.mouse.draw(lu, x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt);
+                // The sprite is in UI pixels: undo the UI stretch so the size setting is in screen pixels.
+                let s = self.cfg.cursor_scale(size[1]) * self.ui_k.1;
+                self.mouse.draw(lu, x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt, s);
             }
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());
@@ -5595,7 +5597,8 @@ impl ApplicationHandler for App {
                     && self.cfg.tool("0021") != 0
                     && let Some(gfx) = &self.gfx
                 {
-                    self.mouse.apply_hardware(&gfx.window, event_loop, self.index.as_ref());
+                    let s = self.cfg.cursor_scale(gfx.config.height);
+                    self.mouse.apply_hardware(&gfx.window, event_loop, self.index.as_ref(), s);
                 }
                 if (self.drive.quit && self.drive_done() && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
                     event_loop.exit();

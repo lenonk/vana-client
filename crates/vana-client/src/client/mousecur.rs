@@ -51,6 +51,7 @@ pub struct MouseCursor {
     acc: f32,
     hw: Option<Vec<Option<Hw>>>,
     hw_applied: Option<(usize, usize, bool)>,
+    hw_size: f32,
     epoch: Option<std::time::Instant>,
 }
 
@@ -70,12 +71,13 @@ impl MouseCursor {
 
     /// The sprite cursor at UI pixel (x, y), last over every window, stepping one frame each 1/30 s (retail: each
     /// drawn frame at 30 fps). The cycle runs 0..n-1 then shows 0 twice (a null sprite resets the counter).
-    pub fn draw(&mut self, gu: &mut GameUi, x: f32, y: f32, dt: f32) {
+    pub fn draw(&mut self, gu: &mut GameUi, x: f32, y: f32, dt: f32, size: f32) {
         if !self.visible {
             return;
         }
         let k = self.kind.min(6) as usize;
         let (lib, tint, scale) = SPRITES[k];
+        let scale = scale * size;
         let n = gu.lib_len(lib);
         if n == 0 {
             return;
@@ -100,7 +102,12 @@ impl MouseCursor {
     /// The Windows cursor for this frame (FUN_100097f0): index 0 for kinds 0 / 3 / 6, 1 for 1 / 2, +0xa6 for 4 / 5;
     /// the .ani steps by its jiffies. Files come through the mods (DatIndex::root_file); a missing one is the system
     /// arrow.
-    pub fn apply_hardware(&mut self, window: &Window, event_loop: &winit::event_loop::ActiveEventLoop, index: Option<&Arc<crate::dat::DatIndex>>) {
+    pub fn apply_hardware(&mut self, window: &Window, event_loop: &winit::event_loop::ActiveEventLoop, index: Option<&Arc<crate::dat::DatIndex>>, size: f32) {
+        if self.hw_size != size {
+            self.hw = None;
+            self.hw_applied = None;
+            self.hw_size = size;
+        }
         let hw = self.hw.get_or_insert_with(|| {
             FILES
                 .iter()
@@ -110,7 +117,8 @@ impl MouseCursor {
                     let frames = c
                         .frames
                         .iter()
-                        .filter_map(|f| CustomCursor::from_rgba(f.rgba.clone(), f.width as u16, f.height as u16, f.hotspot.0.min(f.width as u16 - 1), f.hotspot.1.min(f.height as u16 - 1)).ok())
+                        .map(|f| scaled(f, size))
+                        .filter_map(|f| CustomCursor::from_rgba(f.rgba, f.width as u16, f.height as u16, f.hotspot.0.min(f.width as u16 - 1), f.hotspot.1.min(f.height as u16 - 1)).ok())
                         .map(|src| event_loop.create_custom_cursor(src))
                         .collect::<Vec<_>>();
                     (frames.len() == c.frames.len()).then_some(Hw { frames, steps: c.steps })
@@ -148,6 +156,40 @@ impl MouseCursor {
     pub fn invalidate(&mut self) {
         self.hw_applied = None;
     }
+}
+
+/// A cursor image resized by `k` (bilinear on premultiplied colour), its hotspot with it.
+fn scaled(f: &crate::dat::cursor::Frame, k: f32) -> crate::dat::cursor::Frame {
+    if (k - 1.0).abs() < 1e-3 {
+        return f.clone();
+    }
+    let (w, h) = (((f.width as f32 * k).round() as u32).max(1), ((f.height as f32 * k).round() as u32).max(1));
+    let px = |x: i32, y: i32| {
+        let (x, y) = (x.clamp(0, f.width as i32 - 1) as usize, y.clamp(0, f.height as i32 - 1) as usize);
+        let p = &f.rgba[(y * f.width as usize + x) * 4..][..4];
+        let a = p[3] as f32 / 255.0;
+        [p[0] as f32 * a, p[1] as f32 * a, p[2] as f32 * a, p[3] as f32]
+    };
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for y in 0..h {
+        for x in 0..w {
+            let (sx, sy) = ((x as f32 + 0.5) / k - 0.5, (y as f32 + 0.5) / k - 0.5);
+            let (x0, y0) = (sx.floor() as i32, sy.floor() as i32);
+            let (fx, fy) = (sx - x0 as f32, sy - y0 as f32);
+            let mut c = [0.0f32; 4];
+            for (dx, dy, wt) in [(0, 0, (1.0 - fx) * (1.0 - fy)), (1, 0, fx * (1.0 - fy)), (0, 1, (1.0 - fx) * fy), (1, 1, fx * fy)] {
+                let p = px(x0 + dx, y0 + dy);
+                for i in 0..4 {
+                    c[i] += p[i] * wt;
+                }
+            }
+            let a = c[3] / 255.0;
+            let un = |v: f32| if a > 0.0 { (v / a).round().clamp(0.0, 255.0) as u8 } else { 0 };
+            rgba.extend_from_slice(&[un(c[0]), un(c[1]), un(c[2]), c[3].round().clamp(0.0, 255.0) as u8]);
+        }
+    }
+    let hot = |v: u16| ((v as f32 + 0.5) * k - 0.5).round().max(0.0) as u16;
+    crate::dat::cursor::Frame { width: w, height: h, rgba, hotspot: (hot(f.hotspot.0), hot(f.hotspot.1)) }
 }
 
 #[cfg(test)]

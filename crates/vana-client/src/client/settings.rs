@@ -19,12 +19,13 @@ pub struct Settings {
     pub retail_aspect: bool,
     pub monitor: String,
     pub gpu: String,
+    pub cursor_size: u32,
 }
 
 impl Settings {
     pub fn of(c: &Config) -> Self {
         let pct = |v: f32| (v.clamp(0.0, 1.0) * 100.0).round() as u32;
-        Self { tool: c.tool.clone(), frame_limit: c.frame_limit, anisotropy: c.anisotropy, party_tp: c.party_tp, map_opacity: pct(c.map_overlay_opacity), music: pct(c.music_volume), effects: pct(c.effects_volume), retail_aspect: c.retail_aspect, monitor: c.monitor.clone(), gpu: c.gpu.clone() }
+        Self { tool: c.tool.clone(), frame_limit: c.frame_limit, anisotropy: c.anisotropy, party_tp: c.party_tp, map_opacity: pct(c.map_overlay_opacity), music: pct(c.music_volume), effects: pct(c.effects_volume), retail_aspect: c.retail_aspect, monitor: c.monitor.clone(), gpu: c.gpu.clone(), cursor_size: c.cursor_size }
     }
 
     pub fn store(&self, c: &mut Config) {
@@ -38,6 +39,7 @@ impl Settings {
         c.music_volume = self.music as f32 / 100.0;
         c.effects_volume = self.effects as f32 / 100.0;
         c.retail_aspect = self.retail_aspect;
+        c.cursor_size = self.cursor_size;
     }
 }
 
@@ -64,6 +66,7 @@ enum Val {
     Music,
     Effects,
     RetailAspect,
+    CursorSize,
     /// The monitor for full screen, from the list the app passes in.
     Monitor,
     /// The graphics adapter ("Default" then the app's list).
@@ -129,7 +132,8 @@ fn rows(tab: usize) -> &'static [Row] {
         row("Effects Volume", "Our sound effects level, under the Gameplay page's.", Effects, &[], Now),
     ];
     const MISC: &[Row] = &[
-        row("Hardware Mouse", "0021: the system mouse cursor.", Tool("0021"), OFF_ON, Stored),
+        row("Hardware Mouse", "0021: the game folder's cursor files (.ani) instead of the cursor the game draws.", Tool("0021"), OFF_ON, Now),
+        row("Cursor Size", "The mouse cursor's size; Auto grows it with the window (not retail).", CursorSize, &[(0, "Auto"), (100, "1x"), (150, "1.5x"), (200, "2x"), (300, "3x"), (400, "4x")], Now),
         row("Opening Movie", "0022: play the opening movie on start.", Tool("0022"), OFF_ON, Stored),
         row("Simple Creator", "0023: character creation without 3D models.", Tool("0023"), OFF_ON, Stored),
         row("Screenshot Size", "0043: screenshots at the screen size.", Tool("0043"), OFF_ON, Stored),
@@ -208,6 +212,7 @@ impl SettingsUi {
             Val::Music => self.s.music,
             Val::Effects => self.s.effects,
             Val::RetailAspect => self.s.retail_aspect as u32,
+            Val::CursorSize => self.s.cursor_size,
         }
     }
 
@@ -267,6 +272,7 @@ impl SettingsUi {
                     Val::Aniso => self.s.anisotropy = x as u16,
                     Val::PartyTp => self.s.party_tp = x != 0,
                     Val::RetailAspect => self.s.retail_aspect = x != 0,
+                    Val::CursorSize => self.s.cursor_size = x,
                     _ => {}
                 }
             }
