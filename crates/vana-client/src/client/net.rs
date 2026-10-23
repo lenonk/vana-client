@@ -201,6 +201,8 @@ pub enum NetEvent {
     Emote { caster: u32, target: u32, emote: u16, param: u16, mode: u8 },
     /// s2c 0x0BF REGISTRATION (battlefield registration NPCs): Result u16 @6, ActIndex u32 @0xC.
     Registration { index: u32, result: u16 },
+    /// s2c 0x0A0 MAP_GROUP: a party member's position for the map.
+    MapGroup { id: u32, zone: u16, pos: [f32; 3] },
     /// s2c 0x031 RECIPE, 0x059 FRIENDPASS, 0x10E REQSUBMAPNUM: answers to event ops, whole packet with its header.
     EventAnswer { id: u16, data: Vec<u8> },
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
@@ -571,6 +573,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x05A => tx.send(NetEvent::Emote { caster: p.u32(4), target: p.u32(8), emote: p.u16(0x10), param: p.u16(0x12), mode: p.u8(0x16) })?,
                     0x031 | 0x059 | 0x10E => tx.send(NetEvent::EventAnswer { id: p.id, data: p.data.clone() })?,
+                    0x0A0 => tx.send(NetEvent::MapGroup { id: p.u32(4), zone: p.u16(8), pos: [p.f32(0xc), p.f32(0x10), p.f32(0x14)] })?,
                     0x0BF => tx.send(NetEvent::Registration { index: p.u32(0xC), result: p.u16(6) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,

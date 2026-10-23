@@ -4231,3 +4231,7 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
   The pick (FUN_101f7d80) closes the map; the close callback reopens it in mode 5 (FUN_101f79e0: fit zoom, the arrow
   only in our zone, map0 again).
 - Live: Lnxcsfix's list read San d'Oria 4, Ronfaure 2, Zulkheim 3, Norvallen 1; Current Area reopened the map.
+- Party positions (FUN_101f9070 / FUN_101f9110): when the Markers list opens on, or steps to, set 2 / 3, c2s 0x0D2
+  {u32 zone} once per map (+0xa45); s2c 0x0A0 {id u32 @4, zone s16 @8, x / y / z f32 @0xc / 0x10 / 0x14} places that
+  member (skipping ourselves; party or alliance by the group bits) when the sub-key under the position matches the
+  map, replacing the actor-based position. Not seen live (needs party members out of model range).

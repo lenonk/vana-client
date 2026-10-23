@@ -212,6 +212,9 @@ pub struct MapWin {
     set: u8,
     /// Interface sounds for the caller to play.
     pub sounds: Vec<u32>,
+    /// Party positions (c2s 0x0D2) asked for this map (+0xa45), and an ask waiting to be sent.
+    party_asked: bool,
+    pub ask_party: bool,
     pub mode: Mode,
     /// map0's cursor child (1..3).
     pub cursor: u16,
@@ -303,6 +306,29 @@ impl MapWin {
             self.set = (self.set + step) % 4;
         }
         self.label_only = None;
+    }
+
+    /// The map's zone (for c2s 0x0D2).
+    pub fn zone(&self) -> u16 {
+        self.region.zone as u16
+    }
+
+    /// FUN_101f9070: c2s 0x0D2 for the map's zone, once per map, when a party set is about to show.
+    fn want_party(&mut self) {
+        if self.set > 1 && !self.party_asked {
+            (self.party_asked, self.ask_party) = (true, true);
+        }
+    }
+
+    /// s2c 0x0A0 (FUN_101f9110): a member's position on this map, replacing what the actors gave; `same_key` is
+    /// whether the sub-key under it matches the map's.
+    pub fn party_pos(&mut self, name: &str, x: f32, z: f32, alliance: bool, same_key: bool) {
+        if !same_key {
+            return;
+        }
+        let (px, py) = self.region.px(x, z);
+        self.party.retain(|p| p.0 != name);
+        self.party.push((name.into(), (px as f32, py as f32), alliance));
     }
 
     /// Set s, slot i: its map pixel, label and sprite, when it holds a marker.
@@ -437,6 +463,8 @@ impl MapWin {
             reopen: None,
             set: 0,
             sounds: Vec::new(),
+            party_asked: false,
+            ask_party: false,
             mode,
             cursor: 1,
             return_menu: None,
@@ -559,6 +587,7 @@ impl MapWin {
             egui::Key::Escape => return false,
             // FUN_101f7c60 1: mapv3 (asking party positions, c2s 0x0D2, is not done).
             egui::Key::Enter if self.cursor == 1 => {
+                self.want_party();
                 self.list = Some(List { cursor: 1, ..Default::default() });
                 self.sounds.push(Ui::Select as u32);
             }
@@ -638,7 +667,9 @@ impl MapWin {
                 K::ArrowDown => l.cursor = if l.cursor >= 10 { 1 } else { l.cursor + 1 },
                 // Messages 3 / 4: the next / previous set.
                 K::ArrowRight | K::ArrowLeft => {
+                    self.want_party();
                     self.step_set(if key == K::ArrowRight { 1 } else { -1 });
+                    self.want_party();
                     self.sounds.push(Ui::Cursor as u32);
                 }
                 K::Escape if self.mode == Mode::Event => {}

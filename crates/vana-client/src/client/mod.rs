@@ -1270,6 +1270,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(m) = world.map.as_mut() {
         m.draw(gu, sw, sh);
         world.sounds.append(&mut m.sounds);
+        if std::mem::take(&mut m.ask_party) {
+            let _ = world.net.commands.send(NetCommand::Packet { id: 0x0D2, body: (m.zone() as u32).to_le_bytes().to_vec() });
+        }
     }
     let slots = gu.hud(sw, sh, &st);
 
@@ -4185,6 +4188,18 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::MapGroup { id, zone, pos } => {
+                    let own = world.party.own_flags;
+                    let member = world.party.members().skip(1).find(|m| m.id == id).map(|m| (m.name.clone(), (m.flags ^ own) & 3 != 0));
+                    let p = Vec3::from(pos);
+                    let key = (zone == world.pos_zone).then(|| world.ground.as_ref().map(|g| g.map_key(p))).flatten();
+                    if let (Some((name, alliance)), Some(m)) = (member, world.map.as_mut())
+                        && m.zone() == zone
+                    {
+                        let same = key.is_none_or(|k| k == m.region.key as u8);
+                        m.party_pos(&name, pos[0], pos[2], alliance, same);
+                    }
+                }
                 NetEvent::EventAnswer { id, data } => {
                     if let Some(l) = world.event.as_mut() {
                         l.rt.answer(id, &data);
