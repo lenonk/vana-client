@@ -77,26 +77,32 @@ fn down(@builtin(global_invocation_id) g: vec3<u32>) {
     atomicAdd(&stats[hist(p.level) + a], 1u);
 }
 
-// The level's alpha scale: binary search for the smallest scale whose coverage reaches level 0's.
-@compute @workgroup_size(1)
-fn solve() {
+// The level's alpha scale: binary search for the smallest scale whose coverage reaches level 0's. One invocation
+// per histogram bin, each step's count a tree sum in workgroup memory.
+var<workgroup> red: array<u32, 256>;
+@compute @workgroup_size(256)
+fn solve(@builtin(local_invocation_index) i: u32) {
+    let bin = atomicLoad(&stats[hist(p.level) + i]);
     let goal = f32(atomicLoad(&stats[0])) / f32(max(p.n0, 1u));
-    var s = 1.0;
-    if (atomicLoad(&stats[1]) < 250u && goal > 0.0 && goal < 1.0) {
-        let n = f32(max(p.w * p.h, 1u));
-        var lo = 0.25;
-        var hi = 8.0;
-        for (var i = 0; i < 16; i = i + 1) {
-            let mid = (lo + hi) / 2.0;
-            var c = 0u;
-            for (var a = 0u; a < 256u; a = a + 1u) {
-                if (f32(a) * mid >= CUT) { c += atomicLoad(&stats[hist(p.level) + a]); }
-            }
-            if (f32(c) / n < goal) { lo = mid; } else { hi = mid; }
+    let run = atomicLoad(&stats[1]) < 250u && goal > 0.0 && goal < 1.0;
+    let n = f32(max(p.w * p.h, 1u));
+    var lo = 0.25;
+    var hi = 8.0;
+    for (var k = 0; k < 16; k = k + 1) {
+        let mid = (lo + hi) / 2.0;
+        red[i] = select(0u, bin, f32(i) * mid >= CUT);
+        workgroupBarrier();
+        for (var s = 128u; s > 0u; s = s >> 1u) {
+            if (i < s) { red[i] = red[i] + red[i + s]; }
+            workgroupBarrier();
         }
-        s = hi;
+        let c = red[0];
+        workgroupBarrier();
+        if (f32(c) / n < goal) { lo = mid; } else { hi = mid; }
     }
-    atomicStore(&stats[hist(p.level) + 256u], bitcast<u32>(s));
+    if (i == 0u) {
+        atomicStore(&stats[hist(p.level) + 256u], bitcast<u32>(select(1.0, hi, run)));
+    }
 }
 
 fn texel(x: u32, y: u32) -> vec4<i32> {

@@ -919,8 +919,9 @@ impl ZoneGeometry {
     }
 }
 
-/// Mip texels a frame (render/mipgen.rs).
+/// Mip texels a frame (render/mipgen.rs): while a zone goes up, and in the world (new models spread over frames).
 pub const MIP_BUDGET: u64 = 4 << 20;
+pub const MIP_BUDGET_WORLD: u64 = 1 << 20;
 
 impl ZoneRenderer {
     /// Everything at once (lobby scenes, offscreen shots); their mips run before their first draw.
