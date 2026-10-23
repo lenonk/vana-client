@@ -2860,6 +2860,9 @@ struct World {
     /// Server clock (GameTime and when it arrived), weather number, and the zone's weather keys.
     clock: Option<(u32, Instant)>,
     weather: u16,
+    /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
+    /// Vana minutes x 2.4 s).
+    weather_from: Option<(u16, Instant, f32)>,
     zone_weather: Option<crate::dat::weather::ZoneWeather>,
     /// Typing a chat line (game keys go to the input line instead).
     typing: bool,
@@ -3893,6 +3896,7 @@ impl App {
                             ko_wait: None,
                             clock: None,
                             weather: 1,
+                            weather_from: None,
                             zone_weather: None,
                             area: AreaSwitch::default(),
                             sub: Default::default(),
@@ -4372,6 +4376,7 @@ impl App {
                         world.ko_deadline = (game_time as u64 + (dead_counter / 60) as u64).saturating_sub(360);
                     }
                     world.weather = weather;
+                    world.weather_from = None;
                     let m = crate::dat::weather::vana_minute(game_time, 0.0);
                     log::info!("vana'diel {:02}:{:02}, weather {} ({weather})", (m / 60.0) as u32, m as u32 % 60, crate::dat::weather::weather_tag(weather));
                     world.my_motion = motion;
@@ -4674,6 +4679,9 @@ impl App {
                     treasure::on_solution(world, slot, judge, loot, entry, entry_point, loot_name, entry_name)
                 }
                 NetEvent::Weather(w, minutes) => {
+                    // The lighting blends from the old weather's environment to the new one over the change's time.
+                    let secs = minutes as f32 * 2.4;
+                    world.weather_from = (secs > 0.0 && w != world.weather).then(|| (world.weather, Instant::now(), secs));
                     world.weather = w;
                     // One Vana'diel minute is 2.4 s (FUN_101804d0's duration is u16 @0x0a x 3600 units).
                     world.effects.set_weather(crate::dat::weather::weather_tag(w), minutes as f32 * 2.4);
@@ -6819,12 +6827,25 @@ impl App {
                     let clock = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32());
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
                     let weather = ev_time.and_then(|(_, x)| x).unwrap_or(w.weather);
-                    r.lighting = zw.at(crate::dat::weather::weather_tag(weather), minute).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
+                    // A 0x057 change blends the old weather's environment into the new one over its time (retail
+                    // weights the two weather objects; the linear weight is inferred).
+                    if w.weather_from.is_some_and(|(_, at, secs)| at.elapsed().as_secs_f32() >= secs) {
+                        w.weather_from = None;
+                    }
+                    let blend = w.weather_from.filter(|_| ev_time.and_then(|(_, x)| x).is_none()).map(|(from, at, secs)| (crate::dat::weather::weather_tag(from), (at.elapsed().as_secs_f32() / secs).clamp(0.0, 1.0)));
                     let tag = crate::dat::weather::weather_tag(weather);
+                    let mix = |a: &dyn Fn(&str) -> Option<crate::dat::weather::Env>| -> Option<crate::dat::weather::Env> {
+                        let now = a(tag)?;
+                        Some(match blend.and_then(|(from, t)| Some((a(from)?, t))) {
+                            Some((old, t)) => crate::dat::weather::Env::lerp(&old, &now, t),
+                            None => now,
+                        })
+                    };
+                    r.lighting = mix(&|t| zw.at(t, minute)).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
                     let sub_areas = w.sub.weather.iter().flat_map(|s| s.areas.iter());
-                    w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, a.at(tag, minute)?.area_light()))).collect();
+                    w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, mix(&|t| a.at(t, minute))?.area_light()))).collect();
                     // Scenery areas (FUN_101889c0 finds the area object by 4cc, the sub-area's after the zone's).
-                    let env = |k: &u32| w.sub.weather.as_ref().and_then(|s| s.areas.get(k)).or_else(|| zw.areas.get(k)).and_then(|a| a.at(tag, minute));
+                    let env = |k: &u32| w.sub.weather.as_ref().and_then(|s| s.areas.get(k)).or_else(|| zw.areas.get(k)).and_then(|a| mix(&|t| a.at(t, minute)));
                     let lights = r.area_keys().iter().map(|k| env(k).map(|e| crate::dat::weather::Lighting::from_env(&e, minute))).collect();
                     r.set_area_lights(lights);
                 }

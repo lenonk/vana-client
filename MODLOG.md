@@ -5211,3 +5211,13 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Our own volume factors are gone (the user's call): the game's values alone set the levels, as retail. In game
   the Gameplay page's sliders (config 10 / 9) are the only volume controls (Settings' Sound page leaves them out);
   on the title Settings' two volume rows edit the lobby's one volume (0xa8).
+
+## Weather changes blend the zone lighting (2026-10-23)
+
+- s2c 0x057 (GP_SERV_COMMAND_WEATHER: StartTime @4, WeatherNumber @8, WeatherOffsetTime @0x0a Vana minutes; LSB
+  zone.cpp 785 sends 4..28 at random, about 10..67 s) crossfades the weather objects in retail (FUN_101804d0 /
+  FUN_10183780; the effect generators already blended by it). Ours switched the zone lighting (fog, sun, ambient,
+  area lights) in one frame, so fog vanished at once about a minute after login when the server's change came.
+  Now the environment of the old weather blends into the new one over the change's time (Env::lerp; the linear
+  weight is inferred; StartTime not used: the blend starts on arrival). Live: !setweather 3 then 1 in Southern San
+  d'Oria: far wall brightness 77.8 -> 77.7 (1 s) -> 80.1 (15 s) -> 85.6 (after the 26 s).
