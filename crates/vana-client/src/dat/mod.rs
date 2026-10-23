@@ -10,6 +10,8 @@ pub struct DatIndex {
     root: PathBuf,
     /// Per file id: (rom number, packed dir/file); rom 0 means absent.
     entries: Vec<(u8, u16)>,
+    /// The enabled mods (config `mods`; FFXI_NO_MODS turns them off), scanned once per process.
+    overlays: Option<std::sync::Arc<overlay::Overlays>>,
 }
 
 impl DatIndex {
@@ -38,7 +40,36 @@ impl DatIndex {
         if entries.is_empty() {
             bail!("no VTABLE.DAT under {}", ffxi_dir.display());
         }
-        Ok(Self { root: ffxi_dir.to_path_buf(), entries })
+        let overlays = Self::overlays(&entries);
+        Ok(Self { root: ffxi_dir.to_path_buf(), entries, overlays })
+    }
+
+    fn overlays(entries: &[(u8, u16)]) -> Option<std::sync::Arc<overlay::Overlays>> {
+        use std::sync::{Arc, Mutex, OnceLock};
+        if std::env::var_os("FFXI_NO_MODS").is_some() {
+            return None;
+        }
+        let cfg = crate::config::Config::load();
+        let dirs: Vec<PathBuf> = cfg.mods.iter().filter(|m| m.enabled).map(|m| crate::config::mods_dir().join(&m.name)).filter(|d| d.is_dir()).collect();
+        if dirs.is_empty() {
+            return None;
+        }
+        static SCANNED: OnceLock<Mutex<Option<(Vec<PathBuf>, Arc<overlay::Overlays>)>>> = OnceLock::new();
+        let mut s = SCANNED.get_or_init(Default::default).lock().unwrap();
+        if let Some((d, o)) = s.as_ref()
+            && *d == dirs
+        {
+            return Some(o.clone());
+        }
+        let ids: std::collections::HashMap<(u8, u16), u32> = entries.iter().enumerate().filter(|(_, e)| e.0 != 0).map(|(i, &e)| (e, i as u32)).collect();
+        let o = Arc::new(overlay::Overlays::scan(&dirs, &ids, crate::config::merged_dir()));
+        *s = Some((dirs, o.clone()));
+        Some(o)
+    }
+
+    /// A game-root file (cursors and the like), from the highest-priority mod that has one.
+    pub fn root_file(&self, name: &str) -> PathBuf {
+        self.overlays.as_ref().and_then(|o| o.root_file(name)).unwrap_or_else(|| self.root.join(name))
     }
 
     pub fn len(&self) -> usize {
@@ -51,7 +82,11 @@ impl DatIndex {
             return None;
         }
         let rom_dir = if rom == 1 { "ROM".to_string() } else { format!("ROM{rom}") };
-        Some(self.root.join(rom_dir).join((packed >> 7).to_string()).join(format!("{}.DAT", packed & 0x7F)))
+        let stock = self.root.join(rom_dir).join((packed >> 7).to_string()).join(format!("{}.DAT", packed & 0x7F));
+        match &self.overlays {
+            Some(o) if o.has(id) => Some(o.resolve(id, &stock).unwrap_or(stock)),
+            _ => Some(stock),
+        }
     }
 
     pub fn read(&self, id: u32) -> Result<Vec<u8>> {
@@ -122,6 +157,7 @@ pub fn chunks(file: &[u8]) -> Result<Vec<Chunk<'_>>> {
     Ok(out)
 }
 
+pub mod overlay;
 pub mod tables;
 pub mod zone;
 pub mod collision;

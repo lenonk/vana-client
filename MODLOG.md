@@ -3393,3 +3393,14 @@ needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in 
   in DAT 30834; not by the San d'Oria opening's flyover schedulers (ops 01 / 04 only).
 - Interface sounds (menus, targeting, prompts) follow mask 2 / 8, world effects mask 1 / 8.
 - Creator: on the nation step the dancer is torn down (FUN_10246f10(.., 0)), so its foley stops.
+
+## DAT overlays, merged per chunk (ours; 2026-10-22)
+
+- Chunk kind names (FFXiMain table 0x103542a8): 0x05 Generater, 0x1c Mzb, 0x20 D3s (texture), 0x2e Mmb, 0x2f Weather,
+  0x31 Msb (menu sprite sheet), 0x36 Rid, 0x3d Sep, 0x4a Sph, 0x5d Bp (bump map).
+- What the packs change against the 30261006_0 stock files (chunks keyed by folder path, 4cc, kind, n-th): AshenbubsHD
+  Prime (Nov 2021, 33,671 DATs) D3s only plus 3 Sep that are stale; Amelila upscale 01 / 02 D3s plus a few stale
+  Mmb / Weather / Sep / Mzb / Rid; Amelila megapack 2019 D3s and 278 Bp, and many chunks stock no longer has (the
+  files were restructured since); Remapster and xiPrime menus D3s + Msb. So only D3s / Msb / Bp are taken from mods.
+- 239 AshenbubsHD files and 109 Remapster files are at paths no current VTABLE / FTABLE entry points to (dropped or
+  moved since 2021; Remapster's extra maps), so nothing loads them.

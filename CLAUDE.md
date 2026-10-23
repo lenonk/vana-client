@@ -100,19 +100,15 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - No command line for any of it.
   - The install was behind the server's data (NPC models 2957+ missing: the level-5 crystal scene's set was
     blank): 5321 files, 452 MB as of 30261006_0. Updates go to the base files, never to mods.
-- Mod manager (in game; XIPivot built in): DAT replacement packs (AshenbubsHD, Remapster) as overlays instead of files
-  copied over the install. Each mod is a folder of replacements in XIPivot's layout (`<pack>/ROM*/<dir>/<file>.DAT`,
-  so packs made for XIPivot drop in); DatIndex resolves a file id to the highest enabled mod that has it, else the
-  base file. Enable / disable / order from a settings page. XIPivot (github.com/HealsCodes/XIPivot, read in
-  ~/ffxi/lab/XIPivot, Redirector.cpp) hooks CreateFileA / FindFirstFileA / fopen_s and redirects only the game's
-  denormalised `//ROM` opens, so POL's updater (normal paths) never sees the overlays and never flags retail files;
-  first overlay in priority order wins per whole file; overlays may hold ROM*/VTABLE*/FTABLE*.DAT (new file ids),
-  sound*/win/se and win/music. Ours needs no hooks: DatIndex and the audio loader resolve overlays, patch.rs reads the
-  base paths. AshenbubsHD stopped in November 2021 and a whole-file swap would roll updated DATs back to 2021. Ours merges per chunk instead (DATs are named-chunk
-  containers, dat/mod.rs): start from the current retail DAT and take only the pack's texture chunks whose names
-  match, so SE's updates (models, effects, events) stay and HD textures apply wherever the pack still fits.
-  Migrate today's in-place install (~/ffxi/dat-backup: originals plus manifest.tsv of 34k replaced files) into mod
-  folders and restore the originals.
+- Mod manager (XIPivot built in). Done: dat/overlay.rs. Mods are folders under ~/.local/share/vana-client/mods in
+  XIPivot's layout (ROM*/<dir>/<file>.DAT, game-root files), ordered by config `mods` (highest first). An overlaid
+  DAT is merged per chunk from the current stock file: D3s textures (by their own name), Msb sprite sheets and Bp
+  bump maps from the highest mod, everything else stock; non-chunk files are replaced whole; merged builds cached
+  in ~/.cache/vana-client/merged. Installed 2026-10-22 from ~/Downloads/FFXI by ~/ffxi/lab/tools/install_mods.py:
+  Amelila upscale 02 / 01 / megapack 2019, xiPrime menus / status icons / cursors, Remapster, AshenbubsHD (lowest).
+  Left: a settings page (enable / disable / order / add a pack from an archive); sound overlays (sound*/win) in the
+  audio loader; root files (DatIndex::root_file) used for the cursors; mod VTABLE / FTABLE (new file ids, e.g.
+  Remapster's 109 extra maps, which need an add-on in retail too).
 - Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
   fonts and frames; nothing that sends actions by itself):
   - wanted: a translucent full-screen map overlay and a minimap (after the map's pan and zoom);

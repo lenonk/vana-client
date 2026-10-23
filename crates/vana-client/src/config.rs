@@ -67,6 +67,24 @@ pub struct Config {
     pub gpu: String,
     /// FFXiMain's own options by config id (the in-game and lobby Config menus).
     pub game: crate::gamecfg::GameConfig,
+    /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
+    pub mods: Vec<ModRef>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub struct ModRef {
+    pub name: String,
+    pub enabled: bool,
+}
+
+/// Where mod folders live.
+pub fn mods_dir() -> PathBuf {
+    data_dir().join("mods")
+}
+
+/// Merged overlay DATs (rebuilt when a source changes).
+pub fn merged_dir() -> PathBuf {
+    app_dir(dirs::cache_dir()).join("merged")
 }
 
 /// Config-tool values with our defaults (FFXiMain's own default in the comment where it differs).
@@ -119,6 +137,7 @@ impl Default for Config {
             anisotropy: 16,
             party_tp: true,
             map_overlay_opacity: 0.6,
+            mods: Vec::new(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),
