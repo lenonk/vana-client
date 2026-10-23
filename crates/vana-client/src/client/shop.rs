@@ -129,19 +129,40 @@ fn price_of(s: &Shop, item: u16) -> Option<u32> {
     s.prices.iter().find(|p| p.0 == item).map(|p| p.1)
 }
 
-/// The item ids we hold in the inventory (the darker price) and wear (the green name).
+/// The item ids we hold in the inventory (the darker price, FUN_101cba50) and wear (the green name, FUN_10131fa0:
+/// containers 0, 8, 10..16).
 fn held(w: &World, id: u16) -> (bool, bool) {
-    let slots = w.inv.slots_of(super::items::INVENTORY);
-    (slots.iter().any(|s| s.id == id && s.index != 0), slots.iter().any(|s| s.id == id && s.equipped))
+    let inv = w.inv.slots_of(super::items::INVENTORY).iter().any(|s| s.id == id && s.index != 0);
+    let worn = [0u8, 8, 10, 11, 12, 13, 14, 15, 16].iter().any(|&c| w.inv.slots_of(c).iter().any(|s| s.id == id && s.equipped));
+    (inv, worn)
 }
 
-/// Buy name tint (FUN_1020f740): green when worn, grey past the gil (and an unmet requirement); white else. Not done:
-/// yellow for gear the job can wear, the scroll / attachment colours, the guild rank / job requirements.
+/// FUN_10132050: the main job can wear it now. 0x119 seen; a race / job / level record (automaton items have no race);
+/// the race and main-job bits; level up to the main job's (retail: the unsynced level, s2c 0x067 @0x25, not parsed;
+/// 0x061's is its fallback); the superior level's low byte up to 0x061 @0x52; none of its slots encumbered (0x01B @0x60).
+fn can_wear(w: &World, it: &crate::dat::items::Item, id: u16) -> bool {
+    let (Some(st), Some(jobs)) = (w.stats.as_ref(), w.job_info.as_ref()) else { return false };
+    w.recasts_seen
+        && it.slots != 0
+        && !(0x2000..0x2200).contains(&id)
+        && it.races & (1 << w.my_race) != 0
+        && it.jobs & (1 << st.main.0) != 0
+        && it.level <= st.main.1 as u16
+        && (it.superior_level & 0xff) as u8 <= st.su
+        && u32::from(it.slots) & jobs.encumbrance == 0
+}
+
+/// Buy name tint (FUN_1020f740): gear green when worn, else yellow when the job can wear it now; grey past the gil (and
+/// an unmet requirement); white else. Not done: the scroll / dice / attachment colours, the guild rank / job
+/// requirements.
 fn buy_tint(w: &World, e: &Entry) -> u32 {
+    let gear = w.item_info.as_ref().and_then(|c| c.item(e.item)).filter(|it| it.level != 0);
     if e.price > w.inv.gil() as u32 {
         crate::inventory::TINT_DIM
-    } else if held(w, e.item).1 {
+    } else if gear.is_some() && held(w, e.item).1 {
         crate::inventory::TINT_EQUIPPED
+    } else if gear.is_some_and(|it| can_wear(w, &it, e.item)) {
+        0x8090_9040
     } else {
         crate::inventory::TINT_WHITE
     }
@@ -201,18 +222,20 @@ fn row_count(w: &World, s: &Shop) -> usize {
     }
 }
 
-/// Up / Down a row (scrolling at the ends), Left / Right a page (plain Right / Left page, +0x47 = 1).
+/// Up / Down a row, scrolling at the ends and stopping at the first / last (FUN_101f6c70: no wrap); plain Right / Left
+/// turn a page (+0x47 = 1) as the item lists do.
 fn move_list(list: &mut (usize, usize), n: usize, key: egui::Key) -> bool {
     if n == 0 {
         return false;
+    }
+    if matches!(key, egui::Key::ArrowRight | egui::Key::ArrowLeft) {
+        return super::items::page_keys(&mut list.0, &mut list.1, n, key == egui::Key::ArrowRight);
     }
     let (scroll, cursor) = *list;
     let at = (scroll + cursor) as isize;
     let to = match key {
         egui::Key::ArrowDown => at + 1,
         egui::Key::ArrowUp => at - 1,
-        egui::Key::ArrowRight => at + ROWS as isize,
-        egui::Key::ArrowLeft => at - ROWS as isize,
         _ => at,
     }
     .clamp(0, n as isize - 1) as usize;

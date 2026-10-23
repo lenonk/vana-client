@@ -5243,3 +5243,23 @@ Full trace in `~/ffxi/lab/research/shop_spec.md`; ours in client/shop.rs.
   Distilled Water (2 G).
 - Left: the yellow can-equip tint on buy rows (Skill / job lock), guild shops (0x082..0x086), the Up wrap at the
   list's top (not checked against FUN_101f67c0).
+
+## Shops: the can-wear name colour and the list's paging (2026-10-23)
+
+Notes: `~/ffxi/lab/research/shop_spec2.md`.
+
+- Buy rows of gear (record level non-zero): green when an item of that id is worn (FUN_10131fa0: containers 0, 8,
+  10..16), else yellow 0x80909040 when FUN_10132050 passes: s2c 0x119 seen; slot, race, job and level fields present
+  (automaton items 0x2000..0x2200 have no race field, so never yellow); the race bit (own look +0xef) and the main-job
+  bit; level <= the main job's level (retail reads the unsynced level, player +0x40c42 from s2c 0x067 @0x25, which we
+  don't parse; 0x061 @0x0D is its own fallback); the superior level's low byte <= 0x061 @0x52; and none of the item's
+  slots in the encumbrance mask (player +0x40df0 = s2c 0x01B @0x60, u32: equipment block in the low 16 bits, stat
+  debilitations above).
+- The base list (FUN_101f6c70) never wraps: Up / Down stop at the first / last row without a sound; plain Right / Left
+  turn a page of 10 keeping the cursor row, and on the last / first page move the cursor to the last / first row (as
+  items.rs page_keys).
+- Live: Lnxcsfix (WAR 20) at Ashene: all seven weapons (levels 1..13) yellow; Right on the one page put the cursor on
+  Bilbo, the last row.
+- Still left: the scroll / dice / attachment colours (record +0x1554 kind, +0x1558 argument; spell names, 0x0AC bits,
+  0x044 attachments), the requirement column (keytops3 192 + rank, windowps 212 + job; craft ranks from s2c 0x062,
+  not parsed) and its grey rule, the sell list's settled flag (s2c 0x01D).

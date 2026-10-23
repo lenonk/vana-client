@@ -26,6 +26,8 @@ pub struct JobInfo {
     pub flags: u32,
     pub levels: [u8; 24],
     pub sub_ok: bool,
+    /// Encumbered equipment slots (low 16 bits) and stat debilitations (player +0x40df0, s2c 0x01B @0x60).
+    pub encumbrance: u32,
 }
 
 /// The Mog House / nomad object's request (+0x812..0x814): pending until c2s 0x100 goes; the last one is kept.

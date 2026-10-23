@@ -820,6 +820,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         flags: p.u32(0xc),
                         levels: std::array::from_fn(|n| if n < 16 { p.u8(0x10 + n) } else { p.u8(0x48 + n) }),
                         sub_ok: p.u8(0x44) != 0,
+                        encumbrance: p.u32(0x60),
                     }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
