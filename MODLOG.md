@@ -3601,3 +3601,15 @@ From the door spec (scratchpad doors_spec/SPEC.md).
   talk() treats a door as having a model.
 - Not done: the y + id generator intensity (FUN_100acd30; none in 230), solid doors during a sub-area load
   (FUN_10176dd0), elevators ('@' groups, kind 4, mv?? schedulers, op 0x1d), ships (kind 5), the Mog House door's swing.
+
+## Scenery blending and the alpha cutoff (2026-10-22)
+
+- FUN_1017c9c0 per model: ALPHABLENDENABLE = MMB header bit 31 (SRCALPHA / INVSRCALPHA from the frame's state block),
+  ZWRITEENABLE off and ZBIAS 8 (1 on ATI) for those; ALPHATESTENABLE = inst+0xd6 != 0 (placements named '_' or '#'),
+  ALPHAFUNC GREATER, ALPHAREF 0x60, alpha = tex.a x vertex.a x 4 (MODULATE4X). Blended models are drawn inline in
+  instance order, unsorted.
+- Ours: Draw.mode (bit 0 '_' cut out, bit 1 bit-31 blend), drawn opaque, cut out, blended (a blended sub-pass after
+  each slot's opaque draws, close to retail's inline order), blend pipelines without depth writes and a constant
+  depth bias of -8 *(inf: the D3D8 ZBIAS equivalent)*; the cutoff is keep-if > 96 / 255 (was < 0.3 discarded, and
+  bit-31 models were cut out instead of blended). In 230 bit 31 sits on the ground tiles (mid_*, lef_*, rig_*).
+- The La Theine pond basin's water is an effect, and it draws far too dark (not a blending issue; open).

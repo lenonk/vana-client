@@ -225,7 +225,9 @@ struct Draw {
     base_vertex: i32,
     instances: std::ops::Range<u32>,
     texture: usize,
-    alpha_test: bool,
+    /// FUN_1017c9c0's states: bit 0 alpha test (placements named '_', inst+0xd6), bit 1 alpha blend (MMB model bit 31:
+    /// no depth write, ZBIAS 8). Drawn in that order: opaque, cut out, blended.
+    mode: u8,
 }
 
 /// The scene projection's near and far planes.
@@ -260,6 +262,7 @@ pub struct ZoneRenderer {
     pub light_keys: Vec<u32>,
     pipeline: wgpu::RenderPipeline,
     alpha_pipeline: wgpu::RenderPipeline,
+    blend_pipelines: [wgpu::RenderPipeline; 2],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     texture_layout: wgpu::BindGroupLayout,
@@ -546,6 +549,7 @@ pub struct ZonePipes {
     pose_layout: wgpu::BindGroupLayout,
     pipeline: wgpu::RenderPipeline,
     alpha_pipeline: wgpu::RenderPipeline,
+    blend_pipelines: [wgpu::RenderPipeline; 2],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
@@ -694,6 +698,31 @@ impl ZonePipes {
         });
         let pipeline = make_pipeline("fs_opaque", None);
         let alpha_pipeline = make_pipeline("fs_alpha_test", None);
+        // Bit-31 models: SRCALPHA / INVSRCALPHA, depth tested (LESSEQUAL) but not written, ZBIAS 8 *(inf: as a constant
+        // depth bias of -8)*.
+        let make_blend = |fragment: &str| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some(fragment),
+            layout: Some(&layout),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &vertex_layouts },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: wgpu::DepthBiasState { constant: -8, slope_scale: 0.0, clamp: 0.0 },
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some(fragment),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let blend_pipelines = [make_blend("fs_blend"), make_blend("fs_blend_test")];
         // Actors blend by their model alpha (fades); opaque ones output alpha 1.
         let actor_pipeline = make_pipeline("fs_actor", Some(wgpu::BlendState::ALPHA_BLENDING));
         let sky_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -713,7 +742,7 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, pipeline, alpha_pipeline, actor_pipeline, sky_pipeline, skin_pipeline }
+        Self { globals_layout, texture_layout, pose_layout, pipeline, alpha_pipeline, blend_pipelines, actor_pipeline, sky_pipeline, skin_pipeline }
     }
 }
 
@@ -862,7 +891,7 @@ impl ZoneGeometry {
                     instances: instances.clone(),
                     texture: texture_slot.get(model.texture.as_str()).copied().unwrap_or(0),
                     // Same rule as the reference viewer: '_' meshes and blend bit 0x8000 are cut out.
-                    alpha_test: mesh.name.starts_with('_') || model.blending & 0x8000 != 0,
+                    mode: mesh.name.starts_with('_') as u8 | ((model.blending & 0x8000 != 0) as u8) << 1,
                 });
             }
         }
@@ -944,6 +973,7 @@ impl ZoneRenderer {
         Self {
             pipeline: p.pipeline,
             alpha_pipeline: p.alpha_pipeline,
+            blend_pipelines: p.blend_pipelines,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
             texture_layout: p.texture_layout,
@@ -1468,10 +1498,10 @@ impl ZoneRenderer {
         pass.set_vertex_buffer(1, self.instances.slice(..));
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
-        for (pipeline, cutout) in [(&self.pipeline, false), (&self.alpha_pipeline, true)] {
+        for (pipeline, mode) in [(&self.pipeline, 0), (&self.alpha_pipeline, 1), (&self.blend_pipelines[0], 2), (&self.blend_pipelines[1], 3)] {
             pass.set_pipeline(pipeline);
             let mut bound = usize::MAX;
-            for d in self.draws.iter().filter(|d| d.alpha_test == cutout) {
+            for d in self.draws.iter().filter(|d| d.mode == mode) {
                 if d.texture != bound {
                     pass.set_bind_group(1, &self.textures[d.texture], &[]);
                     bound = d.texture;
@@ -1482,7 +1512,7 @@ impl ZoneRenderer {
                 pass.set_vertex_buffer(1, s.instances.slice(..));
                 pass.set_vertex_buffer(0, s.vertices.slice(..));
                 pass.set_index_buffer(s.indices.slice(..), wgpu::IndexFormat::Uint16);
-                for d in s.draws.iter().filter(|d| d.alpha_test == cutout) {
+                for d in s.draws.iter().filter(|d| d.mode == mode) {
                     if d.texture != bound {
                         pass.set_bind_group(1, &self.textures[d.texture], &[]);
                         bound = d.texture;

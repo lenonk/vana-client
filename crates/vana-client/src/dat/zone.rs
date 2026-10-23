@@ -559,3 +559,4 @@ pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
     }
     Ok(scene)
 }
+

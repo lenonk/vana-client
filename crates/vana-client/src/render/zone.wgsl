@@ -261,16 +261,42 @@ fn fs_actor(in: VertexOut) -> @location(0) vec4<f32> {
     return vec4<f32>(shade(in, vec4<f32>(lit, 1.0)).rgb, alpha);
 }
 
+// Placements named '_': D3DRS_ALPHAFUNC GREATER, ALPHAREF 0x60 on alpha = tex.a x vertex.a x 4 (MODULATE4X; ours with
+// the texture alpha already doubled).
 @fragment
 fn fs_alpha_test(in: VertexOut) -> @location(0) vec4<f32> {
     let color = textureSample(tex, samp, in.uv) * in.color * 2.0;
-    if (color.a < 0.3) {
+    if (color.a <= 96.0 / 255.0) {
         discard;
     }
     if (u.sun.w > 0.5) {
         return lit_zone(in, textureSample(tex, samp, in.uv));
     }
     return shade(in, color);
+}
+
+// MMB models with bit 31: blended by that alpha (SRCALPHA / INVSRCALPHA), alpha-tested only on '_' placements.
+fn blended(in: VertexOut) -> vec4<f32> {
+    let t = textureSample(tex, samp, in.uv);
+    let a = clamp(t.a * in.color.a * 2.0, 0.0, 1.0);
+    if (u.sun.w > 0.5) {
+        return vec4<f32>(lit_zone(in, t).rgb, a);
+    }
+    return vec4<f32>(shade(in, t * in.color * 2.0).rgb, a);
+}
+
+@fragment
+fn fs_blend(in: VertexOut) -> @location(0) vec4<f32> {
+    return blended(in);
+}
+
+@fragment
+fn fs_blend_test(in: VertexOut) -> @location(0) vec4<f32> {
+    let c = blended(in);
+    if (c.a <= 96.0 / 255.0) {
+        discard;
+    }
+    return c;
 }
 
 // ---- D3D8 fixed-function zone lighting (dat/weather.rs; FUN_10174610, FUN_10008d60 defaults) ----
