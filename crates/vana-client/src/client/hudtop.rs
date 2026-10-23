@@ -30,6 +30,10 @@ pub struct HudTop {
     last: Option<Instant>,
     /// The 0x8000 windows' fade (titlewin, helpwind, netstat).
     pub fade: TopFade,
+    /// helpwind's busy strip (+0x64): keytops3 165 + frame, `busy_wait` ticks left on it, the last frame's state.
+    busy_frame: usize,
+    busy_wait: f32,
+    busy_was: bool,
 }
 
 /// Text slots of helpwind (+0x20) and titlewin (+0xa4), FUN_10217230: index 0 action menu, 1 focused window,
@@ -167,16 +171,18 @@ impl HudTop {
         let ticks = self.ticks();
         self.net_tick(w);
         let (title, help) = (shown(&bars.title), shown(&bars.help));
-        // titlewin HN mode (+0x448) and titlehan are not modelled; the +0x64 busy icon is not decoded.
+        // titlewin HN mode (+0x448) and titlehan are not modelled. A busy bar counts as active (FUN_10221740).
         // The rule runs in game state 0x60 only; zoning and the zone load are taken as 0x70 (inferred).
-        self.fade.advance(ticks, !title.is_empty() || !help.is_empty(), w.zoning_since.is_none() && w.loading.is_none());
-        self.draw_bars(gu, sw, sh, title, help, ticks);
+        let busy = w.scan.busy || w.scan.party_busy;
+        self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
+        self.draw_bars(gu, sw, sh, title, help, ticks, busy);
         // The compass alone is hidden in events.
         self.draw_compass(gu, w, log_top, ticks, !super::event::active(w), camera_forward);
     }
 
     /// titlewin, helpwind and netstat at the current fade (also the offscreen topbar-shot).
-    pub fn draw_bars(&mut self, gu: &mut GameUi, sw: f32, sh: f32, title: &str, help: &str, ticks: f32) {
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_bars(&mut self, gu: &mut GameUi, sw: f32, sh: f32, title: &str, help: &str, ticks: f32, busy: bool) {
         let a = self.fade.alpha();
         // titlewin (16, 16) 112 x 30: the title at (+4, +8), clipped to width - 8 (FUN_1014a3b0); content always.
         if let Some((x, y)) = gu.window_alpha("menu    titlewin", sw, sh, a)
@@ -195,13 +201,31 @@ impl HudTop {
         if self.fade.fade == Fade::Shown {
             gu.sprite("menu    windowps", 361, hx + hw - 80.0, hy, 0x8080_8080);
         }
-        let text = help.to_string();
+        // FUN_102214d0 / FUN_102213e0: while a request is pending (helpwind +0x64), keytops3 165..169 (8 ticks each,
+        // table 0x10385fcc; a new request restarts at 165) centred in the text box at y0 + 8, unfaded, in place of
+        // the text; the marquee stands still.
+        if busy {
+            if !self.busy_was {
+                (self.busy_frame, self.busy_wait) = (0, 8.0);
+            } else {
+                self.busy_wait -= ticks;
+                while self.busy_wait < 1.0 {
+                    self.busy_frame = (self.busy_frame + 1) % 5;
+                    self.busy_wait += 8.0;
+                }
+            }
+            let half = (165..170).filter_map(|f| gu.cell_bounds("menu    keytops3", f, 0)).map(|b| (b[2] - b[0]) / 2.0).fold(0.0, f32::max);
+            let x0 = gu.cell_bounds("menu    keytops3", 165 + self.busy_frame, 0).map_or(0.0, |b| b[0]);
+            gu.sprite("menu    keytops3", 165 + self.busy_frame, sw / 2.0 - half - x0, hy + 8.0, 0x8080_8080);
+        }
+        self.busy_was = busy;
+        let text = if busy { self.help.clone() } else { help.to_string() };
         if text != self.help {
             self.help = text;
             self.help_wait = 60.0;
             self.help_off = 0.0;
         }
-        if !self.help.is_empty() {
+        if !self.help.is_empty() && !busy {
             // Box (x0 + 6, y0 + 8), width - 12 (FUN_101354f0); wider text waits 60 ticks, then 1 px a tick.
             let (bx, bw) = (hx + 6.0, hw - 12.0);
             gu.clip(Some([bx, hy, bw, 30.0]));
@@ -283,11 +307,16 @@ impl HudTop {
                 let (dx, dy) = to_screen(dir, 140.0);
                 gu.sprite("menu    compass", sprite, cx + dx, cy + dy, tint);
             }
-            // FUN_102203b0: while tracking, the kaipage arrow on the rim toward the target (radius 28.8 x 0.8, 36 x 0.8
-            // with NIN main or sub, through the 2k matrix), colour 0x802080f0, its bottom centre on the point; the
-            // name at (+36, +26). The untracked pointer (nearest flagged actor) is not done.
-            if let Some(t) = w.scan.tracking() {
-                let d = Vec3::new(t.pos[0] - w.pos.x, 0.0, t.pos[2] - w.pos.z).normalize_or_zero();
+            // FUN_102203b0: the kaipage arrow on the rim toward the tracked target (colour 0x802080f0, the name in
+            // white) or, untracked, the call-for-help monster (FUN_1021f030; 0x80802020, the name in ncol 8): radius
+            // 28.8 x 0.8, 36 x 0.8 with NIN main or sub, through the 2k matrix, its bottom centre on the point, the
+            // name at (+36, +26); both at a fixed alpha, not the disk's.
+            let aim = match w.scan.tracking() {
+                Some(t) => Some((t.pos[0], t.pos[2], t.index, 0x8020_80f0u32, 0x8080_8080u32)),
+                None => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| (e.pos.x, e.pos.z, e.index, 0x8080_2020, gu.ncol(8))),
+            };
+            if let Some((tx, tz, index, colour, name_colour)) = aim {
+                let d = Vec3::new(tx - w.pos.x, 0.0, tz - w.pos.z).normalize_or_zero();
                 if d != Vec3::ZERO {
                     let nin = w.stats.as_ref().is_some_and(|s| s.main.0 == 13 || s.sub.0 == 13);
                     let radius = if nin { 36.0 } else { 28.8 } * 0.8 * 2.0 * k;
@@ -295,9 +324,9 @@ impl HudTop {
                     let n = gu.lib_len("anc     kaipage").max(1);
                     let fr = (w.started.elapsed().as_secs_f32() * 10.0) as usize % n;
                     let b = gu.cell_bounds("anc     kaipage", fr, 0).unwrap_or([0.0; 4]);
-                    gu.sprite("anc     kaipage", fr, cx + sx - (b[2] - b[0]) / 2.0, cy + sy - (b[3] - b[1]), (alpha << 24) | 0x20_80f0);
-                    if let Some((_, name)) = w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == t.index & 0x3ff) {
-                        gu.shape_text(name, cx + 36.0, cy + 26.0, tint, false);
+                    gu.sprite("anc     kaipage", fr, cx + sx - (b[2] - b[0]) / 2.0, cy + sy - (b[3] - b[1]), colour);
+                    if let Some((_, name)) = w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == index & 0x3ff) {
+                        gu.shape_text(name, cx + 36.0, cy + 26.0, name_colour, false);
                     }
                 }
             }
@@ -544,7 +573,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         }
     }
     if !lobby {
-        top.draw_bars(&mut gu, sw, sh, shown(&bars.title), shown(&bars.help), 0.0);
+        top.draw_bars(&mut gu, sw, sh, shown(&bars.title), shown(&bars.help), 0.0, window == Some("busy"));
     }
     gu.save_png(width, height, [0.30, 0.36, 0.28], out)?;
     println!("wrote {} (fade {:?}, alpha {:.2}, title {:?}, help {:?})", out.display(), top.fade.fade, top.fade.alpha(), shown(&bars.title), shown(&bars.help));

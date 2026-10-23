@@ -28,6 +28,7 @@ mod flag {
 mod id {
     pub const SAY: u16 = 0x01;
     pub const MAP: u16 = 0x4f;
+    pub const RECYCLE: u16 = 0x7a;
     pub const SHOUT: u16 = 0x02;
     pub const YELL: u16 = 0x03;
     pub const TELL: u16 = 0x04;
@@ -233,6 +234,8 @@ fn tag(w: &World, tag: &str, target_cmd: bool) -> Option<String> {
         "<me>" if !target_cmd => Some(w.name.clone()),
         "<bt>" if !target_cmd => battle_target(w).and_then(|t| name_of(w, t)),
         "<pet>" if !target_cmd => pet(w).and_then(|t| name_of(w, t)),
+        // FUN_10076ff0 type 0x16: the zone NPC-list name of the call-for-help monster.
+        "<ht>" if !target_cmd => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).and_then(|e| w.npc_names.iter().find(|(n, _)| (*n & 0x3ff) as u16 == e.index & 0x3ff)).map(|(_, n)| n.clone()),
         "<r>" => w.tells.first().cloned(),
         "<tp>" => vit.map(|v| v.2.to_string()),
         "<hp>" => Some(format!("{}/{}", vit?.0, stats?.hp_max)),
@@ -312,6 +315,7 @@ fn resolve(w: &World, text: Option<&str>, fallback: bool, wide: bool, mode: Mode
             // FUN_1007a1c0: the tracked actor while tracking, when it is here.
             "<scan>" => w.scan.tracking().and_then(|t| w.entities.iter().find(|(_, e)| e.index == t.index).map(|(id, e)| (*id, e.index))),
             "<pet>" => pet(w),
+            "<ht>" => super::target::call_for_help(w).and_then(|id| w.entities.get(&id).map(|e| (id, e.index))),
             _ => None,
         };
         if t.is_some() {
@@ -553,6 +557,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             } else if w.map.is_none() {
                 w.map_cmds.push(super::map::Cmd::Menu);
             }
+            Ok(())
+        }
+        // FUN_1007e420: FUN_101daf70(0x11), the bin beside the inventory; Escape closes both.
+        id::RECYCLE => {
+            super::items::open_bin(w, false);
             Ok(())
         }
         id::RANDOM => {

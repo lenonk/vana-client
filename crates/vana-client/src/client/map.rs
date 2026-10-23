@@ -750,6 +750,23 @@ impl MapWin {
                     s.cursor -= 1;
                     self.sounds.push(Ui::Cursor as u32);
                 }
+                // FUN_101f6c70 3 / 4 (list +0x47 = 1, so no modifier): a page of 10, the cursor row kept; at either
+                // end the cursor goes to the first / last row instead (SE 0001 only when something moved).
+                K::ArrowRight | K::ArrowLeft if n > 0 => {
+                    let max = n.saturating_sub(SCAN_ROWS);
+                    let row = s.cursor - s.scroll;
+                    let last = (n - s.scroll).min(SCAN_ROWS) - 1;
+                    let (scroll, cursor) = match key {
+                        K::ArrowRight if s.scroll == max => (s.scroll, s.scroll + last),
+                        K::ArrowRight => ((s.scroll + SCAN_ROWS).min(max), (s.scroll + SCAN_ROWS).min(max) + row),
+                        _ if s.scroll == 0 => (0, 0),
+                        _ => (s.scroll.saturating_sub(SCAN_ROWS), s.scroll.saturating_sub(SCAN_ROWS) + row),
+                    };
+                    if (scroll, cursor) != (s.scroll, s.cursor) {
+                        self.sounds.push(Ui::Cursor as u32);
+                    }
+                    (s.scroll, s.cursor) = (scroll, cursor.min(n - 1));
+                }
                 K::Enter => {
                     if let Some(r) = s.rows.get(s.cursor) {
                         self.scroll_to_px(r.px);

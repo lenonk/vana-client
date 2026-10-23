@@ -33,6 +33,8 @@ pub struct Scan {
     pub track: Track,
     /// The help bar's busy strip (bit 0x80) while a scan is pending.
     pub busy: bool,
+    /// Bit 4: c2s 0x0D2 sent, cleared by any s2c 0x0A0 or the map closing.
+    pub party_busy: bool,
 }
 
 impl Scan {

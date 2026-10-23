@@ -42,8 +42,14 @@ pub fn push_cursor(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32, chi
 /// apart; US columns (0x10375ee4) put the icon at 0 (32x32 at 0.5), the name at 18 (y + 2) and the
 /// count right-aligned at 16 (y + 4, over the icon).
 pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize) {
+    push_item_list(b, ui, style, font, atlas, m, list, w, h, frame, 3.0, true);
+}
+
+/// An item list window with its rows `inset` px in ("menu    bank" rows sit at x 4) and the cursor only when focused.
+#[allow(clippy::too_many_arguments)]
+pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize, inset: f32, focused: bool) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
-    let (ox, oy) = (wx + 3.0, wy + 4.0);
+    let (ox, oy) = (wx + inset, wy + 4.0);
     for (k, row) in list.visible().iter().enumerate() {
         let y = oy + k as f32 * ROW_PITCH;
         b.push_image(&icon_texture(row.id), ox, y, 16.0, 16.0, [1.0; 4]);
@@ -52,7 +58,7 @@ pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Fo
             push_shape_text_right(b, ui, c.as_bytes(), ox + 16.0, y + 4.0, 0x8080_8080);
         }
     }
-    if !list.rows.is_empty() {
+    if focused && !list.rows.is_empty() {
         push_cursor(b, ui, m, wx, wy, list.cursor + 1, frame);
     }
 }

@@ -1279,11 +1279,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 let _ = w.net.commands.send(NetCommand::Packet { id, body: v.to_le_bytes().to_vec() });
             };
             match out {
-                map::Out::AskParty => send(world, 0x0D2, zone as u32),
+                map::Out::AskParty => {
+                    send(world, 0x0D2, zone as u32);
+                    world.scan.party_busy = true;
+                }
+                // FUN_101fb7d0: the strip for either packet (0x0F6 while the last list is still open).
                 map::Out::Scan => {
                     let id = world.scan.start();
                     send(world, id, (id == 0x0F4) as u32);
-                    world.scan.busy = id == 0x0F4;
+                    world.scan.busy = true;
                 }
                 map::Out::Track(i) => {
                     send(world, 0x0F5, i as u32);
@@ -4298,6 +4302,7 @@ impl App {
                     }
                 }
                 NetEvent::MapGroup { id, zone, pos } => {
+                    world.scan.party_busy = false;
                     let own = world.party.own_flags;
                     let member = world.party.members().skip(1).find(|m| m.id == id).map(|m| (m.name.clone(), (m.flags ^ own) & 3 != 0));
                     let p = Vec3::from(pos);
@@ -4776,6 +4781,7 @@ impl App {
         {
             let (back, reopen) = (m.return_menu, m.reopen);
             world.map = None;
+            world.scan.party_busy = false;
             match reopen {
                 Some((zone, key)) => world.map_cmds.push(map::Cmd::Other { zone, key, return_menu: back }),
                 None if back.is_some() => world.menu = back,
@@ -4791,7 +4797,7 @@ impl App {
         items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)
-            && let Some(items::Win::Items { direct: false, sub: None, manual: None, sort, .. }) = &mut world.win
+            && let Some(items::Win::Items { direct: false, sub: None, manual: None, bin: None, sort, .. }) = &mut world.win
         {
             *sort = match sort {
                 Some(_) => None,

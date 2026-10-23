@@ -4306,8 +4306,7 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   - Compass (FUN_102203b0): while tracking, the kaipage arrow on the rim toward the target (radius 28.8 x 0.8, 36 x 0.8
     with NIN main / sub, scale 2k, the disk's tilt), colour 0x802080f0, bottom centre on the point; the name at (cx +
     36, cy + 26). Tags: `<scan>` = the tracked name in text, the tracked actor as a command target.
-  - Not done: the help bar's busy strip (keytops3 165..169 while a scan is pending), the untracked compass pointer
-    (nearest flagged actor, also `<ht>`), mapscan's disabled look, list paging keys.
+  - The busy strip, the untracked pointer, `<ht>` and paging: see "Wide Scan leftovers" below.
   - Live (Lnxcsfix, Southern San d'Oria): the list filled with NPCs, Track on Ephauge closed the map, the compass
     arrow and name showed, `/echo tracking <scan>` printed "tracking Ephauge".
 - Augments (full spec with every table, handler and the 23 test vectors: scratchpad augment/SPEC.md of that session;
@@ -4400,3 +4399,32 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   with it.
 - The direct-use list colours (FUN_101f0810): usable items 0x80909040, equipped charged gear 0x80407090 when ready
   (FUN_100febe0: extdata kind 1, u16 @2 bit 0x4000) else 0x80404040.
+
+## Wide Scan leftovers: the busy strip, the call-for-help pointer, `<ht>`, scanlist paging (2026-10-23)
+
+- helpwind busy strip (text object at window +0x20, bits +0x64; set FUN_10221270, clear FUN_10221300, draw
+  FUN_102214d0, tick FUN_102213e0): while any bit is set the help text and its marquee are replaced by keytops3
+  165..169 (table 0x10385fcc, 8 ticks a frame, looping; each set restarts at 165), centred in the text box (x = box
+  centre - half the widest frame - the frame's x0, y = y0 + 8), 0x80808080, unfaded. It is the "Downloading data ..."
+  strip. FUN_10221740 counts a busy bar as active (the bars stay up; inferred from the caller testing AL).
+  - Bits: 0x80 Wide Scan (set by FUN_101fb7d0 after c2s 0x0F4 or the 0x0F6 sent in its place; cleared by the 0x0F6
+    list end, a 30 s timer, scanlist closing), 4 party positions (c2s 0x0D2; cleared by every s2c 0x0A0 and the map
+    closing), 0x40 "menu    level" after c2s 0x061, 2 after c2s 0x05A (inf: region info), 0x10 message windows, 8 /
+    1 list windows (not identified). Ours: 0x80 and 4 (Scan::busy / party_busy). +0x68 / +0x6c are separate
+    right-aligned indicators from session flags (not done).
+- FUN_1021f030 (the compass's untracked pointer and `<ht>`): over all actors, those with a model (+0xa0), the monster
+  flag (+0x120 bit 13), the call-for-help flag (+0x127 bit 0: 0x00E u32 @0x20 bit 13, our marks.yell) and not dead
+  (+0x170 not 2 / 3); the nearest by horizontal distance (first match, then strictly nearer); 0.0 = none. No range,
+  claim or party test.
+  - Compass (FUN_102203b0 tail), only when not tracking: the same kaipage arrow as tracking in 0x80802020, the name
+    (zone NPC list by index) at (cx + 36, cy + 26) in ncol entry 8; nothing when none qualifies. Both arrows and names
+    use fixed colours, not the disk's open alpha (ours faded them before).
+  - `<ht>`: in text (FUN_10076ff0 type 0x16, where `<t>` expands) the NPC-list name; as a command target
+    (FUN_1007a1c0) that actor, else the generic unresolved-tag path.
+- scanlist paging (list base FUN_101f6c70 messages 3 / 4; the base sets +0x47 = 1, so plain Right / Left page): a
+  page of 10 with the cursor row kept; at the last page Right puts the cursor on the last row, at the first page Left on
+  the first; SE 0001 when something moved.
+- Not done: mapscan's disabled look for untrackable rows (keytops3 300 at 0x30808080, with the cursor 0x40402810 at
+  (+1, +1); FUN_101177d0's rule) and map0 child 2's cursor highlight (keytops3 20 at (+1, +1) in 0x80805020).
+- Checked offscreen: `topbar-shot --window busy` draws the strip. Not seen live: the call-for-help pointer, `<ht>`,
+  the paging.

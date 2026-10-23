@@ -13,6 +13,22 @@ pub const FOCAL: f32 = 350.0;
 
 /// The forced flash (actor +0x88 bit 0x200) for a frame, as the sub-target cursor and area previews set it,
 /// unless /targetcharaeffect turned it off (config 0x99 bit 7).
+/// FUN_1021f030: the nearest (horizontal distance) monster with a model, called for help on (+0x127 bit 0, ours
+/// marks.yell) and not dead; the compass's untracked pointer and `<ht>`. No range, claim or party test.
+pub fn call_for_help(w: &World) -> Option<u32> {
+    let mut best: Option<(u32, f32)> = None;
+    for (id, e) in &w.entities {
+        if !(e.mob && e.marks.yell && !matches!(e.motion.status, 2 | 3) && w.actors.get(id).is_some_and(|a| a.gpu.is_some())) {
+            continue;
+        }
+        let d = ((e.pos.x - w.pos.x).powi(2) + (e.pos.z - w.pos.z).powi(2)).sqrt();
+        if best.is_none_or(|(_, b)| b == 0.0 || d < b) {
+            best = Some((*id, d));
+        }
+    }
+    best.filter(|&(_, d)| d != 0.0).map(|(id, _)| id)
+}
+
 pub fn force_flash(w: &mut World, id: u32) {
     if w.game.get(0x99) & 0x80 == 0
         && let Some(a) = w.actors.get_mut(&id)

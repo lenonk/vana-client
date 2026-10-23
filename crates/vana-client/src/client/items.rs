@@ -7,13 +7,17 @@ use super::game_ui::GameUi;
 use super::net::NetCommand;
 use crate::dat::items::Item;
 use crate::inventory::{Equipment, ItemInfo, ItemList, Persona, ROW_PITCH, SLOT_CHILD, Slot, Stats, VISIBLE_ROWS, build_rows, gil_text};
-use crate::render::invwin::{icon_texture, push_equipment, push_inventory, push_money, push_persona};
+use crate::render::invwin::{icon_texture, push_equipment, push_inventory, push_item_list, push_money, push_persona};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 
 /// Main inventory (LSB LOC_INVENTORY).
 pub const INVENTORY: u8 = 0;
+/// The recycle bin's container.
+const BIN: u8 = 17;
+/// The inventory list's x beside the bin (the partner source's position kind 1, FUN_101f1fe0).
+const BIN_LIST_X: i16 = 200;
 /// Item list x while equipping.
 const LIST_X: i16 = 314;
 
@@ -148,7 +152,7 @@ impl ItemInfo for ItemCache {
 pub enum Win {
     /// Main menu Items: the inventory list, and iuse / sortyn over it. `direct`: the action menu's list of usable items,
     /// where Enter uses at once (FUN_1012b880 case 8, FUN_101f0a10).
-    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>> },
+    Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>>, bin: Option<Bin> },
     /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
     Equip { row: usize, col: usize, pick: Option<Pick> },
 }
@@ -159,6 +163,28 @@ pub enum Win {
 pub struct SortWin {
     pub cursor: u16,
     pub ask: Option<bool>,
+}
+
+/// The recycle bin view (FUN_101daf70(0x11) -> FUN_101dc880 / FUN_101dc700): "menu    bank" on container 17 at (16, 48)
+/// beside the inventory list at (200, 48), its rows all grey; the list's scroll / cursor stay the inventory side's.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Bin {
+    pub scroll: usize,
+    pub cursor: usize,
+    /// Focus on the bin (else the inventory side).
+    pub on_bin: bool,
+    /// "menu    itemctrl" for a stack.
+    pub qty: Option<Qty>,
+    /// Opened from itmsort2 (list +0x90): Escape returns there, else the view closes.
+    pub from_menu: bool,
+}
+
+/// The quantity window's pick: the bin slot, the value 1..max.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Qty {
+    pub index: u8,
+    pub value: u32,
+    pub max: u32,
 }
 
 /// The windows over the list: "menu    iuse" (FUN_101f2bb0: 1 Use, 2 Drop) for the slot it opened on, and
@@ -181,14 +207,14 @@ pub struct Pick {
 }
 
 pub fn open_items(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, bin: None });
     w.menu = None;
     w.action_menu = None;
 }
 
 /// The action menu's Items: only usable items, no iuse or sort window.
 pub fn open_direct(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true, sort: None, manual: None });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: true, sort: None, manual: None, bin: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -226,6 +252,11 @@ pub fn focus(w: &World) -> Option<(&'static str, u16)> {
         Win::Items { sub: Some(Sub::Drop { yes, .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
         Win::Items { sort: Some(SortWin { ask: Some(yes), .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
         Win::Items { sort: Some(s), .. } => Some(("menu    itmsort2", s.cursor)),
+        Win::Items { bin: Some(b), cursor, .. } => Some(match (b.qty, b.on_bin) {
+            (Some(_), _) => ("menu    itemctrl", 1),
+            (None, true) => ("menu    bank", b.cursor as u16 + 1),
+            (None, false) => ("menu    inventor", *cursor as u16 + 1),
+        }),
         Win::Items { cursor, .. } => Some(("menu    inventor", *cursor as u16 + 1)),
         Win::Equip { pick: Some(p), .. } => Some(("menu    inventor", p.cursor as u16 + 1)),
         Win::Equip { row, col, pick: None } => Some(("menu    equip", (1 + col * 4 + row) as u16)),
@@ -267,8 +298,13 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     let direct = matches!(w.win, Some(Win::Items { direct: true, .. }));
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
+    if matches!(w.win, Some(Win::Items { bin: Some(_), .. })) {
+        bin_key(w, &info, key);
+        return true;
+    }
     let mut send = None;
     let mut close = false;
+    let mut open_recycle = false;
     match &mut w.win {
         None => return false,
         // iuse (FUN_101f33a0): Up / Down between Use and Drop, Enter on a disabled child SE 0004, Escape back to the
@@ -353,10 +389,8 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                     w.sounds.push(Ui::Select as u32);
                     return true;
                 }
-                (None, egui::Key::Enter) => {
-                    log::info!("the recycle bin list is not implemented");
-                    w.sounds.push(Ui::Error as u32);
-                }
+                // FUN_101f3a50 row 3: FUN_101daf70(0x11), itmsort2 hidden meanwhile.
+                (None, egui::Key::Enter) => open_recycle = true,
                 (None, egui::Key::Escape) => {
                     *sort = None;
                     w.sounds.push(Ui::Close as u32);
@@ -459,6 +493,9 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     if close {
         w.win = None;
     }
+    if open_recycle {
+        open_bin(w, true);
+    }
     if let Some(c) = send {
         log::info!("equip: {c:?}");
         let _ = w.net.commands.send(c);
@@ -532,6 +569,17 @@ pub(super) fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator
 /// sortyn (FUN_10221740 / its open hook): help slot 1 group 0xc 0x3e "Dispose of item?", title slot 2 "Items".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     match &w.win {
+        // The bin (group 0xd 0xc5 "Recycling Bin", rows 0xe 0x42d), the inventory side ("Items", rows without help),
+        // itemctrl (0xe 0x10c, 0xd 0x3e).
+        Some(Win::Items { bin: Some(b), .. }) => {
+            let (help, title) = match (b.qty, b.on_bin) {
+                (Some(_), _) => (gu.menu_msg(0x10c, ""), 0x3e),
+                (None, true) => (gu.menu_msg(0x42d, ""), 0xc5),
+                (None, false) => (String::new(), 2),
+            };
+            bars.help[1] = help;
+            bars.title[1] = gu.title_msg(title).unwrap_or_default();
+        }
         Some(Win::Items { sub: Some(Sub::Drop { .. }), .. }) => {
             bars.help[1] = gu.lobby_msg(0x0c, 0x3e, "");
             bars.title[2] = gu.title_msg(2).unwrap_or_default();
@@ -557,6 +605,8 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
     let (slot, container, mode) = match w.win.as_ref()? {
         // FUN_101f2740: the list and iteminfo are hidden while the item's target prompt is up.
         Win::Items { .. } if item_prompt(w) => return None,
+        // FUN_101dca80: the bin side shows its cursor row; mode 1 (130, 240) clears itemctrl.
+        Win::Items { bin: Some(b), .. } if b.on_bin => (bin_rows(w).get(b.scroll + b.cursor)?.clone(), BIN, if b.qty.is_some() { 1 } else { 0 }),
         Win::Items { scroll, cursor, direct, .. } => (listed(w, *direct).get(scroll + cursor)?.clone(), INVENTORY, 0),
         Win::Equip { pick: Some(p), .. } => {
             let i = *p.indexes.get(p.scroll + p.cursor)?;
@@ -786,7 +836,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let slots = w.inv.slots_of(INVENTORY);
     match win {
         Win::Items { .. } if item_prompt(w) => {}
-        Win::Items { scroll, cursor, sub, direct, sort, manual } => {
+        Win::Items { scroll, cursor, bin: Some(b), .. } => rects.extend(draw_bin(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
+        Win::Items { scroll, cursor, sub, direct, sort, manual, .. } => {
             let shown = listed(w, *direct);
             let mut rows = build_rows(&shown, info.as_ref(), false);
             // FUN_101f0810: the direct list's colours, yellow for usable items, equipped charged gear blue when ready
@@ -881,8 +932,187 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
+/// FUN_101daf70(0x11): status gate 0x44 (synthesis; the costume bit is not tracked here), then the bin beside the
+/// inventory, from itmsort2 (`from_menu`) or `/recycle`. No zone or Mog House rule.
+pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
+    if !super::textcmd::status_gate(w, 0x44) {
+        return false;
+    }
+    let b = Bin { scroll: 0, cursor: 0, on_bin: true, qty: None, from_menu };
+    match &mut w.win {
+        Some(Win::Items { bin, sort, direct: false, .. }) if from_menu => {
+            *bin = Some(b);
+            *sort = None;
+        }
+        _ => {
+            w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, bin: Some(b) });
+            w.menu = None;
+            w.action_menu = None;
+        }
+    }
+    true
+}
+
+/// The bin's rows: container 17 in view order.
+fn bin_rows(w: &World) -> Vec<Slot> {
+    w.inv.viewed(BIN).into_iter().filter(|s| s.index != 0 && s.id != 0).collect()
+}
+
+/// FUN_101db220 for a bin row: grey with no free inventory slot, or a Rare item already held (but in containers 3 /
+/// 17); orange for the row whose quantity is being set; else white.
+fn bin_tint(w: &World, info: &ItemCache, s: &Slot, picked: Option<u8>) -> u32 {
+    let free = (w.inv.sizes[0] as usize).saturating_sub(1) > w.inv.slots_of(INVENTORY).iter().filter(|x| x.index != 0).count();
+    let rare = info.item(s.id).is_some_and(|it| it.flags & 0x8000 != 0) && w.inv.slots.iter().any(|(&(c, _), &(id, _))| id == s.id && c != 3 && c != BIN);
+    if !free || rare {
+        crate::inventory::TINT_DIM
+    } else if picked == Some(s.index) {
+        0x8080_4020
+    } else {
+        crate::inventory::TINT_WHITE
+    }
+}
+
+/// FUN_100eb710 from the bin: c2s 0x029 {n, 17, 0, slot, 0x52} (the inventory's first free slot).
+fn send_bin(w: &World, index: u8, n: u32) {
+    let mut b = vec![0u8; 8];
+    b[0..4].copy_from_slice(&n.to_le_bytes());
+    (b[4], b[5], b[6], b[7]) = (BIN, INVENTORY, index, 0x52);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x029, body: b });
+}
+
+/// The bin view's keys (FUN_101db690, FUN_101dcb80, itemctrl FUN_1013a6c0): Right on the bin / Left on the inventory
+/// moves the focus (SE 0013); Enter on a bin row sends one item at once or opens itemctrl for a stack (SE 0002), on a
+/// grey row or the inventory side SE 0004; Escape leaves (to itmsort2 when it came from there). itemctrl: Up / Down
+/// +-1 (the step of 10 after a long hold is not done), Right 1, Left the count, Enter sends, Escape drops it.
+fn bin_key(w: &mut World, info: &ItemCache, key: egui::Key) {
+    use crate::audio::Ui;
+    let Some(Win::Items { bin: Some(b), scroll, cursor, .. }) = &w.win else { return };
+    let (mut b, mut scroll, mut cursor) = (*b, *scroll, *cursor);
+    let bins = bin_rows(w);
+    let inv = listed(w, false).len();
+    let (mut close, mut back) = (false, false);
+    if let Some(mut q) = b.qty {
+        match key {
+            egui::Key::ArrowUp => q.value = (q.value + 1).min(q.max),
+            egui::Key::ArrowDown => q.value = q.value.saturating_sub(1).max(1),
+            egui::Key::ArrowRight => q.value = 1,
+            egui::Key::ArrowLeft => q.value = q.max,
+            _ => {}
+        }
+        b.qty = Some(q);
+        match key {
+            egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowRight | egui::Key::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+            egui::Key::Enter => {
+                send_bin(w, q.index, q.value);
+                b.qty = None;
+                w.sounds.push(Ui::Select as u32);
+            }
+            egui::Key::Escape => {
+                b.qty = None;
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            _ => {}
+        }
+    } else {
+        match key {
+            egui::Key::ArrowUp | egui::Key::ArrowDown if b.on_bin => list_keys(&mut b.scroll, &mut b.cursor, bins.len(), key),
+            egui::Key::ArrowUp | egui::Key::ArrowDown => list_keys(&mut scroll, &mut cursor, inv, key),
+            egui::Key::ArrowRight if b.on_bin => {
+                b.on_bin = false;
+                w.sounds.push(Ui::Close as u32);
+            }
+            egui::Key::ArrowLeft if !b.on_bin => {
+                b.on_bin = true;
+                w.sounds.push(Ui::Close as u32);
+            }
+            egui::Key::Enter if b.on_bin => {
+                if let Some(s) = bins.get(b.scroll + b.cursor) {
+                    if bin_tint(w, info, s, None) == crate::inventory::TINT_DIM {
+                        w.sounds.push(Ui::Error as u32);
+                    } else {
+                        w.sounds.push(Ui::Select as u32);
+                        if s.count > 1 {
+                            b.qty = Some(Qty { index: s.index, value: 1, max: s.count });
+                        } else {
+                            send_bin(w, s.index, 1);
+                        }
+                    }
+                }
+            }
+            egui::Key::Enter => w.sounds.push(Ui::Error as u32),
+            // FUN_101dca30 / FUN_101f2640 (no SE in that code: the cancel sound is inferred).
+            egui::Key::Escape => {
+                (close, back) = (!b.from_menu, b.from_menu);
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            _ => {}
+        }
+    }
+    if close {
+        w.win = None;
+        return;
+    }
+    if let Some(Win::Items { bin, scroll: s, cursor: c, sort, .. }) = &mut w.win {
+        (*s, *c) = (scroll, cursor);
+        if back {
+            *bin = None;
+            *sort = Some(SortWin { cursor: 3, ask: None });
+        } else {
+            *bin = Some(b);
+        }
+    }
+}
+
+/// The bin view: "menu    bank" with the bin rows at its layout (16, 48), the inventory list moved to (200, 48) with
+/// every row grey, the cursor on the focused one; "menu    itemctrl" over them for a stack ("%2d" right-aligned at
+/// (+0x34, +0x16), "/%2d" at (+0x3a, +0x16), FUN_1013a520).
+#[allow(clippy::too_many_arguments)]
+fn draw_bin(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cursor: usize, b: &Bin, sw: f32, sh: f32, frame: usize) -> Vec<[f32; 4]> {
+    let mut rects = Vec::new();
+    let bins = bin_rows(w);
+    let mut rows = build_rows(&bins, info, false);
+    for (r, s) in rows.iter_mut().zip(&bins) {
+        r.tint = bin_tint(w, info, s, b.qty.map(|q| q.index));
+    }
+    let blist = ItemList { rows, scroll: b.scroll, cursor: b.cursor };
+    let ilist = ItemList { rows: build_rows(&listed(w, false), info, true), scroll, cursor };
+    upload_icons(gu, info, blist.visible().iter().chain(ilist.visible()).map(|r| r.id));
+    let (bt, ui, style, font) = gu.parts();
+    if let Some(m) = ui.menu("menu    bank") {
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, b.on_bin && b.qty.is_none());
+    }
+    if let Some(m) = ui.menu("menu    inventor") {
+        let mut m = m.clone();
+        if let Some(e) = m.elements.first_mut() {
+            e.x = BIN_LIST_X;
+        }
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, !b.on_bin);
+    }
+    rects.extend(gu.window_rect("menu    bank", sw, sh));
+    if let Some(mut r) = gu.window_rect("menu    inventor", sw, sh) {
+        r[0] += BIN_LIST_X as f32 - gu.window_rect_x("menu    inventor");
+        rects.push(r);
+    }
+    if let Some(q) = b.qty
+        && let Some(win) = gu.lobby_window_off("menu    itemctrl", sw, sh, (0.0, 0.0), Some(1), true, &[])
+    {
+        rects.push(win.frame);
+        let (bt, ui, _, _) = gu.parts();
+        if let Some(m) = ui.menu("menu    itemctrl") {
+            let (x, y) = crate::render::screens::window_pos(m, sw, sh, 1.0, 1.0);
+            crate::render::screens::push_shape_text_right(bt, ui, format!("{:2}", q.value).as_bytes(), x + 52.0, y + 22.0, 0x8080_8080);
+            crate::render::screens::push_shape_text(bt, ui, format!("/{:2}", q.max).as_bytes(), x + 58.0, y + 22.0, 0x8080_8080);
+        }
+    }
+    rects
+}
+
 /// Mouse on the item list: hover moves the cursor, a click on the highlighted row acts as Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+    // The bin view moves the list; its mouse handling (hover messages 3 / 4) is not done.
+    if matches!(w.win, Some(Win::Items { bin: Some(_), .. })) {
+        return;
+    }
     let Some(r) = gu.window_rect("menu    inventor", sw, sh) else { return };
     let row = ((p.1 - r[1] - 4.0) / ROW_PITCH).floor();
     let inside = p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3] && row >= 0.0 && (row as usize) < VISIBLE_ROWS;
