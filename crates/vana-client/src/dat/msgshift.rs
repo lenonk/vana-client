@@ -72,6 +72,21 @@ impl MsgShift {
         let s = self.zones.get(&zone)?.segs.iter().find(|s| s.from <= lsb && lsb <= s.to)?;
         lsb.checked_add_signed(s.delta)
     }
+
+    /// As map; outside the segments (inferred) a gap just before one takes the next one's delta (e.g. 230: LSB 6439
+    /// "Obtained: <item>." is DAT 6432, -7), else the nearest segment's. The segments only cover what the generator
+    /// could anchor, so common lines past them (ITEM_OBTAINED, NOTHING_HAPPENS, ...) were dropped.
+    pub fn map_near(&self, zone: u16, lsb: u32) -> Option<u32> {
+        if let Some(id) = self.map(zone, lsb) {
+            return Some(id);
+        }
+        let segs = &self.zones.get(&zone)?.segs;
+        if let Some(n) = segs.iter().filter(|s| s.from > lsb && s.from - lsb <= 8).min_by_key(|s| s.from) {
+            return lsb.checked_add_signed(n.delta);
+        }
+        let near = segs.iter().min_by_key(|s| if lsb < s.from { s.from - lsb } else { lsb.saturating_sub(s.to) })?;
+        lsb.checked_add_signed(near.delta)
+    }
 }
 
 fn md5_8(data: &[u8]) -> String {

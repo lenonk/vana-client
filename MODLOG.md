@@ -5002,3 +5002,15 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   baked into the text. The Extras switch stamps every line in 0xb5's format (seconds while 0xb5 is off).
 - The main menu opens on the page it was closed on (the user's account of retail; FUN_1013b3f0 / socialme's
   open path not traced). Cursor row 1.
+
+## Chat log fixes, first batch (2026-10-23; audit ~/ffxi/lab/research/chat_audit/REPORT.md)
+
+- Talk (FUN_1007bf30): mounted (FUN_101cbe50 / FUN_101cbe60) refuses with group 7 0x4b before anything else; out of
+  range (6.0, _DAT_1032cf50) prints system message 9 "Target out of range." (FUN_100a1ab0, file 7031). It printed
+  battle message 9. Invisible (own +0x128 bit 6, 7031 0xac) not done: we do not keep that flag.
+- /party (FUN_100e3400): fewer than 2 in the party (FUN_100e8f70(5)) prints 7031 0x24 "There are no party members."
+  and sends nothing; the caller still echoes the line. /linkshell (7031 0x25, FUN_100e9730) not done: the
+  equipped linkshell (s2c 0x0E0) is not kept.
+- MsgShift (inferred): ids outside the matched segments take the nearest segment's delta (a gap of up to 8 just
+  before one takes the next one's). Every zone's table is delta 0 for this install, and 263 LSB ids in 147 zones
+  were dropped (zone 101: 141 "Nothing happens...", 6409, 6417 "Obtained: <item>.", 6420 now show).

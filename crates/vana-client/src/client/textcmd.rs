@@ -872,6 +872,12 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
         id::ASSISTJ => 0x22,
         _ => 0x23,
     };
+    // FUN_100e3400: /party with fewer than 2 in the party (FUN_100e8f70(5)) prints 7031 0x24 and sends nothing; the
+    // caller still echoes the line.
+    let send_it = !(kind == 4 && w.party.party().count() < 2);
+    if !send_it {
+        system_line(w, 0x24);
+    }
     let me = w.name.clone();
     let line = match cid {
         id::YELL => {
@@ -884,7 +890,9 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
     };
     let c = super::cfgapply::chat_colour(&w.game, kind);
     w.chat.push_chat(line, c);
-    send(w, NetCommand::Chat { kind, text: msg.to_string() });
+    if send_it {
+        send(w, NetCommand::Chat { kind, text: msg.to_string() });
+    }
     Ok(())
 }
 

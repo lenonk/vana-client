@@ -1849,6 +1849,11 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     if active(w) || w.talk_lock.is_some() || w.zone.is_none() {
         return false;
     }
+    // FUN_1007bf30: not while mounted (FUN_101cbe50 / FUN_101cbe60: group 7 0x4b).
+    if matches!(w.my_motion.status, 5 | 0x55) {
+        super::textcmd::refuse(w, 0x4b);
+        return false;
+    }
     // LAB_101d6040: the Mog House door is the client's own; it opens the exit menu or the prompt.
     if target == super::myroom::DOOR_ID && w.myroom.is_some() {
         super::open_mogdoor(w);
@@ -1860,8 +1865,9 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     if target >> 24 == 0 || e.index == 0 || !(w.actors.contains_key(&target) || e.door != 0) || e.flags & 6 != 0 {
         return false;
     }
+    // LAB_1007c0ec: system message 9 "Target out of range." (FUN_100a1ab0, file 7031).
     if (e.pos - w.pos).length() > TALK_RANGE {
-        super::combat::system_message(w, 9);
+        super::textcmd::system_line(w, 9);
         return false;
     }
     if matches!(e.motion.status, 2 | 3) {
@@ -1874,13 +1880,6 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     true
 }
 
-/// Inferred: an id in a gap just before a segment (within 8) takes that segment's delta. The gaps are
-/// where the generator found no unique anchor (e.g. 230: LSB 6439 "Obtained: <item>." is DAT 6432, -7).
-fn gap_map(m: &crate::dat::msgshift::MsgShift, zone: u16, lsb: u32) -> Option<u32> {
-    let next = m.zones.get(&zone)?.segs.iter().filter(|s| s.from > lsb).min_by_key(|s| s.from)?;
-    (next.from - lsb <= 8).then(|| lsb.checked_add_signed(next.delta)).flatten()
-}
-
 /// s2c 0x036 / 0x02A: zone dialogue by server id (mapped to the install with MsgShift), into the log.
 pub fn zone_text(w: &mut World, t: &ZoneText) {
     let Some(zone) = w.zone else { return };
@@ -1890,7 +1889,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
     }
     let lsb = (t.mes & 0x7fff) as u32;
     let id = match &w.msgshift {
-        Some(m) if m.zones.contains_key(&zone) => m.map(zone, lsb).or_else(|| gap_map(m, zone, lsb)),
+        Some(m) if m.zones.contains_key(&zone) => m.map_near(zone, lsb),
         _ => Some(lsb),
     };
     let Some((_, d)) = &w.zone_text else { return };

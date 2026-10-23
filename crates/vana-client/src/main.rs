@@ -960,7 +960,7 @@ fn main() -> Result<()> {
                 None => println!("zone {zone}: no mapping for this install"),
             }
             for id in ids {
-                let to = shift.map(zone, id);
+                let to = shift.map_near(zone, id);
                 let text = to.and_then(|t| dialog.as_ref().and_then(|d| d.get(t))).unwrap_or_default();
                 println!("{zone} {id} -> {} {text}", to.map_or("unknown".into(), |t| t.to_string()));
             }
