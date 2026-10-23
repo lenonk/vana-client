@@ -716,6 +716,22 @@ mod tests {
         }
     }
 
+    /// First person's eye (FUN_10020ba0): attach point 12 sits at head height in every PC's rest pose.
+    #[test]
+    fn eye_points() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        for (file, lo, hi) in [(7072u32, 1.4f32, 2.1), (16600, 1.7, 2.5), (19776, 0.7, 1.4), (26352, 1.8, 2.7)] {
+            let Ok(d) = index.read(file) else { return };
+            let skel = super::load_file(&d).unwrap().skeleton.unwrap();
+            let rest = super::pose(&skel, &[]);
+            let (bone, off) = skel.points[12];
+            let (q, t) = rest[bone as usize];
+            let h = -(t + q * off).y;
+            println!("file {file}: point 12 bone {bone} height {h:.2}");
+            assert!((lo..hi).contains(&h), "file {file}: {h}");
+        }
+    }
+
     /// Every PC skeleton's head look: head (0.24, 0.16, 0.5), neck (0.16, 0.06, 0.5); points 3 / 7 head / neck.
     #[test]
     fn look_limits() {

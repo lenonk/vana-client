@@ -346,9 +346,16 @@ fn first_person(w: &mut World, ticks: f32, inp: &Inputs) {
     let dir = w.net.me.lock().map_or(0, |m| m.dir);
     let f = super::forward_from_dir(dir);
     let status = w.my_motion.status;
-    let joint = if matches!(status, 7 | 0x21 | 0x2c | 0x2f | 0x30 | 0x3f..=0x53) { 6 } else { 12 };
-    let h = w.actors.get(&w.my_id).and_then(|a| a.bones.get(joint).map(|b| -b.1.y * a.scale)).unwrap_or(1.5);
-    let h = if joint == 12 { (h * 0.91).min(2.0) } else { h };
+    // FUN_10020ba0: attach point 6 resting or seated, else point 12 (vt+0x1c4, the posed point), 0.91 x its height
+    // at most 2.
+    let k = if matches!(status, 7 | 0x21 | 0x2c | 0x2f | 0x30 | 0x3f..=0x53) { 6 } else { 12 };
+    let point = |a: &super::Actor| {
+        let (bone, off) = *a.character.as_ref()?.skeleton.points.get(k)?;
+        let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
+        bones.get(bone as usize).map(|(q, t)| -(*t + *q * off).y * a.scale)
+    };
+    let h = w.actors.get(&w.my_id).and_then(point).unwrap_or(1.5);
+    let h = if k == 12 { (h * 0.91).min(2.0) } else { h };
     let eye = Vec3::new(p.x - f.x * 0.5, p.y - h, p.z - f.z * 0.5);
     // 0.25 of the gap a retail frame *(inf: per 2 ticks)*.
     let k = 1.0 - 0.75f32.powf(ticks / 2.0);

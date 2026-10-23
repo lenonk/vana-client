@@ -5335,7 +5335,7 @@ impl App {
                         a.top_key = "rest".into();
                     }
                     // CPU bones only where the locked camera reads them (player bone 13, target bone 5).
-                    if w.locked && (*id == w.my_id || w.target == Some(*id)) {
+                    if (w.locked && (*id == w.my_id || w.target == Some(*id))) || (w.camst.first && *id == w.my_id) {
                         a.bones = if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
                     }
                     let frame = actor_matrix(pos, forward);
