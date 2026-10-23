@@ -1,6 +1,6 @@
 //! The mouse cursor (mouse object DAT_104e1d4c): its kind from FUN_10125360 and its draw, FUN_10124eb0. Config 0021
 //! picks the game's own sprite cursor (0, the default) or the game folder's Windows cursors (.ani, LoadCursorFromFileA).
-//! Mods reach both: menu packs through the sprite DAT, cursor packs through the .ani files.
+//! A cursor pack in the mods shows in both (not retail).
 
 use super::game_ui::GameUi;
 use std::sync::Arc;
@@ -31,9 +31,10 @@ const FILES: [&str; 18] = [
     "arw_n.ani", "arw_ne.ani", "arw_e.ani", "arw_se.ani", "arw_s.ani", "arw_sw.ani", "arw_w.ani", "arw_nw.ani",
 ];
 
-/// A cursor file as loaded.
+/// A cursor file as loaded, and whether a mod supplied it.
 struct Loaded {
     cursor: crate::dat::cursor::Cursor,
+    from_mod: bool,
 }
 
 /// One loaded Windows cursor: a winit cursor per image and its steps (image, jiffies).
@@ -75,11 +76,25 @@ impl MouseCursor {
         self.kind = CAMERA_DRAG;
     }
 
-    /// The sprite cursor at UI pixel (x, y), last over every window (a menu pack's sprites when one is installed),
-    /// stepping one frame each 1/30 s (retail: each drawn frame at 30 fps); the cycle runs 0..n-1 then shows 0 twice
-    /// (a null sprite resets the counter).
-    pub fn draw(&mut self, gu: &mut GameUi, x: f32, y: f32, dt: f32, size: f32) {
+    /// The cursor drawn at UI pixel (x, y), last over every window. A cursor pack in the mods draws its .ani images,
+    /// so both modes show the same set (not retail: retail draws its sprites whatever is installed). Otherwise the
+    /// sprite steps one frame each 1/30 s (retail: each drawn frame at 30 fps), cycling 0..n-1 then 0 twice (a null
+    /// sprite resets the counter).
+    /// `size` scales the sprite and `file_size` the pack's images (UI pixels per screen pixel times the setting).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw(&mut self, gu: &mut GameUi, index: Option<&Arc<crate::dat::DatIndex>>, x: f32, y: f32, dt: f32, size: f32, file_size: f32) {
         if !self.visible {
+            return;
+        }
+        let idx = self.file_index();
+        let clock = self.clock();
+        if let Some(f) = self.files(index).get(idx).and_then(|f| f.as_ref()).filter(|f| f.from_mod) {
+            let k = f.cursor.steps[step_of(&f.cursor.steps, clock)].0.min(f.cursor.frames.len() - 1);
+            let fr = &f.cursor.frames[k];
+            let name = format!("cursor {idx} {k}");
+            gu.image(&name, fr.width, fr.height, fr.rgba.clone());
+            let (hx, hy) = (fr.hotspot.0 as f32 * file_size, fr.hotspot.1 as f32 * file_size);
+            gu.image_rect(&name, x - hx, y - hy, fr.width as f32 * file_size, fr.height as f32 * file_size, [0.5, 0.5, 0.5, 1.0]);
             return;
         }
         let k = self.kind.min(6) as usize;
@@ -123,13 +138,14 @@ impl MouseCursor {
     /// The 18 cursor files, through the mods (DatIndex::root_file), loaded once.
     fn files(&mut self, index: Option<&Arc<crate::dat::DatIndex>>) -> &[Option<Loaded>] {
         self.files.get_or_insert_with(|| {
+            let mods = crate::config::mods_dir();
             FILES
                 .iter()
                 .map(|name| {
                     let path = index?.root_file(name);
                     let mut cursor = crate::dat::cursor::parse(&std::fs::read(&path).ok()?).map_err(|e| log::warn!("cursor {}: {e:#}", path.display())).ok()?;
                     cursor.frames.iter_mut().for_each(fix_hotspot);
-                    Some(Loaded { cursor })
+                    Some(Loaded { cursor, from_mod: path.starts_with(&mods) })
                 })
                 .collect()
         })

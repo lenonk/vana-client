@@ -5416,9 +5416,11 @@ impl App {
                 && self.cursor_in
                 && let Some((x, y)) = self.last_cursor
             {
-                // The sprite is in UI pixels: undo the UI stretch so the size setting is in screen pixels.
+                // The sprite is in UI pixels: undo the UI stretch so sizes are in screen pixels. Auto grows only the
+                // sprite; a cursor pack's images stay at their own size, as the hardware cursor shows them.
                 let s = self.cfg.cursor_scale(size[1]) * self.ui_k.1;
-                self.mouse.draw(lu, x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt, s);
+                let fs = if self.cfg.cursor_size == 0 { 1.0 } else { self.cfg.cursor_size as f32 / 100.0 } * self.ui_k.1;
+                self.mouse.draw(lu, self.index.as_ref(), x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt, s, fs);
             }
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());
