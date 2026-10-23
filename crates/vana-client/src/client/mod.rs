@@ -794,7 +794,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let mut pick: Option<usize> = None;
     let mut answer: Option<bool> = None;
     let mut act: Option<u8> = None;
-    for ev in &input.events {
+    // The event input window takes every key first.
+    let input_open = event::input(world).is_some();
+    if input_open {
+        event::input_events(world, &input.events);
+        keys.clear();
+    }
+    for ev in input.events.iter().filter(|_| !input_open) {
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
                 world.chat_input.extend(t.chars().filter(|c| !c.is_control()));
@@ -1283,7 +1289,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // (the choice menu *(inf)*), and while a message waits with no more rows showing than its page: older lines
     // decay away and the message holds.
     let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
-    let keep = (world.typing && world.log.lines() > 2) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
+    // The event input window sets the same input-line flag as the chat line (DAT_1062193c +0x4c).
+    let line_open = world.typing || event::input(world).is_some();
+    let keep = (line_open && world.log.lines() > 2) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
     if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) {
         world.log_active = false;
@@ -1308,11 +1316,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(r);
     } else if let Some(fl) = world.full_log {
         // The small logs are closed while the full log is open (FUN_1015c280).
-        blockers.push(world.log.draw_full(gu, &fl, sw, sh, world.typing, world.game.get(0xb4) != 0));
+        blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, world.game.get(0xb4) != 0));
     } else if log.rect[3] > 0.0 {
         let [x, y, w, h] = log.rect;
         gu.frame(x, y, w, h);
-        let newest = world.log.draw(gu, &log, world.typing);
+        let newest = world.log.draw(gu, &log, line_open);
         // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw.
         if event::prompt(world)
             && let Some((lx, ly, last)) = newest
@@ -1338,6 +1346,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             gu.rect(x + 4.0 + gu.text_width(&shown), y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
         }
         blockers.push([x, y, w, 22.0]);
+    }
+    if let Some(inp) = event::input(world) {
+        let text = String::from_utf8_lossy(&inp.text).into_owned();
+        blockers.extend(draw_event_input(gu, inp.kind, &text, inp.caret, sw, sh));
     }
     if st.target.is_some() {
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
@@ -2079,6 +2091,37 @@ fn drawn_between_steps(h: &[Vec3; 4], t: f32) -> Vec3 {
     let a = (h[0] + h[1] + h[2]) / 3.0;
     let b = (h[1] + h[2] + h[3]) / 3.0;
     a.lerp(b, t)
+}
+
+/// The event input window (FUN_10206640) over the msgline rect: kinds 1..5 a group 0xb title, the text after it;
+/// others the text at +80 (kind 0 with the "Password:" child). 200 px of text around the caret, a steady '|'.
+fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    let hide: &[u16] = if kind == 0 { &[] } else { &[1] };
+    let win = gu.lobby_window_off("menu    passinpu", sw, sh, (0.0, 0.0), None, false, hide)?;
+    let [x, y, ..] = win.frame;
+    let fx = match kind {
+        1..=5 => {
+            let title = gu.group_b([0xb9, 0xbe, 0xb9, 0xc8, 0xc9][kind as usize - 1]).unwrap_or_default();
+            gu.text(&title, x + 4.0, y + 4.0, 0, WHITE);
+            x + 4.0 + gu.text_width(&title)
+        }
+        _ => x + 80.0,
+    };
+    let caret = caret.min(text.len());
+    let before = fit_tail(gu, &text[..caret], 200.0);
+    let room = 200.0 - gu.text_width(&before);
+    let mut used = 0.0;
+    let after: String = text[caret..]
+        .chars()
+        .take_while(|c| {
+            used += gu.text_width(&c.to_string());
+            used <= room
+        })
+        .collect();
+    let cx = fx + gu.text_width(&before);
+    gu.text(&format!("{before}{after}"), fx, y + 4.0, 0, WHITE);
+    gu.text("|", cx, y + 4.0, 0, WHITE);
+    Some(win.frame)
 }
 
 /// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an

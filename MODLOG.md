@@ -4107,3 +4107,29 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   - +0xe0, the head-look speed: FUN_100d5b10 steps the look weight (K+0xbc) by 0.04 or +0xe0 x 0.01 x 0.04
     (0x10329a18 / 0x1032a85c).
   - Ours: Actor::turn_pct / look_pct, turn_rate() for entities and event poses, Look::step's rate.
+
+## Event input window: op 0x71 and "menu    passinpu" (2026-10-23)
+
+Full spec: scratchpad passinpu/SPEC.md of that session; the facts:
+- Op 0x71 (FUN_100b7e10, 5,585 sites), every sub ends the frame, unknown subs stay. Globals: DAT_10489930 input open
+  (cleared only by the callback LAB_100b83d0), DAT_1047fab0 waiting for the server (cleared by s2c 0x052 mode 3,
+  handler 0x100a2050, and at event start), DAT_104886e0 the 16-byte text (kept across inputs).
+- Opens (FUN_10206540(cb, 0, kind, max); an open while one is up does nothing): 0 kind 0 max 16 (len 2); 0x10 kind
+  val@2 + 1 max 8 (4); 0x12 kind val@2 + 1 max val@4 (6); 0x30 kind val@2 + 3 max 16 (4); 0x32 kind val@2 + 3 max val@4
+  (6). 1: once closed, c2s 0x060 PASSWARDS {+4 target u32, +8 index u16, +0xa 0, +0xc text[16]} (len 2); 2: waits for
+  0x052 mode 3 (len 2; LSB answers 0x060 with onEventUpdate, 0x052 mode 1, then mode 3); 3: set@2 = vulgar-name check
+  (FUN_10094160, "entryz.dic" / "VulgarName", not in the install: 0); 0x11 / 0x13: once closed, set@2 = atoi(text);
+  0x31: once closed, the 16 bytes into str@2. 0x20 / 0x21 maze preview ("menu    prvdungp"), 0x40 / 0x41 linkshell
+  picker ("menu    lscswin"), 0x50..0x55 a full-screen picture (zone 291): not done.
+- Kinds (title from group 0xb by table 0x103854c4): 0 none, child 1 the "Password:" sprite (windowps 328), text at
+  x + 80 (92 fr / de), printable ASCII; 1 0xb9 "Enter quill amount: " digits; 2 0xbe "Enter number:" digits; 3 0xb9
+  letters; 4 0xc8 "Enter password: " letters; 5 0xc9 "Enter name: " letters. Max clamped to 16.
+- Window: 16, H - 38, 366 x 22 (the msgline rect, DAT width kept), registry flags 0x12 (animated, Escape does not close
+  through the generic path). Title at (x + 4, y + 4), the text right after it, 200 px around the caret, steady '|'.
+  Opening sets the log's input-line flag (DAT_1062193c +0x4c) and takes the text engine from the chat line.
+- Keys (shared text engine FUN_101b5d10): over max SE 0004, other characters dropped silently; Left / Right / Home /
+  End / Backspace / Delete edit. Enter (SE 0002, none when empty), Escape (SE 0003) and Up / Down (silent) all close it
+  returning the text as typed: there is no cancelled result.
+- Ours: Effect::Input, Packet::Passwords, Runtime::input_done, release mode 3; client event::Input, input_events,
+  draw_event_input; topbar-shot --window passinpu:KIND:TEXT. Headless: Scripted::inputs; Lower Jeuno 0xc7 sends the
+  typed name and finishes. Not seen live (this server has no Lower Jeuno / Port Jeuno NPCs to talk to).

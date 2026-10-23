@@ -419,6 +419,13 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         }
     }
     for w in window.unwrap_or_default().split(',').filter(|w| !w.is_empty()) {
+        // "passinpu:KIND:TEXT": the event input window with the caret at the end.
+        if let Some(rest) = w.strip_prefix("passinpu:") {
+            let (kind, text) = rest.split_once(':').unwrap_or((rest, ""));
+            gu.open_ticks = 0.0;
+            super::draw_event_input(&mut gu, kind.parse().unwrap_or(0), text, text.len(), sw, sh);
+            continue;
+        }
         let (name, sel) = w.split_once(':').unwrap_or((w, "0"));
         let name = format!("menu    {name}");
         let sel = sel.parse().unwrap_or(0);

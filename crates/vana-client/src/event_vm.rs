@@ -38,6 +38,8 @@ pub enum Packet {
     EventEnd { head: Head, option: u32 },
     /// c2s 0x05C (FUN_1009ec80): x, height, z, dir byte.
     EventPos { head: Head, x: f32, y: f32, z: f32, dir: f32, option: u32 },
+    /// c2s 0x060 PASSWARDS (op 0x71 sub 1): the input window's 16 bytes for the event's target.
+    Passwords { head: Head, text: [u8; 16] },
     /// Any other c2s packet: id and body after the 4-byte header (0x01B, 0x058, 0x0EB).
     Raw { id: u16, body: Vec<u8> },
 }
@@ -55,6 +57,9 @@ pub enum Effect {
     /// 0x46 sub 0 / 1: FUN_10082b20 (flag = DAT_10346088 = 1, camera seeded from the player) /
     /// FUN_10082be0 (flag = 0). Cutscenes run with 0 and set 1 before they end.
     Camera { flag: bool },
+    /// Op 0x71: open "menu    passinpu" (kind: title and allowed characters; max bytes, at most 16); answer with
+    /// [`Runtime::input_done`].
+    Input { kind: i32, max: usize },
     /// Sound volume, 0x69 set / 0x6a fade (FUN_10035200.. / FUN_10034be0): mask 1 world sound effects
     /// (DAT_1034656c), 2 interface sounds (DAT_10346568), 4 music (DAT_10346570), 8 all of them and
     /// the stream at DAT_10450fe8; 0x10 (0x69) sets DAT_10346578. Reaches `level` over `ticks`.
@@ -290,6 +295,11 @@ pub struct Runtime {
     /// Answers awaited for ops 0x8c (DAT_10480a90), 0x87 / 0x88 (DAT_1048557a), 0xa6 (DAT_104804c0); 0xa6's map number.
     recipe_wait: bool,
     pass_wait: bool,
+    /// Op 0x71: the input window is open (DAT_10489930), the server's 0x052 mode 3 is awaited (DAT_1047fab0), the
+    /// last text entered (DAT_104886e0).
+    input_open: bool,
+    input_wait: bool,
+    input_buf: [u8; 16],
     submap_wait: bool,
     submap: u32,
     /// Race and server id per VM actor (values 0x7f07 / 0x7f0a), from the host each tick.
@@ -344,6 +354,9 @@ impl Runtime {
             reg_value: 0,
             recipe_wait: false,
             pass_wait: false,
+            input_open: false,
+            input_wait: false,
+            input_buf: [0; 16],
             submap_wait: false,
             submap: 0,
             dt: 1.0,
@@ -469,6 +482,14 @@ impl Runtime {
         self.z[2..10].copy_from_slice(&num);
     }
 
+    /// The input window closed (callback LAB_100b83d0): every way out returns the text as typed.
+    pub fn input_done(&mut self, text: &[u8]) {
+        self.input_buf = [0; 16];
+        let n = text.len().min(16);
+        self.input_buf[..n].copy_from_slice(&text[..n]);
+        self.input_open = false;
+    }
+
     /// s2c 0x0BF (FUN_100a2160 -> FUN_100bab20): the registration answer op 0xa7 waits for.
     pub fn registration(&mut self, value: u32) {
         if self.reg_armed {
@@ -550,6 +571,8 @@ impl Runtime {
     pub fn release(&mut self, mode: u8, event: u16) {
         match mode {
             1 => self.wait_update = false,
+            // 0x100a2050: CancelInput, the answer to op 0x71's c2s 0x060.
+            3 => self.input_wait = false,
             2 if event == self.start.event => {
                 self.ending = true;
                 self.end_phase = 1;
@@ -1807,6 +1830,59 @@ impl Runtime {
                 self.set_at(v, 1, 0, v32);
                 self.adv(v, len);
             }
+            // FUN_100b7e10: the input window. 0 / 0x10 / 0x12 / 0x30 / 0x32 open it (kind 0 / val@2 + 1 / val@2 + 3,
+            // max 16 / 8 / val@4), 1 sends the last text (c2s 0x060) once it is closed, 2 waits for 0x052 mode 3, 3 the
+            // vulgar-name check (no dictionary here: 0), 0x11 / 0x13 atoi into set@2, 0x31 the 16 bytes into str@2.
+            // The rest go to the host; unknown subs stay. Every call ends the frame.
+            0x71 => {
+                let s = sub.unwrap_or(0xff);
+                let open = match s {
+                    0 => Some((0, 16, 2)),
+                    0x10 => Some((self.val(v, 2) + 1, 8, 4)),
+                    0x12 => Some((self.val(v, 2) + 1, self.val(v, 4), 6)),
+                    0x30 => Some((self.val(v, 2) + 3, 16, 4)),
+                    0x32 => Some((self.val(v, 2) + 3, self.val(v, 4), 6)),
+                    _ => None,
+                };
+                if let Some((kind, max, n)) = open {
+                    // FUN_10206540 ignores an open while one is up.
+                    if !self.input_open {
+                        host.effect(Effect::Input { kind, max: max.clamp(0, 16) as usize });
+                    }
+                    (self.input_open, self.input_wait) = (true, true);
+                    self.adv(v, n);
+                } else {
+                    match s {
+                        1 if !self.input_open => {
+                            host.effect(Effect::Send(Packet::Passwords { head: self.head(), text: self.input_buf }));
+                            self.adv(v, 2);
+                        }
+                        2 if !self.input_wait => self.adv(v, 2),
+                        3 => {
+                            self.set_at(v, 2, 0, 0);
+                            self.adv(v, 4);
+                        }
+                        0x11 | 0x13 if !self.input_open => {
+                            let x = Self::atoi(&self.input_buf) as u32;
+                            self.set_at(v, 2, 0, x);
+                            self.adv(v, 4);
+                        }
+                        0x31 if !self.input_open => {
+                            let b = self.input_buf;
+                            let raw = self.u16_at(v, 2);
+                            self.set4(v, raw, 0, std::array::from_fn(|i| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap())));
+                            self.adv(v, 4);
+                        }
+                        0x20 | 0x21 | 0x40 | 0x41 | 0x50..=0x55 => {
+                            let a = self.args(v, op, sub);
+                            host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                            self.adv(v, len);
+                        }
+                        _ => {}
+                    }
+                }
+                self.yield_(v);
+            }
             // FUN_100b98e0: c2s 0x058 RECIPE {skill +4, level +6, +8, mode +0xa = sub (1 for sub 0), +0xc..+0x12} from
             // the operands; sub 1 waits for s2c 0x031. Sub 5 arms no wait. Every call ends the frame.
             0x8c => {
@@ -1902,7 +1978,19 @@ impl Runtime {
         }
     }
 
-    /// FUN_100aead0: push and jump (the stack is per VM, 8 deep).
+    /// C atoi over at most 16 bytes: leading whitespace, a sign, digits; wrapping.
+fn atoi(b: &[u8]) -> i32 {
+    let b = &b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())];
+    let mut i = b.iter().take_while(|c| c.is_ascii_whitespace()).count();
+    let neg = b.get(i) == Some(&b'-');
+    if matches!(b.get(i), Some(b'-' | b'+')) {
+        i += 1;
+    }
+    let n = b[i.min(b.len())..].iter().take_while(|c| c.is_ascii_digit()).fold(0i32, |n, c| n.wrapping_mul(10).wrapping_add((c - b'0') as i32));
+    if neg { n.wrapping_neg() } else { n }
+}
+
+/// FUN_100aead0: push and jump (the stack is per VM, 8 deep).
     fn call(&mut self, v: usize, to: u16, ret: u16) {
         let vm = &mut self.vms[v];
         if vm.stack.len() == 8 {
@@ -2301,6 +2389,8 @@ pub struct Scripted {
     pub sched_ticks: Option<Box<dyn FnMut(u32, &str, i32) -> Option<f32>>>,
     /// The player's race byte (value 0x7f87).
     pub race: u8,
+    /// Texts typed into op 0x71's input window, in order (empty once used up).
+    pub inputs: std::collections::VecDeque<Vec<u8>>,
     running: Vec<(Busy, u32)>,
     seed: u32,
     frame: u32,
@@ -2353,6 +2443,7 @@ impl Scripted {
             cancel: None,
             sched_ticks: None,
             race: 0,
+            inputs: Default::default(),
             running: Vec::new(),
             seed: 1,
             frame: 0,
@@ -2434,6 +2525,15 @@ pub fn run_scripted(rt: &mut Runtime, host: &mut Scripted, max_frames: u32) -> O
                 rt.params(p);
             }
             rt.registration(0);
+        }
+        if host.log[before..].iter().any(|e| matches!(e, Effect::Input { .. })) {
+            let t = host.inputs.pop_front().unwrap_or_default();
+            rt.input_done(&t);
+        }
+        // LSB answers c2s 0x060 with 0x052 mode 1, then mode 3.
+        if host.log[before..].iter().any(|e| matches!(e, Effect::Send(Packet::Passwords { .. }))) {
+            rt.release(1, rt.start.event);
+            rt.release(3, rt.start.event);
         }
         if host.log[before..].iter().any(|e| matches!(e, Effect::Send(Packet::Raw { .. }))) {
             for id in [0x031, 0x059, 0x10E] {
@@ -2654,6 +2754,29 @@ mod tests {
         run_scripted(&mut rt, &mut host, 600).expect("finished");
         assert_eq!(messages(&host.log), vec![0, 1]);
         assert_eq!(end(&host.log), Some(0x4000_0000));
+    }
+
+    /// Op 0x71 over hand-made code: an "Enter number:" input read with atoi, then a name stored as words.
+    #[test]
+    fn input_window() {
+        assert_eq!((Runtime::atoi(b" -42x"), Runtime::atoi(b"+7"), Runtime::atoi(b"")), (-42, 7, 0));
+        assert_eq!(Runtime::atoi(b"1234567890123456"), 1234567890123456u64 as i32);
+    }
+
+    /// Lower Jeuno 0xc7 (compatibility test): the Password: input (kind 0), its text sent with c2s 0x060, then the wait
+    /// for 0x052 mode 3.
+    #[test]
+    fn input_password_lower_jeuno() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let Ok(blocks) = event::load(&index, 245) else { return };
+        let mut host = Scripted::new(&[Some(0)]);
+        host.inputs.push_back(b"Tuxedo".to_vec());
+        let start = Start { zone: 245, event: 0xc7, target: 0x010f_5023, ..Default::default() };
+        let mut rt = Runtime::start(blocks, Dialog::load(&index, 245).ok(), start, Memory::default(), &mut host);
+        run_scripted(&mut rt, &mut host, 60 * 60).expect("finished");
+        assert!(host.log.iter().any(|e| matches!(e, Effect::Input { kind: 0, max: 16 })));
+        let sent = host.log.iter().find_map(|e| if let Effect::Send(Packet::Passwords { text, .. }) = e { Some(*text) } else { None });
+        assert_eq!(&sent.expect("0x060")[..7], b"Tuxedo\0");
     }
 
     /// The opening cutscene: player block event 0x01f7.

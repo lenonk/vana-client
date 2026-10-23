@@ -283,10 +283,30 @@ pub struct Marker {
     pub name: String,
 }
 
+/// The event input window: kind 1 / 2 digits, 3..5 letters, others printable ASCII; at most `max` bytes.
+pub struct Input {
+    pub kind: i32,
+    pub max: usize,
+    pub text: Vec<u8>,
+    pub caret: usize,
+}
+
+impl Input {
+    fn allows(&self, c: u8) -> bool {
+        match self.kind {
+            1 | 2 => c.is_ascii_digit(),
+            3..=5 => c.is_ascii_alphabetic(),
+            _ => (0x20..=0x7e).contains(&c),
+        }
+    }
+}
+
 pub struct State {
     pub start: EventStart,
     pub msg: Option<Msg>,
     pub choice: Option<Choice>,
+    /// Op 0x71's input window ("menu    passinpu").
+    pub input: Option<Input>,
     /// Actors hidden by the script (op 0x22 / 0x4e, actor +0x120 bit 0x20000; FUN_1008cdc0); seeded at bind
     /// with the server-hidden ones (FUN_100bb300 -> FUN_1008cda0).
     pub hidden: HashSet<u32>,
@@ -348,6 +368,7 @@ impl State {
             start,
             msg: None,
             choice: None,
+            input: None,
             hidden: HashSet::new(),
             faded: HashSet::new(),
             idle: HashMap::new(),
@@ -595,6 +616,11 @@ impl Host for LiveHost<'_> {
                 self.w.screen.scheds.retain(|x| !(x.file == file && x.tag == tag && x.actor == actor && x.target == target));
             }
             // 0x46 sub 0 kills the camera tasks (FUN_1003c780) and puts the camera behind the player.
+            // Op 0x71: the window takes the text engine from the chat line (FUN_101c68a0).
+            Effect::Input { kind, max } => {
+                self.st.input = Some(Input { kind, max, text: Vec::new(), caret: 0 });
+                self.w.typing = false;
+            }
             Effect::Camera { flag } => {
                 self.st.camera_flag = flag;
                 if flag {
@@ -641,6 +667,14 @@ impl Host for LiveHost<'_> {
             Effect::Send(p) => match p {
                 Packet::EventUpdate { head, option } => self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 1 }),
                 Packet::EventEnd { head, option } => self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 0 }),
+                Packet::Passwords { head, text } => {
+                    let mut body = Vec::with_capacity(24);
+                    body.extend_from_slice(&head.target.to_le_bytes());
+                    body.extend_from_slice(&index.to_le_bytes());
+                    body.extend_from_slice(&[0, 0]);
+                    body.extend_from_slice(&text);
+                    self.send(NetCommand::Packet { id: 0x060, body });
+                }
                 Packet::EventPos { head, x, y, z, dir, option } => {
                     self.send(NetCommand::EventPos { pos: [x, y, z], dir: dir_of(dir), target: head.target, index, option, zone: head.zone, event: head.event })
                 }
@@ -1504,6 +1538,65 @@ pub fn idles(w: &World) -> HashMap<u32, String> {
 /// The open message waits for a key (the kaipage arrow shows).
 pub fn prompt(w: &World) -> bool {
     w.event.as_ref().is_some_and(|l| l.st.msg.as_ref().is_some_and(Msg::waits_key))
+}
+
+pub fn input(w: &World) -> Option<&Input> {
+    w.event.as_ref()?.st.input.as_ref()
+}
+
+/// The input window takes every key and character (the shared text engine, FUN_101b5d10): the kind's characters
+/// up to max (over it SE 0004, others dropped silently), caret keys, Backspace / Delete. Enter (SE 0002 unless
+/// empty), Escape (SE 0003) and Up / Down (silent) all close it with the text as typed.
+pub fn input_events(w: &mut World, events: &[egui::Event]) {
+    let Some(l) = w.event.as_mut() else { return };
+    let Some(inp) = l.st.input.as_mut() else { return };
+    let mut done = None;
+    for ev in events {
+        match ev {
+            egui::Event::Text(t) | egui::Event::Paste(t) => {
+                for c in t.bytes() {
+                    if !inp.allows(c) {
+                        continue;
+                    }
+                    if inp.text.len() >= inp.max {
+                        w.sounds.push(crate::audio::Ui::Error as u32);
+                        continue;
+                    }
+                    inp.text.insert(inp.caret, c);
+                    inp.caret += 1;
+                }
+            }
+            egui::Event::Key { key, pressed: true, .. } => match key {
+                egui::Key::ArrowLeft => inp.caret = inp.caret.saturating_sub(1),
+                egui::Key::ArrowRight => inp.caret = (inp.caret + 1).min(inp.text.len()),
+                egui::Key::Home => inp.caret = 0,
+                egui::Key::End => inp.caret = inp.text.len(),
+                egui::Key::Backspace if inp.caret > 0 => {
+                    inp.caret -= 1;
+                    inp.text.remove(inp.caret);
+                }
+                egui::Key::Delete if inp.caret < inp.text.len() => {
+                    inp.text.remove(inp.caret);
+                }
+                egui::Key::Enter => done = Some((!inp.text.is_empty()).then_some(crate::audio::Ui::Select)),
+                egui::Key::Escape => done = Some(Some(crate::audio::Ui::Cancel)),
+                egui::Key::ArrowUp | egui::Key::ArrowDown => done = Some(None),
+                _ => {}
+            },
+            _ => {}
+        }
+        if done.is_some() {
+            break;
+        }
+    }
+    if let Some(se) = done {
+        if let Some(se) = se {
+            w.sounds.push(se as u32);
+        }
+        let text = std::mem::take(&mut inp.text);
+        l.st.input = None;
+        l.rt.input_done(&text);
+    }
 }
 
 pub fn choice(w: &World) -> Option<&Choice> {
