@@ -1021,11 +1021,14 @@ impl Runtime {
                 self.message(v, opc, None, None, id, host);
                 self.adv(v, 3);
             }
+            // FUN_100b1fa0: the "Name : " prefix is actor@2's; the talking mouth (body +0x164) is actor@6's.
             0xb0 if sub == Some(0) => {
                 let who = self.actor_at(v, 2);
                 let id = self.val(v, 10) as u32;
                 if host.ready(who) {
                     self.message(v, opc, Some(who), Some(who), id, host);
+                    let body = self.vms[v].body;
+                    self.bodies[body].msg_actor = Some(self.actor_at(v, 6));
                 }
                 self.adv(v, len);
             }
@@ -1492,8 +1495,10 @@ impl Runtime {
                     self.adv(v, len);
                 }
             },
+            // FUN_100b3e20: the caller's real server id.
             0xbe => {
                 let c = self.thread(v).caller;
+                let c = self.actor_info.get(&c).map_or(c, |i| i.1);
                 self.set_at(v, 1, 0, c);
                 self.adv(v, 3);
             }
@@ -1689,6 +1694,7 @@ impl Runtime {
             0x87 | 0x88 | 0x8c | 0xa6 if sub == Some(0) || sub == Some(2) => {
                 host.effect(Effect::Send(Packet::Other { op: opc, sub: sub.unwrap_or(0) }));
                 self.adv(v, len);
+                self.yield_(v);
             }
             _ => {
                 let a = self.args(v, op, sub);
@@ -1705,7 +1711,7 @@ impl Runtime {
                     }
                     self.adv(v, len);
                     // Retail ends the frame after these (+0x25a = 1 in every sub).
-                    if matches!(opc, 0xb6) {
+                    if matches!(opc, 0xb6 | 0xb5 | 0xc1 | 0x7e | 0x71 | 0xa7 | 0xb3) {
                         self.yield_(v);
                     }
                 }

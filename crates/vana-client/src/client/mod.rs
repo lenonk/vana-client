@@ -1932,6 +1932,8 @@ struct Actor {
     overlay: Option<actmotion::Overlay>,
     /// The status motion's own clock, kept under a one-shot or scheduler motion (its regions stay below).
     base_ticks: f32,
+    /// Event op 0xb6 0xf / 0x17: a scale set by a script (+0x204), over the model's own.
+    event_scale: Option<f32>,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
@@ -1983,6 +1985,7 @@ impl Actor {
             oneshot: None,
             overlay: None,
             base_ticks: 0.0,
+            event_scale: None,
             last_attack: String::new(),
             extra: Vec::new(),
             play: None,
@@ -6000,7 +6003,7 @@ impl App {
                     }
                     a.find_cache = cache.take();
                     let t = a.blend / a.blend_len;
-                    a.scale = ch.scale(size);
+                    a.scale = a.event_scale.unwrap_or_else(|| ch.scale(size));
                     // The rest pose's mesh top, once (stub models, plates without attach points).
                     if a.top_key.is_empty() {
                         a.rest = crate::dat::character::pose(&ch.skeleton, &[]);

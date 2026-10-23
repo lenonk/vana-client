@@ -4062,3 +4062,7 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   timer's progress (ours 0: those windows aren't modelled); 0x15 waits while the map window is open. 2 / 3 target
   window, 7 / 8 casttime, 0xa / 0xb eventtim, 0xf..0x12 chocobo race windows, 0x14 map view: host effects only so far.
   Sweep of zones 230 / 240 after: 1,450 of 1,489 events finish headless, 0 faults.
+- Smaller VM fixes (audit R10 / R14 / R15 / R20 / R21): 0xb0's talking mouth is actor@6 (the prefix stays actor@2);
+  0xbe stores the caller's real server id; a 0x5b / 0x66 / 0x5f motion named 0 or 'xxxx' only loads its file; 0xb6
+  0xf / 0x17 set the event actor's / player's scale (+0x204 = val@2 * 0.01, Actor::event_scale); frame ends after b5,
+  c1, 7e, 71, a7, b3 and the 0x87 / 0x88 / 0x8c / 0xa6 sends. Sweep 230 / 240 unchanged (1,450 / 1,489, 0 faults).

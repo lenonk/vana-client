@@ -415,8 +415,15 @@ impl LiveHost<'_> {
     /// are not applied yet.
     fn event_look(&mut self, sub: u8, actor: u32, args: &[Arg]) {
         use crate::dat::npc::NpcLook;
-        let id = if sub == 0x16 { self.w.my_id } else { self.wid(actor) };
+        let id = if matches!(sub, 0x16 | 0x17) { self.w.my_id } else { self.wid(actor) };
         let v = |k: usize| Self::arg_int(args, k).unwrap_or(0) as u16;
+        // 0xf / 0x17: the event actor's / player's scale +0x204 = val@2 * 0.01.
+        if matches!(sub, 0xf | 0x17) {
+            if let Some(a) = self.w.actors.get_mut(&id) {
+                a.event_scale = Some(Self::arg_int(args, 0).unwrap_or(100) as f32 * 0.01);
+            }
+            return;
+        }
         let cur = self.w.actors.get(&id).and_then(|a| a.source);
         let mut look = match cur {
             Some(super::Source::Pc(l)) | Some(super::Source::Npc(NpcLook::Equipped(l))) => l,
@@ -605,6 +612,8 @@ impl Host for LiveHost<'_> {
             }
             Effect::Motion { op, actor, file, name, .. } => {
                 let id = self.wid(actor);
+                // FUN_100b5210: 4cc 0 or 'xxxx' only loads the file.
+                let name = if name == "xxxx" || name.trim_matches('\0').is_empty() { String::new() } else { name };
                 if let Some(a) = self.w.actors.get_mut(&id) {
                     let files = motion_files(op, file, id, a);
                     a.pending = Some(super::actmotion::Pending { files, name, kind: super::actmotion::Kind::Event });
