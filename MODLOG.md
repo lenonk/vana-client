@@ -3748,3 +3748,18 @@ From the popup spec (scratchpad popupanim/SPEC.md; current [2019] addresses ther
   window_off, menu_sel, lobby_window and so yes / no and OK prompts) return None while opening. Not done: frameless
   windows (bare_window, the select list), the 9-tick press pulse on confirm (FUN_10119fb0), the in-game prompt as
   the real "menu    yesno".
+
+## Tab candidates: the per-frame visibility cull (2026-10-23)
+
+From the cull spec (scratchpad tabcull/SPEC.md).
+- The filter's +0xb2 test is what keeps Tab on screen: bit 0 is cleared each frame by the actor update
+  FUN_100c63d0 and set again when the skeleton bounding box (6 floats at the end of the point table, L + 0x18 i;
+  i by status: 2 dead, 1 engaged / sitting / riding, else 0) is missing, wholly behind the near plane (0.1), past the
+  draw distance, not faded in (+0x59c == 0), off the viewport after projection (corners pulled to -P._22), or fails
+  FUN_1006c280's occlusion test: the rect at zmin + 0.25 (zmax - zmin) depth-tested against the scene, any passing
+  sample visible; each actor every 4th frame, a hidden one reported hidden once more on its way back. Doors: a 0.6
+  cube at the door position, every frame. +0x8c is the farthest corner's depth (the sort key), not a visibility test.
+- FUN_10082d70 sorts ascending (near first). Config 0x3c (characters displayed) only skips mesh draws past the cap;
+  actors past it stay targetable.
+- Ours: client/mod.rs box_on_screen / box_corners / box_index, World::visible; render/occlusion.rs (an 8 x 8 sample
+  compute pass over the scene depth every frame, read back a frame or two late; no hysteresis).

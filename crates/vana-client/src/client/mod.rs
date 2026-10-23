@@ -1824,23 +1824,28 @@ impl crate::fx::Actors for FxActors<'_> {
 const MODEL_CACHE: usize = 96;
 
 /// Model space faces +x; place it at `pos` facing `forward` (xz).
-/// FUN_100c63d0 / FUN_100cbde0's cull of one box (model space corners through `model`): visible unless every corner
-/// is behind the near plane (view z > -0.1, right-handed) or its screen rect misses the viewport. The occlusion test
-/// is not done.
-fn box_on_screen(view: glam::Mat4, proj: glam::Mat4, model: glam::Mat4, corners: &[Vec3; 8]) -> bool {
+/// FUN_100c63d0 / FUN_100cbde0's cull of one box (model space corners through `model`): None when every corner is
+/// behind the near plane (view z > -0.1, right-handed) or its screen rect misses the viewport; else the NDC rect and
+/// the occlusion test's depth, a quarter of the way from the box's nearest to its farthest corner (0.01 nearest when
+/// a corner had to be pulled onto the near plane).
+fn box_on_screen(view: glam::Mat4, proj: glam::Mat4, model: glam::Mat4, corners: &[Vec3; 8]) -> Option<([f32; 4], f32)> {
     let vs: Vec<Vec3> = corners.iter().map(|c| view.transform_point3(model.transform_point3(*c))).collect();
     if vs.iter().all(|v| v.z > -0.1) {
-        return false;
+        return None;
     }
-    let (mut lo, mut hi) = (glam::Vec2::splat(f32::MAX), glam::Vec2::splat(f32::MIN));
+    let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+    let mut clamped = false;
     for v in &vs {
-        // Corners behind the eye are pulled onto the near plane first.
+        clamped |= v.z > -0.1;
         let v = Vec3::new(v.x, v.y, v.z.min(-0.1));
         let c = proj * v.extend(1.0);
-        let n = glam::Vec2::new(c.x, c.y) / c.w;
+        let n = c.truncate() / c.w;
         (lo, hi) = (lo.min(n), hi.max(n));
     }
-    hi.x >= -1.0 && lo.x <= 1.0 && hi.y >= -1.0 && lo.y <= 1.0
+    if clamped {
+        lo.z = 0.01;
+    }
+    (hi.x >= -1.0 && lo.x <= 1.0 && hi.y >= -1.0 && lo.y <= 1.0).then(|| ([lo.x, lo.y, hi.x, hi.y], lo.z + 0.25 * (hi.z - lo.z)))
 }
 
 /// A skeleton box's corners in FUN_100c63d0's order (b0 / b1 and b2 / b3 one apart when equal).
@@ -5219,8 +5224,9 @@ impl App {
                 // Doors: a +-0.6 cube at the door (FUN_100ac8e0's class), tested like the rest.
                 let cube = box_corners([-0.6, 0.6, 0.6, -0.6, 0.6, -0.6]);
                 for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
-                    if box_on_screen(cview, cproj, glam::Mat4::from_translation(e.pos), &cube) {
+                    if let Some((rect, z)) = box_on_screen(cview, cproj, glam::Mat4::from_translation(e.pos), &cube) {
                         visible.insert(*id);
+                        r.occl.query(*id, rect, z);
                     }
                 }
                 for (id, a) in w.actors.iter_mut() {
@@ -5346,9 +5352,12 @@ impl App {
                     if drawn
                         && a.alpha > 0.0
                         && let Some(b) = ch.skeleton.boxes.get(box_index(status)).or(ch.skeleton.boxes.first())
-                        && box_on_screen(cview, cproj, model, &box_corners(*b))
+                        && let Some((rect, z)) = box_on_screen(cview, cproj, model, &box_corners(*b))
                     {
                         visible.insert(*id);
+                        if *id != w.my_id {
+                            r.occl.query(*id, rect, z);
+                        }
                     }
                     let g = a.gpu.as_mut().unwrap();
                     g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
@@ -5370,6 +5379,9 @@ impl App {
                         }
                     }
                 }
+                // Test 6: the occlusion results, a frame or two late, drop actors hidden behind scenery.
+                r.occl.results.retain(|id, _| visible.contains(id));
+                visible.retain(|id| r.occl.results.get(id) != Some(&false));
                 w.visible = visible;
                 r.upload_poses(&gfx.gpu, &mut encoder);
                 let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).collect();
@@ -5379,6 +5391,7 @@ impl App {
                 let budget = if w.zone_uploading.is_some() || w.downloading.is_some() { crate::render::MIP_BUDGET } else { crate::render::MIP_BUDGET_WORLD };
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, budget));
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_view, &scene_depth, &camera, aspect, &actors));
+                r.occl.run(&gfx.gpu, &mut encoder, &scene_depth);
                 // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
                 // first shown frame.
@@ -5580,6 +5593,7 @@ impl App {
             && let Some(r) = &mut w.renderer
         {
             r.points.after_submit(&gfx.gpu);
+            r.occl.after_submit(&gfx.gpu);
         }
         if let (Some(buf), Some(path)) = (capture, script_shot.or_else(|| self.drive.screenshot.clone())) {
             if let Err(e) = save_capture(&gfx.gpu, &buf, size, row, gfx.config.format, &path) {

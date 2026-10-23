@@ -61,7 +61,7 @@ impl Region {
     }
 
     /// The record for where `w` stands (the sub-key under the player), else the zone's key-0 map.
-    pub fn here(regions: &[Region], w: &World) -> Option<Region> {
+    pub(super) fn here(regions: &[Region], w: &World) -> Option<Region> {
         let key = w.ground.as_ref().map_or(0, |g| g.map_key(w.pos));
         Self::find_key(regions, w.pos_zone, key).or_else(|| Self::find(regions, w.pos_zone))
     }

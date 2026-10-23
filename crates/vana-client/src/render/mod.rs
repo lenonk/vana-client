@@ -3,6 +3,7 @@
 pub mod anim;
 pub mod effects;
 pub mod points;
+pub mod occlusion;
 pub mod mipgen;
 pub mod upload;
 pub mod character;
@@ -306,6 +307,8 @@ pub struct ZoneRenderer {
     pub lighting: Option<crate::dat::weather::Lighting>,
     /// Posed actor points read back (footsteps).
     pub points: points::Points,
+    /// The actors' occlusion test (FUN_1006c280), for the target keys.
+    pub occl: occlusion::Occlusion,
     /// The loaded sub-area (an interior), drawn after the zone's scenery.
     sub: Option<SubGeometry>,
     /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
@@ -1017,6 +1020,7 @@ impl ZoneRenderer {
             clear_color: true,
             lighting: None,
             points: points::Points::new(gpu),
+            occl: occlusion::Occlusion::new(gpu),
             sub: None,
             links: geo.links.clone(),
             hidden: 0,
