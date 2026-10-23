@@ -616,6 +616,19 @@ mod tests {
         Some(Who { name: name.into(), ..Default::default() })
     }
 
+    /// Treasure pool lines (s2c 0x0D2 / 0x0D3): the find (0x10, target the dropper), a lot (0x11: slot 2 the points,
+    /// slot 3 the lotter) and the win (0x12: slot 2 the winner).
+    #[test]
+    fn treasure_lines() {
+        let Some(bt) = load() else { return };
+        let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], ..Default::default() };
+        assert_eq!(bt.system(0x10, &ctx).unwrap().lines, ["You find an ash log on the Wild Rabbit."]);
+        let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], strings: ["523".into(), "Lnxtest".into()], ..Default::default() };
+        assert_eq!(bt.system(0x11, &ctx).unwrap().lines, ["Lnxtest's lot for the ash log: 523 points."]);
+        let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], strings: ["Lnxtest".into(), String::new()], ..Default::default() };
+        assert_eq!(bt.system(0x12, &ctx).unwrap().lines, ["Lnxtest obtains an ash log."]);
+    }
+
     /// File 7025: /wave is entries 16 (a target) and 17; /no takes the caster's [his/her].
     #[test]
     fn emote_lines() {

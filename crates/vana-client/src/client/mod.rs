@@ -44,6 +44,7 @@ mod magic;
 mod moogle;
 mod post;
 mod synth;
+mod treasure;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -2888,6 +2889,8 @@ struct World {
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     /// Synthesis: tskill1, the request state, the result lines and the animations.
     synth: synth::State,
+    /// The treasure pool's slots: (item, the actor it came from).
+    treasure: [(u16, u32); treasure::SLOTS],
     res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
@@ -3876,6 +3879,7 @@ impl App {
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
+                            treasure: Default::default(),
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -4539,6 +4543,10 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
+                NetEvent::TrophyList { slot, item, target, gold, container } => treasure::on_list(world, slot, item, target, gold, container),
+                NetEvent::TrophySolution { slot, judge, loot, entry, entry_point, loot_name, entry_name } => {
+                    treasure::on_solution(world, slot, judge, loot, entry, entry_point, loot_name, entry_name)
+                }
                 NetEvent::Weather(w, minutes) => {
                     world.weather = w;
                     // One Vana'diel minute is 2.4 s (FUN_101804d0's duration is u16 @0x0a x 3600 units).

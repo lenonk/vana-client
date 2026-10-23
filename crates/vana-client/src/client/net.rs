@@ -156,6 +156,12 @@ pub enum NetEvent {
     ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32, mog_zone: bool, send_count: u16 },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
+    /// s2c 0x0D2 (GP_SERV_COMMAND_TROPHY_LIST): TargetUniqueNo @8, Gold @0xc, TrophyItemNo @0x10, TrophyItemIndex @0x14,
+    /// IsContainer @0x16.
+    TrophyList { slot: u8, item: u16, target: u32, gold: u16, container: bool },
+    /// s2c 0x0D3 (GP_SERV_COMMAND_TROPHY_SOLUTION): LootUniqueNo @4, EntryUniqueNo @8, EntryPoint @0x12,
+    /// TrophyItemIndex @0x14, JudgeFlg @0x15, sLootName @0x16, sLootName2 @0x26.
+    TrophySolution { slot: u8, judge: u8, loot: u32, entry: u32, entry_point: i16, loot_name: String, entry_name: String },
     Event(EventStart),
     /// 0x05C: event params into Z2..Z9.
     EventParams([u32; 8]),
@@ -663,6 +669,16 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         tx.send(NetEvent::SystemMessage { id: p.u16(0xa), para: para[0], para2: para[1] })?
                     }
                     0x053 => tx.send(NetEvent::SystemMessage { id: p.u16(0xc), para: p.u32(4), para2: p.u32(8) })?,
+                    0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,
+                    0x0D3 => tx.send(NetEvent::TrophySolution {
+                        slot: p.u8(0x14),
+                        judge: p.u8(0x15),
+                        loot: p.u32(4),
+                        entry: p.u32(8),
+                        entry_point: p.u16(0x12) as i16,
+                        loot_name: text(&p, 0x16, 16),
+                        entry_name: text(&p, 0x26, 16),
+                    })?,
                     0x058 => tx.send(NetEvent::Assist { player: p.u32(4), target: p.u32(8) })?,
                     0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x05F => tx.send(NetEvent::Music { slot: p.u16(4), id: p.u16(6) })?,

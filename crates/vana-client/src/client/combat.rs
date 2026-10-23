@@ -82,7 +82,7 @@ pub(super) struct Pending {
     reactions: Vec<(u32, u32, u8, u8)>,
 }
 
-fn who(w: &World, id: u32) -> Option<Who> {
+pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
         // Our own gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
         return Some(Who { name: w.name.clone(), pc: true, female: matches!(w.my_race, 2 | 4 | 6 | 7), ..Default::default() });
@@ -205,12 +205,6 @@ pub fn action_messages(a: &Action) -> Vec<(u16, u32, [i32; 5])> {
         out.extend(ids.into_iter().flatten().filter(|&id| id != 0).map(|id| (id, target, work)));
     }
     out
-}
-
-/// A client-side battle message about ourselves (FUN_100a0150), e.g. 9 when a talk target is too far.
-pub(super) fn system_message(w: &mut World, id: u16) {
-    let me = w.my_id;
-    print(w, Msg { id, actor: me, target: me, work: [0; 5] });
 }
 
 /// s2c 0x053 (LAB_100a06a0 -> FUN_100a0150): file 7031 text about ourselves, work[0..2] = para, para2; the

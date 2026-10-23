@@ -5022,3 +5022,18 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - MsgShift (inferred): ids outside the matched segments take the nearest segment's delta (a gap of up to 8 just
   before one takes the next one's). Every zone's table is delta 0 for this install, and 263 LSB ids in 147 zones
   were dropped (zone 101: 141 "Nothing happens...", 6409, 6417 "Obtained: <item>.", 6420 now show).
+
+## Treasure pool lines: s2c 0x0D2 / 0x0D3 (2026-10-23)
+
+- 0x0D2 (LAB_100ecb30; LSB 0x0d2_trophy_list): Gold @0xc > 0 prints 7031 0x13 (actor us, target TargetUniqueNo
+  @8, Para0 the gil). TrophyItemNo @0x10 != 0 fills slot TrophyItemIndex @0x14 (G+0x19520 item, +0x1956c the source
+  actor) and, with a TargetUniqueNo (LSB sends 0 for the pool resent at zone-in), prints 0x10 "You find X on Y."
+  or, IsContainer @0x16, 0xda "You find X in the Y." (actor none, target the source, Para0 the item). Item 0 clears
+  the slot.
+- 0x0D3 (LAB_100ecf80; LSB 0x0d3_trophy_solution) by JudgeFlg @0x15: 0 a lot, 1 won, 2 won but refused, 3 lost.
+  The lot line (0 and 1, when EntryPoint @0x12 is not -1 / 0 and sLootName2 @0x26 is set): 0x11 (0x82 without
+  EntryUniqueNo @8) "X's lot for the Y: N points.", string slot 2 the points ("%d", 0x10352ff0), slot 3 the lotter's
+  name. Won: then 0x12 (0x83 without LootUniqueNo @4) "X obtains Y.", slot 2 sLootName @0x16. Refused: 0x0f with the
+  winner, else 0x1f. 1..3 clear the slot; 3 prints nothing in the client. FUN_100a1ab0's message: +0 actor, +4
+  target, +8 id, +0xc Para0, +0x20 / +0x30 string slots 2 / 3.
+- Not done: the treasure pool window, lot / pass (c2s 0x041 / 0x042), the pool's timers.
