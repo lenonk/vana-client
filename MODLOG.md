@@ -4687,3 +4687,6 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix, into the Mog House by Southern San d'Oria's zmr0zmr1 rect, main menu row 12): myroom with Remodel
   dim, the storage menu with Safe 2 and the Satchel dim, Mog Safe opened (0/50) with the moogle's line, Escape back to
   the storage menu. Talking to the moogle (0x02E) was not tried: Tab found no moogle in view.
+
+- Event op 0x85 (FUN_100b9120, 1 byte): FUN_101d6110(0), the moogle menu as s2c 0x02E opens it (myroom). Wired now;
+  the sweep is unchanged (1450 finished, 0 faults).

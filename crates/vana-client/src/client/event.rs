@@ -744,6 +744,8 @@ impl Host for LiveHost<'_> {
                     self.st.event_status.insert(id, s as u8);
                 }
             }
+            // FUN_100b9120: the moogle menu as 0x02E opens it (FUN_101d6110(0)).
+            Effect::Op { op: 0x85, .. } => super::moogle::open(self.w, false),
             // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (subs 1, 3, 6, 7 mount it: no mount model here).
             Effect::Op { op: 0x7e, sub: Some(0 | 5 | 8), args, .. } => {
                 if let Some(id) = self.arg_actor(&args, 0) {
