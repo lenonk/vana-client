@@ -4382,6 +4382,8 @@ impl App {
                     world.pos_zone = zone;
                     world.unsettled = true;
                     log::info!("zone-in: zone {zone} at {:?} dir {dir}", pos);
+                    // FUN_1008abe0: the event volume channels back to 1.0 at zone-in.
+                    world.audio_cmds.push((0xf, 1.0, 0.0));
                     let f = forward_from_dir(dir);
                     camera::face(world, f.x.atan2(f.z));
                     world.my_id = char_id;

@@ -94,6 +94,10 @@ pub struct Audio {
     fades: [Option<Fade>; 4],
     /// Voices started as the scheduler's stream.
     streams: std::collections::HashSet<u32>,
+    /// Each running voice's level before the factors, and the factors last applied (FUN_100364e0 compares the
+    /// level after them: a factor change re-levels every voice).
+    raw_levels: std::collections::HashMap<u32, i32>,
+    applied: (f32, f32, f32),
     /// Level of the track playing, for re-applying the event volume.
     cur_vol: i32,
     /// Config-tool 0029: effects at once; a new one is dropped while that many play (FUN_10037510).
@@ -111,7 +115,7 @@ impl Audio {
                 log::info!("audio: {} at {} Hz", out.host, out.rate);
                 let (tx, req) = channel();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), cur_vol: 0x7f, max_se: 12 })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12 })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -217,6 +221,7 @@ impl Audio {
             self.streams.insert(handle);
         }
         let lv = self.voice_level_of(handle, level);
+        self.raw_levels.insert(handle, level);
         let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle });
         true
     }
@@ -227,6 +232,7 @@ impl Audio {
     }
 
     pub fn voice_level(&mut self, handle: u32, level: i32) {
+        self.raw_levels.insert(handle, level);
         let lv = self.voice_level_of(handle, level);
         self.send(Cmd::SeLevel { handle, level: lv });
     }
@@ -341,6 +347,18 @@ impl Audio {
     /// Advances the music task by real time at the client's 60 Hz tick.
     pub fn update(&mut self, dt: f32) {
         self.step_fades(dt * 60.0);
+        // Running effect voices follow the effects factor and the event channels.
+        let factors = (self.effects, self.event_se, self.event_stream);
+        if factors != self.applied {
+            self.applied = factors;
+            let alive = self.alive();
+            self.raw_levels.retain(|h, _| alive.contains(h));
+            let levels: Vec<(u32, i32)> = self.raw_levels.iter().map(|(h, l)| (*h, *l)).collect();
+            for (handle, level) in levels {
+                let lv = self.voice_level_of(handle, level);
+                self.send(Cmd::SeLevel { handle, level: lv });
+            }
+        }
         // FUN_10035fb0: the running ambient voice follows the zone level.
         let lv = self.zone_level();
         if self.ambient_se.is_some() && lv != self.ambient_level {

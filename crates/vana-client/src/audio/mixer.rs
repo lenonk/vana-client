@@ -176,6 +176,8 @@ struct Voice {
     started: u64,
     handle: u32,
     stop_after: bool,
+    /// Flag-0x20 files (the ambient loops): +0xd0 = 0x40, never stolen (FUN_1024a2c0).
+    kept: bool,
 }
 
 /// Shared with the game thread: what the mixer is doing (for tests and the music logic).
@@ -290,16 +292,19 @@ impl Mixer {
                     // Fade in over 150 steps (FUN_10240090).
                     ramp = Ramp { cur: LEVEL[1] << 12, left: 0x96, delta: (((LEVEL[(level & 0x7f) as usize] - LEVEL[1]) * 0x1000) | 0x800) / 0x96 };
                 }
+                // Flag 0x20 (ambient loops): priority 20000 and kept from stealing.
+                let kept = flags & 0x20 != 0;
+                let priority = if kept { 20000 } else { priority };
                 // A free voice from the end (FUN_1023fc40), else the lowest priority below ours (inferred).
                 let slot = (0..VOICES).rev().find(|&i| self.voices[i].is_none()).or_else(|| {
-                    (0..VOICES).filter(|&i| self.voices[i].as_ref().is_some_and(|v| v.priority <= priority)).min_by_key(|&i| {
+                    (0..VOICES).filter(|&i| self.voices[i].as_ref().is_some_and(|v| !v.kept && v.priority <= priority)).min_by_key(|&i| {
                         let v = self.voices[i].as_ref().unwrap();
                         (v.priority, v.started)
                     })
                 });
                 if let Some(i) = slot {
                     self.serial += 1;
-                    self.voices[i] = Some(Voice { src: Source::new(dec, self.rate), ramp, pan, priority, started: self.serial, handle, stop_after: false });
+                    self.voices[i] = Some(Voice { src: Source::new(dec, self.rate), ramp, pan, priority, started: self.serial, handle, stop_after: false, kept });
                 }
             }
         }

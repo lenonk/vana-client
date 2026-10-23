@@ -5195,3 +5195,18 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   the screen fades write gamma values and blend on them; the scaling blit reads the sRGB view, so opaque pixels are
   unchanged. The effects' scene copy (CMoDist) is read through a plain view too. Offscreen tools render to a plain
   Rgba8Unorm target (the same). Not yet: the title flyover, character select and creator scenes (still sRGB).
+
+## Sound levels against retail (2026-10-23; spec in the session scratchpad volume/SPEC.md)
+
+- Retail's chain matches ours step by step: the level table 0x103889f0 and pan table 0x103888f0 are our LEVEL /
+  PAN_SCALE; FUN_10248920 cB = ((P x v >> 12) x 10000 >> 12) - 10000 -> SetVolume; effects T[level]
+  (FUN_1024a7c0), music T[file vol] x T[level] >> 12; config 9 / 10 x 0.01 (FUN_10035e80 / FUN_100372a0); the
+  ambient ftol(DAT_10351708 x 127); positional ftol(attenuated x DAT_10351704) (FUN_100364e0); the distance curve
+  FUN_10036c70 is ours. The ambient files are mastered about 15 dB under the music (se 1005 rms 859, music 101 4528).
+- Fixed: flag-0x20 files (every ambient loop: se 1001..1007, 1042, 1056) play at priority 20000 and are never
+  stolen (+0xd0 = 0x40, FUN_1024a2c0); running effect voices are re-levelled when the effects factor or an event
+  channel changes (retail compares the level after the factors); the event channels go back to 1.0 at zone-in
+  (FUN_1008abe0). Not done: the resets at event end / an SE slider change (FUN_100ae3f0 / FUN_10035e80), retail's
+  ambient crossfade (FUN_1024a1b0).
+- Ours only: the Settings page's Music / Effects Volume multiply the level index on top of the in-game sliders;
+  at 100 % the output is retail's.
