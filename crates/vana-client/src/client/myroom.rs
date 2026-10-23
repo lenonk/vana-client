@@ -131,5 +131,3 @@ pub fn in_city(zone: Option<u16>) -> bool {
     zone.is_some_and(|z| CITIES.contains(&z))
 }
 
-/// FUN_101cc0a0 (the house is our own: s2c 0x067 @0x20 owner id 0) *(inf: 0x067 is not parsed yet, so always ours)*.
-pub const OWNER: bool = true;

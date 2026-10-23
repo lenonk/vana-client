@@ -1476,7 +1476,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 .iter()
                 .enumerate()
                 .map(|(k, &(child, id))| {
-                    let id = if k == 1 && !myroom::OWNER { 0xf1 } else { id };
+                    let id = if k == 1 && world.mh_owner != 0 { 0xf1 } else { id };
                     let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
                     (child as usize - 1, g9(id), c)
                 })
@@ -1832,9 +1832,11 @@ fn open_mogdoor(w: &mut World) {
         w.confirm = Some((Confirm::LeaveRoom, false));
         return;
     }
-    // +0x1a: 2F unlocked comes in s2c 0x067 @0x27 bit 0, not parsed yet *(inf: off)*; +0x19 Mog Garden: key item 0x86d.
-    let floors = myroom::in_city(w.zone) && myroom::OWNER && myroom::has_floors(&r) && false;
-    let garden = myroom::OWNER && w.key_items.contains(&0x86d);
+    // +0x1a: 2F unlocked (s2c 0x067 @0x27 bit 0); +0x19 Mog Garden: key item 0x86d; both only in our own house
+    // (FUN_101cc0a0: 0x067 @0x20 owner 0).
+    let own = w.mh_owner == 0;
+    let floors = myroom::in_city(w.zone) && own && myroom::has_floors(&r) && w.mh_floors;
+    let garden = own && w.key_items.contains(&0x86d);
     w.mogdoor = Some(myroom::Menu { bit, sel: 0, list: false, floors, garden, floor: r.floor });
     w.action_menu = None;
 }
@@ -2685,6 +2687,10 @@ struct World {
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
     party_cursor: Option<target::PartyCursor>,
+    /// s2c 0x067 kind 2: the visited Mog House's owner (0 = ours / none, FUN_100f9600) and the 2F / Safe 2 flag
+    /// (FUN_100f97a0).
+    mh_owner: u32,
+    mh_floors: bool,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
@@ -3627,6 +3633,8 @@ impl App {
                             cats: None,
                             prompt: None,
                             party_cursor: None,
+                            mh_owner: 0,
+                            mh_floors: false,
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
@@ -4232,6 +4240,12 @@ impl App {
                 }
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
+                NetEvent::CharSync { id, owner, floors } => {
+                    if id == world.my_id && (world.mh_owner, world.mh_floors) != (owner, floors) {
+                        log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}");
+                        (world.mh_owner, world.mh_floors) = (owner, floors);
+                    }
+                }
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);

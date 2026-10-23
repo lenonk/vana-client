@@ -4589,3 +4589,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   right-aligned at (x1 - 0x13, y0 + 4), the size (ItemNum - 1) right-aligned at (x1 - 1, y1 - 0x10), 0x80808080
   (Japanese: x1 - 0x1c / 0x1e / 6). Retail takes temporary items and a few table counts off the main list\x27s count
   (not traced); ours counts the rows. Live: "11/30" in Items, "0/80" in the Mog Case.
+
+- s2c 0x067 kind 2 (@4 = 2, char sync; LSB packets/char_sync.cpp): @8 the character id, @0x20 the owner of the Mog
+  House being visited (own client only; 0 = none / our own: FUN_100f9600 / FUN_101cc0a0), @0x24 open to visitors,
+  @0x25 main job level, @0x27 bit 0 the 2F / Safe 2 flag (the owner\x27s when visiting: FUN_100f97a0). Parsed now
+  (World.mh_owner / mh_floors): /bank2 opens Safe 2 when set (else group 7 0xa8), itmstora / the Alt cycle offer
+  Safe 2, FUN_101dae10 refuses with 0xbc while visiting, and the Mog House door menu takes its 2F and owner tests
+  from it (myroom::OWNER and the "2F off" placeholder are gone).

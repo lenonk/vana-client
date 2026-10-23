@@ -1094,8 +1094,7 @@ pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool) -> bool {
 
 /// FUN_101dae10(src, c, fn, 0): Mog Safe 1, Storage 2, Locker 4, Safe 2 9. Outside the Mog House the container alone
 /// in a read-only list; the Locker without a lease (ItemNum2[4] == 0) read-only with group 7 0xb6; the moogle away
-/// read-only with 0x48; else the view at the moogle. (Visiting another's Mog House, 0xbc, needs s2c 0x067 @0x20:
-/// not parsed.)
+/// read-only with 0x48; visiting another's Mog House (s2c 0x067 @0x20) group 7 0xbc; else the view at the moogle.
 pub fn open_dae10(w: &mut World, c: u8) -> bool {
     if !super::textcmd::status_gate(w, 0x44) {
         return false;
@@ -1106,6 +1105,9 @@ pub fn open_dae10(w: &mut World, c: u8) -> bool {
         Some(0xb6)
     } else if !w.zone.is_some_and(moogle_zone) {
         Some(0x48)
+    } else if w.mh_owner != 0 {
+        super::textcmd::refuse(w, 0xbc);
+        return true;
     } else {
         open_view(w, c, true, false, false);
         return true;
@@ -1456,7 +1458,7 @@ fn stora_container(row: u16) -> u8 {
 }
 
 /// FUN_101dbc20 for a container: not on either side, not 1 / 2 / 4 / 9 away from the moogle, the Locker leased, the
-/// Satchel there (ItemNum >= 30), Safe 2 owned (not parsed: never), Sack and wardrobes 2..8 with a size.
+/// Satchel there (ItemNum >= 30), Safe 2 owned (s2c 0x067 @0x27), Sack and wardrobes 2..8 with a size.
 fn usable(w: &World, b: &Storage, c: u8) -> bool {
     let n = |c: u8| w.inv.sizes[c as usize];
     !(c == b.bank
@@ -1464,7 +1466,7 @@ fn usable(w: &World, b: &Storage, c: u8) -> bool {
         || (!b.at_moogle && matches!(c, 1 | 2 | 4 | 9))
         || (c == 4 && w.inv.sizes2[4] == 0)
         || (c == 5 && n(5) < 0x1e)
-        || c == 9
+        || (c == 9 && !w.mh_floors)
         || (matches!(c, 6 | 10..=16) && n(c) == 0))
 }
 

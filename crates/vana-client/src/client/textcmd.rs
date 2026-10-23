@@ -587,10 +587,13 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             };
             if super::items::open_daf70(w, c, c == 5) { Ok(()) } else { Err(()) }
         }
-        // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0, not parsed) group 7 0xa8, counted as done.
-        id::BANK2 => {
+        // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0) group 7 0xa8, counted as done.
+        id::BANK2 if !w.mh_floors => {
             refuse(w, 0xa8);
             Ok(())
+        }
+        id::BANK2 => {
+            if super::items::open_dae10(w, 9) { Ok(()) } else { Err(()) }
         }
         id::RANDOM => {
             let v = arg(1).map_or(0, |a| number(a).unwrap_or(-1)) as u32;
