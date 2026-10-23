@@ -26,8 +26,13 @@ pub fn apply(w: &mut World, id: u16) {
     match id {
         // LAB_101a2c60: *(DAT_10565d34 + 0x51) = (v == 0).
         7 => w.auto_lock = w.game.get(7) == 0,
-        // FUN_1015c180 .. FUN_1015c220 on log window 1.
-        0x0e | 0x0f | 0x10 | 0x11 | 0x9c => w.log.cfg = super::logwin::LogCfg::from_config(&w.game),
+        // Log window 1's setters (FUN_10162e60 and its siblings): lines and time also open it at the max (FUN_10162ef0),
+        // which is why the log comes up full at login; the width does not.
+        0x0e | 0x0f | 0x10 | 0x11 => {
+            w.log.cfg = super::logwin::LogCfg::from_config(&w.game);
+            w.log.fill();
+        }
+        0x9c => w.log.cfg = super::logwin::LogCfg::from_config(&w.game),
         // SE / music level (FUN_10035060 / FUN_10036480): the app sets the mixer.
         9 | 10 => w.volume_dirty = true,
         _ => {}

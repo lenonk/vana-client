@@ -5116,3 +5116,11 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   request, a repeated offset unanswered (servmesLastOffset_).
 - Ours: the request also waits for the message tables; real time for the timeouts (retail counts ticks, at least
   one a frame).
+
+## The log opens full at login (2026-10-23)
+
+- Log window 1 (logwindo, name getter FUN_101618a0 in 30261006): its setters for the max lines, min lines and
+  seconds per line (FUN_10162e60, FUN_10162ea0 and siblings) end in FUN_10162ef0: open ticks (+0x34) = ticks per
+  line (+0x54) x max lines (+0x4e). The settings are applied at login, so the log comes up at its full height and
+  shrinks from there (user-confirmed on retail). Per line FUN_10162560 adds one period (capped); Escape
+  FUN_101624b0 takes one off.

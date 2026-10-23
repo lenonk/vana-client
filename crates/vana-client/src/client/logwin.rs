@@ -243,6 +243,11 @@ impl LogWin {
         tw
     }
 
+    /// FUN_10162ef0: open at the max lines (open ticks = ticks per line x max).
+    pub fn fill(&mut self) {
+        self.open = self.cfg.max * self.cfg.ticks;
+    }
+
     pub fn history(&self) -> usize {
         self.wrapped.len()
     }
