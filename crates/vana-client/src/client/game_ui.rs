@@ -128,7 +128,7 @@ pub struct GameUi {
     images: std::collections::HashSet<String>,
     help: HelpScroll,
     /// Party members the last HUD drew (the target window stacks on the party window).
-    members: usize,
+    party_window: String,
     /// The window style in use and images to replace in the renderer.
     style_index: usize,
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
@@ -194,7 +194,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -688,7 +688,7 @@ impl GameUi {
 
     /// The HUD windows (chat log, party, target, main menu), after what is already in the frame.
     pub fn hud(&mut self, w: f32, h: f32, st: &HudState) -> Vec<TextSlot> {
-        self.members = st.party.len();
+        self.party_window = st.party_window.clone();
         let (b, text) = screens::hud_screen(&self.data.lobby, &self.data.style, w, h, st);
         self.batch.append(b);
         text
@@ -804,7 +804,7 @@ impl GameUi {
     }
 
     pub fn window_rect(&self, name: &str, w: f32, h: f32) -> Option<[f32; 4]> {
-        let dy = screens::stacked_dy(&self.data.lobby, name, w, h, self.members);
+        let dy = screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window);
         screens::window_rect(&self.data.lobby, name, w, h).map(|[x, y, rw, rh]| [x, y + dy, rw, rh])
     }
 

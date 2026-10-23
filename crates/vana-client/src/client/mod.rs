@@ -1064,8 +1064,21 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
     let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
+    // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
+    let party_slots = world.party.slots();
+    let rows: Vec<Option<party::Member>> = std::iter::once(None).chain(party_slots.slots[1..6].iter().take_while(|m| m.is_some()).cloned()).collect();
+    let mine = world.vitals.map(|v| (v.3 as f32 / 100.0, v.4 as f32 / 100.0));
     let st = crate::render::screens::HudState {
-        party: world.vitals.map(|v| vec![(v.3 as f32 / 100.0, v.4 as f32 / 100.0)]).unwrap_or_default(),
+        party: rows.iter().filter_map(|m| match m {
+            None => mine,
+            Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
+        }).collect(),
+        party_window: if rows.len() > 1 || party_slots.leaders[0] != 0 { party_slots.window() } else { "menu    ptw0".into() },
+        party_away: rows.iter().map(|m| m.as_ref().is_some_and(|m| m.away != 0 || m.zone != world.pos_zone)).collect(),
+        party_marks: rows.iter().enumerate().map(|(k, m)| {
+            let id = if k == 0 { world.my_id } else { m.as_ref().map_or(0, |m| m.id) };
+            (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
+        }).collect(),
         target: target.filter(|_| event::keeps_target(world)).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
         menu_selected: world.menu.and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
@@ -1123,7 +1136,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The compass follows region 0's top (UI object +0xa0, refreshed by FUN_10159080), i.e. the log's current top.
     top.draw(gu, world, sw, sh, &bars, cam.target - cam.eye, log.rect[1]);
     world.hud_top = top;
-    let party = crate::render::screens::party_menu(st.party.len());
+    let party = st.party_window.clone();
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
     blockers.extend(world.overlay.as_ref().filter(|o| o.has_map()).map(|o| o.rect));
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
@@ -1274,6 +1287,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             blockers.push(win.frame);
         }
     }
+    let mut row_of: HashMap<&str, usize> = HashMap::new();
     for t in &slots {
         match t.what {
             "target name" => {
@@ -1285,25 +1299,41 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     gu.wrapped_name(&e.name, max, t.x, t.y, tint, true, e.no_gauge);
                 }
             }
-            "member name" => {
-                if let Some((_, _, tp, _, _)) = world.vitals {
-                    gu.shape_name(&world.name, t.x, t.y, 0x8080_8080);
-                    // TP (FUN_101f9940): right-aligned at (+0x30, +10), blue from 1000; with config 0xae bit 0 (ours
-                    // `party_tp`), except trust rows (FUN_101f8ee0: index 0x700 and up). Nothing else moves.
-                    if world.party_tp {
-                        gu.shape_text(&tp.to_string(), t.x + 48.0, t.y + 10.0, if tp > 999 { 0x8020_60d0 } else { 0x8060_6060 }, true);
+            "member name" | "HP" | "MP" | "member away" => {
+                // Rows come in order: each slot kind counts its own row.
+                let k = row_of.entry(t.what).or_insert(0);
+                let row = *k;
+                *k += 1;
+                // Ours from our own vitals; the others from the roster (name, HP / MP / TP, HPP).
+                let v = match rows.get(row) {
+                    Some(None) => world.vitals.map(|(hp, mp, tp, hpp, _)| (world.name.clone(), hp, mp, tp, hpp, 0u16, row)),
+                    Some(Some(m)) => Some((m.name.clone(), m.hp, m.mp, m.tp, m.hpp, m.zone, row)),
+                    None => None,
+                };
+                let Some((name, hp, mp, tp, hpp, zone, row)) = v else { continue };
+                match t.what {
+                    "member name" => {
+                        gu.shape_name(&name, t.x, t.y, 0x8080_8080);
+                        // TP (FUN_101f9940): right-aligned at (+0x30, +10), blue from 1000; with config 0xae bit 0
+                        // (ours `party_tp`), except trust rows (FUN_10201eb0: ActIndex 0x700 and up).
+                        let trust = rows.get(row).and_then(|m| m.as_ref()).is_some_and(|m| m.index >= 0x700);
+                        if world.party_tp && !trust {
+                            gu.shape_text(&tp.to_string(), t.x + 48.0, t.y + 10.0, if tp > 999 { 0x8020_60d0 } else { 0x8060_6060 }, true);
+                        }
                     }
-                }
-            }
-            "HP" => {
-                if let Some((hp, _, _, hpp, _)) = world.vitals {
-                    let tint = gu.hp_tint(hpp);
-                    gu.shape_text(&hp.to_string(), t.x, t.y, tint, true);
-                }
-            }
-            "MP" => {
-                if let Some((_, mp, _, _, _)) = world.vitals {
-                    gu.shape_text(&mp.to_string(), t.x, t.y, 0x8080_8080, true);
+                    "HP" => {
+                        let tint = gu.hp_tint(hpp);
+                        gu.shape_text(&hp.to_string(), t.x, t.y, tint, true);
+                    }
+                    "MP" => {
+                        gu.shape_text(&mp.to_string(), t.x, t.y, 0x8080_8080, true);
+                    }
+                    _ => {
+                        // FUN_10202530 out of zone: the name and "(zone)" right-aligned at (+0x69, +0xb), 0x80606060.
+                        gu.shape_name(&name, t.x, t.y, 0x8060_6060);
+                        let zn = crate::dat::font::decode_sjis(&gu.area_name(zone));
+                        gu.shape_text(&format!("({zn})"), t.x + 105.0, t.y + 11.0, 0x8060_6060, true);
+                    }
                 }
             }
             _ => {}

@@ -449,6 +449,11 @@ pub fn push_gauge(b: &mut UiBatch, ui: &UiFile, lib: &SpriteLib, x: f32, y: f32,
 pub struct HudState {
     /// HP / MP fraction per party member (first is the player).
     pub party: Vec<(f32, f32)>,
+    /// The party window ("menu    ptw0" solo, else "ptwN"), and per row: in another zone (no gauges), and marks
+    /// (bit 0 party leader, bit 1 alliance leader).
+    pub party_window: String,
+    pub party_away: Vec<bool>,
+    pub party_marks: Vec<u8>,
     /// The target window: Some(HP fraction) with a gauge, Some(None) without one.
     pub target: Option<Option<f32>>,
     /// Highlighted main menu item (child index from 0), None = menu closed.
@@ -617,11 +622,11 @@ pub fn window_rect(ui: &UiFile, name: &str, w: f32, h: f32) -> Option<[f32; 4]> 
 /// Region stacking (FUN_10159080 -> FUN_10158e10): windows with registry flag 0x2000 (targetwi, flags
 /// 0x02002401) sit on region 1's window, the party window: frame top = party frame top - frame height - 2,
 /// at least 16. Returns the y offset from the window's layout place (0 for other windows).
-pub fn stacked_dy(ui: &UiFile, name: &str, w: f32, h: f32, members: usize) -> f32 {
+pub fn stacked_dy(ui: &UiFile, name: &str, w: f32, h: f32, party_window: &str) -> f32 {
     if name != "menu    targetwi" {
         return 0.0;
     }
-    let (Some(t), Some(p)) = (ui.menu(name), ui.menu(&party_menu(members))) else { return 0.0 };
+    let (Some(t), Some(p)) = (ui.menu(name), ui.menu(party_window)) else { return 0.0 };
     let (_, ty, _, th) = frame_rect(t, w, h, 1.0, 1.0);
     let (_, py, _, _) = frame_rect(p, w, h, 1.0, 1.0);
     (py - th - 2.0).max(16.0) - ty
@@ -669,7 +674,7 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
     if let Some(m) = ui.menu("menu    targetwi")
         && let Some(hp) = st.target
     {
-        let dy = stacked_dy(ui, "menu    targetwi", w, h, st.party.len());
+        let dy = stacked_dy(ui, "menu    targetwi", w, h, &st.party_window);
         let (x, y) = push_window_at(&mut b, ui, style, m, w, h, dy);
         // FUN_10149900: name at (+5, +6), HP gauge at (+0x1c, +0x1d) unless the actor hides it.
         text.push(TextSlot { what: "target name", x: x + 5.0, y: y + 6.0, align: 0 });
@@ -677,19 +682,33 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
             push_gauge(&mut b, ui, wps, x + 28.0, y + 29.0, GAUGE_HP.0, GAUGE_HP.1, hp);
         }
     }
-    if let Some(m) = ui.menu(&party_menu(st.party.len())) {
+    if let Some(m) = ui.menu(&st.party_window) {
         let (x, y) = push_window(&mut b, ui, style, m, w, h);
-        // FUN_101f9560 per member row (children 1..6): HP gauge (+26, +7), MP gauge (+49, +17, drawn empty
-        // for jobs without MP), name at the row, HP number (+88, +1), MP number (+98, +10); TP (+48, +10) only
-        // with config 0xae bit 0 (FUN_1018c830(0xae, 0), default 0).
+        // FUN_10202530 per member row (children 1..6). In zone: HP gauge (+26, +7), MP gauge (+49, +17, drawn empty
+        // for jobs without MP), name at the row, HP number (+88, +1), MP number (+98, +10); TP (+48, +10) only with
+        // config 0xae bit 0. In another zone: the name and "(zone)" right-aligned at (+0x69, +0xb), both grey.
         for (i, &(hp, mp)) in st.party.iter().take(6).enumerate() {
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
             let (rx, ry) = (x + c.x as f32, y + c.y as f32);
-            push_gauge(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, hp);
-            push_gauge(&mut b, ui, wps, rx + 49.0, ry + 17.0, GAUGE_MP.0, GAUGE_MP.1, mp);
-            text.push(TextSlot { what: "member name", x: rx, y: ry, align: 0 });
-            text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: 0 });
-            text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: 0 });
+            if st.party_away.get(i).copied().unwrap_or(false) {
+                text.push(TextSlot { what: "member away", x: rx, y: ry, align: 0 });
+            } else {
+                push_gauge(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, hp);
+                push_gauge(&mut b, ui, wps, rx + 49.0, ry + 17.0, GAUGE_MP.0, GAUGE_MP.1, mp);
+                text.push(TextSlot { what: "member name", x: rx, y: ry, align: 0 });
+                text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: 0 });
+                text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: 0 });
+            }
+            // FUN_10201ff0: party leader windowps 71, alliance leader 70, at (-3, +10); both: the party mark at +3.
+            match st.party_marks.get(i).copied().unwrap_or(0) & 3 {
+                1 => b.push_sprite(ui, wps, 71, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
+                2 => b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0),
+                3 => {
+                    b.push_sprite(ui, wps, 71, rx + 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
+                    b.push_sprite(ui, wps, 70, rx - 3.0, ry + 10.0, 1.0, 1.0, 0x8080_8080, 0);
+                }
+                _ => {}
+            }
         }
     }
     if let Some(m) = ui.menu(menu_window(st.menu_page))
