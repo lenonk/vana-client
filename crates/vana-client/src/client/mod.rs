@@ -2081,6 +2081,8 @@ const TAU_4096: f32 = std::f32::consts::TAU / 4096.0;
 struct Place {
     pos: Vec3,
     forward: Vec3,
+    /// Op 0xd8's rotation x / z on an event body.
+    tilt: [f32; 2],
     status: u8,
     ratio: f32,
     size: u8,
@@ -2188,14 +2190,14 @@ fn turn_rate(a: &Actor, in_event: bool) -> f32 {
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     let size = if id == w.my_id { w.my_motion.graph_size } else { w.entities.get(&id)?.motion.graph_size };
     if let Some(p) = event::pose(w, id) {
-        return Some(Place { pos: p.pos, forward: Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin()), status: event::event_status(w, id), ratio: p.ratio, size });
+        return Some(Place { pos: p.pos, forward: Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin()), tilt: p.tilt, status: event::event_status(w, id), ratio: p.ratio, size });
     }
     if id == w.my_id {
         let m = w.my_motion;
-        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), status: m.status, ratio: if w.moving { w.move_tier } else { 0.0 }, size });
+        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
-    Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), status: e.motion.status, ratio: e.ratio, size })
+    Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), tilt: [0.0; 2], status: e.motion.status, ratio: e.ratio, size })
 }
 
 /// An actor's attach point `k` in the world from its rest pose (vtable +0x1c4); without one its position lifted
@@ -2204,7 +2206,7 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
     let p = places.get(&id)?;
     let a = w.actors.get(&id)?;
     let ch = a.character.as_ref()?;
-    let model = actor_matrix(p.pos, p.forward) * glam::Mat4::from_scale(Vec3::splat(a.scale));
+    let model = actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt) * glam::Mat4::from_scale(Vec3::splat(a.scale));
     match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| *t + *q * *off)) {
         Some(local) => Some(model.transform_point3(local)),
         None => Some(p.pos + Vec3::new(0.0, a.top * 1.2, 0.0)),
@@ -2227,7 +2229,7 @@ struct FxActors<'a> {
 impl crate::fx::Actors for FxActors<'_> {
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
         let p = self.places.get(&id)?;
-        Some(actor_matrix(p.pos, p.forward))
+        Some(actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt))
     }
 
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
@@ -2341,6 +2343,14 @@ fn box_index(status: u8) -> usize {
         1 | 5 | 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e | 0x55 => 1,
         _ => 0,
     }
+}
+
+/// Op 0xd8's x / z rotation in the actor's frame (x forward, y up): z then x *(inf: the order and signs)*.
+fn tilt_matrix(t: [f32; 2]) -> glam::Mat4 {
+    if t == [0.0; 2] {
+        return glam::Mat4::IDENTITY;
+    }
+    glam::Mat4::from_rotation_z(-t[1]) * glam::Mat4::from_rotation_x(-t[0])
 }
 
 fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
@@ -5973,7 +5983,7 @@ impl App {
             let mut places: HashMap<u32, Place> = w.actors.keys().filter_map(|id| actor_place(w, *id, my_dir).map(|p| (*id, p))).collect();
             // Doors have no model; their schedulers' sounds play at the door's own position (op 0x0b, actor2).
             for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
-                places.entry(*id).or_insert(Place { pos: e.pos, forward: forward_from_dir(e.dir), status: 0, ratio: 0.0, size: 0 });
+                places.entry(*id).or_insert(Place { pos: e.pos, forward: forward_from_dir(e.dir), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
             }
             let look_points: HashMap<u32, Vec3> = w
                 .actors
@@ -6073,7 +6083,7 @@ impl App {
                 let in_event = w.event.is_some() || w.event_pending.is_some();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
-                    let Some(&Place { pos, forward, status, ratio, size }) = places.get(id) else { continue };
+                    let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
                     if a.gpu.is_none() {
                         // Not drawn until its model is on the GPU (a few new models a frame).
                         let Some(g) = perf::timed(|| format!("model {id:#x} {} ({} textures)", a.key, ch.textures.len()), || r.skinned_actor(&gfx.gpu, &ch)) else { continue };
@@ -6180,7 +6190,7 @@ impl App {
                     if (w.locked && (*id == w.my_id || w.target == Some(*id))) || (w.camst.first && *id == w.my_id) {
                         a.bones = if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
                     }
-                    let frame = actor_matrix(pos, forward);
+                    let frame = actor_matrix(pos, forward) * tilt_matrix(tilt);
                     let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));
                     // FUN_100d5b10: an event's look, else the target / face target; eased and weighted in world space.
                     let point = |k: usize| ch.skeleton.points.get(k).copied().unwrap_or((0, Vec3::ZERO));

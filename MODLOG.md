@@ -4245,3 +4245,8 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
   (FUN_100b2940 / FUN_100b2aa0) closes the item info window whoever opened it. Guild point and reward menus use it
   (Southern San d'Oria 0x2b2: sub 3 entries #3..#11 with item ids). Ours: State::option_items / item_preview,
   event::option_item. Not seen live.
+- Op 0xd8 (FUN_100bc060, 118 sites, audit R20): actor@2 event body rotation = val x 2 pi / 4096 (constants
+  0x10329d2c 6.283, 0x10330250 1/4096): sub 1 x (+0x150, len 8), 2 y = the direction (+0x154, len 8), 3 z (+0x158,
+  len 8), 4 all three (val@6 / @8 / @10, len 12); sub 0 copies the actor rotation +0x34..+0x40 (len 6). With no body
+  it advances 6 whatever the sub. Scripts tilt NPCs up to ~94 degrees (sub 3 #-1074). Ours: Body::tilt, Pose::tilt,
+  Place::tilt, tilt_matrix in the actor frame (z then x, signs and order inferred; not seen live).

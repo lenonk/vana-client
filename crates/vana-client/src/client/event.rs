@@ -266,6 +266,8 @@ pub struct Choice {
 pub struct Pose {
     pub pos: Vec3,
     pub yaw: f32,
+    /// Op 0xd8's rotation x / z (+0x150 / +0x158).
+    pub tilt: [f32; 2],
     pub ratio: f32,
     /// +0x12c bit 1: still turning (FUN_1008b680).
     pub turning: bool,
@@ -1266,7 +1268,7 @@ fn begin(w: &mut World, mut wt: Box<Waiting>, index: &DatIndex) {
     let me = w.my_id;
     for (a, b) in rt.actors() {
         let id = if a == PLAYER { me } else { a };
-        st.poses.insert(id, Pose { pos: Vec3::from(b.pos), yaw: b.dir, ratio: 0.0, turning: false, dir: b.dir });
+        st.poses.insert(id, Pose { pos: Vec3::from(b.pos), yaw: b.dir, tilt: b.tilt, ratio: 0.0, turning: false, dir: b.dir });
     }
     // FUN_100ad000 (load finished): DAT_104760f8 = 1, DAT_10473068 = DAT_10475cb0.
     st.loaded = true;
@@ -1381,9 +1383,10 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
         let id = if a == PLAYER { me } else { a };
         let p = Vec3::from(b.pos);
         let snap = live.st.snap.remove(&id);
-        let pose = live.st.poses.entry(id).or_insert(Pose { pos: p, yaw: b.dir, ratio: 0.0, turning: false, dir: b.dir });
+        let pose = live.st.poses.entry(id).or_insert(Pose { pos: p, yaw: b.dir, tilt: b.tilt, ratio: 0.0, turning: false, dir: b.dir });
         let step = p - pose.pos;
         pose.pos = p;
+        pose.tilt = b.tilt;
         let flat = Vec3::new(step.x, 0.0, step.z).length();
         let moving = flat >= 0.01 * ticks.max(1e-3);
         let want = if moving { (-step.z).atan2(step.x) } else { b.dir };

@@ -226,6 +226,8 @@ pub struct Body {
     pub pos: [f32; 3],
     /// Direction in radians (+0x154).
     pub dir: f32,
+    /// Rotation x / z in radians (+0x150 / +0x158), op 0xd8.
+    pub tilt: [f32; 2],
     /// Units per second (+0x168), op 0x32 = val * 0.1.
     pub speed: f32,
     /// +0x16c (5.0 at bind, op 0x91 = val * 10): x 0.8 the model's motion speed reference (FUN_1008cce0).
@@ -372,7 +374,7 @@ impl Runtime {
             let actor = rt.blocks[b].actor;
             let (pos, dir) = host.place(actor);
             let n = rt.vms.len();
-            rt.bodies.push(Body { locals: [0; 0x50], pos, dir, speed: 5.0, anim_speed: 5.0, no_ground: false, msg_actor: None });
+            rt.bodies.push(Body { locals: [0; 0x50], pos, dir, tilt: [0.0; 2], speed: 5.0, anim_speed: 5.0, no_ground: false, msg_actor: None });
             rt.vms.push(Vm {
                 block: b,
                 own: actor,
@@ -1699,6 +1701,29 @@ impl Runtime {
                 };
                 self.set_at(v, 1, 0, d as i32 as u32);
                 self.adv(v, 0xb);
+            }
+            // FUN_100bc060: actor@2's event body rotation, val x 2 pi / 4096: sub 1 x, 2 y (the direction), 3 z, 4 all
+            // three (val@6 / @8 / @10); sub 0 copies the actor's. No body: advances 6 whatever the sub.
+            0xd8 => {
+                let t = self.actor_at(v, 2);
+                let rad = |x: i32| x as f32 * std::f32::consts::TAU / 4096.0;
+                match self.vm_of(t).map(|tv| self.vms[tv].body) {
+                    Some(b) => {
+                        match sub {
+                            Some(0) => (self.bodies[b].tilt, self.bodies[b].dir) = ([0.0, 0.0], host.place(t).1),
+                            Some(1) => self.bodies[b].tilt[0] = rad(self.val(v, 6)),
+                            Some(2) => self.bodies[b].dir = rad(self.val(v, 6)),
+                            Some(3) => self.bodies[b].tilt[1] = rad(self.val(v, 6)),
+                            Some(4) => {
+                                let (x, y, z) = (rad(self.val(v, 6)), rad(self.val(v, 8)), rad(self.val(v, 10)));
+                                (self.bodies[b].tilt, self.bodies[b].dir) = ([x, z], y);
+                            }
+                            _ => {}
+                        }
+                        self.adv(v, len);
+                    }
+                    None => self.adv(v, 6),
+                }
             }
             // FUN_100babe0: Vana'diel time val@1 (earth seconds; hour 0x90, day 0xd80) as year + 886, month + 1,
             // day + 1, weekday, hour, minute and moon step.
