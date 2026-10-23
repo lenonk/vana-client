@@ -827,6 +827,30 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         world.overlay = Some(o);
                     }
                 }
+                // The palette (FUN_101a3960): Left / Right move the cursor (wrapping), Down / Up the next / previous set,
+                // Enter runs the cell and closes, Escape closes.
+                _ if world.palette.0 != 0 => {
+                    let p = world.palette.0 as usize - 1;
+                    match key {
+                        egui::Key::ArrowLeft => world.palette.3[p] = (world.palette.3[p] + 9) % 10,
+                        egui::Key::ArrowRight => world.palette.3[p] = (world.palette.3[p] + 1) % 10,
+                        egui::Key::ArrowDown | egui::Key::ArrowUp => {
+                            if let Some(m) = world.macros.as_mut() {
+                                let (book, set) = (m.book, m.set);
+                                m.switch(book, if *key == egui::Key::ArrowDown { (set + 1) % 10 } else { (set + 9) % 10 });
+                            }
+                        }
+                        egui::Key::Enter => {
+                            let n = world.palette.3[p] + 10 * p;
+                            if let Some(m) = world.macros.as_mut() {
+                                m.start(n);
+                            }
+                            world.palette = (0, 0, 0, world.palette.3);
+                        }
+                        egui::Key::Escape => world.palette = (0, 0, 0, world.palette.3),
+                        _ => {}
+                    }
+                }
                 egui::Key::H if modifiers.ctrl || modifiers.alt => send_chat(world, "/heal".into()),
                 egui::Key::C if modifiers.ctrl || modifiers.alt => check_target(world),
                 // FUN_1012ec60 / FUN_101e9f10.
@@ -1278,6 +1302,51 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect(myroom::WINDOW, sw, sh));
     }
 
+    // The macro palette (FUN_101a3b20): mcr1pall / mcr2pall (mcr?long when config 0x9d is 0 and the UI is 1024 or
+    // wider), the keycap cells, each cell's macro title: letters and digits in the mcralpha sprites, anything else in
+    // the UI font.
+    if world.palette.0 != 0
+        && let Some(m) = world.macros.as_ref()
+    {
+        let p = world.palette.0 as usize;
+        let long = world.game.get(0x9d) == 0 && sw >= 1024.0;
+        let name = format!("menu    mcr{p}{}", if long { "long" } else { "pall" });
+        if let Some(win) = gu.lobby_window(&name, sw, sh, false, Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
+            let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
+            for (k, (_, r)) in win.children.iter().take(10).enumerate() {
+                let title = m.recs[k + 10 * (p - 1)].title();
+                if title.is_empty() {
+                    continue;
+                }
+                if title.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    // 62 glyphs in the order 1..9, 0, a..z, A..Z; advance = width + 1, stopping before max(w, 38).
+                    let mut x = r[0] + pad;
+                    for c in title.chars() {
+                        let i = match c {
+                            '1'..='9' => c as usize - '1' as usize,
+                            '0' => 9,
+                            'a'..='z' => 10 + c as usize - 'a' as usize,
+                            _ => 36 + c as usize - 'A' as usize,
+                        };
+                        let adv = gu.sprite_width("menu    mcralpha", i) + 1.0;
+                        if x + adv > r[0] + r[2].max(38.0) {
+                            break;
+                        }
+                        gu.sprite("menu    mcralpha", i, x, r[1] + 4.0, 0x8080_8080);
+                        x += adv;
+                    }
+                } else {
+                    let max = r[2].max(48.0) - 14.0;
+                    let mut t = title.clone();
+                    while !t.is_empty() && gu.text_width(&t) > max {
+                        t.pop();
+                    }
+                    gu.text(&t, r[0] + pad, r[1] + 2.0, 0, WHITE);
+                }
+            }
+            blockers.push(win.frame);
+        }
+    }
     // The yes / no prompt (FUN_10210e30): "menu    comyn" stacked on the log (registry flag 0x1000: frame top = log top
     // - 88 - 2, at least 16), the question at (+4, +4) wrapped to w - 8 (FUN_10211050), Yes / No children 1 / 2.
     if let Some((kind, yes)) = world.confirm {
@@ -1472,6 +1541,17 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     }
     if let Some(s) = &world.settings {
         (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
+    }
+    // The palette's caption (FUN_101a3d00): group 10 0x27 "Macro Set %s (#%d)"; titles "MacroPalette" (group 0xd
+    // 0x50) under the cursor cell's macro title.
+    if world.palette.0 != 0
+        && let Some(m) = world.macros.as_ref()
+    {
+        let p = world.palette.0 as usize - 1;
+        let fmt = gu.lobby_msg(0x0a, 0x27, "Macro Set %s (#%d)");
+        bars.help[1] = fmt.replacen("%s", &m.book_title(m.book), 1).replacen("%d", &(m.set + 1).to_string(), 1);
+        bars.title[1] = gu.title_msg(0x50).unwrap_or_else(|| "MacroPalette".into());
+        bars.title[2] = m.recs[world.palette.3[p] + 10 * p].title();
     }
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -2016,6 +2096,9 @@ struct World {
     party_asked: bool,
     /// The macro files and runner (client/macros.rs), loaded at each zone-in.
     macros: Option<macros::Macros>,
+    /// The macro palette controller (DAT_1066279c): +0xc open (0, 1 Ctrl, 2 Alt), +0xd pending, +0x10 the hold's
+    /// second, each palette's cursor cell.
+    palette: (u8, u8, u64, [usize; 2]),
     /// Key function 0x56 (Scroll Lock): the UI hidden (menu manager +0xb4); shown again by Esc and on zoning.
     ui_hidden: bool,
     /// Key function 0x55 (Print Screen, UI hidden only): the screenshot to save this frame.
@@ -3035,6 +3118,7 @@ impl App {
                             party: Default::default(),
                             party_asked: false,
                             macros: None,
+                            palette: (0, 0, 0, [0, 0]),
                             ui_hidden: false,
                             shot_request: None,
                             shot_count: (0, -1),
@@ -4079,7 +4163,7 @@ impl App {
             self.input.context = if w.map.is_some() { 0x26 } else { 0xffff };
             f.typing = w.typing;
             f.keyboard = w.game.get(0x42);
-            f.window = w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some();
+            f.window = w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.palette.0 != 0;
             f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
         }
         self.input.begin_frame(f);
@@ -4099,7 +4183,22 @@ impl App {
             send_chat(world, crate::dat::font::decode_sjis(&line));
         }
         let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
-        if world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some() {
+        let gate = world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some();
+        // FUN_101a2e80 step 3: Ctrl (0x76) / Alt (0x77) held opens palette 1 / 2 at the next whole second of the
+        // clock; released, it closes. Ctrl wins.
+        let held = if self.input.test(0x76, input::mode::HELD) { 1 } else if self.input.test(0x77, input::mode::HELD) { 2 } else { 0 };
+        let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let pal = &mut world.palette;
+        if held == 0 || !gate {
+            (pal.0, pal.1, pal.2) = (0, 0, 0);
+        } else if pal.0 != held {
+            if pal.1 != held {
+                (pal.1, pal.2) = (held, secs);
+            } else if secs != pal.2 {
+                pal.0 = held;
+            }
+        }
+        if gate {
             const SETS: [usize; 10] = [0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x58];
             const CTRL: [usize; 10] = [0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x6c];
             const ALT: [usize; 10] = [0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x62];
