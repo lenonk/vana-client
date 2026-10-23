@@ -379,6 +379,9 @@ impl Font {
 
 /// Shift-JIS (CP932 plus the client's gaiji) to UTF-8. Gaiji 0xEF1F.. map to U+E000..; bytes below
 /// 0x20 pass through as control characters; undecodable pairs become U+FFFD.
+/// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
+const PAIR_BASE: u32 = 0xF0000;
+
 pub fn decode_sjis(sjis: &[u8]) -> String {
     let mut out = String::with_capacity(sjis.len());
     let mut i = 0;
@@ -390,8 +393,14 @@ pub fn decode_sjis(sjis: &[u8]) -> String {
             if (GAIJI_FIRST..GAIJI_END).contains(&g) {
                 out.push(char::from_u32(0xE000 + (g - GAIJI_FIRST) as u32).unwrap());
             } else {
+                // Pairs standard Shift-JIS lacks are the game's own glyphs (e.g. 0x87B2 / 0x87B3, its curly double
+                // quotes): kept as private-use U+F0000 + pair so encode_sjis gives the bytes back for the font.
                 let (s, bad) = encoding_rs::SHIFT_JIS.decode_without_bom_handling(pair);
-                out.push_str(if bad { "\u{FFFD}" } else { &s });
+                if bad {
+                    out.push(char::from_u32(PAIR_BASE + ((pair[0] as u32) << 8 | pair[1] as u32)).unwrap());
+                } else {
+                    out.push_str(&s);
+                }
             }
             i += 2;
         } else {
@@ -415,6 +424,8 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
         let cp = ch as u32;
         if (0xE000..0xE000 + (GAIJI_END - GAIJI_FIRST) as u32).contains(&cp) {
             out.extend_from_slice(&[0xEF, 0x1F + (cp - 0xE000) as u8]);
+        } else if (PAIR_BASE..PAIR_BASE + 0x10000).contains(&cp) {
+            out.extend_from_slice(&[(cp >> 8) as u8, cp as u8]);
         } else if cp < 0x80 {
             out.push(cp as u8);
         } else {
@@ -445,5 +456,16 @@ mod tests {
         let b = encode_sjis(s);
         assert_eq!(&b[..5], b"Lion ");
         assert_eq!(decode_sjis(&b), s);
+    }
+
+    /// The game's curly quotes 0x87B2 / 0x87B3 (Southern San d'Oria msg 6623, "the “Mog House,” kupo!") are
+    /// font glyphs 723 / 724; they survive decode and encode.
+    #[test]
+    fn game_quotes_round_trip() {
+        let b = [b'a', 0x87, 0xb2, b'b', 0x87, 0xb3];
+        let s = decode_sjis(&b);
+        assert!(!s.contains('\u{FFFD}'));
+        assert_eq!(encode_sjis(&s), b);
+        assert_eq!(glyphs(&b), vec![b'a' as i32 - 0x20, 723, b'b' as i32 - 0x20, 724]);
     }
 }
