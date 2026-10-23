@@ -545,12 +545,14 @@ fn layout(w: &World) -> usize {
     if w.my_motion.status == 1 {
         return 6;
     }
-    match w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e))) {
+    let base = match w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e))) {
         Some((_, e)) if e.mob && !matches!(e.motion.status, 2 | 3) => 4,
         Some((t, e)) if t >> 24 != 0 && !e.mob => 7,
         Some(_) => 2,
         None => 0,
-    }
+    };
+    // FUN_1012b4b0: riding (status 5 chocobo, 0x55 mount) takes the odd layout (Dig, Dismount), but the NPC one.
+    if matches!(w.my_motion.status, 5 | 0x55) && base != 7 { base + 1 } else { base }
 }
 
 /// FUN_10127230's filters, as far as they apply to us (no treasure pool, trust, fellow or party).
@@ -576,7 +578,12 @@ pub fn menu_items(layout: usize, target: Option<u32>) -> Vec<u8> {
 }
 
 pub(super) fn open_menu(w: &World) -> ActionMenu {
-    ActionMenu { items: menu_items(layout(w), w.target.filter(|t| w.entities.contains_key(t))), sel: 0 }
+    let mut items = menu_items(layout(w), w.target.filter(|t| w.entities.contains_key(t)));
+    // FUN_1012af30 case 0xe: Dig only on a chocobo (not a mount); its further zone tests are not traced.
+    if w.my_motion.status == 0x55 {
+        items.retain(|&c| c != 0xe);
+    }
+    ActionMenu { items, sel: 0 }
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -620,6 +627,9 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         // Case 8: the item list (FUN_101e9f10).
         // FUN_1012b880 case 8: the direct-use list.
         (cmd::ITEMS, _) => super::items::open_direct(w),
+        // FUN_1012b880 cases 0xd / 0xe: Dig runs /dig; Dismount asks first (group 0xe 0x4d "Dismount?").
+        (0xe, _) => super::textcmd::run(w, "/dig", super::textcmd::Mode::Internal),
+        (0xf, _) => w.confirm = Some((super::Confirm::Dismount, false)),
         _ => return false,
     }
     true

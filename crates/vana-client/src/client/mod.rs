@@ -1742,6 +1742,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        // LAB_1012bca0: /dismount.
+        (Some(true), Some((Confirm::Dismount, _))) => {
+            world.confirm = None;
+            textcmd::run(world, "/dismount", textcmd::Mode::Internal);
+        }
         // LAB_101f7d40: c2s 0x0F6, the ring goes, scanlist opens.
         (Some(true), Some((Confirm::StopTracking, _))) => {
             world.confirm = None;
@@ -1883,6 +1888,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::HomePoint, _) => gu.menu_msg(0x46, "Return to Home Point?"),
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
         (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
+        (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -2817,6 +2823,8 @@ enum Confirm {
     StopTracking,
     /// Drop of an Ex / Rare / augmented item (group 0xa 0x30), the Linkshell's two more (group 9 0x157 / 0x158).
     Drop { index: u8, id: u16, stage: u8 },
+    /// The action menu's Dismount (FUN_10210e30): group 0xe 0x4d "Dismount?"; Yes runs /dismount.
+    Dismount,
 }
 
 impl World {

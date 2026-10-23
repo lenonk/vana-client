@@ -4690,3 +4690,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 
 - Event op 0x85 (FUN_100b9120, 1 byte): FUN_101d6110(0), the moogle menu as s2c 0x02E opens it (myroom). Wired now;
   the sweep is unchanged (1450 finished, 0 faults).
+
+- Riding action menu (FUN_1012b4b0): status 5 (chocobo) or 0x55 (mount) takes the odd layout of table 0x1036f390
+  (1 = Chat, Dig, Dismount; 3 / 5 as listed), not for the NPC layout. Dig (keytops3 0x26) only on a chocobo; Dismount
+  (0x27) asks group 0xe 0x4d "Dismount?" (FUN_10210e30, Yes / No side by side, default No), Yes runs /dismount. /dig
+  (id 0x37, flags 0x41, FUN_1007aaf0) on a chocobo: c2s 0x01A category 0x11 (LSB ChocoboDig); its place checks
+  (refusal index 8 = group 7 0x4a) are left to the server (inferred). Live (West Ronfaure, on a chocobo): the menu
+  showed Chat / Dig / Dismount, Dismount -> Yes dismounted (category 0x12, the music back).

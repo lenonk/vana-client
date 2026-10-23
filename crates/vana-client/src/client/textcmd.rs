@@ -31,6 +31,7 @@ mod id {
     pub const RECYCLE: u16 = 0x7a;
     pub const MOUNT: u16 = 0x28;
     pub const DISMOUNT: u16 = 0x38;
+    pub const DIG: u16 = 0x37;
     pub const BANK: u16 = 0x6c;
     pub const LOCKER: u16 = 0x6d;
     pub const STORAGE: u16 = 0x6e;
@@ -591,6 +592,14 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             let want = name.trim_matches('"').to_ascii_lowercase();
             let idx = (0..names.mount_count() as u32).find(|&i| names.mount(i).is_some_and(|m| m.0.to_ascii_lowercase() == want)).ok_or(())?;
             act(w, (w.my_id, w.my_index), 0x1a, idx);
+            Ok(())
+        }
+        // FUN_1007aaf0: /dig on a chocobo (status 5): c2s 0x01A category 0x11 (LSB ChocoboDig) through FUN_1009fa70;
+        // its place checks (refusal index 8 = group 7 0x4a) are left to the server here (inferred).
+        id::DIG => {
+            if w.my_motion.status == 5 {
+                act(w, (w.my_id, w.my_index), 0x11, 0);
+            }
             Ok(())
         }
         // FUN_1007aa80: /dismount: category 0x12 on ourselves, no client checks.

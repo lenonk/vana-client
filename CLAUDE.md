@@ -80,7 +80,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     offscreen); the gamepad rows (Misc. 4 0xce, the external gamepad
     tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mix.dat / aix.dat order (read only), mouse
-    in the lists; the sort windows and the order files; cursor memory; left: blue magic sets (s2c 0x044), mouse in the prompt, the mount model and the riding action menu, the emote list);
+    in the lists; the sort windows and the order files; cursor memory; left: blue magic sets (s2c 0x044), mouse in the prompt, the mount model, the emote list);
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
     pointer and `<ht>`; left: the compass radar dots, helpwind's other busy bits;
