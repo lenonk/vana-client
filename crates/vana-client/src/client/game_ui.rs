@@ -45,6 +45,29 @@ pub struct GameUiData {
     count_fmt: [String; 4],
     /// Window frame styles 0..7 = files 14..21 (FUN_10159a70, config 0x12).
     styles: Vec<UiFile>,
+    /// The menu registry's flags by window name (0x2c-byte entries from "menu    menuwind"; FUN_1015e950 copies them
+    /// to window +0x34): 8 = no open / close animation, 0x20 frameless. Unlisted windows are 0.
+    registry: std::collections::HashMap<String, u32>,
+}
+
+/// The menu registry in FFXiMain: {name[32], handler, u32 flags, ...} records 0x2c apart from "menu    menuwind" to
+/// an empty name. Found as the copy of that name followed by another "menu    " entry.
+fn menu_registry(ffximain: &[u8]) -> std::collections::HashMap<String, u32> {
+    let mut out = std::collections::HashMap::new();
+    let first = b"menu    menuwind";
+    let Some(at) = (0..ffximain.len().saturating_sub(0x60)).find(|&i| ffximain[i..].starts_with(first) && ffximain[i + 16] == 0 && ffximain[i + 0x2c..].starts_with(b"menu    ")) else {
+        log::warn!("menu registry not found");
+        return out;
+    };
+    for e in ffximain[at..].chunks_exact(0x2c) {
+        let name = &e[..32];
+        let len = name.iter().position(|&c| c == 0).unwrap_or(32);
+        if len == 0 {
+            break;
+        }
+        out.insert(String::from_utf8_lossy(&name[..len]).into_owned(), u32::from_le_bytes(e[0x24..0x28].try_into().unwrap()));
+    }
+    out
 }
 
 // From FFXiMain (dat::tables): the creator stat table (STR DEX VIT AGI INT MND CHR per race and job), the action
@@ -87,7 +110,8 @@ impl GameUiData {
             .unwrap_or_default();
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, lobby_msgs, stats, area_names, errors, count_fmt, styles })
+        let registry = menu_registry(ffximain);
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
     }
 }
 
@@ -113,6 +137,21 @@ pub struct GameUi {
     /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
     /// pointer moves.
     pub hover: std::cell::Cell<bool>,
+    /// Window open / close animations by menu name, the UI frame number and the tick clock; `open_ticks` is N
+    /// (DAT_1036c190: 25, 0 with config 0xa4).
+    anims: std::collections::HashMap<String, WinAnim>,
+    anim_frame: u64,
+    anim_acc: f32,
+    pub open_ticks: f32,
+}
+
+/// One window's open / close state (window +0x26 open count, +0x64 close count, +0x68 opened animated).
+struct WinAnim {
+    open: f32,
+    close: f32,
+    animated: bool,
+    rect: [f32; 4],
+    seen: u64,
 }
 
 /// The lobby help line's scroll state (lobyhelp draw FUN_10236b40).
@@ -148,7 +187,69 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
+    }
+
+    /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
+    /// zooming frame is drawn, nothing of its contents), true once it is open.
+    fn win_gate(&mut self, name: &str, r: [f32; 4]) -> bool {
+        let n = self.open_ticks;
+        let animates = n > 0.0 && self.data.registry.get(name).copied().unwrap_or(0) & 8 == 0;
+        let frame = self.anim_frame;
+        let a = self.anims.entry(name.to_string()).or_insert(WinAnim { open: 0.0, close: 0.0, animated: false, rect: r, seen: 0 });
+        if a.seen == 0 || a.seen + 1 < frame {
+            (a.open, a.close, a.animated) = (if animates { n } else { 0.0 }, 0.0, animates);
+        }
+        (a.seen, a.rect) = (frame, r);
+        if a.open <= 0.0 {
+            return true;
+        }
+        let f = ((n - a.open) / n).max(0.0);
+        self.zoom_frame(r, f);
+        false
+    }
+
+    /// FUN_1011a250: the style frame at scale f^2 about its centre, then an echo at 1.6 f, alpha blended with alpha
+    /// ftol(96 - 128 f) clamped unsigned to 0x80 (so it turns opaque past f = 0.75, as retail's compare does).
+    fn zoom_frame(&mut self, r: [f32; 4], f: f32) {
+        let [x, y, w, h] = r;
+        let at = |s: f32| ((x - (w / 2.0).trunc() * (s - 1.0)).trunc(), (y - (h / 2.0).trunc() * (s - 1.0)).trunc());
+        let s = f * f;
+        let (ax, ay) = at(s);
+        self.batch.push_frame(&self.data.lobby, &self.data.style, ax, ay, w, h, s, s, 0x8080_8080, 0, false, false);
+        let g = 1.6 * f;
+        let alpha = (96.0 - 80.0 * g) as i32 as u32;
+        let alpha = if alpha > 0x80 { 0x80 } else { alpha };
+        let (bx, by) = at(g);
+        self.batch.push_frame(&self.data.lobby, &self.data.style, bx, by, w, h, g, g, alpha << 24 | 0x80_8080, 0x44, false, false);
+    }
+
+    /// Once a frame, after every window: open counts run down, windows no longer drawn play their close (the frame
+    /// shrinking from the last rect, FUN_101187f0's count), finished ones go.
+    pub fn end_frame(&mut self, dt: f32) {
+        self.anim_acc += dt * 60.0;
+        let ticks = self.anim_acc.floor();
+        self.anim_acc -= ticks;
+        let (n, frame) = (self.open_ticks, self.anim_frame);
+        let mut closing = Vec::new();
+        for a in self.anims.values_mut() {
+            if a.seen == frame {
+                a.open = (a.open - ticks).max(0.0);
+                continue;
+            }
+            if a.seen + 1 == frame && a.animated && n > 0.0 && a.close <= 0.0 {
+                a.close = n;
+            }
+            if a.close > 0.0 {
+                closing.push((a.rect, a.close / n));
+                a.close -= ticks;
+            }
+        }
+        for (r, f) in closing {
+            self.zoom_frame(r, f);
+        }
+        self.anims.retain(|_, a| a.seen == frame || a.close > 0.0);
+        self.anim_frame += 1;
     }
 
     /// Text caret phase: on for half of each second.
@@ -228,9 +329,13 @@ impl GameUi {
     #[allow(clippy::too_many_arguments)]
     pub fn lobby_window(&mut self, name: &str, w: f32, h: f32, centred: bool, sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
+        let (dx, dy) = if centred { (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc()) } else { (0.0, 0.0) };
+        let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
+        if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
+            return None;
+        }
         let ui = &self.data.lobby;
         let m = ui.menu(name)?;
-        let (dx, dy) = if centred { (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc()) } else { (0.0, 0.0) };
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
         let (x, y, fx, fy) = (x + dx, y + dy, fx + dx, fy + dy);
@@ -340,6 +445,11 @@ impl GameUi {
     /// A HUD window by menu name (frame and its first sprite); returns its position.
     pub fn window(&mut self, name: &str, w: f32, h: f32) -> Option<(f32, f32)> {
         let m = self.data.lobby.menu(name)?;
+        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        if !self.win_gate(name, [fx, fy, fw, fh]) {
+            return None;
+        }
+        let m = self.data.lobby.menu(name)?;
         Some(screens::push_window(&mut self.batch, &self.data.lobby, &self.data.style, m, w, h))
     }
 
@@ -423,6 +533,10 @@ impl GameUi {
         let m = self.data.lobby.menu(name)?;
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
+            return None;
+        }
+        let m = self.data.lobby.menu(name)?;
         self.batch.push_frame(&self.data.lobby, &self.data.style, fx + dx, fy + dy, fw, fh, 1.0, 1.0, 0x8080_8080, 0, false, false);
         if let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 0)
             && let Some(lib) = self.data.lobby.lib(&r.lib)
@@ -615,15 +729,22 @@ impl GameUi {
 
     /// A menu window with every child's sprite, the child `sel` highlighted with the hand (FUN_101144b0).
     pub fn menu_sel(&mut self, name: &str, w: f32, h: f32, sel: u16) -> Option<(f32, f32)> {
+        let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
+        if !self.win_gate(name, [fx, fy, fw, fh]) {
+            return None;
+        }
         screens::push_menu_sel(&mut self.batch, &self.data.lobby, &self.data.style, name, w, h, sel)
     }
 
     /// A HUD window at frame alpha a (skipped when 0); returns its position either way.
     pub fn window_alpha(&mut self, name: &str, w: f32, h: f32, a: f32) -> Option<(f32, f32)> {
         let m = self.data.lobby.menu(name)?;
-        if a <= 0.0 {
-            return Some(screens::window_pos(m, w, h, 1.0, 1.0));
+        let pos = screens::window_pos(m, w, h, 1.0, 1.0);
+        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        if !self.win_gate(name, [fx, fy, fw, fh]) || a <= 0.0 {
+            return Some(pos);
         }
+        let m = self.data.lobby.menu(name)?;
         Some(screens::push_window_alpha(&mut self.batch, &self.data.lobby, &self.data.style, m, w, h, 0.0, a))
     }
 

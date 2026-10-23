@@ -3728,3 +3728,23 @@ From the grid spec (scratchpad gridpos/SPEC.md; current [2019] addresses there).
 - Ours: Ground::map_key, map::Region::find_key / here, map::grid_text, hudtop's cached suffix. The map window and
   overlay now open the record under the player (else key 0), so the 40 zones without a key-0 record open a map and
   multi-floor zones show the floor you are on.
+
+## Window open / close animation (2026-10-23)
+
+From the popup spec (scratchpad popupanim/SPEC.md; current [2019] addresses there).
+- Registry at .data 0x103722d8 (0x2c-byte records from "menu    menuwind": name[32], handler, u32 flags @0x24,
+  u8 @0x28, layer @0x29, i16 @0x2a; FUN_1015e950 copies flags to window +0x34). Flags 8 = no open / close
+  animation (20 of 370 windows: inline, fep, macro palettes, loby1win / loby2win, ptcbgwin, dbnamese, ...), 0x20
+  frameless, 0x100000 scaled. Unlisted windows (e.g. "menu    yesno") are 0 (inf).
+- N = DAT_1036c190 = 25 ticks; config 0xa4 sets it 0 (no animation). Open (FUN_1015e530): frame part +0x26 = N; close
+  (FUN_1015e6e0 -> FUN_101187f0): +0x10 = 0xe, +0x64 = N when it opened animated.
+- While opening or closing only the frame draws (FUN_101177d0 at LAB_10117ac8): no window sprite, children, text or
+  hand cursor. f = (N - c) / N (0 -> 1 opening, 1 -> 0 closing), linear in ticks.
+- FUN_1011a250 (framed): the style frame at scale f^2 about its centre (x - (w >> 1)(s - 1), truncated), full colour;
+  then an echo at 1.6 f, alpha blended, alpha ftol(96 - 128 f) clamped unsigned to 0x80 (opaque past f ~0.76: the
+  last three 30 fps frames of an open). FUN_1011a150 (frameless): the window sprite likewise, echo alpha 128 - 128 f.
+- Keys still act during the open (FUN_10118260 tests only the closing state). No sound from the window system.
+- Ours: game_ui.rs menu_registry, win_gate / zoom_frame / end_frame; the named-window helpers (window, window_alpha,
+  window_off, menu_sel, lobby_window and so yes / no and OK prompts) return None while opening. Not done: frameless
+  windows (bare_window, the select list), the 9-tick press pulse on confirm (FUN_10119fb0), the in-game prompt as
+  the real "menu    yesno".

@@ -5409,9 +5409,16 @@ impl App {
             sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma);
         }
         self.mouse_kind(size);
+        // Config 0xa4 (Window Settings): windows open without the zoom (N = 0, FUN_10199500).
+        let no_zoom = match &self.phase {
+            Phase::World(w) => w.game.get(0xa4),
+            _ => self.cfg.game.global.get(0xa4),
+        } != 0;
         if self.ui_drawn
             && let Some(lu) = &mut self.game_ui
         {
+            lu.open_ticks = if no_zoom { 0.0 } else { 25.0 };
+            lu.end_frame(dt);
             if self.cfg.tool("0021") == 0
                 && self.cursor_in
                 && let Some((x, y)) = self.last_cursor
