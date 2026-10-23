@@ -168,7 +168,8 @@ pub enum NetEvent {
     ItemNum { container: u8, index: u8, count: u32 },
     /// 0x01F / 0x020: item in a slot.
     /// 0x01F / 0x020; 0x020 carries the 24-byte extdata (Attr @0x11).
-    Item { container: u8, index: u8, id: u16, count: u32, ext: Option<[u8; 24]> },
+    /// LockFlg (0x01F @0xc, 0x020 @0x10): 0 free, 5 equipped, 0x0F in use, 0x13 linkshell, 0x19, 0x1B mannequin.
+    Item { container: u8, index: u8, id: u16, count: u32, ext: Option<[u8; 24]>, lock: u8 },
     /// 0x050: equipment slot -> container slot (index 0 = removed).
     Equip { slot: u8, index: u8, container: u8 },
     /// 0x061: our stats.
@@ -603,6 +604,20 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x051 => tx.send(NetEvent::SelfLook(look_at(&p, 4)))?,
                     0x00E => tx.send(NetEvent::Entity(entity(&p, EntityKind::Npc)))?,
                     0x057 => tx.send(NetEvent::Weather(p.u16(8), p.u16(0x0a)))?,
+                    // s2c 0x009 (LAB_100fbd40): MesNo @0xa, its parameters as "Para0 %u Para1 %u ..." text in Data @0xd.
+                    0x009 => {
+                        let data = text(&p, 0xd, p.data.len().saturating_sub(0xd));
+                        let mut para = [0u32; 2];
+                        let words: Vec<&str> = data.split_whitespace().collect();
+                        for w in words.windows(2) {
+                            match w[0] {
+                                "Para0" => para[0] = w[1].parse().unwrap_or(0),
+                                "Para1" => para[1] = w[1].parse().unwrap_or(0),
+                                _ => {}
+                            }
+                        }
+                        tx.send(NetEvent::SystemMessage { id: p.u16(0xa), para: para[0], para2: para[1] })?
+                    }
                     0x053 => tx.send(NetEvent::SystemMessage { id: p.u16(0xc), para: p.u32(4), para2: p.u32(8) })?,
                     0x058 => tx.send(NetEvent::Assist { player: p.u32(4), target: p.u32(8) })?,
                     0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
@@ -623,10 +638,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
-                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None })?,
+                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc) })?,
                     0x020 => {
                         let ext = std::array::from_fn(|k| p.u8(0x11 + k));
-                        tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext) })?
+                        tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext), lock: p.u8(0x10) })?
                     }
                     0x050 => tx.send(NetEvent::Equip { index: p.u8(4), slot: p.u8(5), container: p.u8(6) })?,
                     // CLISTATUS: hpmax @4, mpmax @8, jobs @0xc..0xf, bp_base @0x14, bp_adj @0x22, atk @0x30,

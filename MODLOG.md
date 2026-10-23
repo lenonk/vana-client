@@ -4253,3 +4253,32 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
 - Map left-drag (FUN_10122e30 n 1 / 2 with mouse state 4: FUN_10126100 / FUN_10125fe0): the offset from the anchor
   over W x 0.047619 gives -1 / 0 / +1 per axis in place of the scroll keys; ours anchors at the press point *(inf)*
   and keeps the camera still while the map is open (context 0x26 has no camera functions). Not driven live.
+
+## Item use menu: "menu    iuse", Use and Drop (2026-10-23)
+
+Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, the direct-use list are in it, not done).
+- Enter on the item list (FUN_101f2bb0) opens "menu    iuse" ((384, 48) 112 x 42, 1 Use windowps 129 / dim 413, 2 Drop
+  123 / dim 414, caption comwin 25 "Item"; title group 0xd 2 "Items", help 0xe 0x1a / 0x110) for the slot under the
+  cursor, SE 0002; nothing for lock byte 0x19. It closes when the list cursor leaves that slot (FUN_101f2ec0).
+- Enabled (FUN_101f2de0 / FUN_101f2ec0): Use for crystals (type 8), maze tabulae (0x16 / 0x17), non-equipment with
+  record flag 0x400 (the client's test; POLUtils names 0x200 "CanUse"), equipped charged gear whose extdata (kind 1)
+  has u16 @2 bit 0x4000; never as a monster (main job 0x17). Drop when the slot's lock byte (s2c 0x01F @0xc, 0x020
+  @0x10: 5 equipped, 0x0F in use, 0x13 linkshell, 0x19, 0x1B mannequin) is 0. Enter on a disabled child: SE 0004.
+- Use (FUN_101f33a0 case 1): the status gate (0x7f; crystals 0x77; the Mog Garden 0x80 / flag 0x08 rule not done),
+  then the target prompt with the record's targets (0x7f without one), title "Items" (0xd 2), help 0xe 4 "Select
+  target to use item on."; the list and iteminfo hide meanwhile (FUN_101f2740) and come back after. The sender
+  FUN_101f0260 (also /item's end): no charges and a non-monster NPC -> c2s 0x036 trade (inventory only, within 6
+  yalms else message std 9); charged gear must be equipped and ready; cast bar = use time (usable items record +0xe =
+  extra 0xd08, gear the cast byte) x 20 ticks; c2s 0x037 {target u32, 0, ActIndex u16, slot u8, pad, container u32}.
+- Drop: "menu    sortyn" ((384, 124), Yes / No default No, caption comwin 16; help slot 1 group 0xc 0x3e "Dispose of
+  item?", title slot 2 "Items"), iuse stays under it. Yes: Ex / Rare (flags 0xc000), augmented (extdata kind 2 / 3) or
+  the Linkshell (0x201) ask in comyn first (group 0xa 0x30 "Really dispose of the %s?"; the Linkshell then group 9
+  0x157 and 0x158); then c2s 0x028 {count = the whole stack u32, container u8, index u8} (no quantity prompt).
+- s2c 0x009 (LAB_100fbd40): MesNo @0xa, parameters as "Para0 %u Para1 %u" text in Data @0xd -> the message-std
+  expander (ours: SystemMessage).
+- Grammar codes in FUN_100bc8a0 (English): items 0x20..0x22 take the index as the id, 0x23..0x25 the table +0xc64,
+  0x26..0x28 +0xc50 (ours: both the work values *(inf)*); 0x29 / 0x2a take a count index then an item index: "a
+  <item>" (vtable +4) for one, the plural (+0xc) otherwise. A count of 1 (codes 3 / 4) prints nothing and goes to
+  FUN_1024fcd0(0); ours also drops the space after it *(inf)*. Message 180 now reads "You throw away a potion.".
+- Live (Lnxcsfix, !additem 4112 2): iuse showed Use / Drop; Use -> prompt -> the server's "Unable to use item." (the
+  potion script refuses at full HP); Drop -> sortyn -> Yes threw the stack away.

@@ -43,6 +43,8 @@ pub struct Inventory {
     pub slots: BTreeMap<(u8, u8), (u16, u32)>,
     /// Equipment slot -> (container, index).
     pub equip: [Option<(u8, u8)>; 16],
+    /// (container, index) -> LockFlg (s2c 0x01F / 0x020).
+    pub locks: BTreeMap<(u8, u8), u8>,
     /// (container, index) -> the item's 24-byte extdata (s2c 0x020 Attr).
     pub ext: BTreeMap<(u8, u8), [u8; 24]>,
 }
@@ -52,6 +54,7 @@ impl Inventory {
         if id == 0 {
             self.slots.remove(&(container, index));
             self.ext.remove(&(container, index));
+            self.locks.remove(&(container, index));
         } else {
             self.slots.insert((container, index), (id, count));
         }
@@ -121,10 +124,18 @@ impl ItemInfo for ItemCache {
 
 /// An open window and its cursor.
 pub enum Win {
-    /// Main menu / action menu Items: the inventory list.
-    Items { scroll: usize, cursor: usize },
+    /// Main menu / action menu Items: the inventory list, and iuse / sortyn over it.
+    Items { scroll: usize, cursor: usize, sub: Option<Sub> },
     /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
     Equip { row: usize, col: usize, pick: Option<Pick> },
+}
+
+/// The windows over the list: "menu    iuse" (FUN_101f2bb0: 1 Use, 2 Drop) for the slot it opened on, and
+/// "menu    sortyn" for Drop (FUN_10222770: Yes / No, default No; iuse stays under it).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Sub {
+    Use { child: u16, index: u8, id: u16 },
+    Drop { index: u8, id: u16, yes: bool },
 }
 
 pub struct Pick {
@@ -135,7 +146,7 @@ pub struct Pick {
 }
 
 pub fn open_items(w: &mut World) {
-    w.win = Some(Win::Items { scroll: 0, cursor: 0 });
+    w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -152,6 +163,8 @@ pub fn open_equipment(w: &mut World) {
 /// list is taken as an inventor list (inferred).
 pub fn focus(w: &World) -> Option<(&'static str, u16)> {
     match w.win.as_ref()? {
+        Win::Items { sub: Some(Sub::Use { child, .. }), .. } => Some(("menu    iuse", *child)),
+        Win::Items { sub: Some(Sub::Drop { yes, .. }), .. } => Some(("menu    sortyn", if *yes { 1 } else { 2 })),
         Win::Items { cursor, .. } => Some(("menu    inventor", *cursor as u16 + 1)),
         Win::Equip { pick: Some(p), .. } => Some(("menu    inventor", p.cursor as u16 + 1)),
         Win::Equip { row, col, pick: None } => Some(("menu    equip", (1 + col * 4 + row) as u16)),
@@ -195,9 +208,68 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     let mut close = false;
     match &mut w.win {
         None => return false,
-        Some(Win::Items { scroll, cursor }) => match key {
+        // iuse (FUN_101f33a0): Up / Down between Use and Drop, Enter on a disabled child SE 0004, Escape back to the
+        // list. sortyn (FUN_102228b0): Yes / No, Enter or Escape answers.
+        Some(Win::Items { sub: sub @ Some(_), .. }) => {
+            use crate::audio::Ui;
+            match sub.unwrap() {
+                Sub::Use { child, index, id } => match key {
+                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                        *sub = Some(Sub::Use { child: 3 - child, index, id });
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
+                    egui::Key::Escape => {
+                        *sub = None;
+                        w.sounds.push(Ui::Cancel as u32);
+                    }
+                    egui::Key::Enter => {
+                        let ok = iuse_states(w, index, id)[child as usize - 1];
+                        if !ok {
+                            w.sounds.push(Ui::Error as u32);
+                        } else if child == 2 {
+                            if let Some(Win::Items { sub, .. }) = &mut w.win {
+                                *sub = Some(Sub::Drop { index, id, yes: false });
+                            }
+                            w.sounds.push(Ui::Select as u32);
+                        } else {
+                            if let Some(Win::Items { sub, .. }) = &mut w.win {
+                                *sub = None;
+                            }
+                            w.sounds.push(Ui::Select as u32);
+                            use_entry(w, index, id);
+                        }
+                    }
+                    _ => {}
+                },
+                Sub::Drop { index, id, yes } => match key {
+                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                        *sub = Some(Sub::Drop { index, id, yes: !yes });
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
+                    egui::Key::Enter | egui::Key::Escape => {
+                        let yes = yes && key == egui::Key::Enter;
+                        *sub = Some(Sub::Use { child: 2, index, id });
+                        w.sounds.push(if yes { Ui::Select } else { Ui::Cancel } as u32);
+                        if yes {
+                            drop_entry(w, index, id);
+                        }
+                    }
+                    _ => {}
+                },
+            }
+        }
+        Some(Win::Items { scroll, cursor, sub }) => match key {
             egui::Key::Escape => close = true,
-            egui::Key::Enter => log::info!("using items is not implemented yet"),
+            // FUN_101f2bb0: iuse for the row (not for lock 0x19), SE 0002.
+            egui::Key::Enter => {
+                let at = *scroll + *cursor;
+                if let Some(s) = w.inv.slots_of(INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).nth(at)
+                    && w.inv.locks.get(&(INVENTORY, s.index)).copied().unwrap_or(0) != 0x19
+                {
+                    *sub = Some(Sub::Use { child: 1, index: s.index, id: s.id });
+                    w.sounds.push(crate::audio::Ui::Select as u32);
+                }
+            }
             k => list_keys(scroll, cursor, rows, k),
         },
         Some(Win::Equip { row, col, pick }) => {
@@ -272,6 +344,14 @@ pub(super) fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator
     }
 }
 
+/// sortyn (FUN_10221740 / its open hook): help slot 1 group 0xc 0x3e "Dispose of item?", title slot 2 "Items".
+pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    if let Some(Win::Items { sub: Some(Sub::Drop { .. }), .. }) = &w.win {
+        bars.help[1] = gu.lobby_msg(0x0c, 0x3e, "");
+        bars.title[2] = gu.title_msg(2).unwrap_or_default();
+    }
+}
+
 /// The item info window's item from the open list (FUN_101f27a0 / FUN_101321d0): the slot under the cursor, mode 0
 /// for the inventory, mode 1 for the equipment grid or its candidates; (item, extdata, container, index, equipped,
 /// mode).
@@ -279,7 +359,9 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
     let slots = w.inv.slots_of(INVENTORY);
     let listed = |at: usize| slots.iter().filter(|s| s.index != 0 && s.id != 0).nth(at).cloned();
     let (slot, container, mode) = match w.win.as_ref()? {
-        Win::Items { scroll, cursor } => (listed(scroll + cursor)?, INVENTORY, 0),
+        // FUN_101f2740: the list and iteminfo are hidden while the item's target prompt is up.
+        Win::Items { .. } if item_prompt(w) => return None,
+        Win::Items { scroll, cursor, .. } => (listed(scroll + cursor)?, INVENTORY, 0),
         Win::Equip { pick: Some(p), .. } => {
             let i = *p.indexes.get(p.scroll + p.cursor)?;
             (slots.iter().find(|s| s.index == i)?.clone(), INVENTORY, 1)
@@ -293,6 +375,159 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
     Some((slot.id, w.inv.ext.get(&(container, slot.index)).copied(), container, slot.index, slot.equipped, mode))
 }
 
+/// The item's target prompt is up (SubThen::Item).
+fn item_prompt(w: &World) -> bool {
+    matches!(w.prompt.as_ref().map(|p| &p.then), Some(super::target::SubThen::Item { .. }))
+}
+
+/// FUN_101f2de0 / FUN_101f2ec0: [Use, Drop] enabled. Use: crystals and maze tabulae, non-equipment with record flag
+/// 0x400, equipped charged gear whose extdata (kind 1) has u16 @2 bit 0x4000; never as a monster (main job 0x17).
+/// Drop: the slot's lock byte is 0.
+fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
+    let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return [false, false] };
+    let ext = w.inv.ext.get(&(INVENTORY, index));
+    let equipped = w.inv.equip.contains(&Some((INVENTORY, index)));
+    let usable = matches!(it.item_type, 8 | 0x16 | 0x17)
+        || (!matches!(it.item_type, 4 | 5) && it.flags & 0x400 != 0)
+        || (matches!(it.item_type, 4 | 5) && it.max_charges != 0 && equipped && ext.is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0));
+    let monster = w.stats.as_ref().is_some_and(|s| s.main.0 == 0x17);
+    [usable && !monster, w.inv.locks.get(&(INVENTORY, index)).copied().unwrap_or(0) == 0 && id != 0xffff]
+}
+
+/// iuse and sortyn: the frame, children, caption; disabled children with their dim (kind 4) sprite.
+fn draw_iuse(gu: &mut GameUi, w: &World, s: Sub, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    let (child, index, id, ask) = match s {
+        Sub::Use { child, index, id } => (Some(child), index, id, None),
+        Sub::Drop { index, id, yes } => (None, index, id, Some(yes)),
+    };
+    let on = iuse_states(w, index, id);
+    let off: Vec<u16> = (1..=2).filter(|&c| !on[c as usize - 1]).collect();
+    let mut rects = Vec::new();
+    if let Some(win) = gu.lobby_window_off("menu    iuse", sw, sh, (0.0, 0.0), child, child.is_some(), &off) {
+        let [x, y, ..] = win.frame;
+        if let Some(m) = gu.layout("menu    iuse").cloned() {
+            for e in m.elements.iter().filter(|e| off.contains(&e.id)) {
+                if let Some(r) = e.refs.iter().find(|r| r.kind == 4) {
+                    gu.sprite(&r.lib, r.index as usize, x + e.x as f32, y + e.y as f32, 0x8080_8080);
+                }
+            }
+        }
+        rects.push(win.frame);
+    }
+    if let Some(yes) = ask
+        && let Some(win) = gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, 0.0), Some(if yes { 1 } else { 2 }), true, &[])
+    {
+        rects.push(win.frame);
+    }
+    rects
+}
+
+/// FUN_101f2ec0: iuse closes when the list cursor no longer rests on the slot it opened for.
+pub fn check_iuse(w: &mut World) {
+    let Some(Win::Items { scroll, cursor, sub: Some(s) }) = &w.win else { return };
+    let (index, id) = match *s {
+        Sub::Use { index, id, .. } | Sub::Drop { index, id, .. } => (index, id),
+    };
+    let here = w.inv.slots_of(INVENTORY).into_iter().filter(|s| s.index != 0 && s.id != 0).nth(scroll + cursor);
+    if here.is_none_or(|s| s.index != index || s.id != id)
+        && let Some(Win::Items { sub, .. }) = &mut w.win
+    {
+        *sub = None;
+    }
+}
+
+/// iuse Use (FUN_101f33a0 case 1): tabulae and crystals open windows we do not have yet; anything else passes the
+/// status gate (0x7f; the Mog Garden's 0x77 / flag 0x08 rule not done) and opens the target prompt with the item's
+/// targets (0x7f with no record), title "Items", help 0xe 4.
+fn use_entry(w: &mut World, index: u8, id: u16) {
+    let it = w.item_info.as_ref().and_then(|c| c.item(id));
+    match it.as_ref().map(|i| i.item_type) {
+        Some(0x16 | 0x17) => log::info!("iuse: the maze tabula window is not implemented"),
+        Some(8) => {
+            if super::textcmd::status_gate(w, 0x77) {
+                log::info!("iuse: synthesis (tskill1) is not implemented");
+            }
+        }
+        _ => {
+            if super::textcmd::status_gate(w, 0x7f) {
+                let targets = it.map_or(0x7f, |i| i.targets as u32);
+                super::target::open_sub(w, targets, super::target::SubThen::Item { container: INVENTORY, index }, None, String::new(), 4);
+            }
+        }
+    }
+}
+
+/// FUN_101f0260: the use sender (iuse and /item). No charges and a non-monster NPC: a trade (c2s 0x036, inventory
+/// only, within 6 yalms else message std 9). Charged gear must be equipped and ready. Then the cast bar (use time
+/// x 20 ticks) and c2s 0x037.
+pub fn use_slot(w: &mut World, container: u8, index: u8, target: u32) {
+    let Some(&(id, _)) = w.inv.slots.get(&(container, index)) else { return };
+    let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return };
+    let tindex = if target == w.my_id { w.my_index } else { w.entities.get(&target).map_or(0, |e| e.index) };
+    let send = |w: &World, id: u16, body: Vec<u8>| {
+        let _ = w.net.commands.send(NetCommand::Packet { id, body });
+    };
+    if it.max_charges == 0 {
+        if let Some(e) = w.entities.get(&target).filter(|e| target >> 24 == 1 && !(e.mob || e.flags & 1 != 0)) {
+            if (e.pos - w.pos).length_squared() > 36.0 {
+                super::textcmd::system_line(w, 9);
+                return;
+            }
+            if container != 0 {
+                return;
+            }
+            let mut b = vec![0u8; 0x3c];
+            b[0..4].copy_from_slice(&target.to_le_bytes());
+            b[4..8].copy_from_slice(&1u32.to_le_bytes());
+            b[0x2c] = index;
+            b[0x36..0x38].copy_from_slice(&tindex.to_le_bytes());
+            b[0x38] = 1;
+            send(w, 0x036, b);
+            return;
+        }
+    } else {
+        let ext = w.inv.ext.get(&(container, index));
+        let ready = w.inv.equip.contains(&Some((container, index))) && ext.is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
+        if !ready {
+            return;
+        }
+    }
+    let use_time = if matches!(it.item_type, 4 | 5) { it.cast_time as u32 } else { it.extra.iter().find(|e| e.0 == 0xd08).map_or(0, |e| e.1) };
+    if use_time > 0 {
+        let total = use_time as f32 * 20.0;
+        w.cast_bar = Some((total, total));
+    }
+    let mut b = vec![0u8; 16];
+    b[0..4].copy_from_slice(&target.to_le_bytes());
+    b[8..10].copy_from_slice(&tindex.to_le_bytes());
+    b[10] = index;
+    b[12..16].copy_from_slice(&(container as u32).to_le_bytes());
+    send(w, 0x037, b);
+}
+
+/// LAB_101f30c0: Ex / Rare (flags 0xc000), augmented or the Linkshell ask once more (comyn); others go at once.
+fn drop_entry(w: &mut World, index: u8, id: u16) {
+    let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return };
+    let aug = w.inv.ext.get(&(INVENTORY, index)).is_some_and(|e| matches!(e[0], 2 | 3));
+    if it.flags & 0xc000 != 0 || aug || id == 0x201 {
+        w.confirm = Some((super::Confirm::Drop { index, id, stage: 0 }, false));
+    } else {
+        drop_now(w, index);
+    }
+}
+
+/// FUN_101f2ff0: c2s 0x028 {count = the whole stack, container, index}; iuse closes.
+pub fn drop_now(w: &mut World, index: u8) {
+    let Some(&(_, count)) = w.inv.slots.get(&(INVENTORY, index)) else { return };
+    let mut b = vec![0u8; 8];
+    b[0..4].copy_from_slice(&count.to_le_bytes());
+    (b[4], b[5]) = (INVENTORY, index);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x028, body: b });
+    if let Some(Win::Items { sub, .. }) = &mut w.win {
+        *sub = None;
+    }
+}
+
 /// Draws the open window. Returns the rects that take clicks.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
@@ -300,7 +535,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let frame = gu.cursor_frame();
     let slots = w.inv.slots_of(INVENTORY);
     match win {
-        Win::Items { scroll, cursor } => {
+        Win::Items { .. } if item_prompt(w) => {}
+        Win::Items { scroll, cursor, sub } => {
             let list = ItemList { rows: build_rows(&slots, info.as_ref(), false), scroll: *scroll, cursor: *cursor };
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let (b, ui, style, font) = gu.parts();
@@ -308,6 +544,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame);
             }
             rects.extend(gu.window_rect("menu    inventor", sw, sh));
+            if let Some(s) = sub {
+                rects.extend(draw_iuse(gu, w, *s, sw, sh));
+            }
         }
         Win::Equip { row, col, pick } => {
             let slot = slot_at(*row, *col);

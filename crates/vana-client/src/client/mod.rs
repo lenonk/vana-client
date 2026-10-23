@@ -793,6 +793,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         map::apply(world, gu.map_regions(), c, sw, sh);
     }
     map::refresh(world, gu);
+    items::check_iuse(world);
     let items = gu.menu_items(sw, sh, world.menu_page);
     let dead = world.dead();
     let mut opened = false;
@@ -938,11 +939,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     let out = world.config.as_mut().unwrap().key(gu, &mut world.game, *key, sw);
                     config_out(world, out);
                 }
-                _ if world.win.is_some() => {
-                    items::key(world, *key);
-                }
-                // The yes / no prompt (comyn) takes the keys while it is up: only Left / Right move (its links), Enter
-                // answers, Escape is No.
+                // The yes / no prompt (comyn) takes the keys while it is up, over any window: only Left / Right move (its
+                // links), Enter answers, Escape is No.
                 _ if world.confirm.is_some() => match key {
                     egui::Key::ArrowLeft | egui::Key::ArrowRight => {
                         if let Some((_, yes)) = &mut world.confirm {
@@ -960,6 +958,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                     _ => {}
                 },
+                _ if world.win.is_some() => {
+                    items::key(world, *key);
+                }
                 // FUN_101d6540: the Mog House door menu.
                 _ if world.mogdoor.is_some() => {
                     let m = world.mogdoor.as_mut().unwrap();
@@ -1629,6 +1630,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.ko_offer = 0;
             send_menu_answer(world, 0x13, !yes as u32);
         }
+        // FUN_101f3040 / FUN_101f3080: the Linkshell asks twice more; then FUN_101f2ff0 throws the stack away.
+        (Some(true), Some((Confirm::Drop { index, id, stage }, _))) => {
+            if id == 0x201 && stage < 2 {
+                world.confirm = Some((Confirm::Drop { index, id, stage: stage + 1 }, false));
+            } else {
+                world.confirm = None;
+                items::drop_now(world, index);
+            }
+        }
         (Some(true), Some((Confirm::LeaveRoom, _))) => {
             world.confirm = None;
             leave_room(world, 0);
@@ -1740,6 +1750,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     magic::bars(gu, world, &mut bars);
+    items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
         bars.title[0] = gu.title_msg(if world.my_motion.status == 1 { 7 } else { 5 }).unwrap_or_default();
@@ -1758,6 +1769,11 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
         (Confirm::HomePoint, _) => gu.menu_msg(0x46, "Return to Home Point?"),
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
+        (Confirm::Drop { id, stage: 0, .. }, _) => {
+            let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
+            gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
+        }
+        (Confirm::Drop { stage, .. }, _) => gu.item_msg(9, if stage == 1 { 0x157 } else { 0x158 }).unwrap_or_default(),
     }
 }
 
@@ -2635,6 +2651,8 @@ enum Confirm {
     HomePoint,
     /// FUN_10096c90 mode 3: group 0xe 0x60 "Accept Tractor?".
     Tractor,
+    /// Drop of an Ex / Rare / augmented item (group 0xa 0x30), the Linkshell's two more (group 9 0x157 / 0x158).
+    Drop { index: u8, id: u16, stage: u8 },
 }
 
 impl World {
@@ -4129,8 +4147,11 @@ impl App {
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s) => world.inv.sizes = s,
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
-                NetEvent::Item { container, index, id, count, ext } => {
+                NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
+                    if id != 0 {
+                        world.inv.locks.insert((container, index), lock);
+                    }
                     if let Some(e) = ext.filter(|_| id != 0) {
                         world.inv.ext.insert((container, index), e);
                     }

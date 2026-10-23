@@ -364,7 +364,7 @@ pub(super) fn refuse(w: &mut World, id: usize) {
 }
 
 /// FUN_101cc0d0(mask): the status checks of action commands, the first that applies prints its line.
-fn status_gate(w: &mut World, mask: u8) -> bool {
+pub(super) fn status_gate(w: &mut World, mask: u8) -> bool {
     let s = w.my_motion.status;
     let line = if mask & 0x10 != 0 && matches!(s, 0x21 | 7) {
         0x51
@@ -869,31 +869,8 @@ fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
     let name = args.get(1).ok_or(())?;
     let (bag, slot, id) = find_item(w, name, &[3, 0, 8, 10, 11, 12, 13, 14, 15, 16]).ok_or(())?;
     let t = resolve(w, args.get(2).map(String::as_str), false, false, mode).ok_or(())?;
-    let it = w.item_info.as_ref().and_then(|i| i.item(id)).ok_or(())?;
-    let usable = it.targets != 0;
-    if !usable && t.0 >> 24 == 1 {
-        if bag != 0 {
-            return Ok(());
-        }
-        let mut b = vec![0u8; 0x3c];
-        b[0..4].copy_from_slice(&t.0.to_le_bytes());
-        b[4..8].copy_from_slice(&1u32.to_le_bytes());
-        b[0x2c] = slot;
-        b[0x36..0x38].copy_from_slice(&t.1.to_le_bytes());
-        b[0x38] = 1;
-        send(w, NetCommand::Packet { id: 0x036, body: b });
-        return Ok(());
-    }
-    if it.cast_time > 0 {
-        let total = it.cast_time as f32 * 20.0;
-        w.cast_bar = Some((total, total));
-    }
-    let mut b = vec![0u8; 16];
-    b[0..4].copy_from_slice(&t.0.to_le_bytes());
-    b[8..10].copy_from_slice(&t.1.to_le_bytes());
-    b[10] = slot;
-    b[12..16].copy_from_slice(&(bag as u32).to_le_bytes());
-    send(w, NetCommand::Packet { id: 0x037, body: b });
+    let _ = id;
+    super::items::use_slot(w, bag, slot, t.0);
     Ok(())
 }
 
@@ -911,7 +888,7 @@ fn config_flag(w: &World, which: u8, set: bool) {
 }
 
 /// A message-std line printed locally (FUN_100a1ab0, kind 6).
-fn system_line(w: &mut World, id: u16) {
+pub(super) fn system_line(w: &mut World, id: u16) {
     let Some(bt) = w.battle.clone() else { return };
     let ctx = crate::dat::battle::Ctx { me: w.name.clone(), ..Default::default() };
     if let Some(line) = bt.system(id, &ctx) {

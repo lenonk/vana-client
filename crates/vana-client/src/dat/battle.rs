@@ -273,10 +273,16 @@ impl BattleText {
         let work = |k: u8| ctx.work.get(k as usize).copied().unwrap_or(0);
         let who = |k: u8| if k == 0 { ctx.actor.as_ref() } else { ctx.target.as_ref() };
         let mut i = 0;
+        // A count of one prints nothing, nor the space after it (FUN_1024fcd0(0) *(inf)*).
+        let mut eat_space = false;
         while i < s.len() {
             let c = s[i];
             let a = s.get(i + 1).copied().unwrap_or(0);
             let out = lines.last_mut().unwrap();
+            if std::mem::take(&mut eat_space) && c == b' ' {
+                i += 1;
+                continue;
+            }
             let step = match c {
                 0x80.. => {
                     out.extend_from_slice(&s[i..(i + 2).min(s.len())]);
@@ -297,14 +303,19 @@ impl BattleText {
                         Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
                         Some(0x04) if work(slot) != 1 => out.extend(work(slot).to_string().bytes()),
-                        // Items: form (k % 3) name / article / plural, source (k / 3) index / num / work.
+                        Some(0x04) => eat_space = true,
+                        // Items (FUN_100bc8a0): form (k % 3) name / article / plural; the id is the index itself (0x20..0x22),
+                        // or from the tables +0xc64 (0x23..0x25) / +0xc50 (0x26..0x28), both taken as the work values *(inf)*.
                         Some(&k @ 0x20..=0x28) => {
-                            let id = match (k - 0x20) / 3 {
-                                0 => idx as i32,
-                                1 => 0,
-                                _ => work(slot),
-                            };
+                            let id = if k < 0x23 { idx as i32 } else { work(slot) };
                             out.extend(encode_sjis(&self.item_name(id as u32, (k - 0x20) % 3)));
+                        }
+                        // 0x29 / 0x2a: a count index, then an item index; "a <item>" for one, else the plural.
+                        Some(0x29 | 0x2a) => {
+                            let first = body.get(1..).unwrap_or_default();
+                            let item = grammar_index(first.get(grammar_len(first)..).unwrap_or_default()) as u8;
+                            let n = work(slot);
+                            out.extend(encode_sjis(&self.item_name(work(item) as u32, if n == 1 { 1 } else { 2 })));
                         }
                         _ => {}
                     }
@@ -405,6 +416,14 @@ impl BattleText {
 }
 
 /// A grammar argument (FUN_100bbd20): 0x40 | k = slot k; low bits 2 = 14-bit index over the next 3 bytes.
+/// Bytes a grammar index takes: 1 (0x40 form) or 4 (form 2).
+fn grammar_len(b: &[u8]) -> usize {
+    match b.first() {
+        Some(x) if x & 0x40 != 0 => 1,
+        _ => 4,
+    }
+}
+
 fn grammar_index(b: &[u8]) -> u16 {
     match b {
         [x, ..] if x & 0x40 != 0 => (x & 0x3f) as u16,
@@ -433,6 +452,15 @@ mod tests {
         let index = DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?;
         Some(BattleText::load(&index, &dll).unwrap())
+    }
+
+    /// Message 180 (s2c 0x009): "You throw away a potion." for one, "... 3 potions." for more.
+    #[test]
+    fn throw_away_counts() {
+        let Some(bt) = load() else { return };
+        let ctx = |n: i32| Ctx { work: [4112, n, 0, 0, 0], ..Default::default() };
+        assert_eq!(bt.system(180, &ctx(1)).unwrap().lines, vec!["You throw away a potion.".to_string()]);
+        assert_eq!(bt.system(180, &ctx(3)).unwrap().lines, vec!["You throw away 3 potions.".to_string()]);
     }
 
     fn mob(name: &str) -> Option<Who> {

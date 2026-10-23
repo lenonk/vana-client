@@ -31,6 +31,8 @@ pub enum SubThen {
     /// LAB_10077950: a text command with the tag replaced by the server id (or the quoted name, flag 0x08); a
     /// line from a macro stops the macro when cancelled (FUN_101a1cb0).
     Line { stash: String, quoted: bool, from_macro: bool },
+    /// iuse's Use (LAB_101f31e0): FUN_101f0260 on the slot with the pick; the list comes back either way.
+    Item { container: u8, index: u8 },
 }
 
 /// The sub-target prompt (T+0x28 slot B, +0x5c bits 2-3, +0x60 / +0x64, +0x6c range, +0xc4 / +200 callbacks).
@@ -107,7 +109,13 @@ pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, ti
 pub fn confirm_sub(w: &mut World) {
     let (Some(s), Some(t)) = (w.prompt.take(), w.target) else { return };
     w.sounds.push(SE_TARGET);
+    if let SubThen::Item { container, index } = s.then {
+        restore(w, &s);
+        super::items::use_slot(w, container, index, t);
+        return;
+    }
     let line = match &s.then {
+        SubThen::Item { .. } => String::new(),
         SubThen::Magic(name) => format!("/magic \"{name}\" {t}"),
         SubThen::Ability(cmd, name) => format!("{cmd} \"{name}\" {t}"),
         SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{}\"", super::textcmd::display_name(w, t)),

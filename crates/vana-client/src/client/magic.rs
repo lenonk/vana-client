@@ -560,7 +560,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let Some(p) = w.prompt.as_ref().filter(|p| p.help != 0) {
         bars.help[2] = gu.menu_msg(p.help as usize, "");
-        bars.title[2] = p.title.clone();
+        bars.title[2] = if matches!(p.then, SubThen::Item { .. }) { gu.title_msg(2).unwrap_or_default() } else { p.title.clone() };
         return;
     }
     if let Some(c) = w.cats {
