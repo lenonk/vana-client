@@ -57,6 +57,7 @@ pub fn lock(w: &mut World, on: bool, why: &str) {
             return;
         }
         // The locked camera starts from the camera on screen (the same eye and look).
+        w.lock_height = w.target.map_or(-1.5, |t| lock_height(w, t));
         w.locked = true;
         log::info!("lock on {:#x} ({why})", w.target.unwrap_or(0));
     } else {
@@ -295,12 +296,21 @@ pub struct LockCam {
     pub look: Vec3,
 }
 
-/// Height of the look point above the feet (y down, so negative): player bone 13, target bone 5
-/// (FUN_100a9500), x0.8 when we are a Tarutaru. Falls back to 0.7 of the model height (inferred).
-fn look_height(w: &World, id: u32, bone: usize, scale_taru: bool) -> f32 {
-    let a = w.actors.get(&id);
-    let y = a.and_then(|a| a.bones.get(bone).map(|b| b.1.y * a.scale)).unwrap_or_else(|| a.map_or(-1.5, |a| a.top * 0.7));
-    if scale_taru && matches!(w.my_race, 5 | 6) { y * 0.8 } else { y }
+/// An attach point's height above the feet (y down, so negative), from the posed bones when they are posed, else
+/// the rest pose; 0.7 of the model height without points (inferred).
+fn point_height(w: &World, id: u32, k: usize) -> f32 {
+    let Some(a) = w.actors.get(&id) else { return -1.5 };
+    let point = a.character.as_ref().and_then(|c| c.skeleton.points.get(k).copied());
+    let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
+    point.and_then(|(b, off)| bones.get(b as usize).map(|(q, t)| (*t + *q * off).y * a.scale)).unwrap_or(a.top * 0.7)
+}
+
+/// FUN_1001ee60's target height: a snapshot at lock-on of the actor's look point (+0x8a8: point 7 for PCs and
+/// monsters without an init op 0xad), x0.8 when we are a Tarutaru. Never re-read while locked, so a bobbing flyer
+/// doesn't move the camera.
+fn lock_height(w: &World, id: u32) -> f32 {
+    let y = point_height(w, id, 7);
+    if matches!(w.my_race, 5 | 6) { y * 0.8 } else { y }
 }
 
 /// FUN_1001e030, locked branch, run in 1/60 s ticks: look at the player / target midpoint, keep the eye
@@ -309,10 +319,11 @@ fn look_height(w: &World, id: u32, bone: usize, scale_taru: bool) -> f32 {
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let Some(t) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))) else { return };
     let mut c = w.cam;
-    let (tid, tpos) = t;
+    let (_, tpos) = t;
     let me = super::drawn_pos(w);
-    let p = me + Vec3::new(0.0, look_height(w, w.my_id, 13, false), 0.0);
-    let q = tpos + Vec3::new(0.0, look_height(w, tid, 5, true), 0.0);
+    // The player's attach point 13, posed, every frame; the target's height snapshot.
+    let p = me + Vec3::new(0.0, point_height(w, w.my_id, 13), 0.0);
+    let q = tpos + Vec3::new(0.0, w.lock_height, 0.0);
     let l = p.lerp(q, 0.5);
     let k = 1.0 - 0.75f32.powf(ticks);
     c.look += (l - c.look) * k;

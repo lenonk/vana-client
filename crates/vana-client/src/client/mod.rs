@@ -2156,6 +2156,11 @@ struct World {
     battle: Option<Arc<crate::dat::battle::BattleText>>,
     /// Melee results waiting for the attacker's hit.
     pending: Vec<combat::Pending>,
+    /// Swing holds (scheduler ops 0x20 / 0x59): until when an actor's server status changes wait (the applied status
+    /// +0x170 vs the raw +0x16c), the waiting status, and until when it plays no hit reactions (op 0x59).
+    holds: HashMap<u32, Instant>,
+    held_status: HashMap<u32, u8>,
+    noreact: HashMap<u32, Instant>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
     action_menu: Option<combat::ActionMenu>,
     started: Instant,
@@ -2166,6 +2171,8 @@ struct World {
     /// was set, and manual camera turns waiting for the locked camera.
     locked: bool,
     cam: target::LockCam,
+    /// The locked camera's target height, taken once at lock-on (actor +0x8a8's point).
+    lock_height: f32,
     unlock_ticks: f32,
     /// The free camera's state (camera.rs), and our status last frame.
     camst: camera::State,
@@ -3069,12 +3076,16 @@ impl App {
                             tells: Vec::new(),
                             battle: None,
                             pending: Vec::new(),
+                            holds: HashMap::new(),
+                            held_status: HashMap::new(),
+                            noreact: HashMap::new(),
                             action_menu: None,
                             started: Instant::now(),
                             logging_out: false,
                             target: None,
                             locked: false,
                             cam: Default::default(),
+                            lock_height: -1.5,
                             unlock_ticks: 0.0,
                             camst: camera::State::new(),
                             last_status: 0,
@@ -3595,7 +3606,13 @@ impl App {
                         (motion.speed, motion.speed_base) = (e.motion.speed, e.motion.speed_base);
                     }
                     if e.hpp.is_some() {
-                        motion.status = e.motion.status;
+                        // A held actor (mid-swing) applies the change when its hold ends (combat::tick).
+                        if !fresh && world.holds.get(&e.id).is_some_and(|t| *t > Instant::now()) {
+                            world.held_status.insert(e.id, e.motion.status);
+                        } else {
+                            motion.status = e.motion.status;
+                            world.held_status.remove(&e.id);
+                        }
                     }
                     motion.graph_size = e.motion.graph_size;
                     let died = !fresh && matches!(motion.status, 2 | 3) && !matches!(entry.motion.status, 2 | 3);
@@ -3739,13 +3756,13 @@ impl App {
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
                 NetEvent::SelfStatus { status, hpp, home_in, pet } => {
                     world.my_pet = pet;
-                    // The server prints the defeat (0x029 #97 / #20).
-                    if matches!(status, 2 | 3) && !world.dead() {
-                        if let Some(a) = world.actors.get_mut(&world.my_id) {
-                            combat::die(a);
-                        }
+                    // Held mid-swing: applied when the hold ends (the disengage waits for the swing).
+                    if world.holds.get(&world.my_id).is_some_and(|t| *t > Instant::now()) {
+                        world.held_status.insert(world.my_id, status);
+                    } else {
+                        world.held_status.remove(&world.my_id);
+                        combat::apply_status(world, world.my_id, status);
                     }
-                    world.my_motion.status = status;
                     world.home_at = home_in.map(|s| Instant::now() + std::time::Duration::from_secs(s as u64));
                     if home_in.is_none() {
                         world.homing = false;

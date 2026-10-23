@@ -60,6 +60,10 @@ pub struct Plan {
     /// Op 0x28 (FUN_100c6b70 + FUN_100cb8e0): from here the status motion is chosen again, a 10-tick blend
     /// *(inf: back to the stance)*.
     pub stance_at: Option<u32>,
+    /// When the holds end, from the start: op 0x59 on the attacker (FUN_10062650, about 30 ticks past the hit: no
+    /// reactions, server status changes wait) and op 0x20 on the target (FUN_100601f0, hit + 4); u16 @6 each.
+    pub attacker_hold: Option<u32>,
+    pub target_hold: Option<u32>,
 }
 
 pub fn plan(data: &[u8], hit: &[&str]) -> Plan {
@@ -77,6 +81,11 @@ pub fn plan(data: &[u8], hit: &[&str]) -> Plan {
             }
             0x03 if op.name().is_some_and(|n| hit.contains(&n)) && p.hit_at.is_none() => p.hit_at = Some(t),
             0x28 => p.stance_at = Some(t),
+            0x59 | 0x20 => {
+                let end = t + op.raw.get(6..8).map_or(0, |b| u16::from_le_bytes([b[0], b[1]]) as u32);
+                let slot = if op.code == 0x59 { &mut p.attacker_hold } else { &mut p.target_hold };
+                *slot = Some(slot.map_or(end, |e| e.max(end)));
+            }
             _ => {}
         }
         t += op.wait as u32;
@@ -105,6 +114,7 @@ mod tests {
         let p = plan(get("ati0"), &["dada"]);
         assert_eq!(p.motions, vec![Motion { name: "at0".into(), at: 0, speed: 1.0, ticks: 80, count: 1, blend: 10 }]);
         assert_eq!((p.hit_at, p.length), (Some(36), 80));
+        assert_eq!(p.target_hold, Some(40));
         let d = plan(get("dead"), &[]);
         assert_eq!(d.motions.iter().map(|m| (m.name.as_str(), m.at)).collect::<Vec<_>>(), [("ded", 0), ("cor0", 111)]);
         let names: Vec<String> = chunks.iter().filter(|c| c.kind == 7).map(|c| c.name()).collect();

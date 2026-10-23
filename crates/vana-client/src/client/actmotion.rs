@@ -331,11 +331,12 @@ pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bo
         }
         None => return false,
     };
-    // Blend from whatever plays now, even into a motion of the same name.
+    // Blend from whatever plays now, even into a motion of the same name; the newest motion wins over a one-shot.
     if !a.motion.is_empty() {
         a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
         a.blend = 0.0;
     }
+    a.oneshot = None;
     a.play = Some(play);
     true
 }

@@ -3834,3 +3834,21 @@ From the macro spec (scratchpad macros/SPEC.md; current addresses). Corrections 
 - /macro set|book N (cmd 0x16): three tokens, out of range wraps once.
 - Ours: client/macros.rs (files, defaults, runner, tests), keys and /macro in mod.rs. Not done: the palette windows,
   <t> / <pos> / <st> expansion, auto-translate bytes, the editor.
+
+## Combat motions: swing holds, reactions, the kill, lock camera height (2026-10-23)
+
+From the combat spec (scratchpad combatmo/SPEC.md).
+- Every swing scheduler holds both actors from swing start: op 0x59 on the attacker (u16 @6, about hit + 30: no hit
+  reactions, server status changes wait) and op 0x20 on the target (until hit + 4). Status changes (0x00E / 0x037)
+  apply to the applied status (+0x170) only when the hold ends; death, target drop and the sheath read it. So the
+  mob falls at hit + 4 and the target / lock drop then; our disengage waits for the swing to finish, then out N runs.
+- Reactions (FUN_100cbd20 / FUN_100cbe30): a hit reacts only at hit distortion (result scale & 3) above 0; a miss
+  plays nothing; guard / block gdi, parry pyi; none while dead / riding or in the reactor's own op 0x59 window.
+  Retail mixes them as overlays in regions 5 / 6 at 25 / 50 / 100 % by the level (2 cycles, 24-tick fade); ours still
+  plays a full-body one-shot (not done: the overlay layer).
+- A newly started scheduler motion wins over a running one-shot (ours restarted the swing from frame 0 when out N
+  started mid-swing: the "double" last swing, and the sheath hidden behind it).
+- Locked camera (FUN_1001ee60): the target height is a snapshot at lock-on of the actor's look point (+0x8a8: init op
+  0xad's, else point 7), x0.8 for a Tarutaru player; the player's attach point 13, posed, every frame. We read bone 5
+  / bone 13 every frame (bats bobbed the camera).
+- Not done: multi-hit rounds replay the swing per hit; the weapon attach switch on sheathing.

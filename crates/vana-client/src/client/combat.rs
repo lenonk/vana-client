@@ -209,15 +209,36 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
     let mut reactions = Vec::new();
     for (target, r) in a.records() {
         let hits = matches!(a.category, category::BASIC_ATTACK | category::RANGED_FINISH | category::SKILL_FINISH | category::MOB_SKILL_FINISH);
-        if hits && (r.miss == 0 && r.value > 0 || r.miss == 2) {
+        // FUN_100cbd20 / FUN_100cbe30: a hit reacts only at a hit distortion level (scale & 3) above 0; a miss (sway)
+        // plays nothing; guard / block and parry have their own motions.
+        let reacts = match r.miss {
+            0 => r.scale & 3 != 0,
+            2..=4 => true,
+            _ => false,
+        };
+        if hits && reacts {
             reactions.push((target, a.actor, r.miss));
         }
     }
     let first = a.targets.first().map(|t| t.id);
     let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
+    // The swing's holds (ops 0x59 / 0x20): the attacker's status changes and reactions wait, the target's status too.
+    if let Some((_, _, att, tgt)) = &attack {
+        let now = Instant::now();
+        let ticks = |t: u32| now + Duration::from_secs_f32(t as f32 / 60.0);
+        if let Some(t) = att {
+            w.holds.insert(a.actor, ticks(*t));
+            w.noreact.insert(a.actor, ticks(*t));
+        }
+        if let (Some(t), Some(id)) = (tgt, first) {
+            let until = ticks(*t);
+            let e = w.holds.entry(id).or_insert(until);
+            *e = (*e).max(until);
+        }
+    }
     // The action's schedulers drive its effects (fx/tasks.rs); op 0x24 plays the swing picked here.
-    w.effects.on_action(a, attack.as_ref().map(|(_, n)| n.clone()));
-    let delay = attack.map(|(d, _)| d);
+    w.effects.on_action(a, attack.as_ref().map(|(_, n, _, _)| n.clone()));
+    let delay = attack.map(|(d, _, _, _)| d);
     match delay {
         // dada at T: atpr waits 4, then op 0x2b prints; dam0 (op 0x01 wait 1) reacts at T + 5 (triggers.md 2.2).
         Some(d) => {
@@ -237,9 +258,33 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
     }
 }
 
-/// Fires pending hits whose time has come.
+/// A server status taking effect on an actor (+0x170 from +0x16c): falling dead plays the death; ours goes to the
+/// session state too. The server prints the defeat (0x029 #97 / #20).
+pub(super) fn apply_status(w: &mut World, id: u32, status: u8) {
+    let was = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
+    if matches!(status, 2 | 3)
+        && !matches!(was, 2 | 3)
+        && let Some(a) = w.actors.get_mut(&id)
+    {
+        die(a);
+    }
+    if id == w.my_id {
+        w.my_motion.status = status;
+    } else if let Some(e) = w.entities.get_mut(&id) {
+        e.motion.status = status;
+    }
+}
+
+/// Fires pending hits whose time has come, and applies statuses whose swing hold has ended.
 pub(super) fn tick(w: &mut World) {
     let now = Instant::now();
+    let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, _)| w.holds.get(id).is_none_or(|t| *t <= now)).map(|(id, s)| (*id, *s)).collect();
+    for (id, s) in released {
+        w.held_status.remove(&id);
+        apply_status(w, id, s);
+    }
+    w.holds.retain(|_, t| *t > now);
+    w.noreact.retain(|_, t| *t > now);
     let (due, rest): (Vec<Pending>, Vec<Pending>) = std::mem::take(&mut w.pending).into_iter().partition(|p| p.at <= now);
     w.pending = rest;
     for p in due {
@@ -277,7 +322,7 @@ fn play(actor: &mut Actor, name: &str, len: f32, speed: f32) {
 /// Melee (FUN_100d4600 / FUN_100d46f0): standing (+0xf8 clear) a random "ati?" avoiding the one just
 /// used; moving, the first "atf?" ('r' / 'b' / 'l' by the move direction +0x598; we move forward only).
 /// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs, and its name.
-pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String)> {
+pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
     let moving = moving(w, actor);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
     let a = w.actors.get_mut(&actor)?;
@@ -301,13 +346,18 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
     a.last_attack = name.to_string();
     let len = if m.ticks > 0 { m.ticks as f32 } else { motion_ticks(a, &ch, &m.name, m.speed) };
     play(a, &m.name, len, m.speed);
-    Some((Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0), a.last_attack.clone()))
+    Some((Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0), a.last_attack.clone(), plan.attacker_hold, plan.target_hold))
 }
 
 /// Damage reaction (FUN_100cbd20): "dfi?" / "dbi?" (front / back) standing, "dfm?" / "dbm?" while
 /// moving (+0xf8); guard "gdi?" / "gdm?" (FUN_100cbe30). Front or back is taken from where the attacker
 /// stands (inferred).
 fn react(w: &mut World, target: u32, attacker: u32, miss: u8) {
+    // None during the reactor's own swing hold (op 0x59) or while it is dead or riding.
+    let status = if target == w.my_id { w.my_motion.status } else { w.entities.get(&target).map_or(0, |e| e.motion.status) };
+    if w.noreact.get(&target).is_some_and(|t| *t > Instant::now()) || matches!(status, 2 | 3 | 5 | 0x55) {
+        return;
+    }
     let (Some((tp, tdir)), Some((ap, _))) = (position(w, target), position(w, attacker)) else { return };
     let front = super::forward_from_dir(tdir).dot(ap - tp) >= 0.0;
     let moving = moving(w, target);
@@ -317,7 +367,8 @@ fn react(w: &mut World, target: u32, attacker: u32, miss: u8) {
         return;
     }
     let (i, m) = match (miss, front) {
-        (2, _) => ("gdi", "gdm"),
+        (2 | 4, _) => ("gdi", "gdm"),
+        (3, _) => ("pyi", "pym"),
         (_, true) => ("dfi", "dfm"),
         _ => ("dbi", "dbm"),
     };
