@@ -294,6 +294,10 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool, Option
     let dt = f.dt;
     if e.0[w::CTRL] & ctl::LIFE_SET == 0 && e.f(w::MAX_LIFE) != 0.0 {
         e.set(w::LIFE, e.f(w::LIFE) - dt);
+        if e.f(w::LIFE) < 1.0 {
+            e.0[w::CTRL] = 0;
+            return;
+        }
     }
     e.0[w::CTRL] = 0;
     e.set(w::FADE, 1.0);

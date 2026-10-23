@@ -4962,3 +4962,16 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   Failures go on; any other answer (interrupted, a cancel, wait longer), missing materials (group 9 0xe) or a zone
   change stop them. Sends actions by itself: the user asked for it as a standing feature (not an Extras toggle).
 - Live: History -> Synthesize -> 3 typed -> three in a row, about 5 s apart (two failures, one success).
+
+## Effect element life: GPU and CPU in step (Bastok smoke flashes, 2026-10-23)
+
+- FUN_10043ca0 (2019 build, all.c ~49361): life -= dt, then expire / delete at life < 1.0 before the update stream
+  (FUN_100499d0), so retail never samples t above 1 - 1/max_life on a dying element (flag 0x20000000 elements are held
+  at life 0 instead). Many alpha keys rely on it: they end (0.99999988, 0) (1.0, 1.0), a spike only t = 1 reaches.
+  Seen in DATs 330, 331, 334, 335, 337..341 (brsk / skah: Bastok Markets' chimney smoke brs1 / brs2, sk06..sk13;
+  awat, tk01, lint, aalf, malf, gsaf, site, awaa, bukb, jkat, ptaf, hatm, fwsa, ptsc, paaf).
+- Ours had the GPU decrement a new element on its spawn frame while the CPU's lives had already run, so the GPU was a
+  birth frame's dt ahead; an element born on a long frame (dt >= 1 tick) reached GPU life <= 0 while the CPU still
+  kept it and drew at the spike's alpha 0xff (additive 0x48 blend: a white puff for a few frames).
+- Fix: add_elem's full write sets CTL_LIFE_SET (no decrement on the spawn frame); effects.wgsl update and update_ref
+  hide an element whose life drops under 1 and skip its stream (FUN_10043ca0's order).

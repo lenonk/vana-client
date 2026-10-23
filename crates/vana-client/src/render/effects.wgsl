@@ -224,6 +224,12 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     // FUN_10043ca0: life counts down unless the CPU set it this frame.
     if ((el[b + E_CTRL] & CTL_LIFE_SET) == 0u && ef(b, E_MAX_LIFE) != 0.0) {
         set_ef(b, E_LIFE, ef(b, E_LIFE) - dt);
+        // Expired (the CPU deletes it this frame): never drawn at t >= 1.
+        if (ef(b, E_LIFE) < 1.0) {
+            el[b + E_CTRL] = 0u;
+            outs[ob + 23u] = 0.0;
+            return;
+        }
     }
     el[b + E_CTRL] = 0u;
     set_ef(b, E_FADE, 1.0);

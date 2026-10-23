@@ -1238,6 +1238,9 @@ impl Effects {
         if let Some(x) = self.insts[inst].as_mut() {
             x.live.push(e);
         }
+        // The CPU's lives ran before this spawn: the GPU skips its first decrement too, or it would run a frame's dt
+        // ahead and sample t >= 1 on the last frame (keys ending in a spike at 1.0 flash white).
+        elem.0[w::CTRL] |= ctl::LIFE_SET;
         self.writes.push(Write::Full(e, Box::new(elem)));
         for ch in s.children {
             match ch {
