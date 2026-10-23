@@ -97,11 +97,13 @@ fn view_yaw(c: &LockCam) -> Option<f32> {
     (v.x.abs() + v.z.abs() > 1e-4).then(|| v.x.atan2(v.z))
 }
 
-/// Puts the camera behind the player facing `yaw` (zone-in, after events, test drives) *(inf: 5 back, 1 up)*.
+/// Puts the camera behind the player facing `yaw` (zone-in, after events, test drives): FUN_10021680's (-4, -2, 0) in
+/// the player's frame, (-3, -1.5, 0) in the Mog House (FUN_10096640).
 pub fn face(w: &mut World, yaw: f32) {
     let look = look_target(w);
     let f = Vec3::new(yaw.sin(), 0.0, yaw.cos());
-    let mut eye = look - f * 5.0 + Vec3::new(0.0, -1.0, 0.0);
+    let (back, up) = if w.myroom.is_some() { (3.0, 1.5) } else { (4.0, 2.0) };
+    let mut eye = super::drawn_pos(w) - f * back + Vec3::new(0.0, -up, 0.0);
     // Not inside the hill behind: in front of what the look -> eye ray hits.
     if let Some(t) = w.ground.as_ref().and_then(|g| g.raycast(look, eye)) {
         eye = look + (eye - look).normalize_or(Vec3::Z) * (t - 0.5).max(0.3);

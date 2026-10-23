@@ -123,7 +123,7 @@ pub struct ZoneText {
 #[derive(Clone, Debug)]
 pub enum NetEvent {
     /// `game_time` @0x3C (Earth seconds since the Vana'diel epoch), `weather` number @0x68; `area` the log line.
-    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16 },
+    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom> },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
     Event(EventStart),
@@ -181,6 +181,26 @@ pub enum AreaLine {
     MogHouse(u8),
 }
 
+/// The Mog House from a MYROOM 0x00A (LoginState 1): MyroomMapNumber @0xaa, floor (u8 @0xa8 >> 1) & 3 (0 = 1F),
+/// MyRoomExitBit @0xae.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MyRoom {
+    pub map: u16,
+    pub floor: u8,
+    pub exit_bit: u8,
+}
+
+/// LAB_100facf0 / FUN_10094190: the scene (map number) a 0x00A loads: MyroomMapNumber in the Mog House, else
+/// MapNumber @0x42 (+ 0x1bc from 0x100, e.g. 256 Western Adoulin -> 0x2bc).
+pub fn scene_of(p: &SubPacket) -> (u16, Option<MyRoom>) {
+    if p.u32(0x80) == 1 {
+        let room = MyRoom { map: p.u16(0xaa), floor: (p.u8(0xa8) >> 1) & 3, exit_bit: p.u8(0xae) };
+        return (room.map, Some(room));
+    }
+    let map = p.u16(0x42);
+    (if map >= 0x100 { map + 0x1bc } else { map }, None)
+}
+
 /// FUN_100f7de0: GAME (2), 0 and 6 print the area; MYROOM (1) the area for maps 0x118 / 0x11d, else the Mog
 /// House floor when FUN_100f6740 says there is one; 3..5 (exits) nothing.
 pub fn area_line(p: &SubPacket) -> Option<AreaLine> {
@@ -224,6 +244,9 @@ pub enum NetCommand {
     StatusRequest(u8),
     /// c2s 0x016 CHARREQ (FUN_100ad230): ActIndex @4; LSB answers with a full 0x00E / 0x00D.
     CharReq(u16),
+    /// c2s 0x05E RectID 'zmrq' (FUN_1008aec0): leave the Mog House, MyRoomExitBit @0x16, MyRoomExitMode @0x17 (0 the
+    /// area entered from, 1..4 the exit list, 0x7d / 0x7e change floors, 0x7f Mog Garden).
+    MyRoomExit { bit: u8, mode: u8 },
     /// c2s 0x0F2 (FUN_100fc680) {u16 State @4, u16 SubMapNumber @6}: 1 a sub-area loaded (0 = none), 2 from an
     /// event (op 0x75 sub 2).
     SubMap { state: u16, id: u16 },
@@ -435,6 +458,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                 match p.id {
                     0x00A => {
                         let pos = [p.f32(12), p.f32(16), p.f32(20)];
+                        let (scene, myroom) = scene_of(&p);
                         *me.lock().unwrap() = SelfState { pos, dir: p.u8(11), moving: false };
                         zoned = true;
                         my_index = p.u16(8);
@@ -444,7 +468,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
                         let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), ..Default::default() });
-                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != p.u16(0x42) { p.u16(0x60) } else { 0 } })?;
+                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom })?;
                     }
                     0x00B => {
                         let state = p.u8(4);
@@ -584,6 +608,12 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                 NetCommand::Equip { index, slot, container } => queue.push(build(0x050, &[index, slot, container, 0])),
                 NetCommand::StatusRequest(kind) => queue.push(build(0x061, &[kind, 0, 0, 0])),
                 NetCommand::CharReq(index) => queue.push(build(0x016, &charreq_body(index))),
+                NetCommand::MyRoomExit { bit, mode } => {
+                    let mut body = super::myroom::ZMRQ.to_le_bytes().to_vec();
+                    body.extend_from_slice(&[0; 14]);
+                    body.extend_from_slice(&[bit, mode]);
+                    queue.push(build(0x05E, &body));
+                }
                 NetCommand::SubMap { state, id } => {
                     let mut b = state.to_le_bytes().to_vec();
                     b.extend_from_slice(&id.to_le_bytes());

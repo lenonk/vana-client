@@ -3543,3 +3543,30 @@ FUN_1017c9c0 (from FUN_1017b510 and the MZB tree walk FUN_1017c8b0). FUN_1017c9c
   gets the placement's instance with its band and vs_main collapses instances outside it.
 - Still to do from the spec: alpha blending for bit-31 models (the La Theine pond surface is missing), the 0x60
   alpha cutoff on '_' placements only, back-face culling (mirrored = scale.x * scale.z < 0), draw distance.
+
+## The Mog House (MYROOM) (2026-10-22)
+
+From the Mog House spec (scratchpad moghouse_spec/SPEC.md).
+- 0x00A handler LAB_100facf0: MapNumber @0x42 gets + 0x1bc when >= 0x100; LoginState @0x80 1 = MYROOM. Zone load
+  FUN_10094190 loads the scene by map number (FUN_1018b3a0 -> FUN_10178df0, file = n + 100 below 600, else
+  + 0x144f7): MyroomMapNumber @0xaa in the Mog House, else the adjusted MapNumber; never ZoneNo (so zone 256 Western
+  Adoulin is scene 0x2bc, file 83891, not 356, the Jeuno Mog House). NPC names, events and dialogue keep ZoneNo. No
+  sub-area in the Mog House. Floor = (u8 @0xa8 >> 1) & 3; MyRoomExitBit @0xae (LSB: the exit quest's mhflag bit,
+  Adoulin always 9).
+- Rooms: 0x121 / 0x122 / 0x123 nation houses (files 389 / 390 / 391, bare; furniture comes from items), 0x100..0x102 /
+  0x120 rent-a-rooms, 0x124 Adoulin, 214 / 745 / 199 / 219 Whitegate and the [S] cities, 0x267..0x26a 2F, 0x2d4 Mog
+  Garden map, 0x2d9 Feretory. Each RID holds one record, `_720`, the door; no zone lines.
+- Music: slot 6 = 0x7e chosen before everything while in the Mog House (not map 0x2d4). Zone-in camera
+  (FUN_10021680 / FUN_10096640): (-4, -2, 0) in the player's frame, (-3, -1.5, 0) in the Mog House.
+- The door: a client-only actor (FUN_101d2cc0; id 0x1000000, index 0x900, kind 3 so an XiDoorActor, no name plate)
+  "Door: Back to Town" at RID `_720`. LAB_101d6040: with an exit bit the menu "mogdoor" (title group 9 0x45, rows
+  child n + 0x14: 0xb8 stay, 0x46 / 0xf1 area entered from, 0x125 change floors (dim unless 2F unlocked: s2c 0x067
+  @0x27 bit 0, not parsed), 0xb9 select an area: the list DAT_1037ec30[bit] in the same window, zone names); without
+  one the prompt group 0xc 0x2f "Exit your Mog House?" (0x2e in an exit-list city). A choice sends c2s 0x05E RectID
+  'zmrq', MyRoomExitBit @0x16 (FUN_10097bc0: on 1F only the house's own bit), MyRoomExitMode @0x17 (0, 1..4, 0x7d /
+  0x7e floors, 0x7f Mog Garden). The door's opening swing before it is not played yet (door system).
+- Zone 230 group 0xc is now loaded with the lobby message groups.
+- Scene changes within one zone number (city <-> Mog House) reload the scene; until it is in, nothing settles,
+  falls or fades in on the old ground (World::in_scene).
+- Not done: furniture (Mog Safe / Mog Safe 2 items with exdata installed bit; s2c 0x020 exdata), s2c 0x02E and the
+  myroom / mogext moogle menus, 2F unlock and owner from s2c 0x067, the door animation.

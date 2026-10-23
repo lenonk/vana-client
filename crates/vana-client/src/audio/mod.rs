@@ -437,6 +437,8 @@ pub struct MusicContext {
     pub hour: u32,
     /// Party members including us.
     pub party: u32,
+    /// In a Mog House other than Mog Garden (DAT_10482f44 && !DAT_1048098d): slot 6 before anything else.
+    pub myroom: bool,
 }
 
 /// The zone's music slots (0x00A MusicNum[5] -> 0..4, death 0x6f -> 5, 0x05F any of 0..7) and the
@@ -475,6 +477,11 @@ impl ZoneMusic {
         self.ready = true;
     }
 
+    /// FUN_10094190 in the Mog House: slot 6 = 0x7e (music126).
+    pub fn myroom(&mut self) {
+        self.slots[6] = 0x7e;
+    }
+
     /// Event op 0x5c (FUN_100b6e30): slot `slot` plays `id`, started at `vol` (0x7f, or the 0x80..0x87 forms' operand,
     /// at most 0xff); any 0x5c makes the selector choose again.
     pub fn set_slot_vol(&mut self, slot: u16, id: u16, vol: u16) {
@@ -497,6 +504,7 @@ impl ZoneMusic {
             return None;
         }
         let slot = match cx.status {
+            _ if cx.myroom => 6,
             2 | 3 => 5,
             5 | 0x55 if self.slots[4] != 0 => 4,
             // Fishing fights use slot 7 when the zone has one (the 0x10c sub-state test is not modelled).
@@ -560,7 +568,7 @@ mod tests {
     fn battle_and_back_resumes_the_field_track() {
         let mut z = ZoneMusic::default();
         z.zone_in([101, 102, 103, 104, 0]);
-        let day = MusicContext { status: 0, hour: 12, party: 1 };
+        let day = MusicContext { status: 0, hour: 12, party: 1, myroom: false };
         assert_eq!(z.select(day), Some(Change { id: 101, vol: 0x7f, fade_in: 0, save: false, clear: true }));
         assert_eq!(z.select(day), None);
         let fight = MusicContext { status: 1, ..day };

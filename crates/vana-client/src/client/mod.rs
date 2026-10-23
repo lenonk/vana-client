@@ -30,6 +30,7 @@ pub mod select;
 pub mod net;
 pub mod script;
 mod subarea;
+mod myroom;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -84,7 +85,8 @@ enum Task {
     AccountCreated(Result<()>),
     Lobby(Result<(Lobby, Vec<Character>)>),
     Selected(Result<MapLogin>),
-    ZoneLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
+    /// Zone number, scene (map number) and the scene off the loader thread.
+    ZoneLoaded(u16, u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
     AreaLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, Option<crate::fx::lib::Library>)>),
     /// A sub-area (zone, id) off the loader thread.
     SubAreaLoaded(u16, u32, Result<subarea::Loaded>),
@@ -787,6 +789,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     egui::Key::Escape => answer = Some(false),
                     _ => {}
                 },
+                // FUN_101d6540: the Mog House door menu.
+                _ if world.mogdoor.is_some() => {
+                    let m = world.mogdoor.as_mut().unwrap();
+                    let n = m.rows().max(1);
+                    match key {
+                        egui::Key::ArrowDown => m.sel = (m.sel + 1) % n,
+                        egui::Key::ArrowUp => m.sel = (m.sel + n - 1) % n,
+                        egui::Key::Enter => mogdoor_pick(world),
+                        egui::Key::Escape => {
+                            if m.back() {
+                                world.mogdoor = None;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
                 // The action menu (Enter) takes the cursor keys while it is up.
                 _ if world.action_menu.is_some() => {
                     let m = world.action_menu.as_mut().unwrap();
@@ -915,6 +933,23 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             gu.children("menu    query").iter().position(|c| inside(&[r[0] + c[0], r[1] + c[1], c[2].max(132.0), c[3].max(16.0)], p))
         });
         event::click(world, row);
+    }
+
+    // Mog House door menu rows (child n of mogdoor): hover moves the cursor, a click picks.
+    let door_rows: Vec<[f32; 4]> = match (&world.mogdoor, gu.window_xy(myroom::WINDOW, sw, sh)) {
+        (Some(m), Some((wx, wy))) => gu.children(myroom::WINDOW).iter().take(m.rows()).map(|c| [wx + c[0], wy + c[1], c[2].max(120.0), c[3].max(16.0)]).collect(),
+        _ => Vec::new(),
+    };
+    if let (Some(p), Some(m)) = (input.pointer, world.mogdoor.as_mut())
+        && let Some(k) = door_rows.iter().position(|r| inside(r, p))
+    {
+        let k = if m.list { k } else { myroom::ROWS.iter().position(|r| r.0 as usize == k + 1).unwrap_or(k) };
+        if input.moved || input.clicked {
+            m.sel = k;
+        }
+        if input.clicked {
+            mogdoor_pick(world);
+        }
     }
 
     // Action menu rows: hover moves the cursor, a click on the highlighted row picks it.
@@ -1098,6 +1133,46 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(*r);
     }
 
+    // FUN_101d62b0: the door menu, title group 9 0x45 and its rows 0x14 to the right of child n.
+    if let Some(m) = &world.mogdoor
+        && let Some((wx, wy)) = gu.window(myroom::WINDOW, sw, sh)
+    {
+        let kids = gu.children(myroom::WINDOW);
+        let g9 = |id: usize| world.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
+        gu.text(&g9(0x45), wx + 3.0, wy + 3.0, 0, WHITE);
+        let rows: Vec<(usize, String, [u8; 4])> = if m.list {
+            let names = world.names.clone();
+            myroom::areas(m.bit)
+                .iter()
+                .enumerate()
+                .map(|(k, &z)| {
+                    let name = names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).unwrap_or_default();
+                    let c = if z == 0x118 && !m.garden { [0x40, 0x20, 0x40, 0x80] } else { WHITE };
+                    (k, name, c)
+                })
+                .collect()
+        } else {
+            myroom::ROWS
+                .iter()
+                .enumerate()
+                .map(|(k, &(child, id))| {
+                    let id = if k == 1 && !myroom::OWNER { 0xf1 } else { id };
+                    let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
+                    (child as usize - 1, g9(id), c)
+                })
+                .collect()
+        };
+        for (k, (child, text, c)) in rows.iter().enumerate() {
+            let Some(r) = kids.get(*child) else { continue };
+            let (x, y) = (wx + r[0] + 20.0, wy + r[1]);
+            gu.text(text, x, y, 0, *c);
+            if k == m.sel {
+                gu.cursor(x - 2.0, y);
+            }
+        }
+        blockers.extend(gu.window_rect(myroom::WINDOW, sw, sh));
+    }
+
     // The yes/no prompt (FUN_102075f0) with the message from group 0xe.
     if let Some((kind, yes)) = world.confirm {
         let msg = match (kind, world.logging_out) {
@@ -1105,6 +1180,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (Confirm::Logout, true) => gu.menu_msg(0x49, "Cancel current logout process?"),
             (Confirm::Shutdown, false) => gu.menu_msg(0x277, "Shut down?"),
             (Confirm::Shutdown, true) => gu.menu_msg(0x278, "Cancel shut down process?"),
+            (Confirm::LeaveRoom, _) if myroom::in_city(world.zone) => gu.lobby_msg(0x0c, 0x2e, "Moogle: Heading outside, kupo?"),
+            (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
         };
         let ww = (gu.text_width(&msg) + 48.0).max(200.0);
         let (wx, wy, wh) = (((sw - ww) / 2.0).round(), (sh / 2.0 - 40.0).round(), 56.0);
@@ -1189,6 +1266,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push([wx, wy, ww, wh]);
     }
     match (answer, world.confirm) {
+        (Some(true), Some((Confirm::LeaveRoom, _))) => {
+            world.confirm = None;
+            leave_room(world, 0);
+        }
         (Some(true), Some((kind, _))) => {
             world.confirm = None;
             // LAB_10159f00 / LAB_10159ee0: Yes runs "/logout" or "/shutdown" again (a toggle, which also cancels).
@@ -1283,6 +1364,89 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         bars.title[0] = gu.title_msg(if world.my_motion.status == 1 { 7 } else { 5 }).unwrap_or_default();
     }
     bars
+}
+
+/// LAB_101d6040: the door opens the exit menu when the house has an exit bit (FUN_10097bc0), else the prompt.
+fn open_mogdoor(w: &mut World) {
+    let Some(r) = w.myroom else { return };
+    if w.leaving_room {
+        return;
+    }
+    let bit = myroom::exit_bit(&r);
+    if bit == 0 {
+        w.confirm = Some((Confirm::LeaveRoom, true));
+        return;
+    }
+    // +0x1a: 2F unlocked comes in s2c 0x067 @0x27 bit 0, not parsed yet *(inf: off)*; +0x19 Mog Garden: key item 0x86d.
+    let floors = myroom::in_city(w.zone) && myroom::OWNER && myroom::has_floors(&r) && false;
+    let garden = myroom::OWNER && w.key_items.contains(&0x86d);
+    w.mogdoor = Some(myroom::Menu { bit, sel: 0, list: false, floors, garden, floor: r.floor });
+    w.action_menu = None;
+}
+
+/// FUN_101d6540 on a choice.
+fn mogdoor_pick(w: &mut World) {
+    let Some(m) = w.mogdoor.as_mut() else { return };
+    match m.pick() {
+        myroom::Pick::Close => w.mogdoor = None,
+        myroom::Pick::Exit(mode) => {
+            w.mogdoor = None;
+            leave_room(w, mode);
+        }
+        myroom::Pick::Refused(Some(id)) => {
+            if let Some(line) = w.battle.as_ref().and_then(|b| b.group9(id)) {
+                w.chat.push(line);
+            }
+        }
+        myroom::Pick::Refused(None) | myroom::Pick::None => {}
+    }
+}
+
+/// FUN_1008aec0: c2s 0x05E 'zmrq' with the exit bit and mode; LSB re-zones us *(inf: the door's opening swing before
+/// it is not played yet)*.
+fn leave_room(w: &mut World, mode: u8) {
+    let Some(r) = w.myroom else { return };
+    w.leaving_room = true;
+    let _ = w.net.commands.send(NetCommand::MyRoomExit { bit: myroom::exit_bit(&r), mode });
+}
+
+/// FUN_101d2cc0 / FUN_101d2ff0: the client's own door actor, at the room's RID record `_720`.
+fn place_mogdoor(w: &mut World) {
+    if w.myroom.is_none() || !w.in_scene() || w.entities.contains_key(&myroom::DOOR_ID) {
+        return;
+    }
+    let Some(r) = w.sub.regions.iter().find(|r| r.name == myroom::DOOR_RECT) else { return };
+    let pos = Vec3::from(r.pos);
+    w.entities.insert(
+        myroom::DOOR_ID,
+        Entity {
+            name: myroom::DOOR_NAME.into(),
+            pos,
+            kind: EntityKind::Npc,
+            hpp: 100,
+            dir: 0,
+            target: pos,
+            motion: Default::default(),
+            ratio: 0.0,
+            last_pos: pos,
+            claim: 0,
+            mob: false,
+            index: myroom::DOOR_INDEX,
+            named: false,
+            plural: false,
+            slide: pos,
+            remain: 0.0,
+            counter: 0,
+            yaw: 0.0,
+            dir_seen: 0,
+            grounded: false,
+            flags: 0,
+            no_gauge: false,
+            // Kind 3 makes an XiDoorActor (FUN_1008f740), whose plate draw (vtable +0x284, FUN_100ac380) is empty.
+            no_plate: true,
+            untargetable: false,
+        },
+    );
 }
 
 /// Placed narration (rem4line opened by FUN_10131c10 at the FUN_10132030 place: ops 0x67 / 0x68, text codes
@@ -1659,8 +1823,16 @@ struct AreaSwitch {
 
 struct World {
     net: NetHandle,
+    /// The zone number (NPC names, events, dialogue) and the scene drawn: its map number (the Mog House's in one,
+    /// LAB_100facf0), and the scene loading.
     zone: Option<u16>,
+    scene: Option<u16>,
     loading: Option<u16>,
+    loading_scene: u16,
+    /// In the Mog House (0x00A LoginState 1), its door menu, and a leave request sent.
+    myroom: Option<net::MyRoom>,
+    mogdoor: Option<myroom::Menu>,
+    leaving_room: bool,
     area: AreaSwitch,
     /// The building interior loaded over the zone.
     sub: subarea::SubArea,
@@ -1834,9 +2006,17 @@ struct World {
 enum Confirm {
     Logout,
     Shutdown,
+    /// LAB_101d6040 with no exit bit: "Exit your Mog House?" (group 0xc 0x2f, 0x2e in a Mog House city).
+    LeaveRoom,
 }
 
 impl World {
+    /// We stand in the zone and scene that are loaded (a Mog House keeps the zone number but loads another scene, so
+    /// the old ground must not settle or move us meanwhile).
+    fn in_scene(&self) -> bool {
+        self.zone == Some(self.pos_zone) && self.loading.is_none()
+    }
+
     fn dead(&self) -> bool {
         matches!(self.my_motion.status, 2 | 3)
     }
@@ -2411,7 +2591,7 @@ impl App {
                 a.play_ui_se(id);
             }
             let hour = w.clock.map(|(t, at)| crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32 / 60).unwrap_or(12);
-            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party: 1 };
+            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party: 1, myroom: w.myroom.is_some_and(|r| r.map != 0x2d4) };
             if let Some(c) = w.music.select(cx) {
                 log::info!("music: {c:?}");
                 if c.clear {
@@ -2642,6 +2822,11 @@ impl App {
                             zone_weather: None,
                             area: AreaSwitch::default(),
                             sub: Default::default(),
+                            scene: None,
+                            loading_scene: 0,
+                            myroom: None,
+                            mogdoor: None,
+                            leaving_room: false,
                             event_voices: false,
                             event_looks: Vec::new(),
                             music_fades: Vec::new(),
@@ -2803,7 +2988,7 @@ impl App {
                     world.area.done = true;
                 }
             }
-            Task::ZoneLoaded(zone_id, result) => {
+            Task::ZoneLoaded(zone_id, map_no, result) => {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.loading = None;
                 world.area = AreaSwitch::default();
@@ -2835,6 +3020,7 @@ impl App {
                         }
                         world.ground = Some(ground);
                         world.zone = Some(zone_id);
+                        world.scene = Some(map_no);
                         world.npc_names = world.index.as_ref().map(|i| npc_names(i, zone_id)).unwrap_or_default();
                         for (id, e) in world.entities.iter_mut() {
                             if let Some(n) = world.npc_names.get(id) {
@@ -2971,7 +3157,9 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom } => {
+                    world.myroom = myroom;
+                    (world.mogdoor, world.leaving_room) = (None, false);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -2990,6 +3178,9 @@ impl App {
                     }
                     let _ = world.net.commands.send(NetCommand::StatusRequest(0));
                     world.music.zone_in(music);
+                    if myroom.is_some() {
+                        world.music.myroom();
+                    }
                     log::info!("zone music {music:?}");
                     world.clock = Some((game_time, Instant::now()));
                     world.weather = weather;
@@ -3008,9 +3199,12 @@ impl App {
                     world.my_id = char_id;
                     world.name = name;
                     world.entities.clear();
-                    if world.zone != Some(zone) && world.loading != Some(zone) {
+                    let current = world.zone == Some(zone) && world.scene == Some(scene);
+                    let pending = world.loading == Some(zone) && world.loading_scene == scene;
+                    if !current && !pending {
                         world.loading = Some(zone);
-                        load = Some(zone);
+                        world.loading_scene = scene;
+                        load = Some((zone, scene));
                     } else if world.loading.is_none() && world.zone_uploading.is_none() {
                         world.downloading = None;
                     }
@@ -3097,7 +3291,7 @@ impl App {
                         let mut p = Vec3::from(p);
                         entry.grounded = e.ground;
                         if e.ground
-                            && let Some(y) = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone)).and_then(|g| g.snap(p.x, p.z, p.y))
+                            && let Some(y) = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone) && world.loading.is_none()).and_then(|g| g.snap(p.x, p.z, p.y))
                         {
                             p.y = y;
                         }
@@ -3267,7 +3461,7 @@ impl App {
             }
         }
         let Phase::World(_) = &self.phase else { return };
-        if let Some(zone_id) = load {
+        if let Some((zone_id, map_no)) = load {
             self.status = format!("Loading zone {zone_id}...");
             let need_global = match &self.phase {
                 Phase::World(w) => !w.effects.has_global(),
@@ -3275,14 +3469,14 @@ impl App {
             };
             match self.game_data() {
                 Ok((index, keys)) => self.spawn(move || {
-                    Task::ZoneLoaded(zone_id, (|| {
-                        let file = index.read(crate::dat::zone::file_id(zone_id as u32))?;
+                    Task::ZoneLoaded(zone_id, map_no, (|| {
+                        let file = index.read(crate::dat::zone::file_id(map_no as u32))?;
                         let scene = zone::load_scene(&keys, &file)?;
                         let ground = ground::Ground::build(&scene);
                         let weather = crate::dat::weather::ZoneWeather::parse(&file).map_err(|e| log::warn!("zone {zone_id} weather: {e:#}")).ok();
                         let geometry = Arc::new(crate::render::ZoneGeometry::build(&scene));
                         let global = need_global.then(|| index.read(0).and_then(|f| crate::fx::lib::Library::load(0, f))).and_then(|r| r.map_err(|e| log::warn!("effects: DAT 0: {e:#}")).ok());
-                        let zone_fx = crate::fx::lib::Library::load(crate::dat::zone::file_id(zone_id as u32), file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok().map(|mut l| {
+                        let zone_fx = crate::fx::lib::Library::load(crate::dat::zone::file_id(map_no as u32), file).map_err(|e| log::warn!("effects: zone {zone_id}: {e:#}")).ok().map(|mut l| {
                             l.prewarm(&keys);
                             l
                         });
@@ -3318,7 +3512,7 @@ impl App {
         let ticks = dt * 60.0;
         // FUN_1008dfb0 / FUN_100a3560: grounded actors follow the collision floor every frame (also those that
         // arrived before the zone had loaded).
-        let floor = world.ground.as_ref().filter(|_| world.zone == Some(world.pos_zone) && !in_event);
+        let floor = world.ground.as_ref().filter(|_| world.in_scene() && !in_event);
         for e in world.entities.values_mut() {
             // Moved by someone else since last frame (an event script): take that as the slide and drawn spot.
             if e.pos != e.last_pos {
@@ -3378,14 +3572,14 @@ impl App {
             world.zoning_since = None;
         }
         // Black while zoning or loading; fade back in once we stand in the new zone.
-        let ready = world.zoning_since.is_none() && world.zone == Some(world.pos_zone) && world.renderer.is_some();
+        let ready = world.zoning_since.is_none() && world.in_scene() && world.renderer.is_some();
         let target = if ready && !world.unsettled { 0.0 } else { 1.0 };
         if target > world.fade {
             world.fade = (world.fade + dt / 0.4).min(1.0);
         } else if target < world.fade {
             world.fade = (world.fade - dt / 0.6).max(0.0);
         }
-        if world.unsettled && world.zone == Some(world.pos_zone) {
+        if world.unsettled && world.in_scene() {
             if let Some(y) = world.ground.as_ref().and_then(|g| g.settle(world.pos.x, world.pos.z, world.pos.y)) {
                 log::info!("settled from y {:.2} to {:.2}", world.pos.y, y);
                 world.pos.y = y;
@@ -3526,7 +3720,7 @@ impl App {
         world.step_ticks += dt * 60.0;
         // Speed byte x0.1 = units per second (5.0 for a normal run).
         let speed = if world.my_motion.speed > 0 { world.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
-        let falls = !in_event && !world.unsettled && world.zone == Some(world.pos_zone);
+        let falls = !in_event && !world.unsettled && world.in_scene();
         let mut steps = 0;
         while world.step_ticks >= ground::STEP_TICKS {
             world.step_ticks -= ground::STEP_TICKS;
@@ -4392,7 +4586,7 @@ impl App {
             Phase::Characters { screen: LobbyScreen::Main, .. } => "title",
             Phase::Characters { .. } => "lobby",
             Phase::World(w) if w.event.is_some() => "event",
-            Phase::World(w) if w.renderer.is_some() && w.zone_uploading.is_none() && w.fade == 0.0 && w.zone == Some(w.pos_zone) && w.event_pending.is_none() => "world",
+            Phase::World(w) if w.renderer.is_some() && w.zone_uploading.is_none() && w.fade == 0.0 && w.in_scene() && w.event_pending.is_none() => "world",
             Phase::World(_) => "loading",
         }
     }
@@ -4556,6 +4750,9 @@ impl App {
         perf::timed(|| "network".into(), || self.poll_network());
         self.switch_area();
         self.update_sub_area();
+        if let Phase::World(w) = &mut self.phase {
+            place_mogdoor(w);
+        }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {
             let ready = self.game_ui_state == LoadState::Failed || (self.game_ui.is_some() && (self.flyover.is_some() || self.flyover_state == LoadState::Failed || !self.title_backdrop()));

@@ -190,7 +190,7 @@ pub(super) fn area_line(w: &mut World) {
                 format!("=== Area: {z} ===")
             }
         },
-        super::net::AreaLine::MogHouse(floor) => bt.group9(0x126 + floor.saturating_sub(1) as usize).unwrap_or_default(),
+        super::net::AreaLine::MogHouse(floor) => bt.group9(0x126 + floor as usize).unwrap_or_default(),
     };
     if !line.is_empty() {
         w.chat.push(line);

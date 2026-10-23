@@ -975,7 +975,7 @@ pub fn queue(w: &mut World, s: EventStart) {
 }
 
 fn zone_ready(w: &World) -> bool {
-    w.zone == Some(w.pos_zone) && w.renderer.is_some() && !w.unsettled && w.zoning_since.is_none()
+    w.in_scene() && w.renderer.is_some() && !w.unsettled && w.zoning_since.is_none()
 }
 
 /// FUN_100bb290: the block runs in this event (its id, or the 0xfffe wildcard).
@@ -1562,6 +1562,11 @@ pub fn click(w: &mut World, row: Option<usize>) {
 pub fn talk(w: &mut World, target: u32) -> bool {
     if active(w) || w.talk_lock.is_some() || w.zone.is_none() {
         return false;
+    }
+    // LAB_101d6040: the Mog House door is the client's own; it opens the exit menu or the prompt.
+    if target == super::myroom::DOOR_ID && w.myroom.is_some() {
+        super::open_mogdoor(w);
+        return true;
     }
     let Some(e) = w.entities.get(&target) else { return false };
     // UniqueNo high byte: NPCs only; a model on the target (+0x120 bit 9); not hidden by the server.
