@@ -4628,3 +4628,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Not done: the lot column and the lnowin shift (FUN_10202440, FUN_1013f1c0: no loot window yet). Not testable live
   with lnxtest01 (three characters, one session); checked offscreen: `FFXI_UISHOT_MEMBERS=6 FFXI_UISHOT_ALLIANCE=6,4
   ui-shot`.
+
+- Refusal lines (table 0x103763b0, 4-byte entries {group 7 id, 3, 0, mode}, indices 0..0x23, printed by
+  FUN_10129d90(index)): the target failures are indices, so the magic list\x27s "no target" is 0x16 -> group 7 0x5a
+  "You must specify a valid target for that spell." and the ability / ranged one 0x1b -> 0x5d (ours printed group 7
+  0x16 / 0x1b, lobby errors). Chat mode per line: 0x7a for 0x56..0x5f, 0xb5, 0xb7, 0xbd, 0xbf; 0x7b for the status
+  lines and the rest (textcmd::refusal_mode, both refuse helpers).
+- subwindo modes 2 / 10 (FUN_1014fc20): "Next" sits on the second line (+0x1a) with the first empty.

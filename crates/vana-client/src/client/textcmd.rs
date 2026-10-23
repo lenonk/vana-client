@@ -369,10 +369,19 @@ fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
 }
 
 /// A group 7 line (FUN_10129e30, mode 0x7b).
+/// The chat mode of a group 7 refusal (table 0x103763b0, 4-byte entries {id, 3, 0, mode}): the target / recast lines
+/// 0x56..0x5f, 0xb5, 0xb7, 0xbd, 0xbf are 0x7a, the status lines and the rest 0x7b.
+pub(super) fn refusal_mode(id: usize) -> u8 {
+    match id {
+        0x56..=0x5f | 0xb5 | 0xb7 | 0xbd | 0xbf => 0x7a,
+        _ => 0x7b,
+    }
+}
+
 pub(super) fn refuse(w: &mut World, id: usize) {
     let Some(bt) = w.battle.clone() else { return };
     let Some(line) = bt.group7(id) else { return };
-    let colour = bt.colour_in(0x7b, &w.game);
+    let colour = bt.colour_in(refusal_mode(id), &w.game);
     w.chat.push_colour(line, colour);
 }
 

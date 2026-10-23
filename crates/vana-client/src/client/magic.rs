@@ -294,7 +294,7 @@ fn refuse(w: &mut World, id: usize) {
     if let Some(bt) = w.battle.clone()
         && let Some(line) = bt.group7(id).filter(|l| !l.is_empty())
     {
-        let colour = bt.colour_in(0x7a, &w.game);
+        let colour = bt.colour_in(super::textcmd::refusal_mode(id), &w.game);
         w.chat.push_colour(line, colour);
     }
     w.sounds.push(Ui::Error as u32);
@@ -321,7 +321,7 @@ fn enter(w: &mut World, kind: Kind) {
             let range = Some(RANGES[(r.range & 0xf) as usize] as f32);
             let help = 0x4f;
             if !target::open_sub(w, r.targets as u32, SubThen::Magic(name.clone()), range, name, help) {
-                refuse(w, 0x16);
+                refuse(w, 0x5a);
                 return;
             }
             if let Some(m) = w.magic.as_mut() {
@@ -342,7 +342,7 @@ fn enter(w: &mut World, kind: Kind) {
             let name = ability_name(w, id);
             let cmd = if a.kind == 3 { "/weaponskill" } else if a.kind == 0x14 { "/monsterskill" } else { "/jobability" };
             if !target::open_sub(w, a.targets as u32, SubThen::Ability(cmd, name.clone()), None, name, 0x51) {
-                refuse(w, 0x1b);
+                refuse(w, 0x5d);
                 return;
             }
             if let Some(m) = w.ability.as_mut() {
@@ -406,7 +406,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                     Some(Cat::Ranged) => {
                         w.cats = None;
                         if !target::open_sub(w, 0x20, SubThen::Line { stash: "/range ".into(), quoted: false, from_macro: false }, None, String::new(), 0) {
-                            refuse(w, 0x1b);
+                            refuse(w, 0x5d);
                         }
                     }
                     Some(Cat::Mount) => log::info!("the mount list is not implemented yet"),
@@ -790,7 +790,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             Some(a) => {
                 let next = (gu.lobby_msg(9, 0xe7, "Next"), clock(if a.timer == 900 { 0.0 } else { ability_recast(w, a.timer) }));
                 match ability_kind(a.kind) {
-                    2 | 5 | 8 | 10 => vec![next],
+                    // subwindo modes 2 / 10 (FUN_1014fc20): Next on the second line (+0x1a).
+                    2 | 10 => vec![(String::new(), String::new()), next],
+                    5 | 8 => vec![next],
                     3 => vec![(gu.lobby_msg(0x0b, 0xbd, "TP Cost"), a.tp.to_string()), next],
                     4 => vec![("TP".into(), w.vitals.map_or(0, |v| v.2).to_string())],
                     6 => vec![(gu.lobby_msg(9, 0xe6, "MP Cost"), a.cost.to_string())],
