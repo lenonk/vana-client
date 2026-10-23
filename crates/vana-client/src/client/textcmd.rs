@@ -27,6 +27,7 @@ mod flag {
 /// Command ids.
 mod id {
     pub const SAY: u16 = 0x01;
+    pub const MAP: u16 = 0x4f;
     pub const SHOUT: u16 = 0x02;
     pub const YELL: u16 = 0x03;
     pub const TELL: u16 = 0x04;
@@ -541,6 +542,15 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::WAIT => Ok(()),
+        // FUN_1007d2c0: the map as the main menu opens it, unless in a room (group 7 0x44) or already open.
+        id::MAP => {
+            if w.room_flag {
+                refuse(w, 0x44);
+            } else if w.map.is_none() {
+                w.map_cmds.push(super::map::Cmd::Menu);
+            }
+            Ok(())
+        }
         id::RANDOM => {
             let v = arg(1).map_or(0, |a| number(a).unwrap_or(-1)) as u32;
             send(w, NetCommand::Packet { id: 0x0A2, body: v.to_le_bytes().to_vec() });

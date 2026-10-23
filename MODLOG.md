@@ -4133,3 +4133,38 @@ Full spec: scratchpad passinpu/SPEC.md of that session; the facts:
 - Ours: Effect::Input, Packet::Passwords, Runtime::input_done, release mode 3; client event::Input, input_events,
   draw_event_input; topbar-shot --window passinpu:KIND:TEXT. Headless: Scripted::inputs; Lower Jeuno 0xc7 sends the
   typed name and finishes. Not seen live (this server has no Lower Jeuno / Port Jeuno NPCs to talk to).
+
+## Map window: pan, zoom, fades, event maps (2026-10-23)
+
+Full spec: scratchpad mapwin/SPEC.md of that session (current-build addresses; the "Map window" section above uses
+2019 ones: base draw FUN_101eebd0 [101e6ca0], open FUN_101f7810 [101ee8f0], core open FUN_101f9a50 [101f0af0], base
+update FUN_101ef0a0 [101e7170]). Done so far:
+- Zoom: fit = W / 512, range [fit, 4 fit]. Base zoom mode 0 = fit x config 0x8a / 1000 (default 2000), mode 1 = 1.75
+  fit (0x1033a910), others fit; a no-map record always fit. Closing writes config 0x8a = zoom x 1000 / fit whatever
+  the mode (FUN_101fa420). Keys (context 0x26, mask 4): 0xa4 / 0xa5 (PageUp / PageDown, Num9 / Num3, Ctrl / Alt + . / ,)
+  and the compact I / K stick (axis 0x7c) 0.04 a tick, doubled with 0x9a (LAlt); 0x7d (Num5, Ctrl / Alt + V) or both
+  held eases back to the base zoom (a fifth a frame, done under 0.003). FUN_101ede30 keeps the map pixel under the
+  cursor point (W x 200 / 512, H / 2). No mouse-wheel zoom in retail.
+- Scroll: axes 0x79 / 0x7a (Num6 / Num4, Num2 / Num8, compact W / A / S / D; FUN_10122e30) x 15 x ticks / 2, doubled
+  with 0x9a; arrows never scroll. Under 2 px a retail frame is dead (ours judges that per 2-tick frame, so it works at
+  any frame rate). 0x7e (Num*) eases back to the player. Bounds FUN_101ee040: view in [base, base + (512 zoom - W) /
+  zoom]. The left-drag joystick (W / 21 from the press point) is not done.
+- Open: view = player pixel - cursor point (screen pixels from map pixels, as decompiled), clamped, then the scroll-to
+  (FUN_101ef990: each 2-tick frame the view moves (target - point) / zoom map pixels, halved over 2 x zoom; one exact
+  step once it moves under sqrt(0.8)). Fade level 0x80 -> 0 at 8 a frame; the image alpha min(0xff - level, 0xa0); the
+  player arrow and the grid text only at level 0. The arrow's pixel and heading are taken at open only.
+- Close (slot 20, FUN_101ee580): map0 and the other sub-windows go at once, the image fades to 0xff at 0x10 a frame,
+  the window goes when that ends or after 3 s; then the close callback reopens the main menu (LAB_101faff0).
+- /map (command 0x4f, FUN_1007d2c0): group 7 0x44 in a room (zone flag 0x100), nothing when already open, else mode 0.
+  No record: group 7 0x62 "There is no map for this area." (FUN_101f86b0).
+- Event maps: 0x89 (zone val@1, key -1), 0x8d (key val@3), 0xc8 (arrow with val@5) open modes 1 / 2 (zone <= -100) /
+  3 (zone < 0), reopened only for another map; no map0, Escape does nothing; illustrations take no keys. A negative
+  key is the one under the player in that zone, else 0 *(inf)*. Without the arrow the view starts at the image base
+  *(inf)*. 0x8a closes (fade-out; op 0xb4 0x15 waits through it). Op 0xb4 sub 0x14 (x, y, zoom factor, speed, flags,
+  each x 0.001; FUN_101fb070 / FUN_101edee0): zoom = zf x base, view centred on (x, y) unclamped, t += ticks x speed x
+  0.005 (mode 1 linear, 2 x (1 - t + 0.02), 3 x (t + 0.02)); speed 0 jumps; flag 0x80 shows at once; the keys, fade
+  and closing stop.
+- Live (Lnxcsfix, Southern San d'Oria): /map eases to the player in about 2 s, Escape fades out and returns. Keys
+  not driven live (scripted keys are one-frame taps).
+- Left: markers (mapv3 / mapv2, the .MRK file, sets 0..3), party dots (c2s 0x0D2 / s2c 0x0A0), Change Map, Wide
+  Scan, event marker ops 0x8b / 0xb8 / 0xa8 / 0xb9 drawing, the no-key-item chat line (group 10 id 7).

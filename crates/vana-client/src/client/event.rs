@@ -885,13 +885,25 @@ impl Host for LiveHost<'_> {
                     let _ = super::actmotion::emote(a, n as u32 & 0xff, (n as u32 >> 8) as u16, 0, 6);
                 }
             }
-            // FUN_100b08e0(1, zone, map, flag, 0) opens the map; FUN_100b0dd0 closes it.
-            Effect::Op { op: 0xc8, args, .. } => {
-                let zone = Self::arg_int(&args, 0).unwrap_or(0) as u16;
-                self.w.map_open = Some(zone);
-                log::info!("event: map window, zone {zone}");
+            // FUN_100b08e0(1, zone, map, flag, 0): 0x89 (key -1), 0x8d (key val@3) and 0xc8 (the arrow with val@5) open the
+            // map; FUN_100b0dd0 closes it.
+            Effect::Op { op: op @ (0x89 | 0x8d | 0xc8), args, .. } => {
+                let zone = Self::arg_int(&args, 0).unwrap_or(0) as i16;
+                let key = if op == 0x89 { -1 } else { Self::arg_int(&args, 1).unwrap_or(-1) as i16 };
+                let show_player = op == 0xc8 && Self::arg_int(&args, 2).unwrap_or(0) != 0;
+                self.w.map_open = Some(zone as u16);
+                self.w.map_cmds.push(super::map::Cmd::Open { zone, key, show_player });
             }
-            Effect::Op { op: 0x8a, .. } => self.w.map_open = None,
+            Effect::Op { op: 0x8a, .. } => {
+                self.w.map_open = None;
+                self.w.map_cmds.push(super::map::Cmd::Close);
+            }
+            // FUN_100b0a00 0x14 -> FUN_101fb070: the map view to x, y, zoom factor, speed (each x 0.001) and flags.
+            Effect::Op { op: 0xb4, sub: Some(0x14), args, .. } => {
+                let f = |i| Self::arg_int(&args, i).unwrap_or(0) as f32 * 0.001;
+                let flags = Self::arg_int(&args, 4).unwrap_or(0);
+                self.w.map_cmds.push(super::map::Cmd::View { x: f(0), y: f(1), zf: f(2), speed: f(3), flags });
+            }
             // FUN_100b7600 -> FUN_101efdf0 / FUN_101efe80 / FUN_101efed0: marker slot at x, z with a name ('_' = space).
             Effect::Op { op: 0x8b, args, .. } => {
                 let int = |i| Self::arg_int(&args, i).unwrap_or(0);

@@ -1812,6 +1812,11 @@ impl Runtime {
                         self.start.strings[slot] = text;
                     }
                     9 | 0xc => self.set_at(v, 2, 0, 0),
+                    // The map view: x, y, zoom factor, speed, flags (each a value) for the host.
+                    0x14 => {
+                        let a = [2, 4, 6, 8, 10].map(|o| Arg::Int(self.val(v, o)));
+                        host.effect(Effect::Op { op: opc, sub, actor, args: a.to_vec() });
+                    }
                     0x15 if host.busy(&Busy::Op { op: opc, sub, actor }) => {
                         self.yield_(v);
                         return;

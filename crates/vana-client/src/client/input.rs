@@ -353,7 +353,7 @@ impl Input {
     /// (b - 0x80) / 128, the later record winning). While typing only numpad movement with NumLock off counts;
     /// with a window active the arrows need Shift (FUN_1011f7b0 / FUN_1011f910).
     pub fn axis(&self, id: usize) -> f32 {
-        if !(4..=7).contains(&id) || self.masks[id] & self.context == 0 {
+        if !matches!(id, 4..=7 | 0x79 | 0x7a | 0x7c) || self.masks[id] & self.context == 0 {
             return 0.0;
         }
         let key = |p: u8, n: u8| self.held(p) as i32 as f32 - self.held(n) as i32 as f32;
@@ -362,6 +362,11 @@ impl Input {
         let (keys, pad) = match id {
             4 => (if self.typing && self.numlock { 0.0 } else { key(0x4d, 0x4b) }, stick(0x20_0000, 0x40_0000)),
             5 => (if self.typing && self.numlock { 0.0 } else { key(0x50, 0x48) }, stick(0x100_0000, 0x80_0000)),
+            // The map's scroll (0x79 / 0x7a: numpad 6 / 4, 2 / 8 and the compact W / A / S / D stick, FUN_10122e30) and
+            // zoom stick (0x7c: compact I / K; its keys are the caller's).
+            0x79 => (if self.typing && self.numlock { 0.0 } else { key(0x4d, 0x4b) }, stick(0x20_0000, 0x40_0000)),
+            0x7a => (if self.typing && self.numlock { 0.0 } else { key(0x50, 0x48) }, stick(0x100_0000, 0x80_0000)),
+            0x7c => (0.0, stick(0x10_0000, 0x8_0000)),
             6 => (if arrows { key(0xcd, 0xcb) } else { 0.0 }, stick(0x2_0000, 0x4_0000)),
             _ => (if arrows { key(0xd0, 0xc8) } else { 0.0 }, stick(0x10_0000, 0x8_0000)),
         };

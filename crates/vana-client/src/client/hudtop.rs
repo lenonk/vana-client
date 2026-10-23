@@ -387,9 +387,12 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         // FUN_101c2090(zone, 1): group 0x14, the English places file.
         let place = crate::dat::names::DMsg::load(&index, crate::dat::names::PLACES[1])?.text(zone as usize).filter(|n| !n.is_empty());
         let region = super::map::Region::find(gu.map_regions(), zone).ok_or_else(|| anyhow::anyhow!("no map record for zone {zone}"))?;
-        let mut m = super::map::MapWin::new(region, f.get(3) == Some(&"owned"), Some(std::sync::Arc::new(index)), (num(1), num(2)), sw, sh);
+        let owned = f.get(3) == Some(&"owned");
+        gu.open_ticks = 0.0;
+        let zoom = f.get(4).and_then(|v| v.parse().ok()).unwrap_or(2000);
+        let mut m = super::map::MapWin::new(region, owned, Some(std::sync::Arc::new(index)), (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, super::map::Mode::Menu, zoom, true);
         m.wait_image(&mut gu);
-        m.draw(&mut gu, (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh);
+        m.draw(&mut gu, sw, sh);
         let [help, title] = gu.focus_text("menu    map0", m.cursor);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
         match place {

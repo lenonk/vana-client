@@ -787,6 +787,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         return Vec::new();
     }
+    for c in std::mem::take(&mut world.map_cmds) {
+        map::apply(world, gu.map_regions(), c, sw, sh);
+    }
     let items = gu.menu_items(sw, sh, world.menu_page);
     let dead = world.dead();
     let mut opened = false;
@@ -837,8 +840,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
                 }
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Enter | egui::Key::Escape if world.map.is_some() => {
-                    if !world.map.as_mut().is_some_and(|m| m.key(*key)) {
-                        world.map = None;
+                    // map0's Escape (FUN_101fa420): the zoom into config 0x8a, then the fade-out.
+                    if let Some(m) = world.map.as_mut()
+                        && !m.key(*key)
+                    {
+                        world.game.set(0x8a, m.zoom_cfg());
+                        m.begin_close();
                     }
                 }
                 // logwindo's messages (FUN_1015ae20): 5 Enter opens the full log, 6 Escape unfocuses.
@@ -1075,11 +1082,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 4) => items::open_items(world),
             // Item 12 Map (FUN_1013b3f0 case 0xc; the Mog House branch to myroom is not done).
             (0, 12) => match map::MapWin::open(world, gu.map_regions(), sw, sh) {
-                Some(m) => {
+                Some(mut m) => {
+                    m.return_menu = world.menu;
                     world.map = Some(m);
                     world.menu = None;
                 }
-                None => log::info!("map: no map record for zone {}", world.pos_zone),
+                // FUN_101f86b0: "There is no map for this area."
+                None => textcmd::refuse(world, 0x62),
             },
             // Child 7 Config (FUN_10147fc0 case 7): configwi over the menu, SE 0002.
             (1, 7) => {
@@ -1251,12 +1260,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
         o.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh, world.map_opacity);
     }
-    let mut map = world.map.take();
-    if let Some(m) = map.as_mut() {
-        let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
-        m.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh);
+    if let Some(m) = world.map.as_mut() {
+        m.draw(gu, sw, sh);
     }
-    world.map = map;
     let slots = gu.hud(sw, sh, &st);
 
     // Target cursor (FUN_10149900): anc_l at the target's point, 6 frames of 4 ticks, tint 0xe0808080;
@@ -2510,6 +2516,8 @@ struct World {
     self_lock: Option<f32>,
     /// The map window an event opened (op 0xc8) and the markers set (op 0x8b).
     map_open: Option<u16>,
+    /// Event map requests for the next HUD frame (map::apply).
+    map_cmds: Vec<map::Cmd>,
     map_markers: Vec<event::Marker>,
     event_mem: crate::event_vm::Memory,
     event_end_at: Option<Instant>,
@@ -3446,6 +3454,7 @@ impl App {
                             last_camera: None,
                             self_lock: None,
                             map_open: None,
+                            map_cmds: Vec::new(),
                             map_markers: Vec::new(),
                             event_mem: Default::default(),
                             event_end_at: None,
@@ -4585,6 +4594,17 @@ impl App {
         }
         self.input.begin_frame(f);
         let Phase::World(world) = &mut self.phase else { return };
+        // The map window's keys and animations (FUN_101ef0a0); it goes once its fade-out ends, reopening the main menu
+        // it came from (LAB_101faff0).
+        if let Some(m) = world.map.as_mut()
+            && !m.update(&mut self.input, dt * 60.0)
+        {
+            let back = m.return_menu;
+            world.map = None;
+            if back.is_some() {
+                world.menu = back;
+            }
+        }
         // Numpad * / compact H: 0x44 (/heal) and 0x30 (lock-on) read the same press; FUN_101516d0 picks.
         if self.input.test(0x44, input::mode::PRESS) {
             target::numpad_star(world);
