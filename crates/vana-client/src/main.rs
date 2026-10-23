@@ -488,6 +488,9 @@ enum Cmd {
         /// 0x034 params (num[8]).
         #[arg(long, value_parser = parse_num)]
         param: Vec<u32>,
+        /// The player's race (1 Hume M .. 8 Galka) for value 0x7f87.
+        #[arg(long, default_value_t = 0)]
+        race: u8,
     },
     /// Decode a .bgw / .spw to WAV: --id N (effect id, or music number with --music) or --file.
     SoundDump {
@@ -936,11 +939,11 @@ fn main() -> Result<()> {
         Cmd::SoundDump { id, music, file, out, seconds } => sounddump::dump(id, music, file, &out, seconds),
         Cmd::AudioTest { id, seconds, se, fade, device, list } => sounddump::audio_test(id, seconds, se, fade, device, list),
         Cmd::EventSweep { zones } => event_vm::sweep(&zones),
-        Cmd::EventRun { zone, event, target, choice, param } => {
+        Cmd::EventRun { zone, event, target, choice, param, race } => {
             let mut p = [0u32; 8];
             p.iter_mut().zip(param).for_each(|(d, s)| *d = s);
             let c: Vec<Option<u32>> = choice.iter().map(|&c| (c >= 0).then_some(c as u32)).collect();
-            event_vm::run_cli(zone, event as u16, target, p, &c)
+            event_vm::run_cli(zone, event as u16, target, p, &c, race)
         }
         Cmd::ItemDump { lang, key, ids } => itemshot::dump(&lang, key, &ids),
         Cmd::ItemIconShot { ids, out, lang } => itemshot::icon_shot(&ids, &out, &lang),

@@ -120,9 +120,18 @@ pub trait Host {
     fn ground(&self, _actor: u32, _p: [f32; 3]) -> Option<f32> {
         None
     }
-    /// Player bytes read by values 0x7f06 (low) / 0x7f08 (next) (DAT_10472c48).
+    /// Player bytes read by values 0x7f06 (low) / 0x7f08 (next): main job and its level (DAT_10485640 / 41, s2c 0x061
+    /// @0x0C / @0x0D).
     fn player_word(&self) -> u32 {
         0
+    }
+    /// Values 0x7f07 / 0x7f87: an actor's race byte (+0xef); 0 for non-PC looks.
+    fn race(&self, _actor: u32) -> u8 {
+        0
+    }
+    /// Values 0x7f0a / 0x7f8a: an actor's server id (+0x78).
+    fn server_id(&self, actor: u32) -> u32 {
+        actor
     }
     /// A game config value by id (op 0xda reads 0x43, the aspect).
     fn game_config(&self, _id: u16) -> u32 {
@@ -275,6 +284,8 @@ pub struct Runtime {
     last_speaker: Option<u32>,
     names: Option<std::sync::Arc<dyn crate::dat::names::NameSource>>,
     player_word: u32,
+    /// Race and server id per VM actor (values 0x7f07 / 0x7f0a), from the host each tick.
+    actor_info: std::collections::HashMap<u32, (u8, u32)>,
     pub dt: f32,
     /// Print each executed op to stderr.
     pub trace: bool,
@@ -320,6 +331,7 @@ impl Runtime {
             last_speaker: None,
             names: None,
             player_word: host.player_word(),
+            actor_info: std::collections::HashMap::new(),
             dt: 1.0,
             trace: std::env::var_os("FFXI_EVENT_TRACE").is_some(),
             frame: 0,
@@ -488,6 +500,9 @@ impl Runtime {
         }
         self.dt = dt.max(1.0);
         self.frame += 1;
+        for a in self.vms.iter().map(|v| v.actor).chain([PLAYER]).collect::<Vec<_>>() {
+            self.actor_info.insert(a, (host.race(a), host.server_id(a)));
+        }
         for v in 0..self.vms.len() {
             if !self.vms[v].paused {
                 self.step_vm(v, host);
@@ -613,7 +628,10 @@ impl Runtime {
             0x7f06 if self.vms[v].actor == PLAYER => self.player_word & 0xff,
             0x7f08 if self.vms[v].actor == PLAYER => self.player_word >> 8 & 0xff,
             0x7f08 => 1,
-            0x7f0a => self.vms[v].actor,
+            // FUN_100af4c0: the race byte (+0xef) and the server id (+0x78).
+            0x7f07 => self.actor_info.get(&self.vms[v].actor).map_or(0, |i| i.0 as u32),
+            0x7f0a => self.actor_info.get(&self.vms[v].actor).map_or(self.vms[v].actor, |i| i.1),
+            0x7f87 => self.actor_info.get(&PLAYER).map_or(0, |i| i.0 as u32),
             0x7f80..0x7f84 => {
                 let p = self.player_body().map(|b| (b.pos, b.dir)).unwrap_or(([0.0; 3], 0.0));
                 match k {
@@ -623,7 +641,7 @@ impl Runtime {
             }
             0x7f86 => self.player_word & 0xff,
             0x7f88 => self.player_word >> 8 & 0xff,
-            0x7f8a => PLAYER,
+            0x7f8a => self.actor_info.get(&PLAYER).map_or(PLAYER, |i| i.1),
             _ => 0,
         }
     }
@@ -2040,6 +2058,8 @@ pub struct Scripted {
     pub cancel: Option<usize>,
     /// Scheduler length in ticks by (file, tag, param); None = unknown or looping.
     pub sched_ticks: Option<Box<dyn FnMut(u32, &str, i32) -> Option<f32>>>,
+    /// The player's race byte (value 0x7f87).
+    pub race: u8,
     running: Vec<(Busy, u32)>,
     seed: u32,
     frame: u32,
@@ -2091,6 +2111,7 @@ impl Scripted {
             update_params: None,
             cancel: None,
             sched_ticks: None,
+            race: 0,
             running: Vec::new(),
             seed: 1,
             frame: 0,
@@ -2099,6 +2120,10 @@ impl Scripted {
 }
 
 impl Host for Scripted {
+    fn race(&self, actor: u32) -> u8 {
+        if actor == PLAYER { self.race } else { 0 }
+    }
+
     fn effect(&mut self, e: Effect) {
         let until = self.frame + self.busy_frames;
         match &e {
@@ -2193,11 +2218,12 @@ pub fn run_scripted(rt: &mut Runtime, host: &mut Scripted, max_frames: u32) -> O
 }
 
 /// `event-run`: runs one event headless and prints its effects.
-pub fn run_cli(zone: u16, event: u16, target: u32, params: [u32; 8], choices: &[Option<u32>]) -> anyhow::Result<()> {
+pub fn run_cli(zone: u16, event: u16, target: u32, params: [u32; 8], choices: &[Option<u32>], race: u8) -> anyhow::Result<()> {
     let index = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir())?;
     let blocks = event::load(&index, zone)?;
     let dialog = Dialog::load(&index, zone).ok();
     let mut host = Scripted::new(choices);
+    host.race = race;
     host.sched_ticks = Some(sched_timer(crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir())?));
     let start = Start { zone, event, target, params, strings: Vec::new() };
     let mut rt = Runtime::start(blocks, dialog, start, Memory::default(), &mut host);

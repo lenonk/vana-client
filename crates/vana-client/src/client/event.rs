@@ -914,6 +914,22 @@ impl Host for LiveHost<'_> {
         self.w.entities.get(&id).map(|e| e.name.clone()).filter(|n| !n.is_empty()).or_else(|| self.w.npc_names.get(&id).cloned()).unwrap_or_default()
     }
 
+    fn player_word(&self) -> u32 {
+        self.w.stats.as_ref().map_or(0, |s| s.main.0 as u32 | (s.main.1 as u32) << 8)
+    }
+
+    fn race(&self, actor: u32) -> u8 {
+        let id = self.wid(actor);
+        if id == self.w.my_id {
+            return self.w.my_race;
+        }
+        self.w.actors.get(&id).and_then(|a| a.character.as_ref()?.pc).map_or(0, |pc| pc.race)
+    }
+
+    fn server_id(&self, actor: u32) -> u32 {
+        self.wid(actor)
+    }
+
     /// Hume F, Elvaan F, Tarutaru F, Mithra.
     fn female(&self) -> bool {
         matches!(self.w.my_race, 2 | 4 | 6 | 7)

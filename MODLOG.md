@@ -4041,3 +4041,13 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   of the caster / target (0x00D u32 @0x20 bit 15 = male; no operand byte), 7f 88 the article. Mode 7 for our own
   untargeted emote, else 0x0f (both config 0x20's colour); not with Mode 2 or the Emotes filter (config 0x32 bit 3).
 - Ours: the above but the block list, pet / trust copies, /aim's ranged class (0), our gender from the race (inf).
+
+## Event special values: race, job, server id (2026-10-23)
+
+- FUN_100af4c0 (all.c ~130780): 0x7f07 / 0x7f87 = the bound actor's / player's race byte (+0xef; 9,374 player.7 and
+  2,118 self.7 reads, e.g. Port Windurst 0x131 picks camera s100 over s008 for a Galka); 0x7f06 / 0x7f86 main job,
+  0x7f08 / 0x7f88 its level (DAT_10485640 / 41 = s2c 0x061 @0x0C / @0x0D; 0x7f08 is 1 for a VM not the player's);
+  0x7f0a / 0x7f8a the server id (+0x78). Ours: Host::race / server_id cached per tick, player_word from 0x061.
+  0x7f0b / 0x7f8b (+0x124 bit 25, 475 sites) not decoded. `event-run --race N` sets the player's race offline.
+- Event VM audit 2026-10-23: scratchpad evgaps/STATUS.md re-ranks REPORT.md's items (11 done, 1 approximate, 6
+  partial, 4 missing) and the special values above.
