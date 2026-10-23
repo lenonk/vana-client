@@ -57,7 +57,7 @@ use crate::net::lobby::{Character, Lobby, MapLogin, NewCharacter};
 use crate::render::{Camera, Gpu, ZoneRenderer, depth_view};
 use anyhow::Result;
 use glam::{Vec3, Vec4Swizzles};
-use game_ui::{GOLD, GREY, GameUiData, GameUi, WHITE, YELLOW};
+use game_ui::{GREY, GameUiData, GameUi, WHITE, YELLOW};
 use net::{EntityKind, NetCommand, NetEvent, NetHandle};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
@@ -352,8 +352,18 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     let row = |i: usize| wy + 14.0 + i as f32 * 22.0;
     let field_rect = |i: usize| [wx + 148.0, row(i), ww - 164.0, 18.0];
     let ay = row(4) + 6.0;
-    let actions = [("Log in", wx + 40.0), ("Create account", wx + 150.0), ("Exit", wx + 310.0)];
-    let arects = [0, 1, 2].map(|k| [actions[k].1 - 4.0, ay - 2.0, lu.text_width(actions[k].0) + 8.0, 20.0]);
+    // Config-page buttons (88 px, wider for a longer caption), centred 24 px apart.
+    const ACTIONS: [&str; 3] = ["Log in", "Create account", "Exit"];
+    let widths = ACTIONS.map(|a| (lu.label_width(a) + 14.0).max(88.0).round());
+    let mut bx = (wx + (ww - widths.iter().sum::<f32>() - 48.0) / 2.0).round();
+    let arects = [0, 1, 2].map(|k| {
+        let r = [bx, ay, widths[k], 16.0];
+        bx += widths[k] + 24.0;
+        r
+    });
+    // Log in and Create account need the server, account and password.
+    let filled = !fields[0].trim().is_empty() && !fields[1].trim().is_empty() && !fields[2].is_empty();
+    let enabled = [filled, filled, true];
 
     let mut chosen = None;
     // Hovering an action moves the selection there, as in the game's menus.
@@ -371,7 +381,7 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         }
         if let Some(k) = (0..3).find(|&k| inside(&arects[k], p)) {
             *focus = 4 + k;
-            chosen = Some(CHOICES[k]);
+            chosen = enabled[k].then_some(CHOICES[k]);
         }
     }
     for ev in &input.events {
@@ -392,7 +402,10 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
                 }
                 // Escape goes to Exit, as a menu's cancel lands on its back item.
                 egui::Key::Escape => *focus = 6,
-                egui::Key::Enter => chosen = Some(if *focus < 4 { LoginChoice::LogIn } else { CHOICES[*focus - 4] }),
+                egui::Key::Enter => {
+                    let k = focus.saturating_sub(4);
+                    chosen = enabled[k].then_some(CHOICES[k]);
+                }
                 _ => {}
             },
             _ => {}
@@ -401,10 +414,17 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
 
     let help = if busy {
         "Connecting to the server..."
-    } else if status.is_empty() {
-        "Enter your account information to log in."
-    } else {
+    } else if !status.is_empty() {
         status
+    } else if *focus >= 4 && !enabled[*focus - 4] {
+        "Enter the server, account name and password first."
+    } else {
+        match *focus {
+            4 => "Log in with this account.",
+            5 => "Create a new account on this server with the account name and password above.",
+            6 => "Exit the game.",
+            _ => "Enter your account information to log in.",
+        }
     };
     let slots = lu.title(sw, sh, None, 0, [true; 5]);
     lobby_text(lu, &slots, help, if busy || status.is_empty() { WHITE } else { YELLOW }, version);
@@ -423,14 +443,22 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             lu.rect(r[0] + 4.0 + lu.text_width(&shown), r[1] + 2.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
         }
     }
-    // The selected action as a menu's selected item: gold (0x80805020) one pixel up-left, with the hand.
-    for (k, (label, x)) in actions.iter().enumerate() {
+    // As the Config pages' buttons: the selected one gold (0x80805020) one pixel up-left, the hand over it last;
+    // disabled grey.
+    let mut hand = None;
+    for (k, r) in arects.iter().enumerate() {
         let on = *focus == 4 + k && !busy;
         let d = if on { -1.0 } else { 0.0 };
-        lu.text(label, *x + d, ay + d, 0, if busy { GREY } else if on { GOLD } else { WHITE });
+        let tint = if busy || !enabled[k] { 0x8040_4040 } else if on { 0x8080_5020 } else { 0x8080_8080 };
+        settings::button(lu, [r[0] + d, r[1] + d, r[2], r[3]], tint);
+        let lx = r[0] + ((r[2] - lu.label_width(ACTIONS[k])) / 2.0).round();
+        lu.label(ACTIONS[k], lx + d, r[1] + 1.0 + d, tint, true);
         if on {
-            lu.cursor(*x - 2.0 + d, ay + d);
+            hand = Some((r[0] + d, r[1] + d));
         }
+    }
+    if let Some((hx, hy)) = hand {
+        lu.cursor(hx, hy);
     }
     if busy { None } else { chosen }
 }
@@ -3224,7 +3252,7 @@ pub struct App {
     cursor_in: bool,
     /// The game's mouse cursor (client/mousecur.rs).
     mouse: mousecur::MouseCursor,
-    /// A lobby or login error waiting in the OK window on the login screen.
+    /// A lobby or login error (or the new account's notice) waiting in the OK window on the login screen.
     login_error: Option<String>,
     /// The title's Config window (lobycwin) with its values, and our settings screen over the title.
     lobby_cfg: Option<configui::ConfigUi>,
@@ -3798,7 +3826,14 @@ impl App {
                 log::warn!("lobby UI: {e:#}");
                 self.game_ui_state = LoadState::Failed;
             }
-            Task::AccountCreated(Ok(())) => self.status = "Account created. You can log in now.".into(),
+            Task::AccountCreated(Ok(())) => {
+                // In the OK window, with the cursor then on Log in.
+                self.status.clear();
+                self.login_error = Some(format!("The account {} was created.\nYou can log in now.", self.cfg.username));
+                if let Phase::Login { focus, .. } = &mut self.phase {
+                    *focus = 4;
+                }
+            }
             Task::LoggedIn(Ok((lobby, chars))) | Task::Lobby(Ok((lobby, chars))) => {
                 self.status.clear();
                 let (new_name, race, face, size, job, nation) = match &self.phase {
