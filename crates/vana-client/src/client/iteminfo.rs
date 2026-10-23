@@ -5,6 +5,20 @@ use super::game_ui::GameUi;
 use crate::dat::items::Item;
 
 /// Layouts by row count 3..12 (table 0x1036fa70): 366 x (8 + 16 rows).
+/// itemxinf's layouts by rows, 3..12 (the compare window above itemyinf).
+pub const XLAYOUTS: [&str; 10] = [
+    "menu    itemxinf",
+    "menu    itemx4in",
+    "menu    itemx5in",
+    "menu    itemx6in",
+    "menu    itemx7in",
+    "menu    itemx8in",
+    "menu    itemx9in",
+    "menu    itemx10i",
+    "menu    itemx11i",
+    "menu    itemx12i",
+];
+
 pub const LAYOUTS: [&str; 10] = [
     "menu    iteminfo",
     "menu    item4inf",

@@ -174,6 +174,10 @@ pub struct Pick {
     pub indexes: Vec<u8>,
     pub scroll: usize,
     pub cursor: usize,
+    /// itemxinf: the worn piece compared (Some(None) for an empty slot), the slot-bit turn and Ctrl last frame.
+    pub compare: Option<Option<(u8, u8)>>,
+    pub alt: u8,
+    pub ctrl: Option<bool>,
 }
 
 pub fn open_items(w: &mut World) {
@@ -416,6 +420,10 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         },
         Some(Win::Equip { row, col, pick }) => {
             let slot = slot_at(*row, *col);
+            // FUN_101306f0: the list's messages 1..6 drop the compare.
+            if let Some(p) = pick {
+                p.compare = None;
+            }
             match pick {
                 Some(p) => match key {
                     egui::Key::Escape => *pick = None,
@@ -441,7 +449,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                     }
                     egui::Key::Enter => {
                         let indexes = candidates_world(&w.inv, w.stats.as_ref(), w.my_race, &info, slot);
-                        *pick = Some(Pick { indexes, scroll: 0, cursor: 0 });
+                        *pick = Some(Pick { indexes, scroll: 0, cursor: 0, compare: None, alt: 0, ctrl: None });
                     }
                     _ => {}
                 },
@@ -456,6 +464,41 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         let _ = w.net.commands.send(c);
     }
     true
+}
+
+/// FUN_10130a80 / FUN_1013ac50: in the candidate list a Ctrl press (key function 0x76, pad 0x89) opens itemxinf with
+/// the piece worn in a slot the focused item fits, taking its slot bits in turn (rings and earrings alternate) and
+/// moving the grid cursor there; the next press closes it.
+pub fn compare_key(w: &mut World, held: bool) {
+    let info = w.item_info.clone();
+    let Some(Win::Equip { row, col, pick: Some(p) }) = &mut w.win else { return };
+    let rising = held && p.ctrl.is_some_and(|c| !c);
+    p.ctrl = Some(held);
+    if !rising || p.compare.take().is_some() {
+        return;
+    }
+    let Some(&index) = p.indexes.get(p.scroll + p.cursor) else { return };
+    let Some(&(id, _)) = w.inv.slots.get(&(INVENTORY, index)) else { return };
+    let bits = info.as_ref().and_then(|c| c.item(id)).map_or(0, |it| it.slots);
+    // FUN_101317b0 takes the first or second set bit; two misses clear the turn (FUN_10130be0).
+    for _ in 0..2 {
+        let nth = (p.alt & 1) as usize;
+        p.alt = (p.alt + 1) & 3;
+        if let Some(slot) = (0..16).filter(|b| bits & (1 << b) != 0).nth(nth) {
+            let child = SLOT_CHILD[slot] as usize - 1;
+            (*col, *row) = (child / 4, child % 4);
+            p.compare = Some(w.inv.equip[slot]);
+            return;
+        }
+    }
+    p.alt = 0;
+}
+
+/// The compared piece while itemxinf is open: Some(None) for an empty slot; (item, extdata, container).
+pub fn compare(w: &World) -> Option<Option<(u16, Option<[u8; 24]>, u8)>> {
+    let Some(Win::Equip { pick: Some(p), .. }) = &w.win else { return None };
+    let at = (*p.compare.as_ref()?).and_then(|(c, i)| Some((w.inv.slots.get(&(c, i))?.0, w.inv.ext.get(&(c, i)).copied(), c)));
+    Some(at)
 }
 
 /// Inventory items that fit `slot` (item +0x10 slot bits), and the character's level, job and race when known.

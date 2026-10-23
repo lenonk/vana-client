@@ -83,7 +83,6 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): left are the scan busy strip and the untracked
     compass pointer; done: pan, left-drag pan, zoom, fades, /map, event maps and views, markers and the .MRK file,
     Change Map, Wide Scan and tracking;
-  - the item info window: the compare windows (itemxinf / itemyinf);
   - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual done; left the Recycle Bin,
     synthesis, the Mog Garden use rule;
   - collision with characters and moving platforms;

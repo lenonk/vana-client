@@ -614,7 +614,6 @@ fn egui_dik(key: egui::Key) -> Option<u8> {
         E::Period => 0x34,
         E::Slash => 0x35,
         E::Space => 0x39,
-        E::Plus => 0x4e, // Num+ (test drives)
         E::Home => 0xc7,
         E::ArrowUp => 0xc8,
         E::PageUp => 0xc9,

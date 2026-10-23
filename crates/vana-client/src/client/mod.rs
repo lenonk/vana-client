@@ -2209,7 +2209,15 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     p.2 = info.pages.len();
     world.info_page.set(p);
     let page = p.0.min(info.pages.len().saturating_sub(1));
-    let layout = iteminfo::LAYOUTS[iteminfo::rows(&info, page) - 3];
+    // itemxinf open: both windows take the larger row count (+0x381 / +0x382); the compare shows its first page (inf).
+    let cmp = items::compare(world);
+    let cmp_info = cmp.flatten().and_then(|(cid, cext, c)| {
+        let cit = cache.item(cid)?;
+        let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped: true, shop: false, container: Some(c), flags: 0 };
+        Some((cid, iteminfo::build(&cit, cext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s), aug.as_ref())))
+    });
+    let rows = iteminfo::rows(&info, page).max(cmp_info.as_ref().map_or(3, |(_, ci)| iteminfo::rows(ci, 0)));
+    let layout = iteminfo::LAYOUTS[rows - 3];
     let [_, fy, _, fh] = gu.window_rect(layout, sw, sh)?;
     // Mode 4 (FUN_1013e4b0): (16, 16) stacked on region 3, taken as the choice window *(inf)*.
     let query_top = gu.window_rect("menu    query", sw, sh).map_or(16.0 + fh + 2.0, |r| r[1]);
@@ -2222,6 +2230,19 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     items::upload_icons(gu, &cache, std::iter::once(id));
     let icon = crate::render::invwin::icon_texture(id);
     iteminfo::draw(gu, &info, page, gu.has_image(&icon).then_some(icon.as_str()), r[0], r[1]);
+    // FUN_1013ad50: itemyinf right above iteminfo, itemxinf above that, both at its x.
+    if cmp.is_some() {
+        let [yx, yy, _, yh] = gu.window_rect("menu    itemyinf", sw, sh)?;
+        gu.lobby_window_off("menu    itemyinf", sw, sh, (r[0] - yx, r[1] - yh - yy), None, false, &[]);
+        let xl = iteminfo::XLAYOUTS[rows - 3];
+        let [xx, xy, _, xh] = gu.window_rect(xl, sw, sh)?;
+        let rx = gu.window_swapped("menu    itemxinf", xl, sw, sh, (r[0] - xx, r[1] - yh - xh - xy))?;
+        if let Some((cid, ci)) = &cmp_info {
+            items::upload_icons(gu, &cache, std::iter::once(*cid));
+            let icon = crate::render::invwin::icon_texture(*cid);
+            iteminfo::draw(gu, ci, 0, gu.has_image(&icon).then_some(icon.as_str()), rx[0], rx[1]);
+        }
+    }
     Some(r)
 }
 
@@ -4764,6 +4785,7 @@ impl App {
             p.0 = if p.0 + 1 >= p.2.min(3) { 0 } else { p.0 + 1 };
             world.info_page.set(p);
         }
+        items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)
             && let Some(items::Win::Items { direct: false, sub: None, manual: None, sort, .. }) = &mut world.win

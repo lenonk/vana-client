@@ -4353,4 +4353,28 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
     although the help text says "switch"). The same row splits one off with c2s 0x029 {1, inv, inv, index, 0x52} when
     the stack holds more than one and stacks (0x52 as the target index is inferred to mean the first free slot).
     Another row of the same item takes the whole stack (c2s 0x029). Seen live (the move; the split was not tried).
-- Test drives: egui Key::Plus maps to DIK 0x4e (Num+), because egui does not tell the numpad apart.
+- Test drives: act:numpad+ taps Num+.
+
+## Equipment compare: "menu    itemxinf" / "menu    itemyinf" (2026-10-23)
+
+- An equipment-menu feature (the candidate list's per-frame hook FUN_10130a80, class next to the equip window
+  DAT_105781a8). With the equip window in candidate mode (+0x1c == 1), a rising edge of key function 0x76 (Ctrl held)
+  or 0x89 (pad) while no compare is open: FUN_101317b0(item, turn & 1) gives the first or second set bit of the
+  focused item's slot bits (+0x14, table 0x1036f734 maps bit to grid child); turn += 1 (2-bit counter, two misses clear
+  it: FUN_10130be0). The grid cursor moves to that slot (FUN_10131810), and the worn piece there (FUN_10131770) goes
+  to list+0x8c with +0x89 = 1. So rings and earrings alternate between their two slots on each new open.
+- The list draw (FUN_101f2740 area) then opens itemxinf (DAT_10578208, a subclass of the iteminfo object) by
+  FUN_1013e410 mode 5 with that item, or with item 0 / container 0x12 when the slot is empty (an empty frame,
+  inferred from the code path; not seen). While it is open, both windows take the larger row count (+0x381 = max of
+  FUN_1013cb60, +0x382 = 1); layouts "itemxinf", "itemx4in" .. "itemx9in", "itemx10i" .. "itemx12i" (366 wide, the
+  same heights as the iteminfo set).
+- Placement (FUN_1013ad50): itemyinf (366x20, keytops3 sprite 549: a yellow chevron) right above iteminfo, itemxinf
+  above itemyinf, both at iteminfo's x.
+- itemxinf's own update (FUN_1013ac50): the next rising Ctrl edge closes it (states 1 then 2, FUN_1015e790). Its
+  open (FUN_1013aba0) primes the edge with the current Ctrl state, so the opening press does not close it.
+- The candidate list's messages 1..6 and 0x1b (FUN_101306f0: cursor moves, select, cancel) clear the compare.
+- Ours: Pick.compare / alt / ctrl, items::compare_key and items::compare, drawn in draw_item_info. The compare shows
+  its first page only *(inferred: each window keeps its own page state in retail; ours does not page it)*.
+- Live (Lnxcsfix, Main slot): the Onion Sword candidate with the worn Onion Sword above it and the chevron between;
+  a second Ctrl closes it.
+- Test drives: `act:down:1d` / `act:up:1d` hold Ctrl.
