@@ -3541,7 +3541,7 @@ FUN_1017c9c0 (from FUN_1017b510 and the MZB tree walk FUN_1017c8b0). FUN_1017c9c
   nonzero id are not drawn by the scenery pass (Southern San d'Oria's eml0..emlc with ids ent0..entd).
 - Ours: Placement.id / lod / lod_names / drawn, Instance.band (near^2, far^2; far 0 = always); each distinct LOD mesh
   gets the placement's instance with its band and vs_main collapses instances outside it.
-- Still to do from the spec: alpha blending for bit-31 models (the La Theine pond surface is missing), the 0x60
+- Still to do from the spec: alpha blending for bit-31 models, the 0x60
   alpha cutoff on '_' placements only, back-face culling (mirrored = scale.x * scale.z < 0), draw distance.
 
 ## The Mog House (MYROOM) (2026-10-22)
@@ -3612,4 +3612,6 @@ From the door spec (scratchpad doors_spec/SPEC.md).
   each slot's opaque draws, close to retail's inline order), blend pipelines without depth writes and a constant
   depth bias of -8 *(inf: the D3D8 ZBIAS equivalent)*; the cutoff is keep-if > 96 / 255 (was < 0.3 discarded, and
   bit-31 models were cut out instead of blended). In 230 bit 31 sits on the ground tiles (mid_*, lef_*, rig_*).
-- The La Theine pond basin's water is an effect, and it draws far too dark (not a blending issue; open).
+- A dark hollow in La Theine near (-10, 35) looked like a pond without water. It is not a blending or LOD issue; the
+  zone's spring effects (f_la/effe/izum: izu1 / izu2 water meshes, colour 0x30, alpha ~0x30) sit elsewhere ((13, 104),
+  (-59, 136)). Whether retail shows water in that hollow is not checked (open).
