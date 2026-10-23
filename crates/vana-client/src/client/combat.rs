@@ -277,7 +277,7 @@ fn play(actor: &mut Actor, name: &str, len: f32, speed: f32) {
 /// Melee (FUN_100d4600 / FUN_100d46f0): standing (+0xf8 clear) a random "ati?" avoiding the one just
 /// used; moving, the first "atf?" ('r' / 'b' / 'l' by the move direction +0x598; we move forward only).
 /// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs, and its name.
-fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String)> {
+pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String)> {
     let moving = moving(w, actor);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
     let a = w.actors.get_mut(&actor)?;

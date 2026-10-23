@@ -95,6 +95,25 @@ fn effect_base(category: u8, anim: u32) -> Option<u32> {
     })
 }
 
+/// The action file a model's vtable +0x2c4..+0x2ec loads for `id` (event ops 0x73 / 0xad / 0xc4, FUN_100a9700..
+/// FUN_100a98b0): 0 item, 1 magic, 2 ability, then fixed bases.
+pub fn event_action_file(kind: u8, id: u32) -> Option<u32> {
+    Some(id + match kind {
+        0 if id < 100 => 0x1330,
+        0 => 0xdca5,
+        1 => 0xaf0,
+        2 => 0x113c,
+        3 => 0x1394,
+        4 => 0xc7ef,
+        5 => 0xdd6d,
+        6 => 0x1071b,
+        7 => 0x11323,
+        8 => 0x11423,
+        9 => 0x19031,
+        _ => return None,
+    })
+}
+
 impl Effects {
     pub fn set_index(&mut self, index: std::sync::Arc<crate::dat::DatIndex>) {
         self.index = Some(index);

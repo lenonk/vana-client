@@ -3404,3 +3404,19 @@ needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in 
   files were restructured since); Remapster and xiPrime menus D3s + Msb. So only D3s / Msb / Bp are taken from mods.
 - 239 AshenbubsHD files and 109 Remapster files are at paths no current VTABLE / FTABLE entry points to (dropped or
   moved since 2021; Remapster's extra maps), so nothing loads them.
+
+## Event ops 0x73 / 0xad / 0xc4 / 0x7d: actors run action files (2026-10-22)
+
+- FUN_100b4590(off, kind) (0x73: off 0, kind 1; 0xc4 via FUN_100b4550: off 1, kind 0x10 + sub) and FUN_100bb340
+  (0xad: u8@1 high nibble must be 0, low nibble = kind): val id, actors A and B (both with models, +0x120 bit 9),
+  then A model vtable slot (B model, id, "main"). Lengths 0xb (0x73), 0xc (0xad, 0xc4).
+- Slots (character vtables 0x1032db40 / 0x1032e890; base 0x1032cfe0 has stubs): each adds a base to the id and
+  calls FUN_100a98d0 (loads that file and runs "main" on A -> B): kind 0 +0x2d0 item (id < 100: 0x1330, else 0xdca5),
+  1 +0x2c4 magic 0xaf0 (FUN_100a9700 also prints text through FUN_10127c00; events pass none), 2 +0x2cc 0x113c,
+  3 +0x2d4 0x1394, 4 +0x2d8 0xc7ef, 5 +0x2dc 0xdd6d, 6 +0x2e0 0x1071b, 7 +0x2e4 0x11323, 8 +0x2e8 0x11423,
+  9 +0x2ec 0x19031. The same bases as the 0x028 action categories (fx effect_base).
+- 0x10 +0x2f0 / 0x12 +0x2f4 (FUN_100a9a30 / FUN_100a9a90): vtable +0x3e4 (FUN_10085b50) builds an action of one
+  target with a zeroed record (DAT_1032cfac, 11 zero dwords), category 3 (weapon skill) / 0xb (mob skill),
+  animation = id, played through +0x2c0. 0x11 +0x2f8 is FUN_100d67b0 only in vtable 0x1032e890 (others stub):
+  unless +0x2a4, a category 1 action and a melee swing (FUN_100d6850).
+- 0x7d (FUN_100b8b20): the player runs file 0x13f8 + val "main" on itself (FUN_10062e20). Length 3.

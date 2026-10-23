@@ -10,6 +10,7 @@ pub mod sched;
 pub mod sound;
 pub mod spline;
 mod tasks;
+pub use tasks::event_action_file;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
 use crate::dat::zone;

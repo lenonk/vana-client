@@ -486,6 +486,32 @@ impl LiveHost<'_> {
         }
     }
 
+    fn action_file(&mut self, kind: u8, id: u32, a: u32, b: u32) {
+        use crate::fx::sched::Who;
+        use crate::net::action::{Action, ActionResult, ActionTarget};
+        if let Some(file) = crate::fx::event_action_file(kind, id) {
+            self.w.effects.on_event_scheduler(file, u32::from_le_bytes(*b"main"), Who::Actor(a), Who::Actor(b));
+            return;
+        }
+        // Vtable +0x3e4 builds an action of one zeroed record (DAT_1032cfac) whose animation is `id`.
+        let category = match kind {
+            0x10 => 3,
+            0x11 => 1,
+            0x12 => 0xb,
+            _ => return,
+        };
+        let result = ActionResult { animation: id as u16, ..Default::default() };
+        let act = Action { actor: a, category, targets: vec![ActionTarget { id: b, results: vec![result] }], ..Default::default() };
+        if category == 1 {
+            // FUN_100d67b0 (characters only): a swing unless one is already playing (+0x2a4) *(inf: not checked)*.
+            if let Some((_, swing)) = super::combat::start_attack(self.w, a, Some(b)) {
+                self.w.effects.on_action(&act, Some(swing));
+            }
+        } else {
+            self.w.effects.on_action(&act, None);
+        }
+    }
+
     fn arg_int(args: &[Arg], i: usize) -> Option<i32> {
         match args.get(i) {
             Some(Arg::Int(v)) => Some(*v),
@@ -667,6 +693,28 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            // FUN_100b4590 / FUN_100bb340: actor A runs an action file's "main" on actor B (model vtable +0x2c4..
+            // +0x2ec); 0xc4 0 / 2 play a weapon skill / mob skill as a one-record action, 1 a melee swing.
+            Effect::Op { op: op @ (0x73 | 0xad | 0xc4), sub, args, .. } => {
+                let (kind, rest) = match op {
+                    0x73 => (1, &args[..]),
+                    0xad => (Self::arg_int(&args, 0).filter(|k| k & 0xf0 == 0).unwrap_or(-1) as u8, args.get(1..).unwrap_or_default()),
+                    _ => (sub.map_or(0xff, |s| 0x10 + s), &args[..]),
+                };
+                if let (Some(id), Some(Arg::Actor(a)), Some(Arg::Actor(b))) = (Self::arg_int(rest, 0), rest.get(1), rest.get(2))
+                    && *a != 0
+                    && *b != 0
+                {
+                    self.action_file(kind, id as u32, self.wid(*a), self.wid(*b));
+                }
+            }
+            // FUN_100b8b20: the player runs file 0x13f8 + val's "main" on itself.
+            Effect::Op { op: 0x7d, args, .. } => {
+                if let Some(id) = Self::arg_int(&args, 0) {
+                    let me = crate::fx::sched::Who::Actor(self.w.my_id);
+                    self.w.effects.on_event_scheduler(0x13f8 + id as u32, u32::from_le_bytes(*b"main"), me, me);
+                }
+            }
             Effect::Op { op: 0xb6, sub: Some(sub), actor, args } => self.event_look(sub, actor, &args),
             // Zone actions (XiZone, DAT_106175ac vtable +0x18 / +0x1c): schedulers of the zone's effects by 4cc.
             Effect::Op { op: op @ (0x2d | 0x51), args, .. } => {
