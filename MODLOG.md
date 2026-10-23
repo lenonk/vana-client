@@ -270,10 +270,11 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   projection's near 0.1 / far 65535 (FUN_100146e0); scale 1 below 4020, (4100 - z) / 80 up to 4100, hidden
   beyond. In view depth d: 1 up to d = 5.39, then about 0.05 + 5.12 / d (6 → 0.91, 10 → 0.56, 50 → 0.16),
   so plates do shrink with distance; no distance cut-off. All 7 actor vtables share FUN_100ce480 at +0x278.
-  Quads are XYZRHW (FVF 0x144, rhw 1); anchors up to 100 px off screen still draw. Matches retail video frames. Colour = actor +0x78, chosen by FUN_1008c430
+  Quads are XYZRHW (FVF 0x144, rhw 1); anchors up to 100 px off screen still draw. Matches retail video frames. Colour = actor +0x78, chosen by FUN_1008db40 (table filled by FUN_1011c8b0; see "Name colours: the rule")
   from "menu    ncol" (23 sprites, first-cell colour): 0 white (players), 1 cyan (party), 4 green (NPCs),
   5 pale yellow (monsters), 6 red (claimed by us / party), 7 magenta (claimed by others), 8 orange, 9 grey,
-  0x12..0x16 team colours. LSB marks living mobs with 0x00E @0x25 bit 0x08 and the claimer at @0x2C.
+  0x12..0x16 team colours. The monster flag is @0x20 bit 0 (actor +0x120 bit 13); @0x25 is the hitbox size (+0x208 = @0x25 * 0.1), not a
+  monster mark (corrected 2026-10-23). The claimer is at @0x2C.
 - Main menu pages: menuwind (FUN_1013b3f0) and socialme (FUN_10147fc0) open each other on left / right
   (events 3/4/7/0x1c) or children 13..15, keeping the row (pair table 0x10364220). Social children: 1
   Missions, 2 Quests, 3 Key Items, 4 View House, 5 Bazaar, 6 Macros, 7 Config, 8 Help Desk, 9 Communication,
@@ -3952,3 +3953,18 @@ From scratchpad magicmenu/SPEC.md and icons/SPEC.md; client/magic.rs, target.rs 
   is up a typed line needs flag 0x02 (else 7 0xa4), macro lines wait. A /ma line's dry run gives the arrow its range.
 - Not done: mix.dat / aix.dat order and the sort windows, the Right-key magselec pop-out, blue magic sets, mouse in the
   lists and prompt, `<stpt>` / `<stal>` party-list cursors, the mount list, subwindo pet lines and charges, the cast bar.
+
+## Name colours: the rule (2026-10-23)
+
+From scratchpad ncol/SPEC.md (FUN_1008db40; 0x00D FUN_10099ae0, 0x067 FUN_1009cee0, 0x037 FUN_1009d0f0 decompiled
+there). In order: event op 0xae override (+0x1d8 < 0x17); SubKind 2..4 -> 4; applied status 2 / 3 -> 9 grey; PCs on
+a team (allegiance 2..99 but not 0x28..0x2b) team colours 0x12..0x16, party members cyan; GM level 3..7 (@0x23 & 7) ->
+0x0c..0x10; the monster flag (or PvP allegiance 8 / 9) with a claimer: a player's pet cyan, claimer in our party 6
+red, in another alliance party (c6 >> 1) + (c7 >> 1), else 7 magenta (red with our +0x18c shared-claim flag); anyone
+in our party but us 1 cyan; yell flag (0x00E: LSB CallForHelp) 8; LFG / LFG master / auto-party 2; anonymous 3; PCs
+and allegiance-1 actors without the charm flag 0 white; no charm flag (@0x27 bit 3): 5 monster, else 4 NPC; charm +
+@0x28 bit 6 or @0x2B bit 1: cyan only for a trust (@0x28 bit 0) whose owner index (0x067 type 3, +0x2a4) is ours,
+else 4; otherwise (a player's pet) 1 cyan. Pugils came out green because @0x25 (hitbox 23 -> 0x17) has bit 3 clear;
+LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed by us" (red).
+- Ours: the monster flag from @0x20 bit 0 everywhere (auto lock-on, Enter, F8, the action menu); the rule above
+  without the override, PvP teams / ballista, the charmed pet's master and the shared-claim flag.

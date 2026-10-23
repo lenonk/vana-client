@@ -159,6 +159,9 @@ struct Entity {
     face: u16,
     /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
     spawn_fx: bool,
+    /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships).
+    marks: net::Marks,
+    sub_kind: u8,
 }
 
 impl Entity {
@@ -545,17 +548,60 @@ fn self_entity(w: &World) -> Entity {
         object: false,
         face: 0,
         spawn_fx: false,
+        marks: net::Marks::default(),
+        sub_kind: 0,
     }
 }
 
-fn name_colour(e: &Entity, me: u32) -> usize {
-    match (e.kind, e.mob, e.claim) {
-        (EntityKind::Player, _, _) => 0,
-        (_, false, _) => 4,
-        (_, true, 0) => 5,
-        (_, true, c) if c == me => 6,
-        _ => 7,
+/// FUN_1008db40: the name colour, an "menu    ncol" entry (`c`) or the alliance claim blend. Not done: the event
+/// op 0xae override, PvP teams and ballista sides, the charmed-pet master's colour, the shared-claim zone flag.
+fn name_colour(id: u32, e: &Entity, w: &World, c: impl Fn(usize) -> u32) -> u32 {
+    let m = &e.marks;
+    let monster = e.flags & 1 != 0;
+    let pc = id >> 24 == 0;
+    if e.kind == EntityKind::Npc && matches!(e.sub_kind, 2..=4) {
+        return c(4);
     }
+    if matches!(e.motion.status, 2 | 3) {
+        return c(9);
+    }
+    if m.gm >= 3 {
+        return c(0x0c + m.gm as usize - 3);
+    }
+    // Claimed: by us or our party red, another party of the alliance a red / magenta blend, others magenta.
+    if monster && e.claim != 0 {
+        let own = w.party.own_flags & 3;
+        if e.claim == w.my_id {
+            return c(6);
+        }
+        return match w.party.members().find(|r| r.id == e.claim) {
+            Some(r) if r.flags & 3 == own => c(6),
+            Some(_) => (c(6) >> 1) + (c(7) >> 1),
+            None => c(7),
+        };
+    }
+    if id != w.my_id && w.party.party().any(|r| r.id == id) {
+        return c(1);
+    }
+    if m.yell {
+        return c(8);
+    }
+    if m.lfg_master || m.auto || m.lfg {
+        return c(2);
+    }
+    if m.anon {
+        return c(3);
+    }
+    if pc || (m.alleg == 1 && !m.charm) {
+        return c(0);
+    }
+    if !m.charm {
+        return c(if monster { 5 } else { 4 });
+    }
+    if m.npc_pet || m.b2b1 {
+        return c(if m.trust && e.index == w.my_pet { 1 } else { 4 });
+    }
+    c(1)
 }
 
 /// FUN_100818c0 / FUN_100819d0 at view depth `d`: retail's z_ndc * 4096 (near 0.1, far 65535) is 1 up to
@@ -602,14 +648,16 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             };
             // Pre-transformed quads at the projected depth (FUN_10080100): walls in front hide them.
             gu.depth(Some(z));
-            gu.name_plate(&e.name, x, y, scale, name_colour(e, world.my_id), pulse);
+            let tint = name_colour(*id, e, world, |i| gu.ncol(i));
+            gu.name_plate(&e.name, x, y, scale, tint, pulse);
         }
     }
     if !hidden.contains(&world.my_id)
         && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
         gu.depth(Some(z));
-        gu.name_plate(&world.name, x, y, scale, 0, 1.0);
+        let tint = gu.ncol(0);
+        gu.name_plate(&world.name, x, y, scale, tint, 1.0);
     }
     gu.depth(None);
 }
@@ -1328,7 +1376,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // lines only while the target has no gauge.
                 if let Some(e) = target {
                     let max = gu.window_rect("menu    targetwi", sw, sh).map_or(100.0, |r| r[2] - 13.0);
-                    let tint = gu.ncol(name_colour(e, world.my_id));
+                    let tid = world.target.unwrap_or(0);
+                    let tint = name_colour(tid, e, world, |i| gu.ncol(i));
                     gu.wrapped_name(&e.name, max, t.x, t.y, tint, true, e.no_gauge);
                 }
             }
@@ -1604,6 +1653,8 @@ fn place_mogdoor(w: &mut World) {
             object: true,
             face: 0,
             spawn_fx: false,
+            marks: net::Marks::default(),
+            sub_kind: 3,
         },
     );
 }
@@ -3583,6 +3634,8 @@ impl App {
                         object: false,
                         face: 0,
                         spawn_fx: false,
+                        marks: net::Marks::default(),
+                        sub_kind: 0,
                     });
                     if e.mask & 7 != 0 {
                         entry.flags = e.status;
@@ -3611,6 +3664,9 @@ impl App {
                     }
                     if let Some(s) = e.spawn_fx {
                         entry.spawn_fx = s;
+                    }
+                    if let Some(m) = e.marks {
+                        entry.marks = m;
                     }
                     if let Some((named, plural)) = e.name_flags {
                         (entry.named, entry.plural) = (named, plural);
@@ -3672,6 +3728,9 @@ impl App {
                     // no plate (FUN_101501a0, FUN_100ce4d0). The bit stays.
                     if e.kind == EntityKind::Npc {
                         let model_object = |m: u16| matches!(m, 0x32..=0x3b | 0x32e..=0x331 | 0x3c0..=0x3c9 | 0x737..=0x746 | 0x974..=0x97d | 0x9ba..=0x9c3);
+                        if e.npc.is_some() {
+                            entry.sub_kind = e.look_kind;
+                        }
                         entry.object |= matches!(e.look_kind, 2..=4) || (e.look_kind == 0 && matches!(e.npc, Some(crate::dat::npc::NpcLook::Model(m)) if model_object(m)));
                     }
                     if entry.object {

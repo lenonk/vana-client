@@ -694,11 +694,11 @@ impl GameUi {
         text
     }
 
-    /// A name plate in name colour `ncol` (index into "menu    ncol", FUN_10119590), bottom at (x, y).
-    pub fn name_plate(&mut self, name: &str, x: f32, y: f32, scale: [f32; 2], ncol: usize, pulse: f32) {
+    /// A name plate in a name colour (an "menu    ncol" tint, FUN_10119590), bottom at (x, y).
+    pub fn name_plate(&mut self, name: &str, x: f32, y: f32, scale: [f32; 2], colour: u32, pulse: f32) {
         // Alpha is MODULATE4X in that pass: a full-alpha tint saturates it as the card does; `pulse` scales it.
         let a = (255.0 * pulse.clamp(0.0, 1.0)) as u32;
-        let tint = screens::sprite_tint(&self.data.lobby, "menu    ncol", ncol) & 0x00ff_ffff | a << 24;
+        let tint = colour & 0x00ff_ffff | a << 24;
         screens::push_name_plate(&mut self.batch, &self.data.lobby, &encode_sjis(name), x, y, scale[0], scale[1], tint);
     }
 

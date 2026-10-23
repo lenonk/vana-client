@@ -34,8 +34,10 @@ pub struct EntityUpdate {
     pub motion: MotionState,
     /// Claim owner u32 @0x2C (claim bit 0x02), 0 when unclaimed.
     pub claim: Option<u32>,
-    /// LSB sets @0x25 bit 0x08 only for living monsters (general bit 0x04).
+    /// The monster flag (actor +0x120 bit 13): @0x20 bit 0, read with masks 1 / 2 / 4. (@0x25 is the hitbox size.)
     pub mob: Option<bool>,
+    /// Name-colour marks (mask 0x04), FUN_1008db40's inputs.
+    pub marks: Option<Marks>,
     /// u32 @0x24 bits 29 (named: no article) and 30 (plural verbs), read by the 0x00D/0x00E handlers.
     pub name_flags: Option<(bool, bool)>,
     /// u16 @0x18 & 0x1fff, the movement counter (FUN_1008b610), and whether y is snapped to the ground:
@@ -58,6 +60,24 @@ pub struct EntityUpdate {
     pub face: Option<u16>,
     /// Mask 0x04, u8 @0x28 bit 0x04 (LSB PetNewFlag; actor +0x12c bit 23): the model is made with 'spop'.
     pub spawn_fx: Option<bool>,
+}
+
+/// The bytes FUN_1008db40 colours a name by (0x00E / 0x00D, mask 0x04): charm @0x27 bit 3, trust @0x28 bit 0,
+/// pet @0x28 bit 6, @0x2B bit 1, allegiance @0x29, GM level @0x23 & 7, yell (0x00E: call for help) u32 @0x20 bit 13;
+/// PCs only (0x00D): LFG bit 11, anonymous bit 12, auto-party u32 @0x24 bit 31, LFG master @0x28 bit 1.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Marks {
+    pub charm: bool,
+    pub trust: bool,
+    pub npc_pet: bool,
+    pub b2b1: bool,
+    pub alleg: u8,
+    pub gm: u8,
+    pub yell: bool,
+    pub lfg: bool,
+    pub anon: bool,
+    pub auto: bool,
+    pub lfg_master: bool,
 }
 
 /// A battle message packet: 0x029 (FUN_1009cf70) or 0x02D (FUN_1009d1b0).
@@ -399,7 +419,23 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         // 0x57); monsters spawn with 0x0F.
         npc: (kind == EntityKind::Npc && flags & 0x20 == 0 && p.data.len() >= 0x30 + 20).then(|| crate::dat::npc::parse_look(&p.data[0x30..0x44]).ok()).flatten(),
         claim: (kind == EntityKind::Npc && flags & 0x02 != 0).then(|| p.u32(0x2C)),
-        mob: (kind == EntityKind::Npc && flags & 0x04 != 0).then(|| p.u8(0x25) & 0x08 != 0),
+        mob: (kind == EntityKind::Npc && flags & 7 != 0).then(|| p.u8(0x20) & 1 != 0),
+        marks: (flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| {
+            let pc = kind == EntityKind::Player;
+            Marks {
+                charm: p.u8(0x27) & 0x08 != 0,
+                trust: p.u8(0x28) & 0x01 != 0,
+                npc_pet: p.u8(0x28) & 0x40 != 0,
+                b2b1: p.u8(0x2B) & 0x02 != 0,
+                alleg: p.u8(0x29),
+                gm: p.u8(0x23) & 7,
+                yell: p.u32(0x20) >> 13 & 1 != 0,
+                lfg: pc && p.u32(0x20) >> 11 & 1 != 0,
+                anon: pc && p.u32(0x20) >> 12 & 1 != 0,
+                auto: pc && p.u32(0x24) >> 31 != 0,
+                lfg_master: pc && p.u8(0x28) & 0x02 != 0,
+            }
+        }),
         name_flags: (flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| (p.u32(0x24) >> 29 & 1 != 0, p.u32(0x24) >> 30 & 1 != 0)),
         counter: p.u16(0x18) & 0x1fff,
         ground: p.u32(4) >> 24 == 1 && p.u32(0x18) & 0x8000 == 0 && !matches!(p.u8(0x30) & 7, 2 | 3),
