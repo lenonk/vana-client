@@ -2889,6 +2889,8 @@ struct World {
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     /// Synthesis: tskill1, the request state, the result lines and the animations.
     synth: synth::State,
+    /// Message events that came before the message tables loaded (poll_network replays them).
+    held_text: Vec<NetEvent>,
     /// The treasure pool's slots: (item, the actor it came from).
     treasure: [(u16, u32); treasure::SLOTS],
     res_rdy: ResRdy,
@@ -3880,6 +3882,7 @@ impl App {
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
                             treasure: Default::default(),
+                            held_text: Vec::new(),
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -4192,7 +4195,16 @@ impl App {
         let Phase::World(world) = &mut self.phase else { return };
         let mut load = None;
         let mut looks: Vec<(u32, Source)> = Vec::new();
-        while let Ok(ev) = world.net.events.try_recv() {
+        // Lines that need the message tables wait for them (they load on a thread at world start), in order.
+        let mut evs: Vec<NetEvent> = if world.battle.is_some() { std::mem::take(&mut world.held_text) } else { Vec::new() };
+        evs.extend(world.net.events.try_iter());
+        for ev in evs {
+            if world.battle.is_none()
+                && matches!(ev, NetEvent::Battle(_) | NetEvent::SystemMessage { .. } | NetEvent::Emote { .. } | NetEvent::TrophyList { .. } | NetEvent::TrophySolution { .. })
+            {
+                world.held_text.push(ev);
+                continue;
+            }
             match ev {
                 NetEvent::Zoning => {
                     // Leaving the field writes the macro files and the list orders (FUN_101ab7d0) and stops a running
