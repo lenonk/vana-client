@@ -53,7 +53,7 @@ fn message_packet(id: u8, cas: u32, tar: u32, data: [u32; 2], msg: u16) -> SubPa
 fn replay(bt: &BattleText, mob: &str) -> Vec<(String, [u8; 4])> {
     let who = |id: u32| Some(if id == ME { Who { name: "Tuxedo".into(), pc: true, ..Default::default() } } else { Who { name: mob.into(), ..Default::default() } });
     let rel = |a: u32, t: u32| if t == ME { Relation::TargetIsMe } else if a == ME { Relation::CasterIsMe } else { Relation::Other };
-    let say = |id: u16, a: u32, t: u32, work: [i32; 5]| combat::render(bt, id, rel(a, t), &Ctx { actor: who(a), target: who(t), me: "Tuxedo".into(), work }, &Default::default());
+    let say = |id: u16, a: u32, t: u32, work: [i32; 5]| combat::render(bt, id, rel(a, t), &Ctx { actor: who(a), target: who(t), me: "Tuxedo".into(), work, ..Default::default() }, &Default::default());
     let mut lines = Vec::new();
     let mut act = |a: Action| {
         let d = action::parse(&sub(action::pack(&a)).data);

@@ -15,6 +15,7 @@ const STORAGE: &str = "menu    storage";
 const STORAGE2: &str = "menu    storage2";
 const JOBCHANG: &str = "menu    jobchang";
 const JOBCSELU: &str = "menu    jobcselu";
+const MOGPOST: &str = "menu    mogpost";
 /// FUN_101d32c0: the moogle's dance, scheduler 'main' of file 0x13ae.
 const DANCE_FILE: u32 = 0x13ae;
 const DANCE: u32 = u32::from_le_bytes(*b"main");
@@ -53,6 +54,8 @@ pub struct Menu {
     pub storage: Option<(u16, Vec<u16>)>,
     pub open_pending: bool,
     pub jobs: Option<Jobs>,
+    /// "menu    mogpost" over it (FUN_10145c20): its cursor.
+    pub post: Option<u16>,
 }
 
 impl Menu {
@@ -218,7 +221,7 @@ pub fn open(w: &mut World, nomad: bool) {
     if !nomad && w.mh_owner != 0 {
         return;
     }
-    w.moogle = Some(Menu { nomad, origin: w.pos, sel: 1, storage: None, open_pending: false, jobs: None });
+    w.moogle = Some(Menu { nomad, origin: w.pos, sel: 1, storage: None, open_pending: false, jobs: None, post: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -299,6 +302,35 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) -> bool {
     let Some(m) = w.moogle.clone() else { return false };
     if let Some(j) = m.jobs {
         jobs_key(w, gu, j, key);
+        return true;
+    }
+    // mogpost (FUN_10145bc0 / FUN_10145bf0): myroom runs /mailbox or /sendpost as menu lines, a nomad moogle sends
+    // c2s 0x04D PostOpen / DeliOpen itself; it stays open, Escape closes it.
+    if let Some(c) = m.post {
+        match key {
+            K::ArrowDown | K::ArrowUp => {
+                if let Some(mm) = w.moogle.as_mut() {
+                    mm.post = Some(3 - c);
+                }
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            K::Enter => {
+                w.sounds.push(Ui::Select as u32);
+                match (m.nomad, c) {
+                    (false, 1) => super::textcmd::run(w, "/mailbox", super::textcmd::Mode::Internal),
+                    (false, _) => super::textcmd::run(w, "/sendpost", super::textcmd::Mode::Internal),
+                    (true, 1) => super::post::open_cmd(w, 0xe),
+                    (true, _) => super::post::open_cmd(w, 0xd),
+                }
+            }
+            K::Escape => {
+                if let Some(mm) = w.moogle.as_mut() {
+                    mm.post = None;
+                }
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            _ => {}
+        }
         return true;
     }
     if let Some((sel, off)) = &m.storage {
@@ -386,7 +418,13 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) -> bool {
                         mm.jobs = Some(Jobs { sel: 1, select: None });
                     }
                 }
-                (_, r) => log::info!("moogle menu row {r} (Delivery Box / Remodel) is not implemented"),
+                // Delivery Box: mogpost (FUN_10145ba0).
+                (_, 2) => {
+                    if let Some(mm) = w.moogle.as_mut() {
+                        mm.post = Some(1);
+                    }
+                }
+                (_, r) => log::info!("moogle menu row {r} (Remodel) is not implemented"),
             }
         }
         _ => {}
@@ -411,7 +449,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if child6.is_some() {
         hide.push(6);
     }
-    let focused = m.storage.is_none() && m.jobs.is_none();
+    let free = !super::post::active(w);
+    let focused = free && m.storage.is_none() && m.jobs.is_none() && m.post.is_none();
     let mut draw_one = |gu: &mut GameUi, name: &str, sel: u16, off: &[u16], hide: &[u16], focused: bool, extra: Option<(u16, usize)>| {
         if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), focused, hide) {
             let [x, y, ..] = win.frame;
@@ -429,14 +468,17 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     draw_one(gu, m.name(), m.sel, &off, &hide, focused, child6.map(|s| (6, s)));
     if let Some((sel, off)) = &m.storage {
         let name = if m.nomad { STORAGE2 } else { STORAGE };
-        draw_one(gu, name, *sel, off, off, true, None);
+        draw_one(gu, name, *sel, off, off, free, None);
+    }
+    if let Some(c) = m.post {
+        draw_one(gu, MOGPOST, c, &[], &[], free, None);
     }
     if let Some(j) = m.jobs {
         let off: Vec<u16> = if w.job_info.is_some_and(|i| i.sub_ok) { Vec::new() } else { vec![2] };
-        draw_one(gu, JOBCHANG, j.sel, &off, &off, j.select.is_none(), None);
+        draw_one(gu, JOBCHANG, j.sel, &off, &off, free && j.select.is_none(), None);
         if let Some((_, sel)) = j.select {
             let off = jobs_off(w);
-            draw_one(gu, JOBCSELU, sel, &off, &off, true, None);
+            draw_one(gu, JOBCSELU, sel, &off, &off, free, None);
             draw_levels(gu, w, &off, sw, sh);
         }
     }
@@ -469,6 +511,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         return;
     }
     let (name, child) = match (&m.storage, m.jobs) {
+        _ if m.post.is_some() => (MOGPOST, m.post.unwrap_or(1)),
         (Some((sel, _)), _) => (if m.nomad { STORAGE2 } else { STORAGE }, *sel),
         (_, Some(Jobs { select: Some((_, sel)), .. })) => (JOBCSELU, sel),
         (_, Some(j)) => (JOBCHANG, j.sel),
@@ -476,7 +519,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     };
     let [help, title] = gu.focus_text(name, child);
     (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
-    if m.storage.is_none() && m.jobs.is_none() && !m.nomad && m.sel == 6 {
+    if m.storage.is_none() && m.jobs.is_none() && m.post.is_none() && !m.nomad && m.sel == 6 {
         let (t, h) = if w.mh_open { (0x94, 0x29b) } else { (0x93, 0x29a) };
         bars.title[1] = gu.title_msg(t).unwrap_or_default();
         bars.help[1] = gu.menu_msg(h, "");
@@ -488,7 +531,7 @@ pub fn line(w: &mut World, n: u16) {
     let Some(bt) = w.battle.clone() else { return };
     // Nothing without a moogle actor (all.c 120034).
     let Some(name) = moogle_actor(w).and_then(|id| w.entities.get(&id)).map(|e| e.name.clone()) else { return };
-    let ctx = crate::dat::battle::Ctx { actor: None, target: None, me: w.name.clone(), work: [0; 5] };
+    let ctx = crate::dat::battle::Ctx { me: w.name.clone(), ..Default::default() };
     if let Some(l) = bt.system(n, &ctx)
         && let Some(text) = l.lines.into_iter().find(|l| !l.is_empty())
     {

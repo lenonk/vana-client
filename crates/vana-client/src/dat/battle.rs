@@ -59,6 +59,8 @@ pub struct Ctx {
     pub target: Option<Who>,
     pub me: String,
     pub work: [i32; 5],
+    /// String slots 2 / 3 of the queue entry (+0xd04; 0 / 1 are the actor and target names): FUN_100a1ab0's strings.
+    pub strings: [String; 2],
 }
 
 #[derive(Debug, PartialEq)]
@@ -353,8 +355,25 @@ impl BattleText {
                     mode = Some(a);
                     2
                 }
-                0x0a | 0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1c | 0x1e => 2,
+                // 1c n (FUN_100c1650, 0x100c24f7): string slot n.
+                0x1c => {
+                    let s = match a {
+                        0 => ctx.actor.as_ref().map(|w| w.name.clone()),
+                        1 => ctx.target.as_ref().map(|w| w.name.clone()),
+                        n => ctx.strings.get(n as usize - 2).cloned(),
+                    };
+                    out.extend(encode_sjis(&s.unwrap_or_default()));
+                    2
+                }
+                0x0a | 0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1e => 2,
                 0x7f => match a {
+                    // 7f b4 n (0x100c20b9): work[n] clamped to 0..999999999 with separators (FUN_101c9440; ',' in
+                    // English), then group 10 0x5f "%s gil" (English text).
+                    0xb4 => {
+                        let v = work(s.get(i + 2).copied().unwrap_or(0)).clamp(0, 999_999_999);
+                        out.extend(format!("{} gil", separated(v as u32)).bytes());
+                        3
+                    }
                     0x34..=0x36 | 0x80 | 0x81 | 0x94..=0x96 | 0xa0..=0xb5 => 3,
                     0x38 => 4,
                     0x84 => {
@@ -415,6 +434,19 @@ impl BattleText {
     }
 }
 
+/// 1,234,567 (FUN_101c9440 in English).
+pub fn separated(v: u32) -> String {
+    let s = v.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
 /// A grammar argument (FUN_100bbd20): 0x40 | k = slot k; low bits 2 = 14-bit index over the next 3 bytes.
 /// Bytes a grammar index takes: 1 (0x40 form) or 4 (form 2).
 fn grammar_len(b: &[u8]) -> usize {
@@ -461,6 +493,16 @@ mod tests {
         let ctx = |n: i32| Ctx { work: [4112, n, 0, 0, 0], ..Default::default() };
         assert_eq!(bt.system(180, &ctx(1)).unwrap().lines, vec!["You throw away a potion.".to_string()]);
         assert_eq!(bt.system(180, &ctx(3)).unwrap().lines, vec!["You throw away 3 potions.".to_string()]);
+    }
+
+    /// Delivery lines (7031 0xbe / 0xaa): 7f b4 n is "N gil" with separators, 1c n a string slot.
+    #[test]
+    fn delivery_gil_and_string() {
+        let Some(bt) = load() else { return };
+        let ctx = Ctx { work: [2, 0, 12345, 0, 0], strings: ["delivery".into(), String::new()], ..Default::default() };
+        assert_eq!(bt.system(0xbe, &ctx).unwrap().lines, vec!["You take the 12,345 gil out of delivery slot 2.".to_string()]);
+        let ctx = Ctx { work: [3, 1, 0, 0, 0], strings: ["Lnxcsfix".into(), String::new()], ..Default::default() };
+        assert_eq!(bt.system(0xaa, &ctx).unwrap().lines, vec!["Slot 3:".to_string(), "1 gil, sent to you by Lnxcsfix.".to_string()]);
     }
 
     fn mob(name: &str) -> Option<Who> {
@@ -524,7 +566,7 @@ mod tests {
     #[test]
     fn ids_match_lsb() {
         let Some(b) = load() else { return };
-        let ctx = Ctx { actor: pc("A"), target: mob("B"), work: [3, 4, 5, 6, 0], me: "A".into() };
+        let ctx = Ctx { actor: pc("A"), target: mob("B"), work: [3, 4, 5, 6, 0], me: "A".into(), ..Default::default() };
         let t = |id| b.expand(id, &ctx).map(|l| l.lines.join(" ")).unwrap_or_default();
         assert_eq!(t(264), "The B takes 4 points of damage.");
         assert_eq!(t(282), "The B evades.");

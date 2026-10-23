@@ -42,6 +42,7 @@ mod macros;
 mod textcmd;
 mod magic;
 mod moogle;
+mod post;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -846,8 +847,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let mut act: Option<u8> = None;
     // The event input window and the map's marker name entry take every key first.
     let map_typing = world.map.as_ref().is_some_and(|m| m.typing());
-    let input_open = event::input(world).is_some() || map_typing;
-    if map_typing && let Some(m) = world.map.as_mut() {
+    let post_typing = post::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing;
+    if post_typing {
+        post::text_events(world, &input.events);
+        keys.clear();
+    } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
         keys.clear();
     } else if input_open {
@@ -1008,6 +1013,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
+                _ if post::active(world) => post::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1494,6 +1500,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
+    blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -1782,6 +1789,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        (Some(true), Some((Confirm::Post(ctx), _))) => {
+            world.confirm = None;
+            post::confirmed(world, ctx);
+        }
         // LAB_1012bca0: /dismount.
         (Some(true), Some((Confirm::Dismount, _))) => {
             world.confirm = None;
@@ -1908,6 +1919,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     }
     magic::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
+    post::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -1929,6 +1941,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
         (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
         (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
+        (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -2326,8 +2339,10 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
 /// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
 fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
     let cache = world.item_info.clone()?;
+    let post_item = post::info_source(world);
     let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
+        (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
     };
@@ -2829,6 +2844,8 @@ struct World {
     job_info: Option<moogle::JobInfo>,
     job_req: Option<moogle::JobReq>,
     job_cooldown: Option<Instant>,
+    /// The delivery box: s2c 0x04B's slots and the send / receive UIs.
+    post: post::Session,
     res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
@@ -2876,6 +2893,8 @@ enum Confirm {
     Drop { index: u8, id: u16, stage: u8 },
     /// The action menu's Dismount (FUN_10210e30): group 0xe 0x4d "Dismount?"; Yes runs /dismount.
     Dismount,
+    /// post2's Dispose (2) / Return (3): group 9 0x34 / 0x35, default No.
+    Post(u8),
 }
 
 impl World {
@@ -3794,6 +3813,7 @@ impl App {
                             job_info: None,
                             job_req: None,
                             job_cooldown: None,
+                            post: post::Session::default(),
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -4133,6 +4153,7 @@ impl App {
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
                     (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
+                    world.post = post::Session::default();
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -4420,6 +4441,7 @@ impl App {
                 }
                 NetEvent::MogMenu => world.mog_pending = true,
                 NetEvent::JobInfo(j) => world.job_info = Some(j),
+                NetEvent::Pbx(p) => post::on_pbx(world, p),
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
@@ -6129,6 +6151,7 @@ impl App {
             place_mogdoor(w);
             res_rdy(w);
             moogle::update(w);
+            post::update(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {

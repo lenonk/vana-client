@@ -39,6 +39,8 @@ mod id {
     pub const STORAGE: u16 = 0x6e;
     pub const SATCHEL: u16 = 0x6f;
     pub const BANK2: u16 = 0x7b;
+    pub const MAILBOX: u16 = 0x7c;
+    pub const SENDPOST: u16 = 0x7e;
     pub const SHOUT: u16 = 0x02;
     pub const YELL: u16 = 0x03;
     pub const TELL: u16 = 0x04;
@@ -177,7 +179,7 @@ fn cut(s: &mut String) {
 }
 
 /// FUN_10077c30: a name of 3..15 ASCII letters becomes Xxxx; anything else stays as typed (None).
-fn name_case(s: &str) -> Option<String> {
+pub(super) fn name_case(s: &str) -> Option<String> {
     if !(3..=15).contains(&s.len()) || !s.bytes().all(|b| b.is_ascii_alphabetic()) {
         return None;
     }
@@ -642,6 +644,29 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if super::items::open_daf70(w, c, c == 5, false) { Ok(()) } else { Err(()) }
         }
         // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0) group 7 0xa8, counted as done.
+        // FUN_1007e490 / FUN_1007e560 (/mailbox, /deliverybox, /sendpost): one's own Mog House, not visiting (0xbc),
+        // the status gate, the job-change cooldown, the moogle home (0x48); then c2s 0x04D PostOpen / DeliOpen.
+        id::MAILBOX | id::SENDPOST => {
+            if w.myroom.is_none() {
+                return Err(());
+            }
+            if w.mh_owner != 0 {
+                refuse(w, 0xbc);
+                return Err(());
+            }
+            if !status_gate(w, 0x44) {
+                return Ok(());
+            }
+            if super::moogle::job_cooling(w) {
+                return Err(());
+            }
+            if !w.zone.is_some_and(super::items::moogle_zone) {
+                refuse(w, 0x48);
+                return Ok(());
+            }
+            super::post::open_cmd(w, if cid == id::MAILBOX { 0xe } else { 0xd });
+            Ok(())
+        }
         id::BANK2 if !w.mh_floors => {
             refuse(w, 0xa8);
             Ok(())
@@ -685,6 +710,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if let Some(bt) = w.battle.clone() {
                 w.chat.push(bt.group9(if off { 0x137 } else { 0x136 }).unwrap_or_default());
             }
+            Ok(())
+        }
+        // FUN_1007cf80: not while making deliveries (group 7 0x54) or checking the box (0x55).
+        id::LOGOUT | id::SHUTDOWN if super::post::logout_refusal(w).is_some() => {
+            refuse(w, super::post::logout_refusal(w).unwrap_or(0x54));
             Ok(())
         }
         id::LOGOUT | id::SHUTDOWN => {

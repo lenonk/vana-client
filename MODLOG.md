@@ -4787,3 +4787,56 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - MODLOG's FUN_10080100 / FUN_10084b20 / FUN_100ce4d0 / FUN_1005f630 names are the 2019 build's.
 - Also live 2026-10-23: talking to the Mog House moogle with AMK on starts LSB's AMK mission 1 cutscene (event
   30023); it played to its end, and talking again opened myroom through s2c 0x02E.
+
+## Delivery Box: s2c 0x04B / c2s 0x04D, the send and receive UIs (2026-10-23; spec: scratchpad post/SPEC.md)
+
+- c2s 0x04D (FUN_100f7bc0, 0x20 bytes): Command @4, BoxNo @5, PostWorkNo @6, ItemWorkNo @7, i32 ItemStacks @8 (-1),
+  Result / ResParam1..3 @0xc (0), TargetName[16] @0x10 (first letter upper-cased). Builders FUN_100f7b70 ..
+  FUN_100f7fa0: 1 Work (box, post), 2 Set (2, post, inventory index, stacks, name), 3 Send, 4 Cancel (2, post), 5
+  Check (box), 6 Recv (1, post, item 1), 7 Confirm, 8 Accept / 9 Reject (1, post), 0xa Get / 0xb Clear (box, post),
+  0xc Query (name), 0xd DeliOpen / 0xe PostOpen / 0xf PostClose.
+- s2c 0x04B (handler FUN_100a38b0): Command @4, BoxNo @5, PostWorkNo @6, Result @0xc (1 done, 2 the first of LSB's
+  pairs, negative errors), ResParam1..3 @0xd, the slot: Stat @0x10, Name[16] @0x14, OpponentPBoxNo @0x2c (AH gil:
+  item | sold << 16), ItemNo @0x30 (0xffff gil), Stack @0x38, extdata @0x3c. Result -6: group 9 0x2d; -7: group 7
+  0xb9. Each Command stores its slot only for the Results it takes (Work / Set / Check / Confirm / Get / Clear 1;
+  Send / Cancel / Recv / Accept / Reject 1 and 2); every store sets the single latest-answer slot (S+0x2c7c8 /
+  +0x2c7cc, flag 0x4000000) that the UIs take once a frame; Check fills the receive (ResParam2) or send (ResParam3)
+  count. Query's ResParam1 1 = the recipient is on our account. 0xd / 0xe Result 1 open the UIs (so an NPC's
+  unsolicited DeliOpen opens the send UI), 0xf Result 1 closes them.
+- Text commands /mailbox, /deliverybox (id 0x7c) and /sendpost (0x7e), FUN_1007e490 / FUN_1007e560: one's own Mog
+  House, not visiting (group 7 0xbc), status gate 0x44, the job-change cooldown, the moogle home (0x48), then
+  PostOpen / DeliOpen. /logout and /shutdown are refused while a UI is up (group 7 0x54 send / 0x55 receive).
+  myroom / mogext row 2 opens "menu    mogpost" (1 Receive, 2 Send): myroom runs the commands as menu lines, a
+  nomad moogle sends 0x0e / 0x0d itself; it stays open, Escape closes it.
+- Receive UI (DAT_10578450, FUN_1014cb70; states as retail): open (FUN_1014ce80; refusals group 7 0x45 / 0x51) Work
+  (1, -1), 1 Check, 3 / 4 Recv into each free slot while the count lasts, 5 / 6 browse; post1 (16, 48) slots drawn for
+  Stat 6, 7, 0xa..0xe at 0x60808080; Enter on Stat 7 / 0xb / 0xd focuses post2 (16, 144): Take, Dispose, Return
+  (disabled for "AH-" senders); Dispose / Return ask comyn (group 9 0x34 / 0x35, default No). Take = Accept + Get
+  for Stat 7 (Get alone for 0xb), Dispose = Accept + Clear, Return = Reject; a failed Get prints 0x88 / 0x89.
+  Escape sends PostClose. Every request times out after 300 ticks: group 7 0x85, closed.
+- Send UI (DAT_10578198, FUN_1012e880): Check, Confirm for each item the recipients took, Work, then the name in
+  stringdl (16, 144; 15 characters, FUN_10077c30 rules), Query, browse: an empty slot opens the inventory list at
+  (200, 48) as the picker (grey: NoDelivery without CanSendAccount; CanSendAccount to another account; equipped),
+  itemctrl for a stack, the gil field (child 11) moneyctr (130, 240) for gil; each placed item goes out as Set at
+  once; Send sends every Stat 1 slot; Enter on a used slot takes it back (Get). Escape from the slots takes the
+  unsent items back (Get for Stat 1 / 0x10) and returns to the name; Escape / Cancel in the name closes (PostClose).
+  Down out of stringdl's buttons enters cancel mode (group 9 0x32): Enter on a slot, then OK in stringdl, cancels a
+  sent item (Cancel) or takes a placed one back. Errors (FUN_10130290): -0x47 0x88, -0x46 0x89, -7 0xb9, -2 0x87,
+  -1 0x86, then SE 0004.
+- Lines: Get / Clear / Reject on a slot (FUN_1014d0b0 / FUN_1012f2a0, table 0x10371a64): 0xbe..0xc6 with {slot + 1,
+  item, count} and string "delivery" (group 9 0xc1 / 0xc0); the cursor's gil line (FUN_1014ca70) 0xaa {cursor child,
+  amount, string = sender} or 0xab / 0xc7 for AH sales.
+- Draw: slots by FUN_1015bd70 (32x32 icon, "%2d" up to 99 right-aligned at (+30, +22) for stackable items but gil,
+  the cursor cell at (-1, -1)); the gil field FUN_10140910 ("N  G" right-aligned at the child's right edge + 10,
+  always); labels "Sender:" / "Recipient (...)" game font white at (+10, +6); names game font 0x80606010 at (+20,
+  +30) cut at 128 / 130 px with "..."; the editing field white with '|' (19 of 30 ticks); stringdl buttons by code
+  (keytops3 53 / 56 and 59); moneyctr FUN_101409f0 (value right-aligned at (+0x7f, +0x16), the step's digit
+  0x80a06040, leading zeros below the step, "/" and the max at (+0x80 / +0x88, +0x24)).
+- Expander (FUN_100c1650): 1c n = string slot n (0 actor, 1 target, 2 / 3 the caller's strings); 7f b4 n = work[n]
+  clamped to 0..999999999 with separators (FUN_101c9440) and group 10 0x5f "%s gil". The queue entry gives work ==
+  num for these lines (FUN_100a1ab0).
+- Not done: the augment Ex rule and the equipped linkshell in the picker colours; the monstrosity / menu-lock
+  gates; caret movement inside the name; the one-frame Recv-pair miss (we compare frames as retail).
+- Live (Lnxcsfix to itself, Mog House): name, Query (same account), dagger + 1 gil Set and Sent (Stat 3), unsent
+  items taken back on Escape; /mailbox: two Recv, Take x2 with "1 gil, sent to you by Lnxcsfix." and "You take the
+  1 gil out of delivery slot 2.", PostClose.

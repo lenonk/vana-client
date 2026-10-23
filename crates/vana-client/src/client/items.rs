@@ -299,7 +299,7 @@ fn slot_at(row: usize, col: usize) -> usize {
     SLOT_CHILD.iter().position(|&c| c == child).unwrap_or(0)
 }
 
-fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) {
+pub(super) fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) {
     if n == 0 {
         return;
     }
@@ -319,7 +319,7 @@ fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) {
 
 /// FUN_101f6c70 messages 3 / 4: Right / Left turn a page of 10 keeping the cursor row; on the last / first page the
 /// cursor goes to the last / first row instead. True when something moved (SE 0001).
-fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right: bool) -> bool {
+pub(super) fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right: bool) -> bool {
     if n == 0 {
         return false;
     }
@@ -1027,7 +1027,7 @@ fn dest_help(c: u8) -> usize {
 }
 
 /// FUN_10097b50: the residential zones where the moogle is at hand (table 0x1035b680).
-fn moogle_zone(zone: u16) -> bool {
+pub(super) fn moogle_zone(zone: u16) -> bool {
     matches!(zone, 230..=232 | 234..=236 | 238..=241 | 243..=246 | 48 | 50 | 80 | 87 | 94 | 256 | 257 | 280)
 }
 
