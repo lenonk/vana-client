@@ -392,6 +392,9 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         let zoom = f.get(4).and_then(|v| v.parse().ok()).unwrap_or(2000);
         let mut m = super::map::MapWin::new(region, owned, Some(std::sync::Arc::new(index)), (num(1), num(2)), std::f32::consts::FRAC_PI_2, sw, sh, super::map::Mode::Menu, zoom, true);
         m.wait_image(&mut gu);
+        if f.get(5) == Some(&"markers") {
+            m.shot_markers();
+        }
         m.draw(&mut gu, sw, sh);
         let [help, title] = gu.focus_text("menu    map0", m.cursor);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());

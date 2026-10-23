@@ -273,16 +273,6 @@ pub struct Pose {
     dir: f32,
 }
 
-/// A map marker (op 0x8b, FUN_101efdf0): zone, slot, x, z, name.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Marker {
-    pub zone: u16,
-    pub slot: u16,
-    pub x: f32,
-    pub z: f32,
-    pub name: String,
-}
-
 /// The event input window: kind 1 / 2 digits, 3..5 letters, others printable ASCII; at most `max` bytes.
 pub struct Input {
     pub kind: i32,
@@ -911,10 +901,24 @@ impl Host for LiveHost<'_> {
                     Some(Arg::Name(n)) => n.replace('_', " "),
                     _ => String::new(),
                 };
-                let m = Marker { zone: int(0) as u16, slot: int(1) as u16, x: int(2) as f32 * 0.001, z: int(3) as f32 * 0.001, name };
-                log::info!("event: map marker {m:?}");
-                self.w.map_markers.retain(|x| !(x.zone == m.zone && x.slot == m.slot));
-                self.w.map_markers.push(m);
+                let m = super::map::Cmd::Mark { zone: int(0) as i16, key: -1, slot: int(1) as usize, x: int(2) as f32 * 0.001, z: int(3) as f32 * 0.001, name };
+                self.w.map_cmds.push(m);
+            }
+            // FUN_100b9600: as 0x8b with the sub-key val@3.
+            Effect::Op { op: 0xb8, args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                let name = match args.get(5) {
+                    Some(Arg::Name(n)) => n.replace('_', " "),
+                    _ => String::new(),
+                };
+                let m = super::map::Cmd::Mark { zone: int(0) as i16, key: int(1) as i16, slot: int(2) as usize, x: int(3) as f32 * 0.001, z: int(4) as f32 * 0.001, name };
+                self.w.map_cmds.push(m);
+            }
+            // FUN_100b9780 / FUN_100b9820: set 1's slot emptied (zone, [key,] slot); sub 0 through the file.
+            Effect::Op { op: op @ (0xa8 | 0xb9), sub: Some(s @ (0 | 1)), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                let (key, slot) = if op == 0xa8 { (-1, int(1)) } else { (int(1) as i16, int(2)) };
+                self.w.map_cmds.push(super::map::Cmd::Unmark { zone: int(0) as i16, key, slot: slot as usize, file: s == 0 });
             }
             Effect::Fault { actor, pc, op } => log::warn!("event: op {op:#x} at {pc:#x} on {actor:#x} cannot run"),
             Effect::StopTurn { actor } => {

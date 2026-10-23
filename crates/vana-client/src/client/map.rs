@@ -138,9 +138,44 @@ struct Scripted {
     t: f32,
 }
 
+/// mapv3 (the marker list) and what hangs off it.
+#[derive(Clone, Debug, Default)]
+struct List {
+    /// Cursor child: rows 1..10.
+    cursor: u16,
+    /// mapv2 on a row of set 0, with its cursor 1..3.
+    v2: Option<(usize, u16)>,
+    /// Placing a marker in this slot: cursor mode (flag 0x100, sub-mode 1) at a screen point.
+    placing: Option<(usize, (f32, f32))>,
+    /// The name entry for a slot (FUN_101fbd90, 15 characters).
+    rename: Option<(usize, String)>,
+}
+
+/// Marker sprites of the four sets (list 0x1038214c indices 3..6): yours, event, party, alliance.
+const SET_SPRITE: [usize; 4] = [150, 152, 154, 155];
+/// mapv3's row icons (table 0x10382178).
+const ROW_ICON: [usize; 8] = [151, 150, 153, 152, 154, 154, 155, 155];
+
 pub struct MapWin {
     pub region: Region,
     need: Need,
+    owned: bool,
+    /// The .MRK sets 0 / 1, where they live, and whether to save them on close (+0xa44).
+    marks: super::mapmark::MarkFile,
+    mark_dir: Option<std::path::PathBuf>,
+    char_id: u32,
+    dirty: bool,
+    /// Sets 2 / 3: members in this zone and sub-map with a model (FUN_101f7db0): name, map pixel, alliance.
+    party: Vec<(String, (f32, f32), bool)>,
+    /// Marker alpha per set and slot (FUN_101eef90), 0..0x80.
+    mark_alpha: [[f32; 10]; 4],
+    /// Sets 2 / 3: the one member whose label shows (picked in the list).
+    label_only: Option<usize>,
+    list: Option<List>,
+    /// The marker set shown (+0x106).
+    set: u8,
+    /// Interface sounds for the caller to play.
+    pub sounds: Vec<u32>,
     pub mode: Mode,
     /// map0's cursor child (1..3).
     pub cursor: u16,
@@ -188,7 +223,128 @@ impl MapWin {
         let owned = owned(w, &region);
         log::info!("map: zone {} owned {owned}", w.pos_zone);
         let facing = w.net.me.lock().map_or(0.0, |m| super::event::rad_of(m.dir));
-        Some(Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, Mode::Menu, w.game.get(0x8a), true))
+        let mut m = Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, Mode::Menu, w.game.get(0x8a), true);
+        m.attach(w);
+        Some(m)
+    }
+
+    /// FUN_101f80b0 (the .MRK) and FUN_101f7db0 (party markers) at open, then FUN_101fad70(0): a set with entries.
+    fn attach(&mut self, w: &World) {
+        self.mark_dir = marks_dir(w);
+        self.char_id = w.my_id;
+        if let Some(d) = &self.mark_dir {
+            self.marks = super::mapmark::MarkFile::load(d, self.region.zone as u16, self.region.key as u8, w.my_id);
+        }
+        let own = w.party.own_flags;
+        for m in w.party.members().skip(1).filter(|m| m.zone == w.pos_zone && m.away == 0) {
+            let Some(e) = w.entities.get(&m.id) else { continue };
+            if w.ground.as_ref().is_some_and(|g| g.map_key(e.pos) != self.region.key as u8) {
+                continue;
+            }
+            let (px, py) = self.region.px(e.pos.x, e.pos.z);
+            self.party.push((m.name.clone(), (px as f32, py as f32), (m.flags ^ own) & 3 != 0));
+        }
+        self.step_set(0);
+    }
+
+    /// FUN_101fad70(d): the set by d, wrapping, past sets with nothing to show (0 needs the map, 2 any member, 3 an
+    /// alliance member; 1 always).
+    fn step_set(&mut self, d: i32) {
+        let has = |m: &Self, s: u8| match s {
+            0 => m.owned && m.need != Need::Nothing,
+            2 => !m.party.is_empty(),
+            3 => m.party.iter().any(|p| p.2),
+            _ => true,
+        };
+        let step = if d < 0 { 3 } else { 1 };
+        if d != 0 {
+            self.set = (self.set + step) % 4;
+        }
+        for _ in 0..4 {
+            if has(self, self.set) {
+                break;
+            }
+            self.set = (self.set + step) % 4;
+        }
+        self.label_only = None;
+    }
+
+    /// Set s, slot i: its map pixel, label and sprite, when it holds a marker.
+    fn slot(&self, s: usize, i: usize) -> Option<((f32, f32), Option<&str>, usize)> {
+        match s {
+            0 | 1 => self.marks.sets[s].get(i).filter(|m| m.valid).map(|m| ((m.px.0 as f32, m.px.1 as f32), Some(m.name.as_str()), SET_SPRITE[s])),
+            2 => {
+                let p = self.party.iter().filter(|p| !p.2).chain(self.party.iter().filter(|p| p.2)).nth(i)?;
+                Some((p.1, Some(p.0.as_str()), SET_SPRITE[if p.2 { 3 } else { 2 }]))
+            }
+            _ => self.party.iter().filter(|p| p.2).nth(i).map(|p| (p.1, Some(p.0.as_str()), SET_SPRITE[3])),
+        }
+    }
+
+    /// Op 0x8b / 0xb8 on an open event map (FUN_101f8d50 / FUN_101f8de0 / FUN_101f8e30): set 1's slot at the world
+    /// (x, z), named, then scrolled to.
+    fn mark(&mut self, slot: usize, x: f32, z: f32, name: &str) {
+        let Some(m) = self.marks.sets[1].get_mut(slot) else { return };
+        let (px, py) = self.region.px(x, z);
+        *m = super::mapmark::Slot { px: (px as i16, py as i16), name: name.into(), valid: true };
+        self.dirty = true;
+        self.scroll_to_px((px as f32, py as f32));
+    }
+
+    /// Op 0xa8 / 0xb9 (FUN_101f8da0): set 1's slot emptied, its name cleared.
+    fn unmark(&mut self, slot: usize) {
+        if let Some(m) = self.marks.sets[1].get_mut(slot) {
+            *m = Default::default();
+            self.dirty = true;
+        }
+    }
+
+    /// Offscreen shots: three of your markers around the player, mapv3 open on them at full alpha.
+    pub fn shot_markers(&mut self) {
+        for (i, (dx, dy, n)) in [(-40.0, -20.0, "Gate"), (30.0, 10.0, "Chocobo"), (5.0, 45.0, "Home point")].into_iter().enumerate() {
+            self.marks.sets[0][i] = super::mapmark::Slot { px: ((self.home.0 + dx) as i16, (self.home.1 + dy) as i16), name: n.into(), valid: true };
+            self.mark_alpha[0][i] = 128.0;
+        }
+        self.set = 0;
+        self.list = Some(List { cursor: 2, ..Default::default() });
+    }
+
+    /// The marker name entry is open: it takes the keys and characters.
+    pub fn typing(&self) -> bool {
+        self.list.as_ref().is_some_and(|l| l.rename.is_some())
+    }
+
+    /// The name entry's keys: up to 15 characters, Backspace; Enter keeps it, Escape discards it (message 6).
+    pub fn text_events(&mut self, events: &[egui::Event]) {
+        let Some(l) = self.list.as_mut() else { return };
+        let Some((slot, text)) = l.rename.as_mut() else { return };
+        let slot = *slot;
+        let mut done = None;
+        for ev in events {
+            match ev {
+                egui::Event::Text(t) | egui::Event::Paste(t) => {
+                    for c in t.chars().filter(|c| (' '..='~').contains(c)) {
+                        if text.chars().count() < 15 {
+                            text.push(c);
+                        }
+                    }
+                }
+                egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                    text.pop();
+                }
+                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => done = Some(true),
+                egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => done = Some(false),
+                _ => {}
+            }
+        }
+        if let Some(keep) = done {
+            let text = std::mem::take(text);
+            l.rename = None;
+            if keep {
+                self.marks.sets[0][slot].name = text;
+                self.dirty = true;
+            }
+        }
     }
 
     /// An event's map (FUN_100b2570 -> FUN_101f78e0): zone and sub-key (negative: the one under the player when in
@@ -200,7 +356,14 @@ impl MapWin {
         let owned = owned(w, &region);
         let facing = w.net.me.lock().map_or(0.0, |m| super::event::rad_of(m.dir));
         log::info!("map: event map zone {zone} key {key} mode {mode:?} owned {owned}");
-        Some(Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, mode, w.game.get(0x8a), show_player))
+        let mut m = Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, mode, w.game.get(0x8a), show_player);
+        m.attach(w);
+        // Mode 1 opens mapv3 on set 1 instead of map0 (map records only).
+        if mode == Mode::Event && m.need != Need::Nothing {
+            m.set = 1;
+            m.list = Some(List { cursor: 1, ..Default::default() });
+        }
+        Some(m)
     }
 
     /// FUN_101f8360 and the callers' zoom: the image, zoom W / 512 x config 0x8a / 1000 in mode 0 (W / 512 for a no-map
@@ -225,6 +388,17 @@ impl MapWin {
         let mut m = Self {
             region,
             need,
+            owned,
+            marks: Default::default(),
+            mark_dir: None,
+            char_id: 0,
+            dirty: false,
+            party: Vec::new(),
+            mark_alpha: [[0.0; 10]; 4],
+            label_only: None,
+            list: None,
+            set: 0,
+            sounds: Vec::new(),
             mode,
             cursor: 1,
             return_menu: None,
@@ -277,7 +451,7 @@ impl MapWin {
     /// map0 is open: modes 0 / 5 with a map (not for a zone with no map, as FUN_101f0af0 decompiles), not while
     /// closing (FUN_101fa420 closes the sub-windows at once).
     pub fn has_menu(&self) -> bool {
-        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none()
+        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none() && self.list.is_none()
     }
 
     /// Modes 0 / 5 close on Escape (map0); the event modes only by their script.
@@ -293,6 +467,13 @@ impl MapWin {
     /// Slot 20 (FUN_101ee580): fade to 0xff at 0x10 a frame, the window gone when that ends or after 3 s.
     pub fn begin_close(&mut self) {
         if self.closing.is_none() {
+            if self.dirty
+                && let Some(d) = &self.mark_dir
+            {
+                self.marks.save(d, self.region.zone as u16, self.region.key as u8, self.char_id);
+                self.dirty = false;
+            }
+            self.list = None;
             self.closing = Some(std::time::Instant::now() + std::time::Duration::from_secs(3));
             self.fade = (self.fade.0, 255.0, 16.0);
         }
@@ -301,6 +482,14 @@ impl MapWin {
     /// map0's keys: up / down along its links (1..3), Escape closes both windows (FUN_101f14c0). Returns false when
     /// the map starts closing.
     pub fn key(&mut self, key: egui::Key) -> bool {
+        use crate::audio::Ui;
+        if self.closing.is_some() {
+            return true;
+        }
+        if self.list.is_some() {
+            self.list_key(key);
+            return true;
+        }
         if !self.has_menu() {
             return true;
         }
@@ -308,10 +497,113 @@ impl MapWin {
             egui::Key::ArrowUp => self.cursor = if self.cursor <= 1 { 3 } else { self.cursor - 1 },
             egui::Key::ArrowDown => self.cursor = if self.cursor >= 3 { 1 } else { self.cursor + 1 },
             egui::Key::Escape => return false,
+            // FUN_101f7c60 1: mapv3 (asking party positions, c2s 0x0D2, is not done).
+            egui::Key::Enter if self.cursor == 1 => {
+                self.list = Some(List { cursor: 1, ..Default::default() });
+                self.sounds.push(Ui::Select as u32);
+            }
             egui::Key::Enter => log::info!("map0 item {} is not implemented yet", self.cursor),
             _ => {}
         }
         true
+    }
+
+    /// mapv3 (FUN_101fc070), mapv2 (FUN_101fc400) and mapframe in cursor mode.
+    fn list_key(&mut self, key: egui::Key) {
+        use crate::audio::Ui;
+        use egui::Key as K;
+        let Some(mut l) = self.list.take() else { return };
+        if l.rename.is_some() {
+            self.list = Some(l);
+            return;
+        }
+        let set = self.set as usize;
+        if let Some((slot, cur)) = l.placing {
+            match key {
+                // FUN_101f8cf0: the marker at the map pixel under the cursor, then the name entry.
+                K::Enter => {
+                    let px = (cur.0 / self.zoom + self.view.0 + 0.5 + self.shift.0, cur.1 / self.zoom + self.view.1 + 0.5 + self.shift.1);
+                    let name = self.marks.sets[0][slot].name.clone();
+                    self.marks.sets[0][slot] = super::mapmark::Slot { px: (px.0 as i16, px.1 as i16), name: name.clone(), valid: true };
+                    self.dirty = true;
+                    (l.placing, l.v2, l.rename) = (None, None, Some((slot, name)));
+                    self.sounds.push(Ui::Select as u32);
+                }
+                K::Escape => {
+                    l.placing = None;
+                    self.sounds.push(Ui::Cancel as u32);
+                }
+                _ => {}
+            }
+        } else if let Some((row, c)) = l.v2.as_mut() {
+            let (row, valid) = (*row, self.marks.sets[0][*row].valid);
+            match key {
+                K::ArrowUp => *c = if *c <= 1 { 3 } else { *c - 1 },
+                K::ArrowDown => *c = if *c >= 3 { 1 } else { *c + 1 },
+                K::Escape => {
+                    l.v2 = None;
+                    self.sounds.push(Ui::Cancel as u32);
+                }
+                K::Enter => match *c {
+                    1 if valid => {
+                        let p = self.marks.sets[0][row].px;
+                        self.scroll_to_px((p.0 as f32, p.1 as f32));
+                        self.sounds.push(Ui::Select as u32);
+                    }
+                    2 if valid => {
+                        self.marks.sets[0][row] = Default::default();
+                        self.dirty = true;
+                        self.sounds.push(Ui::Select as u32);
+                    }
+                    2 => {
+                        l.placing = Some((row, self.point));
+                        self.sounds.push(Ui::Select as u32);
+                    }
+                    3 => {
+                        l.rename = Some((row, self.marks.sets[0][row].name.clone()));
+                        self.sounds.push(Ui::Select as u32);
+                    }
+                    _ => self.sounds.push(Ui::Error as u32),
+                },
+                _ => {}
+            }
+        } else {
+            match key {
+                K::ArrowUp => l.cursor = if l.cursor <= 1 { 10 } else { l.cursor - 1 },
+                K::ArrowDown => l.cursor = if l.cursor >= 10 { 1 } else { l.cursor + 1 },
+                // Messages 3 / 4: the next / previous set.
+                K::ArrowRight | K::ArrowLeft => {
+                    self.step_set(if key == K::ArrowRight { 1 } else { -1 });
+                    self.sounds.push(Ui::Cursor as u32);
+                }
+                K::Escape if self.mode == Mode::Event => {}
+                K::Escape => {
+                    self.sounds.push(Ui::Cancel as u32);
+                    return;
+                }
+                K::Enter => {
+                    let row = l.cursor as usize - 1;
+                    match (set, self.slot(set, row)) {
+                        (0, _) => {
+                            l.v2 = Some((row, 1));
+                            self.sounds.push(Ui::Select as u32);
+                        }
+                        (1, Some((p, ..))) => {
+                            self.scroll_to_px(p);
+                            self.sounds.push(Ui::Select as u32);
+                        }
+                        (_, Some((p, ..))) => {
+                            self.label_only = Some(row);
+                            self.scroll_to_px(p);
+                            self.sounds.push(Ui::Select as u32);
+                        }
+                        _ => self.sounds.push(Ui::Error as u32),
+                    }
+                }
+                _ => {}
+            }
+        }
+        self.list = Some(l);
     }
 
     /// FUN_101ee040: the view stays over the image (min the image base, max base + the part past the screen).
@@ -440,6 +732,30 @@ impl MapWin {
             self.acc -= 2.0;
             self.frame();
         }
+        if let Some((_, cur)) = self.list.as_mut().and_then(|l| l.placing.as_mut()) {
+            // Cursor mode: axes 0x9d / 0x9e x the cursor speed 8, inside the cursor box; past it the view scrolls.
+            let (sw, sh) = self.screen;
+            let dead = |v: f32| if (v * fast).abs() < 2.0 { 0.0 } else { v };
+            let v = (dead(input.axis(0x9d) * 8.0) * fast * ticks * 0.5, dead(input.axis(0x9e) * 8.0) * fast * ticks * 0.5);
+            let (bx, by) = ([sw / 512.0 * 40.0, sw - sw / 512.0 * 150.0], [sh / 448.0 * 65.0, sh - sh / 448.0 * 180.0]);
+            let want = (cur.0 + v.0, cur.1 + v.1);
+            *cur = (want.0.clamp(bx[0], bx[1]), want.1.clamp(by[0], by[1]));
+            let over = (want.0 - cur.0, want.1 - cur.1);
+            if over != (0.0, 0.0) {
+                self.scroll_by(over);
+            }
+        }
+        if self.fade.0 == 0.0 {
+            // FUN_101eef90: list markers of the shown set fade in 6 a tick, the rest out.
+            let open = self.list.is_some();
+            for s in 0..4 {
+                for i in 0..10 {
+                    let on = open && s == self.set as usize && self.slot(s, i).is_some();
+                    let a = &mut self.mark_alpha[s][i];
+                    *a = (*a + if on { 6.0 } else { -6.0 } * ticks).clamp(0.0, 128.0);
+                }
+            }
+        }
         if self.fade.0 == 0.0 && self.show_player {
             // FUN_101eef90 (flags 0x9f): fade in 6 a tick, then blink between 0 and 0x80 at the same speed.
             self.alpha += if self.rising { 6.0 } else { -6.0 } * ticks;
@@ -499,6 +815,9 @@ impl MapWin {
             let a = if level == 0.0 { 160.0 } else { (255.0 - level).min(160.0) } / 128.0;
             gu.image_rect(t, (self.base.0 - self.view.0) * z + 0.5, (self.base.1 - self.view.1) * z + 0.5, 512.0 * z, 512.0 * z, [0.5, 0.5, 0.5, a.min(1.0)]);
         }
+        if level == 0.0 {
+            self.draw_markers(gu);
+        }
         if level == 0.0 && self.show_player {
             let (px, py) = self.home;
             let sx = (px - self.shift.0 - self.view.0) * z + 0.5;
@@ -512,6 +831,67 @@ impl MapWin {
         if self.has_menu() {
             gu.menu_sel("menu    map0", sw, sh, self.cursor);
         }
+        self.draw_list(gu, sw, sh);
+    }
+
+    /// FUN_101ee7b0 for the four sets: the sprite centred on its pixel, alpha << 24 | 0x808080; a label (colour 2,
+    /// 0x606070, scaled by the alpha) at (+16, +1) for sets 0 / 1 and the picked member.
+    fn draw_markers(&self, gu: &mut GameUi) {
+        let z = self.zoom;
+        for s in 0..4 {
+            for i in 0..10 {
+                let a = self.mark_alpha[s][i];
+                let Some(((px, py), label, k)) = self.slot(s, i).filter(|_| a > 0.0) else { continue };
+                let b = gu.cell_bounds("menu    keytops3", k, 0).unwrap_or([0.0; 4]);
+                let x = ((px - self.shift.0 - self.view.0) * z + 0.5).trunc() - ((b[2] - b[0]) / 2.0).trunc();
+                let y = ((py - self.shift.1 - self.view.1) * z + 0.5).trunc() - ((b[3] - b[1]) / 2.0).trunc();
+                let a = a as u32;
+                gu.sprite("menu    keytops3", k, x, y, a << 24 | 0x80_8080);
+                let labelled = s < 2 || (s == self.set as usize && self.label_only == Some(i));
+                if let Some(t) = label.filter(|t| labelled && !t.is_empty()) {
+                    let c = |v: u32| (v * a) >> 7;
+                    gu.shape_text(t, x + 16.0, y + 1.0, a << 24 | c(0x60) << 16 | c(0x60) << 8 | c(0x70), false);
+                }
+            }
+        }
+    }
+
+    /// mapv3 (FUN_101fbec0): per row the icon at (16, 5 + 16 i) and the name at (0x1f, 7 + 16 i) (font 0x44 taken as
+    /// fontshp *(inf)*); mapv2 beside the
+    /// row (its place is inferred); the placing cursor (keytops3 151).
+    fn draw_list(&self, gu: &mut GameUi, sw: f32, sh: f32) {
+        let Some(l) = &self.list else { return };
+        if let Some((_, (cx, cy))) = l.placing {
+            gu.sprite("menu    keytops3", 151, cx, cy, 0x8080_8080);
+        }
+        let sel = if l.v2.is_some() || l.placing.is_some() { 0 } else { l.cursor };
+        let Some((x, y)) = gu.menu_sel("menu    mapv3", sw, sh, sel) else { return };
+        let s = self.set as usize;
+        let party = self.party.iter().filter(|p| !p.2).count();
+        for i in 0..10 {
+            let (ry, slot) = (y + 16.0 * i as f32, self.slot(s, i));
+            let icon = match s {
+                0 | 1 => Some(ROW_ICON[2 * s + slot.is_some() as usize]),
+                2 => slot.map(|_| ROW_ICON[if i < party { 5 } else { 7 }]),
+                _ => slot.map(|_| ROW_ICON[7]),
+            };
+            if let Some(k) = icon {
+                gu.sprite("menu    keytops3", k, x + 16.0, ry + 5.0, 0x8080_8080);
+            }
+            match l.rename.as_ref().filter(|r| r.0 == i) {
+                Some((_, t)) => {
+                    gu.shape_text(&format!("{t}|"), x + 31.0, ry + 7.0, 0x8080_8080, false);
+                }
+                None => {
+                    if let Some((_, Some(name), _)) = slot {
+                        gu.shape_text(name, x + 31.0, ry + 7.0, 0x8080_8080, false);
+                    }
+                }
+            }
+        }
+        if let Some((row, c)) = l.v2 {
+            gu.lobby_window_off("menu    mapv2", sw, sh, (x - 112.0, y + 16.0 * row as f32), Some(c), true, &[]);
+        }
     }
 }
 
@@ -522,6 +902,24 @@ pub enum Cmd {
     Open { zone: i16, key: i16, show_player: bool },
     Close,
     View { x: f32, y: f32, zf: f32, speed: f32, flags: i32 },
+    /// Ops 0x8b / 0xb8: set 1's slot at world (x, z) named.
+    Mark { zone: i16, key: i16, slot: usize, x: f32, z: f32, name: String },
+    /// Ops 0xa8 / 0xb9: set 1's slot emptied; `file` (sub 0) loads, edits and saves the zone's .MRK.
+    Unmark { zone: i16, key: i16, slot: usize, file: bool },
+}
+
+/// The character's USER folder, where the .MRK files sit with the macros (FUN_101c3d00).
+fn marks_dir(w: &World) -> Option<std::path::PathBuf> {
+    w.macros.as_ref().map(|m| m.dir().to_path_buf())
+}
+
+/// FUN_100b2570(4, ...) / FUN_100b2a60: the zone's .MRK edited without a window, then saved.
+fn edit_file(w: &World, regions: &[Region], zone: i16, key: i16, f: impl FnOnce(&mut super::mapmark::MarkFile, &Region)) {
+    let key = if key >= 0 { key as u8 } else if zone == w.pos_zone as i16 { w.ground.as_ref().map_or(0, |g| g.map_key(w.pos)) } else { 0 };
+    let (Some(dir), Some(region)) = (marks_dir(w), Region::find_key(regions, zone as u16, key).or_else(|| Region::find(regions, zone as u16))) else { return };
+    let mut file = super::mapmark::MarkFile::load(&dir, region.zone as u16, region.key as u8, w.my_id);
+    f(&mut file, &region);
+    file.save(&dir, region.zone as u16, region.key as u8, w.my_id);
 }
 
 pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32) {
@@ -544,6 +942,33 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
             if let Some(m) = w.map.as_mut() {
                 w.game.set(0x8a, m.zoom_cfg());
                 m.begin_close();
+            }
+        }
+        // With an event map open: reopened for that zone if needed, the marker set and scrolled to; else the file.
+        Cmd::Mark { zone, key, slot, x, z, name } => {
+            if w.map.as_ref().is_some_and(|m| m.mode != Mode::Menu && !m.closing()) {
+                apply(w, regions, Cmd::Open { zone, key, show_player: false }, sw, sh);
+                if let Some(m) = w.map.as_mut() {
+                    m.mark(slot, x, z, &name);
+                }
+            } else {
+                edit_file(w, regions, zone, key, |f, r| {
+                    if let Some(s) = f.sets[1].get_mut(slot) {
+                        let (px, py) = r.px(x, z);
+                        *s = super::mapmark::Slot { px: (px as i16, py as i16), name, valid: true };
+                    }
+                });
+            }
+        }
+        Cmd::Unmark { zone, key, slot, file } => {
+            if let Some(m) = w.map.as_mut().filter(|m| m.region.zone == zone) {
+                m.unmark(slot);
+            } else if file {
+                edit_file(w, regions, zone, key, |f, _| {
+                    if let Some(s) = f.sets[1].get_mut(slot) {
+                        *s = Default::default();
+                    }
+                });
             }
         }
         // Opening a map resets the scripted view, so one sent with no map open is dropped.

@@ -4168,3 +4168,20 @@ update FUN_101ef0a0 [101e7170]). Done so far:
   not driven live (scripted keys are one-frame taps).
 - Left: markers (mapv3 / mapv2, the .MRK file, sets 0..3), party dots (c2s 0x0D2 / s2c 0x0A0), Change Map, Wide
   Scan, event marker ops 0x8b / 0xb8 / 0xa8 / 0xb9 drawing, the no-key-item chat line (group 10 id 7).
+- Markers (mapv3 / mapv2, spec 5 / 7): the .MRK file (client/mapmark.rs; USER/<id>/M%03d%02d.MRK, "KMIX", CRC-32 of
+  the 0x1b8 data bytes, 2 sets x 10 records {x, y s16, name[16], valid u8, pad}; the old name M%03d%02d_%08d.MRK with
+  magic @0, CRC @8, data @0x10 is read and removed on save) loads at open and saves on close when changed. map0's
+  Markers opens mapv3 (rows: icon table 0x10382178 at (16, 5 + 16 i), name at (0x1f, 7 + 16 i); font 0x44 taken as
+  fontshp *(inf)*); Left / Right step the set skipping empty ones (FUN_101fad70); Enter on set 0 opens mapv2 (View /
+  Place-Remove / Rename; its place beside the row is inferred), set 1 scrolls to the marker, sets 2 / 3 show only that
+  member's label and scroll. Place: cursor mode (axes 0x9d / 0x9e numpad and stick, speed 8, the cursor box, overflow
+  scrolls), Enter puts the marker under the cursor and opens the 15-character name entry (Enter keeps, Escape
+  discards). Markers of the shown set fade in 6 a tick while mapv3 is open, the rest fade out; labels (colour 2,
+  0x606070 x alpha) at (+16, +1). Sets 2 / 3: party then alliance members here with a model on the same sub-map, from
+  the actors (FUN_101f7db0); the c2s 0x0D2 / s2c 0x0A0 positions are not done. Mode 1 event maps open mapv3 on set 1.
+- Event marker ops (FUN_100b9490 0x8b, FUN_100b9600 0xb8, FUN_100b9780 0xa8, FUN_100b9820 0xb9; DAT_104896e6 = an
+  event map is open): with one open, FUN_100b2570(1, zone, key) reopens it if needed, the slot is set (FUN_101f8d50 at
+  world x / z x 0.001 through the region) and scrolled to (FUN_101f8de0), named (FUN_101f8e30); without one, a mode-4
+  load of the file, the change, then FUN_100b2a60 closes and saves. 0xa8 / 0xb9 sub 0 the same way, sub 1 only on the
+  loaded data. 0x8b and 0xa8 pass key -1.
+- Live (Lnxcsfix): /map, Markers, slot 1, Place, Enter, "Westgate": the marker drew and USER/5/M23000.MRK held it.

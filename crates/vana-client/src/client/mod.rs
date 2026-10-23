@@ -11,6 +11,7 @@ mod event;
 mod game_ui;
 mod hudtop;
 mod map;
+mod mapmark;
 mod logwin;
 pub(crate) mod perf;
 mod cfgapply;
@@ -797,9 +798,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let mut pick: Option<usize> = None;
     let mut answer: Option<bool> = None;
     let mut act: Option<u8> = None;
-    // The event input window takes every key first.
-    let input_open = event::input(world).is_some();
-    if input_open {
+    // The event input window and the map's marker name entry take every key first.
+    let map_typing = world.map.as_ref().is_some_and(|m| m.typing());
+    let input_open = event::input(world).is_some() || map_typing;
+    if map_typing && let Some(m) = world.map.as_mut() {
+        m.text_events(&input.events);
+        keys.clear();
+    } else if input_open {
         event::input_events(world, &input.events);
         keys.clear();
     }
@@ -839,7 +844,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
                 }
-                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Enter | egui::Key::Escape if world.map.is_some() => {
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.map.is_some() => {
                     // map0's Escape (FUN_101fa420): the zoom into config 0x8a, then the fade-out.
                     if let Some(m) = world.map.as_mut()
                         && !m.key(*key)
@@ -1262,6 +1267,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(m) = world.map.as_mut() {
         m.draw(gu, sw, sh);
+        world.sounds.append(&mut m.sounds);
     }
     let slots = gu.hud(sw, sh, &st);
 
@@ -2518,7 +2524,6 @@ struct World {
     map_open: Option<u16>,
     /// Event map requests for the next HUD frame (map::apply).
     map_cmds: Vec<map::Cmd>,
-    map_markers: Vec<event::Marker>,
     event_mem: crate::event_vm::Memory,
     event_end_at: Option<Instant>,
     /// Talk sent, waiting for the server (DAT_10470520).
@@ -3455,7 +3460,6 @@ impl App {
                             self_lock: None,
                             map_open: None,
                             map_cmds: Vec::new(),
-                            map_markers: Vec::new(),
                             event_mem: Default::default(),
                             event_end_at: None,
                             talk_lock: None,
