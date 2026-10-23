@@ -409,6 +409,64 @@ impl LiveHost<'_> {
         if a == PLAYER { self.w.my_id } else { a }
     }
 
+    /// Op 0xb6 (FUN_100b1150) on the event actor's look (0x16: the player's): 0 face, 1 race, 2..0xa slot sub - 2
+    /// (face head body hands legs feet main sub range), 0xb race and slots 0..7, 0xc the fixed model val@2 (type 7),
+    /// 0x16 race, face and slots 1..8 of the player. 0xd / 0xe (race and slots with flags) and the scales 0xf / 0x17
+    /// are not applied yet.
+    fn event_look(&mut self, sub: u8, actor: u32, args: &[Arg]) {
+        use crate::dat::npc::NpcLook;
+        let id = if sub == 0x16 { self.w.my_id } else { self.wid(actor) };
+        let v = |k: usize| Self::arg_int(args, k).unwrap_or(0) as u16;
+        let cur = self.w.actors.get(&id).and_then(|a| a.source);
+        let mut look = match cur {
+            Some(super::Source::Pc(l)) | Some(super::Source::Npc(NpcLook::Equipped(l))) => l,
+            _ => crate::dat::character::Look::default(),
+        };
+        let set = |l: &mut crate::dat::character::Look, slot: usize, val: u16| {
+            let val = val & 0x0fff;
+            match slot {
+                0 => l.face = val,
+                1 => l.head = val,
+                2 => l.body = val,
+                3 => l.hands = val,
+                4 => l.legs = val,
+                5 => l.feet = val,
+                6 => l.main = val,
+                7 => l.sub = val,
+                _ => {}
+            }
+        };
+        let source = match sub {
+            0 => {
+                set(&mut look, 0, v(0));
+                super::Source::Pc(look)
+            }
+            1 => {
+                look.race = v(0) as u8;
+                super::Source::Pc(look)
+            }
+            2..=0xa => {
+                set(&mut look, sub as usize - 2, v(0));
+                super::Source::Pc(look)
+            }
+            0xb => {
+                look.race = v(0) as u8;
+                (0..8).for_each(|k| set(&mut look, k, v(k + 1)));
+                super::Source::Pc(look)
+            }
+            0xc => super::Source::Npc(NpcLook::Model(v(0))),
+            0x16 => {
+                look.race = v(0) as u8;
+                (0..9).for_each(|k| set(&mut look, k, v(k + 1)));
+                super::Source::Pc(look)
+            }
+            _ => return,
+        };
+        if cur.is_none_or(|c| format!("{c:?}") != format!("{source:?}")) {
+            self.w.event_looks.push((id, source));
+        }
+    }
+
     fn send(&self, c: NetCommand) {
         let _ = self.w.net.commands.send(c);
     }
@@ -598,6 +656,7 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            Effect::Op { op: 0xb6, sub: Some(sub), actor, args } => self.event_look(sub, actor, &args),
             Effect::Op { op: 0xd9, args, .. } => self.w.event_voices = Self::arg_int(&args, 0) == Some(0),
             // FUN_10184380 with the area: the App loads it (or brings the zone's scene back) and ends the wait.
             Effect::Op { op: 0x34 | 0x35, args, .. } => match args.first() {
@@ -705,6 +764,8 @@ impl Host for LiveHost<'_> {
                 self.w.actors.get(&id).is_some_and(|a| a.fade.is_some())
             }
             // Actor +0x1b8 (action state) is nonzero while an emote loads and plays.
+            // Op 0xb6 sub 0x10: until the player's model is up.
+            Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(super::actmotion::emoting)

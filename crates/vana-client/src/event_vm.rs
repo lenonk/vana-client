@@ -1440,6 +1440,10 @@ impl Runtime {
                         self.thread(v).state = 0;
                     }
                     self.adv(v, len);
+                    // Retail ends the frame after these (+0x25a = 1 in every sub).
+                    if matches!(opc, 0xb6) {
+                        self.yield_(v);
+                    }
                 }
             }
         }

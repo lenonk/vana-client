@@ -1370,6 +1370,8 @@ enum Source {
 struct Actor {
     /// Debug text of the source, to notice changes.
     key: String,
+    /// What it is drawn from now (event op 0xb6 changes parts of it).
+    source: Option<Source>,
     character: Option<Arc<Model>>,
     gpu: Option<crate::render::ActorGpu>,
     /// Motion playing, and ticks (1/60 s, scaled by its rate) since it started.
@@ -1419,6 +1421,7 @@ impl Actor {
     fn new() -> Self {
         Actor {
             key: String::new(),
+            source: None,
             character: None,
             gpu: None,
             motion: String::new(),
@@ -1657,6 +1660,8 @@ struct World {
     area: AreaSwitch,
     /// Event op 0xd9: effect sounds get 20 voices while an event runs (FUN_10038330).
     event_voices: bool,
+    /// Looks set by event op 0xb6, for the model loader.
+    event_looks: Vec<(u32, Source)>,
     renderer: Option<ZoneRenderer>,
     /// Effect generators of the zone (fx/).
     effects: crate::fx::Effects,
@@ -2623,6 +2628,7 @@ impl App {
                             zone_weather: None,
                             area: AreaSwitch::default(),
                             event_voices: false,
+                            event_looks: Vec::new(),
                             typing: false,
                             log_focus: 0,
                             log_active: false,
@@ -3113,6 +3119,8 @@ impl App {
                 }
             }
         }
+        // Looks the event scripts changed (op 0xb6) load like the server's.
+        looks.extend(std::mem::take(&mut world.event_looks));
         // Load a character model whenever an actor's look is new or changed.
         let mut wanted = Vec::new();
         for (id, source) in looks {
@@ -3125,6 +3133,7 @@ impl App {
                 continue;
             }
             actor.key = key.clone();
+            actor.source = Some(source);
             // A look already loaded is shared at once; one load serves every actor waiting for it.
             if let Some(m) = world.models.get(&key) {
                 actor.character = Some(m.clone());
