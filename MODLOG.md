@@ -3691,3 +3691,24 @@ From the targeting spec section 3 (FUN_100d5b10, FUN_1002a140, FUN_1002ac60, FUN
 - Ours: client/actmotion.rs Look (world point), render/anim.rs look_clamp and the two-bone turn in pose_actors
   (test head_look_limits: side look gives neck 17.7, head 43.4 deg). Not done: scheduler op 0x89 suppression, the
   +0x120 bit 5 freeze, the event rate scale E+0xe0.
+
+## Mouse cursor (2026-10-22)
+
+From the cursor spec (scratchpad cursor_spec/SPEC.md; current build).
+- Config 0021 (DAT_10456bf8, "hardware cursor", default 0): 0 = the game draws its own sprite cursor (FUN_10124eb0,
+  after all window layers, UI pixels) and hides the system pointer; != 0 = Windows cursors from the game folder
+  (LoadCursorFromFileA, 18 at 0x1034fbb0: mousenor, mousehit, oarw_* (loaded, never selected), arw_n..arw_nw).
+  mousenor.cur is referenced by nothing.
+- Sprite table 0x1036e4c8 by kind (+0x4c): 0 anc_m1, 1 / 2 anc_m2 (with an additive "photobut" glow), 3 anc_scro,
+  4 kaipage x2, 5 kaipage x2 tint 0x80202080, 6 anc_m1; all in 39542. One sprite step per drawn frame (30 fps: per
+  2 ticks, inf), cycle 0..5 then 0 again (a null sprite resets the counter). Rotation for 4 / 5:
+  x' = x cos - y sin, y' = x sin + y cos, then scale; position - 0.5.
+- Kind (FUN_10125360): field 2 over an actor (FUN_10083750) else 0; a focused window 1 over an enabled item; 3 / 6
+  scroll thumb / autoscroll; 4 left-drag walk, 5 right-drag camera with angle atan2(dy, dx) - pi/2 from the press
+  point and +0xa6 = arw index by 45 deg bins (10 n .. 17 nw); +0xa6 only changes in state 5. Windows cursor: 0 for
+  kinds 0 / 3 / 6, 1 for 1 / 2, +0xa6 for 4 / 5. Screen edges don't change the cursor.
+- Shown on motion (window messages: only past 2 px) or a mouse button; hidden by other key functions (not during a
+  drag), with the UI hidden, in movies, and at start until the mouse moves.
+- Ours: dat/cursor.rs (.ani / .cur), client/mousecur.rs. Our mouse scheme differs (both drags turn the camera, both
+  buttons run), so a drag shows the camera arrow and both buttons the move arrow pointing ahead. Not done: kind 1 over
+  menu items, 3 / 6, hiding with the UI.

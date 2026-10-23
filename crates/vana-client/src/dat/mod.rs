@@ -158,6 +158,7 @@ pub fn chunks(file: &[u8]) -> Result<Vec<Chunk<'_>>> {
 }
 
 pub mod overlay;
+pub mod cursor;
 pub mod tables;
 pub mod zone;
 pub mod collision;

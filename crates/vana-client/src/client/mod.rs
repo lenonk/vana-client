@@ -32,6 +32,7 @@ pub mod script;
 mod subarea;
 mod myroom;
 mod doors;
+mod mousecur;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -2125,6 +2126,8 @@ pub struct App {
     dragging: bool,
     left_down: bool,
     middle_down: bool,
+    /// Where the right button went down (the camera arrow's reference).
+    drag_from: Option<(f64, f64)>,
     /// Wheel notches since the last frame (FOV zoom).
     wheel: f32,
     mods: winit::keyboard::ModifiersState,
@@ -2194,6 +2197,8 @@ pub struct App {
     exit_requested: bool,
     /// The pointer is over the window (edge panning).
     cursor_in: bool,
+    /// The game's mouse cursor (client/mousecur.rs).
+    mouse: mousecur::MouseCursor,
     /// A lobby or login error waiting in the OK window on the login screen.
     login_error: Option<String>,
     /// The title's Config window (lobycwin) with its values, and our settings screen over the title.
@@ -2297,6 +2302,8 @@ impl App {
             dragging: false,
             left_down: false,
             middle_down: false,
+            drag_from: None,
+            mouse: Default::default(),
             wheel: 0.0,
             mods: Default::default(),
             press_at: None,
@@ -3870,6 +3877,34 @@ impl App {
         }
     }
 
+    /// FUN_10125360's kind for this frame: a drag shows the arrow (both buttons the move arrow pointing ahead,
+    /// otherwise the camera arrow along the drag), an actor under the pointer in the field the hit cursor.
+    /// Not done: kind 1 over menu items, 3 / 6 (scroll thumb, autoscroll).
+    fn mouse_kind(&mut self, size: [u32; 2]) {
+        let at = self.last_cursor;
+        let moved = self.left_down && self.press_at.zip(at).is_some_and(|(a, b)| (a.0 - b.0).abs() + (a.1 - b.1).abs() >= 5.0);
+        self.mouse.kind = mousecur::NORMAL;
+        if self.left_down && self.dragging {
+            self.mouse.kind = mousecur::MOVE_DRAG;
+            self.mouse.angle = -std::f32::consts::PI;
+            return;
+        }
+        if self.dragging || moved {
+            if let (Some(from), Some(to)) = (self.press_at.or(self.drag_from), at) {
+                self.mouse.camera_drag((from.0 as f32, from.1 as f32), (to.0 as f32, to.1 as f32));
+            }
+            return;
+        }
+        let Phase::World(world) = &self.phase else { return };
+        let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
+        if let Some(p) = at.filter(|_| !window && self.mouse.visible) {
+            let aspect = cfgapply::aspect(size, self.cfg.retail_aspect, world.game.get(0x43));
+            if Self::pick(world, p, size, aspect).is_some() {
+                self.mouse.kind = mousecur::OVER_ACTOR;
+            }
+        }
+    }
+
     fn camera(world: &World) -> Camera {
         event::camera(world).unwrap_or_else(|| camera::view(world))
     }
@@ -4923,7 +4958,15 @@ impl App {
             a.ui(s);
         }
         perf::timed(|| "audio".into(), || self.update_audio(dt));
-        gfx.egui_state.handle_platform_output(&gfx.window, output.platform_output);
+        // Once the game UI draws, the cursor is the game's: its sprite (the system pointer hidden) or, with config
+        // 0021, the Windows cursors set after the frame.
+        let mut platform = output.platform_output;
+        if self.ui_drawn {
+            platform.cursor_icon = if self.cfg.tool("0021") == 0 { egui::CursorIcon::None } else { egui::CursorIcon::Default };
+        } else {
+            self.mouse.invalidate();
+        }
+        gfx.egui_state.handle_platform_output(&gfx.window, platform);
         let jobs = ctx.tessellate(output.shapes, output.pixels_per_point);
         let m_ui = Instant::now();
 
@@ -5336,9 +5379,16 @@ impl App {
         {
             sc.blit(&gfx.gpu, &mut encoder, &view, size, gamma);
         }
+        self.mouse_kind(size);
         if self.ui_drawn
             && let Some(lu) = &mut self.game_ui
         {
+            if self.cfg.tool("0021") == 0
+                && self.cursor_in
+                && let Some((x, y)) = self.last_cursor
+            {
+                self.mouse.draw(lu, x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt);
+            }
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());
             perf::timed(|| "ui render".into(), || lu.render(&gfx.gpu, gfx.config.format, &mut encoder, &view, self.cfg.ui_size(size), size, drew_world, ui_level, scene_level));
@@ -5516,12 +5566,23 @@ impl ApplicationHandler for App {
             }
             WindowEvent::RedrawRequested => {
                 self.redraw();
+                if self.ui_drawn
+                    && self.cfg.tool("0021") != 0
+                    && let Some(gfx) = &self.gfx
+                {
+                    self.mouse.apply_hardware(&gfx.window, event_loop, self.index.as_ref());
+                }
                 if (self.drive.quit && self.drive_done() && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
                     event_loop.exit();
                 }
             }
             WindowEvent::KeyboardInput { event, .. } => {
                 if let PhysicalKey::Code(code) = event.physical_key {
+                    // Other key functions hide the cursor (FUN_10125f70(0)), except during a drag.
+                    let modifier = matches!(code, KeyCode::ShiftLeft | KeyCode::ShiftRight | KeyCode::ControlLeft | KeyCode::ControlRight | KeyCode::AltLeft | KeyCode::AltRight | KeyCode::SuperLeft | KeyCode::SuperRight);
+                    if event.state == ElementState::Pressed && !modifier && !self.dragging && !self.left_down {
+                        self.mouse.visible = false;
+                    }
                     if code == KeyCode::F12 && event.state == ElementState::Pressed && !event.repeat {
                         self.debug_overlay = !self.debug_overlay;
                     }
@@ -5534,7 +5595,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::ModifiersChanged(m) => self.mods = m.state(),
-            WindowEvent::CursorEntered { .. } => self.cursor_in = true,
+            WindowEvent::CursorEntered { .. } => {
+                self.cursor_in = true;
+                self.mouse.invalidate();
+            }
             WindowEvent::CursorLeft { .. } => self.cursor_in = false,
             // Config-tool 0035 = 0: no sound while the window is not focused (no DSBCAPS_GLOBALFOCUS).
             WindowEvent::Focused(f) => {
@@ -5554,6 +5618,10 @@ impl ApplicationHandler for App {
             }
             WindowEvent::MouseInput { state, button, .. } if !consumed || state == ElementState::Released => {
                 let pressed = state == ElementState::Pressed;
+                self.mouse.visible = true;
+                if pressed && button == MouseButton::Right {
+                    self.drag_from = self.last_cursor;
+                }
                 match button {
                     MouseButton::Left => {
                         if pressed {
@@ -5586,6 +5654,10 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::CursorMoved { position, .. } => {
+                // FUN_100016c0: window-message motion shows the cursor only past 2 px.
+                if self.last_cursor.is_none_or(|(x, y)| (position.x - x).abs() > 2.0 || (position.y - y).abs() > 2.0) {
+                    self.mouse.visible = true;
+                }
                 // A left-drag that starts on the map overlay pans it instead of turning the camera.
                 let k = self.ui_k;
                 let on_overlay = |w: &World, p: (f64, f64)| w.overlay.as_ref().is_some_and(|o| o.has_map() && inside(&o.rect, (p.0 as f32 * k.0, p.1 as f32 * k.1)));
