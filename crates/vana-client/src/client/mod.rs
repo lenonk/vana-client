@@ -975,7 +975,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
                 _ if world.moogle.is_some() => {
-                    moogle::key(world, *key);
+                    moogle::key(world, gu, *key);
                 }
                 // FUN_101d6540: the Mog House door menu.
                 _ if world.mogdoor.is_some() => {
@@ -2790,6 +2790,11 @@ struct World {
     /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
     mog_pending: bool,
     moogle: Option<moogle::Menu>,
+    /// s2c 0x01B, the job change request (the Mog House / nomad object; gone at zone-in) and its 3 s cooldown
+    /// (myroom +0x18).
+    job_info: Option<moogle::JobInfo>,
+    job_req: Option<moogle::JobReq>,
+    job_cooldown: Option<Instant>,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
@@ -3751,6 +3756,9 @@ impl App {
                             mh_open: false,
                             mog_pending: false,
                             moogle: None,
+                            job_info: None,
+                            job_req: None,
+                            job_cooldown: None,
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
@@ -4087,7 +4095,7 @@ impl App {
                     // Any game-state change shows the UI again.
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
-                    (world.moogle, world.mog_pending) = (None, false);
+                    (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -4371,6 +4379,7 @@ impl App {
                     }
                 }
                 NetEvent::MogMenu => world.mog_pending = true,
+                NetEvent::JobInfo(j) => world.job_info = Some(j),
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);

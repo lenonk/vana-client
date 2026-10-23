@@ -393,6 +393,25 @@ impl GameUi {
     /// sprite, child `sel` tinted 0x80805020 one pixel up-left with the hand when `hand`; `hide` children are
     /// skipped. `centred` adds ((W - 512) / 2, (H - 448) / 2) (FUN_101179a0).
     #[allow(clippy::too_many_arguments)]
+    /// Disabled (state 5) children over a window drawn with them hidden (FUN_101177d0 / FUN_10119c00): the last ref of
+    /// kind 0 or 4 wins; a kind-4 sprite at full tint (cursor 0x80805020 at +1 px), a kind-0 one dimmed to 0x30808080
+    /// (cursor 0x40402810 at +1 px).
+    pub fn disabled_children(&mut self, name: &str, x: f32, y: f32, off: &[u16], cursor: Option<u16>) {
+        let Some(l) = self.layout(name).cloned() else { return };
+        for e in l.elements.iter().skip(1).filter(|e| off.contains(&e.id)) {
+            let Some(r) = e.refs.iter().rfind(|r| r.kind == 0 || r.kind == 4) else { continue };
+            let on = cursor == Some(e.id);
+            let tint = match (r.kind == 4, on) {
+                (true, false) => 0x8080_8080,
+                (true, true) => 0x8080_5020,
+                (false, false) => 0x3080_8080,
+                (false, true) => 0x4040_2810,
+            };
+            let d = if on { 1.0 } else { 0.0 };
+            self.sprite(&r.lib, r.index as usize, x + e.x as f32 + d, y + e.y as f32 + d, tint);
+        }
+    }
+
     pub fn lobby_window(&mut self, name: &str, w: f32, h: f32, centred: bool, sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
         let off = if centred { (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc()) } else { (0.0, 0.0) };
         self.lobby_window_off(name, w, h, off, sel, hand, hide)

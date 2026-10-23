@@ -703,13 +703,7 @@ fn draw_iuse(gu: &mut GameUi, w: &World, s: Sub, sw: f32, sh: f32) -> Vec<[f32; 
     let mut rects = Vec::new();
     if let Some(win) = gu.lobby_window_off("menu    iuse", sw, sh, (0.0, 0.0), child, child.is_some(), &off) {
         let [x, y, ..] = win.frame;
-        if let Some(m) = gu.layout("menu    iuse").cloned() {
-            for e in m.elements.iter().filter(|e| off.contains(&e.id)) {
-                if let Some(r) = e.refs.iter().find(|r| r.kind == 4) {
-                    gu.sprite(&r.lib, r.index as usize, x + e.x as f32, y + e.y as f32, 0x8080_8080);
-                }
-            }
-        }
+        gu.disabled_children("menu    iuse", x, y, &off, child);
         rects.push(win.frame);
     }
     if let Some(yes) = ask
@@ -1091,7 +1085,7 @@ pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool, nomad: bool) -> bool
     if c == BIN {
         return open_bin(w, false);
     }
-    if !super::textcmd::status_gate(w, 0x44) || (need_satchel && w.inv.sizes[5] < 0x1e) {
+    if !super::textcmd::status_gate(w, 0x44) || super::moogle::job_cooling(w) || (need_satchel && w.inv.sizes[5] < 0x1e) {
         return false;
     }
     if w.myroom.is_some() && w.zone.is_some_and(moogle_zone) && w.mh_owner == 0 {
@@ -1110,7 +1104,7 @@ pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool, nomad: bool) -> bool
 /// read-only with 0x48; visiting another's Mog House (s2c 0x067 @0x20) group 7 0xbc; else the view at the moogle.
 /// With `nomad` (a nomad moogle's storage2) in a MogZoneFlag zone the view opens at once, at the moogle and nomad.
 pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
-    if !super::textcmd::status_gate(w, 0x44) {
+    if !super::textcmd::status_gate(w, 0x44) || super::moogle::job_cooling(w) {
         return false;
     }
     let here = w.myroom.is_some() || (nomad && w.mog_zone);
@@ -1615,13 +1609,7 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
             let off = stora_off(w, b);
             if let Some(win) = gu.lobby_window_off("menu    itmstora", sw, sh, (0.0, 0.0), Some(row), true, &off) {
                 let [x, y, ..] = win.frame;
-                if let Some(m) = gu.layout("menu    itmstora").cloned() {
-                    for e in m.elements.iter().filter(|e| off.contains(&e.id)) {
-                        if let Some(r) = e.refs.iter().find(|r| r.kind == 4) {
-                            gu.sprite(&r.lib, r.index as usize, x + e.x as f32, y + e.y as f32, 0x8080_8080);
-                        }
-                    }
-                }
+                gu.disabled_children("menu    itmstora", x, y, &off, Some(row));
                 rects.push(win.frame);
             }
         } else {

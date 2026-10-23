@@ -1,16 +1,47 @@
 //! The moogle menus (s2c 0x02E, FUN_10097af0 -> FUN_101d6110): "menu    myroom" in one's own Mog House, "menu    mogext"
-//! by a nomad moogle, and their storage menus (FUN_10145e70). Change Jobs, the Delivery Box, Gardening / Layout's own
+//! by a nomad moogle, their storage menus (FUN_10145e70) and Change Jobs. The Delivery Box, Gardening / Layout's own
 //! modes and Remodel are not done yet.
 
 use super::World;
 use super::game_ui::GameUi;
 use super::items;
+use crate::fx::sched::Who;
 use glam::Vec3;
+use std::time::{Duration, Instant};
 
 pub const MYROOM: &str = "menu    myroom";
 pub const MOGEXT: &str = "menu    mogext";
 const STORAGE: &str = "menu    storage";
 const STORAGE2: &str = "menu    storage2";
+const JOBCHANG: &str = "menu    jobchang";
+const JOBCSELU: &str = "menu    jobcselu";
+/// FUN_101d32c0: the moogle's dance, scheduler 'main' of file 0x13ae.
+const DANCE_FILE: u32 = 0x13ae;
+const DANCE: u32 = u32::from_le_bytes(*b"main");
+
+/// s2c 0x01B: the jobs we have (bit n = job n), each job's level, and whether a support job is unlocked.
+#[derive(Clone, Copy, Debug)]
+pub struct JobInfo {
+    pub flags: u32,
+    pub levels: [u8; 24],
+    pub sub_ok: bool,
+}
+
+/// The Mog House / nomad object's request (+0x812..0x814): pending until c2s 0x100 goes; the last one is kept.
+#[derive(Clone, Copy, Debug)]
+pub struct JobReq {
+    pub main: u8,
+    pub sub: u8,
+    pub pending: bool,
+    pub moogle: Option<u32>,
+}
+
+/// jobchang's cursor and jobcselu over it (+0x14: 1 main / 2 support, its cursor child = job).
+#[derive(Clone, Copy, Debug)]
+pub struct Jobs {
+    pub sel: u16,
+    pub select: Option<(u8, u16)>,
+}
 
 /// The open moogle menu: myroom or mogext (`nomad`, with the spot it opened at), its cursor child, the storage menu
 /// over it (cursor child, the children disabled at its open), and myroom +0x16 (an open request sent).
@@ -21,6 +52,7 @@ pub struct Menu {
     pub sel: u16,
     pub storage: Option<(u16, Vec<u16>)>,
     pub open_pending: bool,
+    pub jobs: Option<Jobs>,
 }
 
 impl Menu {
@@ -57,6 +89,127 @@ pub fn update(w: &mut World) {
         }
         w.moogle = None;
     }
+    // The per-frame send: c2s 0x100 {main, sub} once the moogle's dance is over (or there is no moogle).
+    if let Some(r) = w.job_req.filter(|r| r.pending) {
+        let busy = r.moogle.is_some_and(|id| w.entities.contains_key(&id) && w.effects.event_scheduler_running(DANCE_FILE, DANCE, Who::Actor(id), Who::Actor(w.my_id)));
+        if !busy {
+            let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x100, body: vec![r.main, r.sub, 0, 0] });
+            w.job_req = Some(JobReq { pending: false, ..r });
+        }
+    }
+}
+
+/// myroom +0x18: within 3 s of a job change the moogle menus and the storage openers refuse (FUN_101039e0 <= it).
+pub fn job_cooling(w: &World) -> bool {
+    w.job_cooldown.is_some_and(|t| Instant::now() <= t)
+}
+
+/// The moogle actor (FUN_100a0080; retail by model 0x52 / 0x3d5 / 0x58a / 0x939, ours the nearest entity named
+/// Moogle, inferred stand-in).
+fn moogle_actor(w: &World) -> Option<u32> {
+    w.entities
+        .iter()
+        .filter(|(_, e)| e.name.contains("Moogle"))
+        .min_by(|a, b| (a.1.pos - w.pos).length().total_cmp(&(b.1.pos - w.pos).length()))
+        .map(|(&id, _)| id)
+}
+
+/// jobcselu's disabled rows: the jobs whose 0x01B bit is clear.
+fn jobs_off(w: &World) -> Vec<u16> {
+    let flags = w.job_info.map_or(0, |j| j.flags);
+    (1..=22u16).filter(|&n| flags & 1 << n == 0).collect()
+}
+
+/// (main, sub) as DAT_10485640 / DAT_10485642 hold them (s2c 0x061).
+fn jobs_now(w: &World) -> (u8, u8) {
+    w.stats.as_ref().map_or((0, 0), |s| (s.main.0, s.sub.0))
+}
+
+/// FUN_101d32c0 / FUN_101d52d0: refused (SE 0004) while one is pending or the same as the last; else the moogle
+/// dances, and FUN_101a8030(0, 1, 0) turns the lockstyle off first (c2s 0x053 {0, Disable, 0}, 0x88 bytes). Nothing
+/// is sent outside the Mog House or a MogZoneFlag zone. The monstrosity case (no 0x053, retried) is not done.
+fn request(w: &mut World, main: u8, sub: u8) {
+    if w.myroom.is_none() && !w.mog_zone {
+        return;
+    }
+    if w.job_req.is_some_and(|r| r.pending || (r.main, r.sub) == (main, sub)) {
+        w.sounds.push(crate::audio::Ui::Error as u32);
+        return;
+    }
+    let moogle = moogle_actor(w);
+    log::debug!("job change ({main}, {sub}), moogle {moogle:?}");
+    if let Some(id) = moogle {
+        w.effects.on_event_scheduler(DANCE_FILE, DANCE, Who::Actor(id), Who::Actor(w.my_id));
+    }
+    w.job_req = Some(JobReq { main, sub, pending: true, moogle });
+    let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x053, body: vec![0; 0x84] });
+}
+
+/// jobchang (FUN_101459d0) and jobcselu (FUN_10145a90) keys.
+fn jobs_key(w: &mut World, gu: &GameUi, j: Jobs, key: egui::Key) {
+    use crate::audio::Ui;
+    use egui::Key as K;
+    let set = |w: &mut World, j: Option<Jobs>| {
+        if let Some(m) = w.moogle.as_mut() {
+            m.jobs = j;
+        }
+    };
+    let Some((mode, sel)) = j.select else {
+        match key {
+            K::ArrowDown | K::ArrowUp => {
+                set(w, Some(Jobs { sel: 3 - j.sel, ..j }));
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            // Escape refocuses myroom / mogext underneath.
+            K::Escape => {
+                set(w, None);
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            K::Enter if j.sel == 2 && !w.job_info.is_some_and(|i| i.sub_ok) => w.sounds.push(Ui::Error as u32),
+            // The cursor starts on child 1 (inferred: the menu base's default).
+            K::Enter => {
+                set(w, Some(Jobs { select: Some((j.sel as u8, 1)), ..j }));
+                w.sounds.push(Ui::Select as u32);
+            }
+            _ => {}
+        }
+        return;
+    };
+    let link = match key {
+        K::ArrowUp => Some(2),
+        K::ArrowDown => Some(3),
+        K::ArrowRight => Some(4),
+        K::ArrowLeft => Some(5),
+        _ => None,
+    };
+    if let Some(k) = link {
+        let to = gu.menu_links(JOBCSELU, sel).map_or(sel, |l| l[k] as u16);
+        if to != sel && to != 0 {
+            set(w, Some(Jobs { select: Some((mode, to)), ..j }));
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        return;
+    }
+    match key {
+        K::Escape => {
+            set(w, Some(Jobs { select: None, ..j }));
+            w.sounds.push(Ui::Cancel as u32);
+        }
+        K::Enter if jobs_off(w).contains(&sel) => w.sounds.push(Ui::Error as u32),
+        K::Enter => {
+            w.sounds.push(Ui::Select as u32);
+            let n = sel as u8;
+            let (main, sub) = jobs_now(w);
+            if n == main || n == sub {
+                w.sounds.push(Ui::Error as u32);
+                return;
+            }
+            request(w, if mode == 1 { n } else { 0 }, if mode == 1 { 0 } else { n });
+            set(w, Some(Jobs { select: None, ..j }));
+            w.job_cooldown = Some(Instant::now() + Duration::from_secs(3));
+        }
+        _ => {}
+    }
 }
 
 /// FUN_101d6110(nomad): myroom in the Mog House (its open hook FUN_10145180 shuts it unless the house is ours), mogext
@@ -65,7 +218,7 @@ pub fn open(w: &mut World, nomad: bool) {
     if !nomad && w.mh_owner != 0 {
         return;
     }
-    w.moogle = Some(Menu { nomad, origin: w.pos, sel: 1, storage: None, open_pending: false });
+    w.moogle = Some(Menu { nomad, origin: w.pos, sel: 1, storage: None, open_pending: false, jobs: None });
     w.menu = None;
     w.action_menu = None;
 }
@@ -140,10 +293,14 @@ fn storage_container(row: u16, nomad: bool) -> Option<u8> {
 }
 
 /// The menu's keys (the menu base: links, SE 0001 / 0002 / 0004 / 0003). True when used.
-pub fn key(w: &mut World, key: egui::Key) -> bool {
+pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) -> bool {
     use crate::audio::Ui;
     use egui::Key as K;
     let Some(m) = w.moogle.clone() else { return false };
+    if let Some(j) = m.jobs {
+        jobs_key(w, gu, j, key);
+        return true;
+    }
     if let Some((sel, off)) = &m.storage {
         let n: u16 = if m.nomad { 14 } else { 15 };
         match key {
@@ -191,9 +348,9 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
             w.sounds.push(Ui::Cancel as u32);
         }
         K::Enter if off.contains(&m.sel) => w.sounds.push(Ui::Error as u32),
-        // FUN_10145460 / FUN_10145760: the synthesis gate first (the job-change cooldown is not tracked).
+        // FUN_10145460 / FUN_10145760: the synthesis gate, then the job-change cooldown (silent).
         K::Enter => {
-            if !super::textcmd::status_gate(w, 0x04) {
+            if !super::textcmd::status_gate(w, 0x04) || job_cooling(w) {
                 w.sounds.push(Ui::Error as u32);
                 return true;
             }
@@ -220,7 +377,16 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                         mm.open_pending = true;
                     }
                 }
-                (_, r) => log::info!("moogle menu row {r} (Delivery Box / Change Jobs / Remodel) is not implemented"),
+                // Change Jobs: myroom has the moogle say 0x32 "Chaaange...job!" when it is there.
+                (_, 3) => {
+                    if !m.nomad && super::myroom::in_city(w.zone) {
+                        line(w, 0x32);
+                    }
+                    if let Some(mm) = w.moogle.as_mut() {
+                        mm.jobs = Some(Jobs { sel: 1, select: None });
+                    }
+                }
+                (_, r) => log::info!("moogle menu row {r} (Delivery Box / Remodel) is not implemented"),
             }
         }
         _ => {}
@@ -245,16 +411,12 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if child6.is_some() {
         hide.push(6);
     }
-    let focused = m.storage.is_none();
+    let focused = m.storage.is_none() && m.jobs.is_none();
     let mut draw_one = |gu: &mut GameUi, name: &str, sel: u16, off: &[u16], hide: &[u16], focused: bool, extra: Option<(u16, usize)>| {
         if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), focused, hide) {
             let [x, y, ..] = win.frame;
+            gu.disabled_children(name, x, y, off, focused.then_some(sel));
             if let Some(l) = gu.layout(name).cloned() {
-                for e in l.elements.iter().filter(|e| off.contains(&e.id)) {
-                    if let Some(r) = e.refs.iter().find(|r| r.kind == 4) {
-                        gu.sprite(&r.lib, r.index as usize, x + e.x as f32, y + e.y as f32, 0x8080_8080);
-                    }
-                }
                 if let Some((child, sprite)) = extra
                     && let Some(e) = l.elements.iter().find(|e| e.id == child)
                 {
@@ -269,7 +431,35 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let name = if m.nomad { STORAGE2 } else { STORAGE };
         draw_one(gu, name, *sel, off, off, true, None);
     }
+    if let Some(j) = m.jobs {
+        let off: Vec<u16> = if w.job_info.is_some_and(|i| i.sub_ok) { Vec::new() } else { vec![2] };
+        draw_one(gu, JOBCHANG, j.sel, &off, &off, j.select.is_none(), None);
+        if let Some((_, sel)) = j.select {
+            let off = jobs_off(w);
+            draw_one(gu, JOBCSELU, sel, &off, &off, true, None);
+            draw_levels(gu, w, &off, sw, sh);
+        }
+    }
     rects
+}
+
+/// FUN_101458f0: "L.%d" (group 10 0x5a) right-aligned at each unlocked row's (x1 + 0x1e, y0 + 2); gold for the main
+/// job (its level from s2c 0x061), blue for the support job.
+fn draw_levels(gu: &mut GameUi, w: &World, off: &[u16], sw: f32, sh: f32) {
+    let Some([x, y, ..]) = gu.window_rect(JOBCSELU, sw, sh) else { return };
+    let Some(l) = gu.layout(JOBCSELU).cloned() else { return };
+    let fmt = gu.item_msg(10, 0x5a).unwrap_or_default();
+    let (main, sub) = jobs_now(w);
+    for e in l.elements.iter().skip(1).filter(|e| !off.contains(&e.id)) {
+        let n = e.id as u8;
+        let mut lv = w.job_info.map_or(0, |j| j.levels.get(n as usize).copied().unwrap_or(0));
+        if n == main {
+            lv = w.stats.as_ref().map_or(lv, |s| s.main.1);
+        }
+        let tint = if n == main { 0x80e0_9620 } else if n == sub { 0x8040_70a0 } else { 0x8080_8080 };
+        let text = fmt.replace("%d", &lv.to_string());
+        gu.shape_text(&text, x + e.x as f32 + e.w as f32 + 30.0, y + e.y as f32 + 2.0, tint, true);
+    }
 }
 
 /// The bars: the focused window's child strings; myroom child 6 says Open (0x93 / 0x29a) or Close (0x94 / 0x29b).
@@ -278,29 +468,25 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if w.win.is_some() {
         return;
     }
-    let (name, child) = match &m.storage {
-        Some((sel, _)) => (if m.nomad { STORAGE2 } else { STORAGE }, *sel),
-        None => (m.name(), m.sel),
+    let (name, child) = match (&m.storage, m.jobs) {
+        (Some((sel, _)), _) => (if m.nomad { STORAGE2 } else { STORAGE }, *sel),
+        (_, Some(Jobs { select: Some((_, sel)), .. })) => (JOBCSELU, sel),
+        (_, Some(j)) => (JOBCHANG, j.sel),
+        _ => (m.name(), m.sel),
     };
     let [help, title] = gu.focus_text(name, child);
     (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
-    if m.storage.is_none() && !m.nomad && m.sel == 6 {
+    if m.storage.is_none() && m.jobs.is_none() && !m.nomad && m.sel == 6 {
         let (t, h) = if w.mh_open { (0x94, 0x29b) } else { (0x93, 0x29a) };
         bars.title[1] = gu.title_msg(t).unwrap_or_default();
         bars.help[1] = gu.menu_msg(h, "");
     }
 }
 
-/// FUN_100a1860(n): system message n (file 7031) spoken by the moogle, "<name> : text" (the moogle is the nearest
-/// entity named Moogle here; retail finds it by model 0x52 / 0x3d5 / 0x58a / 0x939, inferred stand-in).
+/// FUN_100a1860(n): system message n (file 7031) spoken by the moogle (moogle_actor), "<name> : text".
 pub fn line(w: &mut World, n: u16) {
     let Some(bt) = w.battle.clone() else { return };
-    let name = w
-        .entities
-        .values()
-        .filter(|e| e.name.contains("Moogle"))
-        .min_by(|a, b| (a.pos - w.pos).length().total_cmp(&(b.pos - w.pos).length()))
-        .map_or_else(|| "Moogle".to_string(), |e| e.name.clone());
+    let name = moogle_actor(w).and_then(|id| w.entities.get(&id)).map_or_else(|| "Moogle".to_string(), |e| e.name.clone());
     let ctx = crate::dat::battle::Ctx { actor: None, target: None, me: w.name.clone(), work: [0; 5] };
     if let Some(l) = bt.system(n, &ctx)
         && let Some(text) = l.lines.into_iter().find(|l| !l.is_empty())

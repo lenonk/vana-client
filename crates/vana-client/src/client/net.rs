@@ -167,6 +167,9 @@ pub enum NetEvent {
     CharSync { id: u32, owner: u32, floors: bool, open: bool },
     /// s2c 0x11A (the answer to c2s 0x119): unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8).
     EmoteUnlocks { jobs: u32, chairs: u16 },
+    /// s2c 0x01B (GP_MYROOM_DANCER): get_job_flag @0xc, job_lev @0x10 (jobs 0..15), job_lev2 @0x48 (16..23),
+    /// sjobflg @0x44.
+    JobInfo(super::moogle::JobInfo),
     /// s2c 0x02E (header only): open the moogle menu.
     MogMenu,
     /// s2c 0x0AE: the owned mounts, 64 bits (LSB: key items 3072 + n).
@@ -668,6 +671,11 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0 })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
+                    0x01B => tx.send(NetEvent::JobInfo(super::moogle::JobInfo {
+                        flags: p.u32(0xc),
+                        levels: std::array::from_fn(|n| if n < 16 { p.u8(0x10 + n) } else { p.u8(0x48 + n) }),
+                        sub_ok: p.u8(0x44) != 0,
+                    }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
                     0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc) })?,

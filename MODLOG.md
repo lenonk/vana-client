@@ -4717,3 +4717,34 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix): commenu, the emote list (/aim, /amazed, ...), the /bell folder and back with the cursor kept,
   /aim through the target prompt sent; the server's echo could not play the aim motion without a ranged weapon
   (group 9 0x66 "Failed to execute command.", as retail).
+
+## Change Jobs: "menu    jobchang" / "menu    jobcselu" (2026-10-23; spec: scratchpad moogle/SPEC.md section 4)
+
+- s2c 0x01B (GP_MYROOM_DANCER from @4): get_job_flag u32 @0xc (bit n = job n), job_lev[16] @0x10, sjobflg @0x44,
+  job_lev2 @0x48 (indexed by job, used for 16..23). Ours World.job_info.
+- myroom / mogext row 3 opens jobchang (16, 256) over them; myroom first has the moogle say 0x32 when the zone has a
+  moogle (FUN_10097b40). jobchang row 2 (Support Job) is disabled while sjobflg is 0. Enter opens jobcselu (16, 48)
+  with +0x14 = 1 / 2; its cursor starts on child 1 *(inf)*. Escape closes only the top window.
+- jobcselu (FUN_10145850 / FUN_101458f0 / FUN_10145a90): child n = job n, rows with a clear job bit disabled
+  (sprite 333 "? ? ?"); links follow the layout (two columns). "L.%d" (group 10 0x5a) right-aligned with the
+  sprite font at (child x1 + 0x1e, y0 + 2): gold 0x80e09620 main (its level from s2c 0x061), blue 0x804070a0 sub,
+  else white. Enter on the current main or sub: SE 0004. Else (n, 0) / (0, n) goes to FUN_101d32c0 (Mog House) /
+  FUN_101d52d0 (MogZoneFlag zone; nothing elsewhere), jobcselu closes, myroom +0x18 = now + 3.
+- FUN_101d32c0: refused (SE 0004) while a request is pending or equal to the last one; the moogle actor
+  (FUN_100a0080) gets scheduler 'main' of file 0x13ae (5038) as FUN_10062e20(0x13ae, 'main', moogle effect object,
+  FUN_10081550, 0); then FUN_101a8030(0, 1, 0) = c2s 0x053 {0, Disable, 0} (0x88 bytes). Per frame, once the moogle
+  is gone or its 'main' no longer runs, c2s 0x100 {u8 main @4, u8 sub @5, u16 0}. The monstrosity path (no 0x053,
+  DAT_105782d4 retry) is not done.
+- The +0x18 cooldown (FUN_101039e0 <= it) also refuses the myroom / mogext rows (silently) and FUN_101dae10 /
+  FUN_101daf70 (the storage openers and /bank etc.).
+- FUN_100a1860 (the moogle's line) prints nothing without a moogle actor (all.c 120034); ours still names a
+  stand-in "Moogle" (see the next note on why there is none).
+- Disabled children in general (FUN_101177d0 / FUN_10119c00 / FUN_10119870): state maps to a ref kind (0 -> 0,
+  1 -> 1, 3 -> 3, 5 -> 4, 7 -> 2, 9 -> 5, else 6); refs of kind 0 or that kind match and the last match wins. A
+  non-zero kind draws at 0x80808080 (cursor 0x80805020 at +1 px); a state-5 child left with its kind-0 sprite draws
+  at 0x30808080 (cursor 0x40402810 at +1 px); state 0x10 never highlights. Ours GameUi::disabled_children (iuse,
+  itmstora, the moogle menus).
+- Live (Lnxcsfix, own Mog House 1F): myroom row 3 with the line, jobchang with Support Job dim, jobcselu with WAR
+  L.20 gold and five L.1 jobs, WAR -> WHM (gold moved, HP 30 / MP 26, LSB took the gear off) and back. The moogle
+  dance did not run: no moogle actor in our Mog House (LSB sends it only after c2s 0x01A ActionID 0x14
+  SendResRdy, which we never send).
