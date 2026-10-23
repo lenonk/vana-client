@@ -4090,3 +4090,11 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   - 0xa6 (FUN_100ba9c0): sub 0 c2s 0x0EB (header only), sub 1 waits on DAT_104804c0, sub 2 set@2 = DAT_10485a28. s2c
     0x10E (100a2100), only while waiting: DAT_10485a28 = u32 @4 (LSB MapNum).
   - Ours: Packet::Raw, Runtime::answer(id, packet); headless runs answer with empty packets. Sweep 230 / 240 unchanged.
+- Op 0x6a volume fades (audit R16): each channel gets a fade task (FUN_10035a00, one per channel: 1 DAT_1046392c,
+  2 DAT_10463928, 4 DAT_10463930, 8 DAT_10463934) starting at the channel's level; its tick FUN_10035940 takes the
+  frame's ticks off the remaining count and sets from + (to - from) * (1 - left / total) (constants 0.0 / 1.0 at
+  0x103295d8 / 0x1032961c), ending on the target once below 0. A replaced or cancelled task lands on its own target
+  first (destructor FUN_10035b00); 0x69's sets cancel the fade the same way (FUN_10036020 / FUN_10036070). The
+  channel setters multiply by DAT_103516fc * DAT_103516f8 (config) while the task starts from the multiplied level,
+  so retail compounds the config factor during a fade (not copied). Channel 4 (zone ambient loop) re-levels its
+  voice DAT_10463910 when it changes; the others are read when a voice starts. Ours: Audio::fades, step_fades.
