@@ -12,13 +12,173 @@ const SE_SWITCH: u32 = 10;
 pub const FOCAL: f32 = 350.0;
 
 /// The forced flash (actor +0x88 bit 0x200) for a frame, as the sub-target cursor and area previews set it,
-/// unless /targetcharaeffect turned it off (config 0x99 bit 7). Nothing sets it yet: there is no `<st>`.
-#[allow(dead_code)]
+/// unless /targetcharaeffect turned it off (config 0x99 bit 7).
 pub fn force_flash(w: &mut World, id: u32) {
     if w.game.get(0x99) & 0x80 == 0
         && let Some(a) = w.actors.get_mut(&id)
     {
         a.flash.forced = true;
+    }
+}
+
+/// What a sub-target prompt's confirm runs (its callback).
+#[derive(Clone, Debug)]
+pub enum SubThen {
+    /// LAB_1022d140: `/magic "<name>" <id>`, then the magic list closes.
+    Magic(String),
+    /// LAB_10224ef0: `/weaponskill`, `/monsterskill` or `/jobability "<name>" <id>`.
+    Ability(&'static str, String),
+    /// LAB_10077950: a text command with the tag replaced by the server id (or the quoted name, flag 0x08); a
+    /// line from a macro stops the macro when cancelled (FUN_101a1cb0).
+    Line { stash: String, quoted: bool, from_macro: bool },
+}
+
+/// The sub-target prompt (T+0x28 slot B, +0x5c bits 2-3, +0x60 / +0x64, +0x6c range, +0xc4 / +200 callbacks).
+#[derive(Clone, Debug)]
+pub struct Sub {
+    pub inc: u32,
+    pub exc: u32,
+    pub saved: Option<u32>,
+    pub saved_lock: bool,
+    pub then: SubThen,
+    /// The arrow colour's range from us (spell +0x45 through table 0x103644a8), if any.
+    pub range: Option<f32>,
+    /// The spell or ability name for titlewin slot 2, and helpwind slot 2's text id (group 0xe).
+    pub title: String,
+    pub help: u16,
+}
+
+impl Sub {
+    fn takes(&self, kind: u32) -> bool {
+        self.inc & kind != 0 && self.exc & kind == 0
+    }
+}
+
+/// Table 0x103720c0: a DAT valid-target flag's include / exclude kinds (FUN_10159170).
+const SUB_FLAGS: [(u32, u32, u32); 8] = [(1, 0x200, 0), (2, 0x100, 0), (4, 4, 0), (8, 8, 0), (0x10, 1, 0), (0x20, 0x10, 0), (0x40, 2, 0), (0x80, 2, 0x1800)];
+
+/// FUN_1008e290's kind bits: 0x200 self, 1 PC, 4 party, 8 alliance, 0x10 monster, 2 NPC, 0x800 our pet, 0x1000
+/// others' pets and trusts (0x700.., inf for +0x12c bit 22). Not done: 0x100 ally NPCs, 0x400 allegiance.
+fn sub_kind(w: &World, id: u32) -> u32 {
+    if id == w.my_id {
+        return 0x200 | 1 | 4;
+    }
+    let Some(e) = w.entities.get(&id) else { return 0 };
+    let party = w.party.members().find(|m| m.id == id).map_or(0, |m| if m.flags & 3 == w.party.own_flags & 3 { 4 } else { 8 });
+    if id >> 24 == 0 {
+        return 1 | party;
+    }
+    if e.flags & 1 != 0 || e.mob {
+        return 0x10;
+    }
+    let pet = match e.index {
+        i if i == w.my_pet && i != 0 => 0x800,
+        0x700.. => 0x1000,
+        _ => 0,
+    };
+    2 | pet | party
+}
+
+/// FUN_10159440: opens the prompt for DAT target `flags`; the first pick (FUN_101591d0) keeps a fitting target
+/// (not an enemy when we may pick ourselves), else us when allowed, else the nearest candidate in front. False when
+/// nothing fits (the caller prints its line).
+pub fn open_sub(w: &mut World, flags: u32, then: SubThen, range: Option<f32>, title: String, help: u16) -> bool {
+    let (inc, exc) = SUB_FLAGS.iter().filter(|f| flags & f.0 != 0).fold((0, 0), |(i, e), f| (i | f.1, e | f.2));
+    let sub = Sub { inc, exc, saved: w.target, saved_lock: w.locked, then, range, title, help };
+    let current = w.target.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
+    let first = match current {
+        Some(t) if sub.takes(sub_kind(w, t)) && !(inc & 0x200 != 0 && sub_kind(w, t) & 0x10 != 0) => Some(t),
+        _ if inc & 0x200 != 0 => Some(w.my_id),
+        _ => None,
+    };
+    w.prompt = Some(sub);
+    let first = first.or_else(|| nearest(w, |_, _| true));
+    let Some(first) = first else {
+        w.prompt = None;
+        return false;
+    };
+    w.locked = false;
+    w.target = Some(first);
+    w.target_since = std::time::Instant::now();
+    true
+}
+
+/// FUN_10158db0(0): runs the callback on the pick, SE "0009", the saved target and lock come back.
+pub fn confirm_sub(w: &mut World) {
+    let (Some(s), Some(t)) = (w.prompt.take(), w.target) else { return };
+    w.sounds.push(SE_TARGET);
+    let line = match &s.then {
+        SubThen::Magic(name) => format!("/magic \"{name}\" {t}"),
+        SubThen::Ability(cmd, name) => format!("{cmd} \"{name}\" {t}"),
+        SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{}\"", super::textcmd::display_name(w, t)),
+        SubThen::Line { stash, quoted: false, .. } => format!("{stash}{t}"),
+    };
+    restore(w, &s);
+    if matches!(s.then, SubThen::Magic(_)) {
+        w.magic = None;
+    }
+    if matches!(s.then, SubThen::Ability(..)) {
+        w.ability = None;
+    }
+    let mode = if matches!(s.then, SubThen::Line { .. }) { super::textcmd::Mode::SubTarget } else { super::textcmd::Mode::Internal };
+    super::textcmd::run(w, &line, mode);
+}
+
+/// FUN_10158ff0: the cancel callback (the list comes back) and the saved target and lock.
+pub fn cancel_sub(w: &mut World) {
+    let Some(s) = w.prompt.take() else { return };
+    restore(w, &s);
+    if let Some(m) = w.magic.as_mut() {
+        m.hidden = false;
+    }
+    if let Some(m) = w.ability.as_mut() {
+        m.hidden = false;
+    }
+    if matches!(s.then, SubThen::Line { from_macro: true, .. })
+        && let Some(m) = w.macros.as_mut()
+    {
+        m.stop();
+    }
+}
+
+/// FUN_10159040.
+fn restore(w: &mut World, s: &Sub) {
+    w.target = s.saved.filter(|&t| t == w.my_id || w.entities.contains_key(&t));
+    w.target_since = std::time::Instant::now();
+    w.locked = s.saved_lock && w.target.is_some();
+}
+
+/// The prompt's own picks (FUN_101587f0 with +0xc4 set): F1 / F7 us when allowed, F2..F6 / F11 / F12 party slots
+/// when party / alliance members are allowed.
+pub fn sub_self(w: &mut World) {
+    if w.prompt.as_ref().is_some_and(|s| s.inc & 0x200 != 0) {
+        set(w, Some(w.my_id));
+    }
+}
+
+pub fn sub_slot(w: &mut World, slot: usize) {
+    let need = if slot < 6 { 4 } else { 8 };
+    if w.prompt.as_ref().is_some_and(|s| s.inc & need != 0)
+        && let Some(t) = slot_target(w, slot)
+        && w.prompt.as_ref().is_some_and(|s| s.takes(sub_kind(w, t)))
+    {
+        set(w, Some(t));
+    }
+}
+
+/// FUN_10150610: the prompt arrow's tint by distance from us against the range (y ignored): red past range + 0.5 or
+/// at 25 and more, yellow past range - 0.5, else blue. Not done: the model radii (+0x208) the spell record adds.
+pub fn range_tint(w: &World, t: u32) -> u32 {
+    let Some(r) = w.prompt.as_ref().and_then(|s| s.range) else { return 0xe040_40d0 };
+    let p = if t == w.my_id { w.pos } else { w.entities.get(&t).map_or(w.pos, |e| e.pos) };
+    let raw = (p - w.pos).length();
+    let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length();
+    if d > r + 0.5 || raw >= 25.0 {
+        0xe0d0_4040
+    } else if d > r - 0.5 {
+        0xe0d0_d040
+    } else {
+        0xe040_40d0
     }
 }
 
@@ -35,15 +195,15 @@ pub fn set(w: &mut World, t: Option<u32>) {
     log::info!("target {:#x} {:?}", t.unwrap_or(0), t.and_then(|t| w.entities.get(&t)).map(|e| e.name.as_str()));
     w.target = t;
     w.target_since = std::time::Instant::now();
-    if w.locked {
+    if w.locked && w.prompt.is_none() {
         lock(w, false, "target changed");
     }
 }
 
 /// FUN_10151f20: the player's own target inputs (Tab, Escape, a mouse pick) do nothing while locked; only the
-/// lock toggle and the server move a locked target.
+/// lock toggle and the server move a locked target. A sub-target prompt bypasses the lock (+0xc4 set).
 pub fn picks_allowed(w: &World) -> bool {
-    !w.locked
+    !w.locked || w.prompt.is_some()
 }
 
 /// FUN_10150da0: lock needs a target, a living player and a target that is not us. `why` goes in the log.
@@ -111,11 +271,11 @@ fn kind_bits(id: u32, e: &super::Entity) -> u32 {
     }
 }
 
-/// FUN_10083430 with no sub-target prompt: drawn on screen this frame (+0xb2 bit 0 clear: World::visible), not
-/// hidden, not ourselves, and not a dead or despawning monster. No name test. Not done: the event untargetable bit
-/// (ops 0x12..0x15, +0x128 bit 4) and the occlusion part of the cull.
+/// FUN_10083430: drawn on screen this frame (+0xb2 bit 0 clear: World::visible), not hidden, not ourselves, not a
+/// dead or despawning monster, and in a prompt's include / exclude kinds (T+0x60 / +0x64). No name test. Not done:
+/// the event untargetable bit (ops 0x12..0x15, +0x128 bit 4) and the occlusion part of the cull.
 fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &super::Entity) -> bool {
-    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3))
+    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id)))
 }
 
 /// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its own frame, local forward

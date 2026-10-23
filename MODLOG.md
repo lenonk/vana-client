@@ -3914,3 +3914,41 @@ From scratchpad spawnin/SPEC.md (the 0x00E handler is FUN_1009b550, pushed at 0x
   takes its generators.
 - Despawn (mask 0x20): the client plays nothing; the fade is the server's earlier 0x038 'kesu'.
 - Not done: ops 0x07 / 0x59 / 0x2e motion locks (model +0x80 / +0xfc counters, actor +0x11c).
+
+## Magic and ability menus, the target prompt (2026-10-23)
+
+From scratchpad magicmenu/SPEC.md and icons/SPEC.md; client/magic.rs, target.rs (Sub), textcmd.rs (`<st>`).
+- Windows: mgcmenu (main menu child 3: 8 categories, list mode, Trust row 8), magselec (cast mode, no Trust), abimenu
+  (child 5), abiselec (action menu Abilities), "menu    magic" / "menu    ability" (12 rows at children 1..12, icon at
+  the child, name at + 18; colours 0x80808080 / 0x80404040 refused / 0x80803040 cursor row), subwindo (magic "MP
+  Cost" 9 0xe6 / "Next" 9 0xe7 "%d:%02d" right-aligned at +0x69). Openers: action menu 8 Magic (all but Trust, cast
+  mode), 0x19 Trust (type 8), 7 Abilities (abiselec); Ctrl / Alt + M (list mode, no Trust), J / W / B (job abilities,
+  weapon skills, pet commands). Empty: 9 0x4a "No spells learned." / 0x4b "No spells available.". Help bar: the row's
+  description (55734 spells / 55733 abilities), title 0xd 76 "Magic List" / 68 "Abilities".
+- Rows: known spells (0x0AA) / abilities (0x0AC, bit = table index) in id order (retail's order with no mix.dat /
+  aix.dat; not read yet). Cast mode (FUN_1022c3a0) needs 0x119 seen (DAT_10485824 bit 0), FUN_1022b7d0, SCH / GEO main
+  for record +0x44 bits 8 / 0x20; blue magic left out (needs s2c 0x044's set spells, not read).
+- Icons (FUN_10220d40 -> FUN_10220cf0 table DAT_10666e88): kind 5 "menu    magiconw" (file 39551), kind 6 "menu
+  magico2w" (file 39560, loaded by FUN_10010080). HD (config 0x99 bit 2 clear, the default) and the HD value
+  (spell +0x42, ability +4) not 0xffff: kind 6 (value - 1000) from 1000, else kind 5 (value); otherwise kind 5 (spell
+  +0x40, ability +3). 16x16 units, drawn 0x80808080, never greyed.
+- Enter (FUN_1022c7a0): FUN_1022cf30's line (fishing 0x4d, mounted 0x4b, healing 0x51, sitting 0xa0, zone flag 0x100
+  0x44, recast 0x59 / trusts 0xbf, 0x119 missing or job / level 0x57, MP 0x58), then the prompt for record +6's target
+  flags (failure 0x16), the list hidden; confirm runs `/magic "<name>" <id>` (mode 0) and closes the list, cancel shows
+  it again. Abilities (FUN_102241a0): +0xe != 0 opens that sub-type list; traits 0x5e; recast 0x5c; WS not engaged
+  0x52, TP < 1000 0x5f; target failure 0x1b; `/weaponskill` (type 3), `/monsterskill` (0x14), else `/jobability`.
+  Esc on an ability sub-list reopens its parent type (table 0x10386159). Spell recasts: our 0x028 category 4, header
+  info seconds, 0 = record +0xd * 15 ticks. 0x119: 31 x {u16 seconds, u8, u8 timer id, u16, u16}.
+- Target prompt (FUN_10159440): DAT flags -> include / exclude kinds by table 0x103720c0 (1 self 0x200, 2 0x100, 4
+  party 4, 8 alliance 8, 0x10 PC 1, 0x20 monster 0x10, 0x40 NPC 2, 0x80 NPC minus 0x1800 pets / trusts); first pick
+  the current target if it fits (not an enemy when self is allowed), else us, else the nearest candidate; the target
+  and lock are saved and restored. Keys: Enter confirm (SE 0009), Esc cancel, Tab / F8..F10 among candidates of the
+  kinds, F1 / F7 us (inc 0x200), F2..F6 / F11 / F12 slots (inc 4 / 8); works locked on. Arrows: the saved target's as
+  usual, the pick's 10 px higher tinted by range (spell +0x45 via table 0x103644a8; red past range + 0.5 or at 25,
+  yellow past range - 0.5, blue), forced flash unless red. Bars: helpwind slot 2 0xe 0x4f / 0x51, title the name.
+- Text tags: `<st>` 0x7f, `<stpc>` 0x1d, `<stnpc>` 0xa0, `<stpt>` 5, `<stal>` 0xd in a target command (or flag 0x08)
+  open the prompt with the text before the tag; confirm re-runs it with the pick's server id (quoted name for flag
+  0x08); refused in an event (7 0x43) or zone flag 0x100 (0x44); nothing fits 0x46 and a macro stops. While the prompt
+  is up a typed line needs flag 0x02 (else 7 0xa4), macro lines wait. A /ma line's dry run gives the arrow its range.
+- Not done: mix.dat / aix.dat order and the sort windows, the Right-key magselec pop-out, blue magic sets, mouse in the
+  lists and prompt, `<stpt>` / `<stal>` party-list cursors, the mount list, subwindo pet lines and charges, the cast bar.

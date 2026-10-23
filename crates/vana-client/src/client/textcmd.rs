@@ -6,16 +6,19 @@ use super::{World, combat, event, target};
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-/// FUN_10080dc0's mode: 0 menus, 1 typed, 2 macro (3..7, the sub-target re-runs, are not here yet).
+/// FUN_10080dc0's mode: 0 menus, 1 typed, 2 macro, 3..7 a sub-target tag's re-run with the pick's id.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Mode {
     Internal,
     Typed,
     Macro,
+    SubTarget,
 }
 
 /// Command flags (u16 @0x16).
 mod flag {
+    pub const IN_PROMPT: u16 = 0x02;
+    pub const NAME_TAGS: u16 = 0x08;
     pub const UI_FREE: u16 = 0x10;
     pub const TARGET: u16 = 0x100;
     pub const NO_GATE: u16 = 0x1000;
@@ -195,6 +198,11 @@ fn pet(w: &World) -> Option<(u32, u16)> {
     (w.my_pet != 0).then(|| by_index(w, w.my_pet).map(|(id, _)| (id, w.my_pet))).flatten()
 }
 
+/// The name a flag-0x08 command gets for a pick (`"%s\"%s\""`).
+pub fn display_name(w: &World, id: u32) -> String {
+    name_of(w, (id, 0)).unwrap_or_default()
+}
+
 fn name_of(w: &World, t: (u32, u16)) -> Option<String> {
     if t.0 == w.my_id {
         return Some(w.name.clone());
@@ -308,7 +316,7 @@ fn resolve(w: &World, text: Option<&str>, fallback: bool, wide: bool, mode: Mode
         if let Some((id, e)) = hit {
             return Some((*id, e.index));
         }
-        if mode == Mode::Internal
+        if matches!(mode, Mode::Internal | Mode::SubTarget)
             && let Some(n) = number(s)
         {
             let id = n as u32;
@@ -336,7 +344,7 @@ fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
 }
 
 /// A group 7 line (FUN_10129e30, mode 0x7b).
-fn refuse(w: &mut World, id: usize) {
+pub(super) fn refuse(w: &mut World, id: usize) {
     let Some(bt) = w.battle.clone() else { return };
     let Some(line) = bt.group7(id) else { return };
     let colour = bt.colour_in(0x7b, &w.game);
@@ -401,7 +409,23 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     // A line without a command goes to the chat mode (ours: always say).
     let line = if line.starts_with('/') { line.to_string() } else { format!("/say {line}") };
     let first = line.split([' ', '\t']).next().unwrap_or("");
-    let target_cmd = table().get(first).is_some_and(|e| e.1 & flag::TARGET != 0);
+    let first_flags = table().get(first).map_or(0, |e| e.1);
+    let target_cmd = first_flags & flag::TARGET != 0;
+    // With the prompt up a typed line runs only with flag 0x02 (else group 7 0xa4); a macro line is dropped.
+    if w.prompt.is_some() && matches!(mode, Mode::Typed | Mode::Macro) && first_flags & flag::IN_PROMPT == 0 {
+        if mode == Mode::Typed {
+            refuse(w, 0xa4);
+        }
+        return;
+    }
+    // A sub-target tag in a target command (or a flag-0x08 one) opens the prompt with the text before it.
+    if (target_cmd || first_flags & flag::NAME_TAGS != 0)
+        && mode != Mode::SubTarget
+        && let Some((at, mask)) = sub_tag(&line)
+    {
+        open_prompt(w, &line[..at], mask, target_cmd, first_flags & flag::NAME_TAGS != 0, mode);
+        return;
+    }
     let mut expanded = expand(w, &line, target_cmd);
     cut(&mut expanded);
     let args = tokens(&expanded, mode != Mode::Typed);
@@ -417,6 +441,46 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     }
     if handle(w, cid, &args, &expanded, mode).is_err() {
         error(w, &expanded, mode);
+    }
+}
+
+/// FUN_10076ab0's sub-target tags (prefix compare at each '<'): `<st>` 0x7f, `<stpc>` 0x1d, `<stnpc>` 0xa0,
+/// `<stpt>` 5, `<stal>` 0xd: where the first one starts, and its target flags.
+fn sub_tag(line: &str) -> Option<(usize, u32)> {
+    const TAGS: [(&str, u32); 5] = [("<st>", 0x7f), ("<stpc>", 0x1d), ("<stnpc>", 0xa0), ("<stpt>", 5), ("<stal>", 0xd)];
+    line.match_indices('<').find_map(|(i, _)| TAGS.iter().find(|(t, _)| line[i..].starts_with(t)).map(|(_, m)| (i, *m)))
+}
+
+/// The tag's prompt: refused in an event (group 7 0x43) or a place without actions (0x44); the stash must be a
+/// command. A /ma line's dry run gives the arrow its spell range. Nothing fits: 0x46 "You must specify a valid
+/// target." and a macro stops. (`<stpt>` / `<stal>` use the 3D prompt here, not the party list cursor.)
+fn open_prompt(w: &mut World, stash: &str, mask: u32, target_cmd: bool, quoted: bool, mode: Mode) {
+    if event::active(w) {
+        refuse(w, 0x43);
+        return;
+    }
+    if w.room_flag {
+        refuse(w, 0x44);
+        return;
+    }
+    let stash = expand(w, stash, target_cmd);
+    if !stash.starts_with('/') {
+        return;
+    }
+    let args = tokens(&stash, mode != Mode::Typed);
+    let spell = match args.first().and_then(|a| table().get(a.as_str())).map(|e| e.0) {
+        Some(id::MAGIC | id::NINJUTSU | id::SONG) => args.get(1).and_then(|n| find_spell(w, n, 0).ok()),
+        _ => None,
+    };
+    let range = spell.and_then(|s| w.actions.as_ref()?.spell(s)).map(|r| crate::dat::actions::RANGES[(r.range & 0xf) as usize] as f32);
+    let then = target::SubThen::Line { stash, quoted, from_macro: mode == Mode::Macro };
+    if !target::open_sub(w, mask, then, range, String::new(), 0) {
+        refuse(w, 0x46);
+        if mode == Mode::Macro
+            && let Some(m) = w.macros.as_mut()
+        {
+            m.stop();
+        }
     }
 }
 
@@ -747,7 +811,7 @@ fn ability(w: &mut World, _pet: bool, args: &[String], mode: Mode) -> Done {
         return Ok(());
     }
     let name = args.get(1).ok_or(())?;
-    let hidden = |i: u16| w.actions.as_ref().and_then(|a| a.abilities.get(i as usize)).is_some_and(|a| a.hidden);
+    let hidden = |i: u16| w.actions.as_ref().and_then(|a| a.abilities.get(i as usize)).is_some_and(|a| a.sub != 0);
     let ja = ability_named(w, name, (0x200..0x400).filter(|&i| !hidden(i)));
     let id = ability_named(w, name, 0x400..0x600).or(ja).ok_or(())?;
     if (0x200..0x400).contains(&id) {

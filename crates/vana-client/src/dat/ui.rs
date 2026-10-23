@@ -12,11 +12,13 @@ pub const LOBBY_US: u32 = 39541;
 pub const WINDOW_STYLE_BASE: u32 = 14;
 /// Icon images ("menu    magiconw", lobycwin's "menu    ustats"), resident from startup (FUN_10010080 loads 0x9a7f).
 pub const ICONS: u32 = 39551;
+/// "menu    magico2w" (FUN_10010080, 0x9a88): HD trust and SP2 ability list icons (kind 6 of FUN_10220cf0).
+pub const ICONS2: u32 = 39560;
 
 /// Files whose images a UI file's sprites also draw from.
 pub fn companions(id: u32) -> &'static [u32] {
     match id {
-        LOBBY_US => &[MENU_US, WINDOW_STYLE_BASE, ICONS],
+        LOBBY_US => &[MENU_US, WINDOW_STYLE_BASE, ICONS, ICONS2],
         MENU_US => &[WINDOW_STYLE_BASE],
         _ => &[],
     }

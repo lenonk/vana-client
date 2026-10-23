@@ -132,3 +132,51 @@ pub fn push_money(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, gil
     let (x, y) = push_window(b, ui, style, m, w, h);
     push_shape_text_right(b, ui, gil.as_bytes(), x + 103.0, y + 31.0, 0x8080_8080);
 }
+
+/// A row of the magic / ability lists (FUN_1022ce60 / FUN_10224a80): the icon sprite (library, index) at the child,
+/// never greyed, the name at + 18.
+pub struct ActionRow {
+    pub icon: Option<(&'static str, usize)>,
+    pub name: String,
+    pub tint: u32,
+}
+
+/// The magic and ability lists (FUN_10221f50): rows at children 1..12, the hand at the cursor child; an empty list
+/// prints its line at (10, 0x14).
+#[allow(clippy::too_many_arguments)]
+pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    if rows.is_empty() {
+        text(b, font, atlas, empty, wx + 10.0, wy + 20.0, 0x8080_8080);
+        return;
+    }
+    for (k, r) in rows.iter().enumerate() {
+        let Some(e) = m.elements.get(k + 1) else { break };
+        let (x, y) = (wx + e.x as f32, wy + e.y as f32);
+        if let Some((lib, k)) = r.icon
+            && let Some(lib) = ui.lib(lib)
+        {
+            b.push_sprite(ui, lib, k, x, y, 1.0, 1.0, 0x8080_8080, 0);
+        }
+        text(b, font, atlas, &r.name, x + 18.0, y, r.tint);
+    }
+    push_cursor(b, ui, m, wx, wy, cursor + 1, frame);
+}
+
+/// A category window (mgcmenu, abiselec ...): its children's label sprites and the hand.
+#[allow(clippy::too_many_arguments)]
+pub fn push_category(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, cursor_child: usize, w: f32, h: f32, frame: usize) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    push_children(b, ui, m, wx, wy);
+    push_cursor(b, ui, m, wx, wy, cursor_child, frame);
+}
+
+/// subwindo (FUN_1014f960): label lines at (+5, +8) and (+5, +0x1a), their values right-aligned at +0x69.
+#[allow(clippy::too_many_arguments)]
+pub fn push_cost_box(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, lines: &[(String, String)], w: f32, h: f32) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    for ((label, value), dy) in lines.iter().zip([8.0, 26.0]) {
+        text(b, font, atlas, label, wx + 5.0, wy + dy, 0x8080_8080);
+        push_shape_text_right(b, ui, value.as_bytes(), wx + 105.0, wy + dy + 2.0, 0x8080_8080);
+    }
+}

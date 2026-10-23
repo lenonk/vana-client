@@ -205,6 +205,10 @@ pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
 /// 0x028: messages per (target, result) record (FUN_1009c730: main, additional effect, reaction) with
 /// work = [cmd_arg, value, proc value, react value, bit]; melee waits for the attacker's hit.
 pub(super) fn on_action(w: &mut World, a: &Action) {
+    // Our cast finished (category 4, magic file 0xaf0): the spell's recast (asm 0x100a900d).
+    if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
+        super::magic::set_recast(w, a.arg as u16, a.info);
+    }
     let messages: Vec<Msg> = action_messages(a).into_iter().map(|(id, target, work)| Msg { id, actor: a.actor, target, work }).collect();
     let mut reactions = Vec::new();
     for (target, r) in a.records() {
@@ -506,6 +510,10 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         }
         (cmd::CHECK, Some((t, i))) => send(w, NetCommand::Check { target: t, index: i, kind: 0 }),
         (cmd::CHAT | cmd::TELL, _) => w.typing = true,
+        // FUN_1012b880 cases 6 / 7 / 0x18: Abilities opens abiselec, Magic the list without trusts, Trust only them.
+        (7, _) => super::magic::open_cats(w, "menu    abiselec"),
+        (8, _) => super::magic::open_magic(w, 0, false, 0x100),
+        (0x19, _) => super::magic::open_magic(w, 8, false, 0),
         // FUN_10127b60 case 5: FUN_1007aac0 on the target.
         (cmd::TALK, Some((t, _))) => {
             super::event::talk(w, t);

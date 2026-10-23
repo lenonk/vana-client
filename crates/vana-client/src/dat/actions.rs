@@ -58,19 +58,40 @@ pub struct Spell {
     pub recast: u8,
     /// +0xe: level per job 0..23, -1 when the job can't learn it.
     pub levels: [i16; 24],
+    /// +0x3e: the auto-sort position; +0x40 / +0x42: list icons (normal, HD from 1000).
+    pub sort: u16,
+    pub icon: u16,
+    pub icon_hd: u16,
+    /// +0x44: 8 SCH main only, 0x20 GEO main only (bit 5 also the free 3D cursor); +0x45: range index.
+    pub flags: u8,
+    pub range: u8,
     /// +0x5c: per main job, the level is in job points (needs level 99).
     pub jp_mask: u32,
 }
+
+/// Table 0x103644a8: spell range by record +0x45.
+pub const RANGES: [u16; 16] = [0, 1, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 25, 30, 255];
 
 #[derive(Clone, Debug, Default)]
 pub struct Ability {
     /// +0: id in the name table (weapon skills 0..0x1ff, job abilities 0x200.., pet commands 0x400..).
     pub id: u16,
+    /// +2: 1 job ability, 2 pet command, 3 weapon skill, 4 trait, 0x14 Monstrosity; 6..0x17 sub-lists.
     pub kind: u8,
-    /// +6: Ready charges / cost.
+    /// +3 / +4: the list icons, standard and HD (FUN_10224a80 -> FUN_10220d40).
+    pub icon: u8,
+    pub icon_hd: u16,
+    /// +6: MP cost, or Ready charges.
     pub cost: u16,
-    /// +0xe: skipped by /ja (inf: hidden).
-    pub hidden: bool,
+    /// +8: the 0x119 timer id (900 none).
+    pub timer: u16,
+    /// +0xa: valid targets (spell bits).
+    pub targets: u16,
+    /// +0xc: TP cost (255 none).
+    pub tp: u8,
+    /// +0xe: a row opening the sub-list of this type (skipped by /ja); +0xf level (Monstrosity).
+    pub sub: u8,
+    pub level: u8,
 }
 
 pub struct Actions {
@@ -92,12 +113,17 @@ impl Actions {
                 cast: r[0xc],
                 recast: r[0xd],
                 levels: std::array::from_fn(|j| u16_at(r, 0xe + 2 * j) as i16),
+                sort: u16_at(r, 0x3e),
+                icon: u16_at(r, 0x40),
+                icon_hd: u16_at(r, 0x42),
+                flags: r[0x44],
+                range: r[0x45],
                 jp_mask: u32::from_le_bytes(r[0x5c..0x60].try_into().unwrap()),
             })
             .collect();
         let abilities = records(index, ABILITY_CHUNK, ABILITY_SIZE)?
             .iter()
-            .map(|r| Ability { id: u16_at(r, 0), kind: r[2], cost: u16_at(r, 6), hidden: r[0xe] != 0 })
+            .map(|r| Ability { id: u16_at(r, 0), kind: r[2], icon: r[3], icon_hd: u16_at(r, 4), cost: u16_at(r, 6), timer: u16_at(r, 8), targets: u16_at(r, 0xa), tp: r[0xc], sub: r[0xe], level: r[0xf] })
             .collect();
         Ok(Actions { spells, abilities })
     }

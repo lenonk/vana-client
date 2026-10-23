@@ -12,6 +12,9 @@ use anyhow::{Context, Result, bail};
 pub const KEY_ITEMS: [u32; 4] = [55585, 55705, 55825, 56245];
 pub const SPELLS: [u32; 4] = [55582, 55702, 55822, 56242];
 pub const ABILITIES: [u32; 4] = [55581, 55701, 55821, 56241];
+/// Descriptions (help bar): English 55734 / 55733 (slots 0x5e / 0x60); the other languages inferred at +32.
+pub const SPELL_TEXTS: [u32; 4] = [55614, 55734, 55854, 56274];
+pub const ABILITY_TEXTS: [u32; 4] = [55613, 55733, 55853, 56273];
 pub const PLACES: [u32; 4] = [55535, 55465, 55775, 56195];
 pub const TITLES: [u32; 4] = [55584, 55704, 55824, 56244];
 
@@ -124,6 +127,8 @@ pub struct Names {
     key_index: std::collections::HashMap<u32, usize>,
     spells: DMsg,
     abilities: DMsg,
+    spell_texts: Option<DMsg>,
+    ability_texts: Option<DMsg>,
     places: DMsg,
     titles: DMsg,
 }
@@ -146,9 +151,21 @@ impl Names {
             key_index,
             spells: DMsg::load(index, SPELLS[l])?,
             abilities: DMsg::load(index, ABILITIES[l])?,
+            spell_texts: DMsg::load(index, SPELL_TEXTS[l]).ok(),
+            ability_texts: DMsg::load(index, ABILITY_TEXTS[l]).ok(),
             places: DMsg::load(index, PLACES[l])?,
             titles: DMsg::load(index, TITLES[l])?,
         })
+    }
+
+    /// A spell's description (FUN_1022bf80), for the magic list's help bar.
+    pub fn spell_description(&self, id: u32) -> Option<String> {
+        self.spell_texts.as_ref()?.text(id as usize)
+    }
+
+    /// An ability's description (FUN_102239c0).
+    pub fn ability_description(&self, id: u32) -> Option<String> {
+        self.ability_texts.as_ref()?.text(id as usize)
     }
 
     /// Key item fields (FUN_1014d7e0): ja [id, name, desc]; en [id, type, -, -, singular, plural, desc].

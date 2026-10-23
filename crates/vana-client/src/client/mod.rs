@@ -36,6 +36,7 @@ mod mousecur;
 mod party;
 mod macros;
 mod textcmd;
+mod magic;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -761,6 +762,26 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         _ => {}
                     }
                 }
+                // The target prompt (key table 0x10371ee0 with +0xc4 set): Enter confirms, Escape cancels.
+                _ if world.prompt.is_some() && matches!(key, egui::Key::Enter | egui::Key::Escape) => {
+                    if *key == egui::Key::Enter {
+                        target::confirm_sub(world);
+                    } else {
+                        target::cancel_sub(world);
+                        world.sounds.push(crate::audio::Ui::Cancel as u32);
+                    }
+                }
+                // Ctrl / Alt + M, J, W, B (key functions 0x41, 0x7f, 0x80, 0x9f): magic in list mode without trusts, job
+                // abilities, weapon skills, pet commands; in the field, alive, no prompt.
+                egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B if (modifiers.ctrl || modifiers.alt) && !event::active(world) && !world.dead() && world.prompt.is_none() => match key {
+                    egui::Key::M => magic::open_magic(world, 0, true, 0x100),
+                    egui::Key::J => magic::open_ability(world, 1),
+                    egui::Key::W => magic::open_ability(world, 3),
+                    _ => magic::open_ability(world, 2),
+                },
+                _ if world.prompt.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
+                    magic::key(world, *key);
+                }
                 egui::Key::H if modifiers.ctrl || modifiers.alt => send_chat(world, "/heal".into()),
                 egui::Key::C if modifiers.ctrl || modifiers.alt => check_target(world),
                 // FUN_1012ec60 / FUN_101e9f10.
@@ -905,6 +926,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1) {
         match (world.menu_page, id) {
             (0, 2) => items::open_equipment(world),
+            // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
+            (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
+            (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
             // Item 12 Map (FUN_1013b3f0 case 0xc; the Mog House branch to myroom is not done).
             (0, 12) => match map::MapWin::open(world, gu.map_regions(), sw, sh) {
@@ -1054,9 +1078,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
 
     // Target cursor (FUN_10149900): anc_l at the target's point, 6 frames of 4 ticks, tint 0xe0808080;
     // locked, windowps 212 over the target window (0x10149bc0).
-    if let (Some(t), true) = (world.target, st.target.is_some()) {
+    // In a prompt (FUN_101501a0 with +0xc4 set) the saved target keeps it and the pick gets a second one 10 px up,
+    // tinted by range (FUN_10150610), and flashes (+0x88 |= 0x600) unless red.
+    let frame = (world.target_since.elapsed().as_secs_f32() * 60.0 / 4.0) as usize % gu.lib_len("anc     anc_l").max(1);
+    if let Some(p) = world.prompt.as_ref() {
+        if let Some((x, y)) = p.saved.and_then(|t| target_point(world, t, sw, sh, view_proj)) {
+            gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
+        }
+        if let Some(t) = world.target {
+            let tint = target::range_tint(world, t);
+            if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
+                gu.sprite("anc     anc_l", frame, x.round(), (y - 10.0).round(), tint);
+            }
+        }
+    }
+    if let (Some(t), true, None) = (world.target, st.target.is_some(), world.prompt.as_ref()) {
         if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
-            let frame = (world.target_since.elapsed().as_secs_f32() * 60.0 / 4.0) as usize % gu.lib_len("anc     anc_l").max(1);
             gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
         }
         if world.locked
@@ -1129,6 +1166,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     blockers.extend(items::draw(gu, world, sw, sh));
+    blockers.extend(magic::draw(gu, world, sw, sh));
     if let Some(c) = &world.config {
         blockers.extend(c.draw(gu, &world.game, sw, sh));
     }
@@ -1463,6 +1501,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         bars.title[1] = gu.title_msg(0x50).unwrap_or_else(|| "MacroPalette".into());
         bars.title[2] = m.recs[world.palette.3[p] + 10 * p].title();
     }
+    magic::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
         bars.title[0] = gu.title_msg(if world.my_motion.status == 1 { 7 } else { 5 }).unwrap_or_default();
@@ -2185,6 +2224,15 @@ struct World {
     actions: Option<Arc<crate::dat::actions::Actions>>,
     spells_known: Vec<u8>,
     commands_known: Vec<u8>,
+    /// The magic / ability lists, their category windows and the target prompt (client/magic.rs, target.rs).
+    magic: Option<magic::ListWin>,
+    ability: Option<magic::ListWin>,
+    cats: Option<magic::Cats>,
+    prompt: Option<target::Sub>,
+    /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
+    spell_recast: HashMap<u16, Instant>,
+    ability_recast: HashMap<u16, Instant>,
+    recasts_seen: bool,
     item_info: Option<Arc<items::ItemCache>>,
     msgshift: Option<Arc<crate::dat::msgshift::MsgShift>>,
     zone_text: Option<(u16, Arc<crate::dat::dialog::Dialog>)>,
@@ -3092,6 +3140,13 @@ impl App {
                             actions: None,
                             spells_known: Vec::new(),
                             commands_known: Vec::new(),
+                            magic: None,
+                            ability: None,
+                            cats: None,
+                            prompt: None,
+                            spell_recast: HashMap::new(),
+                            ability_recast: HashMap::new(),
+                            recasts_seen: false,
                             item_info: None,
                             msgshift: None,
                             zone_text: None,
@@ -3720,6 +3775,11 @@ impl App {
                 NetEvent::PartyAttr(u) => world.party.attr(&u),
                 NetEvent::MagicKnown(bits) => world.spells_known = bits,
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
+                NetEvent::AbilityRecasts(timers) => {
+                    world.recasts_seen = true;
+                    let now = Instant::now();
+                    world.ability_recast = timers.into_iter().filter(|t| t.1 > 0).map(|(id, s)| (id, now + std::time::Duration::from_secs(s as u64))).collect();
+                }
                 NetEvent::Error(e) => {
                     self.status = format!("Disconnected: {e}");
                     self.to_login(true);
@@ -3841,6 +3901,12 @@ impl App {
         }
         let in_event = event::active(world);
         target::update(world);
+        // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red.
+        if let Some(t) = world.target.filter(|_| world.prompt.is_some())
+            && target::range_tint(world, t) != 0xe0d0_4040
+        {
+            target::force_flash(world, t);
+        }
         combat::area_line(world);
         let ticks = dt * 60.0;
         // FUN_1008dfb0 / FUN_100a3560: grounded actors follow the collision floor every frame (also those that
@@ -4157,7 +4223,7 @@ impl App {
         // Macros (FUN_101a2e80): the runner steps first, one line a 2-tick frame, through the text-command path; then,
         // when the gate allows (field, UI shown, no event, alive, no window), Ctrl / Alt + digit runs a macro and
         // Shift + Ctrl / Alt + digit picks a set. The palettes are not drawn yet.
-        if let Some(line) = world.macros.as_mut().and_then(|m| m.step(dt * 60.0)) {
+        if let Some(line) = world.macros.as_mut().filter(|_| world.prompt.is_none()).and_then(|m| m.step(dt * 60.0)) {
             textcmd::run(world, &crate::dat::font::decode_sjis(&line), textcmd::Mode::Macro);
         }
         let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
@@ -4233,13 +4299,18 @@ impl App {
             } else if self.input.test(0x4e, input::mode::PRESS) {
                 target::nearest_kind(world, 0, false, true);
             } else if self.input.test(0x46, input::mode::PRESS) || self.input.test(0x4c, input::mode::PRESS) {
-                // F1 / F7: ourselves.
-                target::pick(world, Some(world.my_id));
+                // F1 / F7: ourselves (in a prompt only when it takes us).
+                if world.prompt.is_some() {
+                    target::sub_self(world);
+                } else {
+                    target::pick(world, Some(world.my_id));
+                }
             } else if let Some(slot) = [(0x47, 1), (0x48, 2), (0x49, 3), (0x4a, 4), (0x4b, 5), (0x53, 6), (0x54, 12)].into_iter().find(|(k, _)| self.input.test(*k, input::mode::PRESS)).map(|(_, s)| s) {
                 // F2..F6 party slots 1..5, F11 / F12 the other parties' first members (FUN_102033c0 / FUN_102034a0).
-                let t = target::slot_target(world, slot);
-                if t.is_some() {
-                    target::pick(world, t);
+                if world.prompt.is_some() {
+                    target::sub_slot(world, slot);
+                } else if let Some(t) = target::slot_target(world, slot) {
+                    target::pick(world, Some(t));
                 }
             }
         }
