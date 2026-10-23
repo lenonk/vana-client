@@ -284,6 +284,9 @@ pub struct Runtime {
     last_speaker: Option<u32>,
     names: Option<std::sync::Arc<dyn crate::dat::names::NameSource>>,
     player_word: u32,
+    /// Op 0xa7 (body +0x180 bit 0 / +0x184): a registration answer is awaited, and the answer (s2c 0x0BF).
+    reg_armed: bool,
+    reg_value: u32,
     /// Race and server id per VM actor (values 0x7f07 / 0x7f0a), from the host each tick.
     actor_info: std::collections::HashMap<u32, (u8, u32)>,
     pub dt: f32,
@@ -332,6 +335,8 @@ impl Runtime {
             names: None,
             player_word: host.player_word(),
             actor_info: std::collections::HashMap::new(),
+            reg_armed: false,
+            reg_value: 0,
             dt: 1.0,
             trace: std::env::var_os("FFXI_EVENT_TRACE").is_some(),
             frame: 0,
@@ -453,6 +458,13 @@ impl Runtime {
     /// s2c 0x05C: event parameters into Z2..Z9.
     pub fn params(&mut self, num: [u32; 8]) {
         self.z[2..10].copy_from_slice(&num);
+    }
+
+    /// s2c 0x0BF (FUN_100a2160 -> FUN_100bab20): the registration answer op 0xa7 waits for.
+    pub fn registration(&mut self, value: u32) {
+        if self.reg_armed {
+            (self.reg_value, self.reg_armed) = (value, false);
+        }
     }
 
     /// s2c 0x052 (100a06f0): mode 1 ends an update round trip; mode 2 for this event cancels it.
@@ -1634,6 +1646,26 @@ impl Runtime {
                 }
                 self.adv(v, len);
             }
+            // FUN_100baa60: sub 0 arms the wait (+0x180 bit 0) and yields, then sends the update (c2s 0x05B mode 1,
+            // FUN_100a0510) and zeroes the answer; sub 1 waits until s2c 0x0BF clears it, then set@2 = the answer. Any
+            // other sub stalls. Every call ends the frame.
+            0xa7 => {
+                match sub {
+                    Some(0) if !self.reg_armed => self.reg_armed = true,
+                    Some(0) => {
+                        host.effect(Effect::Send(Packet::EventUpdate { head: self.head(), option: self.z[1] }));
+                        self.reg_value = 0;
+                        self.adv(v, 2);
+                    }
+                    Some(1) if !self.reg_armed => {
+                        let x = self.reg_value;
+                        self.set_at(v, 2, 0, x);
+                        self.adv(v, 4);
+                    }
+                    _ => {}
+                }
+                self.yield_(v);
+            }
             // FUN_100b0a00: string slots and literals (feeding the 0x9d compares and message string codes), timers and
             // windows. Every sub ends the frame (+0x25a). 0 / 0x13: str@2 = the 16 literal bytes at pc + 4 (byte 15
             // zeroed; 0x13 turns '@' into spaces); 1: str@2 = event string slot val@4 (0..3, else 0); 4: that slot =
@@ -2250,6 +2282,7 @@ pub fn run_scripted(rt: &mut Runtime, host: &mut Scripted, max_frames: u32) -> O
             if let Some(p) = host.update_params {
                 rt.params(p);
             }
+            rt.registration(0);
         }
         if update || pos {
             rt.release(1, rt.start.event);

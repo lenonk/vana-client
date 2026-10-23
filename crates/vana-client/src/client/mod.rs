@@ -4073,6 +4073,12 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::Registration { index, result } => {
+                    log::info!("0x0BF registration {result} for index {index:#x}");
+                    if let Some(l) = world.event.as_mut() {
+                        l.rt.registration(result as u32);
+                    }
+                }
                 NetEvent::Emote { caster, target, emote, param, mode } => combat::on_emote(world, caster, target, emote, param, mode),
                 NetEvent::AbilityRecasts(timers) => {
                     world.recasts_seen = true;

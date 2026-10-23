@@ -4070,3 +4070,8 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   while the event runs. City zones 231..246 use 0 (13), 1 (battle stance, 11), 34 (2), 2 (corpse, 1). Ours:
   State::event_status, read by actor_place; riding 5 / 0x55 skipped until the chocobo / mount model is spawned
   (0x7e waits for that too). Subs 0 (server status), 2 / 3 (update freeze, c2s 0x016), 4 not done.
+- Op 0xa7 (FUN_100baa60, 108 sites, battlefield registration NPCs): sub 0 sets body +0x180 bit 0 and yields; the next
+  call sends the update (c2s 0x05B mode 1, FUN_100a0510), zeroes +0x184, advances 2, yields. Sub 1 yields until bit 0
+  clears, then set@2 = +0x184 and advances 4. s2c 0x0BF (FUN_100a2160 -> FUN_100bab20; LSB
+  GP_SERV_COMMAND_REGISTRATION: Result u16 @6, ActIndex u32 @0xC) finds the actor by ActIndex and, if it runs an event,
+  stores Result in +0x184 and clears bit 0. Ours: Runtime::registration on the running event (the index is logged).
