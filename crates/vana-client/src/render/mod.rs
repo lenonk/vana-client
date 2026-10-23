@@ -64,9 +64,10 @@ pub fn adapter_names(instance: &wgpu::Instance, surface: Option<&wgpu::Surface>)
         .filter(|a| surface.is_none_or(|s| a.is_surface_supported(s)))
         .map(|a| a.get_info().name)
         .collect();
-    // One per name: each backend (Vulkan, GL, ...) lists the same card.
+    // One per card: each backend (Vulkan, GL, ...) lists it, with its own driver part ("... (RADV NAVI21)", "...
+    // (radeonsi, navi21, ...)"); the first (the preferred backend's) stays.
     let mut seen = std::collections::HashSet::new();
-    names.retain(|n| seen.insert(n.clone()));
+    names.retain(|n| seen.insert(n.split(" (").next().unwrap_or(n).trim().to_string()));
     names
 }
 
