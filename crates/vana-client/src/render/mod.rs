@@ -71,6 +71,22 @@ pub fn adapter_names(instance: &wgpu::Instance, surface: Option<&wgpu::Surface>)
     names
 }
 
+/// With WGPU_BACKEND set, the best adapter (discrete first, software last) of its backends.
+fn preferred_backend(instance: &wgpu::Instance, surface: Option<&wgpu::Surface>) -> Option<wgpu::Adapter> {
+    let backends = wgpu::Backends::from_env()?;
+    let rank = |t: wgpu::DeviceType| match t {
+        wgpu::DeviceType::DiscreteGpu => 0,
+        wgpu::DeviceType::IntegratedGpu => 1,
+        wgpu::DeviceType::VirtualGpu => 2,
+        wgpu::DeviceType::Other => 3,
+        wgpu::DeviceType::Cpu => 4,
+    };
+    pollster::block_on(instance.enumerate_adapters(backends))
+        .into_iter()
+        .filter(|a| surface.is_none_or(|s| a.is_surface_supported(s)))
+        .min_by_key(|a| rank(a.get_info().device_type))
+}
+
 impl Gpu {
     pub fn new(instance: wgpu::Instance, surface: Option<&wgpu::Surface>) -> Result<Self> {
         Self::with_adapter(instance, surface, "")
@@ -78,13 +94,20 @@ impl Gpu {
 
     /// The adapter named `preferred` when it can drive the surface; otherwise (or empty) the high-performance one.
     pub fn with_adapter(instance: wgpu::Instance, surface: Option<&wgpu::Surface>, preferred: &str) -> Result<Self> {
+        // By name, WGPU_BACKEND's copy of the card first.
+        let first = wgpu::Backends::from_env().unwrap_or(wgpu::Backends::all());
         let named = (!preferred.is_empty())
-            .then(|| pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all())).into_iter().find(|a| a.get_info().name == preferred && surface.is_none_or(|s| a.is_surface_supported(s))))
+            .then(|| {
+                pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all()))
+                    .into_iter()
+                    .filter(|a| a.get_info().name == preferred && surface.is_none_or(|s| a.is_surface_supported(s)))
+                    .min_by_key(|a| !first.contains(a.get_info().backend.into()))
+            })
             .flatten();
         if !preferred.is_empty() && named.is_none() {
             log::warn!("GPU {preferred:?} not found or can't drive the window; using the default");
         }
-        let adapter = match named {
+        let adapter = match named.or_else(|| preferred_backend(&instance, surface)) {
             Some(a) => a,
             None => pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,

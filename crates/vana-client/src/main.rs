@@ -809,12 +809,41 @@ fn login(cfg: &config::Config, creds: &Credentials) -> Result<net::lobby::Lobby>
     Ok(lobby)
 }
 
+/// Log lines to stderr and a file.
+#[cfg(windows)]
+struct Tee(std::fs::File);
+
+#[cfg(windows)]
+impl std::io::Write for Tee {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let _ = std::io::stderr().write_all(buf);
+        self.0.write_all(buf)?;
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        let _ = std::io::stderr().flush();
+        self.0.flush()
+    }
+}
+
 fn main() -> Result<()> {
     #[cfg(windows)]
     unsafe {
         windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
     }
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    let mut log = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    // Windows: a GUI exe started without a console loses stderr, so the log (and any panic) also goes to a file.
+    #[cfg(windows)]
+    if let Ok(file) = std::fs::create_dir_all(config::data_dir()).and_then(|_| std::fs::File::create(config::data_dir().join("vana-client.log"))) {
+        log.target(env_logger::Target::Pipe(Box::new(Tee(file))));
+        let default = std::panic::take_hook();
+        std::panic::set_hook(Box::new(move |info| {
+            log::error!("{info}\n{}", std::backtrace::Backtrace::force_capture());
+            default(info);
+        }));
+    }
+    log.init();
     let Some(cmd) = Cli::parse().cmd else {
         return client::run(config::Config::load(), client::Drive::default());
     };
