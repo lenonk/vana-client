@@ -38,8 +38,8 @@ pub enum Packet {
     EventEnd { head: Head, option: u32 },
     /// c2s 0x05C (FUN_1009ec80): x, height, z, dir byte.
     EventPos { head: Head, x: f32, y: f32, z: f32, dir: f32, option: u32 },
-    /// Other event packets (0x1b, 0x58, 0x60, 0xeb) by opcode.
-    Other { op: u8, sub: u8 },
+    /// Any other c2s packet: id and body after the 4-byte header (0x01B, 0x058, 0x0EB).
+    Raw { id: u16, body: Vec<u8> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -287,6 +287,11 @@ pub struct Runtime {
     /// Op 0xa7 (body +0x180 bit 0 / +0x184): a registration answer is awaited, and the answer (s2c 0x0BF).
     reg_armed: bool,
     reg_value: u32,
+    /// Answers awaited for ops 0x8c (DAT_10480a90), 0x87 / 0x88 (DAT_1048557a), 0xa6 (DAT_104804c0); 0xa6's map number.
+    recipe_wait: bool,
+    pass_wait: bool,
+    submap_wait: bool,
+    submap: u32,
     /// Race and server id per VM actor (values 0x7f07 / 0x7f0a), from the host each tick.
     actor_info: std::collections::HashMap<u32, (u8, u32)>,
     pub dt: f32,
@@ -337,6 +342,10 @@ impl Runtime {
             actor_info: std::collections::HashMap::new(),
             reg_armed: false,
             reg_value: 0,
+            recipe_wait: false,
+            pass_wait: false,
+            submap_wait: false,
+            submap: 0,
             dt: 1.0,
             trace: std::env::var_os("FFXI_EVENT_TRACE").is_some(),
             frame: 0,
@@ -464,6 +473,76 @@ impl Runtime {
     pub fn registration(&mut self, value: u32) {
         if self.reg_armed {
             (self.reg_value, self.reg_armed) = (value, false);
+        }
+    }
+
+    /// s2c 0x031 (FUN_1009f7c0), 0x059 (FUN_1009fa00), 0x10E (100a2100): the answers ops 0x8c / 0x87 0x88 / 0xa6 wait
+    /// for. `p` is the whole packet, header included.
+    pub fn answer(&mut self, id: u16, p: &[u8]) {
+        let b = |o: usize| p.get(o).copied().unwrap_or(0);
+        let h = |o: usize| u16::from_le_bytes([b(o), b(o + 1)]) as u32;
+        let w = |o: usize| u32::from_le_bytes([b(o), b(o + 1), b(o + 2), b(o + 3)]);
+        match id {
+            // Type @0x30: 1 / 3 / 4 a recipe (product, skills, crystal, key item into Z40..Z44, Z55; ingredients and
+            // counts into Z45.. / Z4D.., type 4 one slot per unit), 2 a list (Z2..Z9 and 0x1700..0x1707, next 0x1708).
+            0x031 => {
+                match h(0x30) {
+                    t @ (1 | 3 | 4) => {
+                        for i in 0..5 {
+                            self.z[0x40 + i] = h(4 + 2 * i);
+                        }
+                        self.z[0x55] = h(0xe);
+                        if t == 4 {
+                            let mut n = 0;
+                            for i in 0..8 {
+                                let (item, count) = (h(0x10 + 2 * i), h(0x20 + 2 * i));
+                                if item == 0 || count == 0 {
+                                    break;
+                                }
+                                for _ in 0..count.min(8 - n as u32) {
+                                    (self.z[0x45 + n], self.z[0x4d + n]) = (item, 1);
+                                    n += 1;
+                                }
+                                if n == 8 {
+                                    break;
+                                }
+                            }
+                            for k in n..8 {
+                                (self.z[0x45 + k], self.z[0x4d + k]) = (0, 0);
+                            }
+                        } else {
+                            for i in 0..8 {
+                                (self.z[0x45 + i], self.z[0x4d + i]) = (h(0x10 + 2 * i), h(0x20 + 2 * i));
+                            }
+                        }
+                    }
+                    2 => {
+                        for i in 0..8 {
+                            (self.z[2 + i], self.mem.g[i]) = (h(0x10 + 2 * i), h(0x20 + 2 * i));
+                        }
+                        self.mem.g[8] = h(0x32);
+                    }
+                    _ => {}
+                }
+                self.recipe_wait = false;
+            }
+            // Type into Z2, three counts into Z3..Z5, Z6 = byte @0x21, the 16-byte pass code into string slot 0.
+            0x059 => {
+                self.z[2] = b(0x20) as i8 as u32;
+                for i in 0..3 {
+                    self.z[3 + i] = w(4 + 4 * i);
+                }
+                self.z[6] = b(0x21) as i8 as u32;
+                let code = p.get(0x10..0x20).unwrap_or(&[]);
+                let code = String::from_utf8_lossy(&code[..code.iter().position(|&c| c == 0).unwrap_or(code.len())]).into_owned();
+                if self.start.strings.is_empty() {
+                    self.start.strings.push(String::new());
+                }
+                self.start.strings[0] = code;
+                self.pass_wait = false;
+            }
+            0x10E if self.submap_wait => (self.submap, self.submap_wait) = (w(4), false),
+            _ => {}
         }
     }
 
@@ -1723,9 +1802,76 @@ impl Runtime {
                 self.set_at(v, 1, 0, v32);
                 self.adv(v, len);
             }
-            0x87 | 0x88 | 0x8c | 0xa6 if sub == Some(0) || sub == Some(2) => {
-                host.effect(Effect::Send(Packet::Other { op: opc, sub: sub.unwrap_or(0) }));
-                self.adv(v, len);
+            // FUN_100b98e0: c2s 0x058 RECIPE {skill +4, level +6, +8, mode +0xa = sub (1 for sub 0), +0xc..+0x12} from
+            // the operands; sub 1 waits for s2c 0x031. Sub 5 arms no wait. Every call ends the frame.
+            0x8c => {
+                let s = sub.unwrap_or(0xff);
+                let w = |o: usize| self.val(v, o) as u16;
+                // Words at c2s +4, +6, ... +0x12, and the op's length.
+                let mut b = [0u16; 8];
+                let n = match s {
+                    0 => {
+                        b[..3].copy_from_slice(&[w(2), w(4), w(6)]);
+                        8
+                    }
+                    2 => {
+                        (b[0], b[1], b[7], b[4], b[5]) = (w(2), w(4), w(6), w(8), w(10));
+                        12
+                    }
+                    3 | 4 => {
+                        (b[0], b[1], b[7], b[6]) = (w(2), w(4), w(6), w(8));
+                        10
+                    }
+                    5 => {
+                        (b[4], b[0], b[1], b[7], b[6], b[2]) = (w(2), w(4), w(6), w(8), w(10), w(12));
+                        14
+                    }
+                    _ => 0,
+                };
+                if n > 0 {
+                    b[3] = if s == 0 { 1 } else { s as u16 };
+                    let body = b.iter().flat_map(|x| x.to_le_bytes()).collect();
+                    host.effect(Effect::Send(Packet::Raw { id: 0x058, body }));
+                    self.recipe_wait = s != 5;
+                    self.adv(v, n);
+                } else if s == 1 && !self.recipe_wait {
+                    self.adv(v, 2);
+                }
+                self.yield_(v);
+            }
+            // FUN_100b9140 / FUN_100b9220: c2s 0x01B FRIENDPASS Para = sub (0 / 2) for 0x87, sub + 1 for 0x88; sub 1
+            // waits for s2c 0x059. Every call ends the frame.
+            0x87 | 0x88 => {
+                match sub {
+                    Some(s @ (0 | 2)) => {
+                        let para = s as u16 + (opc == 0x88) as u16;
+                        let mut body = vec![0u8; 0x18];
+                        body[..2].copy_from_slice(&para.to_le_bytes());
+                        host.effect(Effect::Send(Packet::Raw { id: 0x01B, body }));
+                        self.pass_wait = true;
+                        self.adv(v, 2);
+                    }
+                    Some(1) if !self.pass_wait => self.adv(v, 2),
+                    _ => {}
+                }
+                self.yield_(v);
+            }
+            // FUN_100ba9c0: sub 0 sends c2s 0x0EB REQSUBMAPNUM, sub 1 waits for s2c 0x10E, sub 2 set@2 = its MapNum.
+            0xa6 => {
+                match sub {
+                    Some(0) => {
+                        host.effect(Effect::Send(Packet::Raw { id: 0x0EB, body: Vec::new() }));
+                        self.submap_wait = true;
+                        self.adv(v, 2);
+                    }
+                    Some(1) if !self.submap_wait => self.adv(v, 2),
+                    Some(2) => {
+                        let m = self.submap;
+                        self.set_at(v, 2, 0, m);
+                        self.adv(v, 4);
+                    }
+                    _ => {}
+                }
                 self.yield_(v);
             }
             _ => {
@@ -2283,6 +2429,11 @@ pub fn run_scripted(rt: &mut Runtime, host: &mut Scripted, max_frames: u32) -> O
                 rt.params(p);
             }
             rt.registration(0);
+        }
+        if host.log[before..].iter().any(|e| matches!(e, Effect::Send(Packet::Raw { .. }))) {
+            for id in [0x031, 0x059, 0x10E] {
+                rt.answer(id, &[]);
+            }
         }
         if update || pos {
             rt.release(1, rt.start.event);

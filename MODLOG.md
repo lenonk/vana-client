@@ -4075,3 +4075,18 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   clears, then set@2 = +0x184 and advances 4. s2c 0x0BF (FUN_100a2160 -> FUN_100bab20; LSB
   GP_SERV_COMMAND_REGISTRATION: Result u16 @6, ActIndex u32 @0xC) finds the actor by ActIndex and, if it runs an event,
   stores Result in +0x184 and clears bit 0. Ours: Runtime::registration on the running event (the index is logged).
+- Packet ops (audit R17), each call ends the frame; a failed packet alloc retries without advancing:
+  - 0x8c (FUN_100b98e0, 196 sites, guild image-support / recipe NPCs): c2s 0x058 RECIPE (0x14 bytes) with mode +0xa
+    = sub (1 for sub 0). Sub 0 {+4 val@2, +6 val@4, +8 val@6} len 8; 2 {+4, +6, +8 = 0, +0x12 val@6, +0xc val@8, +0xe
+    val@10} len 12; 3 / 4 {+4, +6, +0x12 val@6, +0x10 val@8} len 10; 5 {+0xc val@2, +4, +6, +0x12, +0x10, +8 val@12}
+    len 14, arms no wait. Sub 1 waits while DAT_10480a90 is set, then len 2. s2c 0x031 (FUN_1009f7c0) clears it; type
+    @0x30 1 / 3: Z40..Z44 = u16 @4..@0xc, Z55 = u16 @0xe, Z45.. / Z4D.. = items @0x10 / counts @0x20; type 4 the same
+    but one slot per unit (FUN_1009f8e0, count 1 each); type 2 a list: Z2..Z9 = u16 @0x10.., 0x1700..0x1707 = @0x20..,
+    0x1708 = @0x32. Southern San d'Oria 0x28a (Orechiniel) sends skill 5, mode 1 headless.
+  - 0x87 / 0x88 (FUN_100b9140 / FUN_100b9220, world pass NPCs): c2s 0x01B FRIENDPASS (0x1c bytes) Para +4 = 0 / 2
+    for 0x87, 1 / 3 for 0x88 (sub 0 / 2); sub 1 waits on DAT_1048557a (zeroed at every event start). s2c 0x059
+    (FUN_1009fa00): Z2 = i8 @0x20, Z3..Z5 = u32 @4 / @8 / @0xc, Z6 = i8 @0x21, string slot 0 (DAT_10488d08) = the 16
+    bytes @0x10, then the flag clears.
+  - 0xa6 (FUN_100ba9c0): sub 0 c2s 0x0EB (header only), sub 1 waits on DAT_104804c0, sub 2 set@2 = DAT_10485a28. s2c
+    0x10E (100a2100), only while waiting: DAT_10485a28 = u32 @4 (LSB MapNum).
+  - Ours: Packet::Raw, Runtime::answer(id, packet); headless runs answer with empty packets. Sweep 230 / 240 unchanged.

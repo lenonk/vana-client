@@ -4073,6 +4073,11 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::EventAnswer { id, data } => {
+                    if let Some(l) = world.event.as_mut() {
+                        l.rt.answer(id, &data);
+                    }
+                }
                 NetEvent::Registration { index, result } => {
                     log::info!("0x0BF registration {result} for index {index:#x}");
                     if let Some(l) = world.event.as_mut() {

@@ -644,7 +644,7 @@ impl Host for LiveHost<'_> {
                 Packet::EventPos { head, x, y, z, dir, option } => {
                     self.send(NetCommand::EventPos { pos: [x, y, z], dir: dir_of(dir), target: head.target, index, option, zone: head.zone, event: head.event })
                 }
-                Packet::Other { op, sub } => log::info!("event: packet op {op:#x} sub {sub} not sent"),
+                Packet::Raw { id, body } => self.send(NetCommand::Packet { id, body }),
             },
             Effect::Position { op: 0x36 | 0x37, actor, .. } => {
                 let id = self.wid(actor);
