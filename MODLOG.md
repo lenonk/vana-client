@@ -5124,3 +5124,19 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   line (+0x54) x max lines (+0x4e). The settings are applied at login, so the log comes up at its full height and
   shrinks from there (user-confirmed on retail). Per line FUN_10162560 adds one period (capped); Escape
   FUN_101624b0 takes one off.
+
+## Auto-translate: the dictionary and the phrases in the log (2026-10-23; spec ~/ffxi/lab/research/autotranslate_spec.md)
+
+- Dictionary: language slot 0x18 (English file 55665, ROM/168/25.DAT), loader FUN_101bb7a0: groups of a 0x4c-byte
+  header (kind 2, language 2 for English, group id, 0, title[32] "【Greetings】", completion[32], u32 count, u32
+  bytes) then entries (kind, language, group, phrase id, u8 length, text; languages 1 / 4 add a second string).
+  42 English groups, 2685 phrases; @A / @C / @J / @Y texts name a place (group 0x14), spell, job (group 0x12) or
+  ability by hex id. Ours: dat/autotrans.rs, loaded with the battle messages.
+- A block in text is FD kind lang hi lo FD (kind 2 a phrase: group, id; 0 the group itself; 7..0x12 items, 0x13..
+  key items, 00 bytes written as FF with kinds +1 / +2 / +3; 6 a variable block). Resolver FUN_101bc100 ignores
+  the language byte (the client's dictionary answers). The log (FUN_10127c00 param 5 -> FUN_101ac990) shows a block
+  as its text between EF 27 / EF 28 (the green / red brackets); an unknown block cuts the line there. Ours keeps the
+  four inner bytes as U+100000 + 0x100 x position + byte through decode_sjis / encode_sjis and expands chat lines
+  in push_chat_mode.
+- Not done: input (Tab completion, menu fep, the category list), the item / key item groups built at run time, the
+  coloured form in the line being typed, kind 6.

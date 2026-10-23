@@ -576,11 +576,16 @@ fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) 
     })
 }
 
-/// A chat line in its log mode's colour (the config colour before the message tables load).
+/// A chat line in its log mode's colour (the config colour before the message tables load), auto-translate blocks
+/// expanded with their brackets (FUN_10127c00 with param 5).
 fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
-    let colour = match world.battle.clone() {
-        Some(bt) => bt.colour_in(mode, &world.game),
-        None => cfgapply::chat_colour(&world.game, kind),
+    let (colour, line) = match world.battle.clone() {
+        Some(bt) => {
+            let names = world.names.clone();
+            let line = bt.phrases.as_ref().map_or(line.clone(), |d| d.expand(&line, names.as_deref().map(|n| n as &dyn crate::dat::names::NameSource)));
+            (bt.colour_in(mode, &world.game), line)
+        }
+        None => (cfgapply::chat_colour(&world.game, kind), line),
     };
     for l in line.split('\n') {
         world.chat.push_chat(l.to_string(), colour);

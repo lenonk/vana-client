@@ -84,6 +84,8 @@ pub struct BattleText {
     group7: Option<Messages>,
     /// Emote lines (base slot 0x62, file 7025): entry emote * 2 with a target, + 1 without.
     emotes: Option<Dialog>,
+    /// The auto-translate dictionary (language slot 0x18).
+    pub phrases: Option<super::autotrans::Dictionary>,
     /// Group 0x17: equipment slot names for /equip ("main" .. "feet").
     slot_names: Option<Messages>,
     group9: Option<Messages>,
@@ -172,6 +174,7 @@ impl BattleText {
             emotes: dialog(SLOT_EMOTES).map_err(|e| log::warn!("emote messages: {e:#}")).ok(),
             slot_names: super::msg::group_file(ffximain, 1, 0x17).and_then(msgs),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
+            phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
             mode_colours,
             palette,

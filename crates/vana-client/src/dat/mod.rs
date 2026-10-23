@@ -183,3 +183,4 @@ pub mod texmip;
 pub mod animpack;
 pub mod generator;
 pub mod actions;
+pub mod autotrans;
