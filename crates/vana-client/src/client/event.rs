@@ -669,6 +669,18 @@ impl Host for LiveHost<'_> {
                     self.hide(id, &args, 0);
                 }
             }
+            // FUN_100b3540: the event actor hidden as op 0x22 1 (+0x120 bit 17).
+            Effect::Op { op: 0x90, actor, .. } => {
+                let id = self.wid(actor);
+                self.st.hidden.insert(id);
+            }
+            // FUN_100b10f0 sub 0: the event actor's name = str@2 (24 bytes, +0x7c) unless it has an alternate name.
+            Effect::Op { op: 0xb5, sub: Some(0), actor, args, .. } => {
+                let id = self.wid(actor);
+                if let (Some(Arg::Name(n)), Some(e)) = (args.first(), self.w.entities.get_mut(&id)) {
+                    e.name = n.chars().take(20).collect();
+                }
+            }
             // FUN_100b5070: sub 0..7 music slot = val@2; 0x80..0x87 the same with a volume.
             Effect::Op { op: 0x5c, sub: Some(sub), args, .. } if sub < 8 || (0x80..0x88).contains(&sub) => {
                 if let Some(Arg::Int(id)) = args.get(1) {

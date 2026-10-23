@@ -4051,3 +4051,8 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   0x7f0b / 0x7f8b (+0x124 bit 25, 475 sites) not decoded. `event-run --race N` sets the player's race offline.
 - Event VM audit 2026-10-23: scratchpad evgaps/STATUS.md re-ranks REPORT.md's items (11 done, 1 approximate, 6
   partial, 4 missing) and the special values above.
+- Op 0x90 (FUN_100b3540): the event actor hidden as op 0x22 1 (+0x120 bit 17). Op 0xb5 sub 0 (FUN_100b10f0): the
+  event actor's name = str@2 (24 bytes into +0x7c) unless it has an alternate name (+0x210); ours sets the entity name.
+- Op 0x92 (FUN_100b7d10, actor@2 +0x12c bit 16 = u8@1) is NOT "hide in the event": scripts set it to 1 on the
+  actors that then speak (Southern San d'Oria event 0x17: npc05f, npc0ed, each with op 0x94 beside it). Its reader
+  FUN_100977f0 gates something in FUN_10097840 for PCs (not traced); left alone.
