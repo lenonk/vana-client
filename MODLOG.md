@@ -4697,3 +4697,23 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   (id 0x37, flags 0x41, FUN_1007aaf0) on a chocobo: c2s 0x01A category 0x11 (LSB ChocoboDig); its place checks
   (refusal index 8 = group 7 0x4a) are left to the server (inferred). Live (West Ronfaure, on a chocobo): the menu
   showed Chat / Dig / Dismount, Dismount -> Yes dismounted (category 0x12, the music back).
+
+## The emote list (2026-10-23; spec: scratchpad mount/SPEC.md section B of that session)
+
+- Social menu child 9 "Communication" (drawn between 10 Current Time and 11 Shut Down) opens "menu    commenu" (384,
+  48): 1 Friend List (flistmai, not done), 2 Emote List. Its open hook sends c2s 0x119 (empty); the s2c 0x11A answer
+  gives the unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8); nothing else asks for them.
+- "menu    emote" (FUN_10225460) always with abisortw. The tree is file 96 (u32 count, 0x20-byte entries {id, name
+  string, help string, parent (0xffff none), cmd[0x10], arg[8]}; a folder has no command): root 51 rows with the
+  folders /bell (25 notes), /jobemote (22 jobs), /sitchair (13); strings from d_msg 55676 (en; ja 55556, fr 55796,
+  de 56216). Rows in eix.dat order (USER file, version 1, u16[0x80], identity default), every row magico2w 63; each
+  folder keeps its cursor row. Locked job emotes (0x4c..0x61) and chairs (0x63..0x6e) are grey.
+- Enter: a folder opens; a locked job emote still runs its command with SE 0004; a locked chair: group 7 0xc2 and SE
+  0004; else the target prompt (flags 0x7f) and "/<cmd> <arg>" runs while the pick is still the target, then the old
+  target comes back (LAB_10225c50; ours SubThen::Command). Escape goes up a folder, at the root closes. Help: the
+  entry's help string; Manual Sort 0xe 0x3a3 / 0x3a4 (the insert on eix), abisortw's help 0x39f; title 0xd 0xb4.
+- /sitchair [n] (id 0x34): c2s 0x113 {u32 mode 0 toggle, u32 chair} (LSB's layout; the handler's checks are not
+  traced). /jump (0x35, a client-only motion) is not done.
+- Live (Lnxcsfix): commenu, the emote list (/aim, /amazed, ...), the /bell folder and back with the cursor kept,
+  /aim through the target prompt sent; the server's echo could not play the aim motion without a ranged weapon
+  (group 9 0x66 "Failed to execute command.", as retail).

@@ -1130,6 +1130,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.menu = None;
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
+            // Child 9 Communication (FUN_1014e7b0): commenu, whose open hook asks for the emote unlocks (c2s 0x119).
+            (1, 9) => {
+                magic::open_cats(world, "menu    commenu");
+                let _ = world.net.commands.send(NetCommand::Packet { id: 0x119, body: Vec::new() });
+                world.sounds.push(crate::audio::Ui::Select as u32);
+            }
             (1, 11) => world.confirm = Some((Confirm::Shutdown, false)),
             (1, 12) => world.confirm = Some((Confirm::Logout, false)),
             _ => log::info!("main menu item {id} on page {} is not implemented yet", world.menu_page),
@@ -2766,6 +2772,11 @@ struct World {
     /// Owned mounts (s2c 0x0AE; None before the first) and the mount recast's end (0x119 @0xfc).
     mount_bits: Option<u64>,
     mount_recast: Option<Instant>,
+    /// The emote list: the tree (file 96), the open folder path, and the unlock masks from s2c 0x11A.
+    emote_tree: Option<Arc<Vec<magic::EmoteEntry>>>,
+    emote_path: Vec<u16>,
+    emote_jobs: u32,
+    emote_chairs: u16,
     /// Alliance rows' eased HP per slot 6..17 (id, HPP), as party_gauges.
     ally_gauges: Vec<(u32, u8)>,
     /// s2c 0x067 kind 2: the visited Mog House's owner (0 = ours / none, FUN_100f9600) and the 2F / Safe 2 flag
@@ -3729,6 +3740,10 @@ impl App {
                             party_cursor: None,
                             mount_bits: None,
                             mount_recast: None,
+                            emote_tree: None,
+                            emote_path: Vec::new(),
+                            emote_jobs: 0,
+                            emote_chairs: 0,
                             ally_gauges: Vec::new(),
                             mog_zone: false,
                             mh_owner: 0,
@@ -4344,6 +4359,7 @@ impl App {
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
+                NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
                 NetEvent::CharSync { id, owner, floors, open } => {
                     if id == world.my_id && (world.mh_owner, world.mh_floors, world.mh_open) != (owner, floors, open) {

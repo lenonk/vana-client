@@ -20,6 +20,32 @@ pub enum Kind {
     Ability,
     /// The mount list ("menu    mount", FUN_10226490), kept in `w.ability`.
     Mount,
+    /// The emote list ("menu    emote", FUN_10225460), kept in `w.ability`; `ty` = 0x8000 | the open folder.
+    Emote,
+}
+
+/// A file 96 entry (0x20 bytes): {u16 id, u16 name string, u16 help string, u16 parent (0xffff none), cmd[0x10],
+/// arg[8]}; a folder has no command.
+#[derive(Clone, Debug)]
+pub struct EmoteEntry {
+    pub id: u16,
+    pub name: u16,
+    pub help: u16,
+    pub parent: u16,
+    pub cmd: String,
+    pub arg: String,
+}
+
+fn parse_emotes(d: &[u8]) -> Vec<EmoteEntry> {
+    let n = d.get(..4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap())) as usize;
+    let s = |b: &[u8]| String::from_utf8_lossy(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())]).into_owned();
+    (0..n.min(0x200))
+        .filter_map(|i| {
+            let e = d.get(4 + i * 0x20..4 + i * 0x20 + 0x20)?;
+            let u = |o: usize| u16::from_le_bytes([e[o], e[o + 1]]);
+            Some(EmoteEntry { id: u(0), name: u(2), help: u(4), parent: u(6), cmd: s(&e[8..0x18]), arg: s(&e[0x18..0x20]) })
+        })
+        .collect()
 }
 
 /// An open list.
@@ -53,6 +79,7 @@ impl ListWin {
             Kind::Magic => "menu    magic",
             Kind::Ability => "menu    ability",
             Kind::Mount => "menu    mount",
+            Kind::Emote => "menu    emote",
         }
     }
 
@@ -68,6 +95,8 @@ enum Cat {
     Ability(u16),
     Ranged,
     Mount,
+    Friends,
+    Emote,
 }
 
 /// An open category window and its cursor (index into its rows, top to bottom).
@@ -85,6 +114,8 @@ fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
         "menu    magselec" => &[(1, Cat::Magic(1, false)), (2, Cat::Magic(2, false)), (3, Cat::Magic(5, false)), (4, Cat::Magic(4, false)), (5, Cat::Magic(3, false)), (6, Cat::Magic(6, false)), (7, Cat::Magic(7, false))],
         "menu    abimenu" => &[(1, Cat::Ability(4)), (2, Cat::Ability(1)), (3, Cat::Ability(3)), (4, Cat::Ranged), (6, Cat::Mount), (5, Cat::Ability(2))],
         "menu    abiselec" => &[(1, Cat::Ability(1)), (2, Cat::Ability(3)), (3, Cat::Ranged), (5, Cat::Mount), (4, Cat::Ability(2))],
+        // FUN_101ebdc0: 1 the Friend List (flistmai, not done), 2 the emote list.
+        "menu    commenu" => &[(1, Cat::Friends), (2, Cat::Emote)],
         _ => &[],
     }
 }
@@ -227,6 +258,53 @@ pub fn open_mount(w: &mut World, sortable: bool) {
     w.cats = None;
 }
 
+/// The emote tree (file 96, loaded once here; retail reads it at every open).
+fn emote_tree(w: &mut World) -> Option<std::sync::Arc<Vec<EmoteEntry>>> {
+    if w.emote_tree.is_none() {
+        let d = w.index.as_ref()?.read(96).ok()?;
+        w.emote_tree = Some(std::sync::Arc::new(parse_emotes(&d)));
+    }
+    w.emote_tree.clone()
+}
+
+/// FUN_102256f0: the open folder's entries in eix.dat order.
+fn emote_rows(w: &World, folder: u16) -> Vec<u16> {
+    let Some(tree) = w.emote_tree.as_ref() else { return Vec::new() };
+    let order: Vec<u16> = w.macros.as_ref().map_or_else(|| (0..0x80).collect(), |m| m.eix.clone());
+    order
+        .into_iter()
+        .filter(|&id| id != 0 && tree.iter().find(|e| e.id == id).is_some_and(|e| e.parent != 0xffff && e.parent == folder))
+        .collect()
+}
+
+/// FUN_10225460: the emote list on the open folder (path), with abisortw; each folder keeps its cursor row.
+pub fn open_emote(w: &mut World) {
+    if emote_tree(w).is_none() {
+        return;
+    }
+    let folder = w.emote_path.last().copied().unwrap_or(0);
+    let rows = emote_rows(w, folder);
+    let mut win = ListWin { kind: Kind::Emote, ty: 0x8000 | folder, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort: Some("menu    abisortw"), sort_focus: None, ask: None, manual: 0, picked: 0 };
+    recall(w, &mut win);
+    w.ability = Some(win);
+    w.menu = None;
+    w.action_menu = None;
+    w.cats = None;
+}
+
+fn emote_entry(w: &World, id: u16) -> Option<EmoteEntry> {
+    w.emote_tree.as_ref()?.iter().find(|e| e.id == id).cloned()
+}
+
+/// FUN_102253e0 / FUN_10225430: a job emote (0x4c..0x61) or chair (0x63..0x6e) not unlocked (s2c 0x11A).
+fn emote_locked(w: &World, id: u16) -> bool {
+    match id {
+        0x4c..=0x61 => w.emote_jobs & (1 << (id - 0x4c)) == 0,
+        0x63..=0x6e => w.emote_chairs & (1 << (id - 0x63)) == 0,
+        _ => false,
+    }
+}
+
 /// FUN_10226d80: the mount refusals: the status checks, then the shared recast (group 7 0x4c).
 fn mount_check(w: &World) -> Option<usize> {
     status_check(w).or_else(|| w.mount_recast.is_some_and(|t| t > Instant::now()).then_some(0x4c))
@@ -311,6 +389,8 @@ fn row_icon(w: &World, kind: Kind, id: u16) -> Option<(&'static str, usize)> {
     Some(match kind {
         Kind::Magic => acts.spell(id).map(|r| list_icon(r.icon, r.icon_hd, standard))?,
         Kind::Ability => acts.abilities.get(id as usize).map(|a| list_icon(a.icon as u16, a.icon_hd, standard))?,
+        // FUN_10220fb0: magico2w 63 on every emote row.
+        Kind::Emote => ("menu    magico2w", 63),
         // FUN_10220fc0: the 55681 entry's icon field, kind 6 (magico2w 86 / 87), never greyed.
         Kind::Mount => ("menu    magico2w", w.names.as_ref()?.mount(id as u32)?.1 as usize),
     })
@@ -340,12 +420,31 @@ fn refuse(w: &mut World, id: usize) {
 fn enter(w: &mut World, kind: Kind) {
     let Some(win) = (match kind {
         Kind::Magic => w.magic.as_ref(),
-        Kind::Ability | Kind::Mount => w.ability.as_ref(),
+        Kind::Ability | Kind::Mount | Kind::Emote => w.ability.as_ref(),
     }) else {
         return;
     };
     let Some(id) = win.at() else { return };
     match kind {
+        // FUN_10225c70: a folder opens; a locked job emote still runs (SE 0004); a locked chair: group 7 0xc2 and
+        // SE 0004; else the target prompt (flags 0x7f) and the line run on the pick (LAB_10225c50), SE 0002.
+        Kind::Emote => {
+            let Some(e) = emote_entry(w, id) else { return };
+            let line = format!("/{} {}", e.cmd.trim_start_matches('/'), e.arg);
+            if e.cmd.is_empty() {
+                w.emote_path.push(id);
+                open_emote(w);
+            } else if (0x4c..=0x61).contains(&id) && emote_locked(w, id) {
+                w.sounds.push(Ui::Error as u32);
+                super::textcmd::run(w, &line, super::textcmd::Mode::Internal);
+            } else if emote_locked(w, id) {
+                refuse(w, 0xc2);
+            } else {
+                w.sounds.push(Ui::Select as u32);
+                target::open_sub(w, 0x7f, SubThen::Command(line), None, String::new(), 0);
+            }
+            return;
+        }
         // FUN_10226950: refused -> the line and SE 0004, the list stays; else `/mount "<name>"`, SE 0002, closed.
         Kind::Mount => {
             if let Some(m) = mount_check(w) {
@@ -457,6 +556,11 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                         }
                     }
                     Some(Cat::Mount) => open_mount(w, c.menu == "menu    abimenu"),
+                    Some(Cat::Emote) => {
+                        w.emote_path.clear();
+                        open_emote(w);
+                    }
+                    Some(Cat::Friends) => log::info!("the Friend List (flistmai) is not implemented"),
                     None => {}
                 }
                 w.sounds.push(Ui::Select as u32);
@@ -477,13 +581,18 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     }
     match key {
         egui::Key::Enter => enter(w, kind),
+        // FUN_10225b00 / FUN_10225b80: up one folder, or close at the root.
+        egui::Key::Escape if kind == Kind::Emote && !w.emote_path.is_empty() => {
+            w.emote_path.pop();
+            open_emote(w);
+        }
         egui::Key::Escape => {
             // Esc on an ability sub-list goes back to its parent type (not Monstrosity's).
             let parent = w.ability.as_ref().filter(|_| kind == Kind::Ability).map(|a| ABILITY_TYPES.get(a.ty as usize).map_or(0, |t| t.0)).filter(|&p| p != 0 && p != 0x14);
             let sortable = w.ability.as_ref().is_some_and(|a| a.sort.is_some());
             match kind {
                 Kind::Magic => w.magic = None,
-                Kind::Ability | Kind::Mount => w.ability = None,
+                Kind::Ability | Kind::Mount | Kind::Emote => w.ability = None,
             }
             if let Some(p) = parent {
                 open_ability(w, p as u16, sortable);
@@ -493,7 +602,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         k => {
             let win = match kind {
                 Kind::Magic => w.magic.as_mut(),
-                Kind::Ability | Kind::Mount => w.ability.as_mut(),
+                Kind::Ability | Kind::Mount | Kind::Emote => w.ability.as_mut(),
             };
             if win.is_some_and(|win| step(win, k)) {
                 w.sounds.push(Ui::Cursor as u32);
@@ -507,7 +616,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
 fn list_mut(w: &mut World, kind: Kind) -> Option<&mut ListWin> {
     match kind {
         Kind::Magic => w.magic.as_mut(),
-        Kind::Ability | Kind::Mount => w.ability.as_mut(),
+        Kind::Ability | Kind::Mount | Kind::Emote => w.ability.as_mut(),
     }
 }
 
@@ -567,7 +676,7 @@ fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
     use egui::Key as K;
     let win = match kind {
         Kind::Magic => w.magic.as_mut(),
-        Kind::Ability | Kind::Mount => w.ability.as_mut(),
+        Kind::Ability | Kind::Mount | Kind::Emote => w.ability.as_mut(),
     };
     let Some(win) = win else { return false };
     let Some(menu) = win.sort else { return false };
@@ -652,14 +761,16 @@ fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
             let (from, to) = (win.rows.get(win.picked).copied(), win.rows.get(win.scroll + win.cursor).copied());
             win.manual = 1;
             w.sounds.push(Ui::Select as u32);
-            // FUN_10226d00 for mounts: the same insert on moix.dat's 64 entries.
-            if kind == Kind::Mount {
-                if let (Some(a), Some(b), Some(m)) = (from, to, w.macros.as_mut())
-                    && let (Some(p), Some(t)) = (m.moix.iter().position(|&x| x == a), m.moix.iter().position(|&x| x == b))
-                    && p != t
-                {
-                    let id = m.moix.remove(p);
-                    m.moix.insert(t, id);
+            // FUN_10226d00 / FUN_10226100 for mounts / emotes: the same insert on moix's 64 / eix's 128 entries.
+            if matches!(kind, Kind::Mount | Kind::Emote) {
+                if let (Some(a), Some(b), Some(m)) = (from, to, w.macros.as_mut()) {
+                    let order = if kind == Kind::Mount { &mut m.moix } else { &mut m.eix };
+                    if let (Some(p), Some(t)) = (order.iter().position(|&x| x == a), order.iter().position(|&x| x == b))
+                        && p != t
+                    {
+                        let id = order.remove(p);
+                        order.insert(t, id);
+                    }
                 }
             } else if let (Some(a), Some(b)) = (from, to)
                 && let Some(o) = order_mut(w, kind == Kind::Ability)
@@ -696,6 +807,7 @@ fn rebuild(w: &mut World, kind: Kind) {
         Kind::Magic => magic_rows(w, ty, list_mode, exclude),
         Kind::Ability => ability_rows(w, ty),
         Kind::Mount => mount_rows(w),
+        Kind::Emote => emote_rows(w, ty & 0x7fff),
     };
     if let Some(win) = list_mut(w, kind) {
         let n = rows.len();
@@ -803,6 +915,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         .map(|(k, &id)| {
             let (name, refused) = match win.kind {
                 Kind::Mount => (mount_name(w, id), mount_check(w).is_some()),
+                Kind::Emote => (emote_entry(w, id).and_then(|e| w.names.as_ref()?.emote_text(e.name as u32)).unwrap_or_default(), emote_locked(w, id)),
                 Kind::Magic => (spell_name(w, id), magic_check(w, id).is_some()),
                 Kind::Ability => (ability_name(w, id), w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).is_some_and(|a| a.kind != 4) && ability_check(w, id).is_some()),
             };
@@ -903,19 +1016,27 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let (Some(menu), Some(c)) = (win.sort, win.sort_focus) {
         let [help, title] = gu.focus_text(menu, c);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
-        // FUN_10223e10: abisortw's help for the mount list.
-        if win.kind == Kind::Mount {
-            bars.help[1] = gu.menu_msg(0x3e5, "");
+        // FUN_10223e10: abisortw's help for the mount / emote list.
+        match win.kind {
+            Kind::Mount => bars.help[1] = gu.menu_msg(0x3e5, ""),
+            Kind::Emote => bars.help[1] = gu.menu_msg(0x39f, ""),
+            _ => {}
         }
         return;
     }
-    bars.title[1] = gu.title_msg(if win.kind == Kind::Magic { 76 } else { 68 }).unwrap_or_default();
+    bars.title[1] = gu.title_msg(match win.kind {
+        Kind::Magic => 76,
+        Kind::Emote => 0xb4,
+        _ => 68,
+    })
+    .unwrap_or_default();
     // Manual Sort: magic 0xe 8 / 9, abilities 0xa / 0xb (FUN_1022cb90 / FUN_10224640), mounts 0x3e6 / 0x3e7.
     if win.manual != 0 {
         let base = match win.kind {
             Kind::Magic => 8,
             Kind::Ability => 0xa,
             Kind::Mount => 0x3e6,
+            Kind::Emote => 0x3a3,
         };
         bars.help[1] = gu.menu_msg(base + (win.manual as usize - 1), "");
         return;
@@ -924,6 +1045,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         (Kind::Magic, Some(s), Some(n)) => n.spell_description(s as u32).unwrap_or_default(),
         (Kind::Ability, Some(i), Some(n)) => n.ability_description(i as u32).unwrap_or_default(),
         (Kind::Mount, Some(i), Some(n)) => n.mount_description(i as u32).unwrap_or_default(),
+        (Kind::Emote, Some(i), Some(n)) => emote_entry(w, i).and_then(|e| n.emote_text(e.help as u32)).unwrap_or_default(),
         _ => String::new(),
     };
 }

@@ -18,6 +18,8 @@ pub const ABILITY_TEXTS: [u32; 4] = [55613, 55733, 55853, 56273];
 /// Mounts (FUN_10226210, language slot 0x61): field 0 the name, field 1 the icon (magico2w); descriptions (slot 0x62).
 pub const MOUNTS: [u32; 4] = [55561, 55681, 55801, 56221];
 pub const MOUNT_TEXTS: [u32; 4] = [55562, 55682, 55802, 56222];
+/// The emote list's strings (language slot 0x23): names (the commands) and helps, by the tree's string numbers.
+pub const EMOTE_TEXTS: [u32; 4] = [55556, 55676, 55796, 56216];
 pub const PLACES: [u32; 4] = [55535, 55465, 55775, 56195];
 pub const TITLES: [u32; 4] = [55584, 55704, 55824, 56244];
 
@@ -136,6 +138,7 @@ pub struct Names {
     titles: DMsg,
     mounts: Option<DMsg>,
     mount_texts: Option<DMsg>,
+    emote_texts: Option<DMsg>,
 }
 
 impl Names {
@@ -162,6 +165,7 @@ impl Names {
             titles: DMsg::load(index, TITLES[l])?,
             mounts: DMsg::load(index, MOUNTS[l]).ok(),
             mount_texts: DMsg::load(index, MOUNT_TEXTS[l]).ok(),
+            emote_texts: DMsg::load(index, EMOTE_TEXTS[l]).ok(),
         })
     }
 
@@ -181,6 +185,11 @@ impl Names {
     /// The number of mounts the table names.
     pub fn mount_count(&self) -> usize {
         self.mounts.as_ref().map_or(0, |m| m.len())
+    }
+
+    /// An emote list string (FUN_101c8450).
+    pub fn emote_text(&self, i: u32) -> Option<String> {
+        self.emote_texts.as_ref()?.text(i as usize)
     }
 
     pub fn mount_description(&self, i: u32) -> Option<String> {

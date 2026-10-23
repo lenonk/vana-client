@@ -181,6 +181,8 @@ pub struct Macros {
     pub aix: Order,
     /// moix.dat (version 1, u16[0x40]): the mount list's order, identity by default (FUN_10226c80).
     pub moix: Vec<u16>,
+    /// eix.dat (version 1, u16[0x80]): the emote list's order, identity by default (FUN_10226080).
+    pub eix: Vec<u16>,
     /// +0x1dc0 book 0..39, +0x1db8 / 2 set 0..9.
     pub book: usize,
     pub set: usize,
@@ -199,7 +201,8 @@ impl Macros {
         let dir = game.join("USER").join(format!("{content_id:x}"));
         let (mix, aix) = (Order::load(&dir.join("mix.dat"), 2, 0x400, 0x400), Order::load(&dir.join("aix.dat"), 4, 0xb00, 0x700));
         let moix = read_file(&dir.join("moix.dat"), 1).filter(|p| p.len() == 0x80).map_or_else(|| (0..0x40).collect(), |p| p.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
-        let mut m = Macros { dir, mix, aix, moix, book: 0, set: 0, recs: vec![Macro::default(); 20], titles: vec![[0; 16]; BOOKS], run: None, acc: 0.0, group9 };
+        let eix = read_file(&dir.join("eix.dat"), 1).filter(|p| p.len() == 0x100).map_or_else(|| (0..0x80).collect(), |p| p.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
+        let mut m = Macros { dir, mix, aix, moix, eix, book: 0, set: 0, recs: vec![Macro::default(); 20], titles: vec![[0; 16]; BOOKS], run: None, acc: 0.0, group9 };
         for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
             if let Some(p) = read_file(&m.dir.join(name), 1).filter(|p| p.len() == 0x140) {
                 for i in 0..20 {
@@ -270,6 +273,7 @@ impl Macros {
         write_file(&self.dir.join("mix.dat"), 2, &self.mix.payload());
         write_file(&self.dir.join("aix.dat"), 4, &self.aix.payload());
         write_file(&self.dir.join("moix.dat"), 1, &self.moix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
+        write_file(&self.dir.join("eix.dat"), 1, &self.eix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
         write_file(&self.dir.join("mcr.sys"), 1, &((self.book * 20 + 2 * self.set) as u32).to_le_bytes());
         for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
             let p: Vec<u8> = self.titles[k * 20..k * 20 + 20].iter().flatten().copied().collect();

@@ -32,6 +32,8 @@ mod id {
     pub const MOUNT: u16 = 0x28;
     pub const DISMOUNT: u16 = 0x38;
     pub const DIG: u16 = 0x37;
+    pub const SITCHAIR: u16 = 0x34;
+    pub const JUMP: u16 = 0x35;
     pub const BANK: u16 = 0x6c;
     pub const LOCKER: u16 = 0x6d;
     pub const STORAGE: u16 = 0x6e;
@@ -600,6 +602,20 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if w.my_motion.status == 5 {
                 act(w, (w.my_id, w.my_index), 0x11, 0);
             }
+            Ok(())
+        }
+        // /sitchair [n]: c2s 0x113 {u32 mode 0 (toggle), u32 chair n (0 the stool)} (LSB's layout; the handler's own
+        // checks are not traced).
+        id::SITCHAIR => {
+            let n = arg(1).and_then(|a| a.parse::<u32>().ok()).unwrap_or(0);
+            let mut b = vec![0u8; 8];
+            b[4..8].copy_from_slice(&n.to_le_bytes());
+            send(w, NetCommand::Packet { id: 0x113, body: b });
+            Ok(())
+        }
+        // /jump: a client-only motion (not done here).
+        id::JUMP => {
+            log::info!("/jump is not implemented");
             Ok(())
         }
         // FUN_1007aa80: /dismount: category 0x12 on ourselves, no client checks.
