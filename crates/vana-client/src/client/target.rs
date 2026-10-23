@@ -106,11 +106,11 @@ fn kind_bits(id: u32, e: &super::Entity) -> u32 {
     }
 }
 
-/// FUN_10083430 with no sub-target prompt: drawn (a model, or a door), not hidden, not ourselves, and not a dead
-/// or despawning monster. No name test. Not done: the event untargetable bit (ops 0x12..0x15, +0x128 bit 4).
+/// FUN_10083430 with no sub-target prompt: drawn on screen this frame (+0xb2 bit 0 clear: World::visible), not
+/// hidden, not ourselves, and not a dead or despawning monster. No name test. Not done: the event untargetable bit
+/// (ops 0x12..0x15, +0x128 bit 4) and the occlusion part of the cull.
 fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &super::Entity) -> bool {
-    let drawn = e.door != 0 || w.actors.get(&id).is_some_and(|a| a.gpu.is_some() || a.character.is_some());
-    id != w.my_id && drawn && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3))
+    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3))
 }
 
 /// FUN_10083620 / FUN_10083f20: the nearest candidate in front of the character (its own frame, local forward
@@ -137,8 +137,8 @@ fn screen_step(keys: &[(u32, f32)], from: f32, right: bool) -> Option<u32> {
 }
 
 /// Key functions 0x84 / 0x97 (Tab, Num0 / with Shift): FUN_10158ca0. No valid target: the nearest in front;
-/// else screen order by x_view / max(|z_view|, 1) x focal among candidates within 50 of the camera (no line of
-/// sight, behind-camera actors included as retail), else the nearest.
+/// else screen order by x_view / max(|z_view|, 1) x focal among candidates within 50 of the camera (on screen this
+/// frame, so nothing behind the camera), else the nearest.
 pub fn cycle(w: &mut World, view: glam::Mat4, right: bool) {
     if !picks_allowed(w) {
         return;

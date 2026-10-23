@@ -46,6 +46,9 @@ pub struct Skeleton {
     /// Head look limits (FUN_10035270): {horizontal, vertical, depth} for the bones of points 3 and 7, at the end
     /// of the point table + 0x48.
     pub look_limits: [[f32; 3]; 2],
+    /// Bounding boxes (FUN_100cfb40) at the end of the point table: 0 standing, 1 engaged / sitting / riding, 2
+    /// dead; six floats each (y b0..b1, x +-b2 / b3, z b4..b5).
+    pub boxes: Vec<[f32; 6]>,
 }
 
 /// u16 ?, u16 bone count, then 30-byte bones: parent u8, term u8, quat xyzw, translation xyz.
@@ -77,7 +80,9 @@ pub fn parse_skeleton(name: String, d: &[u8]) -> Result<Skeleton> {
     }).collect();
     let lim = at + 4 + count * 26 + 0x48;
     let look_limits = [0, 1].map(|i| [0, 1, 2].map(|k| if lim + 12 * i + 4 * k + 4 <= d.len() { f32_at(d, lim + 12 * i + 4 * k) } else { 0.0 }));
-    Ok(Skeleton { name, bones, points, look_limits })
+    let at_box = at + 4 + count * 26;
+    let boxes = (0..3).take_while(|i| at_box + 0x18 * i + 0x18 <= d.len()).map(|i| std::array::from_fn(|k| f32_at(d, at_box + 0x18 * i + 4 * k))).collect();
+    Ok(Skeleton { name, bones, points, look_limits, boxes })
 }
 
 /// One bone's share of a vertex. `pos`/`normal` are pre-scaled by `weight` in the file.

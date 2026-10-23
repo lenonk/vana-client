@@ -1824,6 +1824,49 @@ impl crate::fx::Actors for FxActors<'_> {
 const MODEL_CACHE: usize = 96;
 
 /// Model space faces +x; place it at `pos` facing `forward` (xz).
+/// FUN_100c63d0 / FUN_100cbde0's cull of one box (model space corners through `model`): visible unless every corner
+/// is behind the near plane (view z > -0.1, right-handed) or its screen rect misses the viewport. The occlusion test
+/// is not done.
+fn box_on_screen(view: glam::Mat4, proj: glam::Mat4, model: glam::Mat4, corners: &[Vec3; 8]) -> bool {
+    let vs: Vec<Vec3> = corners.iter().map(|c| view.transform_point3(model.transform_point3(*c))).collect();
+    if vs.iter().all(|v| v.z > -0.1) {
+        return false;
+    }
+    let (mut lo, mut hi) = (glam::Vec2::splat(f32::MAX), glam::Vec2::splat(f32::MIN));
+    for v in &vs {
+        // Corners behind the eye are pulled onto the near plane first.
+        let v = Vec3::new(v.x, v.y, v.z.min(-0.1));
+        let c = proj * v.extend(1.0);
+        let n = glam::Vec2::new(c.x, c.y) / c.w;
+        (lo, hi) = (lo.min(n), hi.max(n));
+    }
+    hi.x >= -1.0 && lo.x <= 1.0 && hi.y >= -1.0 && lo.y <= 1.0
+}
+
+/// A skeleton box's corners in FUN_100c63d0's order (b0 / b1 and b2 / b3 one apart when equal).
+fn box_corners(b: [f32; 6]) -> [Vec3; 8] {
+    let [mut b0, mut b1, mut b2, mut b3, b4, b5] = b;
+    if b0 == b1 {
+        (b0, b1) = (b0 - 1.0, b1 + 1.0);
+    }
+    if b2 == b3 {
+        (b2, b3) = (b2 - 1.0, b3 + 1.0);
+    }
+    [
+        Vec3::new(b2, b1, b5), Vec3::new(b3, b1, b5), Vec3::new(-b2, b1, b4), Vec3::new(-b3, b1, b4),
+        Vec3::new(-b2, b0, b5), Vec3::new(-b3, b0, b5), Vec3::new(b2, b0, b4), Vec3::new(b3, b0, b4),
+    ]
+}
+
+/// The box for a status (FUN_100cfad0): 2 dead, 1 engaged / sitting / riding, else 0.
+fn box_index(status: u8) -> usize {
+    match status {
+        2 | 3 => 2,
+        1 | 5 | 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e | 0x55 => 1,
+        _ => 0,
+    }
+}
+
 fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
     let f = Vec3::new(forward.x, 0.0, forward.z).normalize_or(Vec3::X);
     glam::Mat4::from_cols(f.extend(0.0), Vec3::Y.extend(0.0), f.cross(Vec3::Y).extend(0.0), pos.extend(1.0))
@@ -1893,6 +1936,9 @@ struct World {
     pos: Vec3,
     yaw: f32,
     entities: HashMap<u32, Entity>,
+    /// Actors drawn on screen this frame (actor +0xb2 bit 0 clear, FUN_100c63d0 / FUN_100cbde0): the target keys
+    /// only take these.
+    visible: HashSet<u32>,
     /// Zone lines with a destination (tag + destination tag).
     zone_lines: Vec<zone::Region>,
     zoning_since: Option<Instant>,
@@ -2139,6 +2185,8 @@ pub struct App {
     middle_down: bool,
     /// Where the right button went down (the camera arrow's reference).
     drag_from: Option<(f64, f64)>,
+    /// FUN_10157fa0's +0x57: this movement push already sent its stand-up command.
+    stand_sent: bool,
     /// Wheel notches since the last frame (FOV zoom).
     wheel: f32,
     mods: winit::keyboard::ModifiersState,
@@ -2314,6 +2362,7 @@ impl App {
             left_down: false,
             middle_down: false,
             drag_from: None,
+            stand_sent: false,
             mouse: Default::default(),
             wheel: 0.0,
             mods: Default::default(),
@@ -2807,6 +2856,7 @@ impl App {
                             pos: Vec3::ZERO,
                             yaw: 0.0,
                             entities: HashMap::new(),
+                            visible: HashSet::new(),
                             zone_lines: Vec::new(),
                             zoning_since: None,
                             chat: Default::default(),
@@ -3667,6 +3717,26 @@ impl App {
         // Test drives hold W; both mouse buttons run forward, as in most modern MMOs.
         if self.keys.contains(&KeyCode::KeyW) || (self.left_down && self.dragging) {
             ay = -1.0;
+        }
+        // FUN_10157fa0 (config 0x46, on by default): a push past 0.5 on a movement axis stands a resting character
+        // up once per push: "/heal off" healing (which also ends a logout), "/sit off", "/sitchair off". The body
+        // stays down until the server stands it.
+        let resting = matches!(world.my_motion.status, 7 | 0x21 | 0x2f | 0x3f..=0x53);
+        if (ax.abs() > 0.5 || ay.abs() > 0.5) && !in_event {
+            if !self.stand_sent && resting && world.game.get(0x46) != 0 {
+                let cmd = match world.my_motion.status {
+                    7 | 0x21 => "/heal off",
+                    0x2f => "/sit off",
+                    _ => "/sitchair off",
+                };
+                send_chat(world, cmd.into());
+            }
+            self.stand_sent = true;
+        } else {
+            self.stand_sent = false;
+        }
+        if resting {
+            (ax, ay) = (0.0, 0.0);
         }
         // Camera axes 6 / 7: the arrows (with Shift in a window) or the compact I / J / K / L stick.
         let (cx, cy) = (self.input.axis(6), self.input.axis(7));
@@ -5144,6 +5214,15 @@ impl App {
                     }
                 }
                 r.begin_poses();
+                let (cview, cproj) = (camera.view(), camera.proj(aspect));
+                let mut visible = HashSet::new();
+                // Doors: a +-0.6 cube at the door (FUN_100ac8e0's class), tested like the rest.
+                let cube = box_corners([-0.6, 0.6, 0.6, -0.6, 0.6, -0.6]);
+                for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
+                    if box_on_screen(cview, cproj, glam::Mat4::from_translation(e.pos), &cube) {
+                        visible.insert(*id);
+                    }
+                }
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, status, ratio, size }) = places.get(id) else { continue };
@@ -5263,6 +5342,14 @@ impl App {
                         limits: ch.skeleton.look_limits,
                     });
                     let drawn = !a.vanished() && !hidden.contains(id) && !(*id == w.my_id && w.camst.self_alpha <= 0.0);
+                    // Tests 1-5 of FUN_100c63d0 / FUN_100cbde0: a box, faded in, in front and on screen.
+                    if drawn
+                        && a.alpha > 0.0
+                        && let Some(b) = ch.skeleton.boxes.get(box_index(status)).or(ch.skeleton.boxes.first())
+                        && box_on_screen(cview, cproj, model, &box_corners(*b))
+                    {
+                        visible.insert(*id);
+                    }
                     let g = a.gpu.as_mut().unwrap();
                     g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
@@ -5283,6 +5370,7 @@ impl App {
                         }
                     }
                 }
+                w.visible = visible;
                 r.upload_poses(&gfx.gpu, &mut encoder);
                 let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0 };
