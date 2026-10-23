@@ -34,12 +34,32 @@ impl LogCfg {
 /// Wrapped lines kept for drawing.
 const KEEP: usize = 512;
 
+/// Timestamps: retail's mode (config 0xb5, chat lines only), the extra's every-line switch, and their colour (0x31).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Stamps {
+    pub mode: u32,
+    pub all: bool,
+    pub colour: [u8; 4],
+}
+
+impl Stamps {
+    fn text(&self, time: [u8; 3], chat: bool) -> String {
+        match (self.all, chat) {
+            (true, _) => super::cfgapply::stamp_text(if self.mode == 0 { 2 } else { self.mode }, time),
+            (false, true) => super::cfgapply::stamp_text(self.mode, time),
+            _ => String::new(),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct LogWin {
-    /// Log lines wrapped to the text width, the log lines consumed, and the width they were wrapped at.
-    wrapped: Vec<(String, [u8; 4])>,
+    /// Log lines wrapped to the text width (with the bytes of a timestamp at the start), the log lines consumed,
+    /// and the width and timestamps they were wrapped with.
+    wrapped: Vec<(String, [u8; 4], usize)>,
     seen: usize,
     width: f32,
+    stamps: Stamps,
     /// +0x34 open ticks (visible lines = ceil(open / ticks per line)) and +0x3c slide-in counter.
     open: f32,
     slide: f32,
@@ -166,23 +186,31 @@ mod tests {
 impl LogWin {
     /// Takes in new log lines and advances the counters by the ticks since the last call. `keep` holds it
     /// open, `shrink` is Escape (key 0x95, FUN_1015b830).
-    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool) -> f32 {
+    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, stamps: Stamps) -> f32 {
         let now = std::time::Instant::now();
         let ticks = self.last.map_or(0.0, |t| (now - t).as_secs_f32().min(0.5) * 60.0);
         self.last = Some(now);
         self.ticks = ticks;
         let tw = text_width(sw, self.cfg.pct);
-        if tw != self.width {
+        let rewrap = tw != self.width || stamps != self.stamps;
+        if rewrap {
             self.width = tw;
+            self.stamps = stamps;
             self.wrapped.clear();
             self.seen = chat.len().saturating_sub(64);
         }
         let mut new = 0;
-        for (line, colour) in chat.iter().skip(self.seen) {
-            for piece in gu.wrap(line, tw) {
-                self.wrapped.push((piece, *colour));
+        for ((line, colour), (time, is_chat)) in chat.iter_timed().skip(self.seen) {
+            let st = stamps.text(time, is_chat);
+            for (k, piece) in gu.wrap(&format!("{st}{line}"), tw).into_iter().enumerate() {
+                let n = if k == 0 { st.trim_end().len().min(piece.len()) } else { 0 };
+                self.wrapped.push((piece, *colour, n));
                 new += 1;
             }
+        }
+        // A rewrap redraws the kept lines, not new ones.
+        if rewrap {
+            new = 0;
         }
         self.seen = chat.len();
         if self.wrapped.len() > KEEP {
@@ -229,8 +257,8 @@ impl LogWin {
         let (n, yoff) = if typing { (lines - 1, -16.0) } else { (lines, 0.0) };
         let bottom = y0 + h - 4.0 + yoff;
         gu.clip(Some([x0, y0 + 3.0, w, (bottom - (y0 + 3.0)).max(0.0)]));
-        for (i, (line, colour)) in self.wrapped.iter().rev().skip(fl.scroll).take(n).enumerate() {
-            gu.text(line, x0 + 4.0, bottom - 16.0 - 16.0 * i as f32, 0, *colour);
+        for (i, (line, colour, st)) in self.wrapped.iter().rev().skip(fl.scroll).take(n).enumerate() {
+            stamped(gu, line, *st, x0 + 4.0, bottom - 16.0 - 16.0 * i as f32, *colour, self.stamps.colour);
         }
         gu.clip(None);
         // Child 1 (the hand, anc_s) at the cursor row: (x0 + 3, yb - 15), yb = bottom + 16 (row - lines) (inferred
@@ -286,9 +314,9 @@ impl LogWin {
         gu.clip(Some(clip));
         let slide = (self.slide % 20.0) * 16.0 / 20.0;
         let mut newest = None;
-        for (k, (line, colour)) in self.wrapped.iter().rev().take(rows + 1).enumerate() {
+        for (k, (line, colour, st)) in self.wrapped.iter().rev().take(rows + 1).enumerate() {
             let y = (y1 - 4.0) - 16.0 * (k as f32 + 1.0) + slide;
-            gu.text(line, x0 + 4.0, y, 0, *colour);
+            stamped(gu, line, *st, x0 + 4.0, y, *colour, self.stamps.colour);
             if k == 0 {
                 newest = Some((x0 + 4.0, y, line.clone()));
             }
@@ -296,4 +324,15 @@ impl LogWin {
         gu.clip(None);
         newest
     }
+}
+
+/// A wrapped line whose first `st` bytes are a timestamp, drawn in its own colour.
+fn stamped(gu: &mut GameUi, line: &str, st: usize, x: f32, y: f32, colour: [u8; 4], stamp: [u8; 4]) {
+    if st == 0 {
+        gu.text(line, x, y, 0, colour);
+        return;
+    }
+    let (head, rest) = line.split_at(st);
+    gu.text(head, x, y, 0, stamp);
+    gu.text(rest, x + gu.text_width(head), y, 0, colour);
 }

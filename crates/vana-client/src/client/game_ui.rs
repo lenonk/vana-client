@@ -665,9 +665,15 @@ impl GameUi {
 
     /// A HUD window moved by (dx, dy): frame and window sprite; returns its position.
     pub fn window_off(&mut self, name: &str, w: f32, h: f32, dx: f32, dy: f32) -> Option<(f32, f32)> {
+        self.window_off_grow(name, w, h, dx, dy, 0.0)
+    }
+
+    /// As window_off, the frame `grow` px taller (rows of ours under a list).
+    pub fn window_off_grow(&mut self, name: &str, w: f32, h: f32, dx: f32, dy: f32, grow: f32) -> Option<(f32, f32)> {
         let m = self.data.lobby.menu(name)?;
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let fh = fh + grow;
         if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
             return None;
         }
@@ -806,6 +812,23 @@ impl GameUi {
     pub fn shape_text(&mut self, s: &str, x: f32, y: f32, tint: u32, right: bool) -> f32 {
         let b = encode_sjis(s);
         if right { screens::push_shape_text_right(&mut self.batch, &self.data.lobby, &b, x, y, tint) } else { screens::push_shape_text(&mut self.batch, &self.data.lobby, &b, x, y, tint) }
+    }
+
+    /// A Config page caption in fontshp (see screens::push_label); returns the end x.
+    pub fn label(&mut self, s: &str, x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
+        screens::push_label(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, tint, shadow)
+    }
+
+    pub fn label_width(&self, s: &str) -> f32 {
+        screens::label_width(&self.data.lobby, &encode_sjis(s))
+    }
+
+    /// A sprite without its caption: the cells not taken from the font texture (a button's blank body).
+    pub fn sprite_base(&mut self, lib: &str, k: usize, x: f32, y: f32, tint: u32, blend_word: u32) {
+        let Some(s) = self.data.lobby.lib(lib).and_then(|l| l.sprites.get(k)) else { return };
+        for c in s.cells.iter().filter(|c| !c.texture.starts_with("font")) {
+            self.batch.push_cell(&self.data.lobby, c, x, y, 1.0, 1.0, tint, blend_word);
+        }
     }
 
     /// FUN_101c9fa0: a name wrapped as the target window draws it (see screens::push_wrapped_name).

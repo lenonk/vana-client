@@ -541,8 +541,10 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
                 update = Some(u);
                 continue;
             }
-            if f[0] == "settings" {
-                let mut s = super::settings::SettingsUi::open(&cfg, [width, height]);
+            if f[0] == "settings" || f[0] == "extras" {
+                let kind = if f[0] == "extras" { super::settings::Kind::Extras } else { super::settings::Kind::Settings };
+                let mut s = super::settings::SettingsUi::open_kind(&cfg, [width, height], kind);
+                s.in_game = true;
                 s.gpus = crate::render::adapter_names(&wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle()), None);
                 s.s.gpu = s.gpus.first().cloned().unwrap_or_default();
                 s.goto(f.get(1).and_then(|x| x.parse().ok()).unwrap_or(0), f.get(2).and_then(|x| x.parse().ok()).unwrap_or(1));
@@ -560,6 +562,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
                 ui.extra.scroll = s;
             }
         }
+        gu.open_ticks = 0.0;
         ui.draw(&mut gu, &v, sw, sh);
         if let Some((name, child)) = ui.focus() {
             let [help, title] = gu.focus_text(&name, child);
@@ -567,7 +570,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         }
         if let Some(s) = &settings {
             s.draw(&mut gu, sw, sh);
-            (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
+            (bars.help[1], bars.title[1]) = (s.help(), s.title().into());
         }
         if let Some(u) = &update {
             u.draw(&mut gu, sw, sh);

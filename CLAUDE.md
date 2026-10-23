@@ -71,9 +71,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   mount model; subs 0 / 5 / 8 done), R15 0xb6 0x11 / 0x12..0x15 (0xd / 0xe chocobo looks done), R20 0xd8 body rotation, 0x46/3 camera seed, 0xb3 mini-game.
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
-  - Windurst: both opening cutscenes after zoning in are badly wrong (seen 2026-10-22 with a new Mithra MNK; the
-    first, event 0x131 in Port Windurst, ran to its end);
-  - Bastok: not reviewed yet.
+  - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
+    left: Windurst's water draws too dark (we blend effects in linear space, D3D8 in gamma space: MODLOG), the
+    other openings (Port Windurst, Windurst Woods, Bastok Mines, Port Bastok) not seen yet.
 - Other known gaps:
   - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop drew black
     (on zone 133 too; not reproduced 2026-10-23: the lobby and the creator race step draw it live and
@@ -117,10 +117,21 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   Left: a settings page (enable / disable / order / add a pack from an archive); sound overlays (sound*/win) in the
   audio loader; root files (DatIndex::root_file) used for the cursors; mod VTABLE / FTABLE (new file ids, e.g.
   Remapster's 109 extra maps, which need an add-on in retail too).
-- Extras (Windower / Ashita addons built in; one Config page, all off by default, drawn with the game's own
-  fonts and frames; nothing that sends actions by itself):
-  - wanted: a translucent full-screen map overlay and a minimap (after the map's pan and zoom);
-  - candidates: target distance, party buffs / TP, target HP %, chat timestamps, clock, recast timers, text
-    auto-advance, Find across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
+- Extras (gameplay additions, the Windower / Ashita add-ons built in): the Config list's Extras row and page, all
+  off by default, built from the Config pages' own sprites (MODLOG "Config: Extras and Settings"). Config-type
+  options (resolution, frame limit, ...) go in Settings, not here. Done: the map overlay, the synthesis amount,
+  timestamps on every line.
+  - wanted: a minimap (after the map's pan and zoom);
+  - candidates: target distance, party buffs / TP, target HP %, clock, recast timers, text auto-advance, Find
+    across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
+- Chat log (user, 2026-10-23: "needs a lot of love"): `~/ffxi/lab/research/chat_audit/REPORT.md` ranks the gaps:
+  treasure pool s2c 0x0D2 / 0x0D3, MsgShift ids outside the segments dropped, 0x017 per-kind formats, 0x027 / 0x043,
+  0x009 strings, lines lost before BattleText loads, c2s 0x04B server message, 0x036 / 0x02A Type colours; client
+  side: talk out of range prints battle message 9 (should be 7031 #9), talk while mounted / invisible, /p and /l
+  without a party or linkshell, /equip refusals, missing text commands (/recast, /clock, /emote, ...). Then
+  auto-translate (`~/ffxi/lab/research/autotranslate_spec.md`: dictionary file 55665, 0xFD blocks, Tab completion in
+  menu fep); it needs chat text kept as Shift-JIS bytes end to end first (we decode it as UTF-8).
+- Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
+  that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
   user in WinBoat) left: the exe icon (a resource), a fully static link (it still imports libwinpthread-1.dll).

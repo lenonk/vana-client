@@ -882,9 +882,8 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
         id::LS2 => format!("[2]<{me}> {msg}"),
         _ => super::chat_line(kind, &me, msg),
     };
-    let line = super::stamped(w, line);
     let c = super::cfgapply::chat_colour(&w.game, kind);
-    w.chat.push_colour(line, c);
+    w.chat.push_chat(line, c);
     send(w, NetCommand::Chat { kind, text: msg.to_string() });
     Ok(())
 }
@@ -902,9 +901,8 @@ fn tell(w: &mut World, args: &[String], line: &str) -> Done {
         return Err(());
     };
     let msg = tail(line, 2).trim().to_string();
-    let echo = super::stamped(w, format!(">>{name} : {msg}"));
     let c = super::cfgapply::chat_colour(&w.game, 3);
-    w.chat.push_colour(echo, c);
+    w.chat.push_chat(format!(">>{name} : {msg}"), c);
     send(w, NetCommand::Tell { name, text: msg });
     Ok(())
 }

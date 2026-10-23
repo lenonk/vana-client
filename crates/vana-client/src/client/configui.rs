@@ -252,17 +252,43 @@ pub struct Out {
     /// Ids whose value changed (their effects run).
     pub changed: Vec<u16>,
     pub closed: bool,
-    /// Enter on our Settings button.
+    /// Enter on our Settings button or row.
     pub open_settings: bool,
+    /// Enter on our Extras row.
+    pub open_extras: bool,
 }
 
-/// Our Settings button under configwi and lobycwin (not retail): a virtual child after the bottom row.
+/// Our Settings button under lobycwin and our rows under configwi's list (not retail): virtual children.
 pub const SETTINGS: u16 = 100;
+pub const EXTRAS: u16 = 101;
+
+/// configwi's rows of ours, under Gamepad (child 13, y 198) at its pitch: (child, label).
+const OUR_ROWS: [(u16, &str); 2] = [(EXTRAS, "Extras"), (SETTINGS, "Settings")];
+const OUR_Y: f32 = 214.0;
+const OUR_PITCH: f32 = 16.0;
+
+/// The rows' rects relative to configwi's window (16, y, 88 x 16, as its own rows).
+fn our_rows() -> impl Iterator<Item = (u16, &'static str, [f32; 4])> {
+    OUR_ROWS.iter().enumerate().map(|(i, &(id, label))| (id, label, [16.0, OUR_Y + OUR_PITCH * i as f32, 88.0, 16.0]))
+}
+
+/// How much taller configwi's frame is for them.
+pub fn grow(name: &str) -> f32 {
+    if name == "configwi" { OUR_PITCH * OUR_ROWS.len() as f32 } else { 0.0 }
+}
+
+/// The help bar's text for a row of ours.
+pub fn our_help(child: u16) -> Option<&'static str> {
+    match child {
+        SETTINGS => Some(SETTINGS_HELP),
+        EXTRAS => Some("Gameplay additions from the add-ons: the map overlay, the synthesis amount, timestamps on every line."),
+        _ => None,
+    }
+}
 
 /// The windows with the button: (bottom row whose Down reaches it, the row its Down goes on to).
 fn settings_host(name: &str) -> Option<(u16, u16)> {
     match name {
-        "configwi" => Some((9, 1)),
         "lobycwin" => Some((4, 5)),
         _ => None,
     }
@@ -277,7 +303,7 @@ pub fn settings_rect(gu: &GameUi, w: &Win, sw: f32, sh: f32) -> Option<[f32; 4]>
 }
 
 /// Our text for the button in the help bar.
-pub const SETTINGS_HELP: &str = "Window, background and menu resolution, frame limit and the Config tool's settings.";
+pub const SETTINGS_HELP: &str = "Window, resolution, frame limit and the other settings of the Windows Config tool.";
 
 /// The open Config windows, bottom first, and page state that is not a config id.
 #[derive(Default)]
@@ -291,6 +317,8 @@ pub struct ConfigUi {
     pub extra: super::configui2::Extra,
     /// Installed-content mask (DAT_10444110 + 0x10, not the server's) for lobycwin's title tracks.
     pub owned: u32,
+    /// Our Settings / Extras page is open over the windows (none of them has the hand).
+    pub covered: bool,
 }
 
 impl ConfigUi {
@@ -359,6 +387,33 @@ impl ConfigUi {
                 w.edit = None;
             }
             return out;
+        }
+        // configwi: Global (9) -> Extras -> Settings -> Gameplay (1), both ways; Gamepad (13) takes no cursor.
+        if w.name == "configwi" {
+            let to = match (key, w.cursor) {
+                (egui::Key::ArrowDown, 9) => Some(EXTRAS),
+                (egui::Key::ArrowDown, EXTRAS) => Some(SETTINGS),
+                (egui::Key::ArrowDown, SETTINGS) => Some(1),
+                (egui::Key::ArrowUp, 1) => Some(SETTINGS),
+                (egui::Key::ArrowUp, SETTINGS) => Some(EXTRAS),
+                (egui::Key::ArrowUp, EXTRAS) => Some(9),
+                (egui::Key::Enter, c @ (EXTRAS | SETTINGS)) => {
+                    out.sounds.push(Se::Select);
+                    if c == SETTINGS {
+                        out.open_settings = true;
+                    } else {
+                        out.open_extras = true;
+                    }
+                    return out;
+                }
+                (k, EXTRAS | SETTINGS) if k != egui::Key::Escape => return out,
+                _ => None,
+            };
+            if let Some(to) = to {
+                w.cursor = to;
+                out.sounds.push(Se::Cursor);
+                return out;
+            }
         }
         if let Some((bottom, first)) = settings_host(&w.name) {
             let to = match key {
@@ -490,6 +545,26 @@ impl ConfigUi {
         }
         let Some(m) = gu.menu_def(&w.full()) else { return out };
         let Some((x, y)) = Self::win_xy(gu, w, sw, sh) else { return out };
+        if w.name == "configwi"
+            && let Some((id, _, _)) = our_rows().find(|(_, _, r)| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3])
+        {
+            gu.hover.set(true);
+            if (moved || clicked) && w.cursor != id {
+                out.sounds.push(Se::Cursor);
+                if let Some(w) = self.stack.last_mut() {
+                    w.cursor = id;
+                }
+            }
+            if clicked {
+                out.sounds.push(Se::Select);
+                if id == SETTINGS {
+                    out.open_settings = true;
+                } else {
+                    out.open_extras = true;
+                }
+            }
+            return out;
+        }
         let hit = m.elements.iter().skip(1).find(|c| {
             let r = [x + c.x as f32, y + c.y as f32, c.w as f32, c.h as f32];
             p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3] && Self::ctl(&w.name, c.id).is_some()
@@ -534,7 +609,7 @@ impl ConfigUi {
         let mut rects = Vec::new();
         let n = self.stack.len();
         for (i, w) in self.stack.iter().enumerate() {
-            let top = i + 1 == n;
+            let top = i + 1 == n && !self.covered;
             // A window under a later one at the same place (k1assign over conf6win, textcol3 over textcol2) is not
             // drawn *(inf)*.
             let at = gu.window_xy(&w.full(), sw, sh);
@@ -558,7 +633,7 @@ impl ConfigUi {
                 rects.push(r);
             }
             let (dx, dy) = Self::offset(w, sw, sh);
-            rects.extend(gu.window_rect(&w.full(), sw, sh).map(|r| [r[0] + dx, r[1] + dy, r[2], r[3]]));
+            rects.extend(gu.window_rect(&w.full(), sw, sh).map(|r| [r[0] + dx, r[1] + dy, r[2], r[3] + grow(&w.name)]));
         }
         rects
     }
@@ -569,7 +644,7 @@ impl ConfigUi {
 pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: f32, sh: f32) {
     let name = w.full();
     let (dx, dy) = ConfigUi::offset(w, sw, sh);
-    let Some((x, y)) = gu.window_off(&name, sw, sh, dx, dy) else { return };
+    let Some((x, y)) = gu.window_off_grow(&name, sw, sh, dx, dy, grow(&w.name)) else { return };
     let kids: Vec<(u16, f32, f32, f32, Option<(u16, String)>, Option<(u16, String)>)> = gu
         .menu_def(&name)
         .map(|m| {
@@ -627,6 +702,19 @@ pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values,
                 }
             }
             _ => {}
+        }
+    }
+    // Our rows: a blank button of the list's (windowps 105's cells) with its name in fontshp, as the list's own.
+    if w.name == "configwi" {
+        for (id, label, r) in our_rows() {
+            let on = id == w.cursor;
+            let d = if on { -1.0 } else { 0.0 };
+            let tint = if on { 0x8080_5020 } else { 0x8080_8080 };
+            super::settings::button(gu, [x + r[0] + d, y + r[1] + d, r[2], r[3]], tint);
+            gu.label(label, x + r[0] + 5.0 + d, y + r[1] + 1.0 + d, tint, true);
+            if on && top {
+                gu.cursor(x + r[0], y + r[1]);
+            }
         }
     }
     if top

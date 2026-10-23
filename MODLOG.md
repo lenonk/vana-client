@@ -4975,3 +4975,28 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   kept it and drew at the spike's alpha 0xff (additive 0x48 blend: a white puff for a few frames).
 - Fix: add_elem's full write sets CTL_LIFE_SET (no decrement on the spawn frame); effects.wgsl update and update_ref
   hide an element whose life drops under 1 and skip its stream (FUN_10043ca0's order).
+
+## Config: Extras and Settings as rows and pages; timestamps on every line; the menu keeps its page (2026-10-23)
+
+- How a Config page is drawn (menu DAT 39542): configwi's window sprite comwin 12 and each page's windowps 465 /
+  464 are one sprite: cell 0 the backing (newtex, skipped by FUN_101144b0), the header strip (gauge), bullets
+  (gauge 8 x 8), every heading and label as "font    font" glyph cells (the fontshp glyphs, each a full width on),
+  the slider tracks (gauge caps 4 x 8 and a 64 x 8 middle, alpha 49) and, under each button, a dark copy of its
+  buttonto cells at (+2, +2) coloured (1, 1, 1, 169), alpha blended. The children (buttons) are additive
+  (b[1, 0, 2, 1], colour 97, 97, 128, 169): over that dark copy they read dark slate; without it, pale lavender.
+  A button's caption is its glyphs twice: at (+2, +2) alpha 49 subtracted (b[1, 2, 0, 1]), then alpha 192.
+  Captions start at (+5, +1) in an 88 x 16 button. Markers: windowps 387 (88 px) / 412 (64 px) at (+37, +4).
+- Ours (not retail): configwi gets rows Extras and Settings under Gamepad (y 214, 230, its 16-px pitch; the frame
+  32 px taller), drawn as its rows (windowps 105's buttonto cells over the dark copy, the caption as above);
+  Global -> Extras -> Settings -> Gameplay with Down, back with Up. Enter opens our page at conf2win's place
+  (16, 48, 366 x 296): the frame, 465's header strip, the title, then rows of a bullet and a heading with
+  conf2win's 88-px or conf3win's 64-px buttons (up to three choices) or a slider (track from 465's cells, fill
+  windowps 384; Enter then Left / Right, as the pages' sliders) under it, the slider's value at the heading's end.
+  Settings has seven tabs (two rows of 88-px buttons, the marker on the open one, Enter switches). Extras (off
+  by default): the map overlay (Ctrl / Alt + O) and its opacity, the synthesis amount, timestamps on all lines.
+  The lobby's lobycwin keeps its Settings button; the page is centred there.
+- Timestamps: retail's /timestamp (config 0xb5) stamps chat lines only (12-hour, FUN_101bf740) in colour 0x31; the
+  stamp is now drawn by the log (each line keeps its arrival time and whether it is chat), in 0x31's colour, not
+  baked into the text. The Extras switch stamps every line in 0xb5's format (seconds while 0xb5 is off).
+- The main menu opens on the page it was closed on (the user's account of retail; FUN_1013b3f0 / socialme's
+  open path not traced). Cursor row 1.

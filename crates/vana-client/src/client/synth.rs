@@ -599,12 +599,21 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                     w.sounds.push(Ui::Cursor as u32);
                 }
             }
-            // FUN_101e08e0: the gate (0x77) and the inventory check (silent); ours then asks how many (1 ready, so Enter
-            // goes on) before the send.
+            // FUN_101e08e0: the gate (0x77), the inventory check (silent), the send; then everything closes. With the
+            // Synthesis Amount extra it first asks how many (1 ready, so Enter goes on).
             K::Enter if s.cursor == 9 => {
-                if complete(&s) && super::textcmd::status_gate(w, 0x77) && still_held(w, &s) {
+                if !(complete(&s) && super::textcmd::status_gate(w, 0x77) && still_held(w, &s)) {
+                    w.sounds.push(Ui::Error as u32);
+                } else if w.synth_amount {
                     w.sounds.push(Ui::Select as u32);
                     s.focus = Focus::Amount(1, sets_held(w, &s), false);
+                } else if send(w, s.crystal, &s.slots) {
+                    w.sounds.push(Ui::Select as u32);
+                    // Modes 1 and 2 also close the cmbmenu chain (FUN_1015e910 / cmbhlst).
+                    if matches!(s.from, From::Crystals | From::History) {
+                        w.synth.menu = None;
+                    }
+                    return;
                 } else {
                     w.sounds.push(Ui::Error as u32);
                 }

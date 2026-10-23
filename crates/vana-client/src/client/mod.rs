@@ -504,13 +504,6 @@ fn ko_step(w: &mut World) {
 }
 
 /// A chat line with its timestamp (config 0xb5, "%s[%s]%s %s" at 0x1036344c).
-fn stamped(world: &World, line: String) -> String {
-    match cfgapply::timestamp(&world.game) {
-        Some(t) => format!("{t} {line}"),
-        None => line,
-    }
-}
-
 /// An effect's sound command (fx/sound.rs) to the sound thread.
 fn play_fx_sound(a: &mut crate::audio::Audio, c: crate::fx::sound::SoundCmd) {
     match c {
@@ -943,7 +936,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Escape if world.log_active && world.overlay.is_none() => world.log_active = false,
                 egui::Key::A if modifiers.ctrl || modifiers.alt => send_chat(world, "/attack".into()),
                 // Extra: the map overlay (a free Ctrl / Alt letter in retail's key set).
-                egui::Key::O if modifiers.ctrl || modifiers.alt => {
+                egui::Key::O if (modifiers.ctrl || modifiers.alt) && world.map_overlay => {
                     if world.overlay.take().is_none() {
                         let o = map::Overlay::open(world, gu.map_regions());
                         if !o.has_map() {
@@ -1076,10 +1069,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         _ => {}
                     }
                 }
-                egui::Key::Minus => {
-                    world.menu = if world.menu.is_some() { None } else { Some(0) };
-                    world.menu_page = 0;
-                }
+                // The menu opens on the page it was closed on.
+                egui::Key::Minus => world.menu = if world.menu.is_some() { None } else { Some(0) },
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // Escape also takes a line off the log (key 0x95, FUN_1015b830). Clearing the target is key 0x92,
@@ -1212,7 +1203,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Mouse on the settings screen, else the Config windows.
     if let (Some(s), Some(p)) = (world.settings.as_mut(), input.pointer) {
-        s.pointer(p, input.moved, input.clicked, sw, sh);
+        s.pointer(gu, p, input.moved, input.clicked, sw, sh);
         if s.hover {
             gu.hover.set(true);
         }
@@ -1464,7 +1455,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if event::active(world) && world.full_log.take().is_some() {
         world.log_focus = 0;
     }
-    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active);
+    let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
+    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, stamps);
     let log = world.log.frame(sw, sh);
     let event_window = event_window(gu, world, sw, sh, tw);
     let bars = bar_text(gu, world, &items);
@@ -1531,6 +1523,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
+    if let Some(c) = world.config.as_mut() {
+        c.covered = world.settings.is_some();
+    }
     if let Some(c) = &world.config {
         blockers.extend(c.draw(gu, &world.game, sw, sh));
     }
@@ -1877,7 +1872,10 @@ fn config_out(world: &mut World, out: configui::Out) {
         world.game_save = true;
     }
     if out.open_settings {
-        world.want_settings = true;
+        world.want_settings = Some(settings::Kind::Settings);
+    }
+    if out.open_extras {
+        world.want_settings = Some(settings::Kind::Extras);
     }
 }
 
@@ -1916,12 +1914,12 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     if let Some((name, child)) = focus.filter(|_| world.confirm.is_none()) {
         let [help, title] = gu.focus_text(name, child);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
-        if child == configui::SETTINGS {
-            bars.help[1] = configui::SETTINGS_HELP.into();
+        if let Some(h) = configui::our_help(child) {
+            bars.help[1] = h.into();
         }
     }
     if let Some(s) = &world.settings {
-        (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
+        (bars.help[1], bars.title[1]) = (s.help(), s.title().into());
     }
     // The palette's caption (FUN_101a3d00): group 10 0x27 "Macro Set %s (#%d)"; titles "MacroPalette" (group 0xd
     // 0x50) under the cursor cell's macro title.
@@ -2795,6 +2793,11 @@ struct World {
     /// The map overlay (extra, Ctrl / Alt + O).
     overlay: Option<map::Overlay>,
     map_opacity: f32,
+    /// Extras: the map overlay and the synthesis amount.
+    map_overlay: bool,
+    synth_amount: bool,
+    /// Config `stamp_all_lines` (extra).
+    stamp_all_lines: bool,
     key_items: Vec<u32>,
     /// "Downloading data ..." (menu chdummy in mode 2, FUN_1022eca0): when it opened; up from the lobby's
     /// world entry or the server's zone change until the zone has loaded (FUN_100135c0 closes it).
@@ -2911,9 +2914,9 @@ struct World {
     config: Option<configui::ConfigUi>,
     volume_dirty: bool,
     game_save: bool,
-    /// Our own settings screen when opened from the Config window, and a request to open it.
+    /// Our Settings or Extras page when opened from the Config window, and a request to open one.
     settings: Option<settings::SettingsUi>,
-    want_settings: bool,
+    want_settings: Option<settings::Kind>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -3310,6 +3313,9 @@ impl App {
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
             w.map_opacity = self.cfg.map_overlay_opacity;
+            w.map_overlay = self.cfg.map_overlay;
+            w.synth_amount = self.cfg.synth_amount;
+            w.stamp_all_lines = self.cfg.stamp_all_lines;
         }
         // Applied at the next frame start: during the UI pass the window is out of self.gfx.
         self.window_dirty = true;
@@ -3755,6 +3761,9 @@ impl App {
                             party_tp: self.cfg.party_tp,
                             overlay: None,
                             map_opacity: self.cfg.map_overlay_opacity,
+                            map_overlay: self.cfg.map_overlay,
+                            synth_amount: self.cfg.synth_amount,
+                            stamp_all_lines: self.cfg.stamp_all_lines,
                             target_since: Instant::now(),
                             cam_turn: (0.0, 0.0),
                             sounds: Vec::new(),
@@ -3886,7 +3895,7 @@ impl App {
                             volume_dirty: true,
                             game_save: false,
                             settings: None,
-                            want_settings: false,
+                            want_settings: None,
                         }));
                         if let Phase::World(w) = &mut self.phase {
                             cfgapply::apply_all(w);
@@ -4447,9 +4456,8 @@ impl App {
                         world.tells.retain(|t| *t != from);
                         world.tells.insert(0, from.clone());
                     }
-                    let line = stamped(world, chat_line(kind, &from, &text));
                     let c = cfgapply::chat_colour(&world.game, kind);
-                    world.chat.push_colour(line, c);
+                    world.chat.push_chat(chat_line(kind, &from, &text), c);
                 }
                 NetEvent::Logout { state } => {
                     log::info!("logged out of the zone (0x00B state {state})");
@@ -5690,7 +5698,7 @@ impl App {
                                     }
                                 }
                                 if let Some(p) = input.pointer.filter(|_| !settings_new) {
-                                    s.pointer(p, input.moved, input.clicked, sw, sh);
+                                    s.pointer(lu, p, input.moved, input.clicked, sw, sh);
                                     if s.hover {
                                         lu.hover.set(true);
                                     }
@@ -6022,11 +6030,12 @@ impl App {
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
                 // What the Config windows and the settings screen hand to the app.
-                if std::mem::take(&mut world.want_settings) {
+                if let Some(kind) = world.want_settings.take() {
                     // Size lists come from the window, not the menu layout it is scaled to.
-                    let mut s = settings::SettingsUi::open(&self.cfg, window);
+                    let mut s = settings::SettingsUi::open_kind(&self.cfg, window, kind);
                     s.monitors = self.monitors.clone();
                     s.gpus = self.gpus.clone();
+                    s.in_game = true;
                     world.settings = Some(s);
                 }
                 if let Some(s) = world.settings.as_mut().filter(|s| s.dirty) {

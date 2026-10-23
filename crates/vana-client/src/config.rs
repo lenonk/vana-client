@@ -52,8 +52,14 @@ pub struct Config {
     pub anisotropy: u16,
     /// Party and alliance rows show TP (retail config 0xae bit 0, default off; ours on, as the add-ons do).
     pub party_tp: bool,
-    /// The map overlay's opacity 0..1 (Ctrl / Alt + O; not retail, the add-ons' map overlay).
+    /// Extra: the map overlay (Ctrl / Alt + O; the add-ons' map overlay) and its opacity 0..1.
+    pub map_overlay: bool,
     pub map_overlay_opacity: f32,
+    /// Extra: Synthesize asks how many and repeats.
+    pub synth_amount: bool,
+    /// Extra (the timestamp add-on): retail's chat timestamps (config 0xb5) on every log line; seconds while 0xb5 is
+    /// off.
+    pub stamp_all_lines: bool,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -139,7 +145,10 @@ impl Default for Config {
             frame_limit: 300,
             anisotropy: 16,
             party_tp: true,
+            map_overlay: false,
             map_overlay_opacity: 0.6,
+            synth_amount: false,
+            stamp_all_lines: false,
             cursor_size: 0,
             mods: Vec::new(),
             tool: Default::default(),

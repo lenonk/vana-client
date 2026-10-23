@@ -534,6 +534,32 @@ pub fn push_shape_text(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, t
     x
 }
 
+/// fontshp text as the Config pages' captions are built: each glyph a full width on (no overlap), optionally under
+/// its shadow (the glyphs again at +2, +2, alpha 49, subtracted: the buttons' captions). Returns the end x.
+pub fn push_label(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
+    let Some(lib) = ui.lib("font    fontshp") else { return x };
+    let glyphs = shape_glyphs(s);
+    if shadow {
+        let mut sx = x + 2.0;
+        for &g in &glyphs {
+            // Cell alpha 192 x 0x21 >> 7 = 49; blend word 0x42 = PS2 (0 - Cs) * As + Cd.
+            b.push_sprite(ui, lib, g, sx, y + 2.0, 1.0, 1.0, 0x2180_8080, 0x42);
+            sx += sprite_width(lib, g);
+        }
+    }
+    let mut x = x;
+    for g in glyphs {
+        b.push_sprite(ui, lib, g, x, y, 1.0, 1.0, tint, 0);
+        x += sprite_width(lib, g);
+    }
+    x
+}
+
+/// The width push_label takes.
+pub fn label_width(ui: &UiFile, s: &[u8]) -> f32 {
+    ui.lib("font    fontshp").map_or(0.0, |lib| shape_glyphs(s).into_iter().map(|g| sprite_width(lib, g)).sum())
+}
+
 /// Sprite-font text ending at x, drawn from its last glyph back (FUN_101c02c0, used for numbers).
 pub fn push_shape_text_right(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, tint: u32) -> f32 {
     let Some(lib) = ui.lib("font    fontshp") else { return x };

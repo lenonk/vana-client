@@ -56,16 +56,20 @@ pub fn chat_colour(v: &Values, kind: u8) -> [u8; 4] {
     crate::dat::battle::argb_bytes(v.get(id))
 }
 
-/// Timestamp for chat lines (0xb5: 1 hh:mm, 2 hh:mm:ss; English is 12-hour, FUN_101bf740) in local time.
-pub fn timestamp(v: &Values) -> Option<String> {
-    let mode = v.get(0xb5);
-    if mode == 0 {
-        return None;
-    }
+/// The local time (hour, minute, second).
+pub fn local_hms() -> [u8; 3] {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64) + utc_offset();
-    let (h, m, s) = ((secs / 3600).rem_euclid(24), (secs / 60).rem_euclid(60), secs.rem_euclid(60));
+    [(secs / 3600).rem_euclid(24) as u8, (secs / 60).rem_euclid(60) as u8, secs.rem_euclid(60) as u8]
+}
+
+/// A timestamp (0xb5: 1 hh:mm, 2 hh:mm:ss; English is 12-hour, FUN_101bf740) with its space; empty for 0.
+pub fn stamp_text(mode: u32, [h, m, s]: [u8; 3]) -> String {
     let h12 = if h % 12 == 0 { 12 } else { h % 12 };
-    Some(if mode == 1 { format!("[{h12:02}:{m:02}]") } else { format!("[{h12:02}:{m:02}:{s:02}]") })
+    match mode {
+        1 => format!("[{h12:02}:{m:02}] "),
+        2 => format!("[{h12:02}:{m:02}:{s:02}] "),
+        _ => String::new(),
+    }
 }
 
 /// The local UTC offset in seconds, from date(1) once.
@@ -119,7 +123,9 @@ mod tests {
         let v = Values::default();
         assert_eq!(focal(&v), 350.0);
         assert_eq!(chat_colour(&v, 3), [0xa0, 0x40, 0xa0, 0x80]);
-        assert!(timestamp(&v).is_none());
+        assert_eq!(v.get(0xb5), 0);
+        // 12-hour (FUN_101bf740): 00:05 is 12:05, 13:07:09 is 01:07:09.
+        assert_eq!((stamp_text(0, [0, 5, 0]), stamp_text(1, [0, 5, 0]), stamp_text(2, [13, 7, 9])), (String::new(), "[12:05] ".into(), "[01:07:09] ".into()));
         assert!((aspect([1600, 900], false, 0) - 16.0 / 9.0).abs() < 1e-6);
         assert!((aspect([1600, 900], true, 0) - 1.0 / 0.791).abs() < 1e-5);
     }
