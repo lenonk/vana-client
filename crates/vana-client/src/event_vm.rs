@@ -149,6 +149,11 @@ pub trait Host {
     fn weather_day(&mut self, _zone: u32, _day: u32) -> Option<[u8; 3]> {
         None
     }
+    /// Op 0x82: the zone RID region named by 4cc `tag` holds `p` (FUN_1017ad70 / FUN_1017ad80); None when there is no
+    /// such region.
+    fn in_region(&self, _tag: u32, _p: [f32; 3]) -> Option<bool> {
+        Some(true)
+    }
 }
 
 /// Event start (0x032 / 0x034 / 0x033).
@@ -1492,6 +1497,16 @@ impl Runtime {
                 } else {
                     self.thread(v).state = 0;
                     self.adv(v, len);
+                }
+            }
+            // FUN_100b9040: on when the event actor's model stands in region 4cc u32@1, else (or with no such region)
+            // jump to u16@5.
+            0x82 => {
+                let p = self.bodies[body].pos;
+                if host.in_region(self.u32_at(v, 1), p) == Some(true) {
+                    self.adv(v, 7);
+                } else {
+                    self.jump(v, 5);
                 }
             }
             // FUN_100ba100: the language as 1 Japanese / 2 English (the European ones count as English).

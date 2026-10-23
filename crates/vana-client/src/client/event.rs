@@ -925,6 +925,10 @@ impl Host for LiveHost<'_> {
         self.w.entities.get(&id).map(|e| e.index)
     }
 
+    fn in_region(&self, tag: u32, p: [f32; 3]) -> Option<bool> {
+        self.w.sub.regions.iter().find(|r| r.tag() == tag).map(|r| r.contains(p))
+    }
+
     fn weather_day(&mut self, zone: u32, day: u32) -> Option<[u8; 3]> {
         weather_day(self.w.index.as_ref()?, zone, day)
     }
@@ -1622,6 +1626,20 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Op 0x82's regions are RID records by 4cc: Lower Jeuno's e6t0 / e6t1 hold their own centres.
+    #[test]
+    fn region_ops() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(keys) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).map_err(anyhow::Error::from).and_then(|d| crate::dat::zone::Keys::from_ffximain(&d)) else { return };
+        let scene = crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(245)).unwrap()).unwrap();
+        for t in [*b"e6t0", *b"e6t1"] {
+            let r = scene.regions.iter().find(|r| r.tag() == u32::from_le_bytes(t)).expect("region");
+            assert!(r.contains(r.pos));
+            assert!(!r.contains([r.pos[0] + 500.0, r.pos[1], r.pos[2]]));
+        }
+    }
 
     /// Op 0x72's weather table: every zone of both halves has a row and 0x870 days.
     #[test]

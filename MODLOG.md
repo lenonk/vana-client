@@ -3517,3 +3517,10 @@ FUN_100b5620, 0x75 FUN_100b8660).
   subs end with the ground snap (FUN_10181290 with range 50 for the player, else FUN_10181300) unless actor +0x128
   bit 14 or +0x120 bits 20 / 21 (ours: Body.no_ground). The limit bounds the time, not the speed.
 - Ours: Thread.frames, move_3d, Effect::StopTurn. Zone 231 event 0x26 walks for 61 / 301 / 481 frames.
+
+## Event op 0x82: region test on the event actor (2026-10-22)
+
+- FUN_100b9040: u32@1 (raw, FUN_100afac0) is a RID region 4cc found by FUN_1017ad70; the VM's own actor's model
+  position (+0xa0 -> +0x34..+0x40) is tested with FUN_1017ad80 (point twice). Inside: len 7; outside, or no region /
+  actor / model: jump to u16@5. Ours always fell through; the headless host keeps that (Host::in_region Some(true)),
+  the live host tests Region::contains of the zone RID record whose tag matches. Lower Jeuno (245) uses e6t0 / e6t1.
