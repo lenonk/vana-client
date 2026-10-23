@@ -1765,6 +1765,8 @@ struct Actor {
     oneshot: Option<combat::OneShot>,
     /// A hit reaction / guard over the motion (regions 5 / 6).
     overlay: Option<actmotion::Overlay>,
+    /// The status motion's own clock, kept under a one-shot or scheduler motion (its regions stay below).
+    base_ticks: f32,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
@@ -1814,6 +1816,7 @@ impl Actor {
             top: -2.0,
             oneshot: None,
             overlay: None,
+            base_ticks: 0.0,
             last_attack: String::new(),
             extra: Vec::new(),
             play: None,
@@ -5699,6 +5702,7 @@ impl App {
                         }
                     };
                     if name != a.motion || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
+                        log::debug!(target: "motion", "actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
                         if !a.motion.is_empty() {
                             a.prev = Some((std::mem::take(&mut a.motion), a.ticks));
                             a.blend = 0.0;
@@ -5725,7 +5729,13 @@ impl App {
                             })
                             .collect()
                     };
-                    let mut anims = frames_of(&name, a.ticks, once);
+                    // FUN_1001ad00's queue replaces only the regions a new motion keys: under a one-shot or scheduler motion
+                    // the status motion goes on (an Elvaan's moving swing amf1 keys the upper body over the run), so it
+                    // goes first and the motion's tracks win where it has them.
+                    let (base, base_rate) = crate::motion::choose(&ch.motions, status, ratio);
+                    a.base_ticks += dt * 60.0 * base_rate;
+                    let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(base, a.base_ticks, false) } else { Vec::new() };
+                    anims.extend(frames_of(&name, a.ticks, once));
                     // The mouth motion of a spoken line goes over the body motion (its face tracks win).
                     if let Some(m) = &mut a.mouth
                         && let Some(mt) = m.ticks

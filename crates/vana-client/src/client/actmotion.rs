@@ -421,8 +421,11 @@ pub(super) fn update(w: &mut World, dt: f32) {
                 drop_kind(&mut a.extra, Kind::Battle);
                 add(&mut a.extra, Kind::Battle, files);
                 log::info!("actor {id:#x}: engaged, battle files {want:?}");
+                // The draw ("in N") plays when the actor becomes engaged, not when its files change mid-fight (a
+                // weapon change while engaged).
+                let drawing = a.battle.on.is_empty() || a.battle.leaving;
                 a.battle = Battle { on: want, leaving: false };
-                if let Some(pc) = &ch.pc {
+                if drawing && let Some(pc) = &ch.pc {
                     start(a, &ch, &crate::dat::motionfile::draw_scheduler(pc, false), &base);
                 }
             }
