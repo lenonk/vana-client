@@ -475,6 +475,7 @@ impl ConfigUi {
             && p.0 < r[0] + r[2]
             && p.1 < r[1] + r[3]
         {
+            gu.hover.set(true);
             if (moved || clicked) && w.cursor != SETTINGS {
                 out.sounds.push(Se::Cursor);
                 if let Some(w) = self.stack.last_mut() {
@@ -494,6 +495,7 @@ impl ConfigUi {
             p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3] && Self::ctl(&w.name, c.id).is_some()
         });
         let Some(c) = hit else { return out };
+        gu.hover.set(true);
         let (id, cx, cw) = (c.id, x + c.x as f32, c.w as f32);
         let name = w.name.clone();
         let editing = w.edit.is_some();

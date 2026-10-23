@@ -110,6 +110,9 @@ pub struct GameUi {
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
     /// When each scrolling text (scroll_text) first showed.
     scroll_seen: std::collections::HashMap<String, Instant>,
+    /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
+    /// pointer moves.
+    pub hover: std::cell::Cell<bool>,
 }
 
 /// The lobby help line's scroll state (lobyhelp draw FUN_10236b40).
@@ -145,7 +148,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), members: 1, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default() }
     }
 
     /// Text caret phase: on for half of each second.

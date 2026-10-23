@@ -224,6 +224,8 @@ pub struct Out {
     pub reload: bool,
     pub restart: bool,
     pub sounds: Vec<Se>,
+    /// The pointer is over a row or button (the hit cursor).
+    pub hover: bool,
 }
 
 const W: f32 = 440.0;
@@ -436,6 +438,7 @@ impl UpdateUi {
                 if clicked {
                     return self.key(egui::Key::Enter);
                 }
+                return Out { hover: true, ..Out::default() };
             }
         }
         Out::default()

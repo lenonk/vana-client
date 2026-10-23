@@ -277,10 +277,11 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
 
     let mut chosen = None;
     // Hovering an action moves the selection there, as in the game's menus.
-    if input.moved
-        && let Some(k) = input.pointer.and_then(|p| (0..3).find(|&k| inside(&arects[k], p)))
-    {
-        *focus = 4 + k;
+    if let Some(k) = input.pointer.and_then(|p| (0..3).find(|&k| inside(&arects[k], p))) {
+        lu.hover.set(true);
+        if input.moved {
+            *focus = 4 + k;
+        }
     }
     if input.clicked
         && let Some(p) = input.pointer
@@ -887,6 +888,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages.
     if let (Some(sel), Some(p), None) = (world.menu, input.pointer, world.confirm) {
         if let Some(k) = items.iter().position(|(_, r)| inside(r, p)) {
+            gu.hover.set(true);
             if input.moved || input.clicked {
                 world.menu = Some(k);
             }
@@ -928,6 +930,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse on the settings screen, else the Config windows.
     if let (Some(s), Some(p)) = (world.settings.as_mut(), input.pointer) {
         s.pointer(p, input.moved, input.clicked, sw, sh);
+        if s.hover {
+            gu.hover.set(true);
+        }
         world.sounds.extend(s.sounds.drain(..).map(|x| x as u32));
     }
     if let (Some(c), Some(p), None) = (world.config.as_mut(), input.pointer, world.settings.as_ref()) {
@@ -958,6 +963,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let (Some(p), Some(m)) = (input.pointer, world.mogdoor.as_mut())
         && let Some(k) = door_rows.iter().position(|r| inside(r, p))
     {
+        gu.hover.set(true);
         let k = if m.list { k } else { myroom::ROWS.iter().position(|r| r.0 as usize == k + 1).unwrap_or(k) };
         if input.moved || input.clicked {
             m.sel = k;
@@ -972,6 +978,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let (Some((_, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut())
         && let Some(k) = rows.iter().position(|r| inside(r, p))
     {
+        gu.hover.set(true);
         if input.moved || input.clicked {
             m.sel = k;
         }
@@ -1205,8 +1212,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         for (k, label) in ["Yes", "No"].iter().enumerate() {
             let x = wx + ww / 2.0 + if k == 0 { -44.0 } else { 20.0 };
             let hit = [x - 4.0, wy + 28.0, gu.text_width(label) + 8.0, 20.0];
-            if let Some(p) = input.pointer.filter(|p| inside(&hit, *p)) {
-                let _ = p;
+            if input.pointer.is_some_and(|p| inside(&hit, p)) {
+                gu.hover.set(true);
                 if input.moved || input.clicked {
                     world.confirm = Some((kind, k == 0));
                 }
@@ -1514,6 +1521,7 @@ fn yes_no(gu: &mut GameUi, input: &UiInput, sw: f32, sh: f32, msg: &str, yes: &m
         let x = wx + ww / 2.0 + if k == 0 { -44.0 } else { 20.0 };
         let hit = [x - 4.0, wy + 28.0, gu.text_width(label) + 8.0, 20.0];
         if input.pointer.is_some_and(|p| inside(&hit, p)) {
+            gu.hover.set(true);
             if input.moved || input.clicked {
                 *yes = k == 0;
             }
@@ -3879,7 +3887,7 @@ impl App {
 
     /// FUN_10125360's kind for this frame: a drag shows the arrow (both buttons the move arrow pointing ahead,
     /// otherwise the camera arrow along the drag), an actor under the pointer in the field the hit cursor.
-    /// Not done: kind 1 over menu items, 3 / 6 (scroll thumb, autoscroll).
+    /// Over an enabled menu item, kind 1. Not done: 3 / 6 (scroll thumb, autoscroll).
     fn mouse_kind(&mut self, size: [u32; 2]) {
         let at = self.last_cursor;
         let moved = self.left_down && self.press_at.zip(at).is_some_and(|(a, b)| (a.0 - b.0).abs() + (a.1 - b.1).abs() >= 5.0);
@@ -3893,6 +3901,10 @@ impl App {
             if let (Some(from), Some(to)) = (self.press_at.or(self.drag_from), at) {
                 self.mouse.camera_drag((from.0 as f32, from.1 as f32), (to.0 as f32, to.1 as f32));
             }
+            return;
+        }
+        if self.mouse.visible && self.game_ui.as_ref().is_some_and(|g| g.hover.get()) {
+            self.mouse.kind = mousecur::OVER_ITEM;
             return;
         }
         let Phase::World(world) = &self.phase else { return };
@@ -3947,6 +3959,11 @@ impl App {
             clicked: i.pointer.primary_clicked(),
             events: i.events.clone(),
         });
+        if input.moved
+            && let Some(gu) = &self.game_ui
+        {
+            gu.hover.set(false);
+        }
         let busy = self.busy;
         let status = self.status.clone();
         let (mut apply, mut save) = (false, false);
@@ -4091,6 +4108,7 @@ impl App {
                             }
                             for (m, r) in &rects {
                                 if !config_open && input.pointer.is_some_and(|p| inside(r, p)) {
+                                    lu.hover.set(true);
                                     if input.moved {
                                         *menu = *m;
                                     }
@@ -4178,6 +4196,9 @@ impl App {
                                 }
                                 if let Some(p) = input.pointer.filter(|_| !settings_new) {
                                     s.pointer(p, input.moved, input.clicked, sw, sh);
+                                    if s.hover {
+                                        lu.hover.set(true);
+                                    }
                                     if let Some(a) = self.audio.as_mut() {
                                         for x in s.sounds.drain(..) {
                                             a.ui(x);
@@ -4207,6 +4228,9 @@ impl App {
                                 }
                                 if let Some(p) = input.pointer {
                                     outs.push(u.pointer(p, input.moved, input.clicked, sw, sh));
+                                    if outs.last().is_some_and(|o| o.hover) {
+                                        lu.hover.set(true);
+                                    }
                                 }
                                 u.draw(lu, sw, sh);
                                 for out in outs {
@@ -4389,6 +4413,7 @@ impl App {
                             if let Some(p) = input.pointer
                                 && let Some(i) = rects.iter().position(|r| inside(r, p))
                             {
+                                gu.hover.set(true);
                                 if input.moved || input.clicked {
                                     sel = i;
                                 }

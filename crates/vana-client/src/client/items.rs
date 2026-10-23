@@ -349,6 +349,9 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     let Some(r) = gu.window_rect("menu    inventor", sw, sh) else { return };
     let row = ((p.1 - r[1] - 4.0) / ROW_PITCH).floor();
     let inside = p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3] && row >= 0.0 && (row as usize) < VISIBLE_ROWS;
+    if inside && matches!(w.win, Some(Win::Items { .. }) | Some(Win::Equip { pick: Some(_), .. })) {
+        gu.hover.set(true);
+    }
     if !inside || !(moved || clicked) {
         return;
     }

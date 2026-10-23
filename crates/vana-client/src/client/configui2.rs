@@ -509,6 +509,7 @@ pub fn pointer(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, p: (f32, f32), mo
     let kids: Vec<(u16, [f32; 4])> = gu.menu_def(&w.full()).map(|m| m.elements.iter().skip(1).filter(|c| (1..=14).contains(&c.id)).map(|c| (c.id, [x + c.x as f32, y + c.y as f32, c.w as f32, c.h as f32])).collect()).unwrap_or_default();
     let Some((id, _)) = kids.iter().find(|(id, r)| p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3] && ui.extra.scroll + *id as usize - 1 < n) else { return true };
     let id = *id;
+    gu.hover.set(true);
     if (moved || clicked) && w.cursor != id {
         out.sounds.push(Se::Cursor);
         if let Some(w) = ui.stack.last_mut() {

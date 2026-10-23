@@ -161,13 +161,15 @@ pub struct SettingsUi {
     pub sounds: Vec<Se>,
     /// Changed since the app last took it.
     pub dirty: bool,
+    /// The pointer is over a tab or a row (the hit cursor).
+    pub hover: bool,
 }
 
 const W: f32 = 480.0;
 
 impl SettingsUi {
     pub fn open(c: &Config, window: [u32; 2]) -> Self {
-        Self { s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, tab: 0, row: 1, sounds: Vec::new(), dirty: false }
+        Self { s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, tab: 0, row: 1, sounds: Vec::new(), dirty: false, hover: false }
     }
 
     fn sizes(&self, k: Sizes) -> Vec<[u32; 2]> {
@@ -342,10 +344,12 @@ impl SettingsUi {
     /// The pointer: tabs and rows follow it; a click on a tab picks it, on a value's left / right half steps it.
     pub fn pointer(&mut self, p: (f32, f32), moved: bool, clicked: bool, sw: f32, sh: f32) {
         self.sounds.clear();
+        self.hover = false;
         let [x, y, _, _] = self.rect(sw, sh);
         let inside = |r: [f32; 4]| p.0 >= r[0] && p.1 >= r[1] && p.0 < r[0] + r[2] && p.1 < r[1] + r[3];
         for t in 0..TABS.len() {
             if inside(tab_rect(x, y, t)) {
+                self.hover = true;
                 if clicked && t != self.tab {
                     self.tab = t;
                     self.row = 0;
@@ -357,6 +361,7 @@ impl SettingsUi {
         for i in 0..rows(self.tab).len() {
             let r = value_rect(x, y, i);
             if inside([x + 12.0, r[1], W - 24.0, 18.0]) {
+                self.hover = true;
                 if (moved || clicked) && self.row != i + 1 {
                     self.row = i + 1;
                 }

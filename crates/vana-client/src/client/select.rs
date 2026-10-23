@@ -728,6 +728,7 @@ impl SelectUi {
         match self.focus.clone() {
             Focus::List => {
                 let Some(i) = self.rects.list.iter().position(|r| inside(r, p)) else { return };
+                gu.hover.set(true);
                 out.input = true;
                 if input.moved || i != self.cursor {
                     self.move_cursor(i, out);
@@ -738,6 +739,7 @@ impl SelectUi {
             }
             focus => {
                 let Some(&(c, _)) = self.rects.children.iter().find(|(_, r)| inside(r, p)) else { return };
+                gu.hover.set(true);
                 let enter = || egui::Key::Enter;
                 match focus {
                     Focus::Options(k) if c != k => {
