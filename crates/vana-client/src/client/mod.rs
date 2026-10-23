@@ -372,6 +372,47 @@ fn send_chat(world: &mut World, text: String) {
     textcmd::run(world, &text, textcmd::Mode::Internal);
 }
 
+/// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
+fn vana_now(w: &World) -> u64 {
+    w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
+}
+
+/// FUN_10096c90 mode 1 for us: dead, the K.O. window opens (closing the other windows, FUN_1015f3e0(0x800)) until
+/// the deadline; "go home" chosen or the deadline passed (which closes the window) sends c2s 0x01A 0x0B, again every
+/// 600 ticks while still dead. Alive again: everything goes. (Ours waits while no deadline is known yet.)
+fn ko_step(w: &mut World) {
+    if !w.dead() {
+        (w.ko_open, w.homing, w.home_sent) = (false, false, None);
+        if matches!(w.confirm, Some((Confirm::HomePoint, _))) {
+            w.confirm = None;
+        }
+        return;
+    }
+    let expired = w.ko_deadline != 0 && vana_now(w) >= w.ko_deadline;
+    if expired && !w.homing {
+        w.homing = true;
+        w.ko_open = false;
+        if matches!(w.confirm, Some((Confirm::HomePoint, _))) {
+            w.confirm = None;
+        }
+    }
+    if !w.homing && !w.ko_open && w.ko_deadline != 0 {
+        if w.prompt.is_some() {
+            target::cancel_sub(w);
+        }
+        (w.menu, w.win, w.config, w.settings, w.action_menu, w.mogdoor) = (None, None, None, None, None, None);
+        (w.magic, w.ability, w.cats) = (None, None, None);
+        if !matches!(w.confirm, Some((Confirm::HomePoint, _))) {
+            w.confirm = None;
+        }
+        w.ko_open = true;
+    }
+    if w.homing && w.home_sent.is_none_or(|t| t.elapsed().as_secs_f32() >= 10.0) {
+        w.home_sent = Some(Instant::now());
+        let _ = w.net.commands.send(NetCommand::HomePoint);
+    }
+}
+
 /// A chat line with its timestamp (config 0xb5, "%s[%s]%s %s" at 0x1036344c).
 fn stamped(world: &World, line: String) -> String {
     match cfgapply::timestamp(&world.game) {
@@ -720,7 +761,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     let items = gu.menu_items(sw, sh, world.menu_page);
     let dead = world.dead();
-    let mut home = false;
     let mut opened = false;
     let mut shrink_log = false;
     let mut pick: Option<usize> = None;
@@ -919,7 +959,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // Left / right swap the commands and social pages on the same row (FUN_1013b3c0).
                 egui::Key::ArrowLeft | egui::Key::ArrowRight if world.menu.is_some() => world.menu_page ^= 1,
                 egui::Key::Enter if world.menu.is_some() => pick = world.menu,
-                egui::Key::Enter if dead && !world.homing => home = true,
+                // The K.O. window (FUN_1012e030 message 5): Enter asks "Return to Home Point?" (comyn, default No).
+                egui::Key::Enter if dead && world.ko_open => {
+                    world.confirm = Some((Confirm::HomePoint, false));
+                    world.sounds.push(crate::audio::Ui::Select as u32);
+                }
                 // Enter on an NPC target talks to it (FUN_101524e0); otherwise it opens the action menu
                 // (FUN_10127790). Inferred: monsters (0x00E @0x25 bit 0x08) take the menu path.
                 // With no target it first targets the nearest actor in front (FUN_101587f0 case 0); only with none
@@ -1422,29 +1466,29 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
 
-    // KO: return home, with the time before the server does it anyway.
-    if dead {
-        let (ww, wh) = (240.0, 66.0);
-        let (wx, wy) = (((sw - ww) / 2.0).round(), (sh / 2.0 + 60.0).round());
-        gu.frame(wx, wy, ww, wh);
-        gu.text("Return to your home point?", wx + ww / 2.0, wy + 8.0, 1, WHITE);
-        if let Some(t) = world.home_at {
-            let s = t.saturating_duration_since(Instant::now()).as_secs();
-            gu.text(&format!("Time remaining: {}:{:02}", s / 60, s % 60), wx + ww / 2.0, wy + 24.0, 1, GREY);
-        }
-        let label = if world.homing { "Returning..." } else { "Home Point" };
-        let (lx, ly) = (wx + ww / 2.0 - gu.text_width(label) / 2.0, wy + 42.0);
-        gu.text(label, lx, ly, 0, if world.homing { GREY } else { WHITE });
-        let hit = [lx - 4.0, ly - 2.0, gu.text_width(label) + 8.0, 20.0];
-        if !world.homing {
-            gu.cursor(lx - 2.0, ly);
-            if input.clicked && input.pointer.is_some_and(|p| inside(&hit, p)) {
-                home = true;
+    // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
+    // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.
+    if world.ko_open
+        && let Some(win) = gu.lobby_window_off("menu    dead", sw, sh, (0.0, 0.0), Some(1), world.confirm.is_none(), &[])
+    {
+        let s = world.ko_deadline.saturating_sub(vana_now(world));
+        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + 75.0, win.frame[1] + 6.0, 0x8080_8080, false);
+        for (id, r) in win.children.iter().filter(|(id, _)| *id == 1) {
+            if world.confirm.is_none() && input.pointer.is_some_and(|p| inside(r, p)) {
+                gu.hover.set(true);
+                if input.clicked && *id == 1 {
+                    world.confirm = Some((Confirm::HomePoint, false));
+                }
             }
         }
-        blockers.push([wx, wy, ww, wh]);
+        blockers.push(win.frame);
     }
     match (answer, world.confirm) {
+        // LAB_1012e0a0: Yes sets +0x24; the state machine sends 0x01A 0x0B.
+        (Some(true), Some((Confirm::HomePoint, _))) => {
+            world.confirm = None;
+            world.homing = true;
+        }
         (Some(true), Some((Confirm::LeaveRoom, _))) => {
             world.confirm = None;
             leave_room(world, 0);
@@ -1458,10 +1502,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         _ => {}
     }
 
-    if home && !world.homing {
-        world.homing = true;
-        let _ = world.net.commands.send(NetCommand::HomePoint);
-    }
     blockers
 }
 
@@ -1550,6 +1590,11 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         bars.title[1] = gu.title_msg(0x50).unwrap_or_else(|| "MacroPalette".into());
         bars.title[2] = m.recs[world.palette.3[p] + 10 * p].title();
     }
+    // The K.O. window's button: help group 0xe 0xf1, title 0xd 0x39 "K.O." from child 1's strings.
+    if world.ko_open && world.confirm.is_none() {
+        let [help, title] = gu.focus_text("menu    dead", 1);
+        (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+    }
     magic::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -1567,6 +1612,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Shutdown, true) => gu.menu_msg(0x278, "Cancel shut down process?"),
         (Confirm::LeaveRoom, _) if myroom::in_city(world.zone) => gu.lobby_msg(0x0c, 0x2e, "Moogle: Heading outside, kupo?"),
         (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
+        (Confirm::HomePoint, _) => gu.menu_msg(0x46, "Return to Home Point?"),
     }
 }
 
@@ -2228,9 +2274,12 @@ struct World {
     my_motion: net::MotionState,
     /// HP, MP, TP and their percentages, once the server has sent them (0x0DF).
     vitals: Option<(u32, u32, u32, u8, u8)>,
-    /// While dead: when the server will send us home regardless, and whether we already asked to go.
-    home_at: Option<Instant>,
+    /// While dead (FUN_10096c90's state): the deadline in game seconds (0x40ddc - 360), the K.O. window ("menu
+    /// dead") open, "go home" chosen or expired (handler +0x24), and when 0x01A 0x0B was last sent (every 10 s).
+    ko_deadline: u64,
+    ko_open: bool,
     homing: bool,
+    home_sent: Option<Instant>,
     /// Server clock (GameTime and when it arrived), weather number, and the zone's weather keys.
     clock: Option<(u32, Instant)>,
     weather: u16,
@@ -2324,6 +2373,8 @@ enum Confirm {
     Shutdown,
     /// LAB_101d6040 with no exit bit: "Exit your Mog House?" (group 0xc 0x2f, 0x2e in a Mog House city).
     LeaveRoom,
+    /// The K.O. window's button (FUN_1012e030): group 0xe 0x46 "Return to Home Point?".
+    HomePoint,
 }
 
 impl World {
@@ -3150,8 +3201,10 @@ impl App {
                             fade: 1.0,
                             my_motion: Default::default(),
                             vitals: None,
-                            home_at: None,
+                            ko_deadline: 0,
+                            ko_open: false,
                             homing: false,
+                            home_sent: None,
                             clock: None,
                             weather: 1,
                             zone_weather: None,
@@ -3530,7 +3583,7 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter } => {
                     world.myroom = myroom;
                     world.room_flag = room_flag;
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
@@ -3562,6 +3615,10 @@ impl App {
                     }
                     log::info!("zone music {music:?}");
                     world.clock = Some((game_time, Instant::now()));
+                    // 0x00A DeadCounter (@0xA4, 60 Hz): the end time from now when logging in or zoning while dead.
+                    if dead_counter > 0 {
+                        world.ko_deadline = (game_time as u64 + (dead_counter / 60) as u64).saturating_sub(360);
+                    }
                     world.weather = weather;
                     let m = crate::dat::weather::vana_minute(game_time, 0.0);
                     log::info!("vana'diel {:02}:{:02}, weather {} ({weather})", (m / 60.0) as u32, m as u32 % 60, crate::dat::weather::weather_tag(weather));
@@ -3817,7 +3874,15 @@ impl App {
                     world.key_items[at..at + 16].copy_from_slice(&bits);
                 }
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, home_in, pet } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet } => {
+                    // 0x037 handler: the end time = dc2 when ahead of now, else now + dc1 / 60, only with dc1 > 0; the
+                    // dead state machine's deadline is 6 minutes before it.
+                    world.ko_deadline = 0;
+                    if dead.0 as i32 > 0 {
+                        let now = vana_now(world);
+                        let end = if dead.1 as u64 > now { dead.1 as u64 } else { now + (dead.0 / 60) as u64 };
+                        world.ko_deadline = end.saturating_sub(360);
+                    }
                     world.my_pet = pet;
                     // Held mid-swing: applied when the hold ends (the disengage waits for the swing).
                     if world.holds.get(&world.my_id).is_some_and(|t| *t > Instant::now()) {
@@ -3825,10 +3890,6 @@ impl App {
                     } else {
                         world.held_status.remove(&world.my_id);
                         combat::apply_status(world, world.my_id, status);
-                    }
-                    world.home_at = home_in.map(|s| Instant::now() + std::time::Duration::from_secs(s as u64));
-                    if home_in.is_none() {
-                        world.homing = false;
                     }
                     if let Some(v) = &mut world.vitals {
                         v.3 = hpp;
@@ -3935,6 +3996,7 @@ impl App {
     fn update_movement(&mut self, dt: f32) {
         let Phase::World(world) = &mut self.phase else { return };
         combat::tick(world);
+        ko_step(world);
         event::update(world, dt);
         if world.in_scene() {
             doors::update(world);

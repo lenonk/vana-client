@@ -92,6 +92,19 @@ impl GameUiData {
         for &c in companions(LOBBY_US) {
             lobby.absorb(parse(c)?, true);
         }
+        // FUN_1011ad50 (non-Japanese clients, called by the dead windows' open): the window takes its frame sprite's
+        // bounds, framesus 65's 144 x 44 for "menu    dead".
+        for name in ["menu    dead", "menu    mp_dead"] {
+            let size = lobby.menu(name).and_then(|m| m.elements[0].refs.iter().find(|r| r.kind == 0)).and_then(|r| {
+                let s = lobby.lib(&r.lib)?.sprites.get(r.index as usize)?;
+                let w = s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[0])).max()?;
+                let h = s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[1])).max()?;
+                Some((w.max(0) as u16, h.max(0) as u16))
+            });
+            if let (Some((w, h)), Some(m)) = (size, lobby.menus.iter_mut().find(|m| m.name == name)) {
+                (m.elements[0].w, m.elements[0].h) = (w, h);
+            }
+        }
         let style = parse(WINDOW_STYLE_BASE)?.libs.into_iter().next().context("window style file has no sprite library")?;
         let font = Font::load(index, ffximain, 1, quality)?;
         let t = crate::dat::tables::of(ffximain)?;

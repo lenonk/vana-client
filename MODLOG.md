@@ -100,8 +100,9 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   4 event, 5 chocobo, 33 healing (rest, also the logout countdown), 47 sit, 63..73 sitchair, 85 mount.
   POS_HEAD @0x1F in 0x00A/0x00D/0x00E.
 - 0x037 (own status): BufStatus[32] @4, UniqueNo @0x24, flags0 u32 @0x28 (hpp bits 16-23, GraphSize 11-12),
-  flags1 @0x2C, server_status @0x30, dead_counter1 u32 @0x38 (60 Hz; includes 6 min, the client forces
-  home point below that), dead_counter2 @0x3C.
+  flags1 @0x2C, server_status @0x30, Flags2 @0x34, Flags3 @0x38, dead_counter1 u32 @0x3C (60 Hz; includes 6 min,
+  the client forces home point below that), dead_counter2 u32 @0x40 (absolute: Earth s since the Vana'diel epoch)
+  (corrected 2026-10-23; asm 0x1009d976..0x1009d9b1).
 - 0x0DF (own/trust vitals): UniqueNo @4, Hp @8, Mp @0xC, Tp @0x10, ActIndex @0x14, Hpp @0x16, Mpp @0x17.
 - Home point while dead: 0x01A {UniqueNo, ActIndex, u16 ActionID 0x0B, 16-byte union, StatusId 0 = accept}.
 - 0x0E7 {u16 Mode, u16 Kind}: 1/1 = /logout. Server applies LEAVEGAME, which adds HEALING; disconnect after 30 s.
@@ -4003,3 +4004,16 @@ LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed 
   every at0 / at1, never after at2 (56 frames, 112 ticks) nor on Hume swings (all within their animations). Retail's
   queue (FUN_1001a8e0) holds the last frame of a region < 3 entry whose count ran out; the from pose now holds it too.
 - Also from this hunt: hit reactions were not the cause (reactions fire only on hits; misses play nothing).
+
+## K.O. window (2026-10-23)
+
+From scratchpad ko/SPEC.md. FUN_10096c90 mode 1 opens "menu    dead" (FUN_1012e0c0) on the first frame our applied
+status is 2 / 3, after closing every window FUN_1015f3e0(0x800) closes (main menu, items, config, ...; the logs, bars,
+party, map stay). Deadline = end - 360 s, end = dc2 when ahead of now else now + dc1 / 60 (0x037 @0x3C / @0x40, only
+with dc1 > 0; 0x00A DeadCounter @0xA4: now + it / 60). The window: framesus 65 ("Time Left:" baked), 144 x 44 by
+FUN_1011ad50 (non-Japanese: the frame sprite's bounds), child 1 windowps 254 "Back to Home Point" with the hand; the
+time "%d:%02d" (minutes unwrapped) at (+75, +6) in the sprite font, 0x80808080; help 0xe 0xf1, title 0xd 0x39 "K.O."
+from child 1's strings. Enter / click: comyn 0xe 0x46 "Return to Home Point?", default No; Yes sets +0x24 and the state
+machine sends 0x01A 0x0B, again every 600 ticks while dead; the deadline passing does the same and closes the window.
+Escape is not taken (the log shrinks). Alive again: all of it goes. Not done: raise / tractor offers (s2c 0x0F9 ->
+resynus / comyn 0x60, 0x01A 0x0D / 0x13), camp mode, mp_dead.

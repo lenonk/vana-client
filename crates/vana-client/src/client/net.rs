@@ -149,7 +149,7 @@ pub struct ZoneText {
 #[derive(Clone, Debug)]
 pub enum NetEvent {
     /// `game_time` @0x3C (Earth seconds since the Vana'diel epoch), `weather` number @0x68; `area` the log line.
-    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool },
+    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32 },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
     Event(EventStart),
@@ -185,7 +185,9 @@ pub enum NetEvent {
     Entity(EntityUpdate),
     /// Our own status (0x037): LSB Animation @0x30, HP% (u32 @0x28 bits 16-23), and while dead the
     /// seconds until the forced return home (dead_counter1 @0x38, 60 Hz, includes a 6 minute floor).
-    SelfStatus { status: u8, hpp: u8, home_in: Option<u32>, pet: u16 },
+    /// `dead`: dead_counter1 u32 @0x3C (60 Hz ticks) and dead_counter2 u32 @0x40 (Earth seconds since the Vana'diel
+    /// epoch), the time the server sends us home (@0x38 is Flags3).
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16 },
     /// Our own HP, MP and TP (0x0DF).
     Vitals { hp: u32, mp: u32, tp: u32, hpp: u8, mpp: u8 },
     /// s2c 0x0C8 GROUP_TBL (kind 0 party / 5 alliance), 0x0DD / 0x0E2 GROUP_LIST (0x0E2 creates), 0x0DF GROUP_ATTR.
@@ -536,7 +538,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
                         let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), ..Default::default() });
-                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom, room_flag: matches!(p.u32(0x80), 1 | 4 | 5) })?;
+                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom, room_flag: matches!(p.u32(0x80), 1 | 4 | 5), dead_counter: p.u32(0xA4) })?;
                     }
                     0x00B => {
                         let state = p.u8(4);
@@ -551,10 +553,9 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x00D => tx.send(NetEvent::Entity(entity(&p, EntityKind::Player)))?,
                     0x037 => {
-                        let (status, ticks) = (p.u8(0x30), p.u32(0x38));
-                        let home_in = matches!(status, 2 | 3).then(|| (ticks / 60).saturating_sub(360));
+                        let status = p.u8(0x30);
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, home_in, pet: (p.u32(0x34) >> 3) as u16 })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
