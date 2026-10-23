@@ -27,6 +27,7 @@ mod flag {
 /// Command ids.
 mod id {
     pub const SAY: u16 = 0x01;
+    pub const EMOTE_TEXT: u16 = 0x0b;
     pub const MAP: u16 = 0x4f;
     pub const RECYCLE: u16 = 0x7a;
     pub const MOUNT: u16 = 0x28;
@@ -564,7 +565,7 @@ type Done = Result<(), ()>;
 fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> Done {
     let arg = |i: usize| args.get(i).map(String::as_str);
     match cid {
-        id::SAY | id::SHOUT | id::YELL | id::PARTY | id::LS | id::LS2 | id::UNITY | id::ASSISTJ | id::ASSISTE => chat(w, cid, tail(line, 1)),
+        id::SAY | id::SHOUT | id::YELL | id::PARTY | id::LS | id::LS2 | id::UNITY | id::ASSISTJ | id::ASSISTE | id::EMOTE_TEXT => chat(w, cid, tail(line, 1)),
         id::TELL => tell(w, args, line),
         id::ECHO => {
             let text = tail(line, 1).to_string();
@@ -870,6 +871,7 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
         id::LS2 => 0x1b,
         id::UNITY => 0x21,
         id::ASSISTJ => 0x22,
+        id::EMOTE_TEXT => 8,
         _ => 0x23,
     };
     // FUN_100e3400: /party with fewer than 2 in the party (FUN_100e8f70(5)) prints 7031 0x24 and sends nothing; the
@@ -884,6 +886,8 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
             let zone = w.zone.and_then(|z| w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32))).unwrap_or_default();
             format!("{me}[{zone}]: {msg}")
         }
+        // FUN_10078f20 (/emote): "%s %s", mode 7.
+        id::EMOTE_TEXT => format!("{me} {msg}"),
         id::LS => format!("[1]<{me}> {msg}"),
         id::LS2 => format!("[2]<{me}> {msg}"),
         _ => super::chat_line(kind, &me, msg),
