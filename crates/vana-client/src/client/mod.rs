@@ -3333,6 +3333,10 @@ impl App {
                     if let Some((b20, b3)) = e.hp_bits {
                         (entry.no_gauge, entry.no_plate) = (b20 || b3, b3);
                     }
+                    // SubKind 2 makes a door (kind 3, an XiDoorActor), whose plate draw (vtable +0x284) is empty.
+                    if e.kind == EntityKind::Npc && e.look_kind == 2 {
+                        entry.no_plate = true;
+                    }
                 }
                 NetEvent::Chat { kind, from, text } => {
                     if kind == 3 && !from.is_empty() {
