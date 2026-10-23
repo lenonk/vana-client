@@ -172,8 +172,9 @@ pub struct SortWin {
 /// with every row grey (FUN_101dae10 away from the moogle). The inventory side keeps the list's scroll / cursor.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Storage {
-    /// The bank side's container (17 = the recycle bin).
+    /// The bank side's container (17 = the recycle bin) and the inventory side's (0 until switched).
     pub bank: u8,
+    pub side: u8,
     pub scroll: usize,
     pub cursor: usize,
     /// Focus on the bank side (else the inventory side).
@@ -189,6 +190,8 @@ pub struct Storage {
     pub sortw: Option<SortW>,
     /// Manual Sort (FUN_101dbed0) on a side (true: the bank), with the held slot.
     pub manual: Option<(bool, Option<u8>)>,
+    /// "menu    itmstora" (Switch) with its cursor row, for the side itmsortw serves.
+    pub stora: Option<u16>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -275,6 +278,7 @@ pub fn focus(w: &World) -> Option<(&'static str, u16)> {
         Win::Items { sort: Some(s), .. } => Some(("menu    itmsort2", s.cursor)),
         Win::Items { store: Some(b), cursor, .. } => Some(match (b.qty, b.sortw, b.on_bank) {
             (Some(_), ..) => ("menu    itemctrl", 1),
+            _ if b.stora.is_some() => ("menu    itmstora", b.stora.unwrap_or(1)),
             (None, Some(sw), _) if sw.ask.is_some() => ("menu    sortyn", if sw.ask == Some(true) { 1 } else { 2 }),
             (None, Some(sw), _) => ("menu    itmsortw", sw.cursor),
             _ if b.read_only => ("menu    inventor", b.cursor as u16 + 1),
@@ -330,7 +334,7 @@ fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right: bool) -> b
 }
 
 /// Keys while a window is open; `page` is key function 0xa8 (Ctrl / Alt held). Returns true when the key was used.
-pub fn key(w: &mut World, key: egui::Key, page: bool) -> bool {
+pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
     let Some(info) = w.item_info.clone() else {
         if key == egui::Key::Escape {
             w.win = None;
@@ -341,7 +345,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool) -> bool {
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
     if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
-        store_key(w, &info, key, page);
+        store_key(w, &info, key, page, alt);
         return true;
     }
     let mut send = None;
@@ -652,6 +656,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
         Win::Items { .. } if item_prompt(w) => return None,
         // FUN_101dca80: the bin side shows its cursor row; mode 1 (130, 240) clears itemctrl.
         Win::Items { store: Some(b), .. } if b.on_bank || b.read_only => (store_rows(w, b.bank).get(b.scroll + b.cursor)?.clone(), b.bank, if b.qty.is_some() { 1 } else { 0 }),
+        Win::Items { store: Some(b), scroll, cursor, .. } => (store_rows(w, b.side).get(scroll + cursor)?.clone(), b.side, if b.qty.is_some() { 1 } else { 0 }),
         Win::Items { scroll, cursor, direct, .. } => (listed(w, *direct).get(scroll + cursor)?.clone(), INVENTORY, 0),
         Win::Equip { pick: Some(p), .. } => {
             let i = *p.indexes.get(p.scroll + p.cursor)?;
@@ -1046,7 +1051,7 @@ fn has_free(w: &World, c: u8) -> bool {
 
 /// The two-list view on `bank` (FUN_101dc880): focused on the bank side.
 fn open_view(w: &mut World, bank: u8, at_moogle: bool, read_only: bool, from_menu: bool) {
-    let st = Storage { bank, scroll: 0, cursor: 0, on_bank: true, qty: None, from_menu, at_moogle, read_only, sortw: None, manual: None };
+    let st = Storage { bank, side: INVENTORY, scroll: 0, cursor: 0, on_bank: true, qty: None, from_menu, at_moogle, read_only, sortw: None, manual: None, stora: None };
     match &mut w.win {
         Some(Win::Items { store, sort, direct: false, .. }) if from_menu => {
             *store = Some(st);
@@ -1114,7 +1119,7 @@ pub fn open_dae10(w: &mut World, c: u8) -> bool {
 /// linkshell (7, s2c 0x0E0).
 fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
-    let (own, dest) = if bank_side { (st.bank, INVENTORY) } else { (INVENTORY, st.bank) };
+    let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
     let it = info.item(s.id);
     let furniture = it.as_ref().is_some_and(|it| matches!(it.item_type, 10 | 12 | 14));
     if (!bank_side && st.bank == BIN) || !has_free(w, dest) {
@@ -1174,6 +1179,11 @@ pub fn store_num_plus(w: &mut World) {
     if st.bank == BIN || st.read_only || st.qty.is_some() || st.manual.is_some() {
         return;
     }
+    if st.stora.is_some() {
+        st.stora = None;
+        w.sounds.push(crate::audio::Ui::Close as u32);
+        return;
+    }
     st.sortw = match st.sortw {
         Some(_) => None,
         None => Some(SortW { cursor: 1, bank_side: st.on_bank, ask: None }),
@@ -1183,13 +1193,13 @@ pub fn store_num_plus(w: &mut World) {
 
 /// The storage view's keys: FUN_101db690 (both sides), FUN_101dcb80 / FUN_101f2bb0 (Enter), itemctrl FUN_1013a6c0,
 /// itmsortw FUN_101f3a50, Manual FUN_101dbed0.
-fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
+fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: bool) {
     use crate::audio::Ui;
     use egui::Key as K;
     let Some(Win::Items { store: Some(b), scroll, cursor, .. }) = &w.win else { return };
     let (mut b, mut scroll, mut cursor) = (*b, *scroll, *cursor);
     let banks = store_rows(w, b.bank);
-    let inv = listed(w, false);
+    let inv = store_rows(w, b.side);
     let (mut close, mut back) = (false, false);
     if let Some(mut q) = b.qty {
         // itemctrl: Up / Down +-1 (the step of 10 after a long hold is not done), Right 1, Left the count.
@@ -1214,8 +1224,43 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
             }
             _ => {}
         }
+    } else if let (Some(row), Some(sw)) = (b.stora, b.sortw) {
+        // itmstora (FUN_101f3e60): Up / Down skip disabled rows (inferred); Enter switches the side itmsortw serves
+        // and focuses that list; Escape / Num+ back to itmsortw (SE 0013).
+        let off = stora_off(w, &b);
+        let step = |r: u16, up: bool| -> u16 {
+            let mut r = r;
+            for _ in 0..16 {
+                r = if up { if r <= 1 { 16 } else { r - 1 } } else if r >= 16 { 1 } else { r + 1 };
+                if !off.contains(&r) {
+                    break;
+                }
+            }
+            r
+        };
+        match key {
+            K::ArrowUp | K::ArrowDown => {
+                b.stora = Some(step(row, key == K::ArrowUp));
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            K::Enter if off.contains(&row) => w.sounds.push(Ui::Error as u32),
+            K::Enter => {
+                let c = stora_container(row);
+                if sw.bank_side {
+                    (b.bank, b.scroll, b.cursor) = (c, 0, 0);
+                } else {
+                    (b.side, scroll, cursor) = (c, 0, 0);
+                }
+                (b.stora, b.sortw, b.on_bank) = (None, None, sw.bank_side);
+            }
+            K::Escape => {
+                b.stora = None;
+                w.sounds.push(Ui::Close as u32);
+            }
+            _ => {}
+        }
     } else if let Some(mut sw) = b.sortw {
-        let c = if sw.bank_side { b.bank } else { INVENTORY };
+        let c = if sw.bank_side { b.bank } else { b.side };
         if let Some(yes) = sw.ask {
             match key {
                 K::ArrowUp | K::ArrowDown => {
@@ -1257,10 +1302,11 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
                     write_store(w, b, scroll, cursor);
                     return;
                 }
-                // Row 3 Switch (itmstora) is not done.
+                // Row 3 Switch: itmstora over itmsortw, on the first enabled row (inferred).
                 K::Enter => {
-                    log::info!("itmstora (Switch) is not implemented");
-                    w.sounds.push(Ui::Error as u32);
+                    let off = stora_off(w, &b);
+                    b.stora = (1..=16).find(|r| !off.contains(r));
+                    w.sounds.push(Ui::Select as u32);
                 }
                 K::Escape => {
                     b.sortw = None;
@@ -1277,7 +1323,7 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
             b.sortw = Some(sw);
         }
     } else if let Some((bank_side, held)) = b.manual {
-        let c = if bank_side { b.bank } else { INVENTORY };
+        let c = if bank_side { b.bank } else { b.side };
         let rows = if bank_side { &banks } else { &inv };
         let (sc, cu) = if bank_side { (&mut b.scroll, &mut b.cursor) } else { (&mut scroll, &mut cursor) };
         match key {
@@ -1319,6 +1365,19 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
         match key {
             K::ArrowUp | K::ArrowDown if b.on_bank => list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key),
             K::ArrowUp | K::ArrowDown => list_keys(&mut scroll, &mut cursor, inv.len(), key),
+            // Key functions 0xb5 / 0xb6 (Alt+Right / Alt+Left): the focused side's container cycles through table
+            // 0x1037ef98 (FUN_101dbb20 / FUN_101dbba0), skipping what FUN_101dbc20 rejects; not for the bin.
+            K::ArrowRight | K::ArrowLeft if alt => {
+                if b.bank != BIN
+                    && let Some(c) = cycle(w, &b, b.on_bank, key == K::ArrowRight)
+                {
+                    if b.on_bank {
+                        (b.bank, b.scroll, b.cursor) = (c, 0, 0);
+                    } else {
+                        (b.side, scroll, cursor) = (c, 0, 0);
+                    }
+                }
+            }
             // Both sources' +0x1c is 0: Right / Left page only with 0xa8 held.
             K::ArrowRight | K::ArrowLeft if page => {
                 let right = key == K::ArrowRight;
@@ -1342,12 +1401,12 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
                 let (s, bank_side) = if b.on_bank { (banks.get(b.scroll + b.cursor), true) } else { (inv.get(scroll + cursor), false) };
                 if let Some(s) = s.cloned() {
                     let t = tint(w, info, &b, bank_side, &s);
-                    let locked = !bank_side && w.inv.locks.get(&(INVENTORY, s.index)).copied().unwrap_or(0) == 0x19;
+                    let locked = !bank_side && w.inv.locks.get(&(b.side, s.index)).copied().unwrap_or(0) == 0x19;
                     if locked || t == crate::inventory::TINT_DIM || t == 0x8060_2020 {
                         w.sounds.push(Ui::Error as u32);
                     } else {
                         w.sounds.push(Ui::Select as u32);
-                        let (from, to) = if bank_side { (b.bank, INVENTORY) } else { (INVENTORY, b.bank) };
+                        let (from, to) = if bank_side { (b.bank, b.side) } else { (b.side, b.bank) };
                         if s.count > 1 {
                             b.qty = Some(Qty { index: s.index, value: 1, max: s.count, from, to });
                         } else {
@@ -1380,6 +1439,45 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool) {
     write_store(w, b, scroll, cursor);
 }
 
+/// FUN_101f3f80: itmstora's rows to containers (1 Inventory, 2 Mog Safe, 3 Safe 2, 4 Storage, 5 Locker, 6 Satchel,
+/// 7 Sack, 8 Case, 9 Wardrobe, 10..16 Wardrobe 2..8).
+fn stora_container(row: u16) -> u8 {
+    match row {
+        1 => 0,
+        2 => 1,
+        3 => 9,
+        4 => 2,
+        5..=9 => (row - 1) as u8,
+        r => r as u8,
+    }
+}
+
+/// FUN_101dbc20 for a container: not on either side, not 1 / 2 / 4 / 9 away from the moogle, the Locker leased, the
+/// Satchel there (ItemNum >= 30), Safe 2 owned (not parsed: never), Sack and wardrobes 2..8 with a size.
+fn usable(w: &World, b: &Storage, c: u8) -> bool {
+    let n = |c: u8| w.inv.sizes[c as usize];
+    !(c == b.bank
+        || c == b.side
+        || (!b.at_moogle && matches!(c, 1 | 2 | 4 | 9))
+        || (c == 4 && w.inv.sizes2[4] == 0)
+        || (c == 5 && n(5) < 0x1e)
+        || c == 9
+        || (matches!(c, 6 | 10..=16) && n(c) == 0))
+}
+
+/// FUN_101f3c60: itmstora's disabled rows.
+fn stora_off(w: &World, b: &Storage) -> Vec<u16> {
+    (1..=16).filter(|&r| !usable(w, b, stora_container(r))).collect()
+}
+
+/// The next usable container after the focused side's in table 0x1037ef98, forward or back.
+fn cycle(w: &World, b: &Storage, bank_side: bool, forward: bool) -> Option<u8> {
+    const ORDER: [u8; 16] = [0, 1, 9, 2, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16];
+    let cur = if bank_side { b.bank } else { b.side };
+    let at = ORDER.iter().position(|&c| c == cur).unwrap_or(0);
+    (1..16).map(|k| ORDER[if forward { (at + k) % 16 } else { (at + 16 - k) % 16 }]).find(|&c| usable(w, b, c))
+}
+
 fn write_store(w: &mut World, b: Storage, scroll: usize, cursor: usize) {
     if let Some(Win::Items { store, scroll: s, cursor: c, .. }) = &mut w.win {
         (*s, *c) = (scroll, cursor);
@@ -1396,6 +1494,11 @@ fn store_bars(gu: &GameUi, b: &Storage, bars: &mut super::hudtop::BarText) {
         bars.title[1] = gu.title_msg(0x3e).unwrap_or_default();
         return;
     }
+    if let Some(row) = b.stora {
+        let [help, title] = gu.focus_text("menu    itmstora", row);
+        (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+        return;
+    }
     if let Some(sw) = b.sortw {
         if sw.ask.is_some() {
             bars.help[1] = gu.lobby_msg(0x0c, 0x3d, "");
@@ -1410,7 +1513,7 @@ fn store_bars(gu: &GameUi, b: &Storage, bars: &mut super::hudtop::BarText) {
         bars.title[2] = gu.title_msg(title_id(b.bank)).unwrap_or_default();
         return;
     }
-    let (own, dest) = if b.on_bank { (b.bank, INVENTORY) } else { (INVENTORY, b.bank) };
+    let (own, dest) = if b.on_bank { (b.bank, b.side) } else { (b.side, b.bank) };
     bars.title[1] = gu.title_msg(title_id(own)).unwrap_or_default();
     bars.help[1] = match b.manual {
         Some((_, held)) => gu.menu_msg(if held.is_some() { 6 } else { 5 }, ""),
@@ -1438,11 +1541,11 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         rects.extend(gu.window_rect("menu    inventor", sw, sh));
         return rects;
     }
-    let inv = listed(w, false);
+    let inv = store_rows(w, b.side);
     let manual = |bank_side: bool| b.manual.filter(|m| m.0 == bank_side).map(|m| m.1);
     let tinted = |rows: &[Slot], bank_side: bool| {
         let mut out = build_rows(rows, info, false);
-        let c = if bank_side { b.bank } else { INVENTORY };
+        let c = if bank_side { b.bank } else { b.side };
         for (r, s) in out.iter_mut().zip(rows) {
             r.tint = match manual(bank_side) {
                 Some(held) => manual_tint(w, c, held, s),
@@ -1454,7 +1557,7 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
     let blist = ItemList { rows: tinted(&banks, true), scroll: b.scroll, cursor: b.cursor };
     let ilist = ItemList { rows: tinted(&inv, false), scroll, cursor };
     upload_icons(gu, info, blist.visible().iter().chain(ilist.visible()).map(|r| r.id));
-    let free = b.qty.is_none() && b.sortw.is_none();
+    let free = b.qty.is_none() && b.sortw.is_none() && b.stora.is_none();
     let (bt, ui, style, font) = gu.parts();
     if let Some(m) = ui.menu("menu    bank") {
         push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank);
@@ -1472,10 +1575,26 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         rects.push(r);
     }
     if b.bank != BIN {
-        let sel = b.sortw.map(|s| s.cursor);
-        rects.extend(gu.lobby_window_off("menu    itmsortw", sw, sh, (0.0, 0.0), sel, sel.is_some(), &[]).map(|x| x.frame));
-        if let Some(yes) = b.sortw.and_then(|s| s.ask) {
-            rects.extend(gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, 0.0), Some(if yes { 1 } else { 2 }), true, &[]).map(|x| x.frame));
+        // itmsortw hides while itmstora is up (FUN_1015e6e0); itmstora's disabled rows take their dim sprites (kind 4).
+        if let Some(row) = b.stora {
+            let off = stora_off(w, b);
+            if let Some(win) = gu.lobby_window_off("menu    itmstora", sw, sh, (0.0, 0.0), Some(row), true, &off) {
+                let [x, y, ..] = win.frame;
+                if let Some(m) = gu.layout("menu    itmstora").cloned() {
+                    for e in m.elements.iter().filter(|e| off.contains(&e.id)) {
+                        if let Some(r) = e.refs.iter().find(|r| r.kind == 4) {
+                            gu.sprite(&r.lib, r.index as usize, x + e.x as f32, y + e.y as f32, 0x8080_8080);
+                        }
+                    }
+                }
+                rects.push(win.frame);
+            }
+        } else {
+            let sel = b.sortw.map(|s| s.cursor);
+            rects.extend(gu.lobby_window_off("menu    itmsortw", sw, sh, (0.0, 0.0), sel, sel.is_some(), &[]).map(|x| x.frame));
+            if let Some(yes) = b.sortw.and_then(|s| s.ask) {
+                rects.extend(gu.lobby_window_off("menu    sortyn", sw, sh, (0.0, 0.0), Some(if yes { 1 } else { 2 }), true, &[]).map(|x| x.frame));
+            }
         }
     }
     if let Some(q) = b.qty
@@ -1516,7 +1635,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     let same = *cur == row;
     *cur = row;
     if clicked && same && enter {
-        key(w, egui::Key::Enter, false);
+        key(w, egui::Key::Enter, false, false);
     }
 }
 

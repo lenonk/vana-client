@@ -4541,9 +4541,18 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   0x97, 0x9e, 0xa6, 0xa8, 0xb5, 0xb9.., 0xbf.., 0xc5), row help names the destination (0xe 0x42d..0x43c).
 - itmsortw (Num+ from the focused side, SE 0013): Auto (sortyn 0xc 0x3d; c2s 0x03A {c} sent twice for a storage
   container, as retail) and Manual (FUN_101dbed0 = itmsort2's Manual with the container; equipped rows green
-  0x80509050). Row 3 Switch (itmstora) and the Alt+Right / Alt+Left container cycle are not done yet.
+  0x80509050). Row 3 Switch and the Alt cycle: below.
 - 0x01C ItemNum2 (u16 x 18 @0x24) is parsed now. Escape closes the view (the bin returns to itmsort2 when it came
   from there).
 - Live (Lnxcsfix, Southern San d'Oria): /case moved 2 of 3 Distilled Water in through itemctrl and all back;
   /wardrobe greyed the non-gear rows; /bank read-only "Mog Safe"; /bank2 "That cannot be used right now."; /satchel
   "...A command error occurred.".
+- itmstora (Switch, FUN_101f3e60): rows 1 Inventory, 2 Mog Safe, 3 Safe 2, 4 Storage, 5 Locker, 6 Satchel, 7 Sack,
+  8 Case, 9 Wardrobe, 10..16 Wardrobe 2..8 (FUN_101f3f80); disabled (FUN_101f3c60, dim sprites of kind 4): both
+  sides\x27 containers, 1 / 2 / 4 / 9 away from the moogle, the Locker without a lease, the Satchel under 30, Safe 2
+  (not parsed), Sack and wardrobes 2..8 with size 0. Enter switches the side itmsortw serves and focuses that list;
+  Escape / Num+ back to itmsortw. Alt+Right / Alt+Left (key functions 0xb5 / 0xb6) cycle the focused side through
+  table 0x1037ef98 {0, 1, 9, 2, 4, 5, 6, 7, 8, 10..16} with the same skips (FUN_101dbc20); not for the bin. Ctrl and
+  Alt are told apart now (Alt alone for the cycle; either for the 0xa8 page). Up / Down in itmstora skip the
+  disabled rows, and it opens on the first enabled one (both inferred).
+- Live: Switch from Mog Case to Mog Wardrobe, Alt+Right to M.Ward. 2 and Alt+Left back.
