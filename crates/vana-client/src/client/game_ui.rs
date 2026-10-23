@@ -546,12 +546,19 @@ impl GameUi {
         if right { screens::push_shape_text_right(&mut self.batch, &self.data.lobby, &b, x, y, tint) } else { screens::push_shape_text(&mut self.batch, &self.data.lobby, &b, x, y, tint) }
     }
 
-    pub fn shape_name(&mut self, s: &str, x: f32, y: f32, tint: u32) {
-        screens::push_shape_name(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, tint);
+    /// FUN_101c9fa0: a name wrapped as the target window draws it (see screens::push_wrapped_name).
+    #[allow(clippy::too_many_arguments)]
+    pub fn wrapped_name(&mut self, s: &str, max: f32, x: f32, y: f32, tint: u32, centre: bool, split: bool) {
+        screens::push_wrapped_name(&mut self.batch, &self.data.lobby, &encode_sjis(s), max, x, y, tint, centre, split);
     }
 
-    pub fn shape_width(&self, s: &str) -> f32 {
-        screens::shape_text_width(&self.data.lobby, &encode_sjis(s))
+    /// The name-plate colour for an ncol entry ("menu    ncol").
+    pub fn ncol(&self, ncol: usize) -> u32 {
+        screens::sprite_tint(&self.data.lobby, "menu    ncol", ncol)
+    }
+
+    pub fn shape_name(&mut self, s: &str, x: f32, y: f32, tint: u32) {
+        screens::push_shape_name(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, tint);
     }
 
     pub fn hp_tint(&self, hpp: u8) -> u32 {

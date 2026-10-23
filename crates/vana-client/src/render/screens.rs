@@ -296,9 +296,9 @@ pub fn select_list(b: &mut UiBatch, lobby: &UiFile, w: f32, h: f32, cursor: usiz
     (rects, area)
 }
 
-/// Sprite-font text fitted into `max` px (FUN_101c04c0): the pen starts 8 in reserve; once it reaches `max` with
-/// more to come (white: or a glyph wider than 8) the rest becomes the ellipsis sprite 0x6c (inferred, as
-/// FUN_101c08f0) and 8 px. Returns the end x.
+/// Sprite-font text fitted into `max` px (FUN_101c9d50): the pen starts 8 in reserve; once it reaches `max` with
+/// more to come (white: or a glyph wider than 8; other colours always) the rest becomes the ellipsis sprite 0x6c
+/// (font table +0x1b0) and 8 px. Returns the end x.
 pub fn push_shape_fit(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, max: f32, tint: u32) -> f32 {
     let Some(lib) = ui.lib("font    fontshp") else { return x };
     let glyphs = shape_glyphs(s);
@@ -314,6 +314,60 @@ pub fn push_shape_fit(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, ma
         x += adv;
     }
     x
+}
+
+/// FUN_101c96d0: how many leading bytes of `s` fit in `max` px (each glyph advances its width - 1).
+fn shape_fit_count(lib: &SpriteLib, s: &[u8], max: f32) -> usize {
+    let mut pen = 0.0;
+    for (i, &c) in s.iter().enumerate() {
+        let adv = shape_glyphs(&[c]).first().map_or(0.0, |&g| sprite_width(lib, g) - 1.0);
+        if pen + adv > max {
+            return i;
+        }
+        pen += adv;
+    }
+    s.len()
+}
+
+/// FUN_101c9fa0: a name in up to two (three) lines of `max` px at (x, y), as the target window draws it. Cut to 24
+/// bytes; one line (at y + 6 when `centre`) when it fits and has no ':'; otherwise broken after the first ':' before
+/// the fit, else at the last ' ', '-', '@', ''' or ':' from fit + 1 down to fit / 4, else at the fit. `split` (no
+/// gauge): the rest goes on as its own name one line down, 4 in and 4 narrower; else the rest is fitted with the
+/// ellipsis (FUN_101c9d50).
+#[allow(clippy::too_many_arguments)]
+pub fn push_wrapped_name(b: &mut UiBatch, ui: &UiFile, s: &[u8], max: f32, x: f32, y: f32, tint: u32, centre: bool, split: bool) {
+    let Some(lib) = ui.lib("font    fontshp") else { return };
+    let s = &s[..s.len().min(24)];
+    let fit = shape_fit_count(lib, s, max);
+    let colon = s.iter().position(|&c| c == b':');
+    if s.len() <= fit && colon.is_none() {
+        push_shape_text(b, ui, s, x, if centre { y + 6.0 } else { y }, tint);
+        return;
+    }
+    let mut cut = fit;
+    match colon {
+        Some(i) if i < fit && i + 1 != fit => cut = i + 1,
+        _ => {
+            let mut i = fit + 1;
+            while i >= fit / 4 && i > 0 {
+                if s.get(i).is_some_and(|c| matches!(c, b' ' | b'-' | b'@' | b'\'' | b':')) {
+                    cut = i + 1;
+                    break;
+                }
+                i -= 1;
+            }
+        }
+    }
+    let cut = cut.min(s.len());
+    if split {
+        push_shape_text(b, ui, &s[..cut], x, y, tint);
+        push_wrapped_name(b, ui, &s[cut..], max - 4.0, x + 4.0, y + 12.0, tint, false, false);
+        return;
+    }
+    let rest_fits = shape_fit_count(lib, &s[cut..], max - 4.0) >= s.len() - cut;
+    let cut = if rest_fits { cut } else { fit.min(s.len()) };
+    push_shape_text(b, ui, &s[..cut], x, y, tint);
+    push_shape_fit(b, ui, &s[cut..], x + 4.0, y + 12.0, max - 4.0, tint);
 }
 
 /// Sprite width as the client advances text by it (+0x22 - +0x20: bounds in x).

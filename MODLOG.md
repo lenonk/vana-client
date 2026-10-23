@@ -3625,3 +3625,20 @@ From the door spec (scratchpad doors_spec/SPEC.md).
   range (Draw.instances / mirrored), cull back / front / none by Draw.cull (bit 29 clear); scenery pipelines are a 4 x 3
   table (opaque, cut out, blend, blend + cut out) x (none, back, front). 230 has 136 mirrored placements (e.g. the
   left leaf of every double door); the 335 interior's upper wall ornaments, hidden behind a back face before, show.
+
+## Target window name (2026-10-22)
+
+- The target window (object DAT_10578478, vtable 0x10334f18, draw FUN_101501a0; the old build's FUN_10149900) copies
+  the actor's display name each frame (+0x214 when u16 +0x210 != 0, else +0x7c) and draws it with FUN_101c9fa0(W - 13,
+  L + 5, T + 6, name, drawobj +0x78 = the name-plate colour, centre 1, split = no gauge drawn).
+- FUN_101c9fa0: cut to 24 bytes; fit = FUN_101c96d0 (leading glyphs whose advances, width - 1 each, total <= max);
+  fits and no ':' -> one line at y + 6 (centre). Else the break: after the first ':' before fit (unless right at it),
+  else the last ' ', '-', '@', ''' or ':' scanning fit + 1 down to fit / 4, else fit. Split (no gauge): line 1, then the
+  rest as its own name at (x + 4, y + 12), max - 4 (centre off). Gauge: cut at the break when the rest fits in max - 4,
+  else at fit; line 2 through FUN_101c9d50 (the ellipsis fit, old FUN_101c04c0) at (x + 4, y + 12), max - 4.
+- "Door:Count's Manor" (fit 14 of 99): "Door:" / "Count's Mano..." with a gauge in NPC green (seen live), "Count's
+  Manor" whole without one or in white.
+- Pets (master found): pet name, then "(" master ")" on line 2. Event mode: an event string, colour +0x68, split 0.
+  Not done: the pet line, the event mode.
+- Names when 0x00E has none (asm 0x1009b666..0x1009b7b5, FUN_10093430): index >= 0x700 with mask 0x08 from @0x34;
+  index < 0x400 with @0x34 == 0x01 the text at @0x35; else the zone list by full server id, else "NPC".

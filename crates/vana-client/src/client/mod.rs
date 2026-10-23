@@ -1212,13 +1212,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for t in &slots {
         match t.what {
             "target name" => {
+                // FUN_101501a0: FUN_101c9fa0(W - 13, L + 5, T + 6, name, the name-plate colour, centred), split into
+                // lines only while the target has no gauge.
                 if let Some(e) = target {
                     let max = gu.window_rect("menu    targetwi", sw, sh).map_or(100.0, |r| r[2] - 13.0);
-                    let mut name = e.name.clone();
-                    while gu.shape_width(&name) > max && !name.is_empty() {
-                        name.pop();
-                    }
-                    gu.shape_text(&name, t.x, t.y, 0x8080_8080, false);
+                    let tint = gu.ncol(name_colour(e, world.my_id));
+                    gu.wrapped_name(&e.name, max, t.x, t.y, tint, true, e.no_gauge);
                 }
             }
             "member name" => {
