@@ -1026,8 +1026,12 @@ impl Runtime {
                     self.yield_(v);
                 }
             },
-            0x24 => self.choice_op(v, host),
-            0x25 => self.wait_choice(v),
+            0x24 => self.choice_op(v, host, 0, 7),
+            0x25 => self.wait_choice(v, true),
+            // FUN_100b2280 subs 0 / 2: the 0x24 menu one byte on (sub 0 also previews the map: not done yet).
+            0xd4 if matches!(sub, Some(0) | Some(2)) => self.choice_op(v, host, 1, 8),
+            // FUN_100b2aa0: as 0x25, but a cancel stores 0xff and the event goes on.
+            0x7f => self.wait_choice(v, false),
             0x26 => self.yield_(v),
             0x27 => {
                 let (t, e, p) = (self.actor_at(v, 2), self.u8_at(v, 6), self.u8_at(v, 1) as u16);
@@ -1476,10 +1480,11 @@ impl Runtime {
     }
 
     /// 0x24 (FUN_100b0960): show the question, then build the menu once its text is ready.
-    fn choice_op(&mut self, v: usize, host: &mut dyn Host) {
+    /// 0x24 (FUN_100b0960) and 0xd4 subs 0 / 2 (operands `off` bytes later, `len` bytes long).
+    fn choice_op(&mut self, v: usize, host: &mut dyn Host, off: usize, len: u16) {
         if !self.choice.ready {
             if !self.choice.requested {
-                let id = self.val(v, 1) as u32;
+                let id = self.val(v, 1 + off) as u32;
                 let (_, _, e) = self.text(id, None, host);
                 let mut options = Vec::new();
                 let mut question = String::new();
@@ -1487,7 +1492,7 @@ impl Runtime {
                 if let Some(e) = e {
                     let at = e.choice.unwrap_or(e.lines.len());
                     question = e.lines[..at.min(e.lines.len())].iter().map(|l| decode_sjis(l)).collect::<Vec<_>>().join("\n");
-                    let (default, mut mask) = (self.val(v, 3) as u32, self.val(v, 5) as u32);
+                    let (default, mut mask) = (self.val(v, 3 + off) as u32, self.val(v, 5 + off) as u32);
                     for (i, l) in e.lines.iter().skip(at).enumerate() {
                         if mask & 1 == 0 {
                             if i as u32 == default {
@@ -1509,11 +1514,11 @@ impl Runtime {
             return;
         }
         self.choice.open = true;
-        self.adv(v, 7);
+        self.adv(v, len);
     }
 
-    /// 0x25 (FUN_100b0cb0): Z0 = option - 1; cancel = 0xfe and the event aborts.
-    fn wait_choice(&mut self, v: usize) {
+    /// 0x25 (FUN_100b0cb0): Z0 = option - 1; cancel = 0xfe and the event aborts (`abort`), or 0xff for 0x7f.
+    fn wait_choice(&mut self, v: usize, abort: bool) {
         if !self.choice.open {
             self.adv(v, 1);
             self.yield_(v);
@@ -1522,7 +1527,9 @@ impl Runtime {
         if let Some(p) = self.choice.picked {
             self.adv(v, 1);
             self.choice = ChoiceState::default();
-            if p == 0xff {
+            if p == 0xff && !abort {
+                self.z[0] = 0xff;
+            } else if p == 0xff {
                 self.z[0] = 0xfe;
                 self.ending = true;
                 self.end_phase = 1;
@@ -2071,6 +2078,15 @@ mod tests {
 
     fn end(log: &[Effect]) -> Option<u32> {
         log.iter().find_map(|e| if let Effect::Send(Packet::EventEnd { option, .. }) = e { Some(*option) } else { None })
+    }
+
+    /// Zone 37 event 0x040a: a 0xd4 sub 2 menu (the 0x24 menu one byte on) and the 0x7f wait after it.
+    #[test]
+    fn select_prompt_d4() {
+        let Some((log, f)) = run(37, 0x040a, &[Some(1), Some(1)]) else { return };
+        assert!(f.is_some());
+        assert!(log.iter().any(|e| matches!(e, Effect::Choice { id: 7284, options, cursor: 2, .. } if options.len() == 3)), "{log:?}");
+        assert!(log.iter().any(|e| matches!(e, Effect::Choice { id: 7279, .. })));
     }
 
     /// Southern San d'Oria actor 0x01b, event 0x0249: the Mog House explanation and its choice.
