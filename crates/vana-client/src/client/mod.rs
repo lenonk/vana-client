@@ -5601,7 +5601,7 @@ impl ApplicationHandler for App {
                     && self.cfg.tool("0021") != 0
                     && let Some(gfx) = &self.gfx
                 {
-                    self.mouse.apply_hardware(&gfx.window, event_loop, self.index.as_ref(), 1.0);
+                    self.mouse.apply_hardware(&gfx.window, event_loop, self.index.as_ref());
                 }
                 if (self.drive.quit && self.drive_done() && !matches!(self.phase, Phase::World(_))) || self.exit_requested {
                     event_loop.exit();
