@@ -31,6 +31,7 @@ pub mod net;
 pub mod script;
 mod subarea;
 mod myroom;
+mod doors;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -142,6 +143,8 @@ struct Entity {
     no_plate: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
+    /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
+    door: u32,
 }
 
 impl Entity {
@@ -1445,6 +1448,7 @@ fn place_mogdoor(w: &mut World) {
             // Kind 3 makes an XiDoorActor (FUN_1008f740), whose plate draw (vtable +0x284, FUN_100ac380) is empty.
             no_plate: true,
             untargetable: false,
+            door: 0,
         },
     );
 }
@@ -1829,6 +1833,8 @@ struct World {
     scene: Option<u16>,
     loading: Option<u16>,
     loading_scene: u16,
+    /// Door states by entity (client/doors.rs).
+    doors: doors::Doors,
     /// In the Mog House (0x00A LoginState 1), its door menu, and a leave request sent.
     myroom: Option<net::MyRoom>,
     mogdoor: Option<myroom::Menu>,
@@ -2827,6 +2833,7 @@ impl App {
                             myroom: None,
                             mogdoor: None,
                             leaving_room: false,
+                            doors: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
                             music_fades: Vec::new(),
@@ -3264,6 +3271,7 @@ impl App {
                         no_gauge: false,
                         no_plate: false,
                         untargetable: false,
+                        door: 0,
                     });
                     if e.mask & 7 != 0 {
                         entry.flags = e.status;
@@ -3336,6 +3344,9 @@ impl App {
                     // SubKind 2 makes a door (kind 3, an XiDoorActor), whose plate draw (vtable +0x284) is empty.
                     if e.kind == EntityKind::Npc && e.look_kind == 2 {
                         entry.no_plate = true;
+                    }
+                    if let Some(d) = e.door {
+                        entry.door = d;
                     }
                 }
                 NetEvent::Chat { kind, from, text } => {
@@ -3496,6 +3507,9 @@ impl App {
         let Phase::World(world) = &mut self.phase else { return };
         combat::tick(world);
         event::update(world, dt);
+        if world.in_scene() {
+            doors::update(world);
+        }
         // Weapon-skill motion files and motions the effect system's schedulers asked for last frame.
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
             if let Some(a) = world.actors.get_mut(&id) {
@@ -4937,7 +4951,11 @@ impl App {
             let idles = event::idles(w);
             // Placements first (look targets read other actors), then each actor's motion and pose.
             let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
-            let places: HashMap<u32, Place> = w.actors.keys().filter_map(|id| actor_place(w, *id, my_dir).map(|p| (*id, p))).collect();
+            let mut places: HashMap<u32, Place> = w.actors.keys().filter_map(|id| actor_place(w, *id, my_dir).map(|p| (*id, p))).collect();
+            // Doors have no model; their schedulers' sounds play at the door's own position (op 0x0b, actor2).
+            for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
+                places.entry(*id).or_insert(Place { pos: e.pos, forward: forward_from_dir(e.dir), status: 0, ratio: 0.0, size: 0 });
+            }
             let look_points: HashMap<u32, Vec3> = w
                 .actors
                 .iter()
@@ -4950,6 +4968,11 @@ impl App {
             if let Some(pts) = w.renderer.as_mut().map(|r| r.points.take()) {
                 footsteps::steps(w, &places, pts);
             }
+            // Door parts animate against the zone's tick clock; the frame's scheduler moves go in first.
+            if let Some(r) = w.renderer.as_mut() {
+                r.now = w.started.elapsed().as_secs_f32() * 60.0;
+            }
+            doors::moves(w, &gfx.gpu);
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.

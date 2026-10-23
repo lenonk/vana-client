@@ -63,6 +63,9 @@ pub struct Ground {
     objs: Vec<u32>,
     /// Per object: its four point lights (table slot + 1, 0 = none or past slot 254).
     obj_lights: Vec<[u8; 4]>,
+    /// Per triangle: the door whose box it is (0 none), and the doors open now (their boxes are skipped).
+    doors: Vec<u32>,
+    open: std::cell::RefCell<std::collections::HashSet<u32>>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -197,7 +200,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new() },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default() },
         }
     }
 
@@ -232,7 +235,22 @@ impl Ground {
         }
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights }
+        let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default() }
+    }
+
+    /// FUN_1017ac40: a door's box is skipped while it is open (state 0), solid while closed.
+    pub fn set_door(&self, door: u32, solid: bool) {
+        let mut open = self.open.borrow_mut();
+        if solid { open.remove(&door) } else { open.insert(door) };
+    }
+
+    /// Triangle `i` counts: not the box of an open door.
+    fn live(&self, i: usize) -> bool {
+        match self.doors.get(i) {
+            Some(&d) if d != 0 => !self.open.borrow().contains(&d),
+            _ => true,
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -280,7 +298,7 @@ impl Ground {
     }
 
     fn near(&self, x: f32, z: f32) -> impl Iterator<Item = usize> + '_ {
-        self.cells.get(&cell(x, z)).into_iter().flatten().map(|&i| i as usize)
+        self.cells.get(&cell(x, z)).into_iter().flatten().map(|&i| i as usize).filter(|&i| self.live(i))
     }
 
     /// Highest face at (x, z) no more than `step` above `feet_y`, i.e. y >= feet_y - step.
@@ -424,7 +442,7 @@ impl Ground {
             }
             let i = i as usize;
             let (ymin, ymax) = self.y_range[i];
-            if self.degenerate[i] || ymin > y_hi || ymax < y_lo {
+            if self.degenerate[i] || ymin > y_hi || ymax < y_lo || !self.live(i) {
                 continue;
             }
             let v = self.tris[i];
@@ -600,7 +618,7 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]] }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default() }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {

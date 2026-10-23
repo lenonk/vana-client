@@ -3570,3 +3570,34 @@ From the Mog House spec (scratchpad moghouse_spec/SPEC.md).
   falls or fades in on the old ground (World::in_scene).
 - Not done: furniture (Mog Safe / Mog Safe 2 items with exdata installed bit; s2c 0x020 exdata), s2c 0x02E and the
   myroom / mogext moogle menus, 2F unlock and owner from s2c 0x067, the door animation.
+
+## Doors (2026-10-22)
+
+From the door spec (scratchpad doors_spec/SPEC.md).
+- 0x00E SubKind 2 (u16 @0x30 & 7, handler 0x1009cb37): actor kind 3, door id = u32 @0x34 (every update, LSB
+  door_id), animation u8 @0x1F -> +0x16c. First model init FUN_1008f740 makes an XiDoorActor (vtable 0x1032fd58,
+  plate draw empty: no name plate) and FUN_100acba0(id): RID record by id, collision closed, door group by id (zone
+  slot then sub-area slot), schedulers from the folder named id: open / clos (with a group), else evst / eved.
+- State in force (+0x170) = +0x16c, or the event's +0x174 (ops 0x4c 8, 0x4d 9, 0x4f val + 0x12, 0x8e 0x2d, 0x8f
+  0x2e) while the actor is bound and an event runs. FUN_1008c6c0 on a change: 8 / 0x1a / 0x1d open + collision off;
+  0x2d open, collision unchanged; 9 / 0x1b / 0x1e / 0x2e close + collision on (at the start of the swing). First sight:
+  into / intc (ints / inte) when present, else the animated open for an open state (230 has none, so a door spawning
+  open swings open).
+- Door groups (FUN_1017a950): placements with MZB u32 @0x34 = an id whose low byte is '_' or '@', record order, at
+  most 4 parts; the name plays no part. Drawn with the high LOD slot.
+- Scheduler ops 0x0d (rotate, FUN_100439c0) / 0x0c (translate, FUN_10043bb0), actor1 a door: target vec @8, part
+  u32 @0x14, duration i16 @6 x speed; linear from the part's current value, exact at the end; angles wrapped to
+  [-3.1415, 3.1415]. Part world = base * T(t) * Rx(a.x) * Ry(a.y) * Rz(a.z) (column vectors), pivot at the model's
+  origin. 230 doors: both leaves +-1.3962 rad about Y over 70 ticks, sounds 9021 / 9022 (op 0x0b at the door).
+- Collision: each '_' RID record becomes a 12-triangle box (FUN_10171930: S(|size|) RotY(yaw) T(pos), corners,
+  normals and triangles in the spec), object flags bit 1, linked into the cells under it (FUN_10167ad0; one cell, or
+  every 4-unit cell when size.x or size.z > 7). FUN_1017ac40 sets list bit 0x2000 (skipped by every walk) while open.
+- Ours: Collision::add_door_boxes (Object.door), Ground::set_door / live (open doors' boxes skipped in heights,
+  rays and the sweep), ZoneGeometry::door_parts and Instance.band.z (part slot), a GPU part table (render PARTS,
+  PartGpu: rotation and translation from / to / (start tick, ticks)) composed in vs_main against u.area_info.y (the
+  tick clock), ZoneRenderer::move_part (the CPU keeps a copy to know a part's current value when a new op starts),
+  fx DoorMove from ops 0x0c / 0x0d, Effects::door_scheduler (folder by id, zone then sub-area library), client/doors.rs
+  (state table, first sight, changes, event overrides), door entities in the fx placement table (their sounds), and
+  talk() treats a door as having a model.
+- Not done: the y + id generator intensity (FUN_100acd30; none in 230), solid doors during a sub-area load
+  (FUN_10176dd0), elevators ('@' groups, kind 4, mv?? schedulers, op 0x1d), ships (kind 5), the Mog House door's swing.

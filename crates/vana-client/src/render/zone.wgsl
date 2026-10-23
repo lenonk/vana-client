@@ -39,6 +39,36 @@ struct Area {
 // (classes2.md 3.2; D3D8 POINT, Att2 = 1 / I, or 1 when I <= 0).
 @group(0) @binding(1) var<storage, read> plights: array<vec4<f32>>;
 @group(0) @binding(2) var<storage, read> areas: array<Area>;
+
+// A door part (scheduler ops 0x0d / 0x0c): rotation and translation from, to, (start tick, ticks); u.area_info.y is now.
+struct Part {
+    rot_from: vec4<f32>,
+    rot_to: vec4<f32>,
+    rot_time: vec4<f32>,
+    pos_from: vec4<f32>,
+    pos_to: vec4<f32>,
+    pos_time: vec4<f32>,
+};
+@group(0) @binding(3) var<storage, read> parts: array<Part>;
+
+fn part_k(time: vec4<f32>) -> f32 {
+    return select(clamp((u.area_info.y - time.x) / time.y, 0.0, 1.0), 1.0, time.y <= 0.0);
+}
+
+// FUN_100acef0: the part's world matrix = base * T(t) * Rx(a.x) * Ry(a.y) * Rz(a.z) (column vectors).
+fn part_matrix(slot: u32) -> mat4x4<f32> {
+    let p = parts[slot];
+    let a = mix(p.rot_from.xyz, p.rot_to.xyz, part_k(p.rot_time));
+    let t = mix(p.pos_from.xyz, p.pos_to.xyz, part_k(p.pos_time));
+    let cx = cos(a.x); let sx = sin(a.x);
+    let cy = cos(a.y); let sy = sin(a.y);
+    let cz = cos(a.z); let sz = sin(a.z);
+    let rx = mat4x4<f32>(vec4<f32>(1.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, cx, sx, 0.0), vec4<f32>(0.0, -sx, cx, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    let ry = mat4x4<f32>(vec4<f32>(cy, 0.0, -sy, 0.0), vec4<f32>(0.0, 1.0, 0.0, 0.0), vec4<f32>(sy, 0.0, cy, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    let rz = mat4x4<f32>(vec4<f32>(cz, sz, 0.0, 0.0), vec4<f32>(-sz, cz, 0.0, 0.0), vec4<f32>(0.0, 0.0, 1.0, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+    let tr = mat4x4<f32>(vec4<f32>(1.0, 0.0, 0.0, 0.0), vec4<f32>(0.0, 1.0, 0.0, 0.0), vec4<f32>(0.0, 0.0, 1.0, 0.0), vec4<f32>(t, 1.0));
+    return tr * rx * ry * rz;
+}
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -126,7 +156,11 @@ fn point_lights(lights: vec4<u32>, p: vec3<f32>, n: vec3<f32>) -> vec3<f32> {
 
 @vertex
 fn vs_main(v: VertexIn) -> VertexOut {
-    let model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    var model = mat4x4<f32>(v.m0, v.m1, v.m2, v.m3);
+    let part = u32(v.band.z);
+    if (part != 0u) {
+        model = model * part_matrix(part);
+    }
     let world = model * vec4<f32>(v.pos, 1.0);
     var out: VertexOut;
     out.clip = u.view_proj * world;

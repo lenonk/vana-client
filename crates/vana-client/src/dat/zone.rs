@@ -553,5 +553,9 @@ pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
             scene.warnings.push(format!("chunk {} at {:#x}: {e}", c.name(), c.offset));
         }
     }
+    // Door boxes go into the grid once both the collision and the RID records are in.
+    if let Some(c) = scene.collision.as_mut() {
+        c.add_door_boxes(&scene.regions);
+    }
     Ok(scene)
 }

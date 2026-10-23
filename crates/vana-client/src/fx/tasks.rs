@@ -523,6 +523,15 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_100439c0 / FUN_10043bb0: a door part turns (0x0d) or moves (0x0c) to vec @8 over i16 @6 x speed,
+            // part u32 @0x14; actor1 must be a door (the client checks).
+            0x0c | 0x0d => {
+                if let Some(actor) = t.a1.id() {
+                    let to = [8, 0xc, 0x10].map(|o| f32::from_bits(op.u32_at(o)));
+                    self.door_moves.push(super::DoorMove { actor, rotate: op.code == 0x0d, part: op.u32_at(0x14), to, ticks: op.dur as f32 * t.speed });
+                }
+                Flow::Next
+            }
             // Sounds at a snapshot of the actor's position: 0x0a actor1, 0x0b actor2, 0x53 the action target nearest
             // the player *(inf: actor2)*; far @0x14, near @0x18, flag 0x100 = height as is.
             0x0a | 0x0b | 0x53 => {

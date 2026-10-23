@@ -144,6 +144,17 @@ pub struct ElemCpu {
     pub light: Option<u32>,
 }
 
+/// Scheduler op 0x0c (translate) / 0x0d (rotate) on a door (FUN_10043bb0 / FUN_100439c0): part `part` of actor1's
+/// door group goes linearly to `to` over `ticks`.
+#[derive(Clone, Debug)]
+pub struct DoorMove {
+    pub actor: u32,
+    pub rotate: bool,
+    pub part: u32,
+    pub to: [f32; 3],
+    pub ticks: f32,
+}
+
 /// Who started an instance.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Owner {
@@ -517,6 +528,8 @@ pub struct Effects {
     serial: u32,
     rng: math::Rng,
     zone_lib: Option<usize>,
+    /// The loaded sub-area's library.
+    sub_lib: Option<usize>,
     /// Free runs of the particle pool (first, count).
     part_free: Vec<(u32, u32)>,
     /// Weather objects (YmCombineWeather), oldest first.
@@ -540,6 +553,8 @@ pub struct Effects {
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
+    /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
+    pub door_moves: Vec<DoorMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
@@ -602,6 +617,8 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             motion_files: Vec::new(),
+            door_moves: Vec::new(),
+            sub_lib: None,
             covered: false,
             sounds: Vec::new(),
             filter: (0, false),
@@ -684,6 +701,7 @@ impl Effects {
     pub fn load_sub_area(&mut self, lib: Library) {
         self.drop_sub_area();
         let l = self.reg.lib_of(lib.file_id).unwrap_or_else(|| self.reg.add(lib));
+        self.sub_lib = Some(l);
         let weat = crate::dat::generator::fourcc("weat");
         let starts: Vec<usize> = self.reg.libs[l]
             .gens
@@ -706,8 +724,32 @@ impl Effects {
         }
     }
 
+    /// FUN_10072290 / FUN_100724c0: scheduler `name` inside the folder named `folder` (a door id) of the zone or the
+    /// sub-area, run with actor1 = actor2 = the door; false when there is none.
+    pub fn door_scheduler(&mut self, actor: u32, folder: u32, name: u32) -> bool {
+        let (folder, name) = (folder.to_le_bytes(), name.to_le_bytes());
+        for l in [self.zone_lib, self.sub_lib].into_iter().flatten() {
+            let tree = &self.reg.libs[l].tree;
+            let Some(f) = tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { continue };
+            let inside = |mut i: usize| loop {
+                match tree.nodes[i].parent {
+                    Some(p) if p == f => return true,
+                    Some(p) => i = p,
+                    None => return false,
+                }
+            };
+            if let Some(s) = tree.nodes.iter().enumerate().position(|(i, n)| n.kind == kind::SCHEDULER && n.name == name && inside(i)) {
+                let who = sched::Who::Actor(actor);
+                self.spawn_task((l, s), who, who, None, 1.0, None);
+                return true;
+            }
+        }
+        false
+    }
+
     /// The sub-area unloads: its generators stop.
     pub fn drop_sub_area(&mut self) {
+        self.sub_lib = None;
         for i in 0..self.insts.len() {
             if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::SubArea)) {
                 self.kill(i);

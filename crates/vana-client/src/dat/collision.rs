@@ -47,6 +47,8 @@ pub struct Object {
     pub lights: [u32; 4],
     /// +0xbc: the sub-area it stands in for; collision skips it while that one is loaded (FUN_10182700).
     pub link: u32,
+    /// A door's box (FUN_10171930): the door id; the walks skip it while the door is open (list bit 0x2000).
+    pub door: u32,
 }
 
 fn u32_at(b: &[u8], o: usize) -> Option<u32> {
@@ -113,7 +115,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                     None => {
                         let next = objects.len() as u32;
                         let obj = *objects.entry(xf).or_insert_with(|| {
-                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)), link: u32_at(p, xf + 0xbc).unwrap_or(0) });
+                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)), link: u32_at(p, xf + 0xbc).unwrap_or(0), door: 0 });
                             next
                         });
                         let first = out.tris.len() as u32;
@@ -132,6 +134,47 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
 }
 
 impl Collision {
+    /// FUN_10173c10 -> FUN_10171930 / FUN_10167ad0: every '_' RID record gets a box (its pos, yaw and |size|) linked
+    /// into the grid cells under it, after their own entries. Object flags bit 1 (resolved late), y range pos.y -/+
+    /// size.y / 2; box triangles carry no surface bits *(inf: RID u32 @0x30 bits 6 / 8 are 0 in the zones seen)*.
+    pub fn add_door_boxes(&mut self, regions: &[super::zone::Region]) {
+        const CORNERS: [[f32; 3]; 8] = [[-0.5, -0.5, 0.5], [0.5, -0.5, 0.5], [-0.5, -0.5, -0.5], [0.5, -0.5, -0.5], [-0.5, 0.5, 0.5], [0.5, 0.5, 0.5], [-0.5, 0.5, -0.5], [0.5, 0.5, -0.5]];
+        const NORMALS: [[f32; 3]; 6] = [[0.0, -1.0, 0.0], [0.0, 0.0, -1.0], [-1.0, 0.0, 0.0], [0.0, 0.0, 1.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0]];
+        const TRIS: [[usize; 4]; 12] = [[2, 3, 6, 1], [3, 7, 6, 1], [0, 2, 4, 2], [2, 6, 4, 2], [1, 0, 5, 3], [0, 4, 5, 3], [3, 1, 7, 4], [1, 5, 7, 4], [6, 7, 4, 5], [7, 5, 4, 5], [0, 1, 2, 0], [1, 3, 2, 0]];
+        let (w, h) = self.grid;
+        for r in regions.iter().filter(|r| r.name.starts_with('_')) {
+            let size = Vec3::from(r.scale).abs();
+            let pos = Vec3::from(r.pos);
+            // RotY(yaw) as D3DX, row vectors: x' = x c + z s, z' = -x s + z c.
+            let (s, c) = r.rot[1].sin_cos();
+            let turn = |v: Vec3| Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
+            let verts: Vec<Vec3> = CORNERS.iter().map(|k| pos + turn(Vec3::from(*k) * size)).collect();
+            let obj = self.objects.len() as u32;
+            self.objects.push(Object { flags: 2, y_range: (pos.y - size.y / 2.0, pos.y + size.y / 2.0), area: 0, lights: [0; 4], link: 0, door: r.tag() });
+            let first = self.tris.len() as u32;
+            for t in TRIS {
+                self.tris.push([verts[t[0]], verts[t[1]], verts[t[2]]]);
+                self.normals.push(turn(Vec3::from(NORMALS[t[3]])));
+                self.flags.push(0);
+                self.kinds.push(0);
+                self.object.push(obj);
+            }
+            let entry = self.entries.len() as u32;
+            self.entries.push(Entry { first, count: 12, object: obj });
+            // One cell for a small box, else every 4-unit cell its footprint touches (FUN_10171930 samples every 4).
+            let (lo, hi) = verts.iter().fold((Vec3::MAX, Vec3::MIN), |(a, b), v| (a.min(*v), b.max(*v)));
+            let cell = |x: f32, z: f32| (((x + w as f32 * 2.0) * 0.25) as isize, ((z + h as f32 * 2.0) * 0.25) as isize);
+            let ((x0, z0), (x1, z1)) = if size.x > 7.0 || size.z > 7.0 { (cell(lo.x, lo.z), cell(hi.x, hi.z)) } else { (cell(pos.x, pos.z), cell(pos.x, pos.z)) };
+            for z in z0..=z1 {
+                for x in x0..=x1 {
+                    if x >= 0 && z >= 0 && (x as usize) < w && (z as usize) < h {
+                        self.cells[z as usize * w + x as usize].push(entry);
+                    }
+                }
+            }
+        }
+    }
+
     pub fn empty(grid: (usize, usize)) -> Collision {
         Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); grid.0 * grid.1], grid }
     }

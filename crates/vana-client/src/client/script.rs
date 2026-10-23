@@ -176,7 +176,7 @@ impl Script {
                 true
             }
             Step::Repeat { key, every, until, last } => {
-                if phase == until {
+                if phase == until || probes.iter().any(|x| x == until) {
                     true
                 } else {
                     if last.is_none_or(|t| t.elapsed().as_secs_f32() >= *every) {

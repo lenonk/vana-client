@@ -47,6 +47,8 @@ pub struct EntityUpdate {
     pub status: u8,
     /// u8 @0x30 & 7 (0x00E): the model kind byte.
     pub look_kind: u8,
+    /// SubKind 2 (a door): the door id at @0x34 (FUN 0x1009cb37: actor +0xf8), sent on every update.
+    pub door: Option<u32>,
     /// 0x00E with mask 0x04 (0x1009adbb): u8 @0x22 bit 0 sets actor +0x130 bit 20 and clears +0x128 bit 3,
     /// else +0x128 bit 3 = u8 @0x2B bit 0x20. Either hides the target gauge; bit 3 also the name plate.
     pub hp_bits: Option<(bool, bool)>,
@@ -377,6 +379,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         mask: flags,
         status: p.u8(0x20) & 7,
         look_kind: p.u8(0x30) & 7,
+        door: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 2 && p.data.len() >= 0x38).then(|| p.u32(0x34)).filter(|d| *d != 0),
         untargetable: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u8(0x2B) & 0x08 != 0),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
     }

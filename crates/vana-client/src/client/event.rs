@@ -693,6 +693,20 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            // FUN_100b6950 / 6a00 / 69b0 / 6980 / 6a30: the event's door state (+0x174) for the bound actor.
+            Effect::Op { op: op @ (0x4c | 0x4d | 0x4f | 0x8e | 0x8f), actor, args, .. } => {
+                let v = match op {
+                    0x4c => Some(8),
+                    0x4d => Some(9),
+                    0x4f => Self::arg_int(&args, 0).map(|v| (v + 0x12) as u8),
+                    0x8e => Some(0x2d),
+                    _ => Some(0x2e),
+                };
+                if let Some(v) = v {
+                    let id = self.wid(actor);
+                    self.w.doors.event.insert(id, v);
+                }
+            }
             // FUN_10178900(val, 1): the sub-area loads (no 0x0F2); sub 2 tells the server (0x0F2 state 2).
             Effect::Op { op: 0x75, sub: Some(0), args, .. } => {
                 if let Some(id) = Self::arg_int(&args, 0) {
@@ -1570,7 +1584,8 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     }
     let Some(e) = w.entities.get(&target) else { return false };
     // UniqueNo high byte: NPCs only; a model on the target (+0x120 bit 9); not hidden by the server.
-    if target >> 24 == 0 || e.index == 0 || !w.actors.contains_key(&target) || e.flags & 6 != 0 {
+    // A door's XiDoorActor counts as its model.
+    if target >> 24 == 0 || e.index == 0 || !(w.actors.contains_key(&target) || e.door != 0) || e.flags & 6 != 0 {
         return false;
     }
     if (e.pos - w.pos).length() > TALK_RANGE {

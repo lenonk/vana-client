@@ -194,6 +194,29 @@ struct AreaGpu {
     actor_ambient: [f32; 4],
 }
 
+/// Door parts the GPU animates (slot 0 unused).
+pub const PARTS: usize = 512;
+
+/// A door part's two channels (scheduler ops 0x0d rotate / 0x0c translate): from, to, (start tick, ticks).
+#[repr(C)]
+#[derive(Clone, Copy, Default, Pod, Zeroable)]
+pub struct PartGpu {
+    rot_from: [f32; 4],
+    rot_to: [f32; 4],
+    rot_time: [f32; 4],
+    pos_from: [f32; 4],
+    pos_to: [f32; 4],
+    pos_time: [f32; 4],
+}
+
+impl PartGpu {
+    /// A channel's value at tick `now` (linear, exact at the end: FUN_10043b00 / FUN_10043ab0).
+    fn at(from: [f32; 4], to: [f32; 4], time: [f32; 4], now: f32) -> [f32; 3] {
+        let k = if time[1] <= 0.0 { 1.0 } else { ((now - time[0]) / time[1]).clamp(0.0, 1.0) };
+        std::array::from_fn(|i| from[i] + (to[i] - from[i]) * k)
+    }
+}
+
 /// One scenery model: a range of the shared index buffer, its base vertex in the shared vertex buffer.
 #[derive(Clone)]
 struct Draw {
@@ -290,6 +313,11 @@ pub struct ZoneRenderer {
     zone_areas: usize,
     area_lights: Vec<Option<crate::dat::weather::Lighting>>,
     areas: wgpu::Buffer,
+    /// Door parts: slots by door id, their animations (CPU copy of the GPU table) and the tick they run against.
+    pub door_parts: HashMap<u32, Vec<u32>>,
+    parts: Vec<PartGpu>,
+    parts_gpu: wgpu::Buffer,
+    pub now: f32,
 }
 
 /// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
@@ -550,6 +578,12 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -711,6 +745,9 @@ pub struct ZoneGeometry {
     pub light_keys: Vec<u32>,
     /// Area 4ccs by slot - 1 (placements' MZB +0x4c), after those passed to build_keyed.
     pub area_keys: Vec<u32>,
+    /// Door groups (FUN_1017a950): an id's parts (placements with MZB +0x34 = id, record order, at most 4) as part
+    /// slots.
+    pub door_parts: HashMap<u32, Vec<u32>>,
     draws: Vec<Draw>,
     verts: Vec<GpuVertex>,
     indices: Vec<u16>,
@@ -737,6 +774,8 @@ impl ZoneGeometry {
         };
         // One instance block per mesh, holding the matrices of every placement that uses it.
         let mut area_keys = areas.to_vec();
+        let mut door_parts: HashMap<u32, Vec<u32>> = HashMap::new();
+        let mut next_part = 1u32;
         let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
         let mut by_mesh: HashMap<String, Vec<(Instance, u32)>> = HashMap::new();
         for p in scene.placements.iter().filter(|p| p.drawn()) {
@@ -770,8 +809,17 @@ impl ZoneGeometry {
                 }
                 v
             };
+            let mut part = 0;
+            if p.id != 0 && (next_part as usize) < PARTS {
+                let parts = door_parts.entry(p.id).or_default();
+                if parts.len() < 4 {
+                    part = next_part;
+                    parts.push(part);
+                    next_part += 1;
+                }
+            }
             for (name, b) in bands {
-                let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], 0.0, 0.0] };
+                let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, 0.0] };
                 by_mesh.entry(name.into_owned()).or_default().push((inst, p.link));
             }
         }
@@ -828,7 +876,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, area_keys, draws, verts: all_verts, indices: all_indices }
+        Self { matrices, links, light_keys, area_keys, door_parts, draws, verts: all_verts, indices: all_indices }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -875,6 +923,7 @@ impl ZoneRenderer {
         // Two vec4s a light: (position, range), (colour x intensity, 0); written by the effects update pass.
         let lights = device.create_buffer(&wgpu::BufferDescriptor { label: Some("point lights"), size: (LIGHTS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let areas = device.create_buffer(&wgpu::BufferDescriptor { label: Some("area lighting"), size: (AREAS * std::mem::size_of::<AreaGpu>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let parts_gpu = device.create_buffer(&wgpu::BufferDescriptor { label: Some("door parts"), size: (PARTS * std::mem::size_of::<PartGpu>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &p.globals_layout,
@@ -882,6 +931,7 @@ impl ZoneRenderer {
                 wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
                 wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 3, resource: parts_gpu.as_entire_binding() },
             ],
         });
         let sampler = mip_sampler(device);
@@ -934,7 +984,27 @@ impl ZoneRenderer {
             zone_areas: geo.area_keys.len(),
             area_lights: Vec::new(),
             areas,
+            door_parts: geo.door_parts.clone(),
+            parts: vec![PartGpu::default(); PARTS],
+            parts_gpu,
+            now: 0.0,
         }
+    }
+
+    /// Scheduler op 0x0d (rotate) / 0x0c (translate) on door part `slot`: from its value now to `to` over `ticks`
+    /// (FUN_100439c0 / FUN_10043bb0; angles wrapped to [-3.1415, 3.1415] as FUN_100acdb0 stores them).
+    pub fn move_part(&mut self, gpu: &Gpu, slot: u32, rotate: bool, to: [f32; 3], ticks: f32) {
+        let Some(p) = self.parts.get_mut(slot as usize) else { return };
+        let now = self.now;
+        let wrap = |a: f32| if (-3.1415..=3.1415).contains(&a) { a } else { a - (a / 6.283).round() * 6.283 };
+        let to = if rotate { to.map(wrap) } else { to };
+        let (from, dst, time) = if rotate { (&mut p.rot_from, &mut p.rot_to, &mut p.rot_time) } else { (&mut p.pos_from, &mut p.pos_to, &mut p.pos_time) };
+        let cur = PartGpu::at(*from, *dst, *time, now);
+        *from = [cur[0], cur[1], cur[2], 0.0];
+        *dst = [to[0], to[1], to[2], 0.0];
+        *time = [now, ticks.max(0.0), 0.0, 0.0];
+        let at = slot as u64 * std::mem::size_of::<PartGpu>() as u64;
+        gpu.queue.write_buffer(&self.parts_gpu, at, bytemuck::bytes_of(&*p));
     }
 
     /// Area 4ccs by slot - 1 (zone's, then the shown sub-area's).
@@ -1353,6 +1423,7 @@ impl ZoneRenderer {
         }
         // FUN_10183da0: instances with an area are lit by its environment; flagged models by 'ev10' while a sub-area
         // is in (+0x50, FUN_101787c0).
+        u.area_info[1] = self.now;
         let ev10 = u32::from_le_bytes(*b"ev10");
         if self.sub.as_ref().is_some_and(|s| s.shown)
             && let Some(s) = self.area_keys.iter().position(|&k| k == ev10)
