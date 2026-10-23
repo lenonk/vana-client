@@ -85,6 +85,7 @@ mod id {
     pub const ONLINE: u16 = 0x69;
     pub const AWAY: u16 = 0x6a;
     pub const TIMESTAMP: u16 = 0x9f;
+    pub const RECAST: u16 = 0x2e;
     pub const LOCKON: u16 = 0x5c;
     pub const CHARAEFFECT: u16 = 0x8a;
     pub const WAIT: u16 = 0x10a;
@@ -831,6 +832,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             system_line(w, if cid == id::AWAY { 0x77 } else { 0x76 });
             Ok(())
         }
+        id::RECAST => recast(w, args),
         id::TIMESTAMP => {
             // FUN_1007b620: "off" / "min" / "sec" set config 0xb5 = 0 / 1 / 2, none cycles; group 9 0x122 + it.
             let v = match args.get(1).map(String::as_str) {
@@ -968,6 +970,52 @@ const EQUIP_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
 fn find_item(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
     let info = w.item_info.as_ref()?;
     bags.iter().find_map(|&bag| w.inv.slots.iter().filter(|((c, i), _)| *c == bag && *i != 0).find(|(_, (id, _))| info.item(*id).is_some_and(|it| it.name.eq_ignore_ascii_case(name))).map(|((c, i), (id, _))| (*c, *i, *id)))
+}
+
+/// FUN_1007bc10: /recast NAME: a spell (FUN_1022b430, then FUN_1022b2f0: (ticks + 59) / 60) or an ability
+/// (FUN_10222e20 / FUN_10222c90) as "[%s] %s" with FUN_101c93c0's time ("%d:%02d", "%d:%02d:%02d" from an hour),
+/// the name as typed, mode 0x79; a name known but not usable (not learned, out of the jobs' reach) "[%s] --:--".
+/// Not done: an ability's charges ("[%s] %s (%d)"), which we do not keep.
+fn recast(w: &mut World, args: &[String]) -> Done {
+    let name = args.get(1).ok_or(())?.clone();
+    let left = |t: Option<&std::time::Instant>| t.map_or(0, |t| t.saturating_duration_since(std::time::Instant::now()).as_secs_f32().ceil() as u32);
+    let mut unusable = false;
+    let mut secs = None;
+    let spell = w.names.as_ref().zip(w.actions.as_ref()).and_then(|(names, acts)| {
+        acts.spells
+            .iter()
+            .filter(|s| s.id != 0 && s.levels.iter().any(|&l| l >= 0))
+            .find(|s| crate::dat::names::NameSource::spell(&**names, s.id as u32).is_some_and(|n| n.eq_ignore_ascii_case(&name)))
+            .map(|s| s.id)
+    });
+    if let Some(id) = spell {
+        match find_spell(w, &name, 0) {
+            Ok(_) => secs = Some(left(w.spell_recast.get(&id))),
+            Err(()) => unusable = true,
+        }
+    }
+    if secs.is_none()
+        && let Some(id) = ability_named(w, &name, 0x200..0x600)
+    {
+        let rec = w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).map(|a| a.timer);
+        let bit = id.wrapping_sub(0x200) as usize;
+        let known = id >= 0x400 || w.commands_known.get(64 + bit / 8).is_some_and(|b| b & (1 << (bit % 8)) != 0);
+        match rec {
+            Some(t) if known => secs = Some(if t == 900 { 0 } else { left(w.ability_recast.get(&t)) }),
+            _ => unusable = true,
+        }
+    }
+    let line = match secs {
+        Some(s) if s >= 3600 => format!("[{name}] {}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60),
+        Some(s) => format!("[{name}] {}:{:02}", s / 60, s % 60),
+        None if unusable => format!("[{name}] --:--"),
+        None => return Err(()),
+    };
+    if let Some(bt) = w.battle.clone() {
+        let colour = bt.colour_in(0x79, &w.game);
+        w.chat.push_colour(line, colour);
+    }
+    Ok(())
 }
 
 fn log9(w: &mut World, id: usize) {
