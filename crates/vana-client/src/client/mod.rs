@@ -2980,6 +2980,8 @@ struct World {
     ambient: Option<u32>,
     /// Message events that came before the message tables loaded (poll_network replays them).
     held_text: Vec<NetEvent>,
+    /// Equipped linkshells by number (1, 2, 3): the item's (index, bag), index 0 none (s2c 0x0E0).
+    linkshells: [(u8, u8); 4],
     /// The treasure pool's slots: (item, the actor it came from).
     treasure: [(u16, u32); treasure::SLOTS],
     res_rdy: ResRdy,
@@ -3982,6 +3984,7 @@ impl App {
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
                             treasure: Default::default(),
+                            linkshells: Default::default(),
                             held_text: Vec::new(),
                             ambient: None,
                             servmes: None,
@@ -4673,6 +4676,12 @@ impl App {
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
                 NetEvent::Fragments(p) => servmes::on_fragment(world, &p),
+                // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
+                NetEvent::LinkshellEquip { num, index, bag } => {
+                    if let Some(l) = world.linkshells.get_mut(num as usize) {
+                        *l = (index, bag);
+                    }
+                }
                 NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
                 NetEvent::TrophyList { slot, item, target, gold, container } => treasure::on_list(world, slot, item, target, gold, container),
                 NetEvent::TrophySolution { slot, judge, loot, entry, entry_point, loot_name, entry_name } => {

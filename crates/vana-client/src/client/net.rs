@@ -163,6 +163,8 @@ pub enum NetEvent {
     ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32, mog_zone: bool, send_count: u16 },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
+    /// s2c 0x0E0 (GP_SERV_COMMAND_GROUP_COMLINK): LinkshellNum @4, ItemIndex @5, Category (bag) @6.
+    LinkshellEquip { num: u8, index: u8, bag: u8 },
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
     Fragments(Vec<u8>),
     /// s2c 0x009 (GP_SERV_COMMAND_MESSAGE): MesNo @0xa, Data @0xd as keys (see std_data).
@@ -714,6 +716,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         tx.send(NetEvent::MessageStd { id: p.u16(0xa), cas: d.0, para: d.1, strings: d.2 })?
                     }
                     0x053 => tx.send(NetEvent::SystemMessage { id: p.u16(0xc), para: p.u32(4), para2: p.u32(8) })?,
+                    0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,
                     0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,
                     0x0D3 => tx.send(NetEvent::TrophySolution {

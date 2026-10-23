@@ -884,9 +884,22 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
     };
     // FUN_100e3400: /party with fewer than 2 in the party (FUN_100e8f70(5)) prints 7031 0x24 and sends nothing; the
     // caller still echoes the line.
-    let send_it = !(kind == 4 && w.party.party().count() < 2);
-    if !send_it {
+    // FUN_100e9730: a linkshell channel needs its linkshell equipped (an item still at its slot), else 7031 0x25.
+    let ls = match kind {
+        5 => Some(1),
+        0x1b => Some(2),
+        0x1e => Some(3),
+        _ => None,
+    };
+    let no_ls = ls.is_some_and(|n: usize| {
+        let (index, bag) = w.linkshells[n];
+        index == 0 || !w.inv.slots.get(&(bag, index)).is_some_and(|s| s.0 != 0)
+    });
+    let send_it = !(kind == 4 && w.party.party().count() < 2) && !no_ls;
+    if kind == 4 && w.party.party().count() < 2 {
         system_line(w, 0x24);
+    } else if no_ls {
+        system_line(w, 0x25);
     }
     // The echoes (all.c 90072..90740): our name and the text as typed, in the sender's mode. Not done: the assist
     // channels' rank icon (s2c 0x01B ranks, MentorFlg).
