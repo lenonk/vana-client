@@ -134,6 +134,19 @@ pub trait Host {
     fn rand(&mut self) -> u32 {
         0
     }
+    /// The client language (DAT_10456a28 + 8): 0 Japanese, 1 English, 2 / 3 the European ones.
+    fn language(&self) -> u32 {
+        1
+    }
+    /// An actor's ActIndex (FUN_100afb00's second result); None when it is not in the zone.
+    fn index(&self, actor: u32) -> Option<u16> {
+        Some(if actor == PLAYER { 0 } else { (actor & 0xfff) as u16 })
+    }
+    /// Op 0x72: the three weather bytes of `zone` on day `day` (files 7032 / 7033, or 7036 / 7037 from zone 100);
+    /// None when the files cannot be read.
+    fn weather_day(&mut self, _zone: u32, _day: u32) -> Option<[u8; 3]> {
+        None
+    }
 }
 
 /// Event start (0x032 / 0x034 / 0x033).
@@ -236,6 +249,8 @@ pub struct Runtime {
     pub mem: Memory,
     /// Table pointer slots (DAT_10476df0 / DAT_10476ce0): (block, code offset).
     slots: [Option<(usize, u16)>; 0x40],
+    /// Op 0xb7 sub 4's actor indices (DAT_10480a94, cleared to 0xffff).
+    actor_slots: [u16; 9],
     /// Message window: 0 closed, 1 open, 2 cancelled (DAT_10475800).
     window: u8,
     choice: ChoiceState,
@@ -283,6 +298,7 @@ impl Runtime {
             z,
             mem,
             slots: [None; 0x40],
+            actor_slots: [0xffff; 9],
             window: 0,
             choice: ChoiceState::default(),
             wait_update: false,
@@ -1448,6 +1464,108 @@ impl Runtime {
                     self.thread(v).state = 0;
                     self.adv(v, len);
                 }
+            }
+            // FUN_100ba100: the language as 1 Japanese / 2 English (the European ones count as English).
+            0x9c => {
+                let n = match host.language() {
+                    1..=3 => 2,
+                    _ => 1,
+                };
+                self.set_at(v, 1, 0, n);
+                self.adv(v, 3);
+            }
+            // FUN_100b75c0: set@1 = sqrt((v7 - v3)^2 + (v9 - v5)^2), integer squares, truncated.
+            0x64 => {
+                let (dx, dz) = (self.val(v, 7).wrapping_sub(self.val(v, 3)), self.val(v, 9).wrapping_sub(self.val(v, 5)));
+                let d = ((dz.wrapping_mul(dz) as f64) + (dx.wrapping_mul(dx) as f64)).sqrt();
+                self.set_at(v, 1, 0, d as i32 as u32);
+                self.adv(v, 0xb);
+            }
+            // FUN_100b7860: set@1 = the 3D distance between actor@3 and actor@7 x 1000 (event bodies where bound), 0 when
+            // either is missing.
+            0x65 => {
+                let at = |rt: &Self, host: &dyn Host, a: u32| match rt.vm_of(a) {
+                    Some(i) => host.index(a).map(|_| rt.bodies[i].pos),
+                    None => host.index(a).map(|_| host.place(a).0),
+                };
+                let (a, b) = (self.actor_at(v, 3), self.actor_at(v, 7));
+                let d = match (at(self, host, a), at(self, host, b)) {
+                    (Some(p), Some(q)) => ((q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2)).sqrt() as f64 * 1000.0,
+                    _ => 0.0,
+                };
+                self.set_at(v, 1, 0, d as i32 as u32);
+                self.adv(v, 0xb);
+            }
+            // FUN_100babe0: Vana'diel time val@1 (earth seconds; hour 0x90, day 0xd80) as year + 886, month + 1,
+            // day + 1, weekday, hour, minute and moon step.
+            0xaa => {
+                let t = self.val(v, 1) as u32;
+                let parts = [t / 0x12fc00 + 0x376, t % 0x12fc00 / 0x19500 + 1, t % 0x19500 / 0xd80 + 1, t % 0x6c00 / 0xd80, t % 0xd80 / 0x90, t % 0x90 * 60 / 0x90, t / 0x5e80 % 12];
+                for (k, p) in parts.into_iter().enumerate() {
+                    self.set_at(v, 3 + 2 * k, 0, p);
+                }
+                self.adv(v, 0x11);
+            }
+            // FUN_100b84b0: sub 0 loads the weather table (file 0x1b79, 0x1b7d from zone 100; a failed load skips
+            // the sub 1 after it, len 10); sub 1 copies zone val@2's three bytes for day val@4 % 0x870 into zone work
+            // 0x1002..0x1004. Both end the frame.
+            0x72 if sub == Some(0) => {
+                let ok = host.weather_day(self.val(v, 2) as u32, 0).is_some();
+                self.adv(v, if ok { 4 } else { 10 });
+                self.yield_(v);
+            }
+            0x72 if sub == Some(1) => {
+                let (zone, day) = (self.val(v, 2) as u32, (self.val(v, 4).rem_euclid(0x870)) as u32);
+                if let Some(b) = host.weather_day(zone, day) {
+                    for k in 0..3 {
+                        self.z[2 + k] = b[k] as u32;
+                    }
+                }
+                self.adv(v, 6);
+                self.yield_(v);
+            }
+            // FUN_100afee0: sub 0 stores val@8 into actor@2's VM, at the operand @6 of *its* current op; 1 actor@4's
+            // name into str@2; 2 its server id (0 when missing); 3 its ActIndex (0xffff when missing); 4 its ActIndex
+            // into slot val@2 of a nine-entry table (DAT_10480a94; nothing reads it).
+            0xb7 => {
+                match sub {
+                    Some(0) => {
+                        let a = self.actor_at(v, 2);
+                        let x = self.val(v, 8) as u32;
+                        if let Some(t) = self.vm_of(a).filter(|_| host.index(a).is_some()) {
+                            self.set_at(t, 6, 0, x);
+                        }
+                    }
+                    Some(1) => {
+                        let a = self.actor_at(v, 4);
+                        let name = if host.index(a).is_some() { host.name(a) } else { String::new() };
+                        let mut b = [0u8; 16];
+                        for (i, c) in name.bytes().take(15).enumerate() {
+                            b[i] = c;
+                        }
+                        let w = std::array::from_fn(|i| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap()));
+                        let raw = self.u16_at(v, 2);
+                        self.set4(v, raw, 0, w);
+                    }
+                    Some(2) => {
+                        let a = self.actor_at(v, 4);
+                        let id = if host.index(a).is_some() { a } else { 0 };
+                        self.set_at(v, 2, 0, id);
+                    }
+                    Some(3) => {
+                        let a = self.actor_at(v, 4);
+                        self.set_at(v, 2, 0, host.index(a).unwrap_or(0xffff) as u32);
+                    }
+                    Some(4) => {
+                        let a = self.actor_at(v, 4);
+                        let k = self.val(v, 2);
+                        if (0..9).contains(&k) {
+                            self.actor_slots[k as usize] = host.index(a).unwrap_or(0xffff);
+                        }
+                    }
+                    _ => {}
+                }
+                self.adv(v, len);
             }
             0xda => {
                 let v32 = host.game_config(0x43);

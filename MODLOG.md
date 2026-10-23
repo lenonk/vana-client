@@ -3480,3 +3480,29 @@ From the current decompile (spec in the session scratchpad, subarea_spec). Zone 
   the zone *(inf: FUN_101889c0 finding nothing)*. zone-shot fills the table at --hour; FFXI_NO_AREAS=1 skips it.
 - Seen: the 335 interior is dim and warm instead of sunlit; ev01 archways in 230 darker than the open street.
 - Open: bit 31 is alpha *blending* in retail; ours alpha-tests those models (the reference viewer's rule).
+
+## Event ops that store values: 0x9c, 0x64, 0x65, 0xaa, 0x72, 0xb7 (2026-10-22)
+
+Handlers from the current build's dispatcher switch FUN_100bc280 (case -> FUN_ map in the session scratchpad,
+dispatch.c): 0x9c FUN_100ba100, 0x64 FUN_100b75c0, 0x65 FUN_100b7860, 0xaa FUN_100babe0, 0x72 FUN_100b84b0, 0xb7
+FUN_100afee0 (also 0x31 FUN_100b5630, 0x4c FUN_100b6950, 0x4d FUN_100b6a00, 0x4f FUN_100b69b0, 0x8e FUN_100b6980, 0x8f
+FUN_100b6a30, 0xb4 FUN_100b0a00, 0x82 FUN_100b9040, 0x69 FUN_100b7a60, 0x6a FUN_100b7af0, 0x20 FUN_100b34c0, 0x30
+FUN_100b5620, 0x75 FUN_100b8660).
+- 0x9c: set@1 = 2 for language 1..3 (2 / 3 count as English since the European versions went), else 1. Len 3.
+- 0x64: set@1 = ftol(sqrt((v7 - v3)^2 + (v9 - v5)^2)) with 32-bit integer squares (asm 100b75c0). Len 0xb.
+- 0x65: set@1 = ftol(3D distance actor@3 -> actor@7 x 1000.0 (double 0x1032a110)); positions +4 / +8 / +0xc, or the
+  event body's +0x140.. (actor+0xd4 -> +0x260) when +0x120 bit 7; 0 when either actor is missing. Len 0xb.
+- 0xaa: val@1 = Vana'diel time in earth seconds (hour 0x90, day 0xd80, week 0x6c00, month 0x19500, year 0x12fc00):
+  @3 year + 0x376 (886), @5 month + 1, @7 day + 1, @9 weekday, @b hour, @d minute (t % 0x90 * 60 / 0x90), @f moon step
+  (t / 0x5e80 % 12). Len 0x11.
+- 0x72: sub 0 starts loading file 0x1b79 (val@2 < 100) or 0x1b7d; a failed load jumps 10 (over the sub 1); len 4. Sub 1
+  (yields until loaded, DAT_104886f5): row = file 0x1b78[zone] (or 0x1b7c[zone - 100], both 256 bytes, loaded at
+  start, FUN_100954a5); bytes at row * 0x1950 + (val@4 % 0x870) * 3 -> DAT_10488800..: zone work 0x1002..0x1004 (zone
+  work base DAT_104887f8, FUN_100af4c0). Both set +0x25a. Files: 0x1b79 38 rows, 0x1b7d 52 rows. Values are weather
+  ids (230 day 0: 1, 2, 255): the forecast NPCs (event 0x278 in 230).
+- 0xb7: sub 0 writes val@8 into actor@2's VM (+0xd4, needs the actor) at the operand @6 *of that VM's current op*
+  (FUN_100af310 with ECX = the target VM, asm 100aff55); 1 str@2 = actor@4's name (+0x7c, or +0x214 when +0x210 != 0;
+  "" when missing); 2 set@2 = server id (0); 3 set@2 = ActIndex (FUN_100afb00's second result; 0xffff); 4
+  DAT_10480a94[val@2] (0..8) = ActIndex, a table nothing in the build reads (cleared to 0xffff at 144153). XiEvents
+  words subs 3 / 4 differently; the decompile above is what we follow.
+- Ours: Host::language / index / weather_day (client/event.rs weather_day reads the files); test weather_table.
