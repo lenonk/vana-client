@@ -116,6 +116,9 @@ mod tests {
         let id = super::four("_6e1");
         let geo = crate::render::ZoneGeometry::build(&scene);
         assert_eq!(geo.door_parts.get(&id).map(Vec::len), Some(2));
+        // The target arrow's anchor, part 0's origin: in the doorway (RID box at -275.7, -7.9, 98.0), at mid height.
+        let o = geo.door_bases[&id][0].w_axis.truncate();
+        assert!((o - glam::Vec3::new(-275.7, -7.9, 98.0)).length() < 2.5, "{o}");
         let c = scene.collision.as_ref().unwrap();
         let boxes = c.objects.iter().filter(|o| o.door == id).count();
         assert_eq!(boxes, 1);

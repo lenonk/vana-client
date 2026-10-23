@@ -664,6 +664,11 @@ fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4)
 /// the model scale, rest data only, so it does not move with the pose; then FUN_1002b7a0's lift by status
 /// for bone-0 points (5 chocobo -1.3, 85 mount -1.3, 63..83 chairs -0.5). Without points: the mesh top.
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
+    if let Some(d) = world.entities.get(&id).map(|e| e.door).filter(|d| *d != 0)
+        && let Some(p) = world.renderer.as_ref().and_then(|r| r.door_point(d, 2))
+    {
+        return Some(p);
+    }
     let (pos, status) = if id == world.my_id { (drawn_pos(world), world.my_motion.status) } else { world.entities.get(&id).map(|e| (e.pos, e.motion.status))? };
     let pos = event::pose(world, id).map_or(pos, |p| p.pos);
     let a = world.actors.get(&id).filter(|a| a.gpu.is_some());
