@@ -13,8 +13,8 @@ const TABLE: usize = crate::dat::animpack::TABLE;
 /// (animation, frame) pairs per pose; regions are filled by later files first, so a few suffice.
 pub const MAX_SET: usize = 8;
 /// Job header: skeleton, output, counts, blend, then the head look (weight, two bones, model-space point, bones
-/// used, point 4, limits, point 4 drop, point 3 offset).
-const HEAD: usize = 28;
+/// used, point 4, limits, point 4 drop, point 3 offset), then the overlay (animation, frame, weight).
+const HEAD: usize = 32;
 const JOB_WORDS: usize = HEAD + 4 * MAX_SET;
 const NO_BONE: u32 = u32::MAX;
 
@@ -128,6 +128,19 @@ fn slerp(a: vec4<f32>, b0: vec4<f32>, s: f32) -> vec4<f32> {
     return (a * sin(theta * (1.0 - s)) + b * sin(theta * s)) * x;
 }
 
+// An overlay animation's local transform of bone `b` (FUN_1001a420, regions 5 / 6): false when it keys no track for it.
+fn overlay_tf(skel: u32, b: u32, a: u32, frame: f32, q: ptr<function, vec4<f32>>, t: ptr<function, vec3<f32>>) -> bool {
+    let ti = data[a + 2u + b];
+    if (ti == 0u) { return false; }
+    let s = skel + 1u + b * 8u;
+    let rq = vec4<f32>(fl(s + 1u), fl(s + 2u), fl(s + 3u), fl(s + 4u));
+    let rt = vec3<f32>(fl(s + 5u), fl(s + 6u), fl(s + 7u));
+    let tr = a + 2u + 256u + (ti - 1u) * 20u;
+    *q = qmul(rot_at(a, tr, frame), rq);
+    *t = rt + vec3<f32>(chan(a, tr + 8u, frame), chan(a, tr + 10u, frame), chan(a, tr + 12u, frame));
+    return true;
+}
+
 // Local transform of bone `b` from the rest pose and a set of (animation, frame): the latest track wins.
 fn local_tf(skel: u32, b: u32, job: u32, first: u32, count: u32, q: ptr<function, vec4<f32>>, t: ptr<function, vec3<f32>>) {
     let s = skel + 1u + b * 8u;
@@ -169,14 +182,23 @@ fn pose_actors(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_i
     var q7 = vec4<f32>(0.0, 0.0, 0.0, 1.0);
     let n = data[skel];
     let sc = wg.x * SCRATCHu;
+    let ov_a = jobs[job + 26u];
+    let ov_f = jf(job + 27u);
+    let ov_w = jf(job + 28u);
     for (var b = lid; b < n; b = b + 64u) {
         var q: vec4<f32>;
         var t: vec3<f32>;
+        // The overlay over both poses: its keyed bones' locals go toward its pose by the weight.
+        var oq: vec4<f32>;
+        var ot: vec3<f32>;
+        let over = ov_a != 0u && ov_w > 0.0 && overlay_tf(skel, b, ov_a, ov_f, &oq, &ot);
         local_tf(skel, b, job, HEADu, n_to, &q, &t);
+        if (over) { q = slerp(q, oq, ov_w); t = mix(t, ot, ov_w); }
         scratch[sc + 4u * b] = q;
         scratch[sc + 4u * b + 1u] = vec4<f32>(t, 0.0);
         if (n_from > 0u) {
             local_tf(skel, b, job, HEADu + 2u * MAX_SETu, n_from, &q, &t);
+            if (over) { q = slerp(q, oq, ov_w); t = mix(t, ot, ov_w); }
             scratch[sc + 4u * b + 2u] = q;
             scratch[sc + 4u * b + 3u] = vec4<f32>(t, 0.0);
         }
@@ -275,7 +297,7 @@ mod tests {
         let n = ch.skeleton.bones.len().min(TABLE - 1);
         let mut ga = GpuAnim::new(gpu);
         ga.begin();
-        ga.job(ch, &[], to, &[], 0.0, 0, look);
+        ga.job(ch, &[], to, &[], 0.0, 0, look, None);
         let size = (n * 32) as u64;
         let out = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
         let rb = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -323,7 +345,7 @@ mod tests {
             let cpu = if f.is_empty() { pose(&ch.skeleton, &to) } else { crate::render::character::pose_blend(&ch, f, &to, t) };
             let mut ga = GpuAnim::new(&gpu);
             ga.begin();
-            ga.job(&ch, &[], &to, f, t, 0, None);
+            ga.job(&ch, &[], &to, f, t, 0, None, None);
             let n = cpu.len().min(TABLE - 1);
             let size = (n * 32) as u64;
             let out = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
@@ -452,7 +474,7 @@ impl GpuAnim {
     /// Queues one actor: its model, the motion files on it, the pose (and the one it blends from at `t`),
     /// written to pose vec4 index `out`. Animations are found in the model or its files by address.
     #[allow(clippy::too_many_arguments)]
-    pub fn job(&mut self, ch: &Arc<Character>, extra: &[Arc<crate::dat::motionfile::MotionFile>], to: &[(&Animation, f32)], from: &[(&Animation, f32)], t: f32, out: u32, look: Option<HeadLook>) {
+    pub fn job(&mut self, ch: &Arc<Character>, extra: &[Arc<crate::dat::motionfile::MotionFile>], to: &[(&Animation, f32)], from: &[(&Animation, f32)], t: f32, out: u32, look: Option<HeadLook>, overlay: Option<(&Animation, f32, f32)>) {
         let (Some(skel), _) = self.source(Arc::as_ptr(ch) as usize, ch.clone(), Some(&ch.skeleton), &ch.animations, ch.packed.as_deref()) else { return };
         let mut lookup = |a: &Animation| -> Option<u32> {
             let find = |list: &[Animation]| list.iter().position(|x| std::ptr::eq(x, a));
@@ -490,6 +512,13 @@ impl GpuAnim {
             }
             words[22] = l.drop.to_bits();
             words[23..26].copy_from_slice(&l.p3.to_array().map(f32::to_bits));
+        }
+        if let Some((a, frame, weight)) = overlay
+            && let Some(off) = lookup(a)
+        {
+            words[26] = off;
+            words[27] = frame.to_bits();
+            words[28] = weight.to_bits();
         }
         for (set, list, count_at) in [(HEAD, to, 2usize), (HEAD + 2 * MAX_SET, from, 3)] {
             let mut k = 0;

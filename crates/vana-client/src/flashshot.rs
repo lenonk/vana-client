@@ -39,7 +39,7 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     for (k, name) in [(0.0f32, "flash_k0.png"), (0.5, "flash_k05.png"), (1.0, "flash_k1.png")] {
         actor.flash = [k, k];
         r.begin_poses();
-        r.pose_actor_gpu(&mut actor, &ch, &[], &idle, &[], 1.0, model, None);
+        r.pose_actor_gpu(&mut actor, &ch, &[], &idle, &[], 1.0, model, None, None);
         let mut enc = gpu.device.create_command_encoder(&Default::default());
         r.upload_poses(&gpu, &mut enc);
         r.render(&gpu, &mut enc, &view, &depth, &camera, w as f32 / h as f32, &[&actor]);

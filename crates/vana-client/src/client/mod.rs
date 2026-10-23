@@ -1762,6 +1762,8 @@ struct Actor {
     top: f32,
     /// An attack, damage or death motion played once over the status motion.
     oneshot: Option<combat::OneShot>,
+    /// A hit reaction / guard over the motion (regions 5 / 6).
+    overlay: Option<actmotion::Overlay>,
     /// The attack scheduler used last (FUN_100d46f0 avoids repeating it).
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
@@ -1810,6 +1812,7 @@ impl Actor {
             blend: 0.0,
             top: -2.0,
             oneshot: None,
+            overlay: None,
             last_attack: String::new(),
             extra: Vec::new(),
             play: None,
@@ -5735,6 +5738,15 @@ impl App {
                     }
                     // Motions are evaluated and skinned on the GPU (render/anim.rs, vs_skinned).
                     let from = a.prev.as_ref().map(|(old, old_ticks)| frames_of(old, *old_ticks, false)).unwrap_or_default();
+                    // The reaction overlay, its first animation found; dropped once faded out.
+                    let overlay = a.overlay.as_mut().and_then(|o| {
+                        o.ticks += dt * 60.0;
+                        let x = actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, &o.name).into_iter().next()?;
+                        o.sample(x.frames as u32, x.speed).map(|(f, wt)| (x, f, wt))
+                    });
+                    if overlay.is_none() {
+                        a.overlay = None;
+                    }
                     a.find_cache = cache.take();
                     let t = a.blend / a.blend_len;
                     a.scale = ch.scale(size);
@@ -5795,7 +5807,7 @@ impl App {
                     g.area = w.ground.as_ref().and_then(|gr| gr.area(pos)).unwrap_or(0);
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
-                        r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look);
+                        r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look, overlay);
                         counts.posed += 1;
                         if footsteps::wanted(&ch, status, pos, camera.eye) {
                             for (slot, &k) in footsteps::POINTS.iter().enumerate().take(if ch.cib[0] == 2 { 4 } else { 2 }) {

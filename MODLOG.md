@@ -3974,3 +3974,13 @@ LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed 
 - The arrow's screen point is the target actor's vtable +0x27c (FUN_10159d40 from FUN_10150090); for an XiDoorActor
   (vtable 0x1032fd58) that is FUN_100ac390: its position (+0x1bc, the 0x00E position) projected, with no lift and no
   part matrix. FUN_100acab0 (attach point k = door part k's origin, 4 = the position) serves effects, not the arrow.
+
+## Hit reactions as overlays (2026-10-23)
+
+- Ours now follows FUN_100cdd60 / FUN_100cde70 / FUN_100cdf00 (combatmo spec section 2): the reaction goes into an
+  overlay layer (Actor.overlay, actmotion::Overlay) over whatever motion plays: a hit at 0.25 / 0.5 / 1.0 by hit
+  distortion (record scale & 3), 2 cycles, in over 1 tick, out over 24; guard / block / parry 1.0, 4 cycles, 16.
+- GPU (render/anim.rs): the job header grew to 32 words: 26 overlay animation offset, 27 frame, 28 weight. For each
+  bone the overlay keys (FUN_1001a420's regions 5 / 6), the local transform of both the current and the blended-from
+  pose slerps / lerps toward the overlay's by the weight before chaining; unkeyed bones are untouched.
+- Not done: two overlays at once (a new one replaces the old), the CPU pose for the locked camera ignores it.

@@ -471,6 +471,34 @@ pub(super) fn update(w: &mut World, dt: f32) {
     }
 }
 
+/// A region 5 / 6 overlay (FUN_100cd920 into FUN_1001ad00's queue): `name` at `weight` (the entry's +0x1c), `cycles`
+/// times through (+0x2c), in over 1 tick, then faded out over `fade` ticks (+0x20, FUN_1001b590).
+#[derive(Clone, Debug)]
+pub struct Overlay {
+    pub name: String,
+    pub ticks: f32,
+    pub weight: f32,
+    pub cycles: u8,
+    pub fade: f32,
+}
+
+impl Overlay {
+    /// The frame and envelope weight `ticks` in, for an animation of `frames` at `speed`; None once faded out.
+    pub fn sample(&self, frames: u32, speed: f32) -> Option<(f32, f32)> {
+        let per = frames.max(1) as f32;
+        let f = self.ticks * speed * 0.5;
+        let full = per * self.cycles as f32;
+        let frame = if f < full { f % per } else { per - 1.0 };
+        let env = if f < full {
+            self.ticks.min(1.0)
+        } else {
+            let over = self.ticks - full / (speed * 0.5).max(1e-3);
+            1.0 - over / self.fade.max(1.0)
+        };
+        (env > 0.0).then_some((frame.min(per - 1.0), self.weight * env))
+    }
+}
+
 /// Actor alpha (model colour high byte, 0x80 = opaque): op 0x6c (FUN_100b5800) steps it linearly
 /// to the target over the frames; DAT 0 "kesu" op 0x29 fades it to 0 over 90 ticks.
 #[derive(Clone, Copy, Debug)]
@@ -503,6 +531,21 @@ impl Fade {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A 2-frame hit pose at speed 1: in over a tick, full for 2 cycles (8 ticks), out over 24, then gone.
+    #[test]
+    fn reaction_overlay_envelope() {
+        let mut o = Overlay { name: "dfi".into(), ticks: 0.5, weight: 0.5, cycles: 2, fade: 24.0 };
+        assert_eq!(o.sample(2, 1.0), Some((0.25, 0.25)));
+        o.ticks = 4.0;
+        assert_eq!(o.sample(2, 1.0).map(|s| s.1), Some(0.5));
+        o.ticks = 20.0;
+        let (frame, w) = o.sample(2, 1.0).unwrap();
+        assert_eq!(frame, 1.0);
+        assert!((w - 0.5 * (1.0 - 12.0 / 24.0)).abs() < 1e-5);
+        o.ticks = 33.0;
+        assert_eq!(o.sample(2, 1.0), None);
+    }
 
     /// Curilla (model 69) and Rahal (an Elvaan M look) have the mouth motion and the attach points the head
     /// look uses (3, 6, 7).

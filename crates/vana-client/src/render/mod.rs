@@ -1294,6 +1294,7 @@ impl ZoneRenderer {
         t: f32,
         model: Mat4,
         look: Option<anim::HeadLook>,
+        overlay: Option<(&crate::dat::character::Animation, f32, f32)>,
     ) {
         if actor.skin.is_none() {
             return;
@@ -1301,7 +1302,7 @@ impl ZoneRenderer {
         self.pose_actor(actor, &[], model);
         if let Some(skin) = &actor.skin {
             let out = skin.offset / 16 + POSE_HEAD as u32;
-            self.anim.job(ch, files, to, from, t, out, look);
+            self.anim.job(ch, files, to, from, t, out, look, overlay);
         }
     }
 

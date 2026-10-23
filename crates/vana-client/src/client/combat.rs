@@ -61,7 +61,7 @@ struct Msg {
 pub(super) struct Pending {
     at: Instant,
     messages: Vec<Msg>,
-    reactions: Vec<(u32, u32, u8)>,
+    reactions: Vec<(u32, u32, u8, u8)>,
 }
 
 fn who(w: &World, id: u32) -> Option<Who> {
@@ -221,7 +221,7 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
             _ => false,
         };
         if hits && reacts {
-            reactions.push((target, a.actor, r.miss));
+            reactions.push((target, a.actor, r.miss, r.scale & 3));
         }
     }
     let first = a.targets.first().map(|t| t.id);
@@ -255,8 +255,8 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
             for m in messages {
                 print(w, m);
             }
-            for (t, by, miss) in reactions {
-                react(w, t, by, miss);
+            for (t, by, miss, level) in reactions {
+                react(w, t, by, miss, level);
             }
         }
     }
@@ -295,8 +295,8 @@ pub(super) fn tick(w: &mut World) {
         for m in p.messages {
             print(w, m);
         }
-        for (t, by, miss) in p.reactions {
-            react(w, t, by, miss);
+        for (t, by, miss, level) in p.reactions {
+            react(w, t, by, miss, level);
         }
     }
 }
@@ -356,7 +356,9 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
 /// Damage reaction (FUN_100cbd20): "dfi?" / "dbi?" (front / back) standing, "dfm?" / "dbm?" while
 /// moving (+0xf8); guard "gdi?" / "gdm?" (FUN_100cbe30). Front or back is taken from where the attacker
 /// stands (inferred).
-fn react(w: &mut World, target: u32, attacker: u32, miss: u8) {
+/// FUN_100cdd60 / FUN_100cde70 / FUN_100cdf00: the reaction as an overlay over whatever plays: a hit at 25 / 50 /
+/// 100 % by hit distortion `level`, 2 cycles, out over 24 ticks; guard / block / parry at full weight, 4 cycles, 16.
+fn react(w: &mut World, target: u32, attacker: u32, miss: u8, level: u8) {
     // None during the reactor's own swing hold (op 0x59) or while it is dead or riding.
     let status = if target == w.my_id { w.my_motion.status } else { w.entities.get(&target).map_or(0, |e| e.motion.status) };
     if w.noreact.get(&target).is_some_and(|t| *t > Instant::now()) || matches!(status, 2 | 3 | 5 | 0x55) {
@@ -378,9 +380,11 @@ fn react(w: &mut World, target: u32, attacker: u32, miss: u8) {
     };
     let order = if moving { [m, i] } else { [i, m] };
     if let Some(name) = order.into_iter().find(|n| !actmotion::find(&a.extra, &ch, n).is_empty()) {
-        // dfi0 is a 2-key pose; hold it 24 ticks (the 24.0 in "damg"'s op 0x21 is our guess at its time).
-        let len = motion_ticks(a, &ch, name, 1.0).max(24.0);
-        play(a, name, len, 1.0);
+        let (weight, cycles, fade) = match miss {
+            2..=4 => (1.0, 4, 16.0),
+            _ => ([0.0, 0.25, 0.5, 1.0][level.min(3) as usize], 2, 24.0),
+        };
+        a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles, fade });
     }
 }
 
