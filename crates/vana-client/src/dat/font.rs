@@ -382,11 +382,22 @@ impl Font {
 /// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
 const PAIR_BASE: u32 = 0xF0000;
 
+/// An auto-translate phrase (`FD kind lang hi lo FD`) kept in a String: its four inner bytes as U+100000 + 0x100 x
+/// position + byte, so encode_sjis gives the block back.
+pub const PHRASE_BASE: u32 = 0x10_0000;
+
 pub fn decode_sjis(sjis: &[u8]) -> String {
     let mut out = String::with_capacity(sjis.len());
     let mut i = 0;
     while i < sjis.len() {
         let b = sjis[i];
+        if b == 0xFD && sjis.get(i + 5) == Some(&0xFD) {
+            for (k, &x) in sjis[i + 1..i + 5].iter().enumerate() {
+                out.push(char::from_u32(PHRASE_BASE + 0x100 * k as u32 + x as u32).unwrap());
+            }
+            i += 6;
+            continue;
+        }
         if is_lead(b) && i + 1 < sjis.len() {
             let pair = &sjis[i..i + 2];
             let g = sjis_index(pair[0], pair[1]);
@@ -422,7 +433,17 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
     let mut buf = [0u8; 4];
     for ch in text.chars() {
         let cp = ch as u32;
-        if (0xE000..0xE000 + (GAIJI_END - GAIJI_FIRST) as u32).contains(&cp) {
+        if (PHRASE_BASE..PHRASE_BASE + 0x400).contains(&cp) {
+            // An auto-translate phrase: FD before its first byte, FD after its fourth.
+            let (k, x) = ((cp - PHRASE_BASE) / 0x100, (cp & 0xff) as u8);
+            if k == 0 {
+                out.push(0xFD);
+            }
+            out.push(x);
+            if k == 3 {
+                out.push(0xFD);
+            }
+        } else if (0xE000..0xE000 + (GAIJI_END - GAIJI_FIRST) as u32).contains(&cp) {
             out.extend_from_slice(&[0xEF, 0x1F + (cp - 0xE000) as u8]);
         } else if (PAIR_BASE..PAIR_BASE + 0x10000).contains(&cp) {
             out.extend_from_slice(&[(cp >> 8) as u8, cp as u8]);
@@ -439,6 +460,15 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Auto-translate blocks and Shift-JIS survive a decode / encode round trip.
+    #[test]
+    fn phrase_round_trip() {
+        let raw = b"Hi \xFD\x02\x02\x01\x07\xFD and \x82\xa0!";
+        let s = decode_sjis(raw);
+        assert_eq!(s.chars().filter(|c| *c as u32 >= PHRASE_BASE).count(), 4);
+        assert_eq!(encode_sjis(&s), raw.to_vec());
+    }
 
     #[test]
     fn sjis_rows() {

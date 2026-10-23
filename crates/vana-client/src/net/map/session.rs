@@ -39,7 +39,8 @@ impl SubPacket {
         let end = (o + len).min(self.data.len());
         let bytes = &self.data[o.min(end)..end];
         let bytes = &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())];
-        String::from_utf8_lossy(bytes).into_owned()
+        // The game's text is Shift-JIS (with its own glyph pairs and auto-translate blocks).
+        crate::dat::font::decode_sjis(bytes)
     }
 }
 

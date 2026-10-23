@@ -465,6 +465,30 @@ fn std_data(data: &str) -> (u32, [i32; 4], [String; 2]) {
     (cas as u32, [num("Para0"), num("Para1"), num("Para2"), num("Para3")], [word("string2"), word("string3")])
 }
 
+/// Chat text as sent: Shift-JIS cut to 150 bytes at a character's end (a pair or a phrase block is not split).
+fn chat_bytes(text: &str) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut buf = [0u8; 4];
+    let mut block = Vec::new();
+    for ch in text.chars() {
+        let b = crate::dat::font::encode_sjis(ch.encode_utf8(&mut buf));
+        // A phrase is four chars; it goes whole or not at all.
+        let cp = ch as u32;
+        if (crate::dat::font::PHRASE_BASE..crate::dat::font::PHRASE_BASE + 0x400).contains(&cp) {
+            block.extend_from_slice(&b);
+            if (cp - crate::dat::font::PHRASE_BASE) / 0x100 < 3 {
+                continue;
+            }
+        }
+        let piece = if block.is_empty() { b } else { std::mem::take(&mut block) };
+        if out.len() + piece.len() > 150 {
+            break;
+        }
+        out.extend_from_slice(&piece);
+    }
+    out
+}
+
 fn text(p: &SubPacket, at: usize, len: usize) -> String {
     p.str(at, len)
 }
@@ -812,16 +836,19 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
         }
         while let Ok(cmd) = rx.try_recv() {
             match cmd {
+                // c2s 0x0B5 / 0x0B6 (FUN_100e3400 / the tell sender): the text in Shift-JIS, auto-translate blocks
+                // kept, 150 bytes at most; 0x0B6 @4 = 3 as retail sends it.
                 NetCommand::Chat { kind, text } => {
                     let mut body = vec![kind, 0];
-                    body.extend_from_slice(&text.as_bytes()[..text.len().min(127)]);
+                    body.extend_from_slice(&chat_bytes(&text));
                     body.push(0);
                     queue.push(build(0x0B5, &body));
                 }
                 NetCommand::Tell { name, text } => {
                     let mut body = vec![0u8; 17];
+                    body[0] = 3;
                     body[2..2 + name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
-                    body.extend_from_slice(&text.as_bytes()[..text.len().min(127)]);
+                    body.extend_from_slice(&chat_bytes(&text));
                     body.push(0);
                     queue.push(build(0x0B6, &body));
                 }
