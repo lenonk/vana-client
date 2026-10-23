@@ -773,7 +773,9 @@ impl MapWin {
     /// One frame (FUN_101ef0a0): the zoom keys (0x7d back to the base, 0xa4 / 0xa5 or the compact stick 0.04 a tick,
     /// doubled with 0x9a), the scroll keys (0x79 / 0x7a, 7.5 px a tick, doubled), 0x7e back to the player, the
     /// scripted view; the fade, zoom-to and scroll-to on 2-tick retail frames. False once the window is gone.
-    pub fn update(&mut self, input: &mut super::input::Input, ticks: f32) -> bool {
+    /// `drag`: a left drag's offset from its press point in UI pixels (FUN_10126100 / FUN_10125fe0: past W / 21 on an
+    /// axis it counts as full scroll that way, the anchor taken as the press point *(inf)*).
+    pub fn update(&mut self, input: &mut super::input::Input, ticks: f32, drag: Option<(f32, f32)>) -> bool {
         use super::input::mode::{HELD, PRESS};
         if let Some(deadline) = self.closing {
             let idle = self.zoom_to.is_none() && self.scroll_to.is_none() && self.fade.0 == self.fade.1;
@@ -799,7 +801,11 @@ impl MapWin {
         if live && self.scroll_to.is_none() {
             // Under 2 px a retail frame is dead (judged per 2-tick frame, so it holds at any frame rate).
             let dead = |v: f32| if (v * fast).abs() < 2.0 { 0.0 } else { v };
-            let v = (dead(input.axis(0x79) * 15.0) * fast * ticks * 0.5, dead(input.axis(0x7a) * 15.0) * fast * ticks * 0.5);
+            let step = |d: f32| if d / (self.screen.0 * 0.047619) >= 1.0 { 1.0 } else if d / (self.screen.0 * 0.047619) <= -1.0 { -1.0 } else { 0.0 };
+            let (mx, my) = drag.map_or((0.0, 0.0), |d| (step(d.0), step(d.1)));
+            let ax = if input.axis(0x79) != 0.0 { input.axis(0x79) } else { mx };
+            let ay = if input.axis(0x7a) != 0.0 { input.axis(0x7a) } else { my };
+            let v = (dead(ax * 15.0) * fast * ticks * 0.5, dead(ay * 15.0) * fast * ticks * 0.5);
             if v != (0.0, 0.0) {
                 self.scroll_by(if self.texture.is_some() { v } else { (-v.0, -v.1) });
             }

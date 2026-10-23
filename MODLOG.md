@@ -4250,3 +4250,6 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
   len 8), 4 all three (val@6 / @8 / @10, len 12); sub 0 copies the actor rotation +0x34..+0x40 (len 6). With no body
   it advances 6 whatever the sub. Scripts tilt NPCs up to ~94 degrees (sub 3 #-1074). Ours: Body::tilt, Pose::tilt,
   Place::tilt, tilt_matrix in the actor frame (z then x, signs and order inferred; not seen live).
+- Map left-drag (FUN_10122e30 n 1 / 2 with mouse state 4: FUN_10126100 / FUN_10125fe0): the offset from the anchor
+  over W x 0.047619 gives -1 / 0 / +1 per axis in place of the scroll keys; ours anchors at the press point *(inf)*
+  and keeps the camera still while the map is open (context 0x26 has no camera functions). Not driven live.

@@ -4677,8 +4677,10 @@ impl App {
         let Phase::World(world) = &mut self.phase else { return };
         // The map window's keys and animations (FUN_101ef0a0); it goes once its fade-out ends, reopening the main menu
         // it came from (LAB_101faff0).
+        let k = self.ui_k;
+        let drag = self.press_at.zip(self.last_cursor).filter(|_| self.left_down).map(|(a, b)| ((b.0 - a.0) as f32 * k.0, (b.1 - a.1) as f32 * k.1));
         if let Some(m) = world.map.as_mut()
-            && !m.update(&mut self.input, dt * 60.0)
+            && !m.update(&mut self.input, dt * 60.0, drag)
         {
             let (back, reopen) = (m.return_menu, m.reopen);
             world.map = None;
@@ -6700,6 +6702,8 @@ impl ApplicationHandler for App {
                 let looking = self.dragging || self.middle_down || (self.left_down && self.press_at.is_some_and(|a| (a.0 - position.x).abs() + (a.1 - position.y).abs() >= 5.0));
                 if let (true, Some((x, y))) = (looking, self.last_cursor) {
                     match &mut self.phase {
+                        // The map's input context (0x26) has no camera functions; its drag scrolls the map.
+                        Phase::World(world) if world.map.is_some() => {}
                         // Mouse/Cam. 0x8b / 0x8c invert the third-person camera's X / Y (FUN_1001e030).
                         Phase::World(world) if world.locked => {
                             let (ix, iy) = (if world.game.get(0x8b) == 1 { -1.0 } else { 1.0 }, if world.game.get(0x8c) == 1 { -1.0 } else { 1.0 });
