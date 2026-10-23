@@ -4992,7 +4992,9 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   (16, 48, 366 x 296): the frame, 465's header strip, the title, then rows of a bullet and a heading with
   conf2win's 88-px or conf3win's 64-px buttons (up to three choices) or a slider (track from 465's cells, fill
   windowps 384; Enter then Left / Right, as the pages' sliders) under it, the slider's value at the heading's end.
-  Settings has seven tabs (two rows of 88-px buttons, the marker on the open one, Enter switches). Extras (off
+  Settings has seven pages, turned as miss00 turns nations (children 9 / 10: menu frames 25 / 26, 18 x 9, at (9, 11) /
+  (343, 11); the page name in the game font at (+60, +10), FUN_1022de70): Left / Right turn it on a slider row (move
+  between buttons on a buttons row), Ctrl / Alt + Left / Right and Tab always, or a click on an arrow. Extras (off
   by default): the map overlay (Ctrl / Alt + O) and its opacity, the synthesis amount, timestamps on all lines.
   The lobby's lobycwin keeps its Settings button; the page is centred there.
 - Timestamps: retail's /timestamp (config 0xb5) stamps chat lines only (12-hour, FUN_101bf740) in colour 0x31; the

@@ -1,8 +1,10 @@
 //! Our Settings and Extras pages (not retail). Settings holds what retail set in the Windows "FINAL FANTASY XI
 //! Config" tool before starting (registry names 0000..0043, read by FUN_10016c30) plus our own display options;
 //! Extras holds the gameplay additions (the add-ons' features), each off until turned on. Both are drawn as the
-//! Config pages are (FUN_101144b0 over windowps 465: page backing, header strip, bullets, fontshp text, the
-//! buttons, markers and sliders of conf2win / conf3win), at the pages' place in game and centred in the lobby.
+//! Config pages are (FUN_101144b0 over windowps 465: header strip, bullets, fontshp text, the buttons, markers and
+//! sliders of conf2win / conf3win), at the pages' place in game and centred in the lobby. Settings has several
+//! pages, turned as miss00 turns its nations: red arrows (menu frames 25 / 26) at the top corners and the page's
+//! name beside the left one (FUN_1022de70).
 
 use super::game_ui::GameUi;
 use crate::audio::Ui as Se;
@@ -203,9 +205,10 @@ const WIDE: [f32; 2] = [78.0, 190.0];
 const NARROW: [f32; 3] = [78.0, 174.0, 270.0];
 const SLIDER_X: f32 = 88.0;
 const SLIDER_W: f32 = 192.0;
-/// Tabs: two rows of four 88-px buttons.
-const TAB_X: f32 = 6.0;
-const TAB_PITCH: f32 = 89.0;
+/// miss00's page arrows (children 9 / 10: menu frames 25 / 26, 18 x 9) and its page name (FUN_1022de70, game font).
+const ARROWS: [f32; 2] = [9.0, 343.0];
+const ARROW_Y: f32 = 11.0;
+const NAME_XY: (f32, f32) = (60.0, 10.0);
 
 pub struct SettingsUi {
     pub kind: Kind,
@@ -217,8 +220,9 @@ pub struct SettingsUi {
     window: [u32; 2],
     /// Drawn where the in-game Config pages are (else centred, over the lobby).
     pub in_game: bool,
+    /// The page (Settings).
     tab: usize,
-    /// 0 = the tab row (Settings), then the rows; the column within the row.
+    /// The cursor's row (from 1) and column within it.
     row: usize,
     col: usize,
     /// A slider being edited (Enter, then Left / Right, as the Config pages' sliders).
@@ -247,7 +251,7 @@ impl SettingsUi {
         s
     }
 
-    fn tabs(&self) -> bool {
+    fn paged(&self) -> bool {
         self.kind == Kind::Settings
     }
 
@@ -414,7 +418,7 @@ impl SettingsUi {
 
     /// The column of a buttons row whose choice holds (the cursor's start on it).
     fn marked_col(&self) -> usize {
-        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return self.tab };
+        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return 0 };
         match Self::ctl(r) {
             Ctl::Buttons(_) => r.choices.iter().position(|c| c.0 == self.get(r.val)).unwrap_or(0),
             Ctl::Slider => 0,
@@ -423,7 +427,7 @@ impl SettingsUi {
 
     fn cols(&self, row: usize) -> usize {
         match row.checked_sub(1).and_then(|i| self.rows().get(i)) {
-            None => TABS.len(),
+            None => 1,
             Some(r) => match Self::ctl(r) {
                 Ctl::Buttons(n) => n,
                 Ctl::Slider => 1,
@@ -431,20 +435,20 @@ impl SettingsUi {
         }
     }
 
-    fn first_row(&self) -> usize {
-        if self.tabs() { 0 } else { 1 }
+    /// Turns the page by `d`, the cursor kept on its row where the page has it.
+    fn turn(&mut self, d: i32) {
+        if !self.paged() {
+            return;
+        }
+        self.tab = (self.tab as i32 + d).rem_euclid(TABS.len() as i32) as usize;
+        self.row = self.row.clamp(1, self.rows().len());
+        self.col = self.marked_col();
+        self.sounds.push(Se::Cursor);
     }
 
     /// Enter on the cursor's control.
     fn enter(&mut self) {
-        if self.row == 0 {
-            if self.tab != self.col {
-                self.tab = self.col;
-            }
-            self.sounds.push(Se::Select);
-            return;
-        }
-        let Some(r) = self.rows().get(self.row - 1) else { return };
+        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return };
         match Self::ctl(r) {
             Ctl::Buttons(_) => {
                 let before = self.s.clone();
@@ -461,8 +465,13 @@ impl SettingsUi {
         }
     }
 
-    /// A key; returns true when the page closes (Escape).
+    /// A key; returns true when the page closes (Escape). Left / Right move between a row's buttons, else turn the
+    /// page; with Ctrl / Alt (the lists' page modifier) they always turn it.
     pub fn key(&mut self, key: egui::Key) -> bool {
+        self.key_mod(key, false)
+    }
+
+    pub fn key_mod(&mut self, key: egui::Key, page_mod: bool) -> bool {
         self.sounds.clear();
         if self.edit {
             let r = &self.rows()[self.row - 1];
@@ -479,29 +488,25 @@ impl SettingsUi {
             return false;
         }
         let n = self.rows().len();
-        let first = self.first_row();
         match key {
             egui::Key::ArrowDown | egui::Key::ArrowUp => {
-                let span = n + 1 - first;
-                let d = if key == egui::Key::ArrowDown { 1 } else { span - 1 };
-                self.row = first + (self.row - first + d) % span;
-                self.col = if self.row == 0 { self.tab } else { self.marked_col().min(self.cols(self.row) - 1) };
+                let d = if key == egui::Key::ArrowDown { 1 } else { n - 1 };
+                self.row = 1 + (self.row - 1 + d) % n;
+                self.col = self.marked_col().min(self.cols(self.row) - 1);
                 self.sounds.push(Se::Cursor);
             }
             egui::Key::ArrowLeft | egui::Key::ArrowRight => {
                 let c = self.cols(self.row);
-                if c > 1 {
-                    self.col = if key == egui::Key::ArrowRight { (self.col + 1) % c } else { (self.col + c - 1) % c };
+                let d = if key == egui::Key::ArrowRight { 1 } else { -1 };
+                if c > 1 && !page_mod {
+                    self.col = (self.col as i32 + d).rem_euclid(c as i32) as usize;
                     self.sounds.push(Se::Cursor);
+                } else {
+                    self.turn(d);
                 }
             }
             egui::Key::Enter => self.enter(),
-            egui::Key::Tab if self.tabs() => {
-                self.tab = (self.tab + 1) % TABS.len();
-                self.row = self.row.min(self.rows().len());
-                self.col = if self.row == 0 { self.tab } else { self.marked_col() };
-                self.sounds.push(Se::Cursor);
-            }
+            egui::Key::Tab => self.turn(1),
             egui::Key::Escape => return true,
             _ => {}
         }
@@ -518,18 +523,19 @@ impl SettingsUi {
         (((sw - W) / 2.0).round(), ((sh - H) / 2.0).round())
     }
 
+    /// The first heading: under the header strip, or under the arrows (miss00 starts its rows at y 40).
     fn top(&self) -> f32 {
-        if self.tabs() { 66.0 } else { 28.0 }
+        if self.paged() { 36.0 } else { 28.0 }
+    }
+
+    /// The page arrows' rects relative to the page (a little larger than the sprites, for the pointer).
+    fn arrow_rects(&self) -> [[f32; 4]; 2] {
+        ARROWS.map(|x| [x - 4.0, ARROW_Y - 4.0, 26.0, 17.0])
     }
 
     /// Every control's rect relative to the page: (row, col, rect).
     fn controls(&self) -> Vec<(usize, usize, [f32; 4])> {
         let mut out = Vec::new();
-        if self.tabs() {
-            for t in 0..TABS.len() {
-                out.push((0, t, [TAB_X + TAB_PITCH * (t % 4) as f32, 26.0 + 18.0 * (t / 4) as f32, 88.0, 16.0]));
-            }
-        }
         for (i, r) in self.rows().iter().enumerate() {
             let y = self.top() + PITCH * i as f32 + 14.0;
             match Self::ctl(r) {
@@ -554,6 +560,16 @@ impl SettingsUi {
         self.sounds.clear();
         self.hover = false;
         let (x, y) = self.origin(gu, sw, sh);
+        if self.paged()
+            && let Some(k) = self.arrow_rects().iter().position(|r| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3])
+        {
+            self.hover = true;
+            if clicked {
+                self.edit = false;
+                self.turn(if k == 0 { -1 } else { 1 });
+            }
+            return;
+        }
         let hit = self.controls().into_iter().find(|(_, _, r)| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3]);
         let Some((row, col, r)) = hit else { return };
         self.hover = true;
@@ -565,8 +581,7 @@ impl SettingsUi {
         if !clicked {
             return;
         }
-        if row > 0
-            && let Some(rw) = self.rows().get(row - 1)
+        if let Some(rw) = self.rows().get(row - 1)
             && matches!(Self::ctl(rw), Ctl::Slider)
         {
             let (n, _) = self.stops(rw);
@@ -584,27 +599,20 @@ impl SettingsUi {
         const N: u32 = 0x8080_8080;
         const ON: u32 = 0x8080_5020;
         let (x, y) = self.origin(gu, sw, sh);
-        // The frame, then windowps 465's header strip (FUN_101144b0 skips its first cell, the backing).
         gu.frame(x, y, W, H);
-        gu.sprite_cells("menu    windowps", 465, 1..2, x, y, N);
-        gu.label(self.title(), x + 8.0, y + 6.0, N, false);
+        if self.paged() {
+            // miss00: the arrows and the page's name.
+            gu.sprite("menu    frames", 25, x + ARROWS[0], y + ARROW_Y, N);
+            gu.sprite("menu    frames", 26, x + ARROWS[1], y + ARROW_Y, N);
+            gu.text(TABS[self.tab], x + NAME_XY.0, y + NAME_XY.1, 0, [0x80; 4]);
+        } else {
+            // A Config page: windowps 465's header strip (FUN_101144b0 skips its first cell, the backing), the title.
+            gu.sprite_cells("menu    windowps", 465, 1..2, x, y, N);
+            gu.label(self.title(), x + 8.0, y + 6.0, N, false);
+        }
         let ctls = self.controls();
         let focus = |row: usize, col: usize| self.row == row && self.col == col;
         let mut hand = None;
-        if self.tabs() {
-            for (_, t, r) in ctls.iter().filter(|c| c.0 == 0) {
-                let on = focus(0, *t);
-                let d = if on { -1.0 } else { 0.0 };
-                button(gu, [x + r[0] + d, y + r[1] + d, r[2], r[3]], if on { ON } else { N });
-                gu.label(TABS[*t], x + r[0] + 5.0 + d, y + r[1] + 1.0 + d, if on { ON } else { N }, true);
-                if *t == self.tab {
-                    marker(gu, x + r[0], y + r[1], r[2]);
-                }
-                if on {
-                    hand = Some((x + r[0], y + r[1]));
-                }
-            }
-        }
         for (i, r) in self.rows().iter().enumerate() {
             let hy = y + self.top() + PITCH * i as f32;
             // The bullet (465 cell 2, drawn at its own place (20, 27) on the page) moved to the heading.
@@ -654,18 +662,18 @@ impl SettingsUi {
         [x, y, W, H]
     }
 
-    /// Puts the cursor on a tab and row (offscreen shots).
+    /// Puts the cursor on a page and row (offscreen shots).
     pub fn goto(&mut self, tab: usize, row: usize) {
-        if self.tabs() {
+        if self.paged() {
             self.tab = tab.min(TABS.len() - 1);
         }
-        self.row = row.clamp(self.first_row(), self.rows().len());
+        self.row = row.clamp(1, self.rows().len());
         self.col = self.marked_col();
     }
 
     /// The help bar's text for the cursor's row, with when a change shows.
     pub fn help(&self) -> String {
-        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return "Choose a group of settings.".into() };
+        let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return String::new() };
         let when = match r.when {
             When::Now => "",
             When::NextZone => " Takes effect at the next zone load.",
@@ -757,12 +765,14 @@ mod tests {
         assert_eq!(Settings::of(&back), ui.s);
     }
 
-    /// Extras: no tab row; buttons pick with Left / Right and Enter; Up from the first row wraps to the last.
+    /// Extras: one page; buttons pick with Left / Right and Enter; Up from the first row wraps to the last.
     #[test]
     fn extras_buttons() {
         let c = Config::default();
         let mut ui = SettingsUi::open_kind(&c, [1280, 800], Kind::Extras);
         assert_eq!((ui.row, ui.col), (1, 1));
+        ui.key_mod(egui::Key::ArrowRight, true);
+        assert_eq!(ui.tab, 0);
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.map_overlay && ui.dirty);
@@ -771,5 +781,21 @@ mod tests {
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.stamp_all_lines);
+    }
+
+    /// Settings: Left / Right turn the page on a slider row, move between buttons on a buttons row, and always turn
+    /// it with the page modifier; the page wraps.
+    #[test]
+    fn pages_turn() {
+        let c = Config::default();
+        let mut ui = SettingsUi::open(&c, [1280, 800]);
+        ui.goto(0, 1);
+        ui.key(egui::Key::ArrowLeft);
+        assert_eq!(ui.tab, 6);
+        ui.goto(0, 2);
+        ui.key(egui::Key::ArrowRight);
+        assert_eq!((ui.tab, ui.col), (0, 1));
+        ui.key_mod(egui::Key::ArrowRight, true);
+        assert_eq!((ui.tab, ui.row), (1, 2));
     }
 }

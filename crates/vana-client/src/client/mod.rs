@@ -1001,7 +1001,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // Our settings screen, then the Config windows, take the keys while open.
                 _ if world.settings.is_some() => {
                     let mut s = world.settings.take().unwrap();
-                    if !s.key(*key) {
+                    if !s.key_mod(*key, modifiers.ctrl || modifiers.alt) {
                         world.settings = Some(s);
                     } else {
                         world.sounds.push(crate::audio::Ui::Cancel as u32);
@@ -5688,8 +5688,8 @@ impl App {
                                 let mut closed = false;
                                 // The Enter that opened it is not its first key.
                                 for ev in input.events.iter().filter(|_| !settings_new) {
-                                    if let egui::Event::Key { key, pressed: true, .. } = ev {
-                                        closed |= s.key(*key);
+                                    if let egui::Event::Key { key, pressed: true, modifiers, .. } = ev {
+                                        closed |= s.key_mod(*key, modifiers.ctrl || modifiers.alt);
                                         if let Some(a) = self.audio.as_mut() {
                                             for x in s.sounds.drain(..) {
                                                 a.ui(x);
