@@ -194,6 +194,8 @@ pub enum NetEvent {
     PartyTable(Vec<super::party::TableEntry>),
     PartyList(super::party::ListUpdate, bool),
     PartyAttr(super::party::AttrUpdate),
+    /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
+    ResOffer { id: u32, kind: u16 },
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
     AbilityRecasts(Vec<(u16, u16)>),
     /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
@@ -557,6 +559,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
                         tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
+                    0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
                     0x0AC => tx.send(NetEvent::CommandsKnown((0..224).map(|i| p.u8(4 + i)).collect()))?,

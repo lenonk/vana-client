@@ -372,6 +372,24 @@ fn send_chat(world: &mut World, text: String) {
     textcmd::run(world, &text, textcmd::Mode::Internal);
 }
 
+/// c2s 0x01A on ourselves with a menu answer in StatusId (0x0D raise, 0x13 tractor; 0 accept, 1 reject).
+fn send_menu_answer(w: &World, action: u16, status: u32) {
+    let mut body = net::action_body(w.my_id, w.my_index, action);
+    body[8..12].copy_from_slice(&status.to_le_bytes());
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x01A, body });
+}
+
+/// LAB_10097370: the raise answer, then accepting closes the K.O. window and waits 20 s (mode 1, sub 4, 1200 ticks);
+/// declining keeps it.
+fn answer_raise(w: &mut World, yes: bool) {
+    send_menu_answer(w, 0x0D, !yes as u32);
+    w.ko_offer = 0;
+    if yes {
+        w.ko_open = false;
+        w.ko_wait = Some(Instant::now() + std::time::Duration::from_secs(20));
+    }
+}
+
 /// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
 fn vana_now(w: &World) -> u64 {
     w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
@@ -382,12 +400,20 @@ fn vana_now(w: &World) -> u64 {
 /// 600 ticks while still dead. Alive again: everything goes. (Ours waits while no deadline is known yet.)
 fn ko_step(w: &mut World) {
     if !w.dead() {
-        (w.ko_open, w.homing, w.home_sent) = (false, false, None);
-        if matches!(w.confirm, Some((Confirm::HomePoint, _))) {
+        // A raise prompt closed unanswered: decline it (FUN_10096640's state[2]).
+        if w.ko_offer == 2 {
+            send_menu_answer(w, 0x0D, 1);
+        }
+        (w.ko_open, w.homing, w.home_sent, w.ko_offer, w.ko_wait) = (false, false, None, 0, None);
+        if matches!(w.confirm, Some((Confirm::HomePoint | Confirm::Tractor, _))) {
             w.confirm = None;
         }
         return;
     }
+    if w.ko_wait.is_some_and(|t| Instant::now() < t) {
+        return;
+    }
+    w.ko_wait = None;
     let expired = w.ko_deadline != 0 && vana_now(w) >= w.ko_deadline;
     if expired && !w.homing {
         w.homing = true;
@@ -959,6 +985,24 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // Left / right swap the commands and social pages on the same row (FUN_1013b3c0).
                 egui::Key::ArrowLeft | egui::Key::ArrowRight if world.menu.is_some() => world.menu_page ^= 1,
                 egui::Key::Enter if world.menu.is_some() => pick = world.menu,
+                // The raise prompt (resynus: Accept / Decline stacked, Accept first): Up / Down, Enter answers, Escape
+                // declines (inf).
+                _ if dead && world.ko_offer == 2 && world.confirm.is_none() => match key {
+                    egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                        world.raise_yes = !world.raise_yes;
+                        world.sounds.push(crate::audio::Ui::Cursor as u32);
+                    }
+                    egui::Key::Enter => {
+                        let yes = world.raise_yes;
+                        answer_raise(world, yes);
+                        world.sounds.push(crate::audio::Ui::Select as u32);
+                    }
+                    egui::Key::Escape => {
+                        answer_raise(world, false);
+                        world.sounds.push(crate::audio::Ui::Cancel as u32);
+                    }
+                    _ => {}
+                },
                 // The K.O. window (FUN_1012e030 message 5): Enter asks "Return to Home Point?" (comyn, default No).
                 egui::Key::Enter if dead && world.ko_open => {
                     world.confirm = Some((Confirm::HomePoint, false));
@@ -1483,11 +1527,35 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         blockers.push(win.frame);
     }
+    // The raise prompt "menu    resynus" (FUN_10210da0, registry flag 0x1000: stacked on the log like comyn).
+    if dead && world.ko_offer == 2 && world.confirm.is_none() {
+        let dy = gu.window_rect("menu    resynus", sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        if let Some(win) = gu.lobby_window_off("menu    resynus", sw, sh, (0.0, dy), Some(if world.raise_yes { 1 } else { 2 }), true, &[]) {
+            for (id, r) in win.children.iter().filter(|(id, _)| matches!(id, 1 | 2)) {
+                if input.pointer.is_some_and(|p| inside(r, p)) {
+                    gu.hover.set(true);
+                    if input.moved || input.clicked {
+                        world.raise_yes = *id == 1;
+                    }
+                    if input.clicked {
+                        answer_raise(world, *id == 1);
+                    }
+                }
+            }
+            blockers.push(win.frame);
+        }
+    }
     match (answer, world.confirm) {
         // LAB_1012e0a0: Yes sets +0x24; the state machine sends 0x01A 0x0B.
         (Some(true), Some((Confirm::HomePoint, _))) => {
             world.confirm = None;
             world.homing = true;
+        }
+        // LAB_10097390: the tractor answer, 0x01A 0x13 (0 accept, 1 reject).
+        (Some(yes), Some((Confirm::Tractor, _))) => {
+            world.confirm = None;
+            world.ko_offer = 0;
+            send_menu_answer(world, 0x13, !yes as u32);
         }
         (Some(true), Some((Confirm::LeaveRoom, _))) => {
             world.confirm = None;
@@ -1590,8 +1658,12 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         bars.title[1] = gu.title_msg(0x50).unwrap_or_else(|| "MacroPalette".into());
         bars.title[2] = m.recs[world.palette.3[p] + 10 * p].title();
     }
-    // The K.O. window's button: help group 0xe 0xf1, title 0xd 0x39 "K.O." from child 1's strings.
-    if world.ko_open && world.confirm.is_none() {
+    // The raise prompt's rows: help 0xe 407 / 408, title 0xd 101 "Revival" from its children's strings.
+    if world.ko_offer == 2 && world.confirm.is_none() {
+        let [help, title] = gu.focus_text("menu    resynus", if world.raise_yes { 1 } else { 2 });
+        (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+    } else if world.ko_open && world.confirm.is_none() {
+        // The K.O. window's button: help group 0xe 0xf1, title 0xd 0x39 "K.O." from child 1's strings.
         let [help, title] = gu.focus_text("menu    dead", 1);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
@@ -1613,6 +1685,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::LeaveRoom, _) if myroom::in_city(world.zone) => gu.lobby_msg(0x0c, 0x2e, "Moogle: Heading outside, kupo?"),
         (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
         (Confirm::HomePoint, _) => gu.menu_msg(0x46, "Return to Home Point?"),
+        (Confirm::Tractor, _) => gu.menu_msg(0x60, "Accept Tractor?"),
     }
 }
 
@@ -2280,6 +2353,11 @@ struct World {
     ko_open: bool,
     homing: bool,
     home_sent: Option<Instant>,
+    /// FUN_10096c90's modes 2 / 3: a raise (2, "menu    resynus", Accept highlighted when `raise_yes`) or tractor (3)
+    /// offer waiting for an answer; after accepting a raise, nothing until (sub 4, 1200 ticks).
+    ko_offer: u8,
+    raise_yes: bool,
+    ko_wait: Option<Instant>,
     /// Server clock (GameTime and when it arrived), weather number, and the zone's weather keys.
     clock: Option<(u32, Instant)>,
     weather: u16,
@@ -2375,6 +2453,8 @@ enum Confirm {
     LeaveRoom,
     /// The K.O. window's button (FUN_1012e030): group 0xe 0x46 "Return to Home Point?".
     HomePoint,
+    /// FUN_10096c90 mode 3: group 0xe 0x60 "Accept Tractor?".
+    Tractor,
 }
 
 impl World {
@@ -3205,6 +3285,9 @@ impl App {
                             ko_open: false,
                             homing: false,
                             home_sent: None,
+                            ko_offer: 0,
+                            raise_yes: true,
+                            ko_wait: None,
                             clock: None,
                             weather: 1,
                             zone_weather: None,
@@ -3908,6 +3991,21 @@ impl App {
                 NetEvent::PartyAttr(u) => world.party.attr(&u),
                 NetEvent::MagicKnown(bits) => world.spells_known = bits,
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
+                NetEvent::ResOffer { id, kind } if id == world.my_id && world.dead() => {
+                    log::info!("0x0F9 offer {kind}");
+                    match kind {
+                        1 => (world.ko_offer, world.raise_yes) = (2, true),
+                        2 => {
+                            world.ko_offer = 3;
+                            world.confirm = Some((Confirm::Tractor, false));
+                        }
+                        _ => world.ko_offer = 0,
+                    }
+                    if world.ko_offer == 2 && matches!(world.confirm, Some((Confirm::HomePoint, _))) {
+                        world.confirm = None;
+                    }
+                }
+                NetEvent::ResOffer { .. } => {}
                 NetEvent::AbilityRecasts(timers) => {
                     world.recasts_seen = true;
                     let now = Instant::now();
