@@ -4393,3 +4393,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   val@12, legs +0x104 = val@14 (0xe) or 0; face, main, sub and range cleared; +0x120 bit 30 = val@2 in {3, 4, 8}
   (meaning not traced). Sites take their values from Z registers (e.g. Bastok Mines actor 0x010ea097), i.e. the
   server: not seen live.
+
+- Zoning: LSB re-sends every container after c2s 0x00C (charutils::SendInventory from 0x00C gameok, equipment
+  as 0x050 too) and empties the temporary items and the recycle bin at zone-in, so ours resets the inventory
+  (but the container sizes) at ZoneIn; that retail resets its copy on connect is inferred. The view order resets
+  with it.
+- The direct-use list colours (FUN_101f0810): usable items 0x80909040, equipped charged gear 0x80407090 when ready
+  (FUN_100febe0: extdata kind 1, u16 @2 bit 0x4000) else 0x80404040.

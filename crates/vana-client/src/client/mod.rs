@@ -3952,6 +3952,9 @@ impl App {
                     world.hud_top.enter();
                     world.map = None;
                     world.scan = Default::default();
+                    // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
+                    // bin on zoning, so slots kept from the last zone would go stale (retail's reset: inferred).
+                    world.inv = items::Inventory { sizes: world.inv.sizes, ..Default::default() };
                     if let Some(ev) = login_event {
                         event::queue(world, ev);
                     }

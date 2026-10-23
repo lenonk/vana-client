@@ -787,7 +787,22 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     match win {
         Win::Items { .. } if item_prompt(w) => {}
         Win::Items { scroll, cursor, sub, direct, sort, manual } => {
-            let list = ItemList { rows: build_rows(&listed(w, *direct), info.as_ref(), false), scroll: *scroll, cursor: *cursor };
+            let shown = listed(w, *direct);
+            let mut rows = build_rows(&shown, info.as_ref(), false);
+            // FUN_101f0810: the direct list's colours, yellow for usable items, equipped charged gear blue when ready
+            // (extdata kind 1, u16 @2 bit 0x4000), else grey.
+            if *direct {
+                for (r, s) in rows.iter_mut().zip(&shown) {
+                    let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
+                    let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
+                    r.tint = match (gear, ready) {
+                        (false, _) => crate::inventory::TINT_FLAGGED,
+                        (true, true) => 0x8040_7090,
+                        (true, false) => crate::inventory::TINT_DIM,
+                    };
+                }
+            }
+            let list = ItemList { rows, scroll: *scroll, cursor: *cursor };
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let (b, ui, style, font) = gu.parts();
             if let Some(m) = ui.menu("menu    inventor") {
