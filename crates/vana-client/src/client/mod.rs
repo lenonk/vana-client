@@ -4212,7 +4212,8 @@ impl App {
                 }
                 // What the Config windows and the settings screen hand to the app.
                 if std::mem::take(&mut world.want_settings) {
-                    let mut s = settings::SettingsUi::open(&self.cfg, screen_size);
+                    // Size lists come from the window, not the menu layout it is scaled to.
+                    let mut s = settings::SettingsUi::open(&self.cfg, window);
                     s.monitors = self.monitors.clone();
                     s.gpus = self.gpus.clone();
                     world.settings = Some(s);

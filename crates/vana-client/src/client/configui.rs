@@ -365,6 +365,8 @@ impl ConfigUi {
                 egui::Key::ArrowDown if w.cursor == bottom => Some(SETTINGS),
                 egui::Key::ArrowDown if w.cursor == SETTINGS => Some(first),
                 egui::Key::ArrowUp if w.cursor == SETTINGS => Some(bottom),
+                // The row under the list wraps both ways (the first row has no up link of its own).
+                egui::Key::ArrowUp if w.cursor == first => Some(SETTINGS),
                 egui::Key::Enter if w.cursor == SETTINGS => {
                     out.sounds.push(Se::Select);
                     out.open_settings = true;
