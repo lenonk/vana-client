@@ -5040,7 +5040,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 
 ## The zone's ambient loop (2026-10-23)
 
-- Every zone has one looping ambient voice (the "bubbling stream" in West Ronfaure); ours played none. Retail
+- Every zone has one looping ambient voice (West Ronfaure's se 1005 is wind, not the stream: streams are sound
+  generators along Sph chains, below); ours played none. Retail
   (30261006): each frame FUN_1018b860 (all.c 13257) runs FUN_101874a0 (copies the weather object's +0x2c into
   world+0x20) and FUN_10036170(world+0x20): 0 stops the voice (FUN_10036b90); a different resource starts its SeSep
   through FUN_10036f00, pan 0x40, level ftol(DAT_10351708 x 127.0), voice DAT_10463910, resource DAT_10463914. The
@@ -5157,3 +5158,13 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   seven rows 16 px apart; a row too wide cut with "...". Ours places it above the chat line at the word *(inf)*.
 - Not done: the cursor inside the line (ours edits at the end), the item / key item groups (the 200-record item
   cache), the line history (Up / Down), macros' editor.
+
+## Effect sound op 0x6b: the Sph name is at op+4 (2026-10-23)
+
+- FUN_10048220 (link pass, all.c 53240): `case 0x6b: if (op[2] == 0) op[2] = *FUN_10072290(.., 0x4a, op[1])`: the
+  chain's 4cc is word 1, word 2 only takes the resolved handle (emission 0x100501c9: +0x198 = *op[2]; per frame the
+  element sits at the camera + the chain's nearest point, all.c 39069). Ours read word 2 (0), which matched any Sph,
+  so every 0x6b sound rode the folder's first chain: 63 of 160 uses in DATs 100..399 (33 zones) on the wrong chain.
+  East Ronfaure (DAT 201 f_ro/effe/sep1): skw1 se 2058 on kaw1 (north), skw2 se 2004 on kaw2 (east river), skw3 se
+  2028 on kaw3 (the stream by the gate), far 40, looping; the waterfall steps sta / stb se 2003 have no 0x6b. A
+  name missing from its file (DAT 170 'seal') leaves the sound at the generator.

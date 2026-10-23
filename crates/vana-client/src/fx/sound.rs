@@ -198,6 +198,33 @@ mod tests {
         assert!(sea.is_some_and(|(_, v)| (119..=121).contains(&v)), "{plays:?}");
     }
 
+    /// East Ronfaure (DAT 201): f_ro/effe/sep1 skw1..3 loop along their own Sph chains (op 0x6b names kaw1 / kaw2 /
+    /// kaw3): in the gate stream (kaw3) only se 2028 plays, at full volume; on the east river (kaw2) only se 2004.
+    #[test]
+    fn stream_chains() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let plays = |eye: Vec3| {
+            let mut fx = crate::fx::Effects::new();
+            fx.set_keys(std::sync::Arc::new(crate::dat::zone::Keys::from_ffximain(&dll).unwrap()));
+            fx.set_global(crate::fx::lib::Library::load(0, index.read(0).unwrap()).unwrap());
+            fx.load_zone(crate::fx::lib::Library::load(201, index.read(201).unwrap()).unwrap());
+            let view = glam::camera::rh::view::look_at_mat4(eye, eye + Vec3::X, Vec3::NEG_Y);
+            let f = crate::fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot: view, eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+            fx.tick(&f, &crate::fx::NoActors);
+            fx.sound_cmds
+                .iter()
+                .filter_map(|c| match c {
+                    SoundCmd::Play { se, vol, .. } if matches!(se, 2004 | 2028 | 2058) => Some((*se, *vol)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(plays(Vec3::new(100.0, -61.0, 203.6)), [(2028, 127)]);
+        assert_eq!(plays(Vec3::new(440.0, -17.0, -300.0)).iter().map(|p| p.0).collect::<Vec<_>>(), [2004]);
+    }
+
     /// West Ronfaure (zone 100, effects DAT 200): weat/suny 0600 = se 1005, 1800 = se 1007, indo/0000 = se 1056.
     #[test]
     fn zone_ambient() {

@@ -492,8 +492,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 s.far = op.f32(1);
                 s.vol = 127;
             }
+            // FUN_10048220 (all.c 53240): the Sph's name is at op+4; op+8 only takes the resolved handle. A missing name
+            // leaves the sound at the generator.
             0x6b if sound.is_some() => {
-                if let Some(r) = reg.resolve(lib, from, kind::SPH, op.u32(2)) {
+                let name = op.u32(1);
+                if name != 0
+                    && let Some(r) = reg.resolve(lib, from, kind::SPH, name)
+                {
                     sound.as_mut().unwrap().sph = Some(std::sync::Arc::new(super::sound::sph(reg.libs[r.0].data(r.1))));
                 }
             }
