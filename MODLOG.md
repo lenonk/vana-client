@@ -3968,3 +3968,9 @@ else 4; otherwise (a player's pet) 1 cyan. Pugils came out green because @0x25 (
 LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed by us" (red).
 - Ours: the monster flag from @0x20 bit 0 everywhere (auto lock-on, Enter, F8, the action menu); the rule above
   without the override, PvP teams / ballista, the charmed pet's master and the shared-claim flag.
+
+## Door target arrow (2026-10-23, corrects "Door target arrow at the door part's origin")
+
+- The arrow's screen point is the target actor's vtable +0x27c (FUN_10159d40 from FUN_10150090); for an XiDoorActor
+  (vtable 0x1032fd58) that is FUN_100ac390: its position (+0x1bc, the 0x00E position) projected, with no lift and no
+  part matrix. FUN_100acab0 (attach point k = door part k's origin, 4 = the position) serves effects, not the arrow.

@@ -323,8 +323,6 @@ pub struct ZoneRenderer {
     areas: wgpu::Buffer,
     /// Door parts: slots by door id, their animations (CPU copy of the GPU table) and the tick they run against.
     pub door_parts: HashMap<u32, Vec<u32>>,
-    /// Each door part's placement matrix, in part order.
-    pub door_bases: HashMap<u32, Vec<glam::Mat4>>,
     parts: Vec<PartGpu>,
     parts_gpu: wgpu::Buffer,
     pub now: f32,
@@ -1030,7 +1028,6 @@ impl ZoneRenderer {
             area_lights: Vec::new(),
             areas,
             door_parts: geo.door_parts.clone(),
-            door_bases: geo.door_bases.clone(),
             parts: vec![PartGpu::default(); PARTS],
             parts_gpu,
             now: 0.0,
@@ -1051,16 +1048,6 @@ impl ZoneRenderer {
         *time = [now, ticks.max(0.0), 0.0, 0.0];
         let at = slot as u64 * std::mem::size_of::<PartGpu>() as u64;
         gpu.queue.write_buffer(&self.parts_gpu, at, bytemuck::bytes_of(&*p));
-    }
-
-    /// A door actor's attach point k (FUN_100acab0 -> FUN_10171030): the origin of door part k, or of part 0
-    /// when it has fewer parts, where the part is now.
-    pub fn door_point(&self, door: u32, k: usize) -> Option<glam::Vec3> {
-        let bases = self.door_bases.get(&door)?;
-        let k = if k < bases.len() { k } else { 0 };
-        let slot = *self.door_parts.get(&door)?.get(k)?;
-        let t = self.parts.get(slot as usize).map_or([0.0; 3], |p| PartGpu::at(p.pos_from, p.pos_to, p.pos_time, self.now));
-        Some(bases.get(k)?.transform_point3(glam::Vec3::from(t)))
     }
 
     /// Area 4ccs by slot - 1 (zone's, then the shown sub-area's).
