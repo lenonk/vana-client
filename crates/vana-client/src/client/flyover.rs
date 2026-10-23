@@ -193,7 +193,7 @@ impl Flyover {
         if dim > 0.0 {
             batch.push_rect(0.0, 0.0, size[0] as f32, size[1] as f32, [0.0, 0.0, 0.0, dim]);
         }
-        ui.render(gpu, encoder, view, size[0], size[1], None, &batch);
+        ui.render(gpu, encoder, view, size, size, None, &batch);
         true
     }
 }

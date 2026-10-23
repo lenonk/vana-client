@@ -236,7 +236,8 @@ impl UiBatch {
 }
 
 const SHADER: &str = r#"
-struct U { screen: vec4<f32> };
+// screen.xy: the layout size the vertices are in; target.xy: the pixels they land on.
+struct U { screen: vec4<f32>, target: vec4<f32> };
 @group(0) @binding(0) var<uniform> u: U;
 @group(0) @binding(1) var scene_depth: texture_depth_2d;
 @group(1) @binding(0) var tex: texture_2d<f32>;
@@ -254,7 +255,7 @@ struct VOut { @builtin(position) clip: vec4<f32>, @location(0) uv: vec2<f32>, @l
     // Depth-tested quads (name plates) hide behind nearer scenery; the scene may be drawn at another size.
     if i.depth >= 0.0 {
         let dims = vec2<f32>(textureDimensions(scene_depth));
-        let t = vec2<i32>(clamp(i.clip.xy / u.screen.xy * dims, vec2<f32>(0.0), dims - 1.0));
+        let t = vec2<i32>(clamp(i.clip.xy / u.target.xy * dims, vec2<f32>(0.0), dims - 1.0));
         if i.depth > textureLoad(scene_depth, t, 0) {
             discard;
         }
@@ -350,7 +351,7 @@ impl UiRenderer {
             });
             pipelines.insert(blend, p);
         }
-        let uniforms = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ui uniforms"), size: 16, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let uniforms = device.create_buffer(&wgpu::BufferDescriptor { label: Some("ui uniforms"), size: 32, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let no_depth = super::depth_view(device, 1, 1);
         let globals = Self::globals_group(device, &globals_layout, &uniforms, &no_depth);
         // Sprite draws set ADDRESSU/V = WRAP (FUN_1011b290); frame pieces tile 1:1.
@@ -434,8 +435,13 @@ impl UiRenderer {
         }
     }
 
-    pub fn render(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, width: u32, height: u32, clear: Option<wgpu::Color>, batch: &UiBatch) {
-        gpu.queue.write_buffer(&self.uniforms, 0, bytemuck::cast_slice(&[width as f32, height as f32, self.fade.clamp(0.0, 1.0), 0.0]));
+    /// `layout`: the size the batch is laid out at (menu size 0037 / 0038); `size`: the target's pixels it is stretched
+    /// over. Clips are in layout units.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, layout: [u32; 2], size: [u32; 2], clear: Option<wgpu::Color>, batch: &UiBatch) {
+        let [width, height] = size;
+        let (kx, ky) = (width as f32 / layout[0].max(1) as f32, height as f32 / layout[1].max(1) as f32);
+        gpu.queue.write_buffer(&self.uniforms, 0, bytemuck::cast_slice(&[layout[0] as f32, layout[1] as f32, self.fade.clamp(0.0, 1.0), 0.0, width as f32, height as f32, 0.0, 0.0]));
         let bytes: &[u8] = bytemuck::cast_slice(&batch.vertices);
         if !bytes.is_empty() {
             if self.vertices.as_ref().is_none_or(|(_, cap)| *cap < bytes.len() as u64) {
@@ -472,6 +478,7 @@ impl UiRenderer {
         for r in &batch.runs {
             let (x, y, w, h) = match r.clip {
                 Some([x, y, w, h]) => {
+                    let (x, y, w, h) = (x * kx, y * ky, w * kx, h * ky);
                     let x0 = x.max(0.0).min(width as f32) as u32;
                     let y0 = y.max(0.0).min(height as f32) as u32;
                     let x1 = (x + w).max(0.0).min(width as f32) as u32;
@@ -514,7 +521,7 @@ pub fn render_png(ui: &[&UiFile], batch: &UiBatch, width: u32, height: u32, clea
     let row = (width * 4).div_ceil(256) * 256;
     let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("readback"), size: (row * height) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-    renderer.render(&gpu, &mut encoder, &view, width, height, Some(wgpu::Color { r: clear[0], g: clear[1], b: clear[2], a: 1.0 }), batch);
+    renderer.render(&gpu, &mut encoder, &view, [width, height], [width, height], Some(wgpu::Color { r: clear[0], g: clear[1], b: clear[2], a: 1.0 }), batch);
     encoder.copy_texture_to_buffer(
         wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
         wgpu::TexelCopyBufferInfo { buffer: &readback, layout: wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(row), rows_per_image: Some(height) } },

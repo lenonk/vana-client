@@ -5053,7 +5053,7 @@ impl App {
         {
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());
-            perf::timed(|| "ui render".into(), || lu.render(&gfx.gpu, gfx.config.format, &mut encoder, &view, self.cfg.ui_size(size), drew_world, ui_level, scene_level));
+            perf::timed(|| "ui render".into(), || lu.render(&gfx.gpu, gfx.config.format, &mut encoder, &view, self.cfg.ui_size(size), size, drew_world, ui_level, scene_level));
             drew_world = true;
         }
 

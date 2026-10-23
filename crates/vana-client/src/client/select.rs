@@ -1003,7 +1003,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
     let input = Input { events: &[], pointer: None, moved: false, clicked: false, busy: false };
     st.step(&mut gu, &input, &list, &chars, shot.deleting, w as f32, h as f32, None);
-    gu.render(&gpu, format, &mut enc, &view, [w, h], true, 1.0, 1.0);
+    gu.render(&gpu, format, &mut enc, &view, [w, h], [w, h], true, 1.0, 1.0);
     let row = (w * 4).div_ceil(256) * 256;
     let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
     enc.copy_texture_to_buffer(

@@ -689,7 +689,9 @@ impl GameUi {
     /// Draws this frame's batch, over the lobby clear colour or (`over`) on top of the 3D scene.
     /// Draws the batch; `fade` is the 2D layer level, `scene` the lobby scene level the clear colour takes.
     #[allow(clippy::too_many_arguments)]
-    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, size: [u32; 2], over: bool, fade: f32, scene: f32) {
+    /// `layout`: the menu size the batch was laid out at; `size`: the target's pixels.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render(&mut self, gpu: &Gpu, format: wgpu::TextureFormat, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, layout: [u32; 2], size: [u32; 2], over: bool, fade: f32, scene: f32) {
         let r = self.renderer.get_or_insert_with(|| {
             let mut r = UiRenderer::new(gpu, format);
             r.load(gpu, &self.data.lobby);
@@ -710,7 +712,7 @@ impl GameUi {
         let clear = (!over).then_some(wgpu::Color { r: c[0], g: c[1], b: c[2], a: 1.0 });
         r.fade = fade;
         r.set_scene_depth(gpu, self.scene_depth.take().as_ref());
-        r.render(gpu, encoder, view, size[0], size[1], clear, &self.batch);
+        r.render(gpu, encoder, view, layout, size, clear, &self.batch);
     }
 }
 

@@ -443,7 +443,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
         }
         gu.clear();
         draw_ui(gu, &v, w as f32, h as f32, None, Some(dt));
-        gu.render(&gpu, format, &mut enc, &view, [w, h], true, 1.0, 1.0);
+        gu.render(&gpu, format, &mut enc, &view, [w, h], [w, h], true, 1.0, 1.0);
         enc
     };
     // Help-line time before the shot, in 30 Hz steps.
