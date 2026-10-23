@@ -128,7 +128,7 @@ pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     // FFXI_UISHOT_MEMBERS: party size (1..6, default 3).
     let n = std::env::var("FFXI_UISHOT_MEMBERS").ok().and_then(|v| v.parse().ok()).unwrap_or(3usize).clamp(1, 6);
     let party = [(1.0, 0.0), (0.55, 1.0), (0.2, 0.35), (0.9, 0.5), (0.4, 0.8), (0.7, 0.2)][..n].to_vec();
-    let st = HudState { party, target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, chat_log: true };
+    let st = HudState { party, target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_focused: true, chat_log: true };
     let (batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
     for t in &text {
         println!("text slot {:?} at ({:.0}, {:.0})", t.what, t.x, t.y);

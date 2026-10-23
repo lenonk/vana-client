@@ -366,8 +366,15 @@ impl GameUi {
     /// skipped. `centred` adds ((W - 512) / 2, (H - 448) / 2) (FUN_101179a0).
     #[allow(clippy::too_many_arguments)]
     pub fn lobby_window(&mut self, name: &str, w: f32, h: f32, centred: bool, sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
+        let off = if centred { (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc()) } else { (0.0, 0.0) };
+        self.lobby_window_off(name, w, h, off, sel, hand, hide)
+    }
+
+    /// `lobby_window` moved by `off` (region stacking).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lobby_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
-        let (dx, dy) = if centred { (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc()) } else { (0.0, 0.0) };
+        let (dx, dy) = off;
         let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
         if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
             return None;

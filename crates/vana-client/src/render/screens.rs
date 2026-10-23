@@ -455,6 +455,8 @@ pub struct HudState {
     pub menu_selected: Option<usize>,
     /// Main menu page: 0 commands (menuwind), 1 social (socialme); the arrows swap them.
     pub menu_page: u8,
+    /// The menu has the focus: unfocused (under a prompt) it keeps its highlight but draws no hand.
+    pub menu_focused: bool,
     /// Draw logwindo at its layout size (offscreen tools); the client sizes it itself (client/logwin.rs).
     pub chat_log: bool,
 }
@@ -703,7 +705,10 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
             let on = i == sel;
             let d = if on { -1.0 } else { 0.0 };
             b.push_sprite(ui, lib, r.index as usize, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
-            if on && let Some(anc) = ui.lib("anc     anc_s") {
+            if on
+                && st.menu_focused
+                && let Some(anc) = ui.lib("anc     anc_s")
+            {
                 b.push_sprite(ui, anc, 0, cx, cy, 1.0, 1.0, 0x8080_8080, 0);
             }
         }

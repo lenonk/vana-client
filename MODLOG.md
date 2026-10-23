@@ -3763,3 +3763,20 @@ From the cull spec (scratchpad tabcull/SPEC.md).
   actors past it stay targetable.
 - Ours: client/mod.rs box_on_screen / box_corners / box_index, World::visible; render/occlusion.rs (an 8 x 8 sample
   compute pass over the scene depth every frame, read back a frame or two late; no hysteresis).
+
+## In-game yes / no prompt: comyn (2026-10-23)
+
+From the yes / no spec (scratchpad yesno/SPEC.md). Correction to the 2026-10-22 popup notes: the prompt is
+"menu    comyn" (FUN_10210e30 on DAT_10664520), not "menu    yesno" (that string is not in the current FFXiMain;
+39542's yesno layout is dead data). FUN_10210f10 only swaps the callback / texts of a prompt already up.
+- Log out (FUN_101609f0), Shut down (FUN_10160960), the Mog House door (LAB_101d6040) and conf6win's key reset all
+  open it. Frame 252 x 88 at layout (130, 208), window sprite windowps 336 from cell 1; Yes child 1 (windowps 68) at
+  (+58, +66), No child 2 (windowps 69) at (+154, +66), 88 x 16; selected child at (-1, -1) tint 0x80805020 with the
+  anc_s hand.
+- Registry flag 0x1000: stacked on the log (FUN_1015f790): frame top = log top - 88 - 2, at least 16. The log holds
+  its lines while a 0x1000 window is up (FUN_101626e0).
+- Text inside: (x0 + 4, y0 + 4), wrapped to w - 8, 16 px lines, 0x80808080 (FUN_10211050). Callers pass no help-bar
+  text; the help bar shows comyn's (empty) item text while it has the focus.
+- Default No (FUN_10118e90(2)); only Left / Right move (its links); Enter answers (SE 0002), a move plays 0001,
+  Escape is No. The main menu stays open under it, unfocused: highlight kept (socialme lacks flag 0x80000), no hand.
+- Not done: conf6win's key-reset prompt still draws 39542's yesno (configui2.rs).

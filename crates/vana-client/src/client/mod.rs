@@ -792,15 +792,23 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.win.is_some() => {
                     items::key(world, *key);
                 }
-                // A yes/no prompt takes the keys while it is up.
+                // The yes / no prompt (comyn) takes the keys while it is up: only Left / Right move (its links), Enter
+                // answers, Escape is No.
                 _ if world.confirm.is_some() => match key {
-                    egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::Tab => {
+                    egui::Key::ArrowLeft | egui::Key::ArrowRight => {
                         if let Some((_, yes)) = &mut world.confirm {
                             *yes = !*yes;
                         }
+                        world.sounds.push(crate::audio::Ui::Cursor as u32);
                     }
-                    egui::Key::Enter => answer = world.confirm.map(|c| c.1),
-                    egui::Key::Escape => answer = Some(false),
+                    egui::Key::Enter => {
+                        answer = world.confirm.map(|c| c.1);
+                        world.sounds.push(crate::audio::Ui::Select as u32);
+                    }
+                    egui::Key::Escape => {
+                        answer = Some(false);
+                        world.sounds.push(crate::audio::Ui::Cancel as u32);
+                    }
                     _ => {}
                 },
                 // FUN_101d6540: the Mog House door menu.
@@ -919,11 +927,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.menu = None;
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
-            (1, 11) => world.confirm = Some((Confirm::Shutdown, true)),
-            (1, 12) => world.confirm = Some((Confirm::Logout, true)),
+            (1, 11) => world.confirm = Some((Confirm::Shutdown, false)),
+            (1, 12) => world.confirm = Some((Confirm::Logout, false)),
             _ => log::info!("main menu item {id} on page {} is not implemented yet", world.menu_page),
         }
-        if world.confirm.is_some() || world.win.is_some() {
+        // The prompt leaves the menu open under it (FUN_1014e7b0 items 0xb / 0xc), unfocused.
+        if world.win.is_some() {
             world.menu = None;
         }
     }
@@ -1016,6 +1025,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         target: target.filter(|_| event::keeps_target(world)).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
         menu_selected: world.menu.and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
+        menu_focused: world.confirm.is_none(),
         chat_log: false,
     };
     gu.clear();
@@ -1052,7 +1062,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // (the choice menu *(inf)*), and while a message waits with no more rows showing than its page: older lines
     // decay away and the message holds.
     let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
-    let keep = (world.typing && world.log.lines() > 2) || event::choice(world).is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
+    let keep = (world.typing && world.log.lines() > 2) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
     if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) {
         world.log_active = false;
@@ -1195,11 +1205,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect(myroom::WINDOW, sw, sh));
     }
 
-    // The yes / no prompt (FUN_10210f10): "menu    yesno" with Yes / No (children 1 / 2) and the hand; the question
-    // goes to the help bar's slot 2 (bar_text).
+    // The yes / no prompt (FUN_10210e30): "menu    comyn" stacked on the log (registry flag 0x1000: frame top = log top
+    // - 88 - 2, at least 16), the question at (+4, +4) wrapped to w - 8 (FUN_10211050), Yes / No children 1 / 2.
     if let Some((kind, yes)) = world.confirm {
         let on_yes = world.confirm.map_or(yes, |c| c.1);
-        if let Some(win) = gu.lobby_window("menu    yesno", sw, sh, false, Some(if on_yes { 1 } else { 2 }), true, &[]) {
+        let dy = gu.window_rect("menu    comyn", sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        let msg = confirm_msg(gu, world, kind);
+        if let Some(win) = gu.lobby_window_off("menu    comyn", sw, sh, (0.0, dy), Some(if on_yes { 1 } else { 2 }), true, &[]) {
+            let [fx, fy, fw, _] = win.frame;
+            for (i, line) in gu.wrap(&msg, fw - 8.0).iter().enumerate() {
+                gu.text(line, fx + 4.0, fy + 4.0 + 16.0 * i as f32, 0, WHITE);
+            }
             for (id, r) in win.children.iter().filter(|(id, _)| matches!(id, 1 | 2)) {
                 if input.pointer.is_some_and(|p| inside(r, p)) {
                     gu.hover.set(true);
@@ -1356,7 +1372,8 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
             None => missing_place(world.pos_zone),
         }
     }
-    if let Some((name, child)) = focus {
+    // A prompt (comyn) has the focus, and its items carry no text.
+    if let Some((name, child)) = focus.filter(|_| world.confirm.is_none()) {
         let [help, title] = gu.focus_text(name, child);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
         if child == configui::SETTINGS {
@@ -1365,9 +1382,6 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     }
     if let Some(s) = &world.settings {
         (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
-    }
-    if let Some((kind, _)) = world.confirm {
-        bars.help[2] = confirm_msg(gu, world, kind);
     }
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -1396,7 +1410,7 @@ fn open_mogdoor(w: &mut World) {
     }
     let bit = myroom::exit_bit(&r);
     if bit == 0 {
-        w.confirm = Some((Confirm::LeaveRoom, true));
+        w.confirm = Some((Confirm::LeaveRoom, false));
         return;
     }
     // +0x1a: 2F unlocked comes in s2c 0x067 @0x27 bit 0, not parsed yet *(inf: off)*; +0x19 Mog Garden: key item 0x86d.
