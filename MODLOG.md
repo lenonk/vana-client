@@ -4424,7 +4424,29 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - scanlist paging (list base FUN_101f6c70 messages 3 / 4; the base sets +0x47 = 1, so plain Right / Left page): a
   page of 10 with the cursor row kept; at the last page Right puts the cursor on the last row, at the first page Left on
   the first; SE 0001 when something moved.
-- Not done: mapscan's disabled look for untrackable rows (keytops3 300 at 0x30808080, with the cursor 0x40402810 at
+- Done later: mapscan's disabled look for untrackable rows (keytops3 300 at 0x30808080, with the cursor 0x40402810 at
   (+1, +1); FUN_101177d0's rule) and map0 child 2's cursor highlight (keytops3 20 at (+1, +1) in 0x80805020).
 - Checked offscreen: `topbar-shot --window busy` draws the strip. Not seen live: the call-for-help pointer, `<ht>`,
-  the paging.
+  the paging (paging and the strip seen later, see Recycle Bin).
+
+## Recycle Bin (2026-10-23; spec: scratchpad recycle/SPEC.md of that session)
+
+- Not its own window: the two-list storage view with the storage side on container 17. itmsort2 row 3 and
+  `/recycle` (id 0x7a, FUN_1007e420) call FUN_101daf70(0x11): status gate 0x44 (synthesis; costume not tracked
+  here), no zone or Mog House rule; "menu    bank" (FUN_101dc880 / open hook FUN_101dc700) at its layout (16, 48),
+  titled group 0xd 0xc5 "Recycling Bin", rows help 0xe 0x42d; the inventory list moves to (200, 48), every row grey.
+  List +0x90 means "opened from main menu Items" (itmsort2), not the bin.
+- Bin row colours (FUN_101db220): grey with no free inventory slot or for a Rare item already held outside
+  containers 3 / 17; orange for the row whose quantity is being set; else white.
+- Enter (FUN_101db690 case 5): one item goes at once; a stack opens "menu    itemctrl" (16, 240), "%2d" / "/%2d"
+  at (+0x34 / +0x3a, +0x16), Up / Down +-1, Right 1, Left all, Enter sends, Escape drops it; iteminfo moves to mode
+  1 meanwhile. c2s 0x029 {n, 17, 0, slot, 0x52}. Grey rows and the inventory side: SE 0004. Right / Left switch
+  the focused list (SE 0013). Escape: back to itmsort2 (FUN_101f2640), or closes the view after `/recycle`.
+- LSB: drops (0x028) put the whole item in the bin, the bin holds 10 and evicts slot 1 when full, it is emptied at
+  every zone-in and login; from 17 only to the inventory or the Mog Locker.
+- itmsortw / itmstora belong to the storage views (bank, Mog Safe, wardrobes ...), not done.
+- Live (Lnxcsfix): dropped Distilled Water x5 and a Potion; the bin listed both; 3 of 5 moved back through
+  itemctrl; `/recycle` opened it; Escape returned to itmsort2.
+- mapscan / map0 disabled looks (FUN_101177d0): Track for an untrackable row keytops3 300 at 0x30808080, under the
+  cursor 0x40402810 at (+1, +1); map0 Wide Scan disabled under the cursor keytops3 20 at (+1, +1) in 0x80805020.
+  Live: the busy strip while scanning, and scanlist paging (Right, Right, Left) in Southern San d\x27Oria.

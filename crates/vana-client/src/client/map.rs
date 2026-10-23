@@ -1145,8 +1145,11 @@ impl MapWin {
                 && !self.scan_ok
                 && let Some(&(_, r)) = win.children.iter().find(|c| c.0 == 1)
             {
-                // Item 2 disabled: its state-4 sprite (keytops3 20) in place of 3.
-                gu.sprite("menu    keytops3", 20, r[0], r[1] + 16.0, 0x8080_8080);
+                // Item 2 disabled: its state-4 sprite (keytops3 20) in place of 3; under the cursor at (+1, +1) in
+                // 0x80805020 (FUN_101177d0).
+                let on = self.cursor == 2;
+                let d = if on { 1.0 } else { 0.0 };
+                gu.sprite("menu    keytops3", 20, r[0] + d, r[1] + 16.0 + d, if on { 0x8080_5020 } else { 0x8080_8080 });
             }
         }
         self.draw_scan(gu, sw, sh);
@@ -1188,8 +1191,18 @@ impl MapWin {
                 }
             }
         }
+        // An untrackable row disables Track, which has no disabled sprite: keytops3 300 at 0x30808080, or under the
+        // cursor 0x40402810 at (+1, +1) (FUN_10119c00 / FUN_101177d0).
         if let Some(c) = s.mapscan {
-            gu.lobby_window_off("menu    mapscan", sw, sh, (0.0, 0.0), Some(c), true, &[]);
+            let off = s.rows.get(s.cursor).is_some_and(|r| !r.trackable);
+            let hide: &[u16] = if off { &[1] } else { &[] };
+            if let Some(win) = gu.lobby_window_off("menu    mapscan", sw, sh, (0.0, 0.0), Some(c), true, hide)
+                && off
+                && let Some(&(_, r)) = win.children.iter().find(|ch| ch.0 == 2)
+            {
+                let d = if c == 1 { 1.0 } else { 0.0 };
+                gu.sprite("menu    keytops3", 300, r[0] + d, r[1] - 16.0 + d, if c == 1 { 0x4040_2810 } else { 0x3080_8080 });
+            }
         }
     }
 

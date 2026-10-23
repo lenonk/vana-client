@@ -80,11 +80,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mix.dat / aix.dat order (read only), mouse
     in the lists; left: the sort windows, blue magic sets (s2c 0x044), mouse in the prompt, <stpt> / <stal> party
     cursors, the mount list);
-  - the map (MODLOG "Map window: pan, zoom, fades, event maps"): left are the scan busy strip and the untracked
-    compass pointer; done: pan, left-drag pan, zoom, fades, /map, event maps and views, markers and the .MRK file,
-    Change Map, Wide Scan and tracking;
-  - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual done; left the Recycle Bin,
-    synthesis, the Mog Garden use rule;
+  - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
+    maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
+    pointer and `<ht>`; left: the compass radar dots, helpwind's other busy bits;
+  - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual, the Recycle Bin (and
+    `/recycle`, "menu    itemctrl") done; left the storage views (bank, itmsortw, itmstora), synthesis, the Mog
+    Garden use rule;
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
