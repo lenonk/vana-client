@@ -534,15 +534,55 @@ fn chat_channel(cmd: &str) -> Option<u8> {
     })
 }
 
-/// A chat line as the log shows it, by 0x017 kind (inferred punctuation).
-fn chat_line(kind: u8, from: &str, text: &str) -> String {
-    match kind {
-        _ if from.is_empty() => text.to_string(),
-        3 => format!("{from}>> {text}"),
-        4 => format!("({from}) {text}"),
-        5 | 0x1b => format!("<{from}> {text}"),
-        0x21 => format!("{{{from}}} {text}"),
-        _ => format!("{from} : {text}"),
+/// s2c 0x017 (LAB_100e37a0 -> FUN_100d9b20): the line and its log mode by Kind (byte table 0x100e3de8, jump table
+/// 0x100e3da0); None for the kinds retail drops (2, 9..0xb, 0xc the GM prompt menu, past 0x23). Attr bit 0 adds
+/// "[GM]"; the yell takes the zone's name; assist (0x22 / 0x23) the rank icon 0xEF (mentor x 10 + mastery + 0x24,
+/// 0x2f..0x4c) when Data is set. Not done: the block list, config 0xce's spam filter, PvP (s2c 0x0B4) dropping the
+/// linkshell's "[n]", the profanity mask, the line cut at a control byte.
+fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) -> Option<(String, u8)> {
+    let gm = if attr & 1 != 0 { "[GM]" } else { "" };
+    let n = from;
+    let say = || format!("{gm}{n} : {text}");
+    Some(match kind {
+        0 | 0x18 => (say(), 9),
+        0x19 if n.is_empty() => (text.to_string(), 9),
+        0x19 => (say(), 9),
+        1 => (say(), 10),
+        3 => (format!("{gm}{n}>> {text}"), 0xc),
+        4 => (format!("({gm}{n}) {text}"), 0xd),
+        5 => (format!("[1]<{gm}{n}> {text}"), 0xe),
+        0x1b => (format!("[2]<{gm}{n}> {text}"), 0xd6),
+        0x1e => (format!("[3]<{gm}{n}> {text}"), 0x79),
+        6 | 7 => (format!("----== SystemMessage ==----\n{text}"), 0xc8),
+        8 => (format!("{gm}{n} {text}"), 0xf),
+        0x1a => (format!("{gm}{n}[{zone}]: {text}"), 0xb),
+        0x21 => (format!("{{{gm}{n}}} {text}"), 0xd4),
+        0x22 | 0x23 => {
+            let c = if kind == 0x22 { 'J' } else { 'E' };
+            let [mastery, mentor] = data.to_le_bytes();
+            let r = mentor.wrapping_mul(10).wrapping_add(mastery).wrapping_add(0x24);
+            let rank = if data != 0 { crate::dat::font::decode_sjis(&[0xef, if (0x2f..=0x4c).contains(&r) { r } else { 0x2f }]) } else { String::new() };
+            (format!("{gm}{rank}{n}({c}) : {text}"), if kind == 0x22 { 0xdc } else { 0xde })
+        }
+        // "NS" kinds: the text alone.
+        0xd => (text.to_string(), 9),
+        0xe => (text.to_string(), 10),
+        0xf => (text.to_string(), 0xd),
+        0x10 => (text.to_string(), 0xe),
+        0x1c => (text.to_string(), 0xd6),
+        0x11..=0x17 | 0x1d | 0x1f | 0x20 => (text.to_string(), 0x79),
+        _ => return None,
+    })
+}
+
+/// A chat line in its log mode's colour (the config colour before the message tables load).
+fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
+    let colour = match world.battle.clone() {
+        Some(bt) => bt.colour_in(mode, &world.game),
+        None => cfgapply::chat_colour(&world.game, kind),
+    };
+    for l in line.split('\n') {
+        world.chat.push_chat(l.to_string(), colour);
     }
 }
 
@@ -4472,13 +4512,21 @@ impl App {
                         entry.door = d;
                     }
                 }
-                NetEvent::Chat { kind, from, text } => {
-                    if kind == 3 && !from.is_empty() {
+                NetEvent::Chat { kind, attr, data, from, text } => {
+                    // Tells (and kind 0x15) go into the reply history.
+                    if matches!(kind, 3 | 0x15) && !from.is_empty() {
                         world.tells.retain(|t| *t != from);
                         world.tells.insert(0, from.clone());
                     }
-                    let c = cfgapply::chat_colour(&world.game, kind);
-                    world.chat.push_chat(chat_line(kind, &from, &text), c);
+                    // The yell's zone: string table 4 (our place names), else group 9 0x40.
+                    let zone = if kind == 0x1a {
+                        world.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, data as u32)).filter(|z| !z.is_empty()).or_else(|| world.battle.as_ref().and_then(|b| b.group9(0x40))).unwrap_or_default()
+                    } else {
+                        String::new()
+                    };
+                    if let Some((line, mode)) = chat_line(kind, attr, data, &from, &text, &zone) {
+                        push_chat_mode(world, line, mode, kind);
+                    }
                 }
                 NetEvent::Logout { state } => {
                     log::info!("logged out of the zone (0x00B state {state})");
@@ -7477,6 +7525,19 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 mod tests {
     use super::*;
 
+    /// s2c 0x017 lines and modes (LAB_100e37a0): GM tag, yell zone, system header, dropped kinds.
+    #[test]
+    fn chat_kinds() {
+        assert_eq!(chat_line(0, 1, 0, "Rabbit", "hi", ""), Some(("[GM]Rabbit : hi".into(), 9)));
+        assert_eq!(chat_line(3, 0, 0, "Rabbit", "hi", ""), Some(("Rabbit>> hi".into(), 0xc)));
+        assert_eq!(chat_line(0x1a, 0, 230, "Rabbit", "hi", "Southern San d'Oria"), Some(("Rabbit[Southern San d'Oria]: hi".into(), 0xb)));
+        assert_eq!(chat_line(6, 0, 0, "", "Restarting", ""), Some(("----== SystemMessage ==----\nRestarting".into(), 0xc8)));
+        assert_eq!(chat_line(0x22, 0, 0, "Rabbit", "hi", ""), Some(("Rabbit(J) : hi".into(), 0xdc)));
+        assert_eq!(chat_line(0x11, 0, 0, "Rabbit", "text only", ""), Some(("text only".into(), 0x79)));
+        assert_eq!(chat_line(0xc, 0, 0, "GM", "menu", ""), None);
+        assert_eq!(chat_line(2, 0, 0, "Rabbit", "hi", ""), None);
+    }
+
     /// A steady slope is drawn exactly (one step late); the downhill bob (drops 0.046, 0.083, 0.046 ...) is not.
     #[test]
     fn drawn_steps_smooth_the_bob() {
@@ -7502,8 +7563,6 @@ mod tests {
         assert_eq!(strip_channel("/l2 x"), "x");
         assert_eq!(strip_channel("hello"), "hello");
         assert_eq!(strip_channel("/wave"), "/wave");
-        assert_eq!(chat_line(4, "Djarum", "hi"), "(Djarum) hi");
-        assert_eq!(chat_line(3, "Djarum", "hi"), "Djarum>> hi");
     }
 
     #[test]

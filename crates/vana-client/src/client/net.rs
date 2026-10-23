@@ -244,7 +244,9 @@ pub enum NetEvent {
     MagicKnown(Vec<u8>),
     /// s2c 0x0AC COMMAND_DATA: weapon skill, job ability, pet command bits (64 bytes each), traits (32).
     CommandsKnown(Vec<u8>),
-    Chat { kind: u8, from: String, text: String },
+    /// s2c 0x017: Kind @4, Attr @5 (bit 0 GM), Data @6 (the yell's zone; assist: mastery, mentor rank), name @8,
+    /// text @0x17.
+    Chat { kind: u8, attr: u8, data: u16, from: String, text: String },
     Battle(BattleMessage),
     Action(crate::net::action::Action),
     /// 0x038: run scheduler `name` (a 4cc such as "kesu") on an actor.
@@ -682,7 +684,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x058 => tx.send(NetEvent::Assist { player: p.u32(4), target: p.u32(8) })?,
                     0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x05F => tx.send(NetEvent::Music { slot: p.u16(4), id: p.u16(6) })?,
-                    0x017 => tx.send(NetEvent::Chat { kind: p.u8(4), from: text(&p, 8, 15), text: text(&p, 23, 150) })?,
+                    0x017 => tx.send(NetEvent::Chat { kind: p.u8(4), attr: p.u8(5), data: p.u16(6), from: text(&p, 8, 15), text: text(&p, 23, 150) })?,
                     0x032..=0x034 => tx.send(NetEvent::Event(event_start(&p)))?,
                     0x05C => tx.send(NetEvent::EventParams(std::array::from_fn(|i| p.u32(4 + 4 * i))))?,
                     0x052 => tx.send(NetEvent::EventRelease { mode: p.u8(4), event: (p.u32(4) >> 8) as u16 })?,

@@ -5058,3 +5058,23 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   event override of the time.
 - Positional sounds in DAT 200 (effe/aose insects, effe/aotr birds, mode/ligh/taki bonfires) are generators and
   already played; none sits on the stream.
+
+## s2c 0x017 chat lines and our echoes (2026-10-23; full spec ~/ffxi/lab/research/chat_audit/c017_SPEC.md)
+
+- Handler LAB_100e37a0 (registered all.c 167487, no C body) -> printer FUN_100d9b20 (all.c 161041) -> FUN_10127c00
+  with the kind's mode. Layout: Kind @4, Attr @5 (bit 0 GM: "[GM]", skips block list and spam filter; bit 3 a
+  window, not the log), Data u16 @6 (yell zone; assist: mastery, mentor rank), name @8 (15), text @0x17 (150).
+- Kinds (byte table 0x100e3de8, jump table 0x100e3da0) -> line, mode: 0 / 0x18 "%s : %s" 9; 1 the same, 10; 3
+  "%s>> %s" 0xc (and 0x15) feed the tell history; 4 "(%s) %s" 0xd; 5 / 0x1b / 0x1e "[1]" / "[2]" / "[3]<%s> %s"
+  0xe / 0xd6 / 0x79 (no prefix in PvP, FUN_100e3750); 6 / 7 "----== SystemMessage ==----" then the text, 0xc8; 8
+  "%s %s" 0xf; 0x1a "%s[%s]: %s" 0xb (zone from the place names, else group 9 0x40); 0x21 "{%s} %s" 0xd4; 0x22 /
+  0x23 rank icon 0xEF (mentor x 10 + mastery + 0x24, 0x2f..0x4c) then "%s(J) : %s" / "(E)", 0xdc / 0xde; 0x19 "%s :
+  %s" or the text alone; NS kinds 0xd..0x10, 0x1c the text (9 / 10 / 0xd / 0xe / 0xd6), 0x11..0x17, 0x1d, 0x1f,
+  0x20 the text, 0x79. Dropped: 2, 9..0xb, 0xc (the GM prompt menu), past 0x23.
+- Echoes (all.c 90072..90740), our name and the text: say "%s : %s" 1, shout 2, yell "%s[%s]: %s" 3, tell
+  ">>%s : %s" 4, party "(%s) %s" 5, linkshell "[1]<%s> %s" 6, linkshell 2 0xd5, unity "{%s} %s" 0xd3, assist
+  "%s(J) : %s" 0xdb / "(E)" 0xdd, emote "%s %s" 7. Colours by mode through the mode table; config 0xcb / 0xcc are
+  colour ids 0x70 / 0x71 (FUN_10129f80).
+- Not done: the block list (FUN_100e0a50), config 0xce's spam filter (kinds 1, 0x1a, 0x22, 0x23), PvP (s2c 0x0B4
+  u16 @0x10), the echoes' rank icon, the profanity mask, the line cut at a control byte, Shift-JIS text (we decode
+  UTF-8), c2s 0x0B5 / 0x0B6 at 150 bytes (ours 127).

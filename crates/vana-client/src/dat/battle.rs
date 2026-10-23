@@ -103,6 +103,9 @@ pub fn colour_id_of(config: u16) -> Option<u8> {
         0x9b => Some(0x6c),
         0xb0 => Some(0x6d),
         0xb3 => Some(0x6e),
+        // FUN_10129f80: the assist channels (J / E).
+        0xcb => Some(0x70),
+        0xcc => Some(0x71),
         _ => None,
     }
 }
@@ -198,7 +201,7 @@ impl BattleText {
     /// The line colour with the config's text colours (callback LAB_10126560 replaces the palette entries).
     pub fn colour_in(&self, mode: u8, cfg: &crate::gamecfg::Values) -> [u8; 4] {
         let id = self.mode_colours.iter().find(|(m, _)| *m == mode as u16).map_or(0, |e| e.1);
-        let config = (0x1b..=0x31).chain([0x9b, 0xb0, 0xb3]).find(|&c| colour_id_of(c) == Some(id));
+        let config = (0x1b..=0x31).chain([0x9b, 0xb0, 0xb3, 0xcb, 0xcc]).find(|&c| colour_id_of(c) == Some(id));
         match config {
             Some(c) => argb_bytes(cfg.get(c)),
             None => self.palette.iter().find(|(i, _)| *i == id).map_or([0x80; 4], |e| e.1),

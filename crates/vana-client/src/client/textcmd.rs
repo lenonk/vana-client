@@ -882,20 +882,26 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
     if !send_it {
         system_line(w, 0x24);
     }
+    // The echoes (all.c 90072..90740): our name and the text as typed, in the sender's mode. Not done: the assist
+    // channels' rank icon (s2c 0x01B ranks, MentorFlg).
     let me = w.name.clone();
-    let line = match cid {
+    let (line, mode) = match cid {
         id::YELL => {
             let zone = w.zone.and_then(|z| w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32))).unwrap_or_default();
-            format!("{me}[{zone}]: {msg}")
+            (format!("{me}[{zone}]: {msg}"), 3)
         }
+        id::SHOUT => (format!("{me} : {msg}"), 2),
+        id::PARTY => (format!("({me}) {msg}"), 5),
+        id::LS => (format!("[1]<{me}> {msg}"), 6),
+        id::LS2 => (format!("[2]<{me}> {msg}"), 0xd5),
+        id::UNITY => (format!("{{{me}}} {msg}"), 0xd3),
+        id::ASSISTJ => (format!("{me}(J) : {msg}"), 0xdb),
+        id::ASSISTE => (format!("{me}(E) : {msg}"), 0xdd),
         // FUN_10078f20 (/emote): "%s %s", mode 7.
-        id::EMOTE_TEXT => format!("{me} {msg}"),
-        id::LS => format!("[1]<{me}> {msg}"),
-        id::LS2 => format!("[2]<{me}> {msg}"),
-        _ => super::chat_line(kind, &me, msg),
+        id::EMOTE_TEXT => (format!("{me} {msg}"), 7),
+        _ => (format!("{me} : {msg}"), 1),
     };
-    let c = super::cfgapply::chat_colour(&w.game, kind);
-    w.chat.push_chat(line, c);
+    super::push_chat_mode(w, line, mode, kind);
     if send_it {
         send(w, NetCommand::Chat { kind, text: msg.to_string() });
     }
@@ -915,8 +921,7 @@ fn tell(w: &mut World, args: &[String], line: &str) -> Done {
         return Err(());
     };
     let msg = tail(line, 2).trim().to_string();
-    let c = super::cfgapply::chat_colour(&w.game, 3);
-    w.chat.push_chat(format!(">>{name} : {msg}"), c);
+    super::push_chat_mode(w, format!(">>{name} : {msg}"), 4, 3);
     send(w, NetCommand::Tell { name, text: msg });
     Ok(())
 }
