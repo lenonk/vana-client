@@ -4378,3 +4378,12 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix, Main slot): the Onion Sword candidate with the worn Onion Sword above it and the chevron between;
   a second Ctrl closes it.
 - Test drives: `act:down:1d` / `act:up:1d` hold Ctrl.
+
+## Event ops 0x7e (stance / mount) and 0xab 9 / 0xa (2026-10-23)
+
+- 0x7e (FUN_100b8b80) subs 0 / 5 / 8 clear actor@2's event status (+0x174 = 0, and 8 also clears the mount id
+  +0x1db). Ours removes the event status the actor poses with. Subs 1 / 3 / 6 / 7 mount the actor (status 5 or
+  0x55, FUN_10097a20 spawns the chocobo / mount): not done, as for op 0xac's 5 / 0x55.
+- 0xab 9 / 0xa set / clear DAT_10487ef5. Its only reader, FUN_10002d80, returns the effect-time multiplier: 1.0
+  (_DAT_1032961c) while it is set, else _DAT_10456a68, a config value (setter FUN_10002d70, called from the config
+  switch at 0x101aa703). Our effects always step at 1.0, so these subs change nothing here.

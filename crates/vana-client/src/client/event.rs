@@ -732,6 +732,12 @@ impl Host for LiveHost<'_> {
                     self.st.event_status.insert(id, s as u8);
                 }
             }
+            // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (subs 1, 3, 6, 7 mount it: no mount model here).
+            Effect::Op { op: 0x7e, sub: Some(0 | 5 | 8), args, .. } => {
+                if let Some(id) = self.arg_actor(&args, 0) {
+                    self.st.event_status.remove(&id);
+                }
+            }
             // FUN_100b3540: the event actor hidden as op 0x22 1 (+0x120 bit 17).
             Effect::Op { op: 0x90, actor, .. } => {
                 let id = self.wid(actor);
