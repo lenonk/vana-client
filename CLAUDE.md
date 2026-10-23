@@ -124,13 +124,14 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - wanted: a minimap (after the map's pan and zoom);
   - candidates: target distance, party buffs / TP, target HP %, clock, recast timers, text auto-advance, Find
     across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
-- Chat log (user, 2026-10-23: "needs a lot of love"): `~/ffxi/lab/research/chat_audit/REPORT.md` ranks the gaps:
-  treasure pool s2c 0x0D2 / 0x0D3, MsgShift ids outside the segments dropped, 0x017 per-kind formats, 0x027 / 0x043,
-  0x009 strings, lines lost before BattleText loads, c2s 0x04B server message, 0x036 / 0x02A Type colours; client
-  side: talk out of range prints battle message 9 (should be 7031 #9), talk while mounted / invisible, /p and /l
-  without a party or linkshell, /equip refusals, missing text commands (/recast, /clock, /emote, ...). Then
-  auto-translate (`~/ffxi/lab/research/autotranslate_spec.md`: dictionary file 55665, 0xFD blocks, Tab completion in
-  menu fep); it needs chat text kept as Shift-JIS bytes end to end first (we decode it as UTF-8).
+- Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side
+  (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
+  tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
+  alone. Left: Shift-JIS chat text end to end (we decode UTF-8), the equipped linkshell (s2c 0x0E0) for /l, invisible
+  talk, /equip refusals, the command gate's lines (window open, layout, charmed), the map on an elevator, /clock,
+  /playtime, the on / off toggles, the block list, s2c 0x0B4 (PvP, the system message filter). Then auto-translate
+  (`~/ffxi/lab/research/autotranslate_spec.md`: dictionary file 55665, 0xFD blocks, Tab completion in menu fep), which
+  needs the Shift-JIS text first.
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
