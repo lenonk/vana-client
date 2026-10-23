@@ -29,6 +29,8 @@ mod id {
     pub const SAY: u16 = 0x01;
     pub const MAP: u16 = 0x4f;
     pub const RECYCLE: u16 = 0x7a;
+    pub const MOUNT: u16 = 0x28;
+    pub const DISMOUNT: u16 = 0x38;
     pub const BANK: u16 = 0x6c;
     pub const LOCKER: u16 = 0x6d;
     pub const STORAGE: u16 = 0x6e;
@@ -368,7 +370,6 @@ fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
     send(w, NetCommand::Packet { id: 0x01A, body });
 }
 
-/// A group 7 line (FUN_10129e30, mode 0x7b).
 /// The chat mode of a group 7 refusal (table 0x103763b0, 4-byte entries {id, 3, 0, mode}): the target / recast lines
 /// 0x56..0x5f, 0xb5, 0xb7, 0xbd, 0xbf are 0x7a, the status lines and the rest 0x7b.
 pub(super) fn refusal_mode(id: usize) -> u8 {
@@ -378,6 +379,7 @@ pub(super) fn refusal_mode(id: usize) -> u8 {
     }
 }
 
+/// A group 7 line (FUN_10129e30) in its chat mode.
 pub(super) fn refuse(w: &mut World, id: usize) {
     let Some(bt) = w.battle.clone() else { return };
     let Some(line) = bt.group7(id) else { return };
@@ -576,6 +578,24 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             } else if w.map.is_none() {
                 w.map_cmds.push(super::map::Cmd::Menu);
             }
+            Ok(())
+        }
+        // FUN_1007bb90: /mount <name>: gate 0x7f (prints and counts as done), the mount by its 55681 name (any case),
+        // c2s 0x01A category 0x1A with the mount index on ourselves.
+        id::MOUNT => {
+            let Some(name) = arg(1) else { return Err(()) };
+            if !status_gate(w, 0x7f) {
+                return Ok(());
+            }
+            let names = w.names.clone().ok_or(())?;
+            let want = name.trim_matches('"').to_ascii_lowercase();
+            let idx = (0..names.mount_count() as u32).find(|&i| names.mount(i).is_some_and(|m| m.0.to_ascii_lowercase() == want)).ok_or(())?;
+            act(w, (w.my_id, w.my_index), 0x1a, idx);
+            Ok(())
+        }
+        // FUN_1007aa80: /dismount: category 0x12 on ourselves, no client checks.
+        id::DISMOUNT => {
+            act(w, (w.my_id, w.my_index), 0x12, 0);
             Ok(())
         }
         // FUN_1007e250 .. FUN_1007e440 (flags 0x51): the storage views; a 0 from the opener is the failure path.

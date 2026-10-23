@@ -18,6 +18,8 @@ pub const VISIBLE: usize = 12;
 pub enum Kind {
     Magic,
     Ability,
+    /// The mount list ("menu    mount", FUN_10226490), kept in `w.ability`.
+    Mount,
 }
 
 /// An open list.
@@ -50,6 +52,7 @@ impl ListWin {
         match self.kind {
             Kind::Magic => "menu    magic",
             Kind::Ability => "menu    ability",
+            Kind::Mount => "menu    mount",
         }
     }
 
@@ -161,9 +164,10 @@ fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     order(w, true, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
 }
 
-/// FUN_10221b90: the cursor on the row of the id remembered for this list (scrolled into view, inferred).
+/// FUN_10221b90: the cursor on the row of the id remembered for this list (scrolled into view, inferred). The mount
+/// list remembers a row (+0x68); ours its mount, the same while the set does not change.
 fn recall(w: &World, win: &mut ListWin) {
-    let key = (win.kind == Kind::Ability, win.list_mode && win.kind == Kind::Magic, win.ty);
+    let key = (win.kind != Kind::Magic, win.list_mode && win.kind == Kind::Magic, win.ty);
     if let Some(at) = w.list_memory.get(&key).and_then(|id| win.rows.iter().position(|r| r == id)) {
         win.scroll = at.saturating_sub(VISIBLE - 1);
         win.cursor = at - win.scroll;
@@ -173,7 +177,7 @@ fn recall(w: &World, win: &mut ListWin) {
 /// FUN_1022c990 / FUN_102243d0 store the cursor row's id at close; ours keeps it as the cursor moves.
 fn remember(w: &mut World) {
     let Some(win) = w.ability.as_ref().or(w.magic.as_ref()) else { return };
-    let key = (win.kind == Kind::Ability, win.list_mode && win.kind == Kind::Magic, win.ty);
+    let key = (win.kind != Kind::Magic, win.list_mode && win.kind == Kind::Magic, win.ty);
     if let Some(id) = win.at() {
         w.list_memory.insert(key, id);
     }
@@ -201,6 +205,35 @@ pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     w.menu = None;
     w.action_menu = None;
     w.cats = None;
+}
+
+/// FUN_10226650: the owned mounts (s2c 0x0AE bits) in moix.dat order; none before the first 0x0AE.
+fn mount_rows(w: &World) -> Vec<u16> {
+    let Some(bits) = w.mount_bits else { return Vec::new() };
+    let order: Vec<u16> = w.macros.as_ref().map_or_else(|| (0..0x40).collect(), |m| m.moix.clone());
+    order.into_iter().filter(|&id| id < 64 && bits & (1 << id) != 0).collect()
+}
+
+/// FUN_10226490(1, sortable): the mount list (abimenu row 6 attaches abisortw; abiselec row 5 does not), with subwindo
+/// in mode 10. Kept in `w.ability` (type 0xfffe for the cursor memory).
+pub fn open_mount(w: &mut World, sortable: bool) {
+    let rows = mount_rows(w);
+    let sort = sortable.then_some("menu    abisortw");
+    let mut win = ListWin { kind: Kind::Mount, ty: 0xfffe, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 };
+    recall(w, &mut win);
+    w.ability = Some(win);
+    w.menu = None;
+    w.action_menu = None;
+    w.cats = None;
+}
+
+/// FUN_10226d80: the mount refusals: the status checks, then the shared recast (group 7 0x4c).
+fn mount_check(w: &World) -> Option<usize> {
+    status_check(w).or_else(|| w.mount_recast.is_some_and(|t| t > Instant::now()).then_some(0x4c))
+}
+
+fn mount_name(w: &World, id: u16) -> String {
+    w.names.as_ref().and_then(|n| n.mount(id as u32)).map_or_else(String::new, |m| m.0)
 }
 
 pub fn open_cats(w: &mut World, menu: &'static str) {
@@ -278,6 +311,8 @@ fn row_icon(w: &World, kind: Kind, id: u16) -> Option<(&'static str, usize)> {
     Some(match kind {
         Kind::Magic => acts.spell(id).map(|r| list_icon(r.icon, r.icon_hd, standard))?,
         Kind::Ability => acts.abilities.get(id as usize).map(|a| list_icon(a.icon as u16, a.icon_hd, standard))?,
+        // FUN_10220fc0: the 55681 entry's icon field, kind 6 (magico2w 86 / 87), never greyed.
+        Kind::Mount => ("menu    magico2w", w.names.as_ref()?.mount(id as u32)?.1 as usize),
     })
 }
 
@@ -305,12 +340,24 @@ fn refuse(w: &mut World, id: usize) {
 fn enter(w: &mut World, kind: Kind) {
     let Some(win) = (match kind {
         Kind::Magic => w.magic.as_ref(),
-        Kind::Ability => w.ability.as_ref(),
+        Kind::Ability | Kind::Mount => w.ability.as_ref(),
     }) else {
         return;
     };
     let Some(id) = win.at() else { return };
     match kind {
+        // FUN_10226950: refused -> the line and SE 0004, the list stays; else `/mount "<name>"`, SE 0002, closed.
+        Kind::Mount => {
+            if let Some(m) = mount_check(w) {
+                refuse(w, m);
+                return;
+            }
+            let line = format!("/mount \"{}\"", mount_name(w, id));
+            w.ability = None;
+            w.sounds.push(Ui::Select as u32);
+            super::textcmd::run(w, &line, super::textcmd::Mode::Internal);
+            return;
+        }
         Kind::Magic => {
             if let Some(m) = magic_check(w, id) {
                 refuse(w, m);
@@ -409,7 +456,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                             refuse(w, 0x5d);
                         }
                     }
-                    Some(Cat::Mount) => log::info!("the mount list is not implemented yet"),
+                    Some(Cat::Mount) => open_mount(w, c.menu == "menu    abimenu"),
                     None => {}
                 }
                 w.sounds.push(Ui::Select as u32);
@@ -420,7 +467,11 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         w.sounds.push(Ui::Cursor as u32);
         return true;
     }
-    let kind = if w.ability.is_some() { Kind::Ability } else if w.magic.is_some() { Kind::Magic } else { return false };
+    let kind = match (&w.ability, &w.magic) {
+        (Some(a), _) => a.kind,
+        (None, Some(_)) => Kind::Magic,
+        _ => return false,
+    };
     if sort_key(w, kind, key) {
         return true;
     }
@@ -432,7 +483,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
             let sortable = w.ability.as_ref().is_some_and(|a| a.sort.is_some());
             match kind {
                 Kind::Magic => w.magic = None,
-                Kind::Ability => w.ability = None,
+                Kind::Ability | Kind::Mount => w.ability = None,
             }
             if let Some(p) = parent {
                 open_ability(w, p as u16, sortable);
@@ -442,7 +493,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         k => {
             let win = match kind {
                 Kind::Magic => w.magic.as_mut(),
-                Kind::Ability => w.ability.as_mut(),
+                Kind::Ability | Kind::Mount => w.ability.as_mut(),
             };
             if win.is_some_and(|win| step(win, k)) {
                 w.sounds.push(Ui::Cursor as u32);
@@ -456,7 +507,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
 fn list_mut(w: &mut World, kind: Kind) -> Option<&mut ListWin> {
     match kind {
         Kind::Magic => w.magic.as_mut(),
-        Kind::Ability => w.ability.as_mut(),
+        Kind::Ability | Kind::Mount => w.ability.as_mut(),
     }
 }
 
@@ -466,7 +517,7 @@ pub fn num_plus(w: &mut World) {
     if w.prompt.is_some() || w.cats.is_some() {
         return;
     }
-    let kind = if w.ability.is_some() { Kind::Ability } else { Kind::Magic };
+    let kind = w.ability.as_ref().map_or(Kind::Magic, |a| a.kind);
     let Some(win) = list_mut(w, kind).filter(|x| !x.hidden && x.sort.is_some() && x.ask.is_none() && x.manual == 0) else { return };
     if win.sort_focus.is_some() {
         win.sort_focus = None;
@@ -516,7 +567,7 @@ fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
     use egui::Key as K;
     let win = match kind {
         Kind::Magic => w.magic.as_mut(),
-        Kind::Ability => w.ability.as_mut(),
+        Kind::Ability | Kind::Mount => w.ability.as_mut(),
     };
     let Some(win) = win else { return false };
     let Some(menu) = win.sort else { return false };
@@ -601,7 +652,16 @@ fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
             let (from, to) = (win.rows.get(win.picked).copied(), win.rows.get(win.scroll + win.cursor).copied());
             win.manual = 1;
             w.sounds.push(Ui::Select as u32);
-            if let (Some(a), Some(b)) = (from, to)
+            // FUN_10226d00 for mounts: the same insert on moix.dat's 64 entries.
+            if kind == Kind::Mount {
+                if let (Some(a), Some(b), Some(m)) = (from, to, w.macros.as_mut())
+                    && let (Some(p), Some(t)) = (m.moix.iter().position(|&x| x == a), m.moix.iter().position(|&x| x == b))
+                    && p != t
+                {
+                    let id = m.moix.remove(p);
+                    m.moix.insert(t, id);
+                }
+            } else if let (Some(a), Some(b)) = (from, to)
                 && let Some(o) = order_mut(w, kind == Kind::Ability)
                 && let (Some(p), Some(t)) = (o.ids().iter().position(|&x| x == a), o.ids().iter().position(|&x| x == b))
             {
@@ -635,6 +695,7 @@ fn rebuild(w: &mut World, kind: Kind) {
     let rows = match kind {
         Kind::Magic => magic_rows(w, ty, list_mode, exclude),
         Kind::Ability => ability_rows(w, ty),
+        Kind::Mount => mount_rows(w),
     };
     if let Some(win) = list_mut(w, kind) {
         let n = rows.len();
@@ -741,6 +802,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         .enumerate()
         .map(|(k, &id)| {
             let (name, refused) = match win.kind {
+                Kind::Mount => (mount_name(w, id), mount_check(w).is_some()),
                 Kind::Magic => (spell_name(w, id), magic_check(w, id).is_some()),
                 Kind::Ability => (ability_name(w, id), w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).is_some_and(|a| a.kind != 4) && ability_check(w, id).is_some()),
             };
@@ -750,8 +812,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             ActionRow { icon: row_icon(w, win.kind, id), name, tint }
         })
         .collect();
-    // Empty: group 9 0x4a "No spells learned." (list mode) / 0x4b "No spells available.".
+    // Empty: group 9 0x4a "No spells learned." (list mode) / 0x4b "No spells available."; mounts 0x4f / 0x50 on two
+    // lines (FUN_10226430).
     let empty = match (win.kind, win.list_mode) {
+        (Kind::Mount, _) => format!("{}\n{}", gu.lobby_msg(9, 0x4f, ""), gu.lobby_msg(9, 0x50, "")),
         (Kind::Magic, true) => gu.lobby_msg(9, 0x4a, ""),
         _ => gu.lobby_msg(9, 0x4b, ""),
     };
@@ -785,6 +849,11 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         (Kind::Magic, Some(s)) => {
             let mp = w.actions.as_ref().and_then(|a| a.spell(s)).map_or(0, |r| r.mp);
             vec![(gu.lobby_msg(9, 0xe6, "MP Cost"), mp.to_string()), (gu.lobby_msg(9, 0xe7, "Next"), clock(spell_recast(w, s)))]
+        }
+        // subwindo mode 10: the shared mount recast, "Next" on the second line.
+        (Kind::Mount, _) => {
+            let secs = w.mount_recast.map_or(0.0, |t| t.saturating_duration_since(Instant::now()).as_secs_f32());
+            vec![(String::new(), String::new()), (gu.lobby_msg(9, 0xe7, "Next"), clock(secs))]
         }
         (Kind::Ability, Some(i)) => match w.actions.as_ref().and_then(|a| a.abilities.get(i as usize)) {
             Some(a) => {
@@ -834,18 +903,27 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let (Some(menu), Some(c)) = (win.sort, win.sort_focus) {
         let [help, title] = gu.focus_text(menu, c);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+        // FUN_10223e10: abisortw's help for the mount list.
+        if win.kind == Kind::Mount {
+            bars.help[1] = gu.menu_msg(0x3e5, "");
+        }
         return;
     }
     bars.title[1] = gu.title_msg(if win.kind == Kind::Magic { 76 } else { 68 }).unwrap_or_default();
-    // Manual Sort: magic 0xe 8 / 9, abilities 0xa / 0xb (FUN_1022cb90 / FUN_10224640).
+    // Manual Sort: magic 0xe 8 / 9, abilities 0xa / 0xb (FUN_1022cb90 / FUN_10224640), mounts 0x3e6 / 0x3e7.
     if win.manual != 0 {
-        let base = if win.kind == Kind::Magic { 8 } else { 0xa };
+        let base = match win.kind {
+            Kind::Magic => 8,
+            Kind::Ability => 0xa,
+            Kind::Mount => 0x3e6,
+        };
         bars.help[1] = gu.menu_msg(base + (win.manual as usize - 1), "");
         return;
     }
     bars.help[1] = match (win.kind, win.at(), w.names.as_ref()) {
         (Kind::Magic, Some(s), Some(n)) => n.spell_description(s as u32).unwrap_or_default(),
         (Kind::Ability, Some(i), Some(n)) => n.ability_description(i as u32).unwrap_or_default(),
+        (Kind::Mount, Some(i), Some(n)) => n.mount_description(i as u32).unwrap_or_default(),
         _ => String::new(),
     };
 }

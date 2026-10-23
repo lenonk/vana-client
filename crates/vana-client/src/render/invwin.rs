@@ -153,7 +153,9 @@ pub struct ActionRow {
 pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
     if rows.is_empty() {
-        text(b, font, atlas, empty, wx + 10.0, wy + 20.0, 0x8080_8080);
+        for (i, line) in empty.split('\n').enumerate() {
+            text(b, font, atlas, line, wx + 10.0, wy + 20.0 + 20.0 * i as f32, 0x8080_8080);
+        }
         return;
     }
     for (k, r) in rows.iter().enumerate() {

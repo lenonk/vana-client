@@ -4635,3 +4635,25 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   0x16 / 0x1b, lobby errors). Chat mode per line: 0x7a for 0x56..0x5f, 0xb5, 0xb7, 0xbd, 0xbf; 0x7b for the status
   lines and the rest (textcmd::refusal_mode, both refuse helpers).
 - subwindo modes 2 / 10 (FUN_1014fc20): "Next" sits on the second line (+0x1a) with the first empty.
+
+## The mount list, /mount, /dismount (2026-10-23; spec: scratchpad mount/SPEC.md of that session)
+
+- "menu    mount" (list object DAT_10667170, FUN_10226490(1, sortable)): abimenu row 6 attaches abisortw, abiselec
+  row 5 does not; subwindo in mode 10 (only "Next" on its second line, the shared mount recast). Rows: the owned
+  mounts (s2c 0x0AE: 64 bits @4, LSB key items 3072 + n; none before the first 0x0AE) in moix.dat order (USER file,
+  version 1, u16[0x40], identity by default; written with the other USER files on leaving the field). Names / icons
+  from d_msg 55681 (en; ja 55561, fr 55801, de 56221: field 0 the name, field 1 the magico2w icon 86 / 87),
+  descriptions 55682. Empty: group 9 0x4f "No mounts" / 0x50 "available." on two lines.
+- Refusals (FUN_10226d80): fishing 0x4d, mounted 0x4b, healing 0x51, sitting 0xa0, no-action area 0x44, the recast
+  (s2c 0x119 u32 @0xfc seconds) 0x4c; rows grey while any applies (but the cursor row). Enter: refused -> the line and
+  SE 0004, the list stays; else `/mount "<name>"`, SE 0002, closed. Manual Sort (abisortw row 1): help 0xe 0x3e6 /
+  0x3e7, abisortw's help 0x3e5; the picked mount is inserted at the cursor mount's place in moix (FUN_10226d00).
+- /mount (id 0x28, FUN_1007bb90): gate 0x7f, the mount by its 55681 name, c2s 0x01A category 0x1A param = index.
+  /dismount (0x38, FUN_1007aa80): category 0x12. LSB checks level 20, the zone (ZoneMisc::Mount: 316 "That action
+  cannot be used in this area."), the key item, a 60 s recast and enmity; success sets Mounted (252) and status 5
+  (chocobo) / 0x55, with the chocobo music.
+- Not done: the mount model under the rider (status 5 / 0x55), the riding layouts of the action menu (Dig, Dismount
+  with its "Dismount?" prompt, table 0x1036f390), the emote list.
+- Live (Lnxcsfix, !addkeyitem 3072 / 3073, !changejob war 20): the list showed Chocobo and Raptor with their
+  descriptions and "Next 0:00"; in Southern San d'Oria the server refused (316); in West Ronfaure /mount Chocobo
+  started the chocobo music (212) and /dismount went back (109).

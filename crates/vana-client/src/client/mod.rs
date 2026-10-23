@@ -2741,6 +2741,9 @@ struct World {
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
     party_cursor: Option<target::PartyCursor>,
+    /// Owned mounts (s2c 0x0AE; None before the first) and the mount recast's end (0x119 @0xfc).
+    mount_bits: Option<u64>,
+    mount_recast: Option<Instant>,
     /// Alliance rows' eased HP per slot 6..17 (id, HPP), as party_gauges.
     ally_gauges: Vec<(u32, u8)>,
     /// s2c 0x067 kind 2: the visited Mog House's owner (0 = ours / none, FUN_100f9600) and the 2F / Safe 2 flag
@@ -3695,6 +3698,8 @@ impl App {
                             cats: None,
                             prompt: None,
                             party_cursor: None,
+                            mount_bits: None,
+                            mount_recast: None,
                             ally_gauges: Vec::new(),
                             mog_zone: false,
                             mh_owner: 0,
@@ -4305,6 +4310,8 @@ impl App {
                 }
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
+                NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
+                NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
                 NetEvent::CharSync { id, owner, floors } => {
                     if id == world.my_id && (world.mh_owner, world.mh_floors) != (owner, floors) {
                         log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}");

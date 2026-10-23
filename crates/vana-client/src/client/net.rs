@@ -165,6 +165,10 @@ pub enum NetEvent {
     /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
     /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
     CharSync { id: u32, owner: u32, floors: bool },
+    /// s2c 0x0AE: the owned mounts, 64 bits (LSB: key items 3072 + n).
+    Mounts(u64),
+    /// s2c 0x119 u32 @0xfc: the mount recast in seconds (one shared timer).
+    MountRecast(u32),
     /// 0x01C: container sizes (ItemNum, 1 + size).
     ItemMax([u8; 18], [u16; 18]),
     /// 0x01E: count of a slot (0 = emptied).
@@ -596,6 +600,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0A0 => tx.send(NetEvent::MapGroup { id: p.u32(4), zone: p.u16(8), pos: [p.f32(0xc), p.f32(0x10), p.f32(0x14)] })?,
                     0x0BF => tx.send(NetEvent::Registration { index: p.u32(0xC), result: p.u16(6) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
+                    0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
+                    0x119 if { let _ = tx.send(NetEvent::MountRecast(p.u32(0xfc))); false } => {}
                     0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
                     0x0AC => tx.send(NetEvent::CommandsKnown((0..224).map(|i| p.u8(4 + i)).collect()))?,

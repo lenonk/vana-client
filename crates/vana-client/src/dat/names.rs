@@ -15,6 +15,9 @@ pub const ABILITIES: [u32; 4] = [55581, 55701, 55821, 56241];
 /// Descriptions (help bar): English 55734 / 55733 (slots 0x5e / 0x60); the other languages inferred at +32.
 pub const SPELL_TEXTS: [u32; 4] = [55614, 55734, 55854, 56274];
 pub const ABILITY_TEXTS: [u32; 4] = [55613, 55733, 55853, 56273];
+/// Mounts (FUN_10226210, language slot 0x61): field 0 the name, field 1 the icon (magico2w); descriptions (slot 0x62).
+pub const MOUNTS: [u32; 4] = [55561, 55681, 55801, 56221];
+pub const MOUNT_TEXTS: [u32; 4] = [55562, 55682, 55802, 56222];
 pub const PLACES: [u32; 4] = [55535, 55465, 55775, 56195];
 pub const TITLES: [u32; 4] = [55584, 55704, 55824, 56244];
 
@@ -131,6 +134,8 @@ pub struct Names {
     ability_texts: Option<DMsg>,
     places: DMsg,
     titles: DMsg,
+    mounts: Option<DMsg>,
+    mount_texts: Option<DMsg>,
 }
 
 impl Names {
@@ -155,12 +160,31 @@ impl Names {
             ability_texts: DMsg::load(index, ABILITY_TEXTS[l]).ok(),
             places: DMsg::load(index, PLACES[l])?,
             titles: DMsg::load(index, TITLES[l])?,
+            mounts: DMsg::load(index, MOUNTS[l]).ok(),
+            mount_texts: DMsg::load(index, MOUNT_TEXTS[l]).ok(),
         })
     }
 
     /// A spell's description (FUN_1022bf80), for the magic list's help bar.
     pub fn spell_description(&self, id: u32) -> Option<String> {
         self.spell_texts.as_ref()?.text(id as usize)
+    }
+
+    /// A mount's name (FUN_102262b0) and icon (FUN_10226390, magico2w).
+    pub fn mount(&self, i: u32) -> Option<(String, u32)> {
+        let f = self.mounts.as_ref()?.fields(i as usize)?;
+        let name = f.iter().find_map(|x| if let Field::Text(s) = x { Some(s.clone()) } else { None })?;
+        let icon = f.iter().find_map(|x| if let Field::Num(n) = x { Some(*n) } else { None }).unwrap_or(87);
+        Some((name, icon))
+    }
+
+    /// The number of mounts the table names.
+    pub fn mount_count(&self) -> usize {
+        self.mounts.as_ref().map_or(0, |m| m.len())
+    }
+
+    pub fn mount_description(&self, i: u32) -> Option<String> {
+        self.mount_texts.as_ref()?.text(i as usize)
     }
 
     /// An ability's description (FUN_102239c0).
