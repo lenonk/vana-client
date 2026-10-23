@@ -19,6 +19,8 @@ pub struct Region {
     pub zone: i16,
     /// Sub-map key (FUN_1017a2d0: the collision map id under the player; not decoded, key 0 is used).
     pub key: i8,
+    /// The map number (+3): which records Change Map lists (FUN_101fc970).
+    pub num: u8,
     pub flags: u8,
     pub scale: i8,
     pub ki: i8,
@@ -44,8 +46,38 @@ pub fn regions(ffximain: &[u8]) -> Vec<Region> {
     let Some(b) = crate::dat::battle::va_bytes(ffximain, at, REGIONS_MAX * 14) else { return Vec::new() };
     let s16 = |r: &[u8], o: usize| i16::from_le_bytes([r[o], r[o + 1]]);
     b.chunks(14)
-        .map(|r| Region { zone: s16(r, 0), key: r[2] as i8, flags: r[4], scale: r[5] as i8, ki: r[6] as i8, file: s16(r, 8), ox: s16(r, 10), oy: s16(r, 12) })
+        .map(|r| Region { zone: s16(r, 0), key: r[2] as i8, num: r[3], flags: r[4], scale: r[5] as i8, ki: r[6] as i8, file: s16(r, 8), ox: s16(r, 10), oy: s16(r, 12) })
         .take_while(|r| r.scale != 0)
+        .collect()
+}
+
+/// Change Map's region groups (FUN_1020a400: 50, FUN_1020a3e0 zone lists ended by 0, FUN_1020a3f0 group 0x13 name
+/// ids). The code is packed, so the data is found: the first two lists (San d'Oria 230..233, Bastok 234..237), the
+/// pointer table naming the first, and the 50 name bytes right after it.
+pub fn region_groups(ffximain: &[u8]) -> Vec<(u8, Vec<u16>)> {
+    const HINT: [u8; 20] = [0xe6, 0, 0xe7, 0, 0xe8, 0, 0xe9, 0, 0, 0, 0, 0, 0xea, 0, 0xeb, 0, 0xec, 0, 0xed, 0];
+    const GROUPS: usize = 50;
+    let found = ffximain.windows(HINT.len()).position(|w| w == HINT).and_then(|at| {
+        let va = crate::dat::tables::va_of(ffximain, at)?;
+        let ptrs = ffximain.windows(4).position(|w| w == va.to_le_bytes())?;
+        Some(ptrs)
+    });
+    let Some(ptrs) = found else {
+        log::warn!("map: no region group table");
+        return Vec::new();
+    };
+    let u32_at = |o: usize| ffximain.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let va = |v: u32, len: usize| crate::dat::battle::va_bytes(ffximain, v, len);
+    (0..GROUPS)
+        .filter_map(|i| {
+            let p = u32_at(ptrs + 4 * i)?;
+            let name = *ffximain.get(ptrs + 4 * GROUPS + i)?;
+            let mut zones = Vec::new();
+            while let Some(z) = va(p + 2 * zones.len() as u32, 2).map(|b| u16::from_le_bytes([b[0], b[1]])).filter(|&z| z != 0) {
+                zones.push(z);
+            }
+            Some((name, zones))
+        })
         .collect()
 }
 
@@ -172,6 +204,10 @@ pub struct MapWin {
     /// Sets 2 / 3: the one member whose label shows (picked in the list).
     label_only: Option<usize>,
     list: Option<List>,
+    /// Change Map's list (maplist) while open.
+    pub maplist: Option<MapList>,
+    /// Change Map's pick (+0x110 / +0x112): reopened in mode 5 once this map has closed.
+    pub reopen: Option<(i16, i16)>,
     /// The marker set shown (+0x106).
     set: u8,
     /// Interface sounds for the caller to play.
@@ -397,6 +433,8 @@ impl MapWin {
             mark_alpha: [[0.0; 10]; 4],
             label_only: None,
             list: None,
+            maplist: None,
+            reopen: None,
             set: 0,
             sounds: Vec::new(),
             mode,
@@ -451,7 +489,15 @@ impl MapWin {
     /// map0 is open: modes 0 / 5 with a map (not for a zone with no map, as FUN_101f0af0 decompiles), not while
     /// closing (FUN_101fa420 closes the sub-windows at once).
     pub fn has_menu(&self) -> bool {
-        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none() && self.list.is_none()
+        self.need != Need::Nothing && matches!(self.mode, Mode::Menu | Mode::Other) && self.closing.is_none() && self.list.is_none() && self.maplist.is_none()
+    }
+
+    /// The focused sub-window and its cursor child, for the bars.
+    pub fn focus(&self) -> Option<(&'static str, u16)> {
+        if let Some(l) = &self.maplist {
+            return Some(("menu    maplist", (l.cursor - l.scroll + 1) as u16));
+        }
+        self.has_menu().then_some(("menu    map0", self.cursor))
     }
 
     /// Modes 0 / 5 close on Escape (map0); the event modes only by their script.
@@ -490,6 +536,20 @@ impl MapWin {
             self.list_key(key);
             return true;
         }
+        if let Some(l) = self.maplist.as_mut() {
+            match l.key(key) {
+                ListOut::Keep => {}
+                ListOut::Close => self.maplist = None,
+                ListOut::Pick(zone, key) => {
+                    // LAB_101f7d70 -> FUN_101f7d80: the pick, then this map closes.
+                    self.maplist = None;
+                    self.reopen = Some((zone, key));
+                    self.sounds.push(crate::audio::Ui::Select as u32);
+                    return false;
+                }
+            }
+            return true;
+        }
         if !self.has_menu() {
             return true;
         }
@@ -500,6 +560,11 @@ impl MapWin {
             // FUN_101f7c60 1: mapv3 (asking party positions, c2s 0x0D2, is not done).
             egui::Key::Enter if self.cursor == 1 => {
                 self.list = Some(List { cursor: 1, ..Default::default() });
+                self.sounds.push(Ui::Select as u32);
+            }
+            // FUN_101f7c60 3: Change Map (maplist, built where the records are).
+            egui::Key::Enter if self.cursor == 3 => {
+                self.maplist = Some(MapList::default());
                 self.sounds.push(Ui::Select as u32);
             }
             egui::Key::Enter => log::info!("map0 item {} is not implemented yet", self.cursor),
@@ -832,6 +897,9 @@ impl MapWin {
             gu.menu_sel("menu    map0", sw, sh, self.cursor);
         }
         self.draw_list(gu, sw, sh);
+        if let Some(l) = &self.maplist {
+            l.draw(gu, sw, sh);
+        }
     }
 
     /// FUN_101ee7b0 for the four sets: the sprite centred on its pixel, alpha << 24 | 0x808080; a label (colour 2,
@@ -895,10 +963,163 @@ impl MapWin {
     }
 }
 
+/// A maplist row: its id (a zone, -2 - region group, -zone - 2 for a floor list, 0x7fffffff none), the sub-key, and
+/// its two cells (FUN_101f4b20: column 0 type 1 game-font text; column 1 a number (type 9) or small text (0x21)).
+#[derive(Clone, Debug, Default)]
+pub struct Row {
+    id: i32,
+    key: i32,
+    a: String,
+    b: String,
+    number: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+enum Level {
+    #[default]
+    Top,
+    Region(usize),
+    Zone(u16),
+}
+
+/// Change Map (FUN_101fcae0 / FUN_101fcd90): the top level (the current area, then region groups with an owned
+/// map), a group's zones, a zone's floors.
+#[derive(Clone, Debug, Default)]
+pub struct MapList {
+    level: Level,
+    /// The level above a floor list (+0x5e) and the cursor to return to (+0x5a).
+    from: Option<(Level, usize)>,
+    rows: Vec<Row>,
+    built: bool,
+    cursor: usize,
+    scroll: usize,
+}
+
+enum ListOut {
+    Keep,
+    Close,
+    Pick(i16, i16),
+}
+
+/// Columns of maplist's rows (table 0x10382188).
+const COLS: [f32; 3] = [20.0, 245.0, 320.0];
+const ROWS: usize = 5;
+
+impl MapList {
+    fn key(&mut self, key: egui::Key) -> ListOut {
+        let n = self.rows.len();
+        match key {
+            egui::Key::ArrowDown if n > 0 => self.cursor = (self.cursor + 1) % n,
+            egui::Key::ArrowUp if n > 0 => self.cursor = (self.cursor + n - 1) % n,
+            egui::Key::Enter => {
+                let Some(r) = self.rows.get(self.cursor) else { return ListOut::Keep };
+                match r.id {
+                    0x7fff_ffff => return ListOut::Close,
+                    id if id >= 0 => return ListOut::Pick(id as i16, r.key as i16),
+                    id if id <= -2 && (-2 - id) < 0x40 && self.level == Level::Top => self.go(Level::Region((-2 - id) as usize)),
+                    id => {
+                        self.from = Some((self.level.clone(), self.cursor));
+                        self.go(Level::Zone((-id - 2) as u16));
+                    }
+                }
+            }
+            egui::Key::Escape => match (self.from.take(), &self.level) {
+                (Some((up, at)), Level::Zone(_)) => {
+                    self.go(up);
+                    self.cursor = at;
+                }
+                (_, Level::Top) => return ListOut::Close,
+                _ => self.go(Level::Top),
+            },
+            _ => {}
+        }
+        self.scroll = self.scroll.min(self.cursor).max((self.cursor + 1).saturating_sub(ROWS));
+        ListOut::Keep
+    }
+
+    fn go(&mut self, level: Level) {
+        (self.level, self.built, self.cursor, self.scroll) = (level, false, 0, 0);
+    }
+
+    /// FUN_101fcae0 / FUN_101fc600 / FUN_101fc7e0 / FUN_101fc9d0.
+    fn build(&mut self, w: &World, gu: &GameUi) {
+        let regions = gu.map_regions();
+        let place = |z: u16| w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).filter(|s| !s.is_empty());
+        // FUN_101fc970: the zone's records with a map number: (key, number).
+        let floors = |z: u16| regions.iter().filter(|r| r.zone == z as i16 && r.num != 0).map(|r| (r.key as i32, r.num)).collect::<Vec<_>>();
+        // FUN_101f7340(zone, key, 1): a record whose key item is held (maps that need none are not listed); key -2 the
+        // zone's first record with a map number.
+        let has = |z: u16, key: i32| {
+            let r = if key == -2 { regions.iter().find(|r| r.zone == z as i16 && r.num != 0) } else { regions.iter().find(|r| r.zone == z as i16 && r.key as i32 == key) };
+            r.is_some_and(|r| matches!(r.need(), Need::Item(_)) && owned(w, r))
+        };
+        let mut rows = Vec::new();
+        match self.level {
+            Level::Top => {
+                rows.push(Row { id: w.pos_zone as i32, key: -1, a: gu.item_msg(9, 0x23).unwrap_or_default(), b: gu.item_msg(9, 0x24).unwrap_or_default(), number: false });
+                for (i, (name, zones)) in gu.region_groups().iter().enumerate() {
+                    let n = zones.iter().filter(|&&z| has(z, -2) && place(z).is_some()).count();
+                    if n > 0 {
+                        rows.push(Row { id: -2 - i as i32, key: -1, a: gu.item_msg(0x13, *name as usize).unwrap_or_default(), b: n.to_string(), number: true });
+                    }
+                }
+            }
+            Level::Region(i) => {
+                for &z in gu.region_groups().get(i).map_or(&[][..], |g| &g.1[..]) {
+                    let Some(name) = place(z).filter(|_| has(z, -2)) else { continue };
+                    let owned: Vec<i32> = floors(z).into_iter().map(|f| f.0).filter(|&k| has(z, k)).collect();
+                    let (id, key) = if owned.len() >= 2 { (-(z as i32) - 2, 0) } else { (z as i32, owned.last().copied().unwrap_or(0)) };
+                    let area = crate::dat::font::decode_sjis(&gu.area_name(z));
+                    rows.push(Row { id, key, a: name, b: area, number: false });
+                }
+            }
+            Level::Zone(z) => {
+                for (key, num) in floors(z).into_iter().filter(|f| has(z, f.0)) {
+                    if let Some(name) = place(z) {
+                        rows.push(Row { id: z as i32, key, a: name, b: num.to_string(), number: true });
+                    }
+                }
+            }
+        }
+        (self.rows, self.built) = (rows, true);
+    }
+
+    /// The list window (16, 208) with 5 rows: the cursor row's first cell in 0x80803040; numbers right-aligned in
+    /// their column (type 9, the sprite font taken as the game font *(inf)*), small text in fontshp.
+    fn draw(&self, gu: &mut GameUi, sw: f32, sh: f32) {
+        let sel = (self.cursor - self.scroll + 1) as u16;
+        let Some((x, y)) = gu.menu_sel("menu    maplist", sw, sh, sel) else { return };
+        for (k, r) in self.rows.iter().enumerate().skip(self.scroll).take(ROWS) {
+            let ry = y + 4.0 + 16.0 * (k - self.scroll) as f32;
+            let tint: u32 = if k == self.cursor { 0x8080_3040 } else { 0x8080_8080 };
+            gu.text(&r.a, x + COLS[0], ry, 0, tint.to_le_bytes());
+            if r.number {
+                let w = gu.text_width(&r.b);
+                gu.text(&r.b, x + COLS[2] - 2.0 - w, ry, 0, [0x80; 4]);
+            } else {
+                gu.shape_text(&r.b, x + COLS[1], ry + 2.0, 0x8080_8080, false);
+            }
+        }
+    }
+}
+
+/// Builds Change Map's rows when its level changed (needs the records, names and key items).
+pub(super) fn refresh(w: &mut World, gu: &GameUi) {
+    let Some(mut l) = w.map.as_mut().and_then(|m| m.maplist.take()) else { return };
+    if !l.built {
+        l.build(w, gu);
+    }
+    if let Some(m) = w.map.as_mut() {
+        m.maplist = Some(l);
+    }
+}
+
 /// Event map requests, applied where the map records are: FUN_100b2570 opens, FUN_100b0dd0 closes, FUN_101fb070 views.
 pub enum Cmd {
     /// /map (FUN_101f7810(0)): mode 0 as from the main menu.
     Menu,
+    /// Change Map's reopen (FUN_101f79e0): mode 5 for (zone, key), key -1 the sub-key under the player.
+    Other { zone: i16, key: i16, return_menu: Option<usize> },
     Open { zone: i16, key: i16, show_player: bool },
     Close,
     View { x: f32, y: f32, zf: f32, speed: f32, flags: i32 },
@@ -928,6 +1149,17 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
             Some(m) => w.map = Some(m),
             None => super::textcmd::refuse(w, 0x62),
         },
+        Cmd::Other { zone, key, return_menu } => {
+            let here = zone == w.pos_zone as i16;
+            let k = if key >= 0 { key as u8 } else if here { w.ground.as_ref().map_or(0, |g| g.map_key(w.pos)) } else { 0 };
+            if let Some(region) = Region::find_key(regions, zone as u16, k).or_else(|| Region::find(regions, zone as u16)) {
+                let facing = w.net.me.lock().map_or(0.0, |m| super::event::rad_of(m.dir));
+                let mut m = MapWin::new(region, owned(w, &region), w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, Mode::Other, w.game.get(0x8a), here);
+                m.attach(w);
+                m.return_menu = return_menu;
+                w.map = Some(m);
+            }
+        }
         Cmd::Open { zone, key, show_player } => {
             // FUN_100b2570 reopens only for another map.
             if w.map.as_ref().is_some_and(|m| !m.closing() && m.region.zone == zone && (key < 0 || m.region.key as i16 == key)) {
@@ -1122,7 +1354,7 @@ mod tests {
     /// The overlay keeps the map pixel under the cursor while zooming, and the image over the whole box.
     #[test]
     fn overlay_zoom_and_pan() {
-        let region = Region { zone: 1, key: 0, flags: 0, scale: 1, ki: -1, file: 0, ox: -256, oy: -256 };
+        let region = Region { zone: 1, key: 0, num: 0, flags: 0, scale: 1, ki: -1, file: 0, ox: -256, oy: -256 };
         let mut o = Overlay::new(1, Some(region), None);
         o.rect = [100.0, 50.0, 512.0, 512.0];
         o.zoom = 1.0;
@@ -1152,6 +1384,15 @@ mod tests {
         let regs = regions(&dll);
         assert!(Region::find_key(&regs, 9, 0).is_none());
         assert!((1..=16).all(|k| Region::find_key(&regs, 9, k).is_some()));
+    }
+
+    /// Change Map's groups: 50, the first San d'Oria's four zones with name 0.
+    #[test]
+    fn region_groups_found() {
+        let Ok(dll) = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")) else { return };
+        let g = region_groups(&dll);
+        assert_eq!(g.len(), 50);
+        assert_eq!(g[0], (0, vec![230, 231, 232, 233]));
     }
 
     /// Jugner Forest (104): record key 0, scale 1, key item 1 (0x181), file 5 -> 5317, origin (-264, -256).

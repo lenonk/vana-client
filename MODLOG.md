@@ -4217,3 +4217,17 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
 - Not done: augment decoding (FUN_100ff140 / FUN_1013b280: the Aug lines and pages), item types 0xf / 0x11..0x15 /
   0x1a, the itemxinf / itemyinf compare windows, the de / fr layout and ja rows.
 - Live (Lnxcsfix): the inventory list shows "Hume tunic", [Body] H♂, DEF:2, Lv.1 All Jobs with Rare / Ex.
+- Change Map (maplist, build FUN_101fcae0, message FUN_101fcd90): region groups FUN_1020a400 (50), FUN_1020a3e0
+  (zone lists, 6 u16 per 12-byte row, ended by 0; 0x103858a8 in this build) and FUN_1020a3f0 (group 0x13 name ids,
+  the 50 bytes right after the pointer table). FFXiMain's code is packed in the install, so ours finds the data: the
+  San d'Oria / Bastok lists as the hint, the pointer naming them, the names 0xc8 on. Rows: top = "Current Area" (group 9
+  0x23, column 1 group 9 0x24 in small text; zone = ours, key -1) then each group with zones holding an owned key-item
+  map (FUN_101f7340(zone, -2, 1): the zone's first record with a map number (+3), its key item held; maps needing none
+  are not listed) and a place name, with the count; a group: each such zone with its area name (FUN_101cbc10, group 4),
+  id -zone - 2 when two or more of its floors are owned; a zone: each owned floor with its map number. Columns (table
+  0x10382188): 20 / 245 / 320 / 380; cell types (FUN_101f4bb0): 1 game font at the column, 9 "%d" right-aligned in
+  the sprite font at column end - 2 (ours: game font, inf), 0x21 small text at y + 2. The cursor row's first cell is
+  0x80803040. Enter descends or picks; Escape goes up (a floor list back to where it came from), closing from the top.
+  The pick (FUN_101f7d80) closes the map; the close callback reopens it in mode 5 (FUN_101f79e0: fit zoom, the arrow
+  only in our zone, map0 again).
+- Live: Lnxcsfix's list read San d'Oria 4, Ronfaure 2, Zulkheim 3, Norvallen 1; Current Area reopened the map.

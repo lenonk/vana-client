@@ -102,7 +102,7 @@ fn find(dll: &[u8], sig: &Sig) -> Result<usize> {
 }
 
 /// The VA of a file offset (data sections).
-fn va_of(dll: &[u8], off: usize) -> Option<u32> {
+pub fn va_of(dll: &[u8], off: usize) -> Option<u32> {
     let u16_at = |o: usize| dll.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
     let u32_at = |o: usize| dll.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
     let nt = u32_at(0x3c)? as usize;

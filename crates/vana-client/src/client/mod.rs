@@ -792,6 +792,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for c in std::mem::take(&mut world.map_cmds) {
         map::apply(world, gu.map_regions(), c, sw, sh);
     }
+    map::refresh(world, gu);
     let items = gu.menu_items(sw, sh, world.menu_page);
     let dead = world.dead();
     let mut opened = false;
@@ -1692,7 +1693,7 @@ fn missing_place(zone: u16) {
 /// is for a FUN_101c26a0 target, not modelled), FUN_10127790.
 fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::BarText {
     let mut bars = hudtop::BarText::default();
-    let map0 = world.map.as_ref().filter(|m| m.has_menu()).map(|m| ("menu    map0", m.cursor));
+    let map0 = world.map.as_ref().and_then(|m| m.focus());
     let cfg_focus = world.config.as_ref().and_then(|c| c.focus());
     let focus = cfg_focus.as_ref().map(|(n, c)| (n.as_str(), *c)).or(items::focus(world)).or(map0).or_else(|| world.menu.and_then(|k| items.get(k)).map(|(i, _)| (crate::render::screens::menu_window(world.menu_page), *i as u16 + 1)));
     // mapframe's base draw (FUN_101e6ca0) puts the zone name (FUN_101c2090(zone, 1)) in helpwind slot 2.
@@ -4647,10 +4648,12 @@ impl App {
         if let Some(m) = world.map.as_mut()
             && !m.update(&mut self.input, dt * 60.0)
         {
-            let back = m.return_menu;
+            let (back, reopen) = (m.return_menu, m.reopen);
             world.map = None;
-            if back.is_some() {
-                world.menu = back;
+            match reopen {
+                Some((zone, key)) => world.map_cmds.push(map::Cmd::Other { zone, key, return_menu: back }),
+                None if back.is_some() => world.menu = back,
+                None => {}
             }
         }
         // FUN_1013c220: key function 0x18 (Num- / -) turns the item info window's page; past the last, back to 0.

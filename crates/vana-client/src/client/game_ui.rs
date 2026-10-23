@@ -33,6 +33,7 @@ pub struct GameUiData {
     cmd_help: Vec<u16>,
     /// The map region table (0x10376010).
     map_regions: Vec<super::map::Region>,
+    region_groups: Vec<(u8, Vec<u16>)>,
     /// File slot 0x1c (55688 in English): item info formats.
     item_fmt: Option<Messages>,
     /// Lobby message groups 1 (Face/Hair/Size), 6 (race names), 8 (lobby help), 0x1b (name help).
@@ -113,12 +114,13 @@ impl GameUiData {
         let menu_msgs = group_file(ffximain, 1, 0x0e).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("menu messages: {e:#}")).ok());
         let title_msgs = group_file(ffximain, 1, 0x0d).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("title messages: {e:#}")).ok());
         let cmd_help = crate::dat::battle::va_bytes(ffximain, t.cmd_help, 0x1c * 12).map_or(Vec::new(), |b| b.chunks(12).map(|r| u16::from_le_bytes([r[0], r[1]])).collect());
-        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x1b]
+        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x13, 0x1b]
             .into_iter()
             .filter_map(|g| Some((g, group_file(ffximain, 1, g).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("message group {g:#x}: {e:#}")).ok())?)))
             .collect();
         let stats = crate::dat::battle::va_bytes(ffximain, t.stats, 8 * 6 * 7).map(<[u8]>::to_vec).unwrap_or_default();
         let map_regions = super::map::regions(ffximain);
+        let region_groups = super::map::region_groups(ffximain);
         let item_fmt = crate::dat::msg::slot_file(ffximain, 1, 0x1c).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("item info formats: {e:#}")).ok());
         let area_names = Messages::load(index, 0xd8aa).map_err(|e| log::error!("area names (group 4): {e:#}")).ok();
         let errors = crate::dat::battle::va_bytes(ffximain, t.errors, 16 * 128)
@@ -127,7 +129,7 @@ impl GameUiData {
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let registry = menu_registry(ffximain);
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, item_fmt, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
     }
 }
 
@@ -813,6 +815,10 @@ impl GameUi {
 
     pub fn map_regions(&self) -> &[super::map::Region] {
         &self.data.map_regions
+    }
+
+    pub fn region_groups(&self) -> &[(u8, Vec<u16>)] {
+        &self.data.region_groups
     }
 
     /// An uploaded image stretched over a rect; colour 1.0 = 0x80.
