@@ -148,6 +148,8 @@ struct GpuVertex {
     normal: [f32; 3],
     color: [u8; 4],
     uv: [f32; 2],
+    /// Bit 0: the MMB model's flag 0x1000 (header u32 +0x10 bit 28): lit by the sub-area's 'ev10' while one is in.
+    flags: u32,
 }
 
 #[repr(C)]
@@ -170,6 +172,26 @@ pub struct Uniforms {
     clear: [f32; 4],
     sky_colors: [[f32; 4]; 8],
     sky_stops: [[f32; 4]; 2],
+    /// x: the area slot of 'ev10' while a sub-area is shown (0 none).
+    area_info: [f32; 4],
+}
+
+/// Area environments (DAT_10631f24 area objects) the scenery is lit by, slot 0 unused.
+pub const AREAS: usize = 64;
+
+/// One area's lighting as the shader takes it: sun (w = 1 when it has an environment), sun colour, ambient, fog
+/// colour, fog (start, end).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable)]
+struct AreaGpu {
+    sun: [f32; 4],
+    sun_color: [f32; 4],
+    ambient: [f32; 4],
+    fog_color: [f32; 4],
+    fog: [f32; 4],
+    actor_sun: [f32; 4],
+    actor_color: [f32; 4],
+    actor_ambient: [f32; 4],
 }
 
 /// One scenery model: a range of the shared index buffer, its base vertex in the shared vertex buffer.
@@ -263,6 +285,11 @@ pub struct ZoneRenderer {
     links: Vec<(u32, u32, Instance)>,
     hidden: u32,
     zone_keys: usize,
+    /// Area 4ccs by slot - 1, how many are the zone's, and each slot's lighting for this frame (set_area_lights).
+    area_keys: Vec<u32>,
+    zone_areas: usize,
+    area_lights: Vec<Option<crate::dat::weather::Lighting>>,
+    areas: wgpu::Buffer,
 }
 
 /// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
@@ -382,6 +409,8 @@ pub struct ActorGpu {
     pub flash: [f32; 2],
     /// The floor's four point lights (table slot + 1, 0 none): FUN_100c94a0 picks the strongest.
     pub lights: [u8; 4],
+    /// The area 4cc it stands in (vtable +0x188, the floor's +0xb0): its environment lights it (0 = the zone's).
+    pub area: u32,
     /// The last mip job of its textures; drawn once the GPU has it.
     mips: u64,
 }
@@ -465,7 +494,7 @@ struct Skinned {
 /// Bones a pose region holds; influences on later bones read the identity slot after them.
 const MAX_BONES: usize = 255;
 /// Pose region in vec4s: model matrix columns, (alpha, flash ambient, flash fog, 0), then (quat, translation) per bone.
-const POSE_HEAD: usize = 5;
+const POSE_HEAD: usize = 6;
 const POSE_BINDING: u64 = ((POSE_HEAD + 2 * (MAX_BONES + 1)) * 16) as u64;
 
 /// Strip to list, dropping the degenerate triangles that join strips.
@@ -515,6 +544,12 @@ impl ZonePipes {
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
+                    count: None,
+                },
             ],
         });
         let texture_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -547,12 +582,12 @@ impl ZonePipes {
             Some(wgpu::VertexBufferLayout {
                 array_stride: std::mem::size_of::<GpuVertex>() as u64,
                 step_mode: wgpu::VertexStepMode::Vertex,
-                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Float32x2],
+                attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Unorm8x4, 3 => Float32x2, 9 => Uint32],
             }),
             Some(wgpu::VertexBufferLayout {
                 array_stride: INSTANCE_BYTES,
                 step_mode: wgpu::VertexStepMode::Instance,
-                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Uint32x4],
+                attributes: &wgpu::vertex_attr_array![4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4, 8 => Uint32x4, 10 => Uint32x4],
             }),
         ];
         let make_pipeline = |fragment: &str, blend: Option<wgpu::BlendState>| device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
@@ -657,6 +692,8 @@ pub const LIGHTS: usize = 256;
 pub struct Instance {
     model: [[f32; 4]; 4],
     lights: [u32; 4],
+    /// x: the area slot it is lit by (0 = the zone's).
+    area: [u32; 4],
 }
 
 /// Instance stride (actors with a CPU-posed mesh use the same layout, lights 0).
@@ -670,6 +707,8 @@ pub struct ZoneGeometry {
     links: Vec<(u32, u32, Instance)>,
     /// The point-light table's keys (MZB light lists; slot = index), for the effects that light them.
     pub light_keys: Vec<u32>,
+    /// Area 4ccs by slot - 1 (placements' MZB +0x4c), after those passed to build_keyed.
+    pub area_keys: Vec<u32>,
     draws: Vec<Draw>,
     verts: Vec<GpuVertex>,
     indices: Vec<u16>,
@@ -677,11 +716,12 @@ pub struct ZoneGeometry {
 
 impl ZoneGeometry {
     pub fn build(scene: &ZoneScene) -> Self {
-        Self::build_keyed(scene, &scene.light_keys)
+        Self::build_keyed(scene, &scene.light_keys, &[])
     }
 
     /// With the point-light table `keys` (a sub-area's light refs resolve into the zone's table, FUN_1017a5e0).
-    pub fn build_keyed(scene: &ZoneScene, keys: &[u32]) -> Self {
+    /// `areas`: area keys already in slots (the zone's, for a sub-area); new ones follow.
+    pub fn build_keyed(scene: &ZoneScene, keys: &[u32], areas: &[u32]) -> Self {
         // Slot 0 is the plain white texture; scene textures follow in order.
         let texture_slot: HashMap<&str, usize> = scene.textures.iter().enumerate().map(|(i, t)| (t.name.as_str(), i + 1)).collect();
         // A placement's refs become their table slot + 1, except keys starting with 'c', which the main scenery
@@ -694,10 +734,20 @@ impl ZoneGeometry {
             }
         };
         // One instance block per mesh, holding the matrices of every placement that uses it.
+        let mut area_keys = areas.to_vec();
         let mut by_mesh: HashMap<&str, Vec<(Instance, u32)>> = HashMap::new();
         for p in &scene.placements {
             let lights = p.lights.map(slot_of);
-            by_mesh.entry(&p.name).or_default().push((Instance { model: p.matrix(), lights }, p.link));
+            let area = match area_keys.iter().position(|&k| k == p.area) {
+                _ if p.area == 0 => 0,
+                Some(s) => s as u32 + 1,
+                None if area_keys.len() + 1 < AREAS => {
+                    area_keys.push(p.area);
+                    area_keys.len() as u32
+                }
+                None => 0,
+            };
+            by_mesh.entry(&p.name).or_default().push((Instance { model: p.matrix(), lights, area: [area, 0, 0, 0] }, p.link));
         }
         let mut matrices: Vec<Instance> = Vec::new();
         let mut links = Vec::new();
@@ -724,7 +774,7 @@ impl ZoneGeometry {
                     .iter()
                     .map(|v| {
                         let [b, g, r, a] = v.color.to_le_bytes();
-                        GpuVertex { pos: v.pos, normal: v.normal, color: [r, g, b, a], uv: v.uv }
+                        GpuVertex { pos: v.pos, normal: v.normal, color: [r, g, b, a], uv: v.uv, flags: (model.blending & 0x1000 != 0) as u32 }
                     })
                     .collect();
                 let count = (indices.len() / 3 * 3) as u32;
@@ -744,7 +794,7 @@ impl ZoneGeometry {
         }
         // A scene with no scenery (the character screen) still needs a non-empty buffer to bind.
         if matrices.is_empty() {
-            matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4] });
+            matrices.push(Instance { model: Mat4::IDENTITY.to_cols_array_2d(), lights: [0; 4], area: [0; 4] });
         }
         if all_verts.is_empty() {
             all_verts.push(GpuVertex::zeroed());
@@ -752,7 +802,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, draws, verts: all_verts, indices: all_indices }
+        Self { matrices, links, light_keys, area_keys, draws, verts: all_verts, indices: all_indices }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -798,10 +848,15 @@ impl ZoneRenderer {
         });
         // Two vec4s a light: (position, range), (colour x intensity, 0); written by the effects update pass.
         let lights = device.create_buffer(&wgpu::BufferDescriptor { label: Some("point lights"), size: (LIGHTS * 32) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let areas = device.create_buffer(&wgpu::BufferDescriptor { label: Some("area lighting"), size: (AREAS * std::mem::size_of::<AreaGpu>()) as u64, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         let globals = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("globals"),
             layout: &p.globals_layout,
-            entries: &[wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }, wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() }],
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 1, resource: lights.as_entire_binding() },
+                wgpu::BindGroupEntry { binding: 2, resource: areas.as_entire_binding() },
+            ],
         });
         let sampler = mip_sampler(device);
         // Slot 0 is plain white for models whose texture lives elsewhere; the others fill in as they go up.
@@ -849,7 +904,21 @@ impl ZoneRenderer {
             links: geo.links.clone(),
             hidden: 0,
             zone_keys: geo.light_keys.len(),
+            area_keys: geo.area_keys.clone(),
+            zone_areas: geo.area_keys.len(),
+            area_lights: Vec::new(),
+            areas,
         }
+    }
+
+    /// Area 4ccs by slot - 1 (zone's, then the shown sub-area's).
+    pub fn area_keys(&self) -> &[u32] {
+        &self.area_keys
+    }
+
+    /// This frame's lighting per area slot - 1 (None: no environment, lit as the zone).
+    pub fn set_area_lights(&mut self, lights: Vec<Option<crate::dat::weather::Lighting>>) {
+        self.area_lights = lights;
     }
 
     /// A sub-area's scenery replaces the loaded one (FUN_101787c0 state 2); `light_keys` is the zone's table with
@@ -878,6 +947,7 @@ impl ZoneRenderer {
             shown: false,
         });
         self.light_keys = light_keys;
+        self.area_keys = geo.area_keys.clone();
         // Offscreen renderers take everything at once.
         if !self.budgeted {
             for (slot, t, _) in std::mem::take(&mut self.pending) {
@@ -896,6 +966,7 @@ impl ZoneRenderer {
             self.textures.truncate(s.tex_base);
             self.pending.retain(|p| p.0 < s.tex_base);
             self.light_keys.truncate(self.zone_keys);
+            self.area_keys.truncate(self.zone_areas);
         }
     }
 
@@ -1056,6 +1127,7 @@ impl ZoneRenderer {
                 alpha: 1.0,
                 flash: [0.0, 1.0],
                 lights: [0; 4],
+                area: 0,
                 mips: 0,
             };
             self.builds.push((key, Build { ch: ch.clone(), mesh, actor, registered: false, vert_at: 0, tex: 0, cur: None }));
@@ -1098,6 +1170,10 @@ impl ZoneRenderer {
     pub fn pose_actor(&mut self, actor: &mut ActorGpu, bones: &[(glam::Quat, Vec3)], model: Mat4) {
         let alpha = actor.alpha.clamp(0.0, 1.0);
         let flash = actor.flash;
+        let area = match self.area_keys.iter().position(|&k| k == actor.area) {
+            Some(s) if actor.area != 0 => (s + 1) as f32,
+            _ => 0.0,
+        };
         let Some(skin) = actor.skin.as_mut() else { return };
         while self.poses.len() % 16 != 0 {
             self.poses.push([0.0; 4]);
@@ -1106,6 +1182,7 @@ impl ZoneRenderer {
         skin.frame = self.pose_frame;
         self.poses.extend(model.to_cols_array_2d());
         self.poses.push([alpha, flash[0], flash[1], f32::from_bits(u32::from_le_bytes(actor.lights))]);
+        self.poses.push([area, 0.0, 0.0, 0.0]);
         for i in 0..skin.bones {
             let (q, t) = bones.get(i).copied().unwrap_or((glam::Quat::IDENTITY, Vec3::ZERO));
             self.poses.push(q.to_array());
@@ -1164,7 +1241,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, flash: [0.0, 1.0], lights: [0; 4], mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
     }
 
     /// Uploads this frame's posed mesh and placement.
@@ -1175,7 +1252,7 @@ impl ZoneRenderer {
         let a = (actor.alpha.clamp(0.0, 1.0) * 128.0).round() as u8;
         for (tex, tris) in &mesh.batches {
             let start = verts.len() as u32;
-            verts.extend(tris.iter().map(|v| GpuVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], color: [128, 128, 128, a], uv: [v[6], v[7]] }));
+            verts.extend(tris.iter().map(|v| GpuVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], color: [128, 128, 128, a], uv: [v[6], v[7]], flags: 0 }));
             actor.draws.push((actor.slot.get(tex.as_str()).copied().unwrap_or(0), start..verts.len() as u32));
         }
         let bytes: &[u8] = bytemuck::cast_slice(&verts);
@@ -1223,6 +1300,7 @@ impl ZoneRenderer {
             clear: [0.0; 4],
             sky_colors: [[0.0; 4]; 8],
             sky_stops: [[0.0; 4]; 2],
+            area_info: [0.0; 4],
         };
         let mut clear = self.fog_color;
         if let Some(l) = &self.lighting {
@@ -1247,6 +1325,21 @@ impl ZoneRenderer {
             let lin = |c: f32| if self.encode_gamma { c } else { c.powf(2.2) };
             clear = [lin(l.clear.x), lin(l.clear.y), lin(l.clear.z)];
         }
+        // FUN_10183da0: instances with an area are lit by its environment; flagged models by 'ev10' while a sub-area
+        // is in (+0x50, FUN_101787c0).
+        let ev10 = u32::from_le_bytes(*b"ev10");
+        if self.sub.as_ref().is_some_and(|s| s.shown)
+            && let Some(s) = self.area_keys.iter().position(|&k| k == ev10)
+        {
+            u.area_info[0] = (s + 1) as f32;
+        }
+        let mut areas = [AreaGpu::zeroed(); AREAS];
+        for (slot, l) in self.area_lights.iter().enumerate().take(AREAS - 1) {
+            if let Some(l) = l {
+                areas[slot + 1] = AreaGpu { sun: v4(l.dir, 1.0), sun_color: v4(l.diffuse, 1.0), ambient: v4(l.ambient, 1.0), fog_color: v4(l.fog, 1.0), fog: [l.fog_start, l.fog_end, 0.0, 0.0], actor_sun: v4(l.actor_dir, 1.0), actor_color: v4(l.actor_diffuse, 1.0), actor_ambient: v4(l.actor_ambient, 1.0) };
+            }
+        }
+        gpu.queue.write_buffer(&self.areas, 0, bytemuck::cast_slice(&areas));
         gpu.queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
         let [r, g, b] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

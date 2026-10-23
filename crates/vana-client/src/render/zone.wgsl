@@ -18,12 +18,27 @@ struct Uniforms {
     clear: vec4<f32>,
     sky_colors: array<vec4<f32>, 8>,
     sky_stops: array<vec4<f32>, 2>,
+    // x: the area slot of 'ev10' while a sub-area is shown (0 none).
+    area_info: vec4<f32>,
+};
+
+// An area environment's lighting (sun.w = 1 when it has one); fog.xy = start, end.
+struct Area {
+    sun: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+    fog_color: vec4<f32>,
+    fog: vec4<f32>,
+    actor_sun: vec4<f32>,
+    actor_color: vec4<f32>,
+    actor_ambient: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> u: Uniforms;
 // Point lights (two vec4s each: position, range; colour rgb / 128 (0 when unlit), intensity I), from the effects
 // (classes2.md 3.2; D3D8 POINT, Att2 = 1 / I, or 1 when I <= 0).
 @group(0) @binding(1) var<storage, read> plights: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read> areas: array<Area>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
 
@@ -38,6 +53,10 @@ struct VertexIn {
     @location(7) m3: vec4<f32>,
     // The placement's four lights (table slot + 1, 0 = none).
     @location(8) lights: vec4<u32>,
+    // Bit 0: the model's 'ev10' flag (MMB +0x10 bit 28).
+    @location(9) flags: u32,
+    // x: the placement's area slot (0 = the zone's).
+    @location(10) area: vec4<u32>,
 };
 
 struct VertexOut {
@@ -53,6 +72,8 @@ struct VertexOut {
     @location(6) point: vec3<f32>,
     // The placement's four light slots (+1, 0 = none) for the per-pixel point lights.
     @location(7) @interpolate(flat) lights: vec4<u32>,
+    // The area slot it is lit by (0 = the zone's); bit 15: the 'ev10' path, which keeps the zone's fog range.
+    @location(8) @interpolate(flat) area: u32,
 };
 
 // FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
@@ -114,11 +135,13 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.depth = out.clip.w;
     out.flash = vec2<f32>(0.0, 1.0);
     out.lights = v.lights;
+    let ev10 = u32(u.area_info.x);
+    out.area = select(v.area.x, ev10 | 0x8000u, (v.flags & 1u) != 0u && ev10 != 0u);
     return out;
 }
 
-// Skinned actors (ZoneRenderer::pose_actor): model matrix, (alpha, flash ambient, flash fog, 0), then (quat,
-// translation) per bone.
+// Skinned actors (ZoneRenderer::pose_actor): model matrix, (alpha, flash ambient, flash fog, lamp lights), (area slot,
+// 0, 0, 0), then (quat, translation) per bone.
 @group(2) @binding(0) var<storage, read> pose: array<vec4<f32>>;
 
 struct SkinIn {
@@ -139,8 +162,8 @@ fn qrot(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
 // As character::skin: p = sum(r * pos + t * w), n = normalize_or_zero(sum(r * normal)); pos and normal come pre-weighted.
 @vertex
 fn vs_skinned(v: SkinIn) -> VertexOut {
-    let a = 5u + 2u * v.bones.x;
-    let b = 5u + 2u * v.bones.y;
+    let a = 6u + 2u * v.bones.x;
+    let b = 6u + 2u * v.bones.y;
     let p = qrot(pose[a], v.p0) + pose[a + 1u].xyz * v.w.x + qrot(pose[b], v.p1) + pose[b + 1u].xyz * v.w.y;
     let n = qrot(pose[a], v.n0) + qrot(pose[b], v.n1);
     let len = length(n);
@@ -157,6 +180,7 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     out.depth = out.clip.w;
     out.flash = pose[4].yz;
     out.point = actor_lamp(bitcast<u32>(pose[4].w), model[3].xyz, out.normal);
+    out.area = u32(pose[5].x);
     return out;
 }
 
@@ -225,21 +249,56 @@ fn d3d_out_fog(in: VertexOut, rgb: vec3<f32>, fog_color: vec3<f32>) -> vec4<f32>
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
 }
 
-// lit = clamp(vc * (ambient + sun * max(N.-L, 0))); out = tex * lit * 2
+// lit = clamp(vc * (ambient + sun * max(N.-L, 0))); out = tex * lit * 2. The light, ambient and fog are the zone's,
+// or the area's (FUN_10183da0: FUN_10188ca0 lights, FUN_10188e00 ambient, FUN_10189120 fog).
 fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
-    let ndl = max(dot(normalize(in.normal), -u.sun.xyz), 0.0);
+    var sun = u.sun.xyz;
+    var sun_color = u.sun_color.rgb;
+    var ambient = u.ambient.rgb;
+    var fog_color = u.fog_color.rgb;
+    var fog = u.fog.xy;
+    let slot = in.area & 0x7fffu;
+    if (slot != 0u && areas[slot].sun.w > 0.5) {
+        let a = areas[slot];
+        sun = a.sun.xyz;
+        sun_color = a.sun_color.rgb;
+        ambient = a.ambient.rgb;
+        fog_color = a.fog_color.rgb;
+        fog = select(a.fog.xy, u.fog.xy, (in.area & 0x8000u) != 0u);
+    }
     let n = normalize(in.normal);
-    let lit = clamp(in.color.rgb * (u.ambient.rgb + u.sun_color.rgb * ndl + point_lights(in.lights, in.world, n)), vec3<f32>(0.0), vec3<f32>(1.0));
-    return d3d_out(in, clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)));
+    let ndl = max(dot(n, -sun), 0.0);
+    let lit = clamp(in.color.rgb * (ambient + sun_color * ndl + point_lights(in.lights, in.world, n)), vec3<f32>(0.0), vec3<f32>(1.0));
+    let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
+    let c = mix(fog_color, rgb, f);
+    return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
 }
 
-// Actors: no vertex colour; material taken as 0x80 grey (inferred).
+// Actors: no vertex colour; material taken as 0x80 grey (inferred). Lit by the zone, or by the area they stand in
+// (the actor update FUN_1018b9a0 and draw FUN_1018b9e0 / FUN_1018ba20 with vtable +0x188's area).
 fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
-    let ndl = max(dot(normalize(in.normal), -u.actor_sun.xyz), 0.0);
+    var sun = u.actor_sun.xyz;
+    var color = u.actor_color.rgb;
+    var ambient = u.actor_ambient.rgb;
+    var fog_color = u.fog_color.rgb;
+    var fog = u.fog.xy;
+    if (in.area != 0u && areas[in.area].sun.w > 0.5) {
+        let a = areas[in.area];
+        sun = a.actor_sun.xyz;
+        color = a.actor_color.rgb;
+        ambient = a.actor_ambient.rgb;
+        fog_color = a.fog_color.rgb;
+        fog = a.fog.xy;
+    }
+    let ndl = max(dot(normalize(in.normal), -sun), 0.0);
     // The target flash pulls the ambient toward 220 / 255 and scales the fog colour (FUN_100c94a0).
-    let amb = mix(u.actor_ambient.rgb, vec3<f32>(220.0 / 255.0), in.flash.x);
-    let lit = clamp(0.5 * (amb + u.actor_color.rgb * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
-    return d3d_out_fog(in, clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0)), u.fog_color.rgb * in.flash.y);
+    let amb = mix(ambient, vec3<f32>(220.0 / 255.0), in.flash.x);
+    let lit = clamp(0.5 * (amb + color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
+    let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
+    let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
+    let c = mix(fog_color * in.flash.y, rgb, f);
+    return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
 }
 
 struct SkyOut {

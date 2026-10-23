@@ -1007,13 +1007,22 @@ fn main() -> Result<()> {
             let camera = render::Camera { eye, target, up, fov_y: 60f32.to_radians() };
             let draws = match effects {
                 None => {
-                    let sub_scene = sub.map(|id| index.read(dat::zone::file_id(id)).and_then(|f| dat::zone::load_scene(&keys, &f)).map(|s| (id, s))).transpose()?;
+                    let sub_file = sub.map(|id| index.read(dat::zone::file_id(id)).map(|f| (id, f))).transpose()?;
+                    let sub_scene = sub_file.as_ref().map(|(id, f)| dat::zone::load_scene(&keys, f).map(|s| (*id, s))).transpose()?;
+                    let weathers: Vec<dat::weather::ZoneWeather> = sub_file.iter().map(|(_, f)| f).chain([&file]).filter_map(|f| dat::weather::ZoneWeather::parse(f).ok()).collect();
                     let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
                         if let Some((id, s)) = &sub_scene {
                             let mut all = scene.light_keys.clone();
                             all.extend(s.light_keys.iter().filter(|k| **k != 0 && !scene.light_keys.contains(k)));
-                            let geo = render::ZoneGeometry::build_keyed(s, &all);
+                            let geo = render::ZoneGeometry::build_keyed(s, &all, r.area_keys());
                             r.set_sub(gpu, *id, &geo, s.textures.clone(), all);
+                        }
+                        // Area lighting at the same hour and weather, the sub-area's areas first.
+                        if let Some(h) = hour.filter(|_| std::env::var_os("FFXI_NO_AREAS").is_none()) {
+                            let env = |k: &u32| weathers.iter().find_map(|w| w.areas.get(k)).and_then(|a| a.at(&weather, h * 60.0));
+                            let lights = r.area_keys().iter().map(|k| env(k).map(|e| dat::weather::Lighting::from_env(&e, h * 60.0))).collect();
+                            println!("areas {:?}", r.area_keys().iter().map(|k| String::from_utf8_lossy(&k.to_le_bytes()).into_owned()).collect::<Vec<_>>());
+                            r.set_area_lights(lights);
                         }
                         Vec::new()
                     };
@@ -1205,6 +1214,14 @@ fn main() -> Result<()> {
                 println!("zone line {:<8} at ({:.2}, {:.2}, {:.2}) rot {:.2} size {:?}", r.name, r.pos[0], r.pos[1], r.pos[2], r.rot[1], r.scale);
             }
             println!("{} RID regions", scene.regions.len());
+            let mut areas: std::collections::BTreeMap<String, (usize, glam::Vec3)> = Default::default();
+            for p in scene.placements.iter().filter(|p| p.area != 0) {
+                let e = areas.entry(String::from_utf8_lossy(&p.area.to_le_bytes()).into_owned()).or_insert((0, glam::Vec3::from(p.translate)));
+                e.0 += 1;
+            }
+            for (a, (n, at)) in &areas {
+                println!("area {a}: {n} placements, e.g. at {at}");
+            }
             if let Some(c) = &scene.collision {
                 let (mut lo, mut hi) = (glam::Vec3::splat(f32::MAX), glam::Vec3::splat(f32::MIN));
                 for t in &c.tris {

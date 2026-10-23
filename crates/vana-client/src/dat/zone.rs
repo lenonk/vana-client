@@ -228,6 +228,8 @@ pub struct Placement {
     pub lights: [u32; 4],
     /// Record +0x50: the sub-area this placement stands in for (hidden while that one is loaded, FUN_1017a630).
     pub link: u32,
+    /// Record +0x4c: the area (environment) 4cc it is lit by (inst+0xdc / +0xe0, FUN_10186cb0); 0 = the zone's.
+    pub area: u32,
 }
 
 impl Placement {
@@ -275,7 +277,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
                 *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
             }
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50) });
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c) });
     }
     Ok(out)
 }

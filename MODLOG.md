@@ -3454,3 +3454,29 @@ From the current decompile (spec in the session scratchpad, subarea_spec). Zone 
 - Not done: scenery lighting per area. FUN_10183da0 lights each instance by its area object (inst+0xe0, from MZB
   +0x4c: none = the zone's lights, else that area's lights, ambient and fog) and pieces with word +0x22 by 'ev10'
   while +0x50 is set; ours lights all scenery with the zone's. Door collision during a load (FUN_10176dd0) not copied.
+
+## Scenery and actors lit by their area's environment (2026-10-22)
+
+- FUN_10183da0 (scenery draw), per instance: when the model's word piece+0x26 is 0 or no 'ev10' area is set
+  (zr+0x50), the instance's area object inst+0xe0 decides: none = the zone's lights (+0x39180), ambient (state 0x8b),
+  fog colour / start / end (0x22 / 0x24 / 0x25); else that area's: FUN_10188ca0 lights, FUN_10188e00 ambient,
+  FUN_10189120 fog colour and range (all with group 0, the bg keys). Models with the word set while 'ev10' is set
+  use 'ev10''s lights, ambient and fog colour but the zone's fog range.
+- inst+0xe0 = FUN_101889c0(inst+0xdc), the area object named by the placement's 4cc at MZB record +0x4c
+  (FUN_10186cb0); area objects come from the zone's (and a sub-area's) area folders (FUN_10186c60).
+- The word: MMB model header u32 +0x10 (FUN_10170150 region, asm 101701d4..10170216): low 28 bits the vertex count,
+  bit 31 -> +0x20 (D3DRS_ALPHABLENDENABLE 0x1b in the draw), bit 30 -> +0x22, bit 29 -> +0x24 (compared with the
+  texture to pick the cull mode 0x16: set = none), bit 28 -> +0x26 (the 'ev10' flag). Ours keeps the high half as
+  Model.blending, so the flag is blending & 0x1000.
+- Actors: the actor update (100a5xxx) builds its light with FUN_1018b9a0(lights, mode, vtable+0x188 area) and the
+  draw (FUN_100cb...) its ambient / fog with FUN_1018b9e0 / FUN_1018ba20 and the same area: the area the actor
+  stands in (its floor's collision object +0xb0). FUN_1018b9xx swap `this` to FUN_101889c0(area) when it is nonzero.
+- Areas in use (zone-info prints them): 230 ev01 x182, ev02 x17 (stand-ins); 231 ev01, ev02, ev03 x199, ent4; 232
+  ev01, ev02; interiors ev10.
+- Ours: Placement.area, Instance.area (slot), GpuVertex.flags bit 0, an area table (render AREAS = 64, AreaGpu: bg
+  sun / colour / ambient / fog, actor sun / colour / ambient) written per frame from ZoneWeather.areas (the
+  sub-area's first *(inf: lookup order)*), Uniforms.area_info.x = the 'ev10' slot while a sub-area is shown;
+  ActorGpu.area from Ground::area, carried in pose header vec4 5 (POSE_HEAD 6). An area with no environment is lit as
+  the zone *(inf: FUN_101889c0 finding nothing)*. zone-shot fills the table at --hour; FFXI_NO_AREAS=1 skips it.
+- Seen: the 335 interior is dim and warm instead of sunlit; ev01 archways in 230 darker than the open street.
+- Open: bit 31 is alpha *blending* in retail; ours alpha-tests those models (the reference viewer's rule).

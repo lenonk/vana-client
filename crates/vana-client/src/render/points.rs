@@ -23,8 +23,8 @@ fn points(@builtin(global_invocation_id) gid: vec3<u32>) {
     let j = jobs[1u + 2u * i];
     let off = bitcast<vec3<f32>>(jobs[2u + 2u * i].xyz);
     let base = j.x;
-    let q = pose[base + 5u + 2u * j.y];
-    let t = pose[base + 6u + 2u * j.y].xyz;
+    let q = pose[base + 6u + 2u * j.y];
+    let t = pose[base + 7u + 2u * j.y].xyz;
     let m = mat4x4<f32>(pose[base], pose[base + 1u], pose[base + 2u], pose[base + 3u]);
     let w = m * vec4<f32>(t + qrot(q, off), 1.0);
     out[i] = vec4<f32>(w.xyz - m[3].xyz, 0.0);

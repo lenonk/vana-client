@@ -21,6 +21,8 @@ pub struct SubArea {
     /// The zone's collision and point-light keys, which a sub-area's merge into.
     pub zone_collision: Option<Arc<Collision>>,
     pub zone_keys: Vec<u32>,
+    /// The zone's area keys by slot - 1 (the renderer's), which a sub-area's follow.
+    pub zone_areas: Vec<u32>,
     /// The zone's own ground while the merged one is in use.
     pub home: Option<Ground>,
     /// The sub-area's area environments (its 'ev10').
@@ -34,8 +36,8 @@ pub enum Step {
 }
 
 impl SubArea {
-    pub fn new(regions: Vec<Region>, collision: Option<Collision>, keys: Vec<u32>) -> Self {
-        SubArea { regions, zone_collision: collision.map(Arc::new), zone_keys: keys, ..Default::default() }
+    pub fn new(regions: Vec<Region>, collision: Option<Collision>, keys: Vec<u32>, areas: Vec<u32>) -> Self {
+        SubArea { regions, zone_collision: collision.map(Arc::new), zone_keys: keys, zone_areas: areas, ..Default::default() }
     }
 
     /// FUN_10178a20 (slot 1): nothing while a load runs or for the loaded id; 0 unloads; another id loads when a
@@ -73,7 +75,7 @@ pub struct Loaded {
 /// FUN_10178d90 and the chunk handlers: the file of `id` (the zone file id mapping, asm 1017894d), its collision
 /// merged into the zone's (FUN_10167be0) with the stand-ins for `id` dropped, its light refs remapped into the
 /// zone's table (FUN_1017a5e0).
-pub fn load(index: &crate::dat::DatIndex, keys: &zone::Keys, id: u32, zone_collision: Option<Arc<Collision>>, zone_keys: &[u32]) -> anyhow::Result<Loaded> {
+pub fn load(index: &crate::dat::DatIndex, keys: &zone::Keys, id: u32, zone_collision: Option<Arc<Collision>>, zone_keys: &[u32], zone_areas: &[u32]) -> anyhow::Result<Loaded> {
     let file_id = zone::file_id(id);
     let file = index.read(file_id)?;
     let mut scene = zone::load_scene(keys, &file)?;
@@ -89,7 +91,7 @@ pub fn load(index: &crate::dat::DatIndex, keys: &zone::Keys, id: u32, zone_colli
         (None, Some(s)) => Ground::from_collision(s, &all),
         (None, None) => Ground::build(&scene),
     };
-    let geometry = crate::render::ZoneGeometry::build_keyed(&scene, &all);
+    let geometry = crate::render::ZoneGeometry::build_keyed(&scene, &all, zone_areas);
     let weather = ZoneWeather::parse(&file).map_err(|e| log::warn!("sub-area {id} weather: {e:#}")).ok();
     let fx = crate::fx::lib::Library::load(file_id, file).map_err(|e| log::warn!("effects: sub-area {id}: {e:#}")).ok().map(|mut l| {
         l.prewarm(keys);
@@ -117,7 +119,8 @@ mod tests {
         let zc = scene.collision.as_ref().unwrap();
         let stand_ins = zc.object.iter().filter(|&&o| zc.objects[o as usize].link == 335).count();
         assert!(stand_ins > 0);
-        let l = load(&index, &keys, 335, Some(Arc::new(Collision::empty(zc.grid))), &scene.light_keys).unwrap();
+        let l = load(&index, &keys, 335, Some(Arc::new(Collision::empty(zc.grid))), &scene.light_keys, &[]).unwrap();
+        assert!(l.geometry.area_keys.contains(&u32::from_le_bytes(*b"ev10")));
         assert!(l.textures.len() > 10);
         let sub = zone::load_scene(&keys, &index.read(zone::file_id(335)).unwrap()).unwrap();
         let merged = zc.merged(sub.collision.as_ref().unwrap(), 335);

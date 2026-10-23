@@ -2810,7 +2810,7 @@ impl App {
                 match result {
                     Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
                         let asked = world.sub.asked.take();
-                        world.sub = subarea::SubArea::new(scene.regions.clone(), scene.collision.take(), geometry.light_keys.clone());
+                        world.sub = subarea::SubArea::new(scene.regions.clone(), scene.collision.take(), geometry.light_keys.clone(), geometry.area_keys.clone());
                         world.sub.asked = asked;
                         world.zone_weather = weather;
                         if let Some(g) = global_fx {
@@ -2888,12 +2888,12 @@ impl App {
                 let Some(zone_id) = w.zone else { return };
                 log::info!("sub-area {id} loading (zone {zone_id})");
                 w.sub.loading = Some((id, from_event));
-                let (collision, keys) = (w.sub.zone_collision.clone(), w.sub.zone_keys.clone());
+                let (collision, keys, areas) = (w.sub.zone_collision.clone(), w.sub.zone_keys.clone(), w.sub.zone_areas.clone());
                 match self.game_data() {
                     Ok((index, zkeys)) => {
                         let tx = self.tasks_tx.clone();
                         std::thread::spawn(move || {
-                            let _ = tx.send(Task::SubAreaLoaded(zone_id, id, subarea::load(&index, &zkeys, id, collision, &keys)));
+                            let _ = tx.send(Task::SubAreaLoaded(zone_id, id, subarea::load(&index, &zkeys, id, collision, &keys, &areas)));
                         });
                     }
                     Err(e) => {
@@ -4769,8 +4769,13 @@ impl App {
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
                     let weather = ev_time.and_then(|(_, x)| x).unwrap_or(w.weather);
                     r.lighting = zw.at(crate::dat::weather::weather_tag(weather), minute).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
+                    let tag = crate::dat::weather::weather_tag(weather);
                     let sub_areas = w.sub.weather.iter().flat_map(|s| s.areas.iter());
-                    w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, a.at(crate::dat::weather::weather_tag(weather), minute)?.area_light()))).collect();
+                    w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, a.at(tag, minute)?.area_light()))).collect();
+                    // Scenery areas (FUN_101889c0 finds the area object by 4cc, the sub-area's after the zone's).
+                    let env = |k: &u32| w.sub.weather.as_ref().and_then(|s| s.areas.get(k)).or_else(|| zw.areas.get(k)).and_then(|a| a.at(tag, minute));
+                    let lights = r.area_keys().iter().map(|k| env(k).map(|e| crate::dat::weather::Lighting::from_env(&e, minute))).collect();
+                    r.set_area_lights(lights);
                 }
                 // Op 0x10: the frame before the cut, drawn once offscreen from the camera it had (last frame's
                 // poses; its own submit so the zone uniforms keep that camera).
@@ -4904,6 +4909,7 @@ impl App {
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).
                     g.lights = w.ground.as_ref().map_or([0; 4], |gr| gr.lights(pos));
+                    g.area = w.ground.as_ref().and_then(|gr| gr.area(pos)).unwrap_or(0);
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look);
