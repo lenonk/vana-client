@@ -152,6 +152,11 @@ impl HudTop {
     }
 
     /// World entry / zone-in (FUN_1015e3f0): the bars up, the timer at 30.
+    /// The cached grid position, "(X-N)" (FUN_101f7600(1)).
+    pub fn grid(&self) -> &str {
+        &self.grid
+    }
+
     pub fn enter(&mut self) {
         self.fade = TopFade::default();
     }

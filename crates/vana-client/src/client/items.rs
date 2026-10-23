@@ -17,7 +17,7 @@ pub const INVENTORY: u8 = 0;
 /// Item list x while equipping.
 const LIST_X: i16 = 314;
 
-const JOBS: [&str; 23] = ["", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG", "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN"];
+pub(super) const JOBS: [&str; 23] = ["", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG", "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN"];
 
 /// s2c 0x061 (GP_SERV_COMMAND_CLISTATUS) fields the status panel shows.
 #[derive(Clone, Debug, Default)]

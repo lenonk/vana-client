@@ -510,7 +510,7 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             let (t, i) = target.unwrap_or((w.my_id, 0));
             send(w, NetCommand::Act { target: t, index: i, action: 4 });
         }
-        (cmd::CHECK, Some((t, i))) => send(w, NetCommand::Check { target: t, index: i }),
+        (cmd::CHECK, Some((t, i))) => send(w, NetCommand::Check { target: t, index: i, kind: 0 }),
         (cmd::CHAT | cmd::TELL, _) => w.typing = true,
         // FUN_10127b60 case 5: FUN_1007aac0 on the target.
         (cmd::TALK, Some((t, _))) => {

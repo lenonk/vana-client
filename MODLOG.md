@@ -3852,3 +3852,38 @@ From the combat spec (scratchpad combatmo/SPEC.md).
   0xad's, else point 7), x0.8 for a Tarutaru player; the player's attach point 13, posed, every frame. We read bone 5
   / bone 13 every frame (bats bobbed the camera).
 - Not done: multi-hit rounds replay the swing per hit; the weapon attach switch on sheathing.
+
+## Text commands (2026-10-23)
+
+From the text command spec (scratchpad textcmd/SPEC.md); client/textcmd.rs.
+- FUN_10080dc0(line, mode): mode 0 menus, 1 typed, 2 macro, 3..7 sub-target re-runs. Trim; a line without '/' gets the
+  chat mode's prefix; the tag pass (FUN_10076ab0); a 150-byte cut (FUN_100769f0, never inside a character); tokens
+  (FUN_10076830: spaces, tabs too outside typed lines, quoted tokens run to the matching quote and lose it, at most 17);
+  the name looked up exactly and case-sensitively in the table at 0x10355408 ({char name[0x14], i16 id, u16 flags},
+  first entry "/ver", then "/say"; 277 entries ending with an empty name, id 0x1d4, then a negative id). There is no
+  /y (only /yell); /h is /help. An unknown command prints nothing; a handler failure prints ">> expanded line" + group 9
+  0x78 (menu lines only 0x78), log mode 0x9d.
+- Flags: 0x02 allowed with the sub-target cursor up, 0x08 name tags, 0x10 UI free (group 7 0x42 while the full log is
+  open), 0x20 dead, 0x40 mounted, 0x80 event, 0x100 target command (<t> <me> <bt> <pet> <scan> <ht> <lastst> <ft> stay
+  literal for the resolver), 0x1000 no gate. State gate FUN_10081230: group 7 0x4f dead, 0x4b mounted, 0x4d fishing,
+  0x43 event. Status gate FUN_101cc0d0(mask): 0x10 healing 0x51, 0x20 sitting 0xa0, 0x01 mounted 0x4b, 0x02 fishing
+  0x4d, 0x04 synthesis 0x4e, 0x08 zone flag 0x100 0x44.
+- Target resolver FUN_1007a1c0(text, fallback, wide): the tags, then a name normalised by FUN_10077c30 (3..15 ASCII
+  letters -> Xxxx) over PCs 0x400..0x6ff only (NPCs and monsters can't be named), with `wide` also 0x700..0x8ff when
+  ours / the party's (inf: +0x12c bit 22 / FUN_1008e260), a numeric server id in internal modes, else with `fallback`
+  the current target.
+- /ma /nin /so (FUN_1007b710, gate 0x7f): spell name case-insensitive exact (55702), type filter 4 / 5, learned bit
+  (s2c 0x0AA, 128 bytes) and FUN_1022b7d0's level rule, then the target (no fallback, wide); 0x01A category 3, u32
+  spell id @0xc, ground offset floats @0x10. /ja /pet (FUN_1007b900): ability records 0x200..0x3ff (not +0xe
+  hidden) then 0x400..0x5ff, category 9, param id - 0x200; a job ability must be in 0x0AC's job ability bits (bit =
+  id - 0x200; pet bits are LSB id - 496, not checked: inf). /ws (FUN_1007b820): engaged only (group 7 0x52), records
+  0..0x1ff, no learned check, category 7; retail sends ids above 0xff as id + 0x2000, LSB reads the id as is, ours
+  sends it unchanged. /attack on|off|<target> (group 7 0x95 not attackable, 0x0F when engaged), /assist (0x0C, nothing
+  while engaged), /target, /check /checkname /checkparam (0x0DD kind 0 / 1 / 2), /ra (0x10), /help (5 on self),
+  /random (0x0A2), /echo (mode 0xce), /sit (0x0EA). Echo: linkshell "[1]<Name> text", yell "Name[Zone]: text".
+- Spell records: file 81 chunk 0x49, 1024 x 100 bytes; ability records chunk 0x53, 0xb00 x 0x30 bytes; each record
+  unmasked by FUN_1021e870 (rotate by (popcount b2 + b12 - b11) % 5; bytes 2, 11, 12 untouched). Spell: +0 id (= its
+  record index and name index), +2 type (1 white .. 8 trust, ids 896..1023), +4 element, +6 targets, +8 skill, +0xa
+  MP, +0xc cast, +0xd recast, +0xe 24 x i16 job levels (job 0..23, -1 none), +0x5c job point mask.
+- LSB's !addalltrusts adds with sendUpdate false: no new 0x0AA until the next zone-in, so the client refuses them
+  until then (retail would too). Trusts can't be called in towns (the server refuses).

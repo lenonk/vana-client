@@ -35,6 +35,7 @@ mod doors;
 mod mousecur;
 mod party;
 mod macros;
+mod textcmd;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -80,6 +81,7 @@ impl Task {
             Task::Dancer(_) => "dancer",
             Task::Battle(_) => "battle text",
             Task::Names(_) => "names",
+            Task::Actions(_) => "actions",
         }
     }
 }
@@ -106,6 +108,8 @@ enum Task {
     Battle(Result<crate::dat::battle::BattleText>),
     /// Item / key item names and the server text id map (checked against the install).
     Names(Result<(Arc<crate::dat::names::Names>, crate::dat::msgshift::MsgShift)>),
+    /// Spell and ability records (file 81).
+    Actions(Result<crate::dat::actions::Actions>),
 }
 
 struct Entity {
@@ -357,104 +361,9 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     if busy { None } else { chosen }
 }
 
-/// Sends a chat line. /logout and /shutdown send c2s 0x0E7 as FUN_1007b8a0 / FUN_1007bb10 do; the countdown
-/// text comes from the server (0x053 #7 / #35).
+/// A line from a menu or key (text command mode 0).
 fn send_chat(world: &mut World, text: String) {
-    let cmd = text.split_whitespace().next().unwrap_or("").to_ascii_lowercase();
-    let arg = text.split_whitespace().nth(1).map(str::to_ascii_lowercase);
-    if cmd == "/logout" || cmd == "/shutdown" {
-        // Mode: none 0 toggle, "on" 1 (3 for shutdown), "off" 2; Kind 1 logout, 3 shutdown. Status 0, 7 or 0x21 only.
-        let shutdown = cmd == "/shutdown";
-        let mode = match arg.as_deref() {
-            Some("on") if shutdown => 3,
-            Some("on") => 1,
-            Some("off") => 2,
-            _ => 0,
-        };
-        if matches!(world.my_motion.status, 0 | 7 | 0x21) {
-            world.logging_out = match mode {
-                0 => !world.logging_out,
-                2 => false,
-                _ => true,
-            };
-            world.shutdown = shutdown && world.logging_out;
-            let _ = world.net.commands.send(NetCommand::Logout { mode, kind: if shutdown { 3 } else { 1 } });
-        }
-    } else if cmd == "/attack" || cmd == "/a" {
-        // FUN_10079490: disengage when engaged, else attack the target (0x01A action 4 / 2); no target, nothing.
-        let c = if world.my_motion.status == 1 { combat::cmd::DISENGAGE } else { combat::cmd::ATTACK };
-        if !combat::choose(world, c) {
-            log::info!("/attack: no target");
-        }
-    } else if cmd == "/heal" {
-        // FUN_1007adb0: only standing (0), status 7 or healing (0x21); "on" 1, "off" 2, else 0 = toggle.
-        let mode = match text.split_whitespace().nth(1).map(str::to_ascii_lowercase).as_deref() {
-            Some("on") => 1,
-            Some("off") => 2,
-            _ => 0,
-        };
-        if matches!(world.my_motion.status, 0 | 7 | 0x21) {
-            let _ = world.net.commands.send(NetCommand::Heal(mode));
-        }
-    } else if cmd == "/targetcharaeffect" {
-        // Command 0x82 (FUN_1007d800): config 0x99 bit 7, which gates only the forced flash; group 9 0x137 / 0x136.
-        let off = world.game.get(0x99) & 0x80 == 0;
-        let v = world.game.get(0x99);
-        world.game.set(0x99, if off { v | 0x80 } else { v & !0x80 });
-        world.game_save = true;
-        if let Some(bt) = world.battle.clone() {
-            let line = bt.group9(if off { 0x137 } else { 0x136 }).unwrap_or_default();
-            world.chat.push(line);
-        }
-    } else if cmd == "/macro" {
-        // Command 0x16 (FUN_10079f10): "/macro set|book N", exactly three tokens; out of range wraps once.
-        let words: Vec<String> = text.split_whitespace().map(str::to_ascii_lowercase).collect();
-        let n = words.get(2).and_then(|w| w.parse::<usize>().ok()).filter(|n| *n > 0);
-        match (words.len(), words.get(1).map(String::as_str), n, world.macros.as_mut()) {
-            (3, Some("set"), Some(n), Some(m)) => {
-                let book = m.book;
-                m.switch(book, n - 1);
-            }
-            (3, Some("book"), Some(n), Some(m)) => {
-                let set = m.set;
-                m.switch(n - 1, set);
-            }
-            _ => combat::command_error(world, &text),
-        }
-    } else if cmd == "/lockon" {
-        // Command 0x59 (FUN_100793f0): the lock-on toggle.
-        let on = !world.locked;
-        target::lock(world, on, "/lockon");
-    } else if cmd == "/tell" || cmd == "/t" {
-        let mut rest = text.splitn(3, ' ').skip(1);
-        match (rest.next().filter(|n| !n.is_empty()), rest.next().map(str::trim).filter(|m| !m.is_empty())) {
-            (Some(name), Some(msg)) => {
-                let line = stamped(world, format!(">>{name} : {msg}"));
-                let c = cfgapply::chat_colour(&world.game, 3);
-                world.chat.push_colour(line, c);
-                let _ = world.net.commands.send(NetCommand::Tell { name: name.to_string(), text: msg.to_string() });
-            }
-            // FUN_100775f0 returns an error: ">> line" and group 9 0x78 (FUN_1007f6d0).
-            _ => combat::command_error(world, &text),
-        }
-    } else {
-        // The server does not echo our own lines; the client prints them.
-        let (kind, msg) = match chat_channel(&cmd) {
-            Some(k) => (k, text.split_once(' ').map_or("", |(_, m)| m.trim()).to_string()),
-            // Retail prints nothing for a command it does not know; ours may be one it knows.
-            None if cmd.starts_with('/') => {
-                log::info!("{cmd} is not supported yet");
-                return;
-            }
-            None => (0, text),
-        };
-        if !msg.is_empty() {
-            let line = stamped(world, chat_line(kind, &world.name, &msg));
-            let c = cfgapply::chat_colour(&world.game, kind);
-            world.chat.push_colour(line, c);
-            let _ = world.net.commands.send(NetCommand::Chat { kind, text: msg });
-        }
-    }
+    textcmd::run(world, &text, textcmd::Mode::Internal);
 }
 
 /// A chat line with its timestamp (config 0xb5, "%s[%s]%s %s" at 0x1036344c).
@@ -485,7 +394,7 @@ fn chat_channel(cmd: &str) -> Option<u8> {
         "/shout" | "/sh" => 1,
         "/party" | "/p" => 4,
         "/linkshell" | "/l" => 5,
-        "/yell" | "/y" => 0x1a,
+        "/yell" => 0x1a,
         "/linkshell2" | "/l2" => 0x1b,
         "/unity" | "/u" => 0x21,
         "/assistj" | "/aj" => 0x22,
@@ -778,9 +687,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
                     let text = std::mem::take(&mut world.chat_input);
-                    if !text.trim().is_empty() {
-                        send_chat(world, text);
-                    }
+                    textcmd::run(world, &text, textcmd::Mode::Typed);
                 }
                 egui::Key::Escape if world.typing => {
                     world.typing = false;
@@ -2266,6 +2173,10 @@ struct World {
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
     names: Option<Arc<crate::dat::names::Names>>,
+    /// Spell / ability records, and the learned bits (s2c 0x0AA, 0x0AC).
+    actions: Option<Arc<crate::dat::actions::Actions>>,
+    spells_known: Vec<u8>,
+    commands_known: Vec<u8>,
     item_info: Option<Arc<items::ItemCache>>,
     msgshift: Option<Arc<crate::dat::msgshift::MsgShift>>,
     zone_text: Option<(u16, Arc<crate::dat::dialog::Dialog>)>,
@@ -2961,7 +2872,7 @@ impl App {
 
     fn handle_task(&mut self, task: Task) {
         // The lobby art loads in the background; nobody is waiting on it.
-        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::AreaLoaded(..) | Task::SubAreaLoaded(..)) {
+        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::Actions(_) | Task::AreaLoaded(..) | Task::SubAreaLoaded(..)) {
             self.busy = false;
         }
         match task {
@@ -2973,6 +2884,11 @@ impl App {
                     w.msgshift = Some(Arc::new(m));
                 }
                 (Err(e), _) => log::warn!("item names: {e:#}"),
+                _ => {}
+            },
+            Task::Actions(res) => match (res, &mut self.phase) {
+                (Ok(a), Phase::World(w)) => w.actions = Some(Arc::new(a)),
+                (Err(e), _) => log::warn!("spell / ability records: {e:#}"),
                 _ => {}
             },
             Task::Battle(res) => match (res, &mut self.phase) {
@@ -3165,6 +3081,9 @@ impl App {
                             talk_lock: None,
                             audio_cmds: Vec::new(),
                             names: None,
+                            actions: None,
+                            spells_known: Vec::new(),
+                            commands_known: Vec::new(),
                             item_info: None,
                             msgshift: None,
                             zone_text: None,
@@ -3194,6 +3113,11 @@ impl App {
                             std::thread::spawn(move || {
                                 let b = std::fs::read(&dll).map_err(anyhow::Error::from).and_then(|d| crate::dat::battle::BattleText::load(&idx, &d));
                                 let _ = tx.send(Task::Battle(b));
+                            });
+                            let tx = self.tasks_tx.clone();
+                            let idx = index.clone();
+                            std::thread::spawn(move || {
+                                let _ = tx.send(Task::Actions(crate::dat::actions::Actions::load(&idx)));
                             });
                             let tx = self.tasks_tx.clone();
                             std::thread::spawn(move || {
@@ -3782,6 +3706,8 @@ impl App {
                     world.party.list(&u, world.my_id, create);
                 }
                 NetEvent::PartyAttr(u) => world.party.attr(&u),
+                NetEvent::MagicKnown(bits) => world.spells_known = bits,
+                NetEvent::CommandsKnown(bits) => world.commands_known = bits,
                 NetEvent::Error(e) => {
                     self.status = format!("Disconnected: {e}");
                     self.to_login(true);
@@ -4197,7 +4123,7 @@ impl App {
         // when the gate allows (field, UI shown, no event, alive, no window), Ctrl / Alt + digit runs a macro and
         // Shift + Ctrl / Alt + digit picks a set. The palettes are not drawn yet.
         if let Some(line) = world.macros.as_mut().and_then(|m| m.step(dt * 60.0)) {
-            send_chat(world, crate::dat::font::decode_sjis(&line));
+            textcmd::run(world, &crate::dat::font::decode_sjis(&line), textcmd::Mode::Macro);
         }
         let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
         let gate = world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some();

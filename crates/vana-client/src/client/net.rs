@@ -170,6 +170,10 @@ pub enum NetEvent {
     PartyTable(Vec<super::party::TableEntry>),
     PartyList(super::party::ListUpdate, bool),
     PartyAttr(super::party::AttrUpdate),
+    /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
+    MagicKnown(Vec<u8>),
+    /// s2c 0x0AC COMMAND_DATA: weapon skill, job ability, pet command bits (64 bytes each), traits (32).
+    CommandsKnown(Vec<u8>),
     Chat { kind: u8, from: String, text: String },
     Battle(BattleMessage),
     Action(crate::net::action::Action),
@@ -238,8 +242,10 @@ pub enum NetCommand {
     HomePoint,
     /// 0x01A on a target: 2 attack, 4 disengage, 0x0f change target (GP_CLI_COMMAND_ACTION).
     Act { target: u32, index: u16, action: u16 },
-    /// 0x0DD check (equip inspect, kind 0 = check).
-    Check { target: u32, index: u16 },
+    /// 0x0DD equip inspect: kind 0 /check, 1 /checkname, 2 /checkparam.
+    Check { target: u32, index: u16, kind: u8 },
+    /// Any c2s packet: id and body (after the 4-byte header).
+    Packet { id: u16, body: Vec<u8> },
     /// c2s 0x076 {u8 Kind = 0}: the roster's names (FUN_100e9550); LSB answers with 0x0C8 and 0x0DD.
     GroupListReq,
     /// Touched a zone line: its tag, and where we are.
@@ -509,6 +515,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
                         tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, home_in, pet: (p.u32(0x34) >> 3) as u16 })?;
                     }
+                    0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
+                    0x0AC => tx.send(NetEvent::CommandsKnown((0..224).map(|i| p.u8(4 + i)).collect()))?,
                     0x0DF => {
                         if p.u32(4) == login.char_id {
                             tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?;
@@ -612,11 +620,13 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     queue.push(build(0x01A, &body));
                 }
                 NetCommand::Act { target, index, action } => queue.push(build(0x01A, &action_body(target, index, action))),
+                NetCommand::Packet { id, body } => queue.push(build(id, &body)),
                 NetCommand::GroupListReq => queue.push(build(0x076, &[0u8; 4])),
-                NetCommand::Check { target, index } => {
+                NetCommand::Check { target, index, kind } => {
                     let mut body = vec![0u8; 12];
                     body[0..4].copy_from_slice(&target.to_le_bytes());
                     body[4..8].copy_from_slice(&(index as u32).to_le_bytes());
+                    body[8] = kind;
                     queue.push(build(0x0DD, &body));
                 }
                 NetCommand::ZoneLine { tag, pos } => {

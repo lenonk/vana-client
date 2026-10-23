@@ -76,6 +76,7 @@ pub struct BattleText {
     items: Option<super::items::Items>,
     /// File 7031 (language slot 0x65): s2c 0x053 system messages; group 9 (file 55648) client messages.
     system: Option<Dialog>,
+    group7: Option<Messages>,
     group9: Option<Messages>,
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
@@ -155,6 +156,7 @@ impl BattleText {
             statuses: msgs(STATUS_FILE),
             items: super::items::Items::load(index, super::items::Lang::En).ok(),
             system: dialog(SLOT_SYSTEM).map_err(|e| log::warn!("system messages: {e:#}")).ok(),
+            group7: super::msg::group_file(ffximain, 1, 7).and_then(msgs),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
             modes,
             mode_colours,
@@ -230,6 +232,11 @@ impl BattleText {
     }
 
     /// A group 9 client message (FUN_10076e80).
+    /// Group 7: command refusals (FUN_10129d90 / FUN_10129e30).
+    pub fn group7(&self, id: usize) -> Option<String> {
+        self.group7.as_ref()?.get(id)
+    }
+
     pub fn group9(&self, id: usize) -> Option<String> {
         self.group9.as_ref()?.get(id)
     }
