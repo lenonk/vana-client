@@ -170,7 +170,7 @@ const RACES: [u16; 14] = [0x1fe, 0x12a, 0xd4, 6, 2, 4, 0x18, 8, 0x10, 0x60, 0x20
 
 /// FUN_1013d790 and FUN_1013c500. `msg(group, id)`: groups 9..12 and 0x1c (file slot 0x1c, 55688 in English);
 /// `width` the game font's.
-pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize) -> Option<String>, width: &dyn Fn(&str) -> f32) -> Info {
+pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize) -> Option<String>, width: &dyn Fn(&str) -> f32, aug_ctx: Option<&super::augment::AugCtx>) -> Info {
     let mut info = Info { name_tint: WHITE, icon_tint: WHITE, extra_tint: WHITE, ..Default::default() };
     let mut name = it.singular.clone();
     if let Some(c) = name.get(..1) {
@@ -186,15 +186,17 @@ pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize
     };
     let t = it.item_type;
     let gear = matches!(t, 4 | 5);
-    let aug = ext.is_some_and(|e| matches!(e[0], 2 | 3));
-    // FUN_1013cc50.
+    // FUN_1013cc50 with FUN_101cb8a0 / FUN_101cb990: Aug for weapons and armour with augment extdata (not the no-mark
+    // weapons nor a serialized item); its flag byte & 2 adds the Ex mark.
+    let fb = aug_ctx.and_then(|a| super::augment::marked(it.id as u16, t, ext, a.tables));
+    let aug = fb.is_some();
     if aug {
         info.marks.push(293);
     }
     if it.flags & 0x8000 != 0 {
         info.marks.push(294);
     }
-    if it.flags & 0x4000 != 0 {
+    if it.flags & 0x4000 != 0 || fb.is_some_and(|f| f & 2 != 0) {
         info.marks.push(295);
     }
     if cx.container == Some(3) {
@@ -230,14 +232,15 @@ pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize
                 (1..super::items::JOBS.len()).filter(|j| it.jobs & (1 << j) != 0).map(|j| super::items::JOBS[j]).collect::<Vec<_>>().join("/")
             };
             let lv = fmt(&msg(10, 0x53).unwrap_or_else(|| "Lv.%d ".into()), &[&it.level]);
-            info.jobs = wrap(&format!("{lv}{jobs}"), 309.0, &[' ', '\t', ',', '/'], width);
+            info.jobs = super::augment::wrap(&format!("{lv}{jobs}"), 309.0, width);
         }
         let ilvl = extra(0xd50);
         if ilvl != 0 {
             info.ilvl = format!("<{}>", fmt(&msg(0x1c, 0x3e).unwrap_or_else(|| "%d".into()), &[&ilvl]));
         }
         // FUN_1013bbf0: charges (extdata kind none / 1); augments (2 / 3) are not decoded yet.
-        if it.max_charges != 0 && ext.is_none_or(|e| e[0] <= 1) {
+        // Charges only with no extdata (an event's item) or kind 1.
+        if it.max_charges != 0 && ext.is_none_or(|e| e[0] == 1) {
             let u32_at = |e: &[u8; 24], o: usize| u32::from_le_bytes(e[o..o + 4].try_into().unwrap());
             let left = |ts: u32| ts.saturating_sub(cx.now);
             let mut tt = ext.map_or(0, |e| left(u32_at(e, 4)));
@@ -257,6 +260,24 @@ pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize
                 info.extra_tint = 0x8040_7090;
             }
             line += &format!(" {}/[{}, {}]", time(tt), time(it.use_delay as u32), time(it.reuse_delay));
+        }
+    }
+    // Augments (FUN_1013b170 -> FUN_100ff140, FUN_1013b280 modes 0 / 1; a stone, type 0x1a, modes 2 / 3): the block
+    // wrapped at 309 px, the short line into "<...>".
+    if let (Some(a), Some(e)) = (aug_ctx, ext)
+        && ((gear && super::augment::applies(it.id as u16, t, e)) || t == 0x1a)
+    {
+        let r = super::augment::decode(e, it.id as u16, a);
+        let stone = t == 0x1a;
+        if !stone || !r.pairs.is_empty() {
+            let block = crate::dat::font::decode_sjis(&super::augment::block(&r, stone, a));
+            info.augs = super::augment::wrap(&block, 309.0, width).into_iter().take(20).collect();
+            if let Some((s, tint)) = super::augment::short(&r, stone, a) {
+                line = crate::dat::font::decode_sjis(&s);
+                if let Some(c) = tint {
+                    info.extra_tint = c;
+                }
+            }
         }
     }
     match (t, ext) {
@@ -350,31 +371,31 @@ fn pages(info: &Info, two_rows: bool, _plus: bool, _flags: u16) -> Vec<Vec<u8>> 
     let mut out = vec![p0];
     let close = |c: &mut Vec<u8>| {
         pad(c);
-        let end = if info.ilvl.is_empty() { 0x50 } else { 0x48 };
-        if c.last() == Some(&0) {
-            *c.last_mut().unwrap() = end;
+        // The item level line with its arrow is always appended; the arrow alone takes a blank last row.
+        if !info.ilvl.is_empty() {
+            c.push(0x48);
+        } else if c.last() == Some(&0) {
+            *c.last_mut().unwrap() = 0x50;
         } else {
-            c.push(end);
+            c.push(0x50);
         }
     };
-    let mut next_desc = shown;
-    let mut next_aug = 0;
-    for _ in 1..3 {
-        if next_desc >= d && next_aug >= a {
-            break;
-        }
+    // Page 1: the rest of the description (to row 10), else the augment lines (to row 10, the rest dropped); page 2
+    // only after a description page, with every augment line.
+    if shown < d {
         let mut p = head.clone();
-        if next_desc < d {
-            while next_desc < d && p.len() < 11 {
-                p.push(10 + next_desc as u8);
-                next_desc += 1;
-            }
-        } else {
-            while next_aug < a && p.len() < 11 {
-                p.push(0x1e + next_aug as u8);
-                next_aug += 1;
-            }
+        p.extend((shown..d).map(|i| 10 + i as u8).take(11 - head.len()));
+        close(&mut p);
+        out.push(p);
+        if a > 0 {
+            let mut p = head.clone();
+            p.extend((0..a).map(|i| 0x1e + i as u8));
+            close(&mut p);
+            out.push(p);
         }
+    } else if a > 0 {
+        let mut p = head.clone();
+        p.extend((0..a).map(|i| 0x1e + i as u8).take(11 - head.len()));
         close(&mut p);
         out.push(p);
     }
@@ -480,7 +501,7 @@ mod tests {
     #[test]
     fn bronze_sword() {
         let Some(it) = item(0x4097) else { return };
-        let i = build(&it, None, &Ctx::default(), &msg, &width);
+        let i = build(&it, None, &Ctx::default(), &msg, &width, None);
         assert_eq!(i.name, "Bronze sword");
         assert_eq!(i.line2, vec!["(Sword)".to_string(), "All Races ".into()]);
         assert_eq!(i.jobs.concat().replace(' ', ""), "Lv.1WAR/RDM/THF/PLD/DRK/BRD/RNG/NIN/DRG/BLU/RUN");
@@ -491,7 +512,7 @@ mod tests {
     #[test]
     fn kupofried_ring() {
         let Some(it) = item(0x3de0) else { return };
-        let i = build(&it, None, &Ctx::default(), &msg, &width);
+        let i = build(&it, None, &Ctx::default(), &msg, &width, None);
         assert_eq!(i.marks, vec![294, 295]);
         assert_eq!((i.extra.as_str(), i.extra_tint), ("<11/11 0:05/[0:05, 15:00]>", 0x8040_7090));
         assert_eq!(i.pages[0], vec![1, 0, 10, 11, 12, 0x32, 0x3c]);
@@ -502,7 +523,7 @@ mod tests {
         let mut it = Item::default();
         it.item_type = 1;
         it.description = (0..14).map(|k| format!("line {k}")).collect::<Vec<_>>().join("\n");
-        let i = build(&it, None, &Ctx::default(), &msg, &width);
+        let i = build(&it, None, &Ctx::default(), &msg, &width, None);
         assert_eq!(i.pages[0].len(), 12);
         assert_eq!(*i.pages[0].last().unwrap(), 0x50);
         assert_eq!(i.pages[1][0], 1);
@@ -518,7 +539,7 @@ mod tests {
         e[9..12].copy_from_slice(&bits.to_be_bytes()[1..]);
         let mut it = Item::default();
         it.item_type = 6;
-        let i = build(&it, Some(&e), &Ctx::default(), &msg, &width);
+        let i = build(&it, Some(&e), &Ctx::default(), &msg, &width, None);
         assert_eq!(i.extra, "<Ab>");
         assert_eq!(i.icon_tint, 0x8000_0000 | (15 * 13 + 0x38) << 16 | (2 * 13 + 0x38) << 8 | (13 + 0x38));
         let mut s = [0u8; 24];
@@ -527,6 +548,6 @@ mod tests {
         s[0xc..0xf].copy_from_slice(&bits.to_be_bytes()[1..]);
         let mut it = Item::default();
         (it.item_type, it.id) = (1, 1);
-        assert_eq!(build(&it, Some(&s), &Ctx::default(), &msg, &width).sig, "[A1]");
+        assert_eq!(build(&it, Some(&s), &Ctx::default(), &msg, &width, None).sig, "[A1]");
     }
 }

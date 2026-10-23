@@ -10,6 +10,7 @@ pub use hudtop::topbar_shot;
 mod event;
 mod game_ui;
 mod hudtop;
+mod augment;
 mod iteminfo;
 mod map;
 mod mapmark;
@@ -2203,7 +2204,8 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         p = (0, id, 1);
     }
     let cx = iteminfo::Ctx { now: vana_now(world) as u32, equipped, shop: false, container, flags };
-    let info = iteminfo::build(&it, ext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s));
+    let aug = gu.aug_ctx();
+    let info = iteminfo::build(&it, ext.as_ref(), &cx, &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s), aug.as_ref());
     p.2 = info.pages.len();
     world.info_page.set(p);
     let page = p.0.min(info.pages.len().saturating_sub(1));

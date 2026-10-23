@@ -451,7 +451,8 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
             let ext: Option<[u8; 24]> = f.get(2).map(|h| std::array::from_fn(|k| h.get(k * 2..k * 2 + 2).and_then(|b| u8::from_str_radix(b, 16).ok()).unwrap_or(0)));
             gu.open_ticks = 0.0;
             if let Some(it) = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok().and_then(|i| crate::dat::items::Items::load(&i, crate::dat::items::Lang::En).ok()).and_then(|t| t.item(id)) {
-                let info = super::iteminfo::build(&it, ext.as_ref(), &Default::default(), &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s));
+                let aug = gu.aug_ctx();
+                let info = super::iteminfo::build(&it, ext.as_ref(), &Default::default(), &|g, k| gu.item_msg(g, k), &|s| gu.text_width(s), aug.as_ref());
                 println!("pages {:?}", info.pages);
                 let layout = super::iteminfo::LAYOUTS[super::iteminfo::rows(&info, page) - 3];
                 if let Some(r) = gu.window_swapped("menu    iteminfo", layout, sw, sh, (0.0, 0.0)) {

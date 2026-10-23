@@ -36,6 +36,11 @@ pub struct GameUiData {
     region_groups: Vec<(u8, Vec<u16>)>,
     /// File slot 0x1c (55688 in English): item info formats.
     item_fmt: Option<Messages>,
+    /// Augments: texts (slot 0x1b, 55692), server names (group 0x16), the DLL tables, file 81's mnc2 chunk.
+    aug_text: Option<Messages>,
+    servers: Option<Messages>,
+    aug_tables: Option<super::augment::AugTables>,
+    mnc2: Option<Vec<u8>>,
     /// Lobby message groups 1 (Face/Hair/Size), 6 (race names), 8 (lobby help), 0x1b (name help).
     lobby_msgs: std::collections::HashMap<u8, Messages>,
     /// Creator base stats, 8 races x 6 jobs x 7 bytes (FFXiMain 0x1037bb10, FUN_102306d0).
@@ -121,6 +126,10 @@ impl GameUiData {
         let stats = crate::dat::battle::va_bytes(ffximain, t.stats, 8 * 6 * 7).map(<[u8]>::to_vec).unwrap_or_default();
         let map_regions = super::map::regions(ffximain);
         let region_groups = super::map::region_groups(ffximain);
+        let aug_text = crate::dat::msg::slot_file(ffximain, 1, 0x1b).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("augment texts: {e:#}")).ok());
+        let servers = crate::dat::msg::group_file(ffximain, 1, 0x16).and_then(|f| Messages::load(index, f).ok());
+        let aug_tables = super::augment::AugTables::find(ffximain);
+        let mnc2 = index.read(81).ok().and_then(|f| super::augment::mnc2(&f));
         let item_fmt = crate::dat::msg::slot_file(ffximain, 1, 0x1c).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("item info formats: {e:#}")).ok());
         let area_names = Messages::load(index, 0xd8aa).map_err(|e| log::error!("area names (group 4): {e:#}")).ok();
         let errors = crate::dat::battle::va_bytes(ffximain, t.errors, 16 * 128)
@@ -129,7 +138,7 @@ impl GameUiData {
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let registry = menu_registry(ffximain);
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
     }
 }
 
@@ -409,6 +418,17 @@ impl GameUi {
             self.batch.push_sprite_from(ui, lib, rf.index as usize, 1, x + off.0, y + off.1, 1.0, 1.0, 0x8080_8080, 0);
         }
         Some(r)
+    }
+
+    /// What augment decoding needs, when its texts and tables loaded.
+    pub fn aug_ctx(&self) -> Option<super::augment::AugCtx<'_>> {
+        Some(super::augment::AugCtx {
+            tables: self.data.aug_tables.as_ref()?,
+            mnc2: self.data.mnc2.as_deref(),
+            text: self.data.aug_text.as_ref()?,
+            fmt88: self.data.item_fmt.as_ref(),
+            servers: self.data.servers.as_ref(),
+        })
     }
 
     /// Item info texts: groups 9..0xc, and 0x1c for file slot 0x1c (55688 in English).

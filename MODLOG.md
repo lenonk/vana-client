@@ -4310,3 +4310,26 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
     (nearest flagged actor, also `<ht>`), mapscan's disabled look, list paging keys.
   - Live (Lnxcsfix, Southern San d'Oria): the list filled with NPCs, Track on Ephauge closed the map, the compass
     arrow and name showed, `/echo tracking <scan>` printed "tracking Ephauge".
+- Augments (full spec with every table, handler and the 23 test vectors: scratchpad augment/SPEC.md of that session;
+  ours client/augment.rs, a port of its reference):
+  - Gate: weapons / armour, ids not 0xffff / 0 / 0x200..0x203 / 0x108c / 0x108d / 0x1525 / 0x1526 (FUN_100fedc0),
+    extdata kind 2 (FUN_100fee70) or 3 (FUN_100feef0); only ext bytes 0..11 are read. Kind 0 or anything else shows
+    nothing, not even charges: the charge line needs no extdata (an event's item) or kind 1.
+  - Aug mark (FUN_101cb8a0 / FUN_101cb990): not for the 50 weapons of the no-mark list (0x1037d378) nor a serialized
+    item (kind 2, ext[1] & 0x10); ext[1] & 2 adds the Ex mark (LSB sets it on every standard augment).
+  - Forms (FUN_100ff140), in order: item id < 0x2800 evolith stone; kind 2 with ext[1] & 0x80 evolith slots, & 0x10
+    serialized ("%s No. %05d", server names group 0x16), & 0x20 mezzotint (Type / Rank / RP), & 0x08 escutcheon
+    (craftsmanship), else classic (5 x {11-bit id, 5-bit value}, 4 plus a trial word with & 0x40: "[Trial %d]" until bit
+    15); kind 3 with ext[1] & 0x80 bundle (file 81's "mnc2" chunk: RP curves, 1024 bundles, 1996 records).
+  - Classic: FUN_100ff9c0 folds the augments into a stats record (handler table 0x10362538 for ids 0..0x7f, ranges
+    above), FUN_100ff2f0 prints it in a fixed order with a packer of 5 units a line (Rng. Acc. / Rng. Atk. / Mag. Acc.
+    3, specials a line each). Texts: file slot 0x1b (55692) through sprintf with the value; "{FIR}".."{DKN}" become
+    EF 1F..EF 26. The block (+0x1b8, 0xbf bytes) groups bundles / mezzotints / evolith slots as "[n]"; the short line
+    goes to "<...>" (0x80407090 at the top rank).
+  - Rows: augment lines never on page 0 (English); page 1 shows the rest of the description, else the augment lines to
+    row 10 (the rest dropped); page 2 only after a description page, with all augment lines. Pages 1 / 2 end with the
+    item level line's 0x48 appended, else 0x50 on the last blank row. FUN_101ca520 / FUN_101ca570 wrap after the last
+    of " \t,/" keeping it, no trimming (job lines too).
+  - Data tables found by hint + MD5 in the packed install DLL (attribute / pet / element masks, prefix, evolith,
+    mezzotint index and RP, no-mark ids); the nearly empty 0x280 / 0x480 tables and the shape glyphs as constants.
+  - Not seen live (no augmented gear on the test characters); offscreen Kupofried's Ring with vector 5 matches.
