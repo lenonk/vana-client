@@ -3506,3 +3506,14 @@ FUN_100b5620, 0x75 FUN_100b8660).
   DAT_10480a94[val@2] (0..8) = ActIndex, a table nothing in the build reads (cleared to 0xffff at 144153). XiEvents
   words subs 3 / 4 differently; the decompile above is what we follow.
 - Ours: Host::language / index / weather_day (client/event.rs weather_day reads the files); test weather_table.
+
+## Event op 0x31: walk to a point in 3D (2026-10-22)
+
+- FUN_100b5630. Sub 0 (len 10): FUN_1008af20 on the actor (stops its '@tl0' / '@tr0' steps, model vtable +0x29c),
+  then the thread slot (+0x20 + thread * 0x20) gets x val@2, height val@6, z val@4 (x 0.001: +0x28 / +0x2c / +0x30)
+  and a frame limit val@8 (short +0x38). Sub 1 (len 2): d = target - body (+0x140..), body dir (+0x154) =
+  atan2(-dz, dx); limit < 1 -> done where it is; |d| <= speed (+0x168) x frame ticks x _DAT_1032b160 -> snap, done;
+  else step along d. Then limit -= frame ticks (ftol), +0x25a = 1 (ends the frame) and actor+0x124 |= 0x20000. Both
+  subs end with the ground snap (FUN_10181290 with range 50 for the player, else FUN_10181300) unless actor +0x128
+  bit 14 or +0x120 bits 20 / 21 (ours: Body.no_ground). The limit bounds the time, not the speed.
+- Ours: Thread.frames, move_3d, Effect::StopTurn. Zone 231 event 0x26 walks for 61 / 301 / 481 frames.

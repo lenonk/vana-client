@@ -813,6 +813,14 @@ impl Host for LiveHost<'_> {
                 self.w.map_markers.push(m);
             }
             Effect::Fault { actor, pc, op } => log::warn!("event: op {op:#x} at {pc:#x} on {actor:#x} cannot run"),
+            Effect::StopTurn { actor } => {
+                let id = self.wid(actor);
+                if let Some(a) = self.w.actors.get_mut(&id)
+                    && a.play.as_ref().is_some_and(|p| p.name == "@tl0" || p.name == "@tr0")
+                {
+                    a.play = None;
+                }
+            }
             _ => {}
         }
     }

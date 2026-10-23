@@ -61,6 +61,8 @@ pub enum Effect {
     Volume { mask: i32, level: f32, ticks: f32 },
     /// Actor alpha fade (0x6c).
     ActorFade { actor: u32, alpha: i32, frames: i32 },
+    /// FUN_1008af20: the actor's turning steps ('@tl0' / '@tr0') stop.
+    StopTurn { actor: u32 },
     /// Motion start: 0x5b / 0x66 load motion file `file` then play 4cc `name` (model vtable +0x298),
     /// 0x2c plays one the actor has (file 0). 0x53 waits for it ([`Busy::Playing`]).
     Motion { op: u8, actor: u32, target: u32, file: i32, name: String },
@@ -186,12 +188,14 @@ struct Thread {
     state: u8,
     /// -1 = idle (+0x18).
     timer: f32,
+    /// Op 0x31's frame limit (the same +0x18 word, as a short).
+    frames: i16,
     caller: u32,
 }
 
 impl Thread {
     fn free() -> Thread {
-        Thread { prio: FREE, pc: 0, target: [0.0; 4], entry: 0, state: 0, timer: -1.0, caller: 0 }
+        Thread { prio: FREE, pc: 0, target: [0.0; 4], entry: 0, state: 0, timer: -1.0, frames: 0, caller: 0 }
     }
 }
 
@@ -1012,6 +1016,31 @@ impl Runtime {
                 self.face(v, a, t, host);
                 self.adv(v, 9);
             }
+            // FUN_100b5630: sub 0 stops the turning steps and keeps target x val@2, z val@4, height val@6 and a frame
+            // limit val@8; sub 1 walks there in 3D at the body speed until it arrives or the limit runs out. Both
+            // then put the body on the ground unless it is off-ground.
+            0x31 => {
+                if sub == Some(0) {
+                    host.effect(Effect::StopTurn { actor });
+                    let (x, z, y) = (self.val(v, 2) as f32 * POS, self.val(v, 4) as f32 * POS, self.val(v, 6) as f32 * POS);
+                    let frames = self.val(v, 8) as i16;
+                    let t = self.thread(v);
+                    t.target = [x, y, z, 0.0];
+                    t.frames = frames;
+                    self.adv(v, 10);
+                } else if sub == Some(1) {
+                    self.move_3d(v);
+                } else {
+                    return;
+                }
+                let (body, actor) = (self.vms[v].body, self.vms[v].actor);
+                let b = &mut self.bodies[body];
+                if !b.no_ground
+                    && let Some(g) = host.ground(actor, b.pos)
+                {
+                    b.pos[1] = g;
+                }
+            }
             0x1f | 0x5a => match sub {
                 Some(0) => {
                     let (x, z, y) = (self.val(v, 2) as f32 * POS, self.val(v, 4) as f32 * POS, self.val(v, 6) as f32 * POS);
@@ -1658,6 +1687,35 @@ impl Runtime {
         if arrived {
             self.adv(v, 2);
         }
+        self.yield_(v);
+    }
+
+    /// 0x31 sub 1: a step toward the thread's target at speed * ticks / 60 (snapping when within it); done when there
+    /// or when the frame limit is below 1. The limit drops by the frame's ticks; always ends the frame.
+    fn move_3d(&mut self, v: usize) {
+        let body = self.vms[v].body;
+        let (tg, frames) = (self.thread(v).target, self.thread(v).frames);
+        let dt = self.dt;
+        let b = &mut self.bodies[body];
+        let d = [tg[0] - b.pos[0], tg[1] - b.pos[1], tg[2] - b.pos[2]];
+        b.dir = (-d[2]).atan2(d[0]);
+        let dist = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
+        let step = dt * b.speed / 60.0;
+        let done = if frames < 1 {
+            true
+        } else if dist <= step {
+            b.pos = [tg[0], tg[1], tg[2]];
+            true
+        } else {
+            for k in 0..3 {
+                b.pos[k] += d[k] / dist * step;
+            }
+            false
+        };
+        if done {
+            self.adv(v, 2);
+        }
+        self.thread(v).frames = (frames as f32 - dt) as i16;
         self.yield_(v);
     }
 
