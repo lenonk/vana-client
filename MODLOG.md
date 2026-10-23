@@ -5263,3 +5263,17 @@ Notes: `~/ffxi/lab/research/shop_spec2.md`.
 - Still left: the scroll / dice / attachment colours (record +0x1554 kind, +0x1558 argument; spell names, 0x0AC bits,
   0x044 attachments), the requirement column (keytops3 192 + rank, windowps 212 + job; craft ranks from s2c 0x062,
   not parsed) and its grey rule, the sell list's settled flag (s2c 0x01D).
+
+## Windows in WinBoat: software GPU and Helios (2026-10-23)
+
+- Without GPU passthrough the VM has only WARP ("Microsoft Basic Render Driver", Dx12, Cpu): unplayably slow even with
+  the first-start software defaults (background halved, anisotropy 1; config software_gpu_seen).
+- WinBoat's pre-release Helios paravirtual GPU (a Venus Vulkan driver in the guest, virglrenderer on the host):
+  - Vulkan: mesa-helios 162130a's vulkan_virtio.dll faults (null read) in vn_get_wait_semaphore_counter on wgpu's first
+    vkQueueSubmit: a VkSubmitInfo that waits on a binary semaphore (the swapchain acquire) and signals a timeline one
+    carries a VkTimelineSemaphoreSubmitInfo with pWaitSemaphoreValues NULL (valid Vulkan; wgpu-hal semaphore_list.rs
+    fills wait values only when a wait is a timeline). A 16-byte patch of the DLL (~/Projects/helios/vulkan-virtio-patch)
+    fixes it; with it the client runs. Stock Helios still crashes.
+  - DX12 (its vkd3d path, "Helios vGPU", Dx12, DiscreteGpu): the device is lost while wgpu creates its 2048-sampler
+    shader-visible heap (DXGI 0x887A0005), about 1 s after creation.
+- WGPU_BACKEND (vulkan, dx12, ...) picks the backend; the Windows build logs to %APPDATA%\vana-client\vana-client.log.
