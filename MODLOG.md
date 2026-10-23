@@ -4949,3 +4949,16 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix, Mog House): menu Synthesize and History, /lastsynth check, /lastsynth twice, a favourite set,
   cmb0.dat written; chat lines "You obtain 3 ash logs!", "1 ash log.", "Lnxcsfix's woodworking skill rises 0.1
   points.", "You synthesized a piece of ash lumber.".
+
+## Ours, not retail: a synthesis amount (2026-10-23, the user's design)
+
+- Synthesize (after retail's gate 0x77 and inventory check) asks how many in itemctrl hung from tskill1's bottom edge,
+  1 filled in so Enter goes on as before. Up / Down 1, Right 1, Left the most (complete sets of the crystal and every
+  material at its count in unlocked stacks, 1..99), digits type the number, Backspace drops a digit, Escape back to
+  tskill1. Bars: itemctrl's (0xd 0x3e, 0xe 0x10c).
+- The repeats (synth::repeat_frame): each next one goes when the last is over (its 0x06F in and the retail 2 s
+  request lock gone, our animation done, out of status 0x2c, no synthesis window), from fresh stacks as /lastsynth
+  finds them; LSB's own rule is 15 s from the last start (0x096_combine_ask.cpp), and a synthesis takes about 16 s.
+  Failures go on; any other answer (interrupted, a cancel, wait longer), missing materials (group 9 0xe) or a zone
+  change stop them. Sends actions by itself: the user asked for it as a standing feature (not an Extras toggle).
+- Live: History -> Synthesize -> 3 typed -> three in a row, about 5 s apart (two failures, one success).

@@ -23,6 +23,8 @@ enum Focus {
     Qty,
     /// The history list or the favourites window has the focus (tskill1 stays open, mode 2).
     Away,
+    /// Ours (not retail): how many to make, in itemctrl: (value, most sets held, typed since open).
+    Amount(u32, u32, bool),
 }
 
 /// Where tskill1 was opened from (window +0x70 mode and the list source +0x4c): Cancel goes back there.
@@ -91,6 +93,8 @@ pub struct Anim {
 #[derive(Default)]
 pub struct State {
     pub win: Option<Win>,
+    /// Ours (not retail): the recipe being repeated and how many are still to go.
+    repeat: Option<(Record, u32)>,
     pub menu: Option<Menu>,
     /// DAT_106634b8: the last ten synthesises, newest first; read once per login.
     pub history: Vec<Record>,
@@ -595,18 +599,15 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                     w.sounds.push(Ui::Cursor as u32);
                 }
             }
-            // FUN_101e08e0: the gate (0x77), the inventory check (silent), the send; then everything closes.
+            // FUN_101e08e0: the gate (0x77) and the inventory check (silent); ours then asks how many (1 ready, so Enter
+            // goes on) before the send.
             K::Enter if s.cursor == 9 => {
-                let ok = complete(&s) && super::textcmd::status_gate(w, 0x77) && still_held(w, &s) && send(w, s.crystal, &s.slots);
-                if ok {
+                if complete(&s) && super::textcmd::status_gate(w, 0x77) && still_held(w, &s) {
                     w.sounds.push(Ui::Select as u32);
-                    // Modes 1 and 2 also close the cmbmenu chain (FUN_1015e910 / cmbhlst).
-                    if matches!(s.from, From::Crystals | From::History) {
-                        w.synth.menu = None;
-                    }
-                    return;
+                    s.focus = Focus::Amount(1, sets_held(w, &s), false);
+                } else {
+                    w.sounds.push(Ui::Error as u32);
                 }
-                w.sounds.push(Ui::Error as u32);
             }
             // Mode 2's Cancel gives the history list the focus back.
             K::Enter if s.cursor == 10 && s.from == From::History => {
@@ -665,6 +666,59 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
             }
             s.list = (sc, cu);
         }
+        Focus::Amount(mut v, max, mut typed) => {
+            let digit = match key {
+                K::Num0 => Some(0),
+                K::Num1 => Some(1),
+                K::Num2 => Some(2),
+                K::Num3 => Some(3),
+                K::Num4 => Some(4),
+                K::Num5 => Some(5),
+                K::Num6 => Some(6),
+                K::Num7 => Some(7),
+                K::Num8 => Some(8),
+                K::Num9 => Some(9),
+                _ => None,
+            };
+            match (key, digit) {
+                (_, Some(d)) => {
+                    v = if typed { v * 10 + d } else { d }.clamp(1, max);
+                    typed = true;
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+                (K::ArrowUp, _) => v = (v + 1).min(max),
+                (K::ArrowDown, _) => v = v.saturating_sub(1).max(1),
+                (K::ArrowRight, _) => v = 1,
+                (K::ArrowLeft, _) => v = max,
+                (K::Backspace, _) => v = (v / 10).max(1),
+                (K::Enter, _) => {
+                    if send(w, s.crystal, &s.slots) {
+                        w.sounds.push(Ui::Select as u32);
+                        if v > 1 {
+                            w.synth.repeat = Some((recipe(&s), v - 1));
+                        }
+                        // Modes 1 and 2 also close the cmbmenu chain (FUN_1015e910 / cmbhlst).
+                        if matches!(s.from, From::Crystals | From::History) {
+                            w.synth.menu = None;
+                        }
+                        return;
+                    }
+                    w.sounds.push(Ui::Error as u32);
+                    s.focus = Focus::Slots;
+                }
+                (K::Escape, _) => {
+                    w.sounds.push(Ui::Cancel as u32);
+                    s.focus = Focus::Slots;
+                }
+                _ => {}
+            }
+            if matches!(key, K::ArrowUp | K::ArrowDown | K::ArrowRight | K::ArrowLeft | K::Backspace) {
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            if matches!(s.focus, Focus::Amount(..)) {
+                s.focus = Focus::Amount(v, max, typed);
+            }
+        }
         Focus::Qty => {
             let (index, id, mut v, max) = s.qty.unwrap_or((0, 0, 1, 1));
             match key {
@@ -693,10 +747,65 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     w.synth.win = Some(s);
 }
 
-/// s2c 0x06F: the waiting request's callback (LAB_101e0940) by Result, then the request is answered.
+/// Ours: how many complete sets (the crystal and every material at its count) the unlocked stacks hold, 1..99.
+fn sets_held(w: &World, s: &Win) -> u32 {
+    let held = |id: u16| -> u32 { w.inv.slots.iter().filter(|((c, i), (x, _))| *c == 0 && *i != 0 && *x == id && w.inv.locks.get(&(0, *i)).copied().unwrap_or(0) == 0).map(|(_, (_, n))| *n).sum() };
+    let mut need: Vec<(u16, u32)> = vec![(s.crystal.1, 1)];
+    for &(index, id, count) in s.slots.iter().filter(|x| x.0 != 0 && x.2 != 0) {
+        let _ = index;
+        match need.iter_mut().find(|n| n.0 == id) {
+            Some(n) => n.1 += count,
+            None => need.push((id, count)),
+        }
+    }
+    need.iter().map(|&(id, n)| held(id) / n.max(1)).min().unwrap_or(1).clamp(1, 99)
+}
+
+/// The request as a record (its crystal and one id per unit) for the repeats.
+fn recipe(s: &Win) -> Record {
+    let mut materials = [0u16; 8];
+    let mut k = 0;
+    for &(_, id, count) in s.slots.iter().filter(|x| x.0 != 0) {
+        for _ in 0..count {
+            if k < 8 {
+                materials[k] = id;
+                k += 1;
+            }
+        }
+    }
+    Record { crystal: s.crystal.1, materials, ..Default::default() }
+}
+
+/// Ours: the next of the repeats once the last one is over (its answer in and the 2 s lock gone, our animation done,
+/// out of status 0x2c, no synthesis window), from fresh stacks; missing materials stop it with group 9 0xe.
+fn repeat_frame(w: &mut World) {
+    let Some((r, left)) = w.synth.repeat else { return };
+    if left == 0 {
+        w.synth.repeat = None;
+        return;
+    }
+    let busy = w.synth.request.is_some() || w.synth.anims.contains_key(&w.my_id) || w.my_motion.status == 0x2c || w.synth.win.is_some();
+    if busy {
+        return;
+    }
+    match find_units(w, &r) {
+        Some((crystal, slots)) if send(w, crystal, &slots) => w.synth.repeat = Some((r, left - 1)),
+        Some(_) => w.synth.repeat = None,
+        None => {
+            w.synth.repeat = None;
+            log_group9(w, 0xe, 0x79);
+        }
+    }
+}
+
+/// s2c 0x06F: the waiting request's callback (LAB_101e0940) by Result, then the request is answered. Ours: anything but
+/// a result (success or failure) ends the repeats.
 pub fn on_result(w: &mut World, a: Answer) {
     if !matches!(w.synth.request, Some((2, _))) {
         return;
+    }
+    if !matches!(a.result, 0 | 1 | 0xc) {
+        w.synth.repeat = None;
     }
     w.synth.request = Some((4, Instant::now()));
     let line9 = |w: &mut World, id| log_group9(w, id, 0x79);
@@ -760,6 +869,7 @@ pub fn update(w: &mut World) {
         r => r,
     };
     shown_frame(w, ticks);
+    repeat_frame(w);
     let ids: Vec<u32> = w.synth.anims.keys().copied().collect();
     for id in ids {
         anim_frame(w, id, ticks);
@@ -900,7 +1010,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
             focus("menu    inventor", s.list.1 as u16 + 1, bars);
             bars.help[1] = gu.menu_msg(7, "");
         }
-        Focus::Qty => {
+        Focus::Qty | Focus::Amount(..) => {
             bars.help[1] = gu.menu_msg(0x10c, "");
             bars.title[1] = gu.title_msg(0x3e).unwrap_or_default();
         }
@@ -912,7 +1022,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     if let Some(s) = &w.synth.win {
         let index = match s.focus {
             Focus::List | Focus::Qty => picker_rows(w).get(s.list.0 + s.list.1)?.index,
-            Focus::Slots => s.slots.get((s.cursor as usize).checked_sub(1)?)?.0,
+            Focus::Slots | Focus::Amount(..) => s.slots.get((s.cursor as usize).checked_sub(1)?)?.0,
             // FUN_101e2e90: the history row's ItemNo.
             Focus::Away => {
                 let (cur, _) = w.synth.menu.as_ref()?.history?;
@@ -1028,8 +1138,17 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
         rects.push(win.frame);
     }
-    if let Some((_, _, v, max)) = s.qty
-        && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])
+    let amount = match s.focus {
+        Focus::Amount(v, max, _) => Some((0, 0, v, max)),
+        _ => None,
+    };
+    // The amount (ours) hangs from tskill1's bottom edge, as part of that menu; itemctrl for a stack stays at its place.
+    let off = match (amount, gu.window_rect(TSKILL1, sw, sh), gu.window_rect(ITEMCTRL, sw, sh)) {
+        (Some(_), Some(t), Some(c)) => (t[0] - c[0], t[1] + t[3] - c[1]),
+        _ => (0.0, 0.0),
+    };
+    if let Some((_, _, v, max)) = s.qty.or(amount)
+        && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, off, Some(1), true, &[])
     {
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, 0x8080_8080, true);
