@@ -657,6 +657,24 @@ impl Host for LiveHost<'_> {
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
             Effect::Op { op: 0xb6, sub: Some(sub), actor, args } => self.event_look(sub, actor, &args),
+            // Zone actions (XiZone, DAT_106175ac vtable +0x18 / +0x1c): schedulers of the zone's effects by 4cc.
+            Effect::Op { op: op @ (0x2d | 0x51), args, .. } => {
+                let who = |a: Option<&Arg>| match a {
+                    Some(Arg::Actor(0)) | None => crate::fx::sched::Who::None,
+                    Some(Arg::Actor(a)) => crate::fx::sched::Who::Actor(self.wid(*a)),
+                    _ => crate::fx::sched::Who::None,
+                };
+                let (a, b) = (who(args.first()), who(args.get(1)));
+                if let (Some(Arg::Name(n)), Some(file)) = (args.get(2), self.w.effects.zone_file()) {
+                    let name = u32::from_le_bytes(crate::dat::generator::fourcc(n));
+                    if op == 0x2d { self.w.effects.on_event_scheduler(file, name, a, b) } else { self.w.effects.stop_event_scheduler(file, name, a, b) }
+                }
+            }
+            Effect::Op { op: 0x60, sub: Some(2), args, .. } => {
+                if let (Some(Arg::Int(n)), Some(file)) = (args.first(), self.w.effects.zone_file()) {
+                    self.w.effects.on_event_scheduler(file, *n as u32, crate::fx::sched::Who::None, crate::fx::sched::Who::None);
+                }
+            }
             Effect::Op { op: 0xd9, args, .. } => self.w.event_voices = Self::arg_int(&args, 0) == Some(0),
             // FUN_10184380 with the area: the App loads it (or brings the zone's scene back) and ends the wait.
             Effect::Op { op: 0x34 | 0x35, args, .. } => match args.first() {
@@ -764,6 +782,11 @@ impl Host for LiveHost<'_> {
                 self.w.actors.get(&id).is_some_and(|a| a.fade.is_some())
             }
             // Actor +0x1b8 (action state) is nonzero while an emote loads and plays.
+            Busy::ZoneAction { name, a, b } => {
+                let who = |x: &u32| if *x == 0 { crate::fx::sched::Who::None } else { crate::fx::sched::Who::Actor(self.wid(*x)) };
+                let n = u32::from_le_bytes(crate::dat::generator::fourcc(name));
+                self.w.effects.zone_file().is_some_and(|f| self.w.effects.event_scheduler_running(f, n, who(a), who(b)))
+            }
             // Op 0xb6 sub 0x10: until the player's model is up.
             Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {

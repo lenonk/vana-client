@@ -87,6 +87,8 @@ pub enum Busy {
     Turning { actor: u32 },
     /// 0x5b / 0x66: the motion file is still loading (FUN_100cf260); the op then plays and yields once.
     MotionLoad { actor: u32, file: i32 },
+    /// 0x54: the zone action (a scheduler of the zone's effects) `name` on (a, b) still running (FUN_100b50f0).
+    ZoneAction { name: String, a: u32, b: u32 },
     /// 0x53: motion or scheduler `name` of the actor still playing (model vtable +0x2a0).
     Playing { actor: u32, name: String },
     Op { op: u8, sub: Option<u8>, actor: u32 },
@@ -1082,6 +1084,15 @@ impl Runtime {
                 self.bodies[body].pos = [x, y, z];
                 let dir = self.bodies[body].dir;
                 host.effect(Effect::Position { op: opc, actor, pos: [x, y, z], dir });
+                self.adv(v, len);
+            }
+            // FUN_100b50f0: wait while the zone action 4cc@9 on (u32@1, u32@5) runs.
+            0x54 => {
+                let (a, b, name) = (self.actor_at(v, 1), self.actor_at(v, 5), four_cc(self.u32_at(v, 9)));
+                if host.busy(&Busy::ZoneAction { name, a, b }) {
+                    self.yield_(v);
+                    return;
+                }
                 self.adv(v, len);
             }
             // FUN_100b6a60: sub 4 actor@2's walk speed (+0x168 = val@6 x 0.1), 5 its no-ground bit (u8@6), 6 waits

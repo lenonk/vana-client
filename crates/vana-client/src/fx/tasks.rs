@@ -196,6 +196,20 @@ impl Effects {
         }
     }
 
+    /// A scheduler of `file` on (a1, a2) still waiting for files or running (event op 0x54).
+    pub fn event_scheduler_running(&self, file: u32, name: u32, a1: Who, a2: Who) -> bool {
+        if self.pending.iter().any(|p| p.file == Some(file) && p.name == name && p.a1 == a1 && p.a2 == a2) {
+            return true;
+        }
+        let Some(r) = self.reg.lib_of(file).and_then(|l| self.reg.libs[l].find_global(kind::SCHEDULER, name).map(|n| (l, n))) else { return false };
+        self.tasks.iter().flatten().any(|t| t.res == r && t.a1 == a1 && t.a2 == a2)
+    }
+
+    /// The zone library's file id (its schedulers are the zone's actions, event ops 0x2d / 0x51 / 0x54).
+    pub fn zone_file(&self) -> Option<u32> {
+        self.zone_lib.map(|l| self.reg.libs[l].file_id)
+    }
+
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
         self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
