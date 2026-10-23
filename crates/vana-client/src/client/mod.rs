@@ -2146,9 +2146,10 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
 /// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
 fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
     let cache = world.item_info.clone()?;
-    let (id, ext, container, equipped, mode, flags) = match items::info_source(world) {
-        Some((id, ext, c, _, eq, mode)) => (id, ext, Some(c), eq, mode, 0),
-        None => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
+    let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
+        (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
+        (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
+        _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
     };
     let it = cache.item(id)?;
     let mut p = world.info_page.get();
@@ -2162,7 +2163,13 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     let page = p.0.min(info.pages.len().saturating_sub(1));
     let layout = iteminfo::LAYOUTS[iteminfo::rows(&info, page) - 3];
     let [_, fy, _, fh] = gu.window_rect(layout, sw, sh)?;
-    let off = if mode == 1 { (114.0, 0.0) } else { (0.0, (log_top - fh - 2.0).max(16.0) - fy) };
+    // Mode 4 (FUN_1013e4b0): (16, 16) stacked on region 3, taken as the choice window *(inf)*.
+    let query_top = gu.window_rect("menu    query", sw, sh).map_or(16.0 + fh + 2.0, |r| r[1]);
+    let off = match mode {
+        1 => (114.0, 0.0),
+        4 => (0.0, (query_top - fh - 2.0).max(16.0) - fy),
+        _ => (0.0, (log_top - fh - 2.0).max(16.0) - fy),
+    };
     let r = gu.window_swapped("menu    iteminfo", layout, sw, sh, off)?;
     items::upload_icons(gu, &cache, std::iter::once(id));
     let icon = crate::render::invwin::icon_texture(id);

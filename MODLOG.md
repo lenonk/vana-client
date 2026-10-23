@@ -4235,3 +4235,13 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
   {u32 zone} once per map (+0xa45); s2c 0x0A0 {id u32 @4, zone s16 @8, x / y / z f32 @0xc / 0x10 / 0x14} places that
   member (skipping ourselves; party or alliance by the group bits) when the sub-key under the position matches the
   map, replacing the actor-based position. Not seen live (needs party members out of model range).
+- Op 0xd4 option entries (FUN_100b2290 subs 1 / 3 / 4 / 5, 6,445 sites; FUN_1014e070): 32 bytes for option val@2
+  (< 0x20) at select window +0x13c + 0x20 i, written before the choice opens: sub 1 {u16 val@4, u16 val@6, rest
+  0xff} (the map preview LAB_101f9510 reads them); sub 3 {u16 item val@4, byte 2 = 0}; 4 / 5 {u16 item val@4, byte 2 =
+  1, byte 3 = 0 / 2, u32 val@6 / @8 / @10 = extdata words}. Sub 2's choice installs LAB_1013e6a0 as the window's
+  +0x53c callback, called every frame with the cursor option's entry (FUN_1014e0a0: option item +0x104 - 1): item
+  0xffff closes the item info window, else FUN_1013e6d0 -> FUN_1013e4b0(item, byte 2 ? entry + 4 : 0, jump = byte 3)
+  opens it in mode 4 ((16, 16), stacked on region 3, taken as the choice window *(inf)*). An answer
+  (FUN_100b2940 / FUN_100b2aa0) closes the item info window whoever opened it. Guild point and reward menus use it
+  (Southern San d'Oria 0x2b2: sub 3 entries #3..#11 with item ids). Ours: State::option_items / item_preview,
+  event::option_item. Not seen live.

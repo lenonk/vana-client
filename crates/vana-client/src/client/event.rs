@@ -297,6 +297,10 @@ pub struct State {
     pub choice: Option<Choice>,
     /// Op 0x71's input window ("menu    passinpu").
     pub input: Option<Input>,
+    /// Op 0xd4 3..5 option entries (select window +0x13c): option position -> item, extdata (subs 4 / 5).
+    pub option_items: HashMap<u32, (u16, Option<[u8; 24]>)>,
+    /// The open choice is op 0xd4 sub 2: its cursor option's item shows (LAB_1013e6a0).
+    pub item_preview: bool,
     /// Actors hidden by the script (op 0x22 / 0x4e, actor +0x120 bit 0x20000; FUN_1008cdc0); seeded at bind
     /// with the server-hidden ones (FUN_100bb300 -> FUN_1008cda0).
     pub hidden: HashSet<u32>,
@@ -359,6 +363,8 @@ impl State {
             msg: None,
             choice: None,
             input: None,
+            option_items: HashMap::new(),
+            item_preview: false,
             hidden: HashSet::new(),
             faded: HashSet::new(),
             idle: HashMap::new(),
@@ -876,6 +882,18 @@ impl Host for LiveHost<'_> {
                 }
             }
             // FUN_100b9d30: the item info window for val@1 (FUN_1013e520); 0 closes it.
+            Effect::Op { op: 0xd4, sub: Some(2), .. } => self.st.item_preview = true,
+            Effect::Op { op: 0xd4, sub: Some(s @ (3 | 4 | 5)), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                let ext = (s != 3).then(|| {
+                    let mut e = [0u8; 24];
+                    for k in 0..3 {
+                        e[k * 4..k * 4 + 4].copy_from_slice(&int(2 + k).to_le_bytes());
+                    }
+                    e
+                });
+                self.st.option_items.insert(int(0) as u32, (int(1) as u16, ext));
+            }
             Effect::Op { op: 0x93, args, .. } => {
                 let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
                 self.w.info_win = (id != 0).then_some((id, None, 0));
@@ -1697,6 +1715,22 @@ pub fn keeps_target(w: &World) -> bool {
 
 /// Keys while an event runs: Enter advances / picks, arrows move the choice cursor. Escape (key function
 /// 0x0f) cancels only while DAT_10473068 allows it, with SE "0003"; c2s 0x05B then carries 0x40000000.
+/// FUN_100b2940 / FUN_100b2aa0 after an answer: the item info window closes, whoever opened it, and the option
+/// entries go.
+fn choice_done(w: &mut World, l: &mut Live) {
+    w.info_win = None;
+    l.st.option_items.clear();
+    l.st.item_preview = false;
+}
+
+/// The item of the open op 0xd4 sub 2 choice's cursor option (LAB_1013e6a0 -> FUN_1013e6d0): item, extdata.
+pub fn option_item(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
+    let l = w.event.as_ref()?;
+    let c = l.st.choice.as_ref().filter(|_| l.st.item_preview)?;
+    let pos = c.options.get(c.cursor)?.0;
+    l.st.option_items.get(&pos).copied().filter(|e| e.0 != 0 && e.0 != 0xffff)
+}
+
 pub fn key(w: &mut World, key: egui::Key) {
     let Some(mut l) = w.event.take() else { return };
     key_live(w, &mut l, key);
@@ -1718,12 +1752,14 @@ fn key_live(w: &mut World, l: &mut Live, key: egui::Key) {
                 let pick = c.options.get(c.cursor).map(|o| o.0);
                 l.rt.choose(pick);
                 l.st.choice = None;
+                choice_done(w, l);
             }
             // FUN_10147c20 case 6: result 0xff with SE 0003 when allowed, else SE 0004 and the choice stays.
             _ if cancel && l.rt.choice_open() => {
                 if allowed {
                     l.rt.choose(None);
                     l.st.choice = None;
+                    choice_done(w, l);
                     w.sounds.push(crate::audio::Ui::Cancel as u32);
                 } else {
                     w.sounds.push(crate::audio::Ui::Error as u32);

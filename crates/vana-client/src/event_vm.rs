@@ -1217,7 +1217,25 @@ impl Runtime {
             0x24 => self.choice_op(v, host, 0, 7),
             0x25 => self.wait_choice(v, true),
             // FUN_100b2280 subs 0 / 2: the 0x24 menu one byte on (sub 0 also previews the map: not done yet).
-            0xd4 if matches!(sub, Some(0) | Some(2)) => self.choice_op(v, host, 1, 8),
+            // Sub 2 is the choice whose cursor option shows its item (LAB_1013e6a0): the host is told each frame.
+            0xd4 if matches!(sub, Some(0) | Some(2)) => {
+                if sub == Some(2) {
+                    host.effect(Effect::Op { op: opc, sub, actor, args: Vec::new() });
+                }
+                self.choice_op(v, host, 1, 8)
+            }
+            // FUN_100b2290 1 / 3 / 4 / 5: option val@2's 32-byte entry (FUN_1014e070): val@4 (an item for 3..5), sub 1
+            // also val@6 (the map preview's), subs 4 / 5 the extdata words val@6 / @8 / @10.
+            0xd4 if matches!(sub, Some(1 | 3 | 4 | 5)) => {
+                let offs: &[usize] = match sub {
+                    Some(1) => &[2, 4, 6],
+                    Some(3) => &[2, 4],
+                    _ => &[2, 4, 6, 8, 10],
+                };
+                let a = offs.iter().map(|&o| Arg::Int(self.val(v, o))).collect();
+                host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                self.adv(v, len);
+            }
             // FUN_100b2aa0: as 0x25, but a cancel stores 0xff and the event goes on.
             0x7f => self.wait_choice(v, false),
             0x26 => self.yield_(v),
