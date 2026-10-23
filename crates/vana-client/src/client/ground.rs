@@ -195,15 +195,25 @@ impl Sweep {
 
 impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
-        let Some(c) = scene.collision.as_ref() else {
-            return Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new() };
-        };
+        match scene.collision.as_ref() {
+            Some(c) => Self::from_collision(c, &scene.light_keys),
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new() },
+        }
+    }
+
+    /// Takes over the player's movement state from the ground it replaces (a sub-area came or went).
+    pub fn keep_body(&self, from: &Ground) {
+        self.body.set(from.body.get());
+    }
+
+    /// `light_keys`: the point-light table the objects' light keys resolve against.
+    pub fn from_collision(c: &crate::dat::collision::Collision, light_keys: &[u32]) -> Self {
         let tris = c.tris.clone();
         let y_range = c.object.iter().map(|&o| c.objects[o as usize].y_range).collect();
         let covers = c.object.iter().map(|&o| c.objects[o as usize].flags & 4 != 0).collect();
         let areas = c.object.iter().map(|&o| c.objects[o as usize].area).collect();
         // FUN_1017aba0: keys with bytes 1..3 'lgb' are skipped.
-        let slot = |key: u32| match scene.light_keys.iter().position(|&k| k == key) {
+        let slot = |key: u32| match light_keys.iter().position(|&k| k == key) {
             Some(s) if key != 0 && key & 0xffff_ff00 != 0x6267_6c00 && s < 255 => s as u8 + 1,
             _ => 0,
         };

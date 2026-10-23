@@ -226,6 +226,8 @@ pub struct Placement {
     pub scale: [f32; 3],
     /// Record +0x54..+0x60 (version >= 0x12): 1-based refs into the MZB light list, as the keys they name (0 none).
     pub lights: [u32; 4],
+    /// Record +0x50: the sub-area this placement stands in for (hidden while that one is loaded, FUN_1017a630).
+    pub link: u32,
 }
 
 impl Placement {
@@ -273,7 +275,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
                 *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
             }
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights });
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50) });
     }
     Ok(out)
 }
@@ -418,21 +420,33 @@ pub fn parse_img(p: &[u8]) -> Result<Texture> {
     Ok(Texture { name, format: flag, width: w, height: h, rgba, dxt })
 }
 
-/// A RID region: an oriented box. Names starting with 'z' are zone lines, '_' doors, 'E' events.
+/// A RID region: an oriented box. Names starting with 'z' are zone lines, '_' doors, 'E' events, 'm' / 'M'
+/// sub-area triggers.
 #[derive(Clone, Debug)]
 pub struct Region {
     pub name: String,
     pub pos: [f32; 3],
+    /// Only the yaw (rot[1]) is used; +0x0C is the rect class, see `class`.
     pub rot: [f32; 3],
     pub scale: [f32; 3],
+    /// +0x0C as a u32: sub-area triggers are hit-tested only with class 0 (FUN_10173c10).
+    pub class: u32,
+    /// +0x2C: a sub-area trigger's sub-area id (0 unloads the current one).
+    pub param: u32,
 }
 
 impl Region {
+    /// FUN_101760f0: inside the box T(-pos) RotY(-yaw) S(1 / |size|) maps to [-0.5, 0.5]^3.
     pub fn contains(&self, p: [f32; 3]) -> bool {
         let (dx, dy, dz) = (p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]);
         let (s, c) = (-self.rot[1]).sin_cos();
         let (lx, lz) = (dx * c + dz * s, -dx * s + dz * c);
-        lx.abs() <= self.scale[0] / 2.0 && dy.abs() <= self.scale[1] / 2.0 && lz.abs() <= self.scale[2] / 2.0
+        lx.abs() <= self.scale[0].abs() / 2.0 && dy.abs() <= self.scale[1].abs() / 2.0 && lz.abs() <= self.scale[2].abs() / 2.0
+    }
+
+    /// An 'm' / 'M' record.
+    pub fn is_sub_area(&self) -> bool {
+        self.name.starts_with(['m', 'M'])
     }
 
     /// The 4-byte tag the server knows a zone line by.
@@ -451,9 +465,19 @@ pub fn parse_rid(p: &[u8]) -> Vec<Region> {
     (0..count)
         .filter_map(|i| {
             let e = 0x40 + i * 0x40;
-            (e + 0x2C <= p.len()).then(|| Region { pos: vec3_at(p, e), rot: vec3_at(p, e + 12), scale: vec3_at(p, e + 24), name: name_at(p, e + 0x24, 8) })
+            (e + 0x30 <= p.len()).then(|| Region { pos: vec3_at(p, e), rot: vec3_at(p, e + 12), scale: vec3_at(p, e + 24), name: name_at(p, e + 0x24, 8), class: u32_at(p, e + 12), param: u32_at(p, e + 0x2C) })
         })
         .collect()
+}
+
+/// FUN_101760f0 over the kept sub-area triggers (class 0, list order): the first one holding `p`, its id.
+pub fn sub_area_at(regions: &[Region], p: [f32; 3]) -> Option<u32> {
+    regions.iter().filter(|r| r.is_sub_area() && r.class == 0).find(|r| r.contains(p)).map(|r| r.param)
+}
+
+/// FUN_101779b0: some 'm' / 'M' record (any class) names sub-area `id`.
+pub fn declares_sub_area(regions: &[Region], id: u32) -> bool {
+    regions.iter().any(|r| r.is_sub_area() && r.param == id)
 }
 
 pub struct ZoneScene {

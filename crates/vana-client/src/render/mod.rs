@@ -256,6 +256,25 @@ pub struct ZoneRenderer {
     pub lighting: Option<crate::dat::weather::Lighting>,
     /// Posed actor points read back (footsteps).
     pub points: points::Points,
+    /// The loaded sub-area (an interior), drawn after the zone's scenery.
+    sub: Option<SubGeometry>,
+    /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
+    /// `light_keys` are the zone's own.
+    links: Vec<(u32, u32, Instance)>,
+    hidden: u32,
+    zone_keys: usize,
+}
+
+/// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
+/// slots after the zone's; drawn once all of it is on the GPU.
+struct SubGeometry {
+    vertices: wgpu::Buffer,
+    indices: wgpu::Buffer,
+    instances: wgpu::Buffer,
+    draws: Vec<Draw>,
+    tex_base: usize,
+    link: u32,
+    shown: bool,
 }
 
 /// Anisotropic filtering for scenery, actor and creator samplers (config `anisotropy`, 1 = off).
@@ -647,6 +666,8 @@ const INSTANCE_BYTES: u64 = std::mem::size_of::<Instance>() as u64;
 /// scene on the loader thread.
 pub struct ZoneGeometry {
     matrices: Vec<Instance>,
+    /// Instances of placements that stand in for a sub-area (MZB +0x50): instance, link, as built.
+    links: Vec<(u32, u32, Instance)>,
     /// The point-light table's keys (MZB light lists; slot = index), for the effects that light them.
     pub light_keys: Vec<u32>,
     draws: Vec<Draw>,
@@ -656,11 +677,16 @@ pub struct ZoneGeometry {
 
 impl ZoneGeometry {
     pub fn build(scene: &ZoneScene) -> Self {
+        Self::build_keyed(scene, &scene.light_keys)
+    }
+
+    /// With the point-light table `keys` (a sub-area's light refs resolve into the zone's table, FUN_1017a5e0).
+    pub fn build_keyed(scene: &ZoneScene, keys: &[u32]) -> Self {
         // Slot 0 is the plain white texture; scene textures follow in order.
         let texture_slot: HashMap<&str, usize> = scene.textures.iter().enumerate().map(|(i, t)| (t.name.as_str(), i + 1)).collect();
         // A placement's refs become their table slot + 1, except keys starting with 'c', which the main scenery
         // path skips (FUN_10175ac0).
-        let light_keys: Vec<u32> = scene.light_keys.iter().copied().take(LIGHTS).collect();
+        let light_keys: Vec<u32> = keys.iter().copied().take(LIGHTS).collect();
         let slot_of = |key: u32| -> u32 {
             match light_keys.iter().position(|&k| k == key) {
                 Some(s) if key != 0 && key as u8 != b'c' => s as u32 + 1,
@@ -668,19 +694,25 @@ impl ZoneGeometry {
             }
         };
         // One instance block per mesh, holding the matrices of every placement that uses it.
-        let mut by_mesh: HashMap<&str, Vec<Instance>> = HashMap::new();
+        let mut by_mesh: HashMap<&str, Vec<(Instance, u32)>> = HashMap::new();
         for p in &scene.placements {
             let lights = p.lights.map(slot_of);
-            by_mesh.entry(&p.name).or_default().push(Instance { model: p.matrix(), lights });
+            by_mesh.entry(&p.name).or_default().push((Instance { model: p.matrix(), lights }, p.link));
         }
         let mut matrices: Vec<Instance> = Vec::new();
+        let mut links = Vec::new();
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
         let mut all_indices: Vec<u16> = Vec::new();
         for mesh in &scene.meshes {
             let Some(mats) = by_mesh.remove(mesh.name.as_str()) else { continue };
             let start = matrices.len() as u32;
-            matrices.extend(mats);
+            for (inst, link) in mats {
+                if link != 0 {
+                    links.push((matrices.len() as u32, link, inst));
+                }
+                matrices.push(inst);
+            }
             let instances = start..matrices.len() as u32;
             for model in &mesh.models {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
@@ -720,7 +752,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, light_keys, draws, verts: all_verts, indices: all_indices }
+        Self { matrices, links, light_keys, draws, verts: all_verts, indices: all_indices }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -813,7 +845,72 @@ impl ZoneRenderer {
             clear_color: true,
             lighting: None,
             points: points::Points::new(gpu),
+            sub: None,
+            links: geo.links.clone(),
+            hidden: 0,
+            zone_keys: geo.light_keys.len(),
         }
+    }
+
+    /// A sub-area's scenery replaces the loaded one (FUN_101787c0 state 2); `light_keys` is the zone's table with
+    /// the sub-area's keys after it. The stand-ins for `link` hide once it is on the GPU (FUN_1017a630).
+    pub fn set_sub(&mut self, gpu: &Gpu, link: u32, geo: &ZoneGeometry, textures: Vec<crate::dat::zone::Texture>, light_keys: Vec<u32>) {
+        self.clear_sub();
+        let device = &gpu.device;
+        let buffer = |label, bytes: &[u8], usage| {
+            let b = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (bytes.len() as u64).max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            gpu.queue.write_buffer(&b, 0, bytes);
+            b
+        };
+        let [v, i, m] = geo.parts();
+        let tex_base = self.textures.len();
+        let white = self.textures[0].clone();
+        self.textures.extend(std::iter::repeat_n(white, textures.len()));
+        self.pending.extend(textures.into_iter().enumerate().map(|(k, t)| (tex_base + k, t, None)));
+        let draws = geo.draws.iter().map(|d| Draw { texture: if d.texture == 0 { 0 } else { tex_base + d.texture - 1 }, instances: d.instances.clone(), ..*d }).collect();
+        self.sub = Some(SubGeometry {
+            vertices: buffer("sub-area vertices", v, wgpu::BufferUsages::VERTEX),
+            indices: buffer("sub-area indices", i, wgpu::BufferUsages::INDEX),
+            instances: buffer("sub-area instances", m, wgpu::BufferUsages::VERTEX),
+            draws,
+            tex_base,
+            link,
+            shown: false,
+        });
+        self.light_keys = light_keys;
+        // Offscreen renderers take everything at once.
+        if !self.budgeted {
+            for (slot, t, _) in std::mem::take(&mut self.pending) {
+                self.put_texture(gpu, slot, &t);
+            }
+            self.hide_links(gpu, link);
+            if let Some(s) = &mut self.sub {
+                s.shown = true;
+            }
+        }
+    }
+
+    /// The sub-area goes (FUN_10178ac0). Its stand-ins stay hidden: unloading does not run FUN_1017a630 again.
+    pub fn clear_sub(&mut self) {
+        if let Some(s) = self.sub.take() {
+            self.textures.truncate(s.tex_base);
+            self.pending.retain(|p| p.0 < s.tex_base);
+            self.light_keys.truncate(self.zone_keys);
+        }
+    }
+
+    /// FUN_1017a630: zone instances whose link is `link` draw nothing, the others as built.
+    fn hide_links(&mut self, gpu: &Gpu, link: u32) {
+        if link == self.hidden {
+            return;
+        }
+        for (i, l, inst) in &self.links {
+            if *l == link || *l == self.hidden {
+                let v = if *l == link { Instance::zeroed() } else { *inst };
+                gpu.queue.write_buffer(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
+            }
+        }
+        self.hidden = link;
     }
 
     fn put_texture(&mut self, gpu: &Gpu, slot: usize, t: &crate::dat::zone::Texture) {
@@ -872,6 +969,13 @@ impl ZoneRenderer {
             crate::client::perf::note(|| format!("zone textures, {} left", self.pending.len()));
             if self.pending.is_empty() {
                 self.log_textures();
+            }
+        }
+        let sub_up = self.sub.as_ref().filter(|s| !s.shown && self.geo_pending.is_none() && !self.pending.iter().any(|p| p.0 >= s.tex_base) && gpu.mips_done() >= self.mips_seq).map(|s| s.link);
+        if let Some(link) = sub_up {
+            self.hide_links(gpu, link);
+            if let Some(s) = &mut self.sub {
+                s.shown = true;
             }
         }
         let mut i = 0;
@@ -1183,6 +1287,21 @@ impl ZoneRenderer {
                     bound = d.texture;
                 }
                 pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, d.instances.clone());
+            }
+            if let Some(s) = self.sub.as_ref().filter(|s| s.shown) {
+                pass.set_vertex_buffer(1, s.instances.slice(..));
+                pass.set_vertex_buffer(0, s.vertices.slice(..));
+                pass.set_index_buffer(s.indices.slice(..), wgpu::IndexFormat::Uint16);
+                for d in s.draws.iter().filter(|d| d.alpha_test == cutout) {
+                    if d.texture != bound {
+                        pass.set_bind_group(1, &self.textures[d.texture], &[]);
+                        bound = d.texture;
+                    }
+                    pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, d.instances.clone());
+                }
+                pass.set_vertex_buffer(1, self.instances.slice(..));
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
             }
         }
         if let Some((_, group, _)) = &self.pose_gpu {

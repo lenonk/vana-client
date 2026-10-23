@@ -148,6 +148,8 @@ pub struct ElemCpu {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Owner {
     Zone,
+    /// The loaded sub-area's auto-start generators.
+    SubArea,
     /// The weather set (index into Effects::weathers' serials).
     Weather(u32),
     Element(usize),
@@ -642,7 +644,7 @@ impl Effects {
     /// Makes an already registered library the zone's (event op 0x34 swaps areas and back).
     pub fn switch_zone(&mut self, l: usize) {
         for i in 0..self.insts.len() {
-            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::Weather(_))) {
+            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_))) {
                 self.kill(i);
             }
         }
@@ -673,6 +675,43 @@ impl Effects {
         }
         for node in starts {
             self.start((l, node), Owner::Zone);
+        }
+    }
+
+    /// A sub-area DAT (an interior) loaded beside the zone: the old one's generators go and its auto-start world
+    /// generators start, as a zone's do *(inf: the chunk loader starts them the same way)*. A file loaded before is
+    /// reused.
+    pub fn load_sub_area(&mut self, lib: Library) {
+        self.drop_sub_area();
+        let l = self.reg.lib_of(lib.file_id).unwrap_or_else(|| self.reg.add(lib));
+        let weat = crate::dat::generator::fourcc("weat");
+        let starts: Vec<usize> = self.reg.libs[l]
+            .gens
+            .iter()
+            .filter(|g| g.flags & 0x1000 != 0 && matches!(g.attach_mode(), 0 | 0xe | 0xf | 0x14))
+            .filter(|g| !self.reg.libs[l].tree.path(g.node).contains(&weat))
+            .map(|g| g.node)
+            .collect();
+        log::info!("effects: sub-area DAT {}: {} generators, {} start at load", self.reg.libs[l].file_id, self.reg.libs[l].gens.len(), starts.len());
+        let meshes: Vec<usize> = self.reg.libs[l].meshes.keys().copied().collect();
+        let sprites: Vec<usize> = self.reg.libs[l].sprites.keys().copied().collect();
+        for n in meshes {
+            self.reg.mesh((l, n));
+        }
+        for n in sprites {
+            self.reg.sprite((l, n));
+        }
+        for node in starts {
+            self.start((l, node), Owner::SubArea);
+        }
+    }
+
+    /// The sub-area unloads: its generators stop.
+    pub fn drop_sub_area(&mut self) {
+        for i in 0..self.insts.len() {
+            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::SubArea)) {
+                self.kill(i);
+            }
         }
     }
 
@@ -989,7 +1028,7 @@ impl Effects {
             if let Some(x) = &self.insts[i]
                 && (x.finished || x.stopping)
                 && x.live.is_empty()
-                && !matches!(x.owner, Owner::Zone | Owner::Actor(_) | Owner::Weather(_))
+                && !matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Actor(_) | Owner::Weather(_))
             {
                 self.kill(i);
             }

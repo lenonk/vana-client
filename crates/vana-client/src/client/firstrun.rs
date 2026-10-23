@@ -133,7 +133,7 @@ impl FirstRun {
         let gold = egui::Color32::from_rgb(0xe8, 0xc8, 0x80);
         let screen = ctx.content_rect();
         ctx.layer_painter(egui::LayerId::background()).rect_filled(screen, 0.0, egui::Color32::from_rgb(0x12, 0x14, 0x22));
-        egui::Area::new(egui::Id::new("first run")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+        egui::Area::new(egui::Id::unique("first run")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
             {
                 egui::Frame::new()
                     .fill(egui::Color32::from_rgb(0x1e, 0x22, 0x3a))

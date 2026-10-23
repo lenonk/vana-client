@@ -693,6 +693,17 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Op { op: 0x78, .. } => self.st.time = None,
+            // FUN_10178900(val, 1): the sub-area loads (no 0x0F2); sub 2 tells the server (0x0F2 state 2).
+            Effect::Op { op: 0x75, sub: Some(0), args, .. } => {
+                if let Some(id) = Self::arg_int(&args, 0) {
+                    self.w.sub.asked = Some((id as u32, true));
+                }
+            }
+            Effect::Op { op: 0x75, sub: Some(2), args, .. } => {
+                if let Some(id) = Self::arg_int(&args, 0) {
+                    let _ = self.w.net.commands.send(super::net::NetCommand::SubMap { state: 2, id: id as u16 });
+                }
+            }
             // FUN_100b4590 / FUN_100bb340: actor A runs an action file's "main" on actor B (model vtable +0x2c4..
             // +0x2ec); 0xc4 0 / 2 play a weapon skill / mob skill as a one-record action, 1 a melee swing.
             Effect::Op { op: op @ (0x73 | 0xad | 0xc4), sub, args, .. } => {
@@ -854,6 +865,8 @@ impl Host for LiveHost<'_> {
             }
             // 0x9a: until the music change has loaded.
             Busy::Op { op: 0x9a, .. } => self.w.music_changing,
+            // FUN_10178780: a sub-area load is running.
+            Busy::Op { op: 0x75, .. } => self.w.sub.loading.is_some() || self.w.sub.asked.is_some(),
             // Op 0xb6 sub 0x10: until the player's model is up.
             Busy::Op { op: 0xb6, sub: Some(0x10), .. } => self.w.actors.get(&self.w.my_id).is_none_or(|a| a.character.is_none()),
             Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {

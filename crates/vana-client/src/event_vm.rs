@@ -1429,6 +1429,26 @@ impl Runtime {
                 self.set_at(v, 1, 0, c);
                 self.adv(v, 3);
             }
+            // FUN_100b67d0 sub 0: waits out a running load, then loads sub-area val@2 (FUN_10178900, synchronous in
+            // retail; ours waits for it).
+            0x75 if sub == Some(0) => {
+                let busy = Busy::Op { op: 0x75, sub, actor };
+                if self.thread(v).state == 0 {
+                    if host.busy(&busy) {
+                        self.yield_(v);
+                        return;
+                    }
+                    let args = self.args(v, op, sub);
+                    host.effect(Effect::Op { op: 0x75, sub, actor, args });
+                    self.thread(v).state = 1;
+                }
+                if host.busy(&busy) {
+                    self.yield_(v);
+                } else {
+                    self.thread(v).state = 0;
+                    self.adv(v, len);
+                }
+            }
             0xda => {
                 let v32 = host.game_config(0x43);
                 self.set_at(v, 1, 0, v32);

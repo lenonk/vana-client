@@ -123,7 +123,7 @@ pub struct ZoneText {
 #[derive(Clone, Debug)]
 pub enum NetEvent {
     /// `game_time` @0x3C (Earth seconds since the Vana'diel epoch), `weather` number @0x68; `area` the log line.
-    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine> },
+    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16 },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
     Event(EventStart),
@@ -224,6 +224,9 @@ pub enum NetCommand {
     StatusRequest(u8),
     /// c2s 0x016 CHARREQ (FUN_100ad230): ActIndex @4; LSB answers with a full 0x00E / 0x00D.
     CharReq(u16),
+    /// c2s 0x0F2 (FUN_100fc680) {u16 State @4, u16 SubMapNumber @6}: 1 a sub-area loaded (0 = none), 2 from an
+    /// event (op 0x75 sub 2).
+    SubMap { state: u16, id: u16 },
 }
 
 /// c2s 0x05B body (FUN_1009ebb0 / FUN_1009ed00).
@@ -441,7 +444,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
                         let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), ..Default::default() });
-                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p) })?;
+                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != p.u16(0x42) { p.u16(0x60) } else { 0 } })?;
                     }
                     0x00B => {
                         let state = p.u8(4);
@@ -581,6 +584,11 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                 NetCommand::Equip { index, slot, container } => queue.push(build(0x050, &[index, slot, container, 0])),
                 NetCommand::StatusRequest(kind) => queue.push(build(0x061, &[kind, 0, 0, 0])),
                 NetCommand::CharReq(index) => queue.push(build(0x016, &charreq_body(index))),
+                NetCommand::SubMap { state, id } => {
+                    let mut b = state.to_le_bytes().to_vec();
+                    b.extend_from_slice(&id.to_le_bytes());
+                    queue.push(build(0x0F2, &b));
+                }
             }
         }
         // Retail sends one datagram every 400 ms (config +0xd0 = 400, net+0x417c), each with a fresh 0x015.

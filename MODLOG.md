@@ -3420,3 +3420,37 @@ needs FixVt.java after analysis (3,478 vtable-only methods, 17,877 functions in 
   animation = id, played through +0x2c0. 0x11 +0x2f8 is FUN_100d67b0 only in vtable 0x1032e890 (others stub):
   unless +0x2a4, a category 1 action and a melee swing (FUN_100d6850).
 - 0x7d (FUN_100b8b20): the player runs file 0x13f8 + val "main" on itself (FUN_10062e20). Length 3.
+
+## Sub-areas: building interiors (2026-10-22)
+
+From the current decompile (spec in the session scratchpad, subarea_spec). Zone renderer DAT_10631f24.
+- Triggers: zone RID records 'm' / 'M'. u32 @0x0C is a rect class (we had read it as rot.x); only class 0 records are
+  hit-tested (builder FUN_10173c10); @0x2C param = the sub-area id (0 = unload). Hit test FUN_101760f0: the point in
+  T(-pos) RotY(-yaw) S(1 / |size|) inside [-0.5, 0.5]^3 *(inf: the bounds, from the corner table)*; first match in
+  list order. Region::contains now takes |size| (negative sizes failed). Zone 230: 18 ids 326..344 except 334;
+  m6eb (class 0, param 335) just outside door _6e1.
+- FUN_10014390 each frame: the player's position -> FUN_10181540 -> FUN_10178a20(zr, 1, id): ignored while loading
+  (+0x44) or for the loaded id (+0x17c, -1 none); 0 unloads (FUN_10178ac0) and sends 0x0F2(1, 0); another id loads
+  only if some m record (any class) names it (FUN_101779b0). No hysteresis: an interior stays until another trigger,
+  a param-0 trigger, s2c 0x05B / 0x065 mode 7 about us (FUN_1009ee60) or the zone unloading.
+- FUN_101787c0 (async): unload the old, read file_id(id) (zone mapping), run its chunks into zone slot 1, then
+  0x0F2(1, id), +0x17c = id, door state, FUN_1017a630, areas, +0x50 = area 'ev10'. FUN_10178900(id, from_event) is the
+  synchronous form: event op 0x75 sub 0 (no packet) and zone-in with 0x00A SubMapNumber (+0x60, when nonzero and not
+  MapNumber +0x42; sends 0x0F2(1, id)). Op 0x75 sub 2 sends 0x0F2(2, val); FUN_10178780 is the busy check.
+- c2s 0x0F2 (FUN_100fc680): u16 State @4, u16 SubMapNumber @6. LSB stores it as loc.boundary and returns it in 0x00A.
+- Placements: MZB record +0x50 = the sub-area it stands in for (house_05_in -> 335, a bare stand-in room). Render
+  type (FUN_1017a630): 1 = hidden when link == +0x17c. Unloading does not run FUN_1017a630, so stand-ins stay hidden
+  until the next load (copied).
+- Collision: the sub-area MZB's collision joins the zone grid (FUN_10167be0, cell entries flagged 0x1000, removed by
+  FUN_101679a0); objects with +0xbc == +0x17c are skipped by the walks (FUN_10182700). Object light refs remap into the
+  zone table (FUN_1017a5e0).
+- Interior DATs (e.g. 435) hold MZB + collision, MMBs, textures, schedulers, 'effe' generators and an 'ev10'
+  environment; no RID; placements already in the zone's world space.
+- Ours: client/subarea.rs (state, background load), Collision::merged, ZoneRenderer::set_sub / clear_sub (own
+  buffers, texture slots after the zone's, stand-in instances zeroed on the GPU), Effects::load_sub_area
+  (Owner::SubArea; its auto-start generators start as a zone's *(inf)*), area lights take the sub-area's
+  environments. zone-shot --sub. Checked live: Lnxcsfix (GM 5 for !pos) in m6eb loads 335, 24 generators start, the
+  floor and room inside are the interior's.
+- Not done: scenery lighting per area. FUN_10183da0 lights each instance by its area object (inst+0xe0, from MZB
+  +0x4c: none = the zone's lights, else that area's lights, ambient and fog) and pieces with word +0x22 by 'ev10'
+  while +0x50 is set; ours lights all scenery with the zone's. Door collision during a load (FUN_10176dd0) not copied.

@@ -34,6 +34,7 @@ pub struct Entry {
 }
 
 /// The object record a triangle is placed by.
+#[derive(Clone)]
 pub struct Object {
     /// +0xa4: bit 0 mirrored, bit 1 resolved after the others in the sweep, bit 2 covered (no weather under it,
     /// FUN_100136a0).
@@ -44,6 +45,8 @@ pub struct Object {
     pub area: u32,
     /// +0xac..+0xaf (records of 0xc0, version >= 0x1a): 1-based MZB light list refs, as their keys (0 none).
     pub lights: [u32; 4],
+    /// +0xbc: the sub-area it stands in for; collision skips it while that one is loaded (FUN_10182700).
+    pub link: u32,
 }
 
 fn u32_at(b: &[u8], o: usize) -> Option<u32> {
@@ -110,7 +113,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                     None => {
                         let next = objects.len() as u32;
                         let obj = *objects.entry(xf).or_insert_with(|| {
-                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)) });
+                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)), link: u32_at(p, xf + 0xbc).unwrap_or(0) });
                             next
                         });
                         let first = out.tris.len() as u32;
@@ -126,6 +129,49 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
         }
     }
     Ok(out)
+}
+
+impl Collision {
+    pub fn empty(grid: (usize, usize)) -> Collision {
+        Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); grid.0 * grid.1], grid }
+    }
+
+    /// The zone's collision with a sub-area's merged in (FUN_10167be0): its faces join the zone's grid cells after
+    /// the zone's own, and zone objects standing in for sub-area `link` drop out (the walks skip +0xbc == the
+    /// loaded id, FUN_10182700).
+    pub fn merged(&self, sub: &Collision, link: u32) -> Collision {
+        let (w, h) = self.grid;
+        let mut out = Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: self.grid };
+        for (src, skip) in [(self, Some(link)), (sub, None)] {
+            let base = out.objects.len() as u32;
+            out.objects.extend(src.objects.iter().cloned());
+            let mut entry = vec![None; src.entries.len()];
+            for (i, e) in src.entries.iter().enumerate() {
+                if skip.is_some_and(|l| src.objects[e.object as usize].link == l) {
+                    continue;
+                }
+                let r = e.first as usize..(e.first + e.count) as usize;
+                let first = out.tris.len() as u32;
+                out.tris.extend_from_slice(&src.tris[r.clone()]);
+                out.flags.extend_from_slice(&src.flags[r.clone()]);
+                out.normals.extend_from_slice(&src.normals[r.clone()]);
+                out.kinds.extend_from_slice(&src.kinds[r.clone()]);
+                out.object.extend(src.object[r].iter().map(|o| o + base));
+                entry[i] = Some(out.entries.len() as u32);
+                out.entries.push(Entry { first, count: e.count, object: e.object + base });
+            }
+            // Both grids are centred on the origin (x 4i - 2w), so a smaller one sits (w - w') / 2 cells in.
+            let (sw, sh) = src.grid;
+            let (dx, dy) = ((w as isize - sw as isize) / 2, (h as isize - sh as isize) / 2);
+            for (c, list) in src.cells.iter().enumerate() {
+                let (x, y) = ((c % sw) as isize + dx, (c / sw) as isize + dy);
+                if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
+                    out.cells[y as usize * w + x as usize].extend(list.iter().filter_map(|&e| entry[e as usize]));
+                }
+            }
+        }
+        out
+    }
 }
 
 fn add_geometry(p: &[u8], xf: usize, geo: usize, obj: u32, out: &mut Collision) {

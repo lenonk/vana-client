@@ -29,6 +29,7 @@ mod items;
 pub mod select;
 pub mod net;
 pub mod script;
+mod subarea;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -64,6 +65,7 @@ impl Task {
             Task::Selected(_) => "selected",
             Task::ZoneLoaded(..) => "zone loaded",
             Task::AreaLoaded(..) => "area loaded",
+            Task::SubAreaLoaded(..) => "sub-area loaded",
             Task::CharacterLoaded(..) => "model loaded",
             Task::GameUi(_) => "game ui",
             Task::Flyover(_) => "flyover",
@@ -84,6 +86,8 @@ enum Task {
     Selected(Result<MapLogin>),
     ZoneLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
     AreaLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, Option<crate::fx::lib::Library>)>),
+    /// A sub-area (zone, id) off the loader thread.
+    SubAreaLoaded(u16, u32, Result<subarea::Loaded>),
     /// A model by its source key, prepared for the GPU on the loader thread.
     CharacterLoaded(String, Result<Model>),
     GameUi(Result<GameUiData>),
@@ -1658,6 +1662,8 @@ struct World {
     zone: Option<u16>,
     loading: Option<u16>,
     area: AreaSwitch,
+    /// The building interior loaded over the zone.
+    sub: subarea::SubArea,
     /// Event op 0xd9: effect sounds get 20 voices while an event runs (FUN_10038330).
     event_voices: bool,
     /// Looks set by event op 0xb6, for the model loader.
@@ -2480,7 +2486,7 @@ impl App {
 
     fn handle_task(&mut self, task: Task) {
         // The lobby art loads in the background; nobody is waiting on it.
-        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::AreaLoaded(..)) {
+        if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::AreaLoaded(..) | Task::SubAreaLoaded(..)) {
             self.busy = false;
         }
         match task {
@@ -2635,6 +2641,7 @@ impl App {
                             weather: 1,
                             zone_weather: None,
                             area: AreaSwitch::default(),
+                            sub: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
                             music_fades: Vec::new(),
@@ -2735,6 +2742,39 @@ impl App {
                     }
                 }
             }
+            Task::SubAreaLoaded(zone_id, id, result) => {
+                let Phase::World(w) = &mut self.phase else { return };
+                let Some((want, from_event)) = w.sub.loading.filter(|_| w.zone == Some(zone_id)) else { return };
+                if want != id {
+                    return;
+                }
+                w.sub.loading = None;
+                match result {
+                    Ok(l) => {
+                        log::info!("sub-area {id} loaded");
+                        if let (Some(gfx), Some(r)) = (&self.gfx, w.renderer.as_mut()) {
+                            r.set_sub(&gfx.gpu, id, &l.geometry, l.textures, l.keys.clone());
+                        }
+                        w.effects.reg.light_keys = l.keys;
+                        if let Some(lib) = l.fx {
+                            w.effects.load_sub_area(lib);
+                        }
+                        w.sub.weather = l.weather;
+                        if let Some(old) = w.ground.take() {
+                            l.ground.keep_body(&old);
+                            if w.sub.home.is_none() {
+                                w.sub.home = Some(old);
+                            }
+                        }
+                        w.ground = Some(l.ground);
+                        w.sub.current = Some(id);
+                        if !from_event {
+                            let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: id as u16 });
+                        }
+                    }
+                    Err(e) => log::warn!("sub-area {id}: {e:#}"),
+                }
+            }
             Task::AreaLoaded(area, result) => {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.area.loading = false;
@@ -2769,6 +2809,9 @@ impl App {
                 world.area = AreaSwitch::default();
                 match result {
                     Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
+                        let asked = world.sub.asked.take();
+                        world.sub = subarea::SubArea::new(scene.regions.clone(), scene.collision.take(), geometry.light_keys.clone());
+                        world.sub.asked = asked;
                         world.zone_weather = weather;
                         if let Some(g) = global_fx {
                             world.effects.set_global(g);
@@ -2814,6 +2857,54 @@ impl App {
                 self.status = format!("{e:#}");
                 self.to_login(true);
             }
+        }
+    }
+
+    /// FUN_10178a20 / FUN_101787c0 each frame: the sub-area trigger under the player (or one asked for) loads its
+    /// interior in the background, or 0 unloads it.
+    fn update_sub_area(&mut self) {
+        let Phase::World(w) = &mut self.phase else { return };
+        if w.zone != Some(w.pos_zone) || w.loading.is_some() || w.area.shown.is_some() || w.ground.is_none() {
+            return;
+        }
+        match w.sub.next(w.pos.to_array()) {
+            Some(subarea::Step::Unload) => {
+                log::info!("sub-area {:?} unloads", w.sub.current);
+                if let Some(r) = w.renderer.as_mut() {
+                    r.clear_sub();
+                }
+                w.effects.drop_sub_area();
+                w.effects.reg.light_keys = w.sub.zone_keys.clone();
+                if let Some(home) = w.sub.home.take() {
+                    if let Some(old) = &w.ground {
+                        home.keep_body(old);
+                    }
+                    w.ground = Some(home);
+                }
+                (w.sub.current, w.sub.weather) = (None, None);
+                let _ = w.net.commands.send(NetCommand::SubMap { state: 1, id: 0 });
+            }
+            Some(subarea::Step::Load(id, from_event)) => {
+                let Some(zone_id) = w.zone else { return };
+                log::info!("sub-area {id} loading (zone {zone_id})");
+                w.sub.loading = Some((id, from_event));
+                let (collision, keys) = (w.sub.zone_collision.clone(), w.sub.zone_keys.clone());
+                match self.game_data() {
+                    Ok((index, zkeys)) => {
+                        let tx = self.tasks_tx.clone();
+                        std::thread::spawn(move || {
+                            let _ = tx.send(Task::SubAreaLoaded(zone_id, id, subarea::load(&index, &zkeys, id, collision, &keys)));
+                        });
+                    }
+                    Err(e) => {
+                        log::warn!("sub-area {id}: {e:#}");
+                        if let Phase::World(w) = &mut self.phase {
+                            w.sub.loading = None;
+                        }
+                    }
+                }
+            }
+            None => {}
         }
     }
 
@@ -2880,7 +2971,9 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map } => {
+                    // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
+                    world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
                     world.my_race = look_from(look).race;
                     world.my_index = index;
@@ -3071,6 +3164,10 @@ impl App {
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
                 NetEvent::Wpos { id, pos, dir, mode } => {
                     // POSMODE (LSB): 0 normal, 1 event, 3 pop, 5 reset, 6 materialize move us; 0x0a turns.
+                    // FUN_1009ee60: mode 7 about us unloads the sub-area.
+                    if id == world.my_id && mode == 7 {
+                        world.sub.asked = Some((0, false));
+                    }
                     if id == world.my_id && matches!(mode, 0 | 1 | 3 | 5 | 6 | 0x0a) {
                         if mode != 0x0a {
                             world.pos = Vec3::from(pos);
@@ -3613,7 +3710,7 @@ impl App {
         }
         if self.game_ui.is_none() {
             if self.game_ui_state == LoadState::Failed {
-                egui::Area::new(egui::Id::new("error")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+                egui::Area::new(egui::Id::unique("error")).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
                     ui.label(format!("The game data could not be loaded.\n{status}"));
                 });
             }
@@ -4100,7 +4197,7 @@ impl App {
                     if !status.is_empty() {
                         lines.push(status.clone());
                     }
-                    egui::Area::new(egui::Id::new("status")).anchor(egui::Align2::LEFT_TOP, [8.0, 56.0]).interactable(false).show(ctx, |ui| {
+                    egui::Area::new(egui::Id::unique("status")).anchor(egui::Align2::LEFT_TOP, [8.0, 56.0]).interactable(false).show(ctx, |ui| {
                         egui::Frame::new().fill(egui::Color32::from_black_alpha(150)).inner_margin(4.0).show(ui, |ui| {
                             for l in &lines {
                                 ui.add(egui::Label::new(egui::RichText::new(l).monospace().color(egui::Color32::WHITE)).extend());
@@ -4457,6 +4554,7 @@ impl App {
         }
         perf::timed(|| "network".into(), || self.poll_network());
         self.switch_area();
+        self.update_sub_area();
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {
             let ready = self.game_ui_state == LoadState::Failed || (self.game_ui.is_some() && (self.flyover.is_some() || self.flyover_state == LoadState::Failed || !self.title_backdrop()));
@@ -4671,7 +4769,8 @@ impl App {
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
                     let weather = ev_time.and_then(|(_, x)| x).unwrap_or(w.weather);
                     r.lighting = zw.at(crate::dat::weather::weather_tag(weather), minute).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
-                    w.area_lights = zw.areas.iter().filter_map(|(&id, a)| Some((id, a.at(crate::dat::weather::weather_tag(weather), minute)?.area_light()))).collect();
+                    let sub_areas = w.sub.weather.iter().flat_map(|s| s.areas.iter());
+                    w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, a.at(crate::dat::weather::weather_tag(weather), minute)?.area_light()))).collect();
                 }
                 // Op 0x10: the frame before the cut, drawn once offscreen from the camera it had (last frame's
                 // poses; its own submit so the zone uniforms keep that camera).

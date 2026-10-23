@@ -633,6 +633,9 @@ enum Cmd {
         /// Also start this generator of the zone (4cc) with the effects, for checking one that is not auto-started.
         #[arg(long)]
         start: Option<String>,
+        /// Load this sub-area (building interior) over the zone, hiding its stand-ins.
+        #[arg(long)]
+        sub: Option<u32>,
         /// Also start an event scheduler in the effects as FILE:TAG (DAT id, 4cc), as event opcode 0x45 does.
         #[arg(long)]
         sched: Option<String>,
@@ -968,7 +971,7 @@ fn main() -> Result<()> {
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust), frames, every, hour),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -1003,7 +1006,19 @@ fn main() -> Result<()> {
             };
             let camera = render::Camera { eye, target, up, fov_y: 60f32.to_radians() };
             let draws = match effects {
-                None => render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &|_, _| Vec::new())?,
+                None => {
+                    let sub_scene = sub.map(|id| index.read(dat::zone::file_id(id)).and_then(|f| dat::zone::load_scene(&keys, &f)).map(|s| (id, s))).transpose()?;
+                    let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
+                        if let Some((id, s)) = &sub_scene {
+                            let mut all = scene.light_keys.clone();
+                            all.extend(s.light_keys.iter().filter(|k| **k != 0 && !scene.light_keys.contains(k)));
+                            let geo = render::ZoneGeometry::build_keyed(s, &all);
+                            r.set_sub(gpu, *id, &geo, s.textures.clone(), all);
+                        }
+                        Vec::new()
+                    };
+                    render::render_pngs_lit(&scene, &[(&camera, out.as_path(), lighting)], 1600, 900, &setup)?
+                }
                 Some(ticks) => {
                     let mut fx = fx::Effects::new();
                     fx.set_keys(std::sync::Arc::new(keys));
