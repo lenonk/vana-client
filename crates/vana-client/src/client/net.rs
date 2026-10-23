@@ -164,7 +164,9 @@ pub enum NetEvent {
     ZoneText(ZoneText),
     /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
     /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
-    CharSync { id: u32, owner: u32, floors: bool },
+    CharSync { id: u32, owner: u32, floors: bool, open: bool },
+    /// s2c 0x02E (header only): open the moogle menu.
+    MogMenu,
     /// s2c 0x0AE: the owned mounts, 64 bits (LSB: key items 3072 + n).
     Mounts(u64),
     /// s2c 0x119 u32 @0xfc: the mount recast in seconds (one shared timer).
@@ -661,7 +663,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         kind: p.u8(0x1c),
                         name: text(&p, 0x1e, 32),
                     }))?,
-                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0 })?,
+                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0 })?,
+                    0x02E => tx.send(NetEvent::MogMenu)?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
                     0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc) })?,

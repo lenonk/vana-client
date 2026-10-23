@@ -183,8 +183,10 @@ pub struct Storage {
     pub qty: Option<Qty>,
     /// The bin opened from itmsort2 (list +0x90): Escape returns there, else the view closes.
     pub from_menu: bool,
-    /// Bank +0x70: at a moogle (Mog Safe, Storage, Locker and Safe 2 rows are grey without it).
+    /// Bank +0x70: at a moogle (Mog Safe, Storage, Locker and Safe 2 rows are grey without it); +0x71: a nomad moogle
+    /// (no Storage).
     pub at_moogle: bool,
+    pub nomad: bool,
     pub read_only: bool,
     /// itmsortw focused: its cursor, the side it serves, Auto's sortyn.
     pub sortw: Option<SortW>,
@@ -1054,7 +1056,11 @@ fn has_free(w: &World, c: u8) -> bool {
 
 /// The two-list view on `bank` (FUN_101dc880): focused on the bank side.
 fn open_view(w: &mut World, bank: u8, at_moogle: bool, read_only: bool, from_menu: bool) {
-    let st = Storage { bank, side: INVENTORY, scroll: 0, cursor: 0, on_bank: true, qty: None, from_menu, at_moogle, read_only, sortw: None, manual: None, stora: None };
+    open_view_n(w, bank, at_moogle, false, read_only, from_menu);
+}
+
+fn open_view_n(w: &mut World, bank: u8, at_moogle: bool, nomad: bool, read_only: bool, from_menu: bool) {
+    let st = Storage { bank, side: INVENTORY, scroll: 0, cursor: 0, on_bank: true, qty: None, from_menu, at_moogle, nomad, read_only, sortw: None, manual: None, stora: None };
     match &mut w.win {
         Some(Win::Items { store, sort, direct: false, .. }) if from_menu => {
             *store = Some(st);
@@ -1077,38 +1083,51 @@ pub fn open_bin(w: &mut World, from_menu: bool) -> bool {
     true
 }
 
-/// FUN_101daf70(c, need_satchel, 0): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the costume bit and the job
-/// change cooldown are not tracked); a missing Satchel (ItemNum < 30) fails silently; at a moogle only in the Mog
-/// House of a residential zone, else the Safe / Storage / Locker rows stay grey. Opens anywhere.
-pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool) -> bool {
+/// FUN_101daf70(c, need_satchel, nomad): Satchel, Sack, Case, the wardrobes. Gate 0x44 (the costume bit and the job
+/// change cooldown are not tracked); a missing Satchel (ItemNum < 30) fails silently. At the moogle in our own Mog
+/// House of a residential zone (with the moogle's line 0x2e), or by a nomad moogle in a MogZoneFlag zone; else the
+/// Safe / Storage / Locker rows stay grey. Opens anywhere.
+pub fn open_daf70(w: &mut World, c: u8, need_satchel: bool, nomad: bool) -> bool {
     if c == BIN {
         return open_bin(w, false);
     }
     if !super::textcmd::status_gate(w, 0x44) || (need_satchel && w.inv.sizes[5] < 0x1e) {
         return false;
     }
-    let at_moogle = w.myroom.is_some() && w.zone.is_some_and(moogle_zone);
-    open_view(w, c, at_moogle, false, false);
+    if w.myroom.is_some() && w.zone.is_some_and(moogle_zone) && w.mh_owner == 0 {
+        super::moogle::line(w, 0x2e);
+        open_view_n(w, c, true, nomad, false, false);
+    } else if nomad && w.mog_zone {
+        open_view_n(w, c, true, true, false, false);
+    } else {
+        open_view(w, c, false, false, false);
+    }
     true
 }
 
 /// FUN_101dae10(src, c, fn, 0): Mog Safe 1, Storage 2, Locker 4, Safe 2 9. Outside the Mog House the container alone
 /// in a read-only list; the Locker without a lease (ItemNum2[4] == 0) read-only with group 7 0xb6; the moogle away
 /// read-only with 0x48; visiting another's Mog House (s2c 0x067 @0x20) group 7 0xbc; else the view at the moogle.
-pub fn open_dae10(w: &mut World, c: u8) -> bool {
+/// With `nomad` (a nomad moogle's storage2) in a MogZoneFlag zone the view opens at once, at the moogle and nomad.
+pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
     if !super::textcmd::status_gate(w, 0x44) {
         return false;
     }
-    let refuse = if w.myroom.is_none() {
+    let here = w.myroom.is_some() || (nomad && w.mog_zone);
+    let refuse = if !here {
         None
     } else if c == 4 && w.inv.sizes2[4] == 0 {
         Some(0xb6)
+    } else if nomad {
+        open_view_n(w, c, true, true, false, false);
+        return true;
     } else if !w.zone.is_some_and(moogle_zone) {
         Some(0x48)
     } else if w.mh_owner != 0 {
         super::textcmd::refuse(w, 0xbc);
         return true;
     } else {
+        super::moogle::line(w, 0x2e);
         open_view(w, c, true, false, false);
         return true;
     };
@@ -1469,6 +1488,7 @@ fn usable(w: &World, b: &Storage, c: u8) -> bool {
     !(c == b.bank
         || c == b.side
         || (!b.at_moogle && matches!(c, 1 | 2 | 4 | 9))
+        || (b.at_moogle && b.nomad && c == 2)
         || (c == 4 && w.inv.sizes2[4] == 0)
         || (c == 5 && n(5) < 0x1e)
         || (c == 9 && !w.mh_floors)

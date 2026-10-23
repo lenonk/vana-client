@@ -41,6 +41,7 @@ mod party;
 mod macros;
 mod textcmd;
 mod magic;
+mod moogle;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -973,6 +974,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
+                _ if world.moogle.is_some() => {
+                    moogle::key(world, *key);
+                }
                 // FUN_101d6540: the Mog House door menu.
                 _ if world.mogdoor.is_some() => {
                     let m = world.mogdoor.as_mut().unwrap();
@@ -1100,7 +1104,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
-            // Item 12 Map (FUN_1013b3f0 case 0xc; the Mog House branch to myroom is not done).
+            // Item 12 in the Mog House (FUN_10140400 case 0xc): myroom, SE 0002, unless visiting another's (the row is
+            // disabled then: help 0xe 0x2a).
+            (0, 12) if world.myroom.is_some() => {
+                if world.mh_owner == 0 {
+                    world.sounds.push(crate::audio::Ui::Select as u32);
+                    moogle::open(world, false);
+                } else {
+                    world.sounds.push(crate::audio::Ui::Error as u32);
+                }
+            }
+            // Item 12 Map (FUN_1013b3f0 case 0xc).
             (0, 12) => match map::MapWin::open(world, gu.map_regions(), sw, sh) {
                 Some(mut m) => {
                     m.return_menu = world.menu;
@@ -1439,6 +1453,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if st.target.is_some() {
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
+    blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -1847,6 +1862,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     magic::bars(gu, world, &mut bars);
+    moogle::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
@@ -2752,6 +2768,11 @@ struct World {
     mog_zone: bool,
     mh_owner: u32,
     mh_floors: bool,
+    /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
+    mh_open: bool,
+    /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
+    mog_pending: bool,
+    moogle: Option<moogle::Menu>,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
@@ -3704,6 +3725,9 @@ impl App {
                             mog_zone: false,
                             mh_owner: 0,
                             mh_floors: false,
+                            mh_open: false,
+                            mog_pending: false,
+                            moogle: None,
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
@@ -4040,6 +4064,7 @@ impl App {
                     // Any game-state change shows the UI again.
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
+                    (world.moogle, world.mog_pending) = (None, false);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
@@ -4312,12 +4337,16 @@ impl App {
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
-                NetEvent::CharSync { id, owner, floors } => {
-                    if id == world.my_id && (world.mh_owner, world.mh_floors) != (owner, floors) {
-                        log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}");
-                        (world.mh_owner, world.mh_floors) = (owner, floors);
+                NetEvent::CharSync { id, owner, floors, open } => {
+                    if id == world.my_id && (world.mh_owner, world.mh_floors, world.mh_open) != (owner, floors, open) {
+                        log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}, open {open}");
+                        (world.mh_owner, world.mh_floors, world.mh_open) = (owner, floors, open);
+                        if open && let Some(m) = world.moogle.as_mut() {
+                            m.open_pending = false;
+                        }
                     }
                 }
+                NetEvent::MogMenu => world.mog_pending = true,
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
@@ -6025,6 +6054,7 @@ impl App {
         self.update_sub_area();
         if let Phase::World(w) = &mut self.phase {
             place_mogdoor(w);
+            moogle::update(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
         if !self.shown {

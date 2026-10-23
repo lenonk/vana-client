@@ -605,7 +605,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
                 id::LOCKER => 4,
                 _ => 2,
             };
-            if super::items::open_dae10(w, c) { Ok(()) } else { Err(()) }
+            if super::items::open_dae10(w, c, false) { Ok(()) } else { Err(()) }
         }
         // /satchel needs ItemNum[5] >= 30; /sack, /case, /wardrobe, /wardrobe2..8, /recycle (0x7a, the bin).
         id::SATCHEL..=id::RECYCLE => {
@@ -614,7 +614,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
                 0x73..=0x79 => (cid - 0x69) as u8,
                 _ => 17,
             };
-            if super::items::open_daf70(w, c, c == 5) { Ok(()) } else { Err(()) }
+            if super::items::open_daf70(w, c, c == 5, false) { Ok(()) } else { Err(()) }
         }
         // /bank2 (FUN_1007e440): without Safe 2 (s2c 0x067 @0x27 bit 0) group 7 0xa8, counted as done.
         id::BANK2 if !w.mh_floors => {
@@ -622,7 +622,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::BANK2 => {
-            if super::items::open_dae10(w, 9) { Ok(()) } else { Err(()) }
+            if super::items::open_dae10(w, 9, false) { Ok(()) } else { Err(()) }
         }
         id::RANDOM => {
             let v = arg(1).map_or(0, |a| number(a).unwrap_or(-1)) as u32;

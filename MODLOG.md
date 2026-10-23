@@ -4657,3 +4657,33 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix, !addkeyitem 3072 / 3073, !changejob war 20): the list showed Chocobo and Raptor with their
   descriptions and "Next 0:00"; in Southern San d'Oria the server refused (316); in West Ronfaure /mount Chocobo
   started the chocobo music (212) and /dismount went back (109).
+
+## Moogle menus: s2c 0x02E, "menu    myroom", "menu    mogext", the storage menus (2026-10-23; spec: scratchpad
+## moogle/SPEC.md of that session)
+
+- s2c 0x02E (handler 0x100a15f0, header only) sets a pending flag; FUN_10097af0 opens once no event runs
+  (FUN_101d6110): myroom in the Mog House (its open hook FUN_10145180 shuts it unless the house is ours: 0x067 @0x20
+  owner 0), mogext elsewhere; nothing when a window with registry flag 0x20000 is up (the flag is dropped). Also event
+  op 0x85 (not wired yet) and main menu row 12 in the Mog House (FUN_10140400 case 0xc: myroom, SE 0002; disabled when
+  visiting, help 0xe 0x29 / 0x2a).
+- myroom (16, 208), 7 rows (FUN_10145460): 1 Storage -> "menu    storage"; 2 Delivery Box, 3 Change Jobs, 7 Remodel
+  (not done); 4 Gardening / 5 Layout run /garden / /layout and close it; 6 Open / Close Mog House: c2s 0x0CB {1 | 2,
+  0, 0}, the label windowps 606 / 607 (pending) / 608, title 0x93 / 0x94, help 0x29a / 0x29b. Gates on Enter: synthesis
+  (0x4e) and the 3 s job-change cooldown (not tracked). Row states (FUN_10145240): 4 off with the moogle away; 5..7
+  only in the nation house (has_floors) or the Mog Garden (map 0x2d4): open -> only 6; else 5 / 7 with the moogle
+  there and not the garden, 7 also with Safe 2; pending -> none. 0x067 kind 2 @0x24 (open to visitors) parsed now.
+- mogext (16, 272), 3 rows (FUN_10145760): Storage -> "menu    storage2", Delivery Box, Change Jobs (not done); it
+  remembers our spot and closes, with what it opened (the storage view included), past 6 yalms in x / z (FUN_10145680).
+- storage (16, 80) 15 rows / storage2 (16, 96) 14 rows (no Storage) (FUN_10145e70): Mog Safe, Safe 2, Storage,
+  Locker -> FUN_101dae10; Satchel, Sack, Case, Wardrobe, Wardrobe 2..8 -> FUN_101daf70; nomad 0 in storage, 1 in
+  storage2 (Storage itself 0). Disabled at open (FUN_10145ca0): Satchel < 30, Sack size 0, Mog Safe (storage only)
+  with the moogle away, Safe 2 without the 2F flag, Wardrobes 2..8 size 0. A 0 from FUN_101dae10 plays SE 0004.
+- The openers' nomad path: FUN_101dae10 with nomad in a MogZoneFlag zone opens at once at the moogle and nomad (no
+  moogle-away / visiting checks, no line); FUN_101daf70 in our own Mog House says the moogle's line, else nomad +
+  MogZoneFlag opens at the moogle and nomad. Bank +0x71 (nomad) takes Storage out of itmstora and the Alt cycle.
+- The moogle's line FUN_100a1860(n): system message n (file 7031) as "<moogle> : text": 0x2e "I'll look after your
+  items, kupo!" when a storage view opens in the Mog House, 0x32 for Change Jobs. Ours names the nearest entity called
+  Moogle (retail finds it by model 0x52 / 0x3d5 / 0x58a / 0x939).
+- Live (Lnxcsfix, into the Mog House by Southern San d'Oria's zmr0zmr1 rect, main menu row 12): myroom with Remodel
+  dim, the storage menu with Safe 2 and the Satchel dim, Mog Safe opened (0/50) with the moogle's line, Escape back to
+  the storage menu. Talking to the moogle (0x02E) was not tried: Tab found no moogle in view.
