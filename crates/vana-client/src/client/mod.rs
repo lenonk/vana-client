@@ -1195,38 +1195,24 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect(myroom::WINDOW, sw, sh));
     }
 
-    // The yes/no prompt (FUN_102075f0) with the message from group 0xe.
+    // The yes / no prompt (FUN_10210f10): "menu    yesno" with Yes / No (children 1 / 2) and the hand; the question
+    // goes to the help bar's slot 2 (bar_text).
     if let Some((kind, yes)) = world.confirm {
-        let msg = match (kind, world.logging_out) {
-            (Confirm::Logout, false) => gu.menu_msg(0x48, "Log out?"),
-            (Confirm::Logout, true) => gu.menu_msg(0x49, "Cancel current logout process?"),
-            (Confirm::Shutdown, false) => gu.menu_msg(0x277, "Shut down?"),
-            (Confirm::Shutdown, true) => gu.menu_msg(0x278, "Cancel shut down process?"),
-            (Confirm::LeaveRoom, _) if myroom::in_city(world.zone) => gu.lobby_msg(0x0c, 0x2e, "Moogle: Heading outside, kupo?"),
-            (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
-        };
-        let ww = (gu.text_width(&msg) + 48.0).max(200.0);
-        let (wx, wy, wh) = (((sw - ww) / 2.0).round(), (sh / 2.0 - 40.0).round(), 56.0);
-        gu.frame(wx, wy, ww, wh);
-        gu.text(&msg, wx + ww / 2.0, wy + 8.0, 1, WHITE);
-        for (k, label) in ["Yes", "No"].iter().enumerate() {
-            let x = wx + ww / 2.0 + if k == 0 { -44.0 } else { 20.0 };
-            let hit = [x - 4.0, wy + 28.0, gu.text_width(label) + 8.0, 20.0];
-            if input.pointer.is_some_and(|p| inside(&hit, p)) {
-                gu.hover.set(true);
-                if input.moved || input.clicked {
-                    world.confirm = Some((kind, k == 0));
-                }
-                if input.clicked {
-                    answer = Some(k == 0);
+        let on_yes = world.confirm.map_or(yes, |c| c.1);
+        if let Some(win) = gu.lobby_window("menu    yesno", sw, sh, false, Some(if on_yes { 1 } else { 2 }), true, &[]) {
+            for (id, r) in win.children.iter().filter(|(id, _)| matches!(id, 1 | 2)) {
+                if input.pointer.is_some_and(|p| inside(r, p)) {
+                    gu.hover.set(true);
+                    if input.moved || input.clicked {
+                        world.confirm = Some((kind, *id == 1));
+                    }
+                    if input.clicked {
+                        answer = Some(*id == 1);
+                    }
                 }
             }
-            gu.text(label, x, wy + 30.0, 0, WHITE);
-            if (k == 0) == world.confirm.map_or(yes, |c| c.1) {
-                gu.cursor(x - 2.0, wy + 30.0);
-            }
+            blockers.push(win.frame);
         }
-        blockers.push([wx, wy, ww, wh]);
     }
     for t in &slots {
         match t.what {
@@ -1380,11 +1366,26 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     if let Some(s) = &world.settings {
         (bars.help[1], bars.title[1]) = (s.help(), "Settings".into());
     }
+    if let Some((kind, _)) = world.confirm {
+        bars.help[2] = confirm_msg(gu, world, kind);
+    }
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
         bars.title[0] = gu.title_msg(if world.my_motion.status == 1 { 7 } else { 5 }).unwrap_or_default();
     }
     bars
+}
+
+/// The yes / no prompt's question: group 0xe (log out, shut down, or cancelling either) or the Mog House door's.
+fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
+    match (kind, world.logging_out) {
+        (Confirm::Logout, false) => gu.menu_msg(0x48, "Log out?"),
+        (Confirm::Logout, true) => gu.menu_msg(0x49, "Cancel current logout process?"),
+        (Confirm::Shutdown, false) => gu.menu_msg(0x277, "Shut down?"),
+        (Confirm::Shutdown, true) => gu.menu_msg(0x278, "Cancel shut down process?"),
+        (Confirm::LeaveRoom, _) if myroom::in_city(world.zone) => gu.lobby_msg(0x0c, 0x2e, "Moogle: Heading outside, kupo?"),
+        (Confirm::LeaveRoom, _) => gu.lobby_msg(0x0c, 0x2f, "Exit your Mog House?"),
+    }
 }
 
 /// LAB_101d6040: the door opens the exit menu when the house has an exit bit (FUN_10097bc0), else the prompt.
