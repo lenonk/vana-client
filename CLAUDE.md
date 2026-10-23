@@ -31,7 +31,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   `setsid -f ./xi_map --log log/map-server-54230.log --ip 127.0.0.1 --port 54230 > /dev/null 2>&1 < /dev/null`
 
 ## Build and test
-- `nice -n 19 cargo build --release`, `nice -n 19 cargo test --release`. The user runs
+- `nice -n 19 cargo build --release -j -1`, `nice -n 19 cargo test --release -j -1` (one core left free: a full load
+  starves the LSB map server, which crashes). The user runs
   `target/release/vana-client play`.
 - Offscreen tools for checking without a window: `npc-shot`, `char-shot`, `select-shot`, `creator-shot`,
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
