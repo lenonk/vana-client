@@ -391,6 +391,31 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     true
 }
 
+/// FUN_1022b3d0 -> FUN_1012c1d0(0, record +0xc * 20): the bar runs for the cast byte times 20 ticks (Cure's 8: 2.67 s,
+/// where LSB casts it in 2 s; retail's bar can end late). Not done: none under Chainspell (status 48).
+pub fn open_cast_bar(w: &mut World, spell: u16) {
+    let Some(r) = w.actions.as_ref().and_then(|a| a.spell(spell)) else { return };
+    let total = r.cast as f32 * 20.0;
+    if total > 0.0 {
+        w.cast_bar = Some((total, total));
+    }
+}
+
+/// FUN_1012bf60 mode 0: casttime at (16, 47) (at its layout's (16, 94) only under gaugewin, not modelled), the HP
+/// gauge pair (windowps 38 / 97) at (+8, +9) by the fraction done, "%d" of it right-aligned at +0x6a and '%' at
+/// +0x70, y + 7, in the sprite font.
+pub fn draw_cast_bar(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
+    let Some((total, left)) = w.cast_bar else { return };
+    let f = ((total - left) / total).clamp(0.0, 1.0);
+    let (b, ui, style, _) = gu.parts();
+    let (Some(m), Some(wps)) = (ui.menu("menu    casttime"), ui.lib("menu    windowps")) else { return };
+    let (x, y) = crate::render::screens::push_window_at(b, ui, style, m, sw, sh, 47.0 - m.elements[0].y as f32);
+    crate::render::screens::push_gauge(b, ui, wps, x + 8.0, y + 9.0, 38, 97, f);
+    let pct = ((f * 100.0) as u32).to_string();
+    crate::render::screens::push_shape_text_right(b, ui, pct.as_bytes(), x + 106.0, y + 7.0, 0x8080_8080);
+    crate::render::screens::push_shape_text(b, ui, b"%", x + 112.0, y + 7.0, 0x8080_8080);
+}
+
 /// "%d:%02d" (">= 1 h: %d:%02d:%02d", FUN_101c93c0) of the seconds left, rounded up.
 fn clock(secs: f32) -> String {
     let s = secs.ceil() as u32;

@@ -1214,6 +1214,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(magic::draw(gu, world, sw, sh));
+    magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = &world.config {
         blockers.extend(c.draw(gu, &world.game, sw, sh));
     }
@@ -2286,6 +2287,8 @@ struct World {
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
     recasts_seen: bool,
+    /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
+    cast_bar: Option<(f32, f32)>,
     item_info: Option<Arc<items::ItemCache>>,
     msgshift: Option<Arc<crate::dat::msgshift::MsgShift>>,
     zone_text: Option<(u16, Arc<crate::dat::dialog::Dialog>)>,
@@ -3200,6 +3203,7 @@ impl App {
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
+                            cast_bar: None,
                             item_info: None,
                             msgshift: None,
                             zone_text: None,
@@ -3932,6 +3936,13 @@ impl App {
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
             if let Some(a) = world.actors.get_mut(&id) {
                 a.pending = Some(actmotion::Pending { files, name: String::new(), kind: actmotion::Kind::Skill });
+            }
+        }
+        // FUN_1012c0f0: the cast bar runs down and closes at 0.
+        if let Some((_, left)) = world.cast_bar.as_mut() {
+            *left -= (dt * 60.0).max(1.0 / 60.0);
+            if *left <= 0.0 {
+                world.cast_bar = None;
             }
         }
         // FUN_100d1070: once the model's files are in, its 'spop' runs on it (actor files, then DAT 0).

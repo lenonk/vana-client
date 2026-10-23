@@ -3984,3 +3984,12 @@ LSB trusts keep @0x25 = 0x08 and their owner in @0x2C, so ours read as "claimed 
   bone the overlay keys (FUN_1001a420's regions 5 / 6), the local transform of both the current and the blended-from
   pose slerps / lerps toward the overlay's by the weight before chaining; unkeyed bones are untouched.
 - Not done: two overlays at once (a new one replaces the old), the CPU pose for the locked camera ignores it.
+
+## Cast bar (2026-10-23)
+
+- "menu    casttime" (128x24, frames 58 "Casting Time"; layout (16, 94), drawn at (16, 47) unless gaugewin is open,
+  FUN_1012c0f0): opened by our 0x028 category 8 with cmd_arg "ca??" (FUN_1022b3d0, spell = the result's value) for the
+  spell's cast byte x 20 ticks (Cure 8: 160 ticks, LSB casts it in 2 s); any other category 8 ("sp??", an interrupt)
+  closes it (FUN_1022b420). Draw FUN_1012bf60: windowps 38 / 97 gauge at (+8, +9) by the fraction done, "%d" right-
+  aligned at +0x6a and '%' at +0x70, y + 7, sprite font. Not done: Chainspell (status 48) skipping it, items (mode 1,
+  item +0x26 x 20), the event mode 4, gaugewin.

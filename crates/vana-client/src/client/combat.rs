@@ -209,6 +209,16 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
     if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
         super::magic::set_recast(w, a.arg as u16, a.info);
     }
+    // Our cast starts (category 8, cmd_arg "ca??"): FUN_1022b3d0 opens the cast bar for the spell in the result's
+    // value; anything else in category 8 ("sp??", an interrupt) closes it (FUN_1022b420).
+    if a.actor == w.my_id && a.category == category::MAGIC_START {
+        if a.arg & 0xffff == 0x6163 {
+            let spell = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.value as u16);
+            super::magic::open_cast_bar(w, spell);
+        } else {
+            w.cast_bar = None;
+        }
+    }
     let messages: Vec<Msg> = action_messages(a).into_iter().map(|(id, target, work)| Msg { id, actor: a.actor, target, work }).collect();
     let mut reactions = Vec::new();
     for (target, r) in a.records() {
