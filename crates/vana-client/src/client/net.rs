@@ -189,7 +189,7 @@ pub enum NetEvent {
     /// seconds until the forced return home (dead_counter1 @0x38, 60 Hz, includes a 6 minute floor).
     /// `dead`: dead_counter1 u32 @0x3C (60 Hz ticks) and dead_counter2 u32 @0x40 (Earth seconds since the Vana'diel
     /// epoch), the time the server sends us home (@0x38 is Flags3).
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16 },
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32 },
     /// Our own HP, MP and TP (0x0DF).
     Vitals { hp: u32, mp: u32, tp: u32, hpp: u8, mpp: u8 },
     /// s2c 0x0C8 GROUP_TBL (kind 0 party / 5 alliance), 0x0DD / 0x0E2 GROUP_LIST (0x0E2 creates), 0x0DF GROUP_ATTR.
@@ -562,7 +562,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x037 => {
                         let status = p.u8(0x30);
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16 })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28) })?;
                     }
                     0x05A => tx.send(NetEvent::Emote { caster: p.u32(4), target: p.u32(8), emote: p.u16(0x10), param: p.u16(0x12), mode: p.u8(0x16) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,

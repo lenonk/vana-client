@@ -60,6 +60,15 @@ mod id {
     pub const CHECK: u16 = 0x45;
     pub const CHECKNAME: u16 = 0x46;
     pub const CHECKPARAM: u16 = 0x47;
+    pub const PCMD: u16 = 0x56;
+    pub const ACMD: u16 = 0x57;
+    pub const JOIN: u16 = 0x58;
+    pub const DECLINE: u16 = 0x59;
+    pub const INVITE: u16 = 0x5d;
+    pub const ANON: u16 = 0x62;
+    pub const ONLINE: u16 = 0x69;
+    pub const AWAY: u16 = 0x6a;
+    pub const TIMESTAMP: u16 = 0x9f;
     pub const LOCKON: u16 = 0x5c;
     pub const CHARAEFFECT: u16 = 0x8a;
     pub const WAIT: u16 = 0x10a;
@@ -641,6 +650,48 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::MAGIC | id::NINJUTSU | id::SONG => magic(w, cid, args, mode),
         id::EQUIP => equip(w, args),
+        id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
+        id::JOIN | id::DECLINE => {
+            // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}.
+            send(w, NetCommand::Packet { id: 0x074, body: vec![(cid == id::JOIN) as u8, 0, 0, 0] });
+            Ok(())
+        }
+        id::ANON | id::INVITE => {
+            // FUN_1007d7e0 / FUN_1007d6a0: "on" sets, "off" clears, no argument toggles, anything else does nothing.
+            // /invite (the seek-party flag) only outside a party (inf: FUN_10201690() == 2).
+            if cid == id::INVITE && w.party.members().count() > 1 {
+                return Err(());
+            }
+            let (which, bit) = if cid == id::ANON { (0, 5) } else { (2, 4) };
+            let set = match (args.len(), args.get(1).map(String::as_str)) {
+                (2, Some("on")) => true,
+                (2, Some("off")) => false,
+                (2, _) => return Ok(()),
+                _ => w.self_flags >> bit & 1 == 0,
+            };
+            config_flag(w, which, set);
+            Ok(())
+        }
+        id::AWAY | id::ONLINE => {
+            // FUN_1007e080 / FUN_1007e0d0: the away flag and Msg std 0x77 / 0x76.
+            config_flag(w, 1, cid == id::AWAY);
+            system_line(w, if cid == id::AWAY { 0x77 } else { 0x76 });
+            Ok(())
+        }
+        id::TIMESTAMP => {
+            // FUN_1007b620: "off" / "min" / "sec" set config 0xb5 = 0 / 1 / 2, none cycles; group 9 0x122 + it.
+            let v = match args.get(1).map(String::as_str) {
+                Some("off") => 0,
+                Some("min") => 1,
+                Some("sec") => 2,
+                Some(_) => return Err(()),
+                None => (w.game.get(0xb5) + 1) % 3,
+            };
+            w.game.set(0xb5, v);
+            w.game_save = true;
+            log9(w, 0x122 + v as usize);
+            Ok(())
+        }
         id::ITEM => item(w, args, mode),
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
@@ -833,6 +884,90 @@ fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
     b[10] = slot;
     b[12..16].copy_from_slice(&(bag as u32).to_le_bytes());
     send(w, NetCommand::Packet { id: 0x037, body: b });
+    Ok(())
+}
+
+/// FUN_100e46a0(which, set): c2s 0x0DC, flag bytes +4..+7 and SetFlg @0x10 (1 set, 2 clear): which 0 anonymous (+4
+/// bit 2), 1 away (bit 1), 2 seeking a party (bit 0).
+fn config_flag(w: &World, which: u8, set: bool) {
+    let mut b = vec![0u8; 16];
+    b[0] = match which {
+        0 => 4,
+        1 => 2,
+        _ => 1,
+    };
+    b[12] = if set { 1 } else { 2 };
+    send(w, NetCommand::Packet { id: 0x0DC, body: b });
+}
+
+/// A message-std line printed locally (FUN_100a1ab0, kind 6).
+fn system_line(w: &mut World, id: u16) {
+    let Some(bt) = w.battle.clone() else { return };
+    let ctx = crate::dat::battle::Ctx { me: w.name.clone(), ..Default::default() };
+    if let Some(line) = bt.system(id, &ctx) {
+        let colour = bt.colour_in(line.mode.unwrap_or(0x79), &w.game);
+        for l in line.lines.into_iter().filter(|l| !l.is_empty()) {
+            w.chat.push_colour(l, colour);
+        }
+    }
+}
+
+/// FUN_1007d3e0: /pcmd (kind 0) and /acmd (kind 5): add [target] (0x06E; an NPC gets group 7 0x9f), leave (0x06F),
+/// breakup (0x070, leaders only), kick / leader / looter Name (0x071 / 0x077 ChangeKind 0 or 1 / 4). A party of only
+/// us and trusts refuses them (group 7 0x9e). An unknown or missing subcommand does nothing. Not done: the name search
+/// for an add whose name isn't here.
+fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
+    let others: Vec<u16> = w.party.members().filter(|m| m.id != w.my_id && m.id != 0).map(|m| m.index).collect();
+    if !others.is_empty() && others.iter().all(|&i| i >= 0x700) {
+        refuse(w, 0x9e);
+        return Ok(());
+    }
+    let named = |w: &mut World, i: usize| -> Result<String, ()> {
+        match args.get(i).and_then(|n| name_case(n)) {
+            Some(n) => Ok(n),
+            None => {
+                log9(w, 0x65);
+                Err(())
+            }
+        }
+    };
+    match args.get(1).map(String::as_str) {
+        Some("add") => {
+            let Some(t) = resolve(w, args.get(2).map(String::as_str), true, false, mode) else { return Err(()) };
+            if t.0 >> 24 == 1 {
+                refuse(w, 0x9f);
+                return Ok(());
+            }
+            let mut b = vec![0u8; 8];
+            b[0..4].copy_from_slice(&t.0.to_le_bytes());
+            b[4..6].copy_from_slice(&t.1.to_le_bytes());
+            b[6] = kind;
+            send(w, NetCommand::Packet { id: 0x06E, body: b });
+        }
+        Some("leave") => send(w, NetCommand::Packet { id: 0x06F, body: vec![kind, 0, 0, 0] }),
+        Some("breakup") => {
+            let leader = if kind == 0 { 4 } else { 8 };
+            if w.party.own_flags & leader != 0 {
+                send(w, NetCommand::Packet { id: 0x070, body: vec![kind, 0, 0, 0] });
+            }
+        }
+        Some("kick") => {
+            let name = named(w, 2)?;
+            let mut b = vec![0u8; 0x18];
+            b[6] = kind;
+            b[8..8 + name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
+            send(w, NetCommand::Packet { id: 0x071, body: b });
+        }
+        Some(sub @ ("leader" | "looter")) => {
+            let name = named(w, 2)?;
+            let mut b = vec![0u8; 0x14];
+            b[..name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
+            b[0x10] = kind;
+            b[0x11] = if sub == "looter" { 4 } else { (kind == 5) as u8 };
+            send(w, NetCommand::Packet { id: 0x077, body: b });
+        }
+        _ => {}
+    }
     Ok(())
 }
 

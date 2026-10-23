@@ -2271,6 +2271,8 @@ struct World {
     /// The party / alliance roster (client/party.rs) and whether its names were asked for (c2s 0x076).
     party: party::Roster,
     party_asked: bool,
+    /// Our 0x037 flags word (u32 @0x28): bit 4 seeking a party, bit 5 anonymous (the /anon / /invite toggles).
+    self_flags: u32,
     /// The gauges' eased values (FUN_101cad00, a 30 Hz step): per party row (member id, HP, MP), the target's (id,
     /// HP), and the unstepped time.
     party_gauges: Vec<(u32, u8, u8)>,
@@ -3354,6 +3356,7 @@ impl App {
                             target_gauge: (0, 0),
                             gauge_acc: 0.0,
                             gauge_last: None,
+                            self_flags: 0,
                             party_asked: false,
                             macros: None,
                             palette: (0, 0, 0, [0, 0]),
@@ -4017,7 +4020,8 @@ impl App {
                     world.key_items[at..at + 16].copy_from_slice(&bits);
                 }
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags } => {
+                    world.self_flags = flags;
                     // 0x037 handler: the end time = dc2 when ahead of now, else now + dc1 / 60, only with dc1 > 0; the
                     // dead state machine's deadline is 6 minutes before it.
                     world.ko_deadline = 0;
