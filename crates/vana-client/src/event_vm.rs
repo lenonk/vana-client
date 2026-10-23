@@ -1084,6 +1084,34 @@ impl Runtime {
                 host.effect(Effect::Position { op: opc, actor, pos: [x, y, z], dir });
                 self.adv(v, len);
             }
+            // FUN_100b6a60: sub 4 actor@2's walk speed (+0x168 = val@6 x 0.1), 5 its no-ground bit (u8@6), 6 waits
+            // while its motion plays; 0..3 (+0xdc / +0xe0 speeds), 7 and 8 go to the host. Always advances.
+            0x59 => {
+                let t = self.actor_at(v, 2);
+                match sub {
+                    Some(4) | Some(5) => {
+                        if let Some(tv) = self.vm_of(t) {
+                            let b = self.vms[tv].body;
+                            if sub == Some(4) {
+                                self.bodies[b].speed = self.val(v, 6) as f32 * 0.1;
+                            } else {
+                                self.bodies[b].no_ground = self.u8_at(v, 6) != 0;
+                            }
+                        }
+                    }
+                    Some(6) => {
+                        if host.busy(&Busy::Op { op: 0x59, sub, actor: t }) {
+                            self.yield_(v);
+                            return;
+                        }
+                    }
+                    _ => {
+                        let a = self.args(v, op, sub);
+                        host.effect(Effect::Op { op: opc, sub, actor, args: a });
+                    }
+                }
+                self.adv(v, len);
+            }
             // FUN_100b5f70: 0x37 on actor@1's event body (x val@5, z val@7, height val@9, direction val@0xb), drawn
             // there at once; nothing when the actor has no event VM.
             0xba => {

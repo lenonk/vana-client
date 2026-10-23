@@ -705,7 +705,7 @@ impl Host for LiveHost<'_> {
                 self.w.actors.get(&id).is_some_and(|a| a.fade.is_some())
             }
             // Actor +0x1b8 (action state) is nonzero while an emote loads and plays.
-            Busy::Op { op: 0x99, actor, .. } => {
+            Busy::Op { op: 0x99, actor, .. } | Busy::Op { op: 0x59, sub: Some(6), actor } => {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(super::actmotion::emoting)
             }
