@@ -81,7 +81,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mouse in the lists, the sort windows and the
     order files, cursor memory, the mount list, the emote list; left: blue magic sets (s2c 0x044), mouse in the
-    prompt, the mount model under the rider, the Friend List, /jump);
+    prompt, the mount model under the rider, the Friend List);
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
     pointer and `<ht>`; left: the compass radar dots, helpwind's other busy bits;

@@ -616,8 +616,17 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         // /jump: a client-only motion (not done here).
+        // FUN_1007c4f0: after SendResRdy, status gate 0x77, standing or engaged; else the handler fails.
         id::JUMP => {
-            log::info!("/jump is not implemented");
+            if !w.res_rdy.sent {
+                return Err(());
+            }
+            if status_gate(w, 0x77) {
+                if !matches!(w.my_motion.status, 0 | 1) {
+                    return Err(());
+                }
+                super::jump(w);
+            }
             Ok(())
         }
         // FUN_1007aa80: /dismount: category 0x12 on ourselves, no client checks.

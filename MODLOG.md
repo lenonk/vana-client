@@ -4840,3 +4840,17 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
 - Live (Lnxcsfix to itself, Mog House): name, Query (same account), dagger + 1 gil Set and Sent (Stat 3), unsent
   items taken back on Escape; /mailbox: two Recv, Take x2 with "1 gil, sent to you by Lnxcsfix." and "You take the
   1 gil out of delivery slot 2.", PostClose.
+
+## /jump (2026-10-23)
+
+- /jump (id 0x35, FUN_1007c4f0): needs SendResRdy sent (FUN_100882c0) and status gate 0x77; status 0 or 1 sets our
+  actor +0x13c bit 22, else the handler fails. Per frame FUN_1008b410 (called from the actor update FUN_1008e9a0)
+  turns bit 22 into bit 21 and, for our own actor, sends c2s 0x11D {u32 UniqueNo, u16 ActIndex} (0xc bytes,
+  FUN_100a2720). s2c 0x11E (LAB_100a2760, ActIndex @4) sets bit 22 on that actor. FUN_100c63d0 sees bit 21, clears
+  it, and when no jump runs sets draw actor +0x8bc = 32.0 ticks (+0x8b6 = 1, the landing step flag); it counts down
+  by the frame ticks. While it is >= 0, FUN_100c8930 (LAB_100c8dde) replaces the stand / walk motion with "jmp*"
+  (status 1) or "jmp " at rate 1.
+- LSB pushes 0x11E with CHAR_INRANGE_SELF, so the jumper gets it too; by the logic above that would send 0x11D
+  again every time, so ours ignores our own index *(inf: retail's server likely does not echo)*.
+- Ours: Actor.jump, the motion "jmp" (prefix); the landing flag is not used. Live: Lnxcsfix in the Mog House,
+  /jump twice, "idl -> jmp -> idl" after 32 ticks.

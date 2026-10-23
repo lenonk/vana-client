@@ -243,6 +243,8 @@ pub enum NetEvent {
     Action(crate::net::action::Action),
     /// 0x038: run scheduler `name` (a 4cc such as "kesu") on an actor.
     Scheduler { actor: u32, target: u32, name: [u8; 4] },
+    /// s2c 0x11E: ActIndex @4 used /jump.
+    Jump(u16),
     Logout { state: u32 },
     Status(String),
     Error(String),
@@ -676,6 +678,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0 })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
+                    0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,
                     0x04B => tx.send(NetEvent::Pbx(super::post::Pbx {
                         cmd: p.u8(4),
                         box_no: p.u8(5) as i8,

@@ -119,12 +119,31 @@ enum Task {
     Actions(Result<crate::dat::actions::Actions>),
 }
 
+/// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
+fn start_jump(w: &mut World, id: u32) {
+    if let Some(a) = w.actors.get_mut(&id)
+        && a.jump < 0.0
+    {
+        a.jump = 32.0;
+    }
+}
+
+/// /jump (FUN_1007c4f0 -> FUN_1008b410): our jump and c2s 0x11D {UniqueNo, ActIndex}.
+pub(super) fn jump(w: &mut World) {
+    let me = w.my_id;
+    start_jump(w, me);
+    let mut b = vec![0u8; 8];
+    b[0..4].copy_from_slice(&w.my_id.to_le_bytes());
+    b[4..6].copy_from_slice(&w.my_index.to_le_bytes());
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x11D, body: b });
+}
+
 /// FUN_10096640 / FUN_100882d0: c2s 0x01A ActionID 0x14 once per zone load (LSB SendResRdy; in the Mog House it
 /// sends the moogle). Waits for the world (and our model), then outside the Mog House for SendCount KingFlag
 /// actors or 600 ticks from the zone load; in the Mog House for the room object's 20-frame count.
 #[derive(Default)]
 struct ResRdy {
-    sent: bool,
+    pub sent: bool,
     send_count: u16,
     kings: HashSet<u32>,
     since: Option<Instant>,
@@ -2191,6 +2210,8 @@ struct Actor {
     emote: Option<String>,
     /// Rest-pose bones (model space), for attach points of a look target.
     rest: Vec<(glam::Quat, Vec3)>,
+    /// /jump (draw actor +0x8bc): ticks left of the jump motion, below 0 none.
+    jump: f32,
 }
 
 impl Actor {
@@ -2231,6 +2252,7 @@ impl Actor {
             look: Default::default(),
             emote: None,
             rest: Vec::new(),
+            jump: -1.0,
         }
     }
 
@@ -4442,6 +4464,14 @@ impl App {
                 NetEvent::MogMenu => world.mog_pending = true,
                 NetEvent::JobInfo(j) => world.job_info = Some(j),
                 NetEvent::Pbx(p) => post::on_pbx(world, p),
+                // LAB_100a2760: the actor's jump flag (FUN_1008b410 -> FUN_100c63d0: 32 ticks of "jmp"). LSB also echoes it
+                // to the jumper; retail's toggle would answer that with another 0x11D, so ours ignores our own (inferred).
+                NetEvent::Jump(index) if index != world.my_index => {
+                    if let Some(id) = world.entities.iter().find(|(_, e)| e.index == index).map(|(id, _)| *id) {
+                        start_jump(world, id);
+                    }
+                }
+                NetEvent::Jump(_) => {}
                 NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
                 NetEvent::Item { container, index, id, count, ext, lock } => {
                     world.inv.set(container, index, id, count);
@@ -6477,6 +6507,9 @@ impl App {
                         (None, Some(m)) => (m.name.clone(), m.speed, m.count == 1, m.blend.max(1) as f32),
                         // Op 0x5e / 0x6b: the event's idle motion while the actor stands.
                         (None, None) if ratio < 1e-3 && idles.get(id).is_some_and(|n| has(n)) => (idles[id].clone(), 1.0, false, crate::motion::BLEND_TICKS),
+                        // FUN_100c8930 (LAB_100c8dde): while the jump timer runs, "jmp" at rate 1 ("jmp*" engaged, "jmp "
+                        // otherwise; ours takes the prefix).
+                        (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
                             let (n, r) = crate::motion::choose(&ch.motions, status, ratio);
                             (n.to_string(), r, false, crate::motion::BLEND_TICKS)
@@ -6494,6 +6527,9 @@ impl App {
                     }
                     a.once = once;
                     a.ticks += dt * 60.0 * rate;
+                    if a.jump >= 0.0 {
+                        a.jump -= dt * 60.0;
+                    }
                     if let Some(o) = &mut a.oneshot {
                         o.ticks = a.ticks;
                     }
