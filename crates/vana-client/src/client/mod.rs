@@ -4995,6 +4995,10 @@ impl App {
                 world.pos.y = y;
             }
             world.unsettled = false;
+            // The camera placed at zone-in had the old (or no) ground and the server height: again behind the settled
+            // player, now that the zone collision is in (ours; retail places it once, FUN_10021680).
+            let yaw = world.yaw;
+            camera::face(world, yaw);
         }
         let forward = Vec3::new(world.yaw.sin(), 0.0, world.yaw.cos());
         let right = forward.cross(Vec3::NEG_Y);
