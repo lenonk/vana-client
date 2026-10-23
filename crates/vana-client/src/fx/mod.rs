@@ -801,6 +801,54 @@ impl Effects {
         self.weathers.push(WeatherSet { serial, tag: tag4, duration: seconds, remaining: seconds });
     }
 
+    /// The zone's ambient loop (FUN_10189ca0 via FUN_1018a220, played by FUN_10036170): a SeSep (type 0x3d) under the
+    /// weather's folder (as set_weather picks it), inside its "indo" folder when covered and outside it otherwise,
+    /// named HHMM (FUN_10189bd0: four digits, the first 0 or 1, the third at most 5, the parent not "extr"); the
+    /// latest at or before the Vana'diel minute, else the last valid one in file order (e.g. 1800 before 06:00).
+    pub fn ambient(&self, minute: f32) -> Option<u32> {
+        let l = self.zone_lib?;
+        let lib = &self.reg.libs[l];
+        let tree = &lib.tree;
+        let named = |parent: Option<usize>, n: [u8; 4]| tree.nodes.iter().enumerate().find(|(_, x)| x.kind == kind::FOLDER && x.name == n && (parent.is_none() || x.parent == parent)).map(|(i, _)| i);
+        let fc = crate::dat::generator::fourcc;
+        let weat = named(None, fc("weat"))?;
+        let tag = self.weathers.last().map_or(fc("suny"), |w| w.tag);
+        let folder = named(Some(weat), tag).or_else(|| named(Some(weat), fc("suny"))).unwrap_or(weat);
+        let under = |mut i: usize, f: usize| loop {
+            match tree.nodes[i].parent {
+                Some(p) if p == f => return true,
+                Some(p) => i = p,
+                None => return false,
+            }
+        };
+        let indo = tree.nodes.iter().enumerate().find(|(i, x)| x.kind == kind::FOLDER && x.name == fc("indo") && under(*i, folder)).map(|(i, _)| i);
+        let time = |n: &[u8; 4]| -> Option<u32> {
+            let d = |c: u8| c.is_ascii_digit().then(|| (c - b'0') as u32);
+            let (a, b, c, e) = (d(n[0])?, d(n[1])?, d(n[2])?, d(n[3])?);
+            (a <= 1 && c <= 5).then_some((a * 10 + b) * 60 + c * 10 + e)
+        };
+        let now = minute.rem_euclid(1440.0) as u32;
+        let mut best: Option<(u32, usize)> = None;
+        let mut last = None;
+        for (i, n) in tree.nodes.iter().enumerate() {
+            if n.kind != 0x3d || !under(i, folder) || n.parent.is_some_and(|p| tree.nodes[p].name == fc("extr")) {
+                continue;
+            }
+            if let Some(f) = indo
+                && under(i, f) != self.covered
+            {
+                continue;
+            }
+            let Some(t) = time(&n.name) else { continue };
+            last = Some(i);
+            if t <= now && best.is_none_or(|(b, _)| t >= b) {
+                best = Some((t, i));
+            }
+        }
+        let node = best.map(|b| b.1).or(last)?;
+        sound::sesep(lib.data(node)).map(|(se, _)| se)
+    }
+
     /// FUN_101845c0: on a change, covered stops the transient weather emitters that spawn at the camera (op-1
     /// flags 4 or 0x4000000: rain, snow, dust) and kills their elements (FUN_10183b90); uncovered starts them again.
     pub fn set_covered(&mut self, covered: bool) {

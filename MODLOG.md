@@ -5037,3 +5037,24 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   winner, else 0x1f. 1..3 clear the slot; 3 prints nothing in the client. FUN_100a1ab0's message: +0 actor, +4
   target, +8 id, +0xc Para0, +0x20 / +0x30 string slots 2 / 3.
 - Not done: the treasure pool window, lot / pass (c2s 0x041 / 0x042), the pool's timers.
+
+## The zone's ambient loop (2026-10-23)
+
+- Every zone has one looping ambient voice (the "bubbling stream" in West Ronfaure); ours played none. Retail
+  (30261006): each frame FUN_1018b860 (all.c 13257) runs FUN_101874a0 (copies the weather object's +0x2c into
+  world+0x20) and FUN_10036170(world+0x20): 0 stops the voice (FUN_10036b90); a different resource starts its SeSep
+  through FUN_10036f00, pan 0x40, level ftol(DAT_10351708 x 127.0), voice DAT_10463910, resource DAT_10463914. The
+  level is the zone channel: FUN_10035fb0 (config x event mask 4) re-levels the running voice. (The 2026-10-22 entry
+  below named FUN_10035350 / DAT_10450fd8 / DAT_10346570; those are the old build's.)
+- The choice (FUN_10189ca0 via FUN_1018a220): type-0x3d chunks under the weather folder (weat/<tag>, else suny);
+  with an "indo" folder, covered (world+0x1bc, FUN_1018b5e0 from the eye ray) takes only those inside it, else only
+  those outside; names pass FUN_10189bd0 (four digits HHMM, the first '0' / '1', the third at most '5', the parent
+  not "extr"), the time by FUN_10072180; the latest at or before now (FUN_10189c60: DAT_1065cb18 or the event
+  override world+0x1c8), else the last valid one in file order. West Ronfaure (DAT 200): 0600 se 1005, 1800 se
+  1007, indo/0000 se 1056; East Ronfaure 1005 / 1007; La Theine 1001 / 1003, rain 1042, wind 1002 / 1004.
+- Ours: Effects::ambient (fx/mod.rs) picks it each frame with our covered flag; Audio::ambient plays it centred on
+  handle 0xffffff00 at 127 x effects x the zone channel (event masks 4 / 8, fades as the others), re-levelled when
+  that changes, stopped outside the world. Not traced: how retail ends the old voice at a change (we stop it), the
+  event override of the time.
+- Positional sounds in DAT 200 (effe/aose insects, effe/aotr birds, mode/ligh/taki bonfires) are generators and
+  already played; none sits on the stream.

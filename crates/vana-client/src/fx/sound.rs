@@ -197,4 +197,16 @@ mod tests {
         let sea = plays.iter().find(|p| p.0 == 2009).copied();
         assert!(sea.is_some_and(|(_, v)| (119..=121).contains(&v)), "{plays:?}");
     }
+
+    /// West Ronfaure (zone 100, effects DAT 200): weat/suny 0600 = se 1005, 1800 = se 1007, indo/0000 = se 1056.
+    #[test]
+    fn zone_ambient() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut fx = crate::fx::Effects::new();
+        fx.load_zone(crate::fx::lib::Library::load(200, index.read(200).unwrap()).unwrap());
+        assert_eq!([fx.ambient(720.0), fx.ambient(1200.0), fx.ambient(180.0)], [Some(1005), Some(1007), Some(1007)]);
+        fx.set_covered(true);
+        assert_eq!(fx.ambient(720.0), Some(1056));
+    }
 }

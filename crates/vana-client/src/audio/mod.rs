@@ -66,6 +66,9 @@ struct Task {
     wait: i32,
 }
 
+/// The ambient loop's voice handle (above the effect voices' handles).
+const AMBIENT: u32 = 0xffff_ff00;
+
 pub struct Audio {
     /// Requests to the loader thread, which reads files and feeds the mixer in order.
     tx: Sender<Req>,
@@ -83,8 +86,12 @@ pub struct Audio {
     event_se: f32,
     event_stream: f32,
     event_ui: f32,
+    /// Event mask 4: the zone's ambient loop; the loop's resource and the level it was last given.
+    event_zone: f32,
+    ambient_se: Option<u32>,
+    ambient_level: u8,
     /// Fades running on event_se / event_stream / event_ui.
-    fades: [Option<Fade>; 3],
+    fades: [Option<Fade>; 4],
     /// Voices started as the scheduler's stream.
     streams: std::collections::HashSet<u32>,
     /// Level of the track playing, for re-applying the event volume.
@@ -104,7 +111,7 @@ impl Audio {
                 log::info!("audio: {} at {} Hz", out.host, out.rate);
                 let (tx, req) = channel();
                 std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, fades: [None; 3], streams: Default::default(), cur_vol: 0x7f, max_se: 12 })
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), cur_vol: 0x7f, max_se: 12 })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -242,15 +249,15 @@ impl Audio {
         ((level as f32 * self.effects * self.event_se) as i32).clamp(0, 127) as u8
     }
 
-    /// Event volume (0x69 set / 0x6a fade, FUN_100b5c30 / FUN_10034be0): mask 1 world effects (DAT_1034656c), 2 interface
-    /// (DAT_10346568), 4 the zone's ambient loop (DAT_10346570, the voice FUN_10035350 starts; we play none), 8 all of
-    /// them and the stream. The music is not among them: cutscenes mute the world and keep the music.
+    /// Event volume (0x69 set / 0x6a fade, FUN_100b5c30 / FUN_10034be0): mask 1 world effects, 2 interface, 4 the zone's
+    /// ambient loop (FUN_10035fb0), 8 all of them and the stream. The music is not among them: cutscenes mute the world
+    /// and keep the music.
     /// A set (0 ticks) first ends a running fade on its target (FUN_10036020), then applies at once.
     pub fn event_volume(&mut self, mask: i32, level: f32, ticks: f32) {
         let level = level.clamp(0.0, 1.0);
         // FUN_100b5c30: 1 world effects (FUN_10035200), 8 everything and the stream (FUN_100350e0); 2 interface sounds
         // (FUN_10035250).
-        for (i, bits) in [(0, 0x9), (1, 0x8), (2, 0xa)] {
+        for (i, bits) in [(0, 0x9), (1, 0x8), (2, 0xa), (3, 0xc)] {
             if mask & bits == 0 {
                 continue;
             }
@@ -270,13 +277,14 @@ impl Audio {
         match i {
             0 => &mut self.event_se,
             1 => &mut self.event_stream,
-            _ => &mut self.event_ui,
+            2 => &mut self.event_ui,
+            _ => &mut self.event_zone,
         }
     }
 
     /// FUN_10035940: each fade steps by the frame's ticks; below 0 left it ends on its target.
     fn step_fades(&mut self, ticks: f32) {
-        for i in 0..3 {
+        for i in 0..4 {
             let Some(mut f) = self.fades[i] else { continue };
             f.left -= ticks;
             let v = if f.left < 0.0 {
@@ -306,9 +314,38 @@ impl Audio {
         self.play_ui_se(s as u32);
     }
 
+    /// The zone's ambient loop (FUN_10036170): a different resource starts its SeSep centred (pan 0x40) at 127 x the
+    /// zone level (DAT_10351708, config x event mask 4); None stops it. A start the voice limit refuses is not
+    /// retried until the resource changes. Stopping the old voice at a change is ours (not traced).
+    pub fn ambient(&mut self, se: Option<u32>) {
+        if self.ambient_se == se {
+            return;
+        }
+        if self.ambient_se.is_some() {
+            self.send(Cmd::SeStop { handle: AMBIENT, ticks: 0 });
+        }
+        self.ambient_se = se;
+        let Some(id) = se else { return };
+        if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
+            return;
+        }
+        self.ambient_level = self.zone_level();
+        let _ = self.tx.send(Req::Voice { id, level: self.ambient_level, pan: 0x40, handle: AMBIENT });
+    }
+
+    fn zone_level(&self) -> u8 {
+        ((127.0 * self.effects * self.event_zone) as i32).clamp(0, 127) as u8
+    }
+
     /// Advances the music task by real time at the client's 60 Hz tick.
     pub fn update(&mut self, dt: f32) {
         self.step_fades(dt * 60.0);
+        // FUN_10035fb0: the running ambient voice follows the zone level.
+        let lv = self.zone_level();
+        if self.ambient_se.is_some() && lv != self.ambient_level {
+            self.ambient_level = lv;
+            self.send(Cmd::SeLevel { handle: AMBIENT, level: lv });
+        }
         self.tick_acc += dt * 60.0;
         let ticks = self.tick_acc.floor().min(30.0) as i32;
         self.tick_acc -= ticks as f32;

@@ -2889,6 +2889,8 @@ struct World {
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     /// Synthesis: tskill1, the request state, the result lines and the animations.
     synth: synth::State,
+    /// The zone's ambient loop chosen this frame (Effects::ambient).
+    ambient: Option<u32>,
     /// Message events that came before the message tables loaded (poll_network replays them).
     held_text: Vec<NetEvent>,
     /// The treasure pool's slots: (item, the actor it came from).
@@ -3531,6 +3533,8 @@ impl App {
                 a.play_se(id, 127);
             }
         }
+        // The zone's ambient loop, only in the world (world+0x20 is 0 elsewhere).
+        a.ambient(if let Phase::World(w) = &self.phase { w.ambient } else { None });
         if let Phase::World(w) = &mut self.phase {
             for (mask, level, ticks) in w.audio_cmds.drain(..) {
                 a.event_volume(mask, level, ticks);
@@ -3883,6 +3887,7 @@ impl App {
                             synth: synth::State::default(),
                             treasure: Default::default(),
                             held_text: Vec::new(),
+                            ambient: None,
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
@@ -6966,6 +6971,7 @@ impl App {
                     }
                     w.effects.filter = (w.game.get(0x92) as u32, matches!(w.my_motion.status, 1 | 3));
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
+                    w.ambient = w.effects.ambient(minute);
                     // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.
                     for c in std::mem::take(&mut w.effects.sound_cmds) {
                         let Some(a) = &mut self.audio else { break };
