@@ -1174,7 +1174,7 @@ pub fn queue(w: &mut World, s: EventStart) {
     w.typing = false;
 }
 
-fn zone_ready(w: &World) -> bool {
+pub(super) fn zone_ready(w: &World) -> bool {
     w.in_scene() && w.renderer.is_some() && !w.unsettled && w.zoning_since.is_none()
 }
 

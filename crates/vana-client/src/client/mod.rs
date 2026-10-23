@@ -118,6 +118,33 @@ enum Task {
     Actions(Result<crate::dat::actions::Actions>),
 }
 
+/// FUN_10096640 / FUN_100882d0: c2s 0x01A ActionID 0x14 once per zone load (LSB SendResRdy; in the Mog House it
+/// sends the moogle). Waits for the world (and our model), then outside the Mog House for SendCount KingFlag
+/// actors or 600 ticks from the zone load; in the Mog House for the room object's 20-frame count.
+#[derive(Default)]
+struct ResRdy {
+    sent: bool,
+    send_count: u16,
+    kings: HashSet<u32>,
+    since: Option<Instant>,
+}
+
+fn res_rdy(w: &mut World) {
+    if w.res_rdy.sent || !event::zone_ready(w) {
+        return;
+    }
+    let since = *w.res_rdy.since.get_or_insert_with(Instant::now);
+    let ticks = since.elapsed().as_secs_f32() * 60.0;
+    // Ticks of 1/60 s for the room's 20 frames (inferred).
+    let go = if w.myroom.is_some() { ticks >= 20.0 } else { w.res_rdy.kings.len() >= w.res_rdy.send_count as usize || ticks >= 600.0 };
+    if go {
+        w.res_rdy.sent = true;
+        let body = net::action_body(w.my_id, w.my_index, 0x14);
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x01A, body });
+        log::info!("0x01A SendResRdy sent");
+    }
+}
+
 struct Entity {
     name: String,
     pos: Vec3,
@@ -2795,6 +2822,7 @@ struct World {
     job_info: Option<moogle::JobInfo>,
     job_req: Option<moogle::JobReq>,
     job_cooldown: Option<Instant>,
+    res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
@@ -3759,6 +3787,7 @@ impl App {
                             job_info: None,
                             job_req: None,
                             job_cooldown: None,
+                            res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
                             recasts_seen: false,
@@ -4085,8 +4114,9 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, mog_zone } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, mog_zone, send_count } => {
                     world.mog_zone = mog_zone;
+                    world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
                     world.room_flag = room_flag;
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
@@ -4154,6 +4184,9 @@ impl App {
                     }
                 }
                 NetEvent::Entity(e) => {
+                    if e.king {
+                        world.res_rdy.kings.insert(e.id);
+                    }
                     if e.id == world.my_id {
                         // 0x100982f6: a full update about us ends the post-event wait (+0x1fa = 0).
                         if e.complete() && world.self_lock.take().is_some() {
@@ -6087,6 +6120,7 @@ impl App {
         self.update_sub_area();
         if let Phase::World(w) = &mut self.phase {
             place_mogdoor(w);
+            res_rdy(w);
             moogle::update(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).

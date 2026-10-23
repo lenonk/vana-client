@@ -86,9 +86,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
     pointer and `<ht>`; left: the compass radar dots, helpwind's other busy bits;
   - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual, the Recycle Bin (and
-    `/recycle`, "menu    itemctrl") done; the storage views (text commands, both sides, itmsortw, itmstora, Alt+arrows) and the moogle menus
-    (0x02E, myroom / mogext, storage menus); left their Change Jobs, Delivery Box and Remodel rows, synthesis, the Mog
-    Garden use rule;
+    `/recycle`, "menu    itemctrl") done; the storage views (text commands, both sides, itmsortw, itmstora,
+    Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); left the Delivery Box and
+    Remodel rows, synthesis, the Mog Garden use rule;
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the

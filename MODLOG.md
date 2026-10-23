@@ -4748,3 +4748,24 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   L.20 gold and five L.1 jobs, WAR -> WHM (gold moved, HP 30 / MP 26, LSB took the gear off) and back. The moogle
   dance did not run: no moogle actor in our Mog House (LSB sends it only after c2s 0x01A ActionID 0x14
   SendResRdy, which we never send).
+
+## c2s 0x01A ActionID 0x14 (LSB SendResRdy) (2026-10-23)
+
+- Builder FUN_100780d0 (all.c 89972; 5-argument wrapper FUN_100780a0): 0x1c bytes, UniqueNo @4, ActIndex @8,
+  ActionID @0xa, four u32 params @0xc..0x18.
+- FUN_100882d0 (all.c 106166): once DAT_1047d6a0 is clear and our actor has a model (+0x120 bit 9), it sends
+  {own id, own index, 0x14, 0, 0, 0, 0} and sets the flag (retried each frame until the send works). The flag
+  is cleared only by the zone-load reset FUN_10093720 (all.c 113539), so it goes once per 0x00B / 0x00A load:
+  login, zone change, Mog House entry and exit. No other resend.
+- Caller FUN_10096640 (all.c 115624, per frame) gates: 0x00A handled, FUN_10094190 set-up, c2s 0x00C sent, the
+  entity wait DAT_10482f43 (0x00A SendCount u16 @0xac reached by distinct 0x00E actors with u32 @0x18 bit 16
+  KingFlag, all.asm 167839, or 600 ticks; skipped in the Mog House, all.c 114158), game mode 0x60, in the Mog
+  House the room object's +0x18 counted down from 0x14 per frame (FUN_101d2cc0 / FUN_101d4a20), and any zone-in
+  event starts first.
+- LSB: in the Mog House it runs SpawnConditionalNPCs, the only way the Mog House moogle (z 1.5, model 0x52) and
+  the Symphonic Curator reach the client; elsewhere it sets requestedInfoSync and spawns NPCs / mobs.
+- Ours (client/mod.rs res_rdy): once the world is shown, in the Mog House after 20 ticks of 1/60 s *(inf: the
+  frame length)*, elsewhere when the KingFlag count reaches SendCount or 600 ticks after the 0x00A.
+- FUN_100a1860 now prints nothing without a moogle actor, as retail.
+- Live (Lnxcsfix, Mog House 1F): the moogle appears; Change Jobs WAR -> MNK -> WAR, each with the moogle's dance
+  (file 5038 'main' on the moogle and us) before c2s 0x100.
