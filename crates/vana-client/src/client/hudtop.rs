@@ -50,9 +50,10 @@ fn shown(slots: &[String; 4]) -> &str {
 }
 
 /// A window frame part's fade state (+0x44) and count (+0x48), FUN_10116230.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum Fade {
     Shown,
+    #[default]
     Hidden,
     Out(i32),
     In(i32),
@@ -112,7 +113,14 @@ impl TopFade {
 
     /// Alpha factor +0x0c.
     pub fn alpha(&self) -> f32 {
-        match self.fade {
+        self.fade.alpha()
+    }
+}
+
+impl Fade {
+    /// Alpha 1 / 0 / count x 0.05 / 1 - count x 0.05 (FUN_10119550).
+    pub fn alpha(&self) -> f32 {
+        match *self {
             Fade::Shown => 1.0,
             Fade::Hidden => 0.0,
             Fade::Out(n) => n as f32 * 0.05,

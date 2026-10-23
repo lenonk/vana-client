@@ -34,6 +34,9 @@ impl LogCfg {
 /// Wrapped lines kept for drawing.
 const KEEP: usize = 512;
 
+/// Ticks a retail frame steps the log by (the frame divisor: 2 = stock retail's 30 fps).
+const FRAME: i32 = 2;
+
 /// Timestamps: retail's mode (config 0xb5, chat lines only), the extra's every-line switch, and their colour (0x31).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Stamps {
@@ -60,14 +63,21 @@ pub struct LogWin {
     seen: usize,
     width: f32,
     stamps: Stamps,
-    /// +0x34 open ticks (visible lines = ceil(open / ticks per line)) and +0x3c slide-in counter.
-    open: f32,
-    slide: f32,
-    /// Current frame height (animated toward the target, FUN_1015c040).
-    h: f32,
-    /// Wall time of the last update and the ticks (1/60 s) since.
+    /// FUN_101626e0's ints: +0x34 open ticks, +0x3c slide counter (20 a line still to slide in), +0x48 its speed (1 /
+    /// 20), the wrapped lines newer than the displayed one (+0x2c, the bottom row), +0x31 visible lines, +0x30 lines
+    /// to draw, +0x2e the slide offset, the frame height and its fade.
+    open: i32,
+    slide: i32,
+    speed: i32,
+    pending: usize,
+    vis: i32,
+    draw_n: i32,
+    off: i32,
+    h: i32,
+    fade: super::hudtop::Fade,
+    /// Wall time of the last update and the ticks not yet run.
     last: Option<std::time::Instant>,
-    ticks: f32,
+    acc: f32,
     /// Wrapped lines added by the last update.
     pub new_lines: usize,
     /// Size and timing from the config (Windows / Window 1 page).
@@ -122,9 +132,11 @@ impl FullLog {
 
 /// What the HUD needs from the log this frame.
 pub struct LogFrame {
-    /// Frame rect (x, y, w, h); h = 0 while hidden.
+    /// Frame rect (x, y, w, h).
     pub rect: [f32; 4],
     pub lines: usize,
+    /// The frame background's fade (0 hidden).
+    pub alpha: f32,
 }
 
 /// FUN_1015ae90: text width = clamp((W - 512) * pct / 100 + 352, 352, W - 160).
@@ -161,6 +173,37 @@ mod tests {
         assert_eq!(caption("/p"), 280);
     }
 
+    /// FUN_101626e0 at stock 30 fps (2 ticks a frame): one line slides 14 12 11 9 8 6 4 3 1 0 px; two lines enter
+    /// one after the other (the second shown once the first has slid); a backlog over 64 jumps to the newest.
+    #[test]
+    fn slide_like_retail() {
+        let mut l = LogWin::default();
+        l.fill();
+        l.add_line();
+        let offs: Vec<i32> = (0..10).map(|_| {
+            l.step(2, false, false, false);
+            l.off
+        }).collect();
+        assert_eq!(offs, [14, 12, 11, 9, 8, 6, 4, 3, 1, 0]);
+        assert_eq!(l.pending, 0);
+        l.add_line();
+        l.add_line();
+        l.step(2, false, false, false);
+        assert_eq!(l.pending, 1);
+        // The first slides 10 frames and rests at 20 (offset 0) for one more; then the second is shown.
+        for _ in 0..9 {
+            l.step(2, false, false, false);
+        }
+        assert_eq!((l.pending, l.slide, l.off), (1, 20, 0));
+        l.step(2, false, false, false);
+        assert_eq!((l.pending, l.off), (0, 14));
+        for _ in 0..70 {
+            l.add_line();
+        }
+        l.step(2, false, false, false);
+        assert_eq!((l.pending, l.slide), (0, 0));
+    }
+
     /// 23 + (H - 448) / 16 rows; the row moves first, then the view scrolls; pages clamp to the history.
     #[test]
     fn full_log_keys() {
@@ -186,11 +229,12 @@ mod tests {
 impl LogWin {
     /// Takes in new log lines and advances the counters by the ticks since the last call. `keep` holds it
     /// open, `shrink` is Escape (key 0x95, FUN_1015b830).
-    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, stamps: Stamps) -> f32 {
+    #[allow(clippy::too_many_arguments)]
+    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, typing: bool, stamps: Stamps) -> f32 {
         let now = std::time::Instant::now();
-        let ticks = self.last.map_or(0.0, |t| (now - t).as_secs_f32().min(0.5) * 60.0);
+        // Retail's frame tick is whole and at most 20 (FUN_10014cf0).
+        let ticks = self.last.map_or(0.0, |t| ((now - t).as_secs_f32() * 60.0).min(20.0));
         self.last = Some(now);
-        self.ticks = ticks;
         let tw = text_width(sw, self.cfg.pct);
         let rewrap = tw != self.width || stamps != self.stamps;
         if rewrap {
@@ -198,6 +242,8 @@ impl LogWin {
             self.stamps = stamps;
             self.wrapped.clear();
             self.seen = chat.len().saturating_sub(64);
+            // FUN_10162d60: the newest line shown, nothing sliding.
+            (self.slide, self.pending) = (0, 0);
         }
         let mut new = 0;
         for ((line, colour), (time, is_chat)) in chat.iter_timed().skip(self.seen) {
@@ -216,36 +262,120 @@ impl LogWin {
         if self.wrapped.len() > KEEP {
             self.wrapped.drain(..self.wrapped.len() - KEEP);
         }
-        // FUN_1015b8e0: each line keeps the window open one more period, capped at the max.
         for _ in 0..new {
-            self.open = (self.open.max(0.0) + self.cfg.ticks).min(self.cfg.max * self.cfg.ticks);
-            self.slide += 20.0;
+            self.add_line();
         }
-        // More than 64 lines behind jumps to the newest; 5 or more slide 20x faster.
-        if self.slide > 64.0 * 20.0 {
-            self.slide = 0.0;
-        }
-        let speed = if self.slide >= 5.0 * 20.0 { 20.0 } else { 1.0 };
-        self.slide = (self.slide - ticks * speed).max(0.0);
         if shrink {
-            let lines = (self.open / self.cfg.ticks).ceil();
-            self.open = ((lines - 1.0) * self.cfg.ticks).max(self.cfg.min * self.cfg.ticks);
-            self.slide = (self.slide - 20.0).max(0.0);
+            self.escape();
         }
-        if !keep && self.open > self.cfg.min * self.cfg.ticks {
-            self.open = (self.open - ticks).max(self.cfg.min * self.cfg.ticks);
-        }
-        // FUN_1015ba60: focused (numpad +), it is held at the max lines.
-        if focused {
-            self.open = self.cfg.max * self.cfg.ticks;
+        // Whole retail frames of FRAME ticks (stock retail runs 30 fps: 2 ticks a frame); the fraction carries.
+        self.acc += ticks;
+        while self.acc >= FRAME as f32 {
+            self.acc -= FRAME as f32;
+            self.step(FRAME, keep, focused, typing);
         }
         self.new_lines = new;
         tw
     }
 
+    fn period(&self) -> i32 {
+        (self.cfg.ticks as i32).max(1)
+    }
+
+    /// Rounds the open ticks up to a whole period.
+    fn round_up(&mut self) {
+        let t = self.period();
+        if self.open % t != 0 {
+            self.open += t - self.open % t;
+        }
+    }
+
+    /// FUN_10162560: a line keeps the window open one more period (capped, rounded up to a whole period) and has 20
+    /// to slide; the displayed line stays until the step reaches it.
+    fn add_line(&mut self) {
+        let t = self.period();
+        self.open = if self.open < 0 { t } else { self.open + t };
+        self.slide += 20;
+        self.open = self.open.min(self.cfg.max as i32 * t);
+        self.round_up();
+        self.pending += 1;
+    }
+
+    /// FUN_101624b0 (Escape, key 0x95): a period off, not under the min lines, rounded up; 20 off the slide.
+    fn escape(&mut self) {
+        let t = self.period();
+        self.open = (self.open - t).max(self.cfg.min as i32 * t);
+        self.round_up();
+        self.slide = (self.slide - 20).max(0);
+    }
+
+    /// FUN_101626e0, one frame of `t` ticks, in its order.
+    fn step(&mut self, t: i32, keep: bool, focused: bool, typing: bool) {
+        use super::hudtop::Fade;
+        let p = self.period();
+        let (max, min) = (self.cfg.max as i32, self.cfg.min as i32);
+        // Held at the max while focused (Num+, the fill argument).
+        if focused {
+            self.open = p * max;
+        }
+        if self.open > min * p && !keep {
+            self.open = (self.open - t).max(min * p);
+        }
+        if self.slide > 0 {
+            self.slide -= t * self.speed.max(1);
+            if self.slide < 1 {
+                self.slide = 0;
+            }
+        }
+        self.vis = self.open.max(0) / p + (self.open.max(0) % p > 0) as i32;
+        self.draw_n = (self.vis + 1 - typing as i32).max(0);
+        // FUN_10162cc0: 8 px a frame while more than 16 away, then 2 (+0x38 never set: p3 0), snapping when closer.
+        let target = 134 + (self.vis - 8) * 16;
+        let d = target - self.h;
+        if d != 0 {
+            let s = if d.abs() <= 16 { d.signum() * 160 / 60 } else { d.signum() * 8 };
+            self.h = if d.abs() < s.abs() { target } else { self.h + s };
+        }
+        self.off = if self.slide > 0 { (self.slide % 20) * 16 / 20 } else { 0 };
+        // The displayed line: one line a frame toward the newest while the slide allows it.
+        if self.pending > 0 {
+            let n = self.pending as i32;
+            if self.slide / 20 < n {
+                self.pending -= 1;
+            } else {
+                self.slide = self.slide % 20 + n * 20;
+            }
+            if n > 64 {
+                (self.slide, self.pending) = (0, 0);
+            } else {
+                self.speed = if n >= 5 { 20 } else { 1 };
+            }
+        } else {
+            self.slide %= 20;
+        }
+        // The frame's background fades out over 20 ticks with no lines and in again (FUN_10119550).
+        self.fade = match self.fade {
+            Fade::Out(n) if n - t >= 1 => Fade::Out(n - t),
+            Fade::Out(_) => Fade::Hidden,
+            Fade::In(n) if n - t >= 1 => Fade::In(n - t),
+            Fade::In(_) => Fade::Shown,
+            f => f,
+        };
+        self.fade = match (self.vis > 0, self.fade) {
+            (false, Fade::In(_) | Fade::Shown) => Fade::Out(20),
+            (true, Fade::Out(_) | Fade::Hidden) => Fade::In(20),
+            (_, f) => f,
+        };
+    }
+
     /// FUN_10162ef0: open at the max lines (open ticks = ticks per line x max).
     pub fn fill(&mut self) {
-        self.open = self.cfg.max * self.cfg.ticks;
+        self.open = self.period() * self.cfg.max as i32;
+    }
+
+    /// The open ticks against two periods: the chat line keeps the log open only up to 2 lines (asm 0x1016280f).
+    pub fn at_most_two(&self) -> bool {
+        self.open <= 2 * self.period()
     }
 
     pub fn history(&self) -> usize {
@@ -286,41 +416,33 @@ impl LogWin {
 
     /// Visible lines (+0x31).
     pub fn lines(&self) -> usize {
-        (self.open / self.cfg.ticks).ceil().max(0.0) as usize
+        self.vis.max(0) as usize
     }
 
-    /// Animates the frame toward its height and returns its rect: x 16, bottom H - 16.
+    /// The frame's rect (x 16, bottom H - 16, the height the step eased), its lines and the fade's alpha.
     pub fn frame(&mut self, sw: f32, sh: f32) -> LogFrame {
-        let ticks = self.ticks;
-        let lines = self.lines();
-        let target = if lines == 0 { 0.0 } else { 134.0 + (lines as f32 - 8.0) * 16.0 };
-        // FUN_1015c040: 8 px a tick while more than 16 px away, then 2 px a tick (inferred tick-based).
-        let gap = target - self.h;
-        let step = if gap.abs() > 16.0 { 8.0 } else { 2.0 } * ticks;
-        self.h = if gap.abs() <= step { target } else { self.h + step * gap.signum() };
         let w = text_width(sw, self.cfg.pct) + 14.0;
-        LogFrame { rect: [16.0, sh - 16.0 - self.h, w, self.h], lines }
+        let h = self.h.max(0) as f32;
+        LogFrame { rect: [16.0, sh - 16.0 - h, w, h], lines: self.lines(), alpha: self.fade.alpha() }
     }
 
     /// Draws the text: newest line at the bottom, lines 16 px apart, clipped to [x0, y0 + 3, x1, y1 - 4]; the
     /// input line takes the bottom 16 px. Returns the newest line's (x, y, text) for the kaipage arrow.
     pub fn draw(&self, gu: &mut GameUi, f: &LogFrame, typing: bool) -> Option<(f32, f32, String)> {
         let [x0, y0, w, h] = f.rect;
-        if h <= 0.0 {
+        // FUN_10162510: only while there are visible lines; from the displayed line up (FUN_101622e0), whole pixels.
+        if self.vis <= 0 || h <= 0.0 {
             return None;
         }
         let mut y1 = y0 + h;
-        let mut rows = f.lines;
         if typing {
             y1 -= 16.0;
-            rows = rows.saturating_sub(1);
         }
         let clip = [x0, y0 + 3.0, w, (y1 - 4.0 - (y0 + 3.0)).max(0.0)];
         gu.clip(Some(clip));
-        let slide = (self.slide % 20.0) * 16.0 / 20.0;
         let mut newest = None;
-        for (k, (line, colour, st)) in self.wrapped.iter().rev().take(rows + 1).enumerate() {
-            let y = (y1 - 4.0) - 16.0 * (k as f32 + 1.0) + slide;
+        for (k, (line, colour, st)) in self.wrapped.iter().rev().skip(self.pending).take(self.draw_n as usize).enumerate() {
+            let y = (y1 - 4.0) - 16.0 * (k as f32 + 1.0) + self.off as f32;
             stamped(gu, line, *st, x0 + 4.0, y, *colour, self.stamps.colour);
             if k == 0 {
                 newest = Some((x0 + 4.0, y, line.clone()));

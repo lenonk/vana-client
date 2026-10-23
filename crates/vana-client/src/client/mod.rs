@@ -1496,13 +1496,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             gu.sprite("menu    windowps", 212, r[0], r[1], 0x8080_8080);
         }
     }
-    // FUN_1015ba60: the log stays open while typing with more than 2 lines, while a window with flag 0x1000 is up
+    // FUN_101626e0's keep: the chat line holds the log while it is at 2 lines or fewer (asm 0x1016280f), a window with
+    // flag 0x1000 is up
     // (the choice menu *(inf)*), and while a message waits with no more rows showing than its page: older lines
     // decay away and the message holds.
     let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
     // The event input window sets the same input-line flag as the chat line (DAT_1062193c +0x4c).
     let line_open = world.typing || event::input(world).is_some();
-    let keep = (line_open && world.log.lines() > 2) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
+    let keep = (world.typing && world.log.at_most_two()) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
     if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) {
         world.log_active = false;
@@ -1511,7 +1512,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.log_focus = 0;
     }
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
-    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, stamps);
+    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
     let event_window = event_window(gu, world, sw, sh, tw);
     let bars = bar_text(gu, world, &items);
@@ -1534,9 +1535,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else if let Some(fl) = world.full_log {
         // The small logs are closed while the full log is open (FUN_1015c280).
         blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, world.game.get(0xb4) != 0));
-    } else if log.rect[3] > 0.0 {
+    } else if log.alpha > 0.0 || log.lines > 0 {
         let [x, y, w, h] = log.rect;
-        gu.frame(x, y, w, h);
+        gu.frame_alpha(x, y, w, h, log.alpha);
         let newest = world.log.draw(gu, &log, line_open);
         // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw.
         if event::prompt(world)

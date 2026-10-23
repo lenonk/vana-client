@@ -1974,7 +1974,8 @@ Decompile: ~/ffxi/lab/creatorwork/ghidra/all.c / all.asm. Research notes with ad
 - Text width = clamp((W - 512) * pct / 100 + 352, 352, W - 160), pct config 0x9c = 100; frame x 16, width text + 14,
   bottom H - 16, height 134 + (lines - 8) * 16. Each new wrapped line adds 300 ticks (config 0x11 = 5 s) capped at
   8 lines (config 0x0f), the count drops one line per 5 s down to 0 (config 0x10), Escape (key 0x95) takes one off.
-  Kept open while typing with more than 2 lines, and during events by FUN_1015ba60's rule (see "Messages" below).
+  Kept open while typing only while at 2 lines or fewer (open ticks <= 2 periods, asm 0x1016280f; corrected
+  2026-10-23), and during events by FUN_1015ba60's rule (see "Messages" below).
 - Frame height eases 8 px a tick while more than 16 px off, else 2 px *(inf: per 1/60 tick, retail per frame)*.
 - Lines 16 px apart, newest at y1 - 20, clipped to [x0, y0 + 3, x1, y1 - 4] (UiBatch now carries scissor rects);
   slide-in 16 px over 20 ticks; with the input open the text rect loses 16 px at the bottom.
@@ -5168,3 +5169,19 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   East Ronfaure (DAT 201 f_ro/effe/sep1): skw1 se 2058 on kaw1 (north), skw2 se 2004 on kaw2 (east river), skw3 se
   2028 on kaw3 (the stream by the gate), far 40, looping; the waterfall steps sta / stb se 2003 have no 0x6b. A
   name missing from its file (DAT 170 'seal') leaves the sound at the generator.
+
+## The log window's animation, as retail steps it (2026-10-23; spec ~/ffxi/lab/research/logwin_anim_spec.md)
+
+- FUN_101626e0 (all.c 277148) each frame, ints in whole ticks (stock retail 30 fps: 2 a frame, FUN_10014cf0 whole, at
+  most 20): fill; open -= t to min x T unless kept; slide -= t x speed (speed from the last frame); vis = ceil(open
+  / T), lines drawn vis + 1 (- 1 typing); frame height eased 8 px a frame while more than 16 away, then 2, toward
+  134 + (vis - 8) x 16 (6 with none; FUN_10162cc0, per frame, not per tick); offset ((slide % 20) x 16) / 20; the
+  displayed line (+0x2c, the bottom row) moves one line toward the newest a frame while slide / 20 < the lines
+  waiting, else slide = slide % 20 + 20 n; over 64 waiting jumps; speed 20 from 5 waiting; the frame background
+  fades out over 20 ticks with no lines and in again. FUN_10162560 per new line: open + T, capped, rounded up to a
+  period; slide + 20; the displayed line stays. FUN_101622e0 draws from the displayed line up at (x0 + 4, y1 + off -
+  16 - 16 k), whole pixels, nothing with no visible lines.
+- Ours had drawn from the newest line with a fractional offset (older lines jumped 16 px whenever two lines came
+  close together) and float counters by real time; now logwin.rs runs FUN_101626e0 in frames of 2 ticks with the
+  fraction carried. Unsettled: while typing retail moves the offset up 16 px as well as the clip (y1 and off);
+  ours moves only the clip, pending a retail screenshot.
