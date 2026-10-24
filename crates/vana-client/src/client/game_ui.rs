@@ -51,6 +51,8 @@ pub struct GameUiData {
     count_fmt: [String; 4],
     /// Window frame styles 0..7 = files 14..21 (FUN_10159a70, config 0x12).
     styles: Vec<UiFile>,
+    /// The status info files (FUN_10227280): slot 0x3a (32x32 icons) and 0x3b (16x16), config 0x99 bit 2 picking.
+    status: [Option<std::sync::Arc<Vec<u8>>>; 2],
     /// The menu registry's flags by window name (0x2c-byte entries from "menu    menuwind"; FUN_1015e950 copies them
     /// to window +0x34): 8 = no open / close animation, 0x20 frameless. Unlisted windows are 0.
     registry: std::collections::HashMap<String, u32>,
@@ -137,7 +139,8 @@ impl GameUiData {
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let registry = menu_registry(ffximain);
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, registry })
+        let status = [0x3a, 0x3b].map(|slot| crate::dat::msg::current_slot_file(ffximain, 1, slot).and_then(|f| index.read(f).map_err(|e| log::warn!("status info {f}: {e:#}")).ok()).map(std::sync::Arc::new));
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry })
     }
 }
 
@@ -983,6 +986,26 @@ impl GameUi {
 
     pub fn region_groups(&self) -> &[(u8, Vec<u16>)] {
         &self.data.region_groups
+    }
+
+    /// Scaled, centred fontshp text (FUN_101c97b0).
+    pub fn shape_scaled_centred(&mut self, text: &[u8], x: f32, y: f32, s: f32, tint: u32) {
+        screens::push_shape_scaled_centred(&mut self.batch, &self.data.lobby, text, x, y, s, tint);
+    }
+
+    /// A status icon's texture name, uploaded on first use (FUN_102272b0 reads it; nothing draws before).
+    pub fn status_icon(&mut self, small: bool, id: u16) -> Option<String> {
+        let name = format!("status icon {}:{id}", small as u8);
+        if !self.has_image(&name) {
+            let (w, h, rgba) = crate::dat::statusinfo::icon(self.data.status[small as usize].as_deref()?, id)?;
+            self.image(&name, w, h, rgba);
+        }
+        Some(name)
+    }
+
+    /// A status info entry (cancellable, never timed, description).
+    pub fn status_entry(&self, small: bool, id: u16) -> Option<crate::dat::statusinfo::Entry> {
+        crate::dat::statusinfo::entry(self.data.status[small as usize].as_deref()?, id)
     }
 
     /// An uploaded image stretched over a rect; colour 1.0 = 0x80.

@@ -5664,3 +5664,22 @@ Spec `~/ffxi/lab/research/actor_sounds_spec.md`.
 - Not done (spec 4): the `shi<n>` / `ska<n>` sound variants and the swing letter by sub-animation (multi-form
   monsters), op 0x53's nearest-to-player target, `pop0` / `pop1` (0x05B / 0x065 modes 3 / 6), the entity +0x138
   hide skip, `?ead` / `sdep`.
+
+## Status icons: "menu    buff" (2026-10-24)
+
+Spec `~/ffxi/lab/research/status_icons_spec.md`.
+- Its own window (object DAT_106671b8, registry A 0x93 / B 0x00400015): open in the field, out of battle, engaged and
+  in events, closed on zoning / logout; not tied to gaugewin. Cells = the layout's children (142 + 2 + 26 (k % 9),
+  48 + 2 + 26 (k / 9)), 24x24, up to 32 icons; the window's own 240x4 line is not drawn (the user's retail shows none).
+- s2c 0x037: icon i = hi << 8 | lo from u8 @4 + i and 2 bits each @0x4C (none: lo 0xff with hi 0). s2c 0x063 sub 9:
+  u16 ids @8, u32 end times @0x48 = (remaining + Vana'diel timestamp) x 60, wrapping; 0x7fffffff no timer; used only
+  where the id matches the 0x037 id at that index. rem = (i32)(end - now x 60 + 59) / 60.
+- Status info files: language slot 0x3a (English 87, 32x32, drawn x0.75) / 0x3b (39557, 16x16, x1.5) by config 0x99
+  bit 2 (slots in current numbering: dat::msg::current_slot_file); 640 entries of 0x1800: the first 0x1fc masked
+  (FUN_1021e870), byte @2 cancellable, @3 0xff never timed, string table @4 = the description; the icon @0x284 (32 bpp
+  BGRA bottom-up; the size field @0x280 is not read). xiPrime replaces file 87 whole (its alpha runs 0..255).
+- Icon at cell + 1; in its last 15 s it dims to rgb 0x40..0x80 on a 40-tick triangle (+0x288). Label (config 0xc3):
+  "%dh" from an hour (at most 99h), "%dm" from a minute, seconds below, none at 5 s or less; fontshp x0.85 centred
+  at (cell x + 14, y + 20), 0x80808080 (FUN_101c97b0).
+- Live: Haste "21" (dimming at 12), Protect "1m", Regen "9m" beside each other at (142, 48).
+- Not done yet: Num+ focus (cursor, name / description, Enter cancels with c2s 0x0F1), the party member icons (0x076).

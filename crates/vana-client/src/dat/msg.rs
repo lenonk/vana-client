@@ -27,6 +27,13 @@ pub fn slot_file(ffximain: &[u8], lang: u8, slot: usize) -> Option<u32> {
     Some(u32::from_le_bytes(ffximain.get(at..at + 4)?.try_into().ok()?))
 }
 
+/// File id in a language's slot table numbered as in this build (slots SE added since 2019, e.g. 0x3b).
+pub fn current_slot_file(ffximain: &[u8], lang: u8, slot: usize) -> Option<u32> {
+    let t = super::tables::of(ffximain).map_err(|e| log::warn!("{e:#}")).ok()?;
+    let at = t.lang_at.get(lang as usize)? + slot * 4;
+    Some(u32::from_le_bytes(ffximain.get(at..at + 4)?.try_into().ok()?))
+}
+
 pub struct Messages {
     entries: Vec<Vec<u8>>,
 }

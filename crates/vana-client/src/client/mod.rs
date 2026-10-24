@@ -8,6 +8,7 @@ mod creator;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use hudtop::topbar_shot;
 mod event;
+mod buffs;
 mod game_ui;
 mod hudtop;
 mod augment;
@@ -493,7 +494,7 @@ fn answer_raise(w: &mut World, yes: bool) {
 }
 
 /// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
-fn vana_now(w: &World) -> u64 {
+pub(super) fn vana_now(w: &World) -> u64 {
     w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
 }
 
@@ -1700,6 +1701,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
+    buffs::draw(gu, world, sw, sh);
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
@@ -2949,6 +2951,9 @@ struct World {
     battle_prev: u8,
     /// "menu    gaugewin", up while engaged.
     gauge: Option<gauge::Gauge>,
+    /// Our status icons (0x037, 0xffff none) and the last 0x063 sub 9 timers (kept once received, as retail).
+    buffs: [u16; 32],
+    buff_timers: Option<([u16; 32], [u32; 32])>,
     /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
     reopen_menu: bool,
     started: Instant,
@@ -4055,6 +4060,8 @@ impl App {
                             menu_picked: false,
                             battle_prev: 0,
                             gauge: None,
+                            buffs: [0xffff; 32],
+                            buff_timers: None,
                             reopen_menu: false,
                             started: Instant::now(),
                             logging_out: false,
@@ -4847,6 +4854,7 @@ impl App {
                     self.to_login(false);
                     return;
                 }
+                NetEvent::StatusTimers { ids, ends } => world.buff_timers = Some((ids, ends)),
                 NetEvent::Battle(m) => combat::on_battle_message(world, &m),
                 NetEvent::Event(s) => event::queue(world, s),
                 NetEvent::EventParams(n) => event::params(world, n),
@@ -4965,8 +4973,9 @@ impl App {
                     world.key_items[at..at + 16].copy_from_slice(&bits);
                 }
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons } => {
                     world.self_flags = flags;
+                    world.buffs = icons;
                     // 0x037 handler: the end time = dc2 when ahead of now, else now + dc1 / 60, only with dc1 > 0; the
                     // dead state machine's deadline is 6 minutes before it.
                     world.ko_deadline = 0;

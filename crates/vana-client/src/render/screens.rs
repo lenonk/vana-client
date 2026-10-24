@@ -668,6 +668,19 @@ pub fn push_shape_name(b: &mut UiBatch, ui: &UiFile, name: &[u8], x: f32, y: f32
     x + sprite_width(lib, 0x6c) - 1.0
 }
 
+/// FUN_101c97b0 (centred): fontshp glyphs scaled by `s`, each advancing (width - 1) x s from x - width x s / 2, at
+/// truncated pen positions; y is the glyphs' top.
+pub fn push_shape_scaled_centred(b: &mut UiBatch, ui: &UiFile, text: &[u8], x: f32, y: f32, s: f32, tint: u32) {
+    let Some(lib) = ui.lib("font    fontshp") else { return };
+    let glyphs = shape_glyphs(text);
+    let total: f32 = glyphs.iter().map(|&g| sprite_width(lib, g) - 1.0).sum();
+    let mut px = x - total * s * 0.5;
+    for g in glyphs {
+        b.push_sprite(ui, lib, g, px.trunc(), y, s, s, tint, 0);
+        px += (sprite_width(lib, g) - 1.0) * s;
+    }
+}
+
 /// Width of sprite-font text.
 pub fn shape_text_width(ui: &UiFile, s: &[u8]) -> f32 {
     let Some(lib) = ui.lib("font    fontshp") else { return 0.0 };

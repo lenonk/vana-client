@@ -11,7 +11,7 @@ const SPELL_SIZE: usize = 100;
 const ABILITY_SIZE: usize = 0x30;
 
 /// FUN_1021e870 (POLUtils DecodeDataBlockMask): every byte but 2, 11 and 12 rotated by a count from their bits.
-fn unmask(r: &mut [u8]) {
+pub(crate) fn unmask(r: &mut [u8]) {
     let pc = |b: u8| b.count_ones() as i32;
     let s = (pc(r[2]) + pc(r[12]) - pc(r[11])).abs() % 5;
     for (i, b) in r.iter_mut().enumerate() {

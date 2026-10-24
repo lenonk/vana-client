@@ -258,7 +258,10 @@ pub enum NetEvent {
     /// seconds until the forced return home (dead_counter1 @0x38, 60 Hz, includes a 6 minute floor).
     /// `dead`: dead_counter1 u32 @0x3C (60 Hz ticks) and dead_counter2 u32 @0x40 (Earth seconds since the Vana'diel
     /// epoch), the time the server sends us home (@0x38 is Flags3).
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32 },
+    /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32] },
+    /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
+    StatusTimers { ids: [u16; 32], ends: [u32; 32] },
     /// Our own HP, MP and TP (0x0DF).
     Vitals { hp: u32, mp: u32, tp: u32, hpp: u8, mpp: u8 },
     /// s2c 0x0C8 GROUP_TBL (kind 0 party / 5 alliance), 0x0DD / 0x0E2 GROUP_LIST (0x0E2 creates), 0x0DF GROUP_ATTR.
@@ -694,7 +697,15 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x037 => {
                         let status = p.u8(0x30);
                         // u32 @0x34 >> 3: the pet's ActIndex (effect_filter.md).
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28) })?;
+                        // FUN_1009d0f0: icon i = hi << 8 | lo, none when lo 0xff with hi 0.
+                        let icons = std::array::from_fn(|i| {
+                            let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
+                            if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
+                        });
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons })?;
+                    }
+                    0x063 if p.u16(4) == 9 => {
+                        tx.send(NetEvent::StatusTimers { ids: std::array::from_fn(|i| p.u16(8 + 2 * i)), ends: std::array::from_fn(|i| p.u32(0x48 + 4 * i)) })?;
                     }
                     0x05A => tx.send(NetEvent::Emote { caster: p.u32(4), target: p.u32(8), emote: p.u16(0x10), param: p.u16(0x12), mode: p.u8(0x16) })?,
                     0x031 | 0x059 | 0x10E => tx.send(NetEvent::EventAnswer { id: p.id, data: p.data.clone() })?,
