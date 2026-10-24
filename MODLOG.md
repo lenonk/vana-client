@@ -5796,3 +5796,14 @@ Spec `~/ffxi/lab/research/model_gens_spec.md`.
 - Fixed: stop_generator's match, var 0x3a without an action, op 0x9a as an entity flag that keeps model_generators
   off. Live: Raminel walks without the smoke. 257 model files had stops that silently missed and now work.
 - Not done: the un-hide restart (FUN_10084320 re-runs FUN_10083970; ours never restarts).
+
+## /pcmd live test with the server bots (2026-10-24)
+
+- LSB bots (another session of the user's) log in when a real player does, up to 15 over 3 minutes, and accept party
+  invites. Tested as Lnxtest in Southern San d'Oria: /pcmd add (two bots joined), kick (the member left, the plate
+  went back to the normal colour), looter, breakup (Solo), leader (the leader dot moved to the bot), leave (Solo).
+- LSB sends the inviter no line on a sent invite or a join (0x06e_group_solicit_req, 0x074_group_solicit_res): the empty
+  chat log is the server's.
+- Not done: /pcmd add NAME for someone outside the zone (FUN_1007c740, a search server name lookup).
+- Test tool: script step follow:PATH runs lines appended to PATH as scripts until a line "end", so a live run can be
+  steered once the bots' names are known.

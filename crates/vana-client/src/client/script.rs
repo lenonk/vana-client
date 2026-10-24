@@ -5,7 +5,8 @@
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
 //! `move:X,Y`, `click:X,Y` and `rclick:X,Y` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
-//! steps that follow; `every:off` stops it), and `act:NAME` for keys egui cannot name (numpad*).
+//! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*), and `follow:PATH`: lines
+//! appended to PATH later each run as a script of their own, until a line `end`.
 
 use anyhow::{Result, anyhow, bail};
 use std::path::PathBuf;
@@ -25,6 +26,8 @@ enum Step {
     Repeat { key: egui::Key, every: f32, until: String, last: Option<Instant> },
     Action(String),
     Every(Option<(egui::Key, f32)>),
+    /// A file read as it grows, and how much of it was taken.
+    Follow { path: PathBuf, read: usize },
 }
 
 pub struct Script {
@@ -87,6 +90,7 @@ impl Script {
                     steps.extend([Step::Move(x, y), Step::Right]);
                 }
                 "shot" => steps.push(Step::Shot(PathBuf::from(arg))),
+                "follow" => steps.push(Step::Follow { path: PathBuf::from(arg), read: 0 }),
                 "act" => steps.push(Step::Action(arg.to_string())),
                 "every" if arg == "off" => steps.push(Step::Every(None)),
                 "every" => {
@@ -119,6 +123,30 @@ impl Script {
             for pressed in [true, false] {
                 events.push(egui::Event::Key { key: *key, physical_key: None, pressed, repeat: false, modifiers: egui::Modifiers::NONE });
             }
+        }
+        if let Some(Step::Follow { path, read }) = self.steps.get_mut(self.at) {
+            let text = std::fs::read_to_string(&*path).unwrap_or_default();
+            let Some(cut) = text.get(*read..).and_then(|t| t.rfind('\n')) else { return (events, shot, action) };
+            let lines: Vec<String> = text[*read..*read + cut].lines().map(str::to_string).collect();
+            *read += cut + 1;
+            let (mut insert, mut end) = (Vec::new(), false);
+            for l in lines {
+                if l.trim() == "end" {
+                    end = true;
+                    break;
+                }
+                match Script::parse(&l, None) {
+                    Ok(s) => insert.extend(s.steps),
+                    Err(e) => log::warn!("script: {e}"),
+                }
+            }
+            if end {
+                self.steps.remove(self.at);
+            }
+            let at = self.at;
+            self.steps.splice(at..at, insert);
+            self.since = Instant::now();
+            return (events, shot, action);
         }
         let Some(step) = self.steps.get_mut(self.at) else { return (events, shot, action) };
         let done = match step {
@@ -175,6 +203,7 @@ impl Script {
                 shot = Some(p.clone());
                 true
             }
+            Step::Follow { .. } => true,
             Step::Repeat { key, every, until, last } => {
                 if phase == until || probes.iter().any(|x| x == until) {
                     true
