@@ -6230,3 +6230,10 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
   others), [4] / [5] the alliance likewise, [6] / [7] a mob claimed by us or a party member (+0x120 bit 13, claimer
   +0x184; the first test on our entity's +0x188 / +0x130 bit 25 is not modelled), [8] / [9] a PC (id class 0), [10]
   otherwise or a missing actor.
+
+## Log focus and the camera keys (2026-10-24)
+
+- FUN_10151550's state (ours `log_focus`) stays at 1 when Escape (logwindo message 6) or another window unfocuses
+  the log; only the focus itself takes the arrow keys. Ours gated the camera on the state, so after Escape or a menu
+  the arrows did nothing until the next Num+ reset it (user's run, 2026-10-24: `log_focus 1`, no window open). The
+  camera gate now reads the focus (`log_active`, or the status icons at state 2); F12 shows both.

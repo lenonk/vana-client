@@ -5930,8 +5930,9 @@ impl App {
             self.input.context = if w.map.is_some() { 0x26 } else { 0xffff };
             f.typing = w.typing;
             f.keyboard = w.game.get(0x42);
-            // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state).
-            f.window = world_window_open(w) || w.palette.0 != 0 || w.log_focus != 0 || w.ko_open || w.ko_offer == 2 || event::choice(w).is_some() || event::input(w).is_some();
+            // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state). The log counts only
+            // while focused: Escape or another window unfocuses it and leaves the 0x78 state at 1.
+            f.window = world_window_open(w) || w.palette.0 != 0 || w.log_active || w.log_focus == 2 || w.ko_open || w.ko_offer == 2 || event::choice(w).is_some() || event::input(w).is_some();
             f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
         }
         self.input.begin_frame(f);
@@ -6946,7 +6947,7 @@ impl App {
                     .filter(|(_, on)| *on)
                     .map(|(n, _)| n)
                     .collect();
-                    lines.push(format!("open [{}]  log_focus {}  locked {}  party_cursor {}", open.join(" "), w.log_focus, w.locked, w.party_cursor.is_some()));
+                    lines.push(format!("open [{}]  log_focus {} (active {})  locked {}  party_cursor {}", open.join(" "), w.log_focus, w.log_active, w.locked, w.party_cursor.is_some()));
                     lines.push(self.input.debug_state());
                     egui::Area::new(egui::Id::unique("status")).anchor(egui::Align2::LEFT_TOP, [8.0, 56.0]).interactable(false).show(ctx, |ui| {
                         egui::Frame::new().fill(egui::Color32::from_black_alpha(150)).inner_margin(4.0).show(ui, |ui| {
