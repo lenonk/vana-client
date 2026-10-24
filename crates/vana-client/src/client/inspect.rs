@@ -292,26 +292,6 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     bars.help[2] = line;
 }
 
-/// FUN_100ed650 (21 chars, 6 bits MSB first): 1..0x1a a..z, 0x1b..0x34 A..Z, 0x3e space, 0 '`'; 0x35..0x3d / 0x3f end.
-pub(super) fn ls_name(packed: &[u8; 16]) -> String {
-    let mut out = String::new();
-    for k in 0..21 {
-        let mut v = 0u8;
-        for b in 0..6 {
-            let bit = k * 6 + b;
-            v = v << 1 | (packed[bit / 8] >> (7 - bit % 8) & 1);
-        }
-        out.push(match v {
-            0 => '`',
-            1..=0x1a => (b'a' + v - 1) as char,
-            0x1b..=0x34 => (b'A' + v - 0x1b) as char,
-            0x3e => ' ',
-            _ => break,
-        });
-    }
-    out
-}
-
 /// FUN_10134230: the window (slot words, the cursor child tinted), the icons at scale 1 without counts, anc_equi on a
 /// slot or the hand on View Wares (#431 when disabled), the linkshell line; the comment window while on View Wares.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
@@ -342,7 +322,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some(g) = &w.inspect.info
         && g.ls_item != 0
     {
-        let name = ls_name(&g.ls_name);
+        let name = super::linkshell::ls_name(&g.ls_name);
         if !name.is_empty() {
             super::items::upload_icons(gu, &info, std::iter::once(g.ls_item));
             let icon = crate::render::invwin::icon_texture(g.ls_item);

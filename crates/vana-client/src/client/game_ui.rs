@@ -459,6 +459,22 @@ impl GameUi {
         screens::select_list(&mut self.batch, &self.data.lobby, w, h, cursor, used, focused.then_some(cursor_frame), press)
     }
 
+    /// Game-font text fitted into `max` px (FUN_101ca250): cut where 16 px plus the text so far would pass `max`,
+    /// "..." drawn after the cut.
+    pub fn text_fit(&mut self, s: &str, x: f32, y: f32, max: f32, tint: u32) {
+        let mut used = 16.0;
+        for (i, c) in s.char_indices() {
+            let cw = self.text_width(c.encode_utf8(&mut [0; 4]));
+            used += cw;
+            if used > max {
+                self.text(&s[..i], x, y, 0, tint.to_le_bytes());
+                self.text("...", x + used - cw - 16.0, y, 0, tint.to_le_bytes());
+                return;
+            }
+        }
+        self.text(s, x, y, 0, tint.to_le_bytes());
+    }
+
     /// Sprite-font text fitted into `max` px (FUN_101c04c0).
     pub fn shape_fit(&mut self, s: &str, x: f32, y: f32, max: f32, tint: u32) -> f32 {
         screens::push_shape_fit(&mut self.batch, &self.data.lobby, &encode_sjis(s), x, y, max, tint)

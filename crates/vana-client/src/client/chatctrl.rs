@@ -183,7 +183,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                     }
                     let mut packed = [0u8; 16];
                     packed[..15].copy_from_slice(&e[9..24]);
-                    gu.shape_text(&super::inspect::ls_name(&packed), x + 95.0, y + 54.0 + dy, 0x8080_6060, false);
+                    gu.shape_text(&super::linkshell::ls_name(&packed), x + 95.0, y + 54.0 + dy, 0x8080_6060, false);
                 }
                 _ => {
                     let none = gu.lobby_msg(0xc, 0x55, "");

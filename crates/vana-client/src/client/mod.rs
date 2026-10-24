@@ -55,6 +55,7 @@ mod journal;
 mod missions;
 mod quests;
 mod keyitems;
+mod linkshell;
 mod searchmenu;
 mod radar;
 mod status;
@@ -159,7 +160,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -791,7 +792,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1110,12 +1111,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let map_typing = world.map.as_ref().is_some_and(|m| m.typing());
     let post_typing = post::typing(world);
     let search_typing = searchmenu::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing;
+    let ls_typing = linkshell::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
     } else if search_typing {
         searchmenu::text_events(world, &input.events);
+        keys.clear();
+    } else if ls_typing {
+        linkshell::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -1333,6 +1338,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1457,7 +1463,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages.
-    if let (Some(sel), Some(p), None, None, None, None) = (world.menu, input.pointer, world.confirm, world.missions.as_ref(), world.quests.as_ref(), world.keyitems.as_ref()) {
+    if let (Some(sel), Some(p), None, None, None, None) = (world.menu, input.pointer, world.confirm, world.missions.as_ref(), world.quests.as_ref(), world.keyitems.as_ref())
+        && world.linkshell.is_none()
+    {
         if let Some(k) = items.iter().position(|(_, r)| inside(r, p)) {
             gu.hover.set(true);
             if input.moved || input.clicked {
@@ -1491,6 +1499,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 6) => partymenu::open(world),
             // Child 8 Search (FUN_10140400 case 8): searchma.
             (0, 8) => searchmenu::open(world),
+            // Child 9 Linkshell (FUN_10140400 case 9): link5 and link6 beside the main menu, its own sounds.
+            (0, 9) => linkshell::open(world),
             // Child 7 Trade (FUN_10140400 case 7 -> FUN_1013fe70).
             (0, 7) => {
                 if trade::start(world) {
@@ -1582,6 +1592,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         && let Some(p) = input.pointer
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.confirm.is_none()) {
+        linkshell::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| searchmenu::focused(world)) {
         searchmenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -1806,7 +1819,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
-        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none(),
+        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none(),
         chat_log: false,
     };
     gu.clear();
@@ -2025,6 +2038,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
+    blockers.extend(linkshell::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2316,6 +2330,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        (Some(true), Some((Confirm::Ls(a), _))) => {
+            world.confirm = None;
+            linkshell::answer(world, a);
+        }
         (Some(true), Some((Confirm::CancelTrade, _))) => {
             world.confirm = None;
             trade::cancel_request(world);
@@ -2462,6 +2480,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
+    linkshell::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -2498,6 +2517,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
         (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
         (Confirm::CancelTrade, _) => gu.lobby_msg(0x0c, 0x2d, "Cancel trade transaction?"),
+        (Confirm::Ls(a), _) => linkshell::ask_text(gu, a),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3438,6 +3458,10 @@ struct World {
     /// The Search row's windows (searchma and its criteria), and scname's name (kept between opens, +0x18).
     searchmenu: Option<searchmenu::SearchMenu>,
     search_name: String,
+    /// The Linkshell row's windows, the change sent last, and which of link2 / link3 / link4 have opened once.
+    linkshell: Option<linkshell::Linkshell>,
+    ls_pending: Option<linkshell::Pending>,
+    ls_opened: u8,
     /// The Key Items windows and the key items' seen bits (s2c 0x055 @0x44).
     keyitems: Option<keyitems::KeyItems>,
     ki_seen: keyitems::Seen,
@@ -3663,6 +3687,8 @@ enum Confirm {
     Post(u8),
     /// Trade again on the player we asked (FUN_10151e40): group 0xc 0x2d "Cancel trade transaction?".
     CancelTrade,
+    /// The Linkshell windows' prompts.
+    Ls(linkshell::Ask),
 }
 
 impl World {
@@ -4650,6 +4676,9 @@ impl App {
                             keyitems: None,
                             ki_seen: Default::default(),
                             searchmenu: None,
+                            linkshell: None,
+                            ls_pending: None,
+                            ls_opened: 0,
                             my_fellow: 0,
                             search_name: String::new(),
                             logs: None,
@@ -5120,6 +5149,7 @@ impl App {
                     world.quests = None;
                     world.keyitems = None;
                     world.searchmenu = None;
+                    world.linkshell = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5919,6 +5949,7 @@ impl App {
         missions::update(world);
         quests::update(world);
         keyitems::update(world);
+        linkshell::update(world);
         if world.party_cursor.is_some()
             && let Some((_, _, Some(id))) = target::party_hand(world)
         {

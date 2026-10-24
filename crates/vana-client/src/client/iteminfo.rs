@@ -141,27 +141,6 @@ fn sig_name(b: &[u8]) -> String {
     out
 }
 
-/// FUN_101cbac0: linkshell names, 6-bit MSB-first, 20 characters (1..0x1a 'a'..'z', 0x1b..0x34 'A'..'Z', 0x3e ' ',
-/// 0x3f end).
-fn ls_name(b: &[u8]) -> String {
-    let mut out = String::new();
-    for k in 0..20 {
-        let bit = k * 6;
-        if bit / 8 >= b.len() {
-            break;
-        }
-        let v = ((u16::from(b[bit / 8]) << 8 | u16::from(*b.get(bit / 8 + 1).unwrap_or(&0))) >> (10 - bit % 8)) & 0x3f;
-        out.push(match v {
-            0x3f => break,
-            1..=0x1a => (b'a' + v as u8 - 1) as char,
-            0x1b..=0x34 => (b'A' + v as u8 - 0x1b) as char,
-            0x3e => ' ',
-            _ => continue,
-        });
-    }
-    out
-}
-
 /// Group 12 ids of the weapon skills (FUN_1015aab0: key skill + 1).
 fn skill_text(skill: u8) -> Option<usize> {
     Some(match skill {
@@ -307,7 +286,7 @@ pub fn build(it: &Item, ext: Option<&[u8; 24]>, cx: &Ctx, msg: &dyn Fn(u8, usize
         // Linkshell (FUN_101cbac0): name and ARGB tint, R = [6] low, G = [6] high, B = [7] low nibble, each x 13 + 0x38;
         // a grey line when broken (status 4).
         (6, Some(e)) if e[8] != 0 => {
-            line = ls_name(&e[9..]);
+            line = super::linkshell::ls_name(&e[9..]);
             let c = |n: u8| (n & 0xf) as u32 * 13 + 0x38;
             info.icon_tint = 0x8000_0000 | c(e[6]) << 16 | c(e[6] >> 4) << 8 | c(e[7]);
             if e[8] == 4 {

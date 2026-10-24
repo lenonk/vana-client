@@ -6617,3 +6617,51 @@ draw_compass.
   while it opens and closes (asm 0x10216671). Draw order disk, letters, dots, time, arrow.
 - Not modelled: +0x120 bit 15 (own model hide), the s2c 0x077 NPC hide (LSB never sends it), SubKind 6 object models.
 - Live (Lnxtest, Southern San d'Oria): green NPCs, Pellam blue beside us, a faded one past the fade start.
+
+## Linkshell menu: link5 / link6, the item submenus, link11 (2026-10-24)
+
+Spec `~/ffxi/lab/research/menu_rows2_spec.md` part L; ours client/linkshell.rs.
+- Main menu row 10 (child 9, FUN_10140400 case 9): in Conflict SE 0004 + 0002 only; else link5 and link6 open beside the
+  main menu (registry group 0: nothing is suspended), SE 0002. Order on the page: Status, Equipment, Magic, Items,
+  Synthesis, Abilities, Party, Trade, Search, Linkshell, Region Info, Map.
+- link5 rows (FUN_101e3b40, rebuilt every frame): bags 0, 5, 6, 7 in view order (FUN_1021cb80), only while player flags
+  have 0x800 or 0x200000, index != 0, lock != 0x19, record type 6; 0x51 at most. Flag @8 0 new / 1..3 / else "Broken"
+  (an embedded ASCII string, not a message). Name tint green 0x80509050 worn as LS1 / LS2, grey for another item of
+  the same GroupId worn (FUN_101e3a20), a new shell while LS1 is worn, or broken. Icon tint from Color @6 (state 0:
+  untinted). FUN_101cb7a0 returns null only for an empty slot, so every row has extdata.
+- List geometry (FUN_101e4470 over the list base FUN_101f67c0): rows from (+3, +3), 18 apart, columns {0, 18, 160, 355};
+  cells type 0x46 (keytops3 0x219 backdrop when present, the icon at half scale at (x, y+2), "1" / "2" in the shape
+  font at (x+6, y+1) in the icon's tint), 0x19 (item name, game font, y+2: vt +0x68 = FUN_101e4170), 0x27 (the LS
+  name in the game font fitted to the column - 8 by FUN_101ca250: 16 px kept for "..."). The cursor bar windowps 75
+  at (+0x2e, +0x2f) = (0, 4) only while focused; no cell recoloured (+0x48 = -1). Empty: 7 0x68 at (+0x20+3, +0x18+3)
+  in 0x80804040, no bar, no hand (FUN_101f69d0 puts the cursor on child count - top = 0).
+- List keys (FUN_101f6c70): Up / Down stop at the ends (no wrap; link5's layout links end on themselves), Right / Left
+  page by 10 (+0x47 = 1 from the constructor); Enter's sound from +0x5c (true 0002, false 0004).
+- link6 mode 0 (FUN_101e57b0): the cursor row's LS name (game font) at (+0x40, +0x14), the icon at full scale at
+  (+10, +0xc), GroupId 0 tinted 7 / 7 / 7 without a name; no row: 7 0x71 "No linkshell items equipped." (even for an
+  empty list). The grey square under the icon is link6's own frame art.
+- Enter (FUN_101e4770): pending change -> refuse; the worn LS1 / LS2 row opens link2 / link3 / link4 by state; else a
+  same-group shell worn -> refuse; new: link1 unless LS1 is worn (then true, nothing opened); else link13.
+- link2..4 open (FUN_101e5f90): the Equip row drawn as windowps 122 (Unequip), help 0xe 2, except on each window's
+  first open of the session: the open hook runs inside FUN_1015e350 before FUN_101e4770 clears +0x16 (constructor
+  value 1), so that time help is 0xe 1. Broken: the Equip row off (link13 also row 3); link2 / link3 Create Pearl off
+  without a free inventory slot (FUN_100eb800). All open on child 1 (registry flag 0x10000).
+- c2s 0x0C4 (FUN_100e95e0): u16 @4 = 0xf000 | b << 8 | (g << 4 ^ r); refused when the slot >= the bag's ItemNum or the
+  name is empty. Equip / unequip send the 15 bytes at 0x1037f448: "dummy" and what follows it in the image
+  (64 75 6d 6d 79 00 00 00 0b 00 00 00 c0 14 a8). LSB checks a == 15, r / g / b 0..15, LinkshellId 1 / 2.
+- The pending change (0x10663510): +4 is the linkshell number n, not an item slot; FUN_101e3370 settles it when LS n
+  is worn with that GroupId (ActiveFlg 1) or none is worn (ActiveFlg 0), or after 0x3c ticks *(inf: 1 s)*.
+- Set as No.n (FUN_101e5d60): LS n worn -> comyn 9 0x07, Yes (LAB_101e5cd0) sends with the bag / slot captured then.
+  Drop: a holder asks 9 0x157, then FUN_10210f10 swaps the same prompt to 9 0x158; others 9 0x08; Yes sends c2s 0x028
+  {1, the cursor row's bag at answer time, the slot captured}. LSB puts dropped items in the Recycle Bin (17), emptied
+  when the character next loads (charutils.cpp LoadChar -> EmptyRecycleBin).
+- link11 (FUN_101e5240 / 5310 / 5490 / 5280): +0x14 0 rows, 1 typing (FUN_101c5be0(1, 0x13): 19 characters), 2..4 a
+  channel (Left / Right -1 / +1, 0..15; Enter keeps, Escape restores +0x33). Bars windowps 97 at child (+12, +1), x scale
+  value * 1/15 (DAT_1033976c), tints 0x70808080 / 0x70008000 / 0x70000080. Name at child 1 (+1, +8) fitted to 0xa2
+  (shape font). OK: empty -> SE 0004; else 0x0C4 {LS1 worn ? 2 : 1, active 1, FUN_100ed590 name, r, g, b}. Cancel
+  reopens link5 from the top (FUN_101e4470). The name field's links go Right to R, not Down.
+- One shared name decoder (FUN_100ed650, linkshell::ls_name): code 0 decodes to '`' (iteminfo's copy skipped it); the
+  encoder FUN_100ed590 maps non-letters to 0x3e (space).
+- Live (Lnxcsfix, !additem 512 / 515): rows, header, link1, link11 bars and colour, Cancel, both Drop prompts, the empty
+  list. !additem 515 gives Flag 3 with GroupId 0, so it opens link13. Not yet seen live: a real shell (create, equip,
+  unequip, switch), Create Pearl; Link List (link12) not done.

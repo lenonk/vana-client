@@ -35,6 +35,7 @@ pub enum Owner {
     Picker,
     /// The mission, quest and key item lists.
     Journal,
+    Linkshell,
 }
 
 /// A focused list's bar as drawn this frame: x, y, height (8 wide), and its (total, visible, top).
@@ -166,6 +167,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Search => super::search::bar(w, m),
         Owner::Picker => super::post::picker_bar(w, m),
         Owner::Journal => super::missions::bar(w, m) || super::quests::bar(w, m) || super::keyitems::bar(w, m),
+        Owner::Linkshell => super::linkshell::bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),
             None => false,

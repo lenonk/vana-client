@@ -477,7 +477,7 @@ fn find_units(w: &World, r: &Record) -> Option<((u8, u16), [(u8, u16, u32); 10])
 }
 
 /// FUN_100eb800: an empty inventory entry 1..size - 1.
-fn free_slot(w: &World) -> bool {
+pub(super) fn free_slot(w: &World) -> bool {
     let size = w.inv.sizes[0] as usize;
     (1..size).any(|i| w.inv.slots.get(&(0, i as u8)).is_none_or(|s| s.0 == 0))
 }
