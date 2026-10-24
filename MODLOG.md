@@ -5726,3 +5726,12 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
 - Op 0x53: the action target nearest our own actor (FUN_1005e300 -> FUN_10081550), actor1 without a player.
 - 0x05B / 0x065 Mode @0x16 (entity +0x144, FUN_1008f740): 3 runs `pop0`, 6 `pop1` on the actor.
 - Left: the hide skip (entity +0x138 bit 31 with model +0xb2 bit 1; +0x138 not traced), `?ead` / `sdep`, fishing.
+
+## Chat call sounds (2026-10-24)
+
+- FUN_10127990 (from the chat line print FUN_10127c00 with the text and the line mode byte): modes 5 / 0x0d (party)
+  with a tag "<...>" not wrapped in quotes that matches a row of DAT_1036eba0 (0x14-byte rows: name, u32 byte-swapped
+  SeSep name) play that SeSep through FUN_100380f0 (one at a time): <call> / <call0> 0017 .. <call21> 0038. Rows with
+  0x800000 / 0x400000 (<ncall>...) run FUN_10127ab0 first: not done. Linkshell lines are not checked.
+- Tell (mode 0x0c) with config 0x47: SeSep "0p40" (0x30703430 byte-swapped), in no resident DAT (0, 27, 52743),
+  so retail finds nothing either *(inf)*; not played.

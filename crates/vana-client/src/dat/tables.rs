@@ -41,6 +41,9 @@ const SCREEN_KINDS: Sig = Sig {
 };
 /// DAT_1035bc60 rows 1..7 (row 0 is zeros): knockback speed per tick, decay, constant ticks by level (f32 each).
 const KNOCKBACK: Sig = Sig { name: "knockback levels", hint: &[0xab, 0xaa, 0xaa, 0x3d, 0x9a, 0x99, 0x99, 0x3d, 0x00, 0x00, 0xa0, 0x40], len: 84, md5: "098219a788fd1677fe255d3c7e8c95bf" };
+/// DAT_1036eba0: the chat call tags, 0x14-byte rows {name[16], u32 SeSep name (byte-swapped), bits 0x800000 /
+/// 0x400000 = <ncall> handling} to a row with sound 0.
+const CALLS: Sig = Sig { name: "chat calls", hint: b"<call>\0", len: 0x40, md5: "806a8a20b9c977474e5c522233d52ec0" };
 const MODE_COLOURS: Sig = Sig { name: "mode colours", hint: &[0x01, 0x00, 0x54, 0x01, 0x02, 0x00, 0x55, 0x01], len: 0x40, md5: "8dcab7880389b2c4c488afb259a5f760" };
 const PALETTE: Sig = Sig { name: "palette", hint: &[0x42, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80, 0x60], len: 0x40, md5: "ada7882381d8a7f871792f7f2bc56e63" };
 const BINDINGS: Sig = Sig { name: "key bindings", hint: &[0xc8, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x00], len: 0x100, md5: "2979f885eeb95c7f5344400b09026857" };
@@ -84,6 +87,7 @@ pub struct Tables {
     pub screen_kinds: u32,
     /// File offset of the knockback level table's row 1.
     pub knockback_at: usize,
+    pub calls_at: usize,
     pub mode_colours: u32,
     pub palette: u32,
     pub bindings: u32,
@@ -142,6 +146,26 @@ pub fn of(dll: &[u8]) -> Result<Tables> {
     Ok(t)
 }
 
+/// FUN_10127990's call tags as (tag, UI sound number): "<call>" 17 .. "<call21>" 38. The <ncall> rows (flag 0x800000,
+/// FUN_10127ab0 first) are left out.
+pub fn call_sounds(dll: &[u8]) -> Result<Vec<(String, u32)>> {
+    let at = of(dll)?.calls_at;
+    let mut out = Vec::new();
+    for row in dll.get(at..).unwrap_or_default().chunks_exact(0x14) {
+        let snd = u32::from_le_bytes(row[16..20].try_into()?);
+        if snd == 0 {
+            break;
+        }
+        let name = String::from_utf8_lossy(row[..16].split(|&b| b == 0).next().unwrap_or_default()).into_owned();
+        if snd & 0xc0_0000 == 0
+            && let Ok(n) = std::str::from_utf8(&snd.to_be_bytes()).unwrap_or("").parse::<u32>()
+        {
+            out.push((name, n));
+        }
+    }
+    Ok(out)
+}
+
 /// FUN_100aa8e0's table: (speed per tick, decay, constant-phase ticks) for knockback levels 0..7.
 pub fn knockback(dll: &[u8]) -> Result<[[f32; 3]; 8]> {
     let at = of(dll)?.knockback_at;
@@ -179,6 +203,7 @@ impl Tables {
             filter_tables: std::array::from_fn(|i| filter_kinds + 0x400 + i as u32 * 200),
             screen_kinds: va(&SCREEN_KINDS)?,
             knockback_at: find(dll, &KNOCKBACK)?,
+            calls_at: find(dll, &CALLS)?,
             mode_colours: va(&MODE_COLOURS)?,
             palette: va(&PALETTE)?,
             bindings: va(&BINDINGS)?,

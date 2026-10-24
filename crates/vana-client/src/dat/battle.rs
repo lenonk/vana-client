@@ -103,6 +103,8 @@ pub struct BattleText {
     filter_tables: Vec<Vec<u32>>,
     /// On-screen kind per message (0x1035cae0): 0 none, 1 damage (`damv`), 2 recovery (`curv`), 3 miss (`misv`).
     screen_kinds: Vec<u8>,
+    /// Chat call tags and their sounds (DAT_1036eba0).
+    pub calls: Vec<(String, u32)>,
 }
 
 /// Config id -> colour id of the log palette (FUN_101262c0).
@@ -161,6 +163,7 @@ impl BattleText {
         }
         let filter_kinds = va_bytes(ffximain, t.filter_kinds, 1024).map(<[u8]>::to_vec).unwrap_or_default();
         let screen_kinds = va_bytes(ffximain, t.screen_kinds, 1024).map(<[u8]>::to_vec).unwrap_or_default();
+        let calls = super::tables::call_sounds(ffximain).unwrap_or_default();
         let filter_tables = t
             .filter_tables
             .iter()
@@ -170,6 +173,7 @@ impl BattleText {
             filter_kinds,
             filter_tables,
             screen_kinds,
+            calls,
             basic,
             skills: dialog(SLOT_SKILLS).ok(),
             lists: dialog(SLOT_LISTS).ok(),
@@ -641,6 +645,15 @@ mod tests {
         assert!(b.off_channel(1, 0, &cfg) && !b.off_channel(6, 0, &cfg));
         cfg.set(0x13, 0);
         assert!(b.off_channel(1, 1, &cfg) && b.off_channel(6, 1, &cfg));
+    }
+
+    /// DAT_1036eba0: <call> and <call0> are 0017, <call21> 0038; the <ncall> rows are left out.
+    #[test]
+    fn call_tags() {
+        let Some(b) = load() else { return };
+        assert_eq!(b.calls.first(), Some(&("<call>".to_string(), 17)));
+        assert_eq!(b.calls.get(1), Some(&("<call0>".to_string(), 17)));
+        assert_eq!(b.calls.last(), Some(&("<call21>".to_string(), 38)));
     }
 
     /// Grammar kinds 0x13 / 0x14: the status noun (206 "... stun effect wears off.") and adjective (204 "is no longer

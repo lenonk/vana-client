@@ -640,7 +640,30 @@ const PHRASE: [u8; 4] = [0xd0, 0x60, 0xc0, 0x80];
 
 /// A chat line in its log mode's colour (the config colour before the message tables load), auto-translate blocks
 /// expanded with their brackets (FUN_10127c00 with param 5).
+/// FUN_10127990: a party line (modes 5 / 0x0d) with a call tag outside quotes plays its sound (the first tag that
+/// matches; FUN_100380f0 plays one at a time). The tell sound (mode 0x0c, config 0x47) names SeSep "0p40", which no
+/// resident file holds: not played.
+fn call_sound(bt: &crate::dat::battle::BattleText, line: &str, mode: u8) -> Option<u32> {
+    if !matches!(mode, 5 | 0x0d) {
+        return None;
+    }
+    let b = line.as_bytes();
+    let mut i = 0;
+    while let Some(open) = b[i..].iter().position(|&c| c == b'<').map(|p| p + i) {
+        let Some(close) = b[open..].iter().position(|&c| c == b'>').map(|p| p + open) else { break };
+        let quoted = open > 0 && b[open - 1] == b'"' && b.get(close + 1) == Some(&b'"');
+        if !quoted && let Some((_, n)) = bt.calls.iter().find(|(t, _)| line[open..].starts_with(t.as_str())) {
+            return Some(*n);
+        }
+        i = open + 1;
+    }
+    None
+}
+
 fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
+    if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode)) {
+        world.sounds.push(n);
+    }
     let (colour, line) = match world.battle.clone() {
         Some(bt) => {
             let names = world.names.clone();
