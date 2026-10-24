@@ -2687,6 +2687,18 @@ impl crate::fx::Actors for FxActors<'_> {
         self.actors.get(&id)?.character.as_ref().map(|c| c.cib)
     }
 
+    fn swings(&self, id: u32, moving: bool) -> Option<Vec<String>> {
+        let a = self.actors.get(&id)?;
+        let ch = a.character.as_ref()?;
+        let names = actmotion::scheduler_names(&a.extra, ch);
+        let (first, other) = if moving { ("atf?", "ati?") } else { ("ati?", "atf?") };
+        let mut pool = crate::dat::sched::matching(names.iter().copied(), first);
+        if pool.is_empty() {
+            pool = crate::dat::sched::matching(names.iter().copied(), other);
+        }
+        Some(pool.into_iter().map(str::to_string).collect())
+    }
+
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;

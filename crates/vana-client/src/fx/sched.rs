@@ -34,6 +34,8 @@ pub struct ActionCtx {
     pub swing: Option<String>,
     /// Records whose messages printed (op 0x2b marks the first one not yet printed; the rest print at the end).
     pub printed: Vec<bool>,
+    /// client/combat.rs picked the melee swing and plays it; without one, op 0x24 picks and the files play it.
+    pub client_swing: bool,
     /// The record op 0x2b printed last (+10): op 0x71 prints its proc / react message.
     pub last: usize,
 }
@@ -139,7 +141,7 @@ impl Task {
         // swing) plays its own motions and holds.
         let motions = action.as_ref().is_none_or(|a| {
             let a = a.borrow();
-            !matches!(a.action.category, 1 | 2) || a1.id().is_some_and(|id| id != a.action.actor)
+            !matches!(a.action.category, 1 | 2) || a1.id().is_some_and(|id| id != a.action.actor) || (a.action.category == 1 && !a.client_swing)
         });
         Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None }
     }

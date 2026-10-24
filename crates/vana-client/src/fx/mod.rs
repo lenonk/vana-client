@@ -65,6 +65,11 @@ pub trait Actors {
     fn cib(&self, _id: u32) -> Option<[i8; 3]> {
         None
     }
+    /// FUN_100d4600's choice: the actor's swing schedulers, `atf?` moving and `ati?` standing (the other set when
+    /// that one is empty); None while its model is not in.
+    fn swings(&self, _id: u32, _moving: bool) -> Option<Vec<String>> {
+        None
+    }
 }
 
 /// No actors (offscreen shots).

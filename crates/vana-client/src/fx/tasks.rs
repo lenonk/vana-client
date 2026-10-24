@@ -174,7 +174,8 @@ impl Effects {
         let speed = action_speed(a);
         log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
         // Melee and ranged main lines are client/combat.rs's (at the hit); their proc / react lines come from op 0x71.
-        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0 }));
+        let client_swing = swing.is_some();
+        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0, client_swing }));
         match a.category {
             1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false }),
             3..=6 | 0xb | 0xd..=0xf => {
@@ -582,8 +583,25 @@ impl Effects {
                 }
             }
             0x24 | 0x5d => {
-                let name = t.action.as_ref().and_then(|a| a.borrow().swing.clone());
-                let (Some(name), Some(id)) = (name, t.a1.id()) else { return Flow::Next };
+                let Some(id) = t.a1.id() else { return Flow::Next };
+                let mut name = t.action.as_ref().and_then(|a| a.borrow().swing.clone());
+                // FUN_100d4600 picks here once the attacker's files are in (ours picks at the packet when it can).
+                if name.is_none() && op.code == 0x24 && t.action.as_ref().is_some_and(|a| a.borrow().action.category == 1) {
+                    let moving = actors.moving(id);
+                    match actors.swings(id, moving) {
+                        None => return Flow::Retry,
+                        Some(pool) if pool.is_empty() => return Flow::Next,
+                        Some(pool) => {
+                            let pick = if moving { pool[0].clone() } else { pool[self.rng.un(pool.len() as u32) as usize].clone() };
+                            log::debug!("effects: swing {pick} picked in op 0x24 for {id:#x}");
+                            if let Some(a) = &t.action {
+                                a.borrow_mut().swing = Some(pick.clone());
+                            }
+                            name = Some(pick);
+                        }
+                    }
+                }
+                let Some(name) = name else { return Flow::Next };
                 let n = u32::from_le_bytes(crate::dat::generator::fourcc(&name));
                 match self.find_on_actor(id, n, actors, false, true) {
                     Ok(Some(r)) => {
@@ -885,7 +903,7 @@ impl Effects {
                 self.loads.push(caster);
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
-                let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0 }));
+                let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0, client_swing: false }));
                 self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
                 Flow::Next
             }
@@ -1582,7 +1600,7 @@ mod skillchain_tests {
         for (kind, burst) in [(0u8, false), (14, true)] {
             let r = ActionResult { animation: 16, message: 185, value: 40, proc: (kind != 0).then_some(Side { kind, info: 0, value: 57, message: 301 }), ..Default::default() };
             let a = Action { actor: 1, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: 2, results: vec![r] }] };
-            let ctx = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true], last: 0 }));
+            let ctx = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true], last: 0, client_swing: false }));
             fx.spawn_task((g, proc_), Who::Actor(1), Who::Actor(2), Some(ctx), 1.0, None);
             let (mut prints, mut reacts, mut holds) = (Vec::new(), Vec::new(), Vec::new());
             for _ in 0..600 {
