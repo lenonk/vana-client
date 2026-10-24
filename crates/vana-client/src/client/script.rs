@@ -3,7 +3,7 @@
 //! `wait:SECS`, `until:PHASE[,SECS]` (go on after SECS anyway; login, title, lobby, event, world; also `cam:TAG` while an event shot plays and
 //! `msg:ID` while that event message is open, `noevent` while none runs), `type:TEXT`, `user`, `pass`,
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
-//! `move:X,Y`, `click:X,Y` and `rclick:X,Y` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
+//! `move:X,Y`, `click:X,Y`, `rclick:X,Y`, `ldown:X,Y` / `lup` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
 //! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*), and `follow:PATH`: lines
 //! appended to PATH later each run as a script of their own, until a line `end`.
@@ -85,6 +85,12 @@ impl Script {
                     let (x, y) = xy()?;
                     steps.extend([Step::Move(x, y), Step::Button(true), Step::Button(false)]);
                 }
+                // The left button pressed at X,Y and left down; lup releases it where the pointer is.
+                "ldown" => {
+                    let (x, y) = xy()?;
+                    steps.extend([Step::Move(x, y), Step::Button(true)]);
+                }
+                "lup" => steps.push(Step::Button(false)),
                 "rclick" => {
                     let (x, y) = xy()?;
                     steps.extend([Step::Move(x, y), Step::Right]);

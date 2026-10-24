@@ -6094,3 +6094,20 @@ Spec `~/ffxi/lab/research/window_groups_spec.md`.
 - Rain (`!setweather RAIN` in La Theine, 2560 x 1366, frame limit 144, the camera level): 143 fps clear and in rain,
   CPU 1.5..1.8 ms a frame. Not reproduced: the user's drop to about 70 fps in rain. The 0.3..0.4 s perf spikes in
   test runs are the script's own screenshots (the capture runs in the encode span).
+
+## Action menu: the mouse hold, release confirm, party cursor on engaging (2026-10-24)
+
+Spec `~/ffxi/lab/research/engaged_menu_spec.md` 3 and 4.
+- FUN_1012b4b0's tail: with playermo focused and the pointer on a row, the left press sets the hold to 60, holding
+  counts it down, and at 0 (not on the release frame) the row's Right function runs (table 0x1036f240 @8: Disengage /
+  Call for help FUN_1012acc0, Magic FUN_1012ab00 -> magselec, Chat / Tell FUN_1012aae0 -> chatctrl, not done) and the
+  hold starts again; a row change by the mouse restarts it. No sound of its own. Ours times it in real time (1 s).
+- FUN_1015de50: the left release over the focused window's cursor row confirms it (ours used egui's click, which
+  drops presses longer than 0.8 s); on the window but no row SE 0004. A right release is msg 6, Escape (ours: a right
+  click over the menu, so a right drag still turns the camera).
+- FUN_1015f3e0(0x20) also runs FUN_10202f00: the party-list cursor (<stpt> / <stal>) is cancelled when we engage, its
+  macro stopped. Confirming the target with the menu up runs its open again (FUN_1012ada0): the rows reload, Call for
+  help resets, the cursor stays *(inf)*.
+- Script steps `ldown:X,Y` / `lup` press and release the left button separately.
+- Live (Lnxcsfix): held 1.3 s on Magic -> magselec; a click on Abilities -> the ability types; a right click on the
+  menu closed it.

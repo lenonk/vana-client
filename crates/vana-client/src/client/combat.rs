@@ -777,6 +777,29 @@ pub struct ActionMenu {
     pub sel: usize,
     /// DAT_10578174: Right on Disengage swapped it for Call for help (reset when the layout leaves battle).
     pub call_help: bool,
+    /// FUN_1012b4b0's hold: since when the left button is down on the cursor row (60 ticks run its Right function).
+    pub hold: Option<Instant>,
+}
+
+/// The cursor row's Right function (table 0x1036f240 @8): Disengage / Call for help swap (FUN_1012acc0, plays nothing;
+/// blocked by /blockhelp: group 9 0xf7 and SE 0004), Magic opens magselec (FUN_1012ab00). False for a row without one.
+pub(super) fn right(w: &mut World) -> bool {
+    match w.action_menu.as_ref().and_then(|m| m.items.get(m.sel).copied()) {
+        Some(cmd::DISENGAGE | cmd::CALL_HELP) => {
+            if w.block_help {
+                w.sounds.push(crate::audio::Ui::Error as u32);
+                super::textcmd::log9(w, 0xf7);
+            } else if let Some(m) = w.action_menu.as_mut() {
+                m.call_help = !m.call_help;
+            }
+            true
+        }
+        Some(cmd::MAGIC) => {
+            super::magic::open_cats(w, "menu    magselec");
+            true
+        }
+        _ => false,
+    }
 }
 
 /// Layout choice (FUN_10127790): engaged 6; an attackable target 4 (2 * 2); an NPC 7 (Talk first;
@@ -883,7 +906,7 @@ pub(super) fn check(w: &mut World, id: Option<u32>, kind: u8, typed: bool) {
 }
 
 pub(super) fn open_menu(w: &World) -> ActionMenu {
-    ActionMenu { items: current_items(w, false), sel: 0, call_help: false }
+    ActionMenu { items: current_items(w, false), sel: 0, call_help: false, hold: None }
 }
 
 /// FUN_1012b4b0 each frame: the rows are rebuilt (the window follows their count, the cursor kept in range); the

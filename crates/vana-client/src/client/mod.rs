@@ -322,6 +322,11 @@ struct UiInput {
     pointer: Option<(f32, f32)>,
     moved: bool,
     clicked: bool,
+    /// The left button's press edge, held state and release edge (a swallowed click has none); a right click.
+    pressed: bool,
+    down: bool,
+    released: bool,
+    right_clicked: bool,
     events: Vec<egui::Event>,
 }
 
@@ -1273,17 +1278,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                             m.sel = if *key == egui::Key::ArrowDown { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
                             world.sounds.push(crate::audio::Ui::Cursor as u32);
                         }
-                        // FUN_1012acc0: the toggle plays nothing; blocked (/blockhelp) group 9 0xf7 and SE 0004.
-                        egui::Key::ArrowRight if matches!(row, Some(combat::cmd::DISENGAGE | combat::cmd::CALL_HELP)) => {
-                            if world.block_help {
-                                world.sounds.push(crate::audio::Ui::Error as u32);
-                                textcmd::log9(world, 0xf7);
-                            } else {
-                                m.call_help = !m.call_help;
-                            }
-                        }
-                        egui::Key::ArrowRight if row == Some(combat::cmd::MAGIC) => {
-                            magic::open_cats(world, "menu    magselec");
+                        egui::Key::ArrowRight => {
+                            combat::right(world);
                         }
                         egui::Key::Enter => act = row,
                         egui::Key::Escape if engaged => {
@@ -1495,17 +1491,51 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
 
-    // Action menu rows: hover moves the cursor, a click on the highlighted row picks it.
+    // Action menu rows: hover moves the cursor; on the focused menu the left release over the cursor row picks it
+    // (FUN_1015de50; on no row SE 0004), the button held 60 ticks on a row runs its Right function and starts again
+    // (FUN_1012b4b0; a row change restarts it), and a right click is Escape (msg 6, FUN_1015def0; ours only over it).
     let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
-    if let (Some((_, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut())
-        && let Some(k) = rows.iter().position(|r| inside(r, p))
-    {
-        gu.hover.set(true);
-        if input.moved || input.clicked {
-            m.sel = k;
+    let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none();
+    let (mut held, mut right_click) = (false, false);
+    if let (Some((r, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut()) {
+        match rows.iter().position(|r| inside(r, p)) {
+            Some(k) => {
+                gu.hover.set(true);
+                if (input.moved || input.pressed) && k != m.sel {
+                    m.sel = k;
+                    m.hold = input.down.then(Instant::now);
+                }
+                if input.pressed {
+                    m.hold = Some(Instant::now());
+                } else if !input.down {
+                    m.hold = None;
+                }
+                if focused && input.down && m.hold.is_some_and(|t| t.elapsed() >= std::time::Duration::from_secs(1)) {
+                    held = true;
+                    m.hold = Some(Instant::now());
+                }
+                if focused && input.released && k == m.sel {
+                    act = m.items.get(k).copied();
+                }
+            }
+            None => {
+                m.hold = None;
+                if focused && input.released && inside(r, p) {
+                    world.sounds.push(crate::audio::Ui::Error as u32);
+                }
+            }
         }
-        if input.clicked {
-            act = m.items.get(k).copied();
+        right_click = focused && input.right_clicked && inside(r, p);
+    }
+    if held {
+        combat::right(world);
+    }
+    if right_click {
+        if world.my_motion.status == 1 {
+            world.autorun = false;
+        } else {
+            world.action_menu = None;
+            world.sounds.push(crate::audio::Ui::Cancel as u32);
         }
     }
     if let Some(c) = act {
@@ -6237,10 +6267,15 @@ impl App {
             Phase::World(w) if self.cfg.tool("0021") == 0 => w.ptr_dy,
             _ => 0.0,
         };
+        let swallow = ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut self.swallow_click);
         let input = ctx.input(|i| UiInput {
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
-            clicked: i.pointer.primary_clicked() && !std::mem::take(&mut self.swallow_click),
+            clicked: i.pointer.primary_clicked() && !swallow,
+            pressed: i.pointer.primary_pressed(),
+            down: i.pointer.primary_down(),
+            released: i.pointer.primary_released() && !swallow,
+            right_clicked: i.pointer.secondary_clicked(),
             events: i.events.clone(),
         });
         if input.moved
@@ -6305,7 +6340,7 @@ impl App {
                     self.ui_drawn = true;
                     let fields = [&mut self.cfg.server, &mut self.cfg.username, &mut *password, &mut *otp];
                     // While an error shows, the fields take no input (the OK window has it).
-                    let none = UiInput { pointer: None, moved: false, clicked: false, events: Vec::new() };
+                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let chosen = login_window(lu, shown, size, fields, focus, busy, &status, &self.cfg.client_version, &mut sounds);

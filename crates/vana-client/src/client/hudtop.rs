@@ -409,7 +409,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
     let login = config == Some("login");
     let lobby = login || config.is_some_and(|c| c.starts_with("lobycwin") || c.starts_with("lobby"));
     if login {
-        let input = super::UiInput { pointer: None, moved: false, clicked: false, events: Vec::new() };
+        let input = super::UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, events: Vec::new() };
         let (mut a, mut b, mut c, mut d) = ("127.0.0.1".to_string(), "tuxedo".to_string(), "secret".to_string(), String::new());
         super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut 0, false, "", &cfg.client_version, &mut Vec::new());
     } else if lobby {
