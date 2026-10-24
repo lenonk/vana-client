@@ -104,7 +104,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state", "Engaged menu", "Action menu: the
     mouse hold"); left chatctrl (Chat / Tell's Right); Sprint / Scout / Quarry show only in Conflict;
-  - the treasure pool window ("menu    loot", lot / pass): not done (the log lines are, client/treasure.rs);
+  - the treasure pool (client/treasure.rs, MODLOG "Treasure pool window"): loot / lootope / lnowin, lot, pass, Done,
+    the party-window chest done and live-tested with a bot; left the zone-pool columns, the mouse;
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
     skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
     "Per-record reactions"); guards, parries and counters not seen live yet;

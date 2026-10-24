@@ -6111,3 +6111,33 @@ Spec `~/ffxi/lab/research/engaged_menu_spec.md` 3 and 4.
 - Script steps `ldown:X,Y` / `lup` press and release the left button separately.
 - Live (Lnxcsfix): held 1.3 s on Magic -> magselec; a click on Abilities -> the ability types; a right click on the
   menu closed it.
+
+## Treasure pool window: loot, lootope, lnowin (2026-10-24)
+
+Spec `~/ffxi/lab/research/loot_spec.md`.
+- Only the action menu's Treasure row opens it (command 0xc -> FUN_1013f060; also the Monstrosity menu): no text
+  command, key function or main menu row. The row is in every layout (table 0x1036f390) while the pool holds an item,
+  not in Conflict (FUN_1012af30 case 0xc); its help is 0x1b in a party, else 0x1c. The action menu stays open under it.
+- Slots at G+0x1951c, 0x58 bytes: state @0 (2 in the pool, 3 gone), item @4, quantity @8, our action @0x30 (0 / 1
+  passed / 2 lotted), our lot @0x34 (-1 passed), the highest lot / lotter @0x36 / @0x38 / @0x40, the source @0x50,
+  StartTime @0x54. 0x0D2 fills them (Entry @0x15 into @0x30, own lot only when IsLocallyLotted @0x1c); 0x0D3 sets
+  ours when EntryUniqueNo is us (EntryFlg ? 2 : 1) and the highest lot always.
+- loot (16, 48) 182 x 190, group 0x10: up to 10 rows, no scroll bar, oldest StartTime first; a 16 x 16 icon at x + 2,
+  the name at x + 20 (white, 0x80804020 once lotted, 0x80404040 once passed), "%2d" for stackables at window x + 0x12;
+  the cursor row 1 px up-left. Down / Up one row without wrap, Right / Left the last / first row, Enter lootope (a
+  passed row SE 0004), Escape closes all three, Num+ the focus to lnowin (SE 0013). It closes on an empty pool,
+  engaging, an event start and zoning; the item info (mode 0) follows the cursor.
+- lootope at the row's right edge: Cast Lot / Pass; Cast Lot disabled once we lotted (the cursor still starts on it,
+  FUN_10118870). Cast Lot refuses a Rare item held in any container (group 7 0x7e) and a full inventory (0x7d), else
+  c2s 0x041 [slot, first free inventory slot, 0, 0]; Pass c2s 0x042 [slot, 0]. It closes when the cursor row changes
+  under it. lnowin (384, 48) "Option / Done": Done passes every slot not acted on; hidden while lootope is up.
+- Bars: help 0xe 300 / 301 / 302 / 922, title 0xd 73 "Treasure Pool" (clipped at titlewin width - 8 like any title).
+- The party window shows the chest (fontshp 0x7a) on its top edge while the pool holds items (FUN_102041d0).
+- No timer in retail (StartTime only sorts). LSB resolves an item 297..300 s after the drop, or at once when one
+  member with room is alone in the pool.
+- Draw order: the item info is drawn after the action menu: both sit on the log (flag 0x1000) and it opened later.
+- Live (Lnxcsfix in a party with the bot Rokuro, `!addtreasure 4096` / `4112`): the chest, the Treasure row, the rows
+  with icons and " 1" on the crystal, Cast Lot -> "Lnxcsfix's lot for the fire crystal: 210 points." and an orange
+  row, Pass -> a grey row, Cast Lot greyed on the lotted row, Num+ -> Done, Escape; at the expiry "Lnxcsfix obtains
+  a fire crystal." / "Rokuro obtains a potion." and the row and chest went.
+- Not done: the zone-pool columns (Treasure-flag zones), lnowin's raid1 dodge, the mouse.

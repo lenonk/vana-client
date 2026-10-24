@@ -819,9 +819,11 @@ fn layout(w: &World) -> usize {
 }
 
 /// FUN_10127230's filters, as far as they apply to us (no treasure pool, trust, fellow or party).
-fn shown(target: Option<u32>, c: u8) -> Option<u8> {
+fn shown(target: Option<u32>, c: u8, treasure: bool) -> Option<u8> {
     let npc = target.is_some_and(|t| t >= 0x0100_0000);
     match c {
+        // FUN_1012af30 case 0xc: every layout while the pool holds items, not in Conflict.
+        cmd::TREASURE if treasure => Some(c),
         // Chat becomes Tell on a player, and is dropped on an NPC.
         cmd::CHAT if npc => None,
         cmd::CHAT if target.is_some() => Some(cmd::TELL),
@@ -839,14 +841,19 @@ fn shown(target: Option<u32>, c: u8) -> Option<u8> {
 
 /// The commands of a layout (0..8) for a target id.
 pub fn menu_items(layout: usize, target: Option<u32>) -> Vec<u8> {
-    LAYOUTS[layout.min(7)].iter().filter_map(|&c| shown(target, c)).collect()
+    menu_rows(layout, target, false)
+}
+
+fn menu_rows(layout: usize, target: Option<u32>, treasure: bool) -> Vec<u8> {
+    LAYOUTS[layout.min(7)].iter().filter_map(|&c| shown(target, c, treasure)).collect()
 }
 
 /// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled and
 /// Treasure shows while the pool holds items (Sprint's area rule is not done).
 fn current_items(w: &World, call_help: bool) -> Vec<u8> {
     let l = layout(w);
-    let mut items = menu_items(l, w.target.filter(|t| w.entities.contains_key(t)));
+    let treasure = super::treasure::count(w) > 0 && !conflict(w.my_team);
+    let mut items = menu_rows(l, w.target.filter(|t| w.entities.contains_key(t)), treasure);
     // FUN_1012af30 case 0xe: Dig only on a chocobo (not a mount); its further zone tests are not traced.
     if w.my_motion.status == 0x55 {
         items.retain(|&c| c != 0xe);
@@ -861,16 +868,11 @@ fn current_items(w: &World, call_help: bool) -> Vec<u8> {
     {
         items.retain(|&c| c != cmd::CHECK);
     }
-    if l == 6 {
-        if call_help && let Some(c) = items.iter_mut().find(|c| **c == cmd::DISENGAGE) {
-            *c = cmd::CALL_HELP;
-        }
-        if w.treasure.iter().any(|t| t.0 != 0)
-            && !conflict(w.my_team)
-            && let Some(at) = items.iter().position(|&c| c == cmd::CHECK)
-        {
-            items.insert(at, cmd::TREASURE);
-        }
+    if l == 6
+        && call_help
+        && let Some(c) = items.iter_mut().find(|c| **c == cmd::DISENGAGE)
+    {
+        *c = cmd::CALL_HELP;
     }
     items
 }
@@ -934,6 +936,7 @@ pub(super) fn battle_frame(w: &mut World) {
     if s == 1 && w.battle_prev != 1 && !super::event::active(w) {
         super::target::cancel_sub(w);
         super::inspect::drop(w);
+        super::treasure::close(w);
         // FUN_10202f00: the party-list cursor (<stpt> / <stal>) is cancelled too, stopping its macro (no sound *(inf)*).
         if let Some(pc) = w.party_cursor.take()
             && let super::target::SubThen::Line { from_macro: true, .. } = pc.then
@@ -969,7 +972,7 @@ pub(super) fn battle_frame(w: &mut World) {
 /// lists (Magic, Abilities, Trust, Items) close it and, engaged, bring it back when they are done; Chat, Tell, Talk
 /// close it.
 pub(super) fn keeps_menu(c: u8) -> bool {
-    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | 0x16..=0x18)
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | cmd::TREASURE | 0x16..=0x18)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -1003,6 +1006,8 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         }
         // Case 2: "/help".
         (cmd::CALL_HELP, _) => super::textcmd::run(w, "/help", super::textcmd::Mode::Internal),
+        // Case 0xb: the pool windows over the action menu (FUN_1013f060).
+        (cmd::TREASURE, _) => super::treasure::open(w),
         (cmd::DISENGAGE, _) => {
             let (t, i) = target.unwrap_or((w.my_id, 0));
             send(w, NetCommand::Act { target: t, index: i, action: 4 });

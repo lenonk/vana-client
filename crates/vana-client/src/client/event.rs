@@ -1157,6 +1157,7 @@ impl LiveHost<'_> {
 /// An event start from the server, or the login event (started once the zone is up).
 pub fn queue(w: &mut World, s: EventStart) {
     super::inspect::drop(w);
+    super::treasure::close(w);
     if w.event.is_some() {
         // 1009e8a0: an event is already running (group 9 message 0x81).
         log::warn!("event {:#x} ignored: event {:#x} is running", s.event, w.event.as_ref().map_or(0, |l| l.st.start.event));

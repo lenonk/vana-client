@@ -110,6 +110,25 @@ pub fn battle_message2(p: &SubPacket) -> BattleMessage {
     BattleMessage { actor: p.u32(4), target: p.u32(8), actor_index: p.u16(0xc), target_index: p.u16(0xe), data: [p.u32(0x10) as i32, p.u32(0x14) as i32], message: p.u16(0x18) }
 }
 
+/// s2c 0x0D2 (GP_SERV_COMMAND_TROPHY_LIST): TrophyItemNum @4, TargetUniqueNo @8, Gold @0xc, TrophyItemNo @0x10,
+/// slot @0x14, Entry @0x15, IsContainer @0x16, StartTime @0x18, IsLocallyLotted @0x1c / Point @0x1e, LootUniqueNo
+/// @0x20, LootPoint @0x26, LootActName @0x28.
+#[derive(Clone, Debug, Default)]
+pub struct TrophyList {
+    pub slot: u8,
+    pub item: u16,
+    pub qty: u32,
+    pub target: u32,
+    pub gold: u16,
+    pub container: bool,
+    pub entry: u8,
+    pub start: u32,
+    pub own_lot: i16,
+    pub loot_id: u32,
+    pub loot_point: u16,
+    pub loot_name: String,
+}
+
 /// Speed, status and size as POS_HEAD carries them (0x00A/0x00D/0x00E).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MotionState {
@@ -208,10 +227,10 @@ pub enum NetEvent {
     MessageStd { id: u16, cas: u32, para: [i32; 4], strings: [String; 2] },
     /// s2c 0x0D2 (GP_SERV_COMMAND_TROPHY_LIST): TargetUniqueNo @8, Gold @0xc, TrophyItemNo @0x10, TrophyItemIndex @0x14,
     /// IsContainer @0x16.
-    TrophyList { slot: u8, item: u16, target: u32, gold: u16, container: bool },
+    TrophyList(TrophyList),
     /// s2c 0x0D3 (GP_SERV_COMMAND_TROPHY_SOLUTION): LootUniqueNo @4, EntryUniqueNo @8, EntryPoint @0x12,
     /// TrophyItemIndex @0x14, JudgeFlg @0x15, sLootName @0x16, sLootName2 @0x26.
-    TrophySolution { slot: u8, judge: u8, loot: u32, entry: u32, entry_point: i16, loot_name: String, entry_name: String },
+    TrophySolution { slot: u8, judge: u8, loot: u32, loot_point: i16, entry: u32, entry_point: i16, entry_flg: bool, loot_name: String, entry_name: String },
     Event(EventStart),
     /// 0x05C: event params into Z2..Z9.
     EventParams([u32; 8]),
@@ -819,13 +838,28 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x008 if p.data.len() >= 4 + 0x30 => tx.send(NetEvent::KnownZones(p.data[4..4 + 0x30].try_into().unwrap()))?,
                     0x0CA => tx.send(NetEvent::InspectMessage(p.data.clone()))?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,
-                    0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,
+                    0x0D2 => tx.send(NetEvent::TrophyList(TrophyList {
+                        slot: p.u8(0x14),
+                        item: p.u16(0x10),
+                        qty: p.u32(4),
+                        target: p.u32(8),
+                        gold: p.u16(0xc),
+                        container: p.u8(0x16) != 0,
+                        entry: p.u8(0x15),
+                        start: p.u32(0x18),
+                        own_lot: if p.u16(0x1c) != 0 { p.u16(0x1e) as i16 } else { 0 },
+                        loot_id: p.u32(0x20),
+                        loot_point: p.u16(0x26),
+                        loot_name: text(&p, 0x28, 16),
+                    }))?,
                     0x0D3 => tx.send(NetEvent::TrophySolution {
                         slot: p.u8(0x14),
                         judge: p.u8(0x15),
                         loot: p.u32(4),
+                        loot_point: p.u16(0xe) as i16,
                         entry: p.u32(8),
                         entry_point: p.u16(0x12) as i16,
+                        entry_flg: p.u16(0x10) >> 15 != 0,
                         loot_name: text(&p, 0x16, 16),
                         entry_name: text(&p, 0x26, 16),
                     })?,

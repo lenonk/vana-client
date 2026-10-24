@@ -137,7 +137,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some()
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -743,7 +743,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1239,6 +1239,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if trade::active(world) => trade::key(world, gu, *key),
                 _ if synth::active(world) => synth::key(world, gu, *key),
                 _ if post::active(world) => post::key(world, gu, *key),
+                // The pool windows over the action menu (loot, lootope, lnowin).
+                _ if treasure::active(world) => treasure::key(world, *key),
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
@@ -1495,7 +1497,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // (FUN_1015de50; on no row SE 0004), the button held 60 ticks on a row runs its Right function and starts again
     // (FUN_1012b4b0; a row change restarts it), and a right click is Escape (msg 6, FUN_1015def0; ours only over it).
     let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
-    let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none();
+    let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none() && world.loot.is_none();
     let (mut held, mut right_click) = (false, false);
     if let (Some((r, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut()) {
         match rows.iter().position(|r| inside(r, p)) {
@@ -1844,6 +1846,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
+    blockers.extend(treasure::draw(gu, world, sw, sh));
+    treasure::draw_chest(gu, world, sw, sh);
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
@@ -1854,12 +1858,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
-    blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
-        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none();
+        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none();
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
             let (lib, sprite) = combat::label(*c);
             gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
@@ -1870,6 +1873,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(*r);
     }
 
+    // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
+    blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = world.config.as_mut() {
@@ -2290,6 +2295,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     magic::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
+    treasure::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -2298,7 +2304,12 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     items::bars(gu, world, &mut bars);
     buffs::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
-        bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
+        bars.help[0] = match m.items.get(m.sel) {
+            // FUN_1012b4b0: Treasure's help is 0x1b "Distribute ..." in a party, else 0x1c "Acquire ...".
+            Some(&combat::cmd::TREASURE) if world.party.members().count() <= 1 => gu.menu_msg(0x1c, ""),
+            Some(&c) => gu.cmd_help(c).unwrap_or_default(),
+            None => String::new(),
+        };
         // Retail shows group 0xd 5 "Commands" while engaged too (seen live, 2026-10-24), though FUN_1012b4b0 reads as 7
         // "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred).
         bars.title[0] = gu.title_msg(5).unwrap_or_default();
@@ -2735,6 +2746,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
+        (None, _) if let Some((id, ext)) = treasure::info_source(world) => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
     };
@@ -3368,8 +3380,9 @@ struct World {
     held_text: Vec<NetEvent>,
     /// Equipped linkshells by number (1, 2, 3): the item's (index, bag), index 0 none (s2c 0x0E0).
     linkshells: [(u8, u8); 4],
-    /// The treasure pool's slots: (item, the actor it came from).
-    treasure: [(u16, u32); treasure::SLOTS],
+    /// The treasure pool's slots (G+0x1951c) and its windows ("menu    loot" and the two beside it).
+    treasure: [treasure::Slot; treasure::SLOTS],
+    loot: Option<treasure::Loot>,
     res_rdy: ResRdy,
     /// The lobby reply's feature bits (u32 @0x24; 0x04..0x80 = Wardrobe 3..8).
     features: u32,
@@ -4445,6 +4458,7 @@ impl App {
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
                             treasure: Default::default(),
+                            loot: None,
                             linkshells: Default::default(),
                             held_text: Vec::new(),
                             ambient: None,
@@ -4799,6 +4813,7 @@ impl App {
                     world.play_time = Some((play_time, Instant::now()));
                     world.search = None;
                     inspect::drop(world);
+                    treasure::close(world);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5215,9 +5230,9 @@ impl App {
                     }
                 }
                 NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
-                NetEvent::TrophyList { slot, item, target, gold, container } => treasure::on_list(world, slot, item, target, gold, container),
-                NetEvent::TrophySolution { slot, judge, loot, entry, entry_point, loot_name, entry_name } => {
-                    treasure::on_solution(world, slot, judge, loot, entry, entry_point, loot_name, entry_name)
+                NetEvent::TrophyList(l) => treasure::on_list(world, l),
+                NetEvent::TrophySolution { slot, judge, loot, loot_point, entry, entry_point, entry_flg, loot_name, entry_name } => {
+                    treasure::on_solution(world, slot, judge, loot, loot_point, entry, entry_point, entry_flg, loot_name, entry_name)
                 }
                 NetEvent::Weather(w, minutes) => {
                     // The lighting blends from the old weather's environment to the new one over the change's time.
@@ -5928,6 +5943,9 @@ impl App {
         }
         if self.input.test(0x11, input::mode::PRESS) && synth::active(world) {
             synth::num_plus(world);
+        }
+        if self.input.test(0x11, input::mode::PRESS) && treasure::active(world) {
+            treasure::num_plus(world);
         }
         // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
         if self.input.test(0x11, input::mode::PRESS) && world.search.as_ref().is_some_and(|s| s.option.is_none()) {
@@ -6887,6 +6905,7 @@ impl App {
                         ("shop", shop::active(w)),
                         ("trade", trade::active(w)),
                         ("post", post::active(w)),
+                        ("loot", treasure::active(w)),
                         ("synth", synth::active(w)),
                         ("search", w.search.is_some()),
                         ("inspect", w.inspect.up()),
@@ -7270,6 +7289,7 @@ impl App {
             res_rdy(w);
             moogle::update(w);
             post::update(w);
+            treasure::update(w);
             shop::update(w);
             trade::update(w);
             combat::battle_frame(w);
