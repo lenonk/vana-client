@@ -343,8 +343,9 @@ fn lit_zone(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
 }
 
-// Actors: no vertex colour; material taken as 0x80 grey (inferred). Lit by the zone, or by the area they stand in
-// (the actor update FUN_1018b9a0 and draw FUN_1018b9e0 / FUN_1018ba20 with vtable +0x188's area).
+// Actors: no vertex colour; material diffuse 0.5, ambient 0x80 / 128 = 1 (DAT_10346380, FUN_1002a8c0). Lit by the
+// zone, or by the area they stand in (the actor update FUN_1018b9a0 and draw FUN_1018b9e0 / FUN_1018ba20 with vtable
+// +0x188's area).
 fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     var sun = u.actor_sun.xyz;
     var color = u.actor_color.rgb;
@@ -360,9 +361,10 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
         fog = a.fog.xy;
     }
     let ndl = max(dot(normalize(in.normal), -sun), 0.0);
-    // The target flash pulls the ambient toward 220 / 255 and scales the fog colour (FUN_100c94a0).
-    let amb = mix(ambient, vec3<f32>(220.0 / 255.0), in.flash.x);
-    let lit = clamp(0.5 * (amb + color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
+    // D3DRS_AMBIENT = ftol(ambient x 128) (FUN_10181de0); the target flash mixes those bytes toward 220 and scales
+    // the fog colour (FUN_100c94a0).
+    let amb = floor(mix(floor(ambient * 128.0), vec3<f32>(220.0), in.flash.x)) / 255.0;
+    let lit = clamp(amb + 0.5 * (color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
     let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color * in.flash.y, rgb, f);

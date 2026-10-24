@@ -477,7 +477,7 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   Zone material (0x3913c) diffuse 1.0, ambient 0.7 (replaced by the vertex colour).
 - WGSL: scenery lit = clamp(vc x (ambient + sun x scale x max(N.(-L), 0))), rgb = clamp(tex x lit x 2),
   alpha = tex.a x vc.a x 4 (our textures already double alpha); fog f = clamp((end - z_view)/(end - start)),
-  out = mix(fog, rgb, f). Actors the same with vc = 0.5 (inferred). Sky: e = asin(-ray.y)/(pi/2), lerp
+  out = mix(fog, rgb, f). Actors: D3DRS_AMBIENT = ftol(ambient x 128) (FUN_10181de0), material ambient 1, diffuse 0.5 (DAT_10346380, FUN_1002a8c0): lit = clamp(Ga + 0.5 x sun x ndl) (MODLOG "Target flash: the ambient bytes"). Sky: e = asin(-ray.y)/(pi/2), lerp
   ring colours by elevation; clear colour when the dome is off. Dome radius (far - near) x 0.8
   (FUN_1003cd20 / FUN_1003c800).
 - Title ops: 0x7e copies the title DAT's 0x2f block (DAT 23: 0620, s101, 1700) into DAT_10617500 as a
@@ -6237,3 +6237,20 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
   the log; only the focus itself takes the arrow keys. Ours gated the camera on the state, so after Escape or a menu
   the arrows did nothing until the next Num+ reset it (user's run, 2026-10-24: `log_focus 1`, no window open). The
   camera gate now reads the focus (`log_active`, or the status icons at state 2); F12 shows both.
+
+## Target flash: the ambient bytes (2026-10-24)
+
+- DAT_104448c0 is D3DRS_AMBIENT (FUN_10029590: SetRenderState 0x8b, then SetLight / LightEnable for slots 0..3 from
+  DAT_104449a0, LIGHTING 1). Its bytes are ftol(env actor ambient / 255 x 128) (FUN_10181de0 mode 1; 0x1031fcd0 =
+  128.0; current FUN_10188e00). Actor material (FUN_1002a8c0, template DAT_10346380, current DAT_10351518): diffuse
+  0.5, ambient = actor colour +0x660 (0x80808080) / 128 = 1.0, specular / emissive 0. No vertex colour (COLORVERTEX
+  falls back to the material); the light ambient DAT_106174dc is never written *(inf: 0)*. Stage 0 MODULATE2X, stage
+  1 MODULATE2X by TFACTOR 0x80 (neutral).
+- So an actor's vertex colour is clamp(Ga + 0.5 x sun x ndl), Ga = the RS bytes / 255; the flash mixes those
+  (already halved) bytes toward a full 220. Ours halved after the mix, so the flash peaked at 110: at noon in Valkurm
+  (actor ambient 167..173, sun 196 x 1.5) a shaded texel 0.5 went 84 -> 110 where retail goes 83 -> 220. Without a
+  flash both formulas agree (within the ftol rounding). lit_actor now follows retail; flash-shot zone 103 hour 12:
+  peak difference 155 (was 43).
+- Not done: each 0x8010 material record's light factor f (f32 at record byte 18): body path scales the RS ambient
+  bytes and light diffuse by f, cloth path diffuse x f and emissive max(f - 1.5, 0); Hume faces carry 1.2..1.6.
+- Research notes and scripts: `~/ffxi/lab/scratch/flash2/`.
