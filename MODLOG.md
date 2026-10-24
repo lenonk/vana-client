@@ -5618,3 +5618,24 @@ Spec `~/ffxi/lab/research/select_buttons_spec.md`.
   generic windows (not done yet: the character list rows, Config pages, the login screen).
 - The action does not wait: the fade-out starts on the press frame.
 - title-shot: FFXI_TITLE_PRESS=c draws Select Character pressed at counter c.
+
+## Actor sounds 1: voices, model init, sub-animations (2026-10-24)
+
+Spec `~/ffxi/lab/research/actor_sounds_spec.md`.
+- Every actor sound is a SeSep from a scheduler op (0x0a / 0x0b / 0x53 / 0x60 / 0x78), a generator sound element or
+  the footstep code; motion chunks carry no sound track.
+- Voices: scheduler sounds start through FUN_100370d0 -> FUN_10036130 and a full voice table (0029, 12) steals the
+  oldest non-looping voice of lower or equal priority (FUN_1023fb90); only the plain call FUN_10037510 refuses at
+  DAT_1044417c. At most 20 distinct SeSeps start a frame, repeats free (FUN_10036460; MODLOG's 12 was wrong).
+- FUN_1008c480: once a model is in (kind not 3..5), `init` once (entity +0x128 bit 29), `inte` too for status 0x22,
+  none seated (0x3f..0x53) or fishing (6 / 0x32 / 0x38; those run their status scheduler instead).
+- FUN_1008ef60 every frame: entity +0x124 bits 1..3 = the wanted sub-animation (0x00E mask 0x04: @0x2A & 7 when @0x20
+  bit 0 or u32 @0x28 bit 26; LSB animationsub), bits 4..7 applied (8 = none yet), +0x8a5 the model's own. Names
+  `init ini1 ini2 ini3` by value & 3. Below 4: on a change the monster runs `ini<n>` unless first sight or already
+  running; 4 <-> 0 only records; 4 and up (LSB spawns a sub-state as 4 | sub) stops `ini<applied>` and runs
+  `ini<wanted>` once init ran.
+- Tunnel Worm (model 424, DAT 1724): `init` = emerge (alpha 0, se 17024 at t30, `sp0?`, dirt, fade in), `ini1` =
+  burrow (`sp1?`, se 17025 at t16, fade out by t112, invisible until the next init); LSB burrows with animationsub 1
+  and surfaces with 0. `ntob` cries se 252001 on engaging; `dead` plays `vded` (252014..16).
+- Live: every model's init on arrival; the Tunnel Worms near Lnxtest emerged with se 17024. A burrow (ini1) was not
+  seen in 45 s.

@@ -256,6 +256,25 @@ impl Effects {
         self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)) });
     }
 
+    /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).
+    pub fn actor_scheduler_running(&self, actor: u32, name: u32) -> bool {
+        let who = Who::Actor(actor);
+        self.pending.iter().any(|p| p.actor == Some(actor) && p.name == name)
+            || self.tasks.iter().flatten().any(|t| t.a1 == who && u32::from_le_bytes(self.reg.libs[t.res.0].tree.nodes[t.res.1].name) == name)
+    }
+
+    /// Model vtable +0x29c: the actor's scheduler `name` stops (waiting or running).
+    pub fn stop_actor_scheduler(&mut self, actor: u32, name: u32) {
+        let who = Who::Actor(actor);
+        self.pending.retain(|p| !(p.actor == Some(actor) && p.name == name));
+        for i in 0..self.tasks.len() {
+            let hit = self.tasks[i].as_ref().is_some_and(|t| t.a1 == who && u32::from_le_bytes(self.reg.libs[t.res.0].tree.nodes[t.res.1].name) == name);
+            if hit {
+                self.tasks[i] = None;
+            }
+        }
+    }
+
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
         self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });

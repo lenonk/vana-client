@@ -220,6 +220,10 @@ struct Entity {
     no_plate: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
+    /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
+    sub: [u8; 3],
+    /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
+    init_done: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
     door: u32,
     /// An object (actor +0x128 bit 3 from the 0x00E look): no target gauge, no name plate.
@@ -757,6 +761,8 @@ fn self_entity(w: &World) -> Entity {
         no_gauge: false,
         no_plate: false,
         untargetable: false,
+        sub: [0, 8, 0],
+        init_done: false,
         door: 0,
         object: false,
         face: 0,
@@ -2245,6 +2251,8 @@ fn place_mogdoor(w: &mut World) {
             // Kind 3 makes an XiDoorActor (FUN_1008f740), whose plate draw (vtable +0x284, FUN_100ac380) is empty.
             no_plate: true,
             untargetable: false,
+            sub: [0, 8, 0],
+            init_done: false,
             door: 0,
             object: true,
             face: 0,
@@ -4667,6 +4675,8 @@ impl App {
                         no_gauge: false,
                         no_plate: false,
                         untargetable: false,
+                        sub: [0, 8, 0],
+                        init_done: false,
                         door: 0,
                         object: false,
                         face: 0,
@@ -4760,6 +4770,9 @@ impl App {
                     }
                     if let Some(u) = e.untargetable {
                         entry.untargetable = u;
+                    }
+                    if let Some(s) = e.sub_anim {
+                        entry.sub[0] = s;
                     }
                     if let Some((b20, b3)) = e.hp_bits {
                         (entry.no_gauge, entry.no_plate) = (b20 || b3, b3);
@@ -5123,6 +5136,57 @@ impl App {
             if *left <= 0.0 {
                 world.cast_bar = None;
             }
+        }
+        // FUN_1008c480: a model's "init" once it is in ("inte" too for status 0x22; none seated, none fishing);
+        // FUN_1008ef60: "ini<n>" when a monster's sub-animation changes (a worm burrows with ini1, comes up with init).
+        const SUB: [[u8; 4]; 8] = [*b"init", *b"ini1", *b"ini2", *b"ini3", *b"init", *b"ini1", *b"ini2", *b"ini3"];
+        let mut starts: Vec<(u32, [u8; 4])> = Vec::new();
+        let mut stops: Vec<(u32, [u8; 4])> = Vec::new();
+        for (id, e) in world.entities.iter_mut() {
+            let ready = world.actors.get(id).is_some_and(|a| a.character.is_some());
+            if !ready || e.door != 0 || matches!(e.sub_kind, 2..=4) {
+                continue;
+            }
+            let status = e.motion.status;
+            if !e.init_done {
+                e.init_done = true;
+                e.sub[2] = e.sub[0];
+                if !matches!(status, 6 | 0x32 | 0x38 | 0x3f..=0x53) {
+                    starts.push((*id, *b"init"));
+                    if status == 0x22 {
+                        starts.push((*id, *b"inte"));
+                    }
+                }
+            }
+            let (want, applied) = (e.sub[0], e.sub[1]);
+            if (want == 4 && applied == 0) || (want == 0 && applied == 4) {
+                e.sub = [want, want, want];
+                continue;
+            }
+            let running = |name: [u8; 4]| world.effects.actor_scheduler_running(*id, u32::from_le_bytes(name));
+            if want < 4 {
+                if want == e.sub[2] && want == applied {
+                    continue;
+                }
+                e.sub[2] = want;
+                if e.mob && applied != 8 && !running(SUB[want as usize]) {
+                    starts.push((*id, SUB[want as usize]));
+                }
+                e.sub[1] = want;
+            } else if want != applied && e.mob && !running(SUB[want as usize]) {
+                if applied != 8 {
+                    stops.push((*id, SUB[applied as usize & 7]));
+                }
+                starts.push((*id, SUB[want as usize]));
+                e.sub = [want, want, want];
+            }
+        }
+        for (id, name) in stops {
+            world.effects.stop_actor_scheduler(id, u32::from_le_bytes(name));
+        }
+        for (id, name) in starts {
+            log::debug!(target: "motion", "actor {id:#x}: scheduler {}", String::from_utf8_lossy(&name));
+            world.effects.on_scheduler(id, id, u32::from_le_bytes(name));
         }
         // FUN_100d1070: once the model's files are in, its 'spop' runs on it (actor files, then DAT 0).
         let spops: Vec<u32> = world.actors.iter_mut().filter(|(_, a)| a.spop && a.character.is_some()).map(|(id, a)| {
