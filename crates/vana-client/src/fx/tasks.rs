@@ -171,7 +171,8 @@ impl Effects {
         let records = a.records().len();
         let speed = action_speed(a);
         log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
-        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![false; records], last: 0 }));
+        // Melee and ranged main lines are client/combat.rs's (at the hit); their proc / react lines come from op 0x71.
+        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0 }));
         match a.category {
             1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None }),
             3..=6 | 0xb | 0xd..=0xf => {
@@ -540,8 +541,21 @@ impl Effects {
                 Flow::Next
             }
             // Swing pick (FUN_100d4600, combat chose it) and the counter swing: call-and-wait, parent back 10 sooner.
-            0x24 | 0x5d | 0x5c => {
-                let name = if op.code == 0x5c { Some("cni0".to_string()) } else { t.action.as_ref().and_then(|a| a.borrow().swing.clone()) };
+            // Op 0x5c: the counter swing, `cni0` standing, `cnf0` moving (ours moves forward only), and no wait.
+            0x5c => {
+                let Some(id) = t.a1.id() else { return Flow::Next };
+                let name = if actors.moving(id) { *b"cnf0" } else { *b"cni0" };
+                match self.find_on_actor(id, u32::from_le_bytes(name), actors, false, true) {
+                    Ok(Some(r)) => {
+                        self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, None);
+                        Flow::Next
+                    }
+                    Ok(None) => Flow::Next,
+                    Err(()) => Flow::Retry,
+                }
+            }
+            0x24 | 0x5d => {
+                let name = t.action.as_ref().and_then(|a| a.borrow().swing.clone());
                 let (Some(name), Some(id)) = (name, t.a1.id()) else { return Flow::Next };
                 let n = u32::from_le_bytes(crate::dat::generator::fourcc(&name));
                 match self.find_on_actor(id, n, actors, false, true) {
@@ -724,8 +738,8 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // FUN_10057fb0 cases 0x25 / 0x21: the hit reaction of actor2 / actor1 at this frame.
-            0x25 | 0x21 if t.motions => {
+            // FUN_10057fb0 cases 0x25 / 0x21: the hit reaction of actor2 / actor1 at this frame (melee's damg too).
+            0x25 | 0x21 => {
                 let (reactor, other) = if op.code == 0x25 { (t.a2, t.a1) } else { (t.a1, t.a2) };
                 // FUN_1005e350: the current record's hit distortion (scale & 3); no action 1.
                 let level = t.action.as_ref().map_or(1, |a| {
@@ -736,6 +750,15 @@ impl Effects {
                 if let (Some(reactor), Some(other)) = (self.doll_of(reactor).id(), self.doll_of(other).id()) {
                     let f = |o: usize| f32::from_bits(op.u32_at(o));
                     self.reacts.push(super::React { reactor, other, amount: f(8), rate: f(0xc), count: op.u32_at(0x10), blend_in: f(0x14), fade: f(0x18), side: op.u32_at(0x1c), level });
+                }
+                Flow::Next
+            }
+            // Ops 0x5a / 0x5b: actor1 / actor2 guards (@0xe 0) or parries.
+            0x5a | 0x5b => {
+                let who = if op.code == 0x5a { t.a1 } else { t.a2 };
+                if let Some(reactor) = self.doll_of(who).id() {
+                    let f = |o: usize| f32::from_bits(op.u32_at(o));
+                    self.guards.push(super::Guard { reactor, parry: op.u16_at(0xe) != 0, rate: f(8), count: op.u16_at(0xc) as i16, blend_in: f(0x10), fade: f(0x14) });
                 }
                 Flow::Next
             }
@@ -751,8 +774,9 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // FUN_1018c870: message n (1 proc, 2 react) of the record op 0x2b printed last (`mprc`, `wapr`, `sb0?`).
-            0x71 if t.motions => {
+            // FUN_1018c870: message n (1 proc, 2 react) of the record op 0x2b printed last (`mprc`, `wapr`, `sb0?`,
+            // `dcnt`).
+            0x71 => {
                 if let Some(a) = &t.action {
                     let a = a.borrow();
                     self.action_prints.push((a.action.clone(), a.last, op.u32_at(8) as u8));

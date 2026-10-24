@@ -57,6 +57,10 @@ pub trait Actors {
     fn fx_class(&self, _id: u32) -> u8 {
         8
     }
+    /// Moving this frame (actor +0xf8, FUN_1005e5d0).
+    fn moving(&self, _id: u32) -> bool {
+        false
+    }
 }
 
 /// No actors (offscreen shots).
@@ -167,6 +171,18 @@ pub struct React {
     pub fade: f32,
     pub side: u32,
     pub level: u8,
+}
+
+/// Op 0x5a (reactor actor1) / 0x5b (actor2): guard (`gdi?` / `gdm?`) or parry (`pyi?` / `pym?`) with rate f32 @8,
+/// count i16 @0xc, parry u16 @0xe, blend-in f32 @0x10, fade f32 @0x14.
+#[derive(Clone, Copy, Debug)]
+pub struct Guard {
+    pub reactor: u32,
+    pub parry: bool,
+    pub rate: f32,
+    pub count: i16,
+    pub blend_in: f32,
+    pub fade: f32,
 }
 
 /// Scheduler op 0x0c (translate) / 0x0d (rotate) on a door (FUN_10043bb0 / FUN_100439c0): part `part` of actor1's
@@ -588,6 +604,8 @@ pub struct Effects {
     pub loads: Vec<u32>,
     /// Op 0x25 / 0x21 hit reactions (FUN_100cdd60).
     pub reacts: Vec<React>,
+    /// Op 0x5a / 0x5b guard and parry overlays (FUN_100cde70 / FUN_100cdf00).
+    pub guards: Vec<Guard>,
     /// Messages that print now: (action, record, which: 0 main (op 0x2b, the action's end), 1 proc / 2 react (op 0x71)).
     pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
@@ -660,6 +678,7 @@ impl Effects {
             releases: Vec::new(),
             loads: Vec::new(),
             reacts: Vec::new(),
+            guards: Vec::new(),
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),

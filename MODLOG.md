@@ -5565,3 +5565,21 @@ Spec `~/ffxi/lab/research/emit_3c_45_spec.md`.
 - `misv`: mis0 (red ":" at 0.40), mis1 clone from the scheduler (purple glow at 0.398, on the red text, no parent),
   and mis0's op 0x3c mis1 from the resource at 0.798, never drawn. Ours copied the number into that burst and drew a
   second purple "Miss!" below; `burst` no longer passes it.
+
+## Per-record reactions from the files: guard, parry, block, counters, added-effect / spike lines (2026-10-24)
+
+Spec `~/ffxi/lab/research/knockback_guard_spec.md` section 2.
+- dam0 (T+5) runs by miss value 1 `sway` (voice only: no evade motion in retail), 2 `gurd`, 3 `pary`, 4 `gur1`, react kind
+  63 `cnt0`, 1..10 `sb0?`; ranged `daml` has no block and no spikes / counter. Op 09 runs them on the target with actor1
+  = target.
+- Ops 0x5a (actor1) / 0x5b (actor2), FUN_100cde70 / FUN_100cdf00: guard `gdi?` / `gdm?` or (@0xe != 0) parry `pyi?` /
+  `pym?` by moving, amount 1.0, rate @8, count @0xc, blend-in @0x10, fade @0x14; gate: no-reaction counter, riding; no
+  dead check, no level, no direction, no fallback between the standing and moving names. Monsters' gurd / pary play a
+  one-shot `gud?` (op 05). PC block (gur1) = the attacker's chit + pain voice + the guard overlay.
+- Op 0x5c: the counter swing `cni0` standing, `cnf0` / `cnr0` / `cnb0` / `cnl0` moving, and the parent does not wait;
+  its `dcnt` prints the react line (op 0x71 2) and runs `damg` on the original attacker.
+- Ours now: ops 0x21 / 0x25 / 0x71 run in every task; melee / ranged tasks whose actor1 is not the attacker play their
+  own motions and holds (fx/sched.rs Task::new), so monster guard / parry and counter swings show; combat.rs no longer
+  plays melee / ranged reactions itself and prints only main lines at T+4 (proc / react lines from op 0x71: wapr
+  T+21, sb0? +55, dcnt at the counter's hit). Melee / ranged ActionCtx records start printed (combat prints the mains).
+- Live: hits on both sides react from damg's op 0x21 one tick after the line.

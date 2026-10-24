@@ -2658,6 +2658,7 @@ struct FxActors<'a> {
     contacts: &'a HashMap<u32, (Vec3, Vec3)>,
     entities: &'a HashMap<u32, Entity>,
     me: u32,
+    me_moving: bool,
     pet: u16,
     /// The area environments' tints this frame, and the floor to find an actor's area on.
     areas: &'a HashMap<u32, Vec3>,
@@ -2668,6 +2669,10 @@ impl crate::fx::Actors for FxActors<'_> {
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
         let p = self.places.get(&id)?;
         Some(actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt))
+    }
+
+    fn moving(&self, id: u32) -> bool {
+        if id == self.me { self.me_moving } else { self.entities.get(&id).is_some_and(|e| e.ratio > 1e-4) }
     }
 
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
@@ -5137,6 +5142,9 @@ impl App {
         for r in std::mem::take(&mut world.effects.reacts) {
             combat::react_op(world, &r);
         }
+        for g in std::mem::take(&mut world.effects.guards) {
+            combat::guard_op(world, &g);
+        }
         for (a, k, which) in std::mem::take(&mut world.effects.action_prints) {
             combat::print_record(world, &a, k, which);
         }
@@ -7353,7 +7361,7 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref() };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref() };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }

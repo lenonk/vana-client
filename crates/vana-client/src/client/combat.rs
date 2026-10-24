@@ -77,11 +77,10 @@ struct Msg {
     which: Option<u8>,
 }
 
-/// Messages and a damage reaction waiting for the attacker's hit ("dada" in its attack scheduler).
+/// Main lines waiting for the attacker's hit ("dada" in its attack scheduler).
 pub(super) struct Pending {
     at: Instant,
     messages: Vec<Msg>,
-    reactions: Vec<(u32, u32, u8, u8)>,
 }
 
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
@@ -362,25 +361,16 @@ fn one_action(w: &mut World, a: &Action) {
             w.cast_bar = None;
         }
     }
-    let messages = record_messages(a);
+    let mut messages = record_messages(a);
+    // Melee / ranged proc and react lines (added effects, spikes, counters) print from their files' op 0x71.
+    if matches!(a.category, category::BASIC_ATTACK | category::RANGED_FINISH) {
+        messages.retain(|m| m.which == Some(0));
+    }
     if a.actor == w.my_id || a.targets.iter().any(|t| t.id == w.my_id) {
         let recs: Vec<String> = a.records().iter().map(|(t, r)| format!("{t:#x} miss {} kind {} anim {} info {} scale {} value {} msg {}", r.miss, r.kind, r.animation, r.info, r.scale, r.value, r.message)).collect();
         log::debug!(target: "motion", "0x028 category {} arg {:#x} from {:#x}: {recs:?}", a.category, a.arg, a.actor);
     }
-    let mut reactions = Vec::new();
-    for (target, r) in a.records() {
-        let hits = matches!(a.category, category::BASIC_ATTACK | category::RANGED_FINISH | category::SKILL_FINISH | category::MOB_SKILL_FINISH);
-        // FUN_100cbd20 / FUN_100cbe30: a hit reacts only at a hit distortion level (scale & 3) above 0; a miss (sway)
-        // plays nothing; guard / block and parry have their own motions.
-        let reacts = match r.miss {
-            0 => r.scale & 3 != 0,
-            2..=4 => true,
-            _ => false,
-        };
-        if hits && reacts {
-            reactions.push((target, a.actor, r.miss, r.scale & 3));
-        }
-    }
+    // Hit, guard, parry and block reactions come from the files (dam0 -> damg / gurd / pary / gur1: ops 0x21 / 0x5a).
     let first = a.targets.first().map(|t| t.id);
     // Skill, magic, item and mob TP actions run from effect files (FUN_100a9230): the caster and every target are held
     // from now until "main" starts (fx releases them; 1800-tick safety, +0x11e); the reactions and messages come from
@@ -410,20 +400,15 @@ fn one_action(w: &mut World, a: &Action) {
     w.effects.on_action(a, attack.as_ref().map(|(_, n, _, _)| n.clone()));
     let delay = attack.map(|(d, _, _, _)| d);
     match delay {
-        // dada at T: atpr waits 4, then op 0x2b prints; dam0 (op 0x01 wait 1) reacts at T + 5 (triggers.md 2.2).
+        // dada at T: atpr waits 4, then op 0x2b prints (triggers.md 2.2).
         Some(d) => {
             let tick = Duration::from_secs_f32(1.0 / 60.0);
-            let now = Instant::now();
-            w.pending.push(Pending { at: now + d + tick * 4, messages, reactions: Vec::new() });
-            w.pending.push(Pending { at: now + d + tick * 5, messages: Vec::new(), reactions });
+            w.pending.push(Pending { at: Instant::now() + d + tick * 4, messages });
         }
         None if by_file => {}
         None => {
             for m in messages {
                 print(w, m);
-            }
-            for (t, by, miss, level) in reactions {
-                react(w, t, by, miss, level);
             }
         }
     }
@@ -553,9 +538,6 @@ pub(super) fn tick(w: &mut World) {
         for m in p.messages {
             print(w, m);
         }
-        for (t, by, miss, level) in p.reactions {
-            react(w, t, by, miss, level);
-        }
     }
 }
 
@@ -611,40 +593,27 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
     Some((Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0), a.last_attack.clone(), plan.attacker_hold, plan.target_hold))
 }
 
-/// Damage reaction (FUN_100cbd20): "dfi?" / "dbi?" (front / back) standing, "dfm?" / "dbm?" while
-/// moving (+0xf8); guard "gdi?" / "gdm?" (FUN_100cbe30). Front or back is taken from where the attacker
-/// stands (inferred).
-/// FUN_100cdd60 / FUN_100cde70 / FUN_100cdf00: the reaction as an overlay over whatever plays: a hit at 25 / 50 /
-/// 100 % by hit distortion `level`, 2 cycles, out over 24 ticks; guard / block / parry at full weight, 4 cycles, 16.
-fn react(w: &mut World, target: u32, attacker: u32, miss: u8, level: u8) {
-    // None during the reactor's own swing hold (op 0x59) or while it is dead or riding.
-    let status = if target == w.my_id { w.my_motion.status } else { w.entities.get(&target).map_or(0, |e| e.motion.status) };
-    if w.noreact.get(&target).is_some_and(|t| *t > Instant::now()) || matches!(status, 2 | 3 | 5 | 0x55) {
+/// FUN_100cde70 / FUN_100cdf00 for ops 0x5a / 0x5b: none while the reactor is in its own no-reaction hold or riding;
+/// standing `gdi?` / `pyi?`, moving `gdm?` / `pym?`, no fallback between them; an overlay at amount 1.0 with the op's
+/// rate, count, blend-in and fade (no level, no direction, no dead check).
+pub(super) fn guard_op(w: &mut World, g: &crate::fx::Guard) {
+    let status = if g.reactor == w.my_id { w.my_motion.status } else { w.entities.get(&g.reactor).map_or(0, |e| e.motion.status) };
+    if w.noreact.get(&g.reactor).is_some_and(|t| *t > Instant::now()) || matches!(status, 5 | 0x55) {
         return;
     }
-    let (Some((tp, tdir)), Some((ap, _))) = (position(w, target), position(w, attacker)) else { return };
-    let front = super::forward_from_dir(tdir).dot(ap - tp) >= 0.0;
-    let moving = moving(w, target);
-    let Some(a) = w.actors.get_mut(&target) else { return };
-    let Some(ch) = a.character.clone() else { return };
-    if a.oneshot.as_ref().is_some_and(|o| o.name.starts_with("ded")) {
-        return;
-    }
-    let (i, m) = match (miss, front) {
-        (2 | 4, _) => ("gdi", "gdm"),
-        (3, _) => ("pyi", "pym"),
-        (_, true) => ("dfi", "dfm"),
-        _ => ("dbi", "dbm"),
+    let name = match (g.parry, moving(w, g.reactor)) {
+        (false, false) => "gdi",
+        (false, true) => "gdm",
+        (true, false) => "pyi",
+        (true, true) => "pym",
     };
-    let order = if moving { [m, i] } else { [i, m] };
-    if let Some(name) = order.into_iter().find(|n| !actmotion::find(&a.extra, &ch, n).is_empty()) {
-        let (weight, cycles, fade) = match miss {
-            2..=4 => (1.0, 4, 16.0),
-            _ => ([0.0, 0.25, 0.5, 1.0][level.min(3) as usize], 2, 24.0),
-        };
-        log::debug!(target: "motion", "actor {target:#x}: reaction {name} weight {weight} (miss {miss}, level {level}) from {attacker:#x}");
-        a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles, fade, rate: 1.0, blend_in: 1.0 });
+    let Some(a) = w.actors.get_mut(&g.reactor) else { return };
+    let Some(ch) = a.character.clone() else { return };
+    if actmotion::find(&a.extra, &ch, name).is_empty() {
+        return;
     }
+    log::debug!(target: "motion", "actor {:#x}: {name} count {} fade {}", g.reactor, g.count, g.fade);
+    a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight: 1.0, cycles: g.count.clamp(1, 255) as u8, fade: g.fade, rate: if g.rate > 0.0 { g.rate } else { 1.0 }, blend_in: g.blend_in });
 }
 
 /// Death: the actor's "dead" scheduler plays "ded?" for its op length, then the corpse loop takes over.

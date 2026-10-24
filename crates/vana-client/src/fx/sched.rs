@@ -135,7 +135,12 @@ pub struct Task {
 
 impl Task {
     pub fn new(res: Ref, ops: Rc<Vec<SOp>>, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32) -> Self {
-        let motions = action.as_ref().is_none_or(|a| !matches!(a.borrow().action.category, 1 | 2));
+        // Melee / ranged: the attacker's swing is client/combat.rs's plan; the target's side (gurd / pary, a counter's
+        // swing) plays its own motions and holds.
+        let motions = action.as_ref().is_none_or(|a| {
+            let a = a.borrow();
+            !matches!(a.action.category, 1 | 2) || a1.id().is_some_and(|id| id != a.action.actor)
+        });
         Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None }
     }
 }
