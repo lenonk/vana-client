@@ -6729,3 +6729,17 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` L5; ours client/linkshell.rs (MsgS
   "level ls|ps|all" -> 0x0E2 @4 0x20, @5 (level << 2) & 0xc, seq (not incremented); "clear" -> 0x0E2 @4 0x40 empty;
   "set TEXT" / "TEXT" -> 0x0E2 @4 0x40 with the text at @0x10 (strncpy 0x80, @0x8f 0).
 - Live (Lnxcsfix, no shell): both commands print 7 0x71. The message lines need a real shell (not seen yet).
+
+## Lift ride: the camera eye follows the drawn height every frame (2026-10-24)
+
+- Reported by the user: dark bars flickering across the screen, only on an elevator (Metalworks '@6l0' / '@6l1').
+- Cause (ours, not retail): the rider's y (world.pos.y) only changes in the physics step loop (STEP_TICKS 2, 30 Hz),
+  and camera::ride (FUN_1001ee60's eye.y += the player's y change) used that stepped change, while the drawn feet
+  (draw_pos.y = the shaft height now), the look point (drawn_pos) and the lift's parts (GPU move against the same
+  clock) moved every frame. The eye jumped about 0.052 units every fifth frame at ~144 fps (a 7 s, 480-tick ride of
+  11.945 units) and the cage bars in front of the camera jittered against it at 30 Hz.
+- Fix: the eye rides by the change of the drawn height (h - last frame's h), every frame. FFXI_TRACE_MOVE now also
+  traces while riding. Measured over two rides: (eye.y - drawn.y) frame-to-frame change mean 0.0228 -> 0.00025, the
+  largest within a ride 0.0001 (was 0.052).
+- Screenshots during a ride are not a fair test of motion: each `shot:` stalls the client ~0.37 s at 2560 x 1366, and
+  the physics then catches up several steps at once.

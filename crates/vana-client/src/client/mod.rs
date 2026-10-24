@@ -6334,15 +6334,16 @@ impl App {
         world.step_to = world.pos;
         world.draw_pos = drawn_between_steps(&world.step_hist, world.step_ticks / ground::STEP_TICKS);
         // On a lift the feet are drawn at its height now (the model is too), and the camera eye rides along
-        // (FUN_1001ee60: eye.y += the player's y change, the hold set).
+        // (FUN_1001ee60: eye.y += the player's y change, the hold set) by the drawn height, every frame as the lift
+        // and the look point move: the stepped y would jolt the eye at 30 Hz against them.
         let rode = ride(world.pos, world.pos);
         world.riding = rode.is_some();
         if let Some((h, _)) = rode {
             world.draw_pos.y = h;
-            camera::ride(world, world.pos.y - world.ride_y);
+            camera::ride(world, h - world.ride_y);
         }
-        world.ride_y = world.pos.y;
-        if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && stepping {
+        world.ride_y = world.draw_pos.y;
+        if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && (stepping || world.riding) {
             let c = Self::camera(world);
             log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z);
         }
