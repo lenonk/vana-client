@@ -1665,10 +1665,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if world.menu.is_some() {
         blockers.extend(gu.window_rect(crate::render::screens::menu_window(world.menu_page), sw, sh));
     }
-    // The action menu (FUN_101276a0): label sprites, the highlighted one tinted 0x80805020.
+    // The action menu (FUN_101276a0): label sprites, the highlighted one tinted 0x80805020; none while it opens.
     if let (Some(m), Some((r, rows))) = (&world.action_menu, &action_rows) {
-        gu.window(&combat::window_name(m.items.len()), sw, sh);
-        for (k, (c, row)) in m.items.iter().zip(rows).enumerate() {
+        let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
+        for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
             let (lib, sprite) = combat::label(*c);
             gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
             if k == m.sel {
