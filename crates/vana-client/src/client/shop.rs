@@ -919,6 +919,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
                 gu.cursor(rx, ry);
             }
         }
+        // Resized every update (FUN_10210880 -> FUN_1011a5a0), so the bar sits at x1 - 6.
+        gu.scroll_bar(wx + ww - 6.0, wy, wh, rows.len(), ROWS, s.list.0);
         rects.push([wx, wy, ww, wh]);
         // money (FUN_101408c0) with the list.
         rects.extend(super::post::draw_money(gu, w, sw, sh));

@@ -42,13 +42,20 @@ pub fn push_cursor(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32, chi
 /// apart; US columns (0x10375ee4) put the icon at 0 (32x32 at 0.5), the name at 18 (y + 2) and the
 /// count right-aligned at 16 (y + 4, over the icon).
 pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize) {
-    push_item_list(b, ui, style, font, atlas, m, list, w, h, frame, 3.0, true);
+    push_item_list(b, ui, style, font, atlas, m, list, w, h, frame, 3.0, true, INVENTOR_BAR);
 }
+
+/// The scroll bar's inset from the frame's right edge: inventor is always moved at open (FUN_101f1fe0 ->
+/// FUN_1011a5a0: x1 - 6); a list left where it opened, or stacked on the log, keeps x1 - 8.
+pub const INVENTOR_BAR: f32 = 6.0;
+pub const LIST_BAR: f32 = 8.0;
 
 /// An item list window with its rows `inset` px in ("menu    bank" rows sit at x 4) and the cursor only when focused.
 #[allow(clippy::too_many_arguments)]
-pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize, inset: f32, focused: bool) {
+#[allow(clippy::too_many_arguments)]
+pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize, inset: f32, focused: bool, bar_inset: f32) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
+    let (fx, fy, fw, fh) = super::screens::frame_rect(m, w, h, 1.0, 1.0);
     let (ox, oy) = (wx + inset, wy + 4.0);
     for (k, row) in list.visible().iter().enumerate() {
         let y = oy + k as f32 * ROW_PITCH;
@@ -61,6 +68,8 @@ pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Fo
     if focused && !list.rows.is_empty() {
         push_cursor(b, ui, m, wx, wy, list.cursor + 1, frame);
     }
+    // 10 rows (FUN_101f6700), total and top from the list every frame (FUN_101f69d0); drawn focused or not.
+    super::screens::push_scroll_bar(b, ui, fx + fw - bar_inset, fy, fh, list.rows.len(), crate::inventory::VISIBLE_ROWS, list.scroll);
 }
 
 /// The equipment grid (FUN_1012ea90): slot labels from the children, 32x32 icons at the child of
@@ -150,8 +159,11 @@ pub struct ActionRow {
 /// The magic and ability lists (FUN_10221f50): rows at children 1..12, the hand at the cursor child; an empty list
 /// prints its line at (10, 0x14).
 #[allow(clippy::too_many_arguments)]
-pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize) {
+/// `bar`: the whole list's (total, top) for its 12-row scroll bar (FUN_10221920), at x1 - 8 on the stacked frame.
+#[allow(clippy::too_many_arguments)]
+pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize, bar: (usize, usize)) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
+    let (fx, fy, fw, fh) = super::screens::frame_rect(m, w, h, 1.0, 1.0);
     if rows.is_empty() {
         for (i, line) in empty.split('\n').enumerate() {
             text(b, font, atlas, line, wx + 10.0, wy + 20.0 + 20.0 * i as f32, 0x8080_8080);
@@ -169,6 +181,7 @@ pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &
         text(b, font, atlas, &r.name, x + 18.0, y, r.tint);
     }
     push_cursor(b, ui, m, wx, wy, cursor + 1, frame);
+    super::screens::push_scroll_bar(b, ui, fx + fw - LIST_BAR, fy, fh, bar.0, 12, bar.1);
 }
 
 /// A category window (mgcmenu, abiselec ...): its children's label sprites and the hand.

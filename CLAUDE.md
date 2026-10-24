@@ -120,7 +120,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
-  - the event choice window's scroll bar (query, when the options outrun the rows);
+  - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map lists; left the
+    config list pages (and textcol1 scrolling), the mouse on a bar;
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the

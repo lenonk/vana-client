@@ -456,6 +456,30 @@ pub fn frame_rect(m: &Menu, w: f32, h: f32, fx: f32, fy: f32) -> (f32, f32, f32,
 /// Draws a menu window as FUN_101144b0 does for an unscaled menu: the window-style frame over the
 /// frame rect, then the window's own sprite (its first cell, the background, is skipped).
 /// Returns the window position.
+/// FUN_10234680: a list's scroll bar ("menu    scroll" 0..3 in 0x80808080) at (x, y), h tall, when total > visible
+/// (window draw 0x10117e97): the top cap, the thumb (x + 1, y + 4 + off) 6 x len, the track, the bottom cap;
+/// len = ((h - 9) visible + total) / total, off = (h - 8 - len) top / (total - visible), in integers.
+#[allow(clippy::too_many_arguments)]
+pub fn push_scroll_bar(b: &mut UiBatch, ui: &UiFile, x: f32, y: f32, h: f32, total: usize, visible: usize, top: usize) {
+    if total <= visible {
+        return;
+    }
+    let Some(lib) = ui.lib("menu    scroll") else { return };
+    let hi = h as i64;
+    let len = ((hi - 9) * visible as i64 + total as i64) / total as i64;
+    let off = (hi - 8 - len) * top.min(total - visible) as i64 / (total - visible) as i64;
+    let mut part = |k: usize, px: f32, py: f32, w: f32, ph: f32| {
+        if let Some(c) = lib.sprites.get(k).and_then(|s| s.cells.first()) {
+            let (cw, ch) = (c.size[0] as f32, c.size[1] as f32);
+            b.push_cell_rect(ui, c, px, py, cw, ch, w / cw.max(1.0), ph / ch.max(1.0), 0x8080_8080, 0);
+        }
+    };
+    part(0, x, y, 8.0, 4.0);
+    part(3, x + 1.0, y + 4.0 + off as f32, 6.0, len as f32);
+    part(1, x, y + 4.0, 8.0, h - 8.0);
+    part(2, x, y + h - 4.0, 8.0, 4.0);
+}
+
 pub fn push_window(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, w: f32, h: f32) -> (f32, f32) {
     push_window_at(b, ui, style, m, w, h, 0.0)
 }

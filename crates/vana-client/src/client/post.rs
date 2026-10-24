@@ -1413,7 +1413,7 @@ pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: 
         if let Some(e) = m.elements.first_mut() {
             e.x = 200;
         }
-        crate::render::invwin::push_item_list(b, ui, style, font, GameUi::ATLAS, &m, &list, sw, sh, frame, 3.0, focused);
+        crate::render::invwin::push_item_list(b, ui, style, font, GameUi::ATLAS, &m, &list, sw, sh, frame, 3.0, focused, crate::render::invwin::INVENTOR_BAR);
     }
     let mut r = gu.window_rect("menu    inventor", sw, sh)?;
     r[0] += 200.0 - gu.window_rect_x("menu    inventor");

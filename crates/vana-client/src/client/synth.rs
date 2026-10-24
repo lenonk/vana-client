@@ -1063,7 +1063,9 @@ fn draw_history(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, cur:
     let away = w.synth.win.as_ref().is_some_and(|s| s.focus == Focus::Away) && w.confirm.is_none();
     let list_focus = away && fav.is_none();
     if let Some(win) = gu.lobby_window_off(CMBHLST, sw, sh, (184.0, 0.0), list_focus.then_some(cur), list_focus, &[]) {
-        let [x, y, ..] = win.frame;
+        let [x, y, fw, fh] = win.frame;
+        // 11 rows (FUN_101e2b60); placed, so at x1 - 6; ours never scrolls the history.
+        gu.scroll_bar(x + fw - 6.0, y, fh, w.synth.history.len(), 11, 0);
         if list_focus {
             gu.sprite("menu    keytops3", 428, x, y + 6.0 + 18.0 * (cur as f32 - 1.0), 0x8080_8080);
         }

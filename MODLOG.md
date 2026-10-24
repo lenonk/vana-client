@@ -6141,3 +6141,28 @@ Spec `~/ffxi/lab/research/loot_spec.md`.
   row, Pass -> a grey row, Cast Lot greyed on the lotted row, Num+ -> Done, Escape; at the expiry "Lnxcsfix obtains
   a fire crystal." / "Rokuro obtains a potion." and the row and chest went.
 - Not done: the zone-pool columns (Treasure-flag zones), lnowin's raid1 dodge, the mouse.
+
+## List scroll bars (2026-10-24)
+
+Spec `~/ffxi/lab/research/scroll_bar_spec.md`.
+- A window has a bar when its handler calls FUN_10118530 (11 sites): the generic row list (base vtable 0x1033a730,
+  open FUN_101f68b0: scresult, inventor, bank, shop, cmbhlst, maplist, scanlist, the social, merit and auction lists),
+  the paged list (base 0x1033bf78, open FUN_10221ef0: magic, ability, emote, mount, key items, quests, missions,
+  guides) and own handlers (query, fulllog, cfilter / fxfilter, k1assign / k2assign, textcol1, faqmain / faqsub,
+  hnhead). No bar: loot, delivery, the moogle storage menus, conf11s, arealist, chswin, logwindo, itmsortw / itmsort2
+  / itmstora / iuse / shopmain.
+- Every bar is the same (FUN_10234680, drawn by the window draw at 0x10117e97 after the contents and the hand, focused
+  or not, while window +0x69 / +0x74 are set and visible < total): `menu    scroll` 0 top cap (x, y) 8 x 4, 3 thumb
+  (x + 1, y + 4 + off) 6 x len, 1 track (x, y + 4) 8 x (h - 8), 2 bottom cap (x, y + h - 4) 8 x 4, colour 0x80808080;
+  len = ((h - 9) visible + total) / total, off = (h - 8 - len) top / (total - visible), integer.
+- Rect: x1 - 8, y0, the frame height at open; a later move or resize (FUN_1011a5a0, asm 0x1011a6d9 SUB 6) puts it at
+  the new x1 - 6 (inventor, moved at every open; the shop, resized; cmbhlst when placed; fulllog); region stacking
+  (FUN_1015f790) back at x1 - 8 on the stacked frame (magic, ability, emote, mount, query, maplist).
+- Ours: screens::push_scroll_bar / GameUi::scroll_bar on the item lists (inventor x1 - 6, bank x1 - 8), the magic /
+  ability / emote / mount lists (12 rows), the shop (10), the event choice (3), the full log (bottom-anchored top),
+  maplist (5), scanlist (10), the synthesis history (11) and scresult (15).
+- The mouse on a bar (focused window only): caps 0x16 / 0x17 one line, the track 0x18 / 0x19 a page, the thumb drags
+  (0x1b, top = start + dy total / (h - 8)); the wheel sends 0x16 / 0x17 to the focused window. Not done in ours.
+- Left: the config list pages (cfilter / fxfilter / k1assign / k2assign 14 rows, textcol1 11, which also scrolls in
+  retail: its category 0 has 13 rows, ours stops at 11), the key item / quest / mission lists.
+- Live (Lnxcsfix, 25 items): the item list's thumb at the top, at the bottom on the last row; the magic list's bar.

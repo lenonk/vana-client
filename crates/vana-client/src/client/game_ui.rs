@@ -787,6 +787,11 @@ impl GameUi {
 
     /// Cell `cell` of sprite `k` stretched over (x, y, w, h), keeping its texture rect.
     #[allow(clippy::too_many_arguments)]
+    /// A list's scroll bar (screens::push_scroll_bar).
+    pub fn scroll_bar(&mut self, x: f32, y: f32, h: f32, total: usize, visible: usize, top: usize) {
+        screens::push_scroll_bar(&mut self.batch, &self.data.lobby, x, y, h, total, visible, top);
+    }
+
     pub fn cell_stretch(&mut self, lib: &str, k: usize, cell: usize, x: f32, y: f32, w: f32, h: f32, tint: u32) {
         self.cell_stretch_blend(lib, k, cell, x, y, w, h, tint, 0);
     }

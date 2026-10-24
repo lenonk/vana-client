@@ -950,7 +950,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let m = gu.stacked_menu(menu, sw, sh).filter(|_| gu.gate_layout(menu, sw, sh, None));
     let (b, ui, style, font) = gu.parts();
     if let Some(m) = &m {
-        push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame);
+        push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame, (win.rows.len(), win.scroll));
     }
     rects.extend(gu.window_rect(menu, sw, sh));
     // The sort window at its layout (384, 48), highlighted while focused; blusortw's row 3 disabled (no disabled

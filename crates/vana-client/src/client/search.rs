@@ -725,16 +725,8 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     if focused {
         gu.sprite("menu    windowps", 75, wx, wy + 4.0 + 16.0 * (res.cursor - res.scroll) as f32, G);
     }
-    // The scroll bar (menu scroll 0..3) past 15 rows: caps, thumb, track at x1 - 8.
-    if count > ROWS {
-        let (x, y, h) = (wx + 358.0, wy, 248.0);
-        let len = (((h - 9.0) * ROWS as f32 + count as f32) / count as f32).trunc();
-        let off = ((h - 8.0 - len) * res.scroll as f32 / (count - ROWS) as f32).trunc();
-        gu.cell_stretch("menu    scroll", 0, 0, x, y, 8.0, 4.0, G);
-        gu.cell_stretch("menu    scroll", 3, 0, x + 1.0, y + 4.0 + off, 6.0, len, G);
-        gu.cell_stretch("menu    scroll", 1, 0, x, y + 4.0, 8.0, h - 8.0, G);
-        gu.cell_stretch("menu    scroll", 2, 0, x, y + h - 4.0, 8.0, 4.0, G);
-    }
+    // The scroll bar past 15 rows at x1 - 8.
+    gu.scroll_bar(wx + 358.0, wy, 248.0, count, ROWS, res.scroll);
     if let Some(c) = res.option {
         let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
         let off: Vec<u16> = OPTION_ORDER.iter().copied().filter(|&o| r.is_some_and(|r| !option_enabled(w, o, r))).collect();

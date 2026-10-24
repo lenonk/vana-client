@@ -1618,7 +1618,7 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         upload_icons(gu, info, list.visible().iter().map(|r| r.id));
         let (bt, ui, style, font) = gu.parts();
         if let Some(m) = ui.menu("menu    inventor") {
-            push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame, 3.0, true);
+            push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame, 3.0, true, crate::render::invwin::INVENTOR_BAR);
         }
         rects.extend(gu.window_rect("menu    inventor", sw, sh));
         return rects;
@@ -1647,14 +1647,14 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
     }
     let (bt, ui, style, font) = gu.parts();
     if let Some(m) = ui.menu("menu    bank") {
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank);
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank, crate::render::invwin::LIST_BAR);
     }
     if let Some(m) = ui.menu("menu    inventor") {
         let mut m = m.clone();
         if let Some(e) = m.elements.first_mut() {
             e.x = BIN_LIST_X;
         }
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, free && !b.on_bank);
+        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, free && !b.on_bank, crate::render::invwin::INVENTOR_BAR);
     }
     rects.extend(gu.window_rect("menu    bank", sw, sh));
     if let Some(mut r) = gu.window_rect("menu    inventor", sw, sh) {

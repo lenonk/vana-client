@@ -1905,6 +1905,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 gu.cursor(qx + row[0], qy + row[1]);
             }
         }
+        // FUN_1014de10: 3 rows, total the options, top the first shown (FUN_1014e300); at x1 - 8 when stacked.
+        if let Some([fx, fy, fw, fh]) = gu.window_rect("menu    query", sw, sh) {
+            gu.scroll_bar(fx + fw - 8.0, fy, fh, options.len(), rows.len(), scroll);
+        }
         blockers.extend(gu.window_rect("menu    query", sw, sh));
     }
     if world.menu.is_some() {
