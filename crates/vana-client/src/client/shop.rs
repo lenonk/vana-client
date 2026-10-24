@@ -349,17 +349,44 @@ fn can_wear(w: &World, it: &crate::dat::items::Item, id: u16) -> bool {
         && u32::from(it.slots) & jobs.encumbrance == 0
 }
 
-/// The buy name colour (FUN_1020f740 / FUN_101ec800): gear green when worn, else yellow when the job can wear it now;
-/// white else. Not done: the scroll / dice / attachment colours.
-fn name_tint(w: &World, id: u16) -> u32 {
-    let gear = w.item_info.as_ref().and_then(|c| c.item(id)).filter(|it| it.level != 0);
-    if gear.is_some() && held(w, id).1 {
-        crate::inventory::TINT_EQUIPPED
-    } else if gear.is_some_and(|it| can_wear(w, &it, id)) {
-        YELLOW
-    } else {
-        WHITE
+/// A scroll's spell (FUN_1022b680 / b570): the first spell with its name that is not blue magic (kind 6).
+fn scroll_spell(w: &World, arg: u16) -> Option<u16> {
+    let (names, acts) = (w.names.as_ref()?, w.actions.as_ref()?);
+    if acts.spell(arg).is_some_and(|s| s.kind != 6) {
+        return Some(arg);
     }
+    let name = crate::dat::names::NameSource::spell(&**names, arg as u32)?;
+    acts.spells.iter().filter(|s| s.id != 0 && s.kind != 6).find(|s| crate::dat::names::NameSource::spell(&**names, s.id as u32).is_some_and(|n| n == name)).map(|s| s.id)
+}
+
+/// The buy name colour (FUN_1020f740 / FUN_101ec800): gear green when worn, else yellow when the job can wear it now;
+/// a scroll (type 7, teach kind 1 at record +0x1554, spell at +0x1558) green when learned (s2c 0x0AA), else yellow when
+/// the main or sub job can learn it (FUN_1022b7d0; job points not parsed); white else. Not done: dice (kind 2, green
+/// only with Monstrosity data, which LSB never sends) and automaton attachments (kind 3, s2c 0x044).
+fn name_tint(w: &World, id: u16) -> u32 {
+    let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return WHITE };
+    let extra = |at: u16| it.extra.iter().find(|e| e.0 == at).map(|e| e.1);
+    if it.level != 0 {
+        if held(w, id).1 {
+            return crate::inventory::TINT_EQUIPPED;
+        }
+        if can_wear(w, &it, id) {
+            return YELLOW;
+        }
+    } else if it.item_type == 7
+        && extra(0xd54) == Some(1)
+        && let Some(spell) = extra(0xd58).and_then(|a| scroll_spell(w, a as u16))
+    {
+        if w.spells_known.get(spell as usize / 8).is_some_and(|b| b & (1 << (spell % 8)) != 0) {
+            return crate::inventory::TINT_EQUIPPED;
+        }
+        if let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref())
+            && acts.can_cast(spell, st.main, st.sub, 0)
+        {
+            return YELLOW;
+        }
+    }
+    WHITE
 }
 
 fn requirement(e: &Entry) -> Option<Req> {

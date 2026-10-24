@@ -5318,3 +5318,15 @@ Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (
 - Any row with a cell widens the list by 0x69 (FUN_10210880); cells end at window + 0x16e. Guild sources never have it.
 - Live: Cauzeriste (`!gotoname Cauzeriste`, Northern San d'Oria) for Lnxcsfix (no woodworking): Amateur items plain,
   Recruit and above with their word and grey.
+
+## Shops: scroll colours (2026-10-24)
+
+- Buy rows of type 7 items with the teach kind 1 (record +0x1554, ours Item::extra 0xd54; argument +0x1558 = 0xd58, the
+  spell id): the spell is found by name among the non-blue spells (FUN_1022b680 / b570: kind 6 skipped); green
+  (0x80509050) when its bit is set in s2c 0x0AA, else yellow when the main or sub job can learn it (FUN_1022b7d0 =
+  Actions::can_cast; the job-point input, s2c 0x063 sub 5, not parsed: 0). Then grey past the gil, as for gear.
+- Not done: kind 2 (Corsair dice: green from the s2c 0x0AC bit id + 0x200, but FUN_100e6020 also needs player
+  +0x2cf4a, set only by s2c 0x063 sub 4 Monstrosity data, which LSB sends only to characters with it) and kind 3 (PUP
+  attachments: main / sub PUP, 0x119 seen, the s2c 0x044 UnlockedAttachments bit).
+- Live: Sororo (Bastok Markets) for Lnxcsfix as WHM 20 (GM, 892 spells known): every affordable scroll green, Repose
+  grey past the gil. Yellow not seen live (no character with the job but not the spell).

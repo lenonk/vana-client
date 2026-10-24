@@ -90,8 +90,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); left the Delivery Box and
     Remodel rows, the Mog Garden use rule; the Delivery Box done (send, receive, cancel mode);
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
-    yellow, the requirement column done; left the scroll / dice / attachment colours, the sell list's settled flag
-    (s2c 0x01D);
+    yellow, the requirement column, the scroll colours done; left the dice / attachment colours (need s2c 0x063 sub 4
+    and 0x044), the sell list's settled flag (s2c 0x01D);
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
