@@ -653,6 +653,8 @@ struct Draw {
     fog: vec4<f32>,
     // near, far, scene target width, height
     clip: vec4<f32>,
+    // "menu    dmgnum" glyphs 0..10: UV rect, then (width, height, 0, 0) in units
+    glyphs: array<vec4<f32>, 22>,
 };
 
 @group(0) @binding(0) var<uniform> d: Draw;
@@ -855,6 +857,67 @@ fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) ->
     var out = vout(e, vp + vec3<f32>(off, off, 0.0), vec4<f32>(0.0), vec2<f32>(0.0), 9u);
     out.uv = vec2<f32>(cl.x / cl.w * 0.5 + 0.5, 0.5 - cl.y / cl.w * 0.5);
     if (pi == 0u) { out.color = out.tf; } else { out.color = vec4<f32>(vec3<f32>(128.0 / 255.0), 0.0); }
+    return out;
+}
+
+// DamValueProg (FUN_10041af0 / FUN_10041c20): glyph k / 6 of the number as a screen quad. The element's view origin
+// passes the name-plate test and scale (FUN_100830c0), is pulled 1 unit toward the camera and projected; glyphs
+// are centred on it, each [x, x + w] x [-(h / 2), h / 2] units of (W, H) x scale x 0.00234375 px. Diffuse = the
+// element colour, the message colour where that is grey 0x808080. Variant 10.
+@vertex
+fn vs_damv(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let eb = e * E_WORDS;
+    let info = dels[eb + E_GLARE];
+    let n = min(info >> 24u, 16u);
+    let g = k / 6u;
+    if (g >= n) { return hidden(); }
+    let vo = out_mat(o)[3].xyz;
+    let dist = -vo.z;
+    if (dist < 1.0) { return hidden(); }
+    let zi = i32(4096.0 * 65535.0 / (65535.0 - 0.1) * (1.0 - 0.1 / dist));
+    if (zi > 4100) { return hidden(); }
+    var scale = 1.0;
+    if (zi >= 4020) { scale = f32(4100 - zi) / 80.0; }
+    let hw = floor(d.clip.z / 2.0);
+    let hh = floor(d.clip.w / 2.0);
+    let s = vec2<f32>(d.clip.z, d.clip.w) * scale * 0.00234375;
+    let c = to_clip(vo + vec3<f32>(0.0, 0.0, 1.0), douts[o + 24u]);
+    let zn = c.z / c.w;
+    if (zn < 0.0 || zn >= 1.0) { return hidden(); }
+    let px = (c.x / c.w + 1.0) * hw - 0.5;
+    let py = (1.0 - c.y / c.w) * hh - 0.5;
+    var total = 0;
+    var x0 = 0;
+    var id = 0u;
+    for (var q = 0u; q < n; q = q + 1u) {
+        let gq = (dels[eb + E_MORPH_W + q / 8u] >> (4u * (q % 8u))) & 0xfu;
+        let wq = i32(d.glyphs[2u * min(gq, 10u) + 1u].x);
+        if (q < g) { x0 = x0 + wq; }
+        if (q == g) { id = min(gq, 10u); }
+        total = total + wq;
+    }
+    let gw = i32(d.glyphs[2u * id + 1u].x);
+    let gh = i32(d.glyphs[2u * id + 1u].y);
+    let x = -(total / 2) + x0;
+    let corner = array<u32, 6>(0u, 1u, 2u, 2u, 1u, 3u)[k % 6u];
+    let right = (corner & 1u) != 0u;
+    let bottom = corner >= 2u;
+    let ux = f32(select(x, x + gw, right));
+    let uy = f32(select(-(gh / 2), gh / 2, bottom));
+    let sp = vec2<f32>(px, py) + vec2<f32>(ux, uy) * s;
+    let r = d.glyphs[2u * id];
+    var out = vout(e, vo, vec4<f32>(0.0), vec2<f32>(0.0), 10u);
+    out.clip = vec4<f32>((sp.x + 0.5) / hw - 1.0, 1.0 - (sp.y + 0.5) / hh, zn, 1.0);
+    out.uv = vec2<f32>(select(r.x, r.z, right), select(r.y, r.w, bottom));
+    let tf = out.tf;
+    var rgb = tf.rgb;
+    if (all(round(tf.rgb * 255.0) == vec3<f32>(128.0))) {
+        rgb = vec3<f32>(f32((info >> 16u) & 0xffu), f32((info >> 8u) & 0xffu), f32(info & 0xffu)) / 255.0;
+    }
+    out.color = vec4<f32>(rgb, tf.a);
     return out;
 }
 

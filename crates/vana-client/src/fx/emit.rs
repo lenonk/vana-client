@@ -73,6 +73,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let draw = if res_kind == 0x22 && inst.flags & 0x2000_0000 == 0 {
         // CMoDist (FUN_10051d90); the batched CMoVuDist is not drawn here.
         Draw::Dist
+    } else if res_kind == 0x5c && inst.dam.as_ref().is_some_and(|d| !d.glyphs.is_empty()) {
+        // DamValueProg (FUN_10041f40): without a task's number the string is empty and nothing draws.
+        Draw::DamValue
     } else if needs_no_resource(res_kind) {
         Draw::None
     } else {
@@ -147,6 +150,14 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         }
         Draw::None => dk::NONE,
         Draw::Dist => dk::DIST,
+        Draw::DamValue => {
+            let d = inst.dam.as_ref().unwrap();
+            let pack = |gs: &[u8]| gs.iter().enumerate().fold(0u32, |a, (k, &g)| a | (g as u32 & 0xf) << (4 * k));
+            e.0[w::GLARE] = (d.rgb & 0xff_ffff) | (d.glyphs.len() as u32) << 24;
+            e.0[w::MORPH_W] = pack(&d.glyphs[..d.glyphs.len().min(8)]);
+            e.0[w::MORPH_W + 1] = pack(d.glyphs.get(8..).unwrap_or_default());
+            dk::DAMV
+        }
         Draw::Mesh(_) => dk::MESH,
         Draw::Morph(id) => {
             e.0[w::FRAMES] = reg.morph_data_of(id).map_or(0, |m| m.k);

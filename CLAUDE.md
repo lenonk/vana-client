@@ -98,9 +98,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
     prompt, mouse hold-to-open;
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
-    left knockback (op 0x5e), guard / parry ops, the skillchain burst (spec pending: skillchain_spec.md);
-  - on-screen damage display (Config Misc. "Damage Display" Log / Both / Screen, id 0x13; the row exists, nothing
-    draws): spec pending, `~/ffxi/lab/research/damage_display_spec.md`;
+    the skillchain burst and message done (MODLOG "Skillchains"); left knockback (op 0x5e), guard / parry ops;
+  - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done; left checking the glow copies'
+    size against retail footage (the code ignores element scale), party / alliance relations for the colours;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done but the tell sound "0p40" and the `<call>` sounds;
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;
   - the event choice window's scroll bar (query, when the options outrun the rows);

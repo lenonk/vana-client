@@ -4573,6 +4573,13 @@ impl App {
                     world.my_id = char_id;
                     world.name = name;
                     world.entities.clear();
+                    // The zone's actors go, and with them their queued swings, messages and holds.
+                    world.pending.clear();
+                    world.rounds.clear();
+                    world.holds.clear();
+                    world.held_status.clear();
+                    world.noreact.clear();
+                    world.loads.clear();
                     let current = world.zone == Some(zone) && world.scene == Some(scene);
                     let pending = world.loading == Some(zone) && world.loading_scene == scene;
                     if !current && !pending {
@@ -7318,6 +7325,11 @@ impl App {
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
                 // first shown frame.
                 let eg = self.effects_gpu.get_or_insert_with(|| crate::render::effects::EffectsGpu::new(&gfx.gpu, scene_fmt));
+                if !eg.has_dmgnum()
+                    && let Some((lib, image)) = self.game_ui.as_ref().and_then(|g| g.dmgnum())
+                {
+                    eg.set_dmgnum(&gfx.gpu, lib, image);
+                }
                 if !r.ready(&gfx.gpu) {
                     eg.upload_pending(&gfx.gpu, &mut w.effects);
                 }

@@ -141,6 +141,15 @@ impl GameUiData {
     }
 }
 
+impl GameUi {
+    /// "menu    dmgnum" (file 39542) and its texture: the on-screen damage number glyphs.
+    pub fn dmgnum(&self) -> Option<(&SpriteLib, &crate::dat::ui::UiImage)> {
+        let lib = self.data.lobby.lib("menu    dmgnum")?;
+        let tex = lib.sprites.first()?.cells.first()?.texture.as_str();
+        Some((lib, self.data.lobby.images.get(tex)?))
+    }
+}
+
 pub struct GameUi {
     data: GameUiData,
     renderer: Option<UiRenderer>,

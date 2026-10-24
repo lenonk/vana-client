@@ -95,6 +95,16 @@ pub enum Draw {
     Morph(u32),
     /// CMoDist (kind 0x22): the background under a diamond redrawn shifted (heat haze).
     Dist,
+    /// DamValueProg (kind 0x5c): a damage number's glyphs over its target (render/effects.rs vs_damv).
+    DamValue,
+}
+
+/// A damage number for kind 0x5c elements: glyphs ('0'..'9' = 0..9, ':' = 10, up to 16) and the message colour
+/// 0xRRGGBB (elem +0x198 / +0x194).
+#[derive(Clone, Debug, PartialEq)]
+pub struct DamValue {
+    pub glyphs: Vec<u8>,
+    pub rgb: u32,
 }
 
 /// This frame's inputs.
@@ -229,6 +239,8 @@ pub struct Instance {
     pub ground: Option<(Vec3, [Vec3; 3])>,
     /// Emission op 0x8f: the source actor's area tint, when the stream has it and the actor is in an area.
     pub area_light: Option<Vec3>,
+    /// The damage number of the task that started it (gen +0x64 -> task +0xa8 / +0xa4); clones inherit it.
+    pub dam: Option<DamValue>,
 }
 
 /// A word range of an element for the GPU this frame.
@@ -672,6 +684,8 @@ impl Effects {
         if self.reg.global.is_none() {
             self.reg.add(lib);
         }
+        // FUN_10072ed0(0) keeps DAT 27 (the damage number schedulers) resident with DAT 0.
+        self.preload(&[27]);
     }
 
     /// The zone library's registry index.
@@ -982,6 +996,7 @@ impl Effects {
             driven: None,
             ground: None,
             area_light: None,
+            dam: None,
         };
         let i = match self.insts.iter().position(|x| x.is_none()) {
             Some(i) => {
@@ -1327,11 +1342,13 @@ impl Effects {
                     // rotation, and the camera's for 0x6a) at the element's world position, its scales the
                     // element's; 0x44 leaves the clone's own placement.
                     let (emitter, size, actors) = self.insts[inst].as_ref().map_or((None, Vec3::ONE, [sched::Who::None; 2]), |x| (x.matrix, x.scale_b, x.actors));
+                    let dam = self.insts[inst].as_ref().and_then(|x| x.dam.clone());
                     if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
                         if let Some(x) = self.insts[ci].as_mut() {
                             x.parent_elem = Some(e);
                             x.driven = Some(e);
                             x.actors = actors;
+                            x.dam = dam;
                             if op != 0x44 {
                                 let mut m = math::euler(parent.rot);
                                 if let Some(a) = emitter {
@@ -1430,11 +1447,14 @@ impl Effects {
 
     /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
     fn burst(&mut self, src: Ref, e: u32, f: &Frame) {
-        let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
+        let from = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref());
+        let actors = from.map_or([sched::Who::None; 2], |x| x.actors);
+        let dam = from.and_then(|x| x.dam.clone());
         if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
             if let Some(x) = self.insts[ci].as_mut() {
                 x.parent_elem = Some(e);
                 x.actors = actors;
+                x.dam = dam;
             }
             self.update_instance(ci, f);
             if let Some(x) = self.insts[ci].as_mut() {
@@ -1633,6 +1653,7 @@ impl Effects {
                 Draw::Sprite(id) => format!("sprite {id}{}", if self.reg.sprite_is_flare(id) { " (flare)" } else { "" }),
                 Draw::Morph(id) => format!("morph {id}"),
                 Draw::Dist => "dist".into(),
+                Draw::DamValue => "damv".into(),
                 Draw::None => "none".into(),
             };
             let pos = c.back.map(|b| b.world).unwrap_or_default();

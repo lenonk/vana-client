@@ -129,12 +129,14 @@ pub struct Task {
     pub done: bool,
     /// Its op 0x05 / 0x28 motions are played (melee's are client/combat.rs's).
     pub motions: bool,
+    /// A damage number's value and message colour 0xRRGGBB (task +0xa8 / +0xa4, FUN_1009e090).
+    pub num: Option<(i32, u32)>,
 }
 
 impl Task {
     pub fn new(res: Ref, ops: Rc<Vec<SOp>>, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32) -> Self {
         let motions = action.as_ref().is_none_or(|a| !matches!(a.borrow().action.category, 1 | 2));
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions }
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None }
     }
 }
 

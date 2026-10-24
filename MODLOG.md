@@ -2708,7 +2708,8 @@ pages `name:cursor:scroll`); shots in scratchpad config/c_*.png, live ones in co
   0x91 chase cam (the free camera eases toward the facing while moving *(inf)*); 0x4a..0x4d move keys and 0x66 / 0x67
   turn keys (keyboard type 2) from Key Assignment; 0x37..0x39 gamma (below); 0x99 bit 7 gates the forced target flash.
   `/targetcharaeffect` (cmd 0x82, FUN_1007d800) toggles 0x99 bit 7 and prints group 9 0x137 / 0x136.
-- Stored and shown only: 0x13, 0x3a, 0x3b, 0x3e, 0x3f, 0x40, 0x42, 0x99 bits 2 / 6, 0x9a, 0xca, 0x9d, 0x9e, 0xa5,
+- 0x13 Damage Display: read at print time (MODLOG "On-screen damage numbers").
+- Stored and shown only: 0x3a, 0x3b, 0x3e, 0x3f, 0x40, 0x42, 0x99 bits 2 / 6, 0x9a, 0xca, 0x9d, 0x9e, 0xa5,
   0xbe..0xc3, 0xc9, 0x18, 0x41, 0x34, 0x35, 0x47, 0x90, 0x8d / 0x8e, 0x92, 0xa4, 0xb9..0xbc, window 2 ids, 0xac, 0xad.
 
 ### The lobby title's Config (lobycwin)
@@ -5527,3 +5528,24 @@ Spec `~/ffxi/lab/research/skillchain_spec.md`.
   target, "Skillchain: Impaction." / "The Snipper takes 10 points of damage." about 1 s after the WS line.
 - Grammar kind 0x14 (FUN_1021d650 -> FUN_1021d8e0): field 1 of the status name entry (English adjective: "stunned",
   "KO'd"); kind 0x13 is field 0 (the noun). Message 204 "is no longer <adj>." printed an empty name before.
+
+## On-screen damage numbers (config 0x13) (2026-10-24)
+
+Spec `~/ffxi/lab/research/damage_display_spec.md`.
+- FUN_100ad8f0: kind table 0x1035cae0 (1024 bytes; 0 none, 1 damage, 2 recovery, 3 miss), config 0x13 (0 Log, 1 Both,
+  2 Screen). A kinded message is off the screen in Log mode and off the log in Screen mode; a kindless one is never on
+  screen. Chat Filters (0x32 / 0x33) drop both. 0x029 / 0x02D only ever ask for the log channel (no numbers; their
+  kinded lines vanish in Screen mode). Found by its first 0x40 bytes (same in the 2019 base and 30261006_0).
+- FUN_1009e090 (0x028 record print, which 0 main / 1 proc / 2 react): needs caster and target to exist (no line
+  otherwise); starts DAT 27 (resident with DAT 0, FUN_10072ed0) `damv` / `curv` / `misv` on (caster, target), on
+  (target, caster) for reactions, task +0xa8 = the record's value of that message, +0xa4 = the line's colour for the
+  relation (FUN_1009e700 -> FUN_10129c70).
+- Kind 0x5c DamValueProg (FUN_10041f40 / FUN_10041af0 / FUN_10041c20): "%d" of the task number (":" = the "Miss!" art
+  under `misv`), glyphs = "menu    dmgnum" sprites (char - 0x30) of file 39542, screen quads centred at the element's
+  view origin + 1 toward the camera, (W, H) x plate scale x 0.00234375 per unit; diffuse = the element colour, or the
+  message colour where that is 0x808080. Ours: fx Draw::DamValue / dk::DAMV (GLARE = rgb | count << 24, MORPH_W..+1 =
+  glyphs), render/effects.wgsl vs_damv, variant 10 (the generic two-stage combine).
+- Live (Lnxtest vs a Forest Hare): "5" / "4" in the dmgnum art under the target's name plate, the hare's hits over
+  Lnxtest, `misv` on a miss.
+- A zone change drops queued swings, messages and holds (combat Pending / rounds / holds / loads): a melee line
+  printed after zoning with its target gone ("Lnxtest misses the .").

@@ -43,6 +43,21 @@ struct DrawU {
     fog_color: [f32; 4],
     fog: [f32; 4],
     clip: [f32; 4],
+    /// "menu    dmgnum" sprites 0..10 ('0'..'9', ':'): UV rect, then (width, height) in units (dmgnum_glyphs).
+    glyphs: [[f32; 4]; 22],
+}
+
+/// FUN_10120730 for sprites 0..10 of "menu    dmgnum": the cell's UV rect over its texture and its size,
+/// (corner x1 - x0 - 1, corner y2 - y0 - 1) (FUN_1011fa80).
+pub fn dmgnum_glyphs(lib: &crate::dat::ui::SpriteLib, tw: f32, th: f32) -> [[f32; 4]; 22] {
+    let mut g = [[0.0; 4]; 22];
+    for k in 0..11 {
+        let Some(c) = lib.sprites.get(k).and_then(|s| s.cells.first()) else { continue };
+        let (u, v) = (c.uv[0] as f32, c.uv[1] as f32);
+        g[2 * k] = [u / tw, v / th, (u + c.size[0] as f32) / tw, (v + c.size[1] as f32) / th];
+        g[2 * k + 1] = [(c.corners[1][0] - c.corners[0][0] - 1) as f32, (c.corners[2][1] - c.corners[0][1] - 1) as f32, 0.0, 0.0];
+    }
+    g
 }
 
 /// Instances are element x PER_ELEM + (particle, or the shading variant for meshes).
@@ -198,6 +213,10 @@ pub struct EffectsGpu {
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     /// CMoDist: SRCALPHA / INVSRCALPHA, z write by flag 12.
     dist_pipes: HashMap<bool, wgpu::RenderPipeline>,
+    /// DamValueProg by blend class; no z write (flag 0x1000 clear in DAT 27).
+    damv_pipes: HashMap<usize, wgpu::RenderPipeline>,
+    /// "font    font" of "menu    dmgnum" (file 39542) and its glyph table, once the game UI is in.
+    dmgnum: Option<(wgpu::BindGroup, [[f32; 4]; 22])>,
     /// The scene copy CMoDist samples (MIRROR, linear), remade on a size or format change.
     scene_copy: Option<(wgpu::Texture, wgpu::BindGroup)>,
     copy_sampler: wgpu::Sampler,
@@ -342,6 +361,7 @@ impl EffectsGpu {
         let mut mesh_pipes = HashMap::new();
         let mut sprite_pipes = HashMap::new();
         let mut morph_pipes = HashMap::new();
+        let mut damv_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
@@ -350,6 +370,7 @@ impl EffectsGpu {
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
+            damv_pipes.insert(class, pipe("vs_damv", &[], class, false));
         }
         let buf = |label: &str, size: u64, usage: wgpu::BufferUsages| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(16), usage, mapped_at_creation: false });
         use wgpu::BufferUsages as U;
@@ -383,6 +404,8 @@ impl EffectsGpu {
             sprite_pipes,
             morph_pipes,
             dist_pipes,
+            damv_pipes,
+            dmgnum: None,
             scene_copy: None,
             copy_sampler,
             flare_pipe,
@@ -415,6 +438,17 @@ impl EffectsGpu {
             count: 0,
             linearize: format.is_srgb(),
         }
+    }
+
+    pub fn has_dmgnum(&self) -> bool {
+        self.dmgnum.is_some()
+    }
+
+    /// The damage number glyphs: the "menu    dmgnum" sheet's texture and its sprites 0..10.
+    pub fn set_dmgnum(&mut self, gpu: &Gpu, lib: &crate::dat::ui::SpriteLib, image: &crate::dat::ui::UiImage) {
+        let view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, image.width, image.height, image.rgba.clone()), false);
+        let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.sampler, &view);
+        self.dmgnum = Some((g, dmgnum_glyphs(lib, image.width as f32, image.height as f32)));
     }
 
     fn tex_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, view: &wgpu::TextureView) -> wgpu::BindGroup {
@@ -683,6 +717,7 @@ impl EffectsGpu {
             fog_color: [fog_color[0], fog_color[1], fog_color[2], 1.0],
             fog: [fog[0], fog[1].max(fog[0] + 1.0), self.linearize as u32 as f32, 0.0],
             clip: [clip[0], clip[1], size[0] as f32, size[1] as f32],
+            glyphs: self.dmgnum.as_ref().map_or([[0.0; 4]; 22], |d| d.1),
         };
         gpu.queue.write_buffer(&self.draw_u, 0, bytemuck::bytes_of(&u));
         // Lens flares count their visible sky samples against this frame's scene depth first.
@@ -794,6 +829,17 @@ impl EffectsGpu {
                     }
                     pass.set_bind_group(1, m.texture.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
                     pass.draw(0..m.t * 3, base..base + 1);
+                }
+                Draw::DamValue => {
+                    let Some((g, _)) = self.dmgnum.as_ref() else { continue };
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    let key = (true, class + 16, false);
+                    if bound != Some(key) {
+                        pass.set_pipeline(&self.damv_pipes[&class]);
+                        bound = Some(key);
+                    }
+                    pass.set_bind_group(1, g, &[]);
+                    pass.draw(0..6 * 16, base..base + 1);
                 }
                 Draw::None => {}
             }

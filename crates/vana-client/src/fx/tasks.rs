@@ -38,6 +38,8 @@ pub(super) struct Pending {
     pub skill: Option<(u8, u16)>,
     /// Wait until the actor lists this motion file (the client adds it).
     pub wait_motion: Option<(u32, u32)>,
+    /// A damage number for the task (Task::num).
+    pub num: Option<(i32, u32)>,
 }
 
 /// A doll (CXiDollActor, FUN_100aa470): where an actor stood when a scheduler froze it.
@@ -171,7 +173,7 @@ impl Effects {
         log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![false; records], last: 0 }));
         match a.category {
-            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None }),
+            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
@@ -182,14 +184,14 @@ impl Effects {
                 };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
                 // *(inf: falls back to the generic file)*.
-                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None });
+                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None });
             }
             7..=0xa | 0xc => {
                 // Starts: the cmd_arg scheduler on the caster itself; "ca??" goes through FUN_10083d60 first.
                 if a.arg & 0xffff == 0x6163 {
                     self.cast_state(caster, a.arg);
                 }
-                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
             }
             _ => {}
         }
@@ -201,7 +203,7 @@ impl Effects {
         match self.casting.remove(&caster) {
             Some(prev) => {
                 let st = (prev & 0xffff_7473) | 0x7473;
-                self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
             }
             None if arg != 0 => {
                 self.casting.insert(caster, arg);
@@ -214,7 +216,7 @@ impl Effects {
     /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
     pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
         log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
-        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
     }
 
     /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
@@ -241,9 +243,21 @@ impl Effects {
         self.zone_lib.map(|l| self.reg.libs[l].file_id)
     }
 
+    /// FUN_1009e090's on-screen number: DAT 27's `damv` / `curv` / `misv` (kind 1 / 2 / 3) on (a1, a2) with the value
+    /// and the message colour 0xRRGGBB.
+    pub fn on_damage_number(&mut self, kind: u8, a1: u32, a2: u32, value: i32, rgb: u32) {
+        let name = match kind {
+            1 => *b"damv",
+            2 => *b"curv",
+            3 => *b"misv",
+            _ => return,
+        };
+        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)) });
+    }
+
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
     }
 
     /// Starts waiting for files, when they are in.
@@ -288,7 +302,10 @@ impl Effects {
                     match res {
                         Some(r) => {
                             log::debug!("effects: scheduler {} started", String::from_utf8_lossy(&p.name.to_le_bytes()));
-                            self.spawn_task(r, p.a1, p.a2, p.action, p.speed, None);
+                            let ti = self.spawn_task(r, p.a1, p.a2, p.action, p.speed, None);
+                            if let Some(Some(t)) = self.tasks.get_mut(ti) {
+                                t.num = p.num;
+                            }
                         }
                         None => {
                             log::debug!("effects: scheduler {} not found", String::from_utf8_lossy(&p.name.to_le_bytes()));
@@ -627,7 +644,7 @@ impl Effects {
                 Flow::Next
             }
             0x19 => {
-                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
                 Flow::Next
             }
             // One of the ops up to 0x3e at random (FUN_1006afb0).
@@ -761,7 +778,7 @@ impl Effects {
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
                 let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0 }));
-                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None });
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
                 Flow::Next
             }
             _ => Flow::Next,
@@ -842,8 +859,12 @@ impl Effects {
         }
         log::debug!("effects: generator {} (DAT {}) on {:?} -> {:?}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name), self.reg.libs[g.0].file_id, t.a1, t.a2);
         let Some(i) = self.start(g, Owner::Task(me)) else { return };
+        // FUN_10041f40: "%d" of the task's number, ":" (the "Miss!" art) under `misv`; fixed at emission.
+        let misv = self.reg.libs[t.res.0].tree.nodes[t.res.1].name == *b"misv";
+        let dam = t.num.map(|(v, rgb)| super::DamValue { glyphs: if misv { vec![10] } else { v.to_string().bytes().filter(u8::is_ascii_digit).map(|b| b - b'0').take(16).collect() }, rgb });
         if let Some(x) = self.insts[i].as_mut() {
             x.actors = [t.a1, t.a2];
+            x.dam = dam;
             if !persistent && !auto {
                 let d = op.dur as f32 * t.speed;
                 x.life = if d == 0.0 { 1.0 } else { d };
@@ -1410,7 +1431,7 @@ mod skillchain_tests {
     use super::*;
     use crate::net::action::{ActionResult, ActionTarget, Side};
 
-    struct Pair;
+    pub(super) struct Pair;
 
     impl Actors for Pair {
         fn matrix(&self, _: u32) -> Option<Mat4> {
@@ -1471,6 +1492,50 @@ mod skillchain_tests {
                 assert_eq!(holds, vec![(2, 64.0)]);
             } else {
                 assert!(prints.is_empty() && reacts.is_empty() && holds.is_empty() && fx.loads.is_empty());
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod damage_number_tests {
+    use super::*;
+
+    /// damage_display_spec.md 3.1: `damv` with 1234 starts dam0 at t0 and the glow dam1 at t2, both kind 0x5c
+    /// elements carrying the glyphs and the colour; `misv` carries ':'.
+    #[test]
+    fn damv_elements() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut fx = Effects::new();
+        let index = std::sync::Arc::new(index);
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        for (kind, glyphs) in [(1u8, vec![1u8, 2, 3, 4]), (3, vec![10])] {
+            fx.on_damage_number(kind, 1, 2, 1234, 0x80_40_20);
+            let mut seen = Vec::new();
+            for _ in 0..300 {
+                fx.tick(&f, &super::skillchain_tests::Pair);
+                for x in fx.insts.iter().flatten() {
+                    let n = String::from_utf8_lossy(&x.name).into_owned();
+                    if !seen.contains(&n) {
+                        seen.push(n);
+                        assert_eq!(x.dam.as_ref().map(|d| (d.glyphs.clone(), d.rgb)), Some((glyphs.clone(), 0x80_40_20)));
+                    }
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                if seen.len() >= 2 && fx.elems.iter().flatten().any(|c| c.draw == crate::fx::Draw::DamValue) {
+                    break;
+                }
+            }
+            assert!(fx.elems.iter().flatten().any(|c| c.draw == crate::fx::Draw::DamValue), "{seen:?}");
+            let want: Vec<String> = if kind == 1 { vec!["dam0".into(), "dam1".into()] } else { vec!["mis0".into(), "mis1".into()] };
+            for g in want {
+                assert!(seen.contains(&g), "{g}: {seen:?}");
+            }
+            for _ in 0..120 {
+                fx.tick(&f, &super::skillchain_tests::Pair);
             }
         }
     }

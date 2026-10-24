@@ -101,6 +101,8 @@ pub struct BattleText {
     /// words (pointers at 0x10351bbc): top 2 bits pick config 0x32 / 0x33, the low 30 the bits.
     filter_kinds: Vec<u8>,
     filter_tables: Vec<Vec<u32>>,
+    /// On-screen kind per message (0x1035cae0): 0 none, 1 damage (`damv`), 2 recovery (`curv`), 3 miss (`misv`).
+    screen_kinds: Vec<u8>,
 }
 
 /// Config id -> colour id of the log palette (FUN_101262c0).
@@ -158,6 +160,7 @@ impl BattleText {
             at += 8;
         }
         let filter_kinds = va_bytes(ffximain, t.filter_kinds, 1024).map(<[u8]>::to_vec).unwrap_or_default();
+        let screen_kinds = va_bytes(ffximain, t.screen_kinds, 1024).map(<[u8]>::to_vec).unwrap_or_default();
         let filter_tables = t
             .filter_tables
             .iter()
@@ -166,6 +169,7 @@ impl BattleText {
         Ok(Self {
             filter_kinds,
             filter_tables,
+            screen_kinds,
             basic,
             skills: dialog(SLOT_SKILLS).ok(),
             lists: dialog(SLOT_LISTS).ok(),
@@ -226,6 +230,20 @@ impl BattleText {
         let Some(&w) = self.filter_tables.get(rel).and_then(|t| t.get(kind as usize)) else { return false };
         let word = if w >> 30 == 0 { cfg.get(0x32) } else { cfg.get(0x33) };
         w & 0x3fff_ffff & word != 0
+    }
+
+    pub fn screen_kind(&self, id: u16) -> u8 {
+        self.screen_kinds.get(id as usize).copied().unwrap_or(0)
+    }
+
+    /// FUN_100ad8f0 under config 0x13 (0 Log, 1 Both, 2 Screen): whether message `id` is kept off channel 0 (the
+    /// log) or 1 (the screen). A message with no kind never goes on screen and always to the log.
+    pub fn off_channel(&self, id: u16, channel: u8, cfg: &crate::gamecfg::Values) -> bool {
+        let mode = cfg.get(0x13);
+        match self.screen_kind(id) {
+            0 => channel != 0,
+            _ => (channel == 1 && mode == 0) || (channel == 0 && mode == 2),
+        }
     }
 
     pub fn raw(&self, id: u16) -> Option<Vec<u8>> {
@@ -601,6 +619,20 @@ mod tests {
         let index = DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?;
         Some(BattleText::load(&index, &dll).unwrap())
+    }
+
+    /// The on-screen kinds (0x1035cae0): 1 hit damage, 15 miss, 24 recovers HP, 6 "defeats" none; Screen mode keeps
+    /// a kinded line off the log, Log mode its number off the screen.
+    #[test]
+    fn screen_kinds() {
+        let Some(b) = load() else { return };
+        assert_eq!([1, 15, 24, 6, 185, 288].map(|id| b.screen_kind(id)), [1, 3, 2, 0, 1, 1]);
+        let mut cfg = crate::gamecfg::Values::default();
+        assert!(!b.off_channel(1, 0, &cfg) && !b.off_channel(1, 1, &cfg));
+        cfg.set(0x13, 2);
+        assert!(b.off_channel(1, 0, &cfg) && !b.off_channel(6, 0, &cfg));
+        cfg.set(0x13, 0);
+        assert!(b.off_channel(1, 1, &cfg) && b.off_channel(6, 1, &cfg));
     }
 
     /// Grammar kinds 0x13 / 0x14: the status noun (206 "... stun effect wears off.") and adjective (204 "is no longer

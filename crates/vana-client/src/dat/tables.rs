@@ -32,6 +32,13 @@ const LANGS: [Sig; 4] = [
 /// The lowest of the seven battle mode tables (FUN_1009cda0's second).
 const MODES: Sig = Sig { name: "battle modes", hint: &[0xbf, 0x14, 0x14, 0x32, 0x7a, 0x7a, 0x24, 0x17], len: 0x40, md5: "eef9775da232dbd97559849b5dae6517" };
 const FILTER_KINDS: Sig = Sig { name: "filter kinds", hint: &[0x00, 0x09, 0x0d, 0x0c, 0x2d, 0x2d, 0x01, 0x12], len: 0x40, md5: "6b4b3991e00bfb97c1174c602e5a737c" };
+/// FUN_100ad8f0's on-screen kind per message (0 none, 1 damage, 2 recovery, 3 miss); 1024 bytes, SE appends.
+const SCREEN_KINDS: Sig = Sig {
+    name: "screen kinds",
+    hint: &[0x00, 0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x03],
+    len: 0x40,
+    md5: "0ea9b21e9a7f04a68aeb660b0e0c2244",
+};
 const MODE_COLOURS: Sig = Sig { name: "mode colours", hint: &[0x01, 0x00, 0x54, 0x01, 0x02, 0x00, 0x55, 0x01], len: 0x40, md5: "8dcab7880389b2c4c488afb259a5f760" };
 const PALETTE: Sig = Sig { name: "palette", hint: &[0x42, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80, 0x60], len: 0x40, md5: "ada7882381d8a7f871792f7f2bc56e63" };
 const BINDINGS: Sig = Sig { name: "key bindings", hint: &[0xc8, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x00], len: 0x100, md5: "2979f885eeb95c7f5344400b09026857" };
@@ -72,6 +79,7 @@ pub struct Tables {
     pub mode_tables: [u32; 7],
     pub filter_kinds: u32,
     pub filter_tables: [u32; 11],
+    pub screen_kinds: u32,
     pub mode_colours: u32,
     pub palette: u32,
     pub bindings: u32,
@@ -152,6 +160,7 @@ impl Tables {
             filter_kinds,
             // Eleven 49-word filter tables follow the kinds 0x400 on (the pointer array at 0x10351bbc lists them).
             filter_tables: std::array::from_fn(|i| filter_kinds + 0x400 + i as u32 * 200),
+            screen_kinds: va(&SCREEN_KINDS)?,
             mode_colours: va(&MODE_COLOURS)?,
             palette: va(&PALETTE)?,
             bindings: va(&BINDINGS)?,

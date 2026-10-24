@@ -91,6 +91,8 @@ pub mod dk {
     pub const DIST: u32 = 6;
     /// CMoPointLightProgElem: draws nothing, updates its light.
     pub const LIGHT: u32 = 7;
+    /// DamValueProg (kind 0x5c): GLARE = message rgb | glyph count << 24, MORPH_W / +1 = glyphs 4 bits each.
+    pub const DAMV: u32 = 8;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -249,6 +251,7 @@ pub fn wgsl_consts() -> String {
         ("E_L_SLOT", w::L_SLOT),
         ("DK_LIGHT", dk::LIGHT as usize),
         ("DK_DIST", dk::DIST as usize),
+        ("DK_DAMV", dk::DAMV as usize),
         ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),

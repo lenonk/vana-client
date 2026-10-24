@@ -73,6 +73,8 @@ struct Msg {
     actor: u32,
     target: u32,
     work: [i32; 5],
+    /// A 0x028 record's message (0 main, 1 proc, 2 react): it may also put its number on screen (FUN_1009e090).
+    which: Option<u8>,
 }
 
 /// Messages and a damage reaction waiting for the attacker's hit ("dada" in its attack scheduler).
@@ -186,14 +188,57 @@ fn print(w: &mut World, m: Msg) {
         log::info!("battle message {} before the message tables loaded", m.id);
         return;
     };
-    // Chat Filters (0x32 / 0x33) hide battle messages on the client.
+    // Chat Filters (0x32 / 0x33) hide battle messages on the client, number and line.
     if bt.filtered(m.id, filter_relation(w, m.actor, m.target), &w.game) {
+        return;
+    }
+    // FUN_1009e090: a record's line (and number) needs its caster and target to exist still.
+    if m.which.is_some() && (who(w, m.actor).is_none() || who(w, m.target).is_none()) {
+        return;
+    }
+    if let Some(which) = m.which
+        && !bt.off_channel(m.id, 1, &w.game)
+    {
+        damage_number(w, &bt, &m, which);
+    }
+    // Screen mode (config 0x13 = 2): lines with an on-screen kind leave the log, 0x029 / 0x02D ones too.
+    if bt.off_channel(m.id, 0, &w.game) {
         return;
     }
     let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, ..Default::default() };
     for (l, c) in render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game) {
         w.chat.push_colour(l, c);
     }
+}
+
+/// FUN_1009e090's number: DAT 27's scheduler for the message's kind on (caster, target), (target, caster) for a
+/// reaction (spikes, counters show over the attacker), with the record's value of that message and the colour its
+/// log line has for this relation.
+fn damage_number(w: &mut World, bt: &battle::BattleText, m: &Msg, which: u8) {
+    let kind = bt.screen_kind(m.id);
+    let mode = bt.mode(m.id, relation(w, m.actor, m.target));
+    if kind == 0 || mode == battle::HIDDEN {
+        return;
+    }
+    let [b, g, r, _] = bt.colour_in(mode, &w.game);
+    let rgb = u32::from_le_bytes([b, g, r, 0]);
+    let (a1, a2) = if which == 2 { (m.target, m.actor) } else { (m.actor, m.target) };
+    w.effects.on_damage_number(kind, a1, a2, m.work[1 + which.min(2) as usize], rgb);
+}
+
+/// A 0x028 action's messages in the client's record order: main, proc, react per record.
+fn record_messages(a: &Action) -> Vec<Msg> {
+    let mut out = Vec::new();
+    for (target, r) in a.records() {
+        let work = [a.arg as i32, r.value as i32, r.proc.as_ref().map_or(0, |p| p.value as i32), r.react.as_ref().map_or(0, |p| p.value as i32), r.bit as i32];
+        let ids = [Some(r.message), r.proc.as_ref().map(|p| p.message), r.react.as_ref().map(|p| p.message)];
+        for (which, id) in ids.into_iter().enumerate() {
+            if let Some(id) = id.filter(|&id| id != 0) {
+                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8) });
+            }
+        }
+    }
+    out
 }
 
 /// The messages of an action with their work arrays, in the client's record order.
@@ -272,7 +317,7 @@ pub(super) fn area_line(w: &mut World) {
 
 /// 0x029 / 0x02D: work[0..2] = Data, Data2.
 pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
-    print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0] });
+    print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
 }
 
 /// 0x028. A melee round of several records replays "atk0" per record (op 0x32 jumps back for the next one): one swing,
@@ -317,7 +362,7 @@ fn one_action(w: &mut World, a: &Action) {
             w.cast_bar = None;
         }
     }
-    let messages: Vec<Msg> = action_messages(a).into_iter().map(|(id, target, work)| Msg { id, actor: a.actor, target, work }).collect();
+    let messages = record_messages(a);
     if a.actor == w.my_id || a.targets.iter().any(|t| t.id == w.my_id) {
         let recs: Vec<String> = a.records().iter().map(|(t, r)| format!("{t:#x} miss {} kind {} anim {} info {} scale {} value {} msg {}", r.miss, r.kind, r.animation, r.info, r.scale, r.value, r.message)).collect();
         log::debug!(target: "motion", "0x028 category {} arg {:#x} from {:#x}: {recs:?}", a.category, a.arg, a.actor);
@@ -394,7 +439,7 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
         _ => r.react.as_ref().map(|p| p.message),
     };
     if let Some(id) = id.filter(|&id| id != 0) {
-        print(w, Msg { id, actor: a.actor, target, work });
+        print(w, Msg { id, actor: a.actor, target, work, which: Some(which) });
     }
 }
 
