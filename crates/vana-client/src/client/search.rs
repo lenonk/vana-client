@@ -139,7 +139,7 @@ fn summary(w: &mut World, scope: Scope, total: usize, shown: usize) {
     }
 }
 
-/// The summary lines' chat mode *(inf: the system colour)*.
+/// FUN_10129e80 / FUN_10129de0: mode word 0x379.
 const SUMMARY_MODE: u8 = 0x79;
 
 /// FUN_100e8fd0: c2s 0x06E {UniqueNo, ActIndex 0, kind 5 to a party leader (flag 8), else 0}.
@@ -154,7 +154,7 @@ fn invite(w: &World, id: u32, flags: u32) {
 pub const OPTION_ORDER: [u16; 5] = [1, 4, 5, 2, 3];
 
 /// Keys while the results window (or scoption over it) is up. The list base: Up / Down stop at the ends, Left / Right
-/// page by 10, Escape closes (FUN_101f67c0); Num+ (list message 8) flips the job cells.
+/// page by 15, Escape closes (FUN_101f67c0); Num+ (list message 8) flips the job cells.
 pub fn key(w: &mut World, key: egui::Key) {
     use egui::Key as K;
     let Some(mut res) = w.search.take() else { return };
@@ -179,10 +179,6 @@ pub fn key(w: &mut World, key: egui::Key) {
                         w.sounds.push(Ui::Select as u32);
                         res.option = None;
                         option(w, c, &r);
-                        // Tell leaves the window for the chat line; the others keep it.
-                        if c == 1 {
-                            return;
-                        }
                     } else {
                         w.sounds.push(Ui::Error as u32);
                     }
@@ -203,8 +199,9 @@ pub fn key(w: &mut World, key: egui::Key) {
             res.cursor -= 1;
             w.sounds.push(Ui::Cursor as u32);
         }
+        // A page of 15 (+0x18).
         K::ArrowRight | K::ArrowLeft => {
-            let c = if key == K::ArrowRight { (res.cursor + 10).min(n - 1) } else { res.cursor.saturating_sub(10) };
+            let c = if key == K::ArrowRight { (res.cursor + ROWS).min(n - 1) } else { res.cursor.saturating_sub(ROWS) };
             if c != res.cursor {
                 res.cursor = c;
                 w.sounds.push(Ui::Cursor as u32);
@@ -262,4 +259,236 @@ fn option(w: &mut World, c: u16, r: &Record) {
         }
         _ => {}
     }
+}
+
+/// Status icons, keytops3 by FUN_1020a740 index k (W+0x898; 0 / 1 draw nothing).
+const STATUS: [usize; 12] = [0, 0, 68, 69, 352, 70, 65, 67, 362, 550, 365, 364];
+/// Comment-genre dots, windowps by index k - 12.
+const GENRE: [usize; 10] = [492, 495, 493, 496, 494, 499, 498, 71, 70, 70];
+/// pname race words by model race (DAT_1037d36f).
+const RACE: [usize; 9] = [0, 0, 0, 1, 1, 2, 2, 3, 4];
+
+const SCRESULT: &str = "menu    scresult";
+const SCOPTION: &str = "menu    scoption";
+
+/// FUN_1020a740's status icon index and the Ballista team (ncol, icon index) by the record flags.
+fn status_icon(f: u32) -> (usize, Option<(usize, usize)>) {
+    let team = match f & 0xe0000 {
+        0x20000 => Some((0x12, 0x16)),
+        0x40000 => Some((0x13, 0x17)),
+        0x60000 => Some((0x14, 0x18)),
+        0x80000 | 0xc0000 => Some((0x15, 0x0b)),
+        0xa0000 | 0xe0000 => Some((0x16, 0x0a)),
+        _ => None,
+    };
+    let k = if f & 0x4000 != 0 {
+        7
+    } else if f & 0x400 != 0 {
+        5
+    } else if f & 0x800 != 0 {
+        2
+    } else if let Some((_, icon)) = team {
+        icon
+    } else if f & 0x100 != 0 {
+        6
+    } else if f & 0x20 != 0 {
+        4
+    } else if f & 0x8000 != 0 {
+        3
+    } else if f & 0x1000_0000 != 0 {
+        9
+    } else if f & 1 != 0 {
+        8
+    } else {
+        1
+    };
+    (k, team)
+}
+
+/// The icon array W+0x898 by index: keytops3 0..11, windowps 12..21, pname 22..24.
+fn icon(k: usize) -> Option<(&'static str, usize)> {
+    match k {
+        0..=11 => Some(("menu    keytops3", STATUS[k])),
+        12..=21 => Some(("menu    windowps", GENRE[k - 12])),
+        22..=24 => Some(("menu    pname", 27 + k - 22)),
+        _ => None,
+    }
+}
+
+/// Two pname digits; the tens drawn always (`lead`) or only from 10.
+fn digits(gu: &mut super::game_ui::GameUi, v: u8, x: f32, y: f32, step: f32, lead: bool, c: u32) {
+    if lead || v >= 10 {
+        gu.sprite("menu    pname", 30 + (v as usize / 10) % 10, x, y, c);
+    }
+    gu.sprite("menu    pname", 30 + v as usize % 10, x + step, y, c);
+}
+
+/// FUN_101ca6c0 (default) / FUN_101caa10 (Num+): the job / level cell at (x, y) = (row + 18, row + 2).
+fn job_cell(gu: &mut super::game_ui::GameUi, r: &Record, x: f32, y: f32, c: u32, alt: bool) {
+    const G: u32 = 0x8080_8080;
+    gu.sprite("menu    pname", if alt { 45 } else { 0 }, x, y, G);
+    if r.present & 1 << 6 == 0 || r.flags & 0x4000 != 0 {
+        return;
+    }
+    let job = |j: u8| (1..=22).contains(&j).then_some(j as usize);
+    let rank = if r.rank == 0 { 1 } else { r.rank };
+    if alt {
+        if let Some(j) = job(r.job.0) {
+            gu.sprite("menu    pname", j, x + 17.0, y + 1.0, c);
+        }
+        if r.flags & 0x4000_0000 != 0 {
+            digits(gu, r.master_level, x + 40.0, y + 1.0, 7.0, true, c);
+        } else {
+            gu.sprite("menu    pname", 46, x + 40.0, y + 1.0, G);
+        }
+        if let Some(j) = job(r.job.1) {
+            gu.sprite("menu    pname", j, x + 59.0, y + 1.0, c);
+            digits(gu, r.level.1, x + 82.0, y + 1.0, 7.0, true, c);
+        }
+        gu.sprite("menu    pname", 27 + r.nation as usize, x + 103.0, y + 1.0, G);
+        digits(gu, rank, x + 115.0, y + 3.0, 6.0, false, G);
+        return;
+    }
+    if let Some(j) = job(r.job.0) {
+        gu.sprite("menu    pname", j, x + 4.0, y + 1.0, c);
+        digits(gu, r.level.0, x + 27.0, y + 1.0, 7.0, true, c);
+    }
+    if let Some(j) = job(r.job.1) {
+        gu.sprite("menu    pname", j, x + 45.0, y + 1.0, c);
+        digits(gu, r.level.1, x + 68.0, y + 1.0, 7.0, true, c);
+    }
+    let mut pen = x + 85.0;
+    if (r.race as usize) < RACE.len() && r.job.0 != 0x17 && r.job.1 != 0x17 {
+        gu.sprite("menu    pname", 40 + RACE[r.race as usize], pen, y + 1.0, G);
+    }
+    pen += 18.0;
+    gu.sprite("menu    pname", 27 + r.nation as usize, pen, y + 1.0, G);
+    pen += 12.0;
+    digits(gu, rank, pen, y + 3.0, 6.0, false, G);
+}
+
+/// scresult (FUN_101f6a60 with FUN_1020c060 / FUN_1020a740 rows, scresult_draw_spec) and scoption over it.
+pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    const G: u32 = 0x8080_8080;
+    let Some(res) = &w.search else { return Vec::new() };
+    let mut rects = Vec::new();
+    let focused = res.option.is_none();
+    let sel = if focused { (res.cursor - res.scroll + 1) as u16 } else { 0 };
+    let Some((wx, wy)) = gu.menu_sel(SCRESULT, sw, sh, sel) else { return rects };
+    rects.extend(gu.window_rect(SCRESULT, sw, sh));
+    let bt = w.battle.clone();
+    let rx = wx + 4.0;
+    if res.failed {
+        // "Search failed." (group 7 0x65) in the game font, the list cleared.
+        let s = bt.as_ref().and_then(|b| b.group7(0x65)).unwrap_or_default();
+        gu.text(&s, wx + 36.0, wy + 28.0, 0, crate::dat::battle::argb_bytes(0x8080_4040));
+        return rects;
+    }
+    let count = res.rows.len() + 1;
+    for i in res.scroll..count.min(res.scroll + ROWS) {
+        let ry = wy + 4.0 + 16.0 * (i - res.scroll) as f32;
+        if i == 0 {
+            // The header: windowps 323 and " [Searching]" / " [%d]" at +150 in 0x60808080.
+            gu.sprite("menu    windowps", 323, rx - 3.0, ry, G);
+            let s = if res.busy { bt.as_ref().and_then(|b| b.group9(0x27)).unwrap_or_default() } else { format!(" [{}]", res.total) };
+            gu.shape_text(&s, rx + 150.0, ry, 0x6080_8080, false);
+            continue;
+        }
+        let r = &res.rows[i - 1];
+        let f = r.flags;
+        let (k, team) = status_icon(f);
+        let tc = team.map_or(G, |t| gu.ncol(t.0));
+        if let Some((lib, s)) = icon(k).filter(|_| k > 1) {
+            if f & 0x10000 != 0 || team.is_some() {
+                let c = if team.is_some() { 0xffff_ffff } else { G };
+                gu.sprite_scaled(lib, s, rx - 4.0, ry + 2.0, 0.9, 0.9, c);
+            } else {
+                gu.sprite(lib, s, rx, ry + 2.0, G);
+            }
+        }
+        // The Ballista case's second icon at 0.8, centred on its bounds.
+        if team.is_some() {
+            let k2 = if f & 0x20 != 0 {
+                4
+            } else if f & 0x8000 != 0 {
+                3
+            } else if f & 0x1000_0000 != 0 {
+                9
+            } else {
+                1
+            };
+            if let Some((lib, s)) = icon(k2).filter(|_| k2 > 1) {
+                let b = gu.cell_bounds(lib, s, 0).unwrap_or([0.0; 4]);
+                gu.sprite_scaled(lib, s, rx + ((b[2] - b[0]) / 2.0).trunc(), ry + 2.0 + ((b[3] - b[1]) / 2.0).trunc(), 0.8, 0.8, G);
+            }
+        }
+        job_cell(gu, r, rx + 18.0, ry + 2.0, tc, res.alt);
+        if f & 0x10 != 0 {
+            let k = ((r.comment >> 4) & 0xf) as usize + 0xb;
+            if let Some((lib, s)) = icon(k).filter(|_| k < 0x19) {
+                gu.sprite(lib, s, rx + 146.0, ry + 2.0, G);
+            }
+        }
+        let nc = if f & 8 != 0 {
+            gu.ncol(5)
+        } else if f & 0x2000 != 0 {
+            gu.ncol(1)
+        } else {
+            G
+        };
+        gu.shape_fit(&r.name, rx + 150.0, ry + 2.0, 80.0, nc);
+        if f & 0x1000_8021 != 0 {
+            for b in 0..5 {
+                if r.languages >> b & 1 != 0 {
+                    gu.sprite("menu    windowps", 595 + b, rx + 238.0 + 6.0 * b as f32, ry + 5.0, G);
+                }
+            }
+        }
+        if r.zone != w.pos_zone {
+            let mut s = crate::dat::font::decode_sjis(&gu.area_name(r.zone));
+            if s.is_empty() {
+                s = bt.as_ref().and_then(|b| b.group9(0x40)).unwrap_or_default();
+            }
+            gu.shape_text(&s, rx + 270.0, ry + 2.0, G, false);
+        }
+    }
+    // The cursor bar (windowps 75) while the list has the focus.
+    if focused {
+        gu.sprite("menu    windowps", 75, wx, wy + 4.0 + 16.0 * (res.cursor - res.scroll) as f32, G);
+    }
+    // The scroll bar (menu scroll 0..3) past 15 rows: caps, thumb, track at x1 - 8.
+    if count > ROWS {
+        let (x, y, h) = (wx + 358.0, wy, 248.0);
+        let len = (((h - 9.0) * ROWS as f32 + count as f32) / count as f32).trunc();
+        let off = ((h - 8.0 - len) * res.scroll as f32 / (count - ROWS) as f32).trunc();
+        gu.cell_stretch("menu    scroll", 0, 0, x, y, 8.0, 4.0, G);
+        gu.cell_stretch("menu    scroll", 3, 0, x + 1.0, y + 4.0 + off, 6.0, len, G);
+        gu.cell_stretch("menu    scroll", 1, 0, x, y + 4.0, 8.0, h - 8.0, G);
+        gu.cell_stretch("menu    scroll", 2, 0, x, y + h - 4.0, 8.0, 4.0, G);
+    }
+    if let Some(c) = res.option {
+        let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
+        let off: Vec<u16> = OPTION_ORDER.iter().copied().filter(|&o| r.is_some_and(|r| !option_enabled(w, o, r))).collect();
+        if let Some(win) = gu.lobby_window_off(SCOPTION, sw, sh, (0.0, 0.0), Some(c), !off.contains(&c), &off) {
+            gu.disabled_children(SCOPTION, win.frame[0], win.frame[1], &off, Some(c));
+            rects.push(win.frame);
+        }
+    }
+    rects
+}
+
+/// Title slot 2 "Search" (group 0xd 0); help slot 2 the row's text: the header 0xe 0x13, a mentor 0xe 0x259; scoption's
+/// rows their own.
+pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    let Some(res) = &w.search else { return };
+    bars.title[2] = gu.title_msg(0).unwrap_or_default();
+    if let Some(c) = res.option {
+        let [help, title] = gu.focus_text(SCOPTION, c);
+        (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
+        return;
+    }
+    bars.help[2] = match res.cursor {
+        0 => gu.menu_msg(0x13, ""),
+        i => res.rows.get(i - 1).filter(|r| status_icon(r.flags).0 == 8).map(|_| gu.menu_msg(0x259, "")).unwrap_or_default(),
+    };
 }

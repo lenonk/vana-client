@@ -5849,3 +5849,27 @@ Spec `~/ffxi/lab/research/party_zone_spec.md`.
 - LSB bots teleport to their leader at once (modules/bots/bot_ai.cpp), so an away row needs a bot leader. Live:
   Gavrel (leader) and Korrin in Southern San d'Oria, Lnxtest in West Ronfaure: "Gavrel (SSandOria)", "Korrin
   (SSandOria)" grey, the leader dot on Gavrel.
+
+## Search: /search and the results window (2026-10-24)
+
+Specs `~/ffxi/lab/research/search_spec.md` (2, 3) and `~/ffxi/lab/research/scresult_draw_spec.md` (drawing; corrects
+search_spec 3.2: 15 visible rows and 7 columns, page by 15, the zone cell plain "%s", "Search" in the title bar).
+- /search /sea (0x3a, FUN_1007c570): nothing while the results window is up; no argument = the current zone, ALL =
+  every area (the full grammar FUN_10104f00 is not done yet). FUN_1020a9d0 mode 1: the window opens on " [Searching]".
+- scresult: layout (16, 48) 366 x 248, no anchor bits, registry flags 0x30000 (no placement meaning: only 0x100000,
+  scaling, feeds FUN_101193f0), and FUN_1020bf90 does not move it: top-left like scanlist. Rows at (x + 4, y + 4 +
+  16 k), columns {0, 0, 18, 146, 150, 238, 270, 300}. Header: windowps 323 and " [%d]" in shape font at +150,
+  0x60808080. Person row: status icon (keytops3 by flag priority), job / level cell (pname brackets, jobs 1..22,
+  digits 30+, race 40+, nation crest 27+, rank; Num+ the master-level view), comment dot, name fitted into 80 px
+  (ncol 5 leader, ncol 1 party member), language letters, the short zone name when not ours. Cursor bar windowps 75
+  while focused; scroll bar (menu scroll 0..3) past 15 rows. "Search failed." (7 0x65) in the game font at (+36,
+  +28), 0x80804040.
+- Chat: group 10 0x05 / 0x35 / 0x06 with the total, then 9 0xbf when fewer rows came than were found; both mode 0x79.
+  Title slot 2 group 0xd 0 "Search"; help slot 2 the header's 0xe 0x13, mentors 0xe 0x259.
+- scoption (top right, anchored): Tell (the chat line on "/tell Name "), Befriend (dim: the Friend List is
+  PlayOnline's), Invite (0x06E, kind 5 to a leader; dim on a party member, a member who is not a leader, recruiting,
+  MON, ourselves), "/partyrequestcmd add / remove Name" (remove dim on ourselves).
+- Live (Lnxtest): /sea "3 people found in this area", /sea all "10 people found in all known areas" with the bots'
+  rows (BST14 Hum, zones Pashhow, Konschtat ...), scoption over a row, Tell opened "/tell Kakaru ".
+- Not done: the grammar and its tables, scsibori / searchma and the criteria windows, the comment fetch on Enter,
+  acoption / /mutelist, /recruitlist, the LS member list, s2c 0x008 known-zone bits.

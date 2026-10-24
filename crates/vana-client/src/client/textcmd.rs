@@ -122,6 +122,7 @@ mod id {
     pub const BELLSW: u16 = 0x98;
     pub const MUTEBGM: u16 = 0x99;
     pub const MUTESE: u16 = 0x9a;
+    pub const SEARCH: u16 = 0x3a;
 }
 
 /// 0x01A categories (LSB GP_CLI_COMMAND_ACTION ActionID).
@@ -1007,6 +1008,10 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::PLAYTIME => playtime(w),
+        id::SEARCH => {
+            super::search::command(w, args);
+            Ok(())
+        }
         id::CHATMODE => chat_mode(w, args),
         // FUN_1007e120: the away flag cleared, like /online, and Msg std 0x79 (no PlayOnline friend list here).
         id::HIDE => {

@@ -1777,6 +1777,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
+    blockers.extend(search::draw(gu, world, sw, sh));
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
     buffs::draw(gu, world, sw, sh);
@@ -2212,6 +2213,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
+    search::bars(gu, world, &mut bars);
     trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
@@ -5804,6 +5806,10 @@ impl App {
         }
         if self.input.test(0x11, input::mode::PRESS) && synth::active(world) {
             synth::num_plus(world);
+        }
+        // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
+        if self.input.test(0x11, input::mode::PRESS) && world.search.as_ref().is_some_and(|s| s.option.is_none()) {
+            search::toggle_view(world);
         }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)
