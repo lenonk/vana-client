@@ -134,29 +134,63 @@ fn main_weapon_class(w: &World) -> u8 {
     w.names.as_ref().and_then(|n| n.items.record(id as u32)).and_then(|(_, r)| r.get(0x28).copied()).unwrap_or(6)
 }
 
-/// FUN_1009cda0 without party or alliance (we are never in one yet); a missing actor counts as others.
+/// FUN_1009e700 (30261006_0): us, then our party (mode 0), then the alliance (mode 5); a missing actor counts as
+/// others.
 fn relation(w: &World, actor: u32, target: u32) -> Relation {
-    let present = |id: u32| id == w.my_id || w.entities.contains_key(&id);
+    relation_in(w.my_id, |id| w.entities.contains_key(&id), &w.party, actor, target)
+}
+
+fn relation_in(me: u32, known: impl Fn(u32) -> bool, roster: &super::party::Roster, actor: u32, target: u32) -> Relation {
+    let present = |id: u32| id == me || known(id);
+    let party = |id: u32| id != me && roster.party().any(|m| m.id == id);
+    let alliance = |id: u32| id != me && roster.members().any(|m| m.id == id);
     if !present(actor) || !present(target) {
         Relation::Other
-    } else if target == w.my_id {
+    } else if target == me {
         Relation::TargetIsMe
-    } else if actor == w.my_id {
+    } else if actor == me {
         Relation::CasterIsMe
+    } else if party(actor) {
+        Relation::PartyCaster
+    } else if party(target) {
+        Relation::PartyTarget
+    } else if alliance(actor) {
+        Relation::AllianceCaster
+    } else if alliance(target) {
+        Relation::AllianceTarget
     } else {
         Relation::Other
     }
 }
 
-/// FUN_100abf20's relation table for the chat filter: [1] target us, [0] caster us, [6] / [7] caster / target a
-/// mob we claimed, [8] / [9] another PC, [10] otherwise (no party or alliance yet).
+/// FUN_100abf20's relation table for the chat filter: [1] target us or our pet, [0] caster us or our pet, [2] / [3]
+/// caster / target in our party, [4] / [5] in the alliance, [6] / [7] a mob our party claimed, [8] / [9] a PC, [10]
+/// otherwise or a missing actor. Other members' pets are not modelled (entity +0x1f6).
 fn filter_relation(w: &World, actor: u32, target: u32) -> usize {
-    let ours = |id: u32| w.entities.get(&id).is_some_and(|e| e.mob && e.claim == w.my_id);
-    let pc = |id: u32| id != w.my_id && id < 0x0100_0000 && w.entities.contains_key(&id);
-    if target == w.my_id {
+    let present = |id: u32| id == w.my_id || w.entities.contains_key(&id);
+    let ours = |id: u32| {
+        w.entities.get(&id).is_some_and(|e| {
+            e.mob && e.claim != 0 && (e.claim == w.my_id || w.party.party().any(|m| m.id == e.claim))
+        })
+    };
+    let pc = |id: u32| id < 0x0100_0000;
+    let me = |id: u32| id == w.my_id || (w.my_pet != 0 && w.entities.get(&id).is_some_and(|e| e.index == w.my_pet));
+    let party = |id: u32| id != w.my_id && w.party.party().any(|m| m.id == id);
+    let alliance = |id: u32| id != w.my_id && w.party.members().any(|m| m.id == id);
+    if !present(actor) || !present(target) {
+        10
+    } else if me(target) {
         1
-    } else if actor == w.my_id {
+    } else if me(actor) {
         0
+    } else if party(actor) {
+        2
+    } else if party(target) {
+        3
+    } else if alliance(actor) {
+        4
+    } else if alliance(target) {
+        5
     } else if ours(actor) {
         6
     } else if ours(target) {
@@ -1065,6 +1099,34 @@ fn send(w: &World, c: NetCommand) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// FUN_1009e700: us before the party, the party (same party number) before the alliance, the caster first.
+    #[test]
+    fn relations() {
+        use super::super::party::{ListUpdate, Roster};
+        const ME: u32 = 0x100;
+        let mut r = Roster::default();
+        r.refresh_self(ME, 0x400, "Me", 230);
+        r.table(&[(ME, 0x400, 4, 230), (0x200, 0x401, 0, 230), (0x300, 0x402, 0, 230)]);
+        let list = |id, index, flags| ListUpdate { id, index, flags, zone: 230, name: "X".into(), ..Default::default() };
+        r.list(&list(ME, 0x400, 4), ME, false);
+        r.list(&list(0x200, 0x401, 0), ME, false);
+        // Party number 1 (flags & 3): an alliance member.
+        r.list(&list(0x300, 0x402, 1), ME, false);
+        let known = |id: u32| id != 0x0100_0999;
+        let rel = |a, t| relation_in(ME, known, &r, a, t);
+        let mob = 0x0100_0001;
+        assert_eq!(rel(0x200, ME), Relation::TargetIsMe);
+        assert_eq!(rel(ME, 0x200), Relation::CasterIsMe);
+        assert_eq!(rel(0x200, mob), Relation::PartyCaster);
+        assert_eq!(rel(mob, 0x200), Relation::PartyTarget);
+        assert_eq!(rel(0x300, 0x200), Relation::PartyTarget);
+        assert_eq!(rel(0x300, mob), Relation::AllianceCaster);
+        assert_eq!(rel(mob, 0x300), Relation::AllianceTarget);
+        assert_eq!(rel(mob, 0x500), Relation::Other);
+        // A missing actor counts as others, even against us.
+        assert_eq!(rel(0x0100_0999, ME), Relation::Other);
+    }
 
     /// knockback_spec 1.2: from DAT_1035bc60, level 1 runs 47 ticks over 1.41 units (bf1 at tick 5), level 7 123 ticks
     /// over 10.61 (bf1 at 45); the same at 60 and 300 fps.

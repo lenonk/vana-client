@@ -6217,3 +6217,16 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
   datagram unchanged. Our 400 ms datagram leaves before a late reply arrives, so a slow map server (15 bots) sent
   some datagrams two or three times, and we printed every battle line in them again (user's run, 2026-10-24). We
   now drop them as retail does.
+
+## Battle message relations: party and alliance (2026-10-24)
+
+- FUN_1009e700 (30261006_0; the old build's FUN_1009cda0) picks the mode table: caster or target missing -> others
+  (0x10359b30); target us (0x10358730); caster us (0x10358330); caster in our party (mode 0 walk, FUN_100e8b80 /
+  FUN_100e8c70, not us: 0x10358b30); target in our party (0x10358f30); caster in the alliance (mode 5, everyone
+  listed: 0x10359330); target in the alliance (0x10359730); else others. Members match by id (+0x14 vs entity
+  +0x78).
+- The chat filter (FUN_100abf20): [1] target us or our pet, [0] caster us or our pet, [2] / [3] party caster /
+  target (a member's pet too, entity +0x1f6 with +0x12c bit 22 clear: not modelled, we keep no pet index for
+  others), [4] / [5] the alliance likewise, [6] / [7] a mob claimed by us or a party member (+0x120 bit 13, claimer
+  +0x184; the first test on our entity's +0x188 / +0x130 bit 25 is not modelled), [8] / [9] a PC (id class 0), [10]
+  otherwise or a missing actor.
