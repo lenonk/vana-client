@@ -614,6 +614,12 @@ impl GameUi {
         }
     }
 
+    /// The right edge (max x) of sprite `k`, in sprite space.
+    pub fn sprite_right(&self, lib: &str, k: usize) -> f32 {
+        let Some(s) = self.data.lobby.lib(lib).and_then(|l| l.sprites.get(k)) else { return 0.0 };
+        s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[0])).max().unwrap_or(0) as f32
+    }
+
     pub fn sprite_width(&self, lib: &str, k: usize) -> f32 {
         self.data.lobby.lib(lib).map_or(0.0, |l| screens::sprite_width(l, k))
     }

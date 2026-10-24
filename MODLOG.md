@@ -5303,3 +5303,18 @@ Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (
 - Live (Lnxcsfix): Kueh Igunahmori (Southern San d'Oria, 3..18): all four views; bought 2 Distilled Water, sold 1
   through "Select from your inventory." (gil 4840 -> 4825). Doggomehr (Northern San d'Oria, 8..23) closed: "The shop
   is closed." / "This shop's hours are 8 to 23."
+
+## Shops: the requirement column (2026-10-24)
+
+- NPC buy rows' Skill / GuildInfo (s2c 0x03C @+8 / @+0xa) make a cell (FUN_1020f8a0): craft skill 0x30..0x3a with
+  GuildInfo / 100 > 1 (LSB: (rank + 1) * 100) -> keytops3 sprite 192 + GuildInfo / 100, the rank's word (193 Amateur,
+  194 Recruit, ... confirmed live: Recruit / Initiate / ... / Craftsman match LSB's woodworking stock), right edge on
+  the column end, y + 2; job 0x40 + job above WAR -> the level (sprite font, right-aligned at the end, y + 4) and
+  windowps 212 + job (the job's name) ending 24 px before; 0x80 -> group 0xc 0x11d + GuildInfo ("New wares!") in the
+  game font ending at end - 2. The cell takes the name's tint.
+- Grey (and Enter refused) when the craft rank is below GuildInfo / 100 - 1 (s2c 0x062 skill_base[skill] & 0x1f,
+  copied from @0x80 + 2 * skill, only after 0x119 and never for 0x8000) or the job's level (s2c 0x01B) is below
+  GuildInfo's low byte.
+- Any row with a cell widens the list by 0x69 (FUN_10210880); cells end at window + 0x16e. Guild sources never have it.
+- Live: Cauzeriste (`!gotoname Cauzeriste`, Northern San d'Oria) for Lnxcsfix (no woodworking): Amateur items plain,
+  Recruit and above with their word and grey.

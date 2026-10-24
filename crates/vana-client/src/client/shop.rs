@@ -25,6 +25,9 @@ const ROWS: usize = 10;
 /// The English list: the price column ends at 258 and the window is 18 px wider than its layout (FUN_1020f6c0).
 const PRICE_END: f32 = 258.0;
 const WIDE: f32 = 18.0;
+/// The requirement column: 0x69 wide, its cells ending at window + 0x16e.
+const REQ_W: f32 = 105.0;
+const REQ_END: f32 = 366.0;
 /// Walking this far (x / z) from where the shop opened closes it (FUN_10210b70 / FUN_101ed6d0: 36.0 squared).
 const REACH: f32 = 6.0;
 const WHITE: u32 = 0x8080_8080;
@@ -127,13 +130,26 @@ impl Shop {
     }
 }
 
-/// A list row as drawn: icon and name by id (or the given text), the name's tint, the price cell.
+/// A list row as drawn: icon and name by id (or the given text), the name's tint, the price cell, the requirement cell
+/// (NPC buy rows only; drawn in the name's tint).
 struct Row {
     id: u16,
     text: Option<String>,
     tint: u32,
     price: Option<String>,
     price_tint: u32,
+    req: Option<Req>,
+}
+
+/// A stock entry's requirement (FUN_1020f8a0): a craft rank, a job level, or a line of group 0xc.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum Req {
+    /// Skill 0x30..0x3a and GuildInfo / 100 (the rank + 1), only above 1.
+    Rank { skill: u16, need: u16 },
+    /// Skill 0x40 + job and the level (GuildInfo low byte), only for jobs above WAR.
+    Job { job: u8, level: u8 },
+    /// Skill 0x80: group 0xc 0x11d + GuildInfo ("New wares!").
+    Text(u16),
 }
 
 pub fn active(w: &World) -> bool {
@@ -346,10 +362,35 @@ fn name_tint(w: &World, id: u16) -> u32 {
     }
 }
 
-/// NPC buy rows: the name colour, grey past the gil (and an unmet requirement: not done, nor the guild rank / job
-/// column).
+fn requirement(e: &Entry) -> Option<Req> {
+    match e.skill {
+        0x30..=0x3a if e.info / 100 > 1 => Some(Req::Rank { skill: e.skill, need: e.info / 100 }),
+        0x40..=0x57 if e.skill - 0x40 > 1 => Some(Req::Job { job: (e.skill - 0x40) as u8, level: (e.info & 0xff) as u8 }),
+        0x80 => Some(Req::Text(e.info)),
+        _ => None,
+    }
+}
+
+/// FUN_1020f8a0's test: the craft rank (s2c 0x062 skill_base & 0x1f, after 0x119; 0x8000 none) at least the needed
+/// rank - 1; the job's level (s2c 0x01B) at least the needed one.
+fn req_met(w: &World, r: Req) -> bool {
+    match r {
+        Req::Rank { skill, need } => {
+            let word = w.skill_base.and_then(|b| b.get(skill as usize).copied()).filter(|&v| w.recasts_seen && v != 0x8000);
+            word.is_some_and(|v| v & 0x1f >= need - 1)
+        }
+        Req::Job { job, level } => w.job_info.as_ref().and_then(|j| j.levels.get(job as usize)).is_some_and(|&l| l >= level),
+        Req::Text(_) => true,
+    }
+}
+
+/// NPC buy rows: the name colour, grey past the gil or with an unmet requirement.
 fn buy_tint(w: &World, e: &Entry) -> u32 {
-    if e.price > w.inv.gil() as u32 { crate::inventory::TINT_DIM } else { name_tint(w, e.item) }
+    if e.price > w.inv.gil() as u32 || requirement(e).is_some_and(|r| !req_met(w, r)) {
+        crate::inventory::TINT_DIM
+    } else {
+        name_tint(w, e.item)
+    }
 }
 
 /// Guild buy rows (FUN_101ec920): the name colour, orange on the busy row, grey past the gil or out of stock.
@@ -398,14 +439,14 @@ fn rows(w: &World, s: &Shop) -> Vec<Row> {
                 .items
                 .iter()
                 .enumerate()
-                .map(|(k, g)| Row { id: g.item, text: None, tint: guild_buy_tint(w, s, k, g), price: gil(g.price & 0x7fff_ffff), price_tint: price_tint(g.item) })
+                .map(|(k, g)| Row { id: g.item, text: None, tint: guild_buy_tint(w, s, k, g), price: gil(g.price & 0x7fff_ffff), price_tint: price_tint(g.item), req: None })
                 .collect(),
             None => Vec::new(),
         },
-        Some(View::Buy) => buy_rows(s).iter().map(|(_, e)| Row { id: e.item, text: None, tint: buy_tint(w, e), price: gil(e.price), price_tint: price_tint(e.item) }).collect(),
+        Some(View::Buy) => buy_rows(s).iter().map(|(_, e)| Row { id: e.item, text: None, tint: buy_tint(w, e), price: gil(e.price), price_tint: price_tint(e.item), req: requirement(e) }).collect(),
         Some(View::Sell) => sell_rows(w)
             .iter()
-            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: Some(price_of(s, r.id).map_or_else(|| "? G".to_string(), |p| crate::inventory::gil_text(p as i64))), price_tint: WHITE })
+            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: Some(price_of(s, r.id).map_or_else(|| "? G".to_string(), |p| crate::inventory::gil_text(p as i64))), price_tint: WHITE, req: None })
             .collect(),
         // FUN_101ecd10: nothing while loading; row 0 group 9 0x2c, then the entries, grey unless held and wanted.
         Some(View::Wanted) => {
@@ -413,17 +454,17 @@ fn rows(w: &World, s: &Shop) -> Vec<Row> {
                 return Vec::new();
             }
             let first = w.battle.as_ref().and_then(|b| b.group9(0x2c)).unwrap_or_default();
-            std::iter::once(Row { id: 0, text: Some(first), tint: WHITE, price: None, price_tint: WHITE })
+            std::iter::once(Row { id: 0, text: Some(first), tint: WHITE, price: None, price_tint: WHITE, req: None })
                 .chain(wanted(w).iter().map(|g| {
                     let ok = held(w, g.item).0 && g.count < g.max;
-                    Row { id: g.item, text: None, tint: if ok { WHITE } else { crate::inventory::TINT_DIM }, price: gil(g.price), price_tint: WHITE }
+                    Row { id: g.item, text: None, tint: if ok { WHITE } else { crate::inventory::TINT_DIM }, price: gil(g.price), price_tint: WHITE, req: None }
                 }))
                 .collect()
         }
         // FUN_101ed150: the price only for items on the guild's list (hidden ones too).
         Some(View::Inv(filter)) => inv_rows(w, filter)
             .iter()
-            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: w.guild[1].find(r.id).and_then(|g| gil(g.price & 0x7fff_ffff)), price_tint: WHITE })
+            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: w.guild[1].find(r.id).and_then(|g| gil(g.price & 0x7fff_ffff)), price_tint: WHITE, req: None })
             .collect(),
     }
 }
@@ -772,6 +813,30 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     }
 }
 
+/// A requirement cell ending at `end` (FUN_101f4bb0): kind 0x13 the rank's word (keytops3 192 + rank + 1), right edge
+/// on the end, y + 2; kind 0x3b the level in the sprite font right-aligned at the end (y + 4) and the job's name
+/// (windowps 212 + job) ending 24 px before it; kind 2 the line in the game font ending at end - 2.
+fn draw_req(gu: &mut GameUi, req: Req, end: f32, y: f32, tint: u32) {
+    const KEYTOPS3: &str = "menu    keytops3";
+    const WINDOWPS: &str = "menu    windowps";
+    match req {
+        Req::Rank { need, .. } => {
+            let k = 192 + need as usize;
+            gu.sprite(KEYTOPS3, k, end - gu.sprite_right(KEYTOPS3, k), y + 2.0, tint);
+        }
+        Req::Job { job, level } => {
+            gu.shape_text(&level.to_string(), end, y + 4.0, tint, true);
+            let k = 212 + job as usize;
+            gu.sprite(WINDOWPS, k, end - 24.0 - gu.sprite_right(WINDOWPS, k), y + 2.0, tint);
+        }
+        Req::Text(info) => {
+            let t = gu.item_msg(0xc, 0x11d + info as usize).unwrap_or_default();
+            let x = end - 2.0 - gu.text_width(&t);
+            gu.text(&t, x, y + 2.0, 0, tint.to_le_bytes());
+        }
+    }
+}
+
 /// shopmain / guildsho / shopbuy / shopsell sit on the log like comyn; the list at (16, 48) 274 wide (English), money
 /// at (16, 240) over shopmain, itemctrl over money.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[f32; 4]> {
@@ -791,12 +856,14 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
     if s.view.is_some() {
         let Some((wx, wy)) = gu.window_xy(SHOP, sw, sh) else { return rects };
         let size = gu.window_rect(SHOP, sw, sh).map_or([wx, wy, 256.0, 190.0], |r| r);
-        let (ww, wh) = (size[2] + WIDE, size[3]);
+        let rows = rows(w, s);
+        // A requirement on any row adds its column (FUN_10210880: the window 0x69 wider, cells up to + 0x16e).
+        let column = rows.iter().any(|r| r.req.is_some());
+        let (ww, wh) = (size[2] + WIDE + if column { REQ_W } else { 0.0 }, size[3]);
         gu.frame(wx, wy, ww, wh);
         gu.sprite_from("menu    framesus", 82, 1, wx, wy, WHITE);
         // Rows from (3, 4), 18 px apart: the half-size icon, the name at +18 (y + 2), the price right-aligned at the
         // column's end - 2 (y + 4) in the sprite font.
-        let rows = rows(w, s);
         super::items::upload_icons(gu, &info, rows.iter().skip(s.list.0).take(ROWS).filter(|r| r.id != 0).map(|r| r.id));
         let focused = s.qty.is_none() && s.confirm.is_none();
         for (k, r) in rows.iter().skip(s.list.0).take(ROWS).enumerate() {
@@ -809,6 +876,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
             gu.text(&name, rx + 18.0, ry + 2.0, 0, r.tint.to_le_bytes());
             if let Some(p) = &r.price {
                 gu.shape_text(p, rx + PRICE_END - 2.0, ry + 4.0, r.price_tint, true);
+            }
+            if let Some(req) = r.req {
+                draw_req(gu, req, wx + REQ_END, ry, r.tint);
             }
             if focused && k == s.list.1 {
                 gu.cursor(rx, ry);

@@ -3038,6 +3038,8 @@ struct World {
     inv: items::Inventory,
     win: Option<items::Win>,
     stats: Option<items::CharStats>,
+    /// s2c 0x062 skill_base (DAT_104856a4): craft ranks in bits 0..4.
+    skill_base: Option<[u16; 64]>,
     /// The zone's NPC name list (FUN_10093bd0), for NPCs whose 0x00E carries no name.
     npc_names: HashMap<u32, String>,
     /// Event and battle motion files, loaded in the background.
@@ -4049,6 +4051,7 @@ impl App {
                             inv: Default::default(),
                             win: None,
                             stats: None,
+                            skill_base: None,
                             npc_names: HashMap::new(),
                             motion_files: Default::default(),
                             game: self.cfg.game.for_character(Some(&login.name)),
@@ -4719,6 +4722,7 @@ impl App {
                 }
                 NetEvent::Equip { slot, index, container } => world.inv.set_equip(slot, index, container),
                 NetEvent::CharStats(s) => world.stats = Some(s),
+                NetEvent::SkillBase(s) => world.skill_base = Some(s),
                 NetEvent::Action(a) => combat::on_action(world, &a),
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
