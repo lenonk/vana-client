@@ -189,9 +189,13 @@ pub struct Status {
     pub voices: AtomicU32,
     /// Handles of the voices still playing (FUN_1023ba50's list), refreshed every mix.
     pub alive: std::sync::Mutex<Vec<u32>>,
+    /// Handles whose play request the mixer (or the loader, on a failed read) has taken, since the last read.
+    pub taken: std::sync::Mutex<Vec<u32>>,
 }
 
 pub struct Mixer {
+    /// Play requests taken this mix, published to `Status::taken`.
+    taken_now: Vec<u32>,
     rx: Receiver<Cmd>,
     rate: u32,
     bgm: Option<Bgm>,
@@ -207,7 +211,7 @@ pub struct Mixer {
 impl Mixer {
     pub fn new(rx: Receiver<Cmd>, rate: u32, status: Arc<Status>) -> Self {
         let tick_len = (rate / 50).max(1);
-        Self { rx, rate, bgm: None, voices: (0..VOICES).map(|_| None).collect(), resume: vec![0; 0x400], tick_len, tick_left: tick_len, serial: 0, status }
+        Self { rx, rate, bgm: None, voices: (0..VOICES).map(|_| None).collect(), resume: vec![0; 0x400], tick_len, tick_left: tick_len, serial: 0, status, taken_now: Vec::new() }
     }
 
     fn command(&mut self, cmd: Cmd) {
@@ -286,6 +290,9 @@ impl Mixer {
                 }
             }
             Cmd::PlaySe { bytes, level, pan, priority, handle, limit } => {
+                if handle != 0 {
+                    self.taken_now.push(handle);
+                }
                 let Ok(dec) = Decoder::new(bytes) else { return };
                 let flags = dec.header.flags;
                 let mut ramp = Ramp { cur: LEVEL[(level & 0x7f) as usize] << 12, left: 0, delta: 0 };
@@ -383,6 +390,10 @@ impl Mixer {
         if let Ok(mut a) = self.status.alive.lock() {
             a.clear();
             a.extend(self.voices.iter().flatten().map(|v| v.handle).filter(|&h| h != 0));
+        }
+        // After `alive`, so a taken handle is always in the list it is checked against.
+        if let Ok(mut t) = self.status.taken.lock() {
+            t.extend(self.taken_now.drain(..));
         }
     }
 }

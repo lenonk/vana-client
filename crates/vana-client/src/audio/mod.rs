@@ -112,6 +112,8 @@ pub struct Audio {
     cur_vol: i32,
     /// Config-tool 0029: effects at once; a new one is dropped while that many play (FUN_10037510).
     pub max_se: u32,
+    /// Voices asked for and not yet taken by the mixer: they count as playing.
+    pending: std::cell::RefCell<std::collections::HashSet<u32>>,
 }
 
 impl Audio {
@@ -124,8 +126,9 @@ impl Audio {
             Ok(out) => {
                 log::info!("audio: {} at {} Hz", out.host, out.rate);
                 let (tx, req) = channel();
-                std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx)).ok()?;
-                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12 })
+                let ls = status.clone();
+                std::thread::Builder::new().name("audio-load".into()).spawn(move || loader(ffxi_dir, req, mixer_tx, ls)).ok()?;
+                Some(Self { tx, status, _out: out, wanted: 0, playing: 0, task: None, music, effects, tick_acc: 0.0, event_se: 1.0, event_stream: 1.0, event_ui: 1.0, event_zone: 1.0, ambient_se: None, ambient_level: 0, fades: [None; 4], streams: Default::default(), raw_levels: Default::default(), applied: (1.0, 1.0, 1.0), cur_vol: 0x7f, max_se: 12, pending: Default::default() })
             }
             Err(e) => {
                 log::warn!("audio disabled: {e:#}");
@@ -230,6 +233,8 @@ impl Audio {
         }
         let lv = self.voice_level_of(handle, level);
         self.raw_levels.insert(handle, level);
+        self.pending.borrow_mut().insert(handle);
+        log::debug!("voice {handle:#x}: se {id} level {lv} pan {pan}");
         let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle, limit: self.max_se as u8 });
         true
     }
@@ -251,12 +256,22 @@ impl Audio {
 
     /// Stop now (0) or fade out over 60 Hz ticks.
     pub fn voice_stop(&mut self, handle: u32, ticks: i32) {
+        log::debug!("voice {handle:#x}: stop over {ticks}");
         self.send(Cmd::SeStop { handle, ticks });
     }
 
-    /// Handles of the voices still playing.
+    /// Handles of the voices still playing, and those the mixer has not taken yet (a voice on its way counts as
+    /// playing: our loader and mixer callback can take longer than retail's 3-pass grace).
     pub fn alive(&self) -> Vec<u32> {
-        self.status.alive.lock().map(|a| a.clone()).unwrap_or_default()
+        let mut pending = self.pending.borrow_mut();
+        if let Ok(mut t) = self.status.taken.lock() {
+            for h in t.drain(..) {
+                pending.remove(&h);
+            }
+        }
+        let mut v = self.status.alive.lock().map(|a| a.clone()).unwrap_or_default();
+        v.extend(pending.iter().copied());
+        v
     }
 
     fn se_level(&self, level: i32) -> u8 {
@@ -508,7 +523,7 @@ pub fn title_choice(option: u32, installed: u32, t: u32) -> (u32, usize, bool) {
 }
 
 /// Reads sound files off the UI thread, keeping command order (effects stay cached).
-fn loader(dir: PathBuf, rx: Receiver<Req>, tx: Sender<Cmd>) {
+fn loader(dir: PathBuf, rx: Receiver<Req>, tx: Sender<Cmd>, status: Arc<Status>) {
     let mut effects: HashMap<u32, Option<Arc<[u8]>>> = HashMap::new();
     let read = |path: Option<PathBuf>, what: &str, id: u32| -> Option<Arc<[u8]>> {
         let bytes = path.and_then(|p| std::fs::read(p).ok()).map(Arc::from);
@@ -525,7 +540,16 @@ fn loader(dir: PathBuf, rx: Receiver<Req>, tx: Sender<Cmd>) {
                 log::debug!("se {id} at level {level}");
                 effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan: 0x40, priority: 0, handle: 0, limit: 0 })
             }
-            Req::Voice { id, level, pan, handle, limit } => effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan, priority: 0, handle, limit }),
+            Req::Voice { id, level, pan, handle, limit } => {
+                let c = effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan, priority: 0, handle, limit });
+                // A failed read is taken too: the voice never comes.
+                if c.is_none()
+                    && let Ok(mut t) = status.taken.lock()
+                {
+                    t.push(handle);
+                }
+                c
+            }
         };
         if let Some(c) = cmd
             && tx.send(c).is_err()

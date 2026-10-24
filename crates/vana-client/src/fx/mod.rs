@@ -778,6 +778,8 @@ impl Effects {
 
     /// Makes an already registered library the zone's (event op 0x34 swaps areas and back).
     pub fn switch_zone(&mut self, l: usize) {
+        // Actors are rebuilt at zone-in: no cast carries over (inf).
+        self.casting.clear();
         for i in 0..self.insts.len() {
             if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_))) {
                 self.kill(i);
@@ -1646,7 +1648,7 @@ impl Effects {
             };
             let s = &mut self.sounds[k];
             if s.grace > 0.0 {
-                s.grace -= 1.0;
+                s.grace -= f.dt;
             }
             let r = if s.stream { Some((vol, 64)) } else { sound::attenuate(s.pan_in, vol, pos, f.eye, f.view, s.near, s.far, s.keep, s.ymode, f.focal) };
             let Some((v, pan)) = r else {
@@ -1669,7 +1671,7 @@ impl Effects {
                 s.handle = self.next_voice;
                 s.last_vol = v;
                 s.last_pan = pan;
-                s.grace = 3.0;
+                s.grace = sound::GRACE_TICKS;
                 self.sound_cmds.push(sound::SoundCmd::Play { handle: s.handle, se: s.se, vol: v, pan, stream: s.stream });
                 continue;
             }
@@ -1689,16 +1691,20 @@ impl Effects {
                 gone.push(k);
             }
         }
+        // FUN_10035cd0: a generator's sound element that goes (voice over, out of range) fades its voice over the
+        // element's life; drop_elem does it and removes the sound. Scheduler sounds play out.
         for k in gone.into_iter().rev() {
-            let s = self.sounds.remove(k);
-            if let Some(e) = s.elem
-                && self.elems.get(e as usize).is_some_and(|c| c.is_some())
-            {
-                let inst = self.elems[e as usize].as_ref().unwrap().inst;
-                if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
-                    x.live.retain(|&l| l != e);
+            match self.sounds[k].elem.filter(|&e| self.elems.get(e as usize).is_some_and(|c| c.is_some())) {
+                Some(e) => {
+                    let inst = self.elems[e as usize].as_ref().unwrap().inst;
+                    if let Some(x) = self.insts.get_mut(inst).and_then(|x| x.as_mut()) {
+                        x.live.retain(|&l| l != e);
+                    }
+                    self.drop_elem(e);
                 }
-                self.drop_elem(e);
+                None => {
+                    self.sounds.swap_remove(k);
+                }
             }
         }
     }

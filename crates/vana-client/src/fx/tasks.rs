@@ -201,18 +201,15 @@ impl Effects {
         }
     }
 
-    /// FUN_10083d60(caster, arg): a stored cast 4cc runs as "st??" (ends the casting effect) and is cleared; a new
-    /// one is stored when none was.
+    /// FUN_10083d60(caster, arg): a stored cast 4cc runs as "st??" (ends the casting effect); +0xa0 = arg either way
+    /// (asm 0x10083d83; the decompile's 0 is a stack misread), 0 clearing it.
     fn cast_state(&mut self, caster: u32, arg: u32) {
-        match self.casting.remove(&caster) {
-            Some(prev) => {
-                let st = (prev & 0xffff_7473) | 0x7473;
-                self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
-            }
-            None if arg != 0 => {
-                self.casting.insert(caster, arg);
-            }
-            None => {}
+        if let Some(prev) = self.casting.remove(&caster) {
+            let st = (prev & 0xffff_7473) | 0x7473;
+            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+        }
+        if arg != 0 {
+            self.casting.insert(caster, arg);
         }
     }
 
@@ -1254,7 +1251,8 @@ impl Effects {
     pub(super) fn follow(&mut self, i: usize, word: u32, f: &Frame, actors: &dyn Actors) {
         let Some((Some(m), a, b, d)) = self.attach_matrix(i, Some(f), actors) else { return };
         let Some(x) = self.insts[i].as_mut() else { return };
-        let k = ((word >> 2) & 0xff) as f32 / 255.0;
+        // FUN_10052cd0 runs once per pass at retail's 2 ticks a frame: the same pull per 2 ticks at any frame rate.
+        let k = 1.0 - (1.0 - ((word >> 2) & 0xff) as f32 / 255.0).powf(f.dt / 2.0);
         let old = x.matrix.unwrap_or(m);
         let mut out = old;
         if word & 1 != 0 {

@@ -15,6 +15,9 @@ pub enum SoundCmd {
     Stop { handle: u32, ticks: i32 },
 }
 
+/// +0x1e4: 3 manager passes (FUN_100356c0) at retail's 2-tick frames, in 1/60 s ticks.
+pub const GRACE_TICKS: f32 = 6.0;
+
 /// One sound: a generator's element (kind 0x3d), or a scheduler's op 0x0a / 0x0b / 0x53.
 #[derive(Clone, Debug)]
 pub struct Sound {
@@ -48,6 +51,7 @@ pub struct Sound {
     pub last_vol: i32,
     pub last_pan: u8,
     /// +0x1e4: counts as playing for 3 manager passes after a start.
+    /// Ticks it counts as playing after a start.
     pub grace: f32,
 }
 

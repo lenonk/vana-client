@@ -4,9 +4,13 @@ use super::mixer::Mixer;
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{FromSample, SampleFormat, SizedSample, StreamConfig};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant};
 
 pub struct Output {
-    _stream: cpal::Stream,
+    _stream: Option<cpal::Stream>,
+    _null: Option<NullOut>,
     pub host: String,
     pub rate: u32,
 }
@@ -25,9 +29,22 @@ pub fn list() -> Vec<String> {
     out
 }
 
-/// Opens the device with this cpal id ("host:device"), else the default output; `make` builds the
-/// mixer once the rate is known.
+/// Stops the null output's thread when dropped.
+struct NullOut(Arc<AtomicBool>);
+
+impl Drop for NullOut {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+}
+
+/// Opens the device with this cpal id ("host:device"), "null" (silent, mixed at real time, for test runs: ALSA's
+/// null device is not paced, so sounds there end at once), else the default output; `make` builds the mixer once the
+/// rate is known.
 pub fn open(device: Option<&str>, make: impl FnOnce(u32) -> Mixer) -> Result<Output> {
+    if device == Some("null") {
+        return open_null(make);
+    }
     let (host, device) = match device.filter(|d| !d.is_empty()) {
         Some(s) => {
             let id: cpal::DeviceId = s.parse()?;
@@ -54,7 +71,27 @@ pub fn open(device: Option<&str>, make: impl FnOnce(u32) -> Mixer) -> Result<Out
         f => anyhow::bail!("unsupported output sample format {f}"),
     };
     stream.play()?;
-    Ok(Output { _stream: stream, host: host.id().name().to_string(), rate })
+    Ok(Output { _stream: Some(stream), _null: None, host: host.id().name().to_string(), rate })
+}
+
+fn open_null(make: impl FnOnce(u32) -> Mixer) -> Result<Output> {
+    const RATE: u32 = 48000;
+    const BLOCK: usize = 480;
+    let mut mixer = make(RATE);
+    let stop = Arc::new(AtomicBool::new(false));
+    let s = stop.clone();
+    std::thread::Builder::new().name("audio-null".into()).spawn(move || {
+        let mut buf = vec![0.0f32; BLOCK * 2];
+        let (start, mut done) = (Instant::now(), 0u64);
+        while !s.load(Ordering::Relaxed) {
+            mixer.render(&mut buf);
+            done += BLOCK as u64;
+            if let Some(d) = (start + Duration::from_micros(done * 1_000_000 / RATE as u64)).checked_duration_since(Instant::now()) {
+                std::thread::sleep(d);
+            }
+        }
+    })?;
+    Ok(Output { _stream: None, _null: Some(NullOut(stop)), host: "null".into(), rate: RATE })
 }
 
 fn build<T: SizedSample + FromSample<f32>>(device: &cpal::Device, config: StreamConfig, mut mixer: Mixer) -> Result<cpal::Stream> {

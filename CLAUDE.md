@@ -57,7 +57,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Never kill a logged-in client: stale sessions cause "already logged in".
   - Stop on that message; don't retry in a loop.
 - One test window at a time, killed by PID only, never pkill. Check `ps` first: the user may be playing in their
-  own window. Use a config copy (`FFXI_CONFIG`) and audio off (`FFXI_AUDIO_DEVICE=alsa:null`) for test runs.
+  own window. Use a config copy (`FFXI_CONFIG`) and audio off (`FFXI_AUDIO_DEVICE=null`: silent, mixed at real
+  time; ALSA's `alsa:null` is not paced, spins a core and ends every sound at once) for test runs.
 - Before profiling, check that the CPU and the GPU (an eGPU over Thunderbolt) are otherwise idle.
 
 ## Next up

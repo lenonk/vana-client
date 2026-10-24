@@ -5880,3 +5880,28 @@ search_spec 3.2: 15 visible rows and 7 columns, page by 15, the zone cell plain 
   ours now does too. The window position (16, 48) and the drawing match that shot with mods off; with the xiPrime menu
   pack (it replaces ROM/119/51, the in-game menu DAT, including menu ustats and the windowps bands) the status icons
   turn into green arrows, the header band reddish and the cursor bar whitish.
+
+## Cast tones and the sound grace (2026-10-24)
+
+Spec `~/ffxi/lab/research/cast_fx_spec.md`.
+- The cast-start tones are generator sound elements: neri gn2s se 5032 (25.3 s, no loop), gn1s 5015, gn4s 5037,
+  ner5 5039, element life 30. st?? / sp?? kill them with op 0x1e on (caster, caster); the clone is (caster, caster)
+  (FUN_10052710 takes the task's actor1 / actor2 as they are, asm 0x10058b4c..0x10058b60).
+- FUN_10083d60 stores its argument after running a stored st?? (asm 0x10083d83). The decompile's 0 is a stack
+  misread: +0x298 takes three arguments and returns with RET 0xc.
+- Sound element grace +0x1e4 = 3 passes, -1 a pass, once a frame at retail's 2 ticks a frame = 6 ticks; ours counts
+  ticks (it counted frames: at 300 fps the grace ran out before our mixer had taken the voice, so the element
+  dropped it as finished).
+- FUN_10035cd0 fades the voice (cmd 5, element life) whenever a generator's sound element goes, however it went;
+  ours now does too.
+- Our audio counts a voice alive from the play request until the mixer has taken it (ours, for the callback
+  latency; a failed read counts as taken).
+- Op 0x11 follow lerps per 2-tick frame (k^(dt/2)).
+- `switch_zone` clears the stored casts *(inf: retail rebuilds the actors)*.
+- Tests: FFXI_AUDIO_DEVICE=null is a silent output mixed at real time. ALSA's null device is not paced (cpal's
+  thread spins a core and every sound ends within milliseconds), so sound timing could not be checked under it.
+- Live (Lnxcsfix WHM 20, Cure on self, null output): 5032 starts with the cast and gets its 30-tick stop at the
+  finish (2.07 s later) and at an interrupt (category 8 `spwh` after walking off). The Cure sound 3037 starts twice
+  in one frame from ops 0x53 and 0x0b; FUN_10036460 lets the same resource start again in a frame, so retail does too.
+- Left: F5 (a file that fails to load blocks the +0x298 lookups), F7 (the start cap per pass; the two specs
+  disagree: 12 a pass in FUN_10035640, 20 distinct a frame in FUN_10036460).
