@@ -105,8 +105,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     MODLOG "Party menu"; left Member List, View Request, Level Sync, Focus, Rearrange; the invite side untested live);
     Status done (client/status.rs, MODLOG "Status window"; left Currencies 1 / 2, Unity, Merit / Job / Alter Ego Points);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
-    lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); left Search, Linkshell,
-    Region Info, the social page's View House / Bazaar / Macros / Help Desk;
+    lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
+    seacom.rs; left /seacom and /seacomup, arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:
+    the item list, equip / unequip, naming, Drop, the message and /lsmes done, not seen with a real shell yet; left the
+    Link List (link12) and member actions); Region Info done (region.rs; left the Campaign windows, which LSB never
+    feeds); left the social page's View House / Bazaar / Macros / Help Desk;
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
     over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
     own zoom;
