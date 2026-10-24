@@ -5753,3 +5753,29 @@ Spec `~/ffxi/lab/research/engaged_menu_spec.md`.
   2 s sent nothing.
 - Not done: Treasure's `menu    loot` window, the mouse hold (60 ticks on a row with a Right function), the party-list
   cursor cancel on engaging, the inspect window (s2c 0x0C9).
+
+## Text commands: toggles, /ver, /playtime, /chatmode, /localsettings (2026-10-24)
+
+Spec `~/ffxi/lab/research/textcmds2_spec.md` parts A and B (handlers, config ids and group 9 lines per command).
+- Config toggles through `cfg` (set, save with cnf.dat, cfgapply): /ignorepet 0x97, /ignorefaith /ignoretrust 0xaa,
+  /aoe 0xc0, /hidetrust 0x99 bit 5, /emotetrust bit 9 (set = not linked), /furcc bit 6 (set = off), /layoutctrl 0xc1,
+  /statusparty 0xc2, /statustimer 0xc3, /gtst 0xc4 (atoi, 1..100), /battlebgm bit 0, /bellsw bit 1, /yellsw
+  /assistjsw /assistesw chat filter bits 0x2e / 0x31 / 0x32. Two argument styles: on / off with a report when no
+  word (FUN_10079170), and /battlebgm /bellsw /blockhelp /blockaid /mutebgm /mutese compare the word only when it is
+  the one argument (token count 2).
+- /blockaid: c2s 0x01A category 0x18, param off 0 / on 1 / else 2; LSB answers with its own lines (live: "Blockaid is
+  currently active." then "... inactive.").
+- /names (FUN_100790e0): session state, cleared at zone-in (inf); off hides every plate, "otherpc" (the last word)
+  only other players'.
+- /mutebgm /mutese: session factors multiplied into the configs 10 / 9 volume (DAT_103517f8 / DAT_103516fc).
+- /ver: "version %s" in mode 0xbf; retail reads patch.ver, ours prints the lobby version string (30261006_0).
+- /playtime: s2c 0x00A u32 @0xA0 plus the seconds since it came; group 10 0x2e or 0x2f (with days), mode 0x8b. Live:
+  "Total time played is: 2 hours, 48 minutes and 21 seconds."
+- /chatmode (FUN_10080830): the prefix for a line with no command (was always "/say "); tell needs a name (name_case,
+  else group 9 0x65 and failure); no argument prints "(chatmode : prefix)" in mode 0x9d.
+- /hide: the away flag cleared (as /online) and Msg std 0x79. /localsettings: shadows 0x3a, charanum 0x3c (25..50),
+  distance 0x3e (N * 2, 0..25), footeffect 0x3f, hidearmor 0xa5 (0xff / 0x100), blureffect 0xc8 (0x145 / 0x146).
+- Ours, not retail: a /say whose text starts with '!' (LSB GM commands) skips the K.O. / mounted / event gate.
+- Not done: the consumers for /ignorepet, /ignoretrust, /hidetrust (our entities carry no pet owner or trust flag),
+  /battlebgm (party battle music), /bellsw (scheduler op 0xb3), /furcc (furniture collision); /displayhead,
+  /partyinfo, /jobmasterdisp, /focustarget, /autotarget.

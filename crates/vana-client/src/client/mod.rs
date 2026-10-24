@@ -893,6 +893,12 @@ fn plate_scale(d: f32) -> Option<f32> {
 
 /// Name plates over characters (FUN_100ce4d0 -> FUN_10084b20): fontshp glyphs at the model's top,
 /// sized by the screen (W, H) * 0.00234375 times the depth scale.
+/// Music and effects volume: configs 10 / 9, times the /mutebgm and /mutese factors.
+fn world_volumes(w: &World) -> (f32, f32) {
+    let f = |id: u16, mute: bool| if mute { 0.0 } else { w.game.get(id) as f32 / 100.0 };
+    (f(10, w.bgm_mute), f(9, w.se_mute))
+}
+
 fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
     let project = |p: Vec3| -> Option<(f32, f32, [f32; 2], f32)> {
         let clip = view_proj * p.extend(1.0);
@@ -915,7 +921,12 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let faded = world.actors.get(id).is_some_and(|a| a.vanished());
         !faded && (e.kind == EntityKind::Player || world.actors.get(id).is_some_and(|a| a.shown()) || world.target == Some(*id))
     };
-    for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id)) {
+    // FUN_100d0510: /names off hides every name, /names otherpc other players' only.
+    let named = |id: &u32| match world.names_hidden {
+        None => true,
+        Some(others) => others && (*id >> 24 != 0 || *id == world.my_id),
+    };
+    for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id)) {
         if let Some((x, y, scale, z)) = plate_point(world, *id).and_then(project) {
             // FUN_100819d0: the target's plate alpha pulses, a * (sin(ticks * 16 deg) * 32 + 96) / 128.
             let pulse = if world.target == Some(*id) {
@@ -931,6 +942,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         }
     }
     if !hidden.contains(&world.my_id)
+        && named(&world.my_id)
         && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
         gu.depth(Some(z));
@@ -3102,6 +3114,17 @@ struct World {
     /// The compass clock (DAT_10666e84 +0x2e): its time, day orb and weather badges; /clock toggles it, on at each world
     /// set-up.
     compass_clock: bool,
+    /// /names (DAT_1047d694 / DAT_1047d695): hidden; true hides only other players' names.
+    names_hidden: Option<bool>,
+    /// /mutebgm, /mutese (DAT_103517f8 / DAT_103516fc), session only.
+    bgm_mute: bool,
+    se_mute: bool,
+    /// s2c 0x00A PlayTime (u32 @0xA0) and when it came, for /playtime.
+    play_time: Option<(u32, Instant)>,
+    /// The chat mode's prefix for a line without a command (/chatmode, chat-line object +8).
+    chat_prefix: String,
+    /// /ver's text (retail: patch.ver; ours the version string sent to the lobby).
+    client_version: String,
     weather: u16,
     /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
     /// Vana minutes x 2.4 s).
@@ -3787,7 +3810,7 @@ impl App {
     /// (FUN_10196390).
     fn volume_factors(&self) -> (f32, f32) {
         match &self.phase {
-            Phase::World(w) => (w.game.get(10) as f32 / 100.0, w.game.get(9) as f32 / 100.0),
+            Phase::World(w) => world_volumes(w),
             _ => {
                 let v = self.cfg.game.global.get(0xa8) as f32 / 100.0;
                 (v, v)
@@ -4195,6 +4218,12 @@ impl App {
                             ko_wait: None,
                             clock: None,
                             compass_clock: true,
+                            names_hidden: None,
+                            bgm_mute: false,
+                            se_mute: false,
+                            play_time: None,
+                            chat_prefix: "/say ".into(),
+                            client_version: self.cfg.client_version.clone(),
                             weather: 1,
                             weather_from: None,
                             zone_weather: None,
@@ -4635,8 +4664,10 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, mog_zone, send_count } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count } => {
                     world.mog_zone = mog_zone;
+                    world.play_time = Some((play_time, Instant::now()));
+                    world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
                     world.room_flag = room_flag;

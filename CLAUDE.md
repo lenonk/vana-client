@@ -110,7 +110,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - lobby (spec `~/ffxi/lab/research/select_buttons_spec.md`): title and list sounds and press animations, the
     prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
-  - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;
+  - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - the event choice window's scroll bar (query, when the options outrun the rows);
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
@@ -151,9 +151,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
-  check (s2c 0x0E0). Left: invisible talk, /equip refusals, the command gate's lines (window open, layout,
-  charmed), the map on an elevator, /playtime, the on / off toggles, the block list, s2c 0x0B4 (PvP, the system
-  message filter).
+  check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles and /localsettings
+  (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: invisible talk, /equip refusals, the command gate's
+  lines (window open, layout, charmed), the map on an elevator, the block list, s2c 0x0B4 (PvP, the system message
+  filter); the toggles' consumers for /ignorepet, /ignoretrust, /hidetrust (no pet owner / trust flag on entities),
+  /battlebgm (party battle music), /bellsw (op 0xb3), /furcc; /displayhead, /partyinfo, /jobmasterdisp, /focustarget,
+  /autotarget; the spec's part C (window, list and server-flag commands).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the

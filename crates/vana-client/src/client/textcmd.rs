@@ -95,6 +95,33 @@ mod id {
     pub const SCOUT: u16 = 0x8d;
     pub const SPRINT: u16 = 0x8e;
     pub const BLOCKHELP: u16 = 0x96;
+    pub const NAMES: u16 = 0x1a8;
+    pub const IGNOREPET: u16 = 0x1a9;
+    pub const IGNOREFAITH: u16 = 0x1aa;
+    pub const IGNORETRUST: u16 = 0x1ab;
+    pub const AOE: u16 = 0x1ac;
+    pub const VER: u16 = 0x1ae;
+    pub const CHATMODE: u16 = 0x1af;
+    pub const LOCALSETTINGS: u16 = 0x1c4;
+    pub const HIDEFAITH: u16 = 0x65;
+    pub const HIDETRUST: u16 = 0x66;
+    pub const EMOTEFAITH: u16 = 0x67;
+    pub const EMOTETRUST: u16 = 0x68;
+    pub const HIDE: u16 = 0x6b;
+    pub const PLAYTIME: u16 = 0x3e;
+    pub const FURCC: u16 = 0x84;
+    pub const LAYOUTCTRL: u16 = 0x85;
+    pub const STATUSPARTY: u16 = 0x86;
+    pub const STATUSTIMER: u16 = 0x88;
+    pub const GTST: u16 = 0x89;
+    pub const YELLSW: u16 = 0x91;
+    pub const ASSISTJSW: u16 = 0x92;
+    pub const ASSISTESW: u16 = 0x93;
+    pub const BLOCKAID: u16 = 0x95;
+    pub const BATTLEBGM: u16 = 0x97;
+    pub const BELLSW: u16 = 0x98;
+    pub const MUTEBGM: u16 = 0x99;
+    pub const MUTESE: u16 = 0x9a;
 }
 
 /// 0x01A categories (LSB GP_CLI_COMMAND_ACTION ActionID).
@@ -456,8 +483,8 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     if line.is_empty() {
         return;
     }
-    // A line without a command goes to the chat mode (ours: always say).
-    let line = if line.starts_with('/') { line.to_string() } else { format!("/say {line}") };
+    // A line without a command goes to the chat mode (/chatmode).
+    let line = if line.starts_with('/') { line.to_string() } else { format!("{}{line}", w.chat_prefix) };
     let first = line.split([' ', '\t']).next().unwrap_or("");
     let first_flags = table().get(first).map_or(0, |e| e.1);
     let target_cmd = first_flags & flag::TARGET != 0;
@@ -486,7 +513,9 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
         return;
     };
     log::info!("text command {name} ({mode:?})");
-    if !state_gate(w, flags) {
+    // Ours: LSB GM commands (a say starting with '!') skip the K.O. / mounted / event gate.
+    let gm = cid == id::SAY && args.get(1).is_some_and(|a| a.starts_with('!'));
+    if !gm && !state_gate(w, flags) {
         return;
     }
     if handle(w, cid, &args, &expanded, mode).is_err() {
@@ -826,16 +855,166 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
-        // FUN_1012ad00: on / off, or a toggle with no argument; group 9 0xf7 / 0xf8.
+        // FUN_1007f480: exactly one "on" / "off", else a toggle; group 9 0xf7 / 0xf8.
         id::BLOCKHELP => {
-            w.block_help = match on_off(args.get(1)) {
-                1 => true,
-                2 => false,
-                _ => !w.block_help,
-            };
-            log9(w, if w.block_help { 0xf7 } else { 0xf8 });
+            let cur = w.block_help;
+            toggle(w, only_on_off(args), cur, |w, on| w.block_help = on, [0xf7, 0xf8]);
             Ok(())
         }
+        // FUN_100790e0: on shows, off hides, else toggles; hidden with "otherpc" (the last word) only other players'.
+        id::NAMES => {
+            let hide = match on_off(args.get(1)) {
+                1 => false,
+                2 => true,
+                _ => w.names_hidden.is_none(),
+            };
+            let last = args.get(if args.len() == 2 { 1 } else { 2 });
+            w.names_hidden = hide.then(|| last.is_some_and(|a| a.eq_ignore_ascii_case("otherpc")));
+            Ok(())
+        }
+        // FUN_100791d0: config 0x97 (Tab skips others' pets: not applied, ours has no pet owner).
+        id::IGNOREPET => {
+            let cur = w.game.get(0x97) != 0;
+            switch(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0x97, on as u32), [0xea, 0xeb], [0xe8, 0xe9]);
+            Ok(())
+        }
+        // FUN_10079270: config 0xaa (Tab skips other players' trusts: not applied, as above).
+        id::IGNOREFAITH | id::IGNORETRUST => {
+            let cur = w.game.get(0xaa) != 0;
+            switch(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0xaa, on as u32), [0x10d, 0x10e], [0x10b, 0x10c]);
+            Ok(())
+        }
+        // FUN_100793a0: config 0xc0, the prompt's area-of-effect display.
+        id::AOE => {
+            let cur = w.game.get(0xc0) == 1;
+            toggle(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0xc0, on as u32), [0x129, 0x12a]);
+            Ok(())
+        }
+        // FUN_1007de50: config 0x99 bit 5 hides other players' trusts (not applied yet).
+        id::HIDEFAITH | id::HIDETRUST => {
+            let cur = bit(w, 0x99, 5);
+            switch(w, on_off(args.get(1)), cur, |w, on| cfg_bit(w, 0x99, 5, on), [0x111, 0x112], [0x10f, 0x110]);
+            Ok(())
+        }
+        // FUN_1007dee0: config 0x99 bit 9, set = trust emotes not linked.
+        id::EMOTEFAITH | id::EMOTETRUST => {
+            let cur = !bit(w, 0x99, 9);
+            switch(w, on_off(args.get(1)), cur, |w, on| cfg_bit(w, 0x99, 9, !on), [0x14b, 0x14c], [0x14b, 0x14c]);
+            Ok(())
+        }
+        // FUN_1007e9b0: config 0x99 bit 6, set = no camera collision with furniture.
+        id::FURCC => {
+            let cur = !bit(w, 0x99, 6);
+            switch(w, on_off(args.get(1)), cur, |w, on| cfg_bit(w, 0x99, 6, !on), [0x12d, 0x12e], [0x12f, 0x130]);
+            Ok(())
+        }
+        // FUN_1007ea40: config 0xc1, type1 0 / type2 1; anything else reports.
+        id::LAYOUTCTRL => {
+            match arg(1) {
+                Some("type1") => {
+                    cfg(w, 0xc1, 0);
+                    log9(w, 0x131);
+                }
+                Some("type2") => {
+                    cfg(w, 0xc1, 1);
+                    log9(w, 0x132);
+                }
+                _ => log9(w, if w.game.get(0xc1) == 0 { 0x133 } else { 0x134 }),
+            }
+            Ok(())
+        }
+        // FUN_1007eae0 / FUN_1007ec10: configs 0xc2 / 0xc3.
+        id::STATUSPARTY | id::STATUSTIMER => {
+            let (cfg_id, lines) = if cid == id::STATUSPARTY { (0xc2, [0x138, 0x139]) } else { (0xc3, [0x13c, 0x13d]) };
+            let cur = w.game.get(cfg_id) != 0;
+            toggle(w, on_off(args.get(1)), cur, |w, on| cfg(w, cfg_id, on as u32), lines);
+            Ok(())
+        }
+        // FUN_1007ec90: config 0xc4 (atoi, 1..100), or the current value.
+        id::GTST => {
+            let Some(bt) = w.battle.clone() else { return Ok(()) };
+            let (line, n) = match arg(1) {
+                Some(v) => {
+                    let n = atoi(v).clamp(1, 100) as u32;
+                    cfg(w, 0xc4, n);
+                    (0x13e, n)
+                }
+                None => (0x13f, w.game.get(0xc4)),
+            };
+            let colour = bt.colour_in(0x79, &w.game);
+            w.chat.push_colour(printf(&bt.group9(line).unwrap_or_default(), &[n.to_string()]), colour);
+            Ok(())
+        }
+        // FUN_1007f0e0 / FUN_1007f1a0 / FUN_1007f260: chat filter bits 0x2e / 0x31 / 0x32 (the Chat Filters page's).
+        id::YELLSW | id::ASSISTJSW | id::ASSISTESW => {
+            let (b, lines) = match cid {
+                id::YELLSW => (0x2e, [0xf9, 0xfa]),
+                id::ASSISTJSW => (0x31, [0x153, 0x154]),
+                _ => (0x32, [0x155, 0x156]),
+            };
+            let (cfg_id, b) = if b < 30 { (0x32, b) } else { (0x33, b - 30) };
+            let cur = bit(w, cfg_id, b);
+            toggle(w, on_off(args.get(1)), cur, |w, on| cfg_bit(w, cfg_id, b, on), lines);
+            Ok(())
+        }
+        // FUN_1007f3e0: c2s 0x01A category 0x18 on us, off 0 / on 1 / else 2 (toggle); the server answers.
+        id::BLOCKAID => {
+            let param = match only_on_off(args) {
+                1 => 1,
+                2 => 0,
+                _ => 2,
+            };
+            act(w, (w.my_id, w.my_index), 0x18, param);
+            Ok(())
+        }
+        // FUN_1007f500: config 0x99 bit 0, battle music for our own engagement only (ours always plays it so).
+        id::BATTLEBGM => {
+            let cur = bit(w, 0x99, 0);
+            toggle(w, only_on_off(args), cur, |w, on| cfg_bit(w, 0x99, 0, on), [0xf2, 0xf3]);
+            Ok(())
+        }
+        // FUN_1007f5c0: config 0x99 bit 1, bell sounds (scheduler op 0xb3).
+        id::BELLSW => {
+            let cur = bit(w, 0x99, 1);
+            toggle(w, only_on_off(args), cur, |w, on| cfg_bit(w, 0x99, 1, on), [0xf4, 0xf5]);
+            Ok(())
+        }
+        // FUN_1007f680 / FUN_1007f750: exactly one "on" mutes, "off" unmutes, another word reports; none toggles.
+        id::MUTEBGM | id::MUTESE => {
+            let bgm = cid == id::MUTEBGM;
+            let cur = if bgm { w.bgm_mute } else { w.se_mute };
+            let mute = match (args.len(), arg(1)) {
+                (2, Some("on")) => true,
+                (2, Some("off")) => false,
+                (2, _) => cur,
+                _ => !cur,
+            };
+            if bgm {
+                w.bgm_mute = mute;
+            } else {
+                w.se_mute = mute;
+            }
+            w.volume_dirty = true;
+            log9(w, if bgm { if mute { 0x147 } else { 0x148 } } else if mute { 0x149 } else { 0x14a });
+            Ok(())
+        }
+        // FUN_10078170: "version %s" in mode 0xbf.
+        id::VER => {
+            if let Some(bt) = w.battle.clone() {
+                let colour = bt.colour_in(0xbf, &w.game);
+                w.chat.push_colour(format!("version {}", w.client_version), colour);
+            }
+            Ok(())
+        }
+        id::PLAYTIME => playtime(w),
+        id::CHATMODE => chat_mode(w, args),
+        // FUN_1007e120: the away flag cleared, like /online, and Msg std 0x79 (no PlayOnline friend list here).
+        id::HIDE => {
+            config_flag(w, 1, false);
+            system_line(w, 0x79);
+            Ok(())
+        }
+        id::LOCALSETTINGS => local_settings(w, args),
         id::SHOOT => {
             // FUN_1007a730: no gate, target required.
             let t = resolve(w, arg(1), false, false, mode).ok_or(())?;
@@ -1197,6 +1376,149 @@ fn config_flag(w: &World, which: u8, set: bool) {
     };
     b[12] = if set { 1 } else { 2 };
     send(w, NetCommand::Packet { id: 0x0DC, body: b });
+}
+
+/// Sets a game config value (FUN_10193830): saved with cnf.dat and applied.
+fn cfg(w: &mut World, id: u16, v: u32) {
+    if w.game.set(id, v) {
+        w.game_save = true;
+        super::cfgapply::apply(w, id);
+    }
+}
+
+fn cfg_bit(w: &mut World, id: u16, b: u32, on: bool) {
+    let v = w.game.get(id);
+    cfg(w, id, if on { v | 1 << b } else { v & !(1 << b) });
+}
+
+fn bit(w: &World, id: u16, b: u32) -> bool {
+    w.game.get(id) >> b & 1 != 0
+}
+
+/// The inline compare some handlers use: "on" / "off" only as the one argument (1 / 2), else 0.
+fn only_on_off(args: &[String]) -> u32 {
+    if args.len() == 2 { on_off(args.get(1)) } else { 0 }
+}
+
+/// "on" / "off" set the state (`on` = the state "on" asks for) and print `lines[0]` / `[1]`; else report `cur`.
+fn switch(w: &mut World, word: u32, cur: bool, set: impl FnOnce(&mut World, bool), lines: [usize; 2], report: [usize; 2]) {
+    if word == 0 {
+        log9(w, report[!cur as usize]);
+    } else {
+        set(w, word == 1);
+        log9(w, lines[(word - 1) as usize]);
+    }
+}
+
+/// "on" / "off" set the state, anything else flips it; then `lines[0]` for on, `[1]` for off.
+fn toggle(w: &mut World, word: u32, cur: bool, set: impl FnOnce(&mut World, bool), lines: [usize; 2]) {
+    let on = match word {
+        1 => true,
+        2 => false,
+        _ => !cur,
+    };
+    set(w, on);
+    log9(w, lines[!on as usize]);
+}
+
+/// C atoi (FUN_103128b2): leading digits, junk 0.
+fn atoi(s: &str) -> i64 {
+    let s = s.trim_start();
+    let (neg, d) = match s.strip_prefix('-') {
+        Some(r) => (true, r),
+        None => (false, s.strip_prefix('+').unwrap_or(s)),
+    };
+    let n = d.bytes().take_while(u8::is_ascii_digit).take(18).fold(0i64, |a, c| a * 10 + (c - b'0') as i64);
+    if neg { -n } else { n }
+}
+
+/// FUN_1007cab0: PlayTime from the 0x00A plus the time since, group 10 0x2e (h, m, s) or 0x2f (with days), mode 0x8b.
+fn playtime(w: &mut World) -> Done {
+    use crate::dat::msgfmt;
+    let (Some(bt), Some((base, at))) = (w.battle.clone(), w.play_time) else { return Ok(()) };
+    let t = base as i64 + at.elapsed().as_secs() as i64;
+    let (d, h, m, s) = ((t / 86400) as i32, (t % 86400 / 3600) as i32, (t % 3600 / 60) as i32, (t % 60) as i32);
+    let (id, ints) = if d == 0 { (0x2e, vec![h, m, s]) } else { (0x2f, vec![d, h, m, s]) };
+    let Some(raw) = bt.group10_raw(id) else { return Ok(()) };
+    let text = crate::dat::font::decode_sjis(&msgfmt::format(&raw, &[], &ints, &|_, _, _| None));
+    let colour = bt.colour_in(0x8b, &w.game);
+    w.chat.push_colour(text, colour);
+    Ok(())
+}
+
+/// FUN_10080830: no argument prints "(chatmode : prefix)" (mode 0x9d); else the mode by its word (table 0x10357ac8),
+/// tell with a name (bad spelling: group 9 0x65 and a failure). Unknown words do nothing.
+fn chat_mode(w: &mut World, args: &[String]) -> Done {
+    let Some(bt) = w.battle.clone() else { return Ok(()) };
+    let colour = bt.colour_in(0x9d, &w.game);
+    let Some(word) = args.get(1) else {
+        let line = format!("(chatmode : {})", w.chat_prefix);
+        w.chat.push_colour(line, colour);
+        return Ok(());
+    };
+    let prefix = match word.as_str() {
+        "say" | "s" => "/say ",
+        "shout" | "sh" => "/shout ",
+        "party" | "p" => "/party ",
+        "linkshell" | "l" => "/linkshell ",
+        "emote" | "em" => "/emote ",
+        "message" | "me" => "/message ",
+        "unity" | "u" => "/unity ",
+        "linkshell2" | "l2" => "/linkshell2 ",
+        "assistj" | "aj" => "/assistj ",
+        "assiste" | "ae" => "/assiste ",
+        "tell" | "t" => {
+            let Some(name) = args.get(2).and_then(|n| name_case(n)) else {
+                w.chat.push_colour(bt.group9(0x65).unwrap_or_default(), colour);
+                return Err(());
+            };
+            w.chat_prefix = format!("/tell {name} ");
+            return Ok(());
+        }
+        _ => return Ok(()),
+    };
+    w.chat_prefix = prefix.into();
+    Ok(())
+}
+
+/// FUN_100808e0: Config values by name (table 0x10357b80); a value needs exactly three words, hidearmor and blureffect
+/// toggle without one and are the only ones that print. Anything else is a failure.
+fn local_settings(w: &mut World, args: &[String]) -> Done {
+    let (three, val) = (args.len() == 3, args.get(2).map(String::as_str));
+    match (args.get(1).map(String::as_str), val) {
+        (Some("shadows"), Some(v)) if three => {
+            let n = match v {
+                "normal" => 0,
+                "off" => 1,
+                "high" => 2,
+                _ => return Err(()),
+            };
+            cfg(w, 0x3a, n);
+        }
+        (Some("charanum"), Some(v)) if three => cfg(w, 0x3c, atoi(v).clamp(25, 50) as u32),
+        (Some("distance"), Some(v)) if three => cfg(w, 0x3e, (atoi(v) as f32 * 2.0).clamp(0.0, 25.0) as u32),
+        (Some("footeffect"), Some(v)) if three => {
+            let n = match v {
+                "on" => 0,
+                "off" => 1,
+                _ => return Err(()),
+            };
+            cfg(w, 0x3f, n);
+        }
+        (Some(which @ ("hidearmor" | "blureffect")), _) if args.len() <= 3 => {
+            let (id, lines) = if which == "hidearmor" { (0xa5, [0xff, 0x100]) } else { (0xc8, [0x145, 0x146]) };
+            let on = match (three, val) {
+                (true, Some("on")) => true,
+                (true, Some("off")) => false,
+                (false, _) => w.game.get(id) == 0,
+                _ => return Err(()),
+            };
+            cfg(w, id, on as u32);
+            log9(w, lines[!on as usize]);
+        }
+        _ => return Err(()),
+    }
+    Ok(())
 }
 
 /// A message-std line printed locally (FUN_100a1ab0, kind 6).
