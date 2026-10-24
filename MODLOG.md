@@ -6538,3 +6538,26 @@ Spec `~/ffxi/lab/research/quest_mission_spec.md` section 6; ours client/quests.r
 - Not done: Enter on the RoE rows 2..4 (their lists, FUN_10232b80, not traced): logged.
 - Live (Lnxtest: empty lists, the panel at 0; Lnxcsfix with !addquest 0 10 / !completequest 0 11: "A Squire's Test"
   current with its description, "Grave Concerns" completed; both removed again with !delquest and checked).
+
+## Key Items (2026-10-24)
+
+Spec `~/ffxi/lab/research/quest_mission_spec.md` section 7; ours client/keyitems.rs.
+- s2c 0x055 (FUN_10098710): tables 0..7 only; the owned bits @4, the seen bits @0x44 (keyitems::Seen): a table whose
+  DAT_104802b8 low-word bit is set merges (local |= ~last & new, keeping the marks made here); the others take the
+  packet; only the first table ever received gets the bit (asm 0x10098790..b2).
+- Social child 3 runs /keyitem (0x4c, FUN_1007d220, SE 0002): evitem beside the social menu; waiting until a 0x055.
+- The table (55705, d_msg 0x2bc records, English list name field 4): '-' headers close the entries before them and
+  title that section (Names::key_item_list, keyitems::categories): 10 sections, Temporary 1632, Permanent 389, Abyssea
+  412, Voidwatch 117, Geas Fete 102, Mounts 40, Mog Garden 127, Magical Maps 134, Claim Slips 89, Active Effects 192
+  (unit test on the real file).
+- evitem: the categories (framesus 35 at child (22, 5), the name at (36, 0), 8 of 10 with the bar); a category's
+  owned key items in file order with the variable-height pages (FUN_1022a590: a row is 16 a wrapped line at 283 px,
+  18 at least; rows from y 12, 12 apart, within 224 px and 8 rows: 7 one-line rows; max top, page starts, the cursor
+  follow), seen framesus 35 / new keytops3 170, help slot 2 the section's name, "You do not possess any key items.";
+  the description box. evitem01 over it (evitem's rows, hand and bar off): "Examine %s?" (9 0x5f) at (28, 30), Yes /
+  No (0xc 0x2b / 0x2c); Yes marks it seen with c2s 0x064 {UniqueNo, the table's 16 seen words, ActIndex, table}.
+- Inferred: the cursor-follow rule (FUN_10221dc0), Yes / No drawn as plain text at their children, the mouse.
+- Not done: event op 0xcc sub 0x20 (the display-only description).
+- Live (Lnxcsfix, !addkeyitem 1 / 2): "Zeruhn report" and "Palborough Mines logs" new, Examine, Yes, the description,
+  then seen; LSB accepted the 0x064. Both removed with !delkeyitem (their seen bits stay set on the server, as LSB
+  keeps them).

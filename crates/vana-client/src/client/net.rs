@@ -278,7 +278,7 @@ pub enum NetEvent {
     /// 0x058 (GP_SERV_COMMAND_ASSIST): UniqueNo @4, AssistNo @8 (the client reads only these).
     Assist { player: u32, target: u32 },
     /// s2c 0x055: key item table TableIndex @0x84, owned bits GetItemFlag[16] @4.
-    KeyItems { table: u16, bits: [u32; 16] },
+    KeyItems { table: u16, bits: [u32; 16], seen: [u32; 16] },
     /// Our own equipment changed (0x051).
     SelfLook([u16; 9]),
     /// The server is moving us to another zone; a ZoneIn follows.
@@ -896,7 +896,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         entry_name: text(&p, 0x26, 16),
                     })?,
                     0x058 => tx.send(NetEvent::Assist { player: p.u32(4), target: p.u32(8) })?,
-                    0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
+                    0x055 if p.data.len() >= 0x86 => tx.send(NetEvent::KeyItems { table: p.u16(0x84), bits: std::array::from_fn(|i| p.u32(4 + 4 * i)), seen: std::array::from_fn(|i| p.u32(0x44 + 4 * i)) })?,
                     0x05F => tx.send(NetEvent::Music { slot: p.u16(4), id: p.u16(6) })?,
                     0x017 => tx.send(NetEvent::Chat { kind: p.u8(4), attr: p.u8(5), data: p.u16(6), from: text(&p, 8, 15), text: text(&p, 23, 150) })?,
                     0x032..=0x034 => tx.send(NetEvent::Event(event_start(&p)))?,

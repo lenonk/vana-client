@@ -206,6 +206,19 @@ impl Names {
         self.key_items.fields(*self.key_index.get(&id)?)
     }
 
+    /// The key item table in file order (FUN_1022a360's walk): (id, the list name: English field 4, else the first
+    /// text); '-' headers have id 0.
+    pub fn key_item_list(&self) -> Vec<(u32, String)> {
+        (0..self.key_items.len())
+            .filter_map(|i| {
+                let f = self.key_items.fields(i)?;
+                let Field::Num(id) = f.first()? else { return None };
+                let name = if self.lang == Lang::En { text_at(f, 4) } else { f.iter().find_map(|x| if let Field::Text(s) = x { Some(s.clone()) } else { None }).unwrap_or_default() };
+                Some((*id, name))
+            })
+            .collect()
+    }
+
     pub fn key_item_description(&self, id: u32) -> Option<String> {
         // FUN_1014dba0: description field ja 2, en 6, de 8, fr 10.
         let at = [2, 6, 8, 10][self.lang as usize];

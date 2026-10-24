@@ -54,6 +54,7 @@ mod partymenu;
 mod journal;
 mod missions;
 mod quests;
+mod keyitems;
 mod status;
 mod inspect;
 mod linehist;
@@ -156,7 +157,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -784,7 +785,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1317,6 +1318,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1441,7 +1443,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages.
-    if let (Some(sel), Some(p), None, None, None) = (world.menu, input.pointer, world.confirm, world.missions.as_ref(), world.quests.as_ref()) {
+    if let (Some(sel), Some(p), None, None, None, None) = (world.menu, input.pointer, world.confirm, world.missions.as_ref(), world.quests.as_ref(), world.keyitems.as_ref()) {
         if let Some(k) = items.iter().position(|(_, r)| inside(r, p)) {
             gu.hover.set(true);
             if input.moved || input.clicked {
@@ -1512,6 +1514,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 textcmd::run(world, "/quest", textcmd::Mode::Internal);
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
+            // Child 3 Key Items (FUN_1014e7b0 case 5): the /keyitem text command, SE 0002.
+            (1, 3) => {
+                textcmd::run(world, "/keyitem", textcmd::Mode::Internal);
+                world.sounds.push(crate::audio::Ui::Select as u32);
+            }
             // Child 7 Config (FUN_10147fc0 case 7): configwi over the menu, SE 0002.
             (1, 7) => {
                 world.config = Some(configui::ConfigUi::open("configwi"));
@@ -1562,6 +1569,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| partymenu::focused(world)) {
         partymenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.keyitems.is_some() && world.confirm.is_none()) {
+        keyitems::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.quests.is_some() && world.confirm.is_none()) {
         quests::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -1777,7 +1787,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
-        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none(),
+        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none(),
         chat_log: false,
     };
     gu.clear();
@@ -1994,6 +2004,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
+    blockers.extend(keyitems::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2429,6 +2440,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     status::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
+    keyitems::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -3397,6 +3409,9 @@ struct World {
     /// The quest / mission store (s2c 0x056), the log name files (read on the first open), the Missions windows, a
     /// /mission to open (with its argument), and the enabled expansions (lobby bits & installed, FUN_1022dad0).
     journal: journal::Store,
+    /// The Key Items windows and the key items' seen bits (s2c 0x055 @0x44).
+    keyitems: Option<keyitems::KeyItems>,
+    ki_seen: keyitems::Seen,
     /// The Quests windows and the Records of Eminence (s2c 0x110..0x112).
     quests: Option<quests::Quests>,
     roe: quests::Roe,
@@ -4600,6 +4615,8 @@ impl App {
                             journal: Default::default(),
                             quests: None,
                             roe: Default::default(),
+                            keyitems: None,
+                            ki_seen: Default::default(),
                             logs: None,
                             missions: None,
                             mission_cmd: None,
@@ -5066,6 +5083,7 @@ impl App {
                     world.status = None;
                     world.missions = None;
                     world.quests = None;
+                    world.keyitems = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5521,13 +5539,16 @@ impl App {
                     world.effects.set_weather(crate::dat::weather::weather_tag(w), minutes as f32 * 2.4);
                 }
                 NetEvent::Assist { player, target: t } => target::assist(world, player, t),
-                NetEvent::KeyItems { table, bits } => {
+                // FUN_10098710: tables 0..7 only; the owned bits, then the seen bits (keyitems::Seen).
+                NetEvent::KeyItems { table, bits, seen } if table <= 7 => {
                     let at = table as usize * 16;
                     if world.key_items.len() < at + 16 {
                         world.key_items.resize(at + 16, 0);
                     }
                     world.key_items[at..at + 16].copy_from_slice(&bits);
+                    world.ki_seen.packet(table as usize, &seen);
                 }
+                NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
                 NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team } => {
                     world.self_flags = flags;
@@ -5854,6 +5875,7 @@ impl App {
         world.cursor_keep();
         missions::update(world);
         quests::update(world);
+        keyitems::update(world);
         if world.party_cursor.is_some()
             && let Some((_, _, Some(id))) = target::party_hand(world)
         {

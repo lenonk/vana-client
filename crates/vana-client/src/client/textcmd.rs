@@ -31,6 +31,7 @@ mod id {
     pub const MAP: u16 = 0x4f;
     pub const MISSION: u16 = 0x4e;
     pub const QUEST: u16 = 0x4d;
+    pub const KEYITEM: u16 = 0x4c;
     pub const RECYCLE: u16 = 0x7a;
     pub const MOUNT: u16 = 0x28;
     pub const DISMOUNT: u16 = 0x38;
@@ -618,6 +619,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::WAIT => Ok(()),
         // FUN_1007d2c0: the map as the main menu opens it, unless in a room (group 7 0x44) or already open.
+        // FUN_1007d220: evitem.
+        id::KEYITEM => {
+            super::keyitems::open(w);
+            Ok(())
+        }
         // FUN_1007d240: quest00 in mode 0.
         id::QUEST => {
             super::quests::open(w);
