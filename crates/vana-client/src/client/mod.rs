@@ -4789,12 +4789,12 @@ impl App {
                         m.aix.merge(&world.commands_known);
                         m.save();
                     }
-                    if world.logging_out {
-                        self.status = "Logged out.".into();
-                        self.exit_requested = world.shutdown;
-                        self.to_login(false);
-                        return;
-                    }
+                    // The server has ended the session (the net thread is done) whatever our toggle thinks: it cancels a
+                    // countdown on its own (moving), so the local flag can be off when its logout comes.
+                    self.status = "Logged out.".into();
+                    self.exit_requested = world.shutdown;
+                    self.to_login(false);
+                    return;
                 }
                 NetEvent::Battle(m) => combat::on_battle_message(world, &m),
                 NetEvent::Event(s) => event::queue(world, s),

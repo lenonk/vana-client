@@ -748,7 +748,10 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
                     2 => false,
                     _ => true,
                 };
-                w.shutdown = shutdown && w.logging_out;
+                // The kind the last request asked for decides what the server's logout does (exit or the login).
+                if m != 2 {
+                    w.shutdown = shutdown;
+                }
                 send(w, NetCommand::Logout { mode: m, kind: if shutdown { 3 } else { 1 } });
             }
             Ok(())
