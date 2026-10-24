@@ -85,6 +85,8 @@ pub struct Marks {
     pub anon: bool,
     pub auto: bool,
     pub lfg_master: bool,
+    /// Flags1 u32 @0x20 bit 31 (actor +0x128 bit 9): the player has a bazaar.
+    pub bazaar: bool,
 }
 
 /// A battle message packet: 0x029 (FUN_1009cf70) or 0x02D (FUN_1009d1b0).
@@ -195,6 +197,9 @@ pub enum NetEvent {
     TradeMine { n: u32, item: u16, slot: u8, inv: u8 },
     /// s2c 0x0E0 (GP_SERV_COMMAND_GROUP_COMLINK): LinkshellNum @4, ItemIndex @5, Category (bag) @6.
     LinkshellEquip { num: u8, index: u8, bag: u8 },
+    /// s2c 0x0C9 (the checked player's equipment / jobs) and 0x0CA (title, bazaar message), raw.
+    InspectEquip(Vec<u8>),
+    InspectMessage(Vec<u8>),
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
     Fragments(Vec<u8>),
     /// s2c 0x009 (GP_SERV_COMMAND_MESSAGE): MesNo @0xa, Data @0xd as keys (see std_data).
@@ -581,6 +586,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
                 anon: pc && p.u32(0x20) >> 12 & 1 != 0,
                 auto: pc && p.u32(0x24) >> 31 != 0,
                 lfg_master: pc && p.u8(0x28) & 0x02 != 0,
+                bazaar: pc && p.u32(0x20) >> 31 != 0,
             }
         }),
         name_flags: (flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| (p.u32(0x24) >> 29 & 1 != 0, p.u32(0x24) >> 30 & 1 != 0)),
@@ -807,6 +813,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x025 => tx.send(NetEvent::TradeMine { n: p.u32(4), item: p.u16(8), slot: p.u8(0xa), inv: p.u8(0xb) })?,
                     0x082 | 0x084 => tx.send(NetEvent::GuildResult { sell: p.id == 0x084, item: p.u16(4), count: p.u8(6), trade: p.u8(7) as i8 })?,
                     0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
+                    0x0C9 => tx.send(NetEvent::InspectEquip(p.data.clone()))?,
+                    0x0CA => tx.send(NetEvent::InspectMessage(p.data.clone()))?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,
                     0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,
                     0x0D3 => tx.send(NetEvent::TrophySolution {

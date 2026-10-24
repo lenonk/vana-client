@@ -385,6 +385,12 @@ impl Input {
         self.keys[k as usize] & HELD != 0
     }
 
+    /// The DIK codes held now, the window flag and typing (the F12 lines).
+    pub fn debug_state(&self) -> String {
+        let held: Vec<String> = (0..=255u8).filter(|&k| self.held(k)).map(|k| format!("{k:02x}")).collect();
+        format!("input window {} typing {} held [{}]", self.window, self.typing, held.join(" "))
+    }
+
     fn ctrl(&self) -> bool {
         self.held(0x1d) || self.held(0x9d)
     }

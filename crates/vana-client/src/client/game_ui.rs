@@ -56,16 +56,19 @@ pub struct GameUiData {
     /// The menu registry's flags by window name (0x2c-byte entries from "menu    menuwind"; FUN_1015e950 copies them
     /// to window +0x34): 8 = no open / close animation, 0x20 frameless. Unlisted windows are 0.
     registry: std::collections::HashMap<String, u32>,
+    /// The registry's group masks (u16 +0x2a, window +0x38): FUN_1015fa00 suspends a window whose bits a window
+    /// above it holds.
+    groups: std::collections::HashMap<String, u16>,
 }
 
 /// The menu registry in FFXiMain: {name[32], handler, u32 flags, ...} records 0x2c apart from "menu    menuwind" to
 /// an empty name. Found as the copy of that name followed by another "menu    " entry.
-fn menu_registry(ffximain: &[u8]) -> std::collections::HashMap<String, u32> {
-    let mut out = std::collections::HashMap::new();
+fn menu_registry(ffximain: &[u8]) -> (std::collections::HashMap<String, u32>, std::collections::HashMap<String, u16>) {
+    let (mut out, mut groups) = (std::collections::HashMap::new(), std::collections::HashMap::new());
     let first = b"menu    menuwind";
     let Some(at) = (0..ffximain.len().saturating_sub(0x60)).find(|&i| ffximain[i..].starts_with(first) && ffximain[i + 16] == 0 && ffximain[i + 0x2c..].starts_with(b"menu    ")) else {
         log::warn!("menu registry not found");
-        return out;
+        return (out, groups);
     };
     for e in ffximain[at..].chunks_exact(0x2c) {
         let name = &e[..32];
@@ -74,9 +77,11 @@ fn menu_registry(ffximain: &[u8]) -> std::collections::HashMap<String, u32> {
             break;
         }
         // Keyed like the layout names (trimmed, lower case), so the padded short names match too.
-        out.insert(crate::dat::ui::norm_name(&name[..len]), u32::from_le_bytes(e[0x24..0x28].try_into().unwrap()));
+        let key = crate::dat::ui::norm_name(&name[..len]);
+        groups.insert(key.clone(), u16::from_le_bytes([e[0x2a], e[0x2b]]));
+        out.insert(key, u32::from_le_bytes(e[0x24..0x28].try_into().unwrap()));
     }
-    out
+    (out, groups)
 }
 
 // From FFXiMain (dat::tables): the creator stat table (STR DEX VIT AGI INT MND CHR per race and job), the action
@@ -120,7 +125,7 @@ impl GameUiData {
         let menu_msgs = group_file(ffximain, 1, 0x0e).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("menu messages: {e:#}")).ok());
         let title_msgs = group_file(ffximain, 1, 0x0d).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("title messages: {e:#}")).ok());
         let cmd_help = crate::dat::battle::va_bytes(ffximain, t.cmd_help, 0x1c * 12).map_or(Vec::new(), |b| b.chunks(12).map(|r| u16::from_le_bytes([r[0], r[1]])).collect());
-        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x13, 0x1b]
+        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x12, 0x13, 0x1b]
             .into_iter()
             .filter_map(|g| Some((g, group_file(ffximain, 1, g).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("message group {g:#x}: {e:#}")).ok())?)))
             .collect();
@@ -138,9 +143,9 @@ impl GameUiData {
             .unwrap_or_default();
         let count_fmt = t.count_fmt.map(|va| va_str(ffximain, va));
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
-        let registry = menu_registry(ffximain);
+        let (registry, groups) = menu_registry(ffximain);
         let status = [0x3a, 0x3b].map(|slot| crate::dat::msg::current_slot_file(ffximain, 1, slot).and_then(|f| index.read(f).map_err(|e| log::warn!("status info {f}: {e:#}")).ok()).map(std::sync::Arc::new));
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry, groups })
     }
 }
 
@@ -169,6 +174,10 @@ pub struct GameUi {
     party_window: String,
     /// Region 0's top, the chat log's frame (set each world frame): registry flag 0x1000 windows stack on it.
     pub log_top: Option<f32>,
+    /// The log shows no lines (fading or faded): stacked windows sit on its bottom instead.
+    pub log_faded: bool,
+    /// The target window is up this frame (region 2's window, which flag-0x4000 windows sit on).
+    target_up: bool,
     /// The window style in use and images to replace in the renderer.
     style_index: usize,
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
@@ -236,7 +245,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -858,19 +867,48 @@ impl GameUi {
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
         self.log_top = None;
+        self.target_up = false;
+    }
+
+    /// A window's registry flags; the action menu's layouts (actionm1 .. actiom10) count as "menu    playermo"
+    /// (FUN_1011a8f0).
+    fn reg_flags(&self, name: &str) -> u32 {
+        let key = name.trim_end().to_ascii_lowercase();
+        let reg = if key.starts_with("menu    actionm") || key.starts_with("menu    actiom") { "menu    playermo" } else { key.as_str() };
+        self.data.registry.get(reg).copied().unwrap_or(0)
+    }
+
+    /// FUN_1015ecc0(mask): a window with registry flags & mask drawn this or last frame.
+    pub fn open_with_flag(&self, mask: u32) -> bool {
+        self.anims.iter().any(|(n, a)| a.seen + 1 >= self.anim_frame && self.reg_flags(n) & mask != 0)
+    }
+
+    /// The frames of those windows as last drawn.
+    pub fn frames_with_flag(&self, mask: u32) -> Vec<[f32; 4]> {
+        self.anims.iter().filter(|(n, a)| a.seen + 1 >= self.anim_frame && self.reg_flags(n) & mask != 0).filter_map(|(_, a)| if let Shape::Frame(r) = &a.shape { Some(*r) } else { None }).collect()
+    }
+
+    /// A window's registry group mask (FUN_1015ed10's +0x38).
+    pub fn win_group(&self, name: &str) -> u16 {
+        self.data.groups.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0)
     }
 
     /// Region stacking (FUN_10159080 -> FUN_10158e10): registry flag 0x1000 windows sit on the chat log (frame top =
     /// log top - frame height - 2, at least 16), flag 0x2000 ones on the party window. The y offset from the layout.
     pub fn stack_dy(&self, name: &str, w: f32, h: f32) -> f32 {
-        // The action menu's layouts (actionm1 .. actiom10) are swapped into "menu    playermo" (FUN_1011a8f0).
-        let key = name.trim_end().to_ascii_lowercase();
-        let reg = if key.starts_with("menu    actionm") || key.starts_with("menu    actiom") { "menu    playermo" } else { key.as_str() };
-        let flags = self.data.registry.get(reg).copied().unwrap_or(0);
+        let flags = self.reg_flags(name);
         match (self.log_top, self.data.lobby.menu(name)) {
             (Some(top), Some(m)) if flags & 0x1000 != 0 => {
                 let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
-                (top - fh - 2.0).max(16.0) - fy
+                // FUN_1015f790: on the log's bottom (h - 16) while it shows no lines, else 2 px above its top.
+                let y = if self.log_faded { h - 16.0 - fh } else { top - fh - 2.0 };
+                y.max(16.0) - fy
+            }
+            // Region 2 (flag 0x4000, subwindo): on the target window, else on the party window (FUN_1015e530).
+            (_, Some(m)) if flags & 0x4000 != 0 => {
+                let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+                let base = if self.target_up { self.window_rect("menu    targetwi", w, h) } else { self.window_rect(&self.party_window, w, h) };
+                base.map_or(0.0, |r| (r[1] - fh - 2.0).max(16.0) - fy)
             }
             _ => screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window),
         }
@@ -879,6 +917,7 @@ impl GameUi {
     /// The HUD windows (chat log, party, target, main menu), after what is already in the frame.
     pub fn hud(&mut self, w: f32, h: f32, st: &HudState) -> Vec<TextSlot> {
         self.party_window = st.party_window.clone();
+        self.target_up = st.target.is_some();
         // raid1 / raid2 open with the zoom (registry flags 3, no 8): nothing of them until it is done.
         let mut st = st.clone();
         for (k, name) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
@@ -1104,19 +1143,11 @@ impl GameUi {
         self.batch.push_rect(x, y, w, h, rgba);
     }
 
-    /// FUN_10116b10's cursor point of a layout child relative to the child's position: its header (+6, +8) plus the
-    /// window element's.
-    pub fn cursor_offset(&self, menu: &str, child: usize) -> Option<(f32, f32)> {
-        let m = self.data.lobby.menu(menu)?;
-        let (c, w) = (m.elements.get(child)?, m.elements.first()?);
-        let at = |h: &[u8; 32], o: usize| i16::from_le_bytes([h[o], h[o + 1]]) as f32;
-        Some((at(&c.head, 6) + at(&w.head, 6), at(&c.head, 8) + at(&w.head, 8)))
-    }
-
-    /// The pointing hand scaled about (x, y) (FUN_1011ab50; the buff list's 0.74).
-    pub fn cursor_scaled(&mut self, x: f32, y: f32, s: f32) {
+    /// A window cursor sprite (`lib`, e.g. the buff window's anc_equi box) scaled about (x, y) (FUN_1011ab50; the
+    /// buff list's 0.74).
+    pub fn cursor_scaled(&mut self, lib: &str, x: f32, y: f32, s: f32) {
         let frame = self.cursor_frame();
-        if let Some(anc) = self.data.lobby.lib("anc     anc_s") {
+        if let Some(anc) = self.data.lobby.lib(lib) {
             self.batch.push_sprite(&self.data.lobby, anc, frame % anc.sprites.len().max(1), x, y, s, s, 0x8080_8080, 0);
         }
     }

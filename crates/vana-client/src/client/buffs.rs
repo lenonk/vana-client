@@ -37,6 +37,12 @@ pub fn key(gu: &GameUi, w: &mut World, key: egui::Key) {
         egui::Key::ArrowRight => (at + 1) % n,
         egui::Key::ArrowUp if at >= 9 => at - 9,
         egui::Key::ArrowDown if at + 9 < n => at + 9,
+        // Escape leaves status select mode (seen in retail; the window's own message 6 does nothing).
+        egui::Key::Escape => {
+            w.log_focus = 0;
+            w.sounds.push(crate::audio::Ui::Cancel as u32);
+            return;
+        }
         egui::Key::Enter => {
             let id = list[at].0;
             let small = w.game.get(0x99) & 4 != 0;
@@ -104,10 +110,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
         if let Some(s) = label(rem).filter(|_| timed) {
             gu.shape_scaled_centred(s.as_bytes(), cx + 14.0, cy + 20.0, 0.85, 0x8080_8080);
         }
-        // FUN_10227970: the hand scaled 0.74 and moved (-5, -5) from the cell's cursor point.
+        // FUN_10227970: the window's cursor (its kind-6 ref, the anc_equi box) scaled 0.74 over the icon. Placed on the
+        // icon as retail shows it (the user's shot); the (-5, -5) of the hand did not fit the box (inf).
         if w.log_focus == 2 && k == w.buff_cursor {
-            let (ox, oy) = gu.cursor_offset(WINDOW, k + 1).unwrap_or((0.0, 0.0));
-            gu.cursor_scaled(cx + ox - 5.0, cy + oy - 5.0, 0.74);
+            gu.cursor_scaled("anc     anc_equi", cx + 1.0, cy + 1.0, 0.74);
         }
     }
 }

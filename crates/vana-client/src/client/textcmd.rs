@@ -833,7 +833,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         // FUN_1007d000 / FUN_1007d050: through FUN_101347b0 (repeat guard, players and monsters only).
         id::CHECK | id::CHECKNAME => {
             let t = resolve(w, arg(1), true, false, mode).ok_or(())?;
-            super::combat::check(w, Some(t.0), (cid - id::CHECK) as u8);
+            super::combat::check(w, Some(t.0), (cid - id::CHECK) as u8, true);
             Ok(())
         }
         id::CHECKPARAM => {

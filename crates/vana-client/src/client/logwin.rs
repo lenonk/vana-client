@@ -74,6 +74,8 @@ pub struct LogWin {
     draw_n: i32,
     off: i32,
     h: i32,
+    /// The frame height's change in the last update (new - old), for the pointer follow.
+    pub dh: i32,
     fade: super::hudtop::Fade,
     /// Wall time of the last update and the ticks not yet run.
     last: Option<std::time::Instant>,
@@ -269,11 +271,13 @@ impl LogWin {
             self.escape();
         }
         // Whole retail frames of FRAME ticks (stock retail runs 30 fps: 2 ticks a frame); the fraction carries.
+        let h0 = self.h;
         self.acc += ticks;
         while self.acc >= FRAME as f32 {
             self.acc -= FRAME as f32;
             self.step(FRAME, keep, focused, typing);
         }
+        self.dh = self.h - h0;
         self.new_lines = new;
         tw
     }
@@ -421,6 +425,11 @@ impl LogWin {
     }
 
     /// The frame's rect (x 16, bottom H - 16, the height the step eased), its lines and the fade's alpha.
+    /// The frame fading out or faded (0 lines shown): FUN_1015f790 then puts stacked windows on the log's bottom.
+    pub fn faded(&self) -> bool {
+        matches!(self.fade, super::hudtop::Fade::Out(_) | super::hudtop::Fade::Hidden)
+    }
+
     pub fn frame(&mut self, sw: f32, sh: f32) -> LogFrame {
         let w = text_width(sw, self.cfg.pct) + 14.0;
         let h = self.h.max(0) as f32;

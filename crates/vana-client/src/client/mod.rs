@@ -47,6 +47,8 @@ mod post;
 mod synth;
 mod treasure;
 mod servmes;
+mod inspect;
+mod linehist;
 mod search;
 mod shop;
 mod gauge;
@@ -135,7 +137,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w)
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -1041,6 +1043,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for ev in input.events.iter().filter(|_| !input_open) {
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
+                world.line_hist.edited();
                 // Space moves the open candidate list instead (FUN_101b6810 returns -1).
                 let open = world.fep.is_some();
                 world.chat_input.extend(t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')));
@@ -1052,10 +1055,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The auto-translate list takes its keys first (FUN_101b5d10).
                 k if world.typing && world.fep.is_some() && fep::key(world, *k, modifiers.shift) => {}
                 egui::Key::Tab if world.typing => fep::open(world),
+                // FUN_101ac2c0 / FUN_101ac3d0: the line history (no sound, no wrap; Shift / Ctrl the same).
+                egui::Key::ArrowUp if world.typing && !modifiers.alt => {
+                    if let Some(l) = world.line_hist.up(&world.chat_input) {
+                        world.chat_input = l;
+                    }
+                }
+                egui::Key::ArrowDown if world.typing && !modifiers.alt => {
+                    if let Some(l) = world.line_hist.down(&world.chat_input) {
+                        world.chat_input = l;
+                    }
+                }
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     let text = std::mem::take(&mut world.chat_input);
+                    world.line_hist.record(&text);
                     let text = fep::outgoing(world, text);
                     textcmd::run(world, &text, textcmd::Mode::Typed);
                 }
@@ -1064,7 +1079,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.chat_input.clear();
                     world.sounds.push(crate::audio::Ui::Cancel as u32);
                 }
-                egui::Key::Backspace if world.typing => fep::backspace(world),
+                egui::Key::Backspace if world.typing => {
+                    world.line_hist.edited();
+                    fep::backspace(world);
+                }
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
                 k if (modifiers.ctrl || modifiers.alt) && !opened && let Some(p) = chat_shortcut(*k) => {
                     chat_prefix(world, p);
@@ -1208,6 +1226,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                     _ => {}
                 },
+                _ if world.inspect.up() => inspect::key(world, gu, *key),
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
@@ -1285,6 +1304,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Minus => world.menu = if world.menu.is_some() { None } else { Some(0) },
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
+                // FUN_102110c0: the raise prompt refuses Escape (+0x39 = 0: SE 0004) and keeps the key.
+                egui::Key::Escape if dead && world.ko_offer == 2 && world.confirm.is_none() => world.sounds.push(crate::audio::Ui::Error as u32),
                 // Escape also takes a line off the log (key 0x95, FUN_1015b830). Clearing the target is key 0x92,
                 // refused while locked (FUN_10151f20).
                 egui::Key::Escape => {
@@ -1298,21 +1319,19 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // Left / right swap the commands and social pages on the same row (FUN_1013b3c0).
                 egui::Key::ArrowLeft | egui::Key::ArrowRight if world.menu.is_some() => world.menu_page ^= 1,
                 egui::Key::Enter if world.menu.is_some() => pick = world.menu,
-                // The raise prompt (resynus: Accept / Decline stacked, Accept first): Up / Down, Enter answers, Escape
-                // declines (inf).
+                // The raise prompt (resynus, FUN_102110c0): Up to Accept, Down to Decline (no wrap), Enter answers.
                 _ if dead && world.ko_offer == 2 && world.confirm.is_none() => match key {
                     egui::Key::ArrowUp | egui::Key::ArrowDown => {
-                        world.raise_yes = !world.raise_yes;
-                        world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        let yes = *key == egui::Key::ArrowUp;
+                        if yes != world.raise_yes {
+                            world.raise_yes = yes;
+                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        }
                     }
                     egui::Key::Enter => {
                         let yes = world.raise_yes;
                         answer_raise(world, yes);
                         world.sounds.push(crate::audio::Ui::Select as u32);
-                    }
-                    egui::Key::Escape => {
-                        answer_raise(world, false);
-                        world.sounds.push(crate::audio::Ui::Cancel as u32);
                     }
                     _ => {}
                 },
@@ -1589,6 +1608,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if hide && world.party_cursor.as_ref().is_some_and(|c| c.index >= 6) {
         world.party_cursor = None;
     }
+    // FUN_1015fa00: the menu windows above the HUD hold their group bits; HUD windows sharing one are suspended (not
+    // drawn: their close plays, their open when the bits are free again).
+    let held = held_groups(gu, world);
+    let suspended = |name: &str| gu.win_group(name) & held != 0;
+    let (gauge_off, menu_off, target_off, buff_off) = (suspended(gauge::WINDOW), suspended("menu    playermo"), suspended("menu    targetwi"), suspended("menu    buff"));
     let st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
         target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
@@ -1604,7 +1628,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             let id = if k == 0 { world.my_id } else { m.as_ref().map_or(0, |m| m.id) };
             (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
         }).collect(),
-        target: target.filter(|_| event::keeps_target(world)).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
+        target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
         menu_selected: world.menu.and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_focused: world.confirm.is_none(),
@@ -1682,9 +1706,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
     // The event input window sets the same input-line flag as the chat line (DAT_1062193c +0x4c).
     let line_open = world.typing || event::input(world).is_some();
-    let keep = (world.typing && world.log.at_most_two()) || event::choice(world).is_some() || world.confirm.is_some() || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
+    // FUN_101626e0's keep: FUN_1015ecc0(0x1000), any open window stacked on the log (the raise prompt, comyn, query,
+    // shops, the lists ...), the chat line at 2 lines or fewer, a message page waiting.
+    let stacked = gu.open_with_flag(0x1000) || (dead && world.ko_offer == 2) || event::choice(world).is_some() || world.confirm.is_some();
+    let keep = (world.typing && world.log.at_most_two()) || stacked || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
-    if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) {
+    if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) || (dead && world.ko_offer == 2) {
         world.log_active = false;
     }
     if event::active(world) && world.full_log.take().is_some() {
@@ -1694,6 +1721,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
     gu.log_top = Some(log.rect[1]);
+    gu.log_faded = world.log.faded();
+    // FUN_101626e0 (asm 0x10162a52): with the log held by a stacked window, a height change moves the pointer with
+    // it while it is inside one, so it stays on the same child. Ours shifts the drawn cursor (no warp on Wayland).
+    if !stacked {
+        world.ptr_dy = 0.0;
+    } else if world.log.dh != 0
+        && let Some(p) = input.pointer
+        && gu.frames_with_flag(0x1000).iter().any(|r| p.0 >= r[0] && p.0 <= r[0] + r[2] && p.1 >= r[1] && p.1 <= r[1] + r[3])
+    {
+        world.ptr_dy -= world.log.dh as f32;
+    }
     let event_window = event_window(gu, world, sw, sh, tw);
     let bars = bar_text(gu, world, &items);
     let cam = App::camera(world);
@@ -1777,17 +1815,23 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
-    blockers.extend(search::draw(gu, world, sw, sh));
     blockers.extend(trade::draw(gu, world, sw, sh));
-    blockers.extend(gauge::draw(gu, world, sw, sh));
-    buffs::draw(gu, world, sw, sh);
+    if !gauge_off {
+        blockers.extend(gauge::draw(gu, world, sw, sh));
+    }
+    if !buff_off {
+        buffs::draw(gu, world, sw, sh);
+    }
     buffs::draw_party(gu, world, sw, sh, log.rect);
+    // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
+    blockers.extend(search::draw(gu, world, sw, sh));
+    blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
     // while it opens; the hand only while it has the focus.
-    if let (Some(m), Some((r, rows))) = (&world.action_menu, &action_rows) {
+    if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
         let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none();
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
@@ -2036,22 +2080,30 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(win.frame);
     }
     // The raise prompt "menu    resynus" (FUN_10210da0, registry flag 0x1000: stacked on the log like comyn).
+    // Stacked by lobby_window_off itself. The hover runs every frame (FUN_10125360: the cursor moves when the child
+    // under the pointer changes, SE 0001); the release confirms the cursor child (FUN_1015de50, SE 0002).
     if dead && world.ko_offer == 2 && world.confirm.is_none() {
-        let dy = gu.window_rect("menu    resynus", sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
-        if let Some(win) = gu.lobby_window_off("menu    resynus", sw, sh, (0.0, dy), Some(if world.raise_yes { 1 } else { 2 }), true, &[]) {
-            for (id, r) in win.children.iter().filter(|(id, _)| matches!(id, 1 | 2)) {
-                if input.pointer.is_some_and(|p| inside(r, p)) {
-                    gu.hover.set(true);
-                    if input.moved || input.clicked {
-                        world.raise_yes = *id == 1;
-                    }
-                    if input.clicked {
-                        answer_raise(world, *id == 1);
-                    }
-                }
+        if let Some(win) = gu.lobby_window_off("menu    resynus", sw, sh, (0.0, 0.0), Some(if world.raise_yes { 1 } else { 2 }), true, &[]) {
+            let hovered = input.pointer.and_then(|p| win.children.iter().find(|(id, r)| matches!(id, 1 | 2) && inside(r, p)).map(|(id, _)| *id));
+            if hovered.is_some() {
+                gu.hover.set(true);
+            }
+            if let Some(id) = hovered.filter(|&id| Some(id) != world.raise_hover && (id == 1) != world.raise_yes) {
+                world.raise_yes = id == 1;
+                world.sounds.push(crate::audio::Ui::Cursor as u32);
+            }
+            world.raise_hover = hovered;
+            if input.clicked
+                && let Some(id) = hovered
+            {
+                world.raise_yes = id == 1;
+                answer_raise(world, id == 1);
+                world.sounds.push(crate::audio::Ui::Select as u32);
             }
             blockers.push(win.frame);
         }
+    } else {
+        world.raise_hover = None;
     }
     match (answer, world.confirm) {
         // LAB_1012e0a0: Yes sets +0x24; the state machine sends 0x01A 0x0B.
@@ -2161,6 +2213,24 @@ fn missing_place(zone: u16) {
     }
 }
 
+/// The group bits held by the open menu windows that sit above the battle HUD (registry +0x2a).
+fn held_groups(gu: &GameUi, w: &World) -> u16 {
+    let mut held = 0;
+    if let Some(s) = &w.search {
+        held |= gu.win_group("menu    scresult");
+        if s.option.is_some() {
+            held |= gu.win_group("menu    scoption");
+        }
+    }
+    if w.map.is_some() {
+        held |= gu.win_group("menu    mapframe");
+    }
+    if w.inspect.up() {
+        held |= gu.win_group(inspect::WINDOW);
+    }
+    held
+}
+
 /// The top bars' text slots. Slot 1: the focused window's cursor item or header (FUN_10115380). Slot 0: the
 /// action menu, the command's help and "Battle Mode" (engaged) or "Commands" (group 0xd 7 / 5; 6 "Ready Mode"
 /// is for a FUN_101c26a0 target, not modelled), FUN_10127790.
@@ -2214,6 +2284,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     post::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
+    inspect::bars(gu, world, &mut bars);
     trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
@@ -2654,6 +2725,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
+        (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
@@ -3123,6 +3195,10 @@ struct World {
     /// offer waiting for an answer; after accepting a raise, nothing until (sub 4, 1200 ticks).
     ko_offer: u8,
     raise_yes: bool,
+    /// The prompt row under the pointer last frame (the hover moves the cursor only when it changes).
+    raise_hover: Option<u16>,
+    /// The pointer's shift while the log moves a stacked window under it (UI px, y).
+    ptr_dy: f32,
     ko_wait: Option<Instant>,
     /// Server clock (GameTime and when it arrived), weather number, and the zone's weather keys.
     clock: Option<(u32, Instant)>,
@@ -3145,6 +3221,10 @@ struct World {
     searches: Vec<(std::sync::mpsc::Receiver<anyhow::Result<crate::net::search::Reply>>, search::Then)>,
     /// The search results window ("menu    scresult") and scoption over it.
     search: Option<search::Results>,
+    /// /check on a player: the store and "menu    inspect".
+    inspect: inspect::Inspect,
+    /// The chat line's history (kept on the App between logins).
+    line_hist: linehist::LineHistory,
     weather: u16,
     /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
     /// Vana minutes x 2.4 s).
@@ -3422,6 +3502,8 @@ impl Drive {
 pub struct App {
     cfg: Config,
     drive: Drive,
+    /// The chat line's history between logins (FSTEXTINPUT lives for the whole run).
+    line_hist: linehist::LineHistory,
     gfx: Option<Gfx>,
     phase: Phase,
     status: String,
@@ -3615,6 +3697,7 @@ impl App {
         Self {
             cfg,
             drive,
+            line_hist: linehist::LineHistory::default(),
             gfx: None,
             phase,
             status: String::new(),
@@ -3818,6 +3901,9 @@ impl App {
     /// Back to the login screen. The world entry (or the world) left the lobby faded out, so the fade starts over;
     /// an error waits in the OK window.
     fn to_login(&mut self, error: bool) {
+        if let Phase::World(w) = &mut self.phase {
+            self.line_hist = std::mem::take(&mut w.line_hist);
+        }
         self.phase = Phase::login(&self.cfg);
         self.lobby_fade = LobbyFade::default();
         if error {
@@ -4160,6 +4246,8 @@ impl App {
                             search_addr: login.search,
                             searches: Vec::new(),
                             search: None,
+                            inspect: inspect::Inspect::default(),
+                            line_hist: std::mem::take(&mut self.line_hist),
                             my_id: login.char_id,
                             my_index: 0,
                             pos: Vec3::ZERO,
@@ -4238,6 +4326,8 @@ impl App {
                             home_sent: None,
                             ko_offer: 0,
                             raise_yes: true,
+                            raise_hover: None,
+                            ptr_dy: 0.0,
                             ko_wait: None,
                             clock: None,
                             compass_clock: true,
@@ -4691,6 +4781,7 @@ impl App {
                     world.mog_zone = mog_zone;
                     world.play_time = Some((play_time, Instant::now()));
                     world.search = None;
+                    inspect::drop(world);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5094,6 +5185,8 @@ impl App {
                 NetEvent::TradeTheirs { n, counter, item, slot, attr } => trade::on_their_slot(world, n, counter, item, slot, attr),
                 NetEvent::TradeMine { n, item, slot, inv } => trade::on_my_slot(world, n, item, slot, inv),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
+                NetEvent::InspectEquip(p) => inspect::on_equip(world, &p),
+                NetEvent::InspectMessage(p) => inspect::on_message(world, &p),
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
                         *l = (index, bag);
@@ -5375,6 +5468,8 @@ impl App {
             world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"spop"));
         }
         search::poll(world);
+        world.line_hist.track(world.typing);
+        inspect::frame(world);
         for (id, off) in std::mem::take(&mut world.effects.gens_off) {
             if let Some(e) = world.entities.get_mut(&id) {
                 e.gens_off = off;
@@ -5774,7 +5869,8 @@ impl App {
             self.input.context = if w.map.is_some() { 0x26 } else { 0xffff };
             f.typing = w.typing;
             f.keyboard = w.game.get(0x42);
-            f.window = w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.palette.0 != 0;
+            // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state).
+            f.window = world_window_open(w) || w.palette.0 != 0 || w.log_focus != 0 || w.ko_open || w.ko_offer == 2 || event::choice(w).is_some() || event::input(w).is_some();
             f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
         }
         self.input.begin_frame(f);
@@ -6144,8 +6240,13 @@ impl App {
         let k = self.ui_k;
         let screen_size = size;
         let ppp = ctx.pixels_per_point();
+        // The stacked-window pointer follow, only with the drawn (software) cursor.
+        let ptr_dy = match &self.phase {
+            Phase::World(w) if self.cfg.tool("0021") == 0 => w.ptr_dy,
+            _ => 0.0,
+        };
         let input = ctx.input(|i| UiInput {
-            pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1)),
+            pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
             clicked: i.pointer.primary_clicked() && !std::mem::take(&mut self.swallow_click),
             events: i.events.clone(),
@@ -6740,6 +6841,43 @@ impl App {
                     if !status.is_empty() {
                         lines.push(status.clone());
                     }
+                    // What holds the keys now (intermittent stuck-input reports).
+                    let w = &*world;
+                    let open: Vec<&str> = [
+                        ("menu", w.menu.is_some()),
+                        ("confirm", w.confirm.is_some()),
+                        ("items", w.win.is_some()),
+                        ("action", w.action_menu.is_some()),
+                        ("config", w.config.is_some()),
+                        ("settings", w.settings.is_some()),
+                        ("map", w.map.is_some()),
+                        ("fulllog", w.full_log.is_some()),
+                        ("magic", w.magic.is_some()),
+                        ("ability", w.ability.is_some()),
+                        ("cats", w.cats.is_some()),
+                        ("moogle", w.moogle.is_some()),
+                        ("mogdoor", w.mogdoor.is_some()),
+                        ("shop", shop::active(w)),
+                        ("trade", trade::active(w)),
+                        ("post", post::active(w)),
+                        ("synth", synth::active(w)),
+                        ("search", w.search.is_some()),
+                        ("inspect", w.inspect.up()),
+                        ("prompt", w.prompt.is_some()),
+                        ("typing", w.typing),
+                        ("log_active", w.log_active),
+                        ("ko_open", w.ko_open),
+                        ("raise", w.ko_offer == 2),
+                        ("event", event::active(w)),
+                        ("choice", event::choice(w).is_some()),
+                        ("palette", w.palette.0 != 0),
+                    ]
+                    .into_iter()
+                    .filter(|(_, on)| *on)
+                    .map(|(n, _)| n)
+                    .collect();
+                    lines.push(format!("open [{}]  log_focus {}  locked {}  party_cursor {}", open.join(" "), w.log_focus, w.locked, w.party_cursor.is_some()));
+                    lines.push(self.input.debug_state());
                     egui::Area::new(egui::Id::unique("status")).anchor(egui::Align2::LEFT_TOP, [8.0, 56.0]).interactable(false).show(ctx, |ui| {
                         egui::Frame::new().fill(egui::Color32::from_black_alpha(150)).inner_margin(4.0).show(ui, |ui| {
                             for l in &lines {
@@ -7813,7 +7951,8 @@ impl App {
                 // sprite; a cursor pack's images stay at their own size, as the hardware cursor shows them.
                 let s = self.cfg.cursor_scale(size[1]) * self.ui_k.1;
                 let fs = if self.cfg.cursor_size == 0 { 1.0 } else { self.cfg.cursor_size as f32 / 100.0 } * self.ui_k.1;
-                self.mouse.draw(lu, self.index.as_ref(), x as f32 * self.ui_k.0, y as f32 * self.ui_k.1, dt, s, fs);
+                let dy = if let Phase::World(w) = &self.phase { w.ptr_dy } else { 0.0 };
+                self.mouse.draw(lu, self.index.as_ref(), x as f32 * self.ui_k.0, y as f32 * self.ui_k.1 + dy, dt, s, fs);
             }
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());

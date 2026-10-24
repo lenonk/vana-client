@@ -5941,3 +5941,61 @@ Spec `~/ffxi/lab/research/raise_anim_spec.md`. Corrects "Scheduler op 0x05 (moti
   is idl / dl1-3 / ltb / lt1-3 / cor / rx1.
 - Ours: actmotion::op_rate; one-shots end by real ticks; the engage and death motions take the same rate.
 - Live: the Hume M raise `std` ran 3.35 s (200 ticks), as the user had seen it too fast before.
+
+## Window groups, region stacking and the raise prompt (2026-10-24)
+
+Specs `~/ffxi/lab/research/raise_prompt_spec.md`, `mpcost_spec.md`.
+- Menu registry (30261006_0: 0x103722d8, 0x2c-byte rows): name, handler, u32 flags @0x24, u8 state @0x28, u8 layer
+  @0x29 (draw order), u16 group @0x2a. Flags 0x1000 / 0x2000 / 0x4000 / 0x10000000 put a window in region 0 (on the
+  chat log), 1 (on the party window), 2 (on the target window), 3 (query); masks 0x1037629c. 0x20000 marks the
+  main-window class.
+- FUN_1015fa00 suspends a lower window whose group bits an open higher one holds: its close animation plays, then
+  its open when the bits are free. Groups: scresult 0x1c, scoption 0x81, inspect 0x10, mapframe 0x5e, gaugewin 0x10,
+  playermo 0x04, targetwi 0x02, buff 0x40. So the search results hide gaugewin and the action menu, not the status
+  icons (they draw under it, layer 0 against 2); the map hides the icons.
+- Region 2 (only subwindo, the MP Cost box): on the target window when it is up, else on the party window; regions
+  restack 0..4 every frame. subwindo's text is fontshp throughout, labels too; MP Cost and Next on one line each.
+- FUN_101626e0 holds the log (no decay, Escape does not shrink it) while a flag-0x1000 window is open
+  (FUN_1015ecc0(0x1000)): the raise prompt, comyn, the event choice, shops and lists. When the held log changes
+  height with the pointer on such a window, the pointer moves with it (asm 0x10162a52); ours shifts the drawn
+  software cursor (no warps on Wayland). Stacked windows sit on the log's bottom (h - 16) while it shows no lines
+  (FUN_1015f790).
+- resynus (FUN_102110c0, FUN_10125360): the hover moves the cursor only when the child under the pointer changes
+  (SE 0001); the release confirms it (FUN_1015de50, SE 0002); Up = Accept, Down = Decline, no wrap; Escape is
+  refused (+0x39 = 0: SE 0004) and does not reach the log or the target.
+- Status icons: the focus box is the window's cursor, anc_equi at 0.74 over the icon (FUN_10227970); placed on the
+  icon as in the user's retail shot. Escape leaves the focus (seen in retail).
+- Arrow keys go to the camera only while no window holds them (`world_window_open`, palettes, the log focus, the
+  K.O. window and the raise prompt, the event choice and input).
+- F12 lines: the windows holding the keys, log focus, lock, party cursor and the held DIK codes (for the intermittent
+  stuck-input reports).
+
+## /check on a player: "menu    inspect" (2026-10-24)
+
+Spec `~/ffxi/lab/research/check_spec.md`.
+- /check on a PC sends c2s 0x0DD; LSB answers s2c 0x0CA (bazaar message, name, title), then 0x0C9 kind 3 (equipment,
+  8 a packet) and kind 1 (jobs, linkshell). 0x0CA prints group 10 0x33 "%s's title: %s" in chat mode 0x29 (not
+  for our own name) and arms View Wares.
+- The first 0x0C9 after the check opens "menu    inspect" (16,48 182x190) with an empty iteminfo; later packets fill
+  the store, the window reads it every frame. A second check is ignored while it is up (holder +0x74).
+- 4x4 slot grid (children 1..16, the equipment layout), child 17 View Wares (the cursor starts there; enabled with a
+  bazaar, 0x00D flags1 u32 @0x20 bit 31, once the message arrived or 120 ticks passed). Title slot 2 the name, help
+  slot 2 "Lv.12 Ranger" (group 10 0x58 / 0x79 + " / " sub job, "？　？　？" when anonymous). The linkshell icon
+  and name at the bottom. The item info follows the cursor; on View Wares the bazaar message ("menu    comment").
+- Escape closes (SE 0003); so do zoning, engaging, an event start and losing the target.
+- Left: the bazaar list behind View Wares (shop list window + c2s 0x105).
+- Live: Brannoc (a bot) showed "Lv.16 Warrior" and its gear; the cursor moves by the column rule.
+
+## Chat line history (2026-10-24)
+
+Spec `~/ffxi/lab/research/input_history_spec.md`.
+- FSTEXTINPUT (DAT_10662d40, built once, freed at shutdown) keeps the history at input +0x7ed8: 10 slots of 0x97
+  bytes, slot 0 the working copy, 1..count the sent lines newest first, count at most 9; not a ring (a push shifts
+  and the oldest falls off).
+- Only the chat line's submit (mode 4, FUN_101b6e40) records: every non-empty Enter, no duplicate check, commands
+  too, recorded before the command runs. Raw bytes kept (auto-translate blocks, Shift-JIS).
+- Up (FUN_101ac2c0) / Down (FUN_101ac3d0): no sound, no wrap, Shift / Ctrl the same, Alt nothing (WM_SYSKEYDOWN is
+  not passed on). A move first stores an edited line (dirty flag +0xc78) into the slot it came from: the half-typed
+  line comes back on Down, an edited recall stays edited. Kept across logins (ours: moved between the App and the
+  World).
+- Live: two Ups recalled "/echo one".

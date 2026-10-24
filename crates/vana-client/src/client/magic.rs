@@ -1001,9 +1001,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         _ => Vec::new(),
     };
     if !lines.is_empty() && gu.gate_layout("menu    subwindo", sw, sh, None) {
-        let (b, ui, style, font) = gu.parts();
-        if let Some(m) = ui.menu("menu    subwindo") {
-            push_cost_box(b, ui, style, font, GameUi::ATLAS, m, &lines, sw, sh);
+        let stacked = gu.stacked_menu("menu    subwindo", sw, sh);
+        let (b, ui, style, _) = gu.parts();
+        if let Some(m) = stacked {
+            push_cost_box(b, ui, style, &m, &lines, sw, sh);
         }
     }
     rects

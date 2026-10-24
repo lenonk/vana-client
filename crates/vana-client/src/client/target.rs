@@ -266,7 +266,7 @@ pub fn confirm_sub(w: &mut World) {
     }
     if matches!(s.then, SubThen::Check) {
         restore(w, &s);
-        super::combat::check(w, Some(t), 0);
+        super::combat::check(w, Some(t), 0, false);
         return;
     }
     if let SubThen::Command(line) = &s.then {
@@ -670,6 +670,7 @@ pub fn update(w: &mut World) {
         log::info!("target {:#x} dropped (attackoff {attackoff})", w.target.unwrap_or(0));
         lock(w, false, "target dropped");
         w.target = None;
+        super::inspect::drop(w);
         if attackoff {
             super::send_chat(w, "/attackoff".into());
         }

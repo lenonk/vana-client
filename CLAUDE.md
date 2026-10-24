@@ -95,6 +95,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     colours (need s2c 0x063 sub 4 and 0x044);
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
     done but untested live (needs a second account); left mouse in both, the target prompt with no target;
+  - /check on a player (client/inspect.rs, MODLOG "/check on a player"): the inspect window done; left the bazaar
+    list behind View Wares (c2s 0x105);
+  - window groups (MODLOG "Window groups, region stacking and the raise prompt"): the search results, the map and
+    inspect suspend the HUD windows sharing their group bits; left the other menu windows' holds;
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
     prompt, mouse hold-to-open;
@@ -130,6 +134,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     patch. While no DATs exist every other title button is disabled. Open question: the title and login screens
     are drawn from the DATs, so a first start needs some screen of its own before them.
   - No command line for any of it.
+  - Releases (user, 2026-10-24): build the Linux binary with the Steam Runtime "sniper" toolchain so one build runs
+    on every distro; the Update button downloads the release from GitHub, installs it and restarts the client.
   - The install was behind the server's data (NPC models 2957+ missing: the level-5 crystal scene's set was
     blank): 5321 files, 452 MB as of 30261006_0. Updates go to the base files, never to mods.
 - Mod manager (XIPivot built in). Done: dat/overlay.rs. Mods are folders under ~/.local/share/vana-client/mods in
@@ -152,7 +158,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
-  check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles and /localsettings
+  check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: invisible talk, /equip refusals, the command gate's
   lines (window open, layout, charmed), the map on an elevator, the block list, s2c 0x0B4 (PvP, the system message
   filter); the toggles' consumers for /ignorepet, /ignoretrust, /hidetrust (no pet owner / trust flag on entities),

@@ -181,10 +181,11 @@ pub fn push_category(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, 
 
 /// subwindo (FUN_1014f960): label lines at (+5, +8) and (+5, +0x1a), their values right-aligned at +0x69.
 #[allow(clippy::too_many_arguments)]
-pub fn push_cost_box(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, lines: &[(String, String)], w: f32, h: f32) {
+/// All in the sprite font (FUN_101c9780 / FUN_101c9b50 draw fontshp).
+pub fn push_cost_box(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, lines: &[(String, String)], w: f32, h: f32) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
     for ((label, value), dy) in lines.iter().zip([8.0, 26.0]) {
-        text(b, font, atlas, label, wx + 5.0, wy + dy, 0x8080_8080);
-        push_shape_text_right(b, ui, value.as_bytes(), wx + 105.0, wy + dy + 2.0, 0x8080_8080);
+        super::screens::push_shape_text(b, ui, &crate::dat::font::encode_sjis(label), wx + 5.0, wy + dy, 0x8080_8080);
+        push_shape_text_right(b, ui, value.as_bytes(), wx + 105.0, wy + dy, 0x8080_8080);
     }
 }

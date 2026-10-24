@@ -859,7 +859,11 @@ pub(super) fn conflict(team: u8) -> bool {
 
 /// FUN_101347b0: a check on `id` (else the target): not the same id again within 2 s (DAT_105781c4), and sent (c2s
 /// 0x0DD) only for a player or a monster (+0x120 bit 13); any other NPC gets nothing.
-pub(super) fn check(w: &mut World, id: Option<u32>, kind: u8) {
+pub(super) fn check(w: &mut World, id: Option<u32>, kind: u8, typed: bool) {
+    // Nothing while the inspect window is up (holder +0x74).
+    if w.inspect.up() {
+        return;
+    }
     let Some(id) = id.or(w.target) else { return };
     if w.last_check.is_some_and(|(last, at)| last == id && at.elapsed() < Duration::from_secs(2)) {
         return;
@@ -872,6 +876,8 @@ pub(super) fn check(w: &mut World, id: Option<u32>, kind: u8) {
             _ => return,
         }
     };
+    let fresh = w.last_check.is_none();
+    super::inspect::sent(w, id, index, fresh, typed);
     w.last_check = Some((id, Instant::now()));
     send(w, NetCommand::Check { target: id, index, kind });
 }
@@ -904,6 +910,7 @@ pub(super) fn battle_frame(w: &mut World) {
     let s = w.my_motion.status;
     if s == 1 && w.battle_prev != 1 && !super::event::active(w) {
         super::target::cancel_sub(w);
+        super::inspect::drop(w);
         (w.menu, w.win, w.config, w.settings, w.magic, w.ability, w.cats) = (None, None, None, None, None, None, None);
         (w.moogle, w.mogdoor, w.full_log, w.shop, w.handover) = (None, None, None, None, None);
         w.action_menu = Some(open_menu(w));
@@ -974,7 +981,7 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         (cmd::CHECK, Some(_)) if w.my_motion.status == 1 => {
             super::target::open_sub(w, 0x20, super::target::SubThen::Check, None, String::new(), 0);
         }
-        (cmd::CHECK, Some(_)) => check(w, None, 0),
+        (cmd::CHECK, Some(_)) => check(w, None, 0, false),
         (0x16..=0x18, _) => super::textcmd::run(w, ["/quarry", "/scout", "/sprint"][(c - 0x16) as usize], super::textcmd::Mode::Internal),
         (cmd::CHAT | cmd::TELL, _) => w.typing = true,
         // FUN_1012b880 cases 6 / 7 / 0x18: Abilities opens abiselec, Magic the list without trusts, Trust only them.
@@ -1120,9 +1127,11 @@ mod tests {
     /// FUN_101275b0 over the layouts, filtered as FUN_10127230 does for a solo player.
     #[test]
     fn action_menus() {
-        assert_eq!(menu_items(4, Some(RABBIT)), [cmd::ATTACK, 8, 7, 0x19, 9, cmd::CHECK]);
-        assert_eq!(menu_items(6, Some(RABBIT)), [cmd::SWITCH_TARGET, 8, 7, 0x19, 9, cmd::DISENGAGE, cmd::CHECK]);
-        assert_eq!(menu_items(0, None), [cmd::CHAT, 8, 7, 0x19, 9]);
+        // Outside Conflict (current_items' rule) Quarry / Scout / Sprint go.
+        let peace = |v: Vec<u8>| v.into_iter().filter(|c| !matches!(c, 0x16..=0x18)).collect::<Vec<_>>();
+        assert_eq!(peace(menu_items(4, Some(RABBIT))), [cmd::ATTACK, 8, 7, 0x19, 9, cmd::CHECK]);
+        assert_eq!(peace(menu_items(6, Some(RABBIT))), [cmd::SWITCH_TARGET, 8, 7, 0x19, 9, cmd::DISENGAGE, cmd::CHECK]);
+        assert_eq!(peace(menu_items(0, None)), [cmd::CHAT, 8, 7, 0x19, 9]);
         // Chat becomes Tell on a player; an NPC target drops it.
         assert_eq!(menu_items(2, Some(0x0000_0042))[0], cmd::TELL);
         assert_eq!(menu_items(2, Some(0x0100_0042))[0], 8);
