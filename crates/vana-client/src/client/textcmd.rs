@@ -1147,8 +1147,50 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
     super::push_chat_mode(w, line, mode, kind);
     if send_it {
         send(w, NetCommand::Chat { kind, text: msg.to_string() });
+        restore_temp_mode(w);
     }
     Ok(())
+}
+
+/// FUN_101adc30: the chat mode's line prefix (1 custom is kept as typed; 4 tell takes the name).
+fn mode_prefix(mode: u8) -> &'static str {
+    match mode {
+        3 => "/shout ",
+        5 => "/party ",
+        6 => "/linkshell ",
+        7 => "/emote ",
+        8 => "/message ",
+        9 => "/yell ",
+        0xa => "//worldmes ",
+        0xb => "/unity ",
+        0xc => "/linkshell2 ",
+        0xe => "/assistj ",
+        0xf => "/assiste ",
+        _ => "/say ",
+    }
+}
+
+/// FUN_101ad670(mode, name): the previous mode is kept unless the current one is shout or message (one line only);
+/// tell takes "/tell Name " and the current tell name, any other mode clears it.
+pub(super) fn set_chat_mode(w: &mut World, mode: u8, name: Option<&str>) {
+    if !matches!(w.chat_mode, 3 | 8) {
+        w.chat_prev = (w.chat_mode, w.chat_prefix.clone());
+    }
+    w.chat_mode = mode;
+    if mode == 4 {
+        w.chat_prefix = name.map_or(String::new(), |n| format!("/tell {n} "));
+        w.tell_name = name.map(str::to_string);
+    } else {
+        w.chat_prefix = mode_prefix(mode).into();
+        w.tell_name = None;
+    }
+}
+
+/// FUN_101adb80, after a channel send: a shout or message mode goes back to the previous mode.
+fn restore_temp_mode(w: &mut World) {
+    if matches!(w.chat_mode, 3 | 8) {
+        (w.chat_mode, w.chat_prefix) = w.chat_prev.clone();
+    }
 }
 
 /// FUN_100785a0: "/tell Name text"; a malformed name prints group 9 0x65 and fails.
@@ -1165,7 +1207,12 @@ fn tell(w: &mut World, args: &[String], line: &str) -> Done {
     };
     let msg = tail(line, 2).trim().to_string();
     super::push_chat_mode(w, format!(">>{name} : {msg}"), 4, 3);
+    // FUN_1018d6e0: the sent-tell names, newest first, 8 at most (exact match moves to the front).
+    w.tell_hist.retain(|n| *n != name);
+    w.tell_hist.insert(0, name.clone());
+    w.tell_hist.truncate(8);
     send(w, NetCommand::Tell { name, text: msg });
+    restore_temp_mode(w);
     Ok(())
 }
 
@@ -1461,28 +1508,28 @@ fn chat_mode(w: &mut World, args: &[String]) -> Done {
         w.chat.push_colour(line, colour);
         return Ok(());
     };
-    let prefix = match word.as_str() {
-        "say" | "s" => "/say ",
-        "shout" | "sh" => "/shout ",
-        "party" | "p" => "/party ",
-        "linkshell" | "l" => "/linkshell ",
-        "emote" | "em" => "/emote ",
-        "message" | "me" => "/message ",
-        "unity" | "u" => "/unity ",
-        "linkshell2" | "l2" => "/linkshell2 ",
-        "assistj" | "aj" => "/assistj ",
-        "assiste" | "ae" => "/assiste ",
+    let mode = match word.as_str() {
+        "say" | "s" => 2,
+        "shout" | "sh" => 3,
+        "party" | "p" => 5,
+        "linkshell" | "l" => 6,
+        "emote" | "em" => 7,
+        "message" | "me" => 8,
+        "unity" | "u" => 0xb,
+        "linkshell2" | "l2" => 0xc,
+        "assistj" | "aj" => 0xe,
+        "assiste" | "ae" => 0xf,
         "tell" | "t" => {
             let Some(name) = args.get(2).and_then(|n| name_case(n)) else {
                 w.chat.push_colour(bt.group9(0x65).unwrap_or_default(), colour);
                 return Err(());
             };
-            w.chat_prefix = format!("/tell {name} ");
+            set_chat_mode(w, 4, Some(&name));
             return Ok(());
         }
         _ => return Ok(()),
     };
-    w.chat_prefix = prefix.into();
+    set_chat_mode(w, mode, None);
     Ok(())
 }
 

@@ -489,6 +489,10 @@ impl GameUi {
             };
             let d = if on { 1.0 } else { 0.0 };
             self.sprite(&r.lib, r.index as usize, x + e.x as f32 + d, y + e.y as f32 + d, tint);
+            // The cursor rests on a disabled child too (FUN_10118870 does not skip them): the hand goes there.
+            if on {
+                self.cursor(x + e.x as f32, y + e.y as f32);
+            }
         }
     }
 

@@ -960,6 +960,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         elem: std::array::from_fn(|i| p.u16(0x34 + 2 * i) as i16 as i32),
                         su: p.u8(0x52),
                         ilvl: p.u8(0x55),
+                        unity: p.u32(0x58),
+                        unity_flag: p.u32(0x60),
                     }))?,
                     _ => {}
                 }

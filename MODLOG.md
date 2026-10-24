@@ -6166,3 +6166,35 @@ Spec `~/ffxi/lab/research/scroll_bar_spec.md`.
 - Left: the config list pages (cfilter / fxfilter / k1assign / k2assign 14 rows, textcol1 11, which also scrolls in
   retail: its category 0 has 13 rows, ours stops at 11), the key item / quest / mission lists.
 - Live (Lnxcsfix, 25 items): the item list's thumb at the top, at the bottom on the last row; the magic list's bar.
+
+## Chat mode window: chatctrl (2026-10-24)
+
+Spec `~/ffxi/lab/research/chatctrl_spec.md`.
+- Right (or the mouse hold) on the action menu's Chat / Tell row runs FUN_1012aae0: "menu    chatctrl" (vtable
+  0x10336420; registry flags 0x21202, group 0x08), the action menu stays under it. Rows 1 Say, 2 Tell, 3 Party,
+  4 Linkshell, 5 Linkshell 2, 6 Unity, 7 Shout (keytops3 label sprites), child 8 the tell-name arrow; Up / Down wrap
+  7 <-> 1. Init (FUN_1012ccd0) puts the cursor on the current mode's row (2 / 7 / 8 / 0xa -> 1, 3 / 9 -> 7, 4 -> 2,
+  5 -> 3, 6 -> 4, 0xb -> 6, 0xc -> 5) and disables 4 / 5 without linkshell 1 / 2 and 6 without a Unity faction
+  (s2c 0x061 u32 @0x58 & 0x1f, FUN_100a3600).
+- Enter (FUN_1012d2b0): SE 0002, the mode through FUN_101ad670, then the chat line opens empty (the prefix is added on
+  send) and the window closes; a disabled row SE 0004 only. Tell by the selector: the current tell name (no change),
+  the target, a sent-tell name; none: SE 0004 and no mode. Right on Tell cycles the selector silently, Left closes
+  silently, Escape with SE 0003. Bars: help 0xe 0x253 "Set your default chat mode.", title 0xd 0x81 "Chat".
+- FUN_1012ce90: the tell name at (+100, +23) in fontshp (current 0x80509050, target 0x80909040, history white); each
+  linkshell's icon at (+0x4f, +0x34 / +0x44) tinted from extdata u16 @6 (each nibble x 13 + 0x38) and its name
+  (FUN_100ed650 of extdata +9) at (+0x5f, ..) in 0x80806060, else group 0xc 0x55 "No Linkshell"; the Unity at
+  (+0x50, +0x56): group 0xc 0x1a2 + faction, 0x80803040 for none, grey 0x80404040 outside the Unity chat (@0x60 bit 0).
+- subwindo in mode 0 (FUN_1014f960 case 0): windowps 283 "Chat Range" at (+5, +8) and the cursor row's range at
+  (+15, +26): Say 284 Vicinity, Tell 285 Target only, Party 286, Linkshell 287, Linkshell 2 709, Unity 710, Shout 289
+  Wide area; stacked like the MP Cost box.
+- FUN_101ad670(mode, name) keeps the previous mode unless the current one is shout or message; FUN_101adb80 restores it
+  after each channel send, so Shout lasts one line. Tell sets "/tell Name " and the current tell name; other modes
+  clear it. Sent tells (FUN_1018d6e0) go to the front of an 8-name list (retail saves it in acq.dat; ours keeps it for
+  the session). /chatmode goes through the same function.
+- The log's channel caption follows the chat mode (FUN_10161990 by the prefix's first word). The action menu's Chat /
+  Tell Enter opens the line with "/tell <target> " on a target (FUN_1012b880 cases 3 / 4).
+- Disabled children: the hand is drawn on one under the cursor (FUN_10118870 does not skip them), for every window.
+- Live (Lnxcsfix, F1 then the action menu): the window with No Linkshell twice and No Unity, Chat Range / Vicinity over
+  the target window, the Chat bars; Party -> "hello" gave "There are no party members." and "(chatmode : /party )",
+  the log caption Party, the action menu still up; Tell showed "Lnxcsfix" in yellow and set "/tell Lnxcsfix ".
+  Shout was not tried (it reaches the zone).

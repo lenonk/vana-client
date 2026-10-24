@@ -38,6 +38,9 @@ pub struct CharStats {
     pub elem: [i32; 8],
     pub su: u8,
     pub ilvl: u8,
+    /// u32 @0x58 (faction bits 0..4, rank, points; FUN_100994a0) and @0x60 (bit 0: in the Unity chat, FUN_100a3680).
+    pub unity: u32,
+    pub unity_flag: u32,
 }
 
 #[derive(Default)]

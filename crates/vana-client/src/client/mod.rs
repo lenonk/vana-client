@@ -47,6 +47,7 @@ mod post;
 mod synth;
 mod treasure;
 mod servmes;
+mod chatctrl;
 mod inspect;
 mod linehist;
 mod search;
@@ -137,7 +138,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w)
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -743,7 +744,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1241,6 +1242,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if post::active(world) => post::key(world, gu, *key),
                 // The pool windows over the action menu (loot, lootope, lnowin).
                 _ if treasure::active(world) => treasure::key(world, *key),
+                _ if world.chatctrl.is_some() => chatctrl::key(world, *key),
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
@@ -1497,7 +1499,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // (FUN_1015de50; on no row SE 0004), the button held 60 ticks on a row runs its Right function and starts again
     // (FUN_1012b4b0; a row change restarts it), and a right click is Escape (msg 6, FUN_1015def0; ours only over it).
     let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
-    let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none() && world.loot.is_none();
+    let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none() && world.loot.is_none() && world.chatctrl.is_none();
     let (mut held, mut right_click) = (false, false);
     if let (Some((r, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut()) {
         match rows.iter().position(|r| inside(r, p)) {
@@ -1799,7 +1801,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         // FUN_1015ad10: the channel caption (windowps by chat mode; Say by default) at (x0 + textw - 352, y0).
         if log.lines > 0 {
-            gu.sprite("menu    windowps", logwin::caption(""), x + tw - 352.0, y, 0x8080_8080);
+            gu.sprite("menu    windowps", logwin::caption(world.chat_prefix.split(' ').next().unwrap_or("")), x + tw - 352.0, y, 0x8080_8080);
         }
         blockers.push(log.rect);
     }
@@ -1862,7 +1864,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
-        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none();
+        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none();
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
             let (lib, sprite) = combat::label(*c);
             gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
@@ -1873,6 +1875,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(*r);
     }
 
+    // chatctrl over the action menu that opened it.
+    blockers.extend(chatctrl::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2300,6 +2304,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
+    chatctrl::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -3238,6 +3243,15 @@ struct World {
     play_time: Option<(u32, Instant)>,
     /// The chat mode's prefix for a line without a command (/chatmode, chat-line object +8).
     chat_prefix: String,
+    /// DAT_10662da4: the chat mode (+0x108: 2 say, 3 shout, 4 tell, 5 party, 6 ls, 0xb unity, 0xc ls2 ...), the previous
+    /// mode and prefix (+0x10c / +0x88), the current tell name (DAT_1066268c +0x10e) and the sent-tell names (+8, 8 at
+    /// most, newest first; retail keeps them in acq.dat, ours for the session).
+    chat_mode: u8,
+    chat_prev: (u8, String),
+    tell_name: Option<String>,
+    tell_hist: Vec<String>,
+    /// The chat mode window ("menu    chatctrl").
+    chatctrl: Option<chatctrl::ChatCtrl>,
     /// /ver's text (retail: patch.ver; ours the version string sent to the lobby).
     client_version: String,
     /// The search server from the lobby's reply (+0x40 IP, +0x44 port) and the queries running on it.
@@ -4370,6 +4384,11 @@ impl App {
                             se_mute: false,
                             play_time: None,
                             chat_prefix: "/say ".into(),
+                            chat_mode: 2,
+                            chat_prev: (2, "/say ".into()),
+                            tell_name: None,
+                            tell_hist: Vec::new(),
+                            chatctrl: None,
                             client_version: self.cfg.client_version.clone(),
                             weather: 1,
                             weather_from: None,
@@ -4818,6 +4837,7 @@ impl App {
                     world.search = None;
                     inspect::drop(world);
                     treasure::close(world);
+                    world.chatctrl = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;

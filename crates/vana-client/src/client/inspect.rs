@@ -293,7 +293,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// FUN_100ed650 (21 chars, 6 bits MSB first): 1..0x1a a..z, 0x1b..0x34 A..Z, 0x3e space, 0 '`'; 0x35..0x3d / 0x3f end.
-fn ls_name(packed: &[u8; 16]) -> String {
+pub(super) fn ls_name(packed: &[u8; 16]) -> String {
     let mut out = String::new();
     for k in 0..21 {
         let mut v = 0u8;

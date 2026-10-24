@@ -798,6 +798,11 @@ pub(super) fn right(w: &mut World) -> bool {
             super::magic::open_cats(w, "menu    magselec");
             true
         }
+        // FUN_1012aae0: the chat mode window; the action menu stays.
+        Some(cmd::CHAT | cmd::TELL) => {
+            super::chatctrl::open(w);
+            true
+        }
         _ => false,
     }
 }
@@ -937,6 +942,7 @@ pub(super) fn battle_frame(w: &mut World) {
         super::target::cancel_sub(w);
         super::inspect::drop(w);
         super::treasure::close(w);
+        w.chatctrl = None;
         // FUN_10202f00: the party-list cursor (<stpt> / <stal>) is cancelled too, stopping its macro (no sound *(inf)*).
         if let Some(pc) = w.party_cursor.take()
             && let super::target::SubThen::Line { from_macro: true, .. } = pc.then
@@ -1018,7 +1024,14 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         }
         (cmd::CHECK, Some(_)) => check(w, None, 0, false),
         (0x16..=0x18, _) => super::textcmd::run(w, ["/quarry", "/scout", "/sprint"][(c - 0x16) as usize], super::textcmd::Mode::Internal),
-        (cmd::CHAT | cmd::TELL, _) => w.typing = true,
+        // FUN_1012b880 cases 3 / 4: the chat line, "/tell <target> " on a target (string 0x1036f5c8).
+        (cmd::CHAT | cmd::TELL, _) => {
+            w.chat_input = match w.target.and_then(|t| w.entities.get(&t)).map(|e| e.name.clone()).filter(|n| !n.is_empty() && c == cmd::TELL) {
+                Some(n) => format!("/tell {n} "),
+                None => String::new(),
+            };
+            w.typing = true;
+        }
         // FUN_1012b880 cases 6 / 7 / 0x18: Abilities opens abiselec, Magic the list without trusts, Trust only them.
         (7, _) => super::magic::open_cats(w, "menu    abiselec"),
         (8, _) => super::magic::open_magic(w, 0, false, 0x100),

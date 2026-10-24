@@ -1158,6 +1158,7 @@ impl LiveHost<'_> {
 pub fn queue(w: &mut World, s: EventStart) {
     super::inspect::drop(w);
     super::treasure::close(w);
+    w.chatctrl = None;
     if w.event.is_some() {
         // 1009e8a0: an event is already running (group 9 message 0x81).
         log::warn!("event {:#x} ignored: event {:#x} is running", s.event, w.event.as_ref().map_or(0, |l| l.st.start.event));

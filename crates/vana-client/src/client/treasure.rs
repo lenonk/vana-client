@@ -374,13 +374,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let hide: &[u16] = if lotted { &[1] } else { &[] };
         if let Some(win) = gu.lobby_window_off(LOOTOPE, sw, sh, off, Some(o.cursor), w.confirm.is_none(), hide) {
             gu.disabled_children(LOOTOPE, win.frame[0], win.frame[1], hide, Some(o.cursor));
-            // The cursor rests on a disabled child too (FUN_10118870 starts it on child 1): the hand goes there.
-            if lotted
-                && o.cursor == 1
-                && let Some(e) = gu.layout(LOOTOPE).and_then(|m| m.elements.iter().find(|e| e.id == 1)).map(|e| (e.x as f32, e.y as f32))
-            {
-                gu.cursor(win.frame[0] + e.0, win.frame[1] + e.1);
-            }
             rects.push(win.frame);
         }
     } else if l.ope.is_none()
