@@ -152,9 +152,15 @@ pub fn gil_text(gil: i64) -> String {
 #[derive(Clone, Debug, Default)]
 pub struct Persona {
     pub name: String,
-    /// Group 10 #0x59 "Lv%2d " with the level, then the job (drawn as a sprite by the client).
-    pub main: Option<(String, String)>,
-    pub sub: Option<(String, String)>,
+    /// Group 10 #0x59 "Lv%2d " with the level, then the job's name sprite (windowps 212 + job).
+    pub main: Option<(String, u8)>,
+    pub sub: Option<(String, u8)>,
+    /// The main job in blue (s2c 0x063 type 2 bit 14: EXP capped or merit mode).
+    pub main_blue: bool,
+    /// s2c 0x01B @0x60 (FUN_101470a0): bits 0x10..0x16 STR..CHR, 0x17 max HP, 0x18 max MP drawn red with a marker.
+    pub enc: u32,
+    /// Stats ready (the first s2c 0x119): before it only the name.
+    pub ready: bool,
     /// "%3d/" item level or "---/", and "Su%2d".
     pub ilvl: String,
     pub su: String,
@@ -169,8 +175,12 @@ pub struct Persona {
 
 pub struct Stats {
     pub name: String,
-    pub main: Option<(u8, String)>,
-    pub sub: Option<(u8, String)>,
+    /// (level, job).
+    pub main: Option<(u8, u8)>,
+    pub sub: Option<(u8, u8)>,
+    pub main_blue: bool,
+    pub enc: u32,
+    pub ready: bool,
     pub ilvl: Option<u16>,
     pub su: u8,
     pub hp: (u32, u32),
@@ -182,7 +192,7 @@ pub struct Stats {
 
 impl Persona {
     pub fn build(s: &Stats) -> Persona {
-        let job = |j: &Option<(u8, String)>| j.as_ref().map(|(lv, name)| (format!("Lv{lv:2} "), name.clone()));
+        let job = |j: &Option<(u8, u8)>| j.map(|(lv, job)| (format!("Lv{lv:2} "), job));
         let stats = std::array::from_fn(|i| {
             let b = s.bonus[i];
             let bonus = match b {
@@ -196,6 +206,9 @@ impl Persona {
             name: s.name.clone(),
             main: job(&s.main),
             sub: job(&s.sub),
+            main_blue: s.main_blue,
+            enc: s.enc,
+            ready: s.ready,
             ilvl: s.ilvl.map_or("---/".into(), |v| format!("{v:3}/")),
             su: format!("Su{:2}", s.su),
             hp: (format!("{:4}/", s.hp.0), s.hp.1.to_string()),

@@ -1167,6 +1167,8 @@ pub fn queue(w: &mut World, s: EventStart) {
     super::inspect::drop(w);
     super::treasure::close(w);
     w.chatctrl = None;
+    // Registry state byte 1 (the party and status windows): closed by the 0x800 broadcast, the menu with them.
+    (w.partymenu, w.status) = (None, None);
     if w.event.is_some() {
         // 1009e8a0: an event is already running (group 9 message 0x81).
         log::warn!("event {:#x} ignored: event {:#x} is running", s.event, w.event.as_ref().map_or(0, |l| l.st.start.event));

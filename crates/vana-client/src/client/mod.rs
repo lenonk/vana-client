@@ -51,6 +51,7 @@ mod treasure;
 mod servmes;
 mod chatctrl;
 mod partymenu;
+mod status;
 mod inspect;
 mod linehist;
 mod scrollbar;
@@ -152,7 +153,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -780,7 +781,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1305,6 +1306,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.chatctrl.is_some() => chatctrl::key(world, *key),
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
+                _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1448,10 +1450,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1).filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
         world.menu_picked = true;
         // FUN_10140400: a row that opens its window plays 0002 (the rows below that can refuse push their own).
-        if matches!((world.menu_page, id), (0, 2 | 3 | 4 | 5 | 6 | 10)) {
+        if matches!((world.menu_page, id), (0, 1 | 2 | 3 | 4 | 5 | 6 | 10)) {
             world.sounds.push(crate::audio::Ui::Select as u32);
         }
         match (world.menu_page, id) {
+            // Child 1 Status (FUN_10140400 case 5): persona, level and statcom2.
+            (0, 1) => status::open(world),
             (0, 2) => items::open_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
@@ -1534,6 +1538,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| partymenu::focused(world)) {
         partymenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.confirm.is_none()) {
+        status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     // Mouse on the magic / ability lists and their category windows.
     if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
@@ -1952,6 +1959,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // chatctrl over the action menu that opened it.
     blockers.extend(chatctrl::draw(gu, world, sw, sh));
     blockers.extend(partymenu::draw(gu, world, sw, sh));
+    blockers.extend(status::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2382,6 +2390,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     treasure::bars(gu, world, &mut bars);
     chatctrl::bars(gu, world, &mut bars);
     partymenu::bars(gu, world, &mut bars);
+    status::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -3342,6 +3351,13 @@ struct World {
     tell_hist: Vec<String>,
     /// The chat mode window ("menu    chatctrl").
     chatctrl: Option<chatctrl::ChatCtrl>,
+    /// The Status row's windows (client/status.rs); s2c 0x063 type 2 (limit points, bits, max merits), type 5 (job point
+    /// access), types 3 / 4 (Monstrosity: the types seen as bits, type 3's rank word and prestige); 0x067 @0x25.
+    status: Option<status::StatusUi>,
+    merits: Option<(u16, u16, u8)>,
+    jp_access: Option<u8>,
+    monstrosity: Option<(u8, u32, u16)>,
+    real_level: Option<u8>,
     /// The Party row's windows, a pending invite (s2c 0x0DC) and the s2c 0x0B4 config bytes (SAVE_CONF @4..@0xf).
     partymenu: Option<partymenu::PartyMenu>,
     invite: Option<partymenu::Invite>,
@@ -4499,6 +4515,11 @@ impl App {
                             tell_name: None,
                             tell_hist: Vec::new(),
                             chatctrl: None,
+                            status: None,
+                            merits: None,
+                            jp_access: None,
+                            monstrosity: None,
+                            real_level: None,
                             partymenu: None,
                             invite: None,
                             conf_sys: [0; 12],
@@ -4953,6 +4974,7 @@ impl App {
                     treasure::close(world);
                     world.chatctrl = None;
                     world.partymenu = None;
+                    world.status = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5304,7 +5326,10 @@ impl App {
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
-                NetEvent::CharSync { id, owner, floors, open } => {
+                NetEvent::CharSync { id, owner, floors, open, level } => {
+                    if id == world.my_id {
+                        world.real_level = Some(level);
+                    }
                     if id == world.my_id && (world.mh_owner, world.mh_floors, world.mh_open) != (owner, floors, open) {
                         log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}, open {open}");
                         (world.mh_owner, world.mh_floors, world.mh_open) = (owner, floors, open);
@@ -5352,7 +5377,19 @@ impl App {
                     }
                 }
                 NetEvent::Equip { slot, index, container } => world.inv.set_equip(slot, index, container),
-                NetEvent::CharStats(s) => world.stats = Some(s),
+                NetEvent::CharStats(s) => {
+                    world.stats = Some(s);
+                    status::on_stats(world);
+                }
+                NetEvent::Merits { limit, bits, max } => world.merits = Some((limit, bits, max)),
+                NetEvent::JobPoints(access) => world.jp_access = Some(access),
+                NetEvent::Monstrosity { kind, rank, prestige } => {
+                    let m = world.monstrosity.get_or_insert((0, 0, 0));
+                    m.0 |= 1 << kind;
+                    if kind == 3 {
+                        (m.1, m.2) = (rank, prestige);
+                    }
+                }
                 NetEvent::SkillBase(s) => world.skill_base = Some(s),
                 NetEvent::Action(a) => combat::on_action(world, &a),
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
@@ -5712,6 +5749,7 @@ impl App {
         }
         target::party_cursor_update(world);
         partymenu::update(world);
+        status::update(world);
         if world.party_cursor.is_some()
             && let Some((_, _, Some(id))) = target::party_hand(world)
         {

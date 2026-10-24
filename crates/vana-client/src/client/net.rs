@@ -244,7 +244,8 @@ pub enum NetEvent {
     ZoneText(ZoneText),
     /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
     /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
-    CharSync { id: u32, owner: u32, floors: bool, open: bool },
+    /// @0x25: the main job's level before any level restriction (player +0x40c42).
+    CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8 },
     /// s2c 0x11A (the answer to c2s 0x119): unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8).
     EmoteUnlocks { jobs: u32, chairs: u16 },
     /// s2c 0x04B (GP_SERV_COMMAND_PBX_RESULT).
@@ -292,6 +293,12 @@ pub enum NetEvent {
     SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8 },
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
+    /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
+    /// EXP capped or merit mode), max merits @0xc; type 5 the job point access @8; types 3 / 4 (Monstrosity): type 3's
+    /// u32 @0xc (gladiator rank bits 2..3) and u16 @0x14 (prestige).
+    Merits { limit: u16, bits: u16, max: u8 },
+    JobPoints(u8),
+    Monstrosity { kind: u16, rank: u32, prestige: u16 },
     /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
     StatusTimers { ids: [u16; 32], ends: [u32; 32] },
     /// Our own HP, MP and TP (0x0DF).
@@ -761,6 +768,9 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             .collect();
                         tx.send(NetEvent::PartyEffects(rows))?;
                     }
+                    0x063 if p.u16(4) == 2 => tx.send(NetEvent::Merits { limit: p.u16(8), bits: p.u16(0xa), max: p.u8(0xc) })?,
+                    0x063 if p.u16(4) == 5 => tx.send(NetEvent::JobPoints(p.u8(8)))?,
+                    0x063 if matches!(p.u16(4), 3 | 4) => tx.send(NetEvent::Monstrosity { kind: p.u16(4), rank: p.u32(0xc), prestige: p.u16(0x14) })?,
                     0x063 if p.u16(4) == 9 => {
                         tx.send(NetEvent::StatusTimers { ids: std::array::from_fn(|i| p.u16(8 + 2 * i)), ends: std::array::from_fn(|i| p.u32(0x48 + 4 * i)) })?;
                     }
@@ -917,7 +927,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         strings: vec![text(&p, 0x10, 16)],
                         ..Default::default()
                     }))?,
-                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0 })?,
+                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25) })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
                     0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,
@@ -948,6 +958,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         levels: std::array::from_fn(|n| if n < 16 { p.u8(0x10 + n) } else { p.u8(0x48 + n) }),
                         sub_ok: p.u8(0x44) != 0,
                         encumbrance: p.u32(0x60),
+                        mentor: p.u8(0x65),
+                        mastery: p.u8(0x66),
+                        ml_jobs: p.u32(0x68),
+                        ml_levels: std::array::from_fn(|n| p.u8(0x6c + n)),
                     }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
@@ -973,6 +987,14 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         ilvl: p.u8(0x55),
                         unity: p.u32(0x58),
                         unity_flag: p.u32(0x60),
+                        exp: (p.u16(0x10), p.u16(0x12)),
+                        title: p.u16(0x44),
+                        rank: p.u16(0x46),
+                        rank_points: p.u16(0x48),
+                        home: p.u16(0x4a),
+                        nation: p.u8(0x50),
+                        ml: (p.u8(0x65), p.u8(0x66)),
+                        ml_exp: (p.u32(0x68), p.u32(0x6c)),
                     }))?,
                     _ => {}
                 }

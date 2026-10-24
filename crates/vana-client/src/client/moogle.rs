@@ -28,6 +28,11 @@ pub struct JobInfo {
     pub sub_ok: bool,
     /// Encumbered equipment slots (low 16 bits) and stat debilitations (player +0x40df0, s2c 0x01B @0x60).
     pub encumbrance: u32,
+    /// @0x65 mentor, @0x66 mastery rank, @0x68 the jobs with a master level (bit n), @0x6c + n their levels.
+    pub mentor: u8,
+    pub mastery: u8,
+    pub ml_jobs: u32,
+    pub ml_levels: [u8; 24],
 }
 
 /// The Mog House / nomad object's request (+0x812..0x814): pending until c2s 0x100 goes; the last one is kept.

@@ -117,28 +117,44 @@ fn shape_clipped(b: &mut UiBatch, ui: &UiFile, s: &str, x: f32, y: f32, max: f32
 /// The status panel (FUN_10141c10), offsets from the window origin; labels are in windowps #8.
 pub fn push_persona(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, p: &Persona, w: f32, h: f32) {
     let (x, y) = push_window(b, ui, style, m, w, h);
-    let white = 0x8080_8080;
+    let (white, red) = (0x8080_8080, 0x8080_4040);
     shape_clipped(b, ui, &p.name, x + 4.0, y + 7.0, m.elements[0].w as f32 - 6.0, white);
-    for (job, dy) in [(&p.main, 0x13), (&p.sub, 0x1f)] {
-        if let Some((lv, name)) = job {
-            let end = push_shape_text(b, ui, lv.as_bytes(), x + 4.0, y + dy as f32, white);
-            // Inferred: the client draws a job sprite here (FUN_1011c470); the name stands in.
-            push_shape_text(b, ui, name.as_bytes(), end + 2.0, y + dy as f32, white);
+    if !p.ready {
+        return;
+    }
+    let sprite = |b: &mut UiBatch, lib: &str, k: usize, sx: f32, sy: f32, tint: u32| {
+        if let Some(l) = ui.lib(lib).filter(|l| k < l.sprites.len()) {
+            b.push_sprite(ui, l, k, sx, sy, 1.0, 1.0, tint, 0);
+        }
+    };
+    for (job, dy, blue) in [(&p.main, 0x13, p.main_blue), (&p.sub, 0x1f, false)] {
+        if let Some((lv, j)) = job {
+            let tint = if blue { 0x8020_60a0 } else { white };
+            let end = push_shape_text(b, ui, lv.as_bytes(), x + 4.0, y + dy as f32, tint);
+            sprite(b, "menu    windowps", 212 + *j as usize, end + 2.0, y + dy as f32, tint);
         }
     }
+    let enc = |bit: u32| p.enc >> bit & 1 != 0;
     push_shape_text(b, ui, b"ILv", x + 4.0, y + 43.0, white);
     push_shape_text_right(b, ui, p.ilvl.as_bytes(), x + 70.0, y + 43.0, white);
     push_shape_text(b, ui, p.su.as_bytes(), x + 74.0, y + 43.0, white);
-    for ((cur, max), dy) in [(&p.hp, 0x3a), (&p.mp, 0x46)] {
+    for ((cur, max), dy, bit) in [(&p.hp, 0x3a, 0x17), (&p.mp, 0x46, 0x18)] {
         push_shape_text_right(b, ui, cur.as_bytes(), x + 70.0, y + dy as f32, white);
-        push_shape_text(b, ui, max.as_bytes(), x + 72.0, y + dy as f32, white);
+        push_shape_text(b, ui, max.as_bytes(), x + 72.0, y + dy as f32, if enc(bit) { red } else { white });
+        if enc(bit) {
+            sprite(b, "menu    keytops3", 430, x + 0x17 as f32, y + dy as f32 + 1.0, white);
+        }
     }
     push_shape_text_right(b, ui, p.tp.as_bytes(), x + 75.0, y + 82.0, white);
     for (i, (base, bonus)) in p.stats.iter().enumerate() {
         let sy = y + 96.0 + i as f32 * 13.0;
-        let end = push_shape_text(b, ui, base.as_bytes(), x + 50.0, sy, white);
+        let on = enc(0x10 + i as u32);
+        let end = push_shape_text(b, ui, base.as_bytes(), x + 50.0, sy, if on { red } else { white });
         if let Some((s, tint)) = bonus {
             push_shape_text(b, ui, s.as_bytes(), end, sy, *tint);
+        }
+        if on {
+            sprite(b, "menu    keytops3", 430, x + 0x1f as f32, sy + 1.0, white);
         }
     }
 }

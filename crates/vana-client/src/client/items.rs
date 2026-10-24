@@ -42,6 +42,16 @@ pub struct CharStats {
     /// u32 @0x58 (faction bits 0..4, rank, points; FUN_100994a0) and @0x60 (bit 0: in the Unity chat, FUN_100a3680).
     pub unity: u32,
     pub unity_flag: u32,
+    /// EXP / to the next level (u16 @0x10 / @0x12), title @0x44, rank @0x46, rank points @0x48, home point zone @0x4a,
+    /// nation @0x50; master level @0x65, its flags @0x66 (bit 0 unlocked), exemplar points @0x68 / next @0x6c.
+    pub exp: (u16, u16),
+    pub title: u16,
+    pub rank: u16,
+    pub rank_points: u16,
+    pub home: u16,
+    pub nation: u8,
+    pub ml: (u8, u8),
+    pub ml_exp: (u32, u32),
 }
 
 #[derive(Default)]
@@ -1769,15 +1779,19 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
 }
 
 /// The status panel from 0x061 and 0x0DF.
-fn persona(w: &World) -> Persona {
+pub(super) fn persona(w: &World) -> Persona {
     let st = w.stats.clone().unwrap_or_default();
     let (hp, mp, tp) = w.vitals.map_or((0, 0, 0), |v| (v.0, v.1, v.2));
-    let job = |(j, lv): (u8, u8)| (j != 0).then(|| (lv, JOBS.get(j as usize).copied().unwrap_or("").to_string()));
+    let job = |(j, lv): (u8, u8)| (j != 0).then_some((lv, j));
     Persona::build(&Stats {
         name: w.name.clone(),
         main: job(st.main),
         sub: job(st.sub),
-        ilvl: (st.ilvl != 0).then_some(st.ilvl as u16),
+        main_blue: w.merits.is_some_and(|m| m.1 & 0x4000 != 0),
+        enc: w.job_info.map_or(0, |j| j.encumbrance),
+        ready: w.recasts_seen && w.stats.is_some(),
+        // FUN_101cc5f0: 0x061 @0x55 + 99, "---/" for 0.
+        ilvl: (st.ilvl != 0).then_some(st.ilvl as u16 + 99),
         su: st.su,
         hp: (hp, st.hp_max),
         mp: (mp, st.mp_max),

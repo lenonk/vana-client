@@ -170,8 +170,11 @@ pub fn equipment_shot(out: &Path, cursor: usize, frame: usize, width: u32, heigh
     }
     let p = Persona::build(&Stats {
         name: "Lenon".into(),
-        main: Some((75, "WAR".into())),
-        sub: Some((37, "NIN".into())),
+        main: Some((75, 1)),
+        sub: Some((37, 13)),
+        main_blue: false,
+        enc: 0,
+        ready: true,
         ilvl: None,
         su: 0,
         hp: (1234, 1500),

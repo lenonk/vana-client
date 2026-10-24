@@ -6432,3 +6432,32 @@ Spec `~/ffxi/lab/research/party_menu_spec.md` (30261006_0); ours client/partymen
   Leader / Rmv. Member dim with one member: LSB keeps a party of one); Chg. Leader (menu closed, main menu back on Party,
   the leader dot on the bot); prty2 (its leave row's windowps 80 reads "Disband"); Leave -> Solo and the window closed
   itself; Find Member with no target: 8 seekers in the region. The receiving side is untested live (no bot invites).
+
+## Status window (2026-10-24)
+
+Spec `~/ffxi/lab/research/status_window_spec.md` (30261006_0); ours client/status.rs.
+- Main menu child 1 (FUN_10140400 case 5, SE 0002): persona in Status mode at (16, 16) with its group 0x30 (titlewin's
+  bit too: GameUi::set_group; the walk hides the title bar), level at its layout place, statcom2 at (384, 48); c2s 0x061
+  {0} with the busy strip until the next 0x061. Ours closes the main menu and brings it back on the Status row (retail:
+  statcom2's group 0x81 suspends it).
+- statcom2: links, SE 0001 / 0002 / 0004 / 0003; Enter on rows 1..5 / 12 shows profile, joblevel, btlskill, mgcskill,
+  trdskill, masterle at (130, 48) (the shown row again: nothing); Play Time runs /playtime; Escape closes the page, else
+  statcom2 (persona and level with it). Children 3 / 4 / 5 / 12 / 13 start disabled: 3..5 enabled once the stats are
+  ready by the skills there are, 12 at level 99+ with 0x061 @0x66 bit 0, 13 at 99+ with key item 0xd21; 7 needs 0x063
+  type 2 bit 13, 8 type 5's access and level 99+.
+- Pages (two a row alternating left / right, FUN_10148030): job names windowps 212 + job (gold main, blue support),
+  skills keytops3 208 + id (blue capped), crafts with the rank keytops3 193 + rank and "(level)"; heights ((n + 1) / 2)
+  x 14 + 0x16, crafts n x 14 + 0x16. Profile: crest keytops3 74 + nation, race (table 0x10364cb0), home point in group 4
+  (the 10-letter names: "SSandOria", so that is what retail shows), rank and the framesus 103 / 98 gauge, with the
+  0x063 type 3 / 4 data the gladiator rank, prestige, mastery rank and mentor; "Title: <name>" in help slot 2. Level:
+  "Level N" (0x067 @0x25), EXP / NEXTLevel with the gauge, or the master level's with an unlocked one.
+- Persona (shared with Equipment): ILv is 0x061 @0x55 + 99 ("---/" for 0); the job names are windowps 212 + job (was
+  text); the main job blue on 0x063 type 2 bit 14; encumbrance (0x01B @0x60 bits 0x10..0x18) reds the stat / max HP /
+  max MP with keytops3 430; only the name until the stats are ready.
+- New data: 0x061 exp / title / rank / rank points / home / nation / master level fields, 0x01B mentor / mastery / master
+  levels, 0x063 types 2 / 3 / 4 / 5, 0x067 @0x25.
+- Not done: Currencies 1 / 2 (evitem modes), Unity (ut_menu), Merit Points (merit1 / levmerit), Job Points (merit2ca),
+  Alter Ego Points (fp_cat): logged; Monstrosity (mp_stat); the stats request retries.
+- Live (Lnxtest, WAR 1): persona "Lv 1 Warrior", level 499 / 500, profile (New Adventurer, San d'Oria, Hume,
+  SSandOria, rank 1, Gla, prestige 0), job levels, combat skills (blue capped Hand-to-Hand 4 / Evasion 5), Magic Skl.
+  refused (SE 0004, no magic skills), crafts "Amateur (0)"; Escape twice back to the main menu on Status.

@@ -208,6 +208,8 @@ struct Walk {
     last: std::collections::HashMap<String, i64>,
     suspended: std::collections::HashSet<String>,
     top: i64,
+    /// Group overrides (GameUi::set_group).
+    groups: std::collections::HashMap<String, u16>,
 }
 
 /// One window's open / close state (window +0x26 open count, +0x64 close count, +0x68 opened animated).
@@ -707,9 +709,15 @@ impl GameUi {
     /// The open / close animation for a window a screens-level drawer places itself (FUN_101177d0): false while it
     /// opens (only the zooming frame draws); stopping drawing it plays its close.
     pub fn gate_layout(&mut self, name: &str, w: f32, h: f32, x: Option<i16>) -> bool {
+        self.gate_layout_at(name, w, h, x, None)
+    }
+
+    /// `gate_layout` with the layout place's x and / or y replaced (a window its open hook moves).
+    pub fn gate_layout_at(&mut self, name: &str, w: f32, h: f32, x: Option<i16>, y: Option<i16>) -> bool {
         let Some(mut m) = self.stacked_menu(name, w, h) else { return true };
-        if let (Some(x), Some(e)) = (x, m.elements.first_mut()) {
-            e.x = x;
+        if let Some(e) = m.elements.first_mut() {
+            e.x = x.unwrap_or(e.x);
+            e.y = y.unwrap_or(e.y);
         }
         let (fx, fy, fw, fh) = screens::frame_rect(&m, w, h, 1.0, 1.0);
         self.win_gate(name, [fx, fy, fw, fh])
@@ -975,9 +983,19 @@ impl GameUi {
         self.anims.iter().filter(|(n, a)| a.seen + 1 >= self.anim_frame && self.reg_flags(n) & mask != 0).filter_map(|(_, a)| if let Shape::Frame(r) = &a.shape { Some(*r) } else { None }).collect()
     }
 
-    /// A window's registry group mask (FUN_1015ed10's +0x38).
+    /// A window's registry group mask (FUN_1015ed10's +0x38), or the one its open hook set.
     pub fn win_group(&self, name: &str) -> u16 {
-        self.data.groups.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0)
+        let key = name.trim_end().to_ascii_lowercase();
+        self.walk.groups.get(&key).or_else(|| self.data.groups.get(key.as_str())).copied().unwrap_or(0)
+    }
+
+    /// A window's group byte changed while open (persona in Status mode: |= 0x20, FUN_10146ec0); None restores it.
+    pub fn set_group(&mut self, name: &str, g: Option<u16>) {
+        let key = name.trim_end().to_ascii_lowercase();
+        match g {
+            Some(g) => self.walk.groups.insert(key, g),
+            None => self.walk.groups.remove(&key),
+        };
     }
 
     /// Region stacking (FUN_1015fa00 -> FUN_1015f790): registry flag 0x1000 windows sit on the chat log (window rect
