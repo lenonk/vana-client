@@ -5437,8 +5437,10 @@ Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
   closes it and brings it back when the list closes (FUN_101336d0). Switch Target goes through the sub-target prompt
   over monsters (flags 0x20) and "/attack <id>". Right on Magic opens magselec. Hidden under a sub-target prompt; the
   hand only while it has the focus; drawn beneath the lists it opens.
-- Title slot 0 while engaged: group 0xd 7 "Battle Mode" (+0x50 = 1); 6 "Ready Mode" on an attackable target; 5
-  "Commands" otherwise. The user's retail shot showed "Commands" while engaged: unresolved.
+- Title slot 0 while engaged: retail shows group 0xd 5 "Commands" (seen live twice by the user), although FUN_1012b4b0
+  reads as 7 "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred). Ours: 5.
+- Choosing Magic / Abilities / Trust / Items closes the battle menu (its close animation plays) and the list opens
+  with its own; engaged, the menu comes back when the list (and any target prompt from it) is done (seen in retail).
 - "menu    gaugewin" (16, 48), up only while engaged (draw FUN_101393a0): framesus 8 labels and troughs at (+4, +8);
   windowps 97 fills at (+25, +8 / +18) scaled by HP% / MP%, tints 0x80808080 / 0x8080e080, blend word 8; TP at
   (+25, +28): below 1000 scaled tp / 1000 in 0x800060b0, above a full bar in the pulse colour then (tp % 1001) / 1000

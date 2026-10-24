@@ -659,7 +659,8 @@ pub(super) fn refresh_menu(w: &mut World) {
 /// The window manager's status watch (FUN_1015ef60): our applied status turning 1 outside an event runs
 /// FUN_1015f3e0(0x20): the sub-target prompt is cancelled, every window not kept in battle closes, then the battle
 /// set opens focused (playermo, gaugewin; targetwi stays). Leaving 1 runs FUN_1015f3e0(0x40): playermo, gaugewin and
-/// magselec close. The item list chosen from the battle menu brings it back when it closes (FUN_101336d0).
+/// magselec close. A list chosen from the battle menu brings it back when it closes (FUN_101336d0 for items; inferred
+/// for the magic / ability lists).
 pub(super) fn battle_frame(w: &mut World) {
     let s = w.my_motion.status;
     if s == 1 && w.battle_prev != 1 && !super::event::active(w) {
@@ -678,7 +679,8 @@ pub(super) fn battle_frame(w: &mut World) {
     if let (Some(g), Some(v)) = (w.gauge.as_mut(), w.vitals) {
         g.tick(v.2);
     }
-    if w.reopen_menu && w.win.is_none() {
+    let busy = w.win.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.prompt.is_some();
+    if w.reopen_menu && !busy {
         w.reopen_menu = false;
         if s == 1 && w.action_menu.is_none() {
             w.action_menu = Some(open_menu(w));
@@ -687,10 +689,11 @@ pub(super) fn battle_frame(w: &mut World) {
     refresh_menu(w);
 }
 
-/// FUN_1012b880: the commands that leave the menu up (Attack, Call for help, Disengage, Abilities, Magic, Check,
-/// Switch Target, Trust); Chat, Tell, Talk and the rest close it (Items closes it and brings it back after).
+/// FUN_1012b880: the commands that leave the menu up (Attack, Call for help, Disengage, Check, Switch Target); the
+/// lists (Magic, Abilities, Trust, Items) close it and, engaged, bring it back when they are done; Chat, Tell, Talk
+/// close it.
 pub(super) fn keeps_menu(c: u8) -> bool {
-    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 7 | cmd::MAGIC | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | 0x19)
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).

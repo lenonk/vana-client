@@ -221,10 +221,9 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     recall(w, &mut win);
     w.magic = Some(win);
     w.menu = None;
-    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
-    if w.my_motion.status != 1 {
-        w.action_menu = None;
-    }
+    // The action menu closes (its close plays); engaged, it comes back when the list is done.
+    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
+    w.action_menu = None;
     w.cats = None;
 }
 
@@ -237,10 +236,9 @@ pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
-    if w.my_motion.status != 1 {
-        w.action_menu = None;
-    }
+    // The action menu closes (its close plays); engaged, it comes back when the list is done.
+    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
+    w.action_menu = None;
     w.cats = None;
 }
 
@@ -260,10 +258,9 @@ pub fn open_mount(w: &mut World, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
-    if w.my_motion.status != 1 {
-        w.action_menu = None;
-    }
+    // The action menu closes (its close plays); engaged, it comes back when the list is done.
+    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
+    w.action_menu = None;
     w.cats = None;
 }
 
@@ -297,10 +294,9 @@ pub fn open_emote(w: &mut World) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
-    if w.my_motion.status != 1 {
-        w.action_menu = None;
-    }
+    // The action menu closes (its close plays); engaged, it comes back when the list is done.
+    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
+    w.action_menu = None;
     w.cats = None;
 }
 
@@ -329,10 +325,9 @@ fn mount_name(w: &World, id: u16) -> String {
 pub fn open_cats(w: &mut World, menu: &'static str) {
     w.cats = Some(Cats { menu, sel: 0 });
     w.menu = None;
-    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
-    if w.my_motion.status != 1 {
-        w.action_menu = None;
-    }
+    // The action menu closes (its close plays); engaged, it comes back when the list is done.
+    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
+    w.action_menu = None;
 }
 
 /// A status check shared by both lists: fishing, mounted, healing, sitting, a place without actions.

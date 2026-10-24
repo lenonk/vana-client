@@ -1383,6 +1383,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(c) = act {
         if !combat::keeps_menu(c) {
+            // The lists (Abilities, Magic, Items, Trust) bring the battle menu back when they are done.
+            world.reopen_menu |= world.my_motion.status == 1 && matches!(c, 7 | 8 | 9 | 0x19);
             world.action_menu = None;
         }
         if !combat::choose(world, c) {
@@ -2104,7 +2106,9 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
-        bars.title[0] = gu.title_msg(if world.my_motion.status == 1 { 7 } else { 5 }).unwrap_or_default();
+        // Retail shows group 0xd 5 "Commands" while engaged too (seen live, 2026-10-24), though FUN_1012b4b0 reads as 7
+        // "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred).
+        bars.title[0] = gu.title_msg(5).unwrap_or_default();
     }
     bars
 }
