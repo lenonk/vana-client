@@ -3653,6 +3653,8 @@ pub struct App {
     hud_blockers: Vec<[f32; 4]>,
     /// Shut Down finished: close the window.
     exit_requested: bool,
+    /// The window was asked to close in the world: a second ask with no logout running closes it at once.
+    close_asked: bool,
     /// The pointer is over the window (edge panning).
     cursor_in: bool,
     /// The game's mouse cursor (client/mousecur.rs).
@@ -3819,6 +3821,7 @@ impl App {
             creator_step: 0,
             creator_yes: true,
             exit_requested: false,
+            close_asked: false,
             scene_scale: None,
             cursor_in: false,
             login_error: None,
@@ -3965,6 +3968,7 @@ impl App {
         }
         self.phase = Phase::login(&self.cfg);
         self.lobby_fade = LobbyFade::default();
+        self.close_asked = false;
         if error {
             log::warn!("back to the login screen: {}", self.status);
             self.login_error = Some(self.status.clone());
@@ -8242,7 +8246,21 @@ impl ApplicationHandler for App {
         let Some(gfx) = &mut self.gfx else { return };
         let consumed = gfx.egui_state.on_window_event(&gfx.window, &event).consumed;
         match event {
-            WindowEvent::CloseRequested => event_loop.exit(),
+            // Retail takes Close off its window menu (RemoveMenu SC_CLOSE). Ours logs out first in the world
+            // ("/shutdown on", exit when the server ends the session); at once elsewhere, with the link quiet for
+            // 10 s, or on a second close when no logout could start (engaged, K.O.).
+            WindowEvent::CloseRequested => match &mut self.phase {
+                Phase::World(w) if w.net.stats.now_ms().saturating_sub(w.net.stats.last_rx_ms.load(std::sync::atomic::Ordering::Relaxed)) < 10_000 => {
+                    if w.logging_out && w.shutdown {
+                    } else if self.close_asked {
+                        event_loop.exit();
+                    } else {
+                        self.close_asked = true;
+                        textcmd::run(w, "/shutdown on", textcmd::Mode::Internal);
+                    }
+                }
+                _ => event_loop.exit(),
+            },
             WindowEvent::Resized(size) => {
                 log::info!("window resized to {}x{}", size.width, size.height);
                 resize_surface(gfx, size);

@@ -6254,3 +6254,31 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
 - Not done: each 0x8010 material record's light factor f (f32 at record byte 18): body path scales the RS ambient
   bytes and light diffuse by f, cloth path diffuse x f and emissive max(f - 1.5, 0); Hume faces carry 1.2..1.6.
 - Research notes and scripts: `~/ffxi/lab/scratch/flash2/`.
+
+## The raise prompt: placement and the K.O. focus (2026-10-24)
+
+Research `~/ffxi/lab/scratch/raise2/` (30261006_0). Corrects "Window groups, region stacking and the raise prompt".
+- FUN_1015f790 moves the window's own rect (element 0: layout pos + anchor shift, layout size; FUN_10118f70 /
+  FUN_10119110), not its frame: rect top = log top - h - 2 (log bottom - h with no lines), at least 16; the frame
+  keeps its header offset from it. resynus is the only stacked window in 39542 with a frame offset (0, -8), so its
+  frame sits 10 px above the log (H - 224 with a full 8-line log); ours stacked the frame, 2 px above.
+- playermo (flags 0x08011c02) and resynus are both region-0 windows at x 16, 112 wide; retail never shows both:
+  FUN_1012e0c0 (the K.O. window) closes the 0x800 set twice (FUN_1015f3e0: every row whose state @0x28 lacks bit
+  0x4: playermo, mp_pmode, menuwind, comyn, resynus); the K.O. window or resynus holds the focus (FUN_1015e7e0 /
+  FUN_10119200: DAT_1057876c+0x74 bit 0) and FUN_101585f0 (Enter, the mouse release, the target keys) returns while
+  that bit is set; Num- goes to the focused window (message 7). Groups: resynus / dead / comyn 0, playermo 4.
+- FUN_10096c90 mode 2 (the offer): comyn closes every frame; with the K.O. window not visible it reopens it
+  (FUN_1012e0c0, closing the 0x800 set again).
+- Ours: world_window_open counts the K.O. window and the prompt (world clicks, the hit cursor); the target keys,
+  Minus and Pause's log-out prompt wait; the K.O. window under the prompt shows no hand and takes no click; mode 2's
+  rules in ko_step. A plain left click while dead used to open the action menu over the prompt (the user's report).
+- Live (Lnxtest, Valkurm, killed by goblins, `!raise 3`): the prompt 10 px above the log, a world click / Tab /
+  Minus open nothing, Enter accepts and the character rises.
+
+## Closing the window in the world (2026-10-24)
+
+- Retail takes Close off its window menu (RemoveMenu(SC_CLOSE), all.c 16267; WM_CLOSE / WM_DESTROY both
+  PostQuitMessage at 0x100168f7), so the window cannot be closed while playing. Ours (the user's choice): a close in
+  the world runs "/shutdown on" and the client exits when the server ends the session; at once outside the world or
+  with the link quiet for 10 s; a second close exits when no logout could start (engaged, K.O.). Live: closed by the
+  user, logout 1 s later (LSB leavegame.lua: GMs and the Mog House log out at once, others count 30 s).
