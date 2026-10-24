@@ -1542,6 +1542,43 @@ mod damage_number_tests {
 }
 
 #[cfg(test)]
+mod damage_number_rate_tests {
+    use super::*;
+
+    /// A `damv` number's elements live the same number of ticks at 30 fps (2 ticks a frame) and 300 fps (0.2).
+    #[test]
+    fn damv_life_by_frame_rate() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut lives = Vec::new();
+        for dt in [2.0f32, 0.2] {
+            let mut fx = Effects::new();
+            fx.set_index(index.clone());
+            fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+            let f = Frame { dt, seconds: dt / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+            while fx.reg.lib_of(27).is_none() {
+                fx.poll_loads();
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            fx.on_damage_number(1, 1, 2, 57, 0x808080);
+            let (mut t, mut first, mut last) = (0.0f32, None, 0.0f32);
+            while t < 200.0 {
+                fx.tick(&f, &super::skillchain_tests::Pair);
+                t += dt;
+                if fx.elems.iter().flatten().any(|c| c.draw == crate::fx::Draw::DamValue) {
+                    first.get_or_insert(t);
+                    last = t;
+                }
+            }
+            lives.push((first.unwrap_or(0.0), last));
+        }
+        eprintln!("damv visible ticks (first, last) at 30 / 300 fps: {lives:?}");
+        assert!((lives[0].1 - lives[1].1).abs() <= 2.0 && (lives[0].0 - lives[1].0).abs() <= 2.0, "{lives:?}");
+    }
+}
+
+#[cfg(test)]
 mod load_tests {
     /// A model's files asked for before the first zone set the index are loaded on the next ask.
     #[test]
