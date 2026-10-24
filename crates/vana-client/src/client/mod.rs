@@ -698,6 +698,11 @@ fn log_cycle(w: &mut World) {
     }
     w.sounds.push(13);
     w.log_focus = (w.log_focus + 1) % 3;
+    // The buff list takes the focus only with icons (FUN_10227bf0 gives it up at 0).
+    if w.log_focus == 2 && !w.buffs.iter().any(|&b| b != 0xffff && b != 0) {
+        w.log_focus = 0;
+    }
+    w.buff_cursor = 0;
     w.log_active = w.log_focus == 1;
 }
 
@@ -1022,6 +1027,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         world.game.set(0x8a, m.zoom_cfg());
                         m.begin_close();
                     }
+                }
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.log_focus == 2 => {
+                    buffs::key(gu, world, *key);
                 }
                 // logwindo's messages (FUN_1015ae20): 5 Enter opens the full log, 6 Escape unfocuses.
                 egui::Key::Enter if world.log_active => {
@@ -2140,6 +2148,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
+    buffs::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
         bars.help[0] = m.items.get(m.sel).and_then(|&c| gu.cmd_help(c)).unwrap_or_default();
         // Retail shows group 0xd 5 "Commands" while engaged too (seen live, 2026-10-24), though FUN_1012b4b0 reads as 7
@@ -2954,6 +2963,8 @@ struct World {
     /// Our status icons (0x037, 0xffff none) and the last 0x063 sub 9 timers (kept once received, as retail).
     buffs: [u16; 32],
     buff_timers: Option<([u16; 32], [u32; 32])>,
+    /// The buff list's cursor (Num+ focus step 2).
+    buff_cursor: usize,
     /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
     reopen_menu: bool,
     started: Instant,
@@ -4062,6 +4073,7 @@ impl App {
                             gauge: None,
                             buffs: [0xffff; 32],
                             buff_timers: None,
+                            buff_cursor: 0,
                             reopen_menu: false,
                             started: Instant::now(),
                             logging_out: false,

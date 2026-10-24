@@ -21,6 +21,54 @@ fn icons(w: &World) -> Vec<(u16, u32)> {
         .collect()
 }
 
+/// FUN_10222150 for the 9-column list: Left / Right one cell, Up / Down a row (staying when there is none; the wrap
+/// rules there are not followed), SE 0001 on a move; Enter (FUN_10227eb0) cancels a cancellable effect: c2s 0x0F1 and
+/// the icon goes at once. Escape does nothing here.
+pub fn key(gu: &GameUi, w: &mut World, key: egui::Key) {
+    let list = icons(w);
+    if list.is_empty() {
+        w.log_focus = 0;
+        return;
+    }
+    let n = list.len();
+    let at = w.buff_cursor.min(n - 1);
+    let to = match key {
+        egui::Key::ArrowLeft => (at + n - 1) % n,
+        egui::Key::ArrowRight => (at + 1) % n,
+        egui::Key::ArrowUp if at >= 9 => at - 9,
+        egui::Key::ArrowDown if at + 9 < n => at + 9,
+        egui::Key::Enter => {
+            let id = list[at].0;
+            let small = w.game.get(0x99) & 4 != 0;
+            if gu.status_entry(small, id).is_some_and(|e| e.cancel) {
+                let _ = w.net.commands.send(super::net::NetCommand::CancelStatus(id));
+                if let Some(b) = w.buffs.iter_mut().find(|b| **b == id) {
+                    *b = 0xffff;
+                }
+            }
+            at
+        }
+        _ => at,
+    };
+    if to != at {
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+    w.buff_cursor = to;
+}
+
+/// While focused: title slot 2 the status name, help slot 2 its description (FUN_10227bf0 step 5).
+pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    if w.log_focus != 2 {
+        return;
+    }
+    let list = icons(w);
+    let Some(&(id, _)) = list.get(w.buff_cursor.min(list.len().saturating_sub(1))) else { return };
+    if let Some(bt) = &w.battle {
+        bars.title[2] = bt.status_title(id);
+    }
+    bars.help[2] = gu.status_entry(w.game.get(0x99) & 4 != 0, id).map(|e| e.desc).unwrap_or_default();
+}
+
 /// LAB_10228080's label: "%dh" from an hour (at most 99), "%dm" from a minute, seconds below; none at 5 s or less.
 fn label(rem: i32) -> Option<String> {
     let rem = rem.min(356_400);
@@ -55,6 +103,11 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
         gu.image_rect(&tex, cx + 1.0, cy + 1.0, 24.0, 24.0, [c, c, c, 1.0]);
         if let Some(s) = label(rem).filter(|_| timed) {
             gu.shape_scaled_centred(s.as_bytes(), cx + 14.0, cy + 20.0, 0.85, 0x8080_8080);
+        }
+        // FUN_10227970: the hand scaled 0.74 and moved (-5, -5) from the cell's cursor point.
+        if w.log_focus == 2 && k == w.buff_cursor {
+            let (ox, oy) = gu.cursor_offset(WINDOW, k + 1).unwrap_or((0.0, 0.0));
+            gu.cursor_scaled(cx + ox - 5.0, cy + oy - 5.0, 0.74);
         }
     }
 }

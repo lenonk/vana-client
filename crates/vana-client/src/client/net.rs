@@ -371,6 +371,8 @@ pub enum NetCommand {
     Check { target: u32, index: u16, kind: u8 },
     /// Any c2s packet: id and body (after the 4-byte header).
     Packet { id: u16, body: Vec<u8> },
+    /// c2s 0x0F1 {u16 BuffNo}: cancel a status effect (FUN_100a0590).
+    CancelStatus(u16),
     /// c2s 0x076 {u8 Kind = 0}: the roster's names (FUN_100e9550); LSB answers with 0x0C8 and 0x0DD.
     GroupListReq,
     /// Touched a zone line: its tag, and where we are.
@@ -941,6 +943,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                 NetCommand::Act { target, index, action } => queue.push(build(0x01A, &action_body(target, index, action))),
                 NetCommand::Packet { id, body } => queue.push(build(id, &body)),
                 NetCommand::GroupListReq => queue.push(build(0x076, &[0u8; 4])),
+                NetCommand::CancelStatus(id) => queue.push(build(0x0F1, &[id as u8, (id >> 8) as u8, 0, 0])),
                 NetCommand::Check { target, index, kind } => {
                     let mut body = vec![0u8; 12];
                     body[0..4].copy_from_slice(&target.to_le_bytes());

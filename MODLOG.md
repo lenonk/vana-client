@@ -5683,3 +5683,13 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
   at (cell x + 14, y + 20), 0x80808080 (FUN_101c97b0).
 - Live: Haste "21" (dimming at 12), Protect "1m", Regen "9m" beside each other at (142, 48).
 - Not done yet: Num+ focus (cursor, name / description, Enter cancels with c2s 0x0F1), the party member icons (0x076).
+
+## Status icons: Num+ focus and cancelling (2026-10-24)
+
+- Num+ (key 0x78) cycles logwindo -> buff -> none; the buff step is skipped (and given up) with no icons.
+- Focused (FUN_10227970 / FUN_10227bf0): the hand scaled 0.74 at the cell's cursor point - (5, 5); Left / Right one
+  icon, Up / Down a row (SE 0001); title slot 2 = the status name (file 55725 field 0; each word capitalised,
+  inferred for FUN_102588c0(2)), help slot 2 = the entry's description; Escape does nothing.
+- Enter (FUN_10227eb0) on a cancellable entry (byte @2): c2s 0x0F1 {u16 id} and the icon goes at once.
+- Live: Haste and Regen up, the bars read "Regen" / "HP are gradually restored.", Enter on Haste cancelled it.
+- Not done: the party member icons (s2c 0x076, config 0xc2).

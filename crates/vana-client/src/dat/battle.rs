@@ -232,6 +232,14 @@ impl BattleText {
         w & 0x3fff_ffff & word != 0
     }
 
+    /// A status name for the title bar (FUN_10227450: file 55725 field 0 through FUN_102588c0(2); the capitals are
+    /// inferred: each word's first letter, as "Haste").
+    pub fn status_title(&self, id: u16) -> String {
+        let mut t = Self::msg_of(&self.statuses, id as i32);
+        apply_case(&mut t, 4);
+        decode_sjis(&t)
+    }
+
     pub fn screen_kind(&self, id: u16) -> u8 {
         self.screen_kinds.get(id as usize).copied().unwrap_or(0)
     }

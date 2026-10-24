@@ -1099,6 +1099,23 @@ impl GameUi {
         self.batch.push_rect(x, y, w, h, rgba);
     }
 
+    /// FUN_10116b10's cursor point of a layout child relative to the child's position: its header (+6, +8) plus the
+    /// window element's.
+    pub fn cursor_offset(&self, menu: &str, child: usize) -> Option<(f32, f32)> {
+        let m = self.data.lobby.menu(menu)?;
+        let (c, w) = (m.elements.get(child)?, m.elements.first()?);
+        let at = |h: &[u8; 32], o: usize| i16::from_le_bytes([h[o], h[o + 1]]) as f32;
+        Some((at(&c.head, 6) + at(&w.head, 6), at(&c.head, 8) + at(&w.head, 8)))
+    }
+
+    /// The pointing hand scaled about (x, y) (FUN_1011ab50; the buff list's 0.74).
+    pub fn cursor_scaled(&mut self, x: f32, y: f32, s: f32) {
+        let frame = self.cursor_frame();
+        if let Some(anc) = self.data.lobby.lib("anc     anc_s") {
+            self.batch.push_sprite(&self.data.lobby, anc, frame % anc.sprites.len().max(1), x, y, s, s, 0x8080_8080, 0);
+        }
+    }
+
     /// The pointing hand; its sprite reaches 32 px left of (x, y).
     pub fn cursor(&mut self, x: f32, y: f32) {
         let frame = self.cursor_frame();
