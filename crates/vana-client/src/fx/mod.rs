@@ -65,6 +65,14 @@ pub trait Actors {
     fn cib(&self, _id: u32) -> Option<[i8; 3]> {
         None
     }
+    /// The model's sub-animation (+0x8a5, vtable +0xa4): the `shi<n>` / `ska<n>` sound and swing letter variants.
+    fn sub_anim(&self, _id: u32) -> u8 {
+        0
+    }
+    /// Our own actor (FUN_10081550), for op 0x53's nearest target.
+    fn player(&self) -> Option<u32> {
+        None
+    }
     /// FUN_100d4600's choice: the actor's swing schedulers, `atf?` moving and `ati?` standing (the other set when
     /// that one is empty); None while its model is not in.
     fn swings(&self, _id: u32, _moving: bool) -> Option<Vec<String>> {

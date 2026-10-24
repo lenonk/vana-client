@@ -2721,11 +2721,21 @@ impl crate::fx::Actors for FxActors<'_> {
         self.actors.get(&id)?.character.as_ref().map(|c| c.cib)
     }
 
+    fn sub_anim(&self, id: u32) -> u8 {
+        self.entities.get(&id).map_or(0, |e| e.sub[2])
+    }
+
+    fn player(&self) -> Option<u32> {
+        Some(self.me)
+    }
+
     fn swings(&self, id: u32, moving: bool) -> Option<Vec<String>> {
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
         let names = actmotion::scheduler_names(&a.extra, ch);
-        let (first, other) = if moving { ("atf?", "ati?") } else { ("ati?", "atf?") };
+        let sub = self.entities.get(&id).map_or(0, |e| e.sub[2]);
+        let (first, other) = combat::swing_patterns(moving, sub);
+        let (first, other) = (first.as_str(), other.as_str());
         let mut pool = crate::dat::sched::matching(names.iter().copied(), first);
         if pool.is_empty() {
             pool = crate::dat::sched::matching(names.iter().copied(), other);
@@ -4912,6 +4922,12 @@ impl App {
                         camera::face(world, f.x.atan2(f.z));
                     }
                     event::position_ack(world, mode);
+                    // FUN_1008f740: entity +0x144 = Mode; 3 runs `pop0`, 6 `pop1` on the actor.
+                    match mode {
+                        3 => world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"pop0")),
+                        6 => world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"pop1")),
+                        _ => {}
+                    }
                 }
                 NetEvent::ZoneText(t) => event::zone_text(world, &t),
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),

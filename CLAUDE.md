@@ -106,7 +106,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Num+ focus and cancel, party member icons (untested live: needs a party) done;
   - actor sounds (spec `~/ffxi/lab/research/actor_sounds_spec.md`; MODLOG "Actor sounds 1..3"): voices steal, init /
     ini<n> (worm emerge seen, burrow not seen live), ntob / bton / dead, op 0x78, op-0x24 swing pick, whole schedulers
-    behind motion paths done; left the spec's #10..#13 (shi<n> variants, 0x53 target, pop0 / pop1, hide skip);
+    behind motion paths, sub-animation variants, op 0x53, pop0 / pop1 done; left the hide skip (+0x138), ?ead / sdep;
   - lobby (spec `~/ffxi/lab/research/select_buttons_spec.md`): title and list sounds and press animations, the
     prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done but the tell sound "0p40" and the `<call>` sounds;

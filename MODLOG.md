@@ -5717,3 +5717,12 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
   row at 14 px (24 x 0.6) from (log x + 200, log y - 8 - rows x 14), above the party window instead when x + 144
   reaches it; the name 16 above in fontshp, 0x80808080 in our zone, else 0x80404040 (FUN_10202cc0, inferred).
 - Untested live (needs two characters in a party).
+
+## Actor sounds 4: sub-animation variants, op 0x53, pop0 / pop1 (2026-10-24)
+
+- +0x8a5 (the model's sub-animation): `shit` / `skaz` SeSeps take it (& 3) as their last digit when such a SeSep
+  resolves (all.c 68810..68830), and FUN_100d4600's swing names take `"t123t123"[sub]` as their second letter
+  (combat::swing_patterns; `ati?` / `atf?` for 0).
+- Op 0x53: the action target nearest our own actor (FUN_1005e300 -> FUN_10081550), actor1 without a player.
+- 0x05B / 0x065 Mode @0x16 (entity +0x144, FUN_1008f740): 3 runs `pop0`, 6 `pop1` on the actor.
+- Left: the hide skip (entity +0x138 bit 31 with model +0xb2 bit 1; +0x138 not traced), `?ead` / `sdep`, fishing.

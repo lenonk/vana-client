@@ -672,8 +672,28 @@ impl Effects {
             // Sounds at a snapshot of the actor's position: 0x0a actor1, 0x0b actor2, 0x53 the action target nearest
             // the player *(inf: actor2)*; far @0x14, near @0x18, flag 0x100 = height as is.
             0x0a | 0x0b | 0x53 => {
-                let who = if op.code == 0x0a { t.a1 } else { t.a2 };
-                let r = scope(self, 0x3d);
+                let mut who = if op.code == 0x0a { t.a1 } else { t.a2 };
+                // Op 0x53 (all.c 67094): the action target nearest our own actor (actor1 with no player).
+                if op.code == 0x53
+                    && let Some(a) = &t.action
+                {
+                    let me = actors.player().and_then(|p| actors.matrix(p)).map(|m| m.w_axis.truncate());
+                    let ids: Vec<u32> = a.borrow().records().iter().map(|r| r.0).collect();
+                    who = match me {
+                        Some(mp) => ids.into_iter().filter_map(|id| Some((id, (actors.matrix(id)?.w_axis.truncate() - mp).length()))).min_by(|x, y| x.1.total_cmp(&y.1)).map_or(t.a2, |(id, _)| Who::Actor(id)),
+                        None => t.a1,
+                    };
+                }
+                // `shit` / `skaz` take the actor's sub-animation as the last digit when that SeSep exists.
+                let sub = self.doll_of(who).id().map_or(0, |id| actors.sub_anim(id) & 3);
+                let r = match op.name().to_le_bytes() {
+                    [b's', b'h', b'i', b't'] | [b's', b'k', b'a', b'z'] if sub != 0 => {
+                        let mut n = op.name().to_le_bytes();
+                        n[3] = b'0' + sub;
+                        self.reg.resolve(t.res.0, t.res.1, 0x3d, u32::from_le_bytes(n)).or_else(|| scope(self, 0x3d))
+                    }
+                    _ => scope(self, 0x3d),
+                };
                 if let (Some(r), Some((_, m))) = (r, self.who_matrix(who, actors))
                     && let Some((se, loops)) = super::sound::sesep(self.reg.libs[r.0].data(r.1))
                 {

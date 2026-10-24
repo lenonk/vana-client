@@ -656,16 +656,25 @@ fn play(actor: &mut Actor, name: &str, len: f32, speed: f32) {
 /// Melee (FUN_100d4600 / FUN_100d46f0): standing (+0xf8 clear) a random "ati?" avoiding the one just
 /// used; moving, the first "atf?" ('r' / 'b' / 'l' by the move direction +0x598; we move forward only).
 /// PCs find them in their battle files. Plays the op-0x05 motion; returns when its "dada" hit runs, and its name.
+/// FUN_100d4600's name patterns: `atf?` moving / `ati?` standing (the other first), the second letter
+/// `"t123t123"[sub-animation]` (forms of multi-form monsters).
+pub(super) fn swing_patterns(moving: bool, sub: u8) -> (String, String) {
+    let c = b"t123t123"[(sub & 7) as usize] as char;
+    let (f, i) = (format!("a{c}f?"), format!("a{c}i?"));
+    if moving { (f, i) } else { (i, f) }
+}
+
 pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
     let moving = moving(w, actor);
+    let sub = w.entities.get(&actor).map_or(0, |e| e.sub[2]);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
     let a = w.actors.get_mut(&actor)?;
     let ch = a.character.clone()?;
     let names = actmotion::scheduler_names(&a.extra, &ch);
-    let (first, other) = if moving { ("atf?", "ati?") } else { ("ati?", "atf?") };
-    let mut pool = sched::matching(names.iter().copied(), first);
+    let (first, other) = swing_patterns(moving, sub);
+    let mut pool = sched::matching(names.iter().copied(), &first);
     if pool.is_empty() {
-        pool = sched::matching(names.iter().copied(), other);
+        pool = sched::matching(names.iter().copied(), &other);
     }
     let name = if moving {
         *pool.first()?
