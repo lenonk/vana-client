@@ -260,6 +260,8 @@ pub enum NetEvent {
     /// epoch), the time the server sends us home (@0x38 is Flags3).
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32] },
+    /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
+    PartyEffects(Vec<(u32, [u16; 32])>),
     /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
     StatusTimers { ids: [u16; 32], ends: [u32; 32] },
     /// Our own HP, MP and TP (0x0DF).
@@ -705,6 +707,22 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
                         tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons })?;
+                    }
+                    // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
+                    // 0x3ff, none when lo 0xff with hi 0.
+                    0x076 => {
+                        let rows = (0..5)
+                            .map(|k| 4 + k * 48)
+                            .filter(|&o| p.u32(o) != 0)
+                            .map(|o| {
+                                let icons = std::array::from_fn(|i| {
+                                    let (lo, hi) = (p.u8(o + 16 + i) as u16, (p.u8(o + 8 + i / 4) as u16 >> (2 * (i % 4))) & 3);
+                                    if lo == 0xff && hi == 0 { 0xffff } else { (hi << 8 | lo) & 0x3ff }
+                                });
+                                (p.u32(o), icons)
+                            })
+                            .collect();
+                        tx.send(NetEvent::PartyEffects(rows))?;
                     }
                     0x063 if p.u16(4) == 9 => {
                         tx.send(NetEvent::StatusTimers { ids: std::array::from_fn(|i| p.u16(8 + 2 * i)), ends: std::array::from_fn(|i| p.u32(0x48 + 4 * i)) })?;

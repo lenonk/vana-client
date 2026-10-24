@@ -112,6 +112,51 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     }
 }
 
+/// The party icon object (DAT_106671bc, draw FUN_10228440, config 0xc2), while the buff window is up: the target
+/// window's target when it is a party member other than us ("< name >"), else the party cursor's member; its 0x076
+/// icons 8 a row at 14 px (24 x 0.6) over the log window (x + 200), or over the party window when they would reach
+/// it; the name above in fontshp, grey unless in our zone (FUN_10202cc0, inferred).
+pub fn draw_party(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log: [f32; 4]) {
+    if w.game.get(0xc2) == 0 {
+        return;
+    }
+    let member = |id: u32| id != w.my_id && w.party.members().any(|m| m.id == id);
+    let (id, bracketed) = match w.target.filter(|&t| member(t)) {
+        Some(t) => (t, true),
+        None => match super::target::party_hand(w).and_then(|(_, _, id)| id).filter(|&t| member(t)) {
+            Some(t) => (t, false),
+            None => return,
+        },
+    };
+    let Some(row) = w.party_buffs.get(&id) else { return };
+    let ids: Vec<u16> = row.iter().copied().filter(|&b| b != 0xffff && b != 0).collect();
+    if ids.is_empty() {
+        return;
+    }
+    let rows = (ids.len() - 1) / 8 + 1;
+    let (x0, mut y0) = (log[0] + 200.0, log[1] - 8.0 - rows as f32 * 14.0);
+    let pw = gu.party_window_name().to_string();
+    if let Some(p) = gu.window_rect(&pw, sw, sh)
+        && x0 + 144.0 >= p[0]
+    {
+        y0 = p[1] - 8.0 - rows as f32 * 14.0;
+    }
+    let small = w.game.get(0x99) & 4 != 0;
+    for (j, &icon) in ids.iter().enumerate() {
+        let Some(tex) = gu.status_icon(small, icon) else { continue };
+        gu.image_rect(&tex, x0 + 1.0 + 14.0 * (j % 8) as f32, y0 + 1.0 + 14.0 * (j / 8) as f32, 14.4, 14.4, [1.0; 4]);
+    }
+    let Some(m) = w.party.members().find(|m| m.id == id) else { return };
+    let tint = if m.zone == w.pos_zone { 0x8080_8080 } else { 0x8040_4040 };
+    if bracketed {
+        gu.shape_text("< ", x0, y0 - 16.0, tint, true);
+    }
+    let end = gu.shape_text(&m.name, x0, y0 - 16.0, tint, false);
+    if bracketed {
+        gu.shape_text(" >", end, y0 - 16.0, tint, false);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     /// The user's retail labels: 25m, 1m, 5h, 2m, 16; 1h59m is 1h; none at 5 s.

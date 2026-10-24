@@ -988,6 +988,11 @@ impl GameUi {
         &self.data.region_groups
     }
 
+    /// The party window in use (ptw0..2 by the member count).
+    pub fn party_window_name(&self) -> &str {
+        &self.party_window
+    }
+
     /// Scaled, centred fontshp text (FUN_101c97b0).
     pub fn shape_scaled_centred(&mut self, text: &[u8], x: f32, y: f32, s: f32, tint: u32) {
         screens::push_shape_scaled_centred(&mut self.batch, &self.data.lobby, text, x, y, s, tint);

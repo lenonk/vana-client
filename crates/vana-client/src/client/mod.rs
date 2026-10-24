@@ -1732,6 +1732,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
     buffs::draw(gu, world, sw, sh);
+    buffs::draw_party(gu, world, sw, sh, log.rect);
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
@@ -2987,6 +2988,8 @@ struct World {
     buff_timers: Option<([u16; 32], [u32; 32])>,
     /// The buff list's cursor (Num+ focus step 2).
     buff_cursor: usize,
+    /// Party members' status icons by UniqueNo (s2c 0x076).
+    party_buffs: HashMap<u32, [u16; 32]>,
     /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
     reopen_menu: bool,
     started: Instant,
@@ -4096,6 +4099,7 @@ impl App {
                             buffs: [0xffff; 32],
                             buff_timers: None,
                             buff_cursor: 0,
+                            party_buffs: HashMap::new(),
                             reopen_menu: false,
                             started: Instant::now(),
                             logging_out: false,
@@ -4889,6 +4893,7 @@ impl App {
                     return;
                 }
                 NetEvent::StatusTimers { ids, ends } => world.buff_timers = Some((ids, ends)),
+                NetEvent::PartyEffects(rows) => world.party_buffs = rows.into_iter().collect(),
                 NetEvent::Battle(m) => combat::on_battle_message(world, &m),
                 NetEvent::Event(s) => event::queue(world, s),
                 NetEvent::EventParams(n) => event::params(world, n),

@@ -5706,3 +5706,14 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
   No alike, Escape nothing.
 - Our login screen (not retail): the generic window sounds, 0001 on focus moves and Escape (to Exit), 0002 on an
   enabled action, 0004 on a disabled one.
+
+## Status icons: party members (2026-10-24)
+
+- s2c 0x076 (FUN_10098f70 / FUN_10098f90): 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon i =
+  (hi << 8 | lo) & 0x3ff with hi = 2 bits from the u64, none when lo 0xff with hi 0; LSB sends members in our zone,
+  not us.
+- The party icon object (DAT_106671bc, draw FUN_10228440, config 0xc2), only while the buff window is up: the target
+  window's target when it is a party member other than us (name in "< >"), else the party cursor's member; icons 8 a
+  row at 14 px (24 x 0.6) from (log x + 200, log y - 8 - rows x 14), above the party window instead when x + 144
+  reaches it; the name 16 above in fontshp, 0x80808080 in our zone, else 0x80404040 (FUN_10202cc0, inferred).
+- Untested live (needs two characters in a party).
