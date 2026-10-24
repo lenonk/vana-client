@@ -98,9 +98,18 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
     prompt, mouse hold-to-open;
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
-    the skillchain burst and message done (MODLOG "Skillchains"); left knockback (op 0x5e), guard / parry ops;
+    skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
+    "Per-record reactions"); guards, parries and counters not seen live yet;
   - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done; left checking the glow copies'
     size against retail footage (the code ignores element scale), party / alliance relations for the colours;
+  - status icons (user, 2026-10-24: none drawn): spec `~/ffxi/lab/research/status_icons_spec.md` ("menu    buff",
+    s2c 0x037 icons / 0x063 sub 9 timers / 0x076 party, status info file 87); not started;
+  - actor sounds (spec `~/ffxi/lab/research/actor_sounds_spec.md`; MODLOG "Actor sounds 1..3"): voices steal, init /
+    ini<n> (worm emerge seen, burrow not seen live), ntob / bton / dead, op 0x78, op-0x24 swing pick, whole schedulers
+    behind motion paths done; left the spec's #10..#13 (shi<n> variants, 0x53 target, pop0 / pop1, hide skip);
+  - lobby (spec `~/ffxi/lab/research/select_buttons_spec.md`): title sounds and press animation done; left the
+    character list press rings (N = 20), login screen sounds, the ptc6yesn prompt (retail: 0002 for No too, Escape
+    does nothing; asked the user), the fade waits (retail 34 frames out, 8 after the fade-in: ours swapped);
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done but the tell sound "0p40" and the `<call>` sounds;
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;
   - the event choice window's scroll bar (query, when the options outrun the rows);
