@@ -404,6 +404,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         target: target.map(|t| (t != "npc").then_some(0.7)),
         menu_selected: menu.and_then(|id| items.iter().find(|(i, _)| *i as u16 + 1 == id)).map(|(i, _)| *i),
         menu_page: 0,
+        menu_off: Vec::new(),
         menu_focused: true,
         chat_log: false,
     };

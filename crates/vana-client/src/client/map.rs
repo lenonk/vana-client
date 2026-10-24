@@ -1617,7 +1617,7 @@ pub fn grid_text(w: &World, regions: &[Region]) -> String {
 
 fn owned(w: &World, region: &Region) -> bool {
     match region.need() {
-        Need::Item(id) => w.key_items.get((id >> 5) as usize).is_some_and(|word| word & (1 << (id & 31)) != 0),
+        Need::Item(id) => w.has_key_item(id),
         _ => true,
     }
 }

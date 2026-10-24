@@ -47,6 +47,8 @@ pub struct Results {
     pub alt: bool,
     /// scoption's cursor (child id) while it is open.
     pub option: Option<u16>,
+    /// Title slot 2 (group 0xd): 0 "Search", 0x13 "Party" from the party menu's Find Member (FUN_10204c60).
+    pub title: usize,
 }
 
 /// The rows the window shows at once (its 15 row children).
@@ -344,7 +346,7 @@ pub fn run(w: &mut World, cond: Cond, scope: Scope) {
     log::info!("search: {cond:?}");
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
-    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None });
+    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0 });
 }
 
 /// FUN_100e0d50's delivery for finished queries (a failure or the 30 s timeout delivers nothing).
@@ -749,11 +751,11 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     rects
 }
 
-/// Title slot 2 "Search" (group 0xd 0); help slot 2 the row's text: the header 0xe 0x13, a mentor 0xe 0x259; scoption's
+/// Title slot 2 "Search" (group 0xd 0) or the opener's; help slot 2 the row's text: the header 0xe 0x13, a mentor 0xe 0x259; scoption's
 /// rows their own.
 pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(res) = &w.search else { return };
-    bars.title[2] = gu.title_msg(0).unwrap_or_default();
+    bars.title[2] = gu.title_msg(res.title).unwrap_or_default();
     if let Some(c) = res.option {
         let [help, title] = gu.focus_text(SCOPTION, c);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());

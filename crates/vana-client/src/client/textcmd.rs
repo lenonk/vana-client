@@ -1030,8 +1030,9 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::EQUIP => equip(w, args),
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::JOIN | id::DECLINE => {
-            // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}.
+            // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}; the invite is no longer pending.
             send(w, NetCommand::Packet { id: 0x074, body: vec![(cid == id::JOIN) as u8, 0, 0, 0] });
+            w.invite = None;
             Ok(())
         }
         id::ANON | id::INVITE => {
@@ -1418,20 +1419,22 @@ fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
 }
 
 /// FUN_100e46a0(which, set): c2s 0x0DC, flag bytes +4..+7 and SetFlg @0x10 (1 set, 2 clear): which 0 anonymous (+4
-/// bit 2), 1 away (bit 1), 2 seeking a party (bit 0).
-fn config_flag(w: &World, which: u8, set: bool) {
+/// bit 2), 1 away (bit 1), 2 seeking a party (bit 0), 6 autogroup (+5 bit 7), 0xb request mode (+7 bit 5).
+pub(super) fn config_flag(w: &World, which: u8, set: bool) {
     let mut b = vec![0u8; 16];
-    b[0] = match which {
-        0 => 4,
-        1 => 2,
-        _ => 1,
-    };
+    match which {
+        0 => b[0] = 4,
+        1 => b[0] = 2,
+        6 => b[1] = 0x80,
+        0xb => b[3] = 0x20,
+        _ => b[0] = 1,
+    }
     b[12] = if set { 1 } else { 2 };
     send(w, NetCommand::Packet { id: 0x0DC, body: b });
 }
 
 /// Sets a game config value (FUN_10193830): saved with cnf.dat and applied.
-fn cfg(w: &mut World, id: u16, v: u32) {
+pub(super) fn cfg(w: &mut World, id: u16, v: u32) {
     if w.game.set(id, v) {
         w.game_save = true;
         super::cfgapply::apply(w, id);
@@ -1616,11 +1619,7 @@ fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
                 refuse(w, 0x9f);
                 return Ok(());
             }
-            let mut b = vec![0u8; 8];
-            b[0..4].copy_from_slice(&t.0.to_le_bytes());
-            b[4..6].copy_from_slice(&t.1.to_le_bytes());
-            b[6] = kind;
-            send(w, NetCommand::Packet { id: 0x06E, body: b });
+            send(w, NetCommand::Packet { id: 0x06E, body: super::party::invite_body(t.0, t.1, kind) });
         }
         Some("leave") => send(w, NetCommand::Packet { id: 0x06F, body: vec![kind, 0, 0, 0] }),
         Some("breakup") => {
@@ -1631,18 +1630,12 @@ fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
         }
         Some("kick") => {
             let name = named(w, 2)?;
-            let mut b = vec![0u8; 0x18];
-            b[6] = kind;
-            b[8..8 + name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
-            send(w, NetCommand::Packet { id: 0x071, body: b });
+            send(w, NetCommand::Packet { id: 0x071, body: super::party::kick_body(kind, &name) });
         }
         Some(sub @ ("leader" | "looter")) => {
             let name = named(w, 2)?;
-            let mut b = vec![0u8; 0x14];
-            b[..name.len().min(15)].copy_from_slice(&name.as_bytes()[..name.len().min(15)]);
-            b[0x10] = kind;
-            b[0x11] = if sub == "looter" { 4 } else { (kind == 5) as u8 };
-            send(w, NetCommand::Packet { id: 0x077, body: b });
+            let change = if sub == "looter" { 4 } else { (kind == 5) as u8 };
+            send(w, NetCommand::Packet { id: 0x077, body: super::party::change_body(&name, kind, change) });
         }
         _ => {}
     }

@@ -225,6 +225,17 @@ mod tests {
         assert!(e.starts_with("2026, Oct. 2") && e.matches(':').count() == 2, "{e}");
     }
 
+    /// The invites (LAB_10203a50): the name as string 0, the pronoun (0 / 1 / 2) as int 1.
+    #[test]
+    fn invite_lines() {
+        let Some(m) = group10() else { return };
+        let f = |id: usize, p: i32| s(format(&m.raw(id).unwrap(), &[b"Ann"], &[p], &|_, _, _| None));
+        assert_eq!(f(4, 0), "Ann invites you to his party.");
+        assert_eq!(f(4, 1), "Ann invites you to her party.");
+        assert_eq!(f(4, 2), "Ann invites you to join a party.");
+        assert_eq!(f(3, 2), "Ann invites you to form an alliance with their party.");
+    }
+
     /// The moon percent at the turning points (FUN_10103ba0).
     #[test]
     fn moon_percent() {

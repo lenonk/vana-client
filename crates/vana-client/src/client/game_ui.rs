@@ -545,6 +545,12 @@ impl GameUi {
     }
 
     pub fn lobby_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
+        self.lobby_window_swaps(name, w, h, off, sel, hand, hide, &[])
+    }
+
+    /// `lobby_window_off` with children's own sprites replaced (FUN_1011ae50: (child, sprite in the same library)).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lobby_window_swaps(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16], swaps: &[(u16, usize)]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
         let (dx, dy) = (off.0, off.1 + self.stack_dy(name, w, h));
         let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
@@ -570,7 +576,8 @@ impl GameUi {
             {
                 let on = sel == Some(c.id);
                 let d = if on { -1.0 } else { 0.0 };
-                self.batch.push_sprite(ui, lib, r.index as usize, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
+                let k = swaps.iter().find(|s| s.0 == c.id).map_or(r.index as usize, |s| s.1);
+                self.batch.push_sprite(ui, lib, k, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
                 if on
                     && hand
                     && let Some(anc) = ui.lib("anc     anc_s")

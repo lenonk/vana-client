@@ -264,6 +264,54 @@ impl Slots {
     pub fn window(&self) -> String {
         if self.leaders[0] == 0 { "menu    ptw0".into() } else { format!("menu    ptw{}", self.counts[0].clamp(1, 6)) }
     }
+
+    /// FUN_10201f00: over all 18 slots, exactly one that is not a trust (ActIndex < 0x700) and at least one trust.
+    pub fn trusts_only(&self) -> bool {
+        let used = self.slots.iter().flatten();
+        let trusts = used.clone().filter(|m| m.index >= 0x700).count();
+        used.count() - trusts == 1 && trusts != 0
+    }
+
+    /// FUN_10201690 without an invite pending: 2 solo, 3 in a party, 4 a party of us and trusts.
+    pub fn state(&self) -> u8 {
+        match (self.leaders[0], self.trusts_only()) {
+            (0, _) => 2,
+            (_, true) => 4,
+            _ => 3,
+        }
+    }
+}
+
+fn name_bytes(b: &mut [u8], name: &str) {
+    let n = name.len().min(15);
+    b[..n].copy_from_slice(&name.as_bytes()[..n]);
+}
+
+/// c2s 0x06E {u32 UniqueNo, u16 ActIndex, u8 Kind}: invite (kind 0) or ask a party leader into an alliance (5).
+pub fn invite_body(id: u32, index: u16, kind: u8) -> Vec<u8> {
+    let mut b = vec![0u8; 8];
+    b[0..4].copy_from_slice(&id.to_le_bytes());
+    b[4..6].copy_from_slice(&index.to_le_bytes());
+    b[6] = kind;
+    b
+}
+
+/// c2s 0x071 {u32 0, u16 0, u8 Kind, pad, name[15]} (FUN_100e9220): remove a member.
+pub fn kick_body(kind: u8, name: &str) -> Vec<u8> {
+    let mut b = vec![0u8; 0x18];
+    b[6] = kind;
+    name_bytes(&mut b[8..], name);
+    b
+}
+
+/// c2s 0x077 {name[16], u8 Kind, u8 ChangeKind} (FUN_100e9420): change 0 leader, 1 alliance leader, 4 quartermaster,
+/// 5 lottery, 6 / 7 level sync on / off.
+pub fn change_body(name: &str, kind: u8, change: u8) -> Vec<u8> {
+    let mut b = vec![0u8; 0x14];
+    name_bytes(&mut b, name);
+    b[0x10] = kind;
+    b[0x11] = change;
+    b
 }
 
 #[cfg(test)]

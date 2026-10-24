@@ -51,6 +51,8 @@ pub enum SubThen {
     Command(String),
     /// The engaged battle menu's Check (LAB_1012bec0): FUN_101347b0 on the pick.
     Check,
+    /// A party menu pick (client/partymenu.rs).
+    Party(super::partymenu::Pick),
 }
 
 /// The party-list cursor of `<stpt>` / `<stal>` (FUN_10202d80, DAT_106643e0): a window slot below `count` (6 / 18)
@@ -117,6 +119,10 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
             let line = match &pc.then {
                 SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{name}\""),
                 SubThen::Line { stash, .. } => format!("{stash}{id}"),
+                SubThen::Party(p) => {
+                    super::partymenu::picked(w, *p, Some((id, name)));
+                    return true;
+                }
                 _ => return true,
             };
             super::textcmd::run(w, &line, super::textcmd::Mode::SubTarget);
@@ -124,6 +130,9 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
         K::Escape => {
             let pc = w.party_cursor.take().unwrap();
             w.sounds.push(crate::audio::Ui::Cancel as u32);
+            if let SubThen::Party(p) = pc.then {
+                super::partymenu::picked(w, p, None);
+            }
             if let SubThen::Line { from_macro: true, .. } = pc.then
                 && let Some(m) = w.macros.as_mut()
             {
@@ -275,7 +284,7 @@ pub fn confirm_sub(w: &mut World) {
         return;
     }
     let line = match &s.then {
-        SubThen::Item { .. } | SubThen::Command(_) | SubThen::Check => String::new(),
+        SubThen::Item { .. } | SubThen::Command(_) | SubThen::Check | SubThen::Party(_) => String::new(),
         SubThen::Magic(name) => format!("/magic \"{name}\" {t}"),
         SubThen::Ability(cmd, name) => format!("{cmd} \"{name}\" {t}"),
         SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{}\"", super::textcmd::display_name(w, t)),

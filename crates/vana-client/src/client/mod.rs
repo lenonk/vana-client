@@ -50,6 +50,7 @@ mod synth;
 mod treasure;
 mod servmes;
 mod chatctrl;
+mod partymenu;
 mod inspect;
 mod linehist;
 mod scrollbar;
@@ -139,9 +140,19 @@ fn pick_key(id: u32, k: u16) -> u64 {
     1 << 63 | (id as u64) << 16 | k as u64
 }
 
+/// The main menu's disabled children on the current page (state 5; FUN_10140090 / FUN_10140270): Party while the party
+/// is us and trusts only (FUN_10201f00). Not done: Monstrosity.
+fn menu_disabled(w: &World) -> Vec<u16> {
+    let mut off = Vec::new();
+    if w.menu_page == 0 && w.party.slots().trusts_only() {
+        off.push(6);
+    }
+    off
+}
+
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -769,7 +780,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1293,6 +1304,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if treasure::active(world) => treasure::key(world, *key),
                 _ if world.chatctrl.is_some() => chatctrl::key(world, *key),
                 _ if world.search.is_some() => search::key(world, *key),
+                _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1433,10 +1445,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Social page: child 11 Shut Down (FUN_10159f90), 12 Log Out (FUN_1015a020) ask first.
     world.menu_picked = false;
-    if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1) {
+    if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1).filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
         world.menu_picked = true;
         // FUN_10140400: a row that opens its window plays 0002 (the rows below that can refuse push their own).
-        if matches!((world.menu_page, id), (0, 2 | 3 | 4 | 5 | 10)) {
+        if matches!((world.menu_page, id), (0, 2 | 3 | 4 | 5 | 6 | 10)) {
             world.sounds.push(crate::audio::Ui::Select as u32);
         }
         match (world.menu_page, id) {
@@ -1445,6 +1457,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
+            // Child 6 Party (FUN_10140400 case 6 -> FUN_102016e0).
+            (0, 6) => partymenu::open(world),
             // Child 7 Trade (FUN_10140400 case 7 -> FUN_1013fe70).
             (0, 7) => {
                 if trade::start(world) {
@@ -1517,6 +1531,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         && let Some(p) = input.pointer
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| partymenu::focused(world)) {
+        partymenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // Mouse on the magic / ability lists and their category windows.
     if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
@@ -1720,6 +1737,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
         menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
+        menu_off: menu_disabled(world),
         menu_focused: world.confirm.is_none(),
         chat_log: false,
     };
@@ -1905,6 +1923,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
     treasure::draw_chest(gu, world, sw, sh);
+    partymenu::draw_invite_icon(gu, world, sw, sh);
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
@@ -1932,6 +1951,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
 
     // chatctrl over the action menu that opened it.
     blockers.extend(chatctrl::draw(gu, world, sw, sh));
+    blockers.extend(partymenu::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2361,6 +2381,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
     chatctrl::bars(gu, world, &mut bars);
+    partymenu::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
@@ -2420,7 +2441,7 @@ fn open_mogdoor(w: &mut World) {
     // (FUN_101cc0a0: 0x067 @0x20 owner 0).
     let own = w.mh_owner == 0;
     let floors = myroom::in_city(w.zone) && own && myroom::has_floors(&r) && w.mh_floors;
-    let garden = own && w.key_items.contains(&0x86d);
+    let garden = own && w.has_key_item(0x86d);
     w.mogdoor = Some(myroom::Menu { bit, sel: 0, list: false, floors, garden, floor: r.floor });
     w.action_menu = None;
 }
@@ -3321,6 +3342,10 @@ struct World {
     tell_hist: Vec<String>,
     /// The chat mode window ("menu    chatctrl").
     chatctrl: Option<chatctrl::ChatCtrl>,
+    /// The Party row's windows, a pending invite (s2c 0x0DC) and the s2c 0x0B4 config bytes (SAVE_CONF @4..@0xf).
+    partymenu: Option<partymenu::PartyMenu>,
+    invite: Option<partymenu::Invite>,
+    conf_sys: [u8; 12],
     /// /ver's text (retail: patch.ver; ours the version string sent to the lobby).
     client_version: String,
     /// The search server from the lobby's reply (+0x40 IP, +0x44 port) and the queries running on it.
@@ -3536,6 +3561,11 @@ impl World {
 
     fn dead(&self) -> bool {
         matches!(self.my_motion.status, 2 | 3)
+    }
+
+    /// Key item `id` is owned (s2c 0x055 bits, 512 per table).
+    fn has_key_item(&self, id: u16) -> bool {
+        self.key_items.get((id >> 5) as usize).is_some_and(|word| word & (1 << (id & 31)) != 0)
     }
 }
 
@@ -4469,6 +4499,9 @@ impl App {
                             tell_name: None,
                             tell_hist: Vec::new(),
                             chatctrl: None,
+                            partymenu: None,
+                            invite: None,
+                            conf_sys: [0; 12],
                             client_version: self.cfg.client_version.clone(),
                             weather: 1,
                             weather_from: None,
@@ -4919,6 +4952,7 @@ impl App {
                     inspect::drop(world);
                     treasure::close(world);
                     world.chatctrl = None;
+                    world.partymenu = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5416,6 +5450,8 @@ impl App {
                     }
                 }
                 NetEvent::ResOffer { .. } => {}
+                NetEvent::ConfSys(c) => world.conf_sys = c,
+                NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
                 NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
                 NetEvent::TrackState(s) => {
@@ -5675,6 +5711,7 @@ impl App {
             target::force_flash(world, t);
         }
         target::party_cursor_update(world);
+        partymenu::update(world);
         if world.party_cursor.is_some()
             && let Some((_, _, Some(id))) = target::party_hand(world)
         {

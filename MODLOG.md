@@ -6394,3 +6394,41 @@ Spec `~/ffxi/lab/research/collision_chars_spec.md` (30261006_0).
 - Event op 0xab subs 0x0b / 0x0c (FUN_100bac90) set / clear the event actor entity +0x120 bit 6, the bump test 3 flag:
   ours e.no_bump from the VM generic Effect::Op (the actor is the VM own NPC). The other subs bits have no known
   reader yet (R12).
+
+## Party menu (2026-10-24)
+
+Spec `~/ffxi/lab/research/party_menu_spec.md` (30261006_0); ours client/partymenu.rs.
+- Main menu child 6 (FUN_10140400 case 6, SE 0002 always) -> FUN_102016e0: prtyjoin while an invite is pending, prty3
+  for the alliance leader or a party leader with no alliance, prty7 for a party leader in someone else's alliance,
+  prty2 for a member, else prty1. The row is disabled (its kind-4 sprite, silent) while the party is us and trusts
+  only (FUN_10201f00 over all 18 slots); HudState::menu_off draws disabled main-menu children.
+- The windows close the main menu (FUN_10205570) and bring it back on the Party row when the bottom one closes
+  (FUN_10205660, which also closes the search results and a menu pick on the party list). prty4 / prty8 / prty5us /
+  alarm stack over their parent; the walk (group 0x81) hides the parent meanwhile. A window watching the party state
+  ([7]: prty1 / prty5us 2, the others 3; FUN_10201690) closes when it changes; ours closes the whole stack *(inf)*.
+- Labels swap per frame through the child's own sprite (FUN_1011ae50; GameUi::lobby_window_swaps), from the s2c 0x0B4
+  SAVE_CONF bytes (World.conf_sys): Seek Party 78 / Play Solo 257 (InviteFlg), Autogroup 474 / 484 (AutoPartyFlg; 485
+  and disabled where zone flag 8 is off), Request 778 / Stop Request 780 (RecruitFlg), Level Sync 611 / Lv. Sync Off
+  613 (a member with GAttr 0x100). The Find Member child is hidden and drawn by the window (FUN_10205790): 82 / 79
+  Invite with the help 0xe 0x10 / 0xf, by whether the target is someone else seeking a party or in autogroup.
+- Rows done: the three 0x0DC toggles (which 2 / 6 / 0xb; textcmd::config_flag gained 6 and 0xb), Find Member (the
+  seeker search `/sea [region] inv`, title slot 2 0xd 0x13 "Party": FUN_10150ce0 is titlewin) / Invite (0x06E {id, 0,
+  0}), Languages (prty5us: config 0x98, check marks keytops3 431, c2s 0x0DB kind 1 on open and on a changed close),
+  Alarm (config 0xc7, windowps 483 mark, sounds 0027 0031 0033 0034 0038 0029 0022), Distribution view (group 10 0x02 /
+  group 9 0x00, mode 0x79), Leave (0x06F 0), Disband (0x070 0 with own GAttr 4), Dissolve in prty7 (0x06F 5), prty4
+  Form (0x06E {target, index, 5}) / Dissolve (0x070 5 with GAttr 8), prty8 Lottery (0x077 change 5 per quartermaster)
+  / Quartermaster, Chg. Leader (the menu closes after the pick), Rmv. Member (us: nothing). The picks use the party-list
+  cursor (SubThen::Party). The enables of FUN_10205ff0 / FUN_102061e0 / FUN_102062c0.
+- s2c 0x0DC: unless AnonFlag bit 1, group 10 0x04 / 0x03 in mode 0x87 (the name as string 0, the pronoun FUN_101cc590 as
+  int 1: "Ann invites you to his party.", "... to join a party." for pronoun 2; LSB sends RaceNo 0); a party invite plays
+  the alarm; the invite is pending (keytops3 69 centred on the party window's top-left corner) until prtyjoin's Yes / No
+  (0x074) or /join / /decline. prtyjoin's help is the question (group 10 0x00 / 0x01, printf %s). Not done: the name's
+  0x7F 0xFC / 0xFB codes in the party line (FUN_100da580; the log draws no 0x7F codes yet).
+- Not done: Member List, View Request, Level Sync (c2s 0x078 / s2c 0x0E1 and GROUP_LIST searches, levelsyn), Focus
+  (/focustarget), Rearrange (local roster order), the request history prompt (comyn 9 0x140), the auto-pool area rule
+  (actor +0x18c, group 9 0xc2), Monstrosity.
+- Live (Lnxtest, Southern San d'Oria, bot Rosalind): prty1 Seek Party -> "Play Solo" once 0x0B4 came, and back;
+  Languages and Alarm; prty3 with Alliance dim (no target); Rmv. Member through the party cursor (the menu stays, Chg.
+  Leader / Rmv. Member dim with one member: LSB keeps a party of one); Chg. Leader (menu closed, main menu back on Party,
+  the leader dot on the bot); prty2 (its leave row's windowps 80 reads "Disband"); Leave -> Solo and the window closed
+  itself; Find Member with no target: 8 seekers in the region. The receiving side is untested live (no bot invites).

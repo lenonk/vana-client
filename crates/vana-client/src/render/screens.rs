@@ -569,6 +569,8 @@ pub struct HudState {
     pub menu_selected: Option<usize>,
     /// Main menu page: 0 commands (menuwind), 1 social (socialme); the arrows swap them.
     pub menu_page: u8,
+    /// Disabled children (state 5): their last kind 0 / 4 sprite as GameUi::disabled_children draws them.
+    pub menu_off: Vec<u16>,
     /// The menu has the focus: unfocused (under a prompt) it keeps its highlight but draws no hand.
     pub menu_focused: bool,
     /// Draw logwindo at its layout size (offscreen tools); the client sizes it itself (client/logwin.rs).
@@ -957,12 +959,21 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
         // Items are label sprites at their child positions; the selected one is tinted and nudged
         // up-left, with the hand cursor (anc_s) at its position (FUN_101144b0, FUN_10116b10).
         for (i, c) in m.elements.iter().skip(1).enumerate() {
-            let Some(r) = c.refs.iter().find(|r| r.kind == 0) else { continue };
+            let off = st.menu_off.contains(&c.id);
+            let r = if off { c.refs.iter().rfind(|r| r.kind == 0 || r.kind == 4) } else { c.refs.iter().find(|r| r.kind == 0) };
+            let Some(r) = r else { continue };
             let Some(lib) = ui.lib(&r.lib) else { continue };
             let (cx, cy) = (x + c.x as f32, y + c.y as f32);
             let on = i == sel;
-            let d = if on { -1.0 } else { 0.0 };
-            b.push_sprite(ui, lib, r.index as usize, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
+            let (d, tint) = match (off, r.kind == 4, on) {
+                (false, _, true) => (-1.0, 0x8080_5020),
+                (false, _, false) => (0.0, 0x8080_8080),
+                (true, true, true) => (1.0, 0x8080_5020),
+                (true, true, false) => (0.0, 0x8080_8080),
+                (true, false, true) => (1.0, 0x4040_2810),
+                (true, false, false) => (0.0, 0x3080_8080),
+            };
+            b.push_sprite(ui, lib, r.index as usize, cx + d, cy + d, 1.0, 1.0, tint, 0);
             if on
                 && st.menu_focused
                 && let Some(anc) = ui.lib("anc     anc_s")
