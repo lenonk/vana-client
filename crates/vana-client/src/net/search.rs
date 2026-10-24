@@ -16,15 +16,67 @@ const FIXED: &[u8; 16] = b"0s=m<1IZ2zBCc8{~";
 /// A slot older than 30 s fails (FUN_100e0d50).
 const TIMEOUT: Duration = Duration::from_secs(30);
 
-/// What to search for (the condition of FUN_10103ec0 with the fields set so far).
-#[derive(Clone, Debug, PartialEq)]
-pub enum Cond {
+/// Condition flags (+0x00): bit `1 << search type` for the typed fields.
+pub const NAME: u32 = 1;
+pub const AREA: u32 = 2;
+pub const NATION: u32 = 4;
+pub const JOB: u32 = 8;
+pub const LEVEL: u32 = 0x10;
+pub const RACE: u32 = 0x20;
+pub const STATUS: u32 = 0x40;
+pub const MLEVEL: u32 = 0x80;
+pub const LS1: u32 = 0x800;
+pub const FRIEND: u32 = 0x1000;
+pub const RANK: u32 = 0x10000;
+pub const LS2: u32 = 0x80000;
+
+/// What to search for: FUN_10103ec0's condition (0x68 bytes) with the fields set so far.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct Cond {
+    pub flags: u32,
+    /// +0x04: the search types typed with + / - (bit 7 descending), in typing order.
+    pub sorts: Vec<u8>,
+    /// +0x0c, at most 15 chars.
+    pub name: String,
+    /// +0x1c / +0x1e: the level, or the master level (the same fields).
+    pub level: (u8, u8),
+    /// +0x24, newest first; none with the area flag = all areas.
+    pub areas: Vec<u16>,
+    /// +0x22: the last area set (-1 for ALL).
+    pub last_area: i16,
+    pub nation: u8,
+    pub job: u8,
+    pub race: u8,
+    /// +0x4c / +0x4d.
+    pub rank: (u8, u8),
+    /// +0x4e bit 1: an area was given (wire type 3).
+    pub area_given: bool,
+    /// +0x50 / +0x54.
+    pub ls: [u32; 2],
+    /// +0x60 (its low half is +0x4a).
+    pub status: u32,
+}
+
+impl Cond {
     /// `/sea all`: the area flag with no area, wire type 0.
-    All,
+    pub fn all() -> Self {
+        Cond { flags: AREA, last_area: -1, ..Default::default() }
+    }
+
     /// One area (FUN_10107b00), wire type 3.
-    Zone(u16),
+    pub fn zone(z: u16) -> Self {
+        Cond { flags: AREA, areas: vec![z], last_area: z as i16, area_given: true, ..Default::default() }
+    }
+
     /// Name only, all areas (FUN_1007c740's lookup), wire type 0.
-    Name(String),
+    pub fn name(n: impl Into<String>) -> Self {
+        Cond { flags: NAME, name: n.into(), ..Default::default() }
+    }
+
+    /// FUN_10105fa0: the type is in the sort list.
+    pub fn sorted(&self, t: u8) -> bool {
+        self.sorts.iter().any(|s| s & 0x1f == t & 0x1f)
+    }
 }
 
 /// The decoded entry (FUN_101061d0's 0x48-byte record); `present` has bit `1 << type` per field sent.
@@ -75,37 +127,99 @@ impl Bits {
     }
 }
 
-/// FUN_101041e0: the condition block (u8 byte count, then the bits) and its wire type.
+/// FUN_101041e0 -> FUN_10104200: the condition block (u8 byte count, then the bits) and its wire type.
 pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
     let mut b = Bits::default();
-    // Each sort entry: 5-bit type, descending, present, then the value.
-    match c {
-        Cond::All => {
-            b.put(0, 7);
-            b.put(1, 5);
-            b.put(0, 2);
+    // The typed sorts, then name and each set field's type not listed yet.
+    let mut sorts = c.sorts.clone();
+    for (flag, t) in [(0, 0), (LEVEL, 4), (MLEVEL, 7), (JOB, 3), (NATION, 2), (RACE, 5), (AREA, 1), (STATUS, 6), (RANK, 0x10)] {
+        if (flag == 0 || c.flags & flag != 0) && !sorts.iter().any(|s| s & 0x1f == t) {
+            sorts.push(t);
         }
-        Cond::Zone(z) => {
-            b.put(0, 7);
-            b.put(1, 5);
-            b.put(0b01, 2);
-            b.put(*z as u32 & 0x3ff, 10);
-            b.put(1, 5);
-            b.put(0, 2);
-        }
-        Cond::Name(n) => {
-            let n: Vec<u8> = n.bytes().take(15).collect();
-            b.put(0b01, 7);
-            b.put(0, 1);
-            b.put(n.len() as u32, 4);
-            for ch in n {
-                b.put(ch as u32 & 0x7f, 7);
+    }
+    // Each entry: 5-bit type, descending, present, then the value.
+    for s in sorts {
+        let (t, desc) = (s & 0x1f, (s >> 7) as u32);
+        let head = |b: &mut Bits, present: bool| {
+            b.put(t as u32, 5);
+            b.put(desc, 1);
+            b.put(present as u32, 1);
+        };
+        let has = |f: u32| c.flags & f != 0;
+        match t {
+            0 if has(NAME) && !c.name.is_empty() => {
+                head(&mut b, true);
+                let n: Vec<u8> = c.name.bytes().take(15).collect();
+                b.put(0, 1);
+                b.put(n.len() as u32, 4);
+                for ch in n {
+                    b.put(ch as u32 & 0x7f, 7);
+                }
             }
+            // One entry per area, then an empty one unless all 16 went.
+            1 if has(AREA) && !c.areas.is_empty() => {
+                for z in c.areas.iter().take(16) {
+                    head(&mut b, true);
+                    b.put(*z as u32 & 0x3ff, 10);
+                }
+                if c.areas.len() < 16 {
+                    head(&mut b, false);
+                }
+            }
+            2 if has(NATION) => {
+                head(&mut b, true);
+                b.put(c.nation as u32, 2);
+            }
+            3 if has(JOB) => {
+                head(&mut b, true);
+                b.put(c.job as u32, 5);
+            }
+            4 if has(LEVEL) => {
+                head(&mut b, true);
+                b.put(c.level.0 as u32, 8);
+                b.put(c.level.1 as u32, 8);
+            }
+            5 if has(RACE) => {
+                head(&mut b, true);
+                b.put(c.race as u32, 4);
+            }
+            6 if has(STATUS) && c.status != 0 => {
+                head(&mut b, true);
+                b.put(c.status & 0xffff, 16);
+            }
+            7 if has(MLEVEL) => {
+                head(&mut b, true);
+                b.put(c.level.0 as u32, 8);
+                b.put(c.level.1 as u32, 8);
+            }
+            0x10 if has(RANK) => {
+                head(&mut b, true);
+                b.put(c.rank.0 as u32, 8);
+                b.put(c.rank.1 as u32, 8);
+            }
+            // Sort only.
+            _ => head(&mut b, false),
         }
+    }
+    // Then without descending / present bits.
+    if c.flags & LS1 != 0 {
+        b.put(0b01011, 5);
+        b.put(c.ls[0], 32);
+    }
+    if c.flags & LS2 != 0 {
+        b.put(0b10011, 5);
+        b.put(c.ls[1], 32);
+    }
+    if c.flags & FRIEND != 0 {
+        b.put(0b01100, 5);
+    }
+    if c.status != 0 {
+        b.put(0b10110, 5);
+        b.put(c.status, 32);
     }
     let mut out = vec![b.bytes.len() as u8];
     out.extend(b.bytes);
-    (if matches!(c, Cond::Zone(_)) { 3 } else { 0 }, out)
+    (if c.area_given { 3 } else { 0 }, out)
 }
 
 /// The request packet (1.2 of the spec): header, payload, session word, MD5, salt; Blowfish over [8, P + 8).
@@ -274,11 +388,11 @@ mod tests {
 
     #[test]
     fn conditions() {
-        assert_eq!(condition(&Cond::Zone(230)), (3, vec![4, 0x00, 0x14, 0xe6, 0x08]));
-        assert_eq!(condition(&Cond::Zone(101)), (3, vec![4, 0x00, 0x14, 0x65, 0x08]));
-        assert_eq!(condition(&Cond::All), (0, vec![2, 0x00, 0x10]));
+        assert_eq!(condition(&Cond::zone(230)), (3, vec![4, 0x00, 0x14, 0xe6, 0x08]));
+        assert_eq!(condition(&Cond::zone(101)), (3, vec![4, 0x00, 0x14, 0x65, 0x08]));
+        assert_eq!(condition(&Cond::all()), (0, vec![2, 0x00, 0x10]));
         // [00000 0 1][0][0011][1000001 1100010 1100011]: "Abc".
-        let (w, p) = condition(&Cond::Name("Abc".into()));
+        let (w, p) = condition(&Cond::name("Abc"));
         assert_eq!((w, p), (0, vec![5, 0x02, 0x38, 0x38, 0xb1, 0x80]));
     }
 
@@ -287,19 +401,19 @@ mod tests {
     #[ignore]
     fn live_lookup() {
         let addr = (Ipv4Addr::LOCALHOST, 54002);
-        let all = query(addr, &Cond::All).unwrap();
+        let all = query(addr, &Cond::all()).unwrap();
         println!("all: {} of {}: {:?}", all.records.len(), all.total, all.records.iter().map(|r| (&r.name, r.zone, r.id)).collect::<Vec<_>>());
         let first = &all.records.first().expect("nobody online").name;
-        let one = query(addr, &Cond::Name(first.clone())).unwrap();
+        let one = query(addr, &Cond::name(first.clone())).unwrap();
         println!("{first}: {:?}", one.records);
         assert!(one.records.iter().any(|r| &r.name == first));
-        let zone = query(addr, &Cond::Zone(all.records[0].zone)).unwrap();
+        let zone = query(addr, &Cond::zone(all.records[0].zone)).unwrap();
         assert!(zone.records.iter().all(|r| r.zone == all.records[0].zone));
     }
 
     #[test]
     fn spec_vector() {
-        let (wire, payload) = condition(&Cond::Zone(101));
+        let (wire, payload) = condition(&Cond::zone(101));
         let req = request(wire, &payload, 0x1122_3344, 0x5566_7788);
         let want = hex("4c0000004958464669148a59d7cfb8e92a38ab9c9baa18dcb9d7f22348c37029b9d7f22348c37029b9d7f22348c37029daf440daa68666cc9160a6313f2cd3c4769d706a41c5c56b88776655");
         assert_eq!(req, want);

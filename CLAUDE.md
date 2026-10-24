@@ -73,8 +73,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
-    left: Windurst's water draws too dark (we blend effects in linear space, D3D8 in gamma space: MODLOG), the
-    other openings (Port Windurst, Windurst Woods, Bastok Mines, Port Bastok) not seen yet.
+    left: Windurst's water (too dark; the world blends in gamma space since, MODLOG "The world scene blends in gamma
+    space", not seen by the user yet; the lobby scenes still blend in linear space), the other openings (Port
+    Windurst, Windurst Woods, Bastok Mines, Port Bastok) not seen yet.
 - Other known gaps:
   - after the move to FFXiMain 30261006_0 (MODLOG "Tables copied from FFXiMain"): the creator backdrop drew black
     (on zone 133 too; not reproduced 2026-10-23: the lobby and the creator race step draw it live and

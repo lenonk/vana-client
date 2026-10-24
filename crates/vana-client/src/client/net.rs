@@ -199,6 +199,8 @@ pub enum NetEvent {
     LinkshellEquip { num: u8, index: u8, bag: u8 },
     /// s2c 0x0C9 (the checked player's equipment / jobs) and 0x0CA (title, bazaar message), raw.
     InspectEquip(Vec<u8>),
+    /// s2c 0x008 (GP_SERV_COMMAND_ENTERZONE, LAB_100facd0): the visited-zone bits @4.
+    KnownZones([u8; 0x30]),
     InspectMessage(Vec<u8>),
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
     Fragments(Vec<u8>),
@@ -814,6 +816,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x082 | 0x084 => tx.send(NetEvent::GuildResult { sell: p.id == 0x084, item: p.u16(4), count: p.u8(6), trade: p.u8(7) as i8 })?,
                     0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
                     0x0C9 => tx.send(NetEvent::InspectEquip(p.data.clone()))?,
+                    0x008 if p.data.len() >= 4 + 0x30 => tx.send(NetEvent::KnownZones(p.data[4..4 + 0x30].try_into().unwrap()))?,
                     0x0CA => tx.send(NetEvent::InspectMessage(p.data.clone()))?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,
                     0x0D2 => tx.send(NetEvent::TrophyList { slot: p.u8(0x14), item: p.u16(0x10), target: p.u32(8), gold: p.u16(0xc), container: p.u8(0x16) != 0 })?,

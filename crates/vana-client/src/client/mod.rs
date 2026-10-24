@@ -3221,6 +3221,10 @@ struct World {
     searches: Vec<(std::sync::mpsc::Receiver<anyhow::Result<crate::net::search::Reply>>, search::Then)>,
     /// The search results window ("menu    scresult") and scoption over it.
     search: Option<search::Results>,
+    /// FUN_10104f00's word lists, regions and zone flags (FFXiMain).
+    search_words: Option<Arc<crate::dat::tables::SearchWords>>,
+    /// s2c 0x008 EnterZoneTbl: a bit per zone visited (S+0x3c409), for /search area names.
+    known_zones: Option<[u8; 0x30]>,
     /// /check on a player: the store and "menu    inspect".
     inspect: inspect::Inspect,
     /// The chat line's history (kept on the App between logins).
@@ -3560,6 +3564,7 @@ pub struct App {
     installed: u32,
     keys_table: Option<Arc<zone::Keys>>,
     knock_table: Option<[[f32; 3]; 8]>,
+    search_words: Option<Arc<crate::dat::tables::SearchWords>>,
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
@@ -3738,6 +3743,7 @@ impl App {
             installed,
             keys_table: None,
             knock_table: None,
+            search_words: None,
             game_ui: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
@@ -4080,6 +4086,7 @@ impl App {
             let dll = std::fs::read(self.cfg.ffxi_dir().join("FFXiMain.dll"))?;
             self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
             self.knock_table = crate::dat::tables::knockback(&dll).ok();
+            self.search_words = crate::dat::tables::search_words(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
             self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
@@ -4246,6 +4253,8 @@ impl App {
                             search_addr: login.search,
                             searches: Vec::new(),
                             search: None,
+                            search_words: self.search_words.clone(),
+                            known_zones: None,
                             inspect: inspect::Inspect::default(),
                             line_hist: std::mem::take(&mut self.line_hist),
                             my_id: login.char_id,
@@ -5188,9 +5197,10 @@ impl App {
                 NetEvent::TradeResponse { id, kind, index } => trade::on_response(world, id, kind, index),
                 NetEvent::TradeTheirs { n, counter, item, slot, attr } => trade::on_their_slot(world, n, counter, item, slot, attr),
                 NetEvent::TradeMine { n, item, slot, inv } => trade::on_my_slot(world, n, item, slot, inv),
-                // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::InspectEquip(p) => inspect::on_equip(world, &p),
                 NetEvent::InspectMessage(p) => inspect::on_message(world, &p),
+                NetEvent::KnownZones(z) => world.known_zones = Some(z),
+                // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
                         *l = (index, bag);

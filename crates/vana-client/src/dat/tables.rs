@@ -179,6 +179,137 @@ pub fn knockback(dll: &[u8]) -> Result<[[f32; 3]; 8]> {
     Ok(t)
 }
 
+/// The file offset of a VA (data sections).
+fn off_of(dll: &[u8], va: u32) -> Option<usize> {
+    let u16_at = |o: usize| dll.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
+    let u32_at = |o: usize| dll.get(o..o + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()));
+    let nt = u32_at(0x3c)? as usize;
+    let (count, opt) = (u16_at(nt + 6)?, u16_at(nt + 20)?);
+    let base = u32_at(nt + 24 + 28)?;
+    (0..count).find_map(|i| {
+        let s = nt + 24 + opt + i * 40;
+        let (sva, rsize, raw) = (u32_at(s + 12)?, u32_at(s + 16)?, u32_at(s + 20)? as usize);
+        let rel = va.checked_sub(base + sva)?;
+        (rel < rsize).then_some(raw + rel as usize)
+    })
+}
+
+fn u32_le(dll: &[u8], at: usize) -> Option<u32> {
+    dll.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()))
+}
+
+/// The C string at a VA.
+fn cstr_at(dll: &[u8], va: u32) -> Option<String> {
+    let o = off_of(dll, va)?;
+    let end = o + dll.get(o..)?.iter().position(|&b| b == 0)?;
+    Some(String::from_utf8_lossy(&dll[o..end]).into_owned())
+}
+
+/// The file offset of the `{i32 value, char *word}` pair for (value, word).
+fn find_pair(dll: &[u8], value: i32, word: &str) -> Result<usize> {
+    let needle: Vec<u8> = [&[0u8][..], word.as_bytes(), &[0]].concat();
+    let mut start = 0;
+    while let Some(i) = dll.get(start..).and_then(|s| s.windows(needle.len()).position(|w| w == needle)) {
+        let s = start + i + 1;
+        if let Some(va) = va_of(dll, s) {
+            let pat: Vec<u8> = [value.to_le_bytes(), va.to_le_bytes()].concat();
+            if let Some(p) = dll.chunks_exact(4).enumerate().find_map(|(k, _)| (dll.get(k * 4..k * 4 + 8) == Some(&pat[..])).then_some(k * 4)) {
+                return Ok(p);
+            }
+        }
+        start = s;
+    }
+    Err(anyhow!("FFXiMain.dll: no word table with {word} (an unknown build?)"))
+}
+
+/// A `{i32 value, char *word}` list from `at` to its NULL word, and the offset after it.
+fn word_list(dll: &[u8], mut at: usize) -> (Vec<(i32, String)>, usize) {
+    let mut out = Vec::new();
+    while let (Some(v), Some(p)) = (u32_le(dll, at), u32_le(dll, at + 4)) {
+        at += 8;
+        if p == 0 {
+            break;
+        }
+        out.push((v as i32, cstr_at(dll, p).unwrap_or_default()));
+    }
+    (out, at)
+}
+
+/// FUN_10104f00's words ({value, word} lists): the categories (0x10331cf0), the UNITY keyword, areas, nations,
+/// races, jobs and status words in a row after them; the unity leaders (0x10364880) elsewhere.
+#[derive(Clone, Debug, Default)]
+pub struct SearchWords {
+    pub categories: Vec<(i32, String)>,
+    pub unity_word: Vec<(i32, String)>,
+    pub areas: Vec<(i32, String)>,
+    pub nations: Vec<(i32, String)>,
+    pub races: Vec<(i32, String)>,
+    pub jobs: Vec<(i32, String)>,
+    pub statuses: Vec<(i32, String)>,
+    pub unity: Vec<(i32, String)>,
+    /// FUN_1020a3e0's regions (0x32 lists of zone ids at 0x103858a8; entry 30 is filled at run time: empty here).
+    pub regions: Vec<Vec<u16>>,
+    /// DAT_103669b8: 4 bits per zone below 300 (FUN_101070f0), 2 = searchable.
+    pub zone_flags: Vec<u8>,
+}
+
+const ZONE_FLAGS: Sig = Sig {
+    name: "zone flags",
+    hint: &[0x70, 0x7f, 0xff, 0xf1, 0xf1, 0xf1, 0x1f, 0xf5, 0x1f, 0x1f, 0x1f, 0x1f, 0xff, 0xff, 0xff, 0x1f],
+    len: 0x40,
+    md5: "7569110eabc4e9d7cd70ab597efacdbf",
+};
+
+pub fn search_words(dll: &[u8]) -> Result<SearchWords> {
+    let mut w = SearchWords::default();
+    let (cats, at) = word_list(dll, find_pair(dll, 0, "NAME")?);
+    let lists: [&mut Vec<(i32, String)>; 6] = [&mut w.unity_word, &mut w.areas, &mut w.nations, &mut w.races, &mut w.jobs, &mut w.statuses];
+    let mut at = at;
+    for l in lists {
+        (*l, at) = word_list(dll, at);
+    }
+    w.categories = cats;
+    if w.areas.first().map(|a| a.1.as_str()) != Some("ALL") {
+        return Err(anyhow!("FFXiMain.dll: the search word lists moved"));
+    }
+    w.unity = word_list(dll, find_pair(dll, 0x40_0000, "PIEUJE")? - 8).0;
+    // The region pointer array: its first list is {230..233}.
+    let first: Vec<u8> = [230u16, 231, 232, 233, 0].iter().flat_map(|z| z.to_le_bytes()).collect();
+    let list_va = dll.windows(first.len()).position(|x| x == first).and_then(|o| va_of(dll, o)).ok_or_else(|| anyhow!("FFXiMain.dll: no region lists"))?;
+    let arr = dll.chunks_exact(4).position(|c| c == list_va.to_le_bytes()).ok_or_else(|| anyhow!("FFXiMain.dll: no region array"))? * 4;
+    for k in 0..0x32 {
+        let mut zones = Vec::new();
+        if let Some(mut o) = u32_le(dll, arr + 4 * k).and_then(|p| off_of(dll, p)) {
+            while let Some(z) = dll.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]])).filter(|&z| z != 0) {
+                zones.push(z);
+                o += 2;
+            }
+        }
+        w.regions.push(zones);
+    }
+    let flags = find(dll, &ZONE_FLAGS)?;
+    w.zone_flags = dll.get(flags..flags + 152).unwrap_or_default().to_vec();
+    Ok(w)
+}
+
+impl SearchWords {
+    /// FUN_101070f0.
+    pub fn zone_flags(&self, zone: u16) -> u8 {
+        if zone >= 300 {
+            return 0;
+        }
+        let k = (zone as usize >> 3) * 4;
+        let word = self.zone_flags.get(k..k + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+        (word >> ((zone & 7) * 4) & 0xf) as u8
+    }
+
+    /// FUN_1020c1c0: the searchable zones (flag 2) of the zone's region, at most 16.
+    pub fn region_of(&self, zone: u16) -> Option<Vec<u16>> {
+        let r = self.regions.iter().find(|r| r.contains(&zone))?;
+        Some(r.iter().copied().filter(|&z| self.zone_flags(z) & 2 != 0).take(16).collect())
+    }
+}
+
 impl Tables {
     pub fn find(dll: &[u8]) -> Result<Self> {
         let va = |s: &Sig| -> Result<u32> { find(dll, s).and_then(|o| va_of(dll, o).ok_or_else(|| anyhow!("{}: not in a section", s.name))) };
@@ -248,5 +379,25 @@ mod tests {
         let t = Tables::find(&dll).unwrap();
         assert_eq!(t.key2_at - t.key1_at, 0x328);
         assert_eq!(t.mode_tables[6] - t.mode_tables[1], 0x1800);
+    }
+
+    /// The /search word lists, regions and zone flags (search_spec.md 2.2, 3.6).
+    #[test]
+    fn search_words() {
+        let Ok(dll) = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")) else { return };
+        let w = super::search_words(&dll).unwrap();
+        assert_eq!(w.categories.len(), 14);
+        assert_eq!(w.categories[13], (6, "UNITY".into()));
+        assert_eq!(w.unity_word, [(1, "UNITY".into())]);
+        assert_eq!(w.areas.len(), 460);
+        assert_eq!(w.areas[1], (1, "PHANAUET CHANNEL".into()));
+        assert_eq!(w.nations[5], (2, "WIN".into()));
+        assert_eq!(w.races.len(), 10);
+        assert_eq!(w.jobs.last(), Some(&(22, "RUN".into())));
+        assert_eq!(w.statuses[9], (0x2000, "*".into()));
+        assert_eq!(w.unity[2], (0x80_0000, "AYAME".into()));
+        assert_eq!(w.regions[7], [103, 108, 196, 102, 193, 248]);
+        assert!(w.regions[30].is_empty());
+        assert_eq!(w.region_of(230).map(|r| r.len()), Some(4));
     }
 }

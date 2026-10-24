@@ -6020,3 +6020,41 @@ Spec `~/ffxi/lab/research/cast_fx_spec.md` F5.
   changing sizes" in Valkurm.
 - Live (La Theine, 45 s): 79 mask-0x01 updates, all size bits 0; General updates (0x04 / 0x05 / 0x0f) carried 0 or
   1. The size now holds through the position updates.
+
+## Search: the /search grammar (2026-10-24)
+
+Spec `~/ffxi/lab/research/search_spec.md` 1.5 / 2.2, checked against the decompile (FUN_10104f00, FUN_10105520,
+FUN_10105640, FUN_10105930, FUN_10105bd0, FUN_10105de0, FUN_10105ab0, FUN_10105fa0).
+- Word lists ({i32 value, char *word}, NULL-ended) in a row from 0x10331cf0: categories (14), the UNITY keyword
+  (0x10331d68, FUN_101055f0), areas (460 words, ALL = -1), nations, races, jobs, status words; unity leaders at
+  0x10364880. Found at run time by the pointer to "NAME" / "PIEUJE" (the packed FFXiMain.dll keeps its data
+  sections plain). Regions: 0x32 pointers at 0x103858a8 to 0-ended u16 zone lists (entry 30 points into .bss);
+  zone flags DAT_103669b8, u32 words, 8 zones a word, low nibble first, zones < 300 (FUN_101070f0); FUN_1020c1c0
+  keeps a region's zones with flag 2 (searchable), 16 at most.
+- FUN_10105520: a token (quoted, or up to whitespace) against an upper-case word, whole and case-insensitive; the
+  first table entry that matches wins. No match returns the terminator's -1.
+- FUN_10104f00 per token: `+` / `-` + a category (a `-` before a digit is a range): STATUS / UNITY, LINKSHELL(2),
+  FRIEND, a set or sorted category end the parse; the sort goes in, and a value after it is optional (not consumed
+  when it does not parse). A keyword: a set category ends the parse (STATUS / UNITY may repeat); FRIEND sets +0x4e
+  bit 2 and flag 0x1000; LINKSHELL / LINKSHELL2 take the equipped LS ids (ours: the LS item's exdata u32 @0,
+  LSB GroupId *(inf for retail)*); REGION copies the searchable zones of the current region when no area is set;
+  other values through FUN_10105640, a failure ends the parse. A bare word: a status word, an area (no area set or
+  sorted, not starting with a digit), level, master level, job, nation, race, name, each only while its category is
+  free and unsorted; nothing ends the parse.
+- FUN_10105640: NAME keeps up to 15 characters as typed (quotes allowed; it never fails); AREA puts the zone first
+  unless listed (16 at most) and sets +0x22 (ALL -1); levels and master levels share +0x1c / +0x1e (`/sea 75 30-40`
+  sends 30..40 as both); UNITY with nothing after it = the own unity bits (+0x64), an unknown word sets 0x0f800000
+  and is read again.
+- FUN_10105930: an area word for zone 1..0x17f fails without its known-zone bit, and with no bits at all.
+- FUN_10105bd0: skip whitespace; digits with at most one `-` / `<`; a single value over 255 is 0; a pair clamps to
+  0..255 unless the side over 255 is the larger one (then 0..0); no swap. FUN_10105de0 (rank): a single value as a
+  byte, unclamped; a pair: below 0 -> 0, over 99 -> 100.
+- End: no area -> the current zone and +0x4e bit 1 (wire type 3); an area with +0x22 > 0 sets the bit too.
+- Encoder FUN_10104200 now covers every field: the sort list (typed sorts, then name and the set fields' types),
+  per entry type / descending / present and its value, the LS / friend / status-high markers.
+- s2c 0x008 (LSB GP_SERV_COMMAND_ENTERZONE after every 0x00C): EnterZoneTbl @4, 0x30 bytes, kept in World.
+- Ours does not track the own unity yet (0x0f800000, "none").
+- Live (Lnxtest, bots): `/sea all war` 2 WARs; `/sea all 10-20` the 8 players from 10 to 20; `/sea region` "4 people
+  found in this region." (zones 230..233); `/sea all elv -level` 4 Elvaan, levels 18, 15, 10, 8; `/sea name Doran`;
+  `/sea "Southern San d'Oria" war` area 230 + WAR; "Northern San d'Oria" (not visited by Lnxtest) became a name, as
+  FUN_10105930 refuses it.

@@ -1009,7 +1009,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::PLAYTIME => playtime(w),
         id::SEARCH => {
-            super::search::command(w, args);
+            super::search::command(w, tail(line, 1));
             Ok(())
         }
         id::CHATMODE => chat_mode(w, args),

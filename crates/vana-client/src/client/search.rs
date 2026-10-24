@@ -5,6 +5,7 @@
 use super::World;
 use super::net::NetCommand;
 use crate::audio::Ui;
+use crate::dat::tables::SearchWords;
 use crate::net::search::{self, Cond, Record, Reply};
 
 /// What a finished query is for.
@@ -49,21 +50,285 @@ pub fn lookup(w: &mut World, name: &str, then: impl FnOnce(String) -> Then) {
     let mut chars = name.chars().take(15);
     let name: String = chars.next().map(|c| c.to_ascii_uppercase()).into_iter().chain(chars.map(|c| c.to_ascii_lowercase())).collect();
     log::info!("search: name lookup {name}");
-    let rx = search::spawn(w.search_addr, Cond::Name(name.clone()));
+    let rx = search::spawn(w.search_addr, Cond::name(name.clone()));
     w.searches.push((rx, then(name)));
 }
 
-/// FUN_1007c570 (/search, /sea): nothing while the results window is up; no arguments search the current zone, "all"
-/// every area. (The full grammar, FUN_10104f00, is not done: other words still search the current zone.)
-pub fn command(w: &mut World, args: &[String]) {
+/// FUN_1007c570 (/search, /sea): nothing while the results window is up; the words after the command through
+/// FUN_10104f00, which stops quietly at the first word it cannot use and searches with what it has.
+pub fn command(w: &mut World, tail: &str) {
     if w.search.is_some() {
         return;
     }
-    let (cond, scope) = match args.get(1).map(|a| a.to_ascii_uppercase()).as_deref() {
-        Some("ALL") => (Cond::All, Scope::World),
-        _ => (Cond::Zone(w.pos_zone), Scope::Area),
+    let Some(words) = w.search_words.clone() else {
+        log::warn!("search: no word tables in FFXiMain.dll; searching this area");
+        run(w, Cond::zone(w.pos_zone), Scope::Area);
+        return;
+    };
+    let ls = |num: usize| w.linkshells.get(num).filter(|l| l.0 != 0).and_then(|&(index, bag)| w.inv.ext.get(&(bag, index))).map_or(0, |e| u32::from_le_bytes([e[0], e[1], e[2], e[3]]));
+    let ctx = Ctx { zone: w.pos_zone, region: words.region_of(w.pos_zone), ls: [ls(1), ls(2)], unity: NO_UNITY, known: w.known_zones.as_ref().map(|k| &k[..]) };
+    let cond = parse(tail, &words, &ctx);
+    let scope = match cond.areas.len() {
+        0 => Scope::World,
+        1 => Scope::Area,
+        _ => Scope::Region,
     };
     run(w, cond, scope);
+}
+
+/// FUN_100e3200's unity bits when there is none (ours does not track the own unity yet).
+const NO_UNITY: u32 = 0x0f80_0000;
+
+/// FUN_10104f00's inputs besides the text: the current zone, its region's searchable zones (FUN_1020c1c0), the
+/// linkshell 1 / 2 ids, the own unity bits and the known-zone bits (s2c 0x008).
+pub struct Ctx<'a> {
+    pub zone: u16,
+    pub region: Option<Vec<u16>>,
+    pub ls: [u32; 2],
+    pub unity: u32,
+    pub known: Option<&'a [u8]>,
+}
+
+fn skip_ws(s: &str) -> &str {
+    s.trim_start_matches(|c: char| c.is_ascii_whitespace())
+}
+
+/// FUN_10105520: the token at `s` (quoted, or up to whitespace) is `word`, case-insensitive and whole; the text
+/// after it (and after a closing quote).
+fn word<'s>(s: &'s str, word: &str) -> Option<&'s str> {
+    let (b, w) = (s.as_bytes(), word.as_bytes());
+    if b.first().is_none_or(|c| c.is_ascii_whitespace()) {
+        return None;
+    }
+    let quoted = b[0] == b'"';
+    let (mut i, mut j) = (quoted as usize, 0);
+    while i < b.len() && !(quoted && b[i] == b'"') && !(!quoted && b[i].is_ascii_whitespace()) {
+        if w.get(j) != Some(&b[i].to_ascii_uppercase()) {
+            return None;
+        }
+        (i, j) = (i + 1, j + 1);
+    }
+    if j != w.len() {
+        return None;
+    }
+    Some(&s[if quoted && i < b.len() { i + 1 } else { i }..])
+}
+
+/// The first entry of a word list matching the token: its value and the text after it.
+fn find_word<'s>(list: &[(i32, String)], s: &'s str) -> Option<(i32, &'s str)> {
+    list.iter().find_map(|(v, w)| word(s, w).map(|rest| (*v, rest)))
+}
+
+/// FUN_10105bd0's token: digits with at most one `-` / `<`: (first, second, separator seen, rest), -1 for a missing
+/// number.
+fn range(s: &str) -> Option<(i32, i32, bool, &str)> {
+    let s = skip_ws(s);
+    let b = s.as_bytes();
+    let (mut v, mut k, mut i) = ([-1i32, -1], 0, 0);
+    while i < b.len() && !b[i].is_ascii_whitespace() {
+        if b[i].is_ascii_digit() {
+            v[k] = 0;
+            while i < b.len() && b[i].is_ascii_digit() {
+                v[k] = v[k].wrapping_mul(10).wrapping_add((b[i] - b'0') as i32);
+                i += 1;
+            }
+        } else if matches!(b[i], b'-' | b'<') && k == 0 {
+            (k, i) = (1, i + 1);
+        } else {
+            return None;
+        }
+    }
+    (v[0] >= 0 || v[1] >= 0).then_some((v[0], v[1], k == 1, &s[i..]))
+}
+
+/// FUN_10105930: an area word, refused for zones 1..0x17f we have no known-zone bit for (none at all without
+/// s2c 0x008); ALL is -1.
+fn area<'s>(s: &'s str, words: &SearchWords, known: Option<&[u8]>) -> Option<(i32, &'s str)> {
+    let (id, rest) = find_word(&words.areas, s)?;
+    let bit = |z: i32| known.and_then(|k| k.get(z as usize >> 3)).is_some_and(|b| b >> (z & 7) & 1 != 0);
+    (!(0 < id && id < 0x180 && !bit(id))).then_some((id, rest))
+}
+
+/// FUN_10105640: a category's value at `s` into the condition; the text after it, None when it does not parse.
+fn value<'s>(c: &mut Cond, t: u8, unity: bool, s: &'s str, words: &SearchWords, ctx: &Ctx) -> Option<&'s str> {
+    match t {
+        // Quotes allowed; the first 15 characters as typed.
+        0 => {
+            let s = skip_ws(s);
+            let (quoted, body) = s.strip_prefix('"').map_or((false, s), |r| (true, r));
+            let end = body.find(|ch: char| if quoted { ch == '"' } else { ch.is_ascii_whitespace() }).unwrap_or(body.len());
+            c.name = body[..end].chars().take(15).collect();
+            let rest = &body[end..];
+            Some(if quoted { rest.strip_prefix('"').unwrap_or(rest) } else { rest })
+        }
+        // Put first unless listed already (16 at most).
+        1 => {
+            let found = area(s, words, ctx.known);
+            c.last_area = found.map_or(-1, |f| f.0 as i16);
+            let (id, rest) = found?;
+            if id >= 0 && !c.areas.contains(&(id as u16)) {
+                c.areas.insert(0, id as u16);
+                c.areas.truncate(16);
+            }
+            Some(rest)
+        }
+        2 => find_word(&words.nations, s).map(|(v, rest)| {
+            c.nation = v as u8;
+            rest
+        }),
+        3 => find_word(&words.jobs, s).map(|(v, rest)| {
+            c.job = v as u8;
+            rest
+        }),
+        5 => find_word(&words.races, s).map(|(v, rest)| {
+            c.race = v as u8;
+            rest
+        }),
+        // A single level over 255 is 0; a pair clamps, unless its out-of-range side is the larger.
+        4 | 7 => {
+            let (a, b, pair, rest) = range(s)?;
+            c.level = if !pair {
+                let v = if a > 255 { 0 } else { a.max(0) as u8 };
+                (v, v)
+            } else if (a < 256 || b < a) && (b < 256 || a < b) {
+                (a.clamp(0, 255) as u8, if (0..=255).contains(&b) { b as u8 } else { 255 })
+            } else {
+                (0, 0)
+            };
+            Some(rest)
+        }
+        // FUN_10105de0: a pair clamps to 0..100, a single value is kept as a byte.
+        0x10 => {
+            let (a, b, pair, rest) = range(s)?;
+            c.rank = if pair { ((if a > 99 { 100 } else { a.max(0) }) as u8, if (0..=99).contains(&b) { b as u8 } else { 100 }) } else { (a as u8, a as u8) };
+            Some(rest)
+        }
+        // FUN_10105ab0: a unity leader, the own unity for UNITY or nothing; an unknown word sets 0x0f800000 and is
+        // read again as the next token.
+        6 if unity => {
+            let (v, rest) = if s.is_empty() { (0, s) } else { find_word(&words.unity, s).unwrap_or((-1, "")) };
+            if v < 0 {
+                c.status |= NO_UNITY;
+                return Some(s);
+            }
+            let v = if v == 0 { ctx.unity as i32 } else { v };
+            if v > 0 {
+                c.status |= v as u32;
+            }
+            Some(rest)
+        }
+        6 => {
+            let (v, rest) = find_word(&words.statuses, s)?;
+            (v > 0).then(|| {
+                c.status |= v as u32;
+                rest
+            })
+        }
+        _ => None,
+    }
+}
+
+/// FUN_10104f00: `+` / `-` sorts, category keywords and their values, and bare words tried as a status, an area,
+/// a level, a master level, a job, a nation, a race and a name, in that order; the first word that fits nothing
+/// ends it. No area: the current zone.
+pub fn parse(text: &str, words: &SearchWords, ctx: &Ctx) -> Cond {
+    use crate::net::search::{AREA, FRIEND, JOB, LEVEL, LS1, LS2, MLEVEL, NAME, NATION, RACE, STATUS};
+    let mut c = Cond { last_area: -1, ..Default::default() };
+    let mut s = text;
+    loop {
+        s = skip_ws(s);
+        let Some(&first) = s.as_bytes().first() else { break };
+        let sign = first == b'+' || (first == b'-' && !s.as_bytes().get(1).is_some_and(u8::is_ascii_digit));
+        if sign {
+            // STATUS / UNITY, LINKSHELL, LINKSHELL2, FRIEND, a set or sorted category: the end.
+            let Some((t, rest)) = find_word(&words.categories, &s[1..]) else { break };
+            let t = t as u8;
+            if matches!(t, 6 | 0xb | 0xc | 0x13 | 0x14) || c.flags & (1 << t) != 0 || c.sorted(t) {
+                break;
+            }
+            c.sorts.push(if first == b'-' { 0x80 | t } else { t });
+            s = skip_ws(rest);
+            if let Some(r) = value(&mut c, t, false, s, words, ctx) {
+                c.flags |= 1 << t;
+                s = r;
+            }
+            continue;
+        }
+        if let Some((t, mut rest)) = find_word(&words.categories, s) {
+            let t = t as u8;
+            let unity = t == 6 && find_word(&words.unity_word, s).is_some();
+            if t != 6 && c.flags & (1 << t) != 0 {
+                break;
+            }
+            rest = skip_ws(rest);
+            match t {
+                0xc => c.flags |= FRIEND,
+                0xb => {
+                    c.ls[0] = ctx.ls[0];
+                    c.flags |= LS1;
+                }
+                0x13 => {
+                    c.ls[1] = ctx.ls[1];
+                    c.flags |= LS2;
+                }
+                // The region's searchable zones, when no area is set.
+                0x12 => {
+                    if c.flags & AREA == 0
+                        && let Some(r) = ctx.region.as_ref().filter(|r| !r.is_empty())
+                    {
+                        c.areas = r.iter().copied().take(16).collect();
+                        c.last_area = *c.areas.last().unwrap() as i16;
+                        c.flags |= AREA;
+                    }
+                }
+                _ => match value(&mut c, t, unity, rest, words, ctx) {
+                    Some(r) => {
+                        c.flags |= 1 << t;
+                        rest = r;
+                    }
+                    None => break,
+                },
+            }
+            s = rest;
+            continue;
+        }
+        if let Some(r) = value(&mut c, 6, false, s, words, ctx) {
+            c.flags |= STATUS;
+            s = r;
+            continue;
+        }
+        if c.flags & AREA == 0
+            && !c.sorted(1)
+            && !first.is_ascii_digit()
+            && let Some(r) = value(&mut c, 1, false, s, words, ctx)
+        {
+            c.flags |= AREA;
+            s = r;
+            continue;
+        }
+        let mut next = None;
+        for (flag, t) in [(LEVEL, 4), (MLEVEL, 7), (JOB, 3), (NATION, 2), (RACE, 5), (NAME, 0)] {
+            if c.flags & flag == 0
+                && !c.sorted(t)
+                && let Some(r) = value(&mut c, t, false, s, words, ctx)
+            {
+                c.flags |= flag;
+                next = Some(r);
+                break;
+            }
+        }
+        match next {
+            Some(r) => s = r,
+            None => break,
+        }
+    }
+    if c.flags & AREA == 0 {
+        (c.areas, c.last_area, c.area_given) = (vec![ctx.zone], ctx.zone as i16, true);
+        c.flags |= AREA;
+    } else if c.last_area > 0 {
+        c.area_given = true;
+    }
+    c
 }
 
 /// FUN_1020a9d0 mode 1: the query, and the window open on " [Searching]".
@@ -495,4 +760,49 @@ pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::Ba
         0 => gu.menu_msg(0x13, ""),
         i => res.rows.get(i - 1).filter(|r| status_icon(r.flags).0 == 8).map(|_| gu.menu_msg(0x259, "")).unwrap_or_default(),
     };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::net::search::{AREA, JOB, LEVEL, LS1, MLEVEL, NAME, RACE, STATUS, condition};
+
+    fn words() -> Option<SearchWords> {
+        let dll = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")).ok()?;
+        crate::dat::tables::search_words(&dll).ok()
+    }
+
+    /// search_spec.md 2.2 examples, checked against FUN_10104f00 / FUN_10105640.
+    #[test]
+    fn grammar() {
+        let Some(w) = words() else { return };
+        let known = [0xffu8; 0x30];
+        let ctx = Ctx { zone: 230, region: w.region_of(230), ls: [7, 8], unity: NO_UNITY, known: Some(&known) };
+        let p = |t: &str| parse(t, &w, &ctx);
+        assert_eq!(p(""), Cond::zone(230));
+        assert_eq!(p("ALL"), Cond::all());
+        let c = p("all war 70-75");
+        assert_eq!((c.flags, c.job, c.level, c.areas.len(), c.area_given), (AREA | JOB | LEVEL, 1, (70, 75), 0, false));
+        assert_eq!(condition(&c), (0, vec![7, 0x00, 0x45, 0x19, 0x2c, 0x68, 0x42, 0x00]));
+        let c = p("\"Lower Jeuno\" inv");
+        assert_eq!((c.areas.clone(), c.status, c.area_given), (vec![245], 0x8020, true));
+        assert_eq!(p("name Lnx").name, "Lnx");
+        let c = p("all -level 1-75 elv");
+        assert_eq!((c.sorts.clone(), c.level, c.race, c.flags & (LEVEL | RACE)), (vec![0x84], (1, 75), 1, LEVEL | RACE));
+        // Level and master level share their fields.
+        let c = p("75 30-40");
+        assert_eq!((c.flags & (LEVEL | MLEVEL), c.level), (LEVEL | MLEVEL, (30, 40)));
+        assert_eq!(p("all unity ayame").status, 0x80_0000);
+        assert_eq!(p("all unity").status, NO_UNITY);
+        let c = p("all linkshell");
+        assert_eq!((c.flags & LS1, c.ls[0]), (LS1, 7));
+        // A word nothing takes ends the parse; the rest is not read.
+        let c = p("all war xyz bst 10");
+        assert_eq!((c.job, c.name.as_str(), c.flags & LEVEL), (1, "xyz", 0));
+        assert_eq!(p("region").areas, w.region_of(230).unwrap());
+        // Zones not visited (no s2c 0x008 bit) are no area: the word becomes the name.
+        let none = Ctx { known: None, ..ctx };
+        let c = parse("\"Lower Jeuno\"", &w, &none);
+        assert_eq!((c.name.as_str(), c.areas.clone(), c.flags & (NAME | STATUS)), ("Lower Jeuno", vec![230], NAME));
+    }
 }
