@@ -6355,3 +6355,9 @@ Spec `~/ffxi/lab/research/collision_actors_spec.md` (30261006_0).
   lifts::metalworks_shaft, ground::rides_a_lift.
 - Not done: the zone-in fade's wait for a lift actor while standing in a shaft (FUN_1008abe0 state 4); the camera's
   look point; LSB's Metalworks door data (spec 2.7) not checked against the doors.
+
+## Lifts: the zone-in wait (2026-10-24)
+
+- FUN_1008abe0 state 1: standing in a lift shaft with no lift actor yet (DAT_10482f45), the zone-in fade waits for one.
+  Ours the same, giving up after 10 s *(not retail: retail waits)*. Live (Lnxcsfix logged in inside Metalworks @6l0):
+  zone-in 37.58, the lifts first seen 40.82, then the fade; standing on the planks.

@@ -3164,6 +3164,8 @@ struct World {
     lifts: lifts::Lifts,
     riding: bool,
     ride_y: f32,
+    /// Since when the zone-in fade waits for a lift actor.
+    lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
     chat: combat::ChatLog,
     chat_input: String,
@@ -4360,6 +4362,7 @@ impl App {
                             lifts: Default::default(),
                             riding: false,
                             ride_y: 0.0,
+                            lift_wait: None,
                             zoning_since: None,
                             chat: Default::default(),
                             chat_input: String::new(),
@@ -5756,8 +5759,16 @@ impl App {
         if world.zoning_since.is_some_and(|t| t.elapsed().as_secs_f32() > 8.0) {
             world.zoning_since = None;
         }
-        // Black while zoning or loading; fade back in once we stand in the new zone.
-        let ready = world.zoning_since.is_none() && world.in_scene() && world.renderer.is_some();
+        // Black while zoning or loading; fade back in once we stand in the new zone. FUN_1008abe0 state 1: standing in
+        // a lift shaft, the fade waits for a lift actor *(ours gives up after 10 s; retail waits)*.
+        let in_shaft = world.in_scene() && !world.lifts.spawned && world.lifts.ride(world.pos, world.pos).is_some();
+        if in_shaft {
+            world.lift_wait.get_or_insert_with(Instant::now);
+        } else {
+            world.lift_wait = None;
+        }
+        let lift_wait = world.lift_wait.is_some_and(|t| t.elapsed().as_secs_f32() < 10.0);
+        let ready = world.zoning_since.is_none() && world.in_scene() && world.renderer.is_some() && !lift_wait;
         let target = if ready && !world.unsettled { 0.0 } else { 1.0 };
         if target > world.fade {
             world.fade = (world.fade + dt / 0.4).min(1.0);

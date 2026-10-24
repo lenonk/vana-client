@@ -124,8 +124,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the mouse and the wheel on them; left the key item / quest / mission lists, the post / trade / synthesis lists;
-  - collision and lifts (MODLOG "Actor collision and lifts"): characters never block in retail; lifts ride and move; left
-    the zone-in wait for a lift, Mog House furniture boxes;
+  - collision and lifts (MODLOG "Actor collision and lifts"): characters never block in retail; lifts ride and move, the zone-in waits for them; left
+    Mog House furniture boxes;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
