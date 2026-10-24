@@ -954,7 +954,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     chars.extend((0..3).map(|_| Character { content_id: 0, name: " ".into(), world: String::new(), status: 1, rename_required: false, race: 0, main_job: 0, main_level: 0, sub_job: 0, face: 0, nation: 0, size: 0, zone: 0, looks: [0; 8] }));
     let list = List::new(&chars);
     let looks: Vec<Option<(Look, u8)>> = (0..SLOTS)
-        .map(|i| list.get(&chars, i).map(|c| (Look { race: c.race as u8, face: c.face, head: c.looks[1], body: c.looks[2], hands: c.looks[3], legs: c.looks[4], feet: c.looks[5], main: c.looks[6], sub: c.looks[7] }, c.size)))
+        .map(|i| list.get(&chars, i).map(|c| (Look { race: c.race as u8, face: c.face, head: c.looks[1], body: c.looks[2], hands: c.looks[3], legs: c.looks[4], feet: c.looks[5], main: c.looks[6], sub: c.looks[7], range: 0 }, c.size)))
         .collect();
     let mut data = SelectData::load(&index, &keys, &looks)?;
     data.lighting = ZoneWeather::parse(&index.read(zone::file_id(ZONE))?).ok().and_then(|w| w.at("suny", shot.hour * 60.0)).map(|e| Lighting::from_env(&e, shot.hour * 60.0));
@@ -1079,7 +1079,7 @@ mod tests {
     #[test]
     fn point7_is_the_chest() {
         let Ok(index) = DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
-        let look = |race| Look { race, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
+        let look = |race| Look { race, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0, range: 0 };
         let (Ok(hume), Ok(galka)) = (load_character(&index, &look(1)), load_character(&index, &look(8))) else { return };
         // Rest point 7 above the feet: Hume M 1.322 x size, Galka 1.701 (skeleton DATs 7072 / 26352).
         for (m, y) in [(&hume, -1.322f32), (&galka, -1.701)] {

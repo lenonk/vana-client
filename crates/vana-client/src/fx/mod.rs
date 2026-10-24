@@ -73,6 +73,10 @@ pub trait Actors {
     fn player(&self) -> Option<u32> {
         None
     }
+    /// Actor +0x886 (vtable +0x3d8 byte 0xe): the range part file's class, -1 none.
+    fn ranged_class(&self, _id: u32) -> Option<i8> {
+        None
+    }
     /// Vtable +0x124 (entity +0x130 bit 1, op 0x9a): the model file's 0x1000 generators stay off.
     fn model_gens_off(&self, _id: u32) -> bool {
         false

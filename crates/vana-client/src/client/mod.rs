@@ -2571,7 +2571,7 @@ fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
 /// Lobby/zone GrapIDTbl: [0] is face | race << 8, the rest carry the slot in the top nibble.
 fn look_from(tbl: [u16; 9]) -> Look {
     let id = |i: usize| tbl[i] & 0x0FFF;
-    Look { race: (tbl[0] >> 8) as u8, face: tbl[0] & 0xFF, head: id(1), body: id(2), hands: id(3), legs: id(4), feet: id(5), main: id(6), sub: id(7) }
+    Look { race: (tbl[0] >> 8) as u8, face: tbl[0] & 0xFF, head: id(1), body: id(2), hands: id(3), legs: id(4), feet: id(5), main: id(6), sub: id(7), range: id(8) }
 }
 
 const TAU_4096: f32 = std::f32::consts::TAU / 4096.0;
@@ -2770,6 +2770,10 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn sub_anim(&self, id: u32) -> u8 {
         self.entities.get(&id).map_or(0, |e| e.sub[2])
+    }
+
+    fn ranged_class(&self, id: u32) -> Option<i8> {
+        self.actors.get(&id)?.character.as_ref().map(|c| c.ranged)
     }
 
     fn model_gens_off(&self, id: u32) -> bool {
@@ -7007,7 +7011,7 @@ impl App {
                     .map(|i| {
                         list.get(chars, i).map(|c| {
                             let l = &c.looks;
-                            (Look { race: c.race as u8, face: c.face, head: l[1], body: l[2], hands: l[3], legs: l[4], feet: l[5], main: l[6], sub: l[7] }, c.size)
+                            (Look { race: c.race as u8, face: c.face, head: l[1], body: l[2], hands: l[3], legs: l[4], feet: l[5], main: l[6], sub: l[7], range: 0 }, c.size)
                         })
                     })
                     .collect();

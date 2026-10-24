@@ -454,6 +454,8 @@ pub struct Look {
     pub feet: u16,
     pub main: u16,
     pub sub: u16,
+    /// The range slot (GrapIDTbl[8]): its file's info byte 0xe is the ranged class (actor +0x886).
+    pub range: u16,
 }
 
 /// Skeleton + leg motions per race 1..8 (FFXiMain .data 0x10353b70, u16 by race 0..36).
@@ -608,12 +610,13 @@ pub fn part_file(race: u8, slot: usize, id: u16) -> Option<u32> {
 pub fn file_ids(look: &Look) -> Result<(u32, Vec<(&'static str, u16, u32)>)> {
     let Some(skel) = skeleton_file(look.race) else { bail!("race {} has no model tables (0..8, 29..36)", look.race) };
     let npc = pc_race(look.race).is_none();
-    let ids = [look.face, look.head, look.body, look.hands, look.legs, look.feet, look.main, look.sub];
+    let ids = [look.face, look.head, look.body, look.hands, look.legs, look.feet, look.main, look.sub, look.range];
     let mut parts = Vec::new();
     for (slot, &id) in ids.iter().enumerate() {
-        // Weapon id 0 is an empty dummy mesh; skip it rather than draw it. NPC races stop after
-        // feet (FUN_100d0ef0), and chocobos have no face slot.
-        if (slot >= 6 && id == 0) || (npc && (slot >= 6 || (slot == 0 && look.race >= 32))) {
+        // Weapon id 0 is an empty dummy mesh; skip it rather than draw it. The range slot always loads, id 0 too
+        // (retail loads all nine; its class byte drives songs). NPC races stop after feet (FUN_100d0ef0), and
+        // chocobos have no face slot.
+        if (matches!(slot, 6 | 7) && id == 0) || (npc && (slot >= 6 || (slot == 0 && look.race >= 32))) {
             continue;
         }
         match part_file(look.race, slot, id) {
@@ -642,6 +645,9 @@ pub struct Character {
     /// 0x45 "Cib" bytes 0..2 (FUN_100cd1d0, first file wins; the feet part file overwrites 1 and 2): leg mode
     /// (+0x878), footstep kind (+0x879), shoe (+0x87a); -1 = unset.
     pub cib: [i8; 3],
+    /// Actor +0x886: the range file's info byte 0xe (FUN_100d0b50 case 8), else the first file's >= 0 (FUN_100cf210);
+    /// -1 none. Ops 0x76 / 0x77 pick `lc` / `ls` + this in two digits (0 sing, 1 wind, 2 string, 3..6 shot, 11 bell).
+    pub ranged: i8,
     /// PC looks: what picks the battle and event motion files.
     pub pc: Option<super::motionfile::PcMotion>,
     pub log: Vec<String>,
@@ -694,6 +700,9 @@ impl Character {
             if *dst == 0xFF {
                 *dst = src;
             }
+        }
+        if self.ranged < 0 && info[14] as i8 >= 0 {
+            self.ranged = info[14] as i8;
         }
     }
 
@@ -767,7 +776,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3] };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {
@@ -789,11 +798,15 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
                     ch.cib[2] = i[2] as i8;
                 }
             }
+            "range" => ch.ranged = f.info.map_or(-1, |i| i[14] as i8),
             _ => {}
         }
         ch.merge_size_info(f.info);
-        ch.parts.extend(f.parts);
-        ch.textures.extend(f.textures);
+        // The range mesh (wep2) is hidden by `init` (hwpc) and shown only while playing or shooting: not drawn yet.
+        if slot != "range" {
+            ch.parts.extend(f.parts);
+            ch.textures.extend(f.textures);
+        }
         ch.schedulers.extend(f.schedulers);
         ch.files.push(id);
         ch.part_files.push(id);

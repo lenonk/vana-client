@@ -5905,3 +5905,16 @@ Spec `~/ffxi/lab/research/cast_fx_spec.md`.
   in one frame from ops 0x53 and 0x0b; FUN_10036460 lets the same resource start again in a frame, so retail does too.
 - Left: F5 (a file that fails to load blocks the +0x298 lookups), F7 (the start cap per pass; the two specs
   disagree: 12 a pass in FUN_10035640, 20 distinct a frame in FUN_10036460).
+
+## Bard songs: ops 0x76 / 0x77 and the range slot (2026-10-24)
+
+Spec `~/ffxi/lab/research/song_sound_spec.md`.
+- caso / shso run op 0x76 / 0x77 (asm 0x1005adb5): `lc` / `ls` + two digits of actor +0x886 (the range part file's
+  info byte 0xe, FUN_100d0b50 case 8; vtable +0x3d8 = &+0x878) on actor1's own files, a plain child; mode 1 above 2
+  -> 0, mode 2 not 11 -> 10, nothing while moving (+0xf8).
+- lc00 sings (face file `vsng`: se 21003..21008 by race / sex), lc01 wind `sefl` se 21001, lc02 string `sehp` se
+  21002, at t60; stso t30 `kf&h` / `ksng` cut them.
+- Retail loads all nine look slots, id 0 included; ours now loads the range slot (class only, its wep2 mesh left
+  out: `init` hides it). Without a range file the first part file's info byte 0xe >= 0 is the class (FUN_100cf210).
+- Live (Lnxcsfix BRD 20, Valor Minuet on self, null output): se 21005 from 1 s into the cast until its stop 0.5 s
+  after the finish, then 20069. Before, the song was silent until the finish.

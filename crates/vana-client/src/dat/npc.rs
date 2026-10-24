@@ -35,8 +35,8 @@ pub fn parse_look(b: &[u8]) -> Result<NpcLook> {
     let id = |i: usize| w(i) & 0xFFF;
     Ok(match w(0) & 7 {
         0 | 5 | 6 => NpcLook::Model(w(1)),
-        1 => NpcLook::Equipped(Look { race: b[3], face: b[2] as u16, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: id(7), sub: id(8) }),
-        7 => NpcLook::Equipped(Look { race: b[2], face: 0, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: 0, sub: 0 }),
+        1 => NpcLook::Equipped(Look { race: b[3], face: b[2] as u16, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: id(7), sub: id(8), range: id(9) }),
+        7 => NpcLook::Equipped(Look { race: b[2], face: 0, head: id(2), body: id(3), hands: id(4), legs: id(5), feet: id(6), main: 0, sub: 0, range: 0 }),
         k => bail!("look kind {k} (door/elevator/ship) has no model"),
     })
 }
@@ -109,7 +109,7 @@ pub fn init_scheduler(file: &[u8]) -> InitScheduler {
         }
         if let Some(race) = v[0] {
             let s = |i: usize| v[i].unwrap_or(0) as u16;
-            out.look = Some(Look { race: race as u8, face: s(1), head: s(2), body: s(3), hands: s(4), legs: s(5), feet: s(6), main: s(7), sub: s(8) });
+            out.look = Some(Look { race: race as u8, face: s(1), head: s(2), body: s(3), hands: s(4), legs: s(5), feet: s(6), main: s(7), sub: s(8), range: 0 });
         }
     }
     let mut hide = HashMap::new();
@@ -162,7 +162,7 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
         f.animations.len()
     )];
     log.extend(f.warnings);
-    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3] };
+    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
     ch.merge_size_info(f.info);
     let init = init_scheduler(&file);
     apply_motion_ops(&mut ch, &init);
@@ -252,7 +252,7 @@ mod tests {
     #[test]
     fn size_info_order() {
         let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new(), look_limits: [[0.0; 3]; 2], boxes: Vec::new() };
-        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3] };
+        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
         let mut later = [0xFFu8; 16];
         later[10..14].copy_from_slice(&[85, 100, 115, 140]);
         ch.merge_size_info(Some(later));

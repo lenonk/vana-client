@@ -918,7 +918,7 @@ fn main() -> Result<()> {
         Cmd::CharShot { race, face, head, body, hands, legs, feet, main, sub, anim, frame, yaw, motions, out } => {
             use dat::character::{Look, load_character};
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
-            let mut ch = load_character(&index, &Look { race, face, head, body, hands, legs, feet, main, sub })?;
+            let mut ch = load_character(&index, &Look { race, face, head, body, hands, legs, feet, main, sub, range: 0 })?;
             println!("pc motion info: {:?}", ch.pc);
             for id in motions {
                 let f = dat::motionfile::MotionFile::load(&index, id)?;

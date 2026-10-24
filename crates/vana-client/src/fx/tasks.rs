@@ -565,6 +565,32 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Ops 0x76 / 0x77 (asm 0x1005adb5): `lc` / `ls` + actor1's ranged class (+0x886) in two digits, a plain
+            // child on actor1's own files; mode @8 1: above 2 sings (0), 2: 10 unless 11. Nothing while moving.
+            0x76 | 0x77 => {
+                let (Some(a1), Some(a2)) = (self.doll_of(t.a1).id(), self.doll_of(t.a2).id()) else { return Flow::Next };
+                if actors.moving(a1) {
+                    return Flow::Next;
+                }
+                let Some(k) = actors.ranged_class(a1).map(i32::from) else { return Flow::Next };
+                let k = match op.u32_at(8) {
+                    1 if k > 2 => 0,
+                    2 if k != 11 => 10,
+                    _ => k,
+                };
+                if k < 0 {
+                    return Flow::Next;
+                }
+                let name = u32::from_le_bytes([b'l', if op.code == 0x77 { b's' } else { b'c' }, b'0' + (k / 10) as u8, b'0' + (k % 10) as u8]);
+                match self.find_on_actor(a1, name, actors, false, false) {
+                    Ok(Some(r)) => {
+                        self.spawn_task(r, Who::Actor(a1), Who::Actor(a2), t.action.clone(), t.speed, None);
+                        Flow::Next
+                    }
+                    Ok(None) => Flow::Next,
+                    Err(()) => Flow::Retry,
+                }
+            }
             // Swing pick (FUN_100d4600, combat chose it) and the counter swing: call-and-wait, parent back 10 sooner.
             // Op 0x5c: the counter swing, `cni0` standing, `cnf0` moving (ours moves forward only), and no wait.
             0x5c => {

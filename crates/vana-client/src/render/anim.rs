@@ -277,7 +277,7 @@ mod tests {
     #[test]
     fn gpu_pose_matches_cpu() {
         let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
-        let look = Look { race: 1, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
+        let look = Look { race: 1, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0, range: 0 };
         let Ok(ch) = load_character(&index, &look) else { return };
         let ch = Arc::new(ch);
         let Ok(gpu) = Gpu::headless() else { return };
@@ -319,7 +319,7 @@ mod tests {
         let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
         let Ok(gpu) = Gpu::headless() else { return };
         for race in 1..=8u8 {
-        let look = Look { race, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0 };
+        let look = Look { race, face: 0, head: 0, body: 8, hands: 8, legs: 8, feet: 8, main: 0, sub: 0, range: 0 };
         let Ok(ch) = load_character(&index, &look) else { return };
         let ch = Arc::new(ch);
         let idle: Vec<(&Animation, f32)> = ch.find_animations("idl").into_iter().map(|a| (a, 0.0)).collect();
