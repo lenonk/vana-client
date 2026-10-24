@@ -1477,6 +1477,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 let _ = world.net.commands.send(NetCommand::Packet { id: 0x119, body: Vec::new() });
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
+            // Child 10 Current Time (FUN_10147fc0 case 10): the /clock text command, SE 0002 (FUN_10036d70).
+            (1, 10) => {
+                textcmd::run(world, "/clock", textcmd::Mode::Internal);
+                world.sounds.push(crate::audio::Ui::Select as u32);
+            }
             (1, 11) => world.confirm = Some((Confirm::Shutdown, false)),
             (1, 12) => world.confirm = Some((Confirm::Logout, false)),
             _ => log::info!("main menu item {id} on page {} is not implemented yet", world.menu_page),

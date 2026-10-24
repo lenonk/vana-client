@@ -603,6 +603,7 @@ impl Ground {
     }
 
     /// The last player step's lift surface type, when it stood on a lift.
+    #[cfg(test)]
     pub fn riding(&self) -> Option<i8> {
         self.body.get().riding
     }
