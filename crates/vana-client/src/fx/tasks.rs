@@ -40,6 +40,8 @@ pub(super) struct Pending {
     pub wait_motion: Option<(u32, u32)>,
     /// A damage number for the task (Task::num).
     pub num: Option<(i32, u32)>,
+    /// Its motion ops (0x05 / 0x28) and holds are the client's (a death: combat::die plays ded? / cor?).
+    pub quiet: bool,
 }
 
 /// A doll (CXiDollActor, FUN_100aa470): where an actor stood when a scheduler froze it.
@@ -174,7 +176,7 @@ impl Effects {
         // Melee and ranged main lines are client/combat.rs's (at the hit); their proc / react lines come from op 0x71.
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0 }));
         match a.category {
-            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None }),
+            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
@@ -185,14 +187,14 @@ impl Effects {
                 };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
                 // *(inf: falls back to the generic file)*.
-                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None });
+                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None, quiet: false });
             }
             7..=0xa | 0xc => {
                 // Starts: the cmd_arg scheduler on the caster itself; "ca??" goes through FUN_10083d60 first.
                 if a.arg & 0xffff == 0x6163 {
                     self.cast_state(caster, a.arg);
                 }
-                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
             }
             _ => {}
         }
@@ -204,7 +206,7 @@ impl Effects {
         match self.casting.remove(&caster) {
             Some(prev) => {
                 let st = (prev & 0xffff_7473) | 0x7473;
-                self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
             }
             None if arg != 0 => {
                 self.casting.insert(caster, arg);
@@ -217,7 +219,7 @@ impl Effects {
     /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
     pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
         log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
-        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
     }
 
     /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
@@ -253,7 +255,12 @@ impl Effects {
             3 => *b"misv",
             _ => return,
         };
-        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)) });
+        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)), quiet: false });
+    }
+
+    /// A status scheduler on the actor with its motions left to the client (FUN_1008c6c0's `dead`).
+    pub fn on_scheduler_quiet(&mut self, actor: u32, name: u32) {
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: true });
     }
 
     /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).
@@ -277,7 +284,7 @@ impl Effects {
 
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
     }
 
     /// Starts waiting for files, when they are in.
@@ -325,6 +332,7 @@ impl Effects {
                             let ti = self.spawn_task(r, p.a1, p.a2, p.action, p.speed, None);
                             if let Some(Some(t)) = self.tasks.get_mut(ti) {
                                 t.num = p.num;
+                                t.motions &= !p.quiet;
                             }
                         }
                         None => {
@@ -677,7 +685,7 @@ impl Effects {
                 Flow::Next
             }
             0x19 => {
-                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
                 Flow::Next
             }
             // One of the ops up to 0x3e at random (FUN_1006afb0).
@@ -804,6 +812,31 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Op 0x78: the body hitting the floor: `0a` + actor1's footstep kind + '1' + shoe in the folder of its last
+            // footstep (model +0x800), at a snapshot of it, near f32 @0xc, far @8; nothing before a first step.
+            0x78 => {
+                let Some(id) = self.doll_of(t.a1).id() else { return Flow::Next };
+                let (Some([_, k, s]), Some(&rain), Some(l), Some(m)) = (actors.cib(id), self.foot_folder.get(&id), self.zone_lib, actors.matrix(id)) else { return Flow::Next };
+                if k < 0 || s < 0 {
+                    return Flow::Next;
+                }
+                let c = if k < 10 { b'0' + k as u8 } else { b'a' + (k - 10) as u8 };
+                let name = [b'0', b'a', c, b'1' + s as u8];
+                let lib = &self.reg.libs[l];
+                let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
+                let found = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder).and_then(|f| lib.find_in(f, 0x3d, name));
+                if let Some(n) = found
+                    && let Some((se, loops)) = super::sound::sesep(lib.data(n))
+                {
+                    log::debug!("effects: sound {se} op 0x78 ({})", String::from_utf8_lossy(&name));
+                    let mut snd = super::sound::Sound::new(se, loops);
+                    snd.pos = m.w_axis.truncate();
+                    snd.far = f32::from_bits(op.u32_at(8));
+                    snd.near = f32::from_bits(op.u32_at(0xc));
+                    self.sounds.push(snd);
+                }
+                Flow::Next
+            }
             // Ops 0x5a / 0x5b: actor1 / actor2 guards (@0xe 0) or parries.
             0x5a | 0x5b => {
                 let who = if op.code == 0x5a { t.a1 } else { t.a2 };
@@ -853,7 +886,7 @@ impl Effects {
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
                 let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0 }));
-                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None });
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
                 Flow::Next
             }
             _ => Flow::Next,

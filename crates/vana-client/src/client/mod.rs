@@ -2683,6 +2683,10 @@ impl crate::fx::Actors for FxActors<'_> {
         if id == self.me { self.me_moving } else { self.entities.get(&id).is_some_and(|e| e.ratio > 1e-4) }
     }
 
+    fn cib(&self, id: u32) -> Option<[i8; 3]> {
+        self.actors.get(&id)?.character.as_ref().map(|c| c.cib)
+    }
+
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
@@ -4705,6 +4709,7 @@ impl App {
                     }
                     motion.graph_size = e.motion.graph_size;
                     let died = !fresh && matches!(motion.status, 2 | 3) && !matches!(entry.motion.status, 2 | 3);
+                    let status_change = (!fresh && motion.status != entry.motion.status).then_some((entry.motion.status, motion.status));
                     entry.motion = motion;
                     entry.index = e.index;
                     if let Some(f) = e.face {
@@ -4724,6 +4729,9 @@ impl App {
                     }
                     if died && let Some(a) = world.actors.get_mut(&e.id) {
                         combat::die(a);
+                    }
+                    if let Some((old, new)) = status_change {
+                        combat::status_schedulers(&mut world.effects, &world.actors, e.id, old, new);
                     }
                     if let Some(p) = e.pos {
                         let mut p = Vec3::from(p);

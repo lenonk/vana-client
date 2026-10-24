@@ -565,8 +565,28 @@ pub(super) fn react_op(w: &mut World, r: &crate::fx::React) {
 
 /// A server status taking effect on an actor (+0x170 from +0x16c): falling dead plays the death; ours goes to the
 /// session state too. The server prints the defeat (0x029 #97 / #20).
+/// FUN_1008c6c0: the scheduler an applied status change runs: a model-id actor leaving battle `bton`, engaging
+/// `ntob`; a death `dead` (its ded? / cor? are die()'s, so the task's motions are off). Not done: `?ead` / `sdep`,
+/// fishing.
+pub(super) fn status_schedulers(fx: &mut crate::fx::Effects, actors: &std::collections::HashMap<u32, Actor>, id: u32, old: u8, new: u8) {
+    if old == new {
+        return;
+    }
+    let model = actors.get(&id).and_then(|a| a.character.as_ref()).is_some_and(|c| c.pc.is_none());
+    if model && old == 1 {
+        fx.on_scheduler(id, id, u32::from_le_bytes(*b"bton"));
+    }
+    if model && new == 1 {
+        fx.on_scheduler(id, id, u32::from_le_bytes(*b"ntob"));
+    }
+    if matches!(new, 2 | 3) && !matches!(old, 2 | 3) {
+        fx.on_scheduler_quiet(id, u32::from_le_bytes(*b"dead"));
+    }
+}
+
 pub(super) fn apply_status(w: &mut World, id: u32, status: u8) {
     let was = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
+    status_schedulers(&mut w.effects, &w.actors, id, was, status);
     if matches!(status, 2 | 3)
         && !matches!(was, 2 | 3)
         && let Some(a) = w.actors.get_mut(&id)

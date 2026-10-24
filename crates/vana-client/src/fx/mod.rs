@@ -61,6 +61,10 @@ pub trait Actors {
     fn moving(&self, _id: u32) -> bool {
         false
     }
+    /// The model's info bytes +0x878..+0x87a: leg mode, footstep kind, shoe.
+    fn cib(&self, _id: u32) -> Option<[i8; 3]> {
+        None
+    }
 }
 
 /// No actors (offscreen shots).
@@ -624,6 +628,8 @@ pub struct Effects {
     knocks_later: Vec<(f32, Knock)>,
     /// DAT_1035bc60: knockback (speed per tick, decay, ticks) by level.
     knock_table: [[f32; 3]; 8],
+    /// Model +0x800: the footstep folder an actor's last step used (true = 'fser', the rain set), for op 0x78.
+    foot_folder: HashMap<u32, bool>,
     /// Messages that print now: (action, record, which: 0 main (op 0x2b, the action's end), 1 proc / 2 react (op 0x71)).
     pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
@@ -700,6 +706,7 @@ impl Effects {
             knocks: Vec::new(),
             knocks_later: Vec::new(),
             knock_table: [[0.0; 3]; 8],
+            foot_folder: HashMap::new(),
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),
@@ -1560,6 +1567,7 @@ impl Effects {
     /// the dust generator `dust` of that folder, if any, bursts once on actor `id`.
     pub fn footstep(&mut self, id: u32, pos: Vec3, name: [u8; 4], dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
         let Some(l) = self.zone_lib else { return };
+        self.foot_folder.insert(id, rain);
         let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
         let lib = &self.reg.libs[l];
         let Some(f) = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == folder) else { return };

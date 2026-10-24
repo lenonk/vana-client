@@ -5639,3 +5639,15 @@ Spec `~/ffxi/lab/research/actor_sounds_spec.md`.
   and surfaces with 0. `ntob` cries se 252001 on engaging; `dead` plays `vded` (252014..16).
 - Live: every model's init on arrival; the Tunnel Worms near Lnxtest emerged with se 17024. A burrow (ini1) was not
   seen in 45 s.
+
+## Actor sounds 2: status schedulers and the fall thud (2026-10-24)
+
+- FUN_1008c6c0 on an applied status change: a model-id actor (not a PC skeleton) leaving battle runs `bton`, engaging
+  `ntob`; a death runs `dead` (not done: `1ead`..`3ead` by entity +0x130 bits 5..6, `sdep` for trusts, the fishing
+  names). Ours runs `dead` with its motions off: die() plays the same ded? / cor?. combat::status_schedulers, from
+  apply_status and the entity update.
+- Op 0x78 (correction: not a race death voice): the body hitting the floor, SeSep `0a` + actor1's footstep kind
+  (+0x879) + '1' + shoe (+0x87a) in the zone folder its last footstep used (model +0x800: fses, or fser in the
+  rain), at a snapshot, near f32 @0xc, far @8; nothing for an actor that never stepped. PC `dead` runs it at t92.
+- Live: a Forest Hare's `ntob` played se 204001 when it engaged; its `dead` played `vded` se 204016 (no op 0x78 thud:
+  the hare model has no footstep kind).
