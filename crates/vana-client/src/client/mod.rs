@@ -138,7 +138,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -546,6 +546,14 @@ fn ko_step(w: &mut World) {
         }
         return;
     }
+    // Mode 2 (the raise offer): comyn closes every frame, and the K.O. window comes back if it is down (FUN_1012e0c0).
+    if w.ko_offer == 2 {
+        w.confirm = None;
+        if !w.ko_open {
+            close_for_ko(w);
+            w.ko_open = true;
+        }
+    }
     if w.ko_wait.is_some_and(|t| Instant::now() < t) {
         return;
     }
@@ -559,11 +567,7 @@ fn ko_step(w: &mut World) {
         }
     }
     if !w.homing && !w.ko_open && w.ko_deadline != 0 {
-        if w.prompt.is_some() {
-            target::cancel_sub(w);
-        }
-        (w.menu, w.win, w.config, w.settings, w.action_menu, w.mogdoor) = (None, None, None, None, None, None);
-        (w.magic, w.ability, w.cats) = (None, None, None);
+        close_for_ko(w);
         if !matches!(w.confirm, Some((Confirm::HomePoint, _))) {
             w.confirm = None;
         }
@@ -573,6 +577,15 @@ fn ko_step(w: &mut World) {
         w.home_sent = Some(Instant::now());
         let _ = w.net.commands.send(NetCommand::HomePoint);
     }
+}
+
+/// FUN_1012e0c0's FUN_1015f3e0(0x800): every window but the logs, bars, party and map closes as the K.O. window opens.
+fn close_for_ko(w: &mut World) {
+    if w.prompt.is_some() {
+        target::cancel_sub(w);
+    }
+    (w.menu, w.win, w.config, w.settings, w.action_menu, w.mogdoor) = (None, None, None, None, None, None);
+    (w.magic, w.ability, w.cats) = (None, None, None);
 }
 
 /// A chat line with its timestamp (config 0xb5, "%s[%s]%s %s" at 0x1036344c).
@@ -1301,7 +1314,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                 }
                 // The menu opens on the page it was closed on.
-                egui::Key::Minus => world.menu = if world.menu.is_some() { None } else { Some(0) },
+                // While dead the K.O. window or the raise prompt has the focus and takes it (message 7, FUN_1015dd00).
+                egui::Key::Minus if !world.ko_open && world.ko_offer != 2 => world.menu = if world.menu.is_some() { None } else { Some(0) },
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // FUN_102110c0: the raise prompt refuses Escape (+0x39 = 0: SE 0004) and keeps the key.
@@ -2104,12 +2118,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
     // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.
     if world.ko_open
-        && let Some(win) = gu.lobby_window_off("menu    dead", sw, sh, (0.0, 0.0), Some(1), world.confirm.is_none(), &[])
+        && let Some(win) = gu.lobby_window_off("menu    dead", sw, sh, (0.0, 0.0), Some(1), world.confirm.is_none() && world.ko_offer != 2, &[])
     {
         let s = world.ko_deadline.saturating_sub(vana_now(world));
         gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + 75.0, win.frame[1] + 6.0, 0x8080_8080, false);
         for (id, r) in win.children.iter().filter(|(id, _)| *id == 1) {
-            if world.confirm.is_none() && input.pointer.is_some_and(|p| inside(r, p)) {
+            if world.confirm.is_none() && world.ko_offer != 2 && input.pointer.is_some_and(|p| inside(r, p)) {
                 gu.hover.set(true);
                 if input.clicked && *id == 1 {
                     world.confirm = Some((Confirm::HomePoint, false));
@@ -5322,9 +5336,6 @@ impl App {
                         }
                         _ => world.ko_offer = 0,
                     }
-                    if world.ko_offer == 2 && matches!(world.confirm, Some((Confirm::HomePoint, _))) {
-                        world.confirm = None;
-                    }
                 }
                 NetEvent::ResOffer { .. } => {}
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
@@ -5932,7 +5943,7 @@ impl App {
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state). The log counts only
             // while focused: Escape or another window unfocuses it and leaves the 0x78 state at 1.
-            f.window = world_window_open(w) || w.palette.0 != 0 || w.log_active || w.log_focus == 2 || w.ko_open || w.ko_offer == 2 || event::choice(w).is_some() || event::input(w).is_some();
+            f.window = world_window_open(w) || w.palette.0 != 0 || w.log_active || w.log_focus == 2 || event::choice(w).is_some() || event::input(w).is_some();
             f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
         }
         self.input.begin_frame(f);
@@ -6055,11 +6066,12 @@ impl App {
             world.sounds.push(16);
         }
         // Key function 0x13 (Pause, FUN_101609f0): the log-out prompt, in the field, not engaged, with the UI shown.
-        if self.input.test(0x13, input::mode::PRESS) && !event::active(world) && !world.ui_hidden && world.my_motion.status != 1 && world.confirm.is_none() {
+        if self.input.test(0x13, input::mode::PRESS) && !event::active(world) && !world.ui_hidden && world.my_motion.status != 1 && world.confirm.is_none() && world.ko_offer != 2 {
             world.confirm = Some((Confirm::Logout, false));
         }
-        // Target keys (FUN_101587f0): Tab / Num0 and with Shift (0x84 / 0x97), F8 / Ctrl+F8 / Alt+F8 / F9 / F10.
-        if !event::active(world) {
+        // Target keys (FUN_101587f0): Tab / Num0 and with Shift (0x84 / 0x97), F8 / Ctrl+F8 / Alt+F8 / F9 / F10; not
+        // while the K.O. window or the raise prompt has the focus (FUN_101585f0).
+        if !event::active(world) && !world.ko_open && world.ko_offer != 2 {
             let view = Self::camera(world).view();
             if self.input.test(0x84, input::mode::PRESS) {
                 target::cycle(world, view, true);

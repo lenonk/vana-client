@@ -958,22 +958,25 @@ impl GameUi {
         self.data.groups.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0)
     }
 
-    /// Region stacking (FUN_10159080 -> FUN_10158e10): registry flag 0x1000 windows sit on the chat log (frame top =
-    /// log top - frame height - 2, at least 16), flag 0x2000 ones on the party window. The y offset from the layout.
+    /// Region stacking (FUN_1015fa00 -> FUN_1015f790): registry flag 0x1000 windows sit on the chat log (window rect
+    /// top = log top - height - 2, at least 16; the frame keeps its header offset from it), flag 0x2000 ones on the
+    /// party window. The y offset from the layout.
     pub fn stack_dy(&self, name: &str, w: f32, h: f32) -> f32 {
         let flags = self.reg_flags(name);
         match (self.log_top, self.data.lobby.menu(name)) {
             (Some(top), Some(m)) if flags & 0x1000 != 0 => {
-                let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
-                // FUN_1015f790: on the log's bottom (h - 16) while it shows no lines, else 2 px above its top.
-                let y = if self.log_faded { h - 16.0 - fh } else { top - fh - 2.0 };
-                y.max(16.0) - fy
+                let (_, wy) = screens::window_pos(m, w, h, 1.0, 1.0);
+                let wh = m.elements[0].h as f32;
+                // On the log's bottom (h - 16) while it shows no lines, else 2 px above its top.
+                let y = if self.log_faded { h - 16.0 - wh } else { top - wh - 2.0 };
+                y.max(16.0) - wy
             }
             // Region 2 (flag 0x4000, subwindo): on the target window, else on the party window (FUN_1015e530).
             (_, Some(m)) if flags & 0x4000 != 0 => {
-                let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+                let (_, wy) = screens::window_pos(m, w, h, 1.0, 1.0);
+                let wh = m.elements[0].h as f32;
                 let base = if self.target_up { self.window_rect("menu    targetwi", w, h) } else { self.window_rect(&self.party_window, w, h) };
-                base.map_or(0.0, |r| (r[1] - fh - 2.0).max(16.0) - fy)
+                base.map_or(0.0, |r| (r[1] - wh - 2.0).max(16.0) - wy)
             }
             _ => screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window),
         }
