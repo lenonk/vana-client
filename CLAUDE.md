@@ -150,8 +150,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side
   (treasure pool, MsgShift gaps, 0x017 kinds and echoes, 0x027 / 0x043, 0x009 keys, lines held until the message
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
-  alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock. Left: the equipped
-  linkshell (s2c 0x0E0) for /l, invisible talk, /equip refusals, the command gate's lines (window open, layout,
+  alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
+  check (s2c 0x0E0). Left: invisible talk, /equip refusals, the command gate's lines (window open, layout,
   charmed), the map on an elevator, /playtime, the on / off toggles, the block list, s2c 0x0B4 (PvP, the system
   message filter).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
