@@ -127,6 +127,8 @@ mod id {
     pub const MUTESE: u16 = 0x9a;
     pub const SEARCH: u16 = 0x3a;
     pub const LSMES: u16 = 0x108;
+    pub const REGIONMAP: u16 = 0x50;
+    pub const COLONIZATIONMAP: u16 = 0x53;
     pub const LS2MES: u16 = 0x109;
 }
 
@@ -1030,6 +1032,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::PLAYTIME => playtime(w),
         id::SEARCH => {
             super::search::command(w, tail(line, 1));
+            Ok(())
+        }
+        // FUN_1007d300 and its siblings: the region maps (modes 0..3), when none is open.
+        id::REGIONMAP..=id::COLONIZATIONMAP => {
+            w.region_cmd = Some((cid - id::REGIONMAP) as usize);
             Ok(())
         }
         id::LSMES | id::LS2MES => {

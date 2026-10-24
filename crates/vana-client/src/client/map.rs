@@ -994,7 +994,9 @@ impl MapWin {
                 }
             }
         }
-        if live && self.scroll_to.is_none() {
+        // Cursor mode (flag 0x100: placing a marker, narrowing a scan) reads the cursor axes instead (FUN_101ef0a0).
+        let cursor_mode = self.list.as_ref().is_some_and(|l| l.placing.is_some()) || self.scan.as_ref().is_some_and(|s| s.narrow.is_some());
+        if live && self.scroll_to.is_none() && !cursor_mode {
             // Under 2 px a retail frame is dead (judged per 2-tick frame, so it holds at any frame rate).
             let dead = |v: f32| if (v * fast).abs() < 2.0 { 0.0 } else { v };
             let step = |d: f32| if d / (self.screen.0 * 0.047619) >= 1.0 { 1.0 } else if d / (self.screen.0 * 0.047619) <= -1.0 { -1.0 } else { 0.0 };
@@ -1005,9 +1007,9 @@ impl MapWin {
             if v != (0.0, 0.0) {
                 self.scroll_by(if self.texture.is_some() { v } else { (-v.0, -v.1) });
             }
-            if input.test(0x7e, PRESS) && self.show_player {
-                self.scroll_to_px(self.home);
-            }
+        }
+        if live && self.scroll_to.is_none() && input.test(0x7e, PRESS) && self.show_player {
+            self.scroll_to_px(self.home);
         }
         if let Some(s) = self.scripted.as_mut()
             && s.mode != 0
@@ -1745,7 +1747,7 @@ impl Overlay {
 }
 
 /// Reads and decodes the map DAT off the UI thread: its first image.
-fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
+pub(super) fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
         let got = index.read(file).ok().and_then(|b| crate::dat::ui::UiFile::parse(&b).map_err(|e| log::warn!("map {file}: {e:#}")).ok()).and_then(|ui| {

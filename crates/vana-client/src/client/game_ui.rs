@@ -125,7 +125,7 @@ impl GameUiData {
         let menu_msgs = group_file(ffximain, 1, 0x0e).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("menu messages: {e:#}")).ok());
         let title_msgs = group_file(ffximain, 1, 0x0d).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("title messages: {e:#}")).ok());
         let cmd_help = crate::dat::battle::va_bytes(ffximain, t.cmd_help, 0x1c * 12).map_or(Vec::new(), |b| b.chunks(12).map(|r| u16::from_le_bytes([r[0], r[1]])).collect());
-        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x12, 0x13, 0x1b]
+        let lobby_msgs = [1u8, 3, 6, 7, 8, 9, 10, 0x0b, 0x0c, 0x12, 0x13, 0x15, 0x1b]
             .into_iter()
             .filter_map(|g| Some((g, group_file(ffximain, 1, g).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("message group {g:#x}: {e:#}")).ok())?)))
             .collect();
@@ -561,6 +561,23 @@ impl GameUi {
     pub fn item_msg(&self, group: u8, id: usize) -> Option<String> {
         let m = if group == 0x1c { self.data.item_fmt.as_ref() } else { self.data.lobby_msgs.get(&group) };
         m.and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+    }
+
+    /// A lobby window in a rect of its own (FUN_1011a5a0 resized or moved it): the style frame over (x, y, w, h) and its
+    /// window sprite at (x, y); no children.
+    pub fn window_sized(&mut self, name: &str, x: f32, y: f32, w: f32, h: f32) -> bool {
+        if !self.win_gate(name, [x, y, w, h]) {
+            return false;
+        }
+        let ui = &self.data.lobby;
+        let Some(m) = ui.menu(name) else { return false };
+        self.batch.push_frame(ui, &self.data.style, x, y, w, h, 1.0, 1.0, 0x8080_8080, 0, false, false);
+        if let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 0)
+            && let Some(lib) = ui.lib(&r.lib)
+        {
+            self.batch.push_sprite_from(ui, lib, r.index as usize, 1, x, y, 1.0, 1.0, 0x8080_8080, 0);
+        }
+        true
     }
 
     pub fn lobby_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
@@ -1049,6 +1066,12 @@ impl GameUi {
                 let wh = m.elements[0].h as f32;
                 let base = if self.target_up { self.window_rect("menu    targetwi", w, h) } else { self.window_rect(&self.party_window, w, h) };
                 base.map_or(0.0, |r| (r[1] - wh - 2.0).max(16.0) - wy)
+            }
+            // Region 1 (flag 0x2000: targetwi, the region map legends): on the party window (FUN_10158e10).
+            (_, Some(m)) if flags & 0x2000 != 0 => {
+                let (_, wy) = screens::window_pos(m, w, h, 1.0, 1.0);
+                let wh = m.elements[0].h as f32;
+                self.window_rect(&self.party_window, w, h).map_or(0.0, |p| (p[1] - wh - 2.0).max(16.0) - wy)
             }
             _ => screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window),
         }

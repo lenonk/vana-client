@@ -3,7 +3,7 @@
 //! SE appends to some). Tables at a fixed distance from a found one in every known build are placed from it.
 //! Signatures from the 2019 base, checked against retail 30261006_0 (lab/current/signatures.py).
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow, bail};
 use md5::{Digest, Md5};
 
 struct Sig {
@@ -382,6 +382,97 @@ impl Tables {
     }
 }
 
+/// A conquest map marker (cnqframe's 0x20-byte entries, menu_rows2_spec R3) with its 8-byte record.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct CnqMarker {
+    /// +0: 1 selected, 4 blink, 8 no label, 0x10 not centred, 0x20 hidden unless selected, 0x40 label by place code,
+    /// 0x100 second icon first, 0x200 plain main icon, 0x400 / 0x2000 fading out, 0x800 not pickable, 0x1000 fades out.
+    pub flags: u16,
+    /// +2 / +3 icons (indices into the icon set), +5 alpha.
+    pub icon: u8,
+    pub icon2: u8,
+    pub alpha: u8,
+    /// +6 / +8 map pixel, +0xa / +0xc label offset.
+    pub px: i16,
+    pub py: i16,
+    pub dx: i16,
+    pub dy: i16,
+    /// +0xf the label place code (not Japanese), +0x10 the label colour index.
+    pub place: u8,
+    pub colour: i16,
+    /// The record: +0 id (region id; a zone's owning region), +2 -1 region / -2 campaign front / zone, +4 name id, +6
+    /// mode, +7 (conquest: the region's first zone; campaign: the area index).
+    pub id: i16,
+    pub par: i16,
+    pub name: i16,
+    pub b7: u8,
+}
+
+/// cnqframe's tables (FUN_101e6fb0 / FUN_101e7980): per mode the markers (top, region and zone records in that order),
+/// the counts (top, top + regions) and the default region; the mode 3 (region, zone) pairs at 0x1037f610.
+#[derive(Clone, Debug, Default)]
+pub struct CnqTables {
+    pub modes: [Vec<CnqMarker>; 4],
+    pub counts: [(usize, usize, i16); 4],
+    pub pairs: Vec<(i16, i16)>,
+}
+
+/// Mode 0's first entry (San d'Oria; mode 2 starts with the same bytes 0x1960 further on).
+const CNQ_FIRST: [u8; 0x12] = [0x40, 0, 4, 0, 0, 0, 0xb1, 0, 0xa2, 0, 0xd7, 0xff, 0xef, 0xff, 0, 0, 0, 0];
+/// Offsets from mode 0's entry table (0x1037fcd0) in 30261006_0: the entry tables, then per mode the top, region and
+/// zone record runs (FUN_101e6fb0) and the counts (FUN_101e7980: top, top + regions, total, default region).
+const CNQ_ENTRIES: [isize; 4] = [0, 0x1520, 0x1960, 0x1ea0];
+const CNQ_RUNS: [[(isize, usize); 3]; 4] = [
+    [(-0x874, 4), (-0x800, 19), (-0x6a0, 146)],
+    [(-0x854, 1), (-0x768, 5), (-0x210, 28)],
+    [(-0x848, 8), (-0x740, 8), (-0x130, 26)],
+    [(-0x808, 1), (-0x700, 8), (-0x60, 12)],
+];
+const CNQ_COUNTS: [(usize, usize, i16); 4] = [(4, 0x17, 4), (1, 6, 0x18), (8, 0x10, 0x21), (1, 9, 1)];
+const CNQ_PAIRS: isize = -0x6c0;
+
+/// The four marker tables, checked against their first records (ids 1 / 24 / 30 / 1, all regions).
+pub fn conquest(dll: &[u8]) -> Result<CnqTables> {
+    let i16_at = |o: usize| dll.get(o..o + 2).map(|b| i16::from_le_bytes([b[0], b[1]]));
+    let base = (0..dll.len().saturating_sub(0x1960 + CNQ_FIRST.len()))
+        .find(|&o| dll[o..o + CNQ_FIRST.len()] == CNQ_FIRST && dll[o + 0x1960..o + 0x1960 + CNQ_FIRST.len()] == CNQ_FIRST)
+        .ok_or_else(|| anyhow!("FFXiMain.dll: no conquest marker tables"))?;
+    let at = |d: isize| base.checked_add_signed(d).ok_or_else(|| anyhow!("conquest tables: offset out of range"));
+    let mut t = CnqTables { counts: CNQ_COUNTS, ..Default::default() };
+    for mode in 0..4 {
+        let recs: Vec<usize> = CNQ_RUNS[mode].iter().map(|&(d, n)| at(d).map(|o| (0..n).map(move |k| o + 8 * k))).collect::<Result<Vec<_>>>()?.into_iter().flatten().collect();
+        let e0 = at(CNQ_ENTRIES[mode])?;
+        for (k, r) in recs.into_iter().enumerate() {
+            let e = e0 + 0x20 * k;
+            let (Some(rec), Some(ent)) = (dll.get(r..r + 8), dll.get(e..e + 0x12)) else { bail!("conquest tables: short") };
+            let s = |b: &[u8], o: usize| i16::from_le_bytes([b[o], b[o + 1]]);
+            t.modes[mode].push(CnqMarker {
+                flags: u16::from_le_bytes([ent[0], ent[1]]),
+                icon: ent[2],
+                icon2: ent[3],
+                alpha: ent[5],
+                px: s(ent, 6),
+                py: s(ent, 8),
+                dx: s(ent, 0xa),
+                dy: s(ent, 0xc),
+                place: ent[0xf],
+                colour: s(ent, 0x10),
+                id: s(rec, 0),
+                par: s(rec, 2),
+                name: s(rec, 4),
+                b7: rec[7],
+            });
+        }
+    }
+    let first: Vec<(i16, i16)> = t.modes.iter().map(|m| (m[0].id, m[0].par)).collect();
+    if first != [(1, -1), (24, -1), (30, -1), (1, -1)] {
+        bail!("FFXiMain.dll: the conquest tables moved ({first:?})");
+    }
+    let p = at(CNQ_PAIRS)?;
+    t.pairs = (0..8).filter_map(|k| Some((i16_at(p + 4 * k)?, i16_at(p + 4 * k + 2)?))).collect();
+    Ok(t)
+}
+
 #[cfg(test)]
 mod tests {
     use super::Tables;
@@ -417,5 +508,18 @@ mod tests {
         assert_eq!((w.levels.len(), w.levels[0]), (60, (5, 2, 0x3a, 0x5a)));
         let capped: Vec<u16> = w.levels.iter().filter(|l| l.3 != 0).map(|l| l.0).collect();
         assert_eq!(capped, [5, 112, 118]);
+    }
+
+    /// cnqframe's markers (menu_rows2_spec R3, cnqentries.txt): counts, first records, a zone, a label place.
+    #[test]
+    fn conquest_markers() {
+        let Ok(dll) = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")) else { return };
+        let t = super::conquest(&dll).unwrap();
+        assert_eq!(t.modes.iter().map(Vec::len).collect::<Vec<_>>(), [0xa9, 0x22, 0x2a, 0x15]);
+        let ronfaure = t.modes[0][4];
+        assert_eq!((ronfaure.id, ronfaure.par, ronfaure.name, ronfaure.px, ronfaure.py, ronfaure.place), (5, -1, 4, 177, 182, 3));
+        assert_eq!((t.modes[0][23].id, t.modes[0][23].par), (1, 230));
+        assert_eq!((t.modes[2][8].par, t.modes[2][8].flags), (-2, 0x840));
+        assert_eq!(t.pairs[0], (2, 260));
     }
 }

@@ -59,6 +59,7 @@ mod linkshell;
 mod searchmenu;
 mod arealist;
 mod seacom;
+mod region;
 mod radar;
 mod status;
 mod inspect;
@@ -162,7 +163,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -794,7 +795,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1100,6 +1101,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for c in std::mem::take(&mut world.map_cmds) {
         map::apply(world, gu.map_regions(), c, sw, sh);
     }
+    if let Some(mode) = world.region_cmd.take() {
+        region::command(world, gu, mode, sw, sh);
+    }
     map::refresh(world, gu);
     items::check_iuse(world);
     let items = gu.menu_items(sw, sh, world.menu_page);
@@ -1197,6 +1201,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if event::active(world) => event::key(world, *key),
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
+                }
+                // cnqframe takes the arrows (its cursor) and Escape (FUN_101e8b10).
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.cnq.is_some() => {
+                    region::key(world, *key);
                 }
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.map.is_some() => {
                     // map0's Escape (FUN_101fa420): the zoom into config 0x8a, then the fade-out.
@@ -1347,6 +1355,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
+                _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1509,6 +1518,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 8) => searchmenu::open(world),
             // Child 9 Linkshell (FUN_10140400 case 9): link5 and link6 beside the main menu, its own sounds.
             (0, 9) => linkshell::open(world),
+            // Child 11 Region Info (FUN_10140400 case 0xb): "menu    region", SE 0002.
+            (0, 11) => region::open_menu(world),
             // Child 7 Trade (FUN_10140400 case 7 -> FUN_1013fe70).
             (0, 7) => {
                 if trade::start(world) {
@@ -1787,7 +1798,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // raid1 / raid2 (FUN_10203c80): shown while their party exists and no window of the registry +0x2a 0x01 / 0x80
     // set is up (main and social menus, item / equipment windows, magic / ability lists, map, config, palettes) nor an
     // event holds us (the mapping to our state: inferred). Closing them drops a party-list cursor silently.
-    let hide = world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world);
+    let hide = world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world);
     world.ally_gauges.resize(12, (0, 0));
     let alliance: [Option<[Option<crate::render::screens::AllyRow>; 6]>; 2] = std::array::from_fn(|k| {
         (party_slots.counts[k + 1] > 0 && !hide).then(|| {
@@ -1842,6 +1853,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
         o.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh, world.map_opacity);
     }
+    if let Some(m) = world.cnq.as_mut() {
+        region::poll_image(gu, m);
+    }
+    region::draw(gu, world, sw, sh);
     if let Some(m) = world.map.as_mut() {
         m.draw(gu, sw, sh);
         world.sounds.append(&mut m.sounds);
@@ -2026,6 +2041,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // arealist draws over scresult (layer 3) and beside searchma / scsibori.
     blockers.extend(arealist::draw(gu, world, sw, sh));
     blockers.extend(seacom::draw(gu, world, sw, sh));
+    blockers.extend(region::draw_menu(gu, world, sw, sh));
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
@@ -2066,8 +2082,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(s) = &world.settings {
         blockers.push(s.draw(gu, sw, sh));
     }
-    // The map covers the screen (mapframe takes the mouse).
-    if world.map.is_some() {
+    // The map covers the screen (mapframe takes the mouse), as does cnqframe.
+    if world.map.is_some() || world.cnq.is_some() {
         blockers.push([0.0, 0.0, sw, sh]);
     }
     // The choice menu (FUN_100b0960): question at the top, three option rows with the anc_s hand.
@@ -2499,6 +2515,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     search::bars(gu, world, &mut bars);
     arealist::bars(gu, world, &mut bars);
     seacom::bars(gu, world, &mut bars);
+    region::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
     trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
@@ -3481,6 +3498,11 @@ struct World {
     /// The area picker and its view (+0x5c: by region; not saved).
     arealist: Option<arealist::AreaList>,
     arealist_by_region: bool,
+    /// Region Info: the conquest data and marker tables, the region menu, the map (cnqframe), a /regionmap to open.
+    conquest: region::Data,
+    region_menu: Option<region::Menu>,
+    cnq: Option<region::CnqMap>,
+    region_cmd: Option<usize>,
     /// The own search comment (shared with /seacom) and its editor while open.
     seacom: seacom::Store,
     seacom_edit: Option<seacom::Editor>,
@@ -3901,6 +3923,7 @@ pub struct App {
     keys_table: Option<Arc<zone::Keys>>,
     knock_table: Option<[[f32; 3]; 8]>,
     search_words: Option<Arc<crate::dat::tables::SearchWords>>,
+    cnq_tables: Option<Arc<crate::dat::tables::CnqTables>>,
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
@@ -4083,6 +4106,7 @@ impl App {
             keys_table: None,
             knock_table: None,
             search_words: None,
+            cnq_tables: None,
             game_ui: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
@@ -4428,6 +4452,7 @@ impl App {
             self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
             self.knock_table = crate::dat::tables::knockback(&dll).ok();
             self.search_words = crate::dat::tables::search_words(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+            self.cnq_tables = crate::dat::tables::conquest(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
             self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
@@ -4718,6 +4743,10 @@ impl App {
                             arealist_by_region: true,
                             seacom: Default::default(),
                             seacom_edit: None,
+                            conquest: region::Data::new(self.cnq_tables.clone()),
+                            region_menu: None,
+                            cnq: None,
+                            region_cmd: None,
                             logs: None,
                             missions: None,
                             mission_cmd: None,
@@ -5189,6 +5218,7 @@ impl App {
                     world.arealist = None;
                     world.seacom_edit = None;
                     world.linkshell = None;
+                    (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
@@ -5630,6 +5660,8 @@ impl App {
                 NetEvent::InspectEquip(p) => inspect::on_equip(world, &p),
                 NetEvent::InspectMessage(p) => inspect::on_message(world, &p),
                 NetEvent::KnownZones(z) => world.known_zones = Some(z),
+                NetEvent::Conquest(p) => region::on_conquest(world, &p),
+                NetEvent::Influence(p) => region::on_influence(world, &p),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
@@ -6377,7 +6409,7 @@ impl App {
         let mut f = input::Frame { ticks: dt * 60.0, ..Default::default() };
         if let Phase::World(w) = &self.phase {
             self.input.assign(&w.game);
-            self.input.context = if w.map.is_some() { 0x26 } else { 0xffff };
+            self.input.context = if w.map.is_some() || w.cnq.is_some() { 0x26 } else { 0xffff };
             f.typing = w.typing;
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state). The log counts only
@@ -6391,6 +6423,9 @@ impl App {
         // it came from (LAB_101faff0).
         let k = self.ui_k;
         let drag = self.press_at.zip(self.last_cursor).filter(|_| self.left_down).map(|(a, b)| ((b.0 - a.0) as f32 * k.0, (b.1 - a.1) as f32 * k.1));
+        if world.cnq.is_some() && !region::update(world, &mut self.input, dt * 60.0) {
+            world.cnq = None;
+        }
         if let Some(m) = world.map.as_mut()
             && !m.update(&mut self.input, dt * 60.0, drag)
         {
@@ -6455,7 +6490,7 @@ impl App {
         if let Some(line) = world.macros.as_mut().filter(|_| !sub_up).and_then(|m| m.step(dt * 60.0)) {
             textcmd::run(world, &crate::dat::font::decode_sjis(&line), textcmd::Mode::Macro);
         }
-        let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.full_log.is_some();
+        let window = world.menu.is_some() || world.confirm.is_some() || world.win.is_some() || world.action_menu.is_some() || world.config.is_some() || world.settings.is_some() || world.map.is_some() || world.cnq.is_some() || world.full_log.is_some();
         let gate = world.in_scene() && !world.ui_hidden && !event::active(world) && !world.dead() && !window && world.macros.is_some();
         // FUN_101a2e80 step 3: Ctrl (0x76) / Alt (0x77) held opens palette 1 / 2 at the next whole second of the
         // clock; released, it closes. Ctrl wins.
@@ -8792,7 +8827,7 @@ impl ApplicationHandler for App {
                 if let (true, Some((x, y))) = (looking, self.last_cursor) {
                     match &mut self.phase {
                         // The map's input context (0x26) has no camera functions; its drag scrolls the map.
-                        Phase::World(world) if world.map.is_some() => {}
+                        Phase::World(world) if world.map.is_some() || world.cnq.is_some() => {}
                         // Mouse/Cam. 0x8b / 0x8c invert the third-person camera's X / Y (FUN_1001e030).
                         Phase::World(world) if world.locked => {
                             let (ix, iy) = (if world.game.get(0x8b) == 1 { -1.0 } else { 1.0 }, if world.game.get(0x8c) == 1 { -1.0 } else { 1.0 });

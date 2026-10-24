@@ -6743,3 +6743,50 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` L5; ours client/linkshell.rs (MsgS
   largest within a ride 0.0001 (was 0.052).
 - Screenshots during a ride are not a fair test of motion: each `shot:` stalls the client ~0.37 s at 2560 x 1366, and
   the physics then catches up several steps at once.
+
+## Region Info: "menu    region", cnqframe and the conquest maps (2026-10-24)
+
+Spec `~/ffxi/lab/research/menu_rows2_spec.md` part R; ours client/region.rs, dat/tables.rs `conquest`.
+- Main menu row 11 opens "menu    region" (group 0x81, cursor memory; help 0xe 0x14b, title 0xd 1); Enter opens the map
+  of the row (mode row - 1) and hides region; the map's close resumes it. /regionmap /rmap 0x50, /besiegemap 0x51,
+  /campaignmap 0x52, /colonizationmap 0x53 open the map when none is (queued to the frame, which has the UI).
+- Marker tables: FUN_101e6fb0 fills each entry's record pointer (+0x1c) and name (+0x18) at run time from record runs
+  that sit before the entry tables in one block (30261006_0: records from 0x1037f45c, the mode 3 (region, zone) pairs
+  at 0x1037f610, entries at 0x1037fcd0 / 0x103811f0 / 0x10381630 / 0x10381b70, icons 0x10381e10, colours
+  0x10382084). Ours finds mode 0's table by its first entry (mode 2 starts with the same 0x12 bytes 0x1960 on), takes
+  every run at its offset from there and checks the first records (ids 1 / 24 / 30 / 1). Names: group 0x13 for
+  regions and fronts, 0x15 for zones (now loaded); mode 3's regions are zone names except Ra'Kaznar (id 9).
+- c2s 0x05A (empty) when 120 s have passed since the last reply and none is out; every icon resets to "?"; helpwind
+  busy bit 2 until s2c 0x05E. An unasked 0x05E is ignored (LSB also pushes it at tally time). 0x05E D = packet + 4:
+  Besieged orbs (D+0x98, +0x9c), owners per region (D+0x19 + 4r: region icon owner + 3, its zones owner + 9, or
+  owner + 0xe for the region's first zone of a nation). 0x071 mode 3 (one-shot): bayld @0x38, rank nibbles @0x10,
+  eight area words @0x18 {rate & 0x7f, bivouacs >> 7 & 7, max >> 10 & 7}; mode 2 merged by ZoneOffset @9 (LSB never
+  sends it).
+- cnqframe: zoom = base = W / 512 x 2.3, the cursor point (W x 200 / 512, H / 2) moved by axes 0x9d / 0x9e x 15 inside
+  [W / 512 x 40, W - W / 512 x 60] x [H / 448 x 65, H - H / 448 x 180] (past it the view scrolls). In cursor mode
+  (flag 0x100) FUN_101ef0a0 reads only 0x9d / 0x9e, never the scroll axes 0x79 / 0x7a; map.rs's marker placing and
+  scan narrowing now do the same (0x7e still works there). Num5 (or both zoom keys) over a marker puts the cursor back
+  at the point and scrolls that marker under it. Escape fades out and closes every info window at once.
+- Markers (FUN_101ee7b0): centred on their pixel by the bounds icon (icon2 with 0x100), icon2 plain first with 0x100,
+  the icon in alpha << 24 | 0x808080 blend 0x44 (plain with 0x200); labels in the game font (FUN_10129f00), colour x
+  alpha / 128 (alpha halved with 0x800), by the label offset or the place code (0x40). Alpha (FUN_101eef90) 6 a tick;
+  flag 4 blinks. Under the cursor (FUN_101efb20): |d| < 5 map pixels.
+- Mode 0 (FUN_101e8320): nothing under the cursor -> conq6sta (balance: "%d." and the nation per rank, ties on the
+  next row, the alliance bracket keytops3 119); a region -> its zones selected (the player's zone blinks in his own
+  region), help slot 2 by its icon (sprintf of 10 8 with group 0x13 0..3, or 9 3 / 9 2 / 9 4), conquer1 for regions
+  past the four capitals. conquer1 (FUN_101e9110, filled once at open): banner keytops3 74..76 or framesus 94 / 93,
+  sprintf 10 0x56 / 0x57 days right at (x + 0x65, y + 0x32), rows framesus {73, 75, 74, 94} with keytops3 {81, 80, 78,
+  77, 79} levels (coarse) or gauges (precise, own region in a named conquest zone; the nation ahead pulsing 0x20..0x80,
+  8 a frame), framesus 95 "The beastmen are dominant."; height - 0x1e coarse, - 8 precise. conq3pts "%10d" points.
+- Mode 1 (FUN_101e8570): beseige1 (136 wide: Al Zahbi orders keytops3 370 + ((ov >> 2) & 3), armies 367 + k with "Lv"
+  and orders 377 + n) or beseige2 for the strongholds (keytops3 374 + k, forces with FUN_101e9af0's gauge, mirrors,
+  prisoners); imperial "%10d". Mode 3 (FUN_101e88b0): colorank over Adoulin (id 1), coloresu else (area by
+  FUN_101e6b80: ids 2..9 -> areas 0, 1, 2, 4, 3, 5, 6, 7; rate "%3d%%" with framesus 148 x rate / 100, bivouacs);
+  colopoin bayld. Mode 2: the map and markers; its windows wait for data LSB never sends (help 9 6).
+- The info windows flip to x 16 while the cursor is past the middle; the legends (flag 0x2000) stack on the party window
+  (GameUi::stack_dy now does flag 0x2000 for any window). GameUi::window_sized draws a window in a rect of its own
+  (FUN_1011a5a0).
+- Live (Lnxcsfix in Metalworks): the conquest map over Bastok ("under the control of Bastok"), Gustaberg's zones,
+  conquer1 (Neutral, Minimal x 3), conq6sta (all tied first on LSB), Conquest Points 0; Besieged's stubs (Defend Al
+  Zahbi, three armies Lv 1 Defending); Colonization with bayld 0.
+- Not done: Campaign's windows (campresu / campsan / camparea / allied), the mouse on cnqframe, Japanese placements.
