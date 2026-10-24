@@ -47,6 +47,7 @@ mod synth;
 mod treasure;
 mod servmes;
 mod shop;
+mod trade;
 mod fep;
 
 use crate::config::Config;
@@ -131,7 +132,7 @@ fn pick_key(id: u32, k: u16) -> u64 {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w)
+    w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -681,7 +682,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1121,6 +1122,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
                 _ if shop::active(world) => shop::key(world, *key),
+                _ if trade::active(world) => trade::key(world, gu, *key),
                 _ if synth::active(world) => synth::key(world, gu, *key),
                 _ if post::active(world) => post::key(world, gu, *key),
                 _ if world.moogle.is_some() => {
@@ -1243,6 +1245,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
+            // Child 7 Trade (FUN_10140400 case 7 -> FUN_1013fe70).
+            (0, 7) => {
+                if trade::start(world) {
+                    world.sounds.push(crate::audio::Ui::Select as u32);
+                }
+            }
             // Child 10 Synthesis (FUN_10140400 case 10): cmbmenu.
             (0, 10) => synth::open_menu(world),
             // Item 12 in the Mog House (FUN_10140400 case 0xc): myroom, SE 0002, unless visiting another's (the row is
@@ -1628,6 +1636,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
+    blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
@@ -2055,6 +2064,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
+    trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
     items::bars(gu, world, &mut bars);
     if let Some(m) = &world.action_menu {
@@ -2486,6 +2496,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
+        (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
@@ -3002,6 +3013,8 @@ struct World {
     post: post::Session,
     /// An NPC shop's windows (s2c 0x03E).
     shop: Option<shop::Shop>,
+    /// The NPC hand-over window (trade.rs).
+    handover: Option<trade::Handover>,
     /// The guild shop's buy / sell lists (s2c 0x083 / 0x085), cleared by 0x086 only.
     guild: [shop::GuildTable; 2],
     /// The mouse pick: actors whose screen rect held the pointer last test (their bones are read back), and the
@@ -4031,6 +4044,7 @@ impl App {
                             job_cooldown: None,
                             post: post::Session::default(),
                             shop: None,
+                            handover: None,
                             guild: Default::default(),
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
@@ -4401,6 +4415,7 @@ impl App {
                     (world.moogle, world.mog_pending, world.job_req) = (None, false, None);
                     world.post = post::Session::default();
                     world.shop = None;
+                    world.handover = None;
                     synth::zone_reset(world);
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
@@ -6623,6 +6638,7 @@ impl App {
             moogle::update(w);
             post::update(w);
             shop::update(w);
+            trade::update(w);
             synth::update(w);
             servmes::frame(w);
         }

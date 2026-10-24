@@ -1302,7 +1302,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 
 /// FUN_101409f0: the value with "  G" right-aligned at (+0x7f, +0x16), the step's digit in 0x80a06040 (below the step:
 /// leading zeros up to it), then "/" and the max at (+0x80 / +0x88, +0x24).
-fn draw_moneyctr(gu: &mut GameUi, [x, y, ..]: [f32; 4], step: u32, max: u32, v: u32) {
+pub(super) fn draw_moneyctr(gu: &mut GameUi, [x, y, ..]: [f32; 4], step: u32, max: u32, v: u32) {
     const WHITE: u32 = 0x8080_8080;
     let mut text = crate::inventory::gil_text(if v < step { (step + v) as i64 } else { v as i64 }).into_bytes();
     if v < step && !text.is_empty() {
@@ -1369,7 +1369,7 @@ pub(super) fn draw_slots(gu: &mut GameUi, info: &super::items::ItemCache, name: 
 }
 
 /// "menu    money": the gil we hold (FUN_101408c0).
-fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
+pub(super) fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     let (b, ui, style, _) = gu.parts();
     if let Some(m) = ui.menu("menu    money") {

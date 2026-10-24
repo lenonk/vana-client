@@ -5361,3 +5361,20 @@ Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (
   layout window helper while GameUi::log_top is set (world frames). Live: the field manual's query now touches the
   log as in retail.
 - Not done: the query window's scroll bar (retail shows it when the options outrun the rows).
+
+## NPC trade: the hand-over window (2026-10-24)
+
+Spec `~/ffxi/lab/research/trade_spec.md`; ours client/trade.rs.
+- "menu    handover" (FUN_10139840; the delivery layout: slots 1..8, 9 OK, 10 Cancel, 11 gil) with the inventory picker
+  at x 200 and money, title group 0xd 10 "Trade". Reached from the main menu's child 7 and the action menu's command
+  0x14 (shown by the Talk rule: an NPC target). A monster target: 7031 0x1c; no target: 7031 0x1d; FUN_101cc0d0(0x43);
+  6.0 (3D) or 7031 9 "Target out of range." at open and every frame.
+- Enter on a slot focuses the picker; a stack asks the count (itemctrl); an inventory slot already placed is taken out
+  (picking it again under the cursor just removes it, FUN_10139e30). Picker grey: linkshells 0x201..0x203 and worn
+  items (Ex, Rare and bazaar-priced are allowed for NPCs); placed rows orange 0x80804020. Child 11: moneyctr. Escape
+  puts the cursor on Cancel first. OK sends c2s 0x036 (UniqueNo, counts u32[10] @8, inventory slots u8[10] @0x30,
+  ActIndex @0x3a, ItemNum @0x3c; gil first as slot 0) and closes; nothing placed: SE 0004. An event closes it.
+- Live: Lnxcsfix gave Endracion (Southern San d'Oria) a Distilled Water (1 of a stack of 2): his onTrade ran event
+  1010 ("Listen, before you bring me something, you must first accept the mission!") and kept nothing.
+- Not done: player-to-player trade (0x032..0x034 / 0x021..0x025, "menu    trade" + "menu    gift"), mouse in the
+  hand-over, the target prompt when Trade is chosen with no target (FUN_10159440, group 0xe 0x2d).

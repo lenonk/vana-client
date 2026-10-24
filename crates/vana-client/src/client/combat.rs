@@ -560,6 +560,7 @@ pub mod cmd {
     pub const TELL: u8 = 5;
     pub const CHECK: u8 = 0xb;
     pub const SWITCH_TARGET: u8 = 0x12;
+    pub const TRADE_NPC: u8 = 0x14;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -592,8 +593,8 @@ fn shown(target: Option<u32>, c: u8) -> Option<u8> {
         cmd::CHAT if npc => None,
         cmd::CHAT if target.is_some() => Some(cmd::TELL),
         cmd::CHECK if target.is_none() => None,
-        // Talk: the target is an NPC that is not engaged (FUN_10127230 case 6).
-        cmd::TALK if npc => Some(c),
+        // Talk: the target is an NPC that is not engaged (FUN_10127230 case 6); NPC Trade by the same rule.
+        cmd::TALK | cmd::TRADE_NPC if npc => Some(c),
         0xa if target.is_none() || npc => None,
         6 | 0xc | 0xd | 0x10 | 0x11 | 0x13 | 0x14 | 0x16..=0x18 | 0x1a | 0x1b => None,
         _ if LABELS[c as usize].1 != 0 => None,
@@ -652,6 +653,10 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         // FUN_10127b60 case 5: FUN_1007aac0 on the target.
         (cmd::TALK, Some((t, _))) => {
             super::event::talk(w, t);
+        }
+        // FUN_1012b880 case 0x13: the hand-over (FUN_1013fd30).
+        (cmd::TRADE_NPC, Some(_)) => {
+            super::trade::start(w);
         }
         // Case 8: the item list (FUN_101e9f10).
         // FUN_1012b880 case 8: the direct-use list.
