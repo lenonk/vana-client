@@ -1447,7 +1447,9 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
             && super::actmotion::scheduler(&a.extra, &ch, name).is_some()
         {
             let base = crate::motion::choose(&ch.motions, 0, ratio).0.to_string();
-            super::actmotion::start(a, &ch, name, &base);
+            if super::actmotion::start(a, &ch, name, &base) {
+                super::actmotion::fx_too(&mut w.effects, id, name);
+            }
         }
     }
 }

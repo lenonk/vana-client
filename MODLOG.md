@@ -5651,3 +5651,16 @@ Spec `~/ffxi/lab/research/actor_sounds_spec.md`.
   rain), at a snapshot, near f32 @0xc, far @8; nothing for an actor that never stepped. PC `dead` runs it at t92.
 - Live: a Forest Hare's `ntob` played se 204001 when it engaged; its `dead` played `vded` se 204016 (no op 0x78 thud:
   the hare model has no footstep kind).
+
+## Actor sounds 3: swing pick at op 0x24, whole schedulers behind motion-only paths (2026-10-24)
+
+- FUN_100d4600 picks the melee swing inside op 0x24 once the attacker's files are in; ours picks at the packet when
+  it can (combat::start_attack) and otherwise op 0x24 picks (retrying while the model loads; `atf?` moving, a random
+  `ati?` standing) and the attacker's tasks play the swing motion and holds themselves (ActionCtx.client_swing).
+  Before, such a hit had no swing, sparks, hit sound or grunt.
+- Schedulers whose motions actmotion plays (event motions, the engage draw `in N` and sheathe `out N`, event steps
+  `@tl0` / `@tr0`, synthesis results) now also run in fx with their motions off (actmotion::fx_too), so their sounds
+  and generators come: `in 1` -> `sinr` -> se 6083 live.
+- Not done (spec 4): the `shi<n>` / `ska<n>` sound variants and the swing letter by sub-animation (multi-form
+  monsters), op 0x53's nearest-to-player target, `pop0` / `pop1` (0x05B / 0x065 modes 3 / 6), the entity +0x138
+  hide skip, `?ead` / `sdep`.

@@ -322,6 +322,14 @@ impl Play {
     }
 }
 
+/// The rest of a scheduler whose motions this module plays (FUN_10083650 runs the whole thing): its sounds (the
+/// weapon draw / sheathe `sinr` / `sotr`, gesture sounds), generators and holds run in fx with the motions off.
+pub(super) fn fx_too(fx: &mut crate::fx::Effects, id: u32, name: &str) {
+    if let Ok(n) = <[u8; 4]>::try_from(name.as_bytes()) {
+        fx.on_scheduler_quiet(id, u32::from_le_bytes(n));
+    }
+}
+
 /// Starts scheduler  from the actor's files (model vtable +0x298); a bare motion of that name
 /// plays once when there is no scheduler. Returns false when the actor has neither.
 pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bool {
@@ -420,6 +428,7 @@ pub(super) fn update(w: &mut World, dt: f32) {
                 // Files only: the effect system's scheduler plays from them.
             } else if start(a, &ch, &p.name, &base) {
                 log::info!("actor {id:#x}: event motion {} (files {:?})", p.name, p.files);
+                fx_too(&mut w.effects, id, &p.name);
             } else {
                 log::info!("actor {id:#x}: event motion {} not in its files {:?}", p.name, p.files);
             }
@@ -434,15 +443,19 @@ pub(super) fn update(w: &mut World, dt: f32) {
                 let drawing = a.battle.on.is_empty() || a.battle.leaving;
                 a.battle = Battle { on: want, leaving: false };
                 if drawing && let Some(pc) = &ch.pc {
-                    start(a, &ch, &crate::dat::motionfile::draw_scheduler(pc, false), &base);
+                    let name = crate::dat::motionfile::draw_scheduler(pc, false);
+                    if start(a, &ch, &name, &base) {
+                        fx_too(&mut w.effects, id, &name);
+                    }
                 }
             }
         } else if want.is_empty() && !a.battle.on.is_empty() && !a.battle.leaving {
             a.battle.leaving = true;
             log::info!("actor {id:#x}: disengaged, sheathing");
             let out = ch.pc.as_ref().map(|pc| crate::dat::motionfile::draw_scheduler(pc, true));
-            if !out.is_some_and(|n| start(a, &ch, &n, &base)) {
-                a.play = None;
+            match out {
+                Some(n) if start(a, &ch, &n, &base) => fx_too(&mut w.effects, id, &n),
+                _ => a.play = None,
             }
         }
         if let Some(p) = &mut a.play {

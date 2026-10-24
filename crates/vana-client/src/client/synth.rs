@@ -931,8 +931,10 @@ fn anim_frame(w: &mut World, id: u32, ticks: f32) {
     let status = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
     let motion = |w: &mut World, name: &str| {
         let base = super::actmotion::status_motion(w, id, &ch);
-        if let Some(x) = w.actors.get_mut(&id) {
-            super::actmotion::start(x, &ch, name, &base);
+        if let Some(x) = w.actors.get_mut(&id)
+            && super::actmotion::start(x, &ch, name, &base)
+        {
+            super::actmotion::fx_too(&mut w.effects, id, name);
         }
     };
     let finish = |w: &mut World, para: u32| {
