@@ -256,21 +256,24 @@ enum LobbyScreen {
 }
 
 /// Lobby screen changes (FUN_10233d50 / FUN_10233cf0, schedulers of file 33193): 'sfot' + 'ffot' take the 2D layer
-/// and the scene to black over 60 ticks, 8 frames pass (FUN_10233d90), the next screen starts, and 'sfin' + 'ffin'
-/// bring both back over 60 ticks. The creator brings in only its 2D layer (FUN_10233db0); its scene follows once
+/// and the scene to black over 60 ticks; the next screen starts 34 frames after the fade began (FUN_1023e5b0: 68 ticks
+/// at the lobby's 30 fps), and 'sfin' + 'ffin' bring both back over 60 ticks, with 8 frames (16 ticks) before the new
+/// screen takes input (FUN_1023e550). The creator brings in only its 2D layer (FUN_10233db0); its scene follows once
 /// the dancer shows (FUN_10245fb0).
 struct LobbyFade {
     ui: f32,
     scene: f32,
     ui_to: f32,
     scene_to: f32,
-    hold: u32,
+    /// Ticks since the fade-out began, and the ticks left before the faded-in screen takes input.
+    since: f32,
+    wait: f32,
     next: Option<Box<dyn FnOnce(&mut App)>>,
 }
 
 impl Default for LobbyFade {
     fn default() -> Self {
-        LobbyFade { ui: 0.0, scene: 0.0, ui_to: 1.0, scene_to: 1.0, hold: 0, next: None }
+        LobbyFade { ui: 0.0, scene: 0.0, ui_to: 1.0, scene_to: 1.0, since: 0.0, wait: 0.0, next: None }
     }
 }
 
@@ -280,22 +283,28 @@ impl LobbyFade {
         if self.next.is_some() {
             return;
         }
-        (self.ui_to, self.scene_to, self.hold, self.next) = (0.0, 0.0, 0, Some(next));
+        (self.ui_to, self.scene_to, self.since, self.next) = (0.0, 0.0, 0.0, Some(next));
     }
 
     /// The next screen fades in; the creator's scene waits for its dancer.
     fn enter(&mut self, scene: bool) {
-        (self.ui_to, self.scene_to) = (1.0, if scene { 1.0 } else { 0.0 });
+        (self.ui_to, self.scene_to, self.wait) = (1.0, if scene { 1.0 } else { 0.0 }, 16.0);
     }
 
-    /// One frame of `ticks`; returns the change to make once faded out and held.
+    /// Screen changes wait for the fade-out and for the fade-in's first 8 frames.
+    fn busy(&self) -> bool {
+        self.next.is_some() || self.wait > 0.0
+    }
+
+    /// One frame of `ticks`; returns the change to make 68 ticks after the fade-out began.
     fn step(&mut self, ticks: f32) -> Option<Box<dyn FnOnce(&mut App)>> {
         let to = |v: f32, t: f32| if v < t { (v + ticks / 60.0).min(t) } else { (v - ticks / 60.0).max(t) };
         self.ui = to(self.ui, self.ui_to);
         self.scene = to(self.scene, self.scene_to);
-        if self.next.is_some() && self.ui <= 0.0 && self.scene <= 0.0 {
-            self.hold += 1;
-            if self.hold > 8 {
+        self.wait = (self.wait - ticks).max(0.0);
+        if self.next.is_some() {
+            self.since += ticks;
+            if self.since >= 68.0 {
                 return self.next.take();
             }
         }
@@ -350,7 +359,11 @@ enum LoginChoice {
 /// The credentials window over the title art (ours: retail logged in through PlayOnline). Focus 0..3 are the
 /// fields, 4..6 Log in / Create account / Exit.
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], focus: &mut usize, busy: bool, status: &str, version: &str) -> Option<LoginChoice> {
+/// Not retail (PlayOnline logged in): the generic window sounds (FUN_10118260) go to `sounds`: 0001 when the focus
+/// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
+#[allow(clippy::too_many_arguments)]
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>) -> Option<LoginChoice> {
+    let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
     const ITEMS: usize = 7;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
@@ -389,8 +402,10 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         if let Some(k) = (0..3).find(|&k| inside(&arects[k], p)) {
             *focus = 4 + k;
             chosen = enabled[k].then_some(CHOICES[k]);
+            sounds.push(if enabled[k] { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
         }
     }
+    let mut escape = false;
     for ev in &input.events {
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if *focus < 4 => {
@@ -408,10 +423,14 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
                     fields[*focus].pop();
                 }
                 // Escape goes to Exit, as a menu's cancel lands on its back item.
-                egui::Key::Escape => *focus = 6,
+                egui::Key::Escape => {
+                    *focus = 6;
+                    escape = true;
+                }
                 egui::Key::Enter => {
                     let k = focus.saturating_sub(4);
                     chosen = enabled[k].then_some(CHOICES[k]);
+                    sounds.push(if enabled[k] { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
                 }
                 _ => {}
             },
@@ -419,6 +438,9 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         }
     }
 
+    if (*focus != was || escape) && chosen.is_none() {
+        sounds.push(crate::audio::Ui::Cursor);
+    }
     let help = if busy {
         "Connecting to the server..."
     } else if !status.is_empty() {
@@ -6056,7 +6078,7 @@ impl App {
         }
         // Screen changes and leaving the lobby wait for the fade-out (LobbyFade); input meanwhile is dropped.
         let before = if let Phase::Characters { screen, .. } = &self.phase { Some(*screen) } else { None };
-        let fading = self.lobby_fade.next.is_some();
+        let fading = self.lobby_fade.busy();
         let mut fade_action = false;
         match &mut self.phase {
             Phase::Login { password, otp, focus } => {
@@ -6067,7 +6089,13 @@ impl App {
                     // While an error shows, the fields take no input (the OK window has it).
                     let none = UiInput { pointer: None, moved: false, clicked: false, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
-                    let chosen = login_window(lu, shown, size, fields, focus, busy, &status, &self.cfg.client_version);
+                    let mut sounds = Vec::new();
+                    let chosen = login_window(lu, shown, size, fields, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    if let Some(a) = self.audio.as_mut() {
+                        for s in sounds {
+                            a.ui(s);
+                        }
+                    }
                     // Lobby and login errors in retail's OK window (menu ok, FUN_102319a0): "Error code: FFXI-%04d" and
                     // the table's message for a known code (FUN_10017310), else the text as it came.
                     if let Some(e) = self.login_error.clone() {

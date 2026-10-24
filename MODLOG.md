@@ -5693,3 +5693,16 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
 - Enter (FUN_10227eb0) on a cancellable entry (byte @2): c2s 0x0F1 {u16 id} and the icon goes at once.
 - Live: Haste and Regen up, the bars read "Regen" / "HP are gradually restored.", Enter on Haste cancelled it.
 - Not done: the party member icons (s2c 0x076, config 0xc2).
+
+## Lobby: fade waits, the list press, the prompt, login sounds (2026-10-24)
+
+- Lobby fades: the next screen starts 34 frames after the fade-out began (FUN_1023e5b0; 68 ticks at the lobby's
+  30 fps), and the faded-in screen takes no screen change for 8 frames (FUN_1023e550; 16 ticks). Ours had the two
+  waits swapped (60 ticks of fade, then 8 of our frames).
+- dbnamese press (generic handler +0x5e = 9 on a used row only; FUN_101177d0 -> FUN_10119f80): the row sprite 77 and
+  its name sink to +1, +1 for 9 ticks with the tail of the N = 20 rings; the cursor row's name otherwise sits at -1, -1
+  with its sprite (FUN_10241a10).
+- ptc6yesn (FUN_1023d050, user: copy retail): Left / Right 0001 every time, Up / Down nothing, Enter 0002 for Yes and
+  No alike, Escape nothing.
+- Our login screen (not retail): the generic window sounds, 0001 on focus moves and Escape (to Exit), 0002 on an
+  enabled action, 0004 on a disabled one.

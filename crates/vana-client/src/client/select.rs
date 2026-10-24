@@ -470,11 +470,13 @@ pub struct SelectUi {
     pub cursor: usize,
     pub focus: Focus,
     rects: Rects,
+    /// When a used row was pressed (the generic handler's window +0x5e = 9; empty rows get none).
+    press: Option<std::time::Instant>,
 }
 
 impl Default for SelectUi {
     fn default() -> Self {
-        Self { cursor: 0, focus: Focus::List, rects: Rects::default() }
+        Self { cursor: 0, focus: Focus::List, rects: Rects::default(), press: None }
     }
 }
 
@@ -608,13 +610,13 @@ impl SelectUi {
                     self.focus = Focus::Options(mode as u16 + 1);
                 }
             }
+            // ptc6yesn (FUN_1023d050): Left / Right 0001 every time; Up / Down and Escape do nothing.
             Focus::Prompt(p, yes) => match key {
-                ArrowLeft | ArrowRight | ArrowUp | ArrowDown => {
+                ArrowLeft | ArrowRight => {
                     out.sounds.push(Se::Cursor);
                     self.focus = Focus::Prompt(p, !yes);
                 }
                 Enter => self.answer(gu, p, yes, list, out),
-                Escape => self.answer(gu, p, false, list, out),
                 _ => {}
             },
             Focus::Ok(_, next) => {
@@ -661,6 +663,7 @@ impl SelectUi {
             return;
         };
         out.sounds.push(Se::Select);
+        self.press = Some(std::time::Instant::now());
         self.focus = if deleting {
             Focus::Prompt(Prompt::Delete, false)
         } else if c.status == 2 {
@@ -673,7 +676,8 @@ impl SelectUi {
     }
 
     fn answer(&mut self, gu: &GameUi, p: Prompt, yes: bool, list: &List, out: &mut Out) {
-        out.sounds.push(if yes { Se::Select } else { Se::Cancel });
+        // 0002 for Yes and No alike.
+        out.sounds.push(Se::Select);
         let idx = list.entries.get(self.cursor).copied();
         self.focus = Focus::List;
         match (p, yes, idx) {
@@ -819,12 +823,20 @@ fn draw(gu: &mut GameUi, st: &SelectUi, list: &List, chars: &[Character], deleti
         }
     }
     let used: Vec<bool> = (0..SLOTS).map(|i| i < list.entries.len()).collect();
-    let (list_rects, area) = gu.select_list(w, h, st.cursor, &used, st.focus == Focus::List);
+    let press = st.press.map(|t| (9.0 - t.elapsed().as_secs_f32() * 60.0).max(0.0));
+    let (list_rects, area) = gu.select_list(w, h, st.cursor, &used, st.focus == Focus::List, press);
     gu.sprite_from("menu    lobbywin", 143, 1, 0.0, 0.0, 0x8080_8080);
     gu.frame_tint(0.0, -16.0, w, h + 32.0, 0x2080_8080);
     for (i, r) in list_rects.iter().enumerate() {
         if let Some(c) = list.get(chars, i) {
-            gu.shape_fit(&c.name, r[0] + 4.0, r[1] + 2.0, r[2], name_tint(c));
+            // FUN_10241a10: the name sits at the row rect + (4, 2), the cursor row's at -1, -1 with its sprite (+1, +1
+            // while pressed).
+            let d = match (i == st.cursor, press) {
+                (true, Some(p)) if p > 0.0 => 1.0,
+                (true, _) => -1.0,
+                _ => 0.0,
+            };
+            gu.shape_fit(&c.name, r[0] + 4.0 + d, r[1] + 2.0 + d, r[2], name_tint(c));
         }
     }
     if let Some(c) = list.get(chars, st.cursor) {

@@ -304,7 +304,10 @@ pub fn push_help_frame(b: &mut UiBatch, lobby: &UiFile, style: &SpriteLib, w: f3
 /// child's sprite 77 (FUN_101144b0): used 0x80808080, the cursor 0x80805020 a pixel up-left; empty (state 5)
 /// 0x30808080, the cursor 0x40402810 a pixel down-right. `hand`: the anc_s frame at the cursor (inferred, as the
 /// other lobby menus). Returns the 16 slot rects and the grid's bounds.
-pub fn select_list(b: &mut UiBatch, lobby: &UiFile, w: f32, h: f32, cursor: usize, used: &[bool], hand: Option<usize>) -> (Vec<[f32; 4]>, [f32; 4]) {
+/// `press`: the cursor row's press counter (window +0x5e, 9 down to 0): the row sinks to +1, +1 and the tail of the
+/// N = 20 rings shows (FUN_101177d0 -> FUN_10119f80).
+#[allow(clippy::too_many_arguments)]
+pub fn select_list(b: &mut UiBatch, lobby: &UiFile, w: f32, h: f32, cursor: usize, used: &[bool], hand: Option<usize>, press: Option<f32>) -> (Vec<[f32; 4]>, [f32; 4]) {
     let (Some(lib), Some(m)) = (lobby.lib("menu    lobbywin"), lobby.menu("menu    dbnamese")) else { return (Vec::new(), [0.0; 4]) };
     let (ox, oy) = (w - 640.0, h - 480.0);
     b.push_sprite(lobby, lib, 78, ox, oy, 1.0, 1.0, 0x8080_8080, 0);
@@ -315,11 +318,21 @@ pub fn select_list(b: &mut UiBatch, lobby: &UiFile, w: f32, h: f32, cursor: usiz
         rects[i] = [x, y, c.w as f32, c.h as f32];
         let (tint, d) = match (used.get(i).copied().unwrap_or(false), i == cursor) {
             (true, false) => (0x8080_8080, 0.0),
+            (true, true) if press.is_some_and(|c| c > 0.0) => (0x8080_5020, 1.0),
             (true, true) => (0x8080_5020, -1.0),
             (false, false) => (0x3080_8080, 0.0),
             (false, true) => (0x4040_2810, 1.0),
         };
         b.push_sprite(lobby, lib, 77, x + d, y + d, 1.0, 1.0, tint, 0);
+        if i == cursor
+            && let Some(c) = press.filter(|&c| c > 0.0 && used.get(i).copied().unwrap_or(false))
+        {
+            let (bw, bh) = (sprite_width(lib, 77), sprite_height(lib, 77));
+            for (s, a, blend) in press_rings(20.0, c) {
+                let (rx, ry) = (x + d - ((s - 1.0) * bw / 2.0).trunc(), y + d - ((s - 1.0) * bh / 2.0).trunc());
+                b.push_sprite(lobby, lib, 77, rx, ry, s, s, a << 24 | 0x80_5020, blend);
+            }
+        }
         if i == cursor
             && let (Some(frame), Some(anc)) = (hand, lobby.lib("anc     anc_s"))
         {

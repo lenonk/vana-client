@@ -384,9 +384,9 @@ impl GameUi {
     }
 
     /// The select screen's 16-slot list (dbnamese); returns the slot rects and the list window's area.
-    pub fn select_list(&mut self, w: f32, h: f32, cursor: usize, used: &[bool], focused: bool) -> (Vec<[f32; 4]>, [f32; 4]) {
+    pub fn select_list(&mut self, w: f32, h: f32, cursor: usize, used: &[bool], focused: bool, press: Option<f32>) -> (Vec<[f32; 4]>, [f32; 4]) {
         let cursor_frame = self.cursor_frame();
-        screens::select_list(&mut self.batch, &self.data.lobby, w, h, cursor, used, focused.then_some(cursor_frame))
+        screens::select_list(&mut self.batch, &self.data.lobby, w, h, cursor, used, focused.then_some(cursor_frame), press)
     }
 
     /// Sprite-font text fitted into `max` px (FUN_101c04c0).
