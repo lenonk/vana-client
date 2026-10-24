@@ -59,6 +59,7 @@ pub struct Cond {
 
 impl Cond {
     /// `/sea all`: the area flag with no area, wire type 0.
+    #[cfg(test)]
     pub fn all() -> Self {
         Cond { flags: AREA, last_area: -1, ..Default::default() }
     }

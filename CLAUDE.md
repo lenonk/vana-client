@@ -102,8 +102,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
     own zoom;
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
-    while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
-    prompt, mouse hold-to-open;
+    while engaged, and the camera cannot be spun): done (MODLOG "Engaged state", "Engaged menu"); left the mouse hold
+    on a row (60 ticks), the party-list cursor cancel on engaging; Sprint / Scout / Quarry show only in Conflict;
+  - the treasure pool window ("menu    loot", lot / pass): not done (the log lines are, client/treasure.rs);
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
     skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
     "Per-record reactions"); guards, parries and counters not seen live yet;

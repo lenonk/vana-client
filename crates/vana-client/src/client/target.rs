@@ -469,7 +469,14 @@ pub fn confirm_target(w: &mut World) {
             if w.action_menu.is_none() {
                 w.sounds.push(crate::audio::Ui::ActionMenu as u32);
             }
-            w.action_menu = Some(super::combat::open_menu(w));
+            // Open again (FUN_1015e350 -> FUN_1012ada0): the rows reload and Call for help resets; the cursor
+            // stays *(inf: +0x4c is not touched)*.
+            let keep = w.action_menu.as_ref().map(|m| m.sel);
+            let mut m = super::combat::open_menu(w);
+            if let Some(sel) = keep {
+                m.sel = sel.min(m.items.len().saturating_sub(1));
+            }
+            w.action_menu = Some(m);
             w.menu = None;
         }
     }

@@ -911,6 +911,13 @@ pub(super) fn battle_frame(w: &mut World) {
     if s == 1 && w.battle_prev != 1 && !super::event::active(w) {
         super::target::cancel_sub(w);
         super::inspect::drop(w);
+        // FUN_10202f00: the party-list cursor (<stpt> / <stal>) is cancelled too, stopping its macro (no sound *(inf)*).
+        if let Some(pc) = w.party_cursor.take()
+            && let super::target::SubThen::Line { from_macro: true, .. } = pc.then
+            && let Some(m) = w.macros.as_mut()
+        {
+            m.stop();
+        }
         (w.menu, w.win, w.config, w.settings, w.magic, w.ability, w.cats) = (None, None, None, None, None, None, None);
         (w.moogle, w.mogdoor, w.full_log, w.shop, w.handover) = (None, None, None, None, None);
         w.action_menu = Some(open_menu(w));
