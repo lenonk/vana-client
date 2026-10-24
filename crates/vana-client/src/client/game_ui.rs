@@ -610,6 +610,24 @@ impl GameUi {
         }
     }
 
+    /// A layout moved by its region stacking, for the screens-level drawers that place windows themselves.
+    pub fn stacked_menu(&self, name: &str, w: f32, h: f32) -> Option<crate::dat::ui::Menu> {
+        let dy = self.stack_dy(name, w, h);
+        let mut m = self.data.lobby.menu(name)?.clone();
+        if let Some(e) = m.elements.first_mut() {
+            e.y = (e.y as f32 + dy).round() as i16;
+        }
+        Some(m)
+    }
+
+    /// Sprite `k` scaled by (sx, sy) with a blend word (8: the gauge fills).
+    #[allow(clippy::too_many_arguments)]
+    pub fn sprite_scaled_blend(&mut self, lib: &str, k: usize, x: f32, y: f32, sx: f32, sy: f32, tint: u32, blend: u32) {
+        if let Some(l) = self.data.lobby.lib(lib).filter(|l| k < l.sprites.len()) {
+            self.batch.push_sprite(&self.data.lobby, l, k, x, y, sx, sy, tint, blend);
+        }
+    }
+
     /// Sprite `k` through a 2x2 matrix about (x, y) (the compass disk).
     pub fn sprite_affine(&mut self, lib: &str, k: usize, x: f32, y: f32, m: [f32; 4], tint: u32) {
         let Some(l) = self.data.lobby.lib(lib) else { return };
@@ -802,8 +820,11 @@ impl GameUi {
 
     /// Region stacking (FUN_10159080 -> FUN_10158e10): registry flag 0x1000 windows sit on the chat log (frame top =
     /// log top - frame height - 2, at least 16), flag 0x2000 ones on the party window. The y offset from the layout.
-    fn stack_dy(&self, name: &str, w: f32, h: f32) -> f32 {
-        let flags = self.data.registry.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0);
+    pub fn stack_dy(&self, name: &str, w: f32, h: f32) -> f32 {
+        // The action menu's layouts (actionm1 .. actiom10) are swapped into "menu    playermo" (FUN_1011a8f0).
+        let key = name.trim_end().to_ascii_lowercase();
+        let reg = if key.starts_with("menu    actionm") || key.starts_with("menu    actiom") { "menu    playermo" } else { key.as_str() };
+        let flags = self.data.registry.get(reg).copied().unwrap_or(0);
         match (self.log_top, self.data.lobby.menu(name)) {
             (Some(top), Some(m)) if flags & 0x1000 != 0 => {
                 let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);

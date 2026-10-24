@@ -47,6 +47,7 @@ mod synth;
 mod treasure;
 mod servmes;
 mod shop;
+mod gauge;
 mod trade;
 mod fep;
 
@@ -1144,15 +1145,38 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         _ => {}
                     }
                 }
-                // The action menu (Enter) takes the cursor keys while it is up.
-                _ if world.action_menu.is_some() => {
+                // The action menu (FUN_1012bd10) takes the keys while it is up (hidden under a sub-target prompt).
+                // Escape engaged keeps it: autorun stops, else the log takes a line off; out of battle it closes.
+                // Right on Disengage / Call for help swaps them (FUN_1012acc0), on Magic opens magselec.
+                _ if world.action_menu.is_some() && world.prompt.is_none() => {
+                    let engaged = world.my_motion.status == 1;
                     let m = world.action_menu.as_mut().unwrap();
                     let n = m.items.len().max(1);
+                    let row = m.items.get(m.sel).copied();
                     match key {
-                        egui::Key::ArrowDown => m.sel = (m.sel + 1) % n,
-                        egui::Key::ArrowUp => m.sel = (m.sel + n - 1) % n,
-                        egui::Key::Enter => act = m.items.get(m.sel).copied(),
-                        egui::Key::Escape => world.action_menu = None,
+                        egui::Key::ArrowDown | egui::Key::ArrowUp => {
+                            m.sel = if *key == egui::Key::ArrowDown { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
+                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        }
+                        egui::Key::ArrowRight if matches!(row, Some(combat::cmd::DISENGAGE | combat::cmd::CALL_HELP)) => {
+                            m.call_help = !m.call_help;
+                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        }
+                        egui::Key::ArrowRight if row == Some(combat::cmd::MAGIC) => {
+                            magic::open_cats(world, "menu    magselec");
+                        }
+                        egui::Key::Enter => act = row,
+                        egui::Key::Escape if engaged => {
+                            if world.autorun {
+                                world.autorun = false;
+                            } else {
+                                shrink_log = true;
+                            }
+                        }
+                        egui::Key::Escape => {
+                            world.action_menu = None;
+                            world.sounds.push(crate::audio::Ui::Cancel as u32);
+                        }
                         _ => {}
                     }
                 }
@@ -1345,7 +1369,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     // Action menu rows: hover moves the cursor, a click on the highlighted row picks it.
-    let action_rows = world.action_menu.as_ref().and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
+    let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
     if let (Some((_, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut())
         && let Some(k) = rows.iter().position(|r| inside(r, p))
     {
@@ -1358,7 +1382,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     if let Some(c) = act {
-        world.action_menu = None;
+        if !combat::keeps_menu(c) {
+            world.action_menu = None;
+        }
         if !combat::choose(world, c) {
             log::info!("action menu command {c} is not implemented yet");
         }
@@ -1637,9 +1663,25 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
+    blockers.extend(gauge::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
+    // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
+    // while it opens; the hand only while it has the focus.
+    if let (Some(m), Some((r, rows))) = (&world.action_menu, &action_rows) {
+        let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
+        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none();
+        for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
+            let (lib, sprite) = combat::label(*c);
+            gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
+            if k == m.sel && focused {
+                gu.cursor(row[0] - 2.0, row[1]);
+            }
+        }
+        blockers.push(*r);
+    }
+
     blockers.extend(magic::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = world.config.as_mut() {
@@ -1675,19 +1717,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if world.menu.is_some() {
         blockers.extend(gu.window_rect(crate::render::screens::menu_window(world.menu_page), sw, sh));
     }
-    // The action menu (FUN_101276a0): label sprites, the highlighted one tinted 0x80805020; none while it opens.
-    if let (Some(m), Some((r, rows))) = (&world.action_menu, &action_rows) {
-        let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
-        for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
-            let (lib, sprite) = combat::label(*c);
-            gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
-            if k == m.sel {
-                gu.cursor(row[0] - 2.0, row[1]);
-            }
-        }
-        blockers.push(*r);
-    }
-
     // FUN_101d62b0: the door menu, title group 9 0x45 and its rows 0x14 to the right of child n.
     if let Some(m) = &world.mogdoor
         && let Some((wx, wy)) = gu.window(myroom::WINDOW, sw, sh)
@@ -1737,7 +1766,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let p = world.palette.0 as usize;
         let long = world.game.get(0x9d) == 0 && sw >= 1024.0;
         let name = format!("menu    mcr{p}{}", if long { "long" } else { "pall" });
-        if let Some(win) = gu.lobby_window(&name, sw, sh, false, Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
+        // 0x82 to the right while the gauge window or the cast bar is up (FUN_101a3840, mode DAT_106218ee 0).
+        let dx = if world.gauge.is_some() || world.cast_bar.is_some() { 130.0 } else { 0.0 };
+        if let Some(win) = gu.lobby_window_off(&name, sw, sh, (dx, 0.0), Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
             let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
             for (k, (_, r)) in win.children.iter().take(10).enumerate() {
                 let title = m.recs[k + 10 * (p - 1)].title();
@@ -2847,6 +2878,12 @@ struct World {
     noreact: HashMap<u32, Instant>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
     action_menu: Option<combat::ActionMenu>,
+    /// The window manager's last applied status (FUN_1015ef60 +0x68): its edges into / out of 1 run the battle reset.
+    battle_prev: u8,
+    /// "menu    gaugewin", up while engaged.
+    gauge: Option<gauge::Gauge>,
+    /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
+    reopen_menu: bool,
     started: Instant,
     logging_out: bool,
     target: Option<u32>,
@@ -3926,6 +3963,9 @@ impl App {
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
                             action_menu: None,
+                            battle_prev: 0,
+                            gauge: None,
+                            reopen_menu: false,
                             started: Instant::now(),
                             logging_out: false,
                             target: None,
@@ -6657,6 +6697,7 @@ impl App {
             post::update(w);
             shop::update(w);
             trade::update(w);
+            combat::battle_frame(w);
             synth::update(w);
             servmes::frame(w);
         }

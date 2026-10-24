@@ -560,6 +560,9 @@ pub mod cmd {
     pub const TELL: u8 = 5;
     pub const CHECK: u8 = 0xb;
     pub const SWITCH_TARGET: u8 = 0x12;
+    pub const CALL_HELP: u8 = 2;
+    pub const MAGIC: u8 = 8;
+    pub const TREASURE: u8 = 0xc;
     pub const TRADE_NPC: u8 = 0x14;
     pub const TRADE: u8 = 0x13;
 }
@@ -568,6 +571,8 @@ pub mod cmd {
 pub struct ActionMenu {
     pub items: Vec<u8>,
     pub sel: usize,
+    /// DAT_10578174: Right on Disengage swapped it for Call for help (reset when the layout leaves battle).
+    pub call_help: bool,
 }
 
 /// Layout choice (FUN_10127790): engaged 6; an attackable target 4 (2 * 2); an NPC 7 (Talk first;
@@ -610,13 +615,82 @@ pub fn menu_items(layout: usize, target: Option<u32>) -> Vec<u8> {
     LAYOUTS[layout.min(7)].iter().filter_map(|&c| shown(target, c)).collect()
 }
 
-pub(super) fn open_menu(w: &World) -> ActionMenu {
-    let mut items = menu_items(layout(w), w.target.filter(|t| w.entities.contains_key(t)));
+/// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled and
+/// Treasure shows while the pool holds items (Sprint's area rule is not done).
+fn current_items(w: &World, call_help: bool) -> Vec<u8> {
+    let l = layout(w);
+    let mut items = menu_items(l, w.target.filter(|t| w.entities.contains_key(t)));
     // FUN_1012af30 case 0xe: Dig only on a chocobo (not a mount); its further zone tests are not traced.
     if w.my_motion.status == 0x55 {
         items.retain(|&c| c != 0xe);
     }
-    ActionMenu { items, sel: 0 }
+    if l == 6 {
+        if call_help && let Some(c) = items.iter_mut().find(|c| **c == cmd::DISENGAGE) {
+            *c = cmd::CALL_HELP;
+        }
+        if w.treasure.iter().any(|t| t.0 != 0)
+            && let Some(at) = items.iter().position(|&c| c == cmd::CHECK)
+        {
+            items.insert(at, cmd::TREASURE);
+        }
+    }
+    items
+}
+
+pub(super) fn open_menu(w: &World) -> ActionMenu {
+    ActionMenu { items: current_items(w, false), sel: 0, call_help: false }
+}
+
+/// FUN_1012b4b0 each frame: the rows are rebuilt (the window follows their count, the cursor kept in range); the
+/// toggle resets outside battle.
+pub(super) fn refresh_menu(w: &mut World) {
+    let Some(m) = &w.action_menu else { return };
+    let call_help = m.call_help && w.my_motion.status == 1;
+    let items = current_items(w, call_help);
+    if let Some(m) = &mut w.action_menu {
+        m.call_help = call_help;
+        if m.items != items {
+            m.sel = m.sel.min(items.len().saturating_sub(1));
+            m.items = items;
+        }
+    }
+}
+
+/// The window manager's status watch (FUN_1015ef60): our applied status turning 1 outside an event runs
+/// FUN_1015f3e0(0x20): the sub-target prompt is cancelled, every window not kept in battle closes, then the battle
+/// set opens focused (playermo, gaugewin; targetwi stays). Leaving 1 runs FUN_1015f3e0(0x40): playermo, gaugewin and
+/// magselec close. The item list chosen from the battle menu brings it back when it closes (FUN_101336d0).
+pub(super) fn battle_frame(w: &mut World) {
+    let s = w.my_motion.status;
+    if s == 1 && w.battle_prev != 1 && !super::event::active(w) {
+        super::target::cancel_sub(w);
+        (w.menu, w.win, w.config, w.settings, w.magic, w.ability, w.cats) = (None, None, None, None, None, None, None);
+        (w.moogle, w.mogdoor, w.full_log, w.shop, w.handover) = (None, None, None, None, None);
+        w.action_menu = Some(open_menu(w));
+        w.gauge = Some(super::gauge::Gauge::default());
+    } else if s != 1 && w.battle_prev == 1 {
+        (w.action_menu, w.gauge, w.reopen_menu) = (None, None, false);
+        if w.cats.as_ref().is_some_and(|c| c.menu == "menu    magselec") {
+            w.cats = None;
+        }
+    }
+    w.battle_prev = s;
+    if let (Some(g), Some(v)) = (w.gauge.as_mut(), w.vitals) {
+        g.tick(v.2);
+    }
+    if w.reopen_menu && w.win.is_none() {
+        w.reopen_menu = false;
+        if s == 1 && w.action_menu.is_none() {
+            w.action_menu = Some(open_menu(w));
+        }
+    }
+    refresh_menu(w);
+}
+
+/// FUN_1012b880: the commands that leave the menu up (Attack, Call for help, Disengage, Abilities, Magic, Check,
+/// Switch Target, Trust); Chat, Tell, Talk and the rest close it (Items closes it and brings it back after).
+pub(super) fn keeps_menu(c: u8) -> bool {
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 7 | cmd::MAGIC | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | 0x19)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -642,7 +716,15 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
     let target = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.index)));
     match (c, target) {
         (cmd::ATTACK, Some((t, i))) => send(w, NetCommand::Act { target: t, index: i, action: 2 }),
-        (cmd::SWITCH_TARGET, Some((t, i))) => send(w, NetCommand::Act { target: t, index: i, action: 0x0f }),
+        // Case 0x12: the sub-target prompt over monsters (FUN_10159440 flags 0x20), then "/attack <id>" of the pick.
+        (cmd::SWITCH_TARGET, _) => {
+            let line = super::target::SubThen::Line { stash: "/attack ".into(), quoted: false, from_macro: false };
+            if !super::target::open_sub(w, 0x20, line, None, String::new(), 0) {
+                w.sounds.push(crate::audio::Ui::Error as u32);
+            }
+        }
+        // Case 2: "/help".
+        (cmd::CALL_HELP, _) => super::textcmd::run(w, "/help", super::textcmd::Mode::Internal),
         (cmd::DISENGAGE, _) => {
             let (t, i) = target.unwrap_or((w.my_id, 0));
             send(w, NetCommand::Act { target: t, index: i, action: 4 });
@@ -662,8 +744,11 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             super::trade::start(w);
         }
         // Case 8: the item list (FUN_101e9f10).
-        // FUN_1012b880 case 8: the direct-use list.
-        (cmd::ITEMS, _) => super::items::open_direct(w),
+        // FUN_1012b880 case 8: the direct-use list; engaged, the battle menu comes back when it closes.
+        (cmd::ITEMS, _) => {
+            w.reopen_menu = w.my_motion.status == 1;
+            super::items::open_direct(w)
+        }
         // FUN_1012b880 cases 0xd / 0xe: Dig runs /dig; Dismount asks first (group 0xe 0x4d "Dismount?").
         (0xe, _) => super::textcmd::run(w, "/dig", super::textcmd::Mode::Internal),
         (0xf, _) => w.confirm = Some((super::Confirm::Dismount, false)),

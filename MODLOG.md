@@ -5420,3 +5420,37 @@ Spec `~/ffxi/lab/research/msgfmt_spec.md`; ours dat/msgfmt.rs.
   compass clock went off and came back with "/clock on".
 - Not done: event text codes 7f ab / 7f ac (dates through these builders), /playtime (g10 0x2e / 0x2f), the other
   callers (party join, merit prompts, auction house, level sync, /sea counts).
+
+## Engaged state: the battle set, the gauge window, the lock-on cone (2026-10-24)
+
+Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
+- No separate battle mode: the window manager update (FUN_1015ef60) watches our applied status; turning 1 outside an
+  event runs FUN_1015f3e0(0x20): the sub-target prompt is cancelled, every window without the battle keep bit (B bit 2
+  in the registry) closes (main menu, item / magic / ability lists, config, shops, ...), then the flag-0x400 windows
+  open focused: playermo (the action menu), gaugewin, targetwi. Leaving 1 runs 0x40: gaugewin, playermo, magselec,
+  mp_pmode close. An event start closes them; they don't come back at its end. Ours: combat::battle_frame.
+- The action menu rebuilds its rows every frame (FUN_1012b4b0 -> FUN_1012b2d0; the actionmN layout follows the count).
+  Engaged layout 6: Switch Target, Magic, Abilities, Trust, Items, Disengage (Call for help while toggled by Right,
+  FUN_1012acc0), Treasure (while the pool holds items), Sprint (area rule, not done), Check. Escape engaged doesn't
+  close it (FUN_1012bd10: autorun off, else the log takes a line off); out of battle SE 0003 and close. Attack, Call
+  for help, Disengage, Abilities, Magic, Check, Switch Target, Trust keep it; Chat / Tell / Talk close it; Items
+  closes it and brings it back when the list closes (FUN_101336d0). Switch Target goes through the sub-target prompt
+  over monsters (flags 0x20) and "/attack <id>". Right on Magic opens magselec. Hidden under a sub-target prompt; the
+  hand only while it has the focus; drawn beneath the lists it opens.
+- Title slot 0 while engaged: group 0xd 7 "Battle Mode" (+0x50 = 1); 6 "Ready Mode" on an attackable target; 5
+  "Commands" otherwise. The user's retail shot showed "Commands" while engaged: unresolved.
+- "menu    gaugewin" (16, 48), up only while engaged (draw FUN_101393a0): framesus 8 labels and troughs at (+4, +8);
+  windowps 97 fills at (+25, +8 / +18) scaled by HP% / MP%, tints 0x80808080 / 0x8080e080, blend word 8; TP at
+  (+25, +28): below 1000 scaled tp / 1000 in 0x800060b0, above a full bar in the pulse colour then (tp % 1001) / 1000
+  in the next tier's (0x8000b060, 0x802060d0); numbers "%4d" right-aligned at x + 123, y + 7 / 17 / 27, 0xc0808080,
+  TP capped at 3000. Pulse (FUN_10139660, per 2 ticks): crossing 1000 starts 1.0 rising, x1.25 to past 2.0, x0.75 to
+  below 1.0; colour = tier base with alpha min(trunc(p 127), 255) - 127. While open the cast bar moves to y 94 and
+  the macro palette 130 to the right.
+- Region stacking applies through the window's registry name: the actionmN layouts stack as "menu    playermo"; the
+  magic / ability lists and category windows (drawn by screens-level pushers) take the offset through
+  GameUi::stacked_menu.
+- Lock-on camera (FUN_1001ee60 locked branch): the eye may swing atan(4 / (near + d)) either side of the target-to-
+  player line (all.c 23071..23080; x3 only in Monstrosity): about 35 degrees at melee range, not 106; near / far by the
+  current focal length. With the battle menu focused the arrows move its cursor (camera only with Shift).
+- Live: Lnxcsfix on Wild Rabbits in East Ronfaure: the battle menu, gauge and "Battle Mode" bar on engage, Escape kept
+  the menu, Down moved it, Magic / Abilities opened over it, all closed at the kill.

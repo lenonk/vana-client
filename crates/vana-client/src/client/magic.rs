@@ -221,7 +221,10 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     recall(w, &mut win);
     w.magic = Some(win);
     w.menu = None;
-    w.action_menu = None;
+    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
+    if w.my_motion.status != 1 {
+        w.action_menu = None;
+    }
     w.cats = None;
 }
 
@@ -234,7 +237,10 @@ pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    w.action_menu = None;
+    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
+    if w.my_motion.status != 1 {
+        w.action_menu = None;
+    }
     w.cats = None;
 }
 
@@ -254,7 +260,10 @@ pub fn open_mount(w: &mut World, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    w.action_menu = None;
+    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
+    if w.my_motion.status != 1 {
+        w.action_menu = None;
+    }
     w.cats = None;
 }
 
@@ -288,7 +297,10 @@ pub fn open_emote(w: &mut World) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    w.action_menu = None;
+    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
+    if w.my_motion.status != 1 {
+        w.action_menu = None;
+    }
     w.cats = None;
 }
 
@@ -317,7 +329,10 @@ fn mount_name(w: &World, id: u16) -> String {
 pub fn open_cats(w: &mut World, menu: &'static str) {
     w.cats = Some(Cats { menu, sel: 0 });
     w.menu = None;
-    w.action_menu = None;
+    // Engaged, the battle menu stays beneath (FUN_1012b880 cases 7 / 8 / 0x19).
+    if w.my_motion.status != 1 {
+        w.action_menu = None;
+    }
 }
 
 /// A status check shared by both lists: fishing, mounted, healing, sitting, a place without actions.
@@ -838,7 +853,9 @@ pub fn draw_cast_bar(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     let f = ((total - left) / total).clamp(0.0, 1.0);
     let (b, ui, style, _) = gu.parts();
     let (Some(m), Some(wps)) = (ui.menu("menu    casttime"), ui.lib("menu    windowps")) else { return };
-    let (x, y) = crate::render::screens::push_window_at(b, ui, style, m, sw, sh, 47.0 - m.elements[0].y as f32);
+    // y 47, or 94 under the gauge window (FUN_1012c0f0).
+    let top = if w.gauge.is_some() { 94.0 } else { 47.0 };
+    let (x, y) = crate::render::screens::push_window_at(b, ui, style, m, sw, sh, top - m.elements[0].y as f32);
     crate::render::screens::push_gauge(b, ui, wps, x + 8.0, y + 9.0, 38, 97, f);
     let pct = ((f * 100.0) as u32).to_string();
     crate::render::screens::push_shape_text_right(b, ui, pct.as_bytes(), x + 106.0, y + 7.0, 0x8080_8080);
@@ -898,8 +915,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let frame = gu.cursor_frame();
     if let Some(c) = w.cats {
         let child = cat_rows(c.menu).get(c.sel).map_or(1, |r| r.0 as usize);
+        let m = gu.stacked_menu(c.menu, sw, sh);
         let (b, ui, style, _) = gu.parts();
-        if let Some(m) = ui.menu(c.menu) {
+        if let Some(m) = &m {
             push_category(b, ui, style, m, child, sw, sh, frame);
         }
         rects.extend(gu.window_rect(c.menu, sw, sh));
@@ -933,8 +951,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         _ => gu.lobby_msg(9, 0x4b, ""),
     };
     let menu = win.menu();
+    let m = gu.stacked_menu(menu, sw, sh);
     let (b, ui, style, font) = gu.parts();
-    if let Some(m) = ui.menu(menu) {
+    if let Some(m) = &m {
         push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame);
     }
     rects.extend(gu.window_rect(menu, sw, sh));

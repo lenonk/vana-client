@@ -1166,7 +1166,8 @@ pub fn queue(w: &mut World, s: EventStart) {
     w.self_lock = None;
     w.event_pending = Some(Box::new(Waiting { start: s, blocks: None, asked: HashSet::new(), timer: ASK_AGAIN, joined: HashSet::new(), since: Instant::now() }));
     w.menu = None;
-    w.action_menu = None;
+    // Event start (FUN_1015f3e0(0x800)) closes the battle set too; it does not come back at the event's end.
+    (w.action_menu, w.gauge) = (None, None);
     w.win = None;
     // Menu broadcast 0x800 (event start) closes the item info window.
     w.info_win = None;

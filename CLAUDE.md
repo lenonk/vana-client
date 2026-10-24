@@ -95,7 +95,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
     done but untested live (needs a second account); left mouse in both, the target prompt with no target;
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
-    while engaged, and the camera cannot be spun): spec `~/ffxi/lab/research/combat_mode_spec.md` (in progress);
+    while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
+    prompt, mouse hold-to-open, the "Commands" / "Battle Mode" title question;
   - weapon skills: a WS kill plays no dying animation, WS hit reactions look wrong (spec ws_reaction_spec.md);
   - UI sounds missing in places (menus opening and others): audit `~/ffxi/lab/research/sound_audit.md`;
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;

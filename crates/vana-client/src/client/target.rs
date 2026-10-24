@@ -697,7 +697,7 @@ fn lock_height(w: &World, id: u32) -> f32 {
 }
 
 /// FUN_1001e030, locked branch, run in 1/60 s ticks: look at the player / target midpoint, keep the eye
-/// within 3 atan(4 / (near + d)) of the target-to-player line and ease its distance into
+/// within atan(4 / (near + d)) of the target-to-player line (x3 only in Monstrosity, all.c 23071..23080) and ease its distance into
 /// [near + d/2, far + d/2], 25 % of the gap a tick. `turn` is manual orbit input in radians.
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let Some(t) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))) else { return };
@@ -719,9 +719,11 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
         dv = glam::Quat::from_rotation_y(turn * 6.0 / len) * dv;
     }
     dv.y += rise;
-    let near = (7.2 + 0.125 * d) * FOCAL * 0.001;
-    let far = (8.6 + 0.125 * d) * FOCAL * 0.001;
-    let allowed = (4.0 / (near + d)).atan() * 3.0;
+    // near / far by the current focal length (FUN_100145d0, config 0x49).
+    let f = super::camera::focal(w);
+    let near = (7.2 + 0.125 * d) * f * 0.001;
+    let far = (8.6 + 0.125 * d) * f * 0.001;
+    let allowed = (4.0 / (near + d)).atan();
     let len = dv.length().max(1e-3);
     let dir = dv / len;
     let angle = dir.dot(e).clamp(-1.0, 1.0).acos();
