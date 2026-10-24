@@ -6307,3 +6307,24 @@ dead PC's plate stays at standing head height, as ours (plate_point). The PC `de
   included); the current build's mount sub-case (asm 0x100d4619..0x100d4714: -0.5, or per-race tables for mount
   entity +0x1db 0x1d {0, .5, .5, .5, 1.1, -.7, -.7, .5, .05} / 0x25 {0, .4, .4, .4, .4, -.8, -.8, .4, .4}; -1.3
   without a mount actor or with k = FUN_10022340(race) 0 / 6, k not decoded).
+
+## List scroll bars: the mouse and the wheel (2026-10-24)
+
+Spec `~/ffxi/lab/research/scroll_bar_spec.md` sections 2..5. client/scrollbar.rs: the focused lists register their
+bar each frame (GameUi::bar_site, whether it shows or not); the next frame's HUD runs FUN_102347f0's zones (1 / 2
+caps, 4 / 5 the track, 3 the thumb), the press and the key repeat (16 ticks, then every 2; FUN_10234930) as 0x16 /
+0x17 / 0x18 / 0x19, the thumb's drag top = trunc(start + dy x total / (h - 8)) as 0x1b (FUN_10234a20), and each wheel
+notch as 0x16 / 0x17 to the focused list (FUN_10125360; else the wheel zooms the camera, the user's FOV choice). While
+the bar holds the mouse the windows see no press and no pointer.
+- Messages per list: the row lists (inventory, the equip pick, both storage sides, the read-only container, shop,
+  Change Map, Wide Scan, search results; FUN_101f6c70): a row moves the top under the hand, a page as Left / Right,
+  0x1b the top. The paged lists (magic, ability, emote, mount; FUN_10222150): rows move top and cursor together,
+  0x18 back by min(top, 12) (cursor 0 at the top), 0x19 the cursor a whole page (the top with it, clamped). query
+  (FUN_1014e410): rows the selection (wrapping, as the keys), pages 3 keeping the screen row, 0x1b the top with the
+  selection shifted. The Config lists (cfilter, fxfilter, k1assign, k2assign, textcol1): rows move top and hand
+  against each other (the selection stays), 0x1b silent. The full log: its handler is not traced *(inf: the
+  scroll-only Up / Down, Left / Right pages, 0x1b the bottom-anchored top)*.
+- Script step `act:wheel:N`. Live (Lnxcsfix, Items, 23 rows): wheel -3 scrolled 3 with the hand on its row; the
+  bottom cap 1 row, the track a page and at the end the hand to the last row, the thumb dragged to the end with the
+  hand kept. Unit tests scrollbar::{row_list, paged_list, hit_zones}.
+- Not done: the post / delivery / trade / synthesis lists (post.rs draw_rows) and the synthesis history.

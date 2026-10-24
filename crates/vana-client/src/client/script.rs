@@ -5,7 +5,7 @@
 //! `key:[shift+|ctrl+|alt+]NAME` (egui key names: Tab, Enter, Escape, Space, Minus, ArrowDown...),
 //! `move:X,Y`, `click:X,Y`, `rclick:X,Y`, `ldown:X,Y` / `lup` (physical pixels), `shot:PATH`, and `press:KEY,SECS,PHASE` (press KEY every
 //! SECS until the client reaches PHASE; event prompts), `every:KEY,SECS` (press KEY every SECS alongside the
-//! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*), and `follow:PATH`: lines
+//! steps that follow; `every:off` stops it), `act:NAME` for keys egui cannot name (numpad*; `act:wheel:N` turns the wheel), and `follow:PATH`: lines
 //! appended to PATH later each run as a script of their own, until a line `end`.
 
 use anyhow::{Result, anyhow, bail};

@@ -4,6 +4,7 @@
 
 use super::configui::{Act, ConfigUi, Ctl, Mark, Out, Win, draw_page};
 use super::game_ui::GameUi;
+use super::scrollbar::Msg;
 use crate::audio::Ui as Se;
 use crate::gamecfg::Values;
 use Ctl::*;
@@ -93,6 +94,38 @@ pub fn page(name: &str) -> &'static [(u16, Ctl)] {
         n if is_list(n) => LIST_ROWS,
         _ => &[],
     }
+}
+
+/// The list pages' bar or wheel (FUN_10197be0 and the others alike): a row moves the top and the hand against each
+/// other so the selected row stays, a page is Left / Right's, the thumb sets the top and shifts the hand by as much,
+/// clamped to 1..visible (silent). True when it moved with SE 0001.
+pub(super) fn bar(ui: &mut ConfigUi, v: &Values, m: Msg) -> bool {
+    let Some(name) = ui.stack.last().map(|w| w.name.clone()) else { return false };
+    if !((is_list(&name) && name != "conf11s") || name == "textcol1") {
+        return false;
+    }
+    let page = if name == "textcol1" { 11 } else { 14 };
+    let n = rows(ui, v, &name);
+    let (shown, max) = (n.min(page).max(1), n.saturating_sub(page));
+    let top = ui.extra.scroll;
+    let hand = ui.stack.last().map_or(1, |w| w.cursor as isize);
+    let (t, h) = match m {
+        Msg::Up => (top.saturating_sub(1), hand + (top > 0) as isize),
+        Msg::Down => ((top + 1).min(max), hand - (top < max) as isize),
+        Msg::PageUp => (top.saturating_sub(page), hand),
+        Msg::PageDown => ((top + page).min(max), hand),
+        Msg::Set(t) => {
+            let t = t.min(max);
+            (t, hand - (t as isize - top as isize))
+        }
+    };
+    let h = h.clamp(1, shown as isize) as u16;
+    ui.extra.scroll = t;
+    let was = ui.stack.last().map_or(1, |w| w.cursor);
+    if let Some(w) = ui.stack.last_mut() {
+        w.cursor = h;
+    }
+    (t, h) != (top, was) && !matches!(m, Msg::Set(_))
 }
 
 fn is_list(name: &str) -> bool {
@@ -572,6 +605,9 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
                 && let Some([fx, fy, fw, fh]) = gu.window_rect(&name, sw, sh)
             {
                 gu.scroll_bar(fx + fw - 8.0, fy, fh, total, 14, ui.extra.scroll);
+                if top {
+                    gu.bar_site(super::scrollbar::Owner::Config, fx + fw - 8.0, fy, fh, total, 14, ui.extra.scroll);
+                }
             }
             rects.extend(gu.window_rect(&name, sw, sh));
             true
@@ -592,6 +628,9 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
             // FUN_10198620: 11 rows, total the category's colours.
             if let Some([fx, fy, fw, fh]) = gu.window_rect(&name, sw, sh) {
                 gu.scroll_bar(fx + fw - 8.0, fy, fh, rows_of.len(), 11, ui.extra.scroll);
+                if top {
+                    gu.bar_site(super::scrollbar::Owner::Config, fx + fw - 8.0, fy, fh, rows_of.len(), 11, ui.extra.scroll);
+                }
             }
             rects.extend(gu.window_rect(&name, sw, sh));
             true

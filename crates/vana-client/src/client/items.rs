@@ -5,6 +5,7 @@
 use super::World;
 use super::game_ui::GameUi;
 use super::net::NetCommand;
+use super::scrollbar::{Msg, Owner, rows};
 use crate::audio::Ui;
 use crate::dat::items::Item;
 use crate::inventory::{Equipment, ItemInfo, ItemList, Persona, ROW_PITCH, SLOT_CHILD, Slot, Stats, VISIBLE_ROWS, build_rows, gil_text};
@@ -340,6 +341,24 @@ pub(super) fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right:
     }
     *cursor = (*cursor).min(n - 1 - *scroll);
     (*scroll, *cursor) != before
+}
+
+/// A scroll bar or wheel message (FUN_101f6c70) to the focused item list. True when it moved.
+pub(super) fn bar(w: &mut World, owner: Owner, m: Msg) -> bool {
+    let direct = matches!(w.win, Some(Win::Items { direct: true, .. }));
+    let n = match (&w.win, owner) {
+        (Some(Win::Items { store: None, .. }), Owner::Items) => listed(w, direct).len(),
+        (Some(Win::Items { store: Some(b), .. }), Owner::Bank) => store_rows(w, b.bank).len(),
+        (Some(Win::Items { store: Some(b), .. }), Owner::StoreInv) => store_rows(w, b.side).len(),
+        (Some(Win::Equip { pick: Some(p), .. }), Owner::EquipPick) => p.indexes.len(),
+        _ => return false,
+    };
+    match (&mut w.win, owner) {
+        (Some(Win::Items { scroll, cursor, store: None, .. }), Owner::Items) | (Some(Win::Items { scroll, cursor, store: Some(_), .. }), Owner::StoreInv) => rows(m, scroll, cursor, n, VISIBLE_ROWS),
+        (Some(Win::Items { store: Some(b), .. }), Owner::Bank) => rows(m, &mut b.scroll, &mut b.cursor, n, VISIBLE_ROWS),
+        (Some(Win::Equip { pick: Some(p), .. }), Owner::EquipPick) => rows(m, &mut p.scroll, &mut p.cursor, n, VISIBLE_ROWS),
+        _ => false,
+    }
 }
 
 /// Keys while a window is open; `page` is key function 0xa8 (Ctrl / Alt held). Returns true when the key was used.
@@ -958,8 +977,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
             let open = gu.gate_layout("menu    inventor", sw, sh, None);
             let (b, ui, style, font) = gu.parts();
-            if let Some(m) = ui.menu("menu    inventor").filter(|_| open) {
-                push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame);
+            let bar = ui.menu("menu    inventor").filter(|_| open).map(|m| push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame));
+            if let Some([x, y, h]) = bar.filter(|_| sub.is_none() && sort.is_none()) {
+                gu.bar_site(Owner::Items, x, y, h, list.rows.len(), VISIBLE_ROWS, list.scroll);
             }
             rects.extend(gu.window_rect("menu    inventor", sw, sh));
             // itmsort2 beside the list (FUN_101f0600), focused or not; iuse sits on top of it.
@@ -1003,6 +1023,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             }
             let open = ["menu    persona", "menu    money", "menu    equip"].map(|n| gu.gate_layout(n, sw, sh, None));
             let list_open = list.is_some() && gu.gate_layout("menu    inventor", sw, sh, Some(LIST_X as i16));
+            let mut pick_bar = None;
             let (b, ui, style, font) = gu.parts();
             if let Some(m) = ui.menu("menu    persona").filter(|_| open[0]) {
                 push_persona(b, ui, style, m, &persona, sw, sh);
@@ -1016,11 +1037,14 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 if let Some(e) = m.elements.first_mut() {
                     e.x = LIST_X;
                 }
-                push_inventory(b, ui, style, font, GameUi::ATLAS, &m, l, sw, sh, frame);
+                pick_bar = Some((push_inventory(b, ui, style, font, GameUi::ATLAS, &m, l, sw, sh, frame), l.rows.len(), l.scroll));
             }
             if let Some(m) = ui.menu("menu    equip").filter(|_| open[2]) {
                 let cursor = pick.is_none().then_some(SLOT_CHILD[slot] as usize);
                 push_equipment(b, ui, style, m, &eq, info.as_ref(), sw, sh, cursor, frame);
+            }
+            if let Some(([x, y, h], n, top)) = pick_bar {
+                gu.bar_site(Owner::EquipPick, x, y, h, n, VISIBLE_ROWS, top);
             }
             for n in ["menu    persona", "menu    money", "menu    equip"] {
                 rects.extend(gu.window_rect(n, sw, sh));
@@ -1621,7 +1645,8 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         upload_icons(gu, info, list.visible().iter().map(|r| r.id));
         let (bt, ui, style, font) = gu.parts();
         if let Some(m) = ui.menu("menu    inventor") {
-            push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame, 3.0, true, crate::render::invwin::INVENTOR_BAR);
+            let [x, y, h] = push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame, 3.0, true, crate::render::invwin::INVENTOR_BAR);
+            gu.bar_site(Owner::Bank, x, y, h, list.rows.len(), VISIBLE_ROWS, list.scroll);
         }
         rects.extend(gu.window_rect("menu    inventor", sw, sh));
         return rects;
@@ -1649,15 +1674,23 @@ fn draw_storage(gu: &mut GameUi, w: &World, info: &ItemCache, scroll: usize, cur
         draw_count(gu, n, w.inv.sizes[c as usize], sw, sh);
     }
     let (bt, ui, style, font) = gu.parts();
+    let mut bars = Vec::new();
     if let Some(m) = ui.menu("menu    bank") {
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank, crate::render::invwin::LIST_BAR);
+        let r = push_item_list(bt, ui, style, font, GameUi::ATLAS, m, &blist, sw, sh, frame, 4.0, free && b.on_bank, crate::render::invwin::LIST_BAR);
+        bars.push((Owner::Bank, r, &blist, b.on_bank));
     }
     if let Some(m) = ui.menu("menu    inventor") {
         let mut m = m.clone();
         if let Some(e) = m.elements.first_mut() {
             e.x = BIN_LIST_X;
         }
-        push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, free && !b.on_bank, crate::render::invwin::INVENTOR_BAR);
+        let r = push_item_list(bt, ui, style, font, GameUi::ATLAS, &m, &ilist, sw, sh, frame, 3.0, free && !b.on_bank, crate::render::invwin::INVENTOR_BAR);
+        bars.push((Owner::StoreInv, r, &ilist, !b.on_bank));
+    }
+    for (owner, [x, y, h], l, on) in bars {
+        if free && on {
+            gu.bar_site(owner, x, y, h, l.rows.len(), VISIBLE_ROWS, l.scroll);
+        }
     }
     rects.extend(gu.window_rect("menu    bank", sw, sh));
     if let Some(mut r) = gu.window_rect("menu    inventor", sw, sh) {

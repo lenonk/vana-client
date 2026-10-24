@@ -1696,6 +1696,34 @@ pub fn input_events(w: &mut World, events: &[egui::Event]) {
     }
 }
 
+/// FUN_1014e410: the choice's bar or wheel (3 rows): a row moves the selection (the view follows), a page 3 rows
+/// keeping the screen row, the thumb the top with the selection shifted by as much. True when the selection moved.
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    use super::scrollbar::Msg;
+    let Some(c) = w.event.as_mut().and_then(|l| l.st.choice.as_mut()) else { return false };
+    let n = c.options.len();
+    if n == 0 {
+        return false;
+    }
+    let (was, max) = (c.cursor, n.saturating_sub(3));
+    match m {
+        Msg::Up => c.cursor = (c.cursor + n - 1) % n,
+        Msg::Down => c.cursor = (c.cursor + 1) % n,
+        Msg::PageUp | Msg::PageDown => {
+            let row = c.cursor - c.scroll.min(c.cursor);
+            c.scroll = if m == Msg::PageUp { c.scroll.saturating_sub(3) } else { (c.scroll + 3).min(max) };
+            c.cursor = (c.scroll + row).min(n - 1);
+        }
+        Msg::Set(t) => {
+            let t = t.min(max);
+            c.cursor = (c.cursor + t).saturating_sub(c.scroll).min(n - 1);
+            c.scroll = t;
+        }
+    }
+    c.scroll = c.scroll.min(c.cursor).max(c.cursor.saturating_sub(2));
+    c.cursor != was
+}
+
 pub fn choice(w: &World) -> Option<&Choice> {
     w.event.as_ref()?.st.choice.as_ref()
 }

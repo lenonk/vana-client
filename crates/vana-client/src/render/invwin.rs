@@ -41,8 +41,8 @@ pub fn push_cursor(b: &mut UiBatch, ui: &UiFile, m: &Menu, wx: f32, wy: f32, chi
 /// The item list (FUN_101edb70 with FUN_101ebda0 cells). Rows start at window + (3, 4), 18 px
 /// apart; US columns (0x10375ee4) put the icon at 0 (32x32 at 0.5), the name at 18 (y + 2) and the
 /// count right-aligned at 16 (y + 4, over the icon).
-pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize) {
-    push_item_list(b, ui, style, font, atlas, m, list, w, h, frame, 3.0, true, INVENTOR_BAR);
+pub fn push_inventory(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize) -> [f32; 3] {
+    push_item_list(b, ui, style, font, atlas, m, list, w, h, frame, 3.0, true, INVENTOR_BAR)
 }
 
 /// The scroll bar's inset from the frame's right edge: inventor is always moved at open (FUN_101f1fe0 ->
@@ -51,9 +51,9 @@ pub const INVENTOR_BAR: f32 = 6.0;
 pub const LIST_BAR: f32 = 8.0;
 
 /// An item list window with its rows `inset` px in ("menu    bank" rows sit at x 4) and the cursor only when focused.
+/// Returns its scroll bar's (x, y, h).
 #[allow(clippy::too_many_arguments)]
-#[allow(clippy::too_many_arguments)]
-pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize, inset: f32, focused: bool, bar_inset: f32) {
+pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, list: &ItemList, w: f32, h: f32, frame: usize, inset: f32, focused: bool, bar_inset: f32) -> [f32; 3] {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
     let (fx, fy, fw, fh) = super::screens::frame_rect(m, w, h, 1.0, 1.0);
     let (ox, oy) = (wx + inset, wy + 4.0);
@@ -70,6 +70,7 @@ pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Fo
     }
     // 10 rows (FUN_101f6700), total and top from the list every frame (FUN_101f69d0); drawn focused or not.
     super::screens::push_scroll_bar(b, ui, fx + fw - bar_inset, fy, fh, list.rows.len(), crate::inventory::VISIBLE_ROWS, list.scroll);
+    [fx + fw - bar_inset, fy, fh]
 }
 
 /// The equipment grid (FUN_1012ea90): slot labels from the children, 32x32 icons at the child of
@@ -158,17 +159,17 @@ pub struct ActionRow {
 
 /// The magic and ability lists (FUN_10221f50): rows at children 1..12, the hand at the cursor child; an empty list
 /// prints its line at (10, 0x14).
+/// `bar`: the whole list's (total, top) for its 12-row scroll bar (FUN_10221920), at x1 - 8 on the stacked frame;
+/// returns the bar's (x, y, h).
 #[allow(clippy::too_many_arguments)]
-/// `bar`: the whole list's (total, top) for its 12-row scroll bar (FUN_10221920), at x1 - 8 on the stacked frame.
-#[allow(clippy::too_many_arguments)]
-pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize, bar: (usize, usize)) {
+pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Font, atlas: &str, m: &Menu, rows: &[ActionRow], cursor: usize, empty: &str, w: f32, h: f32, frame: usize, bar: (usize, usize)) -> [f32; 3] {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
     let (fx, fy, fw, fh) = super::screens::frame_rect(m, w, h, 1.0, 1.0);
     if rows.is_empty() {
         for (i, line) in empty.split('\n').enumerate() {
             text(b, font, atlas, line, wx + 10.0, wy + 20.0 + 20.0 * i as f32, 0x8080_8080);
         }
-        return;
+        return [fx + fw - LIST_BAR, fy, fh];
     }
     for (k, r) in rows.iter().enumerate() {
         let Some(e) = m.elements.get(k + 1) else { break };
@@ -182,6 +183,7 @@ pub fn push_action_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &
     }
     push_cursor(b, ui, m, wx, wy, cursor + 1, frame);
     super::screens::push_scroll_bar(b, ui, fx + fw - LIST_BAR, fy, fh, bar.0, 12, bar.1);
+    [fx + fw - LIST_BAR, fy, fh]
 }
 
 /// A category window (mgcmenu, abiselec ...): its children's label sprites and the hand.

@@ -578,6 +578,14 @@ fn move_list(list: &mut (usize, usize), n: usize, key: egui::Key) -> bool {
     true
 }
 
+/// A scroll bar or wheel message to the shop list (FUN_101f6c70). True when it moved.
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(s) = w.shop.as_ref() else { return false };
+    let n = rows(w, s).len();
+    let Some(s) = w.shop.as_mut() else { return false };
+    super::scrollbar::rows(m, &mut s.list.0, &mut s.list.1, n, ROWS)
+}
+
 /// The cursor on row `at` (FUN_101f7080).
 fn list_at(at: usize) -> (usize, usize) {
     let scroll = (at + 1).saturating_sub(ROWS);
@@ -921,6 +929,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         }
         // Resized every update (FUN_10210880 -> FUN_1011a5a0), so the bar sits at x1 - 6.
         gu.scroll_bar(wx + ww - 6.0, wy, wh, rows.len(), ROWS, s.list.0);
+        if focused {
+            gu.bar_site(super::scrollbar::Owner::Shop, wx + ww - 6.0, wy, wh, rows.len(), ROWS, s.list.0);
+        }
         rects.push([wx, wy, ww, wh]);
         // money (FUN_101408c0) with the list.
         rects.extend(super::post::draw_money(gu, w, sw, sh));

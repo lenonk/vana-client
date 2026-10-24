@@ -186,6 +186,9 @@ pub struct GameUi {
     /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
     /// pointer moves.
     pub hover: std::cell::Cell<bool>,
+    /// The focused lists' bars drawn this frame, and a press held on one (client/scrollbar.rs).
+    pub bars: Vec<super::scrollbar::Site>,
+    pub bar_hold: Option<super::scrollbar::Hold>,
     /// Window open / close animations by menu name, the UI frame number and the tick clock; `open_ticks` is N
     /// (DAT_1036c190: 25, 0 with config 0xa4).
     anims: std::collections::HashMap<String, WinAnim>,
@@ -256,7 +259,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -789,13 +792,25 @@ impl GameUi {
         }
     }
 
-    /// Cell `cell` of sprite `k` stretched over (x, y, w, h), keeping its texture rect.
-    #[allow(clippy::too_many_arguments)]
     /// A list's scroll bar (screens::push_scroll_bar).
     pub fn scroll_bar(&mut self, x: f32, y: f32, h: f32, total: usize, visible: usize, top: usize) {
         screens::push_scroll_bar(&mut self.batch, &self.data.lobby, x, y, h, total, visible, top);
     }
 
+    /// A focused list's bar at (x, y), h tall, for the mouse and the wheel; registered whether it shows or not (the
+    /// wheel goes to the focused list either way).
+    #[allow(clippy::too_many_arguments)]
+    pub fn bar_site(&mut self, owner: super::scrollbar::Owner, x: f32, y: f32, h: f32, total: usize, visible: usize, top: usize) {
+        self.bars.push(super::scrollbar::Site { owner, rect: [x, y, h], bar: (total, visible, top) });
+    }
+
+    /// A focused list takes the wheel (its bar drawn last frame).
+    pub fn wants_wheel(&self) -> bool {
+        !self.bars.is_empty()
+    }
+
+    /// Cell `cell` of sprite `k` stretched over (x, y, w, h), keeping its texture rect.
+    #[allow(clippy::too_many_arguments)]
     pub fn cell_stretch(&mut self, lib: &str, k: usize, cell: usize, x: f32, y: f32, w: f32, h: f32, tint: u32) {
         self.cell_stretch_blend(lib, k, cell, x, y, w, h, tint, 0);
     }

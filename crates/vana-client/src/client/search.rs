@@ -4,6 +4,7 @@
 
 use super::World;
 use super::net::NetCommand;
+use super::scrollbar::{Msg, rows_abs};
 use crate::audio::Ui;
 use crate::dat::tables::SearchWords;
 use crate::net::search::{self, Cond, Record, Reply};
@@ -25,6 +26,13 @@ pub enum Scope {
 }
 
 /// The results window (W) and its list (DAT_106644dc).
+/// A scroll bar or wheel message to the results (FUN_101f6c70; row 0 is the summary line). True when it moved.
+pub(super) fn bar(w: &mut World, m: Msg) -> bool {
+    let Some(res) = w.search.as_mut().filter(|r| r.option.is_none()) else { return false };
+    let n = res.rows.len() + 1;
+    rows_abs(m, &mut res.scroll, &mut res.cursor, n, ROWS)
+}
+
 pub struct Results {
     /// DAT_10385a04 != 4: a query is out.
     pub busy: bool,
@@ -727,6 +735,9 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     }
     // The scroll bar past 15 rows at x1 - 8.
     gu.scroll_bar(wx + 358.0, wy, 248.0, count, ROWS, res.scroll);
+    if focused {
+        gu.bar_site(super::scrollbar::Owner::Search, wx + 358.0, wy, 248.0, count, ROWS, res.scroll);
+    }
     if let Some(c) = res.option {
         let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
         let off: Vec<u16> = OPTION_ORDER.iter().copied().filter(|&o| r.is_some_and(|r| !option_enabled(w, o, r))).collect();

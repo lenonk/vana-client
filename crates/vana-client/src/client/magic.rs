@@ -509,6 +509,13 @@ fn enter(w: &mut World, kind: Kind) {
     w.sounds.push(Ui::Select as u32);
 }
 
+/// A scroll bar or wheel message to the open list (FUN_10222150). True when it moved.
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(win) = w.ability.as_mut().or(w.magic.as_mut()).filter(|x| !x.hidden) else { return false };
+    let n = win.rows.len();
+    super::scrollbar::paged(m, &mut win.scroll, &mut win.cursor, n, VISIBLE)
+}
+
 /// FUN_10222150: Down / Up step and wrap, Right / Left page by 12.
 fn step(win: &mut ListWin, key: egui::Key) -> bool {
     let n = win.rows.len();
@@ -949,8 +956,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     gu.replay_on_change(menu, (win.kind as u64) << 32 | (win.ty as u64) << 16 | w.emote_path.len() as u64);
     let m = gu.stacked_menu(menu, sw, sh).filter(|_| gu.gate_layout(menu, sw, sh, None));
     let (b, ui, style, font) = gu.parts();
-    if let Some(m) = &m {
-        push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame, (win.rows.len(), win.scroll));
+    let bar = m.as_ref().map(|m| push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame, (win.rows.len(), win.scroll)));
+    // The list has the focus unless its sort window or a prompt over it does.
+    if let Some([x, y, h]) = bar.filter(|_| win.sort_focus.is_none() && win.ask.is_none()) {
+        gu.bar_site(super::scrollbar::Owner::Actions, x, y, h, win.rows.len(), VISIBLE, win.scroll);
     }
     rects.extend(gu.window_rect(menu, sw, sh));
     // The sort window at its layout (384, 48), highlighted while focused; blusortw's row 3 disabled (no disabled

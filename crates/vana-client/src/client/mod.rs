@@ -50,6 +50,7 @@ mod servmes;
 mod chatctrl;
 mod inspect;
 mod linehist;
+mod scrollbar;
 mod search;
 mod shop;
 mod gauge;
@@ -328,6 +329,8 @@ struct UiInput {
     down: bool,
     released: bool,
     right_clicked: bool,
+    /// Wheel notches for the focused list, up positive (FUN_10125360).
+    wheel: i32,
     events: Vec<egui::Event>,
 }
 
@@ -794,6 +797,25 @@ fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
     }
 }
 
+/// The full log's bar (its handler is not traced *(inf)*): a row is the scroll-only Up / Down, a page Left / Right,
+/// the thumb the bottom-anchored top.
+fn bar_full_log(w: &mut World, m: scrollbar::Msg, (total, lines, _): (usize, usize, usize)) -> bool {
+    let Some(fl) = w.full_log.as_mut() else { return false };
+    let key = match m {
+        scrollbar::Msg::Up => egui::Key::ArrowUp,
+        scrollbar::Msg::Down => egui::Key::ArrowDown,
+        scrollbar::Msg::PageUp => egui::Key::ArrowLeft,
+        scrollbar::Msg::PageDown => egui::Key::ArrowRight,
+        scrollbar::Msg::Set(t) => {
+            let s = total.saturating_sub(lines + t);
+            let moved = s != fl.scroll;
+            fl.scroll = s;
+            return moved;
+        }
+    };
+    fl.key(key, true, lines, total)
+}
+
 /// FUN_10130280 (Ctrl+C): talk to an NPC target, check anything else.
 fn check_target(world: &mut World) {
     match world.target.filter(|t| t >> 24 != 0 && world.entities.get(t).is_some_and(|e| !e.mob)) {
@@ -1016,6 +1038,9 @@ fn plate_point(world: &World, id: u32) -> Option<Vec3> {
 /// ('-' opens it) and the KO prompt. Returns the rects that take clicks away from the world.
 fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2], keys: &mut HashSet<KeyCode>, view_proj: glam::Mat4, numpad_slash: bool) -> Vec<[f32; 4]> {
     let (sw, sh) = (size[0] as f32, size[1] as f32);
+    // The focused list's scroll bar and the wheel, before the windows see the press.
+    let taken = scrollbar::frame(gu, world, input);
+    let input = taken.as_ref().unwrap_or(input);
     // FUN_1022eca0: keytops3 165 + (n >> 2) % 5 at (W - 234, H - 48 + 8 - min(2n, 8)), y scale min(n / 4, 1), n
     // the draws since the open (taken at 30 a second, inferred); the HUD windows are not drawn meanwhile.
     if let Some(t) = world.downloading {
@@ -1924,6 +1949,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         // FUN_1014de10: 3 rows, total the options, top the first shown (FUN_1014e300); at x1 - 8 when stacked.
         if let Some([fx, fy, fw, fh]) = gu.window_rect("menu    query", sw, sh) {
             gu.scroll_bar(fx + fw - 8.0, fy, fh, options.len(), rows.len(), scroll);
+            gu.bar_site(scrollbar::Owner::Query, fx + fw - 8.0, fy, fh, options.len(), rows.len(), scroll);
         }
         blockers.extend(gu.window_rect("menu    query", sw, sh));
     }
@@ -3573,8 +3599,9 @@ pub struct App {
     drag_from: Option<(f64, f64)>,
     /// FUN_10157fa0's +0x57: this movement push already sent its stand-up command.
     stand_sent: bool,
-    /// Wheel notches since the last frame (FOV zoom).
+    /// Wheel notches since the last frame (FOV zoom), and those a focused list takes.
     wheel: f32,
+    list_wheel: f32,
     mods: winit::keyboard::ModifiersState,
     press_at: Option<(f64, f64)>,
     /// When the left button went down, and the right one (where and when): the drag rule (FUN_10125040).
@@ -3770,6 +3797,7 @@ impl App {
             stand_sent: false,
             mouse: Default::default(),
             wheel: 0.0,
+            list_wheel: 0.0,
             mods: Default::default(),
             press_at: None,
             press_time: None,
@@ -6325,7 +6353,10 @@ impl App {
             _ => 0.0,
         };
         let swallow = ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut self.swallow_click);
+        let notches = self.list_wheel.trunc();
+        self.list_wheel -= notches;
         let input = ctx.input(|i| UiInput {
+            wheel: notches as i32,
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
             clicked: i.pointer.primary_clicked() && !swallow,
@@ -6397,7 +6428,7 @@ impl App {
                     self.ui_drawn = true;
                     let fields = [&mut self.cfg.server, &mut self.cfg.username, &mut *password, &mut *otp];
                     // While an error shows, the fields take no input (the OK window has it).
-                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, events: Vec::new() };
+                    let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let chosen = login_window(lu, shown, size, fields, focus, busy, &status, &self.cfg.client_version, &mut sounds);
@@ -7447,6 +7478,14 @@ impl App {
                 let mob = world.entities.iter().filter(|(id, e)| e.mob && !matches!(e.motion.status, 2 | 3) && world.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
                 target::set(world, mob);
             }
+            // act:wheel:N turns the wheel N notches (up positive): the focused list's, else the camera's.
+            if let Some(n) = action.as_deref().and_then(|a| a.strip_prefix("wheel:")).and_then(|n| n.parse::<f32>().ok()) {
+                if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
+                    self.list_wheel += n;
+                } else {
+                    self.wheel += n;
+                }
+            }
             // act:goto:X,Z adds a waypoint, as --goto does.
             if let Some((x, z)) = action.as_deref().and_then(|a| a.strip_prefix("goto:")).and_then(|a| a.split_once(','))
                 && let (Ok(x), Ok(z)) = (x.trim().parse(), z.trim().parse())
@@ -8369,6 +8408,11 @@ impl ApplicationHandler for App {
                         && inside(&o.rect, p)
                     {
                         o.zoom_at(p, d);
+                        return;
+                    }
+                    // A focused list takes the wheel (FUN_10125360: 0x16 / 0x17 to the focus window).
+                    if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
+                        self.list_wheel += d;
                         return;
                     }
                     // Field of view, as the keys (and retail's wheel on keyboard type 2, FUN_10253af0).

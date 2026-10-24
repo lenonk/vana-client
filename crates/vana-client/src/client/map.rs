@@ -1193,6 +1193,9 @@ impl MapWin {
         if let Some(win) = gu.lobby_window_off("menu    scanlist", sw, sh, (0.0, 0.0), None, false, &[]) {
             let [x, y, fw, fh] = win.frame;
             gu.scroll_bar(x + fw - 8.0, y, fh, s.rows.len(), SCAN_ROWS, s.scroll);
+            if s.mapscan.is_none() {
+                gu.bar_site(super::scrollbar::Owner::ScanList, x + fw - 8.0, y, fh, s.rows.len(), SCAN_ROWS, s.scroll);
+            }
             for (k, r) in s.rows.iter().enumerate().skip(s.scroll).take(SCAN_ROWS) {
                 let ry = y + 4.0 + 24.0 * (k - s.scroll) as f32;
                 gu.wrapped_name(&r.name, 88.0, x + 7.0, ry + 2.0, 0x8080_8080, true, false);
@@ -1363,6 +1366,24 @@ enum ListOut {
 const COLS: [f32; 3] = [20.0, 245.0, 320.0];
 const ROWS: usize = 5;
 
+impl MapWin {
+    /// A scroll bar or wheel message to Change Map's list or the Wide Scan list (FUN_101f6c70). True when it moved.
+    pub fn bar(&mut self, owner: super::scrollbar::Owner, m: super::scrollbar::Msg) -> bool {
+        use super::scrollbar::{Owner, rows_abs};
+        match owner {
+            Owner::MapList => self.maplist.as_mut().is_some_and(|l| {
+                let n = l.rows.len();
+                rows_abs(m, &mut l.scroll, &mut l.cursor, n, ROWS)
+            }),
+            Owner::ScanList => self.scan.as_mut().is_some_and(|s| {
+                let n = s.rows.len();
+                rows_abs(m, &mut s.scroll, &mut s.cursor, n, SCAN_ROWS)
+            }),
+            _ => false,
+        }
+    }
+}
+
 impl MapList {
     fn key(&mut self, key: egui::Key) -> ListOut {
         let n = self.rows.len();
@@ -1449,6 +1470,7 @@ impl MapList {
         let Some((x, y)) = gu.menu_sel("menu    maplist", sw, sh, sel) else { return };
         if let Some([fx, fy, fw, fh]) = gu.window_rect("menu    maplist", sw, sh) {
             gu.scroll_bar(fx + fw - 8.0, fy, fh, self.rows.len(), ROWS, self.scroll);
+            gu.bar_site(super::scrollbar::Owner::MapList, fx + fw - 8.0, fy, fh, self.rows.len(), ROWS, self.scroll);
         }
         for (k, r) in self.rows.iter().enumerate().skip(self.scroll).take(ROWS) {
             let ry = y + 4.0 + 16.0 * (k - self.scroll) as f32;

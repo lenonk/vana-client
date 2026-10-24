@@ -408,6 +408,7 @@ impl LogWin {
         // FUN_10137840: the bar at x1 - 6 (resized at open), the log's lines, bottom-anchored top.
         let total = self.wrapped.len();
         gu.scroll_bar(x0 + w - 6.0, y0, h, total, lines, total.saturating_sub(fl.scroll + lines));
+        gu.bar_site(super::scrollbar::Owner::FullLog, x0 + w - 6.0, y0, h, total, lines, total.saturating_sub(fl.scroll + lines));
         // Tabs (FUN_10138800; list built by FUN_10138700): fep sprite pairs 0x10333b4c, unselected A[2s] / selected
         // A[2s + 1]; the filter-8 tab (pair 1) only with config 0xb4 (a second log window). Pairs 7 / 8 are the
         // Assist J / E filters 9 / 10, in that order only in Japanese. Filter 0 (all) is selected.
