@@ -6207,3 +6207,13 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
   colours, and ours stopped at 11. Enter and textcol2's sample take the scrolled row.
 - Checked offscreen (`topbar-shot --config "conftxtc:1,textcol2:1,textcol1:11:2"`): rows 3..13, the bar's thumb at
   the bottom, the "yell" sample; k1assign scrolled by 5 with its bar.
+
+## Resent datagrams (2026-10-24)
+
+- FUN_100f76b0 (the zone receive): once connected (state 3), a datagram whose header u16 @0 is not newer than the
+  last one handled ((last - seq) as u16 < 0x8000) is dropped and counted (FUN_100f7ab0 slot 2); a sub-packet whose
+  sync is not newer is skipped (slot 4). Only an accepted datagram stores the new sequence (+8) and ack (+10).
+- LSB (map_networking.cpp recv_parse): when our header u16 @2 is not its latest server_packet_id, it resends its last
+  datagram unchanged. Our 400 ms datagram leaves before a late reply arrives, so a slow map server (15 bots) sent
+  some datagrams two or three times, and we printed every battle line in them again (user's run, 2026-10-24). We
+  now drop them as retail does.

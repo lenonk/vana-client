@@ -70,6 +70,8 @@ pub struct MapSession {
     /// every datagram until the server's header u16 @2 reaches it), and that ack.
     unacked: Vec<(u16, Vec<u8>)>,
     server_ack: u16,
+    /// Header sequence of the last datagram handled; none before the first.
+    last_in: Option<u16>,
 }
 
 /// FUN_100fac80's raw payload limit.
@@ -79,7 +81,7 @@ impl MapSession {
     pub fn connect(server: SocketAddr, key: &[u8; 20], codec: Codec) -> Result<Self> {
         let sock = UdpSocket::bind("0.0.0.0:0")?;
         sock.connect(server)?;
-        Ok(Self { sock, cipher: Blowfish::for_session_key(key), codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, unacked: Vec::new(), server_ack: 0 })
+        Ok(Self { sock, cipher: Blowfish::for_session_key(key), codec, seq: 0, server_seq: 0, bytes_out: 0, bytes_in: 0, unacked: Vec::new(), server_ack: 0, last_in: None })
     }
 
     fn header(&mut self) -> Vec<u8> {
@@ -183,8 +185,15 @@ impl MapSession {
         }
         let bits = u32::from_le_bytes(data[data.len() - 4..].try_into().unwrap());
         let plain = self.codec.decompress(&data[..data.len() - 4], bits).context("decompressing datagram")?;
-        self.server_seq = u16::from_le_bytes([dgram[0], dgram[1]]);
-        self.server_ack = u16::from_le_bytes([dgram[2], dgram[3]]);
+        // FUN_100f76b0: a datagram not newer than the last one handled is dropped (counted), and so is a sub-packet
+        // whose sync is not newer; only an accepted datagram moves the stored sequence and ack.
+        let seq = u16::from_le_bytes([dgram[0], dgram[1]]);
+        let newer = |s: u16| self.last_in.is_none_or(|last| last.wrapping_sub(s) >= 0x8000);
+        if !newer(seq) {
+            // LSB resends its last datagram when our ack lags (map_networking.cpp parse).
+            log::debug!("dropped resent datagram {seq}");
+            return Ok(Some(Vec::new()));
+        }
 
         let mut out = Vec::new();
         let mut at = 0;
@@ -194,13 +203,51 @@ impl MapSession {
             if len == 0 || at + len > plain.len() {
                 break;
             }
-            out.push(SubPacket {
-                id: word & 0x1FF,
-                sync: u16::from_le_bytes([plain[at + 2], plain[at + 3]]),
-                data: plain[at..at + len].to_vec(),
-            });
+            let sync = u16::from_le_bytes([plain[at + 2], plain[at + 3]]);
+            if newer(sync) {
+                out.push(SubPacket { id: word & 0x1FF, sync, data: plain[at..at + len].to_vec() });
+            }
             at += len;
         }
+        self.server_seq = seq;
+        self.server_ack = u16::from_le_bytes([dgram[2], dgram[3]]);
+        self.last_in = Some(seq);
         Ok(Some(out))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Set FFXI_MAIN_DLL to run: a resent datagram (same header sequence) and an older one carry nothing.
+    #[test]
+    fn resent_datagram_dropped() {
+        let Ok(dll) = std::env::var("FFXI_MAIN_DLL") else { return };
+        let codec = Codec::from_ffximain(&std::fs::read(dll).unwrap()).unwrap();
+        let key = [7u8; 20];
+        let server = UdpSocket::bind("127.0.0.1:0").unwrap();
+        let mut s = MapSession::connect(server.local_addr().unwrap(), &key, codec.clone()).unwrap();
+        let cipher = Blowfish::for_session_key(&key);
+        let dgram = |seq: u16| {
+            let mut sub = build(0x029, &[0u8; 24]);
+            sub[2..4].copy_from_slice(&seq.to_le_bytes());
+            let (mut body, bits) = codec.compress(&sub);
+            body.extend_from_slice(&bits.to_le_bytes());
+            let digest = Md5::digest(&body);
+            body.extend_from_slice(&digest);
+            cipher.encrypt(&mut body);
+            let mut d = vec![0u8; HEADER];
+            d[..2].copy_from_slice(&seq.to_le_bytes());
+            d.extend_from_slice(&body);
+            d
+        };
+        let to = s.sock.local_addr().unwrap();
+        for seq in [5, 5, 4, 6] {
+            server.send_to(&dgram(seq), to).unwrap();
+        }
+        let got: Vec<usize> = (0..4).map(|_| s.recv(Duration::from_secs(1)).unwrap().unwrap().len()).collect();
+        assert_eq!(got, [1, 0, 0, 1]);
+        assert_eq!(s.server_seq, 6);
     }
 }
