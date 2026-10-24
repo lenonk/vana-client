@@ -37,11 +37,17 @@ struct Body {
     normal: Vec3,
     /// +0x5f4: the first fall is clamped to 0.4.
     fell: bool,
+    /// +0x5e2: on a lift, with its surface type.
+    riding: Option<i8>,
 }
 
 impl Body {
-    const NEW: Body = Body { at: None, vel: 0.0, grounded: false, normal: Vec3::NEG_Y, fell: false };
+    const NEW: Body = Body { at: None, vel: 0.0, grounded: false, normal: Vec3::NEG_Y, fell: false, riding: None };
 }
+
+/// The lift test (FUN_10181560 -> FUN_10176620): a lift box holding the frame's start or end gives its height and
+/// surface type (client/lifts.rs).
+pub type Ride<'a> = &'a dyn Fn(Vec3, Vec3) -> Option<(f32, i8)>;
 
 pub struct Ground {
     tris: Vec<[Vec3; 3]>,
@@ -519,7 +525,9 @@ impl Ground {
 
     /// One frame of FUN_100a3560 for the player: `to - from` is the frame's horizontal move (FUN_100a48d0),
     /// `ticks` the frame length in 1/60 s.
-    fn step(&self, body: &mut Body, from: Vec3, to: Vec3, ticks: f32) -> Vec3 {
+    /// `ride` is FUN_100a4ed0's step 3: inside a lift box the feet go to its height, grounded, and the missed-floor
+    /// undo is skipped.
+    fn step(&self, body: &mut Body, from: Vec3, to: Vec3, ticks: f32, ride: Option<Ride>) -> Vec3 {
         if body.at != Some(from) {
             *body = Body::NEW;
         }
@@ -529,8 +537,15 @@ impl Ground {
         let mut v = Vec3::new(to.x - from.x, 0.0, to.z - from.z);
         let moving = v.length_squared() > 1e-14;
         if !moving && body.grounded {
-            body.at = Some(from);
-            return from;
+            let mut pos = from;
+            if let Some((h, surf)) = ride.and_then(|r| r(from, from)) {
+                pos.y = h;
+                body.riding = Some(surf);
+            } else {
+                body.riding = None;
+            }
+            body.at = Some(pos);
+            return pos;
         }
         // On the ground the move runs along the ground plane at the same length, never downwards.
         if moving && body.grounded {
@@ -562,27 +577,41 @@ impl Ground {
         body.grounded = grounded;
         pos = fallen;
         // FUN_1017a5d0 mode 0: no face from 0.5 above the feet to 40 below, and the frame is undone.
-        match self.ray_down(pos.x, pos.z, pos.y - 0.5, pos.y + 40.0) {
-            Some((_, i)) => {
-                let n = self.normals[i];
-                if n.y > 0.7 || n.y < -0.7 {
-                    body.normal = n;
-                }
+        let floor = self.ray_down(pos.x, pos.z, pos.y - 0.5, pos.y + 40.0);
+        if let Some((_, i)) = floor {
+            let n = self.normals[i];
+            if n.y > 0.7 || n.y < -0.7 {
+                body.normal = n;
+            }
+        }
+        // Then the lift: its height, grounded, the normal (0, -1, 0) and its surface; the undo only outside one.
+        match ride.and_then(|r| r(from, pos)) {
+            Some((h, surf)) => {
+                pos.y = h;
+                (body.grounded, body.normal, body.riding) = (true, Vec3::NEG_Y, Some(surf));
             }
             None => {
-                pos = from;
-                body.vel = 0.0;
+                body.riding = None;
+                if floor.is_none() {
+                    pos = from;
+                    body.vel = 0.0;
+                }
             }
         }
         body.at = Some(pos);
         pos
     }
 
+    /// The last player step's lift surface type, when it stood on a lift.
+    pub fn riding(&self) -> Option<i8> {
+        self.body.get().riding
+    }
+
     /// The player's frame: walks from `from` towards `to` (horizontal), falling while in the air. Call it every
     /// frame the player could fall, also without input (`to == from`).
-    pub fn walk_player(&self, from: Vec3, to: Vec3, ticks: f32) -> Vec3 {
+    pub fn walk_player(&self, from: Vec3, to: Vec3, ticks: f32, ride: Option<Ride>) -> Vec3 {
         let mut body = self.body.get();
-        let pos = self.step(&mut body, from, to, ticks);
+        let pos = self.step(&mut body, from, to, ticks, ride);
         self.body.set(body);
         pos
     }
@@ -600,7 +629,7 @@ impl Ground {
             if d < 1e-3 {
                 break;
             }
-            let next = self.step(&mut body, pos, pos + left * (RUN_STEP.min(d) / d), STEP_TICKS);
+            let next = self.step(&mut body, pos, pos + left * (RUN_STEP.min(d) / d), STEP_TICKS, None);
             let gain = d - Vec3::new(to.x - next.x, 0.0, to.z - next.z).length();
             stuck = if gain < 0.002 { stuck + 1 } else { 0 };
             pos = next;
@@ -690,20 +719,39 @@ mod tests {
     #[test]
     fn stays_grounded_on_a_slope() {
         let g = slope(20.0);
-        let mut pos = g.walk_player(Vec3::new(2.0, -1.0, 0.0), Vec3::new(2.0, -1.0, 0.0), STEP_TICKS);
+        let mut pos = g.walk_player(Vec3::new(2.0, -1.0, 0.0), Vec3::new(2.0, -1.0, 0.0), STEP_TICKS, None);
         for _ in 0..10 {
-            pos = g.walk_player(pos, pos, STEP_TICKS);
+            pos = g.walk_player(pos, pos, STEP_TICKS, None);
         }
         for dir in [1.0, -1.0] {
             let (mut last, mut air) = (pos.y, 0);
             for i in 0..30 {
-                pos = g.walk_player(pos, pos + Vec3::new(dir * RUN_STEP, 0.0, 0.0), STEP_TICKS);
+                pos = g.walk_player(pos, pos + Vec3::new(dir * RUN_STEP, 0.0, 0.0), STEP_TICKS, None);
                 air = if g.body.get().grounded { 0 } else { air + 1 };
                 assert!(air <= (dir < 0.0) as usize, "dir {dir} step {i} {pos}");
                 assert!((pos.y - last) * dir < 0.0, "dir {dir} step {i}: y {last} -> {}", pos.y);
                 last = pos.y;
             }
         }
+    }
+
+    /// A lift (FUN_100a4ed0 step 3): no floor under the shaft, yet the feet hold its height without the undo, standing
+    /// still too; out of it gravity is back.
+    #[test]
+    fn rides_a_lift() {
+        let g = ground(&[(quad(-10.0, 0.0, 0.0, 0.0), Vec3::NEG_Y)]);
+        let shaft = |_: Vec3, b: Vec3| (b.x > -0.5).then_some((-5.0, 3i8));
+        let mut pos = g.walk_player(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(-2.0, 0.0, 0.0), STEP_TICKS, Some(&shaft));
+        for _ in 0..20 {
+            pos = g.walk_player(pos, pos + Vec3::new(RUN_STEP, 0.0, 0.0), STEP_TICKS, Some(&shaft));
+        }
+        assert!(pos.x > 1.0 && (pos.y + 5.0).abs() < 1e-5, "{pos}");
+        assert_eq!(g.riding(), Some(3));
+        assert_eq!(g.walk_player(pos, pos, STEP_TICKS, Some(&shaft)), pos);
+        for _ in 0..60 {
+            pos = g.walk_player(pos, pos + Vec3::new(-RUN_STEP, 0.0, 0.0), STEP_TICKS, Some(&shaft));
+        }
+        assert!(pos.x < -0.5 && pos.y.abs() < 0.05 && g.riding().is_none(), "{pos}");
     }
 
     #[test]
@@ -734,7 +782,7 @@ mod tests {
         let mut pos = s;
         let dir = (e - s).normalize();
         for f in 0..120 {
-            pos = g.step(&mut body, pos, pos + dir * RUN_STEP, STEP_TICKS);
+            pos = g.step(&mut body, pos, pos + dir * RUN_STEP, STEP_TICKS, None);
             println!("f{f} {pos} grounded {} normal {}", body.grounded, body.normal);
         }
     }
@@ -745,10 +793,10 @@ mod tests {
         let g = step(3.0);
         let mut pos = Vec3::new(3.0, -3.0, 0.0);
         for _ in 0..30 {
-            pos = g.walk_player(pos, pos + Vec3::new(-RUN_STEP, 0.0, 0.0), STEP_TICKS);
+            pos = g.walk_player(pos, pos + Vec3::new(-RUN_STEP, 0.0, 0.0), STEP_TICKS, None);
         }
         for _ in 0..30 {
-            pos = g.walk_player(pos, pos, STEP_TICKS);
+            pos = g.walk_player(pos, pos, STEP_TICKS, None);
         }
         assert!(pos.x < -0.4 && pos.y.abs() < 0.01, "{pos}");
     }
@@ -765,7 +813,7 @@ mod tests {
         let dir = Vec3::new(to.x - from.x, 0.0, to.z - from.z).normalize();
         let mut pos = from;
         for _ in 0..steps {
-            pos = g.walk_player(pos, pos + dir * RUN_STEP, STEP_TICKS);
+            pos = g.walk_player(pos, pos + dir * RUN_STEP, STEP_TICKS, None);
         }
         pos
     }

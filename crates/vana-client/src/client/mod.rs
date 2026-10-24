@@ -37,6 +37,7 @@ pub mod script;
 mod subarea;
 mod myroom;
 mod doors;
+mod lifts;
 mod mousecur;
 mod party;
 mod macros;
@@ -234,6 +235,8 @@ struct Entity {
     init_done: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
     door: u32,
+    /// A lift's (shaft id, move start, move end) (0x00E SubKind 3, client/lifts.rs).
+    lift: Option<(u32, u32, u32)>,
     /// An object (actor +0x128 bit 3 from the 0x00E look): no target gauge, no name plate.
     object: bool,
     /// The ActIndex its head looks at (0x00E / 0x00D facetarget, actor +0x1f8); 0 = none.
@@ -862,6 +865,7 @@ fn self_entity(w: &World) -> Entity {
         sub: [0, 8, 0],
         init_done: false,
         door: 0,
+        lift: None,
         object: false,
         face: 0,
         spawn_fx: false,
@@ -2472,6 +2476,7 @@ fn place_mogdoor(w: &mut World) {
             sub: [0, 8, 0],
             init_done: false,
             door: 0,
+            lift: None,
             object: true,
             face: 0,
             spawn_fx: false,
@@ -3154,6 +3159,11 @@ struct World {
     visible: HashSet<u32>,
     /// Zone lines with a destination (tag + destination tag).
     zone_lines: Vec<zone::Region>,
+    /// The zone's lift shafts and lift actors; whether our last step stood on one (+0x5e2), and our y then (the
+    /// camera follows the lift, DAT_10456d9c).
+    lifts: lifts::Lifts,
+    riding: bool,
+    ride_y: f32,
     zoning_since: Option<Instant>,
     chat: combat::ChatLog,
     chat_input: String,
@@ -4347,6 +4357,9 @@ impl App {
                             entities: HashMap::new(),
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
+                            lifts: Default::default(),
+                            riding: false,
+                            ride_y: 0.0,
                             zoning_since: None,
                             chat: Default::default(),
                             chat_input: String::new(),
@@ -4707,6 +4720,7 @@ impl App {
                             world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
                         }
                         world.zone_lines = scene.regions.iter().filter(|r| r.name.starts_with(['z', 'Z']) && r.name.len() == 8).cloned().collect();
+                        world.lifts = lifts::Lifts::load(&scene.regions);
                         // Its geometry and textures go up over the next frames; the indicator stays until then.
                         if let Some(gfx) = &self.gfx {
                             world.effects.reg.light_keys = geometry.light_keys.clone();
@@ -5033,6 +5047,7 @@ impl App {
                         sub: [0, 8, 0],
                         init_done: false,
                         door: 0,
+                        lift: None,
                         object: false,
                         face: 0,
                         spawn_fx: false,
@@ -5155,6 +5170,9 @@ impl App {
                     }
                     if let Some(d) = e.door {
                         entry.door = d;
+                    }
+                    if e.lift.is_some() {
+                        entry.lift = e.lift;
                     }
                 }
                 NetEvent::Chat { kind, attr, data, from, text } => {
@@ -5496,6 +5514,7 @@ impl App {
         event::update(world, dt);
         if world.in_scene() {
             doors::update(world);
+            lifts::update(world);
         }
         // Weapon-skill motion files and motions the effect system's schedulers asked for last frame.
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
@@ -5636,6 +5655,7 @@ impl App {
         // FUN_1008dfb0 / FUN_100a3560: grounded actors follow the collision floor every frame (also those that
         // arrived before the zone had loaded).
         let floor = world.ground.as_ref().filter(|_| world.in_scene() && !in_event);
+        let shafts = world.lifts.shafts();
         let mut knock_ends = Vec::new();
         for (eid, e) in world.entities.iter_mut() {
             // Moved by someone else since last frame (an event script): take that as the slide and drawn spot.
@@ -5689,6 +5709,14 @@ impl App {
                 }
                 e.slide.y = e.target.y;
             }
+            // Characters in a lift shaft stand at its height (FUN_100a4ed0 runs for every collision actor).
+            if e.door == 0
+                && e.lift.is_none()
+                && !matches!(e.sub_kind, 2..=4)
+                && let Some((h, _)) = lifts::ride_in(&shafts, e.last_pos, e.pos)
+            {
+                e.pos.y = h;
+            }
             // A step under 0.01 a tick counts as standing (motion and facing).
             let flat = Vec3::new(step.x, 0.0, step.z);
             let moved = if flat.length() < 0.01 * ticks { 0.0 } else { flat.length() };
@@ -5704,7 +5732,9 @@ impl App {
         if let Some(k) = world.knocks.get_mut(&world.my_id) {
             let from = world.pos;
             let (p, recover, done) = combat::knock_step(k, from, ticks);
-            world.pos = world.ground.as_ref().filter(|g| !g.is_empty()).map_or(p, |g| g.walk_player(from, p, ground::STEP_TICKS));
+            let shafts = world.lifts.shafts();
+            let ride = |a: Vec3, b: Vec3| lifts::ride_in(&shafts, a, b);
+            world.pos = world.ground.as_ref().filter(|g| !g.is_empty()).map_or(p, |g| g.walk_player(from, p, ground::STEP_TICKS, Some(&ride)));
             knock_ends.push((world.my_id, recover, done));
         }
         for (id, recover, done) in knock_ends {
@@ -5907,6 +5937,8 @@ impl App {
         // Speed byte x0.1 = units per second (5.0 for a normal run).
         let speed = if world.my_motion.speed > 0 { world.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
         let falls = !in_event && !world.unsettled && world.in_scene();
+        let shafts = world.lifts.shafts();
+        let ride = |a: Vec3, b: Vec3| lifts::ride_in(&shafts, a, b);
         let mut steps = 0;
         while world.step_ticks >= ground::STEP_TICKS {
             world.step_ticks -= ground::STEP_TICKS;
@@ -5925,15 +5957,27 @@ impl App {
                     Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
                     None => from + s * d,
                 };
-                world.pos = g.map_or(next, |g| g.walk_player(from, next, ground::STEP_TICKS));
+                world.pos = g.map_or(next, |g| g.walk_player(from, next, ground::STEP_TICKS, Some(&ride)));
             } else if falls && let Some(g) = g {
                 // A fall goes on without input.
-                world.pos = g.walk_player(from, from, ground::STEP_TICKS);
+                world.pos = g.walk_player(from, from, ground::STEP_TICKS, Some(&ride));
+            } else if let Some((h, _)) = ride(from, from) {
+                // FUN_100a4ed0 runs in events and standing still too.
+                world.pos.y = h;
             }
             world.step_hist = [world.step_hist[1], world.step_hist[2], world.step_hist[3], world.pos];
         }
         world.step_to = world.pos;
         world.draw_pos = drawn_between_steps(&world.step_hist, world.step_ticks / ground::STEP_TICKS);
+        // On a lift the feet are drawn at its height now (the model is too), and the camera eye rides along
+        // (FUN_1001ee60: eye.y += the player's y change, the hold set).
+        let rode = ride(world.pos, world.pos);
+        world.riding = rode.is_some();
+        if let Some((h, _)) = rode {
+            world.draw_pos.y = h;
+            camera::ride(world, world.pos.y - world.ride_y);
+        }
+        world.ride_y = world.pos.y;
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && stepping {
             let c = Self::camera(world);
             log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z);
@@ -7598,7 +7642,7 @@ impl App {
             let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
             let mut places: HashMap<u32, Place> = w.actors.keys().filter_map(|id| actor_place(w, *id, my_dir).map(|p| (*id, p))).collect();
             // Doors have no model; their schedulers' sounds play at the door's own position (op 0x0b, actor2).
-            for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
+            for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0 || e.lift.is_some()) {
                 places.entry(*id).or_insert(Place { pos: e.pos, forward: forward_from_dir(e.dir), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
             }
             let look_points: HashMap<u32, Vec3> = w
@@ -7648,6 +7692,7 @@ impl App {
                 r.now = w.started.elapsed().as_secs_f32() * 60.0;
             }
             doors::moves(w, &gfx.gpu);
+            lifts::moves(w, &gfx.gpu);
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.

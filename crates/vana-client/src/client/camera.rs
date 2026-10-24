@@ -124,6 +124,16 @@ pub fn drag(w: &mut World, yaw: f32, rise: f32) {
     w.camst.hold = MANUAL_HOLD;
 }
 
+/// On a lift (FUN_1001ee60, all.c 22907): the eye rides with the player's height change, and a change holds the
+/// automatic correction for 10 ticks.
+pub fn ride(w: &mut World, dy: f32) {
+    if dy != 0.0 {
+        w.cam.eye.y += dy;
+        w.camst.prev.eye.y += dy;
+        w.camst.hold = MANUAL_HOLD;
+    }
+}
+
 /// Toggles first person (key function 0x10, FUN_100a4580 -> FUN_100a7350): SE 0014 *(caller)*, focal 280 in it.
 pub fn toggle_first(w: &mut World) {
     w.camst.first = !w.camst.first;

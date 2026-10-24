@@ -349,8 +349,10 @@ pub struct ZoneRenderer {
     zone_areas: usize,
     area_lights: Vec<Option<crate::dat::weather::Lighting>>,
     areas: wgpu::Buffer,
-    /// Door parts: slots by door id, their animations (CPU copy of the GPU table) and the tick they run against.
+    /// Door parts: slots by door id, their base matrices, their animations (CPU copy of the GPU table) and the tick
+    /// they run against.
     pub door_parts: HashMap<u32, Vec<u32>>,
+    pub door_bases: HashMap<u32, Vec<glam::Mat4>>,
     parts: Vec<PartGpu>,
     parts_gpu: wgpu::Buffer,
     pub now: f32,
@@ -1059,6 +1061,7 @@ impl ZoneRenderer {
             area_lights: Vec::new(),
             areas,
             door_parts: geo.door_parts.clone(),
+            door_bases: geo.door_bases.clone(),
             parts: vec![PartGpu::default(); PARTS],
             parts_gpu,
             now: 0.0,

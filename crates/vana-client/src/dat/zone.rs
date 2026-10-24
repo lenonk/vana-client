@@ -462,6 +462,10 @@ pub struct Region {
     pub class: u32,
     /// +0x2C: a sub-area trigger's sub-area id (0 unloads the current one).
     pub param: u32,
+    /// +0x30: a lift's surface type in bits 4..7 (FUN_10173c10 -> +0xec).
+    pub flags: u32,
+    /// +0x34 / +0x36: a lift's floors 0 / 1 as pos.y + v / 256 (-> +0xb8 / +0xbc).
+    pub floors: [i16; 2],
 }
 
 impl Region {
@@ -471,6 +475,21 @@ impl Region {
         let (s, c) = (-self.rot[1]).sin_cos();
         let (lx, lz) = (dx * c + dz * s, -dx * s + dz * c);
         lx.abs() <= self.scale[0].abs() / 2.0 && dy.abs() <= self.scale[1].abs() / 2.0 && lz.abs() <= self.scale[2].abs() / 2.0
+    }
+
+    /// A lift shaft ('@', collision_actors_spec 2.1).
+    pub fn is_lift(&self) -> bool {
+        self.name.starts_with('@')
+    }
+
+    /// A lift floor's height (y down: floor 1 is usually the upper one).
+    pub fn floor_y(&self, i: usize) -> f32 {
+        self.pos[1] + self.floors[i.min(1)] as f32 / 256.0
+    }
+
+    /// A lift's surface type for footsteps: +0x30 bits 4..7, sign-extended.
+    pub fn surface(&self) -> i8 {
+        (((self.flags << 24) as i32) >> 28) as i8
     }
 
     /// An 'm' / 'M' record.
@@ -494,7 +513,16 @@ pub fn parse_rid(p: &[u8]) -> Vec<Region> {
     (0..count)
         .filter_map(|i| {
             let e = 0x40 + i * 0x40;
-            (e + 0x30 <= p.len()).then(|| Region { pos: vec3_at(p, e), rot: vec3_at(p, e + 12), scale: vec3_at(p, e + 24), name: name_at(p, e + 0x24, 8), class: u32_at(p, e + 12), param: u32_at(p, e + 0x2C) })
+            (e + 0x38 <= p.len()).then(|| Region {
+                pos: vec3_at(p, e),
+                rot: vec3_at(p, e + 12),
+                scale: vec3_at(p, e + 24),
+                name: name_at(p, e + 0x24, 8),
+                class: u32_at(p, e + 12),
+                param: u32_at(p, e + 0x2C),
+                flags: u32_at(p, e + 0x30),
+                floors: [0x34, 0x36].map(|o| i16::from_le_bytes([p[e + o], p[e + o + 1]])),
+            })
         })
         .collect()
 }

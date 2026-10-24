@@ -712,6 +712,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_10057fb0 case 0x1d: the lift move; its own duration @6 is unused (the packet's end time sets it).
+            0x1d => {
+                if let Some(actor) = t.a1.id() {
+                    let name = self.reg.libs[t.res.0].tree.nodes[t.res.1].name;
+                    self.lift_moves.push(super::LiftMove { actor, floor: name[3].wrapping_sub(b'0') });
+                }
+                Flow::Next
+            }
             // Sounds at a snapshot of the actor's position: 0x0a actor1, 0x0b actor2, 0x53 the action target nearest
             // the player *(inf: actor2)*; far @0x14, near @0x18, flag 0x100 = height as is.
             0x0a | 0x0b | 0x53 => {

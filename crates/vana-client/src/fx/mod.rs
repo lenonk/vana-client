@@ -234,6 +234,14 @@ pub struct DoorMove {
     pub ticks: f32,
 }
 
+/// Scheduler op 0x1d (FUN_10057fb0 case 0x1d): actor1, a lift, goes to `floor` (the running scheduler's name byte 3,
+/// FUN_100c3ce0) by its packet's end time (client/lifts.rs).
+#[derive(Clone, Copy, Debug)]
+pub struct LiftMove {
+    pub actor: u32,
+    pub floor: u8,
+}
+
 /// Who started an instance.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Owner {
@@ -661,6 +669,7 @@ pub struct Effects {
     pub motion_files: Vec<(u32, Vec<u32>)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
     pub door_moves: Vec<DoorMove>,
+    pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
     /// Sound elements and scheduler sounds; this frame's commands for the audio; voices the audio reports alive.
@@ -737,6 +746,7 @@ impl Effects {
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),
+            lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,
             sounds: Vec::new(),

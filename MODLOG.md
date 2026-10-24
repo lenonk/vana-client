@@ -6328,3 +6328,30 @@ the bar holds the mouse the windows see no press and no pointer.
   bottom cap 1 row, the track a page and at the end the hand to the last row, the thumb dragged to the end with the
   hand kept. Unit tests scrollbar::{row_list, paged_list, hit_zones}.
 - Not done: the post / delivery / trade / synthesis lists (post.rs draw_rows) and the synthesis history.
+
+## Actor collision and lifts (2026-10-24)
+
+Spec `~/ffxi/lab/research/collision_actors_spec.md` (30261006_0).
+- Actor collision: only XiModelActor boxes (Mog House furniture) join the player's sweep (FUN_1016e930, gate
+  DAT_106631d4 = the Mog House object and FUN_101d5fe0). Characters are CXiSkeletonActor and never block anyone, so
+  ours (no actor collision) is retail. Corrects "actor-body boxes" in "Player movement collision". The furniture
+  boxes (FUN_1016d580, spec 1.3) wait for the furniture.
+- Lifts: the only moving platforms, vertical only (RID '@' records in zones 9, 141, 143, 149 and 237; ships are their
+  own zones). The record: +0x30 bits 4..7 the surface type, +0x34 / +0x36 i16 floors (pos.y + v / 256), in memory the
+  height +0xdc (the box centre until a lift actor exists). The lift NPC (0x00E SubKind 3, XiLiftActor) carries the
+  id @0x34, the move start @0x38 (Vana'diel-epoch seconds) and end start + u16 @0x3c on every update; animation - 10
+  is the floor. At first sight the height goes to floor 0 and `mv0<floor>` plays; a state change (10..17) waits for
+  the start time, then `mv<old><new>`. Op 0x1d (FUN_10057fb0): from the height now to the floor (the scheduler's
+  name byte 3) linearly by the packet's end time (its own duration @6 is unused); FUN_100c3920 sets each part's world
+  y and the box height. FUN_100a4ed0 (every collision actor, every frame, events and standing still too): a box
+  holding the frame's start or end (inclusive; the face test is world-space dead code) sets the feet's y to the
+  height, grounded, normal (0, -1, 0), its surface, riding (+0x5e2), and skips the no-floor undo. Riding: the camera
+  eye follows the height change with a 10-tick hold (FUN_1001ee60), the walk / run speed is horizontal, the map is
+  refused with group 7 0x61 (FUN_101f9a50). c2s 0x015 stays absolute.
+- Ours: client/lifts.rs (shafts from the RID, lift actors, the moves on the zone's tick clock, the GPU parts through
+  base * T(t)), Ground::step's ride query, the drawn y on a lift, other characters at the height, footsteps with the
+  shaft's surface, camera::ride, the map refusal. Live (Lnxcsfix, Metalworks '@6l0' / '@6l1'): first sight mv00, then
+  mv01 / mv10 every 18 s over 480 ticks, the character riding on the planks with the camera; /map refused. Tests
+  lifts::metalworks_shaft, ground::rides_a_lift.
+- Not done: the zone-in fade's wait for a lift actor while standing in a shaft (FUN_1008abe0 state 4); the camera's
+  look point; LSB's Metalworks door data (spec 2.7) not checked against the doors.

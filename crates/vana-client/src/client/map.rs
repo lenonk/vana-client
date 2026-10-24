@@ -1532,6 +1532,8 @@ fn edit_file(w: &World, regions: &[Region], zone: i16, key: i16, f: impl FnOnce(
 
 pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32) {
     match c {
+        // FUN_101f9a50: not while riding a lift (group 7 0x61).
+        Cmd::Menu | Cmd::Other { .. } if w.riding => super::textcmd::refuse(w, 0x61),
         Cmd::Menu => match MapWin::open(w, regions, sw, sh) {
             Some(m) => w.map = Some(m),
             None => super::textcmd::refuse(w, 0x62),

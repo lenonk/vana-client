@@ -46,6 +46,8 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
         }
         let Some(g) = &w.ground else { continue };
         let (surface, covered) = g.surface(pl.pos);
+        // On a lift the shaft's surface type (FUN_100a4ed0: vt+0x214(rec+0xec)).
+        let surface = w.lifts.ride(pl.pos, pl.pos).map_or(surface, |r| r.1.max(0) as u8);
         let kind = ch.cib[1] as i32;
         if surface == 0 || kind < 1 {
             continue;
