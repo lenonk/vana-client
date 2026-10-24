@@ -104,6 +104,8 @@ pub struct Corner {
 pub struct Group {
     pub texture: String,
     pub triangles: Vec<[Corner; 3]>,
+    /// The material's light factor (0x8010 record f32 @18; 1 for most, faces up to 1.6).
+    pub light: f32,
 }
 
 /// One drawable copy of a 0x2A mesh; mirrored meshes yield a second copy for the other side.
@@ -114,6 +116,8 @@ pub struct MeshPart {
     /// One or two influences per vertex.
     pub vertices: Vec<Vec<Influence>>,
     pub groups: Vec<Group>,
+    /// Cloth vertices (position only): retail's FUN_100216a0 path.
+    pub cloth: bool,
 }
 
 /// Header (offsets and counts in u16 units): flags @2 (0x80 = bone indices go through the table,
@@ -204,12 +208,12 @@ pub fn parse_mesh(name: &str, d: &[u8]) -> Result<Vec<MeshPart>> {
                 t.swap(1, 2);
             }
         }
-        parts.push(MeshPart { name: name.to_string(), mirrored, vertices, groups });
+        parts.push(MeshPart { name: name.to_string(), mirrored, vertices, groups, cloth });
     }
     Ok(parts)
 }
 
-/// Poly stream of u16-tagged records: 0x8010 material (46 B), 0x8000 texture name (18 B),
+/// Poly stream of u16-tagged records: 0x8010 material (46 B, light factor f32 @18), 0x8000 texture name (18 B),
 /// "ST" strip, "T\0" list; colour-only "SC" strip (3 idx, u32 colour, n-1 idx) and "C\0" list are
 /// skipped; 0xFFFF ends it. Corners carry their own UV.
 fn parse_polys(name: &str, p: &[u8]) -> Result<Vec<Group>> {
@@ -220,6 +224,7 @@ fn parse_polys(name: &str, p: &[u8]) -> Result<Vec<Group>> {
     };
     let mut groups: Vec<Group> = Vec::new();
     let mut texture = String::new();
+    let mut light = 1.0f32;
     let mut at = 0;
     while at + 4 <= p.len() {
         let (tag, n) = (u16_at(p, at), u16_at(p, at + 2) as usize);
@@ -227,6 +232,8 @@ fn parse_polys(name: &str, p: &[u8]) -> Result<Vec<Group>> {
         if tag == 0xFFFF {
             break;
         } else if tag & 0x80F0 == 0x8010 {
+            need(46)?;
+            light = Some(f32_at(p, at + 18)).filter(|f| f.is_finite()).unwrap_or(1.0);
             at += 46;
         } else if tag & 0x80F0 == 0x8000 {
             need(18)?;
@@ -247,11 +254,11 @@ fn parse_polys(name: &str, p: &[u8]) -> Result<Vec<Group>> {
                 }
                 tris.push(if i % 2 == 0 { [a, b, c] } else { [b, a, c] });
             }
-            groups.push(Group { texture: texture.clone(), triangles: tris });
+            groups.push(Group { texture: texture.clone(), triangles: tris, light });
             at += 4 + 30 + n.saturating_sub(1) * 10;
         } else if tag == 0x0054 {
             need(4 + n * 30)?;
-            groups.push(Group { texture: texture.clone(), triangles: (0..n).map(|k| tri(at + 4 + k * 30)).collect() });
+            groups.push(Group { texture: texture.clone(), triangles: (0..n).map(|k| tri(at + 4 + k * 30)).collect(), light });
             at += 4 + n * 30;
         } else if tag == 0x4353 {
             at += n * 2 + 12;

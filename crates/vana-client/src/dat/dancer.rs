@@ -694,7 +694,7 @@ pub fn skin_model(m: &Model, frame: Option<&[f32]>, out: &mut crate::render::cha
             }
         }
         let key = if shader.alpha_test() { tex } else { format!("{tex}#opaque") };
-        out.batches.push((key, tris));
+        out.batches.push((key, [1.0, 0.0], tris));
     }
 }
 

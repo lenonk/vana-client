@@ -26,7 +26,8 @@ struct Uniforms {
 
 /// Skinned triangles grouped by texture name.
 pub struct PosedMesh {
-    pub batches: Vec<(String, Vec<[f32; 8]>)>,
+    /// Texture, (light factor, cloth 0 / 1), posed corners.
+    pub batches: Vec<(String, [f32; 2], Vec<[f32; 8]>)>,
     pub min: Vec3,
     pub max: Vec3,
 }
@@ -72,7 +73,7 @@ pub fn skinned_top(ch: &Character, world: &[(glam::Quat, Vec3)]) -> f32 {
 
 fn skin_character(ch: &Character, world: &[(glam::Quat, Vec3)]) -> PosedMesh {
     let (mut min, mut max) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
-    let mut batches: Vec<(String, Vec<[f32; 8]>)> = Vec::new();
+    let mut batches: Vec<(String, [f32; 2], Vec<[f32; 8]>)> = Vec::new();
     for part in &ch.parts {
         let skinned = skin(part, &world);
         for g in &part.groups {
@@ -85,7 +86,7 @@ fn skin_character(ch: &Character, world: &[(glam::Quat, Vec3)]) -> PosedMesh {
                     out.push([p.x, p.y, p.z, n.x, n.y, n.z, c.uv[0], c.uv[1]]);
                 }
             }
-            batches.push((g.texture.clone(), out));
+            batches.push((g.texture.clone(), [g.light, part.cloth as u32 as f32], out));
         }
     }
     PosedMesh { batches, min, max }
@@ -226,7 +227,7 @@ pub fn render_batches_png(
     }
     let mut verts: Vec<CharVertex> = Vec::new();
     let mut draws = Vec::new();
-    for (tex, tris) in &mesh.batches {
+    for (tex, _, tris) in &mesh.batches {
         let start = verts.len() as u32;
         verts.extend(tris.iter().map(|v| CharVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], uv: [v[6], v[7]] }));
         draws.push((slot.get(tex.as_str()).copied().unwrap_or(0), start..verts.len() as u32));

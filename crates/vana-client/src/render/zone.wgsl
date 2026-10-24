@@ -194,6 +194,7 @@ struct SkinIn {
     @location(4) bones: vec2<u32>,
     @location(5) w: vec2<f32>,
     @location(6) uv: vec2<f32>,
+    @location(7) mat: vec2<f32>,
 };
 
 fn qrot(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
@@ -214,8 +215,9 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     let world = model * vec4<f32>(p, 1.0);
     var out: VertexOut;
     out.clip = u.view_proj * world;
-    // The CPU path's Unorm8 grey 128; alpha 0x80 = opaque.
-    out.color = vec4<f32>(vec3<f32>(128.0 / 255.0), round(pose[4].x * 128.0) / 255.0);
+    // As the CPU path's Unorm8 colour: red the material light factor (0x80 = 1.0), green its cloth flag; alpha
+    // 0x80 = opaque.
+    out.color = vec4<f32>(round(v.mat.x * 128.0) / 255.0, v.mat.y, 128.0 / 255.0, round(pose[4].x * 128.0) / 255.0);
     out.uv = v.uv;
     out.world = world.xyz;
     out.normal = normalize((model * vec4<f32>(nn, 0.0)).xyz);
@@ -364,7 +366,13 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     // D3DRS_AMBIENT = ftol(ambient x 128) (FUN_10181de0); the target flash mixes those bytes toward 220 and scales
     // the fog colour (FUN_100c94a0).
     let amb = floor(mix(floor(ambient * 128.0), vec3<f32>(220.0), in.flash.x)) / 255.0;
-    let lit = clamp(amb + 0.5 * (color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
+    // The material's light factor f (red, 0x80 = 1.0): body meshes scale the ambient bytes (clamped) and the lights by it
+    // (FUN_1002cdf0), cloth ones the lights and add emissive max(f - 1.5, 0) (FUN_100216a0).
+    let mf = in.color.r * 255.0 / 128.0;
+    let cloth = in.color.g > 0.5;
+    let ga = select(min(floor(amb * 255.0 * mf) / 255.0, vec3<f32>(1.0)), amb, cloth);
+    let em = select(0.0, max(mf - 1.5, 0.0), cloth);
+    let lit = clamp(ga + em + 0.5 * mf * (color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
     let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color * in.flash.y, rgb, f);

@@ -6282,3 +6282,15 @@ Research `~/ffxi/lab/scratch/raise2/` (30261006_0). Corrects "Window groups, reg
   the world runs "/shutdown on" and the client exits when the server ends the session; at once outside the world or
   with the link quiet for 10 s; a second close exits when no logout could start (engaged, K.O.). Live: closed by the
   user, logout 1 s later (LSB leavegame.lua: GMs and the Mog House log out at once, others count 30 s).
+
+## Material light factor (2026-10-24)
+
+- Each 0x8010 material record carries a light factor f (f32 at record byte 18; research `~/ffxi/lab/scratch/flash2/`
+  matscan.py: Hume M parts 1.0, faces 1.2 / 1.3 / 1.6). Body path (FUN_1002cdf0, asm 0x1002d2dc..0x1002d3fb):
+  every light slot's diffuse r, g, b x f (a copy, then SetLight), the D3DRS_AMBIENT bytes x f clamped to 255 (alpha
+  as is). Cloth path (FUN_100216a0, mesh flags & 0x7f == 1): the lights' diffuse x f, the material emissive =
+  f - 1.5 per channel when f > 1.5 (0x1031f21c = 1.5), ambient unscaled.
+- Ours: Group.light, MeshPart.cloth; SkinVertex.mat and the CPU path's vertex colour carry (f, cloth) in red
+  (0x80 = 1.0) and green; lit_actor: lit = clamp(ga + em + 0.5 f (sun ndl + lamps)), ga = min(ambient bytes x f,
+  255) / 255 (body) or the bytes (cloth), em = max(f - 1.5, 0) on cloth. flash-shot zone 103 noon: only the face
+  changes (up to +77).

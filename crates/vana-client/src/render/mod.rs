@@ -490,6 +490,8 @@ struct SkinVertex {
     bones: [u32; 2],
     w: [f32; 2],
     uv: [f32; 2],
+    /// The material's light factor and cloth flag (0 / 1).
+    mat: [f32; 2],
 }
 
 /// A model's skinned bind-pose corners grouped by texture name, built on the loader thread (Character::skin).
@@ -522,6 +524,7 @@ impl SkinMesh {
                             bones: [slot_of(i0.bone), b1],
                             w: [i0.weight, w1],
                             uv: c.uv,
+                            mat: [g.light, part.cloth as u32 as f32],
                         });
                     }
                 }
@@ -704,7 +707,7 @@ impl ZonePipes {
         let skin_buffers = [Some(wgpu::VertexBufferLayout {
             array_stride: std::mem::size_of::<SkinVertex>() as u64,
             step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Uint32x2, 5 => Float32x2, 6 => Float32x2],
+            attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x3, 2 => Float32x3, 3 => Float32x3, 4 => Uint32x2, 5 => Float32x2, 6 => Float32x2, 7 => Float32x2],
         })];
         let skin_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("skinned actors"),
@@ -1418,9 +1421,11 @@ impl ZoneRenderer {
         actor.draws.clear();
         // 0x80 = 1.0 as for scenery vertex colours.
         let a = (actor.alpha.clamp(0.0, 1.0) * 128.0).round() as u8;
-        for (tex, tris) in &mesh.batches {
+        for (tex, mat, tris) in &mesh.batches {
             let start = verts.len() as u32;
-            verts.extend(tris.iter().map(|v| GpuVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], color: [128, 128, 128, a], uv: [v[6], v[7]], flags: 0 }));
+            // As vs_skinned: red the light factor (0x80 = 1.0), green the cloth flag.
+            let color = [(mat[0] * 128.0).round().clamp(0.0, 255.0) as u8, if mat[1] > 0.5 { 255 } else { 0 }, 128, a];
+            verts.extend(tris.iter().map(|v| GpuVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], color, uv: [v[6], v[7]], flags: 0 }));
             actor.draws.push((actor.slot.get(tex.as_str()).copied().unwrap_or(0), start..verts.len() as u32));
         }
         let bytes: &[u8] = bytemuck::cast_slice(&verts);
