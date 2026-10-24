@@ -123,7 +123,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
-    left the key item / quest / mission lists, the mouse on a bar;
+    the mouse and the wheel on them; left the key item / quest / mission lists, the post / trade / synthesis lists;
   - collision and lifts (MODLOG "Actor collision and lifts"): characters never block in retail; lifts ride and move; left
     the zone-in wait for a lift, Mog House furniture boxes;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
