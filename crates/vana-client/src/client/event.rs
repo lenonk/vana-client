@@ -1769,10 +1769,17 @@ fn key_live(w: &mut World, l: &mut Live, key: egui::Key) {
     }
     if let Some(c) = &mut l.st.choice {
         let n = c.options.len().max(1);
+        // FUN_1014e410: SE 0001 when the cursor moved; Enter 0002 (the generic handler's).
         match key {
-            egui::Key::ArrowDown => c.cursor = (c.cursor + 1) % n,
-            egui::Key::ArrowUp => c.cursor = (c.cursor + n - 1) % n,
+            egui::Key::ArrowDown | egui::Key::ArrowUp => {
+                let was = c.cursor;
+                c.cursor = if key == egui::Key::ArrowDown { (c.cursor + 1) % n } else { (c.cursor + n - 1) % n };
+                if c.cursor != was {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             egui::Key::Enter if l.rt.choice_open() => {
+                w.sounds.push(crate::audio::Ui::Select as u32);
                 let pick = c.options.get(c.cursor).map(|o| o.0);
                 l.rt.choose(pick);
                 l.st.choice = None;
@@ -1837,6 +1844,7 @@ pub fn click(w: &mut World, row: Option<usize>) {
                 enter = true;
             } else {
                 c.cursor = k;
+                w.sounds.push(crate::audio::Ui::Cursor as u32);
             }
         }
     }

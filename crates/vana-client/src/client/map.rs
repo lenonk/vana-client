@@ -669,9 +669,19 @@ impl MapWin {
             return true;
         }
         match key {
-            egui::Key::ArrowUp => self.cursor = if self.cursor <= 1 { 3 } else { self.cursor - 1 },
-            egui::Key::ArrowDown => self.cursor = if self.cursor >= 3 { 1 } else { self.cursor + 1 },
-            egui::Key::Escape => return false,
+            egui::Key::ArrowUp | egui::Key::ArrowDown => {
+                self.cursor = match key {
+                    egui::Key::ArrowUp if self.cursor <= 1 => 3,
+                    egui::Key::ArrowUp => self.cursor - 1,
+                    _ if self.cursor >= 3 => 1,
+                    _ => self.cursor + 1,
+                };
+                self.sounds.push(Ui::Cursor as u32);
+            }
+            egui::Key::Escape => {
+                self.sounds.push(Ui::Cancel as u32);
+                return false;
+            }
             // FUN_101f7c60 1: mapv3 (asking party positions, c2s 0x0D2, is not done).
             egui::Key::Enter if self.cursor == 1 => {
                 self.want_party();

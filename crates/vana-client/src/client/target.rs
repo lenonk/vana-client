@@ -450,8 +450,11 @@ pub fn mouse_candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u
 /// or no target, opens the action menu ("menu    playermo").
 pub fn confirm_target(w: &mut World) {
     match w.target.filter(|t| t >> 24 != 0 && w.entities.get(t).is_some_and(|e| !e.mob)) {
+        // FUN_10158db0: SE 0009 once the talk went out (after FUN_1007bf30).
         Some(t) => {
-            super::event::talk(w, t);
+            if super::event::talk(w, t) {
+                w.sounds.push(crate::audio::Ui::Target as u32);
+            }
         }
         // SE 0011 when it was not already open (FUN_101585f0 / FUN_10158db0).
         None => {

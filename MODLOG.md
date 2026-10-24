@@ -5498,3 +5498,13 @@ Spec `~/ffxi/lab/research/ws_reaction_spec.md`.
 - Not done: knockback (op 0x5e), guard / parry ops 0x5a / 0x5b, op 0x71, the skillchain burst trigger.
 - The action menu's key arm takes only arrows / Enter / Escape (it swallowed Space, so the chat line could not open
   while the battle menu was up).
+
+## UI sounds: the rest of the audit (2026-10-24)
+
+Spec `~/ffxi/lab/research/sound_audit.md`.
+- Event choices (FUN_1014e410): SE 0001 when Up / Down or a click moves the cursor, 0002 on Enter.
+- NPC talk (FUN_10158db0): SE 0009 once the talk packet went out.
+- Chat line (text engine FUN_101b00b0): Enter 0002, Escape 0003. The full log's Escape 0003.
+- Map menu (map0), Mog House door menu, macro palette: the generic handler's 0001 cursor / 0002 Enter / 0003
+  Escape. Ctrl / Alt + H (key 0x3d): 0002 before /heal.
+- Not done: the tell sound "0p40" (not resolved); the `<call>` sounds 0017..0023.

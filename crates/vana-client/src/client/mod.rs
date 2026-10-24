@@ -704,6 +704,7 @@ fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
         egui::Key::Escape => {
             w.full_log = None;
             w.log_active = w.log_focus == 1;
+            w.sounds.push(crate::audio::Ui::Cancel as u32);
         }
         egui::Key::Enter => w.sounds.push(4),
         k => {
@@ -980,6 +981,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Tab if world.typing => fep::open(world),
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
+                    world.sounds.push(crate::audio::Ui::Select as u32);
                     let text = std::mem::take(&mut world.chat_input);
                     let text = fep::outgoing(world, text);
                     textcmd::run(world, &text, textcmd::Mode::Typed);
@@ -987,6 +989,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::Escape if world.typing => {
                     world.typing = false;
                     world.chat_input.clear();
+                    world.sounds.push(crate::audio::Ui::Cancel as u32);
                 }
                 egui::Key::Backspace if world.typing => fep::backspace(world),
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
@@ -1036,8 +1039,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.palette.0 != 0 => {
                     let p = world.palette.0 as usize - 1;
                     match key {
-                        egui::Key::ArrowLeft => world.palette.3[p] = (world.palette.3[p] + 9) % 10,
-                        egui::Key::ArrowRight => world.palette.3[p] = (world.palette.3[p] + 1) % 10,
+                        egui::Key::ArrowLeft | egui::Key::ArrowRight => {
+                            let step = if *key == egui::Key::ArrowLeft { 9 } else { 1 };
+                            world.palette.3[p] = (world.palette.3[p] + step) % 10;
+                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        }
                         egui::Key::ArrowDown | egui::Key::ArrowUp => {
                             if let Some(m) = world.macros.as_mut() {
                                 let (book, set) = (m.book, m.set);
@@ -1045,13 +1051,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                             }
                         }
                         egui::Key::Enter => {
+                            world.sounds.push(crate::audio::Ui::Select as u32);
                             let n = world.palette.3[p] + 10 * p;
                             if let Some(m) = world.macros.as_mut() {
                                 m.start(n);
                             }
                             world.palette = (0, 0, 0, world.palette.3);
                         }
-                        egui::Key::Escape => world.palette = (0, 0, 0, world.palette.3),
+                        egui::Key::Escape => {
+                            world.palette = (0, 0, 0, world.palette.3);
+                            world.sounds.push(crate::audio::Ui::Cancel as u32);
+                        }
                         _ => {}
                     }
                 }
@@ -1079,7 +1089,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.prompt.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
                     magic::key(world, *key);
                 }
-                egui::Key::H if modifiers.ctrl || modifiers.alt => send_chat(world, "/heal".into()),
+                egui::Key::H if modifiers.ctrl || modifiers.alt => {
+                    world.sounds.push(crate::audio::Ui::Select as u32);
+                    send_chat(world, "/heal".into());
+                }
                 egui::Key::C if modifiers.ctrl || modifiers.alt => check_target(world),
                 // FUN_1012ec60 / FUN_101e9f10.
                 egui::Key::E if modifiers.ctrl || modifiers.alt => items::open_equipment(world),
@@ -1134,13 +1147,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     let m = world.mogdoor.as_mut().unwrap();
                     let n = m.rows().max(1);
                     match key {
-                        egui::Key::ArrowDown => m.sel = (m.sel + 1) % n,
-                        egui::Key::ArrowUp => m.sel = (m.sel + n - 1) % n,
+                        egui::Key::ArrowDown | egui::Key::ArrowUp => {
+                            m.sel = if *key == egui::Key::ArrowDown { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
+                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                        }
                         egui::Key::Enter => mogdoor_pick(world),
                         egui::Key::Escape => {
                             if m.back() {
                                 world.mogdoor = None;
                             }
+                            world.sounds.push(crate::audio::Ui::Cancel as u32);
                         }
                         _ => {}
                     }
