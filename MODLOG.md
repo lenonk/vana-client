@@ -6083,3 +6083,14 @@ Spec `~/ffxi/lab/research/window_groups_spec.md`.
   modelled: raise tickets (a window re-raised while open), handler hides with their own flags.
 - Live (Lnxcsfix): the main menu's Abilities page and the action menu's ability types show alone, as before (our
   code closes their parents too); the item list's Use / Drop window takes the Options window's place.
+
+## Near plane 0.1; rain and frame rate (2026-10-24)
+
+- The scene projection's near plane is retail's 0.1 (FUN_100146e0, MODLOG "name plates"); ours was 0.5 since the first
+  renderer. With the eye kept only 0.17 off the floor below it (FUN_1017a310), a 0.5 near plane cut into the slope
+  beside a low camera and the clear colour showed through as a flat grey or white wedge (La Theine at the
+  Lnxcsfix login spot, camera tilted level). Depth32Float at 0.1 / 2000 keeps about the precision of retail's 24-bit
+  buffer at 0.1 / 65535: zone shots of zones 230 and 102 from street level differ in 7..34 pixels.
+- Rain (`!setweather RAIN` in La Theine, 2560 x 1366, frame limit 144, the camera level): 143 fps clear and in rain,
+  CPU 1.5..1.8 ms a frame. Not reproduced: the user's drop to about 70 fps in rain. The 0.3..0.4 s perf spikes in
+  test runs are the script's own screenshots (the capture runs in the encode span).

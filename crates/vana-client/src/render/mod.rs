@@ -262,8 +262,9 @@ struct Draw {
     mode: u8,
 }
 
-/// The scene projection's near and far planes.
-pub const NEAR: f32 = 0.5;
+/// The scene projection's near and far planes. Near is retail's 0.1 (FUN_100146e0): the eye keeps only 0.17 off the
+/// floor, and a deeper near plane cut into slopes beside it.
+pub const NEAR: f32 = 0.1;
 pub const FAR: f32 = 2000.0;
 
 #[derive(Clone, Copy)]
