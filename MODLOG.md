@@ -5873,3 +5873,10 @@ search_spec 3.2: 15 visible rows and 7 columns, page by 15, the zone cell plain 
   rows (BST14 Hum, zones Pashhow, Konschtat ...), scoption over a row, Tell opened "/tell Kakaru ".
 - Not done: the grammar and its tables, scsibori / searchma and the criteria windows, the comment fetch on Enter,
   acoption / /mutelist, /recruitlist, the LS member list, s2c 0x008 known-zone bits.
+
+## Search results: first cursor row (2026-10-24)
+
+- Retail (vanilla, the user's screenshot) shows the cursor on the first person once the rows are in, not on the header;
+  ours now does too. The window position (16, 48) and the drawing match that shot with mods off; with the xiPrime menu
+  pack (it replaces ROM/119/51, the in-game menu DAT, including menu ustats and the windowps bands) the status icons
+  turn into green arrows, the header band reddish and the cursor bar whitish.

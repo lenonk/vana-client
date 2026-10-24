@@ -113,6 +113,10 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             };
             res.total = reply.total;
             res.rows = reply.records;
+            // Retail shows the cursor on the first person once rows are in (seen in the user's retail shot).
+            if res.cursor == 0 && !res.rows.is_empty() {
+                res.cursor = 1;
+            }
             let (scope, shown, total) = (res.scope, res.rows.len(), reply.total as usize);
             summary(w, scope, total, shown);
         }
