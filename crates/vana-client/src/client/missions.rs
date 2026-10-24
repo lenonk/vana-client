@@ -38,7 +38,7 @@ fn menu_off(enabled: u32) -> Vec<u16> {
 }
 
 /// The journal's name files, read on the first open.
-fn logs(w: &mut World) -> Option<Arc<crate::dat::journal::Logs>> {
+pub(super) fn logs(w: &mut World) -> Option<Arc<crate::dat::journal::Logs>> {
     if w.logs.is_none() {
         let index = w.index.clone()?;
         w.logs = Some(Arc::new(crate::dat::journal::Logs::load(&index)));
@@ -286,7 +286,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// Wrapped game-font lines 16 px apart.
-fn lines(gu: &mut GameUi, s: &str, x: f32, y: f32, width: f32, tint: u32) {
+pub(super) fn lines(gu: &mut GameUi, s: &str, x: f32, y: f32, width: f32, tint: u32) {
     for (k, line) in gu.wrap(s, width).iter().enumerate() {
         gu.text(line, x, y + 16.0 * k as f32, 0, tint.to_le_bytes());
     }

@@ -6520,3 +6520,21 @@ and the row rules), client/missions.rs (the windows), dat/journal.rs (the name f
   menu page (Minus opens on the last row). Not done: the other KEEP windows' own cursors (myroom, configwi, cmbmenu).
 - Live (Lnxtest): action menu Items -> the item list -> Escape: the menu back on Items; the main menu closed on Magic
   reopened on Magic.
+
+## Quests (2026-10-24)
+
+Spec `~/ffxi/lab/research/quest_mission_spec.md` section 6; ours client/quests.rs.
+- Social child 2 runs /quest (0x4d, FUN_1007d240, SE 0002): quest00 beside the social menu (group 0x1c, the menu stays
+  drawn unfocused); its setup sends c2s 0x061 {0}; waiting with the busy strip until the 0x056 store is complete.
+- quest00: five rows moved to y 14 / 46 / 110 / 142 / 174 (FUN_1022f670): Current, Completed, the RoE "Current" with
+  "%s" + 10 spaces + "%d/%d" of the objectives taken (records 0..29 with an id, + 63, + 42) over 30, Objective List,
+  Vana'Bout (enabled while a record 43..62 is set, else grey and not a cursor stop); the RoE panel (FUN_10233560):
+  Sparks / Deeds (s2c 0x110, 0 before one), Unity Accolades (0x061 @0x58 bits 10..26 once stats are ready), Number
+  Completed (the set bits of 0x112's first 0x173 bytes once Offset 3 came), Plaudits; 99999 in 0x80407090.
+- quest01 over quest00 (its frame under it): one area's quests in file order: current (bit set and '+' or not
+  completed) / completed; numbers 1039..1045, 1047..1049 read area 9 bits 39..45 / 47..49 (FUN_102333f0); the area cycle
+  (5 Zilart, 6 ToAU, 7 WotG, 8 Abyssea, 9 / 10 Adoulin; 0..4 always), the titles "<area>: Current / Completed
+  Quests", "No current / completed quests.", the description box, the scroll bar.
+- Not done: Enter on the RoE rows 2..4 (their lists, FUN_10232b80, not traced): logged.
+- Live (Lnxtest: empty lists, the panel at 0; Lnxcsfix with !addquest 0 10 / !completequest 0 11: "A Squire's Test"
+  current with its description, "Grave Concerns" completed; both removed again with !delquest and checked).

@@ -165,7 +165,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::MapList | Owner::ScanList => w.map.as_mut().is_some_and(|map| map.bar(owner, m)),
         Owner::Search => super::search::bar(w, m),
         Owner::Picker => super::post::picker_bar(w, m),
-        Owner::Journal => super::missions::bar(w, m),
+        Owner::Journal => super::missions::bar(w, m) || super::quests::bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),
             None => false,

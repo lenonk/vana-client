@@ -323,6 +323,11 @@ pub enum NetEvent {
     EventAnswer { id: u16, data: Vec<u8> },
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
     ResOffer { id: u32, kind: u16 },
+    /// s2c 0x110 (Sparks u24 @4, Deeds u16 @8, Plaudits u16 @0xa), 0x111 (64 objective records @4), 0x112 (Data[128] @4,
+    /// Offset u16 @0x84): Records of Eminence.
+    RoeUnity { sparks: u32, deeds: u16, plaudits: u16 },
+    RoeActive([u32; 64]),
+    RoeLog { offset: u16, data: [u8; 128] },
     /// s2c 0x056 (LAB_10098ad0): a quest / mission record, data u32[8] @4 and Port @0x24.
     MissionLog { port: u16, data: [u32; 8] },
     /// s2c 0x0B4 CONFIG (LAB_100e4f20): the 12 SAVE_CONF bytes @4 (flags, message filters).
@@ -791,6 +796,9 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0A0 => tx.send(NetEvent::MapGroup { id: p.u32(4), zone: p.u16(8), pos: [p.f32(0xc), p.f32(0x10), p.f32(0x14)] })?,
                     0x0BF => tx.send(NetEvent::Registration { index: p.u32(0xC), result: p.u16(6) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
+                    0x110 => tx.send(NetEvent::RoeUnity { sparks: p.u32(4) & 0xff_ffff, deeds: p.u16(8), plaudits: p.u16(0xa) })?,
+                    0x111 => tx.send(NetEvent::RoeActive(std::array::from_fn(|i| p.u32(4 + 4 * i))))?,
+                    0x112 => tx.send(NetEvent::RoeLog { offset: p.u16(0x84), data: std::array::from_fn(|i| p.u8(4 + i)) })?,
                     0x056 => tx.send(NetEvent::MissionLog { port: p.u16(0x24), data: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x0B4 => tx.send(NetEvent::ConfSys(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,

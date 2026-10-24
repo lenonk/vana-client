@@ -104,7 +104,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
     MODLOG "Party menu"; left Member List, View Request, Level Sync, Focus, Rearrange; the invite side untested live);
     Status done (client/status.rs, MODLOG "Status window"; left Currencies 1 / 2, Unity, Merit / Job / Alter Ego Points);
-    Missions done (client/missions.rs, journal.rs, MODLOG "Missions"); left Quests / Key Items, Search, Linkshell,
+    Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
+    lists); left Key Items, Search, Linkshell,
     Region Info, the social page's View House / Bazaar / Macros / Help Desk;
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
     over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
