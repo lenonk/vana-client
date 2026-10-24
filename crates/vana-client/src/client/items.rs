@@ -5,6 +5,7 @@
 use super::World;
 use super::game_ui::GameUi;
 use super::net::NetCommand;
+use crate::audio::Ui;
 use crate::dat::items::Item;
 use crate::inventory::{Equipment, ItemInfo, ItemList, Persona, ROW_PITCH, SLOT_CHILD, Slot, Stats, VISIBLE_ROWS, build_rows, gil_text};
 use crate::render::invwin::{icon_texture, push_equipment, push_inventory, push_item_list, push_money, push_persona};
@@ -299,15 +300,17 @@ fn slot_at(row: usize, col: usize) -> usize {
     SLOT_CHILD.iter().position(|&c| c == child).unwrap_or(0)
 }
 
-pub(super) fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) {
+/// Up / Down a row (wrapping); true when the cursor moved (the generic handler's SE 0001).
+pub(super) fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) -> bool {
     if n == 0 {
-        return;
+        return false;
     }
-    let mut at = *scroll + *cursor;
+    let was = *scroll + *cursor;
+    let mut at = was;
     match key {
         egui::Key::ArrowDown => at = (at + 1) % n,
         egui::Key::ArrowUp => at = (at + n - 1) % n,
-        _ => return,
+        _ => return false,
     }
     if at < *scroll {
         *scroll = at;
@@ -315,6 +318,7 @@ pub(super) fn list_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: e
         *scroll = at + 1 - VISIBLE_ROWS;
     }
     *cursor = at - *scroll;
+    at != was
 }
 
 /// FUN_101f6c70 messages 3 / 4: Right / Left turn a page of 10 keeping the cursor row; on the last / first page the
@@ -425,8 +429,14 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                         return true;
                     }
                 }
-                (None, egui::Key::ArrowUp) => s.cursor = if s.cursor <= 1 { 3 } else { s.cursor - 1 },
-                (None, egui::Key::ArrowDown) => s.cursor = if s.cursor >= 3 { 1 } else { s.cursor + 1 },
+                (None, egui::Key::ArrowUp) => {
+                    s.cursor = if s.cursor <= 1 { 3 } else { s.cursor - 1 };
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+                (None, egui::Key::ArrowDown) => {
+                    s.cursor = if s.cursor >= 3 { 1 } else { s.cursor + 1 };
+                    w.sounds.push(Ui::Cursor as u32);
+                }
                 (None, egui::Key::Enter) if s.cursor == 1 => {
                     s.ask = Some(false);
                     w.sounds.push(Ui::Select as u32);
@@ -482,11 +492,18 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                         w.sounds.push(Ui::Cursor as u32);
                     }
                 }
-                k => list_keys(scroll, cursor, rows, k),
+                k => {
+                if list_keys(scroll, cursor, rows, k) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             }
         }
         Some(Win::Items { scroll, cursor, sub, direct, .. }) => match key {
-            egui::Key::Escape => close = true,
+            egui::Key::Escape => {
+                close = true;
+                w.sounds.push(Ui::Cancel as u32);
+            }
             // FUN_101f0a10: the direct list uses at once, SE 0002.
             egui::Key::Enter if *direct => {
                 if let Some(s) = shown.get(*scroll + *cursor).cloned() {
@@ -509,7 +526,11 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                     w.sounds.push(crate::audio::Ui::Cursor as u32);
                 }
             }
-            k => list_keys(scroll, cursor, rows, k),
+            k => {
+                if list_keys(scroll, cursor, rows, k) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
         },
         Some(Win::Equip { row, col, pick }) => {
             let slot = slot_at(*row, *col);
@@ -519,21 +540,37 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
             }
             match pick {
                 Some(p) => match key {
-                    egui::Key::Escape => *pick = None,
+                    egui::Key::Escape => {
+                        *pick = None;
+                        w.sounds.push(Ui::Cancel as u32);
+                    }
                     egui::Key::Enter => {
                         if let Some(&index) = p.indexes.get(p.scroll + p.cursor) {
                             send = Some(NetCommand::Equip { index, slot: slot as u8, container: INVENTORY });
                         }
                         *pick = None;
+                        w.sounds.push(Ui::Select as u32);
                     }
-                    k => list_keys(&mut p.scroll, &mut p.cursor, p.indexes.len(), k),
+                    k => {
+                if list_keys(&mut p.scroll, &mut p.cursor, p.indexes.len(), k) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
                 },
                 None => match key {
-                    egui::Key::Escape => close = true,
-                    egui::Key::ArrowDown => *row = (*row + 1) % 4,
-                    egui::Key::ArrowUp => *row = (*row + 3) % 4,
-                    egui::Key::ArrowRight => *col = (*col + 1) % 4,
-                    egui::Key::ArrowLeft => *col = (*col + 3) % 4,
+                    egui::Key::Escape => {
+                        close = true;
+                        w.sounds.push(Ui::Cancel as u32);
+                    }
+                    egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::ArrowRight | egui::Key::ArrowLeft => {
+                        match key {
+                            egui::Key::ArrowDown => *row = (*row + 1) % 4,
+                            egui::Key::ArrowUp => *row = (*row + 3) % 4,
+                            egui::Key::ArrowRight => *col = (*col + 1) % 4,
+                            _ => *col = (*col + 3) % 4,
+                        }
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
                     // Inferred binding: Backspace / Delete removes the piece in the slot (0x050 index 0).
                     egui::Key::Backspace | egui::Key::Delete => {
                         if let Some((c, _)) = w.inv.equip[slot] {
@@ -543,6 +580,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                     egui::Key::Enter => {
                         let indexes = candidates_world(&w.inv, w.stats.as_ref(), w.my_race, &info, slot);
                         *pick = Some(Pick { indexes, scroll: 0, cursor: 0, compare: None, alt: 0, ctrl: None });
+                        w.sounds.push(Ui::Select as u32);
                     }
                     _ => {}
                 },
@@ -915,8 +953,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 draw_count(gu, shown.len(), w.inv.sizes[INVENTORY as usize], sw, sh);
             }
             upload_icons(gu, info, list.visible().iter().map(|r| r.id));
+            let open = gu.gate_layout("menu    inventor", sw, sh, None);
             let (b, ui, style, font) = gu.parts();
-            if let Some(m) = ui.menu("menu    inventor") {
+            if let Some(m) = ui.menu("menu    inventor").filter(|_| open) {
                 push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, frame);
             }
             rects.extend(gu.window_rect("menu    inventor", sw, sh));
@@ -959,14 +998,16 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             if let Some(l) = &list {
                 upload_icons(gu, info, l.visible().iter().map(|r| r.id));
             }
+            let open = ["menu    persona", "menu    money", "menu    equip"].map(|n| gu.gate_layout(n, sw, sh, None));
+            let list_open = list.is_some() && gu.gate_layout("menu    inventor", sw, sh, Some(LIST_X as i16));
             let (b, ui, style, font) = gu.parts();
-            if let Some(m) = ui.menu("menu    persona") {
+            if let Some(m) = ui.menu("menu    persona").filter(|_| open[0]) {
                 push_persona(b, ui, style, m, &persona, sw, sh);
             }
-            if let Some(m) = ui.menu("menu    money") {
+            if let Some(m) = ui.menu("menu    money").filter(|_| open[1]) {
                 push_money(b, ui, style, m, &gil, sw, sh);
             }
-            if let (Some(m), Some(l)) = (ui.menu("menu    inventor"), &list) {
+            if let (Some(m), Some(l)) = (ui.menu("menu    inventor").filter(|_| list_open), &list) {
                 // Inferred: the equippable source puts the list at (314, 48), right of equip (vfunc +4).
                 let mut m = m.clone();
                 if let Some(e) = m.elements.first_mut() {
@@ -974,7 +1015,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 }
                 push_inventory(b, ui, style, font, GameUi::ATLAS, &m, l, sw, sh, frame);
             }
-            if let Some(m) = ui.menu("menu    equip") {
+            if let Some(m) = ui.menu("menu    equip").filter(|_| open[2]) {
                 let cursor = pick.is_none().then_some(SLOT_CHILD[slot] as usize);
                 push_equipment(b, ui, style, m, &eq, info.as_ref(), sw, sh, cursor, frame);
             }
@@ -1368,11 +1409,19 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: b
                 b.manual = None;
                 b.sortw = Some(SortW { cursor: 2, bank_side, ask: None });
             }
-            k => list_keys(sc, cu, rows.len(), k),
+            k => {
+                if list_keys(sc, cu, rows.len(), k) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
         }
     } else if b.read_only {
         match key {
-            K::ArrowUp | K::ArrowDown => list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key),
+            K::ArrowUp | K::ArrowDown => {
+                if list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             K::ArrowRight | K::ArrowLeft => {
                 if page_keys(&mut b.scroll, &mut b.cursor, banks.len(), key == K::ArrowRight) {
                     w.sounds.push(Ui::Cursor as u32);
@@ -1387,8 +1436,16 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: b
         }
     } else {
         match key {
-            K::ArrowUp | K::ArrowDown if b.on_bank => list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key),
-            K::ArrowUp | K::ArrowDown => list_keys(&mut scroll, &mut cursor, inv.len(), key),
+            K::ArrowUp | K::ArrowDown if b.on_bank => {
+                if list_keys(&mut b.scroll, &mut b.cursor, banks.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
+            K::ArrowUp | K::ArrowDown => {
+                if list_keys(&mut scroll, &mut cursor, inv.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             // Key functions 0xb5 / 0xb6 (Alt+Right / Alt+Left): the focused side's container cycles through table
             // 0x1037ef98 (FUN_101dbb20 / FUN_101dbba0), skipping what FUN_101dbc20 rejects; not for the bin.
             K::ArrowRight | K::ArrowLeft if alt => {

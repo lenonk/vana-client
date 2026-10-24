@@ -5456,3 +5456,25 @@ Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
   current focal length. With the battle menu focused the arrows move its cursor (camera only with Shift).
 - Live: Lnxcsfix on Wild Rabbits in East Ronfaure: the battle menu, gauge and "Battle Mode" bar on engage, Escape kept
   the menu, Down moved it, Magic / Abilities opened over it, all closed at the kill.
+
+## UI sounds and window animations along the menu chain (2026-10-24)
+
+Audit `~/ffxi/lab/research/sound_audit.md`.
+- Retail's generic window event method FUN_10118260 gives every window cursor 0001 (when the cursor child changed),
+  Enter 0002 (0004 on a disabled child) and Escape 0003, unless its open hook clears one (+0x84 / +0x85 / +0x86, set
+  by the constructor). SE functions: 10037b30 0001, b90 0002, bf0 0003, c50 0004, d70 0009 (target from none, sub-
+  target confirm, NPC talk), dd0 0010 (target switch), e30 0011 (action menu opened), e90 0013 (focus to another
+  window), ef0 0014 (main menu page opened), f50 0015 (spool next page), fb0 0016 (shutter), 10038010 0039 (netstat).
+- Done: the main menu's row picks play 0002 (they read as a cancel before: the menu closing), a page swap 0014; the
+  action menu's open 0011 and Enter 0002; every item list's Up / Down 0001 (list_keys reports a move), the item list's
+  Escape 0003, the equipment grid's moves / Enter / Escape, itmsort2's moves. Left: event choices' moves / Enter,
+  NPC talk 0009, the chat line's Enter / Escape, the full log's Escape, mogdoor, map0, the macro palette, the tell and
+  `<call>` sounds.
+- Windows placed by screens-level drawers went around the open / close animation (FUN_101177d0): the category windows
+  (mgcmenu, abimenu, abiselec, magselec, commenu), the magic / ability / emote / mount lists, subwindo, the item list
+  (and the direct-use list), the equipment windows (persona, money, equip, the candidate list), the picker beside the
+  delivery box / trade / hand-over, money, the shop list. Now GameUi::gate_layout / gate_rect: each zooms in, and
+  closes with its zoom when it stops being drawn (a list hidden for a target prompt too). A list that swaps its
+  contents in place (an ability type list over its parent and back, an emote folder) plays its open again
+  (replay_on_change; retail's close of the old contents is not drawn).
+- Live: battle menu -> Abilities -> Job Abilities -> Escape: each step's close and open zooms seen.

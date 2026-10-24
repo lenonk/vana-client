@@ -910,7 +910,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let frame = gu.cursor_frame();
     if let Some(c) = w.cats {
         let child = cat_rows(c.menu).get(c.sel).map_or(1, |r| r.0 as usize);
-        let m = gu.stacked_menu(c.menu, sw, sh);
+        let m = gu.stacked_menu(c.menu, sw, sh).filter(|_| gu.gate_layout(c.menu, sw, sh, None));
         let (b, ui, style, _) = gu.parts();
         if let Some(m) = &m {
             push_category(b, ui, style, m, child, sw, sh, frame);
@@ -946,7 +946,8 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         _ => gu.lobby_msg(9, 0x4b, ""),
     };
     let menu = win.menu();
-    let m = gu.stacked_menu(menu, sw, sh);
+    gu.replay_on_change(menu, (win.kind as u64) << 32 | (win.ty as u64) << 16 | w.emote_path.len() as u64);
+    let m = gu.stacked_menu(menu, sw, sh).filter(|_| gu.gate_layout(menu, sw, sh, None));
     let (b, ui, style, font) = gu.parts();
     if let Some(m) = &m {
         push_action_list(b, ui, style, font, GameUi::ATLAS, m, &rows, win.cursor, &empty, sw, sh, frame);
@@ -999,7 +1000,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         },
         _ => Vec::new(),
     };
-    if !lines.is_empty() {
+    if !lines.is_empty() && gu.gate_layout("menu    subwindo", sw, sh, None) {
         let (b, ui, style, font) = gu.parts();
         if let Some(m) = ui.menu("menu    subwindo") {
             push_cost_box(b, ui, style, font, GameUi::ATLAS, m, &lines, sw, sh);

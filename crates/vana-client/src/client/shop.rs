@@ -891,6 +891,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         // A requirement on any row adds its column (FUN_10210880: the window 0x69 wider, cells up to + 0x16e).
         let column = rows.iter().any(|r| r.req.is_some());
         let (ww, wh) = (size[2] + WIDE + if column { REQ_W } else { 0.0 }, size[3]);
+        if !gu.gate_rect(SHOP, [wx, wy, ww, wh]) {
+            rects.push([wx, wy, ww, wh]);
+            return rects;
+        }
         gu.frame(wx, wy, ww, wh);
         gu.sprite_from("menu    framesus", 82, 1, wx, wy, WHITE);
         // Rows from (3, 4), 18 px apart: the half-size icon, the name at +18 (y + 2), the price right-aligned at the
@@ -917,12 +921,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         }
         rects.push([wx, wy, ww, wh]);
         // money (FUN_101408c0) with the list.
-        let gil = crate::inventory::gil_text(w.inv.gil() as i64);
-        let (b, ui, style, _) = gu.parts();
-        if let Some(m) = ui.menu("menu    money") {
-            crate::render::invwin::push_money(b, ui, style, m, &gil, sw, sh);
-        }
-        rects.extend(gu.window_rect("menu    money", sw, sh));
+        rects.extend(super::post::draw_money(gu, w, sw, sh));
     }
     if let Some((v, max)) = s.qty
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])

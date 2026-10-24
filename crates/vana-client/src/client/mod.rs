@@ -489,7 +489,7 @@ fn answer_raise(w: &mut World, yes: bool) {
 }
 
 /// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
-pub(super) fn vana_now(w: &World) -> u64 {
+fn vana_now(w: &World) -> u64 {
     w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
 }
 
@@ -1262,7 +1262,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     // Social page: child 11 Shut Down (FUN_10159f90), 12 Log Out (FUN_1015a020) ask first.
+    world.menu_picked = false;
     if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1) {
+        world.menu_picked = true;
+        // FUN_10140400: a row that opens its window plays 0002 (the rows below that can refuse push their own).
+        if matches!((world.menu_page, id), (0, 2 | 3 | 4 | 5 | 10)) {
+            world.sounds.push(crate::audio::Ui::Select as u32);
+        }
         match (world.menu_page, id) {
             (0, 2) => items::open_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
@@ -1290,6 +1296,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             // Item 12 Map (FUN_1013b3f0 case 0xc).
             (0, 12) => match map::MapWin::open(world, gu.map_regions(), sw, sh) {
                 Some(mut m) => {
+                    world.sounds.push(crate::audio::Ui::Select as u32);
                     m.return_menu = world.menu;
                     world.map = Some(m);
                     world.menu = None;
@@ -1382,6 +1389,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     if let Some(c) = act {
+        // The generic window handler's Enter (FUN_10118260): 0002.
+        world.sounds.push(crate::audio::Ui::Select as u32);
         if !combat::keeps_menu(c) {
             // The lists (Abilities, Magic, Items, Trust) bring the battle menu back when they are done.
             world.reopen_menu |= world.my_motion.status == 1 && matches!(c, 7 | 8 | 9 | 0x19);
@@ -2882,6 +2891,8 @@ struct World {
     noreact: HashMap<u32, Instant>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
     action_menu: Option<combat::ActionMenu>,
+    /// A main menu row was picked this frame (the snapshot's `picked`).
+    menu_picked: bool,
     /// The window manager's last applied status (FUN_1015ef60 +0x68): its edges into / out of 1 run the battle reset.
     battle_prev: u8,
     /// "menu    gaugewin", up while engaged.
@@ -3370,6 +3381,9 @@ const CREATOR_BGM: [u32; 8] = [0x85, 0xa8, 0x84, 0x83, 0xa7, 0x82, 0xa6, 0xa5];
 struct UiSnap {
     screen: Option<LobbyScreen>,
     cursor: Vec<usize>,
+    /// The main menu's page (a swap plays 0014) and whether a row was picked (the menu closing then is no cancel).
+    page: u8,
+    picked: bool,
     confirm: bool,
     yes: bool,
     step: usize,
@@ -3646,6 +3660,8 @@ impl App {
                 UiSnap {
                     screen: Some(*screen),
                     cursor: vec![*menu, selected.unwrap_or(99), *race, *face as usize, *size as usize, *job, *nation],
+                    page: 0,
+                    picked: false,
                     confirm: confirm.is_some() || (create && self.creator_step == 7),
                     yes: if create { self.creator_yes } else { self.delete_yes },
                     step: if create { self.creator_step } else { 0 },
@@ -3655,7 +3671,9 @@ impl App {
             }
             Phase::World(w) => UiSnap {
                 screen: None,
-                cursor: vec![w.menu.unwrap_or(99), w.menu_page as usize],
+                cursor: vec![w.menu.unwrap_or(99)],
+                page: w.menu_page,
+                picked: w.menu_picked,
                 confirm: w.confirm.is_some(),
                 yes: w.confirm.is_some_and(|c| c.1),
                 step: 0,
@@ -3676,7 +3694,14 @@ impl App {
             return Some(if b.screen == Some(LobbyScreen::Main) { Ui::Cancel } else { Ui::Select });
         }
         if a.menu_open != b.menu_open {
+            // A picked row plays its own sound (0002, or 0004 when refused: FUN_10140400).
+            if !b.menu_open && b.picked {
+                return None;
+            }
             return Some(if b.menu_open { Ui::Open } else if b.confirm { Ui::Select } else { Ui::Cancel });
+        }
+        if a.page != b.page && b.menu_open {
+            return Some(Ui::Open);
         }
         if a.step != b.step {
             return Some(if b.step > a.step { Ui::Select } else { Ui::Cancel });
@@ -3967,6 +3992,7 @@ impl App {
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
                             action_menu: None,
+                            menu_picked: false,
                             battle_prev: 0,
                             gauge: None,
                             reopen_menu: false,

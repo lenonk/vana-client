@@ -24,10 +24,20 @@ pub enum Ui {
     Cancel = 3,
     /// "0004": not allowed.
     Error = 4,
-    /// "0013": a menu closed (with FUN_10157290).
+    /// "0009": a target set from none, a sub-target confirm, an NPC talk started (FUN_10037d70).
+    Target = 9,
+    /// "0010": the target switched (FUN_10037dd0).
+    Switch = 10,
+    /// "0011": the action menu opened (FUN_10037e30).
+    ActionMenu = 11,
+    /// "0013": the focus moved to another window (sort windows, log focus; FUN_10037e90).
     Close = 13,
-    /// "0014": main menu opened (FUN_1013b080).
+    /// "0014": a main menu page opened (FUN_10037ef0).
     Open = 14,
+    /// "0015": the next page of a spooled message (FUN_10037f50).
+    Page = 15,
+    /// "0016": the screenshot shutter (FUN_10037fb0).
+    Shutter = 16,
 }
 
 /// Music after an expansion's title track: {track, ticks before the switch, next} (FFXiMain 0x10351718).

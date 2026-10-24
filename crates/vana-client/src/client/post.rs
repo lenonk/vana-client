@@ -937,7 +937,11 @@ fn send_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             let rows = picker_rows(w);
             let (mut sc, mut cu) = s.list;
             match key {
-                K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+                K::ArrowUp | K::ArrowDown => {
+                if super::items::list_keys(&mut sc, &mut cu, rows.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
                 K::ArrowRight | K::ArrowLeft => {
                     if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
                         w.sounds.push(Ui::Cursor as u32);
@@ -1371,8 +1375,9 @@ pub(super) fn draw_slots(gu: &mut GameUi, info: &super::items::ItemCache, name: 
 /// "menu    money": the gil we hold (FUN_101408c0).
 pub(super) fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
+    let open = gu.gate_layout("menu    money", sw, sh, None);
     let (b, ui, style, _) = gu.parts();
-    if let Some(m) = ui.menu("menu    money") {
+    if let Some(m) = ui.menu("menu    money").filter(|_| open) {
         crate::render::invwin::push_money(b, ui, style, m, &gil, sw, sh);
     }
     gu.window_rect("menu    money", sw, sh)
@@ -1401,8 +1406,9 @@ pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: 
     let list = crate::inventory::ItemList { rows: built, scroll, cursor };
     super::items::upload_icons(gu, info, list.visible().iter().map(|r| r.id));
     let frame = gu.cursor_frame();
+    let open = gu.gate_layout("menu    inventor", sw, sh, Some(200));
     let (b, ui, style, font) = gu.parts();
-    if let Some(m) = ui.menu("menu    inventor") {
+    if let Some(m) = ui.menu("menu    inventor").filter(|_| open) {
         let mut m = m.clone();
         if let Some(e) = m.elements.first_mut() {
             e.x = 200;

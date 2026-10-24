@@ -168,6 +168,8 @@ pub struct GameUi {
     /// Window open / close animations by menu name, the UI frame number and the tick clock; `open_ticks` is N
     /// (DAT_1036c190: 25, 0 with config 0xa4).
     anims: std::collections::HashMap<String, WinAnim>,
+    /// What a window that swaps its contents in place showed last (replay_on_change).
+    contents: std::collections::HashMap<String, u64>,
     anim_frame: u64,
     anim_acc: f32,
     pub open_ticks: f32,
@@ -222,7 +224,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -608,6 +610,33 @@ impl GameUi {
         if let Some(l) = self.data.lobby.lib(lib).filter(|l| k < l.sprites.len()) {
             self.batch.push_sprite(&self.data.lobby, l, k, x, y, sx, sy, tint, 0);
         }
+    }
+
+    /// The open / close animation for a window a screens-level drawer places itself (FUN_101177d0): false while it
+    /// opens (only the zooming frame draws); stopping drawing it plays its close.
+    pub fn gate_layout(&mut self, name: &str, w: f32, h: f32, x: Option<i16>) -> bool {
+        let Some(mut m) = self.stacked_menu(name, w, h) else { return true };
+        if let (Some(x), Some(e)) = (x, m.elements.first_mut()) {
+            e.x = x;
+        }
+        let (fx, fy, fw, fh) = screens::frame_rect(&m, w, h, 1.0, 1.0);
+        self.win_gate(name, [fx, fy, fw, fh])
+    }
+
+    /// A window that swaps its contents in place (an ability type list for its parent, an emote folder) is a new
+    /// window to retail: its open plays again when `key` changes.
+    pub fn replay_on_change(&mut self, name: &str, key: u64) {
+        let prev = self.contents.insert(name.to_string(), key);
+        if prev.is_some_and(|p| p != key)
+            && let Some(a) = self.anims.get_mut(name)
+        {
+            a.seen = 0;
+        }
+    }
+
+    /// As gate_layout for a frame the caller draws itself.
+    pub fn gate_rect(&mut self, name: &str, r: [f32; 4]) -> bool {
+        self.win_gate(name, r)
     }
 
     /// A layout moved by its region stacking, for the screens-level drawers that place windows themselves.

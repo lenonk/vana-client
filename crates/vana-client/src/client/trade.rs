@@ -180,7 +180,11 @@ fn handover_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             let rows = super::post::picker_rows(w);
             let (mut sc, mut cu) = h.list;
             match key {
-                K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+                K::ArrowUp | K::ArrowDown => {
+                if super::items::list_keys(&mut sc, &mut cu, rows.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
                 K::ArrowRight | K::ArrowLeft => {
                     if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
                         w.sounds.push(Ui::Cursor as u32);
@@ -717,7 +721,11 @@ fn p2p_key(w: &mut World, gu: &GameUi, key: egui::Key) {
             let rows = super::post::picker_rows(w);
             let (mut sc, mut cu) = u.list;
             match key {
-                K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+                K::ArrowUp | K::ArrowDown => {
+                if super::items::list_keys(&mut sc, &mut cu, rows.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
                 K::ArrowRight | K::ArrowLeft => {
                     if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
                         w.sounds.push(Ui::Cursor as u32);

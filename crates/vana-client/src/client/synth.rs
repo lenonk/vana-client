@@ -223,7 +223,11 @@ fn menu_key(w: &mut World, gu: &GameUi, key: egui::Key) {
     if let Some((mut sc, mut cu)) = m.crystals {
         let rows = crystal_rows(w);
         match key {
-            K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+            K::ArrowUp | K::ArrowDown => {
+                if super::items::list_keys(&mut sc, &mut cu, rows.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             K::ArrowRight | K::ArrowLeft => {
                 if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
                     w.sounds.push(Ui::Cursor as u32);
@@ -645,7 +649,11 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
             let rows = picker_rows(w);
             let (mut sc, mut cu) = s.list;
             match key {
-                K::ArrowUp | K::ArrowDown => super::items::list_keys(&mut sc, &mut cu, rows.len(), key),
+                K::ArrowUp | K::ArrowDown => {
+                if super::items::list_keys(&mut sc, &mut cu, rows.len(), key) {
+                    w.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
                 K::ArrowRight | K::ArrowLeft => {
                     if super::items::page_keys(&mut sc, &mut cu, rows.len(), key == K::ArrowRight) {
                         w.sounds.push(Ui::Cursor as u32);

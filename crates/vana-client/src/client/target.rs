@@ -8,8 +8,6 @@ use glam::Vec3;
 /// SE "0009" (FUN_10036f50): a target from none; "0010" (FUN_10036fb0): switching targets.
 const SE_TARGET: u32 = 9;
 const SE_SWITCH: u32 = 10;
-/// Camera focal length, config 0x49 default 350 (range 242..900).
-pub const FOCAL: f32 = 350.0;
 
 /// The forced flash (actor +0x88 bit 0x200) for a frame, as the sub-target cursor and area previews set it,
 /// unless /targetcharaeffect turned it off (config 0x99 bit 7).
@@ -455,7 +453,11 @@ pub fn confirm_target(w: &mut World) {
         Some(t) => {
             super::event::talk(w, t);
         }
+        // SE 0011 when it was not already open (FUN_101585f0 / FUN_10158db0).
         None => {
+            if w.action_menu.is_none() {
+                w.sounds.push(crate::audio::Ui::ActionMenu as u32);
+            }
             w.action_menu = Some(super::combat::open_menu(w));
             w.menu = None;
         }
