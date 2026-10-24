@@ -29,6 +29,7 @@ mod id {
     pub const SAY: u16 = 0x01;
     pub const EMOTE_TEXT: u16 = 0x0b;
     pub const MAP: u16 = 0x4f;
+    pub const MISSION: u16 = 0x4e;
     pub const RECYCLE: u16 = 0x7a;
     pub const MOUNT: u16 = 0x28;
     pub const DISMOUNT: u16 = 0x38;
@@ -616,6 +617,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::WAIT => Ok(()),
         // FUN_1007d2c0: the map as the main menu opens it, unless in a room (group 7 0x44) or already open.
+        // FUN_1007d270: miss00 alone, on the log titled by the one argument, else the nation's.
+        id::MISSION => {
+            w.mission_cmd = Some(if args.len() == 2 { args.get(1).cloned() } else { None });
+            Ok(())
+        }
         id::MAP => {
             if w.room_flag {
                 refuse(w, 0x44);

@@ -6479,3 +6479,26 @@ Spec `~/ffxi/lab/research/status_window_spec.md` (30261006_0); ours client/statu
   own cap (FUN_100e3400, 0x96) stays.
 - Test tool: the script's `type:` step now sends one Text event a character, as typing does.
 - Live (Lnxtest): "/echo" + 125 digits stopped at 120 characters and echoed.
+
+## Missions (2026-10-24)
+
+Spec `~/ffxi/lab/research/quest_mission_spec.md` sections 2, 3, 5 (30261006_0); ours client/journal.rs (the store
+and the row rules), client/missions.rs (the windows), dat/journal.rs (the name files).
+- s2c 0x056 (LAB_10098ad0): data u32[8] @4, Port @0x24 into the store: quest areas' current (0x50 + 8 a, 0xE0, 0xF0,
+  0x100) and completed (+0x40, 0xE8, 0xF8, 0x108) bits, 0xD0 the nations' and Zilart's completed missions, 0xD8 ToAU /
+  WotG, 0x30 / 0x38 Campaign, 0xFFFF the mission record (CoP sub-path nibbles clamped to 9), 0xFFFE TVR; other ports
+  refused; complete at received == 0x83ffffff. Reset per world entry.
+- Name files: d_msg {u32 number, name, description}: missions 55715..55724 / 55735..55742 by log, quests 55706..55713,
+  55722, 55739, 55740 by area (English); read on the first open.
+- Social child 1: missionm (SE 0002) over the social menu (group 0x81 suspends it; Escape brings it back): children
+  2..5 and 7 disabled without Zilart / CoP / ToAU / WotG / Adoulin (World.expansions = the lobby's bits & installed,
+  FUN_1022dad0). Enter: the category's log (Nations = ours; Add-ons RoV until RoV 340, then TVR).
+- miss00: waiting ("Preparing data." / "Please wait a moment.", the busy strip) until the store is complete; then
+  "Current:", the current row (FUN_1022dfa0 per log family) or 0xc 0x38 / 0x39, "Completed:", every completed entry
+  in file order (FUN_1022e3a0) or 0xc 0x3a; the title at (60, 10); entries with framesus 35, '_' indents of 6 px
+  (none on the current row), wrapped names; the cursor row 0x80803040; headers skipped by Up / Down; Left / Right the
+  log cycle (expansion bits, TVR after RoV 340), Ctrl / Alt a page; Enter the description box; the scroll bar and
+  wheel (Owner::Journal). /mission (0x4e) opens it alone on the titled log or the nation's.
+- Inferred: row bands beyond the count hidden; the held-key header stop not done.
+- Live (Lnxtest, San d'Oria rank 1): "Smash the Orcish Scouts" current, its description; Bastok "Not allowed under
+  current allegiance."; Zilart "No current missions."; Escape back to the social menu on Missions; /mission.

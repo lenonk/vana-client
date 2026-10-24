@@ -174,6 +174,7 @@ pub mod dialog;
 pub mod msgshift;
 pub mod items;
 pub mod names;
+pub mod journal;
 pub mod event;
 pub mod event_ops;
 pub mod title;

@@ -323,6 +323,8 @@ pub enum NetEvent {
     EventAnswer { id: u16, data: Vec<u8> },
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540).
     ResOffer { id: u32, kind: u16 },
+    /// s2c 0x056 (LAB_10098ad0): a quest / mission record, data u32[8] @4 and Port @0x24.
+    MissionLog { port: u16, data: [u32; 8] },
     /// s2c 0x0B4 CONFIG (LAB_100e4f20): the 12 SAVE_CONF bytes @4 (flags, message filters).
     ConfSys([u8; 12]),
     /// s2c 0x0DC GROUP_SOLICIT_REQ (LAB_10203a50): AnonFlag @0xa, Kind @0xb (0 party, 5 alliance), the name @0xc,
@@ -789,6 +791,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0A0 => tx.send(NetEvent::MapGroup { id: p.u32(4), zone: p.u16(8), pos: [p.f32(0xc), p.f32(0x10), p.f32(0x14)] })?,
                     0x0BF => tx.send(NetEvent::Registration { index: p.u32(0xC), result: p.u16(6) })?,
                     0x0F9 => tx.send(NetEvent::ResOffer { id: p.u32(4), kind: p.u16(0xA) })?,
+                    0x056 => tx.send(NetEvent::MissionLog { port: p.u16(0x24), data: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x0B4 => tx.send(NetEvent::ConfSys(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
