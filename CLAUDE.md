@@ -39,6 +39,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
 - Live test runs: `play --credentials ~/ffxi/lab/lnxtest01.json --input '<script>'` (steps in client/script.rs).
   Driven windows are titled "[test]" and take real input too.
+- The client logs to `~/.local/share/vana-client/vana-client.log` (the run before: `vana-client.prev.log`; test runs
+  beside their `FFXI_CONFIG` copy), effect tasks and generators at debug level for now: read the user's run there.
 
 ## Rules
 - Decompile, don't guess. Mark anything inferred as inferred in MODLOG.

@@ -19,6 +19,14 @@ pub fn data_dir() -> PathBuf {
     app_dir(dirs::data_dir())
 }
 
+/// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
+pub fn log_path() -> PathBuf {
+    match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("vana-client.log"),
+        None => data_dir().join("vana-client.log"),
+    }
+}
+
 /// FFXI_CONFIG points test runs at a copy, so they never write the user's file.
 fn config_path() -> PathBuf {
     std::env::var_os("FFXI_CONFIG").map(PathBuf::from).unwrap_or_else(|| app_dir(dirs::config_dir()).join("config.json"))

@@ -810,10 +810,8 @@ fn login(cfg: &config::Config, creds: &Credentials) -> Result<net::lobby::Lobby>
 }
 
 /// Log lines to stderr and a file.
-#[cfg(windows)]
 struct Tee(std::fs::File);
 
-#[cfg(windows)]
 impl std::io::Write for Tee {
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
         let _ = std::io::stderr().write_all(buf);
@@ -832,11 +830,19 @@ fn main() -> Result<()> {
     unsafe {
         windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
     }
-    let mut log = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    let cli = Cli::parse();
+    // The client also logs to a file (the last run's kept as .prev), its effect lines included for now; Windows logs
+    // every command (a GUI exe started without a console loses stderr). The offscreen tools leave the file alone.
+    let client = matches!(cli.cmd, None | Some(Cmd::Play { .. }));
+    let mut log = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or(if client { "info,vana_client::fx=debug" } else { "info" }));
     log.format_timestamp_millis();
-    // Windows: a GUI exe started without a console loses stderr, so the log (and any panic) also goes to a file.
-    #[cfg(windows)]
-    if let Ok(file) = std::fs::create_dir_all(config::data_dir()).and_then(|_| std::fs::File::create(config::data_dir().join("vana-client.log"))) {
+    let path = config::log_path();
+    if (client || cfg!(windows))
+        && let Ok(file) = path.parent().map_or(Ok(()), std::fs::create_dir_all).and_then(|_| {
+            let _ = std::fs::rename(&path, path.with_extension("prev.log"));
+            std::fs::File::create(&path)
+        })
+    {
         log.target(env_logger::Target::Pipe(Box::new(Tee(file))));
         let default = std::panic::take_hook();
         std::panic::set_hook(Box::new(move |info| {
@@ -845,7 +851,7 @@ fn main() -> Result<()> {
         }));
     }
     log.init();
-    let Some(cmd) = Cli::parse().cmd else {
+    let Some(cmd) = cli.cmd else {
         return client::run(config::Config::load(), client::Drive::default());
     };
     match cmd {
