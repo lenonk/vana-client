@@ -4958,7 +4958,11 @@ impl App {
                             world.held_status.remove(&e.id);
                         }
                     }
-                    motion.graph_size = e.motion.graph_size;
+                    // GraphSize is in Flags1 (u32 @0x20), sent with SendFlg.General (0x04) only: a position update
+                    // has it zero, which flipped monsters' sizes between packets.
+                    if e.mask & 0x04 != 0 {
+                        motion.graph_size = e.motion.graph_size;
+                    }
                     let died = !fresh && matches!(motion.status, 2 | 3) && !matches!(entry.motion.status, 2 | 3);
                     let status_change = (!fresh && motion.status != entry.motion.status).then_some((entry.motion.status, motion.status));
                     entry.motion = motion;

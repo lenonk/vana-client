@@ -6009,3 +6009,14 @@ Spec `~/ffxi/lab/research/cast_fx_spec.md` F5.
 - vtable +0x298 (FUN_100cce00, CXiSkeletonActor 0x10330f40 + 0x298) looks in FUN_100cc440 (the motion files, then
   the model's) and DAT 0, never the part files. Ours uses that order for the cast starts, cast_state's st?? and
   0x038; ops 0x09 / 0x57 / 0x85 keep part files first, the others after the motion files.
+
+## Entity size only from General updates (2026-10-24)
+
+- GraphSize (0x00D / 0x00E Flags1 u32 @0x20 bits 9-10) comes with SendFlg.General (mask 0x04) only, like the other
+  @0x20 fields: LSB's CEntityUpdatePacket and CCharUpdatePacket fill Flags1 under General, and a position update
+  (mask 0x01) carries zeros there.
+- Ours applied it on every update: a mob of size 1 (most LSB mob pools: 364 at 1, 147 at 2, 46 at 3, 234 at 0)
+  went to info[10] (85 %) at each position update and back at the next General one. The user's "mobs constantly
+  changing sizes" in Valkurm.
+- Live (La Theine, 45 s): 79 mask-0x01 updates, all size bits 0; General updates (0x04 / 0x05 / 0x0f) carried 0 or
+  1. The size now holds through the position updates.
