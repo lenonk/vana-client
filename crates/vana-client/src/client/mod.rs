@@ -6059,7 +6059,7 @@ impl App {
             }
         }
         // Doors without a region box (FUN_100ad320): a 0.5-tall box at the door, always a hit inside it.
-        for (id, e) in world.entities.iter().filter(|(id, e)| e.door != 0 && target::mouse_candidate(world, &hidden, **id)) {
+        for (id, e) in world.entities.iter().filter(|(id, e)| (e.door != 0 || **id == myroom::DOOR_ID) && target::mouse_candidate(world, &hidden, **id)) {
             let (Some(a), Some(b)) = (rect(&[e.pos], vp), rect(&[e.pos + Vec3::new(0.0, -0.5, 0.0)], vp)) else { continue };
             let h = (b.0.y - a.0.y).abs() * 0.5;
             let (lo, hi) = (glam::Vec2::new(a.0.x - h, a.0.y.min(b.0.y)), glam::Vec2::new(a.0.x + h, a.0.y.max(b.0.y)));
@@ -7202,6 +7202,12 @@ impl App {
                 let mob = world.entities.iter().filter(|(id, e)| e.mob && !matches!(e.motion.status, 2 | 3) && world.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
                 target::set(world, mob);
             }
+            // act:goto:X,Z adds a waypoint, as --goto does.
+            if let Some((x, z)) = action.as_deref().and_then(|a| a.strip_prefix("goto:")).and_then(|a| a.split_once(','))
+                && let (Ok(x), Ok(z)) = (x.trim().parse(), z.trim().parse())
+            {
+                self.drive.goto.push((x, z));
+            }
             // act:monitor:NAME picks the monitor as the settings screen does.
             if let Some(m) = action.as_deref().and_then(|a| a.strip_prefix("monitor:")) {
                 self.cfg.monitor = m.to_string();
@@ -7420,6 +7426,10 @@ impl App {
                 let mut visible = HashSet::new();
                 // Doors: a +-0.6 cube at the door (FUN_100ac8e0's class), tested like the rest.
                 let cube = box_corners([-0.6, 0.6, 0.6, -0.6, 0.6, -0.6]);
+                // The Mog House door (entity +0x12c bit 17, vtable +0x148) is never culled.
+                if w.entities.contains_key(&myroom::DOOR_ID) {
+                    visible.insert(myroom::DOOR_ID);
+                }
                 for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0) {
                     if let Some((rect, z)) = box_on_screen(cview, cproj, glam::Mat4::from_translation(e.pos), &cube) {
                         visible.insert(*id);

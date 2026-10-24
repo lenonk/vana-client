@@ -5807,3 +5807,11 @@ Spec `~/ffxi/lab/research/model_gens_spec.md`.
 - Not done: /pcmd add NAME for someone outside the zone (FUN_1007c740, a search server name lookup).
 - Test tool: script step follow:PATH runs lines appended to PATH as scripts until a line "end", so a live run can be
   steered once the bots' names are known.
+
+## The Mog House door and the visibility cull (2026-10-24)
+
+- The client-made "Door: Back to Town" (entity +0x12c bit 17, set only by FUN_101d2cc0; vtable +0x148) is never culled
+  (tabcull spec step 6). Ours had made World::visible a candidate rule (5596cc4) but never put the door in it: it has
+  no model and door 0, so Tab and the mouse skipped it and nobody could leave the Mog House. Now always visible, and
+  the mouse pick gives it the doors' 0.5-tall box (FUN_100ad320; it is an XiDoorActor, kind 3). Confirmed by the user.
+- Test tool: `act:goto:X,Z` adds a walk waypoint (as --goto) from a script.
