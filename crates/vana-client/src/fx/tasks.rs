@@ -1517,11 +1517,14 @@ mod damage_number_tests {
             let mut seen = Vec::new();
             for _ in 0..300 {
                 fx.tick(&f, &super::skillchain_tests::Pair);
+                // The task's own instances carry the number; mis0's op 0x3c burst of mis1 runs without one.
                 for x in fx.insts.iter().flatten() {
                     let n = String::from_utf8_lossy(&x.name).into_owned();
-                    if !seen.contains(&n) {
+                    if x.parent_elem.is_none() && !seen.contains(&n) {
                         seen.push(n);
                         assert_eq!(x.dam.as_ref().map(|d| (d.glyphs.clone(), d.rgb)), Some((glyphs.clone(), 0x80_40_20)));
+                    } else if x.parent_elem.is_some() {
+                        assert!(x.dam.is_none());
                     }
                 }
                 std::thread::sleep(std::time::Duration::from_millis(1));

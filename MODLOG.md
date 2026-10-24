@@ -5549,3 +5549,19 @@ Spec `~/ffxi/lab/research/damage_display_spec.md`.
   Lnxtest, `misv` on a miss.
 - A zone change drops queued swings, messages and holds (combat Pending / rounds / holds / loads): a melee line
   printed after zoning with its target gone ("Lnxtest misses the .").
+
+## Emission op 0x3c and op 0x45; the double "Miss!" (2026-10-24)
+
+Spec `~/ffxi/lab/research/emit_3c_45_spec.md`.
+- Emission op 0x3c (2019 0x1004de52, current 0x1004ee0e) and the element-death op 1 (FUN_1004d770) run the named
+  generator **resource** (link step FUN_10047270: by 4cc in the folder scope): countdown +0xcc = 0, then its update
+  (FUN_10048740 / current FUN_100496f0) once with the new element as parent. No clone, and the running clones of that
+  generator are untouched. The resource's task link +0x64 is 0 (FUN_1003a800), so a kind 0x5c element it emits has an
+  empty string and draws nothing (FUN_10041f40 writes ":" / "%d" only under a scheduler task). Clones (ops 0x44 / 0x53 /
+  0x6a) copy +0x64 from a clone parent.
+- Emission op 0x45 (2019 0x1004e929, current 0x1004f8e5), parent element only: copies the parent generator's attach
+  bits and actors; flag 0x800000 clear and no frame of its own: borrows the parent generator's frame (elem +0x100);
+  set: copies its matrix and scale vectors; then pos += the parent's local pos. *(Ours: only the pos add.)*
+- `misv`: mis0 (red ":" at 0.40), mis1 clone from the scheduler (purple glow at 0.398, on the red text, no parent),
+  and mis0's op 0x3c mis1 from the resource at 0.798, never drawn. Ours copied the number into that burst and drew a
+  second purple "Miss!" below; `burst` no longer passes it.

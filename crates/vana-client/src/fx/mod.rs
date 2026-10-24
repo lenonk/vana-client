@@ -1447,14 +1447,12 @@ impl Effects {
 
     /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
     fn burst(&mut self, src: Ref, e: u32, f: &Frame) {
-        let from = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref());
-        let actors = from.map_or([sched::Who::None; 2], |x| x.actors);
-        let dam = from.and_then(|x| x.dam.clone());
+        let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
+        // Retail runs the generator resource itself (FUN_10048740), whose task link +0x64 is 0: no damage number.
         if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
             if let Some(x) = self.insts[ci].as_mut() {
                 x.parent_elem = Some(e);
                 x.actors = actors;
-                x.dam = dam;
             }
             self.update_instance(ci, f);
             if let Some(x) = self.insts[ci].as_mut() {
