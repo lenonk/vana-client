@@ -1544,6 +1544,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
+    gu.log_top = Some(log.rect[1]);
     let event_window = event_window(gu, world, sw, sh, tw);
     let bars = bar_text(gu, world, &items);
     let cam = App::camera(world);

@@ -155,6 +155,8 @@ pub struct GameUi {
     help: HelpScroll,
     /// Party members the last HUD drew (the target window stacks on the party window).
     party_window: String,
+    /// Region 0's top, the chat log's frame (set each world frame): registry flag 0x1000 windows stack on it.
+    pub log_top: Option<f32>,
     /// The window style in use and images to replace in the renderer.
     style_index: usize,
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
@@ -220,7 +222,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0 }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -457,7 +459,7 @@ impl GameUi {
 
     pub fn lobby_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
-        let (dx, dy) = off;
+        let (dx, dy) = (off.0, off.1 + self.stack_dy(name, w, h));
         let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
         if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
             return None;
@@ -577,6 +579,10 @@ impl GameUi {
 
     /// A HUD window by menu name (frame and its first sprite); returns its position.
     pub fn window(&mut self, name: &str, w: f32, h: f32) -> Option<(f32, f32)> {
+        let dy = self.stack_dy(name, w, h);
+        if dy != 0.0 {
+            return self.window_off_grow(name, w, h, 0.0, 0.0, 0.0);
+        }
         let m = self.data.lobby.menu(name)?;
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
         if !self.win_gate(name, [fx, fy, fw, fh]) {
@@ -679,6 +685,7 @@ impl GameUi {
 
     /// As window_off, the frame `grow` px taller (rows of ours under a list).
     pub fn window_off_grow(&mut self, name: &str, w: f32, h: f32, dx: f32, dy: f32, grow: f32) -> Option<(f32, f32)> {
+        let dy = dy + self.stack_dy(name, w, h);
         let m = self.data.lobby.menu(name)?;
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
@@ -698,7 +705,8 @@ impl GameUi {
 
     /// A layout window's position (FUN_101160d0).
     pub fn window_xy(&self, name: &str, w: f32, h: f32) -> Option<(f32, f32)> {
-        Some(screens::window_pos(self.data.lobby.menu(name)?, w, h, 1.0, 1.0))
+        let (x, y) = screens::window_pos(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
+        Some((x, y + self.stack_dy(name, w, h)))
     }
 
     /// A message of group 0xb (key assignment labels and prompts).
@@ -789,6 +797,20 @@ impl GameUi {
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
+        self.log_top = None;
+    }
+
+    /// Region stacking (FUN_10159080 -> FUN_10158e10): registry flag 0x1000 windows sit on the chat log (frame top =
+    /// log top - frame height - 2, at least 16), flag 0x2000 ones on the party window. The y offset from the layout.
+    fn stack_dy(&self, name: &str, w: f32, h: f32) -> f32 {
+        let flags = self.data.registry.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0);
+        match (self.log_top, self.data.lobby.menu(name)) {
+            (Some(top), Some(m)) if flags & 0x1000 != 0 => {
+                let (_, fy, _, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+                (top - fh - 2.0).max(16.0) - fy
+            }
+            _ => screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window),
+        }
     }
 
     /// The HUD windows (chat log, party, target, main menu), after what is already in the frame.
@@ -940,7 +962,7 @@ impl GameUi {
     }
 
     pub fn window_rect(&self, name: &str, w: f32, h: f32) -> Option<[f32; 4]> {
-        let dy = screens::stacked_dy(&self.data.lobby, name, w, h, &self.party_window);
+        let dy = self.stack_dy(name, w, h);
         screens::window_rect(&self.data.lobby, name, w, h).map(|[x, y, rw, rh]| [x, y + dy, rw, rh])
     }
 

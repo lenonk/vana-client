@@ -5338,3 +5338,26 @@ Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (
   set 0x200000, which nothing clears. The shop sell lists (FUN_1020ffd0, guild FUN_101ed150) have no rows while
   neither bit is set, so in practice only before the first 0x01D State 1 or storage update after login. Ours:
   World.inv_flags. Live: Ashene's sell list fills as before.
+
+## Field manuals: op 0x43, plurals, windows on the log (2026-10-24)
+
+- Event op 0x43 (server_update) has a sub byte: `43 00` sends c2s 0x05B mode 1 with Z1 as the option, `43 01` waits
+  for s2c 0x052 mode 1 (the 0x05C params come first, into Z2..Z9). Our op table had it as a fixed op with no sub, so
+  neither form matched: nothing was sent and the wait fell through, leaving every mid-event server answer at 0
+  (field manual pages read "Target level range: 0～0", an empty monster line). Now Len::Sub. Live (East Ronfaure
+  Field Manual, event 61): page 1 sends option 18 (bits 0..3 = 2, 4..7 = the page), LSB answers updateEvent(6, 0, 0,
+  0, 0, 1, 5, 64): "6 members of the pugil family." (7842 + Z9), "Target level range: 1～5.", "Training area: East
+  Ronfaure."; registering, Review (option 1 / 6: "0/6 members ..."), Cancel ("Are you certain?", "Training regime
+  canceled.") all run.
+- Dialogue codes `7f 86 n` / `7f 92 n` pick the `[singular/plural]` alternative by message work[n] (+0xc50) / num[n]
+  (+0xc64): English the second unless the value is 1; Japanese and language 3 the second above 1 (the expander's
+  -0x7a / -0x6e cases, then FUN_100bdad0). Ours always took the first.
+- Region stacking: every window with registry flag 0x1000 sits on the chat log (frame top = log top - height - 2, at
+  least 16; FUN_10159080 -> FUN_10158e10), not only comyn / resynus / the shops: query (event choices), gmtell,
+  playermo, chatctrl, magselec, abiselec, myroom, rmpost, mogdoor, mogext, mogpost, roomlist, storage / storage2,
+  jobchang, jobcsel / jobcselu, arealist, shopmain, guildsho, merityn, maplist, comyn, resyn / resynus / resynde /
+  resynfr, magic, ability, emote, mount, rmlo1 / 2 / 4, plnt1..6, mp_pmode, mp_abisc. Flag 0x2000 (targetwi,
+  ut_point, conq3pts, imperial, allied, colopoin) sits on the party window. Ours: GameUi::stack_dy, applied by every
+  layout window helper while GameUi::log_top is set (world frames). Live: the field manual's query now touches the
+  log as in retail.
+- Not done: the query window's scroll bar (retail shows it when the options outrun the rows).

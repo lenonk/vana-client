@@ -417,7 +417,16 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     push(&mut lines, &t);
                     n
                 }
-                0x86 | 0x87 | 0x88 | 0x92 => alt(i, 0).1,
+                // Plurals by work[n] (0x86, msg +0xc50) / num[n] (0x92, +0xc64): English takes the second form
+                // unless the value is 1 (Japanese and language 3: above 1).
+                0x86 | 0x92 => {
+                    let n = s.get(i + 2).copied().unwrap_or(0) as usize;
+                    let v = if a as u8 == 0x86 { ctx.work.get(n).copied() } else { ctx.num.get(n).copied() };
+                    let (t, len) = alt(i, (v.unwrap_or(0) != 1) as usize);
+                    push(&mut lines, &t);
+                    len
+                }
+                0x87 | 0x88 => alt(i, 0).1,
                 0x34 | 0x35 => {
                     wait = Some(s.get(i + 2).copied().unwrap_or(0) as u32 * 60);
                     3
@@ -461,6 +470,17 @@ mod tests {
         let d = Dialog::load(&index, 103).unwrap();
         let e = expand(&d.raw(8099).unwrap(), &ctx(4112));
         assert_eq!((crate::dat::font::decode_sjis(&e.lines[0]).as_str(), e.mode), ("Lnxtest obtains a potion!", Some(0x79)));
+    }
+
+    /// East Ronfaure 7906 (a field manual page): `7f 92 00 [/s]` by num[0].
+    #[test]
+    fn plural_by_num() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let d = Dialog::load(&index, 101).unwrap();
+        let line = |n| crate::dat::font::decode_sjis(&expand(&d.raw(7906).unwrap(), &Ctx { num: [n, 0, 0, 0, 0, 0, 0, 0], ..Default::default() }).lines[0]);
+        assert_eq!(line(6), "6 members of the pugil family.");
+        assert_eq!(line(1), "1 member of the pugil family.");
     }
 
     #[test]
