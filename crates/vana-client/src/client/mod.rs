@@ -2184,6 +2184,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             _ => {}
         }
     }
+    // The party window's hand over the log's edge (partywin layer 3 above logwindo's 1).
+    gu.party_hand(sw, sh, &st);
 
     // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
     // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.

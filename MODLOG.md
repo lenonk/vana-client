@@ -6461,3 +6461,11 @@ Spec `~/ffxi/lab/research/status_window_spec.md` (30261006_0); ours client/statu
 - Live (Lnxtest, WAR 1): persona "Lv 1 Warrior", level 499 / 500, profile (New Adventurer, San d'Oria, Hume,
   SSandOria, rank 1, Gla, prestige 0), job levels, combat skills (blue capped Hand-to-Hand 4 / Evasion 5), Magic Skl.
   refused (SE 0004, no magic skills), crafts "Amateur (0)"; Escape twice back to the main menu on Status.
+
+## Party window hand over the log (2026-10-24)
+
+- FUN_10202110's hand (anc2s) sits at the party / alliance row's top-left and reaches left over the chat log. The
+  registry layers (0x103722d8 +0x29) decide draw order: logwindo 1, raid1 / raid2 2, partywin 3, so retail draws it
+  over the log. Ours drew it inside hud_screen, before the log, which covered it (the user: "behind the chat window").
+  Now screens::push_party_hand runs after the log and the party rows' text (GameUi::party_hand; ui-shot too).
+- Live (Lnxtest, F1): the hand left of our row, over the log's edge.

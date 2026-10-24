@@ -1052,6 +1052,11 @@ impl GameUi {
         text
     }
 
+    /// The party / alliance window hand (screens::push_party_hand), after the chat log.
+    pub fn party_hand(&mut self, w: f32, h: f32, st: &HudState) {
+        screens::push_party_hand(&mut self.batch, &self.data.lobby, st, w, h);
+    }
+
     /// A name plate in a name colour (an "menu    ncol" tint, FUN_10119590), bottom at (x, y).
     pub fn name_plate(&mut self, name: &str, x: f32, y: f32, scale: [f32; 2], colour: u32, pulse: f32) {
         // Alpha is MODULATE4X in that pass: a full-alpha tint saturates it as the card does; `pulse` scales it.

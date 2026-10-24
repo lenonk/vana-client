@@ -484,6 +484,25 @@ pub fn push_window(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, w:
     push_window_at(b, ui, style, m, w, h, 0.0)
 }
 
+/// FUN_10202110: the half-size hand (anc2s, 6 frames) anchored at the top-left of the party (slots 0..5) or alliance
+/// (6..17) row. Drawn after the chat log: partywin's registry layer is 3, raid1 / raid2's 2, logwindo's 1, and the hand
+/// reaches left over the log.
+pub fn push_party_hand(b: &mut UiBatch, ui: &UiFile, st: &HudState, w: f32, h: f32) {
+    let Some((slot, tint, frame)) = st.party_hand else { return };
+    let (name, child) = match slot {
+        0..6 => (st.party_window.as_str(), slot + 1),
+        6..12 => ("menu    raid1", slot - 5),
+        _ => ("menu    raid2", slot - 11),
+    };
+    if slot >= 6 && st.alliance[slot / 6 - 1].is_none() {
+        return;
+    }
+    let (Some(m), Some(anc)) = (ui.menu(name), ui.lib("anc     anc2s")) else { return };
+    let Some(c) = m.elements.iter().find(|e| e.id as usize == child) else { return };
+    let (x, y) = window_pos(m, w, h, 1.0, 1.0);
+    b.push_sprite(ui, anc, frame % 6, x + c.x as f32, y + c.y as f32, 1.0, 1.0, tint, 0);
+}
+
 /// `push_window` moved down by `dy` (region stacking).
 pub fn push_window_at(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, w: f32, h: f32, dy: f32) -> (f32, f32) {
     push_window_alpha(b, ui, style, m, w, h, dy, 1.0)
@@ -913,13 +932,6 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                 text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: row });
                 text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: row });
             }
-            // FUN_10202110: the half-size hand (anc2s, 6 frames) anchored at the row's top-left.
-            if let Some((row, tint, frame)) = st.party_hand.filter(|h| h.0 == i)
-                && let Some(anc) = ui.lib("anc     anc2s")
-            {
-                let _ = row;
-                b.push_sprite(ui, anc, frame % 6, rx, ry, 1.0, 1.0, tint, 0);
-            }
             push_marks(&mut b, ui, wps, st.party_marks.get(i).copied().unwrap_or(0), rx, ry);
         }
     }
@@ -944,11 +956,6 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                     text.push(TextSlot { what: "ally MP", x: rx + 104.0, y: ry + 8.0, align: slot as u8 });
                 }
                 push_marks(&mut b, ui, wps, r.marks, rx, ry);
-            }
-            if let Some((_, tint, frame)) = st.party_hand.filter(|h| h.0 == slot)
-                && let Some(anc) = ui.lib("anc     anc2s")
-            {
-                b.push_sprite(ui, anc, frame % 6, rx, ry, 1.0, 1.0, tint, 0);
             }
         }
     }

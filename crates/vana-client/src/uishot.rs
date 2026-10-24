@@ -122,7 +122,7 @@ pub fn title_shot(out: &Path, width: u32, height: u32) -> Result<()> {
 
 pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     use crate::dat::ui::{MENU_US, WINDOW_STYLE_BASE};
-    use crate::render::screens::{HudState, hud_screen};
+    use crate::render::screens::{HudState, hud_screen, push_party_hand};
     let index = DatIndex::open(&Config::load().ffxi_dir())?;
     let menu = load_ui_full(&index, MENU_US)?;
     let style_file = load_ui(&index, WINDOW_STYLE_BASE)?;
@@ -140,7 +140,8 @@ pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
     });
     let hand = (!ally.is_empty()).then_some((7, 0xa040_40d0u32, 0usize));
     let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_hand: hand, alliance, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_off: Vec::new(), menu_focused: true, chat_log: true };
-    let (batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
+    let (mut batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
+    push_party_hand(&mut batch, &menu, &st, width as f32, height as f32);
     for t in &text {
         println!("text slot {:?} at ({:.0}, {:.0})", t.what, t.x, t.y);
     }
