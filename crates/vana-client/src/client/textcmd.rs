@@ -86,6 +86,7 @@ mod id {
     pub const AWAY: u16 = 0x6a;
     pub const TIMESTAMP: u16 = 0x9f;
     pub const RECAST: u16 = 0x2e;
+    pub const CLOCK: u16 = 0x3f;
     pub const SERVMES: u16 = 0x107;
     pub const LOCKON: u16 = 0x5c;
     pub const CHARAEFFECT: u16 = 0x8a;
@@ -834,6 +835,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::RECAST => recast(w, args),
+        id::CLOCK => clock(w, args),
         // FUN_10080340 (/servmes, /smes): a transfer unless one runs; no line of its own.
         id::SERVMES => {
             super::servmes::start(w);
@@ -1000,6 +1002,54 @@ fn find_item(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
 /// (FUN_10222e20 / FUN_10222c90) as "[%s] %s" with FUN_101c93c0's time ("%d:%02d", "%d:%02d:%02d" from an hour),
 /// the name as typed, mode 0x79; a name known but not usable (not learned, out of the jobs' reach) "[%s] --:--".
 /// Not done: an ability's charges ("[%s] %s (%d)"), which we do not keep.
+/// printf's %s / %d / %% over string arguments (the group 10 lines that go through sprintf).
+fn printf(f: &str, args: &[String]) -> String {
+    let (mut out, mut k, mut it) = (String::new(), 0, f.chars().peekable());
+    while let Some(c) = it.next() {
+        match (c, it.peek()) {
+            ('%', Some('%')) => {
+                it.next();
+                out.push('%');
+            }
+            ('%', Some('s' | 'd')) => {
+                it.next();
+                out.push_str(args.get(k).map_or("", |a| a.as_str()));
+                k += 1;
+            }
+            _ => out.push(c),
+        }
+    }
+    out
+}
+
+/// FUN_1007cba0: two lines in mode 0x8c, group 10 0x42 "Vana'diel: date, weekday, time / moon phase (percent)" and
+/// 0x3a "Earth: date time" (formats by config 0x95 date order and 0x96 12-hour); then no argument flips the compass
+/// clock, "on" / "off" (exact) set it.
+fn clock(w: &mut World, args: &[String]) -> Done {
+    use crate::dat::msgfmt;
+    let Some(bt) = w.battle.clone() else { return Ok(()) };
+    let g = |id: u16| bt.group10_raw(id as usize);
+    let (date_key, h12) = ((w.game.get(0x95) & 3) as usize, w.game.get(0x96) & 1 != 0);
+    let t = super::vana_now(w);
+    let p = msgfmt::VanaParts::of(t);
+    let dec = |b: Vec<u8>| crate::dat::font::decode_sjis(&b);
+    let date = dec(msgfmt::vana_datetime(&g, t, 2, date_key));
+    let time = dec(g(0x46).map(|s| msgfmt::format(&s, &[], &[p.hour, p.minute], &|_, _, _| None)).unwrap_or_default());
+    let vana = printf(&bt.group10(0x42).unwrap_or_default(), &[date, bt.day_name(p.weekday).unwrap_or_default(), time, bt.moon_name(p.phase).unwrap_or_default(), p.moon.to_string()]);
+    let unix = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64);
+    let earth = printf(&bt.group10(0x3a).unwrap_or_default(), &[dec(msgfmt::earth_datetime(&g, unix, 1, date_key, h12))]);
+    let colour = bt.colour_in(0x8c, &w.game);
+    w.chat.push_colour(vana, colour);
+    w.chat.push_colour(earth, colour);
+    match (args.len(), args.get(1).map(String::as_str)) {
+        (1, _) => w.compass_clock = !w.compass_clock,
+        (2, Some("on")) => w.compass_clock = true,
+        (2, Some("off")) => w.compass_clock = false,
+        _ => {}
+    }
+    Ok(())
+}
+
 fn recast(w: &mut World, args: &[String]) -> Done {
     let name = args.get(1).ok_or(())?.clone();
     let left = |t: Option<&std::time::Instant>| t.map_or(0, |t| t.saturating_duration_since(std::time::Instant::now()).as_secs_f32().ceil() as u32);

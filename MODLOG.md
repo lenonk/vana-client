@@ -5397,3 +5397,26 @@ Spec `~/ffxi/lab/research/trade_spec.md` section 3; ours client/trade.rs (P2p, W
   out of reach while trading: 7031 9 and Cancel; an event: 0x1a and Cancel.
 - Not tested live (it needs a second account and window); unit tests cover the offer rule and the reset. Not done:
   the costume / blacklist checks, the Ex-by-augment and equipped-linkshell greys, mouse.
+
+## Message formatter (FA 40 codes) and /clock (2026-10-24)
+
+Spec `~/ffxi/lab/research/msgfmt_spec.md`; ours dat/msgfmt.rs.
+- FUN_10153150 / FUN_10153180 -> FUN_10153a40 -> FUN_10153310 over group 8 / 10 strings: Shift-JIS pairs copied,
+  `FA 40 <code>` interpreted: 0x82 choice (index arg, u14 count, end, offset table from after the code), 0x83 signed
+  compare, 0x84..0x8a jumps (always / eq / !eq / gt / lt / ge / le, signed byte), 0x8b decimal, 0x8c string arg
+  (0-based), 0x8d choice end, 0x8e item name (a / an + singular, or the plural), 0x81 nested group 0 (unused in
+  English). Args (FUN_101531d0): `01 n` ints[n - 1], `02 n` literal, `03 lo hi` 14-bit. Padding and 12-hour forms are
+  written in the strings (0x3f / 0x41). FUN_10153180's 5th argument = the number of leading string args; the int
+  count is the XISTRING entry's i16 @+6 (not flags).
+- Date / time rows by config 0x95 (date order: rows 3b/4d/48/43, 3c/4e/49/44, 3d/4f/4a/45; tables 0x1037d31c) and
+  0x96 (24 / 12 hour: 3e/3e/4b/46/40, 3f/3f/4b/46/40; 0x1037d34c), both kind 2 and 0 by default. FUN_101c8fd0 = Earth
+  local time (flags 1 long date with the month name g10 0x60 / 0x61, 2 date only, 8 no seconds); FUN_101c92b0 = the
+  Vana'diel date (t / 0x12fc00 + 886, month, day) and time (0x46).
+- /clock (FUN_1007cba0, command 0x3f): sprintf(g10 0x42 "Vana'diel: %s, %s, %s\n              %s (%d%%)", date,
+  weekday (group 0x10), time, moon phase (group 0x11), moon percent) and g10 0x3a "Earth: %s", mode 0x8c; then a bare
+  /clock flips the compass clock (DAT_10666e84 +0x2e: its time, day orb, weather badges), "on" / "off" set it.
+  Moon percent (FUN_10103ba0): d = (t / 3456) % 84, v = (d - 4) * 2.3809524f rounded, d < 4: -v, d <= 46: v, else
+  200 - v. Live: "Vana'diel: 1515/5/2, Earthsday, 2:47 / Waxing Crescent (21%)", "Earth: 2026, Oct. 23 20:40:18"; the
+  compass clock went off and came back with "/clock on".
+- Not done: event text codes 7f ab / 7f ac (dates through these builders), /playtime (g10 0x2e / 0x2f), the other
+  callers (party join, merit prompts, auction house, level sync, /sea counts).

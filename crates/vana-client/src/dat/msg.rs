@@ -46,7 +46,7 @@ impl Messages {
             let count = u32_at(data, 0x24).context("header")? as usize;
             let base = 0x38 + count * 12;
             for i in 0..count {
-                // The length's high half carries flags (0x10000 on the "%"-code strings of file 48; inferred).
+                // The length is the low half; the high half (i16 @+6) is the string's int argument count (FUN_10153100).
                 let (off, len) = (u32_at(data, 0x38 + i * 12).context("table")? as usize, (u32_at(data, 0x3c + i * 12).context("table")? & 0xffff) as usize);
                 entries.push(data.get(base + off..base + off + len).context("string out of range")?.to_vec());
             }

@@ -339,7 +339,7 @@ impl HudTop {
                 }
             }
         }
-        if let Some((t, at)) = w.clock {
+        if let Some((t, at)) = w.clock.filter(|_| w.compass_clock) {
             let m = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32;
             self.grid_wait -= ticks.max(1.0);
             if self.grid_wait < 0.0 {

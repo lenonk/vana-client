@@ -98,7 +98,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     while engaged, and the camera cannot be spun): spec `~/ffxi/lab/research/combat_mode_spec.md` (in progress);
   - weapon skills: a WS kill plays no dying animation, WS hit reactions look wrong (spec ws_reaction_spec.md);
   - UI sounds missing in places (menus opening and others): audit `~/ffxi/lab/research/sound_audit.md`;
-  - /clock and the message formatter (FUN_10153a40): spec `~/ffxi/lab/research/msgfmt_spec.md`, not started;
+  - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;
   - the event choice window's scroll bar (query, when the options outrun the rows);
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,

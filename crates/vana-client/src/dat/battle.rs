@@ -92,6 +92,8 @@ pub struct BattleText {
     /// Group 10: formatted client lines (the guild shop's hours, ...); group 0x10: the weekday names.
     group10: Option<Messages>,
     days: Option<Messages>,
+    /// Group 0x11: the moon phase names.
+    moons: Option<Messages>,
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
     palette: Vec<(u8, [u8; 4])>,
@@ -179,6 +181,7 @@ impl BattleText {
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
             group10: super::msg::group_file(ffximain, 1, 10).and_then(msgs),
             days: super::msg::group_file(ffximain, 1, 0x10).and_then(msgs),
+            moons: super::msg::group_file(ffximain, 1, 0x11).and_then(msgs),
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
             mode_colours,
@@ -277,6 +280,16 @@ impl BattleText {
 
     pub fn group10(&self, id: usize) -> Option<String> {
         self.group10.as_ref()?.get(id)
+    }
+
+    /// A group 10 string's bytes, its FA 40 codes kept (for dat::msgfmt).
+    pub fn group10_raw(&self, id: usize) -> Option<Vec<u8>> {
+        self.group10.as_ref()?.raw(id)
+    }
+
+    /// Group 0x11 entry `phase` (0 New Moon .. 11).
+    pub fn moon_name(&self, phase: usize) -> Option<String> {
+        self.moons.as_ref()?.get(phase)
     }
 
     /// Group 0x10 entry `day`: 0 Firesday .. 7 Darksday.

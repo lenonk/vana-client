@@ -168,6 +168,7 @@ pub mod font;
 pub mod ui;
 pub mod dancer;
 pub mod msg;
+pub mod msgfmt;
 pub mod dialog;
 pub mod msgshift;
 pub mod items;

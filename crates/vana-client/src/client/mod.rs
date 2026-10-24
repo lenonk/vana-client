@@ -488,7 +488,7 @@ fn answer_raise(w: &mut World, yes: bool) {
 }
 
 /// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
-fn vana_now(w: &World) -> u64 {
+pub(super) fn vana_now(w: &World) -> u64 {
     w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
 }
 
@@ -2910,6 +2910,9 @@ struct World {
     ko_wait: Option<Instant>,
     /// Server clock (GameTime and when it arrived), weather number, and the zone's weather keys.
     clock: Option<(u32, Instant)>,
+    /// The compass clock (DAT_10666e84 +0x2e): its time, day orb and weather badges; /clock toggles it, on at each world
+    /// set-up.
+    compass_clock: bool,
     weather: u16,
     /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
     /// Vana minutes x 2.4 s).
@@ -3969,6 +3972,7 @@ impl App {
                             raise_yes: true,
                             ko_wait: None,
                             clock: None,
+                            compass_clock: true,
                             weather: 1,
                             weather_from: None,
                             zone_weather: None,
