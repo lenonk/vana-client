@@ -397,6 +397,14 @@ struct TradeUi {
 /// (+0xc4 == 4), the partner (+0x6c / +0x70) and the pending requester (+0x74 / +0x78), the times (+0x20 asked,
 /// +0x28 cancelled), the TradeCounter of the last 0x023, our list (s2c 0x025: count, item, inventory slot; entry 0
 /// gil) and theirs (0x023: count, item, extdata).
+/// The focused picker of the hand-over or of player trade, for its bar and the wheel.
+pub(super) fn picker(w: &mut World) -> Option<&mut (usize, usize)> {
+    if let Some(h) = w.handover.as_mut().filter(|h| h.focus == Focus::Picker) {
+        return Some(&mut h.list);
+    }
+    w.p2p.ui.as_mut().filter(|u| u.focus == PFocus::Picker).map(|u| &mut u.list)
+}
+
 #[derive(Default)]
 pub struct P2p {
     state: u8,

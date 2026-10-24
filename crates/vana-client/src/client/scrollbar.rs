@@ -31,6 +31,8 @@ pub enum Owner {
     ScanList,
     Search,
     Config,
+    /// The inventory list at x 200 of the post, hand-overs, player trade and synthesis.
+    Picker,
 }
 
 /// A focused list's bar as drawn this frame: x, y, height (8 wide), and its (total, visible, top).
@@ -160,6 +162,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::FullLog => super::bar_full_log(w, m, bar),
         Owner::MapList | Owner::ScanList => w.map.as_mut().is_some_and(|map| map.bar(owner, m)),
         Owner::Search => super::search::bar(w, m),
+        Owner::Picker => super::post::picker_bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),
             None => false,

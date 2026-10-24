@@ -6361,3 +6361,10 @@ Spec `~/ffxi/lab/research/collision_actors_spec.md` (30261006_0).
 - FUN_1008abe0 state 1: standing in a lift shaft with no lift actor yet (DAT_10482f45), the zone-in fade waits for one.
   Ours the same, giving up after 10 s *(not retail: retail waits)*. Live (Lnxcsfix logged in inside Metalworks @6l0):
   zone-in 37.58, the lifts first seen 40.82, then the fade; standing on the planks.
+
+## List scroll bars: the pickers (2026-10-24)
+
+- The inventory list at x 200 (post_rows / draw_rows: the post send picker, the hand-over, player trade, synthesis and
+  its crystal list) registers its bar while focused; one owner (Picker) finds whichever is open (FUN_101f6c70 rows).
+  Live: the synthesis picker, focused, scrolled 4 on 4 wheel notches with the hand kept; unfocused (the slots
+  focused) it did not.

@@ -164,6 +164,18 @@ fn menu_off(w: &World) -> bool {
 }
 
 /// The crystal source's rows: crystals only (FUN_101e2a40 colours type 8 yellow; the others are not listed, inferred).
+/// The focused synthesis picker or crystal list (true), for its bar and the wheel.
+pub(super) fn picker(w: &mut World, confirm: bool) -> Option<(&mut (usize, usize), bool)> {
+    if let Some(s) = w.synth.win.as_mut().filter(|s| s.focus == Focus::List && !confirm && s.from != From::History) {
+        return Some((&mut s.list, false));
+    }
+    w.synth.menu.as_mut().filter(|m| m.history.is_none()).and_then(|m| m.crystals.as_mut()).map(|l| (l, true))
+}
+
+pub(super) fn crystal_count(w: &World) -> usize {
+    crystal_rows(w).len()
+}
+
 fn crystal_rows(w: &World) -> Vec<crate::inventory::Slot> {
     let info = w.item_info.as_ref();
     picker_rows(w).into_iter().filter(|r| info.and_then(|c| c.item(r.id)).is_some_and(|it| it.item_type == 8)).collect()

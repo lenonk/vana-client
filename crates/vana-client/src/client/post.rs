@@ -1389,6 +1389,24 @@ pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCac
     draw_rows(gu, &picker_rows(w), info, list, focused, tints, sw, sh)
 }
 
+/// The pickers' bar or wheel (FUN_101f6c70): the post's, the hand-over's, player trade's, synthesis' and its crystals'.
+/// True when it moved.
+pub(super) fn picker_bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    use super::scrollbar::rows;
+    use crate::inventory::VISIBLE_ROWS;
+    let (n, crystals, confirm) = (picker_rows(w).len(), super::synth::crystal_count(w), w.confirm.is_some());
+    if !confirm && let Some(s) = w.post.send_ui.as_mut().filter(|s| !s.busy && s.focus == SFocus::List) {
+        return rows(m, &mut s.list.0, &mut s.list.1, n, VISIBLE_ROWS);
+    }
+    if let Some(l) = super::trade::picker(w) {
+        return rows(m, &mut l.0, &mut l.1, n, VISIBLE_ROWS);
+    }
+    if let Some((l, cr)) = super::synth::picker(w, confirm) {
+        return rows(m, &mut l.0, &mut l.1, if cr { crystals } else { n }, VISIBLE_ROWS);
+    }
+    false
+}
+
 /// The inventory list at x 200 over some rows.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: &super::items::ItemCache, (scroll, cursor): (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
@@ -1413,7 +1431,10 @@ pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: 
         if let Some(e) = m.elements.first_mut() {
             e.x = 200;
         }
-        crate::render::invwin::push_item_list(b, ui, style, font, GameUi::ATLAS, &m, &list, sw, sh, frame, 3.0, focused, crate::render::invwin::INVENTOR_BAR);
+        let [x, y, h] = crate::render::invwin::push_item_list(b, ui, style, font, GameUi::ATLAS, &m, &list, sw, sh, frame, 3.0, focused, crate::render::invwin::INVENTOR_BAR);
+        if focused {
+            gu.bar_site(super::scrollbar::Owner::Picker, x, y, h, list.rows.len(), crate::inventory::VISIBLE_ROWS, list.scroll);
+        }
     }
     let mut r = gu.window_rect("menu    inventor", sw, sh)?;
     r[0] += 200.0 - gu.window_rect_x("menu    inventor");
