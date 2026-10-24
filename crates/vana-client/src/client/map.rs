@@ -652,7 +652,7 @@ impl MapWin {
             return self.scan_key(key);
         }
         if let Some(l) = self.maplist.as_mut() {
-            match l.key(key) {
+            match l.key(key, &mut self.sounds) {
                 ListOut::Keep => {}
                 ListOut::Close => self.maplist = None,
                 ListOut::Pick(zone, key) => {
@@ -1385,11 +1385,25 @@ impl MapWin {
 }
 
 impl MapList {
-    fn key(&mut self, key: egui::Key) -> ListOut {
+    /// The list base (FUN_101f6c70; maplist keeps its +4, so the generic sounds are off): Up / Down stop at the ends
+    /// with SE 0001 on a move, Right / Left page by 5.
+    fn key(&mut self, key: egui::Key, sounds: &mut Vec<u32>) -> ListOut {
         let n = self.rows.len();
         match key {
-            egui::Key::ArrowDown if n > 0 => self.cursor = (self.cursor + 1) % n,
-            egui::Key::ArrowUp if n > 0 => self.cursor = (self.cursor + n - 1) % n,
+            egui::Key::ArrowDown if self.cursor + 1 < n => {
+                self.cursor += 1;
+                sounds.push(crate::audio::Ui::Cursor as u32);
+            }
+            egui::Key::ArrowUp if self.cursor > 0 && n > 0 => {
+                self.cursor -= 1;
+                sounds.push(crate::audio::Ui::Cursor as u32);
+            }
+            egui::Key::ArrowRight | egui::Key::ArrowLeft => {
+                let m = if key == egui::Key::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+                if super::scrollbar::rows_abs(m, &mut self.scroll, &mut self.cursor, n, ROWS) {
+                    sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+            }
             egui::Key::Enter => {
                 let Some(r) = self.rows.get(self.cursor) else { return ListOut::Keep };
                 match r.id {
@@ -1463,25 +1477,32 @@ impl MapList {
         (self.rows, self.built) = (rows, true);
     }
 
-    /// The list window (16, 208) with 5 rows: the cursor row's first cell in 0x80803040; numbers right-aligned in
-    /// their column (type 9, the sprite font taken as the game font *(inf)*), small text in fontshp.
+    /// The list window (16, 208, stacked on the log: registry flag 0x1000) with 5 rows (FUN_101f6a60 with maplist's
+    /// cells, arealist_spec 1.4 / 4): rows from (+3, +4) 16 apart; names in the game font at y + 2; numbers "[n]" (type
+    /// 9) in the shape font right-aligned at the column's end - 2, y + 4; small texts "(s)" (type 0x21) in the shape
+    /// font at y + 2; the windowps 75 cursor bar at (+0, +4), nothing recoloured.
     fn draw(&self, gu: &mut GameUi, sw: f32, sh: f32) {
-        let sel = (self.cursor - self.scroll + 1) as u16;
-        let Some((x, y)) = gu.menu_sel("menu    maplist", sw, sh, sel) else { return };
+        const WHITE: u32 = 0x8080_8080;
+        let sel = (!self.rows.is_empty()).then(|| (self.cursor - self.scroll + 1) as u16);
+        if gu.lobby_window_off("menu    maplist", sw, sh, (0.0, 0.0), sel, true, &[]).is_none() {
+            return;
+        }
+        let Some((x, y)) = gu.window_xy("menu    maplist", sw, sh) else { return };
         if let Some([fx, fy, fw, fh]) = gu.window_rect("menu    maplist", sw, sh) {
             gu.scroll_bar(fx + fw - 8.0, fy, fh, self.rows.len(), ROWS, self.scroll);
             gu.bar_site(super::scrollbar::Owner::MapList, fx + fw - 8.0, fy, fh, self.rows.len(), ROWS, self.scroll);
         }
         for (k, r) in self.rows.iter().enumerate().skip(self.scroll).take(ROWS) {
-            let ry = y + 4.0 + 16.0 * (k - self.scroll) as f32;
-            let tint: u32 = if k == self.cursor { 0x8080_3040 } else { 0x8080_8080 };
-            gu.text(&r.a, x + COLS[0], ry, 0, tint.to_le_bytes());
+            let (rx, ry) = (x + 3.0, y + 4.0 + 16.0 * (k - self.scroll) as f32);
+            gu.text(&r.a, rx + COLS[0], ry + 2.0, 0, WHITE.to_le_bytes());
             if r.number {
-                let w = gu.text_width(&r.b);
-                gu.text(&r.b, x + COLS[2] - 2.0 - w, ry, 0, [0x80; 4]);
+                gu.shape_text(&format!("[{}]", r.b), rx + COLS[2] - 2.0, ry + 4.0, WHITE, true);
             } else {
-                gu.shape_text(&r.b, x + COLS[1], ry + 2.0, 0x8080_8080, false);
+                gu.shape_text(&format!("({})", r.b), rx + COLS[1], ry + 2.0, WHITE, false);
             }
+        }
+        if !self.rows.is_empty() {
+            gu.sprite("menu    windowps", 75, x, y + 4.0 + 16.0 * (self.cursor - self.scroll) as f32, WHITE);
         }
     }
 }

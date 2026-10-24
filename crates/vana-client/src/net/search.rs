@@ -77,6 +77,42 @@ impl Cond {
         Cond { flags: NAME, name: n.into(), ..Default::default() }
     }
 
+    /// FUN_10107b40: no area (flag 2 off, +0x4e bit 1 off, +0x22 = -1).
+    pub fn clear_area(&mut self) {
+        self.flags &= !AREA;
+        (self.areas, self.last_area, self.area_given) = (Vec::new(), -1, false);
+    }
+
+    /// FUN_10107b00: one area, wire type 3.
+    pub fn single_area(&mut self, z: u16) {
+        self.flags |= AREA;
+        (self.areas, self.last_area, self.area_given) = (vec![z], z as i16, true);
+    }
+
+    /// FUN_10107a80: an area in front (no duplicates, the oldest drops past 16); +0x4e bit 1 untouched.
+    pub fn add_area(&mut self, z: u16) {
+        self.flags |= AREA;
+        if !self.areas.contains(&z) {
+            self.areas.insert(0, z);
+            self.areas.truncate(16);
+        }
+        self.last_area = z as i16;
+    }
+
+    /// FUN_10107ea0.
+    pub fn clear_status(&mut self) {
+        self.flags &= !STATUS;
+        self.status = 0;
+    }
+
+    /// FUN_10107e70: the status only while none is set.
+    pub fn set_status_if_none(&mut self, v: u32) {
+        if self.status == 0 {
+            self.flags |= STATUS;
+            self.status = v;
+        }
+    }
+
     /// FUN_10105fa0: the type is in the sort list.
     pub fn sorted(&self, t: u8) -> bool {
         self.sorts.iter().any(|s| s & 0x1f == t & 0x1f)

@@ -57,6 +57,8 @@ mod quests;
 mod keyitems;
 mod linkshell;
 mod searchmenu;
+mod arealist;
+mod seacom;
 mod radar;
 mod status;
 mod inspect;
@@ -160,7 +162,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -792,7 +794,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1112,7 +1114,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let post_typing = post::typing(world);
     let search_typing = searchmenu::typing(world);
     let ls_typing = linkshell::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing;
+    let comment_typing = seacom::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1121,6 +1124,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keys.clear();
     } else if ls_typing {
         linkshell::text_events(world, &input.events);
+        keys.clear();
+    } else if comment_typing {
+        seacom::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -1331,6 +1337,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The pool windows over the action menu (loot, lootope, lnowin).
                 _ if treasure::active(world) => treasure::key(world, *key),
                 _ if world.chatctrl.is_some() => chatctrl::key(world, *key),
+                _ if world.arealist.is_some() => arealist::key(world, gu, *key),
+                _ if searchmenu::refining(world) => searchmenu::key(world, gu, *key),
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.searchmenu.is_some() => searchmenu::key(world, gu, *key),
                 _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
@@ -1595,6 +1603,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.confirm.is_none()) {
         linkshell::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.arealist.is_some() && world.confirm.is_none()) {
+        arealist::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| searchmenu::focused(world)) {
         searchmenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2012,6 +2023,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     buffs::draw_party(gu, world, sw, sh, log.rect);
     // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
     blockers.extend(search::draw(gu, world, sw, sh));
+    // arealist draws over scresult (layer 3) and beside searchma / scsibori.
+    blockers.extend(arealist::draw(gu, world, sw, sh));
+    blockers.extend(seacom::draw(gu, world, sw, sh));
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
     blockers.extend(items::draw(gu, world, sw, sh));
@@ -2483,6 +2497,8 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     linkshell::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
+    arealist::bars(gu, world, &mut bars);
+    seacom::bars(gu, world, &mut bars);
     inspect::bars(gu, world, &mut bars);
     trade::bars(gu, world, &mut bars);
     synth::bars(gu, world, &mut bars);
@@ -3458,6 +3474,16 @@ struct World {
     /// The Search row's windows (searchma and its criteria), and scname's name (kept between opens, +0x18).
     searchmenu: Option<searchmenu::SearchMenu>,
     search_name: String,
+    /// W+0x5c (the last search's condition, which scsibori refines) and DAT_106644d8 (the first status searched since
+    /// searchma opened or /sea ran).
+    search_cond: crate::net::search::Cond,
+    search_status0: u32,
+    /// The area picker and its view (+0x5c: by region; not saved).
+    arealist: Option<arealist::AreaList>,
+    arealist_by_region: bool,
+    /// The own search comment (shared with /seacom) and its editor while open.
+    seacom: seacom::Store,
+    seacom_edit: Option<seacom::Editor>,
     /// The Linkshell row's windows, the change sent last, and which of link2 / link3 / link4 have opened once.
     linkshell: Option<linkshell::Linkshell>,
     ls_pending: Option<linkshell::Pending>,
@@ -4681,6 +4707,12 @@ impl App {
                             ls_opened: 0,
                             my_fellow: 0,
                             search_name: String::new(),
+                            search_cond: Default::default(),
+                            search_status0: 0,
+                            arealist: None,
+                            arealist_by_region: true,
+                            seacom: Default::default(),
+                            seacom_edit: None,
                             logs: None,
                             missions: None,
                             mission_cmd: None,
@@ -5149,6 +5181,8 @@ impl App {
                     world.quests = None;
                     world.keyitems = None;
                     world.searchmenu = None;
+                    world.arealist = None;
+                    world.seacom_edit = None;
                     world.linkshell = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
@@ -6381,7 +6415,11 @@ impl App {
             treasure::num_plus(world);
         }
         // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
-        if self.input.test(0x11, input::mode::PRESS) && world.search.as_ref().is_some_and(|s| s.option.is_none()) {
+        if self.input.test(0x11, input::mode::PRESS) && world.arealist.is_some() {
+            if let Some(gu) = self.game_ui.as_ref() {
+                arealist::num_plus(world, gu);
+            }
+        } else if self.input.test(0x11, input::mode::PRESS) && world.search.as_ref().is_some_and(|s| s.option.is_none()) && !searchmenu::refining(world) {
             search::toggle_view(world);
         }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.

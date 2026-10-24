@@ -251,7 +251,14 @@ pub struct SearchWords {
     pub regions: Vec<Vec<u16>>,
     /// DAT_103669b8: 4 bits per zone below 300 (FUN_101070f0), 2 = searchable.
     pub zone_flags: Vec<u8>,
+    /// The mixed-case unity names (0x103648e8, right after the upper-case list; FUN_10108110), keyed by bits.
+    pub unity_names: Vec<(i32, String)>,
+    /// DAT_1033b430 (FUN_1020e790): (zone, tier, min level, max level) rows, ended by zone 0xffff.
+    pub levels: Vec<(u16, u8, u8, u8)>,
 }
+
+/// The level table's first four rows (unique in the image).
+const LEVELS: [u8; 24] = [5, 0, 2, 0x3a, 0x5a, 0, 0x18, 0, 2, 0x1f, 0, 0, 0x19, 0, 2, 0x1f, 0, 0, 0x21, 0, 2, 0x44, 0, 0];
 
 const ZONE_FLAGS: Sig = Sig {
     name: "zone flags",
@@ -272,7 +279,14 @@ pub fn search_words(dll: &[u8]) -> Result<SearchWords> {
     if w.areas.first().map(|a| a.1.as_str()) != Some("ALL") {
         return Err(anyhow!("FFXiMain.dll: the search word lists moved"));
     }
-    w.unity = word_list(dll, find_pair(dll, 0x40_0000, "PIEUJE")? - 8).0;
+    let (unity, after) = word_list(dll, find_pair(dll, 0x40_0000, "PIEUJE")? - 8);
+    (w.unity, w.unity_names) = (unity, word_list(dll, after).0);
+    if let Some(mut at) = dll.windows(LEVELS.len()).position(|x| x == LEVELS) {
+        while let Some(r) = dll.get(at..at + 6).filter(|r| r[..2] != [0xff, 0xff]) {
+            w.levels.push((u16::from_le_bytes([r[0], r[1]]), r[2], r[3], r[4]));
+            at += 6;
+        }
+    }
     // The region pointer array: its first list is {230..233}.
     let first: Vec<u8> = [230u16, 231, 232, 233, 0].iter().flat_map(|z| z.to_le_bytes()).collect();
     let list_va = dll.windows(first.len()).position(|x| x == first).and_then(|o| va_of(dll, o)).ok_or_else(|| anyhow!("FFXiMain.dll: no region lists"))?;
@@ -399,5 +413,9 @@ mod tests {
         assert_eq!(w.regions[7], [103, 108, 196, 102, 193, 248]);
         assert!(w.regions[30].is_empty());
         assert_eq!(w.region_of(230).map(|r| r.len()), Some(4));
+        assert!(w.unity_names.contains(&(0x40_0000, "Pieuje".into())));
+        assert_eq!((w.levels.len(), w.levels[0]), (60, (5, 2, 0x3a, 0x5a)));
+        let capped: Vec<u16> = w.levels.iter().filter(|l| l.3 != 0).map(|l| l.0).collect();
+        assert_eq!(capped, [5, 112, 118]);
     }
 }

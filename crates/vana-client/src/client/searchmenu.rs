@@ -1,7 +1,8 @@
 //! The main menu's Search row (FUN_10140400 case 8; menu_rows2_spec part S): "menu    searchma" in the main menu's
 //! place and the criterion windows in its place (all group 0x81: the walk shows only the newest). Each pick searches
 //! the current zone with that one criterion (FUN_1020d310 resets the condition whenever searchma has the focus) and
-//! hands over to the results window (client/search.rs).
+//! hands over to the results window (client/search.rs). "menu    scsibori" (Refine, from the results header;
+//! arealist_spec section 2) and the windows opened from it work on the last search's condition instead.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -9,6 +10,7 @@ use crate::audio::Ui;
 use crate::net::search::{COMMENT, Cond, JOB, LEVEL, LS1, LS2, MLEVEL, NAME, NATION, RACE, RANK, STATUS};
 
 pub const MENU: &str = "menu    searchma";
+pub const REFINE: &str = "menu    scsibori";
 const JOBS: &str = "menu    searchjo";
 const NATIONS: &str = "menu    searchna";
 const RACES: &str = "menu    searchra";
@@ -17,6 +19,9 @@ const LEVELS: &str = "menu    scchar";
 const MLEVELS: &str = "menu    scmlev";
 const NAMES: &str = "menu    scname";
 const GENRES: &str = "menu    comgenre";
+const PARTY: &str = "menu    sccompar";
+const ITEMS: &str = "menu    sccomite";
+const SHELLS: &str = "menu    sccomls";
 
 #[derive(Clone, Debug)]
 pub struct Win {
@@ -25,21 +30,26 @@ pub struct Win {
     /// scchar / scmlev: the field being edited (+0x14 / +0x16), the two values (+0x18 / +0x1a); scname: the box open.
     pub edit: Option<u16>,
     pub vals: (u8, u8),
+    /// The children disabled at open (FUN_10118b60(5, child): Enter plays 0004).
+    off: Vec<u16>,
+    /// comgenre / the sub-genres: +0x14 mode (0 the own comment, 1 search, 2 refine) and +0x18 the type base.
+    mode: u8,
+    base: u8,
 }
 
 impl Win {
     fn new(name: &'static str, sel: u16) -> Win {
-        Win { name, sel, edit: None, vals: (1, 1) }
+        Win { name, sel, edit: None, vals: (1, 1), off: Vec::new(), mode: 0, base: 0 }
     }
 }
 
 #[derive(Clone, Debug)]
 pub struct SearchMenu {
-    /// searchma, then a criterion window over it.
+    /// searchma (or scsibori alone after /sea), then the windows over it.
     pub stack: Vec<Win>,
-    /// searchma's disabled rows (FUN_1020d250).
-    off: Vec<u16>,
     return_menu: Option<usize>,
+    /// scsibori's place in the stack: it and the windows above it refine the last search.
+    refine_at: Option<usize>,
 }
 
 /// An equipped linkshell's id (FUN_100e9730 / FUN_10107f40): extdata u32 @0 of the shell at its slot.
@@ -48,27 +58,88 @@ fn ls_id(w: &World, n: usize) -> u32 {
 }
 
 /// FUN_10140400 case 8: searchma (SE 0002) in the main menu's place. Disabled: Friend (no POL friend list), Linkshell /
-/// Linkshell 2 without one equipped, Ballista (S+0x40dac bit 15; LSB never sets it).
+/// Linkshell 2 without one equipped, Ballista (S+0x40dac bit 15; LSB never sets it). DAT_106644d8 = 0.
 pub fn open(w: &mut World) {
+    let mut win = Win::new(MENU, w.cursor_recall(MENU));
+    win.off = vec![8, 10];
+    if ls_id(w, 1) == 0 {
+        win.off.push(9);
+    }
+    if ls_id(w, 2) == 0 {
+        win.off.push(15);
+    }
+    w.search_status0 = 0;
+    w.searchmenu = Some(SearchMenu { stack: vec![win], return_menu: w.menu, refine_at: None });
+    w.menu = None;
+}
+
+/// FUN_1020ce40: scsibori's disabled rows from the equipped shells and the first status searched (DAT_106644d8).
+fn refine_off(w: &World) -> Vec<u16> {
+    let s = w.search_status0;
     let mut off = vec![8, 10];
     if ls_id(w, 1) == 0 {
         off.push(9);
     }
     if ls_id(w, 2) == 0 {
-        off.push(15);
+        off.push(13);
     }
-    let sel = w.cursor_recall(MENU);
-    w.searchmenu = Some(SearchMenu { stack: vec![Win::new(MENU, sel)], off, return_menu: w.menu });
-    w.menu = None;
+    if s & 0x0fc0_0000 != 0 {
+        off.extend([10, 14]);
+    }
+    if s & 0xf_0000 != 0 {
+        off.push(12);
+    }
+    if s & (0x8000 | 0x20 | 1) != 0 {
+        off.push(14);
+    }
+    if s & (0x1000_0000 | 1) != 0 {
+        off.extend([12, 10]);
+    }
+    if s & 0x2000_0000 != 0 {
+        off.extend([12, 14, 10]);
+    }
+    off
 }
 
-fn disabled<'a>(m: &'a SearchMenu, name: &str) -> &'a [u16] {
-    if name == MENU { &m.off } else { &[] }
+/// FUN_1020c250: Enter on the results header opens scsibori (over searchma when it is up, else alone).
+pub fn open_refine(w: &mut World) {
+    let mut win = Win::new(REFINE, w.cursor_recall(REFINE));
+    win.off = refine_off(w);
+    match w.searchmenu.as_mut() {
+        Some(m) => {
+            if let Some(at) = m.refine_at {
+                m.stack.truncate(at);
+            }
+            m.refine_at = Some(m.stack.len());
+            m.stack.push(win);
+        }
+        None => w.searchmenu = Some(SearchMenu { stack: vec![win], return_menu: None, refine_at: Some(0) }),
+    }
+}
+
+/// scsibori and the windows over it close (by name, harmless when it is not open).
+pub fn close_refine(w: &mut World) {
+    let Some(m) = w.searchmenu.as_mut() else { return };
+    let Some(at) = m.refine_at.take() else { return };
+    m.stack.truncate(at);
+    if m.stack.is_empty() {
+        let back = m.return_menu;
+        w.searchmenu = None;
+        w.menu = back.or(w.menu);
+    }
+}
+
+/// The searchmenu windows take the keys over the results while scsibori (or a window it opened) is the top.
+pub fn refining(w: &World) -> bool {
+    w.searchmenu.as_ref().is_some_and(|m| m.refine_at.is_some_and(|at| at < m.stack.len()))
 }
 
 fn close_top(w: &mut World) {
     let Some(m) = w.searchmenu.as_mut() else { return };
     m.stack.pop();
+    if m.refine_at.is_some_and(|at| at >= m.stack.len()) {
+        m.refine_at = None;
+    }
     if m.stack.is_empty() {
         let back = m.return_menu;
         w.searchmenu = None;
@@ -77,7 +148,12 @@ fn close_top(w: &mut World) {
 }
 
 fn push(w: &mut World, name: &'static str) {
+    push_mode(w, name, 0, 0);
+}
+
+fn push_mode(w: &mut World, name: &'static str, mode: u8, base: u8) {
     let mut win = Win::new(name, w.cursor_recall(name));
+    (win.mode, win.base) = (mode, base);
     // scchar / scmlev ask for fresh stats when shown (c2s 0x061); the reply sets both values to our main level (or the
     // master level, 0 without one).
     if matches!(name, LEVELS | MLEVELS) {
@@ -88,6 +164,26 @@ fn push(w: &mut World, name: &'static str) {
     }
     if let Some(m) = w.searchmenu.as_mut() {
         m.stack.push(win);
+    }
+}
+
+/// FUN_1020d340 / FUN_1020cf60's base: searchma's reset condition (the current zone) or, refining, the last search's.
+fn base(w: &World) -> Cond {
+    if refining(w) { w.search_cond.clone() } else { Cond::zone(w.pos_zone) }
+}
+
+/// "run" (FUN_1020a9d0(1, cond, 1, 0, 0, p7)) with this criterion; then the criterion window (and scsibori) close.
+fn run(w: &mut World, set: impl FnOnce(&mut Cond)) {
+    let mut c = base(w);
+    set(&mut c);
+    let scope = super::search::scope_of(&c);
+    super::search::run(w, c, scope);
+    if refining(w) {
+        close_refine(w);
+    } else if let Some(m) = w.searchmenu.as_mut()
+        && m.stack.len() > 1
+    {
+        m.stack.truncate(1);
     }
 }
 
@@ -104,29 +200,34 @@ fn step_field(vals: &mut (u8, u8), field: u16, up: bool, low: u8) {
     }
 }
 
-/// "run" (FUN_1020a9d0(1, cond, 1, 0, 0, p7)): the current zone and this criterion; then the criterion window closes.
-fn run(w: &mut World, set: impl FnOnce(&mut Cond)) {
-    let mut c = Cond::zone(w.pos_zone);
-    set(&mut c);
-    super::search::run(w, c, super::search::Scope::Area);
-    if let Some(m) = w.searchmenu.as_mut()
-        && m.stack.len() > 1
-    {
-        m.stack.truncate(1);
-    }
-}
-
-/// FUN_1020d340 / the criterion windows' Enter (FUN_1020d670, 6e0, 750, 5e0).
-fn enter(w: &mut World, name: &'static str, sel: u16) {
+/// FUN_1020d340 (searchma), FUN_1020cf60 (scsibori) and the criterion windows' Enter (FUN_1020d670, 6e0, 750, 5e0).
+fn enter(w: &mut World, gu: &GameUi, name: &'static str, sel: u16) {
+    use super::arealist::Mode;
+    let (mode, type_base) = w.searchmenu.as_ref().and_then(|m| m.stack.last()).map_or((0, 0), |t| (t.mode, t.base));
     match (name, sel) {
-        (MENU, 3) => push(w, JOBS),
-        (MENU, 4) => push(w, NATIONS),
-        (MENU, 5) => push(w, RACES),
-        (MENU, 7) => push(w, RANKS),
-        (MENU, 6) => push(w, LEVELS),
-        (MENU, 17) => push(w, MLEVELS),
-        (MENU, 2) => push(w, NAMES),
-        (MENU, 11) => push(w, GENRES),
+        (MENU | REFINE, 1) => {
+            let c = base(w);
+            super::arealist::open(w, gu, Mode::Search, c);
+        }
+        (MENU, 13) => {
+            super::arealist::open(w, gu, Mode::Monstrosity, Cond::zone(w.pos_zone));
+            close_refine(w);
+        }
+        (MENU, 14) | (REFINE, 12) => {
+            let c = base(w);
+            super::arealist::open(w, gu, Mode::Unity, c);
+            close_refine(w);
+        }
+        (MENU | REFINE, 3) => push(w, JOBS),
+        (MENU | REFINE, 4) => push(w, NATIONS),
+        (MENU | REFINE, 5) => push(w, RACES),
+        (MENU | REFINE, 7) => push(w, RANKS),
+        (MENU | REFINE, 6) => push(w, LEVELS),
+        (MENU, 17) | (REFINE, 15) => push(w, MLEVELS),
+        (MENU | REFINE, 2) => push(w, NAMES),
+        (MENU, 11) => push_mode(w, GENRES, 1, 0),
+        (REFINE, 11) => push_mode(w, GENRES, 2, 0),
+        (MENU, 12) => push_mode(w, GENRES, 0, 0),
         // scchar / scmlev: OK runs with the pair, Cancel closes.
         (LEVELS | MLEVELS, 3) => {
             let vals = w.searchmenu.as_ref().and_then(|m| m.stack.last()).map_or((1, 1), |t| t.vals);
@@ -140,11 +241,22 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
                 run(w, |c| (c.flags, c.name) = (c.flags | NAME, n));
             }
         }
-        // comgenre mode 1 (a comment search): genre << 4.
+        // comgenre mode 0 (asm 0x1020d865): 1..3 sccompar (base row << 4), 4 sccomite (0x40), 5 sccomls (0x50), 6 / 7
+        // the editor at once (0x61 / 0x73); neither window closes. Modes 1 / 2 (a comment search): genre << 4.
+        (GENRES, g) if mode == 0 => match g {
+            1..=3 => push_mode(w, PARTY, 0, (g as u8) << 4),
+            4 => push_mode(w, ITEMS, 0, 0x40),
+            5 => push_mode(w, SHELLS, 0, 0x50),
+            6 => super::seacom::open(w, 0x61),
+            _ => super::seacom::open(w, 0x73),
+        },
         (GENRES, g) => run(w, |c| (c.flags, c.comment) = (c.flags | COMMENT, (g as u32) << 4)),
-        // Request: status 0x10000000.
+        // FUN_1020d940 / da10 / dae0 mode 0: the editor's type is base + row.
+        (PARTY | ITEMS | SHELLS, r) => super::seacom::open(w, type_base + r as u8),
+        // Request: status 0x10000000 (searchma clears first; scsibori sets it only while none is set).
         (MENU, 16) => run(w, |c| (c.flags, c.status) = (c.flags | STATUS, 0x1000_0000)),
-        (MENU, 9) | (MENU, 15) => {
+        (REFINE, 14) => run(w, |c| c.set_status_if_none(0x1000_0000)),
+        (MENU, 9) | (MENU, 15) | (REFINE, 9) | (REFINE, 13) => {
             let (n, flag) = if sel == 9 { (1, LS1) } else { (2, LS2) };
             let id = ls_id(w, n);
             run(w, |c| {
@@ -162,7 +274,7 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
 }
 
 /// The generic window events: links (SE 0001), Enter (SE 0002; a disabled row or a query still out SE 0004), Escape
-/// (SE 0003) closes the top window; searchma's close brings the main menu back.
+/// (SE 0003) closes the top window; searchma's close brings the main menu back, scsibori's the results.
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     let Some(m) = w.searchmenu.clone() else { return };
     let Some(top) = m.stack.last().cloned() else { return };
@@ -216,14 +328,14 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
             w.sounds.push(Ui::Cancel as u32);
             close_top(w);
         }
-        egui::Key::Enter if disabled(&m, top.name).contains(&top.sel) => w.sounds.push(Ui::Error as u32),
+        egui::Key::Enter if top.off.contains(&top.sel) => w.sounds.push(Ui::Error as u32),
         egui::Key::Enter => {
             w.sounds.push(Ui::Select as u32);
-            if w.search.as_ref().is_some_and(|r| r.busy) {
+            if super::search::busy(w) {
                 w.sounds.push(Ui::Error as u32);
                 return;
             }
-            enter(w, top.name, top.sel);
+            enter(w, gu, top.name, top.sel);
         }
         _ => {}
     }
@@ -259,9 +371,10 @@ pub fn text_events(w: &mut World, events: &[egui::Event]) {
     }
 }
 
-/// The top window takes the keys unless the results window is up over it.
+/// The top window takes the keys unless the results window is up over it (scsibori is over the results), arealist is
+/// up, or a prompt.
 pub fn focused(w: &World) -> bool {
-    w.searchmenu.is_some() && w.search.is_none() && w.confirm.is_none()
+    w.searchmenu.is_some() && (w.search.is_none() || refining(w)) && w.arealist.is_none() && w.seacom_edit.is_none() && w.confirm.is_none()
 }
 
 /// Mouse: hover moves the cursor, a click on the cursor row is Enter *(inf: the generic child hit test)*.
@@ -285,12 +398,15 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
 
 /// Help / title from the cursor row (slot 1); searchma puts 0xd 0 "Search" in title slot 2 while open.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    let Some(top) = w.searchmenu.as_ref().and_then(|m| m.stack.last()) else { return };
+    let Some(m) = w.searchmenu.as_ref() else { return };
+    let Some(top) = m.stack.last() else { return };
     let [help, title] = gu.focus_text(top.name, top.sel);
-    if w.search.is_none() {
+    if focused(w) {
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
-    bars.title[2] = gu.title_msg(0).unwrap_or_default();
+    if m.stack.first().is_some_and(|b| b.name == MENU) {
+        bars.title[2] = gu.title_msg(0).unwrap_or_default();
+    }
 }
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
@@ -299,7 +415,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let n = m.stack.len();
     for (k, win) in m.stack.iter().enumerate() {
         let focused = k + 1 == n && focused(w);
-        let off = disabled(m, win.name);
+        let off = &win.off;
         if let Some(lw) = gu.lobby_window_off(win.name, sw, sh, (0.0, 0.0), Some(win.sel), focused, off) {
             if let Some((x, y)) = gu.window_xy(win.name, sw, sh) {
                 gu.disabled_children(win.name, x, y, off, Some(win.sel).filter(|_| focused));

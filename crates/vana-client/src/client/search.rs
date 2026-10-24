@@ -15,6 +15,8 @@ pub enum Then {
     PartyAdd(String),
     /// LAB_1020ac30: the results window's rows.
     Results,
+    /// FUN_1020a9d0 with p6 = 1: the summary line only (arealist's Monstrosity picks).
+    Summary(Scope),
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -70,6 +72,7 @@ pub fn command(w: &mut World, tail: &str) {
     if w.search.is_some() {
         return;
     }
+    w.search_status0 = 0;
     let Some(words) = w.search_words.clone() else {
         log::warn!("search: no word tables in FFXiMain.dll; searching this area");
         run(w, Cond::zone(w.pos_zone), Scope::Area);
@@ -78,11 +81,7 @@ pub fn command(w: &mut World, tail: &str) {
     let ls = |num: usize| w.linkshells.get(num).filter(|l| l.0 != 0).and_then(|&(index, bag)| w.inv.ext.get(&(bag, index))).map_or(0, |e| u32::from_le_bytes([e[0], e[1], e[2], e[3]]));
     let ctx = Ctx { zone: w.pos_zone, region: words.region_of(w.pos_zone), ls: [ls(1), ls(2)], unity: NO_UNITY, known: w.known_zones.as_ref().map(|k| &k[..]) };
     let cond = parse(tail, &words, &ctx);
-    let scope = match cond.areas.len() {
-        0 => Scope::World,
-        1 => Scope::Area,
-        _ => Scope::Region,
-    };
+    let scope = scope_of(&cond);
     run(w, cond, scope);
 }
 
@@ -341,12 +340,42 @@ pub fn parse(text: &str, words: &SearchWords, ctx: &Ctx) -> Cond {
     c
 }
 
-/// FUN_1020a9d0 mode 1: the query, and the window open on " [Searching]".
+/// FUN_1020a9d0 mode 1: the query, and the window open on " [Searching]"; W+0x5c keeps the condition.
 pub fn run(w: &mut World, cond: Cond, scope: Scope) {
     log::info!("search: {cond:?}");
+    w.search_cond = cond.clone();
+    if w.search_status0 == 0 {
+        w.search_status0 = cond.status;
+    }
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
     w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0 });
+}
+
+/// The same with p6 = 1: the old results window closes (FUN_1020b3a0), none opens; only the summary line comes.
+pub fn run_quiet(w: &mut World, cond: Cond, scope: Scope) {
+    log::info!("search (summary only): {cond:?}");
+    w.search_cond = cond.clone();
+    if w.search_status0 == 0 {
+        w.search_status0 = cond.status;
+    }
+    w.search = None;
+    let rx = search::spawn(w.search_addr, cond);
+    w.searches.push((rx, Then::Summary(scope)));
+}
+
+/// DAT_10385a04 != 4: a query for the results window or a summary is out.
+pub fn busy(w: &World) -> bool {
+    w.searches.iter().any(|s| matches!(s.1, Then::Results | Then::Summary(_)))
+}
+
+/// The summary scope from the areas searched: one area, several, none (all areas).
+pub fn scope_of(c: &Cond) -> Scope {
+    match c.areas.len() {
+        0 => Scope::World,
+        1 => Scope::Area,
+        _ => Scope::Region,
+    }
 }
 
 /// FUN_100e0d50's delivery for finished queries (a failure or the 30 s timeout delivers nothing).
@@ -378,6 +407,11 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             };
             log::info!("search: {name} is {:#x} in zone {}", r.id, r.zone);
             invite(w, r.id, r.flags);
+        }
+        Then::Summary(scope) => {
+            if let Some(r) = reply {
+                summary(w, scope, r.total as usize, r.records.len());
+            }
         }
         Then::Results => {
             let Some(res) = w.search.as_mut() else { return };
@@ -490,9 +524,13 @@ pub fn key(w: &mut World, key: egui::Key) {
             w.sounds.push(Ui::Cancel as u32);
             return;
         }
-        // FUN_1020c250: a person opens scoption (the comment fetch for flag 0x10 is not done); the header would open
-        // scsibori (not done).
-        K::Enter if !res.busy && res.cursor > 0 => {
+        // FUN_1020c250: a person opens scoption (the comment fetch for flag 0x10 is not done); the header (or no row)
+        // opens scsibori, no busy check (its rows check).
+        K::Enter if res.cursor == 0 => {
+            super::searchmenu::open_refine(w);
+            w.sounds.push(Ui::Select as u32);
+        }
+        K::Enter if !res.busy => {
             res.option = Some(1);
             w.sounds.push(Ui::Select as u32);
         }
@@ -543,7 +581,7 @@ fn option(w: &mut World, c: u16, r: &Record) {
 /// Status icons, keytops3 by FUN_1020a740 index k (W+0x898; 0 / 1 draw nothing).
 const STATUS: [usize; 12] = [0, 0, 68, 69, 352, 70, 65, 67, 362, 550, 365, 364];
 /// Comment-genre dots, windowps by index k - 12.
-const GENRE: [usize; 10] = [492, 495, 493, 496, 494, 499, 498, 71, 70, 70];
+pub(super) const GENRE: [usize; 10] = [492, 495, 493, 496, 494, 499, 498, 71, 70, 70];
 /// pname race words by model race (DAT_1037d36f).
 const RACE: [usize; 9] = [0, 0, 0, 1, 1, 2, 2, 3, 4];
 
@@ -651,7 +689,8 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     const G: u32 = 0x8080_8080;
     let Some(res) = &w.search else { return Vec::new() };
     let mut rects = Vec::new();
-    let focused = res.option.is_none();
+    // The bar and hand only while it has the focus (scoption, scsibori or arealist over it take it).
+    let focused = res.option.is_none() && !super::searchmenu::refining(w) && w.arealist.is_none();
     let sel = if focused { (res.cursor - res.scroll + 1) as u16 } else { 0 };
     let Some((wx, wy)) = gu.menu_sel(SCRESULT, sw, sh, sel) else { return rects };
     rects.extend(gu.window_rect(SCRESULT, sw, sh));

@@ -6665,3 +6665,42 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` part L; ours client/linkshell.rs.
 - Live (Lnxcsfix, !additem 512 / 515): rows, header, link1, link11 bars and colour, Cancel, both Drop prompts, the empty
   list. !additem 515 gives Flag 3 with GroupId 0, so it opens link13. Not yet seen live: a real shell (create, equip,
   unequip, switch), Create Pearl; Link List (link12) not done.
+
+## Search: arealist, scsibori (Refine), the own comment editor, maplist fixes (2026-10-24)
+
+Spec `~/ffxi/lab/research/arealist_spec.md`; ours client/arealist.rs, searchmenu.rs, seacom.rs, search.rs, map.rs.
+- arealist (registry 0x31002, layer 3, group 0: stacked on the log, suspends nothing, draws over scresult): 5 rows,
+  columns {20, 245, 320} from the row origin (+3, +4); names game font y + 2, "[n]" shape font right-aligned at the
+  column end - 2 (y + 4), "(s)" and "~Lv%2d" shape font y + 2; windowps 75 cursor bar, nothing recoloured, no scroll
+  bar; its +4 replaces the list base's, so the generic sounds stay on (0001 even when Down is clamped past the last of
+  fewer than 5 rows).
+- Rows (FUN_1020ebf0): Current Area / Current Region (only when the region has more than one zone with zone flag 2) /
+  All Areas, then by region (the default every login: config 0x45 is dead) region rows "[count]" of zones that are
+  known (s2c 0x008), named (group 0x14) and flagged & 3 == 3, or flat (Num+, SE 0013). Enter on a region folds it out
+  (top 0, child 1); Escape folds back to the region row (FUN_101f7080: top = min(row, max top)).
+- Picks change the opener's condition: zone -> single area (wire type 3), 0 -> no area, -1 -> the region's flag-2 zones
+  inserted in front (wire order reversed, +0x4e bit 1 clear). Mode 3 Monstrosity: status 0x300000, the summary line
+  only (no results window; an open one closes), the window stays. Mode 4 Unity: 12 rows (0xc 0x1ba, 0xc 0x192 + i;
+  the mixed-case names right after the upper-case unity list in the DLL), status (i & 0x3f) << 22, row 0 our own
+  (0x061 @0x58 & 0x1f, none 0x0f800000).
+- The level table DAT_1033b430 (6-byte rows to zone 0xffff, 60 rows, signature in dat/tables.rs): only zones 5, 112,
+  118 have a max level, so Monstrosity lists those three at most.
+- W+0x5c (ours World.search_cond) is every search's condition; searchma's picks start from the current zone (its focus
+  reset), scsibori's from W+0x5c. DAT_106644d8 (search_status0): 0 at searchma's open and /sea, then the first status
+  searched. scsibori (from Enter on the results header, no busy check; group 0x81 over searchma, the results stay
+  beside it unfocused): disables 8 / 10 always for us, 9 / 13 without LS1 / LS2, and by that status; Request sets
+  0x10000000 only while no status is set; Area / Unity open arealist on W+0x5c.
+- The comment editor ("menu    comment" mode 2; registry 0x00020002 group 0xc, the window sets flag 0x1000 on itself
+  so it stacks on the log): searchma Edit Comment -> comgenre mode 0 (1..3 sccompar base row << 4, 4 sccomite 0x40, 5
+  sccomls 0x50, 6 / 7 type 0x61 / 0x73), sub-genre row r -> type base + r; neither closes. Three 40-byte lines at
+  (x0 + 0x14, y0 + 4 + 16k), the edited one live, others cut to 335 px; the genre dot at (x0 + 8, y0 + 8). Down /
+  Enter next line, Up previous, Escape commits and closes. On close, when the lines or the type changed: c2s 0x0E0
+  {text (lines padded to 40, 123 bytes; all blank -> ""), installTime (ffxiusr.sys), "WIN", ex codes, msgType}.
+  Live: the comment dot shows on our own search row, gone after sending blank lines.
+- maplist (the same list class, FUN_101fccf0) corrected from the entry above that said the cursor row's first cell is
+  0x80803040: retail draws the windowps 75 bar and recolours nothing; columns are +3; counts "[n]" in the shape font
+  right-aligned at y + 4; small texts "(s)"; names at y + 2; Up / Down stop at the ends (SE 0001 on a move, the list
+  base's own); its window is stacked on the log (flag 0x1000) like arealist.
+- The results window drops its bar and hand while scsibori or arealist has the focus.
+- Not done: arealist modes 1 / 2 (event op 0xcc subs 0x10 / 0x11), /seacom and /seacomup on the same store, scoption's
+  Request / Cancel Request (/partyrequestcmd is not supported yet).

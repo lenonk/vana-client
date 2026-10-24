@@ -208,8 +208,9 @@ struct Walk {
     last: std::collections::HashMap<String, i64>,
     suspended: std::collections::HashSet<String>,
     top: i64,
-    /// Group overrides (GameUi::set_group).
+    /// Group overrides (GameUi::set_group) and window flags set while open (GameUi::force_flags).
     groups: std::collections::HashMap<String, u16>,
+    flags: std::collections::HashMap<String, u32>,
 }
 
 /// One window's open / close state (window +0x26 open count, +0x64 close count, +0x68 opened animated).
@@ -660,6 +661,12 @@ impl GameUi {
     }
 
     /// The info panel's area: group 4's short name (FUN_102333b0, "unknown" when the entry is missing, as retail).
+    /// FUN_101cbc10(zone, 0): the group 4 short name, none when the table has no entry.
+    pub fn short_area(&self, zone: u16) -> Option<String> {
+        let raw = self.data.area_names.as_ref().and_then(|m| m.raw(zone as usize))?;
+        Some(crate::dat::font::decode_sjis(&raw)).filter(|s| !s.is_empty())
+    }
+
     pub fn area_name(&self, zone: u16) -> Vec<u8> {
         match self.data.area_names.as_ref().and_then(|m| m.raw(zone as usize)) {
             Some(n) => n,
@@ -986,7 +993,16 @@ impl GameUi {
     fn reg_flags(&self, name: &str) -> u32 {
         let key = name.trim_end().to_ascii_lowercase();
         let reg = if key.starts_with("menu    actionm") || key.starts_with("menu    actiom") { "menu    playermo" } else { key.as_str() };
-        self.data.registry.get(reg).copied().unwrap_or(0)
+        self.data.registry.get(reg).copied().unwrap_or(0) | self.walk.flags.get(&key).copied().unwrap_or(0)
+    }
+
+    /// Window flags a window set on itself while open (the comment editor's 0x1000, FUN_101dd2b0); None clears them.
+    pub fn force_flags(&mut self, name: &str, f: Option<u32>) {
+        let key = name.trim_end().to_ascii_lowercase();
+        match f {
+            Some(f) => self.walk.flags.insert(key, f),
+            None => self.walk.flags.remove(&key),
+        };
     }
 
     /// FUN_1015ecc0(mask): a window with registry flags & mask drawn this or last frame.
