@@ -230,6 +230,16 @@ pub struct FindCache {
 }
 
 /// `find` through the actor's cache.
+/// FUN_10057000 case 5 (asm 0x1005cc45): op 0x05 stretches its motion over its length (u16 @6 x task speed):
+/// rate = 2 frames / speed of the first matching chunk / ticks, 1 for no length or no chunk. (f32 @0x10 is a blend
+/// weight, not a rate.)
+pub(super) fn op_rate(first: Option<&Animation>, ticks: f32) -> f32 {
+    match first {
+        Some(x) if ticks > 0.01 && x.speed > 0.0 => 2.0 * x.frames as f32 / (x.speed * ticks),
+        _ => 1.0,
+    }
+}
+
 pub fn find_cached<'a>(cache: &mut FindCache, extra: &'a Extra, ch: &'a Character, name: &str) -> Vec<&'a Animation> {
     let sig: Vec<usize> = std::iter::once(ch as *const Character as usize).chain(extra.iter().map(|(_, f)| Arc::as_ptr(f) as usize)).collect();
     if cache.sig != sig {

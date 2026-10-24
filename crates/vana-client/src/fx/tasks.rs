@@ -779,7 +779,7 @@ impl Effects {
                     let name = String::from_utf8_lossy(&op.name().to_le_bytes()).trim_end_matches(['\0', '?']).to_string();
                     let speed = f32::from_bits(op.u32_at(0x10));
                     let count = op.raw.get(0x1e).map_or(1, |b| b & 0x7f);
-                    let m = crate::dat::sched::Motion { name, at: 0, speed: if speed == 0.0 { 1.0 } else { speed }, ticks: op.dur.max(0) as u16, count, blend: op.u16_at(0x18) };
+                    let m = crate::dat::sched::Motion { name, at: 0, speed: if speed == 0.0 { 1.0 } else { speed }, ticks: (op.dur.max(0) as f32 * t.speed).round() as u16, count, blend: op.u16_at(0x18) };
                     self.motions.push((id, Some(m)));
                 }
                 Flow::Next

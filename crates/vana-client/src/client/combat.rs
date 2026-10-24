@@ -687,8 +687,9 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
     let plan = sched::plan(actmotion::scheduler(&a.extra, &ch, name)?, &["dada", "dcnt"]);
     let m = plan.motions.first()?;
     a.last_attack = name.to_string();
-    let len = if m.ticks > 0 { m.ticks as f32 } else { motion_ticks(a, &ch, &m.name, m.speed) };
-    play(a, &m.name, len, m.speed);
+    let len = if m.ticks > 0 { m.ticks as f32 } else { motion_ticks(a, &ch, &m.name, 1.0) };
+    let rate = actmotion::op_rate(actmotion::find(&a.extra, &ch, &m.name).first().copied(), len);
+    play(a, &m.name, len, rate);
     Some((Duration::from_secs_f32(plan.hit_at.unwrap_or(0) as f32 / 60.0), a.last_attack.clone(), plan.attacker_hold, plan.target_hold))
 }
 
@@ -720,7 +721,7 @@ pub(super) fn die(actor: &mut Actor) {
     let Some(ch) = actor.character.clone() else { return };
     let plan = actmotion::scheduler(&actor.extra, &ch, "dead").map(|d| sched::plan(d, &[]));
     let (name, len, speed) = match plan.as_ref().and_then(|p| p.motions.first()) {
-        Some(m) => (m.name.clone(), m.ticks as f32, m.speed),
+        Some(m) => (m.name.clone(), m.ticks as f32, actmotion::op_rate(actmotion::find(&actor.extra, &ch, &m.name).first().copied(), m.ticks as f32)),
         None => ("ded".to_string(), motion_ticks(actor, &ch, "ded", 1.0), 1.0),
     };
     if !actmotion::find(&actor.extra, &ch, &name).is_empty() && len > 0.0 {

@@ -7478,7 +7478,10 @@ impl App {
                     // Then a scheduler's motion (event / weapon draw) over the status motion.
                     let (name, rate, once, blend) = match (&a.oneshot, a.play.as_ref().and_then(|p| p.current())) {
                         (Some(o), _) => (o.name.clone(), o.speed, true, crate::motion::BLEND_TICKS),
-                        (None, Some(m)) => (m.name.clone(), m.speed, m.count == 1, m.blend.max(1) as f32),
+                        (None, Some(m)) => {
+                            let rate = actmotion::op_rate(actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, &m.name).first().copied(), m.ticks as f32);
+                            (m.name.clone(), rate, m.count == 1, m.blend.max(1) as f32)
+                        }
                         // Op 0x5e / 0x6b: the event's idle motion while the actor stands.
                         (None, None) if ratio < 1e-3 && idles.get(id).is_some_and(|n| has(n)) => (idles[id].clone(), 1.0, false, crate::motion::BLEND_TICKS),
                         // FUN_100c8930 (LAB_100c8dde): while the jump timer runs, "jmp" at rate 1 ("jmp*" engaged, "jmp "
@@ -7504,8 +7507,9 @@ impl App {
                     if a.jump >= 0.0 {
                         a.jump -= dt * 60.0;
                     }
+                    // One-shots end by real ticks: their motion runs at the op's stretch rate.
                     if let Some(o) = &mut a.oneshot {
-                        o.ticks = a.ticks;
+                        o.ticks += dt * 60.0;
                     }
                     // Fall back to idle when a model lacks a motion; chocobos idle with chi.
                     let frames_of = |motion: &str, ticks: f32, once: bool| -> Vec<_> {

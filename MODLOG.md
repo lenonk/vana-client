@@ -5918,3 +5918,26 @@ Spec `~/ffxi/lab/research/song_sound_spec.md`.
   out: `init` hides it). Without a range file the first part file's info byte 0xe >= 0 is the class (FUN_100cf210).
 - Live (Lnxcsfix BRD 20, Valor Minuet on self, null output): se 21005 from 1 s into the cast until its stop 0.5 s
   after the finish, then 20069. Before, the song was silent until the finish.
+
+## Scheduler op 0x05: the motion rate (2026-10-24)
+
+Spec `~/ffxi/lab/research/raise_anim_spec.md`. Corrects "Scheduler op 0x05 (motion) and what ends it".
+- FUN_100cb8e0's second argument (op 0x05 f32 @0x10) is the queue entry's weight (+0x1c; FUN_1001a400 blends it into
+  the region queue +0xc, which only the overlay regions 5 / 6 use as their pose weight), not a speed. The third is
+  the rate (+0x28 via FUN_10019a40). FUN_10019ab0 advances `frame += ticks x speed(+0x36) x 0.5 x rate`.
+- FUN_10057000 case 5 (asm 0x1005bc95..0x1005bcd9; 30261006_0 0x1005cc45..0x1005cc83): `rate = 2 x frames /
+  speed (the first matching chunk: the scheduler's own scope, else the actor's files) / (i16 @6 x task speed)`, or 1
+  when that length is <= 0.01 or no chunk is found. So an op 0x05 motion always spans its u16 @6 x task speed
+  ticks. Region-digit names take the same rate unguarded (FUN_100cb4a0).
+- u16 @0x1c: entry +0x20, the fade-out ticks when the count ends in regions >= 3 (FUN_1001a760). u32 @0x1c >> 28:
+  1 = the first half (wrap at (frames + 1) / 2 - 1), 2 = the second half (start at (frames + 1) / 2): `@tr0` /
+  `@tl0` walk steps (not modelled).
+- Raise: 0x028 category 4 actor = target = self, animation 511 / 512 / 496 / 847 (files 3311 / 3312 / 3296 /
+  3647). `main` holds actor2 (op 0x20, 230..320) and runs the skeleton's `stnd` on it (op 0x2e lock 176; op 0x05
+  `std?` 200 ticks: the float-up). Elvaan M's std is 51 frames at speed 1 (102 ticks natural), so it plays at rate
+  0.51. LSB sets status 0 2 s after the accept; the hold delays it past `std`.
+- Op 0x2e (FUN_10061360) / 0x2f (FUN_10061500): timed actor locks, vtable +0x30c / +0x314 for dur x speed (+0x30c
+  = FUN_100a8e80, counter +0xfc). The end of op 0x2e runs FUN_100c8970: +0x7d8 is cleared unless the status motion
+  is idl / dl1-3 / ltb / lt1-3 / cor / rx1.
+- Ours: actmotion::op_rate; one-shots end by real ticks; the engage and death motions take the same rate.
+- Live: the Hume M raise `std` ran 3.35 s (200 ticks), as the user had seen it too fast before.
