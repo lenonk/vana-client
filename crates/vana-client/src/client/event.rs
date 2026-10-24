@@ -744,6 +744,14 @@ impl Host for LiveHost<'_> {
                     self.st.event_status.insert(id, s as u8);
                 }
             }
+            // FUN_100bac90 subs 0x0b / 0x0c: the event actor passable / solid to the player's bump (entity +0x120 bit 6,
+            // client/bump.rs). The other subs' bits have no known reader yet.
+            Effect::Op { op: 0xab, sub: Some(s @ (0x0b | 0x0c)), actor, .. } => {
+                let id = self.wid(actor);
+                if let Some(e) = self.w.entities.get_mut(&id) {
+                    e.no_bump = s == 0x0b;
+                }
+            }
             // FUN_100b9120: the moogle menu as 0x02E opens it (FUN_101d6110(0)).
             Effect::Op { op: 0x85, .. } => super::moogle::open(self.w, false),
             // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (subs 1, 3, 6, 7 mount it: no mount model here).

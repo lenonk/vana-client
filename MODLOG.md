@@ -6390,3 +6390,7 @@ Spec `~/ffxi/lab/research/collision_chars_spec.md` (30261006_0).
   eligible, blocks), called once per 2-tick physics step (retail's 30 fps frame) unless in an event. Not done: event
   op 0xab subs 0x0b / 0x0c (op 0xab is R12), the +0xa4 states. Live (Tuxedo, GM 0, Northern San d'Oria, walking into
   Elesca): 16 held steps (30 -> 0, 0.5 s) at gap -0.062, then through to the other side. Test bump::hold_then_pass.
+
+- Event op 0xab subs 0x0b / 0x0c (FUN_100bac90) set / clear the event actor entity +0x120 bit 6, the bump test 3 flag:
+  ours e.no_bump from the VM generic Effect::Op (the actor is the VM own NPC). The other subs bits have no known
+  reader yet (R12).
