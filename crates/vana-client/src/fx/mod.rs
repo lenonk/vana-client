@@ -572,10 +572,12 @@ pub struct Effects {
     /// no reactions), and the actors whose load hold ends (their "main" started or was given up, FUN_100a9610).
     pub holds: Vec<(u32, f32, bool)>,
     pub releases: Vec<u32>,
+    /// Load holds taken here (op 0x80's skillchain burst, FUN_100a8e30); released like the action's.
+    pub loads: Vec<u32>,
     /// Op 0x25 / 0x21 hit reactions (FUN_100cdd60).
     pub reacts: Vec<React>,
-    /// Records whose messages print now (op 0x2b, or what is left when the action ends): (action, record).
-    pub action_prints: Vec<(crate::net::action::Action, usize)>,
+    /// Messages that print now: (action, record, which: 0 main (op 0x2b, the action's end), 1 proc / 2 react (op 0x71)).
+    pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -644,6 +646,7 @@ impl Effects {
             fades: Vec::new(),
             holds: Vec::new(),
             releases: Vec::new(),
+            loads: Vec::new(),
             reacts: Vec::new(),
             action_prints: Vec::new(),
             motion_files: Vec::new(),

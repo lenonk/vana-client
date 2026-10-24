@@ -48,6 +48,14 @@ pub struct Doll {
 
 const MAIN: u32 = u32::from_le_bytes(*b"main");
 
+/// DAT_1035bc3c: the skillchain burst's animation by proc kind (file 0xaf0 + it; LSB ActionProcSkillChain order).
+const SKILLCHAIN: [u16; 18] = [0, 479, 480, 475, 476, 477, 478, 467, 469, 474, 471, 472, 473, 470, 468, 1013, 1014, 0];
+
+/// FUN_10055cc0: several records outside categories 14 / 15 run at 0.7.
+fn action_speed(a: &Action) -> f32 {
+    if a.records().len() > 1 && !matches!(a.category, 0xe | 0xf) { 0.7 } else { 1.0 }
+}
+
 /// FUN_100d0570's files for a skill on a PC skeleton (tables 0x10353be4..0x10353cb8, indexed by race code 0..8):
 /// the motion and effect file, and the second file when body info byte 9 > 0 (0x...c30 table when it is 1).
 fn skill_files(category: u8, anim: u16, race: u8, skirt: i8) -> Option<(u32, Option<u32>)> {
@@ -159,16 +167,17 @@ impl Effects {
         let caster = a.actor;
         let first = a.targets.first().map_or(Who::None, |t| Who::Actor(t.id));
         let records = a.records().len();
-        // FUN_10055cc0: several records outside categories 14 / 15 run at 0.7.
-        let speed = if records > 1 && !matches!(a.category, 0xe | 0xf) { 0.7 } else { 1.0 };
+        let speed = action_speed(a);
         log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
-        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![false; records] }));
+        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![false; records], last: 0 }));
         match a.category {
             1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
-                    self.end_action(&Some(ctx));
+                    let ctx = Some(ctx);
+                    self.release(&ctx);
+                    self.end_action(&ctx);
                     return;
                 };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
@@ -320,7 +329,7 @@ impl Effects {
         for k in 0..a.printed.len() {
             if !a.printed[k] {
                 a.printed[k] = true;
-                self.action_prints.push((a.action.clone(), k));
+                self.action_prints.push((a.action.clone(), k, 0));
             }
         }
     }
@@ -376,7 +385,15 @@ impl Effects {
         if let Some(o) = self.sched_cache.get(&r) {
             return o.clone();
         }
-        let o = Rc::new(parse(self.reg.libs[r.0].data(r.1)));
+        let mut o = parse(self.reg.libs[r.0].data(r.1));
+        // FUN_1006b2b0: at start-up the global `proc` (op 01 on disk) gets 0x80 written over its first op.
+        if Some(r.0) == self.reg.global
+            && self.reg.libs[r.0].tree.nodes[r.1].name == *b"proc"
+            && let Some(first) = o.first_mut()
+        {
+            first.code = 0x80;
+        }
+        let o = Rc::new(o);
         self.sched_cache.insert(r, o.clone());
         o
     }
@@ -711,9 +728,40 @@ impl Effects {
                     let mut a = a.borrow_mut();
                     if let Some(k) = a.printed.iter().position(|p| !p) {
                         a.printed[k] = true;
-                        self.action_prints.push((a.action.clone(), k));
+                        a.last = k;
+                        self.action_prints.push((a.action.clone(), k, 0));
                     }
                 }
+                Flow::Next
+            }
+            // FUN_1018c870: message n (1 proc, 2 react) of the record op 0x2b printed last (`mprc`, `wapr`, `sb0?`).
+            0x71 if t.motions => {
+                if let Some(a) = &t.action {
+                    let a = a.borrow();
+                    self.action_prints.push((a.action.clone(), a.last, op.u32_at(8) as u8));
+                }
+                Flow::Next
+            }
+            // FUN_100a8e30: record 0's skillchain plays its burst file on (actor1, record 0's target), with a copy of
+            // the action whose records are all printed (only the burst's `mprc` prints its proc message).
+            0x80 if t.motions => {
+                let Some(ctx) = &t.action else { return Flow::Next };
+                let a = ctx.borrow().action.clone();
+                let recs = a.records();
+                let Some((target, r)) = recs.first().map(|(id, r)| (*id, *r)) else { return Flow::Next };
+                let kind = r.proc.as_ref().map_or(0, |p| p.kind as usize);
+                let anim = SKILLCHAIN.get(kind).copied().unwrap_or(0);
+                let Some(caster) = self.doll_of(t.a1).id() else { return Flow::Next };
+                if anim == 0 {
+                    return Flow::Next;
+                }
+                log::debug!("effects: skillchain kind {kind}: burst DAT {} on {caster:#x} -> {target:#x}", 0xaf0 + anim as u32);
+                let n = recs.len();
+                self.loads.push(caster);
+                self.loads.extend(recs.iter().map(|r| r.0));
+                let speed = action_speed(&a);
+                let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0 }));
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None });
                 Flow::Next
             }
             _ => Flow::Next,
@@ -1353,6 +1401,77 @@ mod tests {
         assert!(moves.iter().any(|m| m == "a20"), "{moves:?}");
         for g in ["g006", "g000"] {
             assert!(gens.iter().any(|n| n == g), "{g}: {gens:?}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod skillchain_tests {
+    use super::*;
+    use crate::net::action::{ActionResult, ActionTarget, Side};
+
+    struct Pair;
+
+    impl Actors for Pair {
+        fn matrix(&self, _: u32) -> Option<Mat4> {
+            Some(Mat4::IDENTITY)
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            Some(Vec3::ZERO)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), Vec::new())
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn pc(&self, _: u32) -> Option<(u8, i8)> {
+            None
+        }
+    }
+
+    /// skillchain_spec.md 5: DAT 0 `proc` (op 0x80) with record 0's proc kind 14 plays Impaction (3268) on the
+    /// target: hold 64, the reaction at t39, the proc message at `mprc` (t65); nothing for kind 0.
+    #[test]
+    fn impaction_burst() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let mut fx = Effects::new();
+        let index = std::sync::Arc::new(index);
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let g = fx.reg.global.unwrap();
+        let proc_ = fx.reg.libs[g].find_global(kind::SCHEDULER, u32::from_le_bytes(*b"proc")).unwrap();
+        assert_eq!(fx.sched_ops((g, proc_)).first().map(|o| o.code), Some(0x80));
+        for (kind, burst) in [(0u8, false), (14, true)] {
+            let r = ActionResult { animation: 16, message: 185, value: 40, proc: (kind != 0).then_some(Side { kind, info: 0, value: 57, message: 301 }), ..Default::default() };
+            let a = Action { actor: 1, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: 2, results: vec![r] }] };
+            let ctx = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true], last: 0 }));
+            fx.spawn_task((g, proc_), Who::Actor(1), Who::Actor(2), Some(ctx), 1.0, None);
+            let (mut prints, mut reacts, mut holds) = (Vec::new(), Vec::new(), Vec::new());
+            for _ in 0..600 {
+                fx.tick(&f, &Pair);
+                prints.extend(fx.action_prints.drain(..).map(|p| (p.1, p.2)));
+                reacts.extend(fx.reacts.drain(..).map(|r| r.reactor));
+                holds.extend(fx.holds.drain(..).map(|h| (h.0, h.1)));
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            if burst {
+                assert_eq!(std::mem::take(&mut fx.loads), vec![1, 2]);
+                assert_eq!(std::mem::take(&mut fx.releases), vec![1, 2]);
+                assert_eq!(prints, vec![(0, 1)]);
+                assert_eq!(reacts, vec![2]);
+                assert_eq!(holds, vec![(2, 64.0)]);
+            } else {
+                assert!(prints.is_empty() && reacts.is_empty() && holds.is_empty() && fx.loads.is_empty());
+            }
         }
     }
 }

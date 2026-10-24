@@ -34,6 +34,8 @@ pub struct ActionCtx {
     pub swing: Option<String>,
     /// Records whose messages printed (op 0x2b marks the first one not yet printed; the rest print at the end).
     pub printed: Vec<bool>,
+    /// The record op 0x2b printed last (+10): op 0x71 prints its proc / react message.
+    pub last: usize,
 }
 
 impl ActionCtx {

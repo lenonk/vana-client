@@ -342,10 +342,8 @@ fn one_action(w: &mut World, a: &Action) {
     // its ops 0x25 / 0x2b.
     let by_file = matches!(a.category, 3..=6 | 0xb | 0xd..=0xf);
     if by_file {
-        let until = Instant::now() + Duration::from_secs(30);
         for id in std::iter::once(a.actor).chain(a.records().iter().map(|r| r.0)) {
-            let e = w.holds.entry(id).or_insert(until);
-            *e = (*e).max(until);
+            fx_load(w, id);
         }
     }
     let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
@@ -386,13 +384,31 @@ fn one_action(w: &mut World, a: &Action) {
     }
 }
 
-/// An effect file's message op (0x2b) or the action's end: record `k`'s messages (main, additional effect, reaction).
-pub(super) fn print_record(w: &mut World, a: &Action, k: usize) {
-    let Some((id, r)) = a.records().get(k).map(|(id, r)| (*id, (*r).clone())) else { return };
-    let one = Action { targets: vec![crate::net::action::ActionTarget { id, results: vec![r] }], ..a.clone() };
-    for (mid, target, work) in action_messages(&one) {
-        print(w, Msg { id: mid, actor: a.actor, target, work });
+/// FUN_1009e090: record `k`'s message `which` (0 main from op 0x2b / the action's end, 1 proc / 2 react from op 0x71).
+pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
+    let Some((target, r)) = a.records().get(k).map(|(id, r)| (*id, (*r).clone())) else { return };
+    let work = [a.arg as i32, r.value as i32, r.proc.as_ref().map_or(0, |p| p.value as i32), r.react.as_ref().map_or(0, |p| p.value as i32), r.bit as i32];
+    let id = match which {
+        0 => Some(r.message),
+        1 => r.proc.as_ref().map(|p| p.message),
+        _ => r.react.as_ref().map(|p| p.message),
+    };
+    if let Some(id) = id.filter(|&id| id != 0) {
+        print(w, Msg { id, actor: a.actor, target, work });
     }
+}
+
+/// An actor waits while held by a swing / op 0x20 / 0x59, or while a skill action's file loads.
+pub(super) fn held(w: &World, id: u32) -> bool {
+    let now = Instant::now();
+    w.holds.get(&id).is_some_and(|t| *t > now) || w.loads.get(&id).is_some_and(|l| l.1 > now)
+}
+
+/// FUN_100a4140 for a skill action's load (busy +1; 1800-tick safety, +0x11e).
+pub(super) fn fx_load(w: &mut World, id: u32) {
+    let e = w.loads.entry(id).or_insert((0, Instant::now()));
+    e.0 += 1;
+    e.1 = Instant::now() + Duration::from_secs(30);
 }
 
 /// The skill holds from fx: op 0x20 / 0x59 for their ticks (the longest wins), and a load hold's end.
@@ -406,8 +422,14 @@ pub(super) fn fx_hold(w: &mut World, id: u32, ticks: f32, noreact: bool) {
     }
 }
 
+/// FUN_100a9610: one load hold ends (busy -1); op 0x20 holds run on.
 pub(super) fn fx_release(w: &mut World, id: u32) {
-    w.holds.insert(id, Instant::now());
+    if let Some(l) = w.loads.get_mut(&id) {
+        l.0 = l.0.saturating_sub(1);
+        if l.0 == 0 {
+            w.loads.remove(&id);
+        }
+    }
 }
 
 /// FUN_100cdd60 for op 0x25 / 0x21: none when the reactor is dead, riding, in its own no-reaction hold or the level
@@ -472,7 +494,8 @@ pub(super) fn tick(w: &mut World) {
             }
         }
     }
-    let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, _)| w.holds.get(id).is_none_or(|t| *t <= now)).map(|(id, s)| (*id, *s)).collect();
+    w.loads.retain(|_, l| l.1 > now);
+    let released: Vec<(u32, u8)> = w.held_status.iter().filter(|(id, _)| !held(w, **id)).map(|(id, s)| (*id, *s)).collect();
     for (id, s) in released {
         w.held_status.remove(&id);
         apply_status(w, id, s);

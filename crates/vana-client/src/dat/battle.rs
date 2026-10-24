@@ -362,7 +362,9 @@ impl BattleText {
                         Some(&k @ (0x01 | 0x02)) => pending = Some((line_no, out.len(), k == 0x02)),
                         Some(0x10) => out.extend(encode_sjis(&ctx.actor.as_ref().map_or(String::new(), |w| w.name.clone()))),
                         Some(0x11) => out.extend(encode_sjis(&ctx.target.as_ref().map_or(String::new(), |w| w.name.clone()))),
+                        // FUN_1021d5f0 / FUN_1021d650: the status noun (field 0, "stun") / adjective (field 1, "stunned").
                         Some(0x13) => out.extend(Self::msg_of(&self.statuses, work(slot))),
+                        Some(0x14) => out.extend(self.statuses.as_ref().and_then(|m| m.raw_field(work(slot).max(0) as usize, 1)).unwrap_or_default()),
                         // Kinds 3 / 4: the count, or for one the indefinite article.
                         Some(0x03 | 0x04) if work(slot) != 1 => out.extend(work(slot).to_string().bytes()),
                         Some(0x03 | 0x04) => pending = Some((line_no, out.len(), false)),
@@ -599,6 +601,16 @@ mod tests {
         let index = DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).ok()?;
         Some(BattleText::load(&index, &dll).unwrap())
+    }
+
+    /// Grammar kinds 0x13 / 0x14: the status noun (206 "... stun effect wears off.") and adjective (204 "is no longer
+    /// stunned.").
+    #[test]
+    fn status_noun_and_adjective() {
+        let Some(b) = load() else { return };
+        let ctx = Ctx { target: pc("Lnxtest"), work: [10, 0, 0, 0, 0], ..Default::default() };
+        assert_eq!(b.expand(204, &ctx).unwrap().lines, ["Lnxtest is no longer stunned."]);
+        assert_eq!(b.expand(206, &ctx).unwrap().lines, ["Lnxtest's stun effect wears off."]);
     }
 
     /// Message 180 (s2c 0x009): "You throw away a potion." for one, "... 3 potions." for more.

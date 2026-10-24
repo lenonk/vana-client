@@ -5508,3 +5508,22 @@ Spec `~/ffxi/lab/research/sound_audit.md`.
 - Map menu (map0), Mog House door menu, macro palette: the generic handler's 0001 cursor / 0002 Enter / 0003
   Escape. Ctrl / Alt + H (key 0x3d): 0002 before /heal.
 - Not done: the tell sound "0p40" (not resolved); the `<call>` sounds 0017..0023.
+
+## Skillchains: the burst file, the proc message, load holds by count (2026-10-24)
+
+Spec `~/ffxi/lab/research/skillchain_spec.md`.
+- FUN_1006b2b0 writes 0x80 over the first op of DAT 0's global `proc` (op 01 on disk) at start-up; 2147 skill files
+  call `proc` next to `mdam`. Ours patches the parsed ops (fx/tasks.rs sched_ops).
+- Op 0x80 (FUN_10057fb0, FUN_100a8e30): record 0's proc kind -> DAT_1035bc3c[kind] (18 x u16: 0, 479, 480, 475, 476,
+  477, 478, 467, 469, 474, 471, 472, 473, 470, 468, 1013, 1014, 0), file 0xaf0 + it, "main" on (actor1, record 0's
+  target) with a copy of the action whose records are all printed (FUN_1005e380); caster and targets load-held until
+  main starts.
+- Op 0x71 n (FUN_1018c870, DAT 0 `mprc` / `wapr` / `sb0?`): message n (1 proc, 2 react) of the record op 0x2b printed
+  last (action +10). Op 0x2b and the action's end print only main messages; a proc / react message no op 0x71 prints
+  is dropped.
+- Load holds are busy counts (FUN_100a4140 / FUN_100a9610) apart from the op 0x20 / 0x59 timed holds: a release no
+  longer cuts a running op 0x20 hold (World.loads, combat::held).
+- Live (Lnxtest WAR 15, H2H 40, Snipper in Valkurm Dunes): Shoulder Tackle twice -> proc kind 14 -> DAT 3268 on the
+  target, "Skillchain: Impaction." / "The Snipper takes 10 points of damage." about 1 s after the WS line.
+- Grammar kind 0x14 (FUN_1021d650 -> FUN_1021d8e0): field 1 of the status name entry (English adjective: "stunned",
+  "KO'd"); kind 0x13 is field 0 (the noun). Message 204 "is no longer <adj>." printed an empty name before.

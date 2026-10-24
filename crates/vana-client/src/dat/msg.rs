@@ -80,9 +80,16 @@ impl Messages {
 
     /// Field 0's bytes up to the first NUL (still Shift-JIS).
     pub fn raw(&self, id: usize) -> Option<Vec<u8>> {
+        self.raw_field(id, 0)
+    }
+
+    /// Field `k`'s bytes (FUN_1024d1a0(id, k): status names keep the noun in 0 and the adjective in 1).
+    pub fn raw_field(&self, id: usize, k: usize) -> Option<Vec<u8>> {
         let e = self.entries.get(id)?;
         let text = match u32_at(e, 0) {
-            Some(n) if (1..16).contains(&n) => e.get(u32_at(e, 4)? as usize + 0x1c..)?,
+            Some(n) if (1..16).contains(&n) && k < n as usize => e.get(u32_at(e, 4 + 8 * k)? as usize + 0x1c..)?,
+            Some(n) if (1..16).contains(&n) => return None,
+            _ if k > 0 => return None,
             _ => &e[..],
         };
         let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());

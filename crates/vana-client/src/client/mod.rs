@@ -2908,6 +2908,8 @@ struct World {
     rounds: HashMap<u32, (Instant, std::collections::VecDeque<crate::net::action::Action>)>,
     held_status: HashMap<u32, u8>,
     noreact: HashMap<u32, Instant>,
+    /// Skill actions' load holds (busy counts, FUN_100a4140) with their safety deadline.
+    loads: HashMap<u32, (u32, Instant)>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
     action_menu: Option<combat::ActionMenu>,
     /// A main menu row was picked this frame (the snapshot's `picked`).
@@ -4010,6 +4012,7 @@ impl App {
                             holds: HashMap::new(),
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
+                            loads: HashMap::new(),
                             action_menu: None,
                             menu_picked: false,
                             battle_prev: 0,
@@ -4613,6 +4616,7 @@ impl App {
                         looks.push((e.id, Source::Npc(npc)));
                     }
                     let fresh = !world.entities.contains_key(&e.id);
+                    let held = combat::held(world, e.id);
                     let entry = world.entities.entry(e.id).or_insert(Entity {
                         name: String::new(),
                         pos: Vec3::ZERO,
@@ -4657,7 +4661,7 @@ impl App {
                     }
                     if e.hpp.is_some() {
                         // A held actor (mid-swing) applies the change when its hold ends (combat::tick).
-                        if !fresh && world.holds.get(&e.id).is_some_and(|t| *t > Instant::now()) {
+                        if !fresh && held {
                             world.held_status.insert(e.id, e.motion.status);
                         } else {
                             motion.status = e.motion.status;
@@ -4915,7 +4919,7 @@ impl App {
                     }
                     world.my_pet = pet;
                     // Held mid-swing: applied when the hold ends (the disengage waits for the swing).
-                    if world.holds.get(&world.my_id).is_some_and(|t| *t > Instant::now()) {
+                    if combat::held(world, world.my_id) {
                         world.held_status.insert(world.my_id, status);
                     } else {
                         world.held_status.remove(&world.my_id);
@@ -5114,6 +5118,9 @@ impl App {
             }
         }
         // Skill actions: load holds end first, then op 0x20 / 0x59 holds, reactions and messages (fx/tasks.rs).
+        for id in std::mem::take(&mut world.effects.loads) {
+            combat::fx_load(world, id);
+        }
         for id in std::mem::take(&mut world.effects.releases) {
             combat::fx_release(world, id);
         }
@@ -5123,8 +5130,8 @@ impl App {
         for r in std::mem::take(&mut world.effects.reacts) {
             combat::react_op(world, &r);
         }
-        for (a, k) in std::mem::take(&mut world.effects.action_prints) {
-            combat::print_record(world, &a, k);
+        for (a, k, which) in std::mem::take(&mut world.effects.action_prints) {
+            combat::print_record(world, &a, k, which);
         }
         for (id, m) in std::mem::take(&mut world.effects.motions) {
             actmotion::play_op(world, id, m);
