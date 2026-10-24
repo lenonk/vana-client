@@ -6594,3 +6594,26 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` part S; ours client/searchmenu.rs.
   0x20000, encoded after friend as [10001] + 32 bits, search_spec 1.5).
 - Live (Lnxtest): level 10..20 and name "Pellam" in Southern San d'Oria found nobody, and /sea all showed why
   (Pellam in Tahrongi, the 10..20 players elsewhere).
+
+## Compass radar dots (2026-10-24)
+
+Spec `~/ffxi/lab/research/radar_dots_spec.md` (FUN_102203b0, old FUN_10216610); ours client/radar.rs, hudtop.rs
+draw_compass.
+- Every entity but us, in slot order, that passes FUN_10098210(0) (no door / lift / ship, not hidden or asleep, not
+  invisible: InvisFlag u32 @0x20 bit 29 of 0x00D / 0x00E, not untargetable (@0x2B 0x08) or radar-off (0x00E @0x2B
+  0x40), not an object model), within the compass range horizontally and 4 in height: local (P.x - E.x, E.z - P.z)
+  through S(2k) Rz(h') Rx(-1.0996), truncated; sprite 5 of "menu    compass" (an additive 6x6 dot).
+- Alpha from the compass alpha A: trunc((1 - t) A) past the fade start, then trunc((1 - u) a) past 2 high (x87,
+  truncating; the spec's vectors are unit tests). Colour by the kind bits (FUN_1008e290, ported as radar::kind_bits:
+  1 PC, 2 NPC, 0x10 monster, 4 party, 8 roster, 0x20 / 0x40 / 0x80 door / lift / ship, 0x100 charm, 0x200 us, 0x400
+  allegiance, 0x800 our fellow (0x037 u16 @0x48), 0x1000 trust): PC 0x0040f0 (party / alliance 0x3060e0) unless in
+  Monstrosity (0x00D u16 @0x3E), charm flag (pets, trusts) 0x30d000, NPC 0x00b040, then only when monsters are shown
+  0x808080 (dead 0x206060).
+- The compass's job fields are sampled at each open once the stats are in (FUN_1021ee70): NIN main or sub: scale 1.0,
+  range 36; else 0.8 / 28.8; fade start half the range; monsters shown for THF / BST / RNG / NIN / SMN / BLU main, or
+  sub with a level. The disk and letters use S(scale x k x 0.4) (NIN draws them 1.25x larger), the arrow the sampled
+  range.
+- One heading h' = atan2(f.x, -f.z) + (1 - k) pi for the disk, letters, dots and arrow: the compass turns half a turn
+  while it opens and closes (asm 0x10216671). Draw order disk, letters, dots, time, arrow.
+- Not modelled: +0x120 bit 15 (own model hide), the s2c 0x077 NPC hide (LSB never sends it), SubKind 6 object models.
+- Live (Lnxtest, Southern San d'Oria): green NPCs, Pellam blue beside us, a faded one past the fade start.

@@ -22,8 +22,9 @@ pub struct HudTop {
     help: String,
     help_wait: f32,
     help_off: f32,
-    /// Compass open fraction k 0..1 (24 ticks, DAT_10379934).
+    /// Compass open fraction k 0..1 (24 ticks, DAT_10379934), and its job fields sampled at open (client/radar.rs).
     compass: f32,
+    radar: Option<super::radar::Sample>,
     /// The clock's grid suffix (FUN_10220350): rebuilt when the countdown drops below 0, then 30 ticks on.
     grid: String,
     grid_wait: f32,
@@ -291,52 +292,50 @@ impl HudTop {
         self.compass = if show { (self.compass + step).min(1.0) } else { (self.compass - step).max(0.0) };
         let k = self.compass;
         if k <= 0.0 {
-            // Opening clears the suffix and its countdown, so the first draw builds it.
+            // Opening clears the suffix and its countdown, so the first draw builds it; the job fields are sampled
+            // again (FUN_1021ef60 runs at each open).
             self.grid.clear();
             self.grid_wait = 0.0;
+            self.radar = None;
             return;
         }
+        // Sampled once the stats are in (retail waits for them in state 1; before that ours draws as a non-NIN *(inf)*).
+        if self.radar.is_none()
+            && let Some(st) = w.stats.as_ref().filter(|_| w.recasts_seen)
+        {
+            self.radar = Some(super::radar::sample(st.main.0, st.sub.0, st.sub.1));
+        }
+        let rs = self.radar.unwrap_or_else(|| super::radar::sample(0, 0, 0));
         // Centre (0x58, log top - 0x2a) (FUN_10215170 / object +0x28 .. +0x2c).
         let (cx, cy) = (88.0, log_top - 42.0);
         let alpha = (k * 128.0) as u32;
         let tint = alpha << 24 | 0x80_8080;
-        let s = 0.8 * k * 0.4;
-        let tilt = (1.0996f32).cos();
-        // Screen up = the camera's horizontal forward; right = forward x -Y (east when facing north).
+        let tilt = (1.0996f64).cos();
+        // FUN_10220c20 + asm 0x10216671: the heading (camera forward flattened; up = forward) and half a turn while it
+        // opens or closes: h' = h + (1 - k) pi.
         let f = Vec3::new(fwd.x, 0.0, fwd.z).normalize_or(Vec3::Z);
-        let r = f.cross(Vec3::NEG_Y);
-        let to_screen = |d: Vec3, radius: f32| -> (f32, f32) { (d.dot(r) * radius * s, -d.dot(f) * radius * s * tilt) };
-        if !w.zone.is_some_and(no_compass) {
-            // The disk: sprite 0's cells mapped through the same turn and tilt (north = texture up, inferred).
-            let ang = Vec3::Z.dot(r).atan2(Vec3::Z.dot(f));
-            let (sn, cs) = ang.sin_cos();
-            gu.sprite_affine("menu    compass", 0, cx, cy, [cs * s, -sn * s, sn * s * tilt, cs * s * tilt], tint);
-            for (dir, sprite) in [(Vec3::Z, 4), (Vec3::X, 1), (Vec3::NEG_Z, 3), (Vec3::NEG_X, 2)] {
-                let (dx, dy) = to_screen(dir, 140.0);
+        let h = (f.x as f64).atan2(-f.z as f64) + (1.0 - k as f64) * std::f64::consts::PI;
+        let (sn, cs) = h.sin_cos();
+        // A local (lx, ly) = (P.x - E.x, E.z - P.z) through S(scale) Rz(h') Rx(-1.0996), the offset truncated.
+        let map = |lx: f64, ly: f64, sc: f64| -> (f32, f32) { (((lx * cs - ly * sn) * sc).trunc() as f32, ((lx * sn + ly * cs) * sc * tilt).trunc() as f32) };
+        // The disk and the letters: S(C+0x30 x k x 0.4); the dots and the arrow: S(2k).
+        let s1 = rs.scale as f64 * k as f64 * 0.4;
+        let s2 = 2.0 * k as f64;
+        let compass = !w.zone.is_some_and(no_compass);
+        if compass {
+            // The disk: sprite 0's cells through the same turn and tilt (its quadrants are mirrored, so h' - pi looks
+            // as h').
+            let (dsn, dcs) = ((h - std::f64::consts::PI).sin() as f32, (h - std::f64::consts::PI).cos() as f32);
+            let (s, t) = (s1 as f32, tilt as f32);
+            gu.sprite_affine("menu    compass", 0, cx, cy, [dcs * s, -dsn * s, dsn * s * t, dcs * s * t], tint);
+            for ((lx, ly), sprite) in [((0.0, 140.0), 4), ((-140.0, 0.0), 1), ((0.0, -140.0), 3), ((140.0, 0.0), 2)] {
+                let (dx, dy) = map(lx, ly, s1);
                 gu.sprite("menu    compass", sprite, cx + dx, cy + dy, tint);
             }
-            // FUN_102203b0: the kaipage arrow on the rim toward the tracked target (colour 0x802080f0, the name in
-            // white) or, untracked, the call-for-help monster (FUN_1021f030; 0x80802020, the name in ncol 8): radius
-            // 28.8 x 0.8, 36 x 0.8 with NIN main or sub, through the 2k matrix, its bottom centre on the point, the
-            // name at (+36, +26); both at a fixed alpha, not the disk's.
-            let aim = match w.scan.tracking() {
-                Some(t) => Some((t.pos[0], t.pos[2], t.index, 0x8020_80f0u32, 0x8080_8080u32)),
-                None => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| (e.pos.x, e.pos.z, e.index, 0x8080_2020, gu.ncol(8))),
-            };
-            if let Some((tx, tz, index, colour, name_colour)) = aim {
-                let d = Vec3::new(tx - w.pos.x, 0.0, tz - w.pos.z).normalize_or_zero();
-                if d != Vec3::ZERO {
-                    let nin = w.stats.as_ref().is_some_and(|s| s.main.0 == 13 || s.sub.0 == 13);
-                    let radius = if nin { 36.0 } else { 28.8 } * 0.8 * 2.0 * k;
-                    let (sx, sy) = (d.dot(r) * radius, -d.dot(f) * radius * tilt);
-                    let n = gu.lib_len("anc     kaipage").max(1);
-                    let fr = (w.started.elapsed().as_secs_f32() * 10.0) as usize % n;
-                    let b = gu.cell_bounds("anc     kaipage", fr, 0).unwrap_or([0.0; 4]);
-                    gu.sprite("anc     kaipage", fr, cx + sx - (b[2] - b[0]) / 2.0, cy + sy - (b[3] - b[1]), colour);
-                    if let Some((_, name)) = w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == index & 0x3ff) {
-                        gu.shape_text(name, cx + 36.0, cy + 26.0, name_colour, false);
-                    }
-                }
+            // FUN_102203b0's dots (client/radar.rs): sprite 5 (an additive 6x6 dot), in slot order.
+            for (lx, ly, colour) in super::radar::dots(w, alpha, &rs) {
+                let (dx, dy) = map(lx, ly, s2);
+                gu.sprite("menu    compass", 5, cx + dx, cy + dy, colour);
             }
         }
         if let Some((t, at)) = w.clock.filter(|_| w.compass_clock) {
@@ -359,6 +358,31 @@ impl HudTop {
                 if w.weather % 2 == 1 {
                     let bw = gu.sprite_width("font    usgaiji", b);
                     gu.sprite("font    usgaiji", b, cx - 68.0 + bw, cy - 42.0, tint);
+                }
+            }
+        }
+        // FUN_100f94d0 after the time: the kaipage arrow on the rim toward the tracked target (colour 0x802080f0, the
+        // name in white) or, untracked, the call-for-help monster (FUN_1021f030; 0x80802020, the name in ncol 8):
+        // the unit direction at the compass range x 0.8 through the 2k matrix, its bottom centre on the point, the
+        // name at (+36, +26); both at a fixed alpha, not the disk's.
+        if !compass {
+            return;
+        }
+        let aim = match w.scan.tracking() {
+            Some(t) => Some((t.pos[0], t.pos[2], t.index, 0x8020_80f0u32, 0x8080_8080u32)),
+            None => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| (e.pos.x, e.pos.z, e.index, 0x8080_2020, gu.ncol(8))),
+        };
+        if let Some((tx, tz, index, colour, name_colour)) = aim {
+            let d = Vec3::new(tx - w.pos.x, 0.0, tz - w.pos.z).normalize_or_zero();
+            if d != Vec3::ZERO {
+                let radius = rs.range as f64 * 0.8;
+                let (sx, sy) = map(-d.x as f64 * radius, d.z as f64 * radius, s2);
+                let n = gu.lib_len("anc     kaipage").max(1);
+                let fr = (w.started.elapsed().as_secs_f32() * 10.0) as usize % n;
+                let b = gu.cell_bounds("anc     kaipage", fr, 0).unwrap_or([0.0; 4]);
+                gu.sprite("anc     kaipage", fr, cx + sx - (b[2] - b[0]) / 2.0, cy + sy - (b[3] - b[1]), colour);
+                if let Some((_, name)) = w.npc_names.iter().find(|(id, _)| (*id & 0x3ff) as u16 == index & 0x3ff) {
+                    gu.shape_text(name, cx + 36.0, cy + 26.0, name_colour, false);
                 }
             }
         }

@@ -56,6 +56,7 @@ mod missions;
 mod quests;
 mod keyitems;
 mod searchmenu;
+mod radar;
 mod status;
 mod inspect;
 mod linehist;
@@ -247,6 +248,10 @@ struct Entity {
     gens_off: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
+    /// client/radar.rs: InvisFlag (+0x128 bit 6), 0x00E @0x2B bit 0x40 (+0x130 bit 15), the Monstrosity word (+0x210).
+    invisible: bool,
+    radar_off: bool,
+    monstrosity: u16,
     /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
     sub: [u8; 3],
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
@@ -885,6 +890,9 @@ fn self_entity(w: &World) -> Entity {
         no_plate: false,
         gens_off: false,
         untargetable: false,
+        invisible: false,
+        radar_off: false,
+        monstrosity: 0,
         sub: [0, 8, 0],
         init_done: false,
         door: 0,
@@ -2580,6 +2588,9 @@ fn place_mogdoor(w: &mut World) {
             no_plate: true,
             gens_off: false,
             untargetable: false,
+            invisible: false,
+            radar_off: false,
+            monstrosity: 0,
             sub: [0, 8, 0],
             init_done: false,
             door: 0,
@@ -3422,6 +3433,8 @@ struct World {
     /// The quest / mission store (s2c 0x056), the log name files (read on the first open), the Missions windows, a
     /// /mission to open (with its argument), and the enabled expansions (lobby bits & installed, FUN_1022dad0).
     journal: journal::Store,
+    /// Our adventuring fellow's ActIndex (0x037 u16 @0x48, player +0x29c).
+    my_fellow: u16,
     /// The Search row's windows (searchma and its criteria), and scname's name (kept between opens, +0x18).
     searchmenu: Option<searchmenu::SearchMenu>,
     search_name: String,
@@ -4637,6 +4650,7 @@ impl App {
                             keyitems: None,
                             ki_seen: Default::default(),
                             searchmenu: None,
+                            my_fellow: 0,
                             search_name: String::new(),
                             logs: None,
                             missions: None,
@@ -5254,6 +5268,9 @@ impl App {
                         no_plate: false,
                         gens_off: false,
                         untargetable: false,
+                        invisible: false,
+                        radar_off: false,
+                        monstrosity: 0,
                         sub: [0, 8, 0],
                         init_done: false,
                         door: 0,
@@ -5361,6 +5378,9 @@ impl App {
                     }
                     if let Some(u) = e.untargetable {
                         entry.untargetable = u;
+                    }
+                    if let Some((inv, off, mon)) = e.radar {
+                        (entry.invisible, entry.radar_off, entry.monstrosity) = (inv, off, mon);
                     }
                     if let Some(s) = e.sub_anim {
                         entry.sub[0] = s;
@@ -5572,7 +5592,8 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow } => {
+                    world.my_fellow = fellow;
                     world.self_flags = flags;
                     world.buffs = icons;
                     world.my_team = team;

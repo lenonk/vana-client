@@ -88,7 +88,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     prompt, the mount model under the rider, the Friend List);
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
-    pointer and `<ht>`; left: the compass radar dots, helpwind's other busy bits;
+    pointer and `<ht>`, the compass radar dots (MODLOG "Compass radar dots"); left: helpwind's other busy bits;
   - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual, the Recycle Bin (and
     `/recycle`, "menu    itemctrl") done; the storage views (text commands, both sides, itmsortw, itmstora,
     Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); left the Delivery Box and
