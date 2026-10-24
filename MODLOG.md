@@ -6561,3 +6561,21 @@ Spec `~/ffxi/lab/research/quest_mission_spec.md` section 7; ours client/keyitems
 - Live (Lnxcsfix, !addkeyitem 1 / 2): "Zeruhn report" and "Palborough Mines logs" new, Examine, Yes, the description,
   then seen; LSB accepted the 0x064. Both removed with !delkeyitem (their seen bits stay set on the server, as LSB
   keeps them).
+
+## Search menu, part 1 (2026-10-24)
+
+Spec `~/ffxi/lab/research/menu_rows2_spec.md` part S; ours client/searchmenu.rs.
+- Main menu child 8 (FUN_10140400 case 8, SE 0002): searchma in the main menu's place (ours: the menu closes and comes
+  back on Search; retail: group 0x81 suspends menuwind), the criterion windows in searchma's place (all 0x81: the
+  walk shows the newest); title slot 2 0xd 0 "Search" while searchma is open; cursor memory per window.
+- Disabled at open (FUN_1020d250): Friend (no POL friend list), Linkshell / Linkshell 2 without one equipped,
+  Ballista (S+0x40dac bit 15; LSB: never). A pick while a query is out: SE 0004.
+- Each pick searches the current zone with that one criterion (FUN_1020d310 resets the condition when searchma gets
+  the focus back) and opens the results beside searchma (search::run); the criterion window closes: Job (searchjo,
+  job = child), Country (searchna, nation = child - 1), Race (searchra, child 1..5 Hume, Elvaan, Tarutaru, Mithra,
+  Galka = race 0..4), Rank (searchle, min = max = child), Request (status 0x10000000), Linkshell / Linkshell 2 (the
+  equipped shell's id).
+- Not done yet: Area (arealist), Name (scname), Level / Master Level (scchar / scmlev), Unity / Monstrosity (arealist
+  modes 4 / 3), Comment / Edit Comment (comgenre, the comment editor, c2s 0x0E0), Refine (scsibori).
+- Live (Lnxtest, Southern San d'Oria): Job -> Warrior: Lnxtest and Pellam; Country -> Bastok: Pellam, Pomomaru; Escape
+  back to searchma, then to the main menu on Search.
