@@ -154,10 +154,11 @@ pub fn party_hand(w: &World) -> Option<(usize, u32, Option<u32>)> {
         Some(pc) => {
             let id = match pc.index {
                 0 => Some(w.my_id),
-                i => {
-                    let m = slots.slots.get(i).cloned().flatten()?;
-                    w.entities.iter().find(|(_, e)| e.index == m.index).map(|(id, _)| *id)
-                }
+                // FUN_102033c0: an away member keeps the base tint and flashes nothing.
+                i => match slots.here(i, w.pos_zone) {
+                    Some(m) => w.entities.iter().find(|(_, e)| e.index == m.index).map(|(id, _)| *id),
+                    None => return slots.slots.get(i).cloned().flatten().map(|_| (pc.index, 0xa040_40d0, None)),
+                },
             };
             let tint = match (id, pc.range) {
                 (Some(id), Some(r)) => {

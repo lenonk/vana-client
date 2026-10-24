@@ -137,6 +137,10 @@ impl Roster {
     /// 0x0DD (`create` false: unknown ids ignored, the marker set from ZoneNo) or 0x0E2 (`create`: unknown ids
     /// added, the zone set and the marker cleared).
     pub fn list(&mut self, u: &ListUpdate, my_id: u32, create: bool) {
+        // An update with an empty name is dropped whole.
+        if u.name.is_empty() {
+            return;
+        }
         let i = if u.id == my_id && my_id != 0 {
             Some(0)
         } else {

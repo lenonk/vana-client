@@ -1215,6 +1215,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if trade::active(world) => trade::key(world, gu, *key),
                 _ if synth::active(world) => synth::key(world, gu, *key),
                 _ if post::active(world) => post::key(world, gu, *key),
+                _ if world.search.is_some() => search::key(world, *key),
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -1551,8 +1552,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     while world.gauge_acc >= 1.0 / 30.0 {
         world.gauge_acc -= 1.0 / 30.0;
-        for (g, id) in world.party_gauges.iter_mut().zip(&ids) {
-            (g.1, g.2) = (ease(g.1, id.1), ease(g.2, id.2));
+        // FUN_10202530 eases only rows in our zone; an away row keeps its bars.
+        for ((g, id), m) in world.party_gauges.iter_mut().zip(&ids).zip(&rows) {
+            if m.as_ref().is_none_or(|m| m.away == 0 && m.zone == world.pos_zone) {
+                (g.1, g.2) = (ease(g.1, id.1), ease(g.2, id.2));
+            }
         }
         for (k, g) in world.ally_gauges.iter_mut().enumerate() {
             if let Some(m) = party_slots.slots.get(6 + k).and_then(|m| m.as_ref()) {
@@ -1942,7 +1946,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             blockers.push(win.frame);
         }
     }
-    let mut row_of: HashMap<&str, usize> = HashMap::new();
     for t in &slots {
         match t.what {
             "target name" => {
@@ -1977,10 +1980,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
             }
             "member name" | "HP" | "MP" | "member away" => {
-                // Rows come in order: each slot kind counts its own row.
-                let k = row_of.entry(t.what).or_insert(0);
-                let row = *k;
-                *k += 1;
+                let row = t.align as usize;
                 // Ours from our own vitals; the others from the roster (name, HP / MP / TP, HPP).
                 let v = match rows.get(row) {
                     Some(None) => world.vitals.map(|(hp, mp, tp, hpp, _)| (world.name.clone(), hp, mp, tp, hpp, 0u16, row)),
@@ -3137,6 +3137,8 @@ struct World {
     /// The search server from the lobby's reply (+0x40 IP, +0x44 port) and the queries running on it.
     search_addr: (std::net::Ipv4Addr, u16),
     searches: Vec<(std::sync::mpsc::Receiver<anyhow::Result<crate::net::search::Reply>>, search::Then)>,
+    /// The search results window ("menu    scresult") and scoption over it.
+    search: Option<search::Results>,
     weather: u16,
     /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
     /// Vana minutes x 2.4 s).
@@ -4151,6 +4153,7 @@ impl App {
                             name: login.name.clone(),
                             search_addr: login.search,
                             searches: Vec::new(),
+                            search: None,
                             my_id: login.char_id,
                             my_index: 0,
                             pos: Vec3::ZERO,
@@ -4681,6 +4684,7 @@ impl App {
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count } => {
                     world.mog_zone = mog_zone;
                     world.play_time = Some((play_time, Instant::now()));
+                    world.search = None;
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;

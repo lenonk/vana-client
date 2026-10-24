@@ -872,18 +872,20 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
         // FUN_10202530 per member row (children 1..6). In zone: HP gauge (+26, +7), MP gauge (+49, +17, drawn empty
         // for jobs without MP), name at the row, HP number (+88, +1), MP number (+98, +10); TP (+48, +10) only with
         // config 0xae bit 0. In another zone: the name and "(zone)" right-aligned at (+0x69, +0xb), both grey.
+        // Text slots carry the row in `align`.
         for (i, &(hp, mp)) in st.party.iter().take(6).enumerate() {
+            let row = i as u8;
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
             let (rx, ry) = (x + c.x as f32, y + c.y as f32);
             if st.party_away.get(i).copied().unwrap_or(false) {
-                text.push(TextSlot { what: "member away", x: rx, y: ry, align: 0 });
+                text.push(TextSlot { what: "member away", x: rx, y: ry, align: row });
             } else {
                 let (ha, ma) = st.party_anim.get(i).copied().unwrap_or((hp, mp));
                 push_gauge_eased(&mut b, ui, wps, rx + 26.0, ry + 7.0, GAUGE_HP.0, GAUGE_HP.1, hp, ha);
                 push_gauge_eased(&mut b, ui, wps, rx + 49.0, ry + 17.0, GAUGE_MP.0, GAUGE_MP.1, mp, ma);
-                text.push(TextSlot { what: "member name", x: rx, y: ry, align: 0 });
-                text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: 0 });
-                text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: 0 });
+                text.push(TextSlot { what: "member name", x: rx, y: ry, align: row });
+                text.push(TextSlot { what: "HP", x: rx + 88.0, y: ry + 1.0, align: row });
+                text.push(TextSlot { what: "MP", x: rx + 98.0, y: ry + 10.0, align: row });
             }
             // FUN_10202110: the half-size hand (anc2s, 6 frames) anchored at the row's top-left.
             if let Some((row, tint, frame)) = st.party_hand.filter(|h| h.0 == i)

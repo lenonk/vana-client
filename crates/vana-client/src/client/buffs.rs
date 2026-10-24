@@ -115,7 +115,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
 /// The party icon object (DAT_106671bc, draw FUN_10228440, config 0xc2), while the buff window is up: the target
 /// window's target when it is a party member other than us ("< name >"), else the party cursor's member; its 0x076
 /// icons 8 a row at 14 px (24 x 0.6) over the log window (x + 200), or over the party window when they would reach
-/// it; the name above in fontshp, grey unless in our zone (FUN_10202cc0, inferred).
+/// it; the name above in fontshp, grey unless in our zone (FUN_10202cc0).
 pub fn draw_party(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log: [f32; 4]) {
     if w.game.get(0xc2) == 0 {
         return;
@@ -147,7 +147,7 @@ pub fn draw_party(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log: [f32; 4]) {
         gu.image_rect(&tex, x0 + 1.0 + 14.0 * (j % 8) as f32, y0 + 1.0 + 14.0 * (j / 8) as f32, 14.4, 14.4, [1.0; 4]);
     }
     let Some(m) = w.party.members().find(|m| m.id == id) else { return };
-    let tint = if m.zone == w.pos_zone { 0x8080_8080 } else { 0x8040_4040 };
+    let tint = if m.zone == w.pos_zone && m.away == 0 { 0x8080_8080 } else { 0x8040_4040 };
     if bracketed {
         gu.shape_text("< ", x0, y0 - 16.0, tint, true);
     }

@@ -5831,3 +5831,21 @@ Spec `~/ffxi/lab/research/search_spec.md` (protocol 1.1..1.8, grammar, windows, 
 - /pcmd add NAME, /acmd add NAME with nobody by that name in the zone (LAB_1007d5b0): c2s 0x06E {UniqueNo rec+0x18,
   ActIndex 0, kind 5 when the record has flag 8 (party leader), else 0} for both commands; no match: silent. Live:
   Lnxtest in Southern San d'Oria invited Rokuro in East Ronfaure, who joined.
+
+## Party rows for members in other zones (2026-10-24)
+
+Spec `~/ffxi/lab/research/party_zone_spec.md`.
+- In our zone (FUN_10202cc0, also FUN_10202530 / FUN_10202720 / FUN_102033c0): the slot used, record zone (+0x2e) ==
+  ours (G+0x3c350) and marker (+0x30) == 0. 0x0C8 writes zone and marker together when the zone is new or changed;
+  0x0DD sets the marker to its ZoneNo (@0x20); 0x0E2 sets the zone and clears the marker; 0x0DF touches neither; a
+  0x0DD / 0x0E2 with an empty name is dropped whole. LSB's 0x0DD for a member elsewhere carries ZoneNo only (HP, MP,
+  TP, ActIndex and jobs 0).
+- Party window away row: the name in 0x80606060 and "(%s)" (0x10382120) with the short area name (FUN_101cbc10,
+  group 4) right-aligned in fontshp at (+0x69, +0xb), no gauges; alliance rows: the grey name only. The gauges ease
+  only for rows in our zone. The party status-icon name turns 0x80404040 by the same test.
+- Fixed: our text pass counted rows per text kind, so after an away row every row showed the previous member's name
+  and HP; the slots now carry their row. The party cursor's hand on an away member keeps the base tint 0xa04040d0
+  and flashes nothing (it matched entities by a stale ActIndex).
+- LSB bots teleport to their leader at once (modules/bots/bot_ai.cpp), so an away row needs a bot leader. Live:
+  Gavrel (leader) and Korrin in Southern San d'Oria, Lnxtest in West Ronfaure: "Gavrel (SSandOria)", "Korrin
+  (SSandOria)" grey, the leader dot on Gavrel.
