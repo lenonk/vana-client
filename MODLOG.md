@@ -5815,3 +5815,19 @@ Spec `~/ffxi/lab/research/model_gens_spec.md`.
   no model and door 0, so Tab and the mouse skipped it and nobody could leave the Mog House. Now always visible, and
   the mouse pick gives it the doors' 0.5-tall box (FUN_100ad320; it is an XiDoorActor, kind 3). Confirmed by the user.
 - Test tool: `act:goto:X,Z` adds a walk waypoint (as --goto) from a script.
+
+## Search: the search server client and name lookups (2026-10-24)
+
+Spec `~/ffxi/lab/research/search_spec.md` (protocol 1.1..1.8, grammar, windows, other users, order).
+- net/search.rs: one TCP connection per query to the lobby's search address (MapLogin.search, LSB xi_search 54002);
+  request = 0x10 header ("IXFF", data length, 0x80, wire type) + payload padded to 64 k + session word, MD5 of
+  [8, P-8), salt; Blowfish (the map server's variant, no zero cut) keyed MD5("0s=m<1IZ2zBCc8{~" ++ salt) over
+  [8, P+8). Replies keyed MD5(fixed ++ salt echo ++ session word), MD5 checked, entries `[u8 n][bits]` decoded by
+  5-bit type (FUN_101061d0) into the 0x48 record; read until reply +0x0a bit 7 (LSB sends every page at once and
+  answers retail's "more" with empty auction packets), then close. Conditions so far: all areas, one area, name
+  only. Unit test: the spec's fixed vector (request bytes exact, reply decrypt + 3 records); an ignored live test.
+- FUN_1007c740 name lookup (client/search.rs): name normalised (first upper, rest lower, 15 chars), all areas, name
+  only; the callbacks take only an exact name match (LSB matches a case-insensitive prefix).
+- /pcmd add NAME, /acmd add NAME with nobody by that name in the zone (LAB_1007d5b0): c2s 0x06E {UniqueNo rec+0x18,
+  ActIndex 0, kind 5 when the record has flag 8 (party leader), else 0} for both commands; no match: silent. Live:
+  Lnxtest in Southern San d'Oria invited Rokuro in East Ronfaure, who joined.

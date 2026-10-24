@@ -47,6 +47,7 @@ mod post;
 mod synth;
 mod treasure;
 mod servmes;
+mod search;
 mod shop;
 mod gauge;
 mod trade;
@@ -3133,6 +3134,9 @@ struct World {
     chat_prefix: String,
     /// /ver's text (retail: patch.ver; ours the version string sent to the lobby).
     client_version: String,
+    /// The search server from the lobby's reply (+0x40 IP, +0x44 port) and the queries running on it.
+    search_addr: (std::net::Ipv4Addr, u16),
+    searches: Vec<(std::sync::mpsc::Receiver<anyhow::Result<crate::net::search::Reply>>, search::Then)>,
     weather: u16,
     /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
     /// Vana minutes x 2.4 s).
@@ -4145,6 +4149,8 @@ impl App {
                             area_lights: HashMap::new(),
                             ground: None,
                             name: login.name.clone(),
+                            search_addr: login.search,
+                            searches: Vec::new(),
                             my_id: login.char_id,
                             my_index: 0,
                             pos: Vec3::ZERO,
@@ -5358,6 +5364,7 @@ impl App {
         for id in spops {
             world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"spop"));
         }
+        search::poll(world);
         for (id, off) in std::mem::take(&mut world.effects.gens_off) {
             if let Some(e) = world.entities.get_mut(&id) {
                 e.gens_off = off;

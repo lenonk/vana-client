@@ -1535,8 +1535,8 @@ pub(super) fn system_line(w: &mut World, id: u16) {
 
 /// FUN_1007d3e0: /pcmd (kind 0) and /acmd (kind 5): add [target] (0x06E; an NPC gets group 7 0x9f), leave (0x06F),
 /// breakup (0x070, leaders only), kick / leader / looter Name (0x071 / 0x077 ChangeKind 0 or 1 / 4). A party of only
-/// us and trusts refuses them (group 7 0x9e). An unknown or missing subcommand does nothing. Not done: the name search
-/// for an add whose name isn't here.
+/// us and trusts refuses them (group 7 0x9e). An unknown or missing subcommand does nothing. An add whose name isn't
+/// here goes through the search server (client/search.rs).
 fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
     let others: Vec<u16> = w.party.members().filter(|m| m.id != w.my_id && m.id != 0).map(|m| m.index).collect();
     if !others.is_empty() && others.iter().all(|&i| i >= 0x700) {
@@ -1554,7 +1554,12 @@ fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
     };
     match args.get(1).map(String::as_str) {
         Some("add") => {
-            let Some(t) = resolve(w, args.get(2).map(String::as_str), true, false, mode) else { return Err(()) };
+            let Some(t) = resolve(w, args.get(2).map(String::as_str), true, false, mode) else {
+                // Nobody here by that name: the search server's name lookup (FUN_1007c740, LAB_1007d5b0).
+                let Some(name) = args.get(2) else { return Err(()) };
+                super::search::lookup(w, name, super::search::Then::PartyAdd);
+                return Ok(());
+            };
             if t.0 >> 24 == 1 {
                 refuse(w, 0x9f);
                 return Ok(());
