@@ -31,9 +31,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   `setsid -f ./xi_map --log log/map-server-54230.log --ip 127.0.0.1 --port 54230 > /dev/null 2>&1 < /dev/null`
 
 ## Build and test
-- `nice -n 19 taskset -c 0-14 cargo build --release`, `nice -n 19 taskset -c 0-14 cargo test --release` (core 15
-  left free; `-j` alone doesn't do it, rustc's codegen threads still take every core. A full load starves the LSB
-  map server, which crashes). The user runs
+- `nice -n 19 taskset -c 0-11 cargo build --release`, `nice -n 19 taskset -c 0-11 cargo test --release` (cores
+  12..15 left free; `-j` alone doesn't do it, rustc's codegen threads still take every core. A busier build trips the
+  LSB map server's 2 s tick watchdog while its bots and their chat model run, and it is killed). The user runs
   `target/release/vana-client play`.
 - Offscreen tools for checking without a window: `npc-shot`, `char-shot`, `select-shot`, `creator-shot`,
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
