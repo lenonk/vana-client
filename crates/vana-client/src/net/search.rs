@@ -28,6 +28,7 @@ pub const MLEVEL: u32 = 0x80;
 pub const LS1: u32 = 0x800;
 pub const FRIEND: u32 = 0x1000;
 pub const RANK: u32 = 0x10000;
+pub const COMMENT: u32 = 0x20000;
 pub const LS2: u32 = 0x80000;
 
 /// What to search for: FUN_10103ec0's condition (0x68 bytes) with the fields set so far.
@@ -55,6 +56,8 @@ pub struct Cond {
     pub ls: [u32; 2],
     /// +0x60 (its low half is +0x4a).
     pub status: u32,
+    /// +0x5c: the comment type (genre << 4 | sub; FUN_10108040).
+    pub comment: u32,
 }
 
 impl Cond {
@@ -213,6 +216,10 @@ pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
     }
     if c.flags & FRIEND != 0 {
         b.put(0b01100, 5);
+    }
+    if c.flags & COMMENT != 0 {
+        b.put(0b10001, 5);
+        b.put(c.comment, 32);
     }
     if c.status != 0 {
         b.put(0b10110, 5);

@@ -1101,9 +1101,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The event input window and the map's marker name entry take every key first.
     let map_typing = world.map.as_ref().is_some_and(|m| m.typing());
     let post_typing = post::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing;
+    let search_typing = searchmenu::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing;
     if post_typing {
         post::text_events(world, &input.events);
+        keys.clear();
+    } else if search_typing {
+        searchmenu::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -3418,8 +3422,9 @@ struct World {
     /// The quest / mission store (s2c 0x056), the log name files (read on the first open), the Missions windows, a
     /// /mission to open (with its argument), and the enabled expansions (lobby bits & installed, FUN_1022dad0).
     journal: journal::Store,
-    /// The Search row's windows (searchma and its criteria).
+    /// The Search row's windows (searchma and its criteria), and scname's name (kept between opens, +0x18).
     searchmenu: Option<searchmenu::SearchMenu>,
+    search_name: String,
     /// The Key Items windows and the key items' seen bits (s2c 0x055 @0x44).
     keyitems: Option<keyitems::KeyItems>,
     ki_seen: keyitems::Seen,
@@ -4632,6 +4637,7 @@ impl App {
                             keyitems: None,
                             ki_seen: Default::default(),
                             searchmenu: None,
+                            search_name: String::new(),
                             logs: None,
                             missions: None,
                             mission_cmd: None,

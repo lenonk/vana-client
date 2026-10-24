@@ -6579,3 +6579,18 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` part S; ours client/searchmenu.rs.
   modes 4 / 3), Comment / Edit Comment (comgenre, the comment editor, c2s 0x0E0), Refine (scsibori).
 - Live (Lnxtest, Southern San d'Oria): Job -> Warrior: Lnxtest and Pellam; Country -> Bastok: Pellam, Pomomaru; Escape
   back to searchma, then to the main menu on Search.
+
+## Search menu, part 2 (2026-10-24)
+
+- scchar / scmlev (FUN_1020dd50 / FUN_1020e0a0): shown, they ask for fresh stats (c2s 0x061) and set both values to
+  our main level (scmlev: the master level with 0x061 @0x66 bit 0, else 0); Enter on a field edits it (Up / Down
+  step within 1..99 / 0..99, raising the minimum pushes the maximum up and lowering the maximum pushes the minimum
+  down; Left / Right edit the other field; Enter / Escape stop); OK searches the current zone with the level (or
+  master level) pair; Cancel closes. The values "%d" right-aligned at (child right - 2, top + 2) in the shape font,
+  0x80a06040 while edited. The windows' own links include Left / Right (now followed for every search window).
+- scname: Enter on the field opens a 15-character box (typed text, Backspace; Enter commits, Escape closes it keeping
+  the text); OK searches name + current zone; the name stays between opens (World.search_name).
+- comgenre in mode 1 (searchma's Comment): genre rows 1..7 search comment type genre << 4 (Cond.comment, flag
+  0x20000, encoded after friend as [10001] + 32 bits, search_spec 1.5).
+- Live (Lnxtest): level 10..20 and name "Pellam" in Southern San d'Oria found nobody, and /sea all showed why
+  (Pellam in Tahrongi, the 10..20 players elsewhere).
