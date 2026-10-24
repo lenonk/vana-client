@@ -102,8 +102,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Per-record reactions"); guards, parries and counters not seen live yet;
   - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done; left checking the glow copies'
     size against retail footage (the code ignores element scale), party / alliance relations for the colours;
-  - status icons (user, 2026-10-24: none drawn): spec `~/ffxi/lab/research/status_icons_spec.md` ("menu    buff",
-    s2c 0x037 icons / 0x063 sub 9 timers / 0x076 party, status info file 87); not started;
+  - status icons (spec `~/ffxi/lab/research/status_icons_spec.md`; MODLOG "Status icons"): own icons, timers, pulse,
+    Num+ focus and cancel done; left the party member icons (s2c 0x076, config 0xc2);
   - actor sounds (spec `~/ffxi/lab/research/actor_sounds_spec.md`; MODLOG "Actor sounds 1..3"): voices steal, init /
     ini<n> (worm emerge seen, burrow not seen live), ntob / bton / dead, op 0x78, op-0x24 swing pick, whole schedulers
     behind motion paths done; left the spec's #10..#13 (shi<n> variants, 0x53 target, pop0 / pop1, hide skip);
