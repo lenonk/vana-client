@@ -258,9 +258,191 @@ fn send_active(w: &mut World, n: u8, bag: u8, slot: u8, active: bool, name: &[u8
     b[8..23].copy_from_slice(&name[..15]);
     b[0x17] = n;
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x0C4, body: b });
+    if active && let Some(a) = w.ls_msg.ask.get_mut(n as usize) {
+        *a = 1;
+    }
     let e = ext(w, bag, slot);
     w.ls_pending = Some(Pending { n, group: group(&e), active, until: Instant::now() + Duration::from_secs(1) });
     true
+}
+
+/// The linkshell message (spec L5): per linkshell n 1..3 the ask state S+0x9818 + 4n (0 fresh at login, 1 after our
+/// own equip, 2 asked) and the reason S+0x9834 + 4n the reply prints by (0 typed, 1 / 2 asked by the client).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct MsgState {
+    pub ask: [u8; 4],
+    reason: [u8; 4],
+}
+
+/// FUN_100eaab0 / FUN_100eac70: c2s 0x0E1 {@5 bits 6..7 = n - 1, @6 bag, @7 slot, seq 0}, keeping why it was asked.
+fn ask_message(w: &mut World, n: u8, bag: u8, slot: u8, reason: u8) {
+    if let Some(r) = w.ls_msg.reason.get_mut(n as usize) {
+        *r = reason;
+    }
+    let mut b = vec![0u8; 0x8c];
+    b[1] = 0x3f ^ n.wrapping_mul(0x40).wrapping_sub(1);
+    (b[2], b[3]) = (bag, slot);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0E1, body: b });
+}
+
+/// LAB_100ea780 after the slot is stored: with an item there, ask for the message the first time (reason 1) or after
+/// our own equip (reason 2); asked either way.
+pub fn on_equip(w: &mut World, n: u8, index: u8, bag: u8) {
+    let Some(&state) = w.ls_msg.ask.get(n as usize) else { return };
+    if index != 0 && state < 2 {
+        ask_message(w, n, bag, index, state + 1);
+    }
+    w.ls_msg.ask[n as usize] = 2;
+}
+
+/// The mode word's byte per linkshell (table 0x1032cf40) and the "[n]" prefix (FUN_100e3750).
+fn mode_of(n: u8) -> u8 {
+    match n {
+        2 => 0xd9,
+        3 => 0xda,
+        _ => 0xcd,
+    }
+}
+
+fn push_line(w: &mut World, line: String, mode: u8) {
+    let Some(bt) = w.battle.clone() else { return };
+    let names = w.names.clone();
+    let line = bt.phrases.as_ref().map_or(line.clone(), |d| d.expand(&line, names.as_deref().map(|n| n as &dyn crate::dat::names::NameSource)));
+    let colour = bt.colour_in(mode, &w.game);
+    w.chat.push_colour(line, colour);
+}
+
+/// LAB_10080390: n 7 "An error occurred." (7 0x9c), no text "No linkshell message exists." (7 0x9d), else "[n]" + 10
+/// 0x34 "< %s: %s >" (LS name, poster) and the text + " (" + the Earth date (FUN_101c8fd0(time, 1)) + ")".
+fn message_line(w: &mut World, n: u8, time: u32, ls: &str, poster: &str, text: Option<&str>) {
+    let Some(bt) = w.battle.clone() else { return };
+    if n == 7 {
+        return super::textcmd::refuse(w, 0x9c);
+    }
+    let Some(text) = text else { return super::textcmd::refuse(w, 0x9d) };
+    let head = super::textcmd::printf(&bt.group10(0x34).unwrap_or_default(), &[ls.to_string(), poster.to_string()]);
+    let g = |id: u16| bt.group10_raw(id as usize);
+    let (date_key, h12) = ((w.game.get(0x95) & 3) as usize, w.game.get(0x96) & 1 != 0);
+    let date = crate::dat::font::decode_sjis(&crate::dat::msgfmt::earth_datetime(&g, time as i64, 1, date_key, h12));
+    let mode = mode_of(n);
+    push_line(w, format!("[{n}]{head}"), mode);
+    push_line(w, format!("{} ({date})", text.trim()), mode);
+}
+
+/// LAB_10080570: n 7 the error line, else who may edit (writeLevel 0 / 1 / 2: 9 0xbc / 0xbd / 0xbe) in mode 0xcd.
+fn level_line(w: &mut World, n: u8, level: u8) {
+    if n == 7 {
+        return super::textcmd::refuse(w, 0x9c);
+    }
+    let Some(line) = w.battle.as_ref().and_then(|b| b.group9(0xbc + level as usize).filter(|_| level < 3)) else { return };
+    push_line(w, line, 0xcd);
+}
+
+/// s2c 0x0CC (LAB_100ea810): @4 stat (low nibble) / attr, @5 levels and the slot (bits 6..7 = n - 1), @8 the text,
+/// @0x88 the time, @0x8c the poster, @0x9c opType, @0xa0 the encoded LS name. Load replies print by the reason asked
+/// (typed: the empty case too; asked by the client: only a message).
+pub fn on_message(w: &mut World, p: &[u8]) {
+    let at = |o: usize| p.get(o).copied().unwrap_or(0);
+    let n = (at(5) >> 6) + 1;
+    let (stat, posted) = (at(4) & 0xf, at(4) & 0x40 != 0);
+    let str_at = |o: usize, len: usize| {
+        let b = p.get(o..(o + len).min(p.len())).unwrap_or_default();
+        crate::dat::font::decode_sjis(&b[..b.iter().position(|&c| c == 0).unwrap_or(b.len())])
+    };
+    let (text, poster) = (str_at(8, 128), str_at(0x8c, 16));
+    let time = u32::from_le_bytes([at(0x88), at(0x89), at(0x8a), at(0x8b)]);
+    let ls = ls_name(p.get(0xa0..).unwrap_or_default());
+    let levels = (at(5) & 3, (at(5) >> 2) & 3);
+    let reason = w.ls_msg.reason.get(n as usize).copied().unwrap_or(0);
+    match u16::from_le_bytes([at(0x9c), at(0x9d)]) {
+        // Post (broadcast): only a message is printed.
+        1 => match stat {
+            0 if !posted => {}
+            0 | 5 => {
+                if !text.is_empty() {
+                    message_line(w, n, time, &ls, &poster, Some(&text));
+                }
+            }
+            3 => super::textcmd::refuse(w, 0x9e),
+            _ => message_line(w, 7, 0, "", "", None),
+        },
+        2 => {
+            let shown = match stat {
+                0 if posted => Some(text.as_str()),
+                0 => return,
+                5 => None,
+                _ => return message_line(w, 7, 0, "", "", None),
+            };
+            let shown = shown.filter(|t| !t.is_empty());
+            match (reason, shown) {
+                (0, s) => message_line(w, n, time, &ls, &poster, s),
+                (1 | 2, Some(s)) => message_line(w, n, time, &ls, &poster, Some(s)),
+                _ => {}
+            }
+        }
+        3 => match stat {
+            0 => level_line(w, n, levels.1),
+            3 => super::textcmd::refuse(w, 0x9e),
+            _ => level_line(w, 7, 0),
+        },
+        6 if at(4) & 0xf != 0 => level_line(w, 7, 0),
+        6 => level_line(w, n, levels.1),
+        _ => {}
+    }
+}
+
+/// c2s 0x0E2 (FUN_100eace0 / FUN_100ead60) and 0x0E4 (FUN_100eabc0), linkshell 1 only: @4 0x40 set the text (@0x10,
+/// 127 bytes), 0x20 the edit level (@5 bits 2..3, seq @0xa), 0xb0 ask the level (seq @0xa incremented, 15 bits, never
+/// 0); @6 bag, @7 slot.
+fn send_lsmes(w: &mut World, id: u16, flag: u8, bag: u8, slot: u8, text: &[u8], level: Option<u8>) {
+    let mut b = vec![0u8; 0x8c];
+    b[0] = flag;
+    (b[2], b[3]) = (bag, slot);
+    if let Some(l) = level {
+        b[1] = (l << 2) & 0xc;
+    }
+    if flag == 0xb0 {
+        w.ls_msg_seq = (w.ls_msg_seq.wrapping_add(1)) & 0x7fff;
+        if w.ls_msg_seq == 0 {
+            w.ls_msg_seq = 1;
+        }
+    }
+    if flag != 0x40 {
+        b[6..8].copy_from_slice(&w.ls_msg_seq.to_le_bytes());
+    }
+    let n = text.len().min(0x7f);
+    b[0xc..0xc + n].copy_from_slice(&text[..n]);
+    let _ = w.net.commands.send(NetCommand::Packet { id, body: b });
+}
+
+/// /lsmes (FUN_100805f0) and /ls2mes (FUN_100807d0): linkshell 1 (2) worn, else 7 0x71 *(inf: actor +0x124 bit 27, a
+/// zone-in flag, is not modelled)*. No argument asks for the message (reason 0); /lsmes "level" asks the edit level,
+/// "level ls|ps|all" sets it, "clear" empties the message, "set TEXT" or TEXT sets it.
+pub fn lsmes(w: &mut World, n: usize, args: &[String], tail1: &str, tail2: &str) {
+    let Some((slot, bag, _)) = equipped(w, n) else { return super::textcmd::refuse(w, 0x71) };
+    if args.len() <= 1 {
+        return ask_message(w, n as u8, bag, slot, 0);
+    }
+    if n != 1 {
+        return;
+    }
+    match args[1].as_str() {
+        "level" => {
+            let level = match args.get(2).map(String::as_str) {
+                None => return send_lsmes(w, 0x0E4, 0xb0, bag, slot, &[], None),
+                Some("ls") => 0,
+                Some("ps") => 1,
+                Some("all") => 2,
+                Some(_) => return,
+            };
+            send_lsmes(w, 0x0E2, 0x20, bag, slot, &[], Some(level));
+        }
+        "clear" => send_lsmes(w, 0x0E2, 0x40, bag, slot, &[], None),
+        first => {
+            let t = if first == "set" { tail2 } else { tail1 };
+            send_lsmes(w, 0x0E2, 0x40, bag, slot, &crate::dat::font::encode_sjis(t), None);
+        }
+    }
 }
 
 /// FUN_101e5d60: Set as No.n (asking first while linkshell n is worn) or Unequip, for the cursor row.

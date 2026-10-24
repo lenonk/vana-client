@@ -222,6 +222,8 @@ pub enum NetEvent {
     TradeMine { n: u32, item: u16, slot: u8, inv: u8 },
     /// s2c 0x0E0 (GP_SERV_COMMAND_GROUP_COMLINK): LinkshellNum @4, ItemIndex @5, Category (bag) @6.
     LinkshellEquip { num: u8, index: u8, bag: u8 },
+    /// s2c 0x0CC (GP_SERV_COMMAND_LINKSHELL_MESSAGE), raw.
+    LinkshellMessage(Vec<u8>),
     /// s2c 0x0C9 (the checked player's equipment / jobs) and 0x0CA (title, bazaar message), raw.
     InspectEquip(Vec<u8>),
     /// s2c 0x008 (GP_SERV_COMMAND_ENTERZONE, LAB_100facd0): the visited-zone bits @4.
@@ -873,6 +875,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x025 => tx.send(NetEvent::TradeMine { n: p.u32(4), item: p.u16(8), slot: p.u8(0xa), inv: p.u8(0xb) })?,
                     0x082 | 0x084 => tx.send(NetEvent::GuildResult { sell: p.id == 0x084, item: p.u16(4), count: p.u8(6), trade: p.u8(7) as i8 })?,
                     0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
+                    0x0CC => tx.send(NetEvent::LinkshellMessage(p.data.clone()))?,
                     0x0C9 => tx.send(NetEvent::InspectEquip(p.data.clone()))?,
                     0x008 if p.data.len() >= 4 + 0x30 => tx.send(NetEvent::KnownZones(p.data[4..4 + 0x30].try_into().unwrap()))?,
                     0x0CA => tx.send(NetEvent::InspectMessage(p.data.clone()))?,

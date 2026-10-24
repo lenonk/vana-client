@@ -126,6 +126,8 @@ mod id {
     pub const MUTEBGM: u16 = 0x99;
     pub const MUTESE: u16 = 0x9a;
     pub const SEARCH: u16 = 0x3a;
+    pub const LSMES: u16 = 0x108;
+    pub const LS2MES: u16 = 0x109;
 }
 
 /// 0x01A categories (LSB GP_CLI_COMMAND_ACTION ActionID).
@@ -1030,6 +1032,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             super::search::command(w, tail(line, 1));
             Ok(())
         }
+        id::LSMES | id::LS2MES => {
+            let n = if cid == id::LSMES { 1 } else { 2 };
+            super::linkshell::lsmes(w, n, args, tail(line, 1), tail(line, 2));
+            Ok(())
+        }
         id::CHATMODE => chat_mode(w, args),
         // FUN_1007e120: the away flag cleared, like /online, and Msg std 0x79 (no PlayOnline friend list here).
         id::HIDE => {
@@ -1291,7 +1298,7 @@ fn find_item(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
 /// the name as typed, mode 0x79; a name known but not usable (not learned, out of the jobs' reach) "[%s] --:--".
 /// Not done: an ability's charges ("[%s] %s (%d)"), which we do not keep.
 /// printf's %s / %d / %% over string arguments (the group 10 lines that go through sprintf).
-fn printf(f: &str, args: &[String]) -> String {
+pub(super) fn printf(f: &str, args: &[String]) -> String {
     let (mut out, mut k, mut it) = (String::new(), 0, f.chars().peekable());
     while let Some(c) = it.next() {
         match (c, it.peek()) {

@@ -3488,6 +3488,9 @@ struct World {
     linkshell: Option<linkshell::Linkshell>,
     ls_pending: Option<linkshell::Pending>,
     ls_opened: u8,
+    /// The linkshell message's ask states and reasons, and S+0x9852 (the level request's sequence).
+    ls_msg: linkshell::MsgState,
+    ls_msg_seq: u16,
     /// The Key Items windows and the key items' seen bits (s2c 0x055 @0x44).
     keyitems: Option<keyitems::KeyItems>,
     ki_seen: keyitems::Seen,
@@ -4705,6 +4708,8 @@ impl App {
                             linkshell: None,
                             ls_pending: None,
                             ls_opened: 0,
+                            ls_msg: Default::default(),
+                            ls_msg_seq: 0,
                             my_fellow: 0,
                             search_name: String::new(),
                             search_cond: Default::default(),
@@ -5630,7 +5635,9 @@ impl App {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {
                         *l = (index, bag);
                     }
+                    linkshell::on_equip(world, num, index, bag);
                 }
+                NetEvent::LinkshellMessage(p) => linkshell::on_message(world, &p),
                 NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
                 NetEvent::TrophyList(l) => treasure::on_list(world, l),
                 NetEvent::TrophySolution { slot, judge, loot, loot_point, entry, entry_point, entry_flg, loot_name, entry_name } => {

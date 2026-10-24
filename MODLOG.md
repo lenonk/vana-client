@@ -6704,3 +6704,28 @@ Spec `~/ffxi/lab/research/arealist_spec.md`; ours client/arealist.rs, searchmenu
 - The results window drops its bar and hand while scsibori or arealist has the focus.
 - Not done: arealist modes 1 / 2 (event op 0xcc subs 0x10 / 0x11), /seacom and /seacomup on the same store, scoption's
   Request / Cancel Request (/partyrequestcmd is not supported yet).
+
+## Linkshell message: s2c 0x0CC, the client's own 0x0E1, /lsmes and /ls2mes (2026-10-24)
+
+Spec `~/ffxi/lab/research/menu_rows2_spec.md` L5; ours client/linkshell.rs (MsgState, on_equip, on_message, lsmes).
+- s2c 0x0E0 (LAB_100ea780) after storing the slot: with ItemIndex != 0 and the ask state S+0x9818 + 4n 0 (fresh at
+  login) or 1 (set by our own 0x0C4 with ActiveFlg 1), c2s 0x0E1 goes out with reason 1 or 2 (S+0x9834 + 4n); the
+  state is 2 afterwards either way. Typed /lsmes asks with reason 0.
+- c2s 0x0E1 (FUN_100eac70): @5 = (~old & 0x3f) ^ (n * 0x40 - 1) on a zeroed buffer = (n - 1) << 6; @6 bag, @7 slot.
+- s2c 0x0CC (LAB_100ea810, jump table 0x100ea9f0 by opType - 1): n = (@5 >> 6) + 1, stat = @4 & 0xf.
+  - op 1 (post): stat 0 with @4 & 0x40, or stat 5, prints the message only when non-empty (FUN_100eab30); stat 3 the
+    denied line; any other stat the error line.
+  - op 2 (load): stat 0 with 0x40 the text; stat 5 no text; else error. FUN_100eaa20 by reason: 0 prints either
+    (no text -> 7 0x9d "No linkshell message exists."), 1 / 2 only a non-empty text.
+  - op 3 (level): stat 0 the level line with writeLevel ((@5 >> 2) & 3); stat 3 denied; else error. Op 6 the same line
+    (any stat bits -> error). Ops 4 / 5 nothing.
+- Lines (DAT_104ca3f4 / 3f8 / 3fc = LAB_10080370 / 390 / 570): error 7 0x9c, denied 7 0x9e (FUN_10129e30); the message
+  in mode 0xcd / 0xd9 / 0xda (table 0x1032cf40 by n): "[n]" (FUN_100e3750: "[1]" / "[2]" / "[3]" for chat kinds 5 /
+  0x1b / 0x1e) + 10 0x34 with (LS name, poster), then the text expanded and trimmed + " (" + FUN_101c8fd0(time, 1) +
+  ")"; the level line 9 0xbc / 0xbd / 0xbe in mode 0xcd.
+- /lsmes (0x108) / /ls2mes (0x109), FUN_100805f0 / FUN_100807d0: linkshell n worn, else 7 0x71; also actor +0x124 bit
+  27 (from the zone-in flag word at S+0x40db1 bit 0, FUN_1008xxxx at all.c 114350) *(inf: not modelled)*. No
+  argument: 0x0E1 reason 0. /lsmes only: "level" -> c2s 0x0E4 (@4 0xb0, seq S+0x9852 incremented to 15 bits, never 0);
+  "level ls|ps|all" -> 0x0E2 @4 0x20, @5 (level << 2) & 0xc, seq (not incremented); "clear" -> 0x0E2 @4 0x40 empty;
+  "set TEXT" / "TEXT" -> 0x0E2 @4 0x40 with the text at @0x10 (strncpy 0x80, @0x8f 0).
+- Live (Lnxcsfix, no shell): both commands print 7 0x71. The message lines need a real shell (not seen yet).
