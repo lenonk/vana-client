@@ -6294,3 +6294,16 @@ Research `~/ffxi/lab/scratch/raise2/` (30261006_0). Corrects "Window groups, reg
   (0x80 = 1.0) and green; lit_actor: lit = clamp(ga + em + 0.5 f (sun ndl + lamps)), ga = min(ambient bytes x f,
   255) / 255 (body) or the bytes (cloth), em = max(f - 1.5, 0) on cloth. flash-shot zone 103 noon: only the face
   changes (up to +77).
+
+## Name plates while K.O. (2026-10-24)
+
+Research `~/ffxi/lab/scratch/nameplate/`. No K.O. case in retail: FUN_100ce480 [current FUN_100d04c0] projects
+vtable +0x1c4 of point +0x8a7 (2 from the constructor) plus f32 +0x8c0; FUN_1002b5e0 point 2 is the rest translation
+times the size (no bone, no rotation, no status), lifted only for status 5 / 0x55 (-1.3) and 0x3f..0x53 (-0.5). A
+dead PC's plate stays at standing head height, as ours (plate_point). The PC `dead` scheduler (7072) has no 0xb4 /
+0x9f.
+- Not done: scheduler op 0xb4 (+0x8c0 for the op's duration; only 8 `cst0` schedulers, -1.5 for 600 ticks); op 0x9f
+  plate points (29 `init` + 3 `nam0` monster schedulers: those plates follow the posed bone, death motions
+  included); the current build's mount sub-case (asm 0x100d4619..0x100d4714: -0.5, or per-race tables for mount
+  entity +0x1db 0x1d {0, .5, .5, .5, 1.1, -.7, -.7, .5, .05} / 0x25 {0, .4, .4, .4, .4, -.8, -.8, .4, .4}; -1.3
+  without a mount actor or with k = FUN_10022340(race) 0 / 6, k not decoded).

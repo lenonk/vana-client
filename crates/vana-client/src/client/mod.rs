@@ -916,8 +916,6 @@ fn plate_scale(d: f32) -> Option<f32> {
     }
 }
 
-/// Name plates over characters (FUN_100ce4d0 -> FUN_10084b20): fontshp glyphs at the model's top,
-/// sized by the screen (W, H) * 0.00234375 times the depth scale.
 /// Music and effects volume: configs 10 / 9, times the /mutebgm and /mutese factors.
 fn world_volumes(w: &World) -> (f32, f32) {
     let f = |id: u16, mute: bool| if mute { 0.0 } else { w.game.get(id) as f32 / 100.0 };
