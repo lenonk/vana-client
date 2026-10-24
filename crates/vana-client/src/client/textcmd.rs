@@ -91,6 +91,10 @@ mod id {
     pub const LOCKON: u16 = 0x5c;
     pub const CHARAEFFECT: u16 = 0x8a;
     pub const WAIT: u16 = 0x10a;
+    pub const QUARRY: u16 = 0x8c;
+    pub const SCOUT: u16 = 0x8d;
+    pub const SPRINT: u16 = 0x8e;
+    pub const BLOCKHELP: u16 = 0x96;
 }
 
 /// 0x01A categories (LSB GP_CLI_COMMAND_ACTION ActionID).
@@ -796,9 +800,40 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
-        id::CHECK | id::CHECKNAME | id::CHECKPARAM => {
+        // FUN_1007d000 / FUN_1007d050: through FUN_101347b0 (repeat guard, players and monsters only).
+        id::CHECK | id::CHECKNAME => {
             let t = resolve(w, arg(1), true, false, mode).ok_or(())?;
-            send(w, NetCommand::Check { target: t.0, index: t.1, kind: (cid - id::CHECK) as u8 });
+            super::combat::check(w, Some(t.0), (cid - id::CHECK) as u8);
+            Ok(())
+        }
+        id::CHECKPARAM => {
+            let t = resolve(w, arg(1), true, false, mode).ok_or(())?;
+            send(w, NetCommand::Check { target: t.0, index: t.1, kind: 2 });
+            Ok(())
+        }
+        // FUN_1007ef50 and its neighbours: Conflict only (else group 7 0xa7); c2s 0x01A on us, 0x15 / 0x17 / 0x16.
+        id::QUARRY | id::SCOUT | id::SPRINT => {
+            if super::combat::conflict(w.my_team) {
+                let action = match cid {
+                    id::QUARRY => 0x15,
+                    id::SCOUT => 0x17,
+                    _ => 0x16,
+                };
+                let index = w.my_index;
+                send(w, NetCommand::Act { target: w.my_id, index, action });
+            } else {
+                refuse(w, 0xa7);
+            }
+            Ok(())
+        }
+        // FUN_1012ad00: on / off, or a toggle with no argument; group 9 0xf7 / 0xf8.
+        id::BLOCKHELP => {
+            w.block_help = match on_off(args.get(1)) {
+                1 => true,
+                2 => false,
+                _ => !w.block_help,
+            };
+            log9(w, if w.block_help { 0xf7 } else { 0xf8 });
             Ok(())
         }
         id::SHOOT => {
@@ -1095,7 +1130,7 @@ fn recast(w: &mut World, args: &[String]) -> Done {
     Ok(())
 }
 
-fn log9(w: &mut World, id: usize) {
+pub(super) fn log9(w: &mut World, id: usize) {
     if let Some(bt) = w.battle.clone() {
         let colour = bt.colour_in(0x79, &w.game);
         w.chat.push_colour(bt.group9(id).unwrap_or_default(), colour);

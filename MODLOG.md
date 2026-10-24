@@ -5735,3 +5735,21 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
   0x800000 / 0x400000 (<ncall>...) run FUN_10127ab0 first: not done. Linkshell lines are not checked.
 - Tell (mode 0x0c) with config 0x47: SeSep "0p40" (0x30703430 byte-swapped), in no resident DAT (0, 27, 52743),
   so retail finds nothing either *(inf)*; not played.
+
+## Engaged menu: Check through the prompt, Conflict rows, Call for help block (2026-10-24)
+
+Spec `~/ffxi/lab/research/engaged_menu_spec.md`.
+- FUN_1012b880 Check: engaged, the sub-target prompt over monsters first (FUN_10159440 flags 0x20, LAB_1012bec0);
+  otherwise at once. FUN_101347b0 (also /check, /checkname): the id or the target; not the same id again within 2 s
+  (DAT_105781c4); c2s 0x0DD only for a player or a monster (+0x120 bit 13), any other NPC nothing. Check is hidden on
+  a pet, trust or charmed monster (FUN_1008e150: not a PC, team byte 1).
+- Sprint (cmd 0x18), Scout (0x17), Quarry (0x16): Conflict only (FUN_101cc350: our team byte +0x1ff = s2c 0x037 u32
+  @0x34 >> 21, 2..99 but 8 / 9 / 0x28..0x2b); Treasure is hidden in Conflict. The rows run /quarry /scout /sprint
+  (ids 0x8c..0x8e): c2s 0x01A on us with 0x15 / 0x17 / 0x16, else group 7 0xa7. LSB sends team 1: never shown.
+- /blockhelp (0x96, FUN_1012ad00): on / off / toggle, group 9 0xf7 / 0xf8; while set, Right on Disengage prints 0xf7
+  with SE 0004. The Call for help toggle itself plays nothing; Switch Target with no candidate plays nothing.
+- /say carries flags 0xc3 (not allowed while KO'd, group 7 0x4f); /tell and /party 0xe3 are.
+- Live: engaged on a Snipper, Check -> prompt -> one "The Snipper seems incredibly tough." line; a second Check within
+  2 s sent nothing.
+- Not done: Treasure's `menu    loot` window, the mouse hold (60 ticks on a row with a Right function), the party-list
+  cursor cancel on engaging, the inspect window (s2c 0x0C9).

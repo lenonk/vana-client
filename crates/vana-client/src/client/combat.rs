@@ -807,7 +807,7 @@ fn shown(target: Option<u32>, c: u8) -> Option<u8> {
         // Player Trade (layout 2): a player target (the costume bit +0x1d0 & 0x400 not checked).
         cmd::TRADE if target.is_some() && !npc => Some(c),
         0xa if target.is_none() || npc => None,
-        6 | 0xc | 0xd | 0x10 | 0x11 | 0x13 | 0x14 | 0x16..=0x18 | 0x1a | 0x1b => None,
+        6 | 0xc | 0xd | 0x10 | 0x11 | 0x13 | 0x14 | 0x1a | 0x1b => None,
         _ if LABELS[c as usize].1 != 0 => None,
         _ => Some(c),
     }
@@ -827,17 +827,52 @@ fn current_items(w: &World, call_help: bool) -> Vec<u8> {
     if w.my_motion.status == 0x55 {
         items.retain(|&c| c != 0xe);
     }
+    // FUN_1012af30 cases 0x16..0x18: Quarry / Scout / Sprint in Conflict only (Scout needs Petra, not parsed: Sprint).
+    if !conflict(w.my_team) {
+        items.retain(|c| !matches!(c, 0x16..=0x18));
+    }
+    // Check: not on a pet, trust or charmed monster (FUN_1008e150: not a PC, team byte 1).
+    if let Some(t) = w.target.filter(|t| *t >> 24 != 0)
+        && w.entities.get(&t).is_some_and(|e| e.marks.alleg == 1)
+    {
+        items.retain(|&c| c != cmd::CHECK);
+    }
     if l == 6 {
         if call_help && let Some(c) = items.iter_mut().find(|c| **c == cmd::DISENGAGE) {
             *c = cmd::CALL_HELP;
         }
         if w.treasure.iter().any(|t| t.0 != 0)
+            && !conflict(w.my_team)
             && let Some(at) = items.iter().position(|&c| c == cmd::CHECK)
         {
             items.insert(at, cmd::TREASURE);
         }
     }
     items
+}
+
+/// FUN_101cc350: a Conflict team byte (2..99, not 8 / 9 or 0x28..0x2b).
+pub(super) fn conflict(team: u8) -> bool {
+    (2..=99).contains(&team) && !matches!(team, 8 | 9 | 0x28..=0x2b)
+}
+
+/// FUN_101347b0: a check on `id` (else the target): not the same id again within 2 s (DAT_105781c4), and sent (c2s
+/// 0x0DD) only for a player or a monster (+0x120 bit 13); any other NPC gets nothing.
+pub(super) fn check(w: &mut World, id: Option<u32>, kind: u8) {
+    let Some(id) = id.or(w.target) else { return };
+    if w.last_check.is_some_and(|(last, at)| last == id && at.elapsed() < Duration::from_secs(2)) {
+        return;
+    }
+    let index = if id == w.my_id {
+        w.my_index
+    } else {
+        match w.entities.get(&id) {
+            Some(e) if id >> 24 == 0 || e.mob => e.index,
+            _ => return,
+        }
+    };
+    w.last_check = Some((id, Instant::now()));
+    send(w, NetCommand::Check { target: id, index, kind });
 }
 
 pub(super) fn open_menu(w: &World) -> ActionMenu {
@@ -896,7 +931,7 @@ pub(super) fn battle_frame(w: &mut World) {
 /// lists (Magic, Abilities, Trust, Items) close it and, engaged, bring it back when they are done; Chat, Tell, Talk
 /// close it.
 pub(super) fn keeps_menu(c: u8) -> bool {
-    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET)
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | 0x16..=0x18)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -924,10 +959,9 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         (cmd::ATTACK, Some((t, i))) => send(w, NetCommand::Act { target: t, index: i, action: 2 }),
         // Case 0x12: the sub-target prompt over monsters (FUN_10159440 flags 0x20), then "/attack <id>" of the pick.
         (cmd::SWITCH_TARGET, _) => {
+            // No candidate: nothing (the result is ignored).
             let line = super::target::SubThen::Line { stash: "/attack ".into(), quoted: false, from_macro: false };
-            if !super::target::open_sub(w, 0x20, line, None, String::new(), 0) {
-                w.sounds.push(crate::audio::Ui::Error as u32);
-            }
+            super::target::open_sub(w, 0x20, line, None, String::new(), 0);
         }
         // Case 2: "/help".
         (cmd::CALL_HELP, _) => super::textcmd::run(w, "/help", super::textcmd::Mode::Internal),
@@ -935,7 +969,12 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             let (t, i) = target.unwrap_or((w.my_id, 0));
             send(w, NetCommand::Act { target: t, index: i, action: 4 });
         }
-        (cmd::CHECK, Some((t, i))) => send(w, NetCommand::Check { target: t, index: i, kind: 0 }),
+        // FUN_1012b880 cases 9 / 0xa: engaged, the sub-target prompt over monsters first (LAB_1012bec0); else at once.
+        (cmd::CHECK, Some(_)) if w.my_motion.status == 1 => {
+            super::target::open_sub(w, 0x20, super::target::SubThen::Check, None, String::new(), 0);
+        }
+        (cmd::CHECK, Some(_)) => check(w, None, 0),
+        (0x16..=0x18, _) => super::textcmd::run(w, ["/quarry", "/scout", "/sprint"][(c - 0x16) as usize], super::textcmd::Mode::Internal),
         (cmd::CHAT | cmd::TELL, _) => w.typing = true,
         // FUN_1012b880 cases 6 / 7 / 0x18: Abilities opens abiselec, Magic the list without trusts, Trust only them.
         (7, _) => super::magic::open_cats(w, "menu    abiselec"),

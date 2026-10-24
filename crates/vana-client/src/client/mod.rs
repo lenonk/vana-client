@@ -1237,9 +1237,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                             m.sel = if *key == egui::Key::ArrowDown { (m.sel + 1) % n } else { (m.sel + n - 1) % n };
                             world.sounds.push(crate::audio::Ui::Cursor as u32);
                         }
+                        // FUN_1012acc0: the toggle plays nothing; blocked (/blockhelp) group 9 0xf7 and SE 0004.
                         egui::Key::ArrowRight if matches!(row, Some(combat::cmd::DISENGAGE | combat::cmd::CALL_HELP)) => {
-                            m.call_help = !m.call_help;
-                            world.sounds.push(crate::audio::Ui::Cursor as u32);
+                            if world.block_help {
+                                world.sounds.push(crate::audio::Ui::Error as u32);
+                                textcmd::log9(world, 0xf7);
+                            } else {
+                                m.call_help = !m.call_help;
+                            }
                         }
                         egui::Key::ArrowRight if row == Some(combat::cmd::MAGIC) => {
                             magic::open_cats(world, "menu    magselec");
@@ -3021,6 +3026,12 @@ struct World {
     buff_timers: Option<([u16; 32], [u32; 32])>,
     /// The buff list's cursor (Num+ focus step 2).
     buff_cursor: usize,
+    /// Our PvP team byte (+0x1ff): Conflict rows by FUN_101cc350.
+    my_team: u8,
+    /// FUN_101347b0's repeat guard: the last check's id and time (DAT_105781c4).
+    last_check: Option<(u32, Instant)>,
+    /// /blockhelp (DAT_10578175): Right on Disengage refuses Call for help.
+    block_help: bool,
     /// Party members' status icons by UniqueNo (s2c 0x076).
     party_buffs: HashMap<u32, [u16; 32]>,
     /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
@@ -4132,6 +4143,9 @@ impl App {
                             buffs: [0xffff; 32],
                             buff_timers: None,
                             buff_cursor: 0,
+                            my_team: 0,
+                            last_check: None,
+                            block_help: false,
                             party_buffs: HashMap::new(),
                             reopen_menu: false,
                             started: Instant::now(),
@@ -5051,9 +5065,10 @@ impl App {
                     world.key_items[at..at + 16].copy_from_slice(&bits);
                 }
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team } => {
                     world.self_flags = flags;
                     world.buffs = icons;
+                    world.my_team = team;
                     // 0x037 handler: the end time = dc2 when ahead of now, else now + dc1 / 60, only with dc1 > 0; the
                     // dead state machine's deadline is 6 minutes before it.
                     world.ko_deadline = 0;
