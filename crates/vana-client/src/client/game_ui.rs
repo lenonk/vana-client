@@ -993,6 +993,17 @@ impl GameUi {
                 st.alliance[k] = None;
             }
         }
+        // The main menu zooms open and closed like any window; a page swap closes one and opens the other
+        // (FUN_10140400 messages 3 / 4: socialme opened, menuwind closed). Nothing of it while it opens.
+        let page = screens::menu_window(st.menu_page);
+        if st.menu_selected.is_some()
+            && let Some(m) = self.data.lobby.menu(page)
+        {
+            let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+            if !self.win_gate(page, [fx, fy, fw, fh]) {
+                st.menu_selected = None;
+            }
+        }
         let (b, text) = screens::hud_screen(&self.data.lobby, &self.data.style, w, h, &st);
         self.batch.append(b);
         text
