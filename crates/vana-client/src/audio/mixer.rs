@@ -103,7 +103,8 @@ pub enum Cmd {
     /// Forget saved positions: one id or all (cmd 11).
     ClearPositions(Option<u32>),
     /// Start an effect (cmd 2); `handle` (0 = none) names the voice for the commands below.
-    PlaySe { bytes: Arc<[u8]>, level: u8, pan: u8, priority: i32, handle: u32 },
+    /// `limit`: busy voices above which a new one steals instead of taking a free slot (0 = every slot).
+    PlaySe { bytes: Arc<[u8]>, level: u8, pan: u8, priority: i32, handle: u32, limit: u8 },
     /// Cmd 4 / 3: a voice's level / pan, at once.
     SeLevel { handle: u32, level: u8 },
     SePan { handle: u32, pan: u8 },
@@ -284,7 +285,7 @@ impl Mixer {
                     }
                 }
             }
-            Cmd::PlaySe { bytes, level, pan, priority, handle } => {
+            Cmd::PlaySe { bytes, level, pan, priority, handle, limit } => {
                 let Ok(dec) = Decoder::new(bytes) else { return };
                 let flags = dec.header.flags;
                 let mut ramp = Ramp { cur: LEVEL[(level & 0x7f) as usize] << 12, left: 0, delta: 0 };
@@ -295,8 +296,11 @@ impl Mixer {
                 // Flag 0x20 (ambient loops): priority 20000 and kept from stealing.
                 let kept = flags & 0x20 != 0;
                 let priority = if kept { 20000 } else { priority };
-                // A free voice from the end (FUN_1023fc40), else the lowest priority below ours (inferred).
-                let slot = (0..VOICES).rev().find(|&i| self.voices[i].is_none()).or_else(|| {
+                // A free voice from the end (FUN_1023fc40) while under the limit, else the lowest priority below ours,
+                // oldest first (FUN_1023fb90).
+                let busy = self.voices.iter().flatten().count();
+                let free = limit == 0 || busy < limit as usize;
+                let slot = (0..VOICES).rev().find(|&i| free && self.voices[i].is_none()).or_else(|| {
                     (0..VOICES).filter(|&i| self.voices[i].as_ref().is_some_and(|v| !v.kept && v.priority <= priority)).min_by_key(|&i| {
                         let v = self.voices[i].as_ref().unwrap();
                         (v.priority, v.started)

@@ -221,18 +221,16 @@ impl Audio {
         let _ = self.tx.send(Req::Se { id, level: lv });
     }
 
-    /// A positioned effect voice (FUN_10036130 -> cmd 2) under `handle`; level 0..127 before the effects factor,
-    /// pan 0..127. Refused (false) while the busy voices reach the limit (DAT_1044417c).
+    /// A positioned effect voice (FUN_100370d0 -> FUN_10036130 -> cmd 2) under `handle`; level 0..127 before the
+    /// effects factor, pan 0..127. A full table (the 0029 limit) steals the oldest lower-priority voice (FUN_1023fb90)
+    /// rather than refusing, unlike the plain sound call FUN_10037510.
     pub fn play_voice(&mut self, handle: u32, id: u32, level: i32, pan: u8, stream: bool) -> bool {
-        if self.status.voices.load(std::sync::atomic::Ordering::Relaxed) >= self.max_se {
-            return false;
-        }
         if stream {
             self.streams.insert(handle);
         }
         let lv = self.voice_level_of(handle, level);
         self.raw_levels.insert(handle, level);
-        let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle });
+        let _ = self.tx.send(Req::Voice { id, level: lv, pan: pan & 0x7f, handle, limit: self.max_se as u8 });
         true
     }
 
@@ -347,7 +345,7 @@ impl Audio {
             return;
         }
         self.ambient_level = self.zone_level();
-        let _ = self.tx.send(Req::Voice { id, level: self.ambient_level, pan: 0x40, handle: AMBIENT });
+        let _ = self.tx.send(Req::Voice { id, level: self.ambient_level, pan: 0x40, handle: AMBIENT, limit: self.max_se as u8 });
     }
 
     fn zone_level(&self) -> u8 {
@@ -483,7 +481,7 @@ enum Req {
     Cmd(Cmd),
     Music { id: u32, level: u8 },
     Se { id: u32, level: u8 },
-    Voice { id: u32, level: u8, pan: u8, handle: u32 },
+    Voice { id: u32, level: u8, pan: u8, handle: u32, limit: u8 },
 }
 
 /// FUN_100377a0's choice: (track, sequence entry, no follow-up) for option 0xaf;  stands for timeGetTime.
@@ -525,9 +523,9 @@ fn loader(dir: PathBuf, rx: Receiver<Req>, tx: Sender<Cmd>) {
             Req::Music { id, level } => read(format::music_path(&dir, id), "music", id).map(|bytes| Cmd::PlayBgm { id, bytes, level, ticks: 0 }),
             Req::Se { id, level } => {
                 log::debug!("se {id} at level {level}");
-                effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan: 0x40, priority: 0, handle: 0 })
+                effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan: 0x40, priority: 0, handle: 0, limit: 0 })
             }
-            Req::Voice { id, level, pan, handle } => effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan, priority: 0, handle }),
+            Req::Voice { id, level, pan, handle, limit } => effects.entry(id).or_insert_with(|| read(format::se_path(&dir, id), "sound", id)).clone().map(|bytes| Cmd::PlaySe { bytes, level, pan, priority: 0, handle, limit }),
         };
         if let Some(c) = cmd
             && tx.send(c).is_err()

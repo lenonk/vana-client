@@ -1588,7 +1588,8 @@ impl Effects {
     }
 
     /// The manager pass FUN_10035410 / FUN_100356c0 over every sound: volume and pan for the eye, voices started,
-    /// updated, restarted (persistent) or let go; at most 12 distinct sounds start a frame (FUN_10035640).
+    /// updated, restarted (persistent) or let go; at most 20 distinct sounds start a frame, repeats of one free
+    /// (FUN_10036460).
     fn step_sounds(&mut self, f: &Frame) {
         let mut started: Vec<u32> = Vec::new();
         let mut gone = Vec::new();
@@ -1632,7 +1633,7 @@ impl Effects {
                 continue;
             };
             if s.handle == 0 {
-                if !started.contains(&s.se) && started.len() >= 12 {
+                if !started.contains(&s.se) && started.len() >= 20 {
                     continue;
                 }
                 started.push(s.se);
