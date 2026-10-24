@@ -36,6 +36,7 @@ pub mod net;
 pub mod script;
 mod subarea;
 mod myroom;
+mod bump;
 mod doors;
 mod lifts;
 mod mousecur;
@@ -237,6 +238,11 @@ struct Entity {
     door: u32,
     /// A lift's (shaft id, move start, move end) (0x00E SubKind 3, client/lifts.rs).
     lift: Option<(u32, u32, u32)>,
+    /// client/bump.rs: ticks left of "active" (+0x5ae), made passable by event op 0xab 0x0b (+0x120 bit 6), and the
+    /// SubKind 0 model id (+0xfc).
+    active: f32,
+    no_bump: bool,
+    model: u16,
     /// An object (actor +0x128 bit 3 from the 0x00E look): no target gauge, no name plate.
     object: bool,
     /// The ActIndex its head looks at (0x00E / 0x00D facetarget, actor +0x1f8); 0 = none.
@@ -866,6 +872,9 @@ fn self_entity(w: &World) -> Entity {
         init_done: false,
         door: 0,
         lift: None,
+        active: 0.0,
+        no_bump: false,
+        model: 0,
         object: false,
         face: 0,
         spawn_fx: false,
@@ -2482,6 +2491,9 @@ fn place_mogdoor(w: &mut World) {
             init_done: false,
             door: 0,
             lift: None,
+            active: 0.0,
+            no_bump: false,
+            model: 0,
             object: true,
             face: 0,
             spawn_fx: false,
@@ -3167,6 +3179,8 @@ struct World {
     /// The zone's lift shafts and lift actors; whether our last step stood on one (+0x5e2), and our y then (the
     /// camera follows the lift, DAT_10456d9c).
     lifts: lifts::Lifts,
+    /// The character we are held against (client/bump.rs).
+    bump: bump::State,
     riding: bool,
     ride_y: f32,
     /// Since when the zone-in fade waits for a lift actor.
@@ -4365,6 +4379,7 @@ impl App {
                             visible: HashSet::new(),
                             zone_lines: Vec::new(),
                             lifts: Default::default(),
+                            bump: Default::default(),
                             riding: false,
                             ride_y: 0.0,
                             lift_wait: None,
@@ -5056,6 +5071,9 @@ impl App {
                         init_done: false,
                         door: 0,
                         lift: None,
+                        active: 0.0,
+                        no_bump: false,
+                        model: 0,
                         object: false,
                         face: 0,
                         spawn_fx: false,
@@ -5172,6 +5190,10 @@ impl App {
                             entry.sub_kind = e.look_kind;
                         }
                         entry.object |= matches!(e.look_kind, 2..=4) || (e.look_kind == 0 && matches!(e.npc, Some(crate::dat::npc::NpcLook::Model(m)) if model_object(m)));
+                        entry.model = match (e.look_kind, e.npc) {
+                            (0, Some(crate::dat::npc::NpcLook::Model(m))) => m,
+                            _ => 0,
+                        };
                     }
                     if entry.object {
                         (entry.no_gauge, entry.no_plate) = (true, true);
@@ -5683,6 +5705,7 @@ impl App {
                     e.pos.y = y;
                 }
                 knock_ends.push((*eid, recover, done));
+                bump::active_tick(e, ticks);
                 e.last_pos = e.pos;
                 continue;
             }
@@ -5734,6 +5757,7 @@ impl App {
             let rate = world.actors.get(eid).map_or(0.125, |a| turn_rate(a, in_event));
             e.yaw += diff * (1.0 - (1.0 - rate).powf(ticks));
             e.ratio = crate::motion::move_ratio(e.ratio, moved, dt, e.motion.speed, e.motion.speed_base, e.motion.status);
+            bump::active_tick(e, ticks);
             e.last_pos = e.pos;
         }
         // Our own push goes through the walking collision (walls, floor); the server learns it from 0x015.
@@ -5965,14 +5989,22 @@ impl App {
                 break;
             }
             let from = world.pos;
-            let g = world.ground.as_ref().filter(|g| !g.is_empty());
+            let mut next = from;
             if stepping {
                 let s = step.normalize();
                 let d = speed * tier * ground::STEP_TICKS / 60.0;
-                let next = match lock_target {
+                next = match lock_target {
                     Some(tp) => target::locked_step(from, tp, s.dot(forward), s.dot(right), d),
                     None => from + s * d,
                 };
+            }
+            // FUN_100a8770 at the end of the move input (also with no input): a character in the way holds the step
+            // (the run motion and facing stay).
+            if !in_event && bump::blocks(world, from, next - from, ground::STEP_TICKS) {
+                next = from;
+            }
+            let g = world.ground.as_ref().filter(|g| !g.is_empty());
+            if next != from {
                 world.pos = g.map_or(next, |g| g.walk_player(from, next, ground::STEP_TICKS, Some(&ride)));
             } else if falls && let Some(g) = g {
                 // A fall goes on without input.

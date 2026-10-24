@@ -6333,9 +6333,9 @@ the bar holds the mouse the windows see no press and no pointer.
 
 Spec `~/ffxi/lab/research/collision_actors_spec.md` (30261006_0).
 - Actor collision: only XiModelActor boxes (Mog House furniture) join the player's sweep (FUN_1016e930, gate
-  DAT_106631d4 = the Mog House object and FUN_101d5fe0). Characters are CXiSkeletonActor and never block anyone, so
-  ours (no actor collision) is retail. Corrects "actor-body boxes" in "Player movement collision". The furniture
-  boxes (FUN_1016d580, spec 1.3) wait for the furniture.
+  DAT_106631d4 = the Mog House object and FUN_101d5fe0). Characters (CXiSkeletonActor) are not in that sweep: they
+  have their own test, see "Character bump" (that pass missed it). Corrects "actor-body boxes" in "Player movement
+  collision". The furniture boxes (FUN_1016d580, spec 1.3) wait for the furniture.
 - Lifts: the only moving platforms, vertical only (RID '@' records in zones 9, 141, 143, 149 and 237; ships are their
   own zones). The record: +0x30 bits 4..7 the surface type, +0x34 / +0x36 i16 floors (pos.y + v / 256), in memory the
   height +0xdc (the box centre until a lift actor exists). The lift NPC (0x00E SubKind 3, XiLiftActor) carries the
@@ -6368,3 +6368,25 @@ Spec `~/ffxi/lab/research/collision_actors_spec.md` (30261006_0).
   its crystal list) registers its bar while focused; one owner (Picker) finds whichever is open (FUN_101f6c70 rows).
   Live: the synthesis picker, focused, scrolled 4 on 4 wheel notches with the hand kept; unfocused (the slots
   focused) it did not.
+
+## Character bump (2026-10-24)
+
+Spec `~/ffxi/lab/research/collision_chars_spec.md` (30261006_0).
+- FUN_100a8770 (old FUN_100a6e00): called at the end of the local player's move input FUN_100a6240 (old FUN_100a48d0)
+  in both camera modes, with no input too, before the delta is applied and before the MZB sweep; only the local
+  player. Off when our GmLevel (+0x128 bits 11..13; 0x037 @0x28 bits 29..31) >= 3. The nearest eligible actor (3D,
+  squared distance < 64) to pos + delta; contact when distance - R(me) - R(it) < 0, R = 0.8 x the horizontal offset of
+  skeleton point 44 (bone 0 + (0, 0, -r): Hume / Elvaan / Mithra 0.32, Taru 0.24, Galka 0.64; FUN_100aaef0). First
+  contact with an actor holds the move for 30 ticks (+0x5ac, minus the frame ticks; +0x5b0 flag; +0x5a0 handle);
+  then you pass through while you overlap it; a frame with no contact clears it (letting go restarts it). No slide,
+  no push; the input tier stays, so the player runs in place.
+- Eligible: main body actors of kind 0/1/2/6/7/8 (not doors, lifts or ships), +0xb2 == 0 (drawn, not culled), not
+  +0xa4 1..4 / 0x54 *(inf: mount get-on / off)*, status not 2 / 3, look[0] not 0x32..0x3b (SubKind 0 marker models),
+  +0x59c >= 1 (faded in), not event op 0xab 0x0b-flagged (+0x120 bit 6; 0x0c clears), and PCs (id < 0x01000000) only
+  while +0x5ae > 0: FUN_100a57f0 sets it to 1800 ticks when the actor moved > 0.02 in a frame or its status is not 0 /
+  0x21 / 0x2f / 0x3f..0x53. So players idle for 30 s are never solid (the user's "no collision with players"); NPCs,
+  monsters, trusts and pets always count.
+- Ours: client/bump.rs (hold, radius from the rest pose *(inf: retail reads the current pose)*, active_tick,
+  eligible, blocks), called once per 2-tick physics step (retail's 30 fps frame) unless in an event. Not done: event
+  op 0xab subs 0x0b / 0x0c (op 0xab is R12), the +0xa4 states. Live (Tuxedo, GM 0, Northern San d'Oria, walking into
+  Elesca): 16 held steps (30 -> 0, 0.5 s) at gap -0.062, then through to the other side. Test bump::hold_then_pass.

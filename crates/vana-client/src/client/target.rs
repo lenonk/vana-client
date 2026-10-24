@@ -360,7 +360,8 @@ pub fn set(w: &mut World, t: Option<u32>) {
         (Some(_), Some(_)) => w.sounds.push(SE_SWITCH),
         _ => {}
     }
-    log::info!("target {:#x} {:?}", t.unwrap_or(0), t.and_then(|t| w.entities.get(&t)).map(|e| e.name.as_str()));
+    let e = t.and_then(|t| w.entities.get(&t));
+    log::info!("target {:#x} {:?} at {:?}", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)));
     w.target = t;
     w.target_since = std::time::Instant::now();
     if w.locked && w.prompt.is_none() {
