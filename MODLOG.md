@@ -6469,3 +6469,13 @@ Spec `~/ffxi/lab/research/status_window_spec.md` (30261006_0); ours client/statu
   over the log. Ours drew it inside hud_screen, before the log, which covered it (the user: "behind the chat window").
   Now screens::push_party_hand runs after the log and the party rows' text (GameUi::party_hand; ui-shot too).
 - Live (Lnxtest, F1): the hand left of our row, over the log's edge.
+
+## The chat line's 120-byte limit (2026-10-24)
+
+- FUN_101abc50 inserts typed or pasted text only when the raw line (E+0x888) and the expanded line (E+0xa50) stay
+  within E+0xa54 (0x78 for the chat line); else nothing goes in (a whole paste is refused, not cut). Ours applied it to
+  auto-translate only, so a typed line could reach 150 bytes; LSB's GP_CLI_COMMAND_CHAT_STD takes packets of 6..136
+  bytes and dropped those (seen with a 133-char !exec, "Bad packet size ... got 140, expected [6, 136]"). The sender's
+  own cap (FUN_100e3400, 0x96) stays.
+- Test tool: the script's `type:` step now sends one Text event a character, as typing does.
+- Live (Lnxtest): "/echo" + 125 digits stopped at 120 characters and echoed.

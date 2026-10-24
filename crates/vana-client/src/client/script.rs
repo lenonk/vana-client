@@ -165,8 +165,9 @@ impl Script {
                 }
                 hit || out
             }
+            // One event a character, as typing sends them (a whole string at once is a paste).
             Step::Text(t) => {
-                events.push(egui::Event::Text(t.clone()));
+                events.extend(t.chars().map(|c| egui::Event::Text(c.to_string())));
                 true
             }
             Step::Key(key, modifiers) => {

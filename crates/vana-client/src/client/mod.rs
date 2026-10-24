@@ -1113,7 +1113,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.line_hist.edited();
                 // Space moves the open candidate list instead (FUN_101b6810 returns -1).
                 let open = world.fep.is_some();
-                world.chat_input.extend(t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')));
+                let next: String = world.chat_input.chars().chain(t.chars().filter(|c| !c.is_control() && !(open && *c == ' '))).collect();
+                // FUN_101abc50: the text goes in whole only while the raw and the expanded line stay within 120 bytes.
+                let (raw, plain) = fep::lengths(world, &next);
+                if raw <= fep::MAX && plain <= fep::MAX {
+                    world.chat_input = next;
+                }
             }
             // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events.
             egui::Event::Copy if !world.typing && !event::active(world) => check_target(world),

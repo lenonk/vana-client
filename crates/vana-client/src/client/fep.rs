@@ -8,7 +8,7 @@ use crate::audio::Ui as Se;
 use crate::dat::font::PHRASE_BASE;
 
 /// Raw and expanded limits of the chat line (E+0xa54 = 0x78).
-const MAX: usize = 120;
+pub(super) const MAX: usize = 120;
 /// Rows a page (FUN_1018f550).
 const ROWS: usize = 7;
 
@@ -73,7 +73,7 @@ pub(super) fn open(w: &mut World) {
 }
 
 /// The line's raw (Shift-JIS, a phrase 6 bytes) and expanded lengths (FUN_101abc50 / FUN_101acc30).
-fn lengths(w: &World, line: &str) -> (usize, usize) {
+pub(super) fn lengths(w: &World, line: &str) -> (usize, usize) {
     let raw = crate::dat::font::encode_sjis(line).len();
     let plain = plain(w, line);
     (raw, crate::dat::font::encode_sjis(&plain).len())
