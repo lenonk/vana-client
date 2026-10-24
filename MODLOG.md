@@ -6058,3 +6058,28 @@ FUN_10105640, FUN_10105930, FUN_10105bd0, FUN_10105de0, FUN_10105ab0, FUN_10105f
   found in this region." (zones 230..233); `/sea all elv -level` 4 Elvaan, levels 18, 15, 10, 8; `/sea name Doran`;
   `/sea "Southern San d'Oria" war` area 230 + WAR; "Northern San d'Oria" (not visited by Lnxtest) became a name, as
   FUN_10105930 refuses it.
+
+## Window group walk (2026-10-24)
+
+Spec `~/ffxi/lab/research/window_groups_spec.md`.
+- The window list (0x10621838) is in raise order: the head is the bottom, the tail the window created or raised
+  last; layer only decides draw order (every layer >= 5 row has group 0). FUN_1015fa00 walks it from the tail
+  (0x1015fe10..0x1015fe9c) with mask 0: a visible window sharing a bit with the mask is suspended
+  (FUN_1015e6e0(w, 1, 1, 0, 1)) and adds none of its bits, even the free ones; any other visible window adds its
+  group; a hidden one that is resumable and wanted is resumed (FUN_1015e530) and adds its group. No flag exempts a
+  window; group 0 never takes part (the party window is "menu    partywin", group 0).
+- A suspension is a hide, not a close: the close zoom plays, the handler, cursor, contents and list place stay. The
+  walk itself brings it back once nothing above holds its bits: the open zoom, no raise.
+- Deferred reopens (FUN_1015e350 with defer, registry flag 0x400: gaugewin, targetwi, playermo, mp_pmode): an
+  existing hidden window whose bits are taken goes under every window sharing a bit (the requeue loop
+  0x1015fb35..0x1015fbb6) and waits; a new one goes on top.
+- Consequences read from the code: abiselec (0x04) suspends playermo; the magic / ability / emote / mount lists
+  (0x0c) suspend playermo, money, magselec, abiselec, iteminfo, chatctrl; subwindo (0x80) hides the 0x81 menus below
+  it; loot, persona, trade, shop, inspect hide gaugewin; iuse (0x81) replaces itmsort2 (0x01).
+- Ours (GameUi::want / run_walk): every window that passes the gate, and the ones drawn outside it (playermo, the
+  target window, the main menu, the status icons), says it is open each frame; its stamp is the frame it opened
+  (a new top), targetwi's under the windows holding its bits *(inf: gaugewin and playermo taken as new)*. At the
+  end of the frame the walk runs over them newest first and a suspended window is not drawn next frame. Not
+  modelled: raise tickets (a window re-raised while open), handler hides with their own flags.
+- Live (Lnxcsfix): the main menu's Abilities page and the action menu's ability types show alone, as before (our
+  code closes their parents too); the item list's Use / Drop window takes the Options window's place.

@@ -194,6 +194,17 @@ pub struct GameUi {
     anim_frame: u64,
     anim_acc: f32,
     pub open_ticks: f32,
+    walk: Walk,
+}
+
+/// FUN_1015fa00's group walk (window_groups_spec.md): the windows wanted this frame and last with their raise
+/// stamps, and those the walk suspended for this frame.
+#[derive(Default)]
+struct Walk {
+    now: std::collections::HashMap<String, i64>,
+    last: std::collections::HashMap<String, i64>,
+    suspended: std::collections::HashSet<String>,
+    top: i64,
 }
 
 /// One window's open / close state (window +0x26 open count, +0x64 close count, +0x68 opened animated).
@@ -245,7 +256,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -255,6 +266,10 @@ impl GameUi {
     }
 
     fn gate(&mut self, name: &str, shape: Shape) -> bool {
+        // A suspended window is not drawn: its close plays, and its open once the walk lets it back.
+        if !self.want(name) {
+            return false;
+        }
         let n = self.open_ticks;
         let animates = n > 0.0 && self.data.registry.get(name.trim_end().to_ascii_lowercase().as_str()).copied().unwrap_or(0) & 8 == 0;
         let frame = self.anim_frame;
@@ -339,6 +354,47 @@ impl GameUi {
         }
         self.anims.retain(|_, a| a.seen == frame || a.close > 0.0);
         self.anim_frame += 1;
+        self.run_walk();
+    }
+
+    /// A window that is open this frame (drawn or not); false while the walk has it suspended. Its raise stamp is
+    /// kept while it stays open: a new one goes on top, except targetwi, which FUN_101590c0 reopens with defer: under
+    /// the windows that hold its bits *(inf: gaugewin and playermo, which also defer, are taken as new windows)*.
+    pub fn want(&mut self, name: &str) -> bool {
+        let key = crate::dat::ui::norm_name(name.as_bytes());
+        if !self.walk.now.contains_key(&key) {
+            let stamp = match self.walk.last.get(&key) {
+                Some(&s) => s,
+                None => {
+                    let g = self.win_group(&key);
+                    let under = if key == "menu    targetwi" { self.walk.last.iter().filter(|(n, _)| self.win_group(n) & g != 0).map(|(_, &s)| s - 1).min() } else { None };
+                    under.unwrap_or_else(|| {
+                        self.walk.top += 1000;
+                        self.walk.top
+                    })
+                }
+            };
+            self.walk.now.insert(key.clone(), stamp);
+        }
+        !self.walk.suspended.contains(&key)
+    }
+
+    /// The walk (0x1015fe10..0x1015fe9c), newest stamp first from an empty mask: a window sharing a bit with the
+    /// mask is suspended and adds none of its bits; any other adds its group. Group 0 windows take no part.
+    fn run_walk(&mut self) {
+        let mut order: Vec<(String, i64)> = self.walk.now.drain().collect();
+        order.sort_by_key(|o| std::cmp::Reverse(o.1));
+        let mut mask = 0u16;
+        self.walk.suspended.clear();
+        for (name, _) in &order {
+            let g = self.win_group(name);
+            if g & mask != 0 {
+                self.walk.suspended.insert(name.clone());
+            } else {
+                mask |= g;
+            }
+        }
+        self.walk.last = order.into_iter().collect();
     }
 
     /// Text caret phase: on for half of each second.

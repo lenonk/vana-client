@@ -90,7 +90,7 @@ fn label(rem: i32) -> Option<String> {
 /// every 40 ticks in their last 15 s; the time under each in fontshp x0.85 (config 0xc3).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     let list = icons(w);
-    if list.is_empty() {
+    if list.is_empty() || !gu.want(WINDOW) {
         return;
     }
     let Some((x0, y0)) = gu.window_xy(WINDOW, sw, sh) else { return };

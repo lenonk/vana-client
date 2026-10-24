@@ -1608,11 +1608,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if hide && world.party_cursor.as_ref().is_some_and(|c| c.index >= 6) {
         world.party_cursor = None;
     }
-    // FUN_1015fa00: the menu windows above the HUD hold their group bits; HUD windows sharing one are suspended (not
-    // drawn: their close plays, their open when the bits are free again).
-    let held = held_groups(gu, world);
-    let suspended = |name: &str| gu.win_group(name) & held != 0;
-    let (gauge_off, menu_off, target_off, buff_off) = (suspended(gauge::WINDOW), suspended("menu    playermo"), suspended("menu    targetwi"), suspended("menu    buff"));
+    // FUN_1015fa00's group walk (GameUi::want; the gated windows say so themselves): suspended windows are not drawn,
+    // their close plays, and their open when the bits are free again.
+    let menu_off = world.action_menu.is_some() && !gu.want("menu    playermo");
+    let target_off = target.is_some() && event::keeps_target(world) && !gu.want("menu    targetwi");
+    let main_off = world.menu.is_some() && !gu.want(crate::render::screens::menu_window(world.menu_page));
     let st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
         target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
@@ -1629,7 +1629,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
         }).collect(),
         target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
-        menu_selected: world.menu.and_then(|k| items.get(k)).map(|(i, _)| *i),
+        menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_focused: world.confirm.is_none(),
         chat_log: false,
@@ -1816,12 +1816,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
-    if !gauge_off {
-        blockers.extend(gauge::draw(gu, world, sw, sh));
-    }
-    if !buff_off {
-        buffs::draw(gu, world, sw, sh);
-    }
+    blockers.extend(gauge::draw(gu, world, sw, sh));
+    buffs::draw(gu, world, sw, sh);
     buffs::draw_party(gu, world, sw, sh, log.rect);
     // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
     blockers.extend(search::draw(gu, world, sw, sh));
@@ -2211,24 +2207,6 @@ fn missing_place(zone: u16) {
     if LAST.swap(zone as u32, std::sync::atomic::Ordering::Relaxed) != zone as u32 {
         log::error!("no place name (group 0x14) for zone {zone}");
     }
-}
-
-/// The group bits held by the open menu windows that sit above the battle HUD (registry +0x2a).
-fn held_groups(gu: &GameUi, w: &World) -> u16 {
-    let mut held = 0;
-    if let Some(s) = &w.search {
-        held |= gu.win_group("menu    scresult");
-        if s.option.is_some() {
-            held |= gu.win_group("menu    scoption");
-        }
-    }
-    if w.map.is_some() {
-        held |= gu.win_group("menu    mapframe");
-    }
-    if w.inspect.up() {
-        held |= gu.win_group(inspect::WINDOW);
-    }
-    held
 }
 
 /// The top bars' text slots. Slot 1: the focused window's cursor item or header (FUN_10115380). Slot 0: the

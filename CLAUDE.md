@@ -98,8 +98,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     done but untested live (needs a second account); left mouse in both, the target prompt with no target;
   - /check on a player (client/inspect.rs, MODLOG "/check on a player"): the inspect window done; left the bazaar
     list behind View Wares (c2s 0x105);
-  - window groups (MODLOG "Window groups, region stacking and the raise prompt"): the search results, the map and
-    inspect suspend the HUD windows sharing their group bits; left the other menu windows' holds;
+  - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
+    over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
+    own zoom;
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
     prompt, mouse hold-to-open;
