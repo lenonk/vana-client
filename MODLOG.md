@@ -5779,3 +5779,20 @@ Spec `~/ffxi/lab/research/textcmds2_spec.md` parts A and B (handlers, config ids
 - Not done: the consumers for /ignorepet, /ignoretrust, /hidetrust (our entities carry no pet owner or trust flag),
   /battlebgm (party battle music), /bellsw (scheduler op 0xb3), /furcc (furniture collision); /displayhead,
   /partyinfo, /jobmasterdisp, /focustarget, /autotarget.
+
+## Model-file generators: the stop match, var 0x3a, op 0x9a (Raminel's dust, 2026-10-24)
+
+Spec `~/ffxi/lab/research/model_gens_spec.md`.
+- FUN_10083970 [FUN_10085060] restarts a model file's 0x1000 generators when the file comes in (before `init`) and on
+  un-hide, gated by vtable +0x124 = entity +0x130 bit 1 (FUN_10084a10, the same in all 16 actor vtables). The bit is
+  set only for ship ids {0,1,2,5,6} and by scheduler op 0x9a (u32 @8 & 1). So skeleton NPCs pass, and Raminel's km00
+  (model 2474, file 52769) starts in retail too.
+- Retail then stops it: `init` -> op 0x57 `mse0` -> var 0x3a == 1 ? `ids1` (`strt`) : `ids0` (`stop`, op 0x2d km00).
+  var 0x3a = actor1's sub-animation (vtable +0xa4, +0x8a5 & 3), read in FUN_10061950 before any action. 361 NPC
+  model files use this ids0 / ids1 pattern; the names are model-local (nothing in FFXiMain builds them).
+- FUN_10052a50 (op 0x1e / 0x2d stop): actor1 null = every clone of the generator; else clones on actor1 whose actor2
+  is null or equals the task's actor2 (asm 0x10052b38..51). Ours had the actor2 test reversed, so `init`'s stop (a2 =
+  the actor) never reached the (actor, none) model clone.
+- Fixed: stop_generator's match, var 0x3a without an action, op 0x9a as an entity flag that keeps model_generators
+  off. Live: Raminel walks without the smoke. 257 model files had stops that silently missed and now work.
+- Not done: the un-hide restart (FUN_10084320 re-runs FUN_10083970; ours never restarts).

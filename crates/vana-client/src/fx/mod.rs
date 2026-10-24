@@ -73,6 +73,10 @@ pub trait Actors {
     fn player(&self) -> Option<u32> {
         None
     }
+    /// Vtable +0x124 (entity +0x130 bit 1, op 0x9a): the model file's 0x1000 generators stay off.
+    fn model_gens_off(&self, _id: u32) -> bool {
+        false
+    }
     /// FUN_100d4600's choice: the actor's swing schedulers, `atf?` moving and `ati?` standing (the other set when
     /// that one is empty); None while its model is not in.
     fn swings(&self, _id: u32, _moving: bool) -> Option<Vec<String>> {
@@ -626,6 +630,8 @@ pub struct Effects {
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// Op 0x29 colour drives for the client: actor, target alpha, frames.
     pub fades: Vec<(u32, u8, f32)>,
+    /// Op 0x9a for the client: actor, entity +0x130 bit 1.
+    pub gens_off: Vec<(u32, bool)>,
     /// Skill / magic actions' holds for the client: op 0x20 (actor2) / 0x59 (actor1, no reactions) as (actor, ticks,
     /// no reactions), and the actors whose load hold ends (their "main" started or was given up, FUN_100a9610).
     pub holds: Vec<(u32, f32, bool)>,
@@ -711,6 +717,7 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
+            gens_off: Vec::new(),
             holds: Vec::new(),
             releases: Vec::new(),
             loads: Vec::new(),

@@ -219,6 +219,8 @@ struct Entity {
     /// (FUN_10082ec0). 0x00D clears bit 3, so players have both.
     no_gauge: bool,
     no_plate: bool,
+    /// Entity +0x130 bit 1 (scheduler op 0x9a): the model file's 0x1000 generators don't start.
+    gens_off: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
     /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
@@ -811,6 +813,7 @@ fn self_entity(w: &World) -> Entity {
         flags: 0,
         no_gauge: false,
         no_plate: false,
+        gens_off: false,
         untargetable: false,
         sub: [0, 8, 0],
         init_done: false,
@@ -2324,6 +2327,7 @@ fn place_mogdoor(w: &mut World) {
             no_gauge: false,
             // Kind 3 makes an XiDoorActor (FUN_1008f740), whose plate draw (vtable +0x284, FUN_100ac380) is empty.
             no_plate: true,
+            gens_off: false,
             untargetable: false,
             sub: [0, 8, 0],
             init_done: false,
@@ -2763,6 +2767,10 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn sub_anim(&self, id: u32) -> u8 {
         self.entities.get(&id).map_or(0, |e| e.sub[2])
+    }
+
+    fn model_gens_off(&self, id: u32) -> bool {
+        self.entities.get(&id).is_some_and(|e| e.gens_off)
     }
 
     fn player(&self) -> Option<u32> {
@@ -4813,6 +4821,7 @@ impl App {
                         flags: e.status,
                         no_gauge: false,
                         no_plate: false,
+                        gens_off: false,
                         untargetable: false,
                         sub: [0, 8, 0],
                         init_done: false,
@@ -5348,6 +5357,11 @@ impl App {
         }).collect();
         for id in spops {
             world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"spop"));
+        }
+        for (id, off) in std::mem::take(&mut world.effects.gens_off) {
+            if let Some(e) = world.entities.get_mut(&id) {
+                e.gens_off = off;
+            }
         }
         // Scheduler op 0x29: the model colour's alpha toward a target.
         for (id, alpha, frames) in std::mem::take(&mut world.effects.fades) {

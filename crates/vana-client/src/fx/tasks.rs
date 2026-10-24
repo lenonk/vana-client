@@ -739,7 +739,14 @@ impl Effects {
                 Flow::Jump
             }
             0x6b => {
-                self.stack_op(t, op);
+                self.stack_op(t, op, actors);
+                Flow::Next
+            }
+            // Entity +0x130 bit 1 (FUN_100832f0): set, the model file's 0x1000 generators don't start (vtable +0x124).
+            0x9a => {
+                if let Some(id) = t.a1.id() {
+                    self.gens_off.push((id, op.u32_at(8) & 1 != 0));
+                }
                 Flow::Next
             }
             // Motions on actor1: name with the region '?' dropped, speed f32 @0x10, length u16 @6, count byte @0x1e,
@@ -932,7 +939,7 @@ impl Effects {
     }
 
     /// Op 0x6b: the scheduler's stack machine (triggers.md 0.7).
-    fn stack_op(&mut self, t: &mut Task, op: &SOp) {
+    fn stack_op(&mut self, t: &mut Task, op: &SOp, actors: &dyn Actors) {
         let sub = op.u16_at(8);
         let pop = |t: &mut Task| t.stack.pop().unwrap_or(0.0);
         match sub {
@@ -940,7 +947,11 @@ impl Effects {
                 let v = match op.u16_at(10) {
                     1 => op.u32_at(12) as i32 as f64,
                     2 => f32::from_bits(op.u32_at(12)) as f64,
-                    3 => t.action.as_ref().map_or(0, |a| a.borrow().var(op.u32_at(12), t.a1.id())) as f64,
+                    // 0x3a: actor1's sub-animation (vtable +0xa4, +0x8a5 & 3), with or without an action (FUN_10061950).
+                    3 => match op.u32_at(12) {
+                        0x3a => t.a1.id().map_or(0, |id| actors.sub_anim(id) & 3) as f64,
+                        k => t.action.as_ref().map_or(0, |a| a.borrow().var(k, t.a1.id())) as f64,
+                    },
                     _ => 0.0,
                 };
                 t.stack.push(v);
@@ -1019,10 +1030,11 @@ impl Effects {
         self.attach_now(i, actors);
     }
 
-    /// FUN_10052a50: instances of `g` on (a1, a2): killed now, or soft-stopped (emission ends, elements finish).
+    /// FUN_10052a50: instances of `g` on (a1, a2): killed now, or soft-stopped (emission ends, elements finish). No a1:
+    /// every instance; a clone with no actor2 matches any a2 (asm 0x10052b38).
     fn stop_generator(&mut self, g: Ref, a1: Who, a2: Who, soft: bool) {
         for i in 0..self.insts.len() {
-            let hit = self.insts[i].as_ref().is_some_and(|x| x.src == g && x.actors[0] == a1 && (a2 == Who::None || x.actors[1] == a2));
+            let hit = self.insts[i].as_ref().is_some_and(|x| x.src == g && (a1 == Who::None || (x.actors[0] == a1 && (x.actors[1] == Who::None || x.actors[1] == a2))));
             if !hit {
                 continue;
             }
@@ -1273,7 +1285,7 @@ impl Effects {
             }
         }
         for (id, files) in present {
-            if self.models.contains_key(&id) || actors.hidden(id) {
+            if self.models.contains_key(&id) || actors.hidden(id) || actors.model_gens_off(id) {
                 continue;
             }
             let libs: Vec<Option<usize>> = files.iter().map(|&f| self.lib_for(f)).collect();
