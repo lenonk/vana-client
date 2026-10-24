@@ -5602,3 +5602,19 @@ Spec `~/ffxi/lab/research/knockback_guard_spec.md` section 1.
 - Monsters have no bf0? / bb0? motions: they slide without one.
 - Live: the Forest Hare's Ram Charge (skill 266, knockback 2, file 3910) on Lnxcsfix: level 2 push, bf0 then bf1 at
   tick 5, then idle.
+
+## Title buttons: sounds and the press animation (2026-10-24)
+
+Spec `~/ffxi/lab/research/select_buttons_spec.md`.
+- loby2win (FUN_102405f0): arrows / mouse onto a button 0001; Enter or click 0002 and the title locks (+0x1c, window
+  +0x5d) until the screen changes; a disabled Select / Delete 0004 (Create never refused); Escape moves the cursor to
+  Back with 0001 and does not leave. Config gives the title back when lobycwin closes (FUN_102406d0).
+- Ours lost the 0002s when the lobby fade moved screen changes out of the UiSnap diff; now explicit. The creator's
+  race-step Escape back to the title plays 0003 (FUN_10237730) for the same reason.
+- Press animation FUN_10119fb0: window +0x5e = 9 on every Enter (generic handler), counted down by ticks; while > 0 the
+  button sits +1, +1 instead of -1, -1; a taken press draws the button gold 0x80805020 and two gold rings, M = 0.625 N,
+  D = (N - M) / 2, t = N - c, e = t - D k: scale 1 + 0.3 e / M, alpha 128 (1 - e / M), k = 0 the cell's blend, k = 1
+  blend 0x44, centred by the whole scale (retail's off-centre quirk at W != 1024 kept). N = 9 on the title, 20 in
+  generic windows (not done yet: the character list rows, Config pages, the login screen).
+- The action does not wait: the fade-out starts on the press frame.
+- title-shot: FFXI_TITLE_PRESS=c draws Select Character pressed at counter c.

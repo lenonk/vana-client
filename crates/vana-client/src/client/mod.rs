@@ -3369,6 +3369,8 @@ pub struct App {
     login_error: Option<String>,
     /// The title's Config window (lobycwin) with its values, and our settings screen over the title.
     lobby_cfg: Option<configui::ConfigUi>,
+    /// The title's pressed button (menu index), when, and whether the press was taken (loby2win +0x5e / +0x1c).
+    title_press: Option<(usize, Instant, bool)>,
     lobby_values: crate::gamecfg::Values,
     lobby_settings: Option<settings::SettingsUi>,
     /// The start-up update checks (not retail) and the Update window over the title.
@@ -3527,6 +3529,7 @@ impl App {
             cursor_in: false,
             login_error: None,
             lobby_cfg: None,
+            title_press: None,
             lobby_values: Default::default(),
             lobby_settings: None,
             updates,
@@ -5952,6 +5955,7 @@ impl App {
         let mut fade_action = false;
         match &mut self.phase {
             Phase::Login { password, otp, focus } => {
+                self.title_press = None;
                 if let Some(lu) = self.game_ui.as_mut() {
                     self.ui_drawn = true;
                     let fields = [&mut self.cfg.server, &mut self.cfg.username, &mut *password, &mut *otp];
@@ -5998,6 +6002,9 @@ impl App {
                     *selected = live.first().copied();
                 }
                 let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
+                if *screen != LobbyScreen::Main {
+                    self.title_press = None;
+                }
                 match screen {
                     LobbyScreen::Main => {
                         const ITEMS: [(&str, &str); 5] = [
@@ -6016,6 +6023,12 @@ impl App {
                             *menu = 0;
                         }
                         let order: &[usize] = if upd { &[UPDATE, 0, 1, 2, 3, 4] } else { &[0, 1, 2, 3, 4] };
+                        // FUN_102406d0: Config (and our Update window) give the title back when they close.
+                        if !config_open && self.title_press.is_some_and(|p| p.2 && (p.0 == 3 || p.0 == UPDATE)) {
+                            self.title_press = None;
+                        }
+                        // FUN_102405f0: a taken press locks the title (+0x1c, window +0x5d) until the screen changes.
+                        let config_open = config_open || self.title_press.is_some_and(|p| p.2);
                         if !config_open {
                             ctx.input(|i| {
                                 let at = order.iter().position(|&m| m == *menu).unwrap_or(0);
@@ -6056,7 +6069,8 @@ impl App {
                             let child_enabled = CHILD.map(|k| enabled[k]);
                             let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
                             let wardrobes = lobby.as_ref().map_or(0, |l| l.features);
-                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes);
+                            let press = self.title_press.filter(|p| p.0 == *menu && p.0 != UPDATE).map(|p| ((9.0 - p.1.elapsed().as_secs_f32() * 60.0).max(0.0), p.2));
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press);
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
                                 (None, Some(s), _) => s.help(),
@@ -6201,20 +6215,23 @@ impl App {
                                 }
                             }
                         }
-                        // FUN_10235ec0 case 5: a disabled button (Create excepted) only buzzes.
-                        if chosen.is_some_and(|i| i < 5 && i != 1 && !enabled[i]) {
+                        // FUN_10235ec0 case 5: the press counter starts (the generic handler, window +0x5e = 9); a
+                        // disabled button (Create excepted) only buzzes, any other is taken with 0002 (the fade hides
+                        // the screen change from the UiSnap diff).
+                        if let Some(i) = chosen {
+                            let refused = i < 5 && i != 1 && !enabled[i];
+                            self.title_press = Some((i, Instant::now(), !refused));
                             if let Some(a) = self.audio.as_mut() {
-                                a.ui(crate::audio::Ui::Error);
+                                a.ui(if refused { crate::audio::Ui::Error } else { crate::audio::Ui::Select });
                             }
-                            chosen = None;
+                            if refused {
+                                chosen = None;
+                            }
                         }
                         match chosen {
                             Some(UPDATE) => {
                                 if let Some(s) = self.updates.clone() {
                                     self.update_ui = Some(updater::UpdateUi::open(s, self.cfg.ffxi_dir()));
-                                    if let Some(a) = self.audio.as_mut() {
-                                        a.ui(crate::audio::Ui::Select);
-                                    }
                                 }
                             }
                             Some(0) => *screen = LobbyScreen::Select,
@@ -6234,9 +6251,12 @@ impl App {
                             }
                             _ => {}
                         }
+                        // Escape does not leave: the cursor goes to Back (0001).
                         if escape && !config_open {
-                            action = Some(Box::new(|app: &mut App| app.phase = Phase::login(&app.cfg)));
-                            fade_action = true;
+                            *menu = 4;
+                            if let Some(a) = self.audio.as_mut() {
+                                a.ui(crate::audio::Ui::Cursor);
+                            }
                         }
                     }
                     LobbyScreen::Select | LobbyScreen::Delete if self.game_ui.is_some() => {
@@ -6403,7 +6423,11 @@ impl App {
                         }
                         if back {
                             if step == 0 {
+                                // FUN_10237730 plays 0003 itself; the fade hides the change from the UiSnap diff.
                                 *screen = LobbyScreen::Main;
+                                if let Some(a) = self.audio.as_mut() {
+                                    a.ui(crate::audio::Ui::Cancel);
+                                }
                             } else {
                                 self.creator_step = step - 1;
                             }

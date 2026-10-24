@@ -31,6 +31,30 @@ pub struct TitleState {
     /// The account's features word from the lobby (FUN_100ed7e0 case 0xf -> *0x103601bc + 0xb4): bits 2..7 are
     /// mog wardrobes 3..8 (containers 11..16).
     pub wardrobes: u32,
+    /// The selected button's press: window +0x5e (9 ticks down to 0) and whether it was taken (+0x1c).
+    pub press: Option<(f32, bool)>,
+}
+
+/// FUN_10119fb0's two gold rings for press counter `c` of `n` ticks: (scale, alpha 0..128, blend word) of each ring
+/// that shows; k = 0 uses the cell's own blend, k = 1 alpha blend 0x44 and trails (N - M) / 2 ticks.
+pub fn press_rings(n: f32, c: f32) -> Vec<(f32, u32, u32)> {
+    let m = 0.625 * n;
+    let d = (n - m) / 2.0;
+    let t = n - c;
+    (0..2)
+        .filter_map(|k| {
+            let e = t - d * k as f32;
+            (0.0..=m).contains(&e).then(|| (1.0 + 0.3 * e / m, (128.0 * (1.0 - e / m)) as u32, if k == 0 { 0 } else { 0x44 }))
+        })
+        .collect()
+}
+
+/// A sprite's height from its cells' corners (the sprite bounds +0x24 / +0x26).
+pub fn sprite_height(lib: &SpriteLib, i: usize) -> f32 {
+    let Some(s) = lib.sprites.get(i) else { return 0.0 };
+    let ys = s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[1]));
+    let (lo, hi) = ys.fold((i16::MAX, i16::MIN), |(lo, hi), y| (lo.min(y), hi.max(y)));
+    if lo > hi { 0.0 } else { (hi - lo) as f32 }
 }
 
 /// Wardrobe 3..8 icons on the title (FUN_10240030 after the logos): sprites 227 + i at (74 + 21 i, 360) in a
@@ -93,9 +117,23 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
             let (cx, cy) = button_pos(m, c, sx, sy, st.shift);
             let selected = i == st.selected && !st.update.is_some_and(|u| u.0);
             let tint = if selected { 0x8080_5020 } else { 0x8080_8080 };
-            // The selected child of the active menu sits one pixel up-left (FUN_101155e0).
-            let d = if selected { -1.0 } else { 0.0 };
+            // The selected child of the active menu sits one pixel up-left (FUN_101155e0), down-right while pressed.
+            let press = st.press.filter(|_| selected);
+            let d = match press {
+                Some((c, _)) if c > 0.0 => 1.0,
+                _ if selected => -1.0,
+                _ => 0.0,
+            };
             b.push_sprite(lobby, lib, on as usize - 1, cx + d, cy + d, sx, sy, tint, 0);
+            // FUN_10119fb0 (N = 9): rings centred by the whole scale, as retail (off-centre when sx != 1).
+            if let Some((c, true)) = press {
+                let (bw, bh) = (sprite_width(lib, on as usize - 1), sprite_height(lib, on as usize - 1));
+                for (s, a, blend) in press_rings(9.0, c) {
+                    let x = cx + d - ((sx * s - 1.0) * bw / 2.0).trunc();
+                    let y = cy + d - ((sy * s - 1.0) * bh / 2.0).trunc();
+                    b.push_sprite(lobby, lib, on as usize - 1, x, y, sx * s, sy * s, a << 24 | 0x80_5020, blend);
+                }
+            }
             if i == 0
                 && let Some((upd_sel, upd_on)) = st.update
                 && let (Some(spr), Some((ux, uy, _, _))) = (update_button(lib, "Update", upd_on), update_button_pos(lobby, w, h, st.shift))
