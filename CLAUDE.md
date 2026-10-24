@@ -92,6 +92,14 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
     yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D) done; left the dice / attachment
     colours (need s2c 0x063 sub 4 and 0x044);
+  - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
+    done but untested live (needs a second account); left mouse in both, the target prompt with no target;
+  - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
+    while engaged, and the camera cannot be spun): spec `~/ffxi/lab/research/combat_mode_spec.md` (in progress);
+  - weapon skills: a WS kill plays no dying animation, WS hit reactions look wrong (spec ws_reaction_spec.md);
+  - UI sounds missing in places (menus opening and others): audit `~/ffxi/lab/research/sound_audit.md`;
+  - /clock and the message formatter (FUN_10153a40): spec `~/ffxi/lab/research/msgfmt_spec.md`, not started;
+  - the event choice window's scroll bar (query, when the options outrun the rows);
   - collision with characters and moving platforms;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
