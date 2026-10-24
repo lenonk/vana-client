@@ -42,6 +42,8 @@ pub(super) struct Pending {
     pub num: Option<(i32, u32)>,
     /// Its motion ops (0x05 / 0x28) and holds are the client's (a death: combat::die plays ded? / cor?).
     pub quiet: bool,
+    /// Looked up as vtable +0x298 (FUN_100cce00): the motion and model files, then DAT 0; no part files.
+    pub own: bool,
 }
 
 /// A doll (CXiDollActor, FUN_100aa470): where an actor stood when a scheduler froze it.
@@ -51,6 +53,14 @@ pub struct Doll {
 }
 
 const MAIN: u32 = u32::from_le_bytes(*b"main");
+
+/// Where an actor's equipment part files go in a scheduler lookup.
+#[derive(Clone, Copy)]
+enum Parts {
+    First,
+    Last,
+    Skip,
+}
 
 /// DAT_1035bc3c: the skillchain burst's animation by proc kind (file 0xaf0 + it; LSB ActionProcSkillChain order).
 const SKILLCHAIN: [u16; 18] = [0, 479, 480, 475, 476, 477, 478, 467, 469, 474, 471, 472, 473, 470, 468, 1013, 1014, 0];
@@ -158,10 +168,14 @@ impl Effects {
 
     pub(super) fn poll_loads(&mut self) {
         while let Ok((file, lib)) = self.load_rx.try_recv() {
-            if let Some(l) = lib
-                && self.reg.lib_of(file).is_none()
-            {
-                self.reg.add(l);
+            match lib {
+                Some(l) if self.reg.lib_of(file).is_none() => {
+                    self.reg.add(l);
+                }
+                Some(_) => {}
+                None => {
+                    self.failed.insert(file);
+                }
             }
         }
     }
@@ -177,7 +191,7 @@ impl Effects {
         let client_swing = swing.is_some();
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0, client_swing }));
         match a.category {
-            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false }),
+            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
@@ -188,14 +202,14 @@ impl Effects {
                 };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
                 // *(inf: falls back to the generic file)*.
-                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None, quiet: false });
+                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None, quiet: false, own: false });
             }
             7..=0xa | 0xc => {
                 // Starts: the cmd_arg scheduler on the caster itself; "ca??" goes through FUN_10083d60 first.
                 if a.arg & 0xffff == 0x6163 {
                     self.cast_state(caster, a.arg);
                 }
-                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
             }
             _ => {}
         }
@@ -206,7 +220,7 @@ impl Effects {
     fn cast_state(&mut self, caster: u32, arg: u32) {
         if let Some(prev) = self.casting.remove(&caster) {
             let st = (prev & 0xffff_7473) | 0x7473;
-            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
         }
         if arg != 0 {
             self.casting.insert(caster, arg);
@@ -217,7 +231,7 @@ impl Effects {
     /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
     pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
         log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
-        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
     }
 
     /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
@@ -253,12 +267,12 @@ impl Effects {
             3 => *b"misv",
             _ => return,
         };
-        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)), quiet: false });
+        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)), quiet: false, own: false });
     }
 
     /// A status scheduler on the actor with its motions left to the client (FUN_1008c6c0's `dead`).
     pub fn on_scheduler_quiet(&mut self, actor: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: true });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: true, own: false });
     }
 
     /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).
@@ -282,7 +296,7 @@ impl Effects {
 
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
     }
 
     /// Starts waiting for files, when they are in.
@@ -311,9 +325,10 @@ impl Effects {
             let found = match (p.file, p.actor) {
                 (Some(file), _) => match self.lib_for(file) {
                     Some(l) => Ok(self.reg.libs[l].find_global(kind::SCHEDULER, p.name).map(|n| (l, n))),
+                    None if self.failed.contains(&file) => Ok(None),
                     None => Err(()),
                 },
-                (None, Some(actor)) => self.find_on_actor(actor, p.name, actors, true, true),
+                (None, Some(actor)) => self.find_on_actor(actor, p.name, actors, if p.own { Parts::Skip } else { Parts::First }, true),
                 _ => Ok(None),
             };
             match found {
@@ -377,11 +392,15 @@ impl Effects {
         }
     }
 
-    /// FUN_100cc970 (equipment part files, `parts`) then FUN_100cc440 (motion files newest first, then the model's)
-    /// then DAT 0 (`global`). Err while one of those files is still loading.
-    fn find_on_actor(&mut self, actor: u32, name: u32, actors: &dyn Actors, parts: bool, global: bool) -> Result<Option<Ref>, ()> {
+    /// FUN_100cc970 (equipment part files, `parts`) and FUN_100cc440 (motion files newest first, then the model's),
+    /// then DAT 0 (`global`). Err while one of those files is still loading; a failed file is passed by.
+    fn find_on_actor(&mut self, actor: u32, name: u32, actors: &dyn Actors, parts: Parts, global: bool) -> Result<Option<Ref>, ()> {
         let (part_files, motion_files) = actors.files(actor);
-        let order: Vec<u32> = if parts { part_files.into_iter().chain(motion_files).collect() } else { motion_files.into_iter().chain(part_files).collect() };
+        let order: Vec<u32> = match parts {
+            Parts::First => part_files.into_iter().chain(motion_files).collect(),
+            Parts::Last => motion_files.into_iter().chain(part_files).collect(),
+            Parts::Skip => motion_files,
+        };
         let mut waiting = false;
         for file in order {
             match self.lib_for(file) {
@@ -390,6 +409,7 @@ impl Effects {
                         return Ok(Some((l, n)));
                     }
                 }
+                None if self.failed.contains(&file) => {}
                 None => waiting = true,
             }
         }
@@ -531,7 +551,7 @@ impl Effects {
             0x09 | 0x57 | 0x85 => {
                 let (on, a1, a2) = if op.code == 0x09 { (t.a2, t.a2, t.a1) } else { (t.a1, t.a1, t.a2) };
                 let found = match on.id() {
-                    Some(id) => match self.find_on_actor(id, op.name(), actors, true, false) {
+                    Some(id) => match self.find_on_actor(id, op.name(), actors, Parts::First, false) {
                         Ok(r) => r,
                         Err(()) => return Flow::Retry,
                     },
@@ -550,7 +570,7 @@ impl Effects {
             // The caster's own scheduler, call-and-wait, no global fallback.
             0x3c => {
                 let Some(id) = t.a1.id() else { return Flow::Next };
-                match self.find_on_actor(id, op.name(), actors, false, false) {
+                match self.find_on_actor(id, op.name(), actors, Parts::Last, false) {
                     Ok(Some(r)) => {
                         self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
                         Flow::Wait
@@ -582,7 +602,7 @@ impl Effects {
                     return Flow::Next;
                 }
                 let name = u32::from_le_bytes([b'l', if op.code == 0x77 { b's' } else { b'c' }, b'0' + (k / 10) as u8, b'0' + (k % 10) as u8]);
-                match self.find_on_actor(a1, name, actors, false, false) {
+                match self.find_on_actor(a1, name, actors, Parts::Last, false) {
                     Ok(Some(r)) => {
                         self.spawn_task(r, Who::Actor(a1), Who::Actor(a2), t.action.clone(), t.speed, None);
                         Flow::Next
@@ -596,7 +616,7 @@ impl Effects {
             0x5c => {
                 let Some(id) = t.a1.id() else { return Flow::Next };
                 let name = if actors.moving(id) { *b"cnf0" } else { *b"cni0" };
-                match self.find_on_actor(id, u32::from_le_bytes(name), actors, false, true) {
+                match self.find_on_actor(id, u32::from_le_bytes(name), actors, Parts::Last, true) {
                     Ok(Some(r)) => {
                         self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, None);
                         Flow::Next
@@ -626,7 +646,7 @@ impl Effects {
                 }
                 let Some(name) = name else { return Flow::Next };
                 let n = u32::from_le_bytes(crate::dat::generator::fourcc(&name));
-                match self.find_on_actor(id, n, actors, false, true) {
+                match self.find_on_actor(id, n, actors, Parts::Last, true) {
                     Ok(Some(r)) => {
                         let c = self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
                         if let Some(Some(ct)) = self.tasks.get_mut(c) {
@@ -746,7 +766,7 @@ impl Effects {
                 Flow::Next
             }
             0x19 => {
-                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
                 Flow::Next
             }
             // One of the ops up to 0x3e at random (FUN_1006afb0).
@@ -954,7 +974,7 @@ impl Effects {
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
                 let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0, client_swing: false }));
-                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false });
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
                 Flow::Next
             }
             _ => Flow::Next,
@@ -1313,7 +1333,7 @@ impl Effects {
                 continue;
             }
             let libs: Vec<Option<usize>> = files.iter().map(|&f| self.lib_for(f)).collect();
-            if libs.iter().any(|l| l.is_none()) {
+            if files.iter().zip(&libs).any(|(f, l)| l.is_none() && !self.failed.contains(f)) {
                 continue;
             }
             let mut gens = Vec::new();
@@ -1384,6 +1404,58 @@ mod tests {
         fn models(&self) -> Vec<(u32, Vec<u32>)> {
             Vec::new()
         }
+    }
+
+    /// A Hume with a motion file that cannot load (no such DAT).
+    struct Broken;
+    const BAD: u32 = 0x00ff_ffff;
+
+    impl Actors for Broken {
+        fn matrix(&self, _: u32) -> Option<Mat4> {
+            Some(Mat4::IDENTITY)
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            None
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (vec![8392], vec![BAD])
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+    }
+
+    /// cast_fx_spec F5: a failed file is passed by, so a +0x298 lookup reaches DAT 0's stwh instead of waiting on it
+    /// for ever; part files are not looked in.
+    #[test]
+    fn failed_file_passed_by() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let stwh = u32::from_le_bytes(*b"stwh");
+        let t = std::time::Instant::now();
+        loop {
+            fx.poll_loads();
+            match fx.find_on_actor(HUME, stwh, &Broken, Parts::Skip, true) {
+                Ok(r) => {
+                    assert_eq!(r.map(|r| r.0), fx.reg.global);
+                    break;
+                }
+                Err(()) => assert!(t.elapsed().as_secs() < 10, "still waiting on a failed file"),
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert!(fx.failed.contains(&BAD));
+        assert!(!fx.loading.contains(&8392));
     }
 
     struct Walker;

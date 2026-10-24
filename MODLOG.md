@@ -5999,3 +5999,13 @@ Spec `~/ffxi/lab/research/input_history_spec.md`.
   line comes back on Down, an edited recall stays edited. Kept across logins (ours: moved between the App and the
   World).
 - Live: two Ups recalled "/echo one".
+
+## Effect lookups: failed files and the +0x298 order (2026-10-24)
+
+Spec `~/ffxi/lab/research/cast_fx_spec.md` F5.
+- A DAT whose load fails is remembered (Effects.failed): actor lookups pass it by, a file start ends at once, and
+  model generators start from the files that did load. Before, the failed id stayed in `loading` for good, every
+  lookup on that actor waited on it, and a pending st?? / sp?? was dropped after 600 ticks: the cast's stop was lost.
+- vtable +0x298 (FUN_100cce00, CXiSkeletonActor 0x10330f40 + 0x298) looks in FUN_100cc440 (the motion files, then
+  the model's) and DAT 0, never the part files. Ours uses that order for the cast starts, cast_state's st?? and
+  0x038; ops 0x09 / 0x57 / 0x85 keep part files first, the others after the motion files.

@@ -626,6 +626,8 @@ pub struct Effects {
     sched_cache: HashMap<Ref, std::rc::Rc<Vec<sched::SOp>>>,
     index: Option<Arc<crate::dat::DatIndex>>,
     loading: HashSet<u32>,
+    /// Files whose load failed: lookups pass them by instead of waiting.
+    failed: HashSet<u32>,
     load_tx: std::sync::mpsc::Sender<(u32, Option<Library>)>,
     load_rx: std::sync::mpsc::Receiver<(u32, Option<Library>)>,
     /// Actors whose model generators run, by the model files they were started for.
@@ -716,6 +718,7 @@ impl Effects {
             sched_cache: HashMap::new(),
             index: None,
             loading: HashSet::new(),
+            failed: HashSet::new(),
             load_tx,
             load_rx,
             models: HashMap::new(),
