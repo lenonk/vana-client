@@ -6502,3 +6502,21 @@ and the row rules), client/missions.rs (the windows), dat/journal.rs (the name f
 - Inferred: row bands beyond the count hidden; the held-key header stop not done.
 - Live (Lnxtest, San d'Oria rank 1): "Smash the Orcish Scouts" current, its description; Bastok "Not allowed under
   current allegiance."; Zilart "No current missions."; Escape back to the social menu on Missions; /mission.
+
+## Cursor memory and the held action menu (2026-10-24)
+
+- FUN_1015e6e0 (every hide, and FUN_1015e790's close) runs FUN_10118830: the window's cursor child goes into its
+  layout entry (window +4, the menu DAT's element, alive all session: +0x1a / +0x1c). FUN_1015e350 (open by name, new
+  or existing window) runs FUN_10118870: without registry flag 0x10000 the cursor comes back from there (1 the first
+  time); with it, child 1. Flag 0x10000 in this build: playermo, inventor, iuse, link5, quest00, quest01, miss00,
+  evitem; not: menuwind, socialme, statcom2, prty*, missionm, chatctrl, mgcmenu / abimenu / magselec / abiselec,
+  commenu, myroom / mogext, configwi, cmbmenu, searchma. Handlers' own open hooks may set it after (chatctrl does).
+- The action menu's Magic / Abilities / Items / Trust rows open their list without closing playermo (FUN_1012b880
+  cases 7 / 8, abiselec); the lists' groups (magic / ability 0x0c, abiselec 0x04) share playermo's 0x04, so the walk
+  only suspends it, and resumes it with its cursor when the list closes (the cast callback LAB_1022d140 closes only
+  the list), in battle or not. Reopened by name (Enter on a target, engaging) it starts on its first row.
+- Ours: World.held_menu replaces reopen_menu (which rebuilt the menu on row 0, in battle only); World.cursor_mem
+  per window name (kept every frame: statcom2, the party windows, missionm, the category menus) and menu_mem per main
+  menu page (Minus opens on the last row). Not done: the other KEEP windows' own cursors (myroom, configwi, cmbmenu).
+- Live (Lnxtest): action menu Items -> the item list -> Escape: the menu back on Items; the main menu closed on Magic
+  reopened on Magic.

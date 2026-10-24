@@ -221,9 +221,10 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     recall(w, &mut win);
     w.magic = Some(win);
     w.menu = None;
-    // The action menu closes (its close plays); engaged, it comes back when the list is done.
-    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
-    w.action_menu = None;
+    // An action menu still up is suspended under the list (shared group bit) and comes back when it is done.
+    if let Some(m) = w.action_menu.take() {
+        w.held_menu = Some(m);
+    }
     w.cats = None;
 }
 
@@ -236,9 +237,10 @@ pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // The action menu closes (its close plays); engaged, it comes back when the list is done.
-    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
-    w.action_menu = None;
+    // An action menu still up is suspended under the list (shared group bit) and comes back when it is done.
+    if let Some(m) = w.action_menu.take() {
+        w.held_menu = Some(m);
+    }
     w.cats = None;
 }
 
@@ -258,9 +260,10 @@ pub fn open_mount(w: &mut World, sortable: bool) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // The action menu closes (its close plays); engaged, it comes back when the list is done.
-    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
-    w.action_menu = None;
+    // An action menu still up is suspended under the list (shared group bit) and comes back when it is done.
+    if let Some(m) = w.action_menu.take() {
+        w.held_menu = Some(m);
+    }
     w.cats = None;
 }
 
@@ -294,9 +297,10 @@ pub fn open_emote(w: &mut World) {
     recall(w, &mut win);
     w.ability = Some(win);
     w.menu = None;
-    // The action menu closes (its close plays); engaged, it comes back when the list is done.
-    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
-    w.action_menu = None;
+    // An action menu still up is suspended under the list (shared group bit) and comes back when it is done.
+    if let Some(m) = w.action_menu.take() {
+        w.held_menu = Some(m);
+    }
     w.cats = None;
 }
 
@@ -322,12 +326,20 @@ fn mount_name(w: &World, id: u16) -> String {
     w.names.as_ref().and_then(|n| n.mount(id as u32)).map_or_else(String::new, |m| m.0)
 }
 
+/// The cursor row's child id (the cursor memory is by child).
+pub(super) fn cat_child(c: &Cats) -> u16 {
+    cat_rows(c.menu).get(c.sel).map_or(1, |r| r.0)
+}
+
 pub fn open_cats(w: &mut World, menu: &'static str) {
-    w.cats = Some(Cats { menu, sel: 0 });
+    let child = w.cursor_recall(menu);
+    let sel = cat_rows(menu).iter().position(|r| r.0 == child).unwrap_or(0);
+    w.cats = Some(Cats { menu, sel });
     w.menu = None;
-    // The action menu closes (its close plays); engaged, it comes back when the list is done.
-    w.reopen_menu |= w.my_motion.status == 1 && w.action_menu.is_some();
-    w.action_menu = None;
+    // An action menu still up is suspended under the list (shared group bit) and comes back when it is done.
+    if let Some(m) = w.action_menu.take() {
+        w.held_menu = Some(m);
+    }
 }
 
 /// A status check shared by both lists: fishing, mounted, healing, sitting, a place without actions.

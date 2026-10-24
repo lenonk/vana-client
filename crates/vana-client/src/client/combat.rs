@@ -986,10 +986,11 @@ pub(super) fn battle_frame(w: &mut World) {
         }
         (w.menu, w.win, w.config, w.settings, w.magic, w.ability, w.cats) = (None, None, None, None, None, None, None);
         (w.moogle, w.mogdoor, w.full_log, w.shop, w.handover) = (None, None, None, None, None);
-        w.action_menu = Some(open_menu(w));
+        // Reopened by name (FUN_1015e350, registry flag 0x10000): on its first row.
+        (w.action_menu, w.held_menu) = (Some(open_menu(w)), None);
         w.gauge = Some(super::gauge::Gauge::default());
     } else if s != 1 && w.battle_prev == 1 {
-        (w.action_menu, w.gauge, w.reopen_menu) = (None, None, false);
+        (w.action_menu, w.gauge, w.held_menu) = (None, None, None);
         if w.cats.as_ref().is_some_and(|c| c.menu == "menu    magselec") {
             w.cats = None;
         }
@@ -999,11 +1000,9 @@ pub(super) fn battle_frame(w: &mut World) {
         g.tick(v.2);
     }
     let busy = w.win.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.prompt.is_some();
-    if w.reopen_menu && !busy {
-        w.reopen_menu = false;
-        if s == 1 && w.action_menu.is_none() {
-            w.action_menu = Some(open_menu(w));
-        }
+    // The walk resumes the suspended menu once the lists are gone (in battle or not), its cursor kept.
+    if w.held_menu.is_some() && !busy && w.action_menu.is_none() {
+        w.action_menu = w.held_menu.take();
     }
     refresh_menu(w);
 }
@@ -1079,11 +1078,8 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
             super::trade::start(w);
         }
         // Case 8: the item list (FUN_101e9f10).
-        // FUN_1012b880 case 8: the direct-use list; engaged, the battle menu comes back when it closes.
-        (cmd::ITEMS, _) => {
-            w.reopen_menu = w.my_motion.status == 1;
-            super::items::open_direct(w)
-        }
+        // FUN_1012b880 case 8: the direct-use list; the menu comes back when it closes.
+        (cmd::ITEMS, _) => super::items::open_direct(w),
         // FUN_1012b880 cases 0xd / 0xe: Dig runs /dig; Dismount asks first (group 0xe 0x4d "Dismount?").
         (0xe, _) => super::textcmd::run(w, "/dig", super::textcmd::Mode::Internal),
         (0xf, _) => w.confirm = Some((super::Confirm::Dismount, false)),

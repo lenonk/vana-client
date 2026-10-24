@@ -49,7 +49,7 @@ fn logs(w: &mut World) -> Option<Arc<crate::dat::journal::Logs>> {
 /// Social child 1: missionm with its cursor on child 1.
 pub fn open_menu(w: &mut World) {
     logs(w);
-    w.missions = Some(Missions { menu: Some(1), list: None });
+    w.missions = Some(Missions { menu: Some(w.cursor_recall(MENU)), list: None });
 }
 
 /// FUN_1022dbd0 + miss00's open (FUN_1022dcf0): the list on `log`, or waiting while the store is incomplete.

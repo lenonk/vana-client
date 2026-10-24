@@ -7,7 +7,7 @@ use super::game_ui::GameUi;
 use super::net::NetCommand;
 use crate::audio::Ui;
 
-const STATCOM: &str = "menu    statcom2";
+pub const STATCOM: &str = "menu    statcom2";
 const PERSONA: &str = "menu    persona";
 const LEVEL: &str = "menu    level";
 const WHITE: u32 = 0x8080_8080;
@@ -53,7 +53,7 @@ pub fn open(w: &mut World) {
         off.push(8);
     }
     let _ = w.net.commands.send(NetCommand::StatusRequest(0));
-    w.status = Some(StatusUi { sel: 1, shown: None, off, once: false, busy: true, return_menu: w.menu });
+    w.status = Some(StatusUi { sel: w.cursor_recall(STATCOM), shown: None, off, once: false, busy: true, return_menu: w.menu });
     w.menu = None;
 }
 

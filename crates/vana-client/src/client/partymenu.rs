@@ -123,13 +123,14 @@ pub fn open(w: &mut World) {
     } else {
         PRTY1
     };
-    w.partymenu = Some(PartyMenu { stack: vec![Win { name, sel: 1 }], return_menu: w.menu, langs: 0 });
+    w.partymenu = Some(PartyMenu { stack: vec![Win { name, sel: w.cursor_recall(name) }], return_menu: w.menu, langs: 0 });
     w.menu = None;
 }
 
 fn push(w: &mut World, name: &'static str) {
+    let sel = w.cursor_recall(name);
     if let Some(m) = w.partymenu.as_mut() {
-        m.stack.push(Win { name, sel: 1 });
+        m.stack.push(Win { name, sel });
     }
 }
 

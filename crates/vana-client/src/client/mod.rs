@@ -1373,7 +1373,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 // The menu opens on the page it was closed on.
                 // While dead the K.O. window or the raise prompt has the focus and takes it (message 7, FUN_1015dd00).
-                egui::Key::Minus if !world.ko_open && world.ko_offer != 2 => world.menu = if world.menu.is_some() { None } else { Some(0) },
+                egui::Key::Minus if !world.ko_open && world.ko_offer != 2 => world.menu = if world.menu.is_some() { None } else { Some(world.menu_mem[world.menu_page as usize & 1]) },
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // FUN_102110c0: the raise prompt refuses Escape (+0x39 = 0: SE 0004) and keeps the key.
@@ -1645,9 +1645,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         // The generic window handler's Enter (FUN_10118260): 0002.
         world.sounds.push(crate::audio::Ui::Select as u32);
         if !combat::keeps_menu(c) {
-            // The lists (Abilities, Magic, Items, Trust) bring the battle menu back when they are done.
-            world.reopen_menu |= world.my_motion.status == 1 && matches!(c, 7 | 8 | 9 | 0x19);
-            world.action_menu = None;
+            // The lists (Abilities, Magic, Items, Trust) only suspend the menu; it comes back with its cursor.
+            let menu = world.action_menu.take();
+            if matches!(c, 7 | 8 | 9 | 0x19) {
+                world.held_menu = menu;
+            }
         }
         if !combat::choose(world, c) {
             log::info!("action menu command {c} is not implemented yet");
@@ -3285,8 +3287,13 @@ struct World {
     block_help: bool,
     /// Party members' status icons by UniqueNo (s2c 0x076).
     party_buffs: HashMap<u32, [u16; 32]>,
-    /// The battle menu comes back when the item list chosen from it closes (FUN_101336d0).
-    reopen_menu: bool,
+    /// The action menu suspended under the list it opened (Magic, Abilities, Items, Trust: their groups share playermo's
+    /// 0x04): the walk brings it back with its cursor when the list is gone.
+    held_menu: Option<combat::ActionMenu>,
+    /// FUN_10118830 / FUN_10118870: windows' cursor children kept in their layouts across closes, and the main menu's
+    /// row per page.
+    cursor_mem: HashMap<&'static str, u16>,
+    menu_mem: [usize; 2],
     started: Instant,
     logging_out: bool,
     target: Option<u32>,
@@ -3604,6 +3611,32 @@ impl World {
     /// the old ground must not settle or move us meanwhile).
     fn in_scene(&self) -> bool {
         self.zone == Some(self.pos_zone) && self.loading.is_none()
+    }
+
+    /// FUN_10118870: the cursor child a window opened by name starts on (the one it last had; 1 the first time).
+    fn cursor_recall(&self, name: &str) -> u16 {
+        self.cursor_mem.get(name).copied().unwrap_or(1)
+    }
+
+    /// FUN_10118830 on every hide or close, here every frame: the open windows' cursor children into their layouts.
+    fn cursor_keep(&mut self) {
+        if let Some(k) = self.menu {
+            self.menu_mem[self.menu_page as usize & 1] = k;
+        }
+        let mut kept: Vec<(&'static str, u16)> = Vec::new();
+        if let Some(s) = &self.status {
+            kept.push((status::STATCOM, s.sel));
+        }
+        if let Some(m) = &self.partymenu {
+            kept.extend(m.stack.iter().map(|win| (win.name, win.sel)));
+        }
+        if let Some(sel) = self.missions.as_ref().and_then(|m| m.menu) {
+            kept.push((missions::MENU, sel));
+        }
+        if let Some(c) = &self.cats {
+            kept.push((c.menu, magic::cat_child(c)));
+        }
+        self.cursor_mem.extend(kept);
     }
 
     fn dead(&self) -> bool {
@@ -4487,7 +4520,9 @@ impl App {
                             last_check: None,
                             block_help: false,
                             party_buffs: HashMap::new(),
-                            reopen_menu: false,
+                            held_menu: None,
+                            cursor_mem: HashMap::new(),
+                            menu_mem: [0; 2],
                             started: Instant::now(),
                             logging_out: false,
                             target: None,
@@ -5789,6 +5824,7 @@ impl App {
         target::party_cursor_update(world);
         partymenu::update(world);
         status::update(world);
+        world.cursor_keep();
         missions::update(world);
         if world.party_cursor.is_some()
             && let Some((_, _, Some(id))) = target::party_hand(world)
