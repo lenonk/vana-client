@@ -486,17 +486,21 @@ pub struct Overlay {
     pub weight: f32,
     pub cycles: u8,
     pub fade: f32,
+    /// Op 0x25's rate (frames advance at speed x rate) and blend-in ticks.
+    pub rate: f32,
+    pub blend_in: f32,
 }
 
 impl Overlay {
     /// The frame and envelope weight `ticks` in, for an animation of `frames` at `speed`; None once faded out.
     pub fn sample(&self, frames: u32, speed: f32) -> Option<(f32, f32)> {
         let per = frames.max(1) as f32;
+        let speed = speed * self.rate.max(1e-3);
         let f = self.ticks * speed * 0.5;
         let full = per * self.cycles as f32;
         let frame = if f < full { f % per } else { per - 1.0 };
         let env = if f < full {
-            self.ticks.min(1.0)
+            (self.ticks / self.blend_in.max(1.0)).min(1.0)
         } else {
             let over = self.ticks - full / (speed * 0.5).max(1e-3);
             1.0 - over / self.fade.max(1.0)
@@ -541,7 +545,7 @@ mod tests {
     /// A 2-frame hit pose at speed 1: in over a tick, full for 2 cycles (8 ticks), out over 24, then gone.
     #[test]
     fn reaction_overlay_envelope() {
-        let mut o = Overlay { name: "dfi".into(), ticks: 0.5, weight: 0.5, cycles: 2, fade: 24.0 };
+        let mut o = Overlay { name: "dfi".into(), ticks: 0.5, weight: 0.5, cycles: 2, fade: 24.0, rate: 1.0, blend_in: 1.0 };
         assert_eq!(o.sample(2, 1.0), Some((0.25, 0.25)));
         o.ticks = 4.0;
         assert_eq!(o.sample(2, 1.0).map(|s| s.1), Some(0.5));

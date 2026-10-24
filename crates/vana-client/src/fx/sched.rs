@@ -32,6 +32,8 @@ pub struct ActionCtx {
     pub cur: usize,
     /// The swing scheduler client/combat.rs picked for op 0x24 (FUN_100d4600).
     pub swing: Option<String>,
+    /// Records whose messages printed (op 0x2b marks the first one not yet printed; the rest print at the end).
+    pub printed: Vec<bool>,
 }
 
 impl ActionCtx {

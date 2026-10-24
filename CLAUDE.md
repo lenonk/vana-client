@@ -97,7 +97,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state"); left Sprint, engaged Check through the
     prompt, mouse hold-to-open;
-  - weapon skills: a WS kill plays no dying animation, WS hit reactions look wrong (spec ws_reaction_spec.md);
+  - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
+    left knockback (op 0x5e), guard / parry ops, the skillchain burst;
   - UI sounds missing in places (menus opening and others): audit `~/ffxi/lab/research/sound_audit.md`;
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, /playtime, the other callers;
   - the event choice window's scroll bar (query, when the options outrun the rows);

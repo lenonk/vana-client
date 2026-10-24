@@ -162,12 +162,15 @@ impl Effects {
         // FUN_10055cc0: several records outside categories 14 / 15 run at 0.7.
         let speed = if records > 1 && !matches!(a.category, 0xe | 0xf) { 0.7 } else { 1.0 };
         log::debug!("effects: action category {} arg {:#x} from {caster:#x}, swing {swing:?}", a.category, a.arg);
-        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing }));
+        let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![false; records] }));
         match a.category {
             1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
-                let Some(base) = effect_base(a.category, anim) else { return };
+                let Some(base) = effect_base(a.category, anim) else {
+                    self.end_action(&Some(ctx));
+                    return;
+                };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
                 // *(inf: falls back to the generic file)*.
                 self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None });
@@ -270,17 +273,54 @@ impl Effects {
                     if let Some(c) = p.end_cast {
                         self.cast_state(c, 0);
                     }
+                    if p.name == MAIN {
+                        self.release(&p.action);
+                    }
                     match res {
                         Some(r) => {
                             log::debug!("effects: scheduler {} started", String::from_utf8_lossy(&p.name.to_le_bytes()));
                             self.spawn_task(r, p.a1, p.a2, p.action, p.speed, None);
                         }
-                        None => log::debug!("effects: scheduler {} not found", String::from_utf8_lossy(&p.name.to_le_bytes())),
+                        None => {
+                            log::debug!("effects: scheduler {} not found", String::from_utf8_lossy(&p.name.to_le_bytes()));
+                            self.end_action(&p.action);
+                        }
                     }
                 }
-                // Give up on a file that does not come within 10 s.
+                // Give up on a file that does not come within 10 s (asm 0x100a912e: everything prints).
                 Err(()) if p.age < 600.0 => self.pending.push(p),
-                Err(()) => {}
+                Err(()) => {
+                    if p.name == MAIN {
+                        self.release(&p.action);
+                    }
+                    self.end_action(&p.action);
+                }
+            }
+        }
+    }
+
+    /// FUN_100a9610: the caster's and the targets' load holds end (the skill action's "main" started or failed).
+    fn release(&mut self, action: &Option<Rc<RefCell<ActionCtx>>>) {
+        let Some(a) = action else { return };
+        let a = a.borrow();
+        if matches!(a.action.category, 1 | 2) {
+            return;
+        }
+        self.releases.push(a.action.actor);
+        self.releases.extend(a.records().iter().map(|r| r.0));
+    }
+
+    /// FUN_1018c620: an action ending prints every record not printed yet.
+    fn end_action(&mut self, action: &Option<Rc<RefCell<ActionCtx>>>) {
+        let Some(a) = action else { return };
+        let mut a = a.borrow_mut();
+        if matches!(a.action.category, 1 | 2) {
+            return;
+        }
+        for k in 0..a.printed.len() {
+            if !a.printed[k] {
+                a.printed[k] = true;
+                self.action_prints.push((a.action.clone(), k));
             }
         }
     }
@@ -387,6 +427,9 @@ impl Effects {
                     && let Some(Some(pt)) = self.tasks.get_mut(p)
                 {
                     pt.waiting = false;
+                }
+                if t.action.as_ref().is_some_and(|a| Rc::strong_count(a) == 1) {
+                    self.end_action(&t.action);
                 }
             } else {
                 self.tasks[i] = Some(t);
@@ -636,6 +679,40 @@ impl Effects {
                 if t.ops.get(t.ip + 1).is_some_and(|o| o.code == 0x69) {
                     t.ip = block_end(&t.ops, t.ip + 1) + 1;
                     return Flow::Jump;
+                }
+                Flow::Next
+            }
+            // FUN_100a4140 for op dur x speed: 0x20 holds actor2 (its status changes wait), 0x59 actor1, no reactions.
+            0x20 | 0x59 if t.motions => {
+                let (who, noreact) = if op.code == 0x20 { (t.a2, false) } else { (t.a1, true) };
+                if let Some(id) = self.doll_of(who).id() {
+                    self.holds.push((id, op.dur.max(0) as f32 * t.speed, noreact));
+                }
+                Flow::Next
+            }
+            // FUN_10057fb0 cases 0x25 / 0x21: the hit reaction of actor2 / actor1 at this frame.
+            0x25 | 0x21 if t.motions => {
+                let (reactor, other) = if op.code == 0x25 { (t.a2, t.a1) } else { (t.a1, t.a2) };
+                // FUN_1005e350: the current record's hit distortion (scale & 3); no action 1.
+                let level = t.action.as_ref().map_or(1, |a| {
+                    let a = a.borrow();
+                    let recs = a.records();
+                    recs.get(a.cur.min(recs.len().saturating_sub(1))).map_or(1, |r| r.1.scale & 3)
+                });
+                if let (Some(reactor), Some(other)) = (self.doll_of(reactor).id(), self.doll_of(other).id()) {
+                    let f = |o: usize| f32::from_bits(op.u32_at(o));
+                    self.reacts.push(super::React { reactor, other, amount: f(8), rate: f(0xc), count: op.u32_at(0x10), blend_in: f(0x14), fade: f(0x18), side: op.u32_at(0x1c), level });
+                }
+                Flow::Next
+            }
+            // FUN_1018c810: the first record not printed yet prints its main message.
+            0x2b if t.motions => {
+                if let Some(a) = &t.action {
+                    let mut a = a.borrow_mut();
+                    if let Some(k) = a.printed.iter().position(|p| !p) {
+                        a.printed[k] = true;
+                        self.action_prints.push((a.action.clone(), k));
+                    }
                 }
                 Flow::Next
             }

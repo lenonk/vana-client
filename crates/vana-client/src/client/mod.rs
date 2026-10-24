@@ -1148,7 +1148,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The action menu (FUN_1012bd10) takes the keys while it is up (hidden under a sub-target prompt).
                 // Escape engaged keeps it: autorun stops, else the log takes a line off; out of battle it closes.
                 // Right on Disengage / Call for help swaps them (FUN_1012acc0), on Magic opens magselec.
-                _ if world.action_menu.is_some() && world.prompt.is_none() => {
+                // Only its own keys: Space (the chat line) and the rest go on as usual.
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape
+                    if world.action_menu.is_some() && world.prompt.is_none() =>
+                {
                     let engaged = world.my_motion.status == 1;
                     let m = world.action_menu.as_mut().unwrap();
                     let n = m.items.len().max(1);
@@ -5093,6 +5096,19 @@ impl App {
                     a.fade = Some(actmotion::Fade::to(a.alpha, alpha, frames.round() as i32));
                 }
             }
+        }
+        // Skill actions: load holds end first, then op 0x20 / 0x59 holds, reactions and messages (fx/tasks.rs).
+        for id in std::mem::take(&mut world.effects.releases) {
+            combat::fx_release(world, id);
+        }
+        for (id, ticks, noreact) in std::mem::take(&mut world.effects.holds) {
+            combat::fx_hold(world, id, ticks, noreact);
+        }
+        for r in std::mem::take(&mut world.effects.reacts) {
+            combat::react_op(world, &r);
+        }
+        for (a, k) in std::mem::take(&mut world.effects.action_prints) {
+            combat::print_record(world, &a, k);
         }
         for (id, m) in std::mem::take(&mut world.effects.motions) {
             actmotion::play_op(world, id, m);

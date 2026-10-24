@@ -337,6 +337,17 @@ fn one_action(w: &mut World, a: &Action) {
         }
     }
     let first = a.targets.first().map(|t| t.id);
+    // Skill, magic, item and mob TP actions run from effect files (FUN_100a9230): the caster and every target are held
+    // from now until "main" starts (fx releases them; 1800-tick safety, +0x11e); the reactions and messages come from
+    // its ops 0x25 / 0x2b.
+    let by_file = matches!(a.category, 3..=6 | 0xb | 0xd..=0xf);
+    if by_file {
+        let until = Instant::now() + Duration::from_secs(30);
+        for id in std::iter::once(a.actor).chain(a.records().iter().map(|r| r.0)) {
+            let e = w.holds.entry(id).or_insert(until);
+            *e = (*e).max(until);
+        }
+    }
     let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
     // The swing's holds (ops 0x59 / 0x20): the attacker's status changes and reactions wait, the target's status too.
     if let Some((_, _, att, tgt)) = &attack {
@@ -363,6 +374,7 @@ fn one_action(w: &mut World, a: &Action) {
             w.pending.push(Pending { at: now + d + tick * 4, messages, reactions: Vec::new() });
             w.pending.push(Pending { at: now + d + tick * 5, messages: Vec::new(), reactions });
         }
+        None if by_file => {}
         None => {
             for m in messages {
                 print(w, m);
@@ -372,6 +384,61 @@ fn one_action(w: &mut World, a: &Action) {
             }
         }
     }
+}
+
+/// An effect file's message op (0x2b) or the action's end: record `k`'s messages (main, additional effect, reaction).
+pub(super) fn print_record(w: &mut World, a: &Action, k: usize) {
+    let Some((id, r)) = a.records().get(k).map(|(id, r)| (*id, (*r).clone())) else { return };
+    let one = Action { targets: vec![crate::net::action::ActionTarget { id, results: vec![r] }], ..a.clone() };
+    for (mid, target, work) in action_messages(&one) {
+        print(w, Msg { id: mid, actor: a.actor, target, work });
+    }
+}
+
+/// The skill holds from fx: op 0x20 / 0x59 for their ticks (the longest wins), and a load hold's end.
+pub(super) fn fx_hold(w: &mut World, id: u32, ticks: f32, noreact: bool) {
+    let until = Instant::now() + Duration::from_secs_f32(ticks.max(0.0) / 60.0);
+    let e = w.holds.entry(id).or_insert(until);
+    *e = (*e).max(until);
+    if noreact {
+        let e = w.noreact.entry(id).or_insert(until);
+        *e = (*e).max(until);
+    }
+}
+
+pub(super) fn fx_release(w: &mut World, id: u32) {
+    w.holds.insert(id, Instant::now());
+}
+
+/// FUN_100cdd60 for op 0x25 / 0x21: none when the reactor is dead, riding, in its own no-reaction hold or the level
+/// is 0; standing "dfi?" / "dbi?" (side 0 by where the other actor stands, 1 front, 2 back), moving "dfm?" unless side
+/// 2 ("dbm?"); an overlay at amount x {0.25, 0.5, 1.0}[level] with the op's rate, count, blend-in and fade.
+pub(super) fn react_op(w: &mut World, r: &crate::fx::React) {
+    let status = if r.reactor == w.my_id { w.my_motion.status } else { w.entities.get(&r.reactor).map_or(0, |e| e.motion.status) };
+    if r.level == 0 || w.noreact.get(&r.reactor).is_some_and(|t| *t > Instant::now()) || matches!(status, 2 | 3 | 5 | 0x55) {
+        return;
+    }
+    let front = match r.side {
+        1 => true,
+        2 => false,
+        _ => match (position(w, r.reactor), position(w, r.other)) {
+            (Some((tp, tdir)), Some((op, _))) => super::forward_from_dir(tdir).dot(op - tp) >= 0.0,
+            _ => true,
+        },
+    };
+    let name = match (moving(w, r.reactor), front) {
+        (true, _) => if r.side == 2 { "dbm" } else { "dfm" },
+        (false, true) => "dfi",
+        (false, false) => "dbi",
+    };
+    let Some(a) = w.actors.get_mut(&r.reactor) else { return };
+    let Some(ch) = a.character.clone() else { return };
+    if a.oneshot.as_ref().is_some_and(|o| o.name.starts_with("ded")) || actmotion::find(&a.extra, &ch, name).is_empty() {
+        return;
+    }
+    let weight = r.amount * [0.0, 0.25, 0.5, 1.0][r.level.min(3) as usize];
+    log::debug!(target: "motion", "actor {:#x}: op reaction {name} weight {weight} count {} blend {} fade {} side {}", r.reactor, r.count, r.blend_in, r.fade, r.side);
+    a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles: r.count.clamp(1, 255) as u8, fade: r.fade, rate: if r.rate > 0.0 { r.rate } else { 1.0 }, blend_in: r.blend_in });
 }
 
 /// A server status taking effect on an actor (+0x170 from +0x16c): falling dead plays the death; ours goes to the
@@ -508,7 +575,7 @@ fn react(w: &mut World, target: u32, attacker: u32, miss: u8, level: u8) {
             _ => ([0.0, 0.25, 0.5, 1.0][level.min(3) as usize], 2, 24.0),
         };
         log::debug!(target: "motion", "actor {target:#x}: reaction {name} weight {weight} (miss {miss}, level {level}) from {attacker:#x}");
-        a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles, fade });
+        a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles, fade, rate: 1.0, blend_in: 1.0 });
     }
 }
 

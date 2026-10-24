@@ -5478,3 +5478,23 @@ Audit `~/ffxi/lab/research/sound_audit.md`.
   contents in place (an ability type list over its parent and back, an emote folder) plays its open again
   (replay_on_change; retail's close of the old contents is not drawn).
 - Live: battle menu -> Abilities -> Job Abilities -> Escape: each step's close and open zooms seen.
+
+## Skill actions: holds, op reactions, messages, the death after the hits (2026-10-24)
+
+Spec `~/ffxi/lab/research/ws_reaction_spec.md`.
+- The 0x028 handler plays no reaction, message or death for categories 3..6, 0xb, 0xd..0xf: FUN_100a9230 raises the
+  busy counter (+0x11c) of the caster and every target until the effect file's "main" starts (FUN_100a9500 /
+  FUN_100a9610; 1800-tick safety), and main's own ops drive the rest: op 0x20 holds actor2 for dur x speed (its
+  server status waits: a kill's status 3 applies when the hold ends, about at the message), op 0x59 holds actor1 with
+  no reactions, op 0x25 (actor2) / 0x21 (actor1) is the hit reaction at its frame (FUN_100cdd60: amount f32 @8, rate
+  @0xc, count @0x10, blend-in @0x14, fade @0x18, side @0x1c; level = the current record's scale & 3; standing dfi /
+  dbi by side (0 by position), moving dfm unless side 2), op 0x2b (DAT 0 `mdam`) prints the first record not yet
+  printed (FUN_1018c810), and the rest print when the action ends (FUN_1018c620) or its file fails.
+- Ours: fx/tasks.rs pushes holds / releases / reacts / action_prints (melee keeps combat.rs's plan); combat::one_action
+  holds the caster and targets for skill actions and no longer prints or reacts at arrival; react_op; actmotion
+  Overlay rate and blend-in.
+- Live: Shoulder Tackle (DAT 33244) killing a Forest Hare: main -> op 0x20 / 0x59 -> op 0x25 at the hit (dfi, weight
+  1, count 2, fade 37) -> mdam's line -> ded -> cor. Before: ded at the packet, the reaction once at once.
+- Not done: knockback (op 0x5e), guard / parry ops 0x5a / 0x5b, op 0x71, the skillchain burst trigger.
+- The action menu's key arm takes only arrows / Enter / Escape (it swallowed Space, so the chat line could not open
+  while the battle menu was up).

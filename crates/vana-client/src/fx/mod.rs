@@ -144,6 +144,21 @@ pub struct ElemCpu {
     pub light: Option<u32>,
 }
 
+/// Op 0x25 (reactor actor2) / 0x21 (actor1): amount f32 @8, rate @0xc, count u32 @0x10, blend-in ticks @0x14, fade
+/// @0x18, side u32 @0x1c (0 by position, 1 front, 2 back); level = the current record's scale & 3.
+#[derive(Clone, Copy, Debug)]
+pub struct React {
+    pub reactor: u32,
+    pub other: u32,
+    pub amount: f32,
+    pub rate: f32,
+    pub count: u32,
+    pub blend_in: f32,
+    pub fade: f32,
+    pub side: u32,
+    pub level: u8,
+}
+
 /// Scheduler op 0x0c (translate) / 0x0d (rotate) on a door (FUN_10043bb0 / FUN_100439c0): part `part` of actor1's
 /// door group goes linearly to `to` over `ticks`.
 #[derive(Clone, Debug)]
@@ -553,6 +568,14 @@ pub struct Effects {
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// Op 0x29 colour drives for the client: actor, target alpha, frames.
     pub fades: Vec<(u32, u8, f32)>,
+    /// Skill / magic actions' holds for the client: op 0x20 (actor2) / 0x59 (actor1, no reactions) as (actor, ticks,
+    /// no reactions), and the actors whose load hold ends (their "main" started or was given up, FUN_100a9610).
+    pub holds: Vec<(u32, f32, bool)>,
+    pub releases: Vec<u32>,
+    /// Op 0x25 / 0x21 hit reactions (FUN_100cdd60).
+    pub reacts: Vec<React>,
+    /// Records whose messages print now (op 0x2b, or what is left when the action ends): (action, record).
+    pub action_prints: Vec<(crate::net::action::Action, usize)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -619,6 +642,10 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
+            holds: Vec::new(),
+            releases: Vec::new(),
+            reacts: Vec::new(),
+            action_prints: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),
             sub_lib: None,
