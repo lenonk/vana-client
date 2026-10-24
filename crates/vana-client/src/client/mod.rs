@@ -3038,6 +3038,8 @@ struct World {
     inv: items::Inventory,
     win: Option<items::Win>,
     stats: Option<items::CharStats>,
+    /// The player flags the item updates keep (+0x3c35c): 0x800 settled since the last update, 0x200000 storage seen.
+    inv_flags: u32,
     /// s2c 0x062 skill_base (DAT_104856a4): craft ranks in bits 0..4.
     skill_base: Option<[u16; 64]>,
     /// The zone's NPC name list (FUN_10093bd0), for NPCs whose 0x00E carries no name.
@@ -4052,6 +4054,7 @@ impl App {
                             win: None,
                             stats: None,
                             skill_base: None,
+                            inv_flags: 0,
                             npc_names: HashMap::new(),
                             motion_files: Default::default(),
                             game: self.cfg.game.for_character(Some(&login.name)),
@@ -4710,8 +4713,22 @@ impl App {
                 NetEvent::SynthEffect { id, index, effect, kind, status, timer } => synth::on_effect(world, id, index, effect, kind, status, timer),
                 NetEvent::SynthResult(a) => synth::on_result(world, a),
                 NetEvent::SynthOthers(a) => synth::on_others(world, a),
-                NetEvent::ItemNum { container, index, count } => world.inv.count(container, index, count),
+                // FUN_100ec6c0: 0x01D State 1 sets the settled bits; each item update clears 0x800, and a storage
+                // container's 0x01F / 0x020 sets 0x200000 (never cleared).
+                NetEvent::ItemsSettled(state) => {
+                    if state == 1 {
+                        world.inv_flags |= 0x0020_0800;
+                    }
+                }
+                NetEvent::ItemNum { container, index, count } => {
+                    world.inv_flags &= !0x800;
+                    world.inv.count(container, index, count)
+                }
                 NetEvent::Item { container, index, id, count, ext, lock } => {
+                    world.inv_flags &= !0x800;
+                    if matches!(container, 1..=7 | 9) {
+                        world.inv_flags |= 0x0020_0000;
+                    }
                     world.inv.set(container, index, id, count);
                     if id != 0 {
                         world.inv.locks.insert((container, index), lock);

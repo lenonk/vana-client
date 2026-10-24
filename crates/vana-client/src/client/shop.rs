@@ -313,7 +313,11 @@ fn buy_rows(s: &Shop) -> Vec<(u8, Entry)> {
     s.stock.iter().enumerate().filter_map(|(i, e)| e.map(|e| (i as u8, e))).take(s.count.max(1) as usize).collect()
 }
 
+/// The inventory rows (FUN_1020ffd0 / FUN_101ed150): none until the inventory has settled (flags 0x800 or 0x200000).
 fn sell_rows(w: &World) -> Vec<crate::inventory::Slot> {
+    if w.inv_flags & 0x0020_0800 == 0 {
+        return Vec::new();
+    }
     super::post::picker_rows(w)
 }
 

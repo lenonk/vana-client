@@ -5330,3 +5330,11 @@ Full trace in `~/ffxi/lab/research/guild_shop_spec.md`; ours in client/shop.rs (
   attachments: main / sub PUP, 0x119 seen, the s2c 0x044 UnlockedAttachments bit).
 - Live: Sororo (Bastok Markets) for Lnxcsfix as WHM 20 (GM, 892 spells known): every affordable scroll green, Repose
   grey past the gil. Yellow not seen live (no character with the job but not the spell).
+
+## Inventory settled flags (2026-10-24)
+
+- s2c 0x01D (State u8 @4; LSB Flags u32 @8) with State 1 sets player flags (+0x3c35c) 0x800 and 0x200000
+  (FUN_100ec6c0); every s2c 0x01E / 0x01F / 0x020 clears 0x800, and 0x01F / 0x020 for a storage container (1, 9, 2..7)
+  set 0x200000, which nothing clears. The shop sell lists (FUN_1020ffd0, guild FUN_101ed150) have no rows while
+  neither bit is set, so in practice only before the first 0x01D State 1 or storage update after login. Ours:
+  World.inv_flags. Live: Ashene's sell list fills as before.
