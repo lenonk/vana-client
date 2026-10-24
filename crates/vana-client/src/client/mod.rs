@@ -1929,6 +1929,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        (Some(true), Some((Confirm::CancelTrade, _))) => {
+            world.confirm = None;
+            trade::cancel_request(world);
+        }
         (Some(true), Some((Confirm::Post(ctx), _))) => {
             world.confirm = None;
             post::confirmed(world, ctx);
@@ -2088,6 +2092,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::StopTracking, _) => gu.menu_msg(0x45, "Stop tracking current target\nand proceed with wide area scan?"),
         (Confirm::Dismount, _) => gu.menu_msg(0x4d, "Dismount?"),
         (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
+        (Confirm::CancelTrade, _) => gu.lobby_msg(0x0c, 0x2d, "Cancel trade transaction?"),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3015,6 +3020,8 @@ struct World {
     shop: Option<shop::Shop>,
     /// The NPC hand-over window (trade.rs).
     handover: Option<trade::Handover>,
+    /// Player trade (trade.rs): the request, both windows and both offers.
+    p2p: trade::P2p,
     /// The guild shop's buy / sell lists (s2c 0x083 / 0x085), cleared by 0x086 only.
     guild: [shop::GuildTable; 2],
     /// The mouse pick: actors whose screen rect held the pointer last test (their bones are read back), and the
@@ -3089,6 +3096,8 @@ enum Confirm {
     Dismount,
     /// post2's Dispose (2) / Return (3): group 9 0x34 / 0x35, default No.
     Post(u8),
+    /// Trade again on the player we asked (FUN_10151e40): group 0xc 0x2d "Cancel trade transaction?".
+    CancelTrade,
 }
 
 impl World {
@@ -4045,6 +4054,7 @@ impl App {
                             post: post::Session::default(),
                             shop: None,
                             handover: None,
+                            p2p: Default::default(),
                             guild: Default::default(),
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
@@ -4768,6 +4778,10 @@ impl App {
                 NetEvent::GuildOpen { stat, time } => shop::on_guild_open(world, stat, time),
                 NetEvent::GuildList { sell, stat, entries } => shop::on_guild_list(world, sell, stat, &entries),
                 NetEvent::GuildResult { sell, item, count, trade } => shop::on_guild_result(world, sell, item, count, trade),
+                NetEvent::TradeRequest { id, index } => trade::on_request(world, id, index),
+                NetEvent::TradeResponse { id, kind, index } => trade::on_response(world, id, kind, index),
+                NetEvent::TradeTheirs { n, counter, item, slot, attr } => trade::on_their_slot(world, n, counter, item, slot, attr),
+                NetEvent::TradeMine { n, item, slot, inv } => trade::on_my_slot(world, n, item, slot, inv),
                 // G+0x9808 / +0x980f by linkshell number: its item's slot and bag.
                 NetEvent::LinkshellEquip { num, index, bag } => {
                     if let Some(l) = world.linkshells.get_mut(num as usize) {

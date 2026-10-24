@@ -182,6 +182,14 @@ pub enum NetEvent {
     GuildList { sell: bool, stat: u8, entries: Vec<(u16, u8, u8, u32)> },
     /// s2c 0x082 / 0x084 (GUILD_BUY / GUILD_SELL): ItemNo @4 (0 refused), Count @6 (the guild's stock), Trade @7.
     GuildResult { sell: bool, item: u16, count: u8, trade: i8 },
+    /// s2c 0x021 (ITEM_TRADE_REQ): UniqueNo @4, ActIndex @8.
+    TradeRequest { id: u32, index: u16 },
+    /// s2c 0x022 (ITEM_TRADE_RES): UniqueNo @4, Kind @8, ActIndex @0xc.
+    TradeResponse { id: u32, kind: u32, index: u16 },
+    /// s2c 0x023 (ITEM_TRADE_LIST): ItemNum @4, TradeCounter @8, ItemNo @0xa, TradeIndex @0xd, Attr @0xe (24).
+    TradeTheirs { n: u32, counter: u16, item: u16, slot: u8, attr: [u8; 24] },
+    /// s2c 0x025 (ITEM_TRADE_MYLIST): ItemNum @4, ItemNo @8, TradeIndex @0xa, ItemIndex @0xb.
+    TradeMine { n: u32, item: u16, slot: u8, inv: u8 },
     /// s2c 0x0E0 (GP_SERV_COMMAND_GROUP_COMLINK): LinkshellNum @4, ItemIndex @5, Category (bag) @6.
     LinkshellEquip { num: u8, index: u8, bag: u8 },
     /// s2c 0x04D (GP_SERV_COMMAND_FRAGMENTS): the whole packet (client/servmes.rs reads it).
@@ -757,6 +765,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         }).collect();
                         tx.send(NetEvent::GuildList { sell: p.id == 0x085, stat: p.u8(0xf5), entries })?
                     }
+                    0x021 => tx.send(NetEvent::TradeRequest { id: p.u32(4), index: p.u16(8) })?,
+                    0x022 => tx.send(NetEvent::TradeResponse { id: p.u32(4), kind: p.u32(8), index: p.u16(0xc) })?,
+                    0x023 => tx.send(NetEvent::TradeTheirs { n: p.u32(4), counter: p.u16(8), item: p.u16(0xa), slot: p.u8(0xd), attr: std::array::from_fn(|k| p.u8(0xe + k)) })?,
+                    0x025 => tx.send(NetEvent::TradeMine { n: p.u32(4), item: p.u16(8), slot: p.u8(0xa), inv: p.u8(0xb) })?,
                     0x082 | 0x084 => tx.send(NetEvent::GuildResult { sell: p.id == 0x084, item: p.u16(4), count: p.u8(6), trade: p.u8(7) as i8 })?,
                     0x0E0 => tx.send(NetEvent::LinkshellEquip { num: p.u8(4), index: p.u8(5), bag: p.u8(6) })?,
                     0x04D => tx.send(NetEvent::Fragments(p.data.clone()))?,

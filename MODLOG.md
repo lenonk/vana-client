@@ -5378,3 +5378,22 @@ Spec `~/ffxi/lab/research/trade_spec.md`; ours client/trade.rs.
   1010 ("Listen, before you bring me something, you must first accept the mission!") and kept nothing.
 - Not done: player-to-player trade (0x032..0x034 / 0x021..0x025, "menu    trade" + "menu    gift"), mouse in the
   hand-over, the target prompt when Trade is chosen with no target (FUN_10159440, group 0xe 0x2d).
+
+## Player trade (2026-10-24)
+
+Spec `~/ffxi/lab/research/trade_spec.md` section 3; ours client/trade.rs (P2p, World.p2p).
+- Trade on a player (main menu child 7, action menu 0x13 on a player target): c2s 0x032 {UniqueNo, ActIndex} and
+  group 10 0x14 "You offer to trade with %s." (mode 0x79); again within 60 s: comyn group 0xc 0x2d "Cancel trade
+  transaction?" (Yes: 0x033 Cancel); after 60 s or out of reach a silent cancel; 7031 9 out of reach; nothing within
+  3 s of a cancel. s2c 0x021: 7031 0x18 "{name} wishes to trade with you." and no window: choosing Trade answers
+  (0x033 Start), whatever is targeted.
+- s2c 0x022 Start opens "menu    trade" (the delivery layout; ours) and "menu    gift" (16, 144, theirs) with the picker
+  and money, unless out of reach or a 0x20000 window is open (then 0x033 Cancel). Our offer draws from the 0x025 echo
+  only; Enter on a filled slot clears it (0x034 count 0), the picker toggles an inventory slot already offered, gil
+  goes in slot 0 (0x034 {n, 0xffff, 0, 0}); each 0x034 after our OK is preceded by 0x033 MakeCancell. OK = 0x033 Make
+  (our name orange, keys only on OK / Cancel); the partner's Make turns their name orange; any 0x023 voids both OKs.
+  Picker grey: Ex (0x4000) and worn items. Down from our bottom row goes to the gift, Up from its top row back.
+- 0x022 Cancell / errors: 7031 0x1a "You cannot trade with {name} at this time."; End: 0x1e "Trade complete.";
+  out of reach while trading: 7031 9 and Cancel; an event: 0x1a and Cancel.
+- Not tested live (it needs a second account and window); unit tests cover the offer rule and the reset. Not done:
+  the costume / blacklist checks, the Ex-by-augment and equipped-linkshell greys, mouse.
