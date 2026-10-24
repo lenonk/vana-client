@@ -39,6 +39,8 @@ const SCREEN_KINDS: Sig = Sig {
     len: 0x40,
     md5: "0ea9b21e9a7f04a68aeb660b0e0c2244",
 };
+/// DAT_1035bc60 rows 1..7 (row 0 is zeros): knockback speed per tick, decay, constant ticks by level (f32 each).
+const KNOCKBACK: Sig = Sig { name: "knockback levels", hint: &[0xab, 0xaa, 0xaa, 0x3d, 0x9a, 0x99, 0x99, 0x3d, 0x00, 0x00, 0xa0, 0x40], len: 84, md5: "098219a788fd1677fe255d3c7e8c95bf" };
 const MODE_COLOURS: Sig = Sig { name: "mode colours", hint: &[0x01, 0x00, 0x54, 0x01, 0x02, 0x00, 0x55, 0x01], len: 0x40, md5: "8dcab7880389b2c4c488afb259a5f760" };
 const PALETTE: Sig = Sig { name: "palette", hint: &[0x42, 0x00, 0x00, 0x00, 0x80, 0x80, 0x80, 0x60], len: 0x40, md5: "ada7882381d8a7f871792f7f2bc56e63" };
 const BINDINGS: Sig = Sig { name: "key bindings", hint: &[0xc8, 0x00, 0x00, 0x00, 0x00, 0x00, 0xd0, 0x00], len: 0x100, md5: "2979f885eeb95c7f5344400b09026857" };
@@ -80,6 +82,8 @@ pub struct Tables {
     pub filter_kinds: u32,
     pub filter_tables: [u32; 11],
     pub screen_kinds: u32,
+    /// File offset of the knockback level table's row 1.
+    pub knockback_at: usize,
     pub mode_colours: u32,
     pub palette: u32,
     pub bindings: u32,
@@ -138,6 +142,19 @@ pub fn of(dll: &[u8]) -> Result<Tables> {
     Ok(t)
 }
 
+/// FUN_100aa8e0's table: (speed per tick, decay, constant-phase ticks) for knockback levels 0..7.
+pub fn knockback(dll: &[u8]) -> Result<[[f32; 3]; 8]> {
+    let at = of(dll)?.knockback_at;
+    let mut t = [[0.0; 3]; 8];
+    for (k, row) in t.iter_mut().enumerate().skip(1) {
+        for (j, v) in row.iter_mut().enumerate() {
+            let o = at + ((k - 1) * 3 + j) * 4;
+            *v = f32::from_le_bytes(dll[o..o + 4].try_into()?);
+        }
+    }
+    Ok(t)
+}
+
 impl Tables {
     pub fn find(dll: &[u8]) -> Result<Self> {
         let va = |s: &Sig| -> Result<u32> { find(dll, s).and_then(|o| va_of(dll, o).ok_or_else(|| anyhow!("{}: not in a section", s.name))) };
@@ -161,6 +178,7 @@ impl Tables {
             // Eleven 49-word filter tables follow the kinds 0x400 on (the pointer array at 0x10351bbc lists them).
             filter_tables: std::array::from_fn(|i| filter_kinds + 0x400 + i as u32 * 200),
             screen_kinds: va(&SCREEN_KINDS)?,
+            knockback_at: find(dll, &KNOCKBACK)?,
             mode_colours: va(&MODE_COLOURS)?,
             palette: va(&PALETTE)?,
             bindings: va(&BINDINGS)?,

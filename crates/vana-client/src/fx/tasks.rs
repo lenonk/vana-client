@@ -753,6 +753,38 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Ops 0x5e / 0xbf (+ delay u16 @6): actor2 pushed from actor1; mode u16 @8 0 = the record's level (scale >> 2,
+            // no action 1, 0 = nothing) from DAT_1035bc60, else speed f32 @0xc a second, decay @0x10, ticks @0x14; pull
+            // u16 @0xa toward. Motion bf0? with the pusher in front of the reactor's facing, bb0? behind (swapped for a pull).
+            0x5e | 0xbf => {
+                let (Some(reactor), Some(pusher)) = (self.doll_of(t.a2).id(), self.doll_of(t.a1).id()) else { return Flow::Next };
+                let (Some(rm), Some(pm)) = (actors.matrix(reactor), actors.matrix(pusher)) else { return Flow::Next };
+                let (rp, pp) = (rm.w_axis.truncate(), pm.w_axis.truncate());
+                let front = rm.x_axis.truncate().dot(pp - rp) >= 0.0;
+                let pull = op.u16_at(0xa) != 0;
+                let f = |o: usize| f32::from_bits(op.u32_at(o));
+                let (speed, decay, ticks) = if op.u16_at(8) == 0 {
+                    let level = t.action.as_ref().map_or(1, |a| {
+                        let a = a.borrow();
+                        let recs = a.records();
+                        recs.get(a.cur.min(recs.len().saturating_sub(1))).map_or(1, |r| r.1.scale >> 2)
+                    });
+                    if level == 0 {
+                        return Flow::Next;
+                    }
+                    let row = self.knock_table[level.min(7) as usize];
+                    (row[0], row[1], row[2])
+                } else {
+                    (f(0xc) / 60.0, f(0x10), f(0x14))
+                };
+                let k = super::Knock { reactor, from: pp, speed: if pull { -speed } else { speed }, decay, ticks, motion: if front != pull { "bf0" } else { "bb0" }.to_string(), count: (f(0x14) as i32).clamp(0, 255) as u8 };
+                if op.code == 0x5e {
+                    self.knocks.push(k);
+                } else {
+                    self.knocks_later.push((op.u16_at(6) as f32 * t.speed, k));
+                }
+                Flow::Next
+            }
             // Ops 0x5a / 0x5b: actor1 / actor2 guards (@0xe 0) or parries.
             0x5a | 0x5b => {
                 let who = if op.code == 0x5a { t.a1 } else { t.a2 };

@@ -2915,6 +2915,8 @@ struct World {
     noreact: HashMap<u32, Instant>,
     /// Skill actions' load holds (busy counts, FUN_100a4140) with their safety deadline.
     loads: HashMap<u32, (u32, Instant)>,
+    /// Running knockbacks (op 0x5e), by actor.
+    knocks: HashMap<u32, combat::KnockState>,
     /// The action menu (Enter), and when the world started (a seed for random motion picks).
     action_menu: Option<combat::ActionMenu>,
     /// A main menu row was picked this frame (the snapshot's `picked`).
@@ -3323,6 +3325,7 @@ pub struct App {
     /// Installed-content mask (ROM2..): title music and lobycwin's tracks (FUN_1023ae80).
     installed: u32,
     keys_table: Option<Arc<zone::Keys>>,
+    knock_table: Option<[[f32; 3]; 8]>,
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
@@ -3497,6 +3500,7 @@ impl App {
             index: None,
             installed,
             keys_table: None,
+            knock_table: None,
             game_ui: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
@@ -3834,6 +3838,7 @@ impl App {
             self.index = Some(Arc::new(DatIndex::open(&self.cfg.ffxi_dir())?));
             let dll = std::fs::read(self.cfg.ffxi_dir().join("FFXiMain.dll"))?;
             self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
+            self.knock_table = crate::dat::tables::knockback(&dll).ok();
             self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
@@ -4018,6 +4023,7 @@ impl App {
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
                             loads: HashMap::new(),
+                            knocks: HashMap::new(),
                             action_menu: None,
                             menu_picked: false,
                             battle_prev: 0,
@@ -4332,6 +4338,9 @@ impl App {
                             if let Some(keys) = self.keys_table.clone() {
                                 world.effects.set_keys(keys);
                             }
+                            if let Some(t) = self.knock_table {
+                                world.effects.set_knock_table(t);
+                            }
                             if let Some(index) = world.index.clone() {
                                 world.effects.set_index(index);
                             }
@@ -4585,6 +4594,7 @@ impl App {
                     world.held_status.clear();
                     world.noreact.clear();
                     world.loads.clear();
+                    world.knocks.clear();
                     let current = world.zone == Some(zone) && world.scene == Some(scene);
                     let pending = world.loading == Some(zone) && world.loading_scene == scene;
                     if !current && !pending {
@@ -5145,6 +5155,9 @@ impl App {
         for g in std::mem::take(&mut world.effects.guards) {
             combat::guard_op(world, &g);
         }
+        for k in std::mem::take(&mut world.effects.knocks) {
+            combat::knock(world, &k);
+        }
         for (a, k, which) in std::mem::take(&mut world.effects.action_prints) {
             combat::print_record(world, &a, k, which);
         }
@@ -5175,11 +5188,27 @@ impl App {
         // FUN_1008dfb0 / FUN_100a3560: grounded actors follow the collision floor every frame (also those that
         // arrived before the zone had loaded).
         let floor = world.ground.as_ref().filter(|_| world.in_scene() && !in_event);
+        let mut knock_ends = Vec::new();
         for (eid, e) in world.entities.iter_mut() {
             // Moved by someone else since last frame (an event script): take that as the slide and drawn spot.
             if e.pos != e.last_pos {
                 e.slide = e.pos;
                 e.remain = 0.0;
+            }
+            // FUN_100c63d0 while +0x102 is set: the push moves the drawn position directly (no easing, no walk / turn
+            // motion choice); afterwards it eases back to the server's slide.
+            if let Some(k) = world.knocks.get_mut(eid) {
+                let (p, recover, done) = combat::knock_step(k, e.pos, ticks);
+                e.pos = p;
+                if e.grounded
+                    && let Some(g) = floor
+                    && let Some(y) = g.snap(e.pos.x, e.pos.z, e.pos.y)
+                {
+                    e.pos.y = y;
+                }
+                knock_ends.push((*eid, recover, done));
+                e.last_pos = e.pos;
+                continue;
             }
             if e.dir != e.dir_seen {
                 e.dir_seen = e.dir;
@@ -5222,6 +5251,21 @@ impl App {
             e.yaw += diff * (1.0 - (1.0 - rate).powf(ticks));
             e.ratio = crate::motion::move_ratio(e.ratio, moved, dt, e.motion.speed, e.motion.speed_base, e.motion.status);
             e.last_pos = e.pos;
+        }
+        // Our own push goes through the walking collision (walls, floor); the server learns it from 0x015.
+        if let Some(k) = world.knocks.get_mut(&world.my_id) {
+            let from = world.pos;
+            let (p, recover, done) = combat::knock_step(k, from, ticks);
+            world.pos = world.ground.as_ref().filter(|g| !g.is_empty()).map_or(p, |g| g.walk_player(from, p, ground::STEP_TICKS));
+            knock_ends.push((world.my_id, recover, done));
+        }
+        for (id, recover, done) in knock_ends {
+            if recover {
+                combat::knock_recover(world, id);
+            }
+            if done {
+                world.knocks.remove(&id);
+            }
         }
         // FFXI_TRACE_MOVE=1: the nearest monster's drawn / goal position and motion ratio each frame (test runs).
         static TRACE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();

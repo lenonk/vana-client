@@ -5583,3 +5583,22 @@ Spec `~/ffxi/lab/research/knockback_guard_spec.md` section 2.
   plays melee / ranged reactions itself and prints only main lines at T+4 (proc / react lines from op 0x71: wapr
   T+21, sb0? +55, dcnt at the counter's hit). Melee / ranged ActionCtx records start printed (combat prints the mains).
 - Live: hits on both sides react from damg's op 0x21 one tick after the line.
+
+## Knockback: scheduler ops 0x5e / 0xbf (2026-10-24)
+
+Spec `~/ffxi/lab/research/knockback_guard_spec.md` section 1.
+- Level = the record's `scale >> 2` (FUN_1005e360; bits 0..1 are the hit distortion). Op 0x5e: mode u16 @8 (0 = the
+  level from DAT_1035bc60: speed per tick, decay, constant ticks; level 0 = nothing; no action = 1), pull u16 @0xa,
+  explicit speed f32 @0xc a second, decay @0x10, ticks @0x14 (also the bf0? count; 0 loops). Op 0xbf: the same after
+  delay u16 @6 x task speed. Table found by its row 1 (dat/tables.rs KNOCKBACK).
+- FUN_100aa940 on actor2: refused for applied status 2, 3, 6, 0x26..0x2b, 0x32..0x35, 0x38..0x3e and riding; velocity
+  = normalize(reactor - pusher) x speed (any facing); motion `bf0?` with the pusher in front, `bb0?` behind (swapped
+  for a pull); no-reaction and busy counters while it runs (ops 0x21 / 0x25 / 0x5a skip it; a knockback kill falls at
+  the end).
+- FUN_100aab70 per whole tick: move by the velocity (a pull stops 0.9 from the puller), decay once the constant phase is
+  over, end at |v|^2 < 9e-6; FUN_100ca8c0: `bf1?` / `bb1?` once when the constant phase ends. Drawn position moved
+  directly (no easing, no walk motion), the own player through the walking collision (0x015 tells the server);
+  entities ease back to the server's position afterwards (LSB never moves them, inf).
+- Monsters have no bf0? / bb0? motions: they slide without one.
+- Live: the Forest Hare's Ram Charge (skill 266, knockback 2, file 3910) on Lnxcsfix: level 2 push, bf0 then bf1 at
+  tick 5, then idle.

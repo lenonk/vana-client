@@ -185,6 +185,19 @@ pub struct Guard {
     pub fade: f32,
 }
 
+/// Op 0x5e / 0xbf: push `reactor` away from `from` (the pusher's position; toward it when `speed` < 0) at `speed`
+/// units a tick for `ticks`, then decaying by `decay` a tick; `motion` "bf0" / "bb0" with `count` (0 loops).
+#[derive(Clone, Debug)]
+pub struct Knock {
+    pub reactor: u32,
+    pub from: Vec3,
+    pub speed: f32,
+    pub decay: f32,
+    pub ticks: f32,
+    pub motion: String,
+    pub count: u8,
+}
+
 /// Scheduler op 0x0c (translate) / 0x0d (rotate) on a door (FUN_10043bb0 / FUN_100439c0): part `part` of actor1's
 /// door group goes linearly to `to` over `ticks`.
 #[derive(Clone, Debug)]
@@ -606,6 +619,11 @@ pub struct Effects {
     pub reacts: Vec<React>,
     /// Op 0x5a / 0x5b guard and parry overlays (FUN_100cde70 / FUN_100cdf00).
     pub guards: Vec<Guard>,
+    /// Op 0x5e pushes (FUN_100aa940), and op 0xbf's waiting for their delay (ticks left).
+    pub knocks: Vec<Knock>,
+    knocks_later: Vec<(f32, Knock)>,
+    /// DAT_1035bc60: knockback (speed per tick, decay, ticks) by level.
+    knock_table: [[f32; 3]; 8],
     /// Messages that print now: (action, record, which: 0 main (op 0x2b, the action's end), 1 proc / 2 react (op 0x71)).
     pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
@@ -679,6 +697,9 @@ impl Effects {
             loads: Vec::new(),
             reacts: Vec::new(),
             guards: Vec::new(),
+            knocks: Vec::new(),
+            knocks_later: Vec::new(),
+            knock_table: [[0.0; 3]; 8],
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             door_moves: Vec::new(),
@@ -692,6 +713,10 @@ impl Effects {
             alive: HashSet::new(),
             next_voice: 0,
         }
+    }
+
+    pub fn set_knock_table(&mut self, t: [[f32; 3]; 8]) {
+        self.knock_table = t;
     }
 
     pub fn set_keys(&mut self, keys: Arc<zone::Keys>) {
@@ -1149,6 +1174,13 @@ impl Effects {
         self.model_generators(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
+        // Op 0xbf: the push starts when its delay has counted down (its task's destructor).
+        for k in self.knocks_later.iter_mut() {
+            k.0 -= dt;
+        }
+        let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.knocks_later).into_iter().partition(|k| k.0 <= 0.0);
+        self.knocks_later = later;
+        self.knocks.extend(due.into_iter().map(|k| k.1));
         self.start_dust(f, actors);
         // Lives first, as each element's Exec does before its update stream.
         for e in 0..self.elems.len() {

@@ -346,6 +346,11 @@ pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bo
 
 /// A scheduler's op 0x05 run by the effect system (fx/tasks.rs) on actor `id`, or its op 0x28 (None): the
 /// status motion comes back.
+/// A motion's length in ticks at `speed` (the longest of its regions).
+pub(super) fn motion_len(a: &Actor, ch: &Character, name: &str, speed: f32) -> f32 {
+    find(&a.extra, ch, name).iter().map(|x| x.frames as f32 / (x.speed * speed * 0.5).max(1e-3)).fold(0.0, f32::max)
+}
+
 pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
     let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { return };
     let base = status_motion(w, id, &ch);

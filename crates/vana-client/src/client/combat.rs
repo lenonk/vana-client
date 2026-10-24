@@ -428,10 +428,79 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
     }
 }
 
-/// An actor waits while held by a swing / op 0x20 / 0x59, or while a skill action's file loads.
+/// An actor waits while held by a swing / op 0x20 / 0x59, a skill action's file loading, or a knockback.
 pub(super) fn held(w: &World, id: u32) -> bool {
     let now = Instant::now();
-    w.holds.get(&id).is_some_and(|t| *t > now) || w.loads.get(&id).is_some_and(|l| l.1 > now)
+    w.holds.get(&id).is_some_and(|t| *t > now) || w.loads.get(&id).is_some_and(|l| l.1 > now) || w.knocks.contains_key(&id)
+}
+
+/// A running knockback (actor +0x102): velocity per tick, signed speed, decay, constant-phase ticks left, the
+/// pusher's position, the motion, and the part tick carried to the next frame.
+pub(super) struct KnockState {
+    vel: Vec3,
+    speed: f32,
+    decay: f32,
+    left: f32,
+    origin: Vec3,
+    motion: String,
+    carry: f32,
+}
+
+/// Applied statuses whose actor plays the knockback motions (op 0x5e step 4, FUN_100ca8c0).
+fn knock_shows(status: u8) -> bool {
+    matches!(status, 0 | 1 | 4 | 7 | 0x21 | 0x2f | 0x30 | 0x3f..=0x53)
+}
+
+/// FUN_100aa940: a push starts (or replaces the running one) unless the reactor is dead, riding or in an event pose;
+/// its no-reaction and busy counters hold while it runs (held()).
+pub(super) fn knock(w: &mut World, k: &crate::fx::Knock) {
+    let status = if k.reactor == w.my_id { w.my_motion.status } else { w.entities.get(&k.reactor).map_or(0, |e| e.motion.status) };
+    if matches!(status, 2 | 3 | 5 | 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e | 0x55) {
+        return;
+    }
+    let Some((pos, _)) = position(w, k.reactor) else { return };
+    let vel = (pos - k.from).normalize_or_zero() * k.speed;
+    let left = if k.ticks == 0.0 { 1.0 } else { k.ticks };
+    log::debug!(target: "motion", "actor {:#x}: knockback {} speed {} decay {} ticks {left}", k.reactor, k.motion, k.speed, k.decay);
+    w.knocks.insert(k.reactor, KnockState { vel, speed: k.speed, decay: k.decay, left, origin: k.from, motion: k.motion.clone(), carry: 0.0 });
+    if knock_shows(status) {
+        actmotion::play_op(w, k.reactor, Some(sched::Motion { name: k.motion.clone(), at: 0, speed: 1.0, ticks: 0, count: k.count, blend: 12 }));
+    }
+}
+
+/// FUN_100aab70: one frame of a push from `pos`: whole ticks move by the velocity (a pull stops 0.9 from the
+/// puller), the velocity decays each tick once the constant phase is over. Returns the position, whether the
+/// constant phase ended this frame, and whether the push is over (|v|^2 < 9e-6).
+pub(super) fn knock_step(k: &mut KnockState, pos: Vec3, ticks: f32) -> (Vec3, bool, bool) {
+    let prev = k.left;
+    k.left -= ticks;
+    k.carry += ticks;
+    let mut p = pos;
+    while k.carry >= 1.0 {
+        k.carry -= 1.0;
+        let cand = p + k.vel;
+        if k.speed >= 0.0 || (cand - k.origin).length_squared() >= 0.81 {
+            p = cand;
+        }
+        // Ticks come in frame parts here: a small tolerance keeps the phase end on its whole tick.
+        if k.left <= 1e-3 {
+            k.vel -= k.vel * k.decay;
+        }
+    }
+    (p, prev > 1e-3 && k.left <= 1e-3, k.vel.length_squared() < 9e-6)
+}
+
+/// FUN_100ca8c0: when the constant phase ends, "bf1?" / "bb1?" once (blend 12), then the status motion.
+pub(super) fn knock_recover(w: &mut World, id: u32) {
+    let Some(name) = w.knocks.get(&id).map(|k| k.motion.replacen('0', "1", 1)) else { return };
+    let status = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
+    if !knock_shows(status) {
+        return;
+    }
+    let Some(a) = w.actors.get(&id) else { return };
+    let Some(ch) = a.character.clone() else { return };
+    let len = actmotion::motion_len(a, &ch, &name, 1.0);
+    actmotion::play_op(w, id, Some(sched::Motion { name, at: 0, speed: 1.0, ticks: len.ceil() as u16, count: 1, blend: 12 }));
 }
 
 /// FUN_100a4140 for a skill action's load (busy +1; 1800-tick safety, +0x11e).
@@ -467,7 +536,8 @@ pub(super) fn fx_release(w: &mut World, id: u32) {
 /// 2 ("dbm?"); an overlay at amount x {0.25, 0.5, 1.0}[level] with the op's rate, count, blend-in and fade.
 pub(super) fn react_op(w: &mut World, r: &crate::fx::React) {
     let status = if r.reactor == w.my_id { w.my_motion.status } else { w.entities.get(&r.reactor).map_or(0, |e| e.motion.status) };
-    if r.level == 0 || w.noreact.get(&r.reactor).is_some_and(|t| *t > Instant::now()) || matches!(status, 2 | 3 | 5 | 0x55) {
+    // FUN_1005e5f0: none while the reactor is being knocked back.
+    if r.level == 0 || w.noreact.get(&r.reactor).is_some_and(|t| *t > Instant::now()) || w.knocks.contains_key(&r.reactor) || matches!(status, 2 | 3 | 5 | 0x55) {
         return;
     }
     let front = match r.side {
@@ -598,7 +668,7 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
 /// rate, count, blend-in and fade (no level, no direction, no dead check).
 pub(super) fn guard_op(w: &mut World, g: &crate::fx::Guard) {
     let status = if g.reactor == w.my_id { w.my_motion.status } else { w.entities.get(&g.reactor).map_or(0, |e| e.motion.status) };
-    if w.noreact.get(&g.reactor).is_some_and(|t| *t > Instant::now()) || matches!(status, 5 | 0x55) {
+    if w.noreact.get(&g.reactor).is_some_and(|t| *t > Instant::now()) || w.knocks.contains_key(&g.reactor) || matches!(status, 5 | 0x55) {
         return;
     }
     let name = match (g.parry, moving(w, g.reactor)) {
@@ -871,6 +941,35 @@ fn send(w: &World, c: NetCommand) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// knockback_spec 1.2: from DAT_1035bc60, level 1 runs 47 ticks over 1.41 units (bf1 at tick 5), level 7 123 ticks
+    /// over 10.61 (bf1 at 45); the same at 60 and 300 fps.
+    #[test]
+    fn knockback_levels() {
+        let cfg = crate::config::Config::load();
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let t = crate::dat::tables::knockback(&dll).unwrap();
+        for dt in [1.0f32, 0.2] {
+            for (level, total, dist, recover) in [(1, 47.0, 1.41, 5.0), (7, 123.0, 10.61, 45.0)] {
+                let row = t[level];
+                let mut k = KnockState { vel: Vec3::X * row[0], speed: row[0], decay: row[1], left: row[2], origin: Vec3::ZERO, motion: "bf0".into(), carry: 0.0 };
+                let (mut p, mut ticks, mut at) = (Vec3::ZERO, 0.0f32, None);
+                loop {
+                    ticks += dt;
+                    let (q, r, done) = knock_step(&mut k, p, dt);
+                    p = q;
+                    if r {
+                        at = Some(ticks);
+                    }
+                    if done || ticks > 400.0 {
+                        break;
+                    }
+                }
+                assert!((ticks - total).abs() <= 1.0 && (p.x - dist).abs() < 0.02, "level {level} dt {dt}: {ticks} ticks, {}", p.x);
+                assert!(at.is_some_and(|a| (a - recover).abs() <= dt + 1e-3), "level {level} dt {dt}: bf1 at {at:?}");
+            }
+        }
+    }
     use crate::client::net::{battle_message, battle_message2};
     use crate::dat::battle::BattleText;
     use crate::net::action::{ActionResult, ActionTarget, Side, pack, parse};
