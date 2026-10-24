@@ -6198,3 +6198,12 @@ Spec `~/ffxi/lab/research/chatctrl_spec.md`.
   the target window, the Chat bars; Party -> "hello" gave "There are no party members." and "(chatmode : /party )",
   the log caption Party, the action menu still up; Tell showed "Lnxcsfix" in yellow and set "/tell Lnxcsfix ".
   Shout was not tried (it reaches the zone).
+
+## Config lists: bars, textcol1 scrolling (2026-10-24)
+
+- cfilter / fxfilter / k1assign / k2assign (FUN_10197b80 / FUN_1019d3b0 / FUN_1019cff0): the bar at x1 - 8 over 14
+  rows; conf11s has none. textcol1 (FUN_10198620, 11 rows, total the category's colours) scrolls like them
+  (FUN_10198800: Down on row 11 moves the top while top + 11 < count; Left / Right page): its category 0 has 13
+  colours, and ours stopped at 11. Enter and textcol2's sample take the scrolled row.
+- Checked offscreen (`topbar-shot --config "conftxtc:1,textcol2:1,textcol1:11:2"`): rows 3..13, the bar's thumb at
+  the bottom, the "yell" sample; k1assign scrolled by 5 with its bar.

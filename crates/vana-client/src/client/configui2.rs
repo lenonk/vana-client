@@ -186,7 +186,7 @@ fn rows(ui: &ConfigUi, v: &Values, name: &str) -> usize {
 
 /// A window was pushed.
 pub fn opened(ui: &mut ConfigUi, name: &str) {
-    if is_list(name) {
+    if is_list(name) || name == "textcol1" {
         ui.extra.scroll = 0;
     }
     if name == "lobycwin"
@@ -359,7 +359,9 @@ pub fn key(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, key: egui::Key, out: 
     }
     if is_list(&name) || name == "textcol1" {
         let n = rows(ui, v, &name);
-        let shown = if name == "textcol1" { n.min(11) } else { n.min(14) };
+        // textcol1 shows 11 rows, the lists 14 (FUN_10198620 / FUN_10197b80); all scroll and page alike.
+        let page = if name == "textcol1" { 11 } else { 14 };
+        let shown = n.min(page);
         let at = ui.extra.scroll + cursor as usize - 1;
         let mut moved = false;
         let set_cursor = |ui: &mut ConfigUi, c: u16| {
@@ -372,7 +374,7 @@ pub fn key(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, key: egui::Key, out: 
                 if (cursor as usize) < shown {
                     set_cursor(ui, cursor + 1);
                     moved = true;
-                } else if name != "textcol1" && ui.extra.scroll + shown < n {
+                } else if ui.extra.scroll + shown < n {
                     ui.extra.scroll += 1;
                     moved = true;
                 }
@@ -391,19 +393,19 @@ pub fn key(ui: &mut ConfigUi, gu: &GameUi, v: &mut Values, key: egui::Key, out: 
                 ui.extra.log_window ^= 1;
                 moved = true;
             }
-            egui::Key::ArrowRight if name != "textcol1" => {
-                let s = (ui.extra.scroll + 14).min(n.saturating_sub(14));
+            egui::Key::ArrowRight => {
+                let s = (ui.extra.scroll + page).min(n.saturating_sub(page));
                 moved = s != ui.extra.scroll;
                 ui.extra.scroll = s;
             }
-            egui::Key::ArrowLeft if name != "textcol1" => {
-                let s = ui.extra.scroll.saturating_sub(14);
+            egui::Key::ArrowLeft => {
+                let s = ui.extra.scroll.saturating_sub(page);
                 moved = s != ui.extra.scroll;
                 ui.extra.scroll = s;
             }
             egui::Key::Enter if name == "textcol1" => {
                 out.sounds.push(Se::Select);
-                ui.extra.row = cursor as usize - 1;
+                ui.extra.row = at;
                 let id = COLOUR_ROWS[ui.extra.cat.min(3)].get(ui.extra.row).map_or(0x1b, |r| r.2);
                 let c = v.get(id);
                 ui.extra.rgb = [(c >> 16) as u8, (c >> 8) as u8, c as u8];
@@ -565,6 +567,12 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
                     }
                 }
             }
+            // FUN_10197b80: 14 rows at x1 - 8 (conf11s has none).
+            if n != "conf11s"
+                && let Some([fx, fy, fw, fh]) = gu.window_rect(&name, sw, sh)
+            {
+                gu.scroll_bar(fx + fw - 8.0, fy, fh, total, 14, ui.extra.scroll);
+            }
             rects.extend(gu.window_rect(&name, sw, sh));
             true
         }
@@ -573,13 +581,17 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
             let Some((x, y)) = gu.window(&name, sw, sh) else { return true };
             let kids: Vec<(u16, f32, f32)> = gu.menu_def(&name).map(|m| m.elements.iter().skip(1).map(|c| (c.id, x + c.x as f32, y + c.y as f32)).collect()).unwrap_or_default();
             for (id, cx, cy) in kids {
-                let Some(row) = rows_of.get(id as usize - 1) else { continue };
+                let Some(row) = rows_of.get(ui.extra.scroll + id as usize - 1) else { continue };
                 let on = top && id == w.cursor;
                 gu.sprite("menu    windowps", 74, cx, cy, if on { 0x8080_5020 } else { 0x8080_8080 });
                 text_b(gu, row.0, cx + 30.0, cy, white);
                 if on {
                     gu.cursor(cx, cy);
                 }
+            }
+            // FUN_10198620: 11 rows, total the category's colours.
+            if let Some([fx, fy, fw, fh]) = gu.window_rect(&name, sw, sh) {
+                gu.scroll_bar(fx + fw - 8.0, fy, fh, rows_of.len(), 11, ui.extra.scroll);
             }
             rects.extend(gu.window_rect(&name, sw, sh));
             true
@@ -589,7 +601,7 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
             let Some((x, y)) = gu.window(&name, sw, sh) else { return true };
             let row = top.then_some(()).map_or(ui.stack.iter().any(|s| s.name == "textcol1"), |_| true);
             let cursor = ui.stack.iter().find(|s| s.name == "textcol1").map_or(1, |s| s.cursor) as usize;
-            if let (true, Some(r)) = (row, COLOUR_ROWS[ui.extra.cat.min(3)].get(cursor - 1)) {
+            if let (true, Some(r)) = (row, COLOUR_ROWS[ui.extra.cat.min(3)].get(ui.extra.scroll + cursor - 1)) {
                 text_b(gu, r.1, x + 16.0, y + 20.0, crate::dat::battle::argb_bytes(v.get(r.2)));
             }
             rects.extend(gu.window_rect(&name, sw, sh));
