@@ -833,6 +833,7 @@ fn main() -> Result<()> {
         windows_sys::Win32::System::Console::AttachConsole(windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS);
     }
     let mut log = env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"));
+    log.format_timestamp_millis();
     // Windows: a GUI exe started without a console loses stderr, so the log (and any panic) also goes to a file.
     #[cfg(windows)]
     if let Ok(file) = std::fs::create_dir_all(config::data_dir()).and_then(|_| std::fs::File::create(config::data_dir().join("vana-client.log"))) {
