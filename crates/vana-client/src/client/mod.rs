@@ -1573,9 +1573,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The action menu (FUN_1012bd10) takes the keys while it is up (hidden under a sub-target prompt).
                 // Escape engaged keeps it: autorun stops, else the log takes a line off; out of battle it closes.
                 // Right on Disengage / Call for help swaps them (FUN_1012acc0), on Magic opens magselec.
-                // Only its own keys: Space (the chat line) and the rest go on as usual.
+                // Only its own keys: Space (the chat line) and the rest go on as usual. The main menu opened over it (-
+                // while engaged; engaging closes the main menu) is newer and has the focus.
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape
-                    if world.action_menu.is_some() && world.prompt.is_none() =>
+                    if world.action_menu.is_some() && world.prompt.is_none() && world.menu.is_none() =>
                 {
                     let engaged = world.my_motion.status == 1;
                     let m = world.action_menu.as_mut().unwrap();
@@ -2348,7 +2349,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
-        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none();
+        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none() && world.menu.is_none();
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
             let (lib, sprite) = combat::label(*c);
             gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });

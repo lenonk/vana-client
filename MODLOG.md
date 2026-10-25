@@ -5462,6 +5462,13 @@ Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
   closes it and brings it back when the list closes (FUN_101336d0). Switch Target goes through the sub-target prompt
   over monsters (flags 0x20) and "/attack <id>". Right on Magic opens magselec. Hidden under a sub-target prompt; the
   hand only while it has the focus; drawn beneath the lists it opens.
+- The main menu opened while engaged (- ; engaging closes it) is newer than playermo and has the focus: menuwind's
+  group 0x81 and playermo's 0x04 share no bit, so both stay drawn; the action menu takes no keys and draws no hand
+  until the main menu closes (Escape). It took every arrow key before (user, 2026-10-25).
+- Battle music after a kill: FUN_1008db40 sets DAT_10480aec for a claimed monster with a model (+0x120 bit 9) whatever
+  its status; +0x130 bit 22 is s2c 0x067 @0x10 bit 2 (Level Sync, 0x1009cf90), +0xee 3..5 the lift / ship model
+  kinds. LSB clears the claim (m_OwnerID) only in the death's drop-item callback and sends no update for it, so the
+  corpse keeps our claim until it despawns and the music goes on *(inf: the retail server clears it at death)*.
 - Title slot 0 while engaged: retail shows group 0xd 5 "Commands" (seen live twice by the user), although FUN_1012b4b0
   reads as 7 "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred). Ours: 5.
 - Choosing Magic / Abilities / Trust / Items closes the battle menu (its close animation plays) and the list opens
