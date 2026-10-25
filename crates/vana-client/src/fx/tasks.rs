@@ -1049,6 +1049,7 @@ impl Effects {
                 match self.find_afb(id, op.u32_at(8), actors) {
                     Err(()) => return Flow::Retry,
                     Ok(Some(afb)) => {
+                        log::debug!("effects: after-image {} on {id:#x} ({} points)", String::from_utf8_lossy(&op.raw[8..11]), afb.a.len());
                         let tr = super::trail::Trail::new(id, afb, &op.raw);
                         match self.trails.iter().position(|t| t.is_none()) {
                             Some(i) => self.trails[i] = Some(tr),
