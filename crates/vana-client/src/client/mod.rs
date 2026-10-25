@@ -51,6 +51,7 @@ mod treasure;
 mod servmes;
 mod chatctrl;
 mod partymenu;
+mod levelsync;
 mod journal;
 mod missions;
 mod quests;
@@ -163,7 +164,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -795,7 +796,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1346,6 +1347,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if treasure::active(world) => treasure::key(world, *key),
                 _ if world.chatctrl.is_some() => chatctrl::key(world, *key),
                 _ if world.arealist.is_some() => arealist::key(world, gu, *key),
+                _ if world.levelsync.is_some() => levelsync::key(world, *key),
                 _ if searchmenu::refining(world) => searchmenu::key(world, gu, *key),
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.searchmenu.is_some() => searchmenu::key(world, gu, *key),
@@ -2063,6 +2065,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // chatctrl over the action menu that opened it.
     blockers.extend(chatctrl::draw(gu, world, sw, sh));
     blockers.extend(partymenu::draw(gu, world, sw, sh));
+    blockers.extend(levelsync::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
@@ -2360,6 +2363,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 items::drop_now(world, index);
             }
         }
+        (Some(true), Some((Confirm::Sync { id, off, .. }, _))) => {
+            world.confirm = None;
+            levelsync::answer(world, id, off);
+        }
         (Some(true), Some((Confirm::Ls(a), _))) => {
             world.confirm = None;
             linkshell::answer(world, a);
@@ -2506,6 +2513,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     chatctrl::bars(gu, world, &mut bars);
     searchmenu::bars(gu, world, &mut bars);
     partymenu::bars(gu, world, &mut bars);
+    levelsync::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
@@ -2551,6 +2559,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Post(ctx), _) => post::confirm_text(gu, ctx),
         (Confirm::CancelTrade, _) => gu.lobby_msg(0x0c, 0x2d, "Cancel trade transaction?"),
         (Confirm::Ls(a), _) => linkshell::ask_text(gu, a),
+        (Confirm::Sync { id, race, off }, _) => levelsync::ask_text(world, id, race, off),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3533,6 +3542,9 @@ struct World {
     /// The Party row's windows, a pending invite (s2c 0x0DC) and the s2c 0x0B4 config bytes (SAVE_CONF @4..@0xf).
     partymenu: Option<partymenu::PartyMenu>,
     invite: Option<partymenu::Invite>,
+    /// c2s 0x078's pending use of the s2c 0x0E1 answer (mode, what for), and the Level Sync window.
+    group_cb: Option<(u8, partymenu::GroupThen)>,
+    levelsync: Option<levelsync::LevelSync>,
     conf_sys: [u8; 12],
     /// /ver's text (retail: patch.ver; ours the version string sent to the lobby).
     client_version: String,
@@ -3627,6 +3639,8 @@ struct World {
     cats: Option<magic::Cats>,
     prompt: Option<target::Sub>,
     party_cursor: Option<target::PartyCursor>,
+    /// /focustarget (target object +0x84 / +0x88): {id, ActIndex}, valid while a member of our six slots.
+    focus: Option<(u32, u16)>,
     /// Owned mounts (s2c 0x0AE; None before the first) and the mount recast's end (0x119 @0xfc).
     mount_bits: Option<u64>,
     mount_recast: Option<Instant>,
@@ -3740,6 +3754,8 @@ enum Confirm {
     CancelTrade,
     /// The Linkshell windows' prompts.
     Ls(linkshell::Ask),
+    /// Level Sync on (group 10 0x71) or off (0x72) with a party member (FUN_10204af0, FUN_10204e50).
+    Sync { id: u32, race: u8, off: bool },
 }
 
 impl World {
@@ -4758,6 +4774,8 @@ impl App {
                             real_level: None,
                             partymenu: None,
                             invite: None,
+                            group_cb: None,
+                            levelsync: None,
                             conf_sys: [0; 12],
                             client_version: self.cfg.client_version.clone(),
                             weather: 1,
@@ -4826,6 +4844,7 @@ impl App {
                             cats: None,
                             prompt: None,
                             party_cursor: None,
+                            focus: None,
                             mount_bits: None,
                             mount_recast: None,
                             emote_tree: None,
@@ -5757,6 +5776,7 @@ impl App {
                 }
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
+                NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
                 NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
                 NetEvent::TrackState(s) => {

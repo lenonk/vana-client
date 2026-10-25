@@ -118,21 +118,25 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     }
 }
 
-/// The party icon object (DAT_106671bc, draw FUN_10228440, config 0xc2), while the buff window is up: the target
-/// window's target when it is a party member other than us ("< name >"), else the party cursor's member; its 0x076
-/// icons 8 a row at 14 px (24 x 0.6) over the log window (x + 200), or over the party window when they would reach
-/// it; the name above in fontshp, grey unless in our zone (FUN_10202cc0).
+/// The party icon object (DAT_106671bc, draw FUN_10228440, config 0xc2), while the buff window is up: the focus target
+/// ("< name >"), else FUN_10157cb0's (the party cursor's member while it is up, else the current target), each only
+/// when someone other than us in our six slots (FUN_101593c0); its 0x076 icons 8 a row at 14 px (24 x 0.6) over the
+/// log window (x + 200), or over the party window when they would reach it; the name above in fontshp, grey unless in
+/// our zone (FUN_10202cc0).
 pub fn draw_party(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log: [f32; 4]) {
     if w.game.get(0xc2) == 0 {
         return;
     }
-    let member = |id: u32| id != w.my_id && w.party.members().any(|m| m.id == id);
-    let (id, bracketed) = match w.target.filter(|&t| member(t)) {
-        Some(t) => (t, true),
-        None => match super::target::party_hand(w).and_then(|(_, _, id)| id).filter(|&t| member(t)) {
-            Some(t) => (t, false),
-            None => return,
-        },
+    let valid = |id: u32| id != w.my_id && super::target::in_own_six(w, id);
+    let (id, bracketed) = match super::target::focus_member(w) {
+        Some(f) => (f, true),
+        None => {
+            let t = if w.party_cursor.is_some() { super::target::party_hand(w).and_then(|(_, _, id)| id) } else { w.target };
+            match t.filter(|&t| valid(t)) {
+                Some(t) => (t, false),
+                None => return,
+            }
+        }
     };
     let Some(row) = w.party_buffs.get(&id) else { return };
     let ids: Vec<u16> = row.iter().copied().filter(|&b| b != 0xffff && b != 0).collect();

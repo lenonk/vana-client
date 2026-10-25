@@ -58,9 +58,17 @@ pub struct Cond {
     pub status: u32,
     /// +0x5c: the comment type (genre << 4 | sub; FUN_10108040).
     pub comment: u32,
+    /// A group list instead (kind 2, FUN_100e2f10; setters FUN_10107640..670): party, alliance, LS1, LS2 ids.
+    pub group: Option<[u32; 4]>,
 }
 
 impl Cond {
+    /// The group list request (wire type 2): the four ids and a zero word (LSB: party / alliance first, else LS1,
+    /// else LS2; no reply when all are 0).
+    pub fn group(ids: [u32; 4]) -> Self {
+        Cond { group: Some(ids), ..Default::default() }
+    }
+
     /// `/sea all`: the area flag with no area, wire type 0.
     #[cfg(test)]
     pub fn all() -> Self {
@@ -169,6 +177,11 @@ impl Bits {
 
 /// FUN_101041e0 -> FUN_10104200: the condition block (u8 byte count, then the bits) and its wire type.
 pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
+    if let Some(ids) = c.group {
+        let mut p: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
+        p.extend([0; 4]);
+        return (2, p);
+    }
     let mut b = Bits::default();
     // The typed sorts, then name and each set field's type not listed yet.
     let mut sorts = c.sorts.clone();

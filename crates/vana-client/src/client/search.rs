@@ -17,6 +17,8 @@ pub enum Then {
     Results,
     /// FUN_1020a9d0 with p6 = 1: the summary line only (arealist's Monstrosity picks).
     Summary(Scope),
+    /// LAB_10204da0's query: the rows of "menu    levelsyn".
+    LevelSync,
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -51,6 +53,8 @@ pub struct Results {
     pub option: Option<u16>,
     /// Title slot 2 (group 0xd): 0 "Search", 0x13 "Party" from the party menu's Find Member (FUN_10204c60).
     pub title: usize,
+    /// W+0x58: 1 a search, 3 a group list (no header help, no summary line, Enter on the header does nothing).
+    pub mode: u8,
 }
 
 /// The rows the window shows at once (its 15 row children).
@@ -349,7 +353,21 @@ pub fn run(w: &mut World, cond: Cond, scope: Scope) {
     }
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
-    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0 });
+    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0, mode: 1 });
+}
+
+/// FUN_1020a9d0 mode 3 (FUN_100e2f10): the group list of the ids (party, alliance, LS1, LS2) in the results window,
+/// title slot 2 from group 0xd; nothing while a query is out.
+pub fn run_group(w: &mut World, ids: [u32; 4], title: usize) {
+    if busy(w) {
+        return;
+    }
+    log::info!("search: group list {ids:?}");
+    let cond = Cond::group(ids);
+    w.search_cond = cond.clone();
+    let rx = search::spawn(w.search_addr, cond);
+    w.searches.push((rx, Then::Results));
+    w.search = Some(Results { busy: true, failed: false, scope: Scope::Area, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title, mode: 3 });
 }
 
 /// The same with p6 = 1: the old results window closes (FUN_1020b3a0), none opens; only the summary line comes.
@@ -408,6 +426,7 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             log::info!("search: {name} is {:#x} in zone {}", r.id, r.zone);
             invite(w, r.id, r.flags);
         }
+        Then::LevelSync => super::levelsync::filled(w, reply),
         Then::Summary(scope) => {
             if let Some(r) = reply {
                 summary(w, scope, r.total as usize, r.records.len());
@@ -426,8 +445,10 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             if res.cursor == 0 && !res.rows.is_empty() {
                 res.cursor = 1;
             }
-            let (scope, shown, total) = (res.scope, res.rows.len(), reply.total as usize);
-            summary(w, scope, total, shown);
+            let (scope, shown, total, mode) = (res.scope, res.rows.len(), reply.total as usize, res.mode);
+            if mode != 3 {
+                summary(w, scope, total, shown);
+            }
         }
     }
 }
@@ -526,6 +547,7 @@ pub fn key(w: &mut World, key: egui::Key) {
         }
         // FUN_1020c250: a person opens scoption (the comment fetch for flag 0x10 is not done); the header (or no row)
         // opens scsibori, no busy check (its rows check).
+        K::Enter if res.cursor == 0 && res.mode == 3 => {}
         K::Enter if res.cursor == 0 => {
             super::searchmenu::open_refine(w);
             w.sounds.push(Ui::Select as u32);
@@ -641,7 +663,7 @@ fn digits(gu: &mut super::game_ui::GameUi, v: u8, x: f32, y: f32, step: f32, lea
 }
 
 /// FUN_101ca6c0 (default) / FUN_101caa10 (Num+): the job / level cell at (x, y) = (row + 18, row + 2).
-fn job_cell(gu: &mut super::game_ui::GameUi, r: &Record, x: f32, y: f32, c: u32, alt: bool) {
+pub(super) fn job_cell(gu: &mut super::game_ui::GameUi, r: &Record, x: f32, y: f32, c: u32, alt: bool) {
     const G: u32 = 0x8080_8080;
     gu.sprite("menu    pname", if alt { 45 } else { 0 }, x, y, G);
     if r.present & 1 << 6 == 0 || r.flags & 0x4000 != 0 {
@@ -801,6 +823,7 @@ pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::Ba
         return;
     }
     bars.help[2] = match res.cursor {
+        0 if res.mode == 3 => String::new(),
         0 => gu.menu_msg(0x13, ""),
         i => res.rows.get(i - 1).filter(|r| status_icon(r.flags).0 == 8).map(|_| gu.menu_msg(0x259, "")).unwrap_or_default(),
     };

@@ -6790,3 +6790,49 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` part R; ours client/region.rs, dat
   conquer1 (Neutral, Minimal x 3), conq6sta (all tied first on LSB), Conquest Points 0; Besieged's stubs (Defend Al
   Zahbi, three armies Lv 1 Defending); Colonization with bayld 0.
 - Not done: Campaign's windows (campresu / campsan / camparea / allied), the mouse on cnqframe, Japanese placements.
+
+## Party menu: Member List, Level Sync, Focus, Rearrange; /focustarget (2026-10-24)
+
+Spec `~/ffxi/lab/research/party_menu_spec.md` 3; ours client/partymenu.rs, levelsync.rs, target.rs, search.rs.
+- Member List (prty2 child 1, prty3 / prty7 child 2, FUN_10204d50): c2s 0x078 (no body) with the callback and its mode
+  stored (FUN_100e9800: G+0x9860 / +0x9864; mode 0, or 5 when our GAttr & 3 != 0). s2c 0x0E1 {GroupID @4}
+  (LAB_100ea7f0) calls the stored callback on every answer (never cleared). LAB_10204cd0: a group list query (search
+  kind 2, wire type 2: five u32 at @0x10 party, alliance, LS1, LS2, 0; mode 5 puts the id in the alliance slot,
+  FUN_10107650) into the results window in mode 3 (FUN_1020a9d0(3, ..): no header help, no summary line, Enter on the
+  header does nothing), title slot 2 0xd 0x13. LSB's 0x0E1 GroupID is always the party id (GetPartyID).
+- Level Sync (prty3 / prty7 child 8, FUN_10204e50): with a party member synced (GAttr 0x100, FUN_10203190) the comyn
+  group 10 0x72 "Remove your level synchronization with %s?" (Yes, LAB_10204e00: c2s 0x077 {name, 0, 7}); else 0x078
+  with LAB_10204da0: the group list of the party id into "menu    levelsyn", a second results window (DAT_106643b4,
+  vtable 0x1033af48: +0x70 open FUN_10204880, +0x74 close FUN_102048f0, +0x78 rows FUN_10204940, +0x7c / +0x80 header
+  and group rows stubs returning 0, so no header row), title slot 2 0xd 0x95, frame help 0xe 0x2a2. Rows only for ids
+  in our six slots (FUN_102031f0(id, 1, 1)); columns at 0x10385378 {1, 18, 160, 270}: keytops3 471 before the synced
+  member, the job / level cell, the name (0x80404040 under level 10 or with 0x4000), the zone name when not ours.
+  Enter (FUN_10204af0): under level 10 SE 0004; else 10 0x72 for the synced member / 0x71 "Synchronize your level with
+  that of %s?" (name and the race pronoun), Yes c2s 0x077 {name, 0, 7 / 6} and the window closes; its close drops a
+  pending prompt of its own.
+- Focus (prty2 child 5, prty3 / prty7 child 10, FUN_102051d0) and Rearrange (prty2 4, prty3 / prty7 9, FUN_10205100):
+  the party cursor with the menu closed (FUN_1015e6e0) and reopened after the pick or Escape (FUN_1015e530).
+  FUN_10202fe0: with two callbacks (Rearrange) we are refused; mode 1 (Focus) refuses us and anyone not in our six
+  slots or a trust (FUN_102031f0(id, 1, 0); FUN_10201eb0 is the trust test, +0x7a set and ActIndex > 0x6ff), SE 0004,
+  the cursor stays. Focus runs "%s %s" of "/focustarget" (0x10385488) and the slot tag (FUN_10076810, "<p0>".."<p5>")
+  through FUN_10080dc0. Rearrange: stage 1 (LAB_10205070) keeps the member and limits the cursor to its window party
+  (slot / 6 x 6 .. + 6, FUN_102035c0 / FUN_10203680); stage 2 (LAB_102050c0) FUN_100e99b0 moves the first member to
+  the second's place in roster list 0 (the ones between shift), no packet; back to stage 1 with the cursor up. Escape
+  in stage 2 only goes back to stage 1 (FUN_10202f00).
+- /focustarget (0x87, FUN_1007eb60): a member of our party by name (FUN_1007bed0, FUN_100e8b80(0)), else the resolver
+  with the current target as fallback; the focus again clears it (9 0x13b); anyone but us in our six slots and not a
+  trust sets it (target object +0x84 / +0x88) with "%s(%s)" of 9 0x13a and the name (mode 0x79); else 7 0xc3.
+- The focus tag is `<focust>` (tag table 0x10357860 type 0x1d, expanded in target commands too: FUN_10159380, the
+  member's name while in a window slot). `<ft>` (type 0x1b) is the adventuring fellow (FUN_101cc550) and `<fthpp>`
+  (0x1c) its HP %; textcmds2_spec.md's `<ft>` for the focus was wrong.
+- The party icon display (FUN_10228440, config 0xc2) shows the focus target first, its name in "< >" (strings
+  0x10386284 / 0x10386280, by the previous frame's +0x230); else FUN_10157cb0's (the party cursor's member while it is
+  up, else the current target), each only when FUN_101593c0 (not us, in our six slots, not a trust). Ours had the
+  brackets on the target.
+- Live (Lnxcsfix in Metalworks with the bots Jorund (same zone) and Brakka (Southern San d'Oria, a cross-zone
+  /pcmd add)): Member List [3] with jobs and levels; Focus refused us, then "Focus targeting is enabled. (Jorund)" and
+  the menu back on Focus; Rearrange Jorund onto Brakka (party window Lnxcsfix, Brakka, Jorund); Level Sync's list,
+  the prompt, LSB's "The party's level has been restricted to 21." and the row as "Lvl. Sync Off", then its removal
+  ("Level Sync will be deactivated in 30 seconds."); /pcmd breakup. Brakka's level came back (RUN30) after the sync.
+- Not done: View Request (/recruitlist and the party-request history), the request-history prompt, the stage-1 mark
+  (if retail draws one), Level Sync's empty list text, the mouse in levelsyn.

@@ -177,6 +177,18 @@ impl Roster {
         (r.index, r.hp, r.mp, r.tp, r.hpp, r.mpp, r.jobs, r.time) = (u.index, u.hp, u.mp, u.tp, u.hpp, u.mpp, u.jobs, t);
     }
 
+    /// FUN_100e99b0: member `a` moves to member `b`'s place in the order, the ones between shift by one (the party
+    /// menu's Rearrange; local only).
+    pub fn move_member(&mut self, a: u32, b: u32) {
+        let pos = |id: u32| self.order.iter().position(|&i| self.recs[i].id == id && id != 0);
+        let (Some(pa), Some(pb)) = (pos(a), pos(b)) else { return };
+        if pa == 0 || pb == 0 {
+            return;
+        }
+        let r = self.order.remove(pa);
+        self.order.insert(pb, r);
+    }
+
     /// FUN_100e9a70: the old order kept for records still there, then new ones in record order; ours first.
     fn rebuild(&mut self) {
         if !self.seen_table {

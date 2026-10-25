@@ -2,6 +2,7 @@
 //! functions 0x44 / 0x30), the s2c 0x058 assist target, and the locked camera of FUN_1001e030.
 
 use super::World;
+use super::partymenu::Pick;
 use crate::audio::Ui;
 use glam::Vec3;
 
@@ -62,6 +63,19 @@ pub struct PartyCursor {
     pub count: usize,
     pub then: SubThen,
     pub range: Option<f32>,
+    /// Rearrange's second stage (DAT_106643fc / +0x3f5 / +0x3f6): the member picked first and its window party's
+    /// first slot; the cursor stays inside that party.
+    pub moving: Option<(u32, usize)>,
+}
+
+/// FUN_102031f0(id, 1, 0): a member of our six slots that is not a trust (FUN_10201eb0: ActIndex > 0x6ff).
+pub fn in_own_six(w: &World, id: u32) -> bool {
+    w.party.slots().slots[..6].iter().flatten().any(|m| m.id == id && m.index < 0x700)
+}
+
+/// FUN_101593c0 on the focus target: someone other than us in our six slots.
+pub fn focus_member(w: &World) -> Option<u32> {
+    w.focus.map(|f| f.0).filter(|&id| id != w.my_id && in_own_six(w, id))
 }
 
 /// "Sub-target up" (T+0x59 || T+0xc4): the 3D prompt or the party-list cursor.
@@ -73,17 +87,19 @@ pub fn sub_up(w: &World) -> bool {
 pub fn open_party_cursor(w: &mut World, count: usize, then: SubThen, range: Option<f32>) {
     let slots = w.party.slots();
     let index = w.target.and_then(|t| slots.slots.iter().position(|m| m.as_ref().is_some_and(|m| m.id == t))).filter(|&i| i < count).unwrap_or(0);
-    w.party_cursor = Some(PartyCursor { index, count, then, range });
+    w.party_cursor = Some(PartyCursor { index, count, then, range, moving: None });
 }
 
-/// FUN_10203570 / FUN_10203630: the next / previous used slot below the count, wrapping.
-fn party_step(used: &[bool], index: usize, count: usize, down: bool) -> usize {
-    let n = count.min(used.len()).max(1);
-    let mut i = index;
+/// FUN_10203570 / FUN_10203630 (FUN_102035c0 / FUN_10203680 in a stage-2 range): the next / previous used slot in
+/// lo..hi, wrapping.
+fn party_step(used: &[bool], index: usize, lo: usize, hi: usize, down: bool) -> usize {
+    let hi = hi.min(used.len()).max(lo + 1);
+    let n = hi - lo;
+    let mut i = index.clamp(lo, hi - 1) - lo;
     for _ in 0..n {
         i = if down { (i + 1) % n } else { (i + n - 1) % n };
-        if used[i] {
-            return i;
+        if used[lo + i] {
+            return lo + i;
         }
     }
     index
@@ -100,27 +116,53 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
     let Some(pc) = w.party_cursor.as_mut() else { return false };
     match key {
         K::ArrowDown | K::ArrowUp => {
-            let i = party_step(&used, pc.index, pc.count, key == K::ArrowDown);
+            let (lo, hi) = pc.moving.map_or((0, pc.count), |(_, base)| (base, base + 6));
+            let i = party_step(&used, pc.index, lo, hi, key == K::ArrowDown);
             if i != pc.index {
                 pc.index = i;
                 w.sounds.push(crate::audio::Ui::Cursor as u32);
             }
         }
         K::Enter => {
-            let pc = w.party_cursor.take().unwrap();
-            w.sounds.push(crate::audio::Ui::Select as u32);
-            let (id, name) = match pc.index {
+            let (index, moving, then) = (pc.index, pc.moving, pc.then.clone());
+            let (id, name) = match index {
                 0 => (w.my_id, w.name.clone()),
                 i => match w.party.slots().slots.get(i).cloned().flatten() {
                     Some(m) => (m.id, m.name),
                     None => return true,
                 },
             };
-            let line = match &pc.then {
+            // FUN_10202fe0: Rearrange (two callbacks) refuses us, Focus (mode 1) us and anyone not in our six slots or
+            // a trust (SE 0004, the cursor stays).
+            let refused = match then {
+                SubThen::Party(Pick::Rearrange) => id == w.my_id,
+                SubThen::Party(Pick::Focus) => id == w.my_id || !in_own_six(w, id),
+                _ => false,
+            };
+            if refused {
+                w.sounds.push(crate::audio::Ui::Error as u32);
+                return true;
+            }
+            w.sounds.push(crate::audio::Ui::Select as u32);
+            // Rearrange: the first pick keeps the cursor inside that member's window party, the second moves the first
+            // member to its place in the roster order (LAB_102050c0 -> FUN_100e99b0, no packet), then stage 1 again.
+            if let SubThen::Party(Pick::Rearrange) = then {
+                let pc = w.party_cursor.as_mut().unwrap();
+                match moving {
+                    None => pc.moving = Some((id, index / 6 * 6)),
+                    Some((first, _)) => {
+                        pc.moving = None;
+                        w.party.move_member(first, id);
+                    }
+                }
+                return true;
+            }
+            w.party_cursor = None;
+            let line = match &then {
                 SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{name}\""),
                 SubThen::Line { stash, .. } => format!("{stash}{id}"),
                 SubThen::Party(p) => {
-                    super::partymenu::picked(w, *p, Some((id, name)));
+                    super::partymenu::picked(w, *p, Some((index, id, name)));
                     return true;
                 }
                 _ => return true,
@@ -128,8 +170,12 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
             super::textcmd::run(w, &line, super::textcmd::Mode::SubTarget);
         }
         K::Escape => {
-            let pc = w.party_cursor.take().unwrap();
             w.sounds.push(crate::audio::Ui::Cancel as u32);
+            // FUN_10202f00: Escape in Rearrange's second stage only goes back to the first.
+            if pc.moving.take().is_some() {
+                return true;
+            }
+            let pc = w.party_cursor.take().unwrap();
             if let SubThen::Party(p) = pc.then {
                 super::partymenu::picked(w, p, None);
             }

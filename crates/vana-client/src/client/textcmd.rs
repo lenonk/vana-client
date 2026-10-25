@@ -115,6 +115,7 @@ mod id {
     pub const FURCC: u16 = 0x84;
     pub const LAYOUTCTRL: u16 = 0x85;
     pub const STATUSPARTY: u16 = 0x86;
+    pub const FOCUSTARGET: u16 = 0x87;
     pub const STATUSTIMER: u16 = 0x88;
     pub const GTST: u16 = 0x89;
     pub const YELLSW: u16 = 0x91;
@@ -272,6 +273,12 @@ pub fn display_name(w: &World, id: u32) -> String {
     name_of(w, (id, 0)).unwrap_or_default()
 }
 
+/// FUN_10159380: the focus target's name while it holds a party window slot.
+fn focus_name(w: &World) -> Option<String> {
+    let id = w.focus?.0;
+    w.party.slots().slots.iter().flatten().find(|m| m.id == id).map(|m| m.name.clone())
+}
+
 fn name_of(w: &World, t: (u32, u16)) -> Option<String> {
     if t.0 == w.my_id {
         return Some(w.name.clone());
@@ -292,6 +299,8 @@ fn tag(w: &World, tag: &str, target_cmd: bool) -> Option<String> {
         "<pet>" if !target_cmd => pet(w).and_then(|t| name_of(w, t)),
         // FUN_10076ff0 type 0x16: the zone NPC-list name of the call-for-help monster.
         "<ht>" if !target_cmd => super::target::call_for_help(w).and_then(|id| w.entities.get(&id)).and_then(|e| w.npc_names.iter().find(|(n, _)| (*n & 0x3ff) as u16 == e.index & 0x3ff)).map(|(_, n)| n.clone()),
+        // Type 0x1d, in target commands too.
+        "<focust>" => focus_name(w),
         "<r>" => w.tells.first().cloned(),
         "<tp>" => vit.map(|v| v.2.to_string()),
         "<hp>" => Some(format!("{}/{}", vit?.0, stats?.hp_max)),
@@ -951,6 +960,30 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             let (cfg_id, lines) = if cid == id::STATUSPARTY { (0xc2, [0x138, 0x139]) } else { (0xc3, [0x13c, 0x13d]) };
             let cur = w.game.get(cfg_id) != 0;
             toggle(w, on_off(args.get(1)), cur, |w, on| cfg(w, cfg_id, on as u32), lines);
+            Ok(())
+        }
+        // FUN_1007eb60: a member of our party by name (FUN_1007bed0), else the resolver with the current target as the
+        // fallback; the focus again clears it (9 0x13b), anyone but us in our six slots sets it (9 0x13a + "(name)"),
+        // else group 7 0xc3.
+        id::FOCUSTARGET => {
+            let named = arg(1).and_then(|n| w.party.party().find(|m| m.name.eq_ignore_ascii_case(n)).map(|m| (m.id, m.index)));
+            let Some((id, index)) = named.or_else(|| resolve(w, arg(1), true, false, mode)) else { return Err(()) };
+            if id == 0 {
+                return Ok(());
+            }
+            if w.focus.is_some_and(|f| f.0 == id) {
+                w.focus = None;
+                log9(w, 0x13b);
+            } else if id != w.my_id && super::target::in_own_six(w, id) {
+                w.focus = Some((id, index));
+                let name = focus_name(w).unwrap_or_default();
+                if let Some(bt) = w.battle.clone() {
+                    let colour = bt.colour_in(0x79, &w.game);
+                    w.chat.push_colour(format!("{}({name})", bt.group9(0x13a).unwrap_or_default()), colour);
+                }
+            } else {
+                refuse(w, 0xc3);
+            }
             Ok(())
         }
         // FUN_1007ec90: config 0xc4 (atoi, 1..100), or the current value.

@@ -102,7 +102,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     list behind View Wares (c2s 0x105);
   - main menu rows (specs in `~/ffxi/lab/research/`: `party_menu_spec.md`, `status_window_spec.md`,
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
-    MODLOG "Party menu"; left Member List, View Request, Level Sync, Focus, Rearrange; the invite side untested live);
+    levelsync.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange"; left View Request; the
+    invite side untested live);
     Status done (client/status.rs, MODLOG "Status window"; left Currencies 1 / 2, Unity, Merit / Job / Alter Ego Points);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
     lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
@@ -180,8 +181,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: invisible talk, /equip refusals, the command gate's
   lines (window open, layout, charmed), the map on an elevator, the block list, s2c 0x0B4 (PvP, the system message
   filter); the toggles' consumers for /ignorepet, /ignoretrust, /hidetrust (no pet owner / trust flag on entities),
-  /battlebgm (party battle music), /bellsw (op 0xb3), /furcc; /displayhead, /partyinfo, /jobmasterdisp, /focustarget,
-  /autotarget; the spec's part C (window, list and server-flag commands).
+  /battlebgm (party battle music), /bellsw (op 0xb3), /furcc; /displayhead, /partyinfo, /jobmasterdisp, /autotarget; the spec's part C (window, list and server-flag commands).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the

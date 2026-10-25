@@ -33,6 +33,8 @@ pub struct PartyMenu {
     return_menu: Option<usize>,
     /// prty5us +0x2c: the language mask while it is open.
     langs: u32,
+    /// Closed while Focus / Rearrange pick on the party list (FUN_1015e6e0), back after (FUN_1015e530).
+    hidden: bool,
 }
 
 /// A pending invite (DAT_106643a6 / DAT_106643a7, the name at prtyjoin +0x14).
@@ -51,6 +53,10 @@ pub enum Pick {
     Leader,
     /// prty8's Quartermaster: c2s 0x077 change 4; prty8 stays.
     Quartermaster,
+    /// LAB_10205160: "/focustarget <pN>" for the picked slot (FUN_102051d0, mode 1).
+    Focus,
+    /// LAB_10205070 / LAB_102050c0: two picks move a member in the roster order (FUN_10205100, mode 3).
+    Rearrange,
 }
 
 /// FUN_10201690: 1 an invite pending, 2 solo, 3 in a party, 4 a party of us and trusts.
@@ -123,7 +129,7 @@ pub fn open(w: &mut World) {
     } else {
         PRTY1
     };
-    w.partymenu = Some(PartyMenu { stack: vec![Win { name, sel: w.cursor_recall(name) }], return_menu: w.menu, langs: 0 });
+    w.partymenu = Some(PartyMenu { stack: vec![Win { name, sel: w.cursor_recall(name) }], return_menu: w.menu, langs: 0, hidden: false });
     w.menu = None;
 }
 
@@ -300,9 +306,23 @@ fn pick(w: &mut World, p: Pick) {
     super::target::open_party_cursor(w, 6, SubThen::Party(p), None);
 }
 
-/// A pick confirmed on slot member (id, name); None on Escape. Kick refuses us; Leader closes the menu after.
-pub fn picked(w: &mut World, p: Pick, who: Option<(u32, String)>) {
-    let Some((id, name)) = who else { return };
+/// Focus (six slots) and Rearrange (all 18): the menu closes while the cursor is up.
+fn pick_hidden(w: &mut World, p: Pick) {
+    super::target::open_party_cursor(w, if p == Pick::Rearrange { 18 } else { 6 }, SubThen::Party(p), None);
+    if let Some(m) = w.partymenu.as_mut() {
+        m.hidden = true;
+    }
+}
+
+/// A pick confirmed on (slot, id, name); None on Escape. Kick refuses us; Leader closes the menu after; Focus and
+/// Rearrange bring it back either way.
+pub fn picked(w: &mut World, p: Pick, who: Option<(usize, u32, String)>) {
+    if matches!(p, Pick::Focus | Pick::Rearrange)
+        && let Some(m) = w.partymenu.as_mut()
+    {
+        m.hidden = false;
+    }
+    let Some((slot, id, name)) = who else { return };
     match p {
         Pick::Kick if id != w.my_id => packet(w, 0x071, super::party::kick_body(0, &name)),
         Pick::Kick => {}
@@ -313,6 +333,9 @@ pub fn picked(w: &mut World, p: Pick, who: Option<(u32, String)>) {
             }
         }
         Pick::Quartermaster => packet(w, 0x077, super::party::change_body(&name, 0, 4)),
+        // "%s %s" of "/focustarget" and the slot's tag (FUN_10076810), run through FUN_10080dc0.
+        Pick::Focus => super::textcmd::run(w, &format!("/focustarget <p{slot}>"), super::textcmd::Mode::Internal),
+        Pick::Rearrange => {}
     }
 }
 
@@ -345,6 +368,10 @@ fn enter(w: &mut World, name: &'static str, sel: u16) {
         (PRTY2, 2) | (PRTY7, 3) => show_distribution(w),
         (PRTY2, 3) => packet(w, 0x06F, vec![0, 0, 0, 0]),
         (PRTY3, 3) => push(w, PRTY8),
+        (PRTY2, 1) | (PRTY3 | PRTY7, 2) => member_list(w),
+        (PRTY3 | PRTY7, 8) => level_sync(w),
+        (PRTY2, 4) | (PRTY3 | PRTY7, 9) => pick_hidden(w, Pick::Rearrange),
+        (PRTY2, 5) | (PRTY3 | PRTY7, 10) => pick_hidden(w, Pick::Focus),
         (PRTY3 | PRTY7, 4) => pick(w, Pick::Leader),
         (PRTY3 | PRTY7, 5) => pick(w, Pick::Kick),
         // FUN_100e9090: 0x070 only with our own leader flag (GAttr 4 party, 8 alliance).
@@ -410,8 +437,51 @@ fn play_alarm(w: &mut World, n: u32) {
     }
 }
 
+/// What s2c 0x0E1's party id is for (the callback FUN_100e9800 stores with its mode at G+0x9860 / +0x9864).
+#[derive(Clone, Copy, Debug)]
+pub enum GroupThen {
+    /// LAB_10204cd0: the group list in the results window (mode 3), title slot 2 0xd 0x13 "Party".
+    MemberList,
+    /// LAB_10204da0: the group list in "menu    levelsyn".
+    LevelSync,
+}
+
+/// FUN_100e9800: c2s 0x078 (no body); the answer's GroupID goes to `then` with `mode` (0 our party, 5 the alliance).
+fn ask_group(w: &mut World, mode: u8, then: GroupThen) {
+    w.group_cb = Some((mode, then));
+    packet(w, 0x078, Vec::new());
+}
+
+/// FUN_10204d50: Member List asks for the group id, the alliance's when we are in one (own GAttr & 3 != 0).
+fn member_list(w: &mut World) {
+    let mode = if w.party.own_flags & 3 == 0 { 0 } else { 5 };
+    ask_group(w, mode, GroupThen::MemberList);
+}
+
+/// s2c 0x0E1 (LAB_100ea7f0): the stored callback runs on every answer.
+pub fn on_group_id(w: &mut World, gid: u32) {
+    let Some((mode, then)) = w.group_cb else { return };
+    match then {
+        // FUN_10107650 (alliance id) for mode 5, else FUN_10107640 (party id).
+        GroupThen::MemberList => {
+            let ids = if mode == 5 { [0, gid, 0, 0] } else { [gid, 0, 0, 0] };
+            super::search::run_group(w, ids, 0x13);
+        }
+        GroupThen::LevelSync => super::levelsync::open(w, gid),
+    }
+}
+
+/// FUN_10204e50: with a member synced, group 10 0x72 to remove it (LAB_10204e00: c2s 0x077 change 7); else the
+/// group list for "menu    levelsyn".
+fn level_sync(w: &mut World) {
+    match super::levelsync::synced(w).map(|m| m.id) {
+        Some(id) => w.confirm = Some((super::Confirm::Sync { id, race: 0, off: true }, false)),
+        None => ask_group(w, 0, GroupThen::LevelSync),
+    }
+}
+
 /// FUN_101cc590: the pronoun by race (0 male, 1 female, 2 other).
-fn pronoun(race: u16) -> i32 {
+pub(super) fn pronoun(race: u16) -> i32 {
     match race {
         1 | 3 | 5 | 8 => 0,
         2 | 4 | 6 | 7 => 1,
@@ -472,7 +542,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 
 /// The top window takes the keys unless the results window, a prompt or a party-list pick is up over it.
 pub fn focused(w: &World) -> bool {
-    w.partymenu.is_some() && w.search.is_none() && w.confirm.is_none() && w.party_cursor.is_none()
+    w.partymenu.is_some() && w.search.is_none() && w.confirm.is_none() && w.party_cursor.is_none() && w.levelsync.is_none()
 }
 
 /// Mouse: hover over a row moves the cursor, a click on the cursor row is Enter *(inf: the generic child hit test)*.
@@ -498,7 +568,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
 
 /// The top window's help (slot 1, its own where it sets one) and title (frame string 1, group 0xd).
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    let Some(top) = w.partymenu.as_ref().and_then(|m| m.stack.last()) else { return };
+    let Some(top) = w.partymenu.as_ref().filter(|m| !m.hidden).and_then(|m| m.stack.last()) else { return };
     let [h, title] = gu.focus_text(top.name, top.sel);
     bars.help[1] = help(gu, w, top).or(h).unwrap_or_default();
     bars.title[1] = title.unwrap_or_default();
@@ -509,7 +579,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// 431, FUN_10205b10) and alarm's mark (windowps 483 at child config 199 + 1, FUN_10205c50).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
-    let Some(m) = &w.partymenu else { return rects };
+    let Some(m) = w.partymenu.as_ref().filter(|m| !m.hidden) else { return rects };
     let n = m.stack.len();
     for (k, win) in m.stack.iter().enumerate() {
         let focused = k + 1 == n && focused(w);
