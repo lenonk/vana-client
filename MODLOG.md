@@ -8103,6 +8103,19 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   k (to + 1) hi lo FD (k 7; 9 with hi 0, 10 with lo 0, the zero byte written 0xff) with 0x69 when from == to, else
   0x68 (names and letters) then 0x6a. Live: "{Hume tunic} has been added to your Auto-Translate dictionary.", the
   missing-item line, and Hume Tunic (E) to its Japanese name (J).
-- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list), the polls (/nominate /vote, s2c
-  0x078 / 0x079), /seacom /seacomup.
+- /nominate /propose (FUN_10079420): a channel word (say / s 5, shout / sh 6, party / p 1, linkshell / l 2,
+  linkshell2 / l2 3) and the rest, or the chat mode's channel and the line; tell / unity / assist / emote 7031 0x69.
+  c2s 0x0A0 {Kind, Str, NUL} padded to whole words (variable length: LSB refuses more than 136 bytes; ours first sent
+  a fixed 160 and was dropped). /vote (FUN_100798e0): [name] [1..8], a lone number for the last proposer, not a
+  blacklisted name; c2s 0x0A1 {Index, Name[15]}. s2c 0x078 (LAB_100f8ee0): the 7031 proposal line by Kind with the
+  name (1 0x65, 2 0x66, 3 / 4 0x121, 5 0x92, 6 0x64), the text in the Kind's mode, the name kept for /vote; s2c 0x079
+  (LAB_100f8ff0): current / final results by Kind (0x97 / 0x98, 0x99 / 0x9a, 0x122 / 0x123, 0x93 / 0x94, 0x95 / 0x96),
+  then the text and, while active, " i[votes]". Live: "Lnxcsfix's proposal to all (cast vote with command: "/vote
+  ?"):", [Lunch?] 1:yes 2:no; "/vote 1" gave "Current poll results:" 1[1] 2[0]; a second /nominate closed it with the
+  final results.
+- /seacom N ["text"] (FUN_1007efb0): search comment line N set or cleared (not while the editor is open), nothing
+  sent. /seacomup [type] [n] (FUN_1007f020): expparty 0, battlecontent 1, mission&quest 2, item 3, linkshell 4,
+  lookingforfriends 5 (n 1), others 6 (n 3, the default); msgType (type + 1) << 4 | n; c2s 0x0E0 when changed (as the
+  editor's close); group 9 0xe1 "Registration successful.". Live: both printed the line (set, then cleared again).
+- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list).
 

@@ -88,6 +88,10 @@ mod id {
     pub const ITEMSEARCH: u16 = 0x23;
     pub const VOLUNTEER: u16 = 0x11;
     pub const TRANSLATE: u16 = 0x15;
+    pub const NOMINATE: u16 = 0x0f;
+    pub const VOTE: u16 = 0x10;
+    pub const SEACOM: u16 = 0x8f;
+    pub const SEACOMUP: u16 = 0x90;
     pub const TARGETPC: u16 = 0x18;
     pub const TARGETNPC: u16 = 0x19;
     pub const TARGETBNPC: u16 = 0x1a;
@@ -1273,6 +1277,106 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             w.translating = true;
             Ok(())
         }
+        // FUN_10079420: a channel word (say / s 5, shout / sh 6, party / p 1, linkshell / l 2, linkshell2 / l2 3) and
+        // the rest, or the chat mode's channel and the whole line; tell, unity, assist and emote 7031 0x69. c2s 0x0A0
+        // {Kind, Str}. No line.
+        id::NOMINATE => {
+            let chan = match arg(1) {
+                Some("say" | "s") => Some(5),
+                Some("shout" | "sh") => Some(6),
+                Some("party" | "p") => Some(1),
+                Some("linkshell" | "l") => Some(2),
+                Some("linkshell2" | "l2") => Some(3),
+                Some("tell" | "t" | "unity" | "assistj" | "aj" | "assiste" | "ae" | "emote" | "em") => {
+                    system_line(w, 0x69);
+                    return Ok(());
+                }
+                _ => None,
+            };
+            let (kind, text) = match chan {
+                Some(k) => (k, tail(line, 2)),
+                None => (
+                    match w.chat_mode {
+                        3 => 6,
+                        5 => 1,
+                        6 => 2,
+                        0xc => 3,
+                        4 => {
+                            system_line(w, 0x69);
+                            return Ok(());
+                        }
+                        _ => 5,
+                    },
+                    tail(line, 1),
+                ),
+            };
+            // Kind, the text and its NUL, padded to whole words (LSB takes 5..136 bytes).
+            let t = crate::dat::font::encode_sjis(text.trim());
+            let mut b = vec![kind];
+            b.extend_from_slice(&t[..t.len().min(0x7f)]);
+            b.push(0);
+            b.resize(b.len().div_ceil(4) * 4, 0);
+            send(w, NetCommand::Packet { id: 0x0A0, body: b });
+            Ok(())
+        }
+        // FUN_100798e0: [name] [1..8] (a lone number votes for the last proposer); not to a blacklisted name (or with
+        // the list not in). c2s 0x0A1 {Index, Name[15]}.
+        id::VOTE => {
+            let n = |s: &str| number(s).filter(|v| (1..=8).contains(v)).map(|v| v as u8);
+            let (name, index) = match args.len() {
+                2 => match n(&args[1]) {
+                    Some(v) => (w.last_proposer.clone(), v),
+                    None => (args[1].clone(), 0),
+                },
+                3 => match n(&args[2]) {
+                    Some(v) => (args[1].clone(), v),
+                    None => return Err(()),
+                },
+                _ => return Err(()),
+            };
+            if name.is_empty() || name.len() > 15 || !name.starts_with(|c: char| c.is_ascii_alphabetic()) || super::partyreq::blacklisted(w, &name) != 0 {
+                return Err(());
+            }
+            let mut b = vec![0u8; 0x10];
+            b[0] = index;
+            for (k, c) in name.bytes().take(15).enumerate() {
+                b[1 + k] = c;
+            }
+            send(w, NetCommand::Packet { id: 0x0A1, body: b });
+            Ok(())
+        }
+        // FUN_1007efb0: N 1..3 and the text (none clears); no line, nothing sent.
+        id::SEACOM => {
+            let Some(n) = arg(1).and_then(number).filter(|&v| v >= 1) else { return Err(()) };
+            super::seacom::set_line(w, n as usize - 1, arg(2).unwrap_or(""));
+            Ok(())
+        }
+        // FUN_1007f020: the type word (expparty 0 .. others 6, default others) and 1..3 (lookingforfriends 1, others 3
+        // forced); msgType (type + 1) << 4 | n; c2s 0x0E0 when changed; group 9 0xe1 "Registration successful.".
+        id::SEACOMUP => {
+            let t = match arg(1).map(str::to_ascii_lowercase).as_deref() {
+                None | Some("others") => 6,
+                Some("expparty") => 0,
+                Some("battlecontent") => 1,
+                Some("mission&quest") => 2,
+                Some("item") => 3,
+                Some("linkshell") => 4,
+                Some("lookingforfriends") => 5,
+                _ => return Err(()),
+            };
+            let n = match t {
+                5 => 1,
+                6 => 3,
+                _ => match arg(2).and_then(number) {
+                    Some(v @ 1..=3) => v as u8,
+                    None => 1,
+                    _ => return Err(()),
+                },
+            };
+            super::seacom::upload(w, (t + 1) << 4 | n);
+            log9(w, 0xe1);
+            Ok(())
+        }
         // FUN_10079810: the rest of the line from the first word, with a target "%s T1 %s" (its name); c2s 0x01E.
         id::VOLUNTEER => {
             if args.len() < 2 {
@@ -1805,6 +1909,49 @@ fn server_flag(w: &World, args: &[String], which: u8, cur: bool) {
     } else {
         config_flag(w, which, !cur);
     }
+}
+
+/// s2c 0x078 (LAB_100f8ee0): dropped from a blacklisted name; the proposal's 7031 line by Kind (1 party 0x65, 2
+/// linkshell 0x66, 3 / 4 0x121, 5 say 0x92, 6 shout 0x64) with the name, then the text in the Kind's mode; the name is
+/// /vote's default.
+pub(super) fn poll_start(w: &mut World, name: &str, kind: u8, text: &str) {
+    if super::partyreq::blacklisted(w, name) == 1 {
+        return;
+    }
+    let (line, mode) = match kind {
+        1 => (0x65, 0x0f),
+        2 => (0x66, 0x10),
+        3 => (0x121, 0x1c),
+        4 => (0x121, 0x1f),
+        5 => (0x92, 0x0d),
+        6 => (0x64, 0x0e),
+        _ => return,
+    };
+    w.last_proposer = name.to_string();
+    super::post::system_line(w, line, [0; 5], name.to_string());
+    super::push_chat_mode(w, text.to_string(), mode, 0);
+}
+
+/// s2c 0x079 (LAB_100f8ff0): the current / final results line by Kind (party 0x97 / 0x98, linkshell 0x99 / 0x9a, 2
+/// 0x122 / 0x123, say 0x93 / 0x94, shout 0x95 / 0x96), then the text and, while active, " n[votes]" per option.
+pub(super) fn poll_state(w: &mut World, votes: [u16; 9], kind: u8, state: u8, questions: u8, name: &str, text: &str) {
+    let done = state == 2;
+    let (line, mode) = match kind {
+        1 => (if done { 0x98 } else { 0x97 }, 0x0f),
+        2 => (if done { 0x9a } else { 0x99 }, 0x10),
+        3 | 4 => (if done { 0x123 } else { 0x122 }, if kind == 3 { 0x1c } else { 0x1f }),
+        5 => (if done { 0x94 } else { 0x93 }, 0x0d),
+        6 => (if done { 0x96 } else { 0x95 }, 0x0e),
+        _ => return,
+    };
+    super::post::system_line(w, line, [0; 5], name.to_string());
+    let mut s = text.to_string();
+    if !done {
+        for i in 1..(questions as usize).min(9) {
+            s.push_str(&format!(" {i}[{}]", votes[i]));
+        }
+    }
+    super::push_chat_mode(w, s, mode, 0);
 }
 
 /// /translate's answer (LAB_10079d40), mode 0x79: no item group 10 0x67 (the name, the letters); else the item's

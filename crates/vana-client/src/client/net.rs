@@ -421,6 +421,11 @@ pub enum NetEvent {
     PartyRequest { status: u8, name: String },
     /// s2c 0x041 BLACK_LIST: List[12] {u32 ID, Name[16]} @4, Stat @0xf4 (bit 0 reset, bit 1 last), Num @0xf5.
     Blacklist { stat: u8, entries: Vec<(u32, String)> },
+    /// s2c 0x078 SWITCH_START: UniqueNo @4, AllNum @8, ActIndex @0xc, sName[15] @0xe, Kind @0x1d, Str @0x1e.
+    PollStart { name: String, kind: u8, text: String },
+    /// s2c 0x079 SWITCH_PROC: AllNum @4, VoteNumTbl[9] u16 @8, Kind @0x1a, State @0x1b, QuestionNum @0x1c, sPropName[15]
+    /// @0x1d, Str @0x2c.
+    PollState { votes: [u16; 9], kind: u8, state: u8, questions: u8, name: String, text: String },
     /// s2c 0x047 TRANSLATE: ItemNo u16 @4, From @6, To @7, FromString[64] @8, ToString[64] @0x48.
     Translate { item: u16, from: u8, to: u8, from_text: String, to_text: String },
     /// s2c 0x049 ITEMSEARCH: ItemNo u16 @4, Flag u8 @6, ItemName @8.
@@ -960,6 +965,15 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x11C => tx.send(NetEvent::LockStyleError((0..p.u8(4).min(16) as usize).map(|i| p.u16(8 + 2 * i)).collect()))?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x11D => tx.send(NetEvent::PartyRequest { status: p.u8(0xb), name: text(&p, 0xc, 16) })?,
+                    0x078 => tx.send(NetEvent::PollStart { name: text(&p, 0xe, 15), kind: p.u8(0x1d), text: text(&p, 0x1e, p.data.len().saturating_sub(0x1e)) })?,
+                    0x079 => tx.send(NetEvent::PollState {
+                        votes: std::array::from_fn(|i| p.u16(8 + 2 * i)),
+                        kind: p.u8(0x1a),
+                        state: p.u8(0x1b),
+                        questions: p.u8(0x1c),
+                        name: text(&p, 0x1d, 15),
+                        text: text(&p, 0x2c, p.data.len().saturating_sub(0x2c)),
+                    })?,
                     0x047 => tx.send(NetEvent::Translate { item: p.u16(4), from: p.u8(6), to: p.u8(7), from_text: text(&p, 8, 64), to_text: text(&p, 0x48, 64) })?,
                     0x049 => tx.send(NetEvent::ItemSearch { item: p.u16(4), flag: p.u8(6) })?,
                     0x042 => tx.send(NetEvent::BlackEdit { id: p.u32(4), name: text(&p, 8, 16), mode: p.u8(0x18) })?,

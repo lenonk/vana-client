@@ -125,6 +125,11 @@ fn close(w: &mut World) {
         let _ = w.net.commands.send(NetCommand::Packet { id: 0x0DE, body: b });
         return;
     }
+    commit(w);
+}
+
+/// The search comment's send (FUN_101dd330 mode 2 / FUN_100e5980): c2s 0x0E0 when the lines or the type changed.
+fn commit(w: &mut World) {
     let s = &mut w.seacom;
     if s.lines == s.sent && s.kind == s.sent_kind {
         return;
@@ -139,6 +144,21 @@ fn close(w: &mut World) {
     s.sent_kind = s.kind;
     let kind = s.kind;
     send(w, kind, &text);
+}
+
+/// /seacom N ["text"] (FUN_1007efb0 -> FUN_101ddb30): line N (0..2) set to the text or cleared; nothing while the
+/// editor is open; nothing sent.
+pub fn set_line(w: &mut World, n: usize, text: &str) {
+    if w.seacom_edit.is_some() || n > 2 {
+        return;
+    }
+    w.seacom.lines[n] = text.chars().filter(|c| (' '..='~').contains(c)).take(LINE).collect();
+}
+
+/// /seacomup (FUN_1007f020): the type, then the send as the editor's close does.
+pub fn upload(w: &mut World, kind: u8) {
+    w.seacom.kind = kind;
+    commit(w);
 }
 
 /// c2s 0x0E0 (0x98 bytes): text[128] @4, installTime @0x84, "WIN" @0x88, srvExCode @0x8c, cliExCode @0x90, msgType @0x94.
