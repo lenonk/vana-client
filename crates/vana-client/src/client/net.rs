@@ -62,6 +62,11 @@ pub struct EntityUpdate {
     pub hp_bits: Option<(bool, bool)>,
     /// u8 @0x2B bit 0x08 with mask 0x04 (actor +0x130 bit 7, 0x1009ad2e): an attackable target is dropped.
     pub untargetable: Option<bool>,
+    /// TargetOffFlag u32 @0x20 bit 19 with mask 0x04 (+0x128 bit 4; 0x00E 0x1009c0a3, 0x00D 0x1009a477): never a
+    /// target candidate (FUN_10084580).
+    pub target_off: Option<bool>,
+    /// 0x00E u32 @0x24 bit 31 with mask 0x04 (entity +0x13c bit 23, 0x1009c3fb): shown only while an s2c 0x077 lists it.
+    pub listed_only: Option<bool>,
     /// Mask 0x04: InvisFlag u32 @0x20 bit 29 (+0x128 bit 6), 0x00E u8 @0x2B bit 0x40 (+0x130 bit 15), 0x00D's
     /// Monstrosity word u16 @0x3E (+0x210): the radar's tests (FUN_10098210, FUN_102203b0).
     pub radar: Option<(bool, bool, u16)>,
@@ -471,6 +476,9 @@ pub enum NetEvent {
     Blacklist { stat: u8, entries: Vec<(u32, String)> },
     /// s2c 0x078 SWITCH_START: UniqueNo @4, AllNum @8, ActIndex @0xc, sName[15] @0xe, Kind @0x1d, Str @0x1e.
     PollStart { name: String, kind: u8, text: String },
+    /// s2c 0x077 ENTITY_VIS (LAB_10098f30): with Flags @4 bit 0, UniqueNo[32] @8 (FUN_10087ae0; zeroes kept): the
+    /// listed-only NPCs shown.
+    EntityVis(Vec<u32>),
     /// s2c 0x079 SWITCH_PROC: AllNum @4, VoteNumTbl[9] u16 @8, Kind @0x1a, State @0x1b, QuestionNum @0x1c, sPropName[15]
     /// @0x1d, Str @0x2c.
     PollState { votes: [u16; 9], kind: u8, state: u8, questions: u8, name: String, text: String },
@@ -818,6 +826,8 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         door: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 2 && p.data.len() >= 0x38).then(|| p.u32(0x34)).filter(|d| *d != 0),
         lift: (kind == EntityKind::Npc && p.u8(0x30) & 7 == 3 && p.data.len() >= 0x3e).then(|| (p.u32(0x34), p.u32(0x38), p.u32(0x38).wrapping_add(p.u16(0x3c) as u32))).filter(|l| l.0 != 0),
         untargetable: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| p.u8(0x2B) & 0x08 != 0),
+        target_off: (flags & 0x04 != 0 && p.data.len() >= 0x24).then(|| p.u32(0x20) >> 19 & 1 != 0),
+        listed_only: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| p.u32(0x24) >> 31 != 0),
         radar: (flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| {
             let npc = kind == EntityKind::Npc;
             (p.u32(0x20) >> 29 & 1 != 0, npc && p.u8(0x2B) & 0x40 != 0, if !npc && p.data.len() >= 0x40 { p.u16(0x3E) } else { 0 })
@@ -1021,6 +1031,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x11C => tx.send(NetEvent::LockStyleError((0..p.u8(4).min(16) as usize).map(|i| p.u16(8 + 2 * i)).collect()))?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x11D => tx.send(NetEvent::PartyRequest { status: p.u8(0xb), name: text(&p, 0xc, 16) })?,
+                    0x077 if p.u8(4) & 1 != 0 => tx.send(NetEvent::EntityVis((0..32).map(|k| p.u32(8 + 4 * k)).collect()))?,
                     0x078 => tx.send(NetEvent::PollStart { name: text(&p, 0xe, 15), kind: p.u8(0x1d), text: text(&p, 0x1e, p.data.len().saturating_sub(0x1e)) })?,
                     0x079 => tx.send(NetEvent::PollState {
                         votes: std::array::from_fn(|i| p.u16(8 + 2 * i)),

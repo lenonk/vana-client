@@ -538,10 +538,11 @@ fn kind_bits(id: u32, e: &super::Entity) -> u32 {
 }
 
 /// FUN_10083430: drawn on screen this frame (+0xb2 bit 0 clear: World::visible), not hidden, not ourselves, not a
-/// dead or despawning monster, and in a prompt's include / exclude kinds (T+0x60 / +0x64). No name test. Not done:
-/// the event untargetable bit (ops 0x12..0x15, +0x128 bit 4) and the occlusion part of the cull.
+/// dead or despawning monster, not TargetOffFlag (+0x128 bit 4, FUN_10084580), and in a prompt's include / exclude
+/// kinds (T+0x60 / +0x64). No name test. Not done: event ops 0x12..0x15's +0x128 bit 4 and the occlusion part of the
+/// cull.
 fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &super::Entity) -> bool {
-    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id))) && !ignored(w, id, e)
+    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !e.target_off && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id))) && !ignored(w, id, e)
 }
 
 /// FUN_101cc220: hostile to us. In PvP (both on a team, kind 0x400) another team is, but the same Ballista side; then,
@@ -765,7 +766,7 @@ pub fn slot_target(w: &World, slot: usize) -> Option<u32> {
 
 /// FUN_101514a0: while engaged with no target, the first attackable actor we claimed that is alive.
 fn auto_target(w: &World) -> Option<u32> {
-    let alive = |e: &super::Entity| e.flags & 1 != 0 && e.claim == w.my_id && !e.untargetable && !matches!(e.motion.status, 2 | 3);
+    let alive = |e: &super::Entity| e.flags & 1 != 0 && e.claim == w.my_id && !e.untargetable && !e.target_off && !matches!(e.motion.status, 2 | 3);
     w.entities.iter().filter(|(id, e)| alive(e) && w.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by_key(|(_, e)| e.index).map(|(id, _)| *id)
 }
 

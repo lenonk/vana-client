@@ -8835,3 +8835,29 @@ interpolates between the hour keys in both clients.
   Mhaura's coast receded over 35 s while the deck and sails stayed. LSB never sends a route (the barge's and
   Manaclipper's other legs show c000) and has no data for the pirates' run (227 / 228). Not done: ship actors (0x00E
   SubKind 4: the pirate ship, the port-side ships; MODLOG "Doors").
+
+## Listed-only NPCs: s2c 0x077 and TargetOffFlag (2026-10-25)
+
+- 0x00E with mask 0x04, u32 @0x24 bit 31 (u8 @0x27 bit 7; asm 0x1009c3fb..0x1009c424) sets entity +0x13c bit 23; 0x00D
+  never writes it. FUN_100cd040 (each frame from the actor update FUN_100c63d0): such an NPC whose UniqueNo is not in
+  the s2c 0x077 list gets +0xb2 bit 7 (FUN_10085ac0: not drawn (FUN_10082d70 needs +0xb2 == 0), not targetable
+  (FUN_10083430), no radar dot (FUN_102203b0)) and, once its `init` ran, a one-time effects kill (FUN_10085b10);
+  listed, the bit clears and the effects restart (FUN_10085ad0). With the bit clear the block is skipped, so +0xb2 bit 7
+  stays as it was (ours keeps `unlisted`).
+- s2c 0x077 (LAB_10098f30): Flags u8 @4 bit 0, then UniqueNo[32] @8 copied to DAT_10480900 (FUN_10087ae0; zeroes kept,
+  LSB's enableEntities({}) sends all zeroes). The zone load clears it (FUN_10093720 -> FUN_10093b10). LSB sends it from
+  three scripts only (ROTZ 1 in Norg, CoP 1-1 in Lower Delkfutt's, Full Speed Ahead); ~/ffxi/lab/research/
+  radar_dots_spec.md's "LSB never sends 0x077" is out of date.
+- About 103 LSB NPCs carry name_prefix bit 0x80 (@0x27): every town's Tales' Beginning (model 2433, the book) and its
+  model 2478 glow (an invisible stub mesh with endless kir0 / cil0 / pou0 generators), the model-1525 "???" sets in
+  Bastok Markets, Southern San d'Oria and Windurst Waters, Batallia Downs' Raptor's Food, Valhallan Rift, Talos and
+  others. The user saw the Windurst Woods pair (0x10F11E0 / 0x10F11E1 at (90.3, -32.0)) drawn and targetable; retail
+  shows neither.
+- TargetOffFlag u32 @0x20 bit 19 with mask 0x04 (0x00E asm 0x1009c0a3, 0x00D 0x1009a477) sets +0x128 bit 4: never a
+  target candidate (FUN_10083430 -> FUN_10084580) nor the claimed auto-pick (FUN_10157d60). LSB's entity_flags 0x800.
+- Zone name records keep an empty name (FUN_10093430 copies the record's 24 bytes), so "NPC" (0x1035bb44) is only for
+  ids without a record.
+- Ours: net.rs target_off / listed_only and NetEvent::EntityVis; Entity target_off / listed_only / unlisted;
+  event::hidden() adds `unlisted` (events included); target.rs candidate and auto_target; radar::shown.
+- Live (Lnxcsfix, !pos onto (90, -4.5, -26) in 241; its zone-in plays event 0x347, the Seekers prompt): both models
+  hidden at once, the glow's generators never start, Tab picks Sevah Kummekihn.

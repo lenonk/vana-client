@@ -321,6 +321,12 @@ struct Entity {
     gens_off: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
+    /// +0x128 bit 4 (TargetOffFlag): never a target candidate.
+    target_off: bool,
+    /// +0x13c bit 23 (0x00E @0x24 bit 31): drawn only while the s2c 0x077 list holds it; `unlisted` is that hide
+    /// (+0xb2 bit 7, FUN_100cd040), kept when the bit clears.
+    listed_only: bool,
+    unlisted: bool,
     /// client/radar.rs: InvisFlag (+0x128 bit 6), 0x00E @0x2B bit 0x40 (+0x130 bit 15), the Monstrosity word (+0x210).
     invisible: bool,
     radar_off: bool,
@@ -1001,6 +1007,9 @@ fn self_entity(w: &World) -> Entity {
         no_plate: false,
         gens_off: false,
         untargetable: false,
+        target_off: false,
+        listed_only: false,
+        unlisted: false,
         invisible: false,
         radar_off: false,
         plate: net::PlateExtra::default(),
@@ -3026,6 +3035,9 @@ fn place_mogdoor(w: &mut World) {
             no_plate: true,
             gens_off: false,
             untargetable: false,
+            target_off: false,
+            listed_only: false,
+            unlisted: false,
             invisible: false,
             radar_off: false,
             plate: net::PlateExtra::default(),
@@ -3370,7 +3382,7 @@ fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
         .filter_map(|r| {
             let id = u32::from_le_bytes(r[0x1c..0x20].try_into().ok()?);
             let name = &r[..r[..0x18].iter().position(|&b| b == 0).unwrap_or(0x18)];
-            (id != 0 && !name.is_empty()).then(|| (id, String::from_utf8_lossy(name).into_owned()))
+            (id != 0).then(|| (id, String::from_utf8_lossy(name).into_owned()))
         })
         .collect()
 }
@@ -3991,6 +4003,8 @@ struct World {
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
     zone_cross: Option<zonecross::ZoneCross>,
+    /// The s2c 0x077 list (DAT_10480900): the listed-only NPCs shown.
+    vis_list: Vec<u32>,
     chat: combat::ChatLog,
     chat_input: String,
     /// The chat line's caret (char index; None the end of the line, where every new line starts).
@@ -5466,6 +5480,7 @@ impl App {
                             lift_wait: None,
                             zoning_since: None,
                             zone_cross: None,
+                            vis_list: Vec::new(),
                             chat: Default::default(),
                             chat_input: String::new(),
                             chat_caret: None,
@@ -6099,6 +6114,13 @@ impl App {
                 continue;
             }
             match ev {
+                NetEvent::EntityVis(list) => {
+                    world.vis_list = list;
+                    for (id, e) in world.entities.iter_mut().filter(|(_, e)| e.listed_only) {
+                        e.unlisted = !world.vis_list.contains(id);
+                    }
+                    log::info!("0x077: listed {:x?}", world.vis_list.iter().filter(|&&id| id != 0).collect::<Vec<_>>());
+                }
                 NetEvent::Zoning => {
                     // FUN_100955d0 asks only on the lobby login's first zone (state +0x10 cleared by a zone change).
                     world.servmes_armed = false;
@@ -6234,6 +6256,8 @@ impl App {
                     world.name = name;
                     timers::on_zone(world);
                     world.entities.clear();
+                    // FUN_10093b10: the 0x077 list goes with the zone.
+                    world.vis_list.clear();
                     // The zone's actors go, and with them their queued swings, messages and holds.
                     world.pending.clear();
                     world.rounds.clear();
@@ -6314,6 +6338,9 @@ impl App {
                         no_plate: false,
                         gens_off: false,
                         untargetable: false,
+                        target_off: false,
+                        listed_only: false,
+                        unlisted: false,
                         invisible: false,
                         radar_off: false,
                         plate: net::PlateExtra::default(),
@@ -6448,6 +6475,15 @@ impl App {
                     }
                     if let Some(u) = e.untargetable {
                         entry.untargetable = u;
+                    }
+                    if let Some(t) = e.target_off {
+                        entry.target_off = t;
+                    }
+                    if let Some(l) = e.listed_only {
+                        entry.listed_only = l;
+                        if l {
+                            entry.unlisted = !world.vis_list.contains(&e.id);
+                        }
                     }
                     if let Some(x) = e.plate {
                         entry.plate = x;
