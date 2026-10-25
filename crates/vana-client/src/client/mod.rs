@@ -2907,6 +2907,8 @@ struct Actor {
     blend_len: f32,
     /// Alpha 0..0x80 (model colour high byte) and a fade toward a target (op 0x6c, "kesu").
     alpha: f32,
+    /// The model colour's RGB bytes (0x80 = 1.0), faded by scheduler op 0x29.
+    rgb: [f32; 3],
     /// The target flash state (FUN_100c94a0).
     flash: flash::Flash,
     fade: Option<actmotion::Fade>,
@@ -2959,6 +2961,7 @@ impl Actor {
             battle: Default::default(),
             blend_len: crate::motion::BLEND_TICKS,
             alpha: actmotion::OPAQUE,
+            rgb: [actmotion::OPAQUE; 3],
             flash: Default::default(),
             fade: None,
             spop: false,
@@ -6167,13 +6170,14 @@ impl App {
                 e.gens_off = off;
             }
         }
-        // Scheduler op 0x29: the model colour's alpha toward a target.
-        for (id, alpha, frames) in std::mem::take(&mut world.effects.fades) {
+        // Scheduler op 0x29: the model colour toward an ARGB target.
+        for (id, argb, frames) in std::mem::take(&mut world.effects.fades) {
             if let Some(a) = world.actors.get_mut(&id) {
+                let f = actmotion::Fade::argb(a.alpha, a.rgb, argb, frames.round() as i32);
                 if frames <= 0.0 {
-                    (a.alpha, a.fade) = (alpha as f32, None);
+                    (a.alpha, a.rgb, a.fade) = (f.target, f.rgb.map_or(a.rgb, |[_, to, _]| to), None);
                 } else {
-                    a.fade = Some(actmotion::Fade::to(a.alpha, alpha, frames.round() as i32));
+                    a.fade = Some(f);
                 }
             }
         }
@@ -8544,6 +8548,7 @@ impl App {
                     }
                     let g = a.gpu.as_mut().unwrap();
                     g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
+                    g.tint = a.rgb.map(|c| c.max(0.0) / actmotion::OPAQUE);
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).

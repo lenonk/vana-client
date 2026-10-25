@@ -7233,3 +7233,17 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   scale vectors); without it a frameless element borrows the parent's frame slot, kept alive while borrowed. The GPU
   readback now returns each element's local position (back words 13..15), which op 0x45 adds; it was zero.
 - fx-shot takes --file N (that file's "main" on the caster) and --walk x,y,z (caster movement a tick).
+
+## Scheduler op 0x29: the whole model colour (2026-10-25)
+
+- Op 0x29 (FUN_1005f6c0, CMoActorColorDriveTask) drives the actor's ARGB model colour (+0x660, vtable +0x2c / +0x30)
+  from its current value to u32 @8, not only its alpha. The skeleton draw (2019 FUN_100c9da0) passes +0x660's RGB
+  with the computed alpha to the mesh draw FUN_1002a8c0 as the vertex colour, which lighting takes as the material
+  colour of the ambient and diffuse terms (COLORVERTEX, material source COLOR1), then MODULATE2X: 0x80 = 1.0.
+- Level down (DAT 3309) runs op 0x29 to 0x80000000 over 40 ticks at the start and back to 0x80808080 at tick 90: the
+  black silhouette in the user's retail shot. Ours faded alpha only.
+- Ours: Actor.rgb (bytes, 0x80 = 1.0) faded with the alpha (Fade::argb); the pose header's second row carries it
+  (area, r, g, b) and lit_actor multiplies the ambient and diffuse terms (not the cloth emissive) by it.
+- Not done: FUN_1005f6c0's other colour (param 6 set: vtable +0x40c / +0x410), the CMoLockColorDriveTask check.
+- The user checked level down's text height against retail again: ours is right (start 0.7 above point 0, the feet;
+  elem +0x128 from op 0x72 is only the sort key, FUN_100440d0).

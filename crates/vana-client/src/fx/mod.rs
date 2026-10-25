@@ -650,8 +650,8 @@ pub struct Effects {
     models: HashMap<u32, Vec<u32>>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
-    /// Op 0x29 colour drives for the client: actor, target alpha, frames.
-    pub fades: Vec<(u32, u8, f32)>,
+    /// Op 0x29 colour drives for the client: actor, target ARGB, frames.
+    pub fades: Vec<(u32, u32, f32)>,
     /// Op 0x9a for the client: actor, entity +0x130 bit 1.
     pub gens_off: Vec<(u32, bool)>,
     /// Skill / magic actions' holds for the client: op 0x20 (actor2) / 0x59 (actor1, no reactions) as (actor, ticks,

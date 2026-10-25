@@ -471,6 +471,8 @@ pub struct ActorGpu {
     skin: Option<Skinned>,
     /// Model colour alpha, 1 = opaque (actor fades); goes into the vertex alpha.
     pub alpha: f32,
+    /// Model colour RGB, 1 = 0x80 (scheduler op 0x29): the material colour of the lit terms.
+    pub tint: [f32; 3],
     /// Target flash (client/flash.rs): ambient lerp toward 220 / 255 and fog colour scale.
     pub flash: [f32; 2],
     /// The floor's four point lights (table slot + 1, 0 none): FUN_100c94a0 picks the strongest.
@@ -1298,6 +1300,7 @@ impl ZoneRenderer {
                 instance,
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
+                tint: [1.0; 3],
                 flash: [0.0, 1.0],
                 lights: [0; 4],
                 area: 0,
@@ -1343,6 +1346,7 @@ impl ZoneRenderer {
     /// Queues a skinned actor's bones (world transforms from character::pose) and placement.
     pub fn pose_actor(&mut self, actor: &mut ActorGpu, bones: &[(glam::Quat, Vec3)], model: Mat4) {
         let alpha = actor.alpha.clamp(0.0, 1.0);
+        let tint = actor.tint;
         let flash = actor.flash;
         let area = match self.area_keys.iter().position(|&k| k == actor.area) {
             Some(s) if actor.area != 0 => (s + 1) as f32,
@@ -1356,7 +1360,7 @@ impl ZoneRenderer {
         skin.frame = self.pose_frame;
         self.poses.extend(model.to_cols_array_2d());
         self.poses.push([alpha, flash[0], flash[1], f32::from_bits(u32::from_le_bytes(actor.lights))]);
-        self.poses.push([area, 0.0, 0.0, 0.0]);
+        self.poses.push([area, tint[0], tint[1], tint[2]]);
         for i in 0..skin.bones {
             let (q, t) = bones.get(i).copied().unwrap_or((glam::Quat::IDENTITY, Vec3::ZERO));
             self.poses.push(q.to_array());
@@ -1415,7 +1419,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
     }
 
     /// Uploads this frame's posed mesh and placement.

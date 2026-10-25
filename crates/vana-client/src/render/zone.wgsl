@@ -106,6 +106,8 @@ struct VertexOut {
     @location(7) @interpolate(flat) lights: vec4<u32>,
     // The area slot it is lit by (0 = the zone's); bit 15: the 'ev10' path, which keeps the zone's fog range.
     @location(8) @interpolate(flat) area: u32,
+    // Actors: the model colour's RGB (actor +0x660, 0x80 = 1.0), the material colour of the ambient and diffuse terms.
+    @location(9) @interpolate(flat) tint: vec3<f32>,
 };
 
 // FUN_100c94a0: of the floor's lights, the strongest w = 1 / max(d^2 Att2, 1e-4) at the actor's position within
@@ -170,6 +172,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
     out.normal = normalize((model * vec4<f32>(v.normal, 0.0)).xyz);
     out.depth = out.clip.w;
     out.flash = vec2<f32>(0.0, 1.0);
+    out.tint = vec3<f32>(1.0);
     out.lights = v.lights;
     let ev10 = u32(u.area_info.x);
     out.area = select(v.area.x, ev10 | 0x8000u, (v.flags & 1u) != 0u && ev10 != 0u);
@@ -183,7 +186,7 @@ fn vs_main(v: VertexIn) -> VertexOut {
 }
 
 // Skinned actors (ZoneRenderer::pose_actor): model matrix, (alpha, flash ambient, flash fog, lamp lights), (area slot,
-// 0, 0, 0), then (quat, translation) per bone.
+// model colour r, g, b), then (quat, translation) per bone.
 @group(2) @binding(0) var<storage, read> pose: array<vec4<f32>>;
 
 struct SkinIn {
@@ -225,6 +228,7 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     out.flash = pose[4].yz;
     out.point = actor_lamp(bitcast<u32>(pose[4].w), model[3].xyz, out.normal);
     out.area = u32(pose[5].x);
+    out.tint = pose[5].yzw;
     return out;
 }
 
@@ -259,7 +263,7 @@ fn fs_actor(in: VertexOut) -> @location(0) vec4<f32> {
         return vec4<f32>(lit_actor(in, texel).rgb, alpha);
     }
     let diffuse = max(dot(normalize(in.normal), normalize(-u.light.xyz)), 0.0);
-    let lit = texel.rgb * (u.light.w + (1.0 - u.light.w) * diffuse);
+    let lit = texel.rgb * (u.light.w + (1.0 - u.light.w) * diffuse) * in.tint;
     return vec4<f32>(shade(in, vec4<f32>(lit, 1.0)).rgb, alpha);
 }
 
@@ -372,7 +376,7 @@ fn lit_actor(in: VertexOut, t: vec4<f32>) -> vec4<f32> {
     let cloth = in.color.g > 0.5;
     let ga = select(min(floor(amb * 255.0 * mf) / 255.0, vec3<f32>(1.0)), amb, cloth);
     let em = select(0.0, max(mf - 1.5, 0.0), cloth);
-    let lit = clamp(ga + em + 0.5 * mf * (color * ndl + in.point), vec3<f32>(0.0), vec3<f32>(1.0));
+    let lit = clamp((ga + 0.5 * mf * (color * ndl + in.point)) * in.tint + em, vec3<f32>(0.0), vec3<f32>(1.0));
     let rgb = clamp(to_gamma(t.rgb) * lit * 2.0, vec3<f32>(0.0), vec3<f32>(1.0));
     let f = clamp((fog.y - in.depth) / (fog.y - fog.x), 0.0, 1.0);
     let c = mix(fog_color * in.flash.y, rgb, f);

@@ -498,6 +498,9 @@ pub(super) fn update(w: &mut World, dt: f32) {
         if let Some(f) = &mut a.fade {
             let done = f.tick(ticks);
             a.alpha = f.alpha;
+            if let Some([cur, ..]) = f.rgb {
+                a.rgb = cur;
+            }
             if done {
                 a.fade = None;
             }
@@ -545,24 +548,40 @@ pub struct Fade {
     pub target: f32,
     pub step: f32,
     pub left: f32,
+    /// Scheduler op 0x29 steps the RGB bytes too (0x80 = 1.0): current, target, step.
+    pub rgb: Option<[[f32; 3]; 3]>,
 }
 
 impl Fade {
     pub fn to(from: f32, target: u8, frames: i32) -> Fade {
         let n = frames.max(1) as f32;
         let target = target as f32;
-        Fade { alpha: from, target, step: (target - from) / n, left: n }
+        Fade { alpha: from, target, step: (target - from) / n, left: n, rgb: None }
+    }
+
+    /// The whole model colour toward ARGB `target`, linear per byte (FUN_1005f820).
+    pub fn argb(alpha: f32, rgb: [f32; 3], target: u32, frames: i32) -> Fade {
+        let mut f = Fade::to(alpha, (target >> 24) as u8, frames);
+        let to = [16, 8, 0].map(|s| ((target >> s) & 0xff) as f32);
+        f.rgb = Some([rgb, to, std::array::from_fn(|i| (to[i] - rgb[i]) / f.left)]);
+        f
     }
 
     /// Returns true when finished.
     pub fn tick(&mut self, ticks: f32) -> bool {
         self.left -= ticks;
-        if self.left < 0.0 {
+        let done = self.left < 0.0;
+        if done {
             self.alpha = self.target;
-            return true;
+        } else {
+            self.alpha += self.step * ticks;
         }
-        self.alpha += self.step * ticks;
-        false
+        if let Some([cur, to, step]) = &mut self.rgb {
+            for i in 0..3 {
+                cur[i] = if done { to[i] } else { cur[i] + step[i] * ticks };
+            }
+        }
+        done
     }
 }
 
