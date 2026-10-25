@@ -7400,3 +7400,38 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
   then prints 7 0x8e "You were unable to change your equipped items."; so does an item with its lock byte (+8) set.
   Already worn or not found: nothing. Live: `/equip sub "Bronze Dagger"` on WAR prints 0x8b then 0x8e;
   `/equip head "Hume Tunic"` 0x8e. Not done: the equipment-message setting FUN_100e48d0 that drops 9 0x43 / 0x44.
+
+## Party requests (2026-10-25)
+
+Spec: `~/ffxi/lab/research/party_request_spec.md`. Ours: client/partyreq.rs, search.rs, textcmd.rs, partymenu.rs.
+
+- s2c 0x11D PARTYREQ (LAB_100a2610, asm only): Status 0 a request, 1 stopped; UniqueNo, ActIndex, Flags, Race unused
+  (the pronoun call's result is thrown away). Status 0: dropped while the name is on our blacklist or the blacklist is
+  not in yet (FUN_100e0a50: 2 also asks for it, c2s 0x03C 0x18 zero bytes, at most every 60 s); else added to the
+  history, a line (group 10 0x77, mode 0x87) when new or last asked >= 180 s ago. Status 1: deleted, line 10 0x78
+  only when it was there. No sound, no window, no RecruitFlg / config test; an open list is not refreshed.
+- s2c 0x041 BLACK_LIST: 12 {u32 id, name[16]} @4, Stat @0xf4 (bit 0 starts over, bit 1 last), Num @0xf5. LSB sends
+  it at every GAMEOK (live: stat 3, 0 names). The blacklist test compares the leading letters of both names.
+- The history (DAT_10662690): 64 records {name[16], u32 game clock}, newest first. Add (FUN_1018dd40): a known name
+  moves to the top with the new time. Delete (FUN_1018de60): the later **names** move up, the times stay in place.
+  Clear (FUN_1018df40). Records older than 30 days (0x278d00 s) are left out of the search.
+- USER/<id>/pec.dat: the user-file container, version 2, payload 0x500 (the 64 records); read at field entry, one
+  non-letter in any name wipes it all; written at logout (ours at every 0x00B, as cmb*.dat).
+- View Request (prty1 row 6, prty2 7, prty3 / prty7 12) and /recruitlist [list] (FUN_1020c390): once s2c 0x119 came,
+  a search in every area with condition bit 0x1000000: wire entry [11000] after LS / friend, then after the
+  condition block u16 n + n x 16-byte names (LSB: trailer at 0x11 + size; only those names, online, by name).
+  Results mode 2 (W+0x58): languages on every row. It replaces open results.
+- scoption in request-list mode (results mode != 3 and the condition has 0x1000000, so a refine keeps it): child 4
+  "Clear History" (windowps 785, help 14 0x3bc) asks 9 0x140 (default No) over scoption, Yes clears (9 0x142) and
+  closes the search windows; child 5 "Delete Request" (786, help 0x3bd) deletes (9 0x141), closes, runs View
+  Request again. Rows 4 / 5 are never disabled; search_spec 3.3's "row 5 disabled on ourselves" is child 2 (Befriend).
+- The Request toggle (FUN_10204ee0): turning it on with any history asks 9 0x140 (default No); Yes clears; either
+  answer then turns Request on (c2s 0x0DC).
+- /recruitlist delete Name (9 0x141 whether or not it was there; a bad name 9 0x65 in mode 0x9d and the command
+  fails), clear (0x142). FUN_10077e30 = a line in mode 0x9d (also /pcmd's misspelt names).
+- /prcmd add / remove [target] (FUN_1007d9c0): c2s 0x11C {u32 id, u16 index, kind 0 / 1, 0}; add prints 10 0x76.
+  Refusals 7 0xc4 (ourselves, an NPC), 0xc5 (blacklisted), 0xc6 (blacklist not in). Not here: a name lookup, the
+  found record's id with index 0. Not done: the own actor's +0x124 bits 22 / 23 (0xc6).
+- Live (Lnxcsfix, s2c 0x11D injected with LSB's `!inject FILE`, a 34-byte file): lines, the 180 s silence, the
+  stop line only for a known name, View Request listing two online bots, Delete Request, Clear History, the toggle
+  prompt, /prcmd add / remove to a bot (the bot answered with a party invite).
