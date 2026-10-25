@@ -53,6 +53,7 @@ mod chatctrl;
 mod partymenu;
 mod levelsync;
 mod viewhouse;
+mod currencies;
 mod journal;
 mod missions;
 mod quests;
@@ -1354,6 +1355,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.searchmenu.is_some() => searchmenu::key(world, gu, *key),
                 _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
                 _ if world.viewhouse.is_some() => viewhouse::key(world, gu, *key),
+                _ if world.currencies.is_some() => currencies::key(world, *key),
                 _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
@@ -1642,7 +1644,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.missions.is_some() && world.confirm.is_none()) {
         missions::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| world.currencies.is_some() && world.confirm.is_none()) {
+        currencies::pointer(world, gu, sw, sh, p, input.moved);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.confirm.is_none()) {
         status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     // Mouse on the magic / ability lists and their category windows.
@@ -2076,6 +2081,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(viewhouse::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
+    blockers.extend(currencies::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
@@ -2524,6 +2530,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     levelsync::bars(gu, world, &mut bars);
     viewhouse::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
+    currencies::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
@@ -3670,6 +3677,8 @@ struct World {
     mh_seen: bool,
     /// Social row View House: "menu    mogcont".
     viewhouse: Option<viewhouse::ViewHouse>,
+    /// statcom2's Currencies rows: evitem modes 1 / 2.
+    currencies: Option<currencies::Currencies>,
     /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
     mh_open: bool,
     /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
@@ -4870,6 +4879,7 @@ impl App {
                             mh_floors: false,
                             mh_seen: false,
                             viewhouse: None,
+                            currencies: None,
                             mh_open: false,
                             mog_pending: false,
                             moogle: None,
@@ -5257,7 +5267,7 @@ impl App {
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
                     world.room_flag = room_flag;
-                    (world.mh_seen, world.viewhouse) = (false, None);
+                    (world.mh_seen, world.viewhouse, world.currencies) = (false, None, None);
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
@@ -5794,6 +5804,7 @@ impl App {
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
+                NetEvent::Currencies { mode, data } => currencies::on_packet(world, mode, &data),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
                 NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
                 NetEvent::TrackState(s) => {
@@ -6055,6 +6066,7 @@ impl App {
         target::party_cursor_update(world);
         partymenu::update(world);
         status::update(world);
+        currencies::update(world, dt * 60.0);
         world.cursor_keep();
         missions::update(world);
         quests::update(world);

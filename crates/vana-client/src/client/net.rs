@@ -345,6 +345,8 @@ pub enum NetEvent {
     Invite { anon: u8, kind: u8, name: String, race: u16 },
     /// s2c 0x0E1 GROUP_CHECKID (LAB_100ea7f0): GroupID @4, the answer to c2s 0x078.
     GroupId(u32),
+    /// s2c 0x113 (mode 1) / 0x118 (mode 2): the currencies, the whole packet (status_rows_spec.md appendix A).
+    Currencies { mode: u8, data: Vec<u8> },
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
     AbilityRecasts(Vec<(u16, u16)>),
     /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
@@ -816,6 +818,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x056 => tx.send(NetEvent::MissionLog { port: p.u16(0x24), data: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x0B4 => tx.send(NetEvent::ConfSys(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x0E1 => tx.send(NetEvent::GroupId(p.u32(4)))?,
+                    0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
                     0x119 if { let _ = tx.send(NetEvent::MountRecast(p.u32(0xfc))); false } => {}

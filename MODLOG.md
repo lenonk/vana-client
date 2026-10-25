@@ -6854,3 +6854,20 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` part V; ours client/viewhouse.rs.
   group 0x01) suspends it *(inf: the registry groups)*. Both come back to mogcont on Escape.
 - Live (Lnxcsfix in Metalworks): Safe 2 and Satchel dim; the Mog Safe read-only beside mogcont; the Mog Case two-list
   view with mogcont hidden; Escape back to mogcont, then to the social page on View House. Not tried in a Mog House.
+
+## Currencies and Currencies 2 (statcom2 rows 6 / 10) (2026-10-24)
+
+Spec `~/ffxi/lab/research/status_rows_spec.md` 3 and appendix A; ours client/currencies.rs.
+- statcom2 child 6 / 10 (FUN_1022a620(1 / 2)): "menu    evitem" in mode 1 / 2 (group 0x1c: persona and level are
+  suspended by the walk, statcom2 stays drawn unfocused, titlewin slot 2 group 0xe 0x2d1 "Currencies" for both). c2s
+  0x10F / 0x115 (header only) is sent again every 31 ticks *(inf: 60 Hz)* until s2c 0x113 / 0x118 calls the stored
+  callback once; before it the frame alone (no rows, hand or bar), only Escape works.
+- Rows: tables 0x103862c8 (99) / 0x103865e0 (97) {field, label group 0xc, help group 0xe}, the fields' packet offsets
+  from FUN_102297c0 / FUN_10229ca0 (u8 / u16 / u32; the five plans are 9-bit fields of the u64 at 0x113 @0xd8,
+  Tutelary across both words); all rows shown, zero or not. At the layout's row children: framesus 35 at (4, 5), the
+  label in the game font at (18, 0), the value "%d" (u32 as int) in fontshp right-aligned at (310, 3); the cursor
+  row 0x80803040. Help slot 2 = the cursor row's group 0xe help (row 0's before the data).
+- Keys (FUN_1022aa40): Escape closes (statcom2 has the focus again); Up / Down wrap, Left / Right page by 8, SE 0001;
+  Enter nothing. The bar at (374, 48, 248), 8 visible.
+- Live (Lnxcsfix): `!addcurrency sandoria_cp 1234`, `kindred_seal 7`, `bayld 56789` showed 1234, 7, 56789 in their rows
+  (u32 @4, u16 @0x12, 0x118 u32 @4); removed with `!delcurrency` (char_points back to 0).
