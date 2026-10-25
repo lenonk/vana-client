@@ -541,7 +541,39 @@ fn kind_bits(id: u32, e: &super::Entity) -> u32 {
 /// dead or despawning monster, and in a prompt's include / exclude kinds (T+0x60 / +0x64). No name test. Not done:
 /// the event untargetable bit (ops 0x12..0x15, +0x128 bit 4) and the occlusion part of the cull.
 fn candidate(w: &World, hidden: &std::collections::HashSet<u32>, id: u32, e: &super::Entity) -> bool {
-    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id)))
+    id != w.my_id && w.visible.contains(&id) && !hidden.contains(&id) && !(e.flags & 1 != 0 && matches!(e.motion.status, 2 | 3)) && w.prompt.as_ref().is_none_or(|s| s.takes(sub_kind(w, id))) && !ignored(w, id, e)
+}
+
+/// FUN_101cc220: hostile to us. In PvP (both on a team, kind 0x400) another team is, but the same Ballista side; then,
+/// for an actor that is neither a player's pet / trust (0x100) nor an allied NPC: a monster, a charmed player or
+/// another Monstrosity player.
+pub fn hostile(w: &World, id: u32, e: &super::Entity) -> bool {
+    let (a, b) = (w.my_team, e.marks.alleg);
+    if (2..=99).contains(&a) && (2..=99).contains(&b) {
+        let side = |t: u8| match t {
+            0x28 | 0x2a => 1,
+            0x29 | 0x2b => 2,
+            _ => 0,
+        };
+        if side(a) != 0 && side(a) == side(b) {
+            return false;
+        }
+        if (a == 99 && b == 99) || a != b {
+            return true;
+        }
+    }
+    let pet = id >> 24 != 0 && e.marks.charm;
+    let allied = id >> 24 != 0 && !e.marks.charm && b == 1;
+    !pet && !allied && (e.flags & 1 != 0 || e.marks.charm || (id != w.my_id && e.monstrosity != 0))
+}
+
+/// FUN_10083430 steps 3 / 4: /ignorepet (config 0x97) skips other players' pets (charmed, not hostile, not ours; party
+/// members' too), /ignoretrust (0xaa) trusts outside our alliance. A target already held is not dropped for it.
+fn ignored(w: &World, id: u32, e: &super::Entity) -> bool {
+    let k = super::radar::kind_bits(w, id, e);
+    let pet = w.game.get(0x97) != 0 && k & 0x100 != 0 && e.marks.charm && !e.marks.npc_pet && !e.marks.b2b1 && !hostile(w, id, e) && !(w.my_pet != 0 && e.index == w.my_pet);
+    let trust = w.game.get(0xaa) != 0 && e.marks.trust && k & 0xc == 0;
+    pet || trust
 }
 
 /// FUN_10083430 as the mouse pick calls it (FUN_10083750): self too, unless a prompt's kinds leave out 0x200.

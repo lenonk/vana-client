@@ -566,8 +566,10 @@ pub struct MusicContext {
     pub status: u8,
     /// Vana'diel hour 0..23.
     pub hour: u32,
-    /// Party members including us.
+    /// Party members including us (and our trusts).
     pub party: u32,
+    /// DAT_10480aec: a monster claimed by our alliance within 45 (only with /battlebgm's bit 0 clear).
+    pub party_battle: bool,
     /// In a Mog House other than Mog Garden (DAT_10482f44 && !DAT_1048098d): slot 6 before anything else.
     pub myroom: bool,
 }
@@ -645,8 +647,8 @@ impl ZoneMusic {
                 }
                 7
             }
-            1 => {
-                if cx.party <= 1 {
+            _ if cx.status == 1 || cx.party_battle => {
+                if cx.party == 1 {
                     2
                 } else {
                     3
@@ -699,7 +701,7 @@ mod tests {
     fn battle_and_back_resumes_the_field_track() {
         let mut z = ZoneMusic::default();
         z.zone_in([101, 102, 103, 104, 0]);
-        let day = MusicContext { status: 0, hour: 12, party: 1, myroom: false };
+        let day = MusicContext { status: 0, hour: 12, party: 1, party_battle: false, myroom: false };
         assert_eq!(z.select(day), Some(Change { id: 101, vol: 0x7f, fade_in: 0, save: false, clear: true }));
         assert_eq!(z.select(day), None);
         let fight = MusicContext { status: 1, ..day };
@@ -708,5 +710,9 @@ mod tests {
         let night = MusicContext { hour: 20, ..day };
         assert_eq!(z.select(night).map(|c| c.id), Some(102));
         assert_eq!(z.select(MusicContext { status: 3, ..day }).map(|c| c.id), Some(0x6f));
+        // Our party of 2+ engaged: slot 3; the party battle flag alone starts it too.
+        assert_eq!(z.select(MusicContext { status: 1, party: 2, ..day }).map(|c| c.id), Some(104));
+        assert_eq!(z.select(day).map(|c| c.id), Some(101));
+        assert_eq!(z.select(MusicContext { party_battle: true, ..day }).map(|c| c.id), Some(103));
     }
 }

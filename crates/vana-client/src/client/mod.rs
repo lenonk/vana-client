@@ -3161,6 +3161,27 @@ impl Actor {
     }
 }
 
+/// DAT_10480aec (FUN_1008db40 asm:151886), with /battlebgm off (config 0x99 bit 0 clear): a monster with a model,
+/// not a door / lift / ship, GM level under 3, no team colour, claimed by anyone on our alliance list (us included),
+/// not owned (a charmed monster counts as owned *(inf: no pet index for others)*), within 45 of us; not while we are
+/// KO'd or in an event *(inf: retail tests the field state 0x60)*.
+fn party_battle(w: &World) -> bool {
+    if w.game.get(0x99) & 1 != 0 || matches!(w.my_motion.status, 2 | 3) || event::active(w) {
+        return false;
+    }
+    w.entities.iter().any(|(id, e)| {
+        e.flags & 1 != 0
+            && !matches!(e.sub_kind, 2..=4)
+            && e.marks.gm < 3
+            && !((2..=99).contains(&e.marks.alleg) && !(0x28..=0x2b).contains(&e.marks.alleg))
+            && !e.marks.charm
+            && e.claim != 0
+            && (e.claim == w.my_id || w.party.members().any(|m| m.id == e.claim))
+            && w.actors.get(id).is_some_and(|a| a.character.is_some())
+            && (e.pos - w.pos).length() < 45.0
+    })
+}
+
 /// FUN_100cd040 with R 0.5 / r 0.2 (the 0x5e-chunk radii of a few large models are not kept): the eye's horizontal
 /// distance h from point `p`; 0 within 0.2, linear to 1 at 0.5; no fade with the eye more than 0.5 above the point.
 fn near_camera_fade(p: Vec3, eye: Vec3) -> f32 {
@@ -3380,9 +3401,15 @@ struct FxActors<'a> {
     /// The area environments' tints this frame, and the floor to find an actor's area on.
     areas: &'a HashMap<u32, Vec3>,
     ground: Option<&'a ground::Ground>,
+    /// /bellsw (config 0x99 bit 1): scheduler op 0xb3 sounds.
+    bells: bool,
 }
 
 impl crate::fx::Actors for FxActors<'_> {
+    fn bells(&self) -> bool {
+        self.bells
+    }
+
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
         let p = self.places.get(&id)?;
         Some(actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt))
@@ -3772,8 +3799,9 @@ struct World {
     models_loading: HashSet<String>,
     /// A new zone renderer still uploading (since when).
     zone_uploading: Option<Instant>,
-    /// Config `party_tp` (retail config 0xae bit 0).
+    /// Config `party_tp` (retail config 0xae bit 0); /partyinfo asks the App to save it.
     party_tp: bool,
+    party_tp_save: bool,
     target_since: Instant,
     cam_turn: (f32, f32),
     /// UI sound effects to play ("0002", "0009" ...), by SE id.
@@ -4868,7 +4896,8 @@ impl App {
                 a.play_ui_se(id);
             }
             let hour = w.clock.map(|(t, at)| crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32 / 60).unwrap_or(12);
-            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party: 1, myroom: w.myroom.is_some_and(|r| r.map != 0x2d4) };
+            let party = w.party.party().count().max(1) as u32;
+            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party, party_battle: party_battle(w), myroom: w.myroom.is_some_and(|r| r.map != 0x2d4) };
             if let Some(c) = w.music.select(cx) {
                 log::info!("music: {c:?}");
                 if c.clear {
@@ -5139,6 +5168,7 @@ impl App {
                             models_loading: HashSet::new(),
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
+                            party_tp_save: false,
                             overlay: None,
                             map_opacity: self.cfg.map_overlay_opacity,
                             map_overlay: self.cfg.map_overlay,
@@ -5767,6 +5797,10 @@ impl App {
                     world.map_open = None;
                     world.talk_lock = None;
                     world.hud_top.enter();
+                    // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
+                    // (config 0x99 bit 8 clear) go to the server again.
+                    let _ = world.net.commands.send(NetCommand::Packet { id: 0x118, body: vec![world.game.get(0xb2) as u8, 0, 0, 0] });
+                    let _ = world.net.commands.send(NetCommand::Packet { id: 0x11B, body: vec![(world.game.get(0x99) & 0x100 == 0) as u8, 0, 0, 0] });
                     world.map = None;
                     world.scan = Default::default();
                     // LSB re-sends every container after c2s 0x00C and empties the temporary items and the recycle
@@ -8147,6 +8181,12 @@ impl App {
                 if std::mem::take(&mut world.volume_dirty) {
                     apply = true;
                 }
+                if std::mem::take(&mut world.party_tp_save) {
+                    self.cfg.party_tp = world.party_tp;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
                 if std::mem::take(&mut world.game_save) || apply {
                     self.cfg.game.store(Some(&world.name), &world.game);
                     save = true;
@@ -9183,7 +9223,7 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref() };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0 };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }

@@ -8043,3 +8043,26 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   0/1000, the three categories, Max HP / Max MP and STR..CHR at 0/60, grey in Southern San d'Oria. Not tried: a raise
   in the Mog House (LSB does not apply it).
 
+## The toggles' consumers (2026-10-25; spec ~/ffxi/lab/research/toggle_consumers_spec.md)
+
+- /ignorepet (config 0x97), /ignoretrust (0xaa): FUN_10083430 steps 3 / 4 in every candidate scan (Tab, F8..F10,
+  Enter, the mouse): skip a charmed non-PC (kind 0x100) without bits b30 / b31, not hostile (FUN_101cc220, ours
+  target::hostile) and not our pet; and a trust outside our alliance (kind & 0xc == 0). A held target is not dropped.
+  On LSB charmed monsters and trusts carry b30, so /ignorepet skips avatars, wyverns, automatons and jug pets only.
+- /hidetrust (0x99 bit 5): FUN_1008e4d0 takes the model of every trust outside our own party (not alliance), so its
+  plate and targeting go too; the radar dot stays. Ours: event::hidden, outside the event's own actors.
+- /battlebgm (0x99 bit 0, default clear): the party battle flag (FUN_1008db40): a monster with a model claimed by our
+  alliance (us included) within 45 starts the battle music while we stand idle; the slot is 2 for a party of one, else
+  3 (our `party: 1` was hard-coded, so slot 3 never played). Ours: client::party_battle, MusicContext::party_battle.
+- /bellsw (0x99 bit 1, default clear): scheduler op 0xb3 (only in the /bell note schedulers em00..em07) ends at once
+  when clear, else it is op 0x0a (a sound at actor 1). So every /bell is silent by default. Actors::bells.
+- /displayhead (c2s 0x0DC which 10, +7 bit 3): on / off / toggle from s2c 0x0B4 byte 3 bit 3; the server answers
+  (0x009 260 / 261, 0x051 with head 0). /autotarget (which 5, +5 bit 6): no word prints the state 7031 0x7f / 0x80,
+  on / off send and print; the server re-targets (0x058). /jobmasterdisp: config 0x99 bit 8 (set = hidden), c2s 0x11B
+  {u8 show} and 9 0x143 / 0x144 on a change; at every zone-in the world start sends 0x118 {config 0xb2} and 0x11B.
+  /partyinfo showtp on / off / toggle: config 0xae bit 0, ours also the `party_tp` setting (saved), no line.
+- Live (Lnxcsfix): every command's line came back ("Bell sounds have been enabled.", "Auto-target: ON.", "Your
+  headgear is now hidden.", "Job mastery display is disabled.", ...). Not seen live: a bell note (the /bell emote
+  did not run for Lnxcsfix), /ignorepet / /hidetrust (no other players' pets or trusts near).
+- Not done: /furcc (no Mog House furniture actors yet).
+

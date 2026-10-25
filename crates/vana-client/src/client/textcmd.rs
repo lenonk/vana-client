@@ -84,6 +84,10 @@ mod id {
     pub const CHECKPARAM: u16 = 0x47;
     pub const PCMD: u16 = 0x56;
     pub const RECRUITLIST: u16 = 0x60;
+    pub const AUTOTARGET: u16 = 0x63;
+    pub const DISPLAYHEAD: u16 = 0x64;
+    pub const JOBMASTERDISP: u16 = 0x8b;
+    pub const PARTYINFO: u16 = 0x1ad;
     pub const BLACKLIST: u16 = 0x3b;
     pub const PRCMD: u16 = 0x61;
     pub const ACMD: u16 = 0x57;
@@ -911,13 +915,13 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             w.names_hidden = hide.then(|| last.is_some_and(|a| a.eq_ignore_ascii_case("otherpc")));
             Ok(())
         }
-        // FUN_100791d0: config 0x97 (Tab skips others' pets: not applied, ours has no pet owner).
+        // FUN_100791d0: config 0x97 (target::ignored: the candidates skip other players' pets).
         id::IGNOREPET => {
             let cur = w.game.get(0x97) != 0;
             switch(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0x97, on as u32), [0xea, 0xeb], [0xe8, 0xe9]);
             Ok(())
         }
-        // FUN_10079270: config 0xaa (Tab skips other players' trusts: not applied, as above).
+        // FUN_10079270: config 0xaa (target::ignored: the candidates skip trusts outside our alliance).
         id::IGNOREFAITH | id::IGNORETRUST => {
             let cur = w.game.get(0xaa) != 0;
             switch(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0xaa, on as u32), [0x10d, 0x10e], [0x10b, 0x10c]);
@@ -929,7 +933,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             toggle(w, on_off(args.get(1)), cur, |w, on| cfg(w, 0xc0, on as u32), [0x129, 0x12a]);
             Ok(())
         }
-        // FUN_1007de50: config 0x99 bit 5 hides other players' trusts (not applied yet).
+        // FUN_1007de50: config 0x99 bit 5 hides the trusts outside our party (event::hidden).
         id::HIDEFAITH | id::HIDETRUST => {
             let cur = bit(w, 0x99, 5);
             switch(w, on_off(args.get(1)), cur, |w, on| cfg_bit(w, 0x99, 5, on), [0x111, 0x112], [0x10f, 0x110]);
@@ -1035,7 +1039,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             act(w, (w.my_id, w.my_index), 0x18, param);
             Ok(())
         }
-        // FUN_1007f500: config 0x99 bit 0, battle music for our own engagement only (ours always plays it so).
+        // FUN_1007f500: config 0x99 bit 0, battle music for our own engagement only (else client::party_battle too).
         id::BATTLEBGM => {
             let cur = bit(w, 0x99, 0);
             toggle(w, only_on_off(args), cur, |w, on| cfg_bit(w, 0x99, 0, on), [0xf2, 0xf3]);
@@ -1143,6 +1147,70 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::RECRUITLIST => recruitlist(w, args),
+        // FUN_1007ddc0: c2s 0x0DC which 10; exactly "on" shows the head gear, "off" hides it, another word nothing;
+        // else a toggle from s2c 0x0B4's mirror (byte 3 bit 3). No line: the server answers (0x009, 0x051).
+        id::DISPLAYHEAD => {
+            if args.len() == 2 {
+                match arg(1) {
+                    Some("on") => config_flag(w, 10, false),
+                    Some("off") => config_flag(w, 10, true),
+                    _ => {}
+                }
+            } else {
+                config_flag(w, 10, w.conf_sys[3] & 8 == 0);
+            }
+            Ok(())
+        }
+        // FUN_1007df60: not one word, the state (7031 0x80 off by 0x0B4 byte 1 bit 6, else 0x7f); "on" / "off" c2s
+        // 0x0DC which 5 and its line; another word fails. The server re-targets (s2c 0x058).
+        id::AUTOTARGET => {
+            if args.len() != 2 {
+                system_line(w, if w.conf_sys[1] & 0x40 != 0 { 0x80 } else { 0x7f });
+                return Ok(());
+            }
+            match arg(1) {
+                Some("on") => {
+                    config_flag(w, 5, false);
+                    system_line(w, 0x7f);
+                }
+                Some("off") => {
+                    config_flag(w, 5, true);
+                    system_line(w, 0x80);
+                }
+                _ => return Err(()),
+            }
+            Ok(())
+        }
+        // FUN_1007ede0: the job master stars shown / hidden (config 0x99 bit 8 set = hidden); a change sends c2s 0x11B
+        // {u8 show} and 9 0x143 / 0x144. No word toggles from our own job master flag.
+        id::JOBMASTERDISP => {
+            let show = match arg(1) {
+                Some("on") => true,
+                Some("off") => false,
+                _ => !w.my_plate.extra.job_master,
+            };
+            if show != (w.game.get(0x99) & 0x100 == 0) {
+                cfg_bit(w, 0x99, 8, !show);
+                send(w, NetCommand::Packet { id: 0x11B, body: vec![show as u8, 0, 0, 0] });
+                log9(w, if show { 0x143 } else { 0x144 });
+            }
+            Ok(())
+        }
+        // FUN_10079310: "showtp on / off / (toggle)": TP on the party and alliance rows (config 0xae bit 0, ours also
+        // the `party_tp` setting, kept in step); another first word does nothing. No line.
+        id::PARTYINFO => {
+            if arg(1) == Some("showtp") {
+                let on = match on_off(args.get(2)) {
+                    1 => true,
+                    2 => false,
+                    _ => !w.party_tp,
+                };
+                w.party_tp = on;
+                cfg_bit(w, 0xae, 0, on);
+                w.party_tp_save = true;
+            }
+            Ok(())
+        }
         id::BLACKLIST => blacklist(w, args),
         id::PRCMD => prcmd(w, args, mode),
         id::JOIN | id::DECLINE => {
@@ -1547,13 +1615,16 @@ fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
 }
 
 /// FUN_100e46a0(which, set): c2s 0x0DC, flag bytes +4..+7 and SetFlg @0x10 (1 set, 2 clear): which 0 anonymous (+4
-/// bit 2), 1 away (bit 1), 2 seeking a party (bit 0), 6 autogroup (+5 bit 7), 0xb request mode (+7 bit 5).
+/// bit 2), 1 away (bit 1), 2 seeking a party (bit 0), 5 auto-target off (+5 bit 6), 6 autogroup (+5 bit 7), 10 head
+/// gear hidden (+7 bit 3), 0xb request mode (+7 bit 5).
 pub(super) fn config_flag(w: &World, which: u8, set: bool) {
     let mut b = vec![0u8; 16];
     match which {
         0 => b[0] = 4,
         1 => b[0] = 2,
+        5 => b[1] = 0x40,
         6 => b[1] = 0x80,
+        10 => b[3] = 8,
         // The mentor flags (Help Desk's Config page): mentor on, new adventurer off.
         8 => b[3] = 2,
         9 => b[3] = 4,

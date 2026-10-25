@@ -1659,9 +1659,12 @@ pub fn hidden(w: &World) -> HashSet<u32> {
     let takes_part = |id: &u32| part.is_some_and(|p| p.contains(id));
     let filtered = |id: u32| if id >> 24 == 0 { flags & 0x02 != 0 } else { flags & 0x10 != 0 };
     for (id, e) in &w.entities {
+        // FUN_1008e4d0: /hidetrust (config 0x99 bit 5) takes the model of every trust outside our own party (its plate
+        // and targeting go with it; the radar dot stays).
+        let trust = w.game.get(0x99) & 0x20 != 0 && e.marks.trust && !w.party.party().any(|m| m.index == e.index);
         let hide = match script {
             Some(h) if takes_part(id) => h.contains(id),
-            _ => e.flags & 2 != 0 || (!takes_part(id) && filtered(*id)),
+            _ => e.flags & 2 != 0 || (!takes_part(id) && (filtered(*id) || trust)),
         };
         if hide {
             out.insert(*id);

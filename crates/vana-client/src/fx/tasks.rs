@@ -824,8 +824,10 @@ impl Effects {
             // the player *(inf: actor2)*, 0x4a actor2 only when it is the player (vtable +0x304, FUN_100a4640: the
             // level-up jingle); far @0x14, near @0x18, flag 0x100 = height as is.
             0x4a if t.a2.id().is_none() || t.a2.id() != actors.player() => Flow::Next,
-            0x0a | 0x0b | 0x53 | 0x4a => {
-                let mut who = if op.code == 0x0a { t.a1 } else { t.a2 };
+            // FUN_10057fb0 case 0xb3: with /bellsw off the op ends; on, it is case 0x0a.
+            0xb3 if !actors.bells() => Flow::Next,
+            0x0a | 0x0b | 0x53 | 0x4a | 0xb3 => {
+                let mut who = if matches!(op.code, 0x0a | 0xb3) { t.a1 } else { t.a2 };
                 // Op 0x53 (all.c 67094): the action target nearest our own actor (actor1 with no player).
                 if op.code == 0x53
                     && let Some(a) = &t.action

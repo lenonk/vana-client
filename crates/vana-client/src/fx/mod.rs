@@ -52,6 +52,10 @@ pub trait Actors {
     fn ground_hit(&self, _from: Vec3, _to: Vec3) -> Option<Vec3> {
         None
     }
+    /// /bellsw: scheduler op 0xb3 (the /bell notes) plays as op 0x0a.
+    fn bells(&self) -> bool {
+        false
+    }
     /// The ground projection's cells around a world point, and their paintable faces (client/ground.rs).
     fn decal_cell(&self, _c: Vec3) -> Option<(usize, usize)> {
         None
