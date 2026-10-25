@@ -275,7 +275,8 @@ enum Cmd {
         target: Option<String>,
         #[arg(long, default_value_t = 100)]
         hpp: u8,
-        /// The map window: ZONE,X,Z[,owned] (the player's world x / z).
+        /// The map window: ZONE,X,Z[,owned] (the player's world x / z); ZONE,X,Z,overlay the map overlay;
+        /// ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] the minimap with sample dots under the HUD.
         #[arg(long, allow_hyphen_values = true)]
         map: Option<String>,
         /// Only the "Downloading data ..." indicator at its draw N (from 1).

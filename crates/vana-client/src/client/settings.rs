@@ -23,6 +23,9 @@ pub struct Settings {
     pub stamp_all_lines: bool,
     pub timers: bool,
     pub timers_dock: u32,
+    pub minimap: bool,
+    pub minimap_dock: u32,
+    pub minimap_size: u32,
     pub music: u32,
     pub effects: u32,
     pub retail_aspect: bool,
@@ -45,6 +48,9 @@ impl Settings {
             stamp_all_lines: c.stamp_all_lines,
             timers: c.timers,
             timers_dock: c.timers_dock,
+            minimap: c.minimap,
+            minimap_dock: c.minimap_dock,
+            minimap_size: c.minimap_size,
             // The game's own volumes (Gameplay page, config 10 / 9; the lobby's 0xa8): set by the opener.
             music: 100,
             effects: 100,
@@ -68,6 +74,9 @@ impl Settings {
         c.stamp_all_lines = self.stamp_all_lines;
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
+        c.minimap = self.minimap;
+        c.minimap_dock = self.minimap_dock;
+        c.minimap_size = self.minimap_size;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
     }
@@ -105,6 +114,9 @@ enum Val {
     StampAll,
     Timers,
     TimersDock,
+    Minimap,
+    MinimapDock,
+    MinimapSize,
     Music,
     Effects,
     RetailAspect,
@@ -194,6 +206,9 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
         row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now),
         row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
+        row("Minimap", "The zone map in a corner, centred on you, with what is near; the mouse wheel over it zooms.", Minimap, OFF_ON, Now),
+        row("Minimap Position", "Where the minimap stands: the top right beside the main menu, or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
+        row("Minimap Size", "How big the minimap is.", MinimapSize, &[(0, "Small"), (1, "Medium"), (2, "Large")], Now),
     ];
     match kind {
         Kind::Extras => EXTRAS,
@@ -319,6 +334,9 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines as u32,
             Val::Timers => self.s.timers as u32,
             Val::TimersDock => self.s.timers_dock,
+            Val::Minimap => self.s.minimap as u32,
+            Val::MinimapDock => self.s.minimap_dock,
+            Val::MinimapSize => self.s.minimap_size,
             Val::Music => self.s.music,
             Val::Effects => self.s.effects,
             Val::RetailAspect => self.s.retail_aspect as u32,
@@ -336,6 +354,9 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines = x != 0,
             Val::Timers => self.s.timers = x != 0,
             Val::TimersDock => self.s.timers_dock = x,
+            Val::Minimap => self.s.minimap = x != 0,
+            Val::MinimapDock => self.s.minimap_dock = x,
+            Val::MinimapSize => self.s.minimap_size = x,
             Val::RetailAspect => self.s.retail_aspect = x != 0,
             Val::CursorSize => self.s.cursor_size = x,
             _ => {}
@@ -811,7 +832,21 @@ mod tests {
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.map_overlay && ui.dirty);
-        // The last row, Timers Position (Left / Right / Top): the right dock.
+        // The last row, Minimap Size (Small / Medium / Large): Large; then its place, top left; then the minimap on.
+        ui.key(egui::Key::ArrowUp);
+        assert_eq!(ui.row, 9);
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::Enter);
+        assert_eq!(ui.s.minimap_size, 2);
+        ui.key(egui::Key::ArrowUp);
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::Enter);
+        assert_eq!(ui.s.minimap_dock, 1);
+        ui.key(egui::Key::ArrowUp);
+        ui.key(egui::Key::ArrowLeft);
+        ui.key(egui::Key::Enter);
+        assert!(ui.s.minimap);
+        // Timers Position (Left / Right / Top): the right dock.
         ui.key(egui::Key::ArrowUp);
         assert_eq!(ui.row, 6);
         ui.key(egui::Key::ArrowRight);

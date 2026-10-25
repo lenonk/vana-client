@@ -189,8 +189,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   off by default, built from the Config pages' own sprites (MODLOG "Config: Extras and Settings"). Config-type
   options (resolution, frame limit, ...) go in Settings, not here. Done: the map overlay, the synthesis amount,
   timestamps on every line, timers (recasts, our effects, ours on others and monsters at LSB's lengths, a docked
-  drawer; MODLOG "Timers").
-  - wanted: a minimap (after the map's pan and zoom);
+  drawer; MODLOG "Timers"), the minimap (MODLOG "Minimap").
   - candidates: target distance, party buffs / TP, target HP %, clock, text auto-advance, Find
     across bags; later Battlemod-style filtering, a DPS meter, a skillchain helper.
 - Chat log (user, 2026-10-23: "needs a lot of love"; audit `~/ffxi/lab/research/chat_audit/`): done the server side

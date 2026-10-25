@@ -1992,13 +1992,49 @@ impl Overlay {
         self.clamp();
     }
 
-    /// The box centred on the screen, the image clipped to it at `opacity`, and the player marker.
-    pub fn draw(&mut self, gu: &mut GameUi, pos: (f32, f32), facing: f32, sw: f32, sh: f32, opacity: f32) {
+    /// The image once it is decoded.
+    fn poll(&mut self, gu: &mut GameUi) {
         if let Some(Ok(Some((name, iw, ih, rgba)))) = self.rx.as_ref().map(|r| r.try_recv()) {
             gu.image(&name, iw, ih, rgba);
             self.texture = Some(name);
             self.rx = None;
         }
+    }
+
+    /// Extra, the minimap (client/minimap.rs): the style frame at `rect`, inside it `span` map pixels across centred on
+    /// `pos`, the dots (world x, z, colour, the target drawn larger) and our marker.
+    pub fn draw_mini(&mut self, gu: &mut GameUi, rect: [f32; 4], pos: (f32, f32), facing: f32, span: f32, dots: &[(f32, f32, u32, bool)]) {
+        self.poll(gu);
+        let (Some(region), Some(t)) = (self.region, self.texture.clone()) else { return };
+        const INSET: f32 = 5.0;
+        gu.frame(rect[0], rect[1], rect[2], rect[3]);
+        let inner = [rect[0] + INSET, rect[1] + INSET, rect[2] - 2.0 * INSET, rect[3] - 2.0 * INSET];
+        let (z, s) = (inner[2] / span, super::minimap::px_per_unit(&region));
+        let (cx, cy) = (inner[0] + inner[2] / 2.0, inner[1] + inner[3] / 2.0);
+        let (px, py) = (pos.0 * s, -pos.1 * s);
+        gu.clip(Some(inner));
+        gu.image_rect(&t, cx + (region.ox as f32 - px) * z, cy + (region.oy as f32 - py) * z, 512.0 * z, 512.0 * z, [1.0; 4]);
+        // Squares in the radar's colours (at half strength: the monsters' 0x808080 stays grey on the parchment, where the
+        // compass's added dot fades out) on a dark border, the target larger on a red one.
+        let rgb = |c: u32| [0, 8, 16].map(|sh| ((c >> (16 - sh)) & 0xff) as f32 / 255.0);
+        for &(x, wz, colour, target) in dots {
+            let (dx, dy) = ((x * s - px) * z, (-wz * s - py) * z);
+            if dx.abs() > inner[2] / 2.0 + 8.0 || dy.abs() > inner[3] / 2.0 + 8.0 {
+                continue;
+            }
+            let (d, border) = if target { (6.0, [0.85, 0.1, 0.1, 1.0]) } else { (4.0, [0.0, 0.0, 0.0, 0.85]) };
+            let [r, g, b] = rgb(colour);
+            gu.rect(cx + dx - d / 2.0 - 1.0, cy + dy - d / 2.0 - 1.0, d + 2.0, d + 2.0, border);
+            gu.rect(cx + dx - d / 2.0, cy + dy - d / 2.0, d, d, [r, g, b, 1.0]);
+        }
+        let (sn, cs) = facing.sin_cos();
+        gu.sprite_affine("menu    keytops3", MARKER, cx, cy, [cs, -sn, sn, cs], 0x8080_8080);
+        gu.clip(None);
+    }
+
+    /// The box centred on the screen, the image clipped to it at `opacity`, and the player marker.
+    pub fn draw(&mut self, gu: &mut GameUi, pos: (f32, f32), facing: f32, sw: f32, sh: f32, opacity: f32) {
+        self.poll(gu);
         let Some(region) = self.region else { return };
         let side = (sw.min(sh) * OVERLAY_SIZE).round();
         let rect = [((sw - side) / 2.0).round(), ((sh - side) / 2.0).round(), side, side];

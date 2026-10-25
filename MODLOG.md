@@ -8918,3 +8918,18 @@ interpolates between the hour keys in both clients.
   frame)*, add their own chunks (not under a one-shot, whose status motion layer covers them), the list is sorted by
   region (stable, newer last in a region) so higher regions win, and the blend's old pose takes the kept regions live.
   Not done: FUN_10019ed0 carries the old entry's frame into a status motion's start frame (ours starts at 0).
+
+## Minimap (Extra, 2026-10-25; ours, the add-ons' minimap)
+
+- client/minimap.rs, map::Overlay::draw_mini: the zone map in the style frame (inset 5), north up and centred on us,
+  SPAN map pixels across (48..512, the wheel over it: x 1.25 a notch, saved as config minimap_span); our marker as the
+  map window's (keytops3 159, turned by our facing); the compass radar's entities (radar::shown, radar::colour with the
+  monsters on) as 4-px squares on a dark border at half the radar colour (the compass's added dot vanishes on the
+  parchment; the mod's marker texture is red), the target 6 px on a red border. World to map: x / 5 x |scale|.
+- The map is an Overlay of its own: another zone opens it again, another page (the sub-map key under us) follows.
+  Nothing without a map, a key item or a record (as the map window), in events, under the map window or Conquest.
+- Places (layout pixels): top right (W - 132 - side, 50), left of the main menu column; top left (16, 122, past the
+  status icons as the Timers' left dock). Sizes 128 / 176 / 224. The Timers keep clear: the left dock starts 6 under
+  it, the top dock ends 4 left of it, the right dock's top stays 6 under a large one. Extras rows Minimap, Minimap
+  Position, Minimap Size. Offscreen: topbar-shot --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] with sample dots.
+- Live (Lnxcsfix, 230, map key item 385): top right with the NPCs around the Westgate.

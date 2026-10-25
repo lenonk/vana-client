@@ -466,8 +466,24 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
         println!("wrote {} (map overlay)", out.display());
         return Ok(());
     }
+    // --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN]: the minimap (extra) with sample dots (an NPC, a player, a party member,
+    // the targeted monster), facing north, under the HUD windows.
+    let mut mini = None;
+    if let Some(spec) = map.filter(|s| s.contains(",minimap")) {
+        let f: Vec<&str> = spec.split(',').collect();
+        let num = |i: usize, d: f32| f.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(d);
+        let (zone, x, z) = (num(0, 0.0) as u16, num(1, 0.0), num(2, 0.0));
+        let rect = super::minimap::place(num(4, 0.0) as u32, num(5, 1.0) as u32, sw, 0);
+        let region = super::map::Region::find(gu.map_regions(), zone);
+        let index = crate::dat::DatIndex::open(&cfg.ffxi_dir())?;
+        let mut o = super::map::Overlay::new(zone, region, Some(std::sync::Arc::new(index)));
+        o.wait_image(&mut gu);
+        let dots = [(x + 5.0, z + 3.0, 0x8000_b040, false), (x - 8.0, z + 6.0, 0x8000_40f0, false), (x - 4.0, z - 12.0, 0x8030_60e0, false), (x + 10.0, z - 10.0, 0x8080_8080, true)];
+        o.draw_mini(&mut gu, rect, (x, z), std::f32::consts::FRAC_PI_2, num(6, 160.0), &dots);
+        mini = Some(rect);
+    }
     // --map ZONE,X,Z[,owned]: the map window as the main menu's Map opens it, the player facing north.
-    if let Some(spec) = map {
+    if let Some(spec) = map.filter(|s| !s.contains(",minimap")) {
         let f: Vec<&str> = spec.split(',').collect();
         let num = |i: usize| f.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(0.0);
         let zone = num(0) as u16;
@@ -493,7 +509,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
     // "timers:DOCK[:SLIDE[:FOLDED]]": the Timers window's sample, under the party / target windows and menus.
     for spec in window.unwrap_or_default().split(',').filter_map(|w| w.strip_prefix("timers:")) {
         let acts = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok().and_then(|i| crate::dat::actions::Actions::load(&i).ok());
-        super::timers::shot(&mut gu, acts.as_ref(), spec, sw, sh);
+        super::timers::shot(&mut gu, acts.as_ref(), spec, sw, sh, mini);
     }
     let hud = if lobby { Vec::new() } else { gu.hud(sw, sh, &st) };
     for t in hud {

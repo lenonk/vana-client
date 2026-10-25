@@ -80,6 +80,12 @@ pub struct Config {
     pub timers_dock: u32,
     pub timers_out: bool,
     pub timers_folded: u8,
+    /// Extra (the minimap add-ons): the minimap, its place (0 top right, 1 top left), size (0..2) and the map pixels
+    /// across (the wheel's zoom).
+    pub minimap: bool,
+    pub minimap_dock: u32,
+    pub minimap_size: u32,
+    pub minimap_span: f32,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -175,6 +181,10 @@ impl Default for Config {
             timers_dock: 0,
             timers_out: true,
             timers_folded: 0,
+            minimap: false,
+            minimap_dock: 0,
+            minimap_size: 1,
+            minimap_span: 160.0,
             cursor_size: 0,
             mods: Vec::new(),
             tool: Default::default(),

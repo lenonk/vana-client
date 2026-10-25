@@ -874,25 +874,29 @@ pub struct Place {
 }
 
 /// Where the window goes beside the retail windows (layout pixels): `icons` the status icon rows, `log_top` the log's
-/// top, `foot` the top of the party / target / alliance windows on the right.
-pub fn place(dock: Dock, sw: f32, sh: f32, icons: usize, log_top: f32, foot: f32) -> Place {
+/// top, `foot` the top of the party / target / alliance windows on the right, `mini` the minimap's rect.
+pub fn place(dock: Dock, sw: f32, sh: f32, icons: usize, log_top: f32, foot: f32, mini: Option<[f32; 4]>) -> Place {
     // The status icons: 26-px rows from (142, 48).
     let icons_foot = if icons == 0 { 0.0 } else { 48.0 + 2.0 + 26.0 * icons.div_ceil(9) as f32 + 4.0 };
+    // The minimap's foot where it stands over the column [x0, x1).
+    let mini_foot = |x0: f32, x1: f32| mini.filter(|m| m[0] < x1 && m[0] + m[2] > x0).map_or(0.0, |m| m[1] + m[3] + 6.0);
     match dock {
         Dock::Left => {
             // Under the cast bar (16, 94) + 24 and the gauges, past the icons when they reach over; above the compass
-            // (its centre 42 above the log, 50 each way).
-            let top = 122f32.max(if 16.0 + WIDTH > 142.0 { icons_foot } else { 0.0 });
+            // (its centre 42 above the log, 50 each way); under a minimap there.
+            let top = 122f32.max(if 16.0 + WIDTH > 142.0 { icons_foot } else { 0.0 }).max(mini_foot(16.0, 16.0 + WIDTH));
             Place { dock, x: 16.0, y: top, max_h: (log_top - 96.0 - top).max(0.0) }
         }
         Dock::Right => {
-            // Above the party / target / alliance windows, below the main menu (W - 128, 48) 112 x 202.
-            let foot = foot - 4.0;
-            Place { dock, x: sw - 16.0 - WIDTH, y: foot, max_h: (foot - 252.0).max(0.0) }
+            // Above the party / target / alliance windows, below the main menu (W - 128, 48) 112 x 202 and a minimap.
+            let (foot, x) = (foot - 4.0, sw - 16.0 - WIDTH);
+            Place { dock, x, y: foot, max_h: (foot - 252f32.max(mini_foot(x, x + WIDTH))).max(0.0) }
         }
         Dock::Top => {
-            // Centred, clear of the status icons (to x 376) and the main menu column (from W - 128).
-            let x = ((sw - WIDTH) / 2.0).max(380.0).min(sw - 132.0 - WIDTH);
+            // Centred, clear of the status icons (to x 376), the main menu column (from W - 128) and a minimap at the
+            // top right.
+            let right = mini.filter(|m| m[1] < 100.0 && m[0] > sw / 2.0).map_or(sw - 132.0, |m| m[0] - 4.0);
+            let x = ((sw - WIDTH) / 2.0).max(380.0).min(right - WIDTH);
             let top = 50.0;
             Place { dock, x, y: top, max_h: ((sh * 0.45).min(log_top - 4.0) - top).max(0.0) }
         }
@@ -1096,7 +1100,7 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32, sh: f32, foot: f32) {
         Some([lx, ly, lw, _]) if lx + lw > sw - 16.0 - WIDTH => foot.min(ly),
         _ => foot,
     };
-    let place = place(Dock::of(w.timers_dock), sw, sh, icon_count(w), log_top, foot);
+    let place = place(Dock::of(w.timers_dock), sw, sh, icon_count(w), log_top, foot, w.minimap_rect);
     let t = 40.0 - (w.started.elapsed().as_secs_f32() * 60.0) % 40.0;
     let pulse = if t <= 20.0 { t } else { 40.0 - t } * 0.05;
     w.timers.frame = Some(Prepared { secs, place, pulse, small: w.game.get(0x99) & 4 != 0 });
@@ -1138,7 +1142,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: Option<(f32, f32)>, clicked: bool,
 }
 
 /// topbar-shot's sample (`--window timers:DOCK[:SLIDE[:FOLDED]]`): spell and ability icons from the action table.
-pub fn shot(gu: &mut GameUi, acts: Option<&crate::dat::actions::Actions>, spec: &str, sw: f32, sh: f32) {
+pub fn shot(gu: &mut GameUi, acts: Option<&crate::dat::actions::Actions>, spec: &str, sw: f32, sh: f32, mini: Option<[f32; 4]>) {
     let f: Vec<&str> = spec.split(':').collect();
     let dock = Dock::of(f.first().and_then(|d| d.parse().ok()).unwrap_or(0));
     let slide = f.get(1).and_then(|d| d.parse().ok()).unwrap_or(1.0);
@@ -1179,7 +1183,7 @@ pub fn shot(gu: &mut GameUi, acts: Option<&crate::dat::actions::Actions>, spec: 
     ];
     let log_top = sh - 16.0 - 8.0 * 16.0 - 14.0;
     let foot = sh - 16.0 - 34.0 - 46.0;
-    let p = place(dock, sw, sh, 4, log_top, foot);
+    let p = place(dock, sw, sh, 4, log_top, foot, mini);
     draw_panel(gu, &secs, folded, &p, slide, sw, 0.5, false);
 }
 
@@ -1235,12 +1239,21 @@ mod tests {
 
     #[test]
     fn places() {
-        let p = place(Dock::Left, 1280.0, 800.0, 3, 650.0, 600.0);
+        let p = place(Dock::Left, 1280.0, 800.0, 3, 650.0, 600.0, None);
         assert_eq!((p.x, p.y, p.max_h), (16.0, 122.0, 650.0 - 96.0 - 122.0));
         // Three icon rows reach past y 122.
-        let p = place(Dock::Left, 1280.0, 800.0, 20, 650.0, 600.0);
+        let p = place(Dock::Left, 1280.0, 800.0, 20, 650.0, 600.0, None);
         assert_eq!(p.y, 48.0 + 2.0 + 78.0 + 4.0);
-        let p = place(Dock::Right, 1280.0, 800.0, 0, 650.0, 600.0);
+        let p = place(Dock::Right, 1280.0, 800.0, 0, 650.0, 600.0, None);
         assert_eq!((p.x, p.y, p.max_h), (1280.0 - 16.0 - WIDTH, 596.0, 596.0 - 252.0));
+        // A minimap at the top left: the left dock starts under it; at the top right the top dock keeps left of it.
+        let mini = crate::client::minimap::place(1, 1, 1280.0, 0);
+        assert_eq!(place(Dock::Left, 1280.0, 800.0, 0, 650.0, 600.0, Some(mini)).y, mini[1] + mini[3] + 6.0);
+        let mini = crate::client::minimap::place(0, 2, 1280.0, 0);
+        let p = place(Dock::Top, 1280.0, 800.0, 0, 650.0, 600.0, Some(mini));
+        assert!(p.x + WIDTH <= mini[0] - 4.0, "{}", p.x);
+        // A large one reaches below the main menu: the right dock stops above its foot.
+        let p = place(Dock::Right, 1280.0, 800.0, 0, 650.0, 600.0, Some(mini));
+        assert_eq!(p.max_h, 596.0 - (mini[1] + mini[3] + 6.0));
     }
 }

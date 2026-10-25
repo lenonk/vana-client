@@ -100,6 +100,7 @@ mod timers;
 mod durations;
 mod voyage;
 mod zonefade;
+mod minimap;
 
 /// A fresh voyage state for the fx tests.
 #[cfg(test)]
@@ -1975,6 +1976,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for l in page_lines {
         world.chat.push(l);
     }
+    minimap::prepare(gu, world, sw);
     let foot = timers_foot(gu, world, sw, sh);
     timers::prepare(gu, world, sw, sh, foot);
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
@@ -2125,6 +2127,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
     }
+    minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
     timers::draw(gu, &mut world.timers, sw);
     let slots = gu.hud(sw, sh, &st);
 
@@ -2208,6 +2211,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     blockers.extend(world.overlay.as_ref().filter(|o| o.has_map()).map(|o| o.rect));
+    blockers.extend(world.minimap_rect);
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
@@ -4467,6 +4471,15 @@ struct World {
     recasts_seen: bool,
     /// Extras: the Timers window (on, dock) and its state.
     extra_timers: bool,
+    /// Extra: the minimap (client/minimap.rs), its map, its rect this frame, its config and an unsaved zoom.
+    extra_minimap: bool,
+    minimap: Option<map::Overlay>,
+    minimap_rect: Option<[f32; 4]>,
+    minimap_frame: Option<minimap::Frame>,
+    minimap_dock: u32,
+    minimap_size: u32,
+    minimap_span: f32,
+    minimap_dirty: bool,
     timers_dock: u32,
     timers: timers::Timers,
     /// The ship voyage (kept across zone changes, as retail's globals).
@@ -5002,6 +5015,7 @@ impl App {
             w.stamp_all_lines = self.cfg.stamp_all_lines;
             w.extra_timers = self.cfg.timers;
             w.timers_dock = self.cfg.timers_dock;
+            (w.extra_minimap, w.minimap_dock, w.minimap_size) = (self.cfg.minimap, self.cfg.minimap_dock, self.cfg.minimap_size);
         }
         // Applied at the next frame start: during the UI pass the window is out of self.gfx.
         self.window_dirty = true;
@@ -5792,6 +5806,14 @@ impl App {
                             ability_recast: HashMap::new(),
                             ability_calc: HashMap::new(),
                             extra_timers: self.cfg.timers,
+                            extra_minimap: self.cfg.minimap,
+                            minimap: None,
+                            minimap_rect: None,
+                            minimap_frame: None,
+                            minimap_dock: self.cfg.minimap_dock,
+                            minimap_size: self.cfg.minimap_size,
+                            minimap_span: self.cfg.minimap_span,
+                            minimap_dirty: false,
                             timers_dock: self.cfg.timers_dock,
                             timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
                             voyage: Default::default(),
@@ -8852,6 +8874,12 @@ impl App {
                         log::warn!("config: {e:#}");
                     }
                 }
+                if std::mem::take(&mut world.minimap_dirty) {
+                    self.cfg.minimap_span = world.minimap_span;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
                 if std::mem::take(&mut world.timers.dirty) {
                     (self.cfg.timers_out, self.cfg.timers_folded) = (world.timers.out, world.timers.folded);
                     if let Err(e) = self.cfg.save() {
@@ -10510,6 +10538,9 @@ impl ApplicationHandler for App {
                         && inside(&o.rect, p)
                     {
                         o.zoom_at(p, d);
+                        return;
+                    }
+                    if at.is_some_and(|p| minimap::wheel(world, p, d)) {
                         return;
                     }
                     // A focused list takes the wheel (FUN_10125360: 0x16 / 0x17 to the focus window).
