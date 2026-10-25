@@ -323,6 +323,16 @@ impl Library {
         self.tree.of_kind(kind::IMG).find(|&i| tail(&format!("{:<16}", self.img_name(i))).as_ref() == Some(&want))
     }
 
+    /// FUN_1001d940: an IMG named `cubemap ...` becomes a cube texture (only face -Z filled).
+    pub fn is_cubemap(&self, i: usize) -> bool {
+        self.img_name(i).starts_with("cubemap ")
+    }
+
+    /// The IMG whose 16-byte name is `name` (spaces trimmed).
+    pub fn img_named(&self, name: &str) -> Option<usize> {
+        self.tree.of_kind(kind::IMG).find(|&i| self.img_name(i).trim_end() == name)
+    }
+
     fn img_name(&self, i: usize) -> String {
         self.data(i).get(1..17).map(|b| tex_name(&String::from_utf8_lossy(b))).unwrap_or_default()
     }

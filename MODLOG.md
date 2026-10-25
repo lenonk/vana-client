@@ -7810,3 +7810,26 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Not done: DistMorph (13 files; key mesh 0 only, geometry shifted, UVs unshifted, raw corner colours); the D3m
   loader's format-7 fallback (FUN_1003fee0; 4 meshes parse 6 bytes off).
 
+## Specular effect meshes: CMoD3mSpecularElem (2026-10-25; spec ~/ffxi/lab/research/fx_specular_spec.md)
+
+- A D3m with op-1 flag 0x1000000 and neither 0x200000 nor 0x100000 (FUN_1004e8d0 c:57183; 1104 generators in 554
+  effect files, 1391 in zone DATs): its prep (FUN_10041160) turns lighting (flag 16) off and sets flag 25 (no fog)
+  every frame; the draw (FUN_100412b0) adds a specular stage. An MMB in the D3m's place draws the plain MMB path.
+- Op 0x55 (IsType 7): angles a0..a2 (+0x19c..), a TexInfo 4cc (the IMG of that 4cc; none or a miss: DAT 0's `cubemap
+  spec`), the specular colour C (+0x1ac, file RGBA), bits @0x24 & 7; a `!sp` 4cc picks CLAMP. Emission 0x59..0x5f take
+  their bases from these fields; per-frame 0x35..0x37 key the angles, 0x38..0x3b the colour (life keys), 0x4a..0x4d the
+  colour by the day (ours wrote the element colour with 0x4a..0x4d: wrong for the DAT 161 sea, fixed); keyed bytes
+  store 0 below 0 (FUN_1004e220).
+- Every IMG named `cubemap ...` is a cube texture with only face -Z (layer 5) filled (FUN_1001d940, FUN_10039e50).
+- The stage: the camera-space normal (NORMALIZENORMALS) through T = Rz(-a2) Ry(-(a1 + pi/2)) Rx(-a0) (bit 0; times the
+  camera rotation with bit 1), else Ry(-pi/2); COUNT3, no scale or bias; the texel tinted when C != 0x80808080: 2 x T x C
+  over a 2D image (C's rgb = element x specular / 128 when bit 0 is clear), black over a cube (its tinted copy samples
+  face -Z with 2D coordinates). Groups (TSS 0x103529c8): rgb = sat(2 (2 T0 D) F + a1 S'), a = a1 (= 4 a0 F.a, or a0 for
+  mode 0x64 / flag 0x10000000); no groups (0x103528f0): rgb = sat(2 D F + a0 S'); the untextured tail: no specular. No
+  mode-0x44 alpha rule, no 'I' blend, no fog.
+- Ours: words SPEC_ANG / SPEC_COL / SPEC_BITS (44..48), ElemCpu::spec (the image, cube, clamp); the update pass writes
+  the 3x3 matrix and the gain into out words 32..43 for DK_MESH elements of the class; vs_mesh_spec / fs_spec with a
+  group 2 (2D, cube, WRAP or CLAMP sampler), per run variants 10 / 11 / 12. Seen offscreen: weapon skill 164 (3564
+  toad/hm00): the golden hammer with its sheen; not compared with retail. 3445 gob_/bm00 (no texture groups) runs as
+  the class.
+

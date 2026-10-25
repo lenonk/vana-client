@@ -84,8 +84,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let op1 = stream.first().filter(|o| o.code == 0x01)?;
     let mut e = Elem::default();
     let mut children = Vec::new();
-    let flags = op1.u32(1);
     let res_kind = op1.byte(0x21);
+    // FUN_1004e8d0 c:57183: a D3m with 0x1000000 and neither 0x200000 nor 0x100000 is a CMoD3mSpecularElem, whose prep
+    // (FUN_10041160) turns lighting (flag 16) off and fog (flag 25) on-skip every frame.
+    let spec = remap(res_kind) == kind::D3M && op1.u32(1) & 0x30_0000 == 0 && op1.u32(1) & 0x100_0000 != 0;
+    let flags = if spec { (op1.u32(1) & !0x1_0000) | 0x200_0000 } else { op1.u32(1) };
+    let mut spec_on = false;
+    let mut spec_tex = None;
     let name = op1.u32(3);
     // Link step FUN_10047270 / FUN_100485c0: D3m kinds fall back to an MMB of the same name.
     let draw = if res_kind == 0x22 && inst.flags & 0x2000_0000 == 0 {
@@ -113,7 +118,11 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 // DistModel (0x100000, FUN_10043320); an MMB in its place draws nothing (+0x179).
                 Some((r, true)) if flags & 0x10_0000 != 0 => reg.mesh(r).map(Draw::DistModel).unwrap_or(Draw::None),
                 Some(_) if flags & 0x10_0000 != 0 => Draw::None,
-                Some((r, _)) => reg.mesh(r).map(Draw::Mesh).unwrap_or(Draw::None),
+                Some((r, d3m)) => {
+                    // The specular stage needs the D3m; an MMB in its place draws the plain MMB path.
+                    spec_on = spec && d3m;
+                    reg.mesh(r).map(Draw::Mesh).unwrap_or(Draw::None)
+                }
                 None => {
                     reg.miss(lib, from, name, res_kind);
                     return None;
@@ -528,6 +537,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     0x7c => Some(e.0[w::L_INT]),
                     0x7d => Some(e.0[w::L_RANGE]),
                     0x38 => Some((1.0f32 / 120.0).to_bits()),
+                    // The specular fields' bases: angles / pi, colour bytes R, G, B, A / 255.
+                    0x59..=0x5b if spec_on => Some((e.f(w::SPEC_ANG + (op.code - 0x59) as usize) / PI).to_bits()),
+                    0x5c..=0x5f if spec_on => Some((e.0[w::SPEC_COL].to_le_bytes()[[2, 1, 0, 3][(op.code - 0x5c) as usize]] as f32 / 255.0).to_bits()),
                     _ => None,
                 };
                 if let Some(b) = base {
@@ -618,6 +630,22 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::DRAG, drag);
             }
             // Ground snap, point lists, paths, sound, class-specific: not handled yet.
+            // FUN_1004e8d0 0x10051835 (IsType 7): angles f32 @4..@0xc, a TexInfo 4cc @0x10 (an IMG of that 4cc; none or
+            // a miss: DAT 0's `cubemap spec`), the specular colour @0x20 (file RGBA), bits @0x24 & 7; `!sp` names
+            // CLAMP. Words @0x18 / @0x1c have no reader.
+            0x55 if spec_on => {
+                e.set_v3(w::SPEC_ANG, v3(1));
+                let [r, g, b, a] = op.u32(8).to_le_bytes();
+                e.0[w::SPEC_COL] = u32::from_le_bytes([b, g, r, a]);
+                let name = op.u32(4);
+                let hit = if name != 0 { reg.resolve(lib, from, kind::IMG, name) } else { None };
+                let clamp = hit.is_some() && name.to_le_bytes()[..3] == *b"!sp";
+                let img = hit.or_else(|| reg.global.and_then(|g| reg.libs[g].img_named("cubemap spec").map(|i| (g, i))));
+                let cube = img.is_some_and(|(l, i)| reg.libs[l].is_cubemap(i));
+                spec_tex = img.and_then(|(l, i)| reg.libs[l].texture_at(i).map(|t| crate::fx::SpecTex { tex: (l, t), cube, clamp }));
+                e.0[w::SPEC_BITS] = 32 | (op.u32(9) & 7) | if clamp { 8 } else { 0 } | if cube { 16 } else { 0 };
+            }
+            0x55 => {}
             // FUN_1004e8d0 0x10051b5b (any class): ring radii f32 @4.., colours @0x14.. (file RGBA), segments byte
             // @0x24, rings byte @0x25 + 2 (at most 4).
             0x3a => {
@@ -660,6 +688,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     e.0[w::PARENT] = frame;
     let cpu = ElemCpu {
         quake: None,
+        spec: spec_tex,
         inst: usize::MAX,
         serial: 0,
         life,

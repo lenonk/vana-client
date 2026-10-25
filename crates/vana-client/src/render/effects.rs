@@ -191,7 +191,8 @@ fn blend_state(class: usize) -> wgpu::BlendState {
 
 struct GpuMesh {
     vb: wgpu::Buffer,
-    groups: Vec<(Option<(usize, usize)>, std::ops::Range<u32>)>,
+    /// Texture, vertices, and whether the D3m named a texture for the run (the specular variants).
+    groups: Vec<(Option<(usize, usize)>, std::ops::Range<u32>, bool)>,
     mmb: bool,
     dist: Vec<std::ops::Range<u32>>,
 }
@@ -215,6 +216,12 @@ pub struct EffectsGpu {
     ring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     distmodel_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     distring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    spec_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    spec_layout: wgpu::BindGroupLayout,
+    /// Specular images by (library, texture, cube, clamp), and the black stand-ins of the other dimension.
+    spec_groups: HashMap<((usize, usize), bool, bool), wgpu::BindGroup>,
+    spec_black: (wgpu::TextureView, wgpu::TextureView),
+    clamp_sampler: wgpu::Sampler,
     /// The scene copy with a Repeat sampler (DistModel's stage address WRAP).
     copy_wrap: Option<wgpu::BindGroup>,
     wrap_sampler: wgpu::Sampler,
@@ -372,6 +379,30 @@ impl EffectsGpu {
         let mut ring_pipes = HashMap::new();
         let mut distmodel_pipes = HashMap::new();
         let mut distring_pipes = HashMap::new();
+        // CMoD3mSpecularElem: group 2 the specular image (2D, cube) and its sampler.
+        let spec_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("effects specular"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry { binding: 0, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::D2, multisampled: false }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 1, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Texture { sample_type: wgpu::TextureSampleType::Float { filterable: true }, view_dimension: wgpu::TextureViewDimension::Cube, multisampled: false }, count: None },
+                wgpu::BindGroupLayoutEntry { binding: 2, visibility: wgpu::ShaderStages::FRAGMENT, ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering), count: None },
+            ],
+        });
+        let spec_pipe_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("effects specular"), bind_group_layouts: &[Some(&draw_layout), Some(&tex_layout), Some(&spec_layout)], immediate_size: 0 });
+        let spec_pipe = |class: usize, zwrite: bool| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("effects specular"),
+                layout: Some(&spec_pipe_layout),
+                vertex: wgpu::VertexState { module: &dmod, entry_point: Some("vs_mesh_spec"), compilation_options: Default::default(), buffers: &vbuf },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(zwrite), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: Default::default(), bias: Default::default() }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState { module: &dmod, entry_point: Some("fs_spec"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format, blend: Some(blend_state(class)), write_mask: wgpu::ColorWrites::COLOR })] }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let mut spec_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
@@ -380,6 +411,7 @@ impl EffectsGpu {
                 ring_pipes.insert((class, zwrite), pipe("vs_ring", &[], class, zwrite));
                 distmodel_pipes.insert((class, zwrite), pipe("vs_distmodel", &vbuf, class, zwrite));
                 distring_pipes.insert((class, zwrite), pipe("vs_distring", &[], class, zwrite));
+                spec_pipes.insert((class, zwrite), spec_pipe(class, zwrite));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -413,6 +445,14 @@ impl EffectsGpu {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let clamp_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("effects specular, clamped"),
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
+        let spec_black_2d = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, 1, 1, vec![0, 0, 0, 0]), false);
+        let spec_black_cube = Self::cube_view(gpu, 1, 1, None);
         let white_view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, 1, 1, vec![255; 4]), false);
         let white = Self::tex_group(device, &tex_layout, &sampler, &white_view);
         let table = |label: &str| (buf(label, 1024, U::STORAGE | U::COPY_DST), 1024usize);
@@ -427,6 +467,11 @@ impl EffectsGpu {
             ring_pipes,
             distmodel_pipes,
             distring_pipes,
+            spec_pipes,
+            spec_layout,
+            spec_groups: HashMap::new(),
+            spec_black: (spec_black_2d, spec_black_cube),
+            clamp_sampler,
             copy_wrap: None,
             wrap_sampler,
             dist_pipes,
@@ -475,6 +520,56 @@ impl EffectsGpu {
         let view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, image.width, image.height, image.rgba.clone()), false);
         let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.sampler, &view);
         self.dmgnum = Some((g, dmgnum_glyphs(lib, image.width as f32, image.height as f32)));
+    }
+
+    /// FUN_10039e50 for a `cubemap ` image: every face black (rgb 0), face -Z (layer 5) the image.
+    fn cube_view(gpu: &Gpu, w: u32, h: u32, rgba: Option<&[u8]>) -> wgpu::TextureView {
+        let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("effects cube"),
+            size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 6 },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let black = vec![0u8; (w * h * 4) as usize];
+        for layer in 0..6 {
+            let data = if layer == 5 { rgba.unwrap_or(&black) } else { &black };
+            gpu.queue.write_texture(
+                wgpu::TexelCopyTextureInfo { texture: &tex, mip_level: 0, origin: wgpu::Origin3d { x: 0, y: 0, z: layer }, aspect: wgpu::TextureAspect::All },
+                data,
+                wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(w * 4), rows_per_image: Some(h) },
+                wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
+            );
+        }
+        tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::Cube), ..Default::default() })
+    }
+
+    /// A specular element's group 2: its image as 2D or cube (the other black), WRAP or CLAMP.
+    fn spec_group(&mut self, gpu: &Gpu, fx: &Effects, s: crate::fx::SpecTex) {
+        let key = (s.tex, s.cube, s.clamp);
+        if self.spec_groups.contains_key(&key) {
+            return;
+        }
+        let t = &fx.reg.libs[s.tex.0].textures[s.tex.1];
+        let (d2, cube) = if s.cube {
+            (None, Some(Self::cube_view(gpu, t.width, t.height, Some(&t.rgba))))
+        } else {
+            (Some(super::upload_texture(gpu, t, false)), None)
+        };
+        let sampler = if s.clamp { &self.clamp_sampler } else { &self.sampler };
+        let g = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("effects specular"),
+            layout: &self.spec_layout,
+            entries: &[
+                wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(d2.as_ref().unwrap_or(&self.spec_black.0)) },
+                wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::TextureView(cube.as_ref().unwrap_or(&self.spec_black.1)) },
+                wgpu::BindGroupEntry { binding: 2, resource: wgpu::BindingResource::Sampler(sampler) },
+            ],
+        });
+        self.spec_groups.insert(key, g);
     }
 
     fn tex_group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, view: &wgpu::TextureView) -> wgpu::BindGroup {
@@ -698,7 +793,7 @@ impl EffectsGpu {
             return;
         }
         let vb = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("effect mesh"), contents: bytemuck::cast_slice(&m.verts), usage: wgpu::BufferUsages::VERTEX });
-        let groups: Vec<_> = m.groups.iter().map(|g| (g.texture, g.range.clone())).collect();
+        let groups: Vec<_> = m.groups.iter().map(|g| (g.texture, g.range.clone(), g.name.is_some())).collect();
         for t in groups.iter().filter_map(|g| g.0) {
             self.texture(gpu, fx, t);
         }
@@ -736,6 +831,11 @@ impl EffectsGpu {
             let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &view);
             self.copy_wrap = Some(Self::tex_group(&gpu.device, &self.tex_layout, &self.wrap_sampler, &view));
             self.scene_copy = Some((c, g));
+        }
+        for &e in &order {
+            if let Some(sp) = fx.elems[e as usize].as_ref().and_then(|c| c.spec) {
+                self.spec_group(gpu, fx, sp);
+            }
         }
         let Some(group) = self.draw_group.as_ref() else { return };
         let (color, depth, size) = target;
@@ -843,6 +943,25 @@ impl EffectsGpu {
                         pass.draw(r.clone(), base..base + 1);
                     }
                 }
+                // CMoD3mSpecularElem: one pass with the specular stage; no 'I' blend, per-run variants (FUN_100412b0).
+                Draw::Mesh(id) if c.spec.is_some() && self.meshes.get(id as usize).is_some_and(|m| m.as_ref().is_some_and(|m| !m.mmb)) => {
+                    let s = c.spec.unwrap();
+                    let (Some(Some(m)), Some(sg)) = (self.meshes.get(id as usize), self.spec_groups.get(&(s.tex, s.cube, s.clamp))) else { continue };
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    let key = (false, class + 32, c.flags & 0x1000 != 0);
+                    if bound != Some(key) {
+                        pass.set_pipeline(&self.spec_pipes[&(class, key.2)]);
+                        bound = Some(key);
+                    }
+                    pass.set_bind_group(2, sg, &[]);
+                    pass.set_vertex_buffer(0, m.vb.slice(..));
+                    let grouped = m.groups.iter().any(|g| g.2);
+                    for (tex, range, named) in &m.groups {
+                        let variant = if !grouped { 11 } else if *named { 10 } else { 12 };
+                        pass.set_bind_group(1, tex.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
+                        pass.draw(range.clone(), base + variant..base + variant + 1);
+                    }
+                }
                 Draw::Mesh(id) => {
                     let Some(Some(m)) = self.meshes.get(id as usize) else { continue };
                     class = blend_class(c.blend, !m.mmb).unwrap_or(class);
@@ -852,7 +971,7 @@ impl EffectsGpu {
                         bound = Some(key);
                     }
                     pass.set_vertex_buffer(0, m.vb.slice(..));
-                    for (tex, range) in &m.groups {
+                    for (tex, range, _) in &m.groups {
                         let variant = if m.mmb { 2 } else { 0 } + tex.is_none() as u32;
                         pass.set_bind_group(1, tex.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
                         pass.draw(range.clone(), base + variant..base + variant + 1);

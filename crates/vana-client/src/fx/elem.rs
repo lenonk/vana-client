@@ -61,6 +61,11 @@ pub mod w {
     pub const RING_R: usize = 44;
     pub const RING_C: usize = 48;
     pub const RING_SR: usize = 52;
+    /// CMoD3mSpecularElem (op 0x55): angles +0x19c..+0x1a4, the specular colour +0x1ac (D3DCOLOR), and bits:
+    /// 0..2 = +0x198 bits 0..2, 3 CLAMP (`!sp`), 4 a cube image, 5 the specular stage on (a D3m of the class).
+    pub const SPEC_ANG: usize = 44;
+    pub const SPEC_COL: usize = 47;
+    pub const SPEC_BITS: usize = 48;
     /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
     pub const GROUND: usize = 54;
     pub const SLOTS: usize = 64;
@@ -271,6 +276,9 @@ pub fn wgsl_consts() -> String {
         ("E_RING_R", w::RING_R),
         ("E_RING_C", w::RING_C),
         ("E_RING_SR", w::RING_SR),
+        ("E_SPEC_ANG", w::SPEC_ANG),
+        ("E_SPEC_COL", w::SPEC_COL),
+        ("E_SPEC_BITS", w::SPEC_BITS),
         ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),

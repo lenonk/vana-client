@@ -181,6 +181,8 @@ pub struct Frame {
 pub struct ElemCpu {
     /// Element update op 0x5f's inputs (camera shake, rumble), evaluated on the CPU.
     pub quake: Option<Quake>,
+    /// CMoD3mSpecularElem's specular image.
+    pub spec: Option<SpecTex>,
     pub inst: usize,
     pub serial: u32,
     pub life: f32,
@@ -387,6 +389,15 @@ pub struct Registry {
     missed: HashSet<(usize, u32)>,
     /// fx-sweep's record of what runs skipped or could not resolve (off in the client).
     pub audit: Option<Audit>,
+}
+
+/// CMoD3mSpecularElem's specular image (op 0x55, else DAT 0's `cubemap spec`): (library, texture index), a cube
+/// (face -Z only), CLAMP addressing (a `!sp` 4cc).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpecTex {
+    pub tex: (usize, usize),
+    pub cube: bool,
+    pub clamp: bool,
 }
 
 /// Element update op 0x5f (FUN_1004a980 0x1004c0d9): the slot's key and sampler flags, the player factor (op 0x82),

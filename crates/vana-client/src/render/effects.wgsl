@@ -88,6 +88,12 @@ fn set_cb(b: u32, k: u32, v: u32) {
 }
 // ftol of key * 255 into a byte (retail truncates and keeps the low byte).
 fn to_byte(v: f32) -> u32 { return u32(i32(v * 255.0)) & 0xffu; }
+// FUN_1004e220: negative values store 0, larger ones wrap.
+fn pos_byte(v: f32) -> u32 { let x = v * 255.0; if (x < 0.0) { return 0u; } return u32(x) & 0xffu; }
+fn set_sb(b: u32, k: u32, v: u32) {
+    let sh = 8u * k;
+    el[b + E_SPEC_COL] = (el[b + E_SPEC_COL] & ~(0xffu << sh)) | ((v & 0xffu) << sh);
+}
 
 // FUN_10053550 (linear, x clamped) / FUN_100537f0 (eased) over keyframe `id`.
 fn key_sample(id: u32, x_in: f32, eased: bool) -> f32 {
@@ -425,10 +431,11 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             case 0x3eu: { set_cb(b, 0u, to_byte(key_g(b, s))); }
             case 0x3fu: { set_ef(b, E_FADE, ef(b, E_FADE) * key_rep(b, s)); }
             case 0x40u, 0x41u, 0x42u: { set_ef(b, E_SCALE + code - 0x40u, key_g(b, s)); }
-            case 0x4au: { set_cb(b, 2u, to_byte(key_g(b, s))); }
-            case 0x4bu: { set_cb(b, 1u, to_byte(key_g(b, s))); }
-            case 0x4cu: { set_cb(b, 0u, to_byte(key_g(b, s))); }
-            case 0x4du: { set_cb(b, 3u, to_byte(key_g(b, s))); }
+            // The specular fields (+0x19c.., +0x1ac; no IsType check in retail, ours meshes only): angles from the life
+            // keys, colour bytes R, G, B, A from the life keys (0x38..0x3b) or the day (0x4a..0x4d).
+            case 0x35u, 0x36u, 0x37u: { if (el[b + E_KIND] == DK_MESH) { set_ef(b, E_SPEC_ANG + code - 0x35u, select(0.0, half_turns(key_t(b, s, t)), sl(b, s) != NONE)); } }
+            case 0x38u, 0x39u, 0x3au, 0x3bu: { if (el[b + E_KIND] == DK_MESH) { set_sb(b, array<u32, 4>(2u, 1u, 0u, 3u)[code - 0x38u], pos_byte(key_t(b, s, t))); } }
+            case 0x4au, 0x4bu, 0x4cu, 0x4du: { if (el[b + E_KIND] == DK_MESH) { set_sb(b, array<u32, 4>(2u, 1u, 0u, 3u)[code - 0x4au], pos_byte(key_g(b, s))); } }
             case 0x50u: { if (parent != NONE) { set_ef(b, E_FADE, ef(b, E_FADE) * slot_f(parent, S_WEATHER)); } }
             // FUN_10046c00 / FUN_1003d0d0: rot += wrap(fmod(key, 2) pi) dt, wrapped again.
             case 0x56u, 0x57u, 0x58u: { set_ef(b, E_ROT + code - 0x56u, wrap_pi(ef(b, E_ROT + code - 0x56u) + half_turns(key_n(b, s, t)) * dt)); }
@@ -605,6 +612,39 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             set_ef(b, E_MORPH_PREV + q, ef(b, E_MORPH_W + q));
         }
     }
+    // CMoD3mSpecularElem (FUN_100412b0): the specular stage's texture matrix (bit 0: Rz(-a2) Ry(-(a1 + pi/2)) Rx(-a0),
+    // times the camera rotation with bit 1; else Ry(-pi/2)) and its gain: the colour C (bit 0 clear: rgb = element x
+    // specular / 128 per byte, wrapping) as 2 C over a 2D image, 1 when C is 0x80808080, 0 over a cube (its tinted copy
+    // samples face -Z with 2D coordinates: black).
+    if (kind == DK_MESH && (el[b + E_SPEC_BITS] & 32u) != 0u) {
+        let sb = el[b + E_SPEC_BITS];
+        var ms = rot_y(-1.5707964);
+        if ((sb & 1u) != 0u) {
+            let a = ev3(b, E_SPEC_ANG);
+            ms = euler(vec3<f32>(-a.x, -(a.y + 1.5707964), -a.z));
+            if ((sb & 2u) != 0u) { ms = mat3x3<f32>(p.view_rot[0].xyz, p.view_rot[1].xyz, p.view_rot[2].xyz) * ms; }
+        }
+        var c = el[b + E_SPEC_COL];
+        if ((sb & 1u) == 0u) {
+            var m = c & 0xff000000u;
+            for (var k = 0u; k < 3u; k = k + 1u) {
+                m = m | ((((cb(b, k) * ((c >> (8u * k)) & 0xffu)) >> 7u) & 0xffu) << (8u * k));
+            }
+            c = m;
+        }
+        var g = vec3<f32>(1.0);
+        if (c != 0x80808080u) {
+            g = select(2.0 * vec3<f32>(f32((c >> 16u) & 0xffu), f32((c >> 8u) & 0xffu), f32(c & 0xffu)) / 255.0, vec3<f32>(0.0), (sb & 16u) != 0u);
+        }
+        for (var k = 0u; k < 3u; k = k + 1u) {
+            outs[ob + 32u + 3u * k] = ms[k].x;
+            outs[ob + 33u + 3u * k] = ms[k].y;
+            outs[ob + 34u + 3u * k] = ms[k].z;
+        }
+        outs[ob + 41u] = g.x;
+        outs[ob + 42u] = g.y;
+        outs[ob + 43u] = g.z;
+    }
     // Batched particles (d3a_particles.md 4.4 / 4.5): count, t, placement M1 = parent rotation x inverse(V_b90).
     if (kind == DK_BATCHED) {
         let nn = el[b + E_PART_N];
@@ -670,6 +710,9 @@ struct Draw {
 @group(0) @binding(6) var<storage, read> mdata: array<u32>;
 @group(1) @binding(0) var tex: texture_2d<f32>;
 @group(1) @binding(1) var samp: sampler;
+@group(2) @binding(0) var spec2d: texture_2d<f32>;
+@group(2) @binding(1) var speccube: texture_cube<f32>;
+@group(2) @binding(2) var spec_samp: sampler;
 
 // Instances are element x 512 + (particle, or the shading variant for meshes).
 const PER_ELEM: u32 = 512u;
@@ -689,6 +732,9 @@ struct VOut {
     @location(3) depth: f32,
     // flags, blend mode, shading variant (0 D3m, 1 D3m untextured, 2 MMB, 3 MMB untextured, 4 D3a)
     @location(4) @interpolate(flat) mode: vec3<u32>,
+    // The specular stage (vs_mesh_spec): the texture direction, and the gain rgb with w = 1 for a cube.
+    @location(5) sd: vec3<f32>,
+    @location(6) @interpolate(flat) sk: vec4<f32>,
 };
 
 fn out_mat(o: u32) -> mat4x4<f32> {
@@ -871,6 +917,60 @@ fn screen_uv(vp: vec3<f32>) -> vec2<f32> {
     var w = abs(c.w);
     if (w == 0.0) { w = 1.0; }
     return vec2<f32>(0.5 + 0.5 * c.x / w, 0.5 - 0.5 * c.y / w);
+}
+
+// CMoD3mSpecularElem (FUN_100412b0): the specular stage reads the camera-space normal (NORMALIZENORMALS, the
+// inverse transpose of the element's model-view) through its texture matrix (COUNT3, no scale or bias).
+@vertex
+fn vs_mesh_spec(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let mv = out_mat(o);
+    var out = vout(e, (mv * vec4<f32>(v.pos, 1.0)).xyz, v.color, v.uv, inst % PER_ELEM);
+    let m = mat3x3<f32>(mv[0].xyz, mv[1].xyz, mv[2].xyz);
+    let cof = mat3x3<f32>(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1]));
+    let n = cof * v.normal * sign(dot(m[0], cof[0]));
+    let nc = select(vec3<f32>(0.0), normalize(n), dot(n, n) > 0.0);
+    let ms = mat3x3<f32>(vec3<f32>(douts[o + 32u], douts[o + 33u], douts[o + 34u]), vec3<f32>(douts[o + 35u], douts[o + 36u], douts[o + 37u]), vec3<f32>(douts[o + 38u], douts[o + 39u], douts[o + 40u]));
+    out.sd = ms * nc;
+    let cube = (dels[e * E_WORDS + E_SPEC_BITS] & 16u) != 0u;
+    out.sk = vec4<f32>(douts[o + 41u], douts[o + 42u], douts[o + 43u], select(0.0, 1.0, cube));
+    return out;
+}
+
+// TSS 0x103529c8 (groups, variant 10): base 2 x T0 x D, then x TFACTOR x 2 (alpha x 4, or a0 alone for mode 0x64 /
+// flag 0x10000000), plus a1 x the specular texel; 0x103528f0 (no groups, 11): 2 x D x TF, alpha 4 x D a x TF a, plus
+// a0 x specular; 0x10352c78 (the untextured tail, 12): no specular. No mode-0x44 alpha rule, no fog.
+@fragment
+fn fs_spec(i: VOut) -> @location(0) vec4<f32> {
+    let flags = i.mode.x;
+    let variant = i.mode.z;
+    let dd = i.color;
+    let f = i.tf;
+    let t0 = textureSample(tex, samp, i.uv);
+    let s2 = textureSample(spec2d, spec_samp, i.sd.xy);
+    let sc = textureSample(speccube, spec_samp, i.sd);
+    let sp = sat3(select(s2.rgb, sc.rgb, i.sk.w > 0.5) * i.sk.rgb);
+    var rgb: vec3<f32>;
+    var a: f32;
+    if (variant == 10u) {
+        let c0 = sat3(2.0 * dd.rgb * t0.rgb);
+        let a0 = sat(dd.a * t0.a);
+        var a1 = sat(4.0 * a0 * f.a);
+        if ((i.mode.y & 0xffu) == 0x64u || (flags & 0x10000000u) != 0u) { a1 = a0; }
+        rgb = sat3(sat3(2.0 * c0 * f.rgb) + a1 * sp);
+        a = a1;
+    } else if (variant == 11u) {
+        let a0 = sat(4.0 * dd.a * f.a);
+        rgb = sat3(sat3(2.0 * dd.rgb * f.rgb) + a0 * sp);
+        a = a0;
+    } else {
+        rgb = sat3(2.0 * dd.rgb * f.rgb);
+        a = sat(4.0 * dd.a * f.a);
+    }
+    if (d.fog.z > 0.5) { rgb = pow(rgb, vec3<f32>(2.2)); }
+    return vec4<f32>(rgb, a);
 }
 
 // CMoDistModelElem (FUN_10043320): the mesh drawn unshifted; each vertex samples the scene copy at the screen point of
