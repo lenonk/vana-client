@@ -68,6 +68,13 @@ const CMD_HELP: Sig = Sig {
     len: 0x10,
     md5: "645ded257e5c15cd4d8c973d31128021",
 };
+/// Table 0x1032cbb0: {i16 command id, i16 help entry} rows to a -1 (FUN_10080300, at most 0xe4).
+const TEXT_HELP: Sig = Sig {
+    name: "text command help",
+    hint: &[0x00, 0x00, 0x00, 0x00, 0x03, 0x01, 0x01, 0x00, 0x07, 0x01, 0x02, 0x00, 0xae, 0x01, 0x03, 0x00],
+    len: 0x40,
+    md5: "17b93b0dfd37ab284614ea90cacc01c1",
+};
 const ERRORS: Sig = Sig { name: "error codes", hint: &[0x34, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], len: 0x40, md5: "3e6e09a7959e57630975fc953b865925" };
 /// "No. of content IDs purchased: %2d"; the other three formats follow at -0x24 each.
 const COUNT_FMT: Sig = Sig { name: "count formats", hint: b"No. of conte", len: 0x18, md5: "2e622d8e177bbaaf8d9aee67475441ae" };
@@ -162,6 +169,20 @@ pub fn call_sounds(dll: &[u8]) -> Result<Vec<(String, u32)>> {
         {
             out.push((name, n));
         }
+    }
+    Ok(out)
+}
+
+/// FUN_10080300's rows: (text command id, entry in the slot 0x24 help file), first match wins.
+pub fn text_help(dll: &[u8]) -> Result<Vec<(i16, i16)>> {
+    let at = find(dll, &TEXT_HELP)?;
+    let mut out = Vec::new();
+    for r in dll.get(at..at + 0xe4 * 4).unwrap_or_default().chunks_exact(4) {
+        let (c, e) = (i16::from_le_bytes([r[0], r[1]]), i16::from_le_bytes([r[2], r[3]]));
+        if c == -1 || e == -1 {
+            break;
+        }
+        out.push((c, e));
     }
     Ok(out)
 }

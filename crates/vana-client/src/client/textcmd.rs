@@ -76,6 +76,7 @@ mod id {
     pub const JA: u16 = 0x2b;
     pub const PET: u16 = 0x2c;
     pub const BSTPET: u16 = 0x2d;
+    pub const QUESTION: u16 = 0x103;
     pub const HEAL: u16 = 0x32;
     pub const SIT: u16 = 0x33;
     pub const LOGOUT: u16 = 0x43;
@@ -183,13 +184,19 @@ mod cat {
 /// Name -> (id, flags).
 pub type Table = HashMap<String, (u16, u16)>;
 
-/// The table, found by its "/say" entry (id 1, flags 0xc3) with "/ver" before it; it ends at a negative id.
-pub fn parse_table(dll: &[u8]) -> Option<Table> {
+#[cfg(test)]
+fn parse_table(dll: &[u8]) -> Option<Table> {
+    Some(parse_rows(dll)?.into_iter().map(|(n, id, f)| (n, (id, f))).collect())
+}
+
+/// The table's named rows in order (name, id, flags), found by its "/say" entry (id 1, flags 0xc3) with "/ver"
+/// before it; it ends at a negative id.
+fn parse_rows(dll: &[u8]) -> Option<Vec<(String, u16, u16)>> {
     let mut say = [0u8; 0x18];
     say[..4].copy_from_slice(b"/say");
     (say[0x14], say[0x16]) = (1, 0xc3);
     let at = dll.windows(0x18).position(|w| w == say)?.checked_sub(0x18)?;
-    let mut t = HashMap::new();
+    let mut t = Vec::new();
     for e in dll[at..].chunks_exact(0x18) {
         let id = i16::from_le_bytes([e[0x14], e[0x15]]);
         if id < 0 {
@@ -197,21 +204,39 @@ pub fn parse_table(dll: &[u8]) -> Option<Table> {
         }
         let end = e[..0x14].iter().position(|&b| b == 0).unwrap_or(0x14);
         if end > 0 {
-            t.insert(String::from_utf8_lossy(&e[..end]).into_owned(), (id as u16, u16::from_le_bytes([e[0x16], e[0x17]])));
+            t.push((String::from_utf8_lossy(&e[..end]).into_owned(), id as u16, u16::from_le_bytes([e[0x16], e[0x17]])));
         }
     }
     Some(t)
 }
 
-fn table() -> &'static Table {
-    static T: OnceLock<Table> = OnceLock::new();
+/// The command table, its rows in order (for /?), and /?'s help entries and file.
+struct Commands {
+    map: Table,
+    rows: Vec<(String, u16, u16)>,
+    help: Vec<(i16, i16)>,
+    help_file: Option<u32>,
+}
+
+fn commands() -> &'static Commands {
+    static T: OnceLock<Commands> = OnceLock::new();
     T.get_or_init(|| {
         let dll = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")).unwrap_or_default();
-        parse_table(&dll).unwrap_or_else(|| {
+        let rows = parse_rows(&dll).unwrap_or_else(|| {
             log::warn!("text command table not found in FFXiMain.dll");
-            Table::new()
-        })
+            Vec::new()
+        });
+        Commands {
+            map: rows.iter().map(|(n, id, f)| (n.clone(), (*id, *f))).collect(),
+            rows,
+            help: crate::dat::tables::text_help(&dll).map_err(|e| log::warn!("{e:#}")).unwrap_or_default(),
+            help_file: crate::dat::msg::current_slot_file(&dll, 1, 0x24),
+        }
     })
+}
+
+fn table() -> &'static Table {
+    &commands().map
 }
 
 /// FUN_10076830: tokens split at spaces (and tabs outside typed lines); a token opening with a quote runs to the
@@ -1550,6 +1575,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
         id::BSTPET => bstpet(w, args, mode),
+        id::QUESTION => question(w, args),
         c if is_emote(c) => emote(w, c, args, mode),
         _ => {
             log::info!("{}: not supported yet", args[0]);
@@ -2466,6 +2492,51 @@ fn ability(w: &mut World, _pet: bool, args: &[String], mode: Mode) -> Done {
     Ok(())
 }
 
+/// FUN_1007ffa0 (/?): no word lists the commands with flag 1 or 4, "normal" those with flag 1 (none with 0x1e00), in
+/// table order; else the exact name ('/' added, 18 characters) prints its help, and a name not found lists every
+/// command containing it (flags & 7). Lines in mode 0x9d; never fails.
+fn question(w: &mut World, args: &[String]) -> Done {
+    let Some(bt) = w.battle.clone() else { return Ok(()) };
+    let colour = bt.colour_in(0x9d, &w.game);
+    let c = commands();
+    let mut list = |want: u16, part: Option<&str>| {
+        for (name, _, flags) in &c.rows {
+            if flags & 0x1e00 == 0 && flags & want != 0 && part.is_none_or(|p| name.contains(p)) {
+                w.chat.push_colour(name.clone(), colour);
+            }
+        }
+    };
+    let word = match args.get(1).map(String::as_str) {
+        None => return Ok(list(5, None)),
+        Some("normal") => return Ok(list(1, None)),
+        Some(word) => word,
+    };
+    let name: String = if word.starts_with('/') { String::new() } else { "/".into() } + &word.chars().take(0x12).collect::<String>();
+    match c.rows.iter().find(|r| r.0 == name) {
+        None => list(7, Some(&name[1..])),
+        Some(&(_, id, _)) if id != 0 && id != 0x10b => {
+            if let Some(text) = help_text(w, id) {
+                w.chat.push_colour(text, colour);
+            }
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+/// FUN_10080210: a command's help, entry by table 0x1032cbb0 (none: entry 0) in the slot 0x24 file (55687 in
+/// English); ids below 0x1d4.
+fn help_text(w: &World, id: u16) -> Option<String> {
+    let c = commands();
+    if id >= 0x1d4 {
+        return None;
+    }
+    let entry = c.help.iter().find(|r| r.0 == id as i16).map_or(0, |r| r.1 as usize);
+    let text = crate::dat::msg::Messages::load(w.index.as_ref()?, c.help_file?).map_err(|e| log::warn!("/? help: {e:#}")).ok()?.get(entry)?;
+    // 0x07 is the text's line break.
+    Some(text.replace('\u{7}', "\n"))
+}
+
 /// FUN_1007b9d0 (/bstpet): no word lists the known Ready moves (ability type 0x12, in the ability list's order) as
 /// "[n]name Charges required: c." in mode 0x9d, failing with none; else the n-th (1..99 in one or two characters) or
 /// one by name, then the target and 0x01A category 9 (as /pet).
@@ -2547,5 +2618,8 @@ mod tests {
         assert_eq!(t["/h"].0, id::HELP);
         assert_eq!(t["/a"], (id::ATTACK, 0x0141));
         assert!(!t.contains_key("/y") && !t.contains_key("/MA"));
+        // /?'s help rows: /ma's text is entry 47.
+        let h = crate::dat::tables::text_help(&dll).unwrap();
+        assert_eq!((h.len(), h.iter().find(|r| r.0 == id::MAGIC as i16)), (216, Some(&(0x25, 47))));
     }
 }

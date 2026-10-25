@@ -8127,3 +8127,19 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   param 689, LSB "Unable to use job ability." in town; an unquoted two-word name fails as /ja does.
 - Not done from part D: /monsterskill (no Monstrosity).
 
+## Text command /? (2026-10-25; spec textcmds2_spec.md part C)
+
+- FUN_1007ffa0: no word lists every command name with flag 1 or 4 and none of 0x1e00 (FUN_100800a0), "normal"
+  (exact) those with flag 1, in the command table's order (0x10355408, 0x18-byte rows); each name a mode 0x9d line
+  (FUN_10077e30). Else the word, '/' put in front when missing and cut to 18 characters, is looked up exactly
+  (FUN_10077ad0, strcmp: case matters): not found -> every command whose name contains it without the '/'
+  (FUN_10080140, strstr, flags & 7, none of 0x1e00); found with id != 0 and != 0x10b -> its help (FUN_10080210).
+  Never fails. Retail sets +0xda of a log object to 1 around the lists (FUN_1018ee20) *(inf: holds the log's scroll)*;
+  ours does not.
+- The help (FUN_10080210): ids below 0x1d4; the entry from table 0x1032cbb0 ({i16 command id, i16 entry}, 216 rows
+  to a -1, first match; none -> entry 0, which is empty); file FUN_1025b580(0x24) = this build's language slot 0x24,
+  55687 in English: a d_msg with fixed 0x300-byte records (no table), field 0. 0x07 in the text is a line break
+  (FUN_10077e30 splits there), 0x81a8 the arrow. Ours: dat::tables::text_help, textcmd::help_text.
+- Live: "/? sit" printed the /sit help with its Subcommands block on separate lines, "/? lock" listed /clock
+  /lockon /locker /blockaid /blockhelp /lockstyle /lockstyleset.
+
