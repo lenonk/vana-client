@@ -60,6 +60,7 @@ mod helpdesk;
 mod macroedit;
 mod equipsets;
 mod esmenu;
+mod esedit;
 mod journal;
 mod missions;
 mod quests;
@@ -3042,6 +3043,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
+        (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = treasure::info_source(world) => (id, ext, None, false, 0, 0),
         (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
@@ -5898,7 +5900,7 @@ impl App {
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),
                 NetEvent::Currencies { mode, data } => currencies::on_packet(world, mode, &data),
-                NetEvent::EquipSetValid(slots) => log::info!("s2c 0x116 {slots:?}"),
+                NetEvent::EquipSetValid(slots) => esedit::on_valid(world, slots),
                 NetEvent::EquipSetRes { count, changed, equipped } => equipsets::on_res(world, count, &changed, &equipped),
                 NetEvent::LockStyleFlag(v) => equipsets::on_flag(world, v),
                 NetEvent::LockStyleError(ids) => equipsets::on_lock_error(world, &ids),

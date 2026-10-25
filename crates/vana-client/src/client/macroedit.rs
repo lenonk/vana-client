@@ -327,6 +327,10 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 /// Num+ (key function 0x11, event 8): a palette to mcrbedit and back (FUN_101a4950 / FUN_101a6180), the editor on a
 /// line to mcrledit and back (FUN_101a5690 / FUN_101a6350); SE 0013.
 pub fn num_plus(w: &mut World) {
+    if w.macroedit.as_ref().and_then(|m| m.sets.as_ref()).is_some_and(|s| s.ed.is_some()) {
+        super::esedit::num_plus(w);
+        return;
+    }
     let Some(e) = edit_mut(w) else { return };
     match e.editor.as_mut() {
         Some(d) if d.editing.is_some() => return,

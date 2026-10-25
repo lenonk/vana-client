@@ -59,7 +59,10 @@ pub fn push_item_list(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, font: &Fo
     let (ox, oy) = (wx + inset, wy + 4.0);
     for (k, row) in list.visible().iter().enumerate() {
         let y = oy + k as f32 * ROW_PITCH;
-        b.push_image(&icon_texture(row.id), ox, y, 16.0, 16.0, [1.0; 4]);
+        // Id 0: a row without an item (the equipment set editor's rows above its items).
+        if row.id != 0 {
+            b.push_image(&icon_texture(row.id), ox, y, 16.0, 16.0, [1.0; 4]);
+        }
         text(b, font, atlas, &row.name, ox + 18.0, y + 2.0, row.tint);
         if let Some(c) = &row.count {
             push_shape_text_right(b, ui, c.as_bytes(), ox + 16.0, y + 4.0, 0x8080_8080);

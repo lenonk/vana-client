@@ -114,7 +114,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done
     (bazaar.rs, shop.rs, seacom.rs; left the name's bazaar glyph, View Wares), Help Desk's faqsub done (helpdesk.rs; left
     the Adventuring Primer, the GM call faqmain), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
-    done (equipsets.rs, esmenu.rs, /equipset, /lockstyle, /lockstyleset; left the slot editor mcresed, spec M2.6);
+    done (equipsets.rs, esmenu.rs, esedit.rs, /equipset, /lockstyle, /lockstyleset; left the mouse);
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
     over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
     own zoom;

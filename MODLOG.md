@@ -7026,3 +7026,42 @@ client/fep.rs, World.chat_caret.
 - Before this the line had no caret: Left / Right did nothing while typing (user report) and Delete was ignored.
 - Live (Lnxcsfix): "/echo abcdef", Left x3, X, Right, Backspace, Delete, End, "!", Home, Right x6, "<" echoed
   "<abcXf!"; a Helldive phrase crossed by one Left ("QHelldiveZ").
+
+## Equipment sets: the slot editor (2026-10-25)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` M2.6 / M2.7; ours client/esedit.rs.
+- mcresmn's Edit: "menu    mcresed" (16, 48), the 16-slot grid (children as the Equipment window's, labels frames
+  40..55, help group 0xe 0xf3..0x102, title 0xd 0xac also in title slot 2), and the item list "menu    inventor" at
+  (200, 48): the source's vfunc +4 returns 1, which FUN_101f1fe0 places at (200, 48) (0 -> (16, 48), 2 -> (314, 48)).
+  "menu    mcrmogc" opens at (384, 48), mcres20's place; the walk suspends mcres20 under the editor.
+- Grid (FUN_101359c0): state 2 keytops3 429 (a red cross) at (+1, 0), state 1 the item's icon at full size, state 0
+  the label alone. Keys: FUN_10135c00 / FUN_10135c40 move as the equipment grid (wrapping) in mode 2 or with no mask;
+  with a picked item Left / Right walk 0x1036f744's order {1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16} over
+  the allowed slots (wrapping, never back onto the start), Up / Down do nothing. Enter (FUN_10135ab0) in mode 2: the
+  list on the slot entry's container (byte 0 >> 2, whatever the state) filtered to the slot, cursor on the top row; in
+  mode 1 the pick goes in (nothing picked: FUN_10135f00(0, 1) fails, SE 0004), then the list. Escape (FUN_10135ba0):
+  mode 1 unpicks, mode 2 closes. Num+ (FUN_10135bd0): mode 2 -> mode 1 on the list, SE 0013.
+- List (FUN_101352c0 / FUN_10135650): rows = storage strip, "Remove piece." (group 9 0x113), "Keep same piece."
+  (0x114), then the container's items whose record has slots and jobs (and the filter's slot). Tints (FUN_10135120):
+  the picked index orange 0x80804020, in the working set green 0x80509050 (FUN_10131f10: any slot entry's container and
+  index), else white; Remove / Keep yellow 0x80909040, orange when picked. Help: items group 0xe 3, Remove / Keep 0xc
+  0x54, the strip none; title the container's (items.rs title_id). Mode 1 Enter on an item: picked, the mask its slots
+  (or the one slot already holding that exact item), the grid cursor to the first allowed child in the order above;
+  Escape closes all; Num+ with nothing picked back to mode 2. Mode 2: Enter assigns at the grid slot, Escape back to
+  the grid. The strip's Enter opens mcrmogc on the list's container (FUN_10136130: container 0 / 1 / 2 -> child 1 / 2 /
+  3, others their own); mcrmogc's Enter shows child 1 -> 0, 2 -> 1, 3 -> 2, the others their own number.
+- The strip row: cell 0 kind 0x40 value = the wardrobe number 0..8, cell 1 kind 0x41 = framesus 185 (a 166 x 16 strip
+  with "Storage Options" and a key glyph baked in, bounds x 16..182). The generic cell draw (FUN_101f4bb0, EBX = the
+  cell's value, skipped when 0) would use these values as object pointers, so the source draws the row itself: ours at
+  (x - 18, y + 2) of the icon column *(inf)*; the wardrobe number's glyph not drawn (unknown).
+- Assign FUN_10135f00(item, kind): refused unless 700 ms since the last (any kind), then stamped; kind 0 zeroes the
+  slot, 2 = {2, 0, 0, 0}; kind 1: the slot holding that exact item (container, index, id) is zeroed (a toggle), else
+  the same item leaves any other slot and c2s 0x052 {slot @4, {1 | c << 2, index, id} @8, the 16 working entries @0xc}
+  goes; s2c 0x116's 16 entries replace the working copy. Closing writes the working copy into the set (the file on
+  mcres20's Escape / page turn).
+- Item info: the grid's slot item (FUN_101360e0: its id whatever the state) or the list's cursor item, mode 0
+  (FUN_1013e200(id, 0, 3, 0): +0x348 = 0; the 3 goes to +0x3a7).
+- Live (Lnxcsfix; USER/5 restored): Main in mode 2 (list filtered to Onion Sword / Dagger / Bronze Dagger) -> 0x052 ->
+  0x116 with the sword; Num+, Hume Tunic picked (grid to Body) -> 0x052 -> 0x116; Remove picked onto Head; Storage
+  Options; es0.dat after Escape held main / body / head-remove.
+- Not done: the mouse, the wardrobe number glyph.

@@ -1075,7 +1075,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 }
 
 /// Bank-side titles by container (FUN_1011ae30's table, also the inventory side's): group 0xd.
-fn title_id(c: u8) -> usize {
+pub(super) fn title_id(c: u8) -> usize {
     match c {
         1 => 3,
         2 => 0x25,

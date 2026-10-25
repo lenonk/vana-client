@@ -1,6 +1,7 @@
 //! MacroPalette's Edit Equip. Set (spec ~/ffxi/lab/research/social_rows_spec.md M2.4 / M2.5): the set list
 //! "menu    mcres20" (ten pages of 20, mcralpha names, the in-row name field) and its menu "menu    mcresmn"
-//! (Edit, Name, Copy, Paste, Delete, Overwrite, Equip, Set appearance). The store and packets: client/equipsets.rs.
+//! (Edit, Name, Copy, Paste, Delete, Overwrite, Equip, Set appearance). The store and packets: client/equipsets.rs; the
+//! slot editor: client/esedit.rs.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -12,12 +13,13 @@ const MENU: &str = "menu    mcresmn";
 const WHITE: u32 = 0x8080_8080;
 
 /// mcres20: the cursor child (1..20 rows, 21 / 22 the page arrows), the name field's text, the picked row (+0x20)
-/// and mcresmn's cursor while it is open.
+/// and mcresmn's cursor while it is open; the slot editor.
 pub struct SetList {
     sel: u16,
     rename: Option<Vec<u8>>,
     row: usize,
     opt: Option<u16>,
+    pub(super) ed: Option<super::esedit::Editor>,
 }
 
 fn list_mut(w: &mut World) -> Option<&mut SetList> {
@@ -29,7 +31,7 @@ pub fn open(w: &mut World) {
     let Some(es) = w.equipsets.as_mut() else { return };
     es.load_page(es.page.unwrap_or(0));
     if let Some(m) = w.macroedit.as_mut() {
-        m.sets = Some(SetList { sel: 1, rename: None, row: 0, opt: None });
+        m.sets = Some(SetList { sel: 1, rename: None, row: 0, opt: None, ed: None });
     }
 }
 
@@ -80,6 +82,10 @@ fn flip(w: &mut World, next: bool) {
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     use egui::Key as K;
     let Some(s) = w.macroedit.as_ref().and_then(|m| m.sets.as_ref()) else { return };
+    if s.ed.is_some() {
+        super::esedit::key(w, gu, key);
+        return;
+    }
     if s.rename.is_some() {
         return;
     }
@@ -181,7 +187,12 @@ fn menu_key(w: &mut World, gu: &GameUi, key: egui::Key, o: u16, row: usize) {
             let Some(es) = w.equipsets.as_mut() else { return };
             let id = es.page.unwrap_or(0) * 20 + row;
             match o {
-                1 => log::info!("mcresmn: Edit (mcresed) is not implemented yet"),
+                1 => {
+                    let ed = super::esedit::open(w, row);
+                    if let Some(s) = list_mut(w) {
+                        s.ed = ed;
+                    }
+                }
                 2 => {
                     let name = es.sets.get(row).map_or(Vec::new(), |s| s.raw_name().to_vec());
                     if let Some(s) = list_mut(w) {
@@ -232,6 +243,10 @@ pub fn bars(gu: &GameUi, w: &World, s: &SetList, bars: &mut super::hudtop::BarTe
         let [help, title] = gu.focus_text(name, child);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     };
+    if s.ed.is_some() {
+        super::esedit::bars(gu, w, bars);
+        return;
+    }
     if let Some(o) = s.opt {
         focus(bars, MENU, o);
         bars.title[2] = name(w, s.row);
@@ -251,23 +266,28 @@ pub fn bars(gu: &GameUi, w: &World, s: &SetList, bars: &mut super::hudtop::BarTe
 pub fn draw(gu: &mut GameUi, w: &World, s: &SetList, sw: f32, sh: f32, free: bool) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(es) = w.equipsets.as_ref() else { return rects };
-    let Some(win) = gu.lobby_window_off(LIST, sw, sh, (0.0, 0.0), Some(s.sel), free && s.opt.is_none() && s.rename.is_none(), &[]) else { return rects };
-    for &(id, r) in win.children.iter().filter(|(id, _)| (1..=20).contains(id)) {
-        let row = id as usize - 1;
-        match &s.rename {
-            Some(t) if row == s.row => gu.text(&format!("{}{}", String::from_utf8_lossy(t), caret(w)), r[0] + 8.0, r[1] + 2.0, 0, WHITE.to_le_bytes()),
-            _ => alpha(gu, es.sets.get(row).map_or(&[][..], |s| s.raw_name()), r[0] + 8.0, r[1] + 2.0, 75.0),
+    if let Some(win) = gu.lobby_window_off(LIST, sw, sh, (0.0, 0.0), Some(s.sel), free && s.opt.is_none() && s.rename.is_none() && s.ed.is_none(), &[]) {
+        for &(id, r) in win.children.iter().filter(|(id, _)| (1..=20).contains(id)) {
+            let row = id as usize - 1;
+            match &s.rename {
+                Some(t) if row == s.row => gu.text(&format!("{}{}", String::from_utf8_lossy(t), caret(w)), r[0] + 8.0, r[1] + 2.0, 0, WHITE.to_le_bytes()),
+                _ => alpha(gu, es.sets.get(row).map_or(&[][..], |s| s.raw_name()), r[0] + 8.0, r[1] + 2.0, 75.0),
+            }
+        }
+        rects.push(win.frame);
+        if let (Some(o), Some(&(_, r)), Some([lx, ly, lw, lh])) = (s.opt, win.children.iter().find(|(id, _)| *id as usize == s.row + 1), gu.window_rect(MENU, sw, sh)) {
+            let [_, fy, _, fh] = win.frame;
+            let (x, y) = (r[0] - lw, r[1].min(fy + fh - lh));
+            let off = menu_off(w);
+            if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (x - lx, y - ly), Some(o), free, &off) {
+                gu.disabled_children(MENU, win.frame[0], win.frame[1], &off, free.then_some(o));
+                rects.push(win.frame);
+            }
         }
     }
-    rects.push(win.frame);
-    if let (Some(o), Some(&(_, r)), Some([lx, ly, lw, lh])) = (s.opt, win.children.iter().find(|(id, _)| *id as usize == s.row + 1), gu.window_rect(MENU, sw, sh)) {
-        let [_, fy, _, fh] = win.frame;
-        let (x, y) = (r[0] - lw, r[1].min(fy + fh - lh));
-        let off = menu_off(w);
-        if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (x - lx, y - ly), Some(o), free, &off) {
-            gu.disabled_children(MENU, win.frame[0], win.frame[1], &off, free.then_some(o));
-            rects.push(win.frame);
-        }
+    // The slot editor over the list (mcrmogc sits where mcres20 does).
+    if s.ed.is_some() {
+        rects.extend(super::esedit::draw(gu, w, sw, sh, free));
     }
     rects
 }
