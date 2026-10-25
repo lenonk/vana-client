@@ -7110,3 +7110,19 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H3 / H4; ours client/faqmain.rs (
   Q04 with the field ("test call" committed), Return sent type 1 (248 bytes) and closed. Execute not pressed: it
   writes a row in the server's help_desk table.
 - Not done: the GM reply page (s2c 0x0B6, gmNotice.fdt, c2s 0x0D5), the language row (area code 2), the mouse.
+
+## Main menu: the Status comparison, the gauge rules, the Mog House row (2026-10-25)
+
+Spec `~/ffxi/lab/research/mainmenu_panels_spec.md`.
+- The user's retail shot with the persona and level panels at the left was the Status window (statcom2 child 1 help
+  0xe 0x1e0 "View your profile including current allegiance and title."), not the bare main menu: FUN_1015ee40 /
+  FUN_10140090 open only "menu    menuwind" (SE 0014). Ours matches retail there (checked live side by side).
+- Gauges (FUN_101cad00, push_gauge, also the cast bar): a fraction outside [0, 1] counts as 0 (not clamped), the fill
+  only when trunc(f * 100 + 0.5) != 0, the frame dim only at 0.
+- The Master Level capped test compares unsigned with wrap (next - 1 wraps at 0).
+- Row 12 in the Mog House (FUN_10140090 / FUN_10140270 / FUN_1013ff90): the label drawn by code, windowps 44
+  "MogHouse" (443, dim, while visiting another's house, the row disabled), title 0xd 9, help 0xe 0x29 (own) / 0x2a
+  (visiting); out of the Mog House the layout's "Map". HudState.menu_swap; topbar-shot --menu-swap 12:44.
+- Not done: the Monstrosity overrides of rows 2 / 5 / 6 / 10, the Synthesis row's rule (DAT_106634ac / FUN_101e15c0).
+- Live: the Mog House door was not reached by !pos this time (the earlier run entered by the zmr0zmr1 rect from the
+  sub-area); checked offscreen.
