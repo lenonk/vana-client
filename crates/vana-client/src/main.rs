@@ -261,6 +261,10 @@ enum Cmd {
         /// Main menu child (1..12) under the cursor; none = menu closed.
         #[arg(long)]
         menu: Option<u16>,
+        /// Main menu children whose label the menu draws itself, CHILD:WINDOWPS (the Mog House row: 12:44, visiting
+        /// another's house 12:443).
+        #[arg(long)]
+        menu_swap: Option<String>,
         /// Target window: "mob" (gauge) or "npc" (no gauge).
         #[arg(long)]
         target: Option<String>,
@@ -1311,7 +1315,7 @@ fn main() -> Result<()> {
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
-        Cmd::TopbarShot { out, fade, menu, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),
+        Cmd::TopbarShot { out, fade, menu, menu_swap, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, menu_swap.as_deref(), target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),
         Cmd::FlashShot { zone, hour, pos, out_dir } => {
             let v: Vec<f32> = pos.split(',').filter_map(|s| s.trim().parse().ok()).collect();
             anyhow::ensure!(v.len() == 3, "--pos wants x,y,z");

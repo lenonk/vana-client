@@ -392,7 +392,7 @@ impl HudTop {
 /// The offscreen top bar (topbar-shot): the bars at a fade state, the main menu on child `menu`, the party
 /// row at `hpp` and a target window with ("mob") or without ("npc") the gauge.
 #[allow(clippy::too_many_arguments)]
-pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target: Option<&str>, hpp: u8, map: Option<&str>, downloading: Option<usize>, window: Option<&str>, config: Option<&str>, cfgset: Option<&str>, installed: Option<u32>, width: u32, height: u32) -> anyhow::Result<()> {
+pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_swap: Option<&str>, target: Option<&str>, hpp: u8, map: Option<&str>, downloading: Option<usize>, window: Option<&str>, config: Option<&str>, cfgset: Option<&str>, installed: Option<u32>, width: u32, height: u32) -> anyhow::Result<()> {
     use crate::render::screens::HudState;
     let cfg = crate::config::Config::load();
     let index = crate::dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -429,6 +429,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, target:
         menu_selected: menu.and_then(|id| items.iter().find(|(i, _)| *i as u16 + 1 == id)).map(|(i, _)| *i),
         menu_page: 0,
         menu_off: Vec::new(),
+        menu_swap: menu_swap.map_or(Vec::new(), |s| s.split(',').filter_map(|p| { let (c, k) = p.split_once(':')?; Some((c.parse().ok()?, k.parse().ok()?)) }).collect()),
         menu_focused: true,
         chat_log: false,
     };

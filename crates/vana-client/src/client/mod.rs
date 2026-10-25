@@ -169,7 +169,17 @@ fn menu_disabled(w: &World) -> Vec<u16> {
     if w.menu_page == 0 && w.party.slots().trusts_only() {
         off.push(6);
     }
+    // FUN_10140270: row 12 (Mog House) is disabled while visiting another's house.
+    if w.menu_page == 0 && w.myroom.is_some() && w.mh_owner != 0 {
+        off.push(12);
+    }
     off
+}
+
+/// FUN_1013ff90: in the Mog House row 12 reads "MogHouse" (windowps 44; 443 dim while visiting another's house) instead
+/// of the layout's "Map".
+fn menu_swap(w: &World) -> Vec<(u16, usize)> {
+    if w.menu_page == 0 && w.myroom.is_some() { vec![(12, if w.mh_owner == 0 { 44 } else { 443 })] } else { Vec::new() }
 }
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
@@ -1888,6 +1898,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
+        menu_swap: menu_swap(world),
         menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
@@ -2542,6 +2553,14 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         if let Some(h) = configui::our_help(child) {
             bars.help[1] = h.into();
         }
+    }
+    // FUN_10140090 / FUN_10140270: row 12 in the Mog House: title 0xd 9 "Mog House", help 0xe 0x29 (own house) or 0x2a.
+    if world.myroom.is_some()
+        && world.confirm.is_none()
+        && focus == Some((crate::render::screens::menu_window(0), 12))
+    {
+        bars.title[1] = gu.title_msg(9).unwrap_or_default();
+        bars.help[1] = gu.menu_msg(if world.mh_owner == 0 { 0x29 } else { 0x2a }, "");
     }
     if let Some(s) = &world.settings {
         (bars.help[1], bars.title[1]) = (s.help(), s.title().into());

@@ -533,8 +533,10 @@ pub fn alpha_tint(a: f32) -> u32 {
 /// A gauge (FUN_101c1190): fill sprite at (+4, +1) scaled in x by the fraction, blending off;
 /// then the frame sprite at (x, y), dimmed 0x30505050 when empty.
 pub fn push_gauge(b: &mut UiBatch, ui: &UiFile, lib: &SpriteLib, x: f32, y: f32, frame: usize, fill: usize, fraction: f32) {
-    let f = fraction.clamp(0.0, 1.0);
-    if f > 0.0 {
+    // FUN_101cad00: outside [0, 1] counts as 0 (not clamped); the fill only when it rounds to 1 % or more. A NaN
+    // (0 / 0) is taken as 0 here (retail draws a bright frame and nothing visible).
+    let f = if (0.0..=1.0).contains(&fraction) { fraction } else { 0.0 };
+    if (f * 100.0 + 0.5) as i32 != 0 {
         b.push_sprite(ui, lib, fill, x + 4.0, y + 1.0, f, 1.0, 0x8080_8080, 8);
     }
     b.push_sprite(ui, lib, frame, x, y, 1.0, 1.0, if f == 0.0 { 0x3050_5050 } else { 0x8080_8080 }, 0);
@@ -590,6 +592,9 @@ pub struct HudState {
     pub menu_page: u8,
     /// Disabled children (state 5): their last kind 0 / 4 sprite as GameUi::disabled_children draws them.
     pub menu_off: Vec<u16>,
+    /// Children whose label the menu draws itself (FUN_1013ff90): a windowps sprite in place of the layout's, drawn as an
+    /// enabled row even when the child is disabled (443 is itself dim).
+    pub menu_swap: Vec<(u16, usize)>,
     /// The menu has the focus: unfocused (under a prompt) it keeps its highlight but draws no hand.
     pub menu_focused: bool,
     /// Draw logwindo at its layout size (offscreen tools); the client sizes it itself (client/logwin.rs).
@@ -966,10 +971,15 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
         // Items are label sprites at their child positions; the selected one is tinted and nudged
         // up-left, with the hand cursor (anc_s) at its position (FUN_101144b0, FUN_10116b10).
         for (i, c) in m.elements.iter().skip(1).enumerate() {
-            let off = st.menu_off.contains(&c.id);
+            let swap = st.menu_swap.iter().find(|s| s.0 == c.id).map(|s| s.1);
+            let off = st.menu_off.contains(&c.id) && swap.is_none();
             let r = if off { c.refs.iter().rfind(|r| r.kind == 0 || r.kind == 4) } else { c.refs.iter().find(|r| r.kind == 0) };
             let Some(r) = r else { continue };
-            let Some(lib) = ui.lib(&r.lib) else { continue };
+            let (lib, index) = match swap {
+                Some(k) => (ui.lib("menu    windowps"), k),
+                None => (ui.lib(&r.lib), r.index as usize),
+            };
+            let Some(lib) = lib else { continue };
             let (cx, cy) = (x + c.x as f32, y + c.y as f32);
             let on = i == sel;
             let (d, tint) = match (off, r.kind == 4, on) {
@@ -980,7 +990,7 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
                 (true, false, true) => (1.0, 0x4040_2810),
                 (true, false, false) => (0.0, 0x3080_8080),
             };
-            b.push_sprite(ui, lib, r.index as usize, cx + d, cy + d, 1.0, 1.0, tint, 0);
+            b.push_sprite(ui, lib, index, cx + d, cy + d, 1.0, 1.0, tint, 0);
             if on
                 && st.menu_focused
                 && let Some(anc) = ui.lib("anc     anc_s")

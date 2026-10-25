@@ -217,7 +217,7 @@ fn draw_level(gu: &mut GameUi, w: &World, x: f32, y: f32) {
     let Some(st) = w.stats.as_ref().filter(|_| w.recasts_seen) else { return };
     let sep = gu.lobby_msg(0xc, 0x5b, ",");
     let ml = st.ml.1 & 1 != 0;
-    let capped = if ml { st.ml.1 & 2 != 0 && st.ml_exp.0 >= st.ml_exp.1.saturating_sub(1) } else { w.merits.is_some_and(|m| m.1 & 0x4000 != 0) };
+    let capped = if ml { st.ml.1 & 2 != 0 && st.ml_exp.0 >= st.ml_exp.1.wrapping_sub(1) } else { w.merits.is_some_and(|m| m.1 & 0x4000 != 0) };
     let (c1, c2) = if capped { (BLUE, 0x8040_4040) } else { (WHITE, WHITE) };
     let (head, level, l1, l2, now, next) = if ml {
         (gu.lobby_msg(0xc, 0x203, ""), st.ml.0, gu.lobby_msg(0xc, 0x204, ""), gu.lobby_msg(0xc, 0x205, ""), st.ml_exp.0 as i64, st.ml_exp.1 as i64)
