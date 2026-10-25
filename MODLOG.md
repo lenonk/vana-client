@@ -7885,3 +7885,15 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Seen offscreen: 2860 rej_/dis0 (a lens inside the bubble shifting the wall and floor behind it).
 - Also: emission op 0x56 on a VuDist is no longer counted as a gap (its count is read when the draw is chosen).
 
+## Scheduler op 0x7a: pin actor1 to actor2 (2026-10-25; spec task_ops_rest_spec.md section 3)
+
+- Record: `7a 0c | wait | dur`, offset vec3 @0x10 (w 1.0 @0x1c), point u32 @0x20. Seen: 4117 (1, 1.2, 0) point 2,
+  50703 (1.2, 0, 0), 86913 (2, 0, 0), 86973 (1, 0, 0), 61017 (0, 0, 0) point 7; dur 50..212.
+- FUN_10061fd0 sub-task for dur x speed (it dies with its scheduler task); FUN_100c63d0 each frame: actor1 at actor2's
+  attach point (FUN_1003ba20's special points too) + offset turned by actor2's yaw, facing actor2's yaw + pi for
+  ordinary points (< 0x30); the facing ease is skipped.
+- Ours: Effects::pins / pinned (computed in step_tasks with who_point), the client's entity loop places a pinned entity
+  there with no ease; afterwards it eases back to its slide *(inf: the dtor's +0x5fc = +0x5c4)*. Not done: our own
+  player as actor1 (retail moves the actor itself, which for the player is the position sent to the server).
+  Test pin_holds_actor1.
+

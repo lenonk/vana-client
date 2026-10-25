@@ -536,6 +536,20 @@ impl Effects {
         }
         let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
         self.step_shine(f.dt, &live);
+        // Op 0x7a's pins end with their time or their task (FUN_10061f50).
+        self.pinned.clear();
+        let eye = Some(f.eye);
+        for (owner, a, b, k, off, left) in std::mem::take(&mut self.pins) {
+            let left = left - f.dt;
+            if left < 0.0 || !live.contains(&owner) {
+                continue;
+            }
+            if let Some((m, p)) = self.who_point(Who::Actor(b), k, Who::Actor(a), eye, Vec3::ZERO, actors) {
+                let yaw = (k < 0x30).then(|| (-m.x_axis.z).atan2(m.x_axis.x) + std::f32::consts::PI);
+                self.pinned.insert(a, (p + m.transform_vector3(off), yaw));
+            }
+            self.pins.push((owner, a, b, k, off, left));
+        }
         for (owner, id, mut left) in std::mem::take(&mut self.color_guards) {
             left -= f.dt;
             if !live.contains(&owner) {
@@ -990,6 +1004,18 @@ impl Effects {
             0x88 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
                     self.color_guards.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
+            // FUN_10061fd0: for dur x speed, actor1 stands at actor2's point (u32 @0x20) + offset (vec3 @0x10) turned
+            // by actor2's yaw, facing actor2's yaw + pi for ordinary points (FUN_100c63d0).
+            0x7a => {
+                if let (Some(a), Some(b)) = (self.doll_of(t.a1).id(), self.doll_of(t.a2).id())
+                    && a != b
+                {
+                    let off = Vec3::new(f32::from_bits(op.u32_at(0x10)), f32::from_bits(op.u32_at(0x14)), f32::from_bits(op.u32_at(0x18)));
+                    self.pins.retain(|p| p.1 != a);
+                    self.pins.push((t.uid, a, b, op.u32_at(0x20) as u16, off, op.dur.max(0) as f32 * t.speed));
                 }
                 Flow::Next
             }
@@ -1752,6 +1778,32 @@ mod tests {
         fn models(&self) -> Vec<(u32, Vec<u32>)> {
             Vec::new()
         }
+    }
+
+    /// Op 0x7a (86913's layout): the orc stands at the Hume's point + (2, 0, 0), facing back, for dur ticks.
+    #[test]
+    fn pin_holds_actor1() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let mut pin = vec![0u8; 0x30];
+        pin[..8].copy_from_slice(&[0x7a, 0x0c, 0, 0, 0, 0, 30, 0]);
+        pin[0x10..0x14].copy_from_slice(&2.0f32.to_le_bytes());
+        pin[0x1c..0x20].copy_from_slice(&1.0f32.to_le_bytes());
+        let ops = vec![SOp { code: 0x7a, wait: 0, dur: 30, raw: pin }, SOp { code: 0x01, wait: 60, dur: 0, raw: vec![1, 2, 0, 0, 60, 0, 0, 0] }];
+        fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(ORC), Who::Actor(HUME), None, 1.0)));
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        fx.tick(&f, &Two);
+        let (p, yaw) = fx.pinned[&ORC];
+        assert!(p.distance(Vec3::new(2.0, -1.0, 0.0)) < 1e-5, "{p}");
+        assert!((yaw.unwrap() - std::f32::consts::PI).abs() < 1e-5, "{yaw:?}");
+        for _ in 0..31 {
+            fx.tick(&f, &Two);
+        }
+        assert!(!fx.pinned.contains_key(&ORC));
     }
 
     /// A Hume with a motion file that cannot load (no such DAT).

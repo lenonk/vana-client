@@ -6608,6 +6608,16 @@ impl App {
                 e.last_pos = e.pos;
                 continue;
             }
+            // Scheduler op 0x7a: held at another actor's attach point for the move (FUN_100c63d0), no ease, no turn;
+            // afterwards it eases back to its slide.
+            if let Some(&(p, yaw)) = world.effects.pinned.get(eid) {
+                e.pos = p;
+                if let Some(y) = yaw {
+                    e.yaw = y;
+                }
+                e.last_pos = e.pos;
+                continue;
+            }
             if e.dir != e.dir_seen {
                 e.dir_seen = e.dir;
                 e.yaw = event::rad_of(e.dir);

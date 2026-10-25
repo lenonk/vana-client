@@ -827,6 +827,10 @@ pub struct Effects {
     next_drive: u64,
     /// Op 0x88's colour guards: (owner task uid, actor, ticks left).
     color_guards: Vec<(u64, u32, f32)>,
+    /// Op 0x7a's pins: (owner task uid, actor1, actor2, point, offset, ticks left).
+    pins: Vec<(u64, u32, u32, u16, Vec3, f32)>,
+    /// Where each pinned actor stands this frame, and its yaw (atan2(-z, x) of its facing) for ordinary points.
+    pub pinned: HashMap<u32, (Vec3, Option<f32>)>,
     pub effect_motions_done: Vec<(u32, u32)>,
     owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -924,6 +928,8 @@ impl Effects {
             shine_drives: Vec::new(),
             next_drive: 0,
             color_guards: Vec::new(),
+            pins: Vec::new(),
+            pinned: HashMap::new(),
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),
