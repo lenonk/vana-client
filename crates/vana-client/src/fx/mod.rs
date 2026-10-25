@@ -51,6 +51,10 @@ pub trait Actors {
     fn ground_hit(&self, _from: Vec3, _to: Vec3) -> Option<Vec3> {
         None
     }
+    /// The actor's status (2 / 3 dead, scheduler ops 0xb1 / 0xb2).
+    fn status(&self, _id: u32) -> u8 {
+        0
+    }
     /// The last foot contact in the world (actor+0x63c, attach point 0x34).
     fn foot(&self, _id: u32) -> Option<Vec3> {
         None
@@ -799,6 +803,8 @@ pub struct Effects {
     shine: HashMap<u32, Shine>,
     shine_drives: Vec<ShineDrive>,
     next_drive: u64,
+    /// Op 0x88's colour guards: (owner task uid, actor, ticks left).
+    color_guards: Vec<(u64, u32, f32)>,
     pub effect_motions_done: Vec<(u32, u32)>,
     owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -893,6 +899,7 @@ impl Effects {
             shine: HashMap::new(),
             shine_drives: Vec::new(),
             next_drive: 0,
+            color_guards: Vec::new(),
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),

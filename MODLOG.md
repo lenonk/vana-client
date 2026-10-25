@@ -7841,3 +7841,14 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Ours: the readback gets three words (BACK_WORDS 19, back::VEL) with the slot vector at E_OP2_SLOT; Parent::vel is
   that (at spawn, the element's own slot), set only when the parent's generator has update op 0x02.
 
+## Scheduler ops 0x3f, 0x88, 0xb1 / 0xb2 (2026-10-25; spec task_ops_rest_spec.md section 2 / 3)
+
+- 0x3f (FUN_10053a00, cur 66848): every running instance of generator A (4cc @8) on the task's pair ends, each of its
+  live elements bursting generator B (4cc @0x10) once at its place (FUN_10052930, our Effects::burst with the element
+  as the parent): travelling orbs turn into explosions where they are. Not done: a static, unattached A morphing in
+  place (FUN_10052930 on A itself), and B's lone emission when no A runs. 43 files.
+- 0x88 (FUN_1005f320): a guard for dur x speed; when its scheduler task ends first (the guard dies with it, flag still
+  set), actor1's model colour goes back to 0x80808080 at once. Effects::color_guards, swept with the live tasks.
+- 0xb1 / 0xb2 (FUN_100618a0): actor1 / actor2 dead (status 2 / 3): model colour 0x80808080 at once (Raise and the
+  like). Actors::status (the client's placement status).
+

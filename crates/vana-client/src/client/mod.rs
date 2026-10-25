@@ -3404,6 +3404,10 @@ impl crate::fx::Actors for FxActors<'_> {
         Some(f)
     }
 
+    fn status(&self, id: u32) -> u8 {
+        self.places.get(&id).map_or(0, |p| p.status)
+    }
+
     fn ground_hit(&self, from: Vec3, to: Vec3) -> Option<Vec3> {
         let d = self.ground?.raycast(from, to)?;
         Some(from + (to - from).normalize_or_zero() * d)

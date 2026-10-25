@@ -536,6 +536,16 @@ impl Effects {
         }
         let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
         self.step_shine(f.dt, &live);
+        for (owner, id, mut left) in std::mem::take(&mut self.color_guards) {
+            left -= f.dt;
+            if !live.contains(&owner) {
+                if left >= 0.0 {
+                    self.fades.push((id, 0x8080_8080, 0.0));
+                }
+            } else if left >= 0.0 {
+                self.color_guards.push((owner, id, left));
+            }
+        }
         // Effect motion files whose every owning task has ended come off their actors.
         if !self.owned_motions.is_empty() {
             let (keep, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.owned_motions).into_iter().partition(|(o, ..)| live.contains(o));
@@ -964,6 +974,43 @@ impl Effects {
                 };
                 self.next_drive += 1;
                 self.shine_drives.push(crate::fx::ShineDrive { id: self.next_drive, owner: t.uid, actor: id, left, kind });
+                Flow::Next
+            }
+            // FUN_100618a0: a dead (status 2 / 3) actor2 (0xb2) or actor1 (0xb1): model colour 0x80808080 at once.
+            0xb1 | 0xb2 => {
+                if let Some(id) = self.doll_of(if op.code == 0xb1 { t.a1 } else { t.a2 }).id()
+                    && matches!(actors.status(id), 2 | 3)
+                {
+                    self.fades.push((id, 0x8080_8080, 0.0));
+                }
+                Flow::Next
+            }
+            // FUN_1005f320: a guard for dur x speed; when its scheduler task ends before that, actor1's model colour
+            // goes back to 0x80808080 (no tint left behind by a cut-short effect).
+            0x88 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.color_guards.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
+            // FUN_10053a00 / FUN_10052a50: every instance of generator A (4cc @8) on the pair ends, each live element of
+            // it bursting generator B (4cc @0x10) once where it is (FUN_10052930). A static A morphing in place and a
+            // lone B emission when no A runs are not done.
+            0x3f => {
+                let (Some(ga), Some(gb)) = (scope(self, kind::GENERATOR), self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.u32_at(0x10))) else { return Flow::Next };
+                let f = self.last_frame;
+                for i in 0..self.insts.len() {
+                    if !self.insts[i].as_ref().is_some_and(|x| x.src == ga && x.actors == [t.a1, t.a2] && x.driven.is_none()) {
+                        continue;
+                    }
+                    if let Some(f) = f.as_ref() {
+                        let live = self.insts[i].as_ref().map(|x| x.live.clone()).unwrap_or_default();
+                        for e in live {
+                            self.burst(gb, e, f, actors);
+                        }
+                    }
+                    self.kill(i);
+                }
                 Flow::Next
             }
             // Actor1's wepN meshes, N = i16 @0xc: 0x75 on hide byte 0 (hide u32 @8 != 0, show 0; with a length hidden
