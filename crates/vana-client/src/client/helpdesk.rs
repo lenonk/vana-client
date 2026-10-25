@@ -1,8 +1,8 @@
 //! Social row 8 Help Desk and /helpdesk (spec ~/ffxi/lab/research/social_rows_spec.md part H): "menu    faqsub"
 //! (vtable 0x1033bcf8; the state machine FUN_10212760 / FUN_10212aa0) with its menu page (FUN_102133c0 / FUN_102136d0)
 //! and Config page (FUN_102157c0 / FUN_10215a50). Q&A runs in PlayOnline's knowledge base, which we do not have: it
-//! stays grey and refuses, as retail does when its files fail to load. Not done: the Adventuring Primer (guide00) and
-//! the GM call (faqmain).
+//! stays grey and refuses, as retail does when its files fail to load. The GM call: client/faqmain.rs. Not done: the
+//! Adventuring Primer (guide00).
 
 use super::World;
 use super::game_ui::GameUi;
@@ -31,12 +31,14 @@ pub struct HelpDesk {
     cursor: usize,
     /// +0x17a: the page's scroll in pixels.
     scroll: f32,
+    /// faqmain (the GM call) over it: faqsub is suspended while it is open.
+    pub(super) main: Option<super::faqmain::FaqMain>,
 }
 
 /// FUN_102174c0 (and /helpdesk when faqsub is not open): faqsub at its menu page; the social page stays beside it.
 pub fn open(w: &mut World) {
     if w.helpdesk.is_none() {
-        w.helpdesk = Some(HelpDesk { config: false, cursor: 0, scroll: 0.0 });
+        w.helpdesk = Some(HelpDesk { config: false, cursor: 0, scroll: 0.0, main: None });
     }
 }
 
@@ -77,6 +79,10 @@ fn mentor_search(w: &mut World) {
 pub fn key(w: &mut World, key: egui::Key) {
     use egui::Key as K;
     let Some(h) = w.helpdesk.as_ref() else { return };
+    if h.main.is_some() {
+        super::faqmain::key(w, key);
+        return;
+    }
     let (config, cursor) = (h.config, h.cursor);
     let r = rows(config);
     let at = r.iter().position(|&c| c == cursor).unwrap_or(0);
@@ -127,9 +133,16 @@ pub fn key(w: &mut World, key: egui::Key) {
                     (h.config, h.cursor, h.scroll) = (true, 0, 0.0);
                 }
             }
+            3 => {
+                w.sounds.push(Ui::Select as u32);
+                let main = super::faqmain::open(w);
+                if let Some(h) = w.helpdesk.as_mut() {
+                    h.main = main;
+                }
+            }
             c => {
                 w.sounds.push(Ui::Select as u32);
-                log::info!("help desk: row {c} ({}) is not implemented yet", if c == 1 { "Adventuring Primer" } else { "Help Desk GM call" });
+                log::info!("help desk: row {c} (Adventuring Primer) is not implemented yet");
             }
         },
         _ => {}
@@ -163,6 +176,12 @@ pub fn bars(_gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         bars.help[1] = String::new();
     }
     bars.title[2] = text(w, 25);
+    // faqmain: its title (group 0xd 0x3c), no row help (the script's HELP lines are empty).
+    if h.main.is_some() {
+        bars.title[1] = _gu.title_msg(0x3c).unwrap_or_default();
+        bars.help[2] = String::new();
+        return;
+    }
     let help = if h.config { [Some(21), Some(22), Some(23), None, None][h.cursor] } else { MENU_HELP[h.cursor] };
     bars.help[2] = help.map_or(String::new(), |i| text(w, i));
 }
@@ -213,6 +232,9 @@ fn layout(gu: &GameUi, w: &World, h: &HelpDesk, width: f32) -> Vec<Entry> {
 /// framesus 35 at y + 4 on the other rows; the scroll keeps the cursor row inside; the bar at x1 - 8.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let h = w.helpdesk.as_ref()?;
+    if h.main.is_some() {
+        return super::faqmain::draw(gu, w, sw, sh);
+    }
     let win = gu.lobby_window_off(WIN, sw, sh, (0.0, 0.0), None, false, &(1..=15).collect::<Vec<u16>>())?;
     let [fx, fy, fw, fh] = win.frame;
     let (px, py, pr, pb) = PAD;
@@ -250,6 +272,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
 /// The scroll the draw settled on is kept so the view does not jump back (FUN_10213bd0 writes +0x17a).
 pub fn keep_scroll(w: &mut World, gu: &GameUi, sw: f32, sh: f32) {
     let Some(h) = w.helpdesk.as_ref() else { return };
+    if h.main.is_some() {
+        super::faqmain::keep_scroll(w, gu, sw, sh);
+        return;
+    }
     let Some([_, _, fw, fh]) = gu.window_rect(WIN, sw, sh) else { return };
     let (px, py, pr, pb) = PAD;
     let (cw, ch) = (fw - pr - px, fh - 5.0 - py - pb);

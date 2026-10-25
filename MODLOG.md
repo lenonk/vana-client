@@ -7075,3 +7075,38 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` M2.6 / M2.7; ours client/esedit.r
   do not), so ours, which placed mode 1 as layout + (114, 0), put the Equipment grid's and the shops' item info by the
   chat log on a screen taller than 448. Mode 1 is now (130, 240) from the top left.
 - Live (Lnxcsfix): the Onion Sword's info right under the Equipment grid, as the user's retail shot.
+
+## Help Desk: the GM call questionnaire (faqmain) (2026-10-25)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` H3 / H4; ours client/faqmain.rs (state under helpdesk.rs's holder).
+- DAT 5813 (ROM/19/62.DAT) is plain text (Shift-JIS Japanese column; the German / French columns have non-SJIS bytes,
+  so only the Japanese column is read two bytes at a time): DATASET 2003022101, 54 nodes (select and question), 43
+  LINK records. English = the second string of HEADER / SLOT; an "Input:REQUIRE" slot is {"Input:REQUIRE", var, ja,
+  en, de, fr}. No '#' labels in this file.
+- Rows follow the visible slots: FUN_1010f140(row - 1) walks the same DISP-filtered iterator as the draw (node 22 on
+  PC: "My character is stuck." is slot 5, the PS2 one is slot 1). DISP values ours: GENERIC.PLATFORM "win",
+  GAME.INFIELD "on" *(inf: the evaluator is not traced)*.
+- Pages: a select node with visible slots draws the select page (pads 8 / 20 / 10), other select nodes a leaf page
+  (10 / 25 / 15), question nodes the question page (8 / 20 / 15) *(inf: FUN_1010ea10's 1 / 3 not traced)*. Rows at
+  text x + 20, slots 10 apart, Execute / Go back / Return 15 apart (Return 30 below the slots without history); a
+  question slot's value "[text]" 3 below its prompt at + 20 (cut at the box - 30 with "..."), the slot 20 taller.
+  Markers (FUN_10218180): the hand (anc_s, bounds -32..0) at the row's x, framesus 35 at (text x, y + 4) on slot rows
+  only; with the field open the hand moves to the field and the prompt keeps its bullet.
+- Keys (FUN_1021a240): Up / Down wrap through the row list with SE 0001 every time; Right / Left scroll 150 px;
+  Escape moves the cursor to Return (SE 0001 when it moves), never closes; Enter: select page slot follows its link,
+  row 0 back, Return SE 0003 and closes with no packet; question / leaf page Return: SE 0003, c2s 0x0D3 type 1, close;
+  a field row opens the field (text: the last committed one if it was this row, else empty; reset at every open);
+  Execute (FUN_102197f0) does not check "Input:REQUIRE".
+- The field's Enter (LAB_102176d0) stores the text in the slot's parameter and DAT_10664550; Escape stores nothing.
+- c2s 0x0D4 {u16 counter (never 0), u16 0} at every open. c2s 0x0D3 (FUN_10113410): {u16 type | pktId << 8, u8 seq |
+  eos << 7, u8 blocks}, then blocks cut into packets of at most 0x104: position {0, 0x20, opt, zone 0, world 0, the
+  actor's position at +4..+0xc and +0x24..+0x2c} (zone / world are never written), version {1, len, opt, u32 dataset,
+  u32 per node of the walk *(inf)*}, error codes (none kept), "GROUP.KEY:value" strings NUL-padded to 4
+  (FUN_10113a70), lobby history (none kept). Ours sends the walk's EVAL keys and the fields' parameters *(inf)*.
+- Execute: GENERIC.CLILANG "1", AREACODE (s2c 0x0B4 @0x12, which LSB leaves 0), SELLANG "0"; GMREPORT.GMCALL -> type
+  2 and 7031 0x14; GMREPORT.NOTICE -> 3; else 1; close; EXEC.POLEXIT runs the text command at 0x10376384 (not used by
+  this file, not done), EXEC.LOGOUT "/logout", EXEC.RESCUE c2s 0x0F0 {0}.
+- Live (Lnxcsfix): root, controls (27), a leaf (28) and Go back, Escape to Return, faqsub back; stuck (22), node 44,
+  Q04 with the field ("test call" committed), Return sent type 1 (248 bytes) and closed. Execute not pressed: it
+  writes a row in the server's help_desk table.
+- Not done: the GM reply page (s2c 0x0B6, gmNotice.fdt, c2s 0x0D5), the language row (area code 2), the mouse.

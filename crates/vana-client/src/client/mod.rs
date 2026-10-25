@@ -61,6 +61,7 @@ mod macroedit;
 mod equipsets;
 mod esmenu;
 mod esedit;
+mod faqmain;
 mod journal;
 mod missions;
 mod quests;
@@ -1133,7 +1134,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let ls_typing = linkshell::typing(world);
     let comment_typing = seacom::typing(world);
     let macro_typing = macroedit::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing;
+    let faq_typing = faqmain::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1148,6 +1150,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keys.clear();
     } else if macro_typing {
         macroedit::text_events(world, &input.events);
+        keys.clear();
+    } else if faq_typing {
+        faqmain::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -3740,6 +3745,9 @@ struct World {
     bazaar_customers: i32,
     /// Social row Help Desk: "menu    faqsub".
     helpdesk: Option<helpdesk::HelpDesk>,
+    /// The GM call's packet counters: c2s 0x0D4's Id (DAT_104e1b5c) and 0x0D3's pktId (DAT_104e1b64), never 0.
+    faq_counter: u16,
+    faq_report: u8,
     /// Social row MacroPalette's windows, mcrselec's page (its object is permanent) and mcrledit's line clipboard.
     macroedit: Option<macroedit::MacroEdit>,
     mcr_page: usize,
@@ -4958,6 +4966,8 @@ impl App {
                             bazaar_msg: Default::default(),
                             bazaar_customers: 0,
                             helpdesk: None,
+                            faq_counter: 0,
+                            faq_report: 0,
                             macroedit: None,
                             mcr_page: 0,
                             equipsets: None,
