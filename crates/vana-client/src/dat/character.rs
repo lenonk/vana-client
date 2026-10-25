@@ -425,6 +425,8 @@ pub struct CharFile {
     pub animations: Vec<Animation>,
     /// Payload of the 0x45 "info" chunk: per-part motion selectors, 0xFF = unset.
     pub info: Option<[u8; 16]>,
+    /// A mount file's 0x45 "moun" chunk (FUN_100cf210): rider yaw offsets and riding variants by race.
+    pub moun: Option<[u8; 16]>,
     /// Type-0x07 schedulers (name, data): attack, damage and death scripts (dat::sched).
     pub schedulers: Vec<(String, Vec<u8>)>,
     pub warnings: Vec<String>,
@@ -442,6 +444,10 @@ pub fn load_file(file: &[u8]) -> Result<CharFile> {
                 out.schedulers.push((c.name(), c.data.to_vec()));
                 Ok(())
             }
+            0x45 if c.data.len() >= 16 && c.name() == "moun" => {
+                out.moun = c.data[..16].try_into().ok();
+                Ok(())
+            }
             0x45 if c.data.len() >= 16 && out.info.is_none() => {
                 out.info = c.data[..16].try_into().ok();
                 Ok(())
@@ -456,7 +462,7 @@ pub fn load_file(file: &[u8]) -> Result<CharFile> {
 }
 
 /// Model ids as the lobby sends them (GrapIDTbl without the slot nibble); face 0..15 = 1A..8B.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct Look {
     pub race: u8,
     pub face: u16,
@@ -640,6 +646,48 @@ pub fn file_ids(look: &Look) -> Result<(u32, Vec<(&'static str, u16, u32)>)> {
     Ok((skel, parts))
 }
 
+/// A mount file's riding data (FUN_100cf210 into the actor's info block +0x878: `moun` at +0x14, info[15] / [14] at
+/// +0x24 / +0x25).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MountInfo {
+    pub moun: [u8; 16],
+    pub rate: u8,
+    pub cam: u8,
+}
+
+impl MountInfo {
+    /// DAT_1032a410: the race's column (Hume M, Hume F, Elvaan M, Elvaan F, Taru M, Taru F, Mithra, Galka).
+    fn column(race: u8) -> Option<usize> {
+        [0, 0, 1, 2, 3, 4, 5, 6, 7].get(race as usize).copied()
+    }
+
+    /// FUN_100222b0: the rider's yaw offset, radians (unsigned units of 2 pi / 255.5; 0xff none).
+    pub fn yaw(&self, race: u8) -> f32 {
+        match Self::column(race).map(|i| self.moun[i]) {
+            Some(b) if b != 0xff => b as f32 * 0.024_591_723,
+            _ => 0.0,
+        }
+    }
+
+    /// FUN_10022340: the riding variant digit replacing the first letter of the rider's motions (0 none).
+    pub fn variant(&self, race: u8) -> u8 {
+        match Self::column(race).map(|i| self.moun[8 + i]) {
+            Some(b) if b != 0xff => b,
+            _ => 0,
+        }
+    }
+
+    /// FUN_10022380: the animal's motion rate (info[15] / 100).
+    pub fn rate(&self) -> f32 {
+        if self.rate == 0xff { 1.0 } else { self.rate as f32 / 100.0 }
+    }
+
+    /// FUN_100223b0: added to the third-person look height (info[14] / 100).
+    pub fn cam_add(&self) -> f32 {
+        if self.cam == 0xff { 0.0 } else { self.cam as f32 / 100.0 }
+    }
+}
+
 pub struct Character {
     pub skeleton: Skeleton,
     pub parts: Vec<MeshPart>,
@@ -663,6 +711,8 @@ pub struct Character {
     pub ranged: i8,
     /// PC looks: what picks the battle and event motion files.
     pub pc: Option<super::motionfile::PcMotion>,
+    /// A mount (102705..): its `moun` chunk and info bytes 14 / 15.
+    pub mount: Option<MountInfo>,
     pub log: Vec<String>,
     /// The animations as GPU words (`prepare`), else packed when first posed.
     pub packed: Option<std::sync::Arc<super::animpack::Packed>>,
@@ -789,7 +839,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, mount: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {

@@ -8143,3 +8143,33 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live: "/? sit" printed the /sit help with its Subcommands block on separate lines, "/? lock" listed /clock
   /lockon /locker /blockaid /blockhelp /lockstyle /lockstyleset.
 
+## Riding: the chocobo / mount under the rider (2026-10-25; spec ~/ffxi/lab/research/mount_model_spec.md)
+
+- Fields: 0x00D mask 0x04 ChocoboIndex u32 @0x20 bits 5..7 (asm 0x1009a1e7), the mount id u32 @0x44 bits 4..11
+  (asm 0x1009aa8d -> entity +0x1db), CustomProperties @0x34 / @0x38; 0x037 ChocoboIndex u32 @0x28 bits 13..15 and the
+  mount id u8 @0x5B; 0x067 type 2 CustomProperties @0x18 / @0x1C for ourselves. net::Ride, Entity::ride, World::my_ride.
+- The animal (FUN_1008f740) is a second actor, id = the rider's | 0x4000_0000 (ride::ANIMAL; never an entity, a
+  target or a pick), made once the rider's PC model is in: status 5 with ChocoboIndex 0 / 1 file 39275 (39276 in the
+  [S] zones 80..99, 136, 137 outside an event), ChocoboIndex 2..4 a race 32..36 look from CustomProperties
+  (FUN_1009ab60: colour cp0 >> 9 & 7, beak & 7, talons >> 3 & 7, tail >> 6 & 7, body 7; cp1 bit 0 the Noble Chocobo
+  0x20 / 3 3 3 1 3; nothing while the race is not 32..36), status 0x55 file 102705 + mount id - 1 (none with id 0).
+  It loads as Source::File through npc::load_file_model and stands at the rider's place (status 0, the rider's
+  ratio), names chi / wlk / run, mounts at info[15] / 100 (Actor::rate_scale), size info[10 + rider info[13]] / 100 x
+  the rider's scale (FUN_100cf210).
+- A mount file's 0x45 `moun` chunk (16 bytes: yaw by race column 0..7, then the variant digit) is kept apart from
+  `info` (102716 Moogle and 102740 Phuabo have it first); dat::character::MountInfo. The yaw byte is **unsigned**
+  (FUN_100222b0: `(uint)byte x 0.024591723`, 0xff none), so Morbol 0xec is +332.5 degrees, not -28.
+- The rider (FUN_100d2800, FUN_100c8bb0): riding files `DAT_1035f5ac[race] + v` (u16: 38603 38603 38699 38795 38891
+  38987 38987 39083 39179) and, with a skirt set, `DAT_1035f5c0[race * 2 + (skirt 1 ? 0 : 1)] + v` (u16 38635 38667
+  ...), v 0 chocobo, 3 chocobo in the [S] zones, 5 mount, as actmotion::Kind::Ride; names chi / wlk / run, on a mount
+  the first letter the variant digit (FUN_100c83c0: "6hi", "3un"); wep0..wep8 byte 0 hidden on a mount.
+- Placement (FUN_100c9330): the rider draws at pos + v, v = the mount's saddle point (0x2f + race, 0x30 for race 0)
+  - the rider's point 0x6b, both read back from the GPU pose relative to their roots (keys bit 62, ride::points; one
+  frame late as retail), and its facing turned by the yaw offset. Nothing on a chocobo (the riding motion lifts it).
+- Live (Lnxcsfix, Hume M, West Ronfaure): /mount Chocobo drew the chocobo with the rider (files [38603]), standing and
+  running; /mount Raptor files [38608], offset (-0.128, 0.383, -0.110) = 0.17 forward and 0.38 down as the spec's CPU
+  check (0.17, 0.38, 0); from the side the rider sits on the raptor's back.
+- Not done yet: the mount / dismount transitions (rider hidden until the mount loads, the 32-tick fade, `coff` on
+  both and the animal running off: ours drops the animal at once), the plate lift by variant, the riding camera height,
+  first person, event op 0x7e, the ground tilt of info[0] 1 / 2 models.
+

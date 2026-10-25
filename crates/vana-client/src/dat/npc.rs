@@ -126,8 +126,8 @@ pub fn load_model(index: &DatIndex, model: u16) -> Result<Character> {
 fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Character> {
     let id = model_file(model);
     let file = index.read(id)?;
-    let f = load_file(&file)?;
-    let Some(skeleton) = f.skeleton else {
+    let mut f = load_file(&file)?;
+    let Some(skeleton) = f.skeleton.take() else {
         // Skeleton-less ids script either a PC look or another model id (a variant whose own meshes,
         // e.g. weapons, are added to the base model; the merge is verified visually only).
         let init = init_scheduler(&file);
@@ -153,8 +153,20 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
         ch.log.insert(0, format!("model {model} -> file {id}: init scheduler sets {look:?}"));
         return Ok(ch);
     };
+    Ok(self_contained(id, &file, f, skeleton, &format!("model {model}")))
+}
+
+/// A self-contained model file by id (a mount 102705.., the chocobo 39275 / 39276).
+pub fn load_file_model(index: &DatIndex, id: u32) -> Result<Character> {
+    let file = index.read(id)?;
+    let mut f = load_file(&file)?;
+    let Some(skeleton) = f.skeleton.take() else { bail!("file {id} has no skeleton") };
+    Ok(self_contained(id, &file, f, skeleton, "riding model"))
+}
+
+fn self_contained(id: u32, file: &[u8], f: super::character::CharFile, skeleton: super::character::Skeleton, what: &str) -> Character {
     let mut log = vec![format!(
-        "model {model} -> file {id}: skeleton {} ({} bones), {} mesh copies, {} textures, {} animations",
+        "{what} -> file {id}: skeleton {} ({} bones), {} mesh copies, {} textures, {} animations",
         skeleton.name,
         skeleton.bones.len(),
         f.parts.len(),
@@ -162,14 +174,15 @@ fn load_model_depth(index: &DatIndex, model: u16, depth: u32) -> Result<Characte
         f.animations.len()
     )];
     log.extend(f.warnings);
-    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+    let mount = f.moun.map(|moun| super::character::MountInfo { moun, rate: f.info.map_or(0xff, |i| i[15]), cam: f.info.map_or(0xff, |i| i[14]) });
+    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, mount, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
     ch.merge_size_info(f.info);
-    let init = init_scheduler(&file);
+    let init = init_scheduler(file);
     apply_motion_ops(&mut ch, &init);
     // FUN_1008ad70 plays init once the model is up; weapon meshes it hides are left out *(inf: nothing shows them
     // again yet; a later op 0x75 / 0xa3 show needs per-actor hide bytes)*.
     hide_weapons(&mut ch, &init.hidden_weapons);
-    Ok(ch)
+    ch
 }
 
 fn hide_weapons(ch: &mut Character, hidden: &[u8]) {
@@ -205,6 +218,22 @@ pub fn load_npc(index: &DatIndex, look: &NpcLook) -> Result<Character> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Mount files (mount_model_spec.md 2.3): the raptor, the tiger's side-saddle for Hume F, the moogle whose `moun`
+    /// comes before its `info`.
+    #[test]
+    fn mount_info() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let mi = |id| load_file_model(&index, id).unwrap().mount.unwrap();
+        let raptor = mi(102_706);
+        assert_eq!((raptor.variant(1), raptor.yaw(1), raptor.rate()), (6, 0.0, 1.0));
+        let tiger = mi(102_707);
+        assert_eq!((tiger.variant(1), tiger.variant(2), tiger.rate()), (6, 3, 0.9));
+        assert!((tiger.yaw(2) - 0x40 as f32 * 0.024_591_723).abs() < 1e-6);
+        let moogle = load_file_model(&index, 102_716).unwrap();
+        assert_eq!((moogle.mount.unwrap().variant(8), moogle.mount.unwrap().rate(), moogle.size_info), (3, 0.5, [100; 4]));
+        assert!(load_file_model(&index, 39_275).unwrap().mount.is_none());
+    }
 
     /// Pugil (model 348) keys flip quaternion sign between frames; samples between keys stay on the short arc
     /// (FUN_10032400), not near zero where the fins spun.
@@ -252,7 +281,7 @@ mod tests {
     #[test]
     fn size_info_order() {
         let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new(), point_rots: Vec::new(), look_limits: [[0.0; 3]; 2], boxes: Vec::new() };
-        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, mount: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
         let mut later = [0xFFu8; 16];
         later[10..14].copy_from_slice(&[85, 100, 115, 140]);
         ch.merge_size_info(Some(later));

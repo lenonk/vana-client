@@ -74,6 +74,18 @@ pub struct EntityUpdate {
     pub spawn_fx: Option<bool>,
     /// 0x00E u32 @0x18 bit 16 (KingFlag): counted toward 0x00A SendCount before c2s 0x01A 0x14 (all.asm 167839).
     pub king: bool,
+    /// 0x00D mask 0x04: ChocoboIndex u32 @0x20 bits 5..7 (asm 0x1009a1e7), the mount id u32 @0x44 bits 4..11 (asm
+    /// 0x1009aa8d), CustomProperties @0x34 / @0x38 (FUN_1009ab40).
+    pub ride: Option<Ride>,
+}
+
+/// Riding (mount_model_spec.md 1.2): ChocoboIndex, the mount id (0 none) and CustomProperties (a personal or Noble
+/// chocobo's look).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Ride {
+    pub chocobo: u8,
+    pub mount: u8,
+    pub custom: [u32; 2],
 }
 
 /// The bytes FUN_1008db40 colours a name by (0x00E / 0x00D, mask 0x04): charm @0x27 bit 3, trust @0x28 bit 0,
@@ -312,7 +324,8 @@ pub enum NetEvent {
     /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
     /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
     /// @0x25: the main job's level before any level restriction (player +0x40c42).
-    CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8, sync: u8 },
+    /// `custom`: CustomProperties @0x18 / @0x1C, our own personal chocobo's look (FUN_1009ab40).
+    CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8, sync: u8, custom: [u32; 2] },
     /// s2c 0x11A (the answer to c2s 0x119): unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8).
     EmoteUnlocks { jobs: u32, chairs: u16 },
     /// s2c 0x04B (GP_SERV_COMMAND_PBX_RESULT).
@@ -364,7 +377,8 @@ pub enum NetEvent {
     /// epoch), the time the server sends us home (@0x38 is Flags3).
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate },
+    /// `ride`: ChocoboIndex u32 @0x28 bits 13..15 and the mount id u8 @0x5B.
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8) },
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
     /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
@@ -774,6 +788,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
         king: kind == EntityKind::Npc && p.u32(0x18) >> 16 & 1 != 0,
+        ride: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x48).then(|| Ride { chocobo: (p.u32(0x20) >> 5 & 7) as u8, mount: (p.u32(0x44) >> 4) as u8, custom: [p.u32(0x34), p.u32(0x38)] }),
     }
 }
 
@@ -885,7 +900,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p) })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }) })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.
@@ -1119,7 +1134,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         strings: vec![text(&p, 0x10, 16)],
                         ..Default::default()
                     }))?,
-                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25), sync: p.u8(0x10) })?,
+                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25), sync: p.u8(0x10), custom: [p.u32(0x18), p.u32(0x1c)] })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
                     0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,

@@ -22,6 +22,8 @@ pub enum Kind {
     Skill,
     /// An effect file whose scheduler plays its own motions (op 0x05, Pollen's wz00), while that task runs.
     Effect,
+    /// The riding files (FUN_100d2800, tag 7) while on a chocobo or mount.
+    Ride,
 }
 
 pub type Extra = Vec<(Kind, Arc<MotionFile>)>;
@@ -437,7 +439,19 @@ pub(super) fn update(w: &mut World, dt: f32) {
             (Some(pc), true) => crate::dat::motionfile::battle_files(pc),
             _ => Vec::new(),
         };
+        let ride = ch.pc.map(|pc| super::ride::files(w, id, &pc)).unwrap_or_default();
         let a = w.actors.get_mut(&id).unwrap();
+        if ride != a.ride_on {
+            if ride.is_empty() {
+                drop_kind(&mut a.extra, Kind::Ride);
+                a.ride_on.clear();
+            } else if let Some(files) = w.motion_files.all(&index, &ride) {
+                drop_kind(&mut a.extra, Kind::Ride);
+                add(&mut a.extra, Kind::Ride, files);
+                log::info!("actor {id:#x}: riding files {ride:?}");
+                a.ride_on = ride;
+            }
+        }
         let fx_want: Vec<u32> = a.fx_files.iter().copied().filter(|f| !a.extra.iter().any(|(k, m)| *k == Kind::Effect && m.id == *f)).collect();
         if !fx_want.is_empty()
             && let Some(files) = w.motion_files.all(&index, &fx_want)

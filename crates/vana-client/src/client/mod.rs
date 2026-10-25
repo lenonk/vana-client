@@ -81,6 +81,7 @@ mod arealist;
 mod seacom;
 mod region;
 mod radar;
+mod ride;
 mod status;
 mod inspect;
 mod linehist;
@@ -328,6 +329,8 @@ struct Entity {
     face: u16,
     /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
     spawn_fx: bool,
+    /// 0x00D's riding fields (ride.rs).
+    ride: net::Ride,
     /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
     marks: net::Marks,
     female: bool,
@@ -961,6 +964,7 @@ fn self_entity(w: &World) -> Entity {
         object: false,
         face: 0,
         spawn_fx: false,
+        ride: Default::default(),
         marks: net::Marks::default(),
         female: false,
         sub_kind: 0,
@@ -2926,6 +2930,7 @@ fn place_mogdoor(w: &mut World) {
             object: true,
             face: 0,
             spawn_fx: false,
+            ride: Default::default(),
             marks: net::Marks::default(),
             female: false,
             sub_kind: 3,
@@ -3018,6 +3023,8 @@ impl Default for NationShow {
 enum Source {
     Pc(Look),
     Npc(crate::dat::npc::NpcLook),
+    /// A self-contained model file (a chocobo or mount, ride.rs).
+    File(u32),
 }
 
 struct Actor {
@@ -3098,6 +3105,10 @@ struct Actor {
     pick_bones: Option<Vec<u16>>,
     /// Status motion names changed by scheduler ops 0x79 / 0x8c / 0xa4 / 0xa5 (actor +0x7c8..+0x7d4), else the model's.
     motion_names: Option<crate::motion::MotionNames>,
+    /// A mount's status motions run at this rate (info[15] / 100, ride.rs).
+    rate_scale: f32,
+    /// The riding files on `extra`.
+    ride_on: Vec<u32>,
 }
 
 impl Actor {
@@ -3139,6 +3150,8 @@ impl Actor {
             find_cache: Default::default(),
             failed: false,
             motion_names: None,
+            rate_scale: 1.0,
+            ride_on: Vec::new(),
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
@@ -3361,9 +3374,25 @@ fn turn_rate(a: &Actor, in_event: bool) -> f32 {
     if in_event && a.turn_pct != 0 { (a.turn_pct as f32 * 0.00125).clamp(0.0, 1.0) } else { 0.125 }
 }
 
+/// An actor's place; a riding animal stands at its rider's (FUN_100c8ed0), a rider on a mount moves by its offset and
+/// yaw (FUN_100c9330; zero on a chocobo).
+fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
+    if id & ride::ANIMAL != 0 {
+        let p = base_place(w, id & !ride::ANIMAL, my_dir)?;
+        return Some(Place { status: 0, tilt: [0.0; 2], ..p });
+    }
+    let mut p = base_place(w, id, my_dir)?;
+    if let Some(r) = w.rides.get(&id).filter(|_| matches!(p.status, 5 | 0x55)) {
+        p.pos += r.offset;
+        let a = (-p.forward.z).atan2(p.forward.x) + r.yaw;
+        p.forward = Vec3::new(a.cos(), 0.0, -a.sin());
+    }
+    Some(p)
+}
+
 /// A bound actor draws from its VM body while the event runs, posing with its event status (+0x174, op 0xac 1);
 /// otherwise ourselves from the session, others from their entity.
-fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
+fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     let size = if id == w.my_id { w.my_motion.graph_size } else { w.entities.get(&id)?.motion.graph_size };
     if let Some(p) = event::pose(w, id) {
         return Some(Place { pos: p.pos, forward: Vec3::new(p.yaw.cos(), 0.0, -p.yaw.sin()), tilt: p.tilt, status: event::event_status(w, id), ratio: p.ratio, size });
@@ -3676,8 +3705,11 @@ struct World {
     sub: subarea::SubArea,
     /// Event op 0xd9: effect sounds get 20 voices while an event runs (FUN_10038330).
     event_voices: bool,
-    /// Looks set by event op 0xb6, for the model loader.
+    /// Looks set by event op 0xb6 (and the riding animals, ride.rs), for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// Our riding fields (0x037, 0x067), and every rider's state (ride.rs).
+    my_ride: net::Ride,
+    rides: HashMap<u32, ride::Riding>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
@@ -5306,6 +5338,8 @@ impl App {
                             doors: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            my_ride: Default::default(),
+                            rides: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
                             typing: false,
@@ -5946,6 +5980,7 @@ impl App {
                         object: false,
                         face: 0,
                         spawn_fx: false,
+                        ride: Default::default(),
                         marks: net::Marks::default(),
                         female: false,
                         sub_kind: 0,
@@ -5982,6 +6017,9 @@ impl App {
                     }
                     if let Some(s) = e.spawn_fx {
                         entry.spawn_fx = s;
+                    }
+                    if let Some(r) = e.ride {
+                        entry.ride = r;
                     }
                     if let Some(m) = e.marks {
                         entry.marks = m;
@@ -6150,7 +6188,10 @@ impl App {
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
-                NetEvent::CharSync { id, owner, floors, open, level, sync } => {
+                NetEvent::CharSync { id, owner, floors, open, level, sync, custom } => {
+                    if id == world.my_id {
+                        world.my_ride.custom = custom;
+                    }
                     // @0x10 bit 1 Campaign (+0x1da), bit 2 Level Sync (+0x130 bit 23): name plate icons.
                     if id == world.my_id {
                         world.my_sync = sync;
@@ -6290,7 +6331,8 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride } => {
+                    (world.my_ride.chocobo, world.my_ride.mount) = ride;
                     world.my_plate = plate;
                     world.my_fellow = fellow;
                     world.self_flags = flags;
@@ -6464,6 +6506,7 @@ impl App {
                         let model = match source {
                             Source::Pc(look) => crate::dat::character::load_character(&index, &look),
                             Source::Npc(look) => crate::dat::npc::load_npc(&index, &look),
+                            Source::File(file) => crate::dat::npc::load_file_model(&index, file),
                         };
                         let _ = tx.send(Task::CharacterLoaded(key, model.map(|mut m| {
                             m.prepare();
@@ -6678,6 +6721,7 @@ impl App {
         for (id, m) in std::mem::take(&mut world.effects.motions) {
             actmotion::play_op(world, id, m);
         }
+        ride::update(world);
         actmotion::update(world, dt);
         // Inferred safety: a talk the server never answers stops blocking after 10 s.
         if world.talk_lock.is_some_and(|t| t.elapsed().as_secs_f32() > 10.0) {
@@ -8810,6 +8854,9 @@ impl App {
                 pcs.sort_by(|a, b| a.0.total_cmp(&b.0));
                 hidden.extend(pcs[cap..].iter().map(|p| p.1));
             }
+            // A riding animal goes with its rider.
+            let animals: Vec<u32> = hidden.iter().map(|id| ride::ANIMAL | id).collect();
+            hidden.extend(animals);
             let idles = event::idles(w);
             // Placements first (look targets read other actors), then each actor's motion and pose.
             let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
@@ -8852,6 +8899,8 @@ impl App {
                 .collect();
             // Foot points that came back from earlier frames: steps (FUN_100d2970).
             if let Some(pts) = w.renderer.as_mut().map(|r| r.points.take()) {
+                let (rides, pts): (Vec<_>, Vec<_>) = pts.into_iter().partition(|(k, _)| ride::is_key(*k));
+                ride::points(w, rides);
                 let (pick, steps): (Vec<_>, Vec<_>) = pts.into_iter().partition(|(k, _)| k >> 63 != 0);
                 let mut fresh: HashMap<u32, HashMap<u16, Vec3>> = HashMap::new();
                 for (k, p) in pick {
@@ -8985,7 +9034,7 @@ impl App {
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
                             let (n, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
-                            (n.to_string(), r, false, crate::motion::BLEND_TICKS)
+                            (n.to_string(), r * a.rate_scale, false, crate::motion::BLEND_TICKS)
                         }
                     };
                     if name != a.motion || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
@@ -9025,7 +9074,7 @@ impl App {
                     // the status motion goes on (an Elvaan's moving swing amf1 keys the upper body over the run), so it
                     // goes first and the motion's tracks win where it has them.
                     let (base, base_rate) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
-                    a.base_ticks += dt * 60.0 * base_rate;
+                    a.base_ticks += dt * 60.0 * base_rate * a.rate_scale;
                     let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(base, a.base_ticks, false) } else { Vec::new() };
                     anims.extend(frames_of(&name, a.ticks, once));
                     // The mouth motion of a spoken line goes over the body motion (its face tracks win).
@@ -9182,6 +9231,12 @@ impl App {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look, overlay);
                         counts.posed += 1;
+                        // FUN_100c9330: a mounted rider's point 0x6b and the mount's saddle point, for the offset.
+                        if let Some((key, k)) = ride::query(&w.rides, *id)
+                            && let Some(&(bone, off)) = ch.skeleton.points.get(k)
+                        {
+                            r.query_point(g, key, bone as u16, off);
+                        }
                         // The pick's fine test: the geometry bones and attach points 1 / 3 / 13 / 15 of an actor whose rect
                         // held the pointer, read back a frame or two late.
                         if w.pick_rect.contains(id) {
