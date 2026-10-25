@@ -211,6 +211,7 @@ pub struct EffectsGpu {
     mesh_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     sprite_pipes: HashMap<usize, wgpu::RenderPipeline>,
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    ring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     /// CMoDist: SRCALPHA / INVSRCALPHA, z write by flag 12.
     dist_pipes: HashMap<bool, wgpu::RenderPipeline>,
     /// DamValueProg by blend class; no z write (flag 0x1000 clear in DAT 27).
@@ -362,11 +363,13 @@ impl EffectsGpu {
         let mut sprite_pipes = HashMap::new();
         let mut morph_pipes = HashMap::new();
         let mut damv_pipes = HashMap::new();
+        let mut ring_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
                 mesh_pipes.insert((class, zwrite), pipe("vs_mesh", &vbuf, class, zwrite));
                 morph_pipes.insert((class, zwrite), pipe("vs_morph", &[], class, zwrite));
+                ring_pipes.insert((class, zwrite), pipe("vs_ring", &[], class, zwrite));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -403,6 +406,7 @@ impl EffectsGpu {
             mesh_pipes,
             sprite_pipes,
             morph_pipes,
+            ring_pipes,
             dist_pipes,
             damv_pipes,
             dmgnum: None,
@@ -829,6 +833,17 @@ impl EffectsGpu {
                     }
                     pass.set_bind_group(1, m.texture.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
                     pass.draw(0..m.t * 3, base..base + 1);
+                }
+                // Up to 3 ring pairs of 2S triangles (S <= 255); vs_ring hides the rest.
+                Draw::Ring => {
+                    class = blend_class(c.blend, true).unwrap_or(class);
+                    let key = (true, class + 24, c.flags & 0x1000 != 0);
+                    if bound != Some(key) {
+                        pass.set_pipeline(&self.ring_pipes[&(class, key.2)]);
+                        bound = Some(key);
+                    }
+                    pass.set_bind_group(1, &self.white, &[]);
+                    pass.draw(0..3 * 2 * 255 * 3, base..base + 1);
                 }
                 Draw::DamValue => {
                     let Some((g, _)) = self.dmgnum.as_ref() else { continue };

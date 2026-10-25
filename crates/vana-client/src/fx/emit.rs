@@ -92,6 +92,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     } else if res_kind == 0x5c && inst.dam.as_ref().is_some_and(|d| !d.glyphs.is_empty()) {
         // DamValueProg (FUN_10041f40): without a task's number the string is empty and nothing draws.
         Draw::DamValue
+    } else if res_kind == 0x24 && flags & 0x10_0000 == 0 {
+        // RingProg (FUN_100555f0); DistRing (0x100000) is a distortion, not drawn yet.
+        Draw::Ring
     } else if needs_no_resource(res_kind) {
         Draw::None
     } else {
@@ -170,6 +173,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         }
         Draw::None => dk::NONE,
         Draw::Dist => dk::DIST,
+        Draw::Ring => dk::RING,
         Draw::DamValue => {
             let d = inst.dam.as_ref().unwrap();
             let pack = |gs: &[u8]| gs.iter().enumerate().fold(0u32, |a, (k, &g)| a | (g as u32 & 0xf) << (4 * k));
@@ -582,6 +586,16 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::DRAG, drag);
             }
             // Ground snap, point lists, paths, sound, class-specific: not handled yet.
+            // FUN_1004e8d0 0x10051b5b (any class): ring radii f32 @4.., colours @0x14.. (file RGBA), segments byte
+            // @0x24, rings byte @0x25 + 2 (at most 4).
+            0x3a => {
+                for k in 0..4 {
+                    e.set(w::RING_R + k, op.f32(1 + k));
+                    let [r, g, b, a] = op.u32(5 + k).to_le_bytes();
+                    e.0[w::RING_C + k] = u32::from_le_bytes([b, g, r, a]);
+                }
+                e.0[w::RING_SR] = op.byte(0x24) as u32 | (op.byte(0x25) as u32 + 2).min(4) << 8;
+            }
             // FUN_1004e8d0 0x1004f7d6: onto the ground under the element (1 above to 6 below, as attach point 0x30);
             // a miss leaves it.
             0x42 => {

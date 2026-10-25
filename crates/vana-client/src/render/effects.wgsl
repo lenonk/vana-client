@@ -864,6 +864,39 @@ fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) ->
     return out;
 }
 
+// RingProg (FUN_100555f0): per ring pair p a triangle strip of 2S + 2 vertices, as triangles (strip index t + c);
+// strip pair q at angle 0 for q 0 and S, else (q - 1) 2 pi / S (the literal degenerate first pair); even strip
+// vertices on ring p, odd on ring p + 1, at (sin a r, cos a r, 0) with that ring's colour. Colour diffuse x TFACTOR
+// x 2, alpha x 4 (TSS 0x10348678, variant 3), TFACTOR the raw element colour (+0xf8, no fade). Untextured.
+@vertex
+fn vs_ring(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let eb = e * E_WORDS;
+    let sr = dels[eb + E_RING_SR];
+    let segs = sr & 0xffu;
+    let rings = (sr >> 8u) & 0xffu;
+    if (segs == 0u || rings < 2u) { return hidden(); }
+    let per = 6u * segs;
+    let p = k / per;
+    if (p + 1u >= rings) { return hidden(); }
+    let j = (k % per) / 3u + k % 3u;
+    let q = j / 2u;
+    var ang = 0.0;
+    if (q != 0u && q != segs) { ang = f32(q - 1u) * 6.2831853 / f32(segs); }
+    let ring = p + j % 2u;
+    let r = bitcast<f32>(dels[eb + E_RING_R + ring]);
+    let mv = out_mat(o);
+    let vp = (mv * vec4<f32>(sin(ang) * r, cos(ang) * r, 0.0, 1.0)).xyz;
+    let c = dels[eb + E_RING_C + ring];
+    let dc = vec4<f32>(f32((c >> 16u) & 0xffu), f32((c >> 8u) & 0xffu), f32(c & 0xffu), f32(c >> 24u)) / 255.0;
+    var out = vout(e, vp, dc, vec2<f32>(0.0), 3u);
+    let t = dels[eb + E_COLOR];
+    out.tf = vec4<f32>(f32((t >> 16u) & 0xffu), f32((t >> 8u) & 0xffu), f32(t & 0xffu), f32(t >> 24u)) / 255.0;
+    return out;
+}
+
 // DamValueProg (FUN_10041af0 / FUN_10041c20): glyph k / 6 of the number as a screen quad. The element's view origin
 // passes the name-plate test and scale (FUN_100830c0), is pulled 1 unit toward the camera and projected; glyphs
 // are centred on it, each [x, x + w] x [-(h / 2), h / 2] units of (W, H) x scale x 0.00234375 px. Diffuse = the

@@ -7711,3 +7711,17 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   0x55 (the shine overlay), 0x88, 0x3f, 0x2c, 0xb2, screen ops 0x0e / 0x72 / 0x0f, 0x7a; attach modes 9..0xb (the bone
   rotation, inferred). 854 "scheduler not found" are the item / ability files with other entry names and LSB mob
   animations outside the effect files (see "Effects audit: fx-sweep").
+
+## Effect rings: RingProg (kind 0x24), emission op 0x3a (2026-10-25)
+
+- Op 0x3a (FUN_1004e8d0 0x10051b5b, any class): radii f32 @4..@0x10, colours @0x14..@0x20 (file RGBA -> D3DCOLOR as
+  op 0x16), segments S byte @0x24, rings R = byte @0x25 + 2 (at most 4). Element words RING_R / RING_C / RING_SR
+  (shared with the morph weights).
+- Draw (FUN_100555f0, classes2.md 4.4): per ring pair p a strip of 2S + 2 vertices, pairs at angles 0, 0, s .. (S-2)s,
+  0 (the literal degenerate first pair), even vertices on ring p, odd on p + 1, at (sin a r, cos a r, 0) in the
+  element's frame with that ring's colour; colour diffuse x TFACTOR x 2, alpha x 4 (TSS 0x10348678), TFACTOR the raw
+  element colour (+0xf8, no fade). Ours: Draw::Ring / dk::RING, vs_ring builds the vertices from the vertex index
+  (one draw of 3 x 2 x 255 x 3 vertices, the rest hidden), fragment variant 3, the element's blend class.
+- DistRing (ring + 0x100000) stays undrawn until the distortion pass exists.
+- Checked offscreen: weapon skill 85 (file 3485, ga_b/mr00: radii 1 / 2 / 3, colours 0 / 0x80000000 / 0, S 24, R 3,
+  blend 0x44) draws its rings, a dark band at the target; not compared with retail yet.

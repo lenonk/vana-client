@@ -56,6 +56,11 @@ pub mod w {
     pub const L_ISCALE: usize = 46;
     pub const L_RSCALE: usize = 47;
     pub const L_SLOT: usize = 48;
+    /// RingProg (kind 0x24, emission op 0x3a): radii r0..r3 (+0x194..), colours c0..c3 (+0x1a4.., D3DCOLOR), and
+    /// segments | rings << 8 (+0x1b4 / +0x1b5). Share the morph words.
+    pub const RING_R: usize = 44;
+    pub const RING_C: usize = 48;
+    pub const RING_SR: usize = 52;
     /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
     pub const GROUND: usize = 54;
     pub const SLOTS: usize = 64;
@@ -93,6 +98,8 @@ pub mod dk {
     pub const LIGHT: u32 = 7;
     /// DamValueProg (kind 0x5c): GLARE = message rgb | glyph count << 24, MORPH_W / +1 = glyphs 4 bits each.
     pub const DAMV: u32 = 8;
+    /// RingProg (FUN_100555f0): untextured rings, built by vs_ring from the vertex index.
+    pub const RING: u32 = 9;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -254,6 +261,10 @@ pub fn wgsl_consts() -> String {
         ("DK_LIGHT", dk::LIGHT as usize),
         ("DK_DIST", dk::DIST as usize),
         ("DK_DAMV", dk::DAMV as usize),
+        ("DK_RING", dk::RING as usize),
+        ("E_RING_R", w::RING_R),
+        ("E_RING_C", w::RING_C),
+        ("E_RING_SR", w::RING_SR),
         ("ST_GROUND", st::GROUND as usize),
         ("DK_MESH", dk::MESH as usize),
         ("DK_SPRITE", dk::SPRITE as usize),

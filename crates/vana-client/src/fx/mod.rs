@@ -131,6 +131,8 @@ pub enum Draw {
     Dist,
     /// DamValueProg (kind 0x5c): a damage number's glyphs over its target (render/effects.rs vs_damv).
     DamValue,
+    /// RingProg (kind 0x24): concentric rings from emission op 0x3a (render/effects.rs vs_ring).
+    Ring,
 }
 
 /// A damage number for kind 0x5c elements: glyphs ('0'..'9' = 0..9, ':' = 10, up to 16) and the message colour
@@ -1877,6 +1879,7 @@ impl Effects {
                 Draw::Sprite(id) => format!("sprite {id}{}", if self.reg.sprite_is_flare(id) { " (flare)" } else { "" }),
                 Draw::Morph(id) => format!("morph {id}"),
                 Draw::Dist => "dist".into(),
+                Draw::Ring => "ring".into(),
                 Draw::DamValue => "damv".into(),
                 Draw::None => "none".into(),
             };
