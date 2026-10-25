@@ -525,6 +525,17 @@ impl Effects {
             self.stepping = None;
             i += 1;
         }
+        // Effect motion files whose every owning task has ended come off their actors.
+        if !self.owned_motions.is_empty() {
+            let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
+            let (keep, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.owned_motions).into_iter().partition(|(o, ..)| live.contains(o));
+            for (_, a, f) in gone {
+                if !keep.iter().any(|&(_, ka, kf)| ka == a && kf == f) && !self.effect_motions_done.contains(&(a, f)) {
+                    self.effect_motions_done.push((a, f));
+                }
+            }
+            self.owned_motions = keep;
+        }
     }
 
     fn run_op(&mut self, me: usize, t: &mut Task, op: &SOp, actors: &dyn Actors) -> Flow {
@@ -817,6 +828,23 @@ impl Effects {
             // blend u16 @0x18 (as dat::sched::plan reads them).
             0x05 if t.motions => {
                 if let Some(id) = t.a1.id() {
+                    // A motion in the scheduler's own file plays from there: that file goes on the actor first.
+                    let (lib, raw) = (t.res.0, op.name().to_le_bytes());
+                    let has = |n: u32| self.reg.libs[lib].find(t.res.1, kind::MOTION, n).is_some();
+                    let in_file = if raw[3] == b'?' { (b'0'..=b'6').any(|d| has(u32::from_le_bytes([raw[0], raw[1], raw[2], d]))) } else { has(op.name()) };
+                    let file = self.reg.libs[lib].file_id;
+                    let owned = self.owned_motions.iter().any(|&(o, a, f)| o == t.uid && a == id && f == file);
+                    // A file the actor already has (its model, a skill file) plays as it is.
+                    if in_file && (owned || !actors.files(id).1.contains(&file)) {
+                        if !owned {
+                            log::debug!("effects: motion {} on {id:#x} from DAT {file}", String::from_utf8_lossy(&raw));
+                            self.owned_motions.push((t.uid, id, file));
+                            self.effect_motions.push((id, file));
+                        }
+                        if !actors.files(id).1.contains(&file) {
+                            return Flow::Retry;
+                        }
+                    }
                     let name = String::from_utf8_lossy(&op.name().to_le_bytes()).trim_end_matches(['\0', '?']).to_string();
                     let speed = f32::from_bits(op.u32_at(0x10));
                     let count = op.raw.get(0x1e).map_or(1, |b| b & 0x7f);
@@ -1185,9 +1213,9 @@ impl Effects {
         }
     }
 
-    /// An actor slot's placement and attach point `k` in the world (FUN_1003abe0): 0x30 the ground below it *(inf:
-    /// its position)*, 0x31 / 0x32 the body point 0xd..0x14 nearest the other actor, 0x33 the one nearest the eye;
-    /// later special indices use point 0 *(inf)*.
+    /// An actor slot's placement and attach point `k` in the world (FUN_1003ba20): 0x30 the ground under point 0,
+    /// 0x31 / 0x32 the body point 0xd..0x14 nearest the other actor, 0x33 the one nearest the eye, 0x34 the last foot
+    /// contact, 0x35 the position, 0x36..0x3c points 0x7e / 0x7f / 0x66..0x6a, others point k.
     fn who_point(&self, w: Who, k: u16, other: Who, eye: Option<Vec3>, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
         let (id, m) = self.who_matrix(w, actors)?;
         let local = |k: u16| match w {
@@ -1197,7 +1225,9 @@ impl Effects {
         let world = |k: u16| local(k).map(|p| m.transform_point3(p));
         let nearest = |to: Vec3| (0xd..=0x14u16).filter_map(world).min_by(|a, b| a.distance_squared(to).total_cmp(&b.distance_squared(to)));
         let p = match k {
-            0x30 => Some(m.w_axis.truncate()),
+            // From 1 above to 6 below; retail's miss is (0, 0, 0), ours keeps the position (our collision is not
+            // retail's everywhere).
+            0x30 => world(0).and_then(|p| actors.ground_hit(p - Vec3::Y, p + Vec3::Y * 6.0)),
             0x31 | 0x32 => self.who_matrix(other, actors).and_then(|(_, o)| nearest(o.w_axis.truncate())),
             0x33 => eye.and_then(nearest),
             0x34 => actors.foot(id),
@@ -1205,7 +1235,8 @@ impl Effects {
             0x36 => world(0x7e),
             0x37 => world(0x7f),
             0x38..=0x3c => world(k - 0x38 + 0x66),
-            0x35.. => world(0),
+            // Retail takes the water surface for y while wading (actor+0x64c) *(not kept here)*.
+            0x35 => None,
             _ => world(k),
         };
         Some((m, p.unwrap_or(m.w_axis.truncate())))
@@ -1305,11 +1336,13 @@ impl Effects {
             };
             let k = if blend == 0.0 { 1.0 } else { blend };
             let s = (self.who_scale(who, actors) - 1.0) * k + 1.0;
-            match (src & 0xf).wrapping_sub(1) & 3 {
+            // FUN_10053e60 on nibble & 3: 0 uniform, bit 0 x and z, bit 1 y.
+            match src & 3 {
                 0 => Vec3::splat(s),
-                1 => Vec3::new(s, 1.0, s),
-                2 => Vec3::new(1.0, s, 1.0),
-                _ => Vec3::new(s, s, s),
+                b => {
+                    let xz = if b & 1 != 0 { s } else { 1.0 };
+                    Vec3::new(xz, if b & 2 != 0 { s } else { 1.0 }, xz)
+                }
             }
         };
         let mut a = size(w >> 20, g.blend[0]);
@@ -1412,6 +1445,15 @@ impl Effects {
             }
             self.models.insert(id, files);
         }
+    }
+
+    /// Actors whose attach points the live effects read: the client poses their bones (FUN_100d4560 reads the
+    /// drawn pose).
+    pub fn posed_actors(&self) -> std::collections::HashSet<u32> {
+        let insts = self.insts.iter().flatten().filter(|x| x.mode != 0).flat_map(|x| x.actors);
+        let tasks = self.tasks.iter().flatten().flat_map(|t| [t.a1, t.a2]);
+        let pending = self.pending.iter().flat_map(|p| [p.a1, p.a2]);
+        insts.chain(tasks).chain(pending).filter_map(|w| self.doll_of(w).id()).chain(self.dolls.iter().map(|d| d.of)).collect()
     }
 
     pub fn task_count(&self) -> usize {

@@ -7244,7 +7244,7 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   black silhouette in the user's retail shot. Ours faded alpha only.
 - Ours: Actor.rgb (bytes, 0x80 = 1.0) faded with the alpha (Fade::argb); the pose header's second row carries it
   (area, r, g, b) and lit_actor multiplies the ambient and diffuse terms (not the cloth emissive) by it.
-- Not done: FUN_1005f6c0's other colour (param 6 set: vtable +0x40c / +0x410), the CMoLockColorDriveTask check.
+- Not done: FUN_1005f6c0's other colour (param 6 set: vtable +0x40c / +0x60 (the overlay colour +0x74c; +0x410 is the overlay U setter)), the CMoLockColorDriveTask check.
 - The user checked level down's text height against retail again: ours is right (start 0.7 above point 0, the feet;
   elem +0x128 from op 0x72 is only the sort key, FUN_100440d0).
 
@@ -7586,8 +7586,9 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   (mode, caster point, target point). F.tsv has a row per file; F.summary.txt ranks every gap by file count with
   example file ids. `--only` also prints the schedulers' ops.
 - First full run: 5564 files. Largest gaps: task ops 0x01 (4271 files), 0x2e, 0x56, 0x2f, 0x1f, 0x75, 0x69 / 0x6a,
-  0x2a, 0x40..0x47 (actor transforms; Pollen's spin); stream 1 ops 0x56, 0x32, 0x55, 0x3a, 0x08, 0x46, 0x43, 0x42;
-  stream 0 ops 0x5d, 0x0f; the special attach points 0x30 / 0x31.
+  0x2a, 0x40..0x47 (the actor shine overlay, not transforms: see "Effect motions from the effect file"); stream 1 ops
+  0x56, 0x32, 0x55, 0x3a, 0x08, 0x46, 0x43, 0x42; stream 0 ops 0x5d, 0x0f; the special attach points 0x30 / 0x31.
+  Specs: ~/ffxi/lab/research/task_ops_actor_spec.md, task_ops_rest_spec.md, fx_stream_attach_spec.md.
 - 908 "main not found": LSB mob moves 0xc00..0xcdb and 0xedc..0xefe land on model data (0x14b07 + 0xc00 = 87815:
   textures, skeleton motions), not gaps. 644 item and 14 ability files are effect files with other entry names (4972:
   goal / kill / open / clos; 56695: str0 / str1 / dis0..2 / trg0): which of their schedulers retail starts is not
@@ -7619,3 +7620,28 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   (FUN_102371c0, the flag cleared after). Only the title's Config has the option (no in-game Config page carries 0xac;
   group 14 has only the main menu's Log Out texts). Ours goes back to the login screen after a logout: not retail,
   which returns to the title without the password.
+
+## Effect motions from the effect file; posed attach points (Pollen, 2026-10-25)
+
+- The user (checked against retail): the bee's Pollen did not spin, and its golden burst sat at the bee's feet.
+- The spin is op 0x05 `wz00` (then `wz10` hover x 6, `wz20` settle), motion chunks (type 0x2b) in DAT 3979 itself.
+  FUN_10057000 case 5 (cur FUN_10057fb0) looks a motion up in the scheduler's own scope first, then in the actor's
+  files; ours only searched the actor's. Now op 0x05 checks its own library (exact name, or `abc?` as any region
+  digit); when found in a file the actor lacks, Effects::effect_motions asks the client to put that file on the actor
+  (actmotion Kind::Effect, client Actor::fx_files) and the op waits until it is there. The file comes off when no
+  live task that asked for it remains (task uid, swept after step_tasks). A file the actor already has (its model,
+  a skill file) plays as it is. `wz00` turns bone 1 (the body root) about 720 degrees over 44 ticks while it rises.
+- Attach points read the drawn pose (FUN_100d4560 -> FUN_1002c400 / FUN_1002a780: the bone matrices the skeleton is
+  drawn with); ours read the rest pose, and every bee motion lifts bone 1 about 1.2 x scale. FxActors::point now uses
+  the CPU pose (Actor::bones) for actors in Effects::posed_actors() (live attached instances, tasks, pending starts,
+  dolls), computed in the actor loop like the locked camera's, and cleared otherwise. Point 2 is the root plus its
+  offset (no bone, no pose). Seen live by the user: the spin and the burst on the bee ("Perfect").
+- Attach point specials (FUN_1003ba20): 0x30 is the ground under point 0 (a segment from 1 above to 6 below,
+  FUN_10181590; Actors::ground_hit over Ground::raycast); retail's miss is (0, 0, 0), ours keeps the position. 0x35 is
+  the actor position (retail: y on the water surface while wading, not kept); 0x3d..0x7f are point k (they all were
+  point 0).
+- Scale vectors (FUN_10053e60): the source nibble & 3 picks the axes, 0 uniform, bit 0 x and z, bit 1 y; ours switched
+  on (nibble - 1) & 3 (about 140 generators in 60 files had the wrong axes).
+- Not done from the specs yet: ops 0x40..0x47 (the shine overlay: an additive, camera-normal mapped texture pass with
+  U / V scroll and colour fades; Pollen's green wave), op 0x7b's two-point offsets, 0x33 and modes 7 / 8 at start
+  (attach_now has no Frame), the spin ops' attachment rebuild.

@@ -3027,6 +3027,8 @@ struct Actor {
     last_attack: String,
     /// Motion files on top of the model (event banks, battle files), newest last.
     extra: actmotion::Extra,
+    /// Effect files whose schedulers play motions from them (Kind::Effect), wanted on `extra`.
+    fx_files: Vec<u32>,
     /// A scheduler's motions (event motions, weapon draw / sheathe), and one waiting for its files.
     play: Option<actmotion::Play>,
     pending: Option<actmotion::Pending>,
@@ -3085,6 +3087,7 @@ impl Actor {
             look_pct: 0,
             last_attack: String::new(),
             extra: Vec::new(),
+            fx_files: Vec::new(),
             play: None,
             pending: None,
             battle: Default::default(),
@@ -3370,11 +3373,22 @@ impl crate::fx::Actors for FxActors<'_> {
         Some(pool.into_iter().map(str::to_string).collect())
     }
 
+    // FUN_100d4560 -> FUN_1002c400: point 2 is the root plus its offset (no bone, no pose); the others ride the drawn
+    // pose's bones (posed for effect actors, see posed_actors).
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
         let (bone, off) = ch.skeleton.points.get(k as usize)?;
-        a.rest.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)
+        if k == 2 {
+            return Some(*off * a.scale);
+        }
+        let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
+        bones.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)
+    }
+
+    fn ground_hit(&self, from: Vec3, to: Vec3) -> Option<Vec3> {
+        let d = self.ground?.raycast(from, to)?;
+        Some(from + (to - from).normalize_or_zero() * d)
     }
 
     fn scale(&self, id: u32) -> f32 {
@@ -6351,6 +6365,19 @@ impl App {
                 a.pending = Some(actmotion::Pending { files, name: String::new(), kind: actmotion::Kind::Skill });
             }
         }
+        for (id, file) in std::mem::take(&mut world.effects.effect_motions) {
+            if let Some(a) = world.actors.get_mut(&id)
+                && !a.fx_files.contains(&file)
+            {
+                a.fx_files.push(file);
+            }
+        }
+        for (id, file) in std::mem::take(&mut world.effects.effect_motions_done) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.fx_files.retain(|f| *f != file);
+                a.extra.retain(|(k, m)| !(*k == actmotion::Kind::Effect && m.id == file));
+            }
+        }
         // FUN_1012c0f0: the cast bar runs down and closes at 0.
         if let Some((_, left)) = world.cast_bar.as_mut() {
             *left -= (dt * 60.0).max(1.0 / 60.0);
@@ -8565,6 +8592,7 @@ impl App {
             // that allow it (FUN_10095790), never at doors; the target's point 3, 1.2 higher when it is hidden.
             let mut by_index: HashMap<u16, u32> = w.entities.iter().filter(|(_, e)| e.index != 0).map(|(id, e)| (e.index, *id)).collect();
             by_index.insert(w.my_index, w.my_id);
+            let fx_posed = w.effects.posed_actors();
             let face_points: HashMap<u32, Vec3> = w
                 .actors
                 .keys()
@@ -8790,9 +8818,12 @@ impl App {
                         a.top = crate::render::character::skinned_top(&ch, &a.rest) * a.scale;
                         a.top_key = "rest".into();
                     }
-                    // CPU bones only where the locked camera reads them (player bone 13, target bone 5).
-                    if (w.locked && (*id == w.my_id || w.target == Some(*id))) || (w.camst.first && *id == w.my_id) {
+                    // CPU bones only where they are read: the locked camera (player bone 13, target bone 5), first
+                    // person, and the attach points of actors with live effects.
+                    if (w.locked && (*id == w.my_id || w.target == Some(*id))) || (w.camst.first && *id == w.my_id) || fx_posed.contains(id) {
                         a.bones = if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
+                    } else {
+                        a.bones.clear();
                     }
                     let frame = actor_matrix(pos, forward) * tilt_matrix(tilt);
                     let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));

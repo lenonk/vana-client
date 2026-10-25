@@ -1712,6 +1712,16 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
 /// monster's files are the caster model's when one is given.
 struct SweepActors {
     mob_files: (Vec<u32>, Vec<u32>),
+    fx_files: std::cell::RefCell<Vec<(u32, u32)>>,
+}
+
+/// The client's side of op 0x05's effect motion files for the stand-in actors: on while a task owns them.
+fn sync_fx_files(fx: &mut fx::Effects, list: &std::cell::RefCell<Vec<(u32, u32)>>) {
+    let mut l = list.borrow_mut();
+    l.extend(std::mem::take(&mut fx.effect_motions));
+    for d in std::mem::take(&mut fx.effect_motions_done) {
+        l.retain(|x| *x != d);
+    }
 }
 
 const SWEEP_PC: u32 = 0x0001_0001;
@@ -1732,7 +1742,9 @@ impl fx::Actors for SweepActors {
         1.0
     }
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
-        if id == SWEEP_PC { (vec![8392], vec![9672, 7072]) } else { self.mob_files.clone() }
+        let (p, mut m) = if id == SWEEP_PC { (vec![8392], vec![9672, 7072]) } else { self.mob_files.clone() };
+        m.extend(self.fx_files.borrow().iter().filter(|x| x.0 == id).map(|x| x.1));
+        (p, m)
     }
     fn hidden(&self, _: u32) -> bool {
         false
@@ -1808,7 +1820,7 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
                 }
                 _ => ((Vec::new(), vec![1300]), "orc".into()),
             };
-            let actors = SweepActors { mob_files: mob.clone() };
+            let actors = SweepActors { mob_files: mob.clone(), fx_files: Default::default() };
             fx.preload(&mob.1);
             fx.reg.audit = Some(fx::Audit::default());
             let (a, t) = if category == 11 { (SWEEP_MOB, SWEEP_PC) } else { (SWEEP_PC, if category == 5 { SWEEP_PC } else { SWEEP_MOB }) };
@@ -1818,6 +1830,7 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             let mut n = 0;
             while n < ticks {
                 fx.tick(&frame, &actors);
+                sync_fx_files(&mut fx, &actors.fx_files);
                 n += 1;
                 // Started (the file loads in the background) and nothing left to run.
                 if n > 30 && fx.task_count() == 0 && fx.pending_count() == 0 {
@@ -1899,6 +1912,7 @@ struct ShotActors {
     /// The caster's movement a tick, and the ticks walked.
     walk: glam::Vec3,
     ticks: std::cell::Cell<f32>,
+    fx_files: std::cell::RefCell<Vec<(u32, u32)>>,
 }
 
 impl ShotActors {
@@ -1925,7 +1939,9 @@ impl fx::Actors for ShotActors {
         1.0
     }
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
-        if id == self.at[0].0 { (vec![8392], vec![9672, 7072]) } else { (Vec::new(), vec![1300]) }
+        let (p, mut m) = if id == self.at[0].0 { (vec![8392], vec![9672, 7072]) } else { (Vec::new(), vec![1300]) };
+        m.extend(self.fx_files.borrow().iter().filter(|x| x.0 == id).map(|x| x.1));
+        (p, m)
     }
     fn hidden(&self, _: u32) -> bool {
         false
@@ -1952,7 +1968,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         println!("caster on {c} surface {:?}", g.surface(c));
     }
     let walk = if walk.len() == 3 { v3(walk) } else { Vec3::ZERO };
-    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)], walk, ticks: std::cell::Cell::new(0.0) };
+    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)], walk, ticks: std::cell::Cell::new(0.0), fx_files: Default::default() };
     let mut fx = fx::Effects::new();
     fx.set_keys(std::sync::Arc::new(keys));
     fx.set_index(index.clone());
@@ -1995,6 +2011,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         }
         for _ in 0..every {
             fx.tick(&f, &actors);
+            sync_fx_files(&mut fx, &actors.fx_files);
             actors.ticks.set(actors.ticks.get() + 1.0);
             let mut e = gpu.device.create_command_encoder(&Default::default());
             eg.update(gpu, &mut e, &mut fx, &f);

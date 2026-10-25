@@ -13,6 +13,7 @@ pub mod kind {
     pub const SCHEDULER: u8 = 0x07;
     pub const TEXINFO: u8 = 0x0a;
     pub const KEYFRAME: u8 = 0x19;
+    pub const MOTION: u8 = 0x2b;
     pub const D3M: u8 = 0x1f;
     pub const IMG: u8 = 0x20;
     pub const D3A: u8 = 0x21;

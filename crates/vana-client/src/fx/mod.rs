@@ -41,6 +41,10 @@ pub trait Actors {
     fn pc(&self, _id: u32) -> Option<(u8, i8)> {
         None
     }
+    /// The first collision face on a segment (FUN_10181590's vertical test: attach point 0x30, emission op 0x42).
+    fn ground_hit(&self, _from: Vec3, _to: Vec3) -> Option<Vec3> {
+        None
+    }
     /// The last foot contact in the world (actor+0x63c, attach point 0x34).
     fn foot(&self, _id: u32) -> Option<Vec3> {
         None
@@ -700,6 +704,11 @@ pub struct Effects {
     pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
     pub motion_files: Vec<(u32, Vec<u32>)>,
+    /// Op 0x05 motions found in their scheduler's own file (FUN_10057000 case 5 looks there before the actor's
+    /// files): (actor, file) to put on the actor, and those to take off once no live task owns them.
+    pub effect_motions: Vec<(u32, u32)>,
+    pub effect_motions_done: Vec<(u32, u32)>,
+    owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
     pub door_moves: Vec<DoorMove>,
     pub lift_moves: Vec<LiftMove>,
@@ -780,6 +789,9 @@ impl Effects {
             foot_folder: HashMap::new(),
             action_prints: Vec::new(),
             motion_files: Vec::new(),
+            effect_motions: Vec::new(),
+            effect_motions_done: Vec::new(),
+            owned_motions: Vec::new(),
             door_moves: Vec::new(),
             lift_moves: Vec::new(),
             sub_lib: None,

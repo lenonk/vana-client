@@ -133,6 +133,8 @@ pub struct Task {
     pub motions: bool,
     /// A damage number's value and message colour 0xRRGGBB (task +0xa8 / +0xa4, FUN_1009e090).
     pub num: Option<(i32, u32)>,
+    /// Unique per task (slots are reused): what a task owns ends with it.
+    pub uid: u64,
 }
 
 impl Task {
@@ -143,7 +145,9 @@ impl Task {
             let a = a.borrow();
             !matches!(a.action.category, 1 | 2) || a1.id().is_some_and(|id| id != a.action.actor) || (a.action.category == 1 && !a.client_swing)
         });
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None }
+        static UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        let uid = UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid }
     }
 }
 

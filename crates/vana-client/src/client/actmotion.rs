@@ -20,6 +20,8 @@ pub enum Kind {
     Emote,
     /// Weapon-skill files (FUN_100d22a0 kind 6), put on by the effect system.
     Skill,
+    /// An effect file whose scheduler plays its own motions (op 0x05, Pollen's wz00), while that task runs.
+    Effect,
 }
 
 pub type Extra = Vec<(Kind, Arc<MotionFile>)>;
@@ -426,6 +428,12 @@ pub(super) fn update(w: &mut World, dt: f32) {
             _ => Vec::new(),
         };
         let a = w.actors.get_mut(&id).unwrap();
+        let fx_want: Vec<u32> = a.fx_files.iter().copied().filter(|f| !a.extra.iter().any(|(k, m)| *k == Kind::Effect && m.id == *f)).collect();
+        if !fx_want.is_empty()
+            && let Some(files) = w.motion_files.all(&index, &fx_want)
+        {
+            add(&mut a.extra, Kind::Effect, files);
+        }
         if let Some(p) = a.pending.clone()
             && let Some(files) = w.motion_files.all(&index, &p.files)
         {
