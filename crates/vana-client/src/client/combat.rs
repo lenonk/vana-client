@@ -350,6 +350,26 @@ pub(super) fn area_line(w: &mut World) {
 
 /// 0x029 / 0x02D: work[0..2] = Data, Data2.
 pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
+    // FUN_100c3480: these also run an effect on the actor, file 0xaf0 + DAT_1035d570[kind] "main" (model vtable +0x2c4):
+    // level up 0x1fe, level down 0x1fd, merit point 0x2fe, job point 0x3a0, master level up / down 0x3f8 / 0x3f9 (the
+    // art and the jingle are the file's). Not done: the actor +0x210 variants (0x388 level up, 0x389 for message 45)
+    // and the wait before it (up to 600 ticks on the actor's state, not traced).
+    let anim = match m.message {
+        9 => Some(0x1fe),
+        11 => Some(0x1fd),
+        50 => Some(0x2fe),
+        719 => Some(0x3a0),
+        811 => Some(0x3f8),
+        813 => Some(0x3f9),
+        _ => None,
+    };
+    if let Some(id) = anim
+        && (m.actor == w.my_id || w.actors.contains_key(&m.actor))
+    {
+        let who = crate::fx::sched::Who::Actor(m.actor);
+        log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
+        w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
+    }
     print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
 }
 

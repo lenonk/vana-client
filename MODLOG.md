@@ -7195,3 +7195,20 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
 - Ours counted the action menu as a blocking window, and combat mode keeps it up while engaged, so Ctrl / Alt + digit
   did nothing in battle (user report). Now the gate takes every other open window (window_over_actions: also the magic
   and ability lists, the macro editor ..., which the old list missed) but not the action menu alone.
+
+## Level up / down effects and the jingle (2026-10-25)
+
+- LSB sends level up as s2c 0x02D message 9 (GP_SERV_COMMAND_BATTLE_MESSAGE2, CHAR_INRANGE_SELF). FUN_100c3480 (the
+  battle message queue) treats messages 9, 0xb, 0x32, 0x2cf, 0x2d (only with actor +0x210), 0x32b, 0x32d specially:
+  after a wait (state 0 -> 600 ticks, state 1 on the actor's +0x170, not traced) it calls the actor model's vtable
+  +0x2c4 (FUN_100a9700: prints the text through FUN_10127c00, then FUN_100a98d0 runs file 0xaf0 + id "main") with id
+  DAT_1035d570[kind * 4 + language]: level up 0x1fe (3310), level down 0x1fd (3309), merit point 0x2fe, job point
+  0x3a0, master level up / down 0x3f8 / 0x3f9; with actor +0x210 set level up 0x388 and message 45 0x389.
+- DAT 3310's main: op 0x22 doll, g0s0, op 0x4a '0007', g000 ... g001, op 0x03 'mdam'. Op 0x4a (FUN_10057fb0 case 0x4a)
+  is op 0x0b's sound (at actor2) only when actor2's vtable +0x304 (FUN_100a4640: the player's own actor) holds: the
+  level-up jingle (sound 7) plays for our own level up only. Ours had no op 0x4a.
+- The doll (FUN_100abea0) copies the actor's two matrices, its scale and its 48 attach points at that moment; every
+  generator of 3309 / 3310 attaches to actor1 (mode 1), i.e. the doll.
+- Live (Lnxcsfix, !givexp 4800 / !takexp 4800): message 9 ran 3310 with "Level Up !!" and sparkles and sound 7;
+  message 11 ran 3309 ("Level Down..."). The user: both look wrong while the character moves (retail has a
+  "ghosting" look); not resolved yet. Not done: the +0x210 variants, the queue wait.
