@@ -307,6 +307,11 @@ pub struct ZoneRenderer {
     indices: wgpu::Buffer,
     draws: Vec<Draw>,
     skin_pipeline: wgpu::RenderPipeline,
+    shine_pipeline: wgpu::RenderPipeline,
+    shine_buf: wgpu::Buffer,
+    shine_group: wgpu::BindGroup,
+    /// Shine images by (effect file, IMG node).
+    shine_tex: HashMap<(u32, usize), wgpu::BindGroup>,
     pose_layout: wgpu::BindGroupLayout,
     /// This frame's pose regions (256-byte aligned), and the buffer they go up in with its bind group.
     poses: Vec<[f32; 4]>,
@@ -470,6 +475,8 @@ pub struct ActorGpu {
     instance: wgpu::Buffer,
     /// `wepN` meshes not drawn (bit N; scheduler ops 0x75 / 0xa3, MODLOG "Weapon meshes hidden and shown").
     pub hidden_weps: u16,
+    /// The shine overlay this frame (skinned actors).
+    pub shine: Option<Shine>,
     skin: Option<Skinned>,
     /// Model colour alpha, 1 = opaque (actor fades); goes into the vertex alpha.
     pub alpha: f32,
@@ -502,6 +509,20 @@ struct SkinVertex {
 
 /// A draw group that is no `wepN` mesh.
 const NO_WEP: u8 = 0xff;
+
+/// The actor shine overlay (scheduler ops 0x40..0x47): an effect image by (file, node), its U / V scroll and the
+/// TFACTOR colour (RGBA, 0..1).
+#[derive(Clone, Copy, Debug)]
+pub struct Shine {
+    pub key: (u32, usize),
+    pub u: f32,
+    pub v: f32,
+    pub tf: [f32; 4],
+}
+
+/// Shined actors drawn a frame at most, and the stride of their parameters in the shine uniform buffer.
+const SHINE_SLOTS: usize = 64;
+const SHINE_STRIDE: u64 = 256;
 
 /// A model's skinned bind-pose corners grouped by texture name, built on the loader thread (Character::skin).
 pub struct SkinMesh {
@@ -600,6 +621,8 @@ pub struct ZonePipes {
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
     skin_pipeline: wgpu::RenderPipeline,
+    shine_layout: wgpu::BindGroupLayout,
+    shine_pipeline: wgpu::RenderPipeline,
 }
 
 impl ZonePipes {
@@ -789,7 +812,50 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline }
+        // The shine overlay (FUN_10024e10's second pass): additive (SRCALPHA / ONE), z tested (as drawn) but not written.
+        let shine_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("shine"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: true, min_binding_size: wgpu::BufferSize::new(32) },
+                count: None,
+            }],
+        });
+        let shine_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("actor shine"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("actor shine"),
+                bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&shine_layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_skinned_shine"), compilation_options: Default::default(), buffers: &skin_buffers },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_actor_shine"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::SrcAlpha, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline }
     }
 }
 
@@ -1025,6 +1091,12 @@ impl ZoneRenderer {
         let white = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 255, 255, 255]);
         // Slot 0 of actors: magenta, so a missing texture is obvious.
         let magenta = texture_bind_group(gpu, &p.texture_layout, &sampler, 1, 1, &[255, 0, 255, 255]);
+        let shine_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor shine"), size: SHINE_SLOTS as u64 * SHINE_STRIDE, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let shine_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("actor shine"),
+            layout: &p.shine_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &shine_buf, offset: 0, size: wgpu::BufferSize::new(32) }) }],
+        });
         let [v, i, m] = geo.parts().map(|b| b.len() as u64);
         let buffer = |label, size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self {
@@ -1044,6 +1116,10 @@ impl ZoneRenderer {
             indices: buffer("scenery indices", i, wgpu::BufferUsages::INDEX),
             draws: geo.draws.clone(),
             skin_pipeline: p.skin_pipeline,
+            shine_pipeline: p.shine_pipeline,
+            shine_buf,
+            shine_group,
+            shine_tex: HashMap::new(),
             pose_layout: p.pose_layout,
             poses: Vec::new(),
             pose_gpu: None,
@@ -1307,6 +1383,7 @@ impl ZoneRenderer {
                 draws,
                 instance,
                 hidden_weps: 0,
+                shine: None,
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 tint: [1.0; 3],
@@ -1428,7 +1505,17 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+    }
+
+    /// A shine image goes up once (effect file, IMG node).
+    pub fn has_shine(&self, key: (u32, usize)) -> bool {
+        self.shine_tex.contains_key(&key)
+    }
+
+    pub fn add_shine(&mut self, gpu: &Gpu, key: (u32, usize), t: &crate::dat::zone::Texture) {
+        let view = upload_texture(gpu, t, true);
+        self.shine_tex.insert(key, view_bind_group(gpu, &self.texture_layout, &self.sampler, &view));
     }
 
     /// Uploads this frame's posed mesh and placement.
@@ -1592,6 +1679,28 @@ impl ZoneRenderer {
                     pass.set_bind_group(1, &a.textures[*tex], &[]);
                     pass.draw(range.clone(), 0..1);
                 }
+            }
+            // The shine overlay: every batch of the actor again, its image mapped by the world normal.
+            let mut slot = 0u64;
+            for a in actors.iter().filter(|a| a.mips <= done) {
+                let (Some(s), Some(skin)) = (a.shine, a.skin.as_ref().filter(|s| s.frame == self.pose_frame)) else { continue };
+                let Some(tex) = self.shine_tex.get(&s.key) else { continue };
+                if slot >= SHINE_SLOTS as u64 {
+                    break;
+                }
+                gpu.queue.write_buffer(&self.shine_buf, slot * SHINE_STRIDE, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                pass.set_pipeline(&self.shine_pipeline);
+                pass.set_bind_group(3, &self.shine_group, &[(slot * SHINE_STRIDE) as u32]);
+                pass.set_bind_group(2, group, &[skin.offset]);
+                pass.set_bind_group(1, tex, &[]);
+                pass.set_vertex_buffer(0, skin.vertices.slice(..));
+                for (_, range, wep) in &a.draws {
+                    if *wep != NO_WEP && a.hidden_weps & (1 << wep) != 0 {
+                        continue;
+                    }
+                    pass.draw(range.clone(), 0..1);
+                }
+                slot += 1;
             }
         }
         pass.set_pipeline(&self.actor_pipeline);

@@ -208,6 +208,10 @@ fn qrot(q: vec4<f32>, v: vec3<f32>) -> vec3<f32> {
 // As character::skin: p = sum(r * pos + t * w), n = normalize_or_zero(sum(r * normal)); pos and normal come pre-weighted.
 @vertex
 fn vs_skinned(v: SkinIn) -> VertexOut {
+    return skin(v);
+}
+
+fn skin(v: SkinIn) -> VertexOut {
     let a = 6u + 2u * v.bones.x;
     let b = 6u + 2u * v.bones.y;
     let p = qrot(pose[a], v.p0) + pose[a + 1u].xyz * v.w.x + qrot(pose[b], v.p1) + pose[b + 1u].xyz * v.w.y;
@@ -230,6 +234,35 @@ fn vs_skinned(v: SkinIn) -> VertexOut {
     out.area = u32(pose[5].x);
     out.tint = pose[5].yzw;
     return out;
+}
+
+// The actor shine overlay (scheduler ops 0x40..0x47): U / V scroll, TFACTOR (RGBA 0..1).
+struct ShineU {
+    uv: vec4<f32>,
+    tf: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> shine: ShineU;
+
+// FUN_1002b6e0's second pass: texture coordinates from the camera-space normal through the inverse view rotation
+// (the world normal), x 0.5 + 0.5, plus the scroll.
+@vertex
+fn vs_skinned_shine(v: SkinIn) -> VertexOut {
+    var out = skin(v);
+    out.uv = vec2<f32>(0.5 * out.normal.x + 0.5 + shine.uv.x, 0.5 * out.normal.y + 0.5 + shine.uv.y);
+    return out;
+}
+
+// Stages MODULATE2X(TEXTURE, DIFFUSE white), MODULATE2X(CURRENT, TFACTOR), added SRCALPHA / ONE. Texture alpha comes
+// doubled from the upload. Fog fades it out *(inf: the base pass's fog state)*.
+@fragment
+fn fs_actor_shine(in: VertexOut) -> @location(0) vec4<f32> {
+    let t = textureSample(tex, samp, in.uv);
+    let rgb = clamp(clamp(2.0 * t.rgb, vec3<f32>(0.0), vec3<f32>(1.0)) * 2.0 * shine.tf.rgb, vec3<f32>(0.0), vec3<f32>(1.0));
+    let a = clamp(clamp(t.a, 0.0, 1.0) * 2.0 * shine.tf.a, 0.0, 1.0);
+    let dist = distance(in.world, u.eye.xyz);
+    let fog = clamp((dist - u.fog.x) / (u.fog.y - u.fog.x), 0.0, 1.0);
+    let o = rgb * (1.0 - fog);
+    return vec4<f32>(select(o, pow(o, vec3<f32>(1.0 / 2.2)), u.fog.z > 0.5), a);
 }
 
 // FFXI vertex colours are half intensity (0x80 = 1.0).

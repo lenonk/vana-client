@@ -376,6 +376,33 @@ pub struct Registry {
     pub audit: Option<Audit>,
 }
 
+/// The actor shine overlay (CXiSkeletonActor +0x734 bit 0): the image (+0x750; with the drive that set it), U / V
+/// (+0x73c / +0x740) and TFACTOR (+0x74c, ARGB). U / V / colour stay on the actor when the overlay goes.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Shine {
+    pub tex: Option<(Ref, u64)>,
+    pub u: f32,
+    pub v: f32,
+    pub tf: u32,
+}
+
+#[derive(Clone, Copy, Debug)]
+enum ShineKind {
+    Overlay,
+    Uv { v: bool, start: f32, target: f32, total: f32 },
+    Tf { start: u32, target: u32, total: f32 },
+}
+
+/// A timed shine change, a child of its scheduler task (`owner`, the task uid): it ends with it.
+#[derive(Clone, Copy, Debug)]
+struct ShineDrive {
+    id: u64,
+    owner: u64,
+    actor: u32,
+    left: f32,
+    kind: ShineKind,
+}
+
 /// Scheduler ops 0x75 / 0xa3 (FUN_100d60e0 hide, FUN_100d5f10 show) on actor1's `wepN` meshes, hide byte 0 / 1.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponOp {
@@ -730,6 +757,10 @@ pub struct Effects {
     pub effect_motions: Vec<(u32, u32)>,
     /// The last frame's inputs, for attachments made between frames (the eye for point 0x33, the camera for 7 / 8).
     last_frame: Option<Frame>,
+    /// Scheduler ops 0x40..0x47 / 0x54 / 0x55: each actor's shine overlay and the timed drives changing it.
+    shine: HashMap<u32, Shine>,
+    shine_drives: Vec<ShineDrive>,
+    next_drive: u64,
     pub effect_motions_done: Vec<(u32, u32)>,
     owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -816,6 +847,9 @@ impl Effects {
             motion_files: Vec::new(),
             effect_motions: Vec::new(),
             last_frame: None,
+            shine: HashMap::new(),
+            shine_drives: Vec::new(),
+            next_drive: 0,
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),

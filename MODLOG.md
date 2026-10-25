@@ -7725,3 +7725,24 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - DistRing (ring + 0x100000) stays undrawn until the distortion pass exists.
 - Checked offscreen: weapon skill 85 (file 3485, ga_b/mr00: radii 1 / 2 / 3, colours 0 / 0x80000000 / 0, S 24, R 3,
   blend 0x44) draws its rings, a dark band at the target; not compared with retail yet.
+
+## The actor shine overlay: scheduler ops 0x40..0x47, 0x54 / 0x55 (2026-10-25; spec task_ops_actor_spec.md)
+
+- On a skeleton actor (+0x734 bit 0): every mesh batch drawn again (FUN_1002b6e0 -> FUN_10024e10) with the TexInfo
+  image +0x750, texture coordinates from the camera-space normal through the inverse view rotation (the world normal)
+  x 0.5 + 0.5 plus U / V (+0x73c / +0x740), stages MODULATE2X(TEXTURE, white), MODULATE2X(CURRENT, TFACTOR +0x74c),
+  SRCALPHA / ONE, z tested not written, lighting off.
+- 0x40 / 0x54 (actor1), 0x41 / 0x55 (actor2): on for dur x speed (truncated) with the TexInfo of 4cc u32 @8 (the
+  current loader makes one beside every IMG chunk, same 4cc); at the end, or when its scheduler task dies, off if
+  still its own. 0x42 / 0x43 (actor1) and 0x44 / 0x45 (actor2): U / V linearly from the current value to f32 @8,
+  fmod 2, snapped at the end or the task's death. 0x46 / 0x47: the colour per byte toward ARGB u32 @8 (the colour
+  drive's channel 1; a new one replaces the running one; the task's death leaves it where it was). U / V / colour stay
+  on the actor.
+- Ours: fx keeps Shine per actor and ShineDrive (owner = the task uid, swept each frame with the live tasks); the
+  client hands Effects::shines() to the renderer (ActorGpu::shine; the image decoded from the effect library and
+  uploaded once by (file, node)); render/mod.rs draws the shine pass after the skinned actors (vs_skinned_shine,
+  fs_actor_shine, a 32-byte uniform per shined actor at a dynamic offset, 64 a frame at most). Fog scales it out
+  *(inf)*.
+- Pollen (3979): `nami` (bee_mitunami) for 131 ticks from tick 130; seen live 2026-10-25: the bee's body turns a pale
+  olive green under the burst during the fade-in and scroll; not compared with retail.
+- Ops 0x48 / 0x49 (+0x734 bit 1, the refraction pass) are not done.

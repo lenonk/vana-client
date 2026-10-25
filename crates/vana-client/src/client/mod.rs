@@ -8742,6 +8742,18 @@ impl App {
                     }
                 }
                 let in_event = w.event.is_some() || w.event_pending.is_some();
+                // Scheduler ops 0x40..0x47: shine images go up once; each actor's overlay this frame.
+                let mut shines: HashMap<u32, crate::render::Shine> = HashMap::new();
+                for (id, (lib, node), u, v, tf) in w.effects.shines() {
+                    let key = (w.effects.reg.libs[lib].file_id, node);
+                    if !r.has_shine(key)
+                        && let Some(t) = w.effects.reg.libs[lib].texture_at(node)
+                    {
+                        r.add_shine(&gfx.gpu, key, &w.effects.reg.libs[lib].textures[t]);
+                    }
+                    let c = |sh: u32| ((tf >> sh) & 0xff) as f32 / 255.0;
+                    shines.insert(id, crate::render::Shine { key, u, v, tf: [c(16), c(8), c(0), c(24)] });
+                }
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -8916,6 +8928,7 @@ impl App {
                         }
                     }
                     g.hidden_weps = (0..16).filter(|&n| a.wep_hide[n].iter().any(|&h| h)).fold(0, |m, n| m | 1 << n);
+                    g.shine = shines.get(id).copied();
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).

@@ -534,9 +534,10 @@ impl Effects {
             self.stepping = None;
             i += 1;
         }
+        let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
+        self.step_shine(f.dt, &live);
         // Effect motion files whose every owning task has ended come off their actors.
         if !self.owned_motions.is_empty() {
-            let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
             let (keep, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.owned_motions).into_iter().partition(|(o, ..)| live.contains(o));
             for (_, a, f) in gone {
                 if !keep.iter().any(|&(_, ka, kf)| ka == a && kf == f) && !self.effect_motions_done.contains(&(a, f)) {
@@ -934,6 +935,35 @@ impl Effects {
                         }
                     }
                 }
+                Flow::Next
+            }
+            // The shine overlay (FUN_100617b0, FUN_100615b0, FUN_1005f6c0 channel 1), on actor1 (0x40 / 0x54 / 0x42 /
+            // 0x43 / 0x46) or actor2 (0x41 / 0x55 / 0x44 / 0x45 / 0x47) for dur x speed: on with the TexInfo of 4cc
+            // u32 @8 (the loader makes one beside each IMG, same 4cc); U (0x42 / 0x44) or V (0x43 / 0x45) linearly to
+            // f32 @8, kept mod 2; the colour to ARGB u32 @8 (a new colour drive replaces the running one).
+            0x40 | 0x41 | 0x54 | 0x55 | 0x42..=0x47 => {
+                let who = if matches!(op.code, 0x40 | 0x54 | 0x42 | 0x43 | 0x46) { t.a1 } else { t.a2 };
+                let Some(id) = self.doll_of(who).id() else { return Flow::Next };
+                let left = (op.dur.max(0) as f32 * t.speed).trunc();
+                let kind = match op.code {
+                    0x40 | 0x41 | 0x54 | 0x55 => {
+                        let Some(r) = scope(self, kind::IMG) else { return Flow::Next };
+                        self.shine.entry(id).or_default().tex = Some((r, self.next_drive + 1));
+                        log::debug!("effects: shine on {id:#x}: {} of DAT {} for {left} ticks", self.reg.libs[r.0].tree.nodes[r.1].name(), self.reg.libs[r.0].file_id);
+                        crate::fx::ShineKind::Overlay
+                    }
+                    0x46 | 0x47 => {
+                        self.shine_drives.retain(|d| !(d.actor == id && matches!(d.kind, crate::fx::ShineKind::Tf { .. })));
+                        crate::fx::ShineKind::Tf { start: self.shine.entry(id).or_default().tf, target: op.u32_at(8), total: left }
+                    }
+                    c => {
+                        let v = matches!(c, 0x43 | 0x45);
+                        let s = self.shine.entry(id).or_default();
+                        crate::fx::ShineKind::Uv { v, start: if v { s.v } else { s.u }, target: f32::from_bits(op.u32_at(8)), total: left }
+                    }
+                };
+                self.next_drive += 1;
+                self.shine_drives.push(crate::fx::ShineDrive { id: self.next_drive, owner: t.uid, actor: id, left, kind });
                 Flow::Next
             }
             // Actor1's wepN meshes, N = i16 @0xc: 0x75 on hide byte 0 (hide u32 @8 != 0, show 0; with a length hidden
@@ -1561,7 +1591,50 @@ impl Effects {
     }
 
     /// fx-sweep between runs: every task, pending start and generator gone.
+    /// The shine drives' frame (FUN_10060680, FUN_1005e870): a drive whose task is gone ends there (U / V snap to the
+    /// target, the overlay goes if still its own, the colour stays where it was).
+    fn step_shine(&mut self, dt: f32, live: &[u64]) {
+        use crate::fx::ShineKind;
+        for mut d in std::mem::take(&mut self.shine_drives) {
+            d.left -= dt;
+            let dead = !live.contains(&d.owner);
+            let done = d.left < 0.0 || dead;
+            let s = self.shine.entry(d.actor).or_default();
+            match d.kind {
+                ShineKind::Overlay => {
+                    if done && s.tex.is_some_and(|(_, o)| o == d.id) {
+                        s.tex = None;
+                    }
+                }
+                ShineKind::Uv { v, start, target, total } => {
+                    let x = if done || total <= 0.0 { target % 2.0 } else { (start + (target - start) * (1.0 - d.left / total)) % 2.0 };
+                    if v {
+                        s.v = x;
+                    } else {
+                        s.u = x;
+                    }
+                }
+                ShineKind::Tf { start, target, total } if !dead => {
+                    let k = if d.left < 0.0 || total <= 0.0 { 1.0 } else { 1.0 - d.left / total };
+                    let (a, b) = (start.to_le_bytes(), target.to_le_bytes());
+                    s.tf = u32::from_le_bytes(std::array::from_fn(|i| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * k) as u8));
+                }
+                ShineKind::Tf { .. } => {}
+            }
+            if !done {
+                self.shine_drives.push(d);
+            }
+        }
+    }
+
+    /// Actors with the shine overlay on: (actor, its image, U, V, TFACTOR as ARGB).
+    pub fn shines(&self) -> Vec<(u32, Ref, f32, f32, u32)> {
+        self.shine.iter().filter_map(|(id, s)| s.tex.map(|(r, _)| (*id, r, s.u, s.v, s.tf))).collect()
+    }
+
     pub fn reset_runs(&mut self) {
+        self.shine.clear();
+        self.shine_drives.clear();
         self.pending.clear();
         self.tasks.iter_mut().for_each(|t| *t = None);
         for i in 0..self.insts.len() {
