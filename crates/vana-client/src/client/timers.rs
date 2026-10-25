@@ -1039,10 +1039,10 @@ pub fn draw_panel(gu: &mut GameUi, secs: &[Vec<Group>; 3], folded: u8, p: &Place
                     let f = (r.left / r.total).clamp(0.0, 1.0);
                     let f = if r.fills { 1.0 - f } else { f };
                     let (gx, gy) = (rx + GAUGE_X, ly + 14.0);
-                    let fill = if r.fills { 97 } else { 98 };
-                    let tint = if r.fills { 0x8000_60b0 } else { N };
+                    // Frame 38's own fill (97, 64 x 6); effects take the MP fill's gold (98: 73, 73, 33; green caps at 65).
+                    let tint = if r.fills { 0x8000_60b0 } else { 0x8056_ff71 };
                     if f > 0.0 {
-                        gu.sprite_scaled_blend("menu    windowps", fill, gx + 4.0, gy + 1.0, f, 1.0, tint, 8);
+                        gu.sprite_scaled_blend("menu    windowps", 97, gx + 4.0, gy + 1.0, f, 1.0, tint, 8);
                     }
                     gu.sprite("menu    windowps", 38, gx, gy, if f == 0.0 { 0x3050_5050 } else { N });
                 }
