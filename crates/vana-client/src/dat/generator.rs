@@ -193,6 +193,8 @@ pub struct Generator {
     /// Data 0x68: bits 0..8 extra elements per emission, 0x400 single element, 0x1000 auto-start, 0x20000000
     /// one element per emission.
     pub flags: u32,
+    /// Data 0x1c (gen +0x98): the two-point modes take emission op 0x7b's point offsets (FUN_10053e60).
+    pub offsets: bool,
     pub streams: [Vec<Op>; 4],
 }
 
@@ -218,6 +220,7 @@ impl Generator {
             node,
             attach: u32_at(0x00),
             blend: [f32_at(0x10), f32_at(0x14)],
+            offsets: u32_at(0x1c) != 0,
             life: f32_at(0x60),
             interval_rand: i16_at(0x64),
             interval: i16_at(0x66),

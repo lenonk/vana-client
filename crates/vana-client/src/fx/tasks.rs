@@ -1269,13 +1269,15 @@ impl Effects {
     /// An actor slot's placement and attach point `k` in the world (FUN_1003ba20): 0x30 the ground under point 0,
     /// 0x31 / 0x32 the body point 0xd..0x14 nearest the other actor, 0x33 the one nearest the eye, 0x34 the last foot
     /// contact, 0x35 the position, 0x36..0x3c points 0x7e / 0x7f / 0x66..0x6a, others point k.
-    fn who_point(&self, w: Who, k: u16, other: Who, eye: Option<Vec3>, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
+    fn who_point(&self, w: Who, k: u16, other: Who, eye: Option<Vec3>, off: Vec3, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
         let (id, m) = self.who_matrix(w, actors)?;
         let local = |k: u16| match w {
             Who::Doll(d) if k < DOLL_POINTS => self.dolls.get(d).and_then(|d| d.points[k as usize]),
             _ => actors.point(id, k),
         };
-        let world = |k: u16| local(k).map(|p| m.transform_point3(p));
+        // Op 0x7b's offset turns with the actor (TransformCoord by its yaw).
+        let off = m.transform_vector3(off);
+        let world = |k: u16| local(k).map(|p| m.transform_point3(p) + off);
         let nearest = |to: Vec3| (0xd..=0x14u16).filter_map(world).min_by(|a, b| a.distance_squared(to).total_cmp(&b.distance_squared(to)));
         let p = match k {
             // From 1 above to 6 below; retail's miss is (0, 0, 0), ours keeps the position (our collision is not
@@ -1334,8 +1336,15 @@ impl Effects {
             m
         });
         let eye = f.map(|f| f.eye);
-        let p1 = |k: u16| self.who_point(a1, k, a2, eye, actors);
-        let p2 = |k: u16| self.who_point(a2, k, a1, eye, actors);
+        // FUN_10053e60: with gen +0x98 set, emission op 0x7b's offsets A (caster point) / B (target point) reach the
+        // two-point modes only.
+        let two_point = matches!(x.mode, 3 | 6 | 0xd | 0x10 | 0x11 | 0x12 | 0x16..=0x1b);
+        let (off_a, off_b) = match x.streams[1].iter().find(|o| o.code == 0x7b) {
+            Some(o) if g.offsets && two_point => (Vec3::new(o.f32(1), o.f32(2), o.f32(3)), Vec3::new(o.f32(4), o.f32(5), o.f32(6))),
+            _ => (Vec3::ZERO, Vec3::ZERO),
+        };
+        let p1 = |k: u16| self.who_point(a1, k, a2, eye, off_a, actors);
+        let p2 = |k: u16| self.who_point(a2, k, a1, eye, off_b, actors);
         let mut dist = 0.0;
         let m = match x.mode {
             1 | 9 | 0xb => p1(pc).map(|(m, p)| at(m, p)),
@@ -1368,7 +1377,7 @@ impl Effects {
             8 => p2(pt).and_then(|(_, p)| cam(p)),
             0x10 | 0x11 => {
                 let (a, o) = if x.mode == 0x10 { (a1, a2) } else { (a2, a1) };
-                match (self.who_point(a, pc, o, eye, actors), self.who_point(a, pt, o, eye, actors)) {
+                match (self.who_point(a, pc, o, eye, off_a, actors), self.who_point(a, pt, o, eye, off_b, actors)) {
                     (Some((_, p1)), Some((_, p2))) => {
                         let (m, d) = two(p1, p2);
                         dist = d;
@@ -1413,7 +1422,8 @@ impl Effects {
             let (pc, pt) = (((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16, ((w >> 10) & 0x3f) as u16);
             *au.attach.entry((x.mode, pc, pt)).or_default() += 1;
         }
-        let placed = self.attach_matrix(i, None, actors);
+        let last = self.last_frame;
+        let placed = self.attach_matrix(i, last.as_ref(), actors);
         if placed.as_ref().is_none_or(|p| p.0.is_none())
             && let (Some(au), Some(x)) = (self.reg.audit.as_mut(), self.insts[i].as_ref())
             && x.mode != 0
@@ -1430,6 +1440,38 @@ impl Effects {
             x.scale_b = b;
             x.dist = d;
         }
+    }
+
+    /// Generator ops 0x0e / 0x0f / 0x10 (FUN_100496f0): the attachment rebuilt (FUN_10053e60), then turned about X / Y
+    /// / Z at its origin by keyframe 4cc u32 @8 at t over the element plus generator life (op 1's i16 @0x22),
+    /// half-turns wrapped to +-pi.
+    pub(super) fn spin(&mut self, i: usize, op: &crate::dat::generator::Op, f: &Frame, actors: &dyn Actors) {
+        let Some((Some(m), a, b, d)) = self.attach_matrix(i, Some(f), actors) else { return };
+        let Some(x) = self.insts[i].as_ref() else { return };
+        let l = x.streams[1].first().map_or(0.0, |o| o.i16_at(0x22) as f32);
+        let t = if l + x.life > 0.0 { (1.0 - (l + x.life - x.elapsed) / (l + x.life)).min(1.0) } else { 0.0 };
+        let Some(v) = self.reg.resolve(x.src.0, x.src.1, kind::KEYFRAME, op.u32(2)).and_then(|r| self.reg.keyframe(r)).map(|k| k.sample(t, op.u32(3) & 0xf != 0)) else { return };
+        let mut ang = (v % 2.0) * 3.141592;
+        if ang > 3.1415 {
+            ang -= 2.0 * 3.1415;
+        } else if ang < -3.1415 {
+            ang += 2.0 * 3.1415;
+        }
+        let r = match op.code {
+            0x0e => Mat4::from_rotation_x(ang),
+            0x0f => Mat4::from_rotation_y(ang),
+            _ => Mat4::from_rotation_z(ang),
+        };
+        // D3D's A x Rot with the translation set aside: the turn follows the attach rotation.
+        let mut rot = m;
+        rot.w_axis = glam::Vec4::W;
+        let mut out = r * rot;
+        out.w_axis = m.w_axis;
+        let Some(x) = self.insts[i].as_mut() else { return };
+        x.matrix = Some(out);
+        x.scale_a = a;
+        x.scale_b = b;
+        x.dist = d;
     }
 
     /// Generator op 0x11 (FUN_10052cd0): the attach matrix again, lerped by k = ((op[1] >> 2) & 0xff) / 255 —

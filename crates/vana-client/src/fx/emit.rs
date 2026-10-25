@@ -75,7 +75,7 @@ fn needs_no_resource(k: u8) -> bool {
 
 /// FUN_1004d920: builds one element from the instance's emission stream, or None when op 1's resource does not
 /// resolve (retail returns without emitting).
-pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f: &Frame, rng: &mut Rng) -> Option<Spawn> {
+pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f: &Frame, rng: &mut Rng, ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>) -> Option<Spawn> {
     let lib = inst.src.0;
     let from = inst.src.1;
     let stream = inst.streams[1].clone();
@@ -97,6 +97,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     } else {
         match remap(res_kind) {
             kind::D3M => match reg.resolve(lib, from, kind::D3M, name).or_else(|| reg.resolve(lib, from, kind::MMB, name)) {
+                // DistModel (0x100000) and the ground projection (0x200000) are never drawn as a plain mesh; their
+                // passes are not done yet.
+                Some(_) if flags & 0x30_0000 != 0 => Draw::None,
                 Some(r) => reg.mesh(r).map(Draw::Mesh).unwrap_or(Draw::None),
                 None => {
                     reg.miss(lib, from, name, res_kind);
@@ -579,6 +582,21 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::DRAG, drag);
             }
             // Ground snap, point lists, paths, sound, class-specific: not handled yet.
+            // FUN_1004e8d0 0x1004f7d6: onto the ground under the element (1 above to 6 below, as attach point 0x30);
+            // a miss leaves it.
+            0x42 => {
+                let m = snapshot.or(inst.matrix);
+                let wp = m.map_or(pos, |m| m.transform_point3(pos));
+                if let Some(h) = ground(wp - Vec3::Y, wp + Vec3::Y * 6.0) {
+                    pos = m.map_or(h, |m| m.inverse().transform_point3(h));
+                }
+            }
+            // No-ops in retail: 0x56 on every class but VuAnm / VuLine / VuDist / Disintegrate (the `vib?` NullProg
+            // generators carry it for their per-frame op 0x5f), 0x06 / 0x08 in batched mode (data for 0x56), 0x7b
+            // (the attachment reads its offsets).
+            0x56 if !(batched && res_kind == 0x22) => {}
+            0x06 | 0x08 if batched => {}
+            0x7b => {}
             _ => reg.unhandled(1, op.code),
         }
     }
@@ -695,9 +713,10 @@ pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> b
                     break;
                 }
             }
-            // 0x11 follow is the attachment (fx/mod.rs recomputes the matrix every frame); 0x0e..0x10 spin and
-            // 0x15 view-box gate are not handled yet.
+            // 0x11 follow and the 0x0e..0x10 spins are the attachment (fx/mod.rs, every frame); 0x5d is never read.
+            // 0x15 (view-box gate) is not handled yet.
             0x11 => inst.flags |= 0x200,
+            0x0e..=0x10 | 0x5d => {}
             _ => reg.unhandled(0, op.code),
         }
     }

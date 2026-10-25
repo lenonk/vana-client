@@ -7687,3 +7687,27 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Sweep note: a weapon-skill run of 2026-10-25 (ws2) recorded almost no gaps because no effect file loaded in it
   (every file sat 600 ticks, the pending start's timeout); runs before and after it are normal. The summary now ranks
   only inferred attach parts (modes 9..0xc, point 0x35), not every special point.
+
+## Effect stream ops: ground snap, point offsets, emitter spin, no-ops (2026-10-25; spec fx_stream_attach_spec.md)
+
+- Emission op 0x42 (FUN_1004e8d0 0x1004f7d6): the element onto the ground under it (1 above to 6 below, through its
+  attach matrix and back); a miss leaves it. emit() takes a ground query (Actors::ground_hit).
+- Op 0x7b: a no-op in the emission stream; with generator data 0x1c set (gen +0x98), FUN_10053e60 adds its offsets
+  A (words 1..3, caster point) / B (words 4..6, target point), turned by the point actor's yaw, in the two-point modes
+  3, 6, 0xd, 0x10, 0x11, 0x12, 0x16..0x1b only (Generator::offsets; who_point's `off`).
+- Generator ops 0x0e / 0x0f / 0x10 (FUN_100496f0): the attachment rebuilt fresh, then turned about X / Y / Z at its
+  origin by a keyframe (u32 @8, eased by @0xc low nibble) at t = 1 - (L + life - elapsed) / (L + life), L = op 1's
+  element life; fmod(v, 2) x pi, wrapped to +-pi. Applied as D3D's A x R (world axes after the attach rotation);
+  only the stream's last spin op stands each frame (each rebuilds the matrix). 98 + 2 files.
+- Attachments made between frames (attach_now) use the last frame's inputs (eye, camera), so point 0x33 and modes
+  7 / 8 have them at start.
+- D3m elements with op-1 flag 0x100000 (DistModel) or 0x200000 (the ground projection) are no longer drawn as plain
+  meshes (no fallback); their passes are being specified.
+- No-ops as in retail: emission 0x56 on every class but VuAnm / VuLine / VuDist / Disintegrate (the `vib?` NullProg
+  generators carry it for per-frame op 0x5f); 0x06 / 0x08 in batched mode; generator 0x5d (never read); expire 0x04
+  (the spline path's reference count).
+- Full sweep after this and the task-op batches: the gaps left are emission 0x32 (distortion, 536 files), 0x3a (rings,
+  409), 0x55 (specular, 299), 0x46 (parent velocity, 226), 0x43 (ground projection, 141); task ops 0x40..0x47 / 0x54 /
+  0x55 (the shine overlay), 0x88, 0x3f, 0x2c, 0xb2, screen ops 0x0e / 0x72 / 0x0f, 0x7a; attach modes 9..0xb (the bone
+  rotation, inferred). 854 "scheduler not found" are the item / ability files with other entry names and LSB mob
+  animations outside the effect files (see "Effects audit: fx-sweep").

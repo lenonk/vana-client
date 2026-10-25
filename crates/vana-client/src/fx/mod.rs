@@ -726,6 +726,8 @@ pub struct Effects {
     /// Op 0x05 motions found in their scheduler's own file (FUN_10057000 case 5 looks there before the actor's
     /// files): (actor, file) to put on the actor, and those to take off once no live task owns them.
     pub effect_motions: Vec<(u32, u32)>,
+    /// The last frame's inputs, for attachments made between frames (the eye for point 0x33, the camera for 7 / 8).
+    last_frame: Option<Frame>,
     pub effect_motions_done: Vec<(u32, u32)>,
     owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
@@ -811,6 +813,7 @@ impl Effects {
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             effect_motions: Vec::new(),
+            last_frame: None,
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),
@@ -1312,6 +1315,7 @@ impl Effects {
         let (due, later): (Vec<_>, Vec<_>) = std::mem::take(&mut self.knocks_later).into_iter().partition(|k| k.0 <= 0.0);
         self.knocks_later = later;
         self.knocks.extend(due.into_iter().map(|k| k.1));
+        self.last_frame = Some(*f);
         self.start_dust(f, actors);
         // Lives first, as each element's Exec does before its update stream.
         for e in 0..self.elems.len() {
@@ -1321,7 +1325,7 @@ impl Effects {
             }
             c.life -= dt;
             if c.life < 1.0 {
-                self.expire(e as u32, f);
+                self.expire(e as u32, f, actors);
             }
         }
         for i in 0..self.insts.len() {
@@ -1333,13 +1337,17 @@ impl Effects {
             {
                 self.follow(i, word, f, actors);
             }
+            // Generator ops 0x0e..0x10: each rebuilds the attachment and spins it, so the stream's last one stands.
+            if let Some(Some(op)) = self.insts[i].as_ref().filter(|x| x.mode != 0).map(|x| x.streams[0].iter().rev().find(|o| matches!(o.code, 0x0e..=0x10)).cloned()) {
+                self.spin(i, &op, f, actors);
+            }
             self.ground_frame(i, actors);
             let driven = self.drive(i, f);
             let Some(inst) = self.insts[i].as_ref() else { continue };
             let (m, a, b, wgt, ss, ms) = (inst.matrix, inst.scale_a, inst.scale_b, inst.weather, inst.size_scaled, inst.mslot);
             self.put_slot(ms, m, a, b, wgt, ss);
             if driven {
-                self.update_instance(i, f);
+                self.update_instance(i, f, actors);
             }
         }
         self.step_sounds(f);
@@ -1390,7 +1398,7 @@ impl Effects {
     }
 
     /// FUN_10048740 for one instance.
-    fn update_instance(&mut self, i: usize, f: &Frame) {
+    fn update_instance(&mut self, i: usize, f: &Frame, actors: &dyn Actors) {
         let Some(mut inst) = self.insts[i].take() else { return };
         if inst.stopping || inst.finished {
             self.insts[i] = Some(inst);
@@ -1438,7 +1446,7 @@ impl Effects {
         });
         let mut spawns = Vec::new();
         for _ in 0..emissions.min(512) {
-            if let Some(s) = emit::emit(&mut self.reg, &mut inst, parent.as_ref(), f, &mut self.rng) {
+            if let Some(s) = emit::emit(&mut self.reg, &mut inst, parent.as_ref(), f, &mut self.rng, &|a, b| actors.ground_hit(a, b)) {
                 spawns.push(s);
             }
         }
@@ -1448,7 +1456,7 @@ impl Effects {
         }
         self.insts[i] = Some(inst);
         for s in spawns {
-            self.add_elem(i, s, f);
+            self.add_elem(i, s, f, actors);
         }
     }
 
@@ -1469,7 +1477,7 @@ impl Effects {
         })
     }
 
-    fn add_elem(&mut self, inst: usize, s: emit::Spawn, f: &Frame) {
+    fn add_elem(&mut self, inst: usize, s: emit::Spawn, f: &Frame, acts: &dyn Actors) {
         let Some(e) = self.free.pop().or_else(|| (self.elems.len() < MAX_ELEMS).then(|| {
             self.elems.push(None);
             (self.elems.len() - 1) as u32
@@ -1581,10 +1589,10 @@ impl Effects {
                         if let Some(c) = self.elems[e as usize].as_mut() {
                             c.child = Some(ci);
                         }
-                        self.update_instance(ci, f);
+                        self.update_instance(ci, f, acts);
                     }
                 }
-                emit::Child::Burst { src } => self.burst(src, e, f),
+                emit::Child::Burst { src } => self.burst(src, e, f, acts),
             }
         }
     }
@@ -1604,7 +1612,7 @@ impl Effects {
                 x.life = 10000.0;
             }
             self.attach_now(i, actors);
-            self.update_instance(i, f);
+            self.update_instance(i, f, actors);
             if let Some(x) = self.insts[i].as_mut() {
                 x.elapsed = 10001.0;
                 x.finished = true;
@@ -1647,16 +1655,16 @@ impl Effects {
         }
         self.ground_frame(i, actors);
         let Some(mut inst) = self.insts[i].take() else { return };
-        let spawn = emit::emit(&mut self.reg, &mut inst, None, f, &mut self.rng);
+        let spawn = emit::emit(&mut self.reg, &mut inst, None, f, &mut self.rng, &|a, b| actors.ground_hit(a, b));
         inst.finished = true;
         self.insts[i] = Some(inst);
         if let Some(s) = spawn {
-            self.add_elem(i, s, f);
+            self.add_elem(i, s, f, actors);
         }
     }
 
     /// One emission of generator `src` with element `e` as parent, now (emission op 0x3c, end-stream op 1).
-    fn burst(&mut self, src: Ref, e: u32, f: &Frame) {
+    fn burst(&mut self, src: Ref, e: u32, f: &Frame, acts: &dyn Actors) {
         let actors = self.elems.get(e as usize).and_then(|c| c.as_ref()).and_then(|c| self.insts.get(c.inst)?.as_ref()).map_or([sched::Who::None; 2], |x| x.actors);
         // Retail runs the generator resource itself (FUN_10048740), whose task link +0x64 is 0: no damage number.
         if let Some(ci) = self.start(src, Owner::Element(e as usize)) {
@@ -1664,7 +1672,7 @@ impl Effects {
                 x.parent_elem = Some(e);
                 x.actors = actors;
             }
-            self.update_instance(ci, f);
+            self.update_instance(ci, f, acts);
             if let Some(x) = self.insts[ci].as_mut() {
                 x.stopping = true;
             }
@@ -1672,7 +1680,7 @@ impl Effects {
     }
 
     /// FUN_10043ca0 once life < 1: the end stream (FUN_1004d770), then delete unless held.
-    fn expire(&mut self, e: u32, f: &Frame) {
+    fn expire(&mut self, e: u32, f: &Frame, acts: &dyn Actors) {
         let Some(c) = self.elems[e as usize].as_ref() else { return };
         let inst = c.inst;
         let (ops, src, actors) = self.insts.get(inst).and_then(|x| x.as_ref()).map(|x| (x.streams[3].clone(), x.src, x.actors)).unwrap_or_default();
@@ -1681,7 +1689,7 @@ impl Effects {
                 // Burst a generator at the element / start a scheduler with the element's actor pair.
                 0x01 => {
                     if let Some(g) = self.reg.resolve(src.0, src.1, kind::GENERATOR, op.u32(2)) {
-                        self.burst(g, e, f);
+                        self.burst(g, e, f, acts);
                     }
                 }
                 0x02 => {
@@ -1696,6 +1704,8 @@ impl Effects {
                     self.writes.push(Write::Words(e, w::LIFE, vec![life.to_bits()]));
                     self.writes.push(Write::Words(e, w::CTRL, vec![ctl::LIFE_SET]));
                 }
+                // FUN_10063b20: the spline path's reference count (ours keep none).
+                0x04 => {}
                 _ => self.reg.unhandled(3, op.code),
             }
         }
