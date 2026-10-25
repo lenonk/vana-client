@@ -175,7 +175,7 @@ impl Effects {
         }
     }
 
-    pub(super) fn poll_loads(&mut self) {
+    pub fn poll_loads(&mut self) {
         while let Ok((file, lib)) = self.load_rx.try_recv() {
             match lib {
                 Some(l) if self.reg.lib_of(file).is_none() => {
@@ -1713,6 +1713,11 @@ impl Effects {
     /// Starts still waiting for their files (fx-sweep).
     pub fn pending_count(&self) -> usize {
         self.pending.len()
+    }
+
+    /// Files being read in the background (fx-sweep waits for them in real time, not in ticks).
+    pub fn loading_count(&self) -> usize {
+        self.loading.iter().filter(|f| self.reg.lib_of(**f).is_none() && !self.failed.contains(f)).count()
     }
 
     /// fx-sweep between runs: every task, pending start and generator gone.

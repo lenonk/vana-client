@@ -1828,7 +1828,14 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }] };
             fx.on_action(&action, None);
             let (mut n, mut kicks, mut peak) = (0, 0usize, 0.0f32);
+            let started = std::time::Instant::now();
             while n < ticks {
+                // Ticks spent while files load would vary with the machine: wait for them (5 s at most a run).
+                if fx.loading_count() > 0 && started.elapsed().as_secs() < 5 {
+                    fx.poll_loads();
+                    std::thread::sleep(std::time::Duration::from_millis(1));
+                    continue;
+                }
                 fx.tick(&frame, &actors);
                 sync_fx_files(&mut fx, &actors.fx_files);
                 kicks += fx.quakes.len();
