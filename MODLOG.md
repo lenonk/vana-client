@@ -7770,11 +7770,24 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 
 - Modes 9 / 0xa (FUN_1003bd90 -> actor vtable +0x1d0): the generator rides point pc of the caster / pt of the target
   with its whole frame: Rx Ry Rz of the point (the skeleton keeps the three angles, Skeleton::point_rots, bytes 2..13 of
-  each 26-byte point) with its offset, times the drawn bone, through the placement (Actors::point_frame; the rotation
-  normalised, the translation with the model scale). 0xb / 0xc: only that frame's heading, RotY(-atan2(B._33, B._31)),
-  at the point *(inf: the decompile's arguments are garbled there)*. FUN_100d4a90's details (translation +0x6a8 when
-  +0xa00 == 0) are not traced. Dolls keep the point with the actor's turn. 152 files use mode 9 (weapon and limb
-  effects that turn with the swing). Not seen live yet.
+  each 26-byte point) with its offset, times the drawn bone, through the placement (Actors::point_frame). 152 files use
+  mode 9 (weapon and limb effects that turn with the swing). Not seen live yet.
+- Traced exactly (2026-10-25, spec ~/ffxi/lab/research/fx_sweep_rest_spec.md 1): FUN_1003be10 -> FUN_1003bd90 remaps
+  points 0x36 -> 0x7e, 0x37 -> 0x7f, 0x38..0x3c -> 0x66..0x6a (12 Trust weapon skill files use mode 9 with 0x36..0x39:
+  the weapon hand, not the root), then CXiSkeletonActor vt+0x1d0 = FUN_100d49d0 -> FUN_100d4a90 -> FUN_1002a900: O =
+  Rx Ry Rz T(P.t) Bone_world, whose rows carry the actor size (ours: the rotation columns times Actors::scale, no
+  longer normalised). The "+0x6a8 when +0xa00 == 0" term is retail's skeleton update throttle (stale bones shifted by
+  the frame's movement); we pose every frame, which is equivalent. 0xb / 0xc: RotY(-atan2(B._33, B._31)) with the
+  translation from FUN_1003ba20 / vt+0x1c4 (the point resolver: point 2 and the specials), not the bone frame.
+  Dolls (FUN_10082180): the generator's last matrix times T(doll position), no rotation, the point ignored: a rebuild
+  (op 0x11, spin ops) adds the position again (copied); a doll's 0xb / 0xc heading is the math pool's scratch *(inf:
+  identity)*. Model / furniture actors: their placement (as ours' fallback). Not done: the bone-0 point drop while
+  riding or in some statuses (FUN_1002c5c0; the statuses not traced), the not-yet-posed skeleton's identity (load
+  edge). Tests attach_bone_frame, attach_voyage_identity.
+- Modes 0x14 / 0x15: the voyage matrix DAT_10631ed0 (FUN_10178b30: the rigid inverse of a ship's pose on the zone's
+  `c00N` path), whole / its rotation; identity off a voyage (Effects::voyage). Op 0x11 follows mode 0x14 too. The
+  voyage itself (ShipStart / ShipEnd from 0x00A, the path, op 0xb4 0xd / 0xe hold, the moving ship scenery, the sun /
+  moon rotation of modes 0xe / 0xf) is not done (fx_op_ac_attach14_spec.md 2.7 phase 2).
 
 ## Camera shake and rumble: element update op 0x5f (2026-10-25; spec ~/ffxi/lab/research/fx_shake_spec.md)
 

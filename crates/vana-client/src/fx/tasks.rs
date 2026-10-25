@@ -1543,28 +1543,48 @@ impl Effects {
         let p1 = |k: u16| self.who_point(a1, k, a2, eye, off_a, actors);
         let p2 = |k: u16| self.who_point(a2, k, a1, eye, off_b, actors);
         let mut dist = 0.0;
-        // FUN_1003bd90 -> vtable +0x1d0: the point's frame on its drawn bone, through the placement (9 / 0xa); 0xb /
-        // 0xc keep only its heading, RotY(-atan2(B._33, B._31)), at the point *(inf: the decompile's arguments there are
-        // garbled; FUN_100d4a90 not traced)*. Dolls keep the point with the actor's turn.
+        // FUN_1003bd90 remaps points 0x36..0x3c, then vtable +0x1d0: a skeleton's point frame Rx Ry Rz T(offset) on
+        // its drawn bone, whose rows carry the actor size (FUN_100d49d0 -> FUN_1002a900); a doll's (FUN_10082180) is
+        // the generator's last matrix moved by the doll's position: no rotation, the point ignored, so a rebuild adds
+        // the position again (as decompiled).
+        let remap = |k: u16| match k {
+            0x36 => 0x7e,
+            0x37 => 0x7f,
+            0x38..=0x3c => k - 0x38 + 0x66,
+            _ => k,
+        };
         let bone_frame = |w: Who, k: u16| match w {
-            Who::Actor(id) => Some(actors.matrix(id)? * actors.point_frame(id, k)?),
+            Who::Actor(id) => {
+                let f = actors.matrix(id)? * actors.point_frame(id, remap(k))?;
+                let s = actors.scale(id);
+                Some(Mat4::from_cols(f.x_axis * s, f.y_axis * s, f.z_axis * s, f.w_axis))
+            }
+            Who::Doll(_) => {
+                let (_, d) = self.who_matrix(w, actors)?;
+                let mut o = x.matrix.unwrap_or(Mat4::IDENTITY);
+                o.w_axis += d.w_axis.truncate().extend(0.0);
+                Some(o)
+            }
             _ => None,
         };
-        let heading = |b: Mat4| {
+        // 0xb / 0xc: RotY(-atan2(B._33, B._31)) of that frame, at the point FUN_1003ba20 resolves (vt+0x1c4, the
+        // specials included). A doll's B is the math pool's scratch *(inf: taken as identity)*.
+        let heading = |w: Who, k: u16, p: Option<(Mat4, Vec3)>| {
+            let b = match w {
+                Who::Doll(_) => Some(Mat4::IDENTITY),
+                _ => bone_frame(w, k),
+            }?;
             let mut r = Mat4::from_rotation_y(-b.z_axis.z.atan2(b.z_axis.x));
-            r.w_axis = b.w_axis;
-            r
+            r.w_axis = p.map_or(b.w_axis, |(_, p)| p.extend(1.0));
+            Some(r)
         };
         let m = match x.mode {
-            9 | 0xa => bone_frame(if x.mode == 9 { a1 } else { a2 }, if x.mode == 9 { pc } else { pt }).map(|b| {
-                let mut r = rot(b);
-                r.x_axis = r.x_axis.normalize_or_zero();
-                r.y_axis = r.y_axis.normalize_or_zero();
-                r.z_axis = r.z_axis.normalize_or_zero();
-                r.w_axis = b.w_axis;
-                r
-            }).or_else(|| if x.mode == 9 { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
-            0xb | 0xc => bone_frame(if x.mode == 0xb { a1 } else { a2 }, if x.mode == 0xb { pc } else { pt }).map(heading).or_else(|| if x.mode == 0xb { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
+            9 | 0xa => bone_frame(if x.mode == 9 { a1 } else { a2 }, if x.mode == 9 { pc } else { pt }).or_else(|| if x.mode == 9 { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
+            0xb => heading(a1, pc, p1(pc)).or_else(|| p1(pc).map(|(m, p)| at(m, p))),
+            0xc => heading(a2, pt, p2(pt)).or_else(|| p2(pt).map(|(m, p)| at(m, p))),
+            // FUN_1003be10 0x14 / 0x15: the voyage matrix DAT_10631ed0 (identity off a voyage), whole / its rotation.
+            0x14 => Some(self.voyage),
+            0x15 => Some(rot(self.voyage)),
             1 => p1(pc).map(|(m, p)| at(m, p)),
             2 => p2(pt).map(|(m, p)| at(m, p)),
             3 | 0xd | 0x16 | 0x1a => match (p1(pc), p2(pt)) {
@@ -1916,6 +1936,63 @@ mod tests {
             fx.tick(&f, &Two);
         }
         assert!(!fx.pinned.contains_key(&ORC));
+    }
+
+    /// A posed stand-in: point k's frame RotY(0.5) at height k / 100 above its bone, the actor at x 1, size 2.
+    struct Skel;
+
+    impl Actors for Skel {
+        fn matrix(&self, _: u32) -> Option<Mat4> {
+            Some(Mat4::from_translation(Vec3::X))
+        }
+        fn point(&self, _: u32, k: u16) -> Option<Vec3> {
+            Some(Vec3::new(0.0, -(k as f32) / 100.0, 0.0))
+        }
+        fn scale(&self, _: u32) -> f32 {
+            2.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), Vec::new())
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn point_frame(&self, _: u32, k: u16) -> Option<Mat4> {
+            Some(Mat4::from_translation(Vec3::new(0.0, -(k as f32) / 100.0, 0.0)) * Mat4::from_rotation_y(0.5))
+        }
+    }
+
+    /// The first generator of a file with this attach mode (and caster point), started on HUME / ORC and attached.
+    fn attached(file: u32, mode: u8, pc: Option<u16>, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
+        let index = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok()?;
+        let mut fx = Effects::new();
+        let lib = Library::load(file, index.read(file).ok()?).ok()?;
+        let node = lib.gens.iter().find(|g| g.attach_mode() == mode && pc.is_none_or(|pc| ((((g.attach >> 18) & 1) << 6) | ((g.attach >> 4) & 0x3f)) as u16 == pc))?.node;
+        let l = fx.reg.add(lib);
+        let i = fx.start((l, node), super::super::Owner::Zone)?;
+        fx.insts[i].as_mut()?.actors = [Who::Actor(HUME), Who::Actor(ORC)];
+        fx.attach_now(i, actors);
+        let x = fx.insts[i].as_ref()?;
+        Some((x.matrix?, x.scale_a))
+    }
+
+    /// Mode 9 with point 0x36 (Bisection, 87053): FUN_1003bd90 takes point 0x7e, and the frame's rows keep the size 2.
+    #[test]
+    fn attach_bone_frame() {
+        let Some((m, _)) = attached(87053, 9, Some(0x36), &Skel) else { return };
+        let want = Mat4::from_translation(Vec3::new(1.0, -1.26, 0.0)) * Mat4::from_rotation_y(0.5);
+        let want = Mat4::from_cols(want.x_axis * 2.0, want.y_axis * 2.0, want.z_axis * 2.0, want.w_axis);
+        assert!(m.abs_diff_eq(want, 1e-5), "{m} != {want}");
+    }
+
+    /// Mode 0x14 (56775 alex): the voyage matrix, identity off a ship's voyage.
+    #[test]
+    fn attach_voyage_identity() {
+        let Some((m, a)) = attached(56775, 0x14, None, &Two) else { return };
+        assert_eq!((m, a), (Mat4::IDENTITY, Vec3::ONE));
     }
 
     /// Op 0xac: actor1's death pick, u32 @8 & 3, at once.

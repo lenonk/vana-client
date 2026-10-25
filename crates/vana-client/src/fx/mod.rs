@@ -863,6 +863,8 @@ pub struct Effects {
     pub motion_sets: Vec<(u32, u8, u32)>,
     /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
     pub death_picks: Vec<(u32, u8)>,
+    /// The voyage matrix (DAT_10631ed0, FUN_10178b30) attach modes 0x14 / 0x15 take: identity off a ship's voyage.
+    pub voyage: Mat4,
     pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
@@ -969,6 +971,7 @@ impl Effects {
             screen_ops: Vec::new(),
             motion_sets: Vec::new(),
             death_picks: Vec::new(),
+            voyage: Mat4::IDENTITY,
             lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,
@@ -1497,7 +1500,7 @@ impl Effects {
             attach(inst, f);
             // Generator op 0x11: follow the actors every frame.
             if let Some(word) = inst.streams[0].iter().find(|o| o.code == 0x11).map(|o| o.u32(1))
-                && !matches!(inst.mode, 0 | 0xe | 0xf | 0x14)
+                && !matches!(inst.mode, 0 | 0xe | 0xf)
             {
                 self.follow(i, word, f, actors);
             }
