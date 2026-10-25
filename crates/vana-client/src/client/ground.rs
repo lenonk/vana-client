@@ -78,6 +78,33 @@ pub struct Ground {
     cam_pass: Vec<bool>,
     /// Per triangle: effect ground projections paint it (Collision::decal).
     decal: Vec<bool>,
+    /// Mog House furniture boxes (FUN_1016d580): each piece's position and its 12 triangles with normals.
+    furniture: Vec<(Vec3, Vec<([Vec3; 3], Vec3)>)>,
+    /// The furniture meshes the camera ray tests (FUN_1016b1d0), each with its bounds; while `furcc` (config 0x99 bit 6
+    /// clear, /furcc on).
+    furn_mesh: Vec<(Vec3, Vec3, Vec<([Vec3; 3], Vec3)>)>,
+    pub furcc: bool,
+}
+
+/// FUN_1016d580's box: corners c0..c7 at local x0 / x1 (+-width / 2), the fixed top y -1.0 or y1 (+height / 2), z1 /
+/// z0, triangles from table 0x103769c8 (the x0 face's second is (2, 6, 5) in the data) with the normals of 0x10376a28,
+/// all turned by the piece's matrix.
+pub fn furniture_box(m: glam::Mat4, size: Vec3) -> Vec<([Vec3; 3], Vec3)> {
+    let (x0, x1, y1, z0, z1) = (-size.x / 2.0, size.x / 2.0, size.y / 2.0, -size.z / 2.0, size.z / 2.0);
+    let c = [
+        Vec3::new(x0, -1.0, z1),
+        Vec3::new(x1, -1.0, z1),
+        Vec3::new(x0, -1.0, z0),
+        Vec3::new(x1, -1.0, z0),
+        Vec3::new(x0, y1, z1),
+        Vec3::new(x1, y1, z1),
+        Vec3::new(x0, y1, z0),
+        Vec3::new(x1, y1, z0),
+    ]
+    .map(|p| m.transform_point3(p));
+    const N: [Vec3; 6] = [Vec3::NEG_Y, Vec3::Y, Vec3::Z, Vec3::NEG_Z, Vec3::X, Vec3::NEG_X];
+    const T: [(usize, usize, usize, usize); 12] = [(0, 1, 2, 0), (1, 3, 2, 0), (5, 4, 7, 1), (4, 6, 7, 1), (0, 2, 4, 5), (2, 6, 5, 5), (1, 0, 5, 2), (0, 4, 5, 2), (3, 1, 7, 4), (1, 5, 7, 4), (2, 3, 6, 3), (3, 7, 6, 3)];
+    T.iter().map(|&(a, b, d, n)| ([c[a], c[b], c[d]], m.transform_vector3(N[n]))).collect()
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -217,10 +244,26 @@ pub fn map_key_of(flags: u32) -> u8 {
 }
 
 impl Ground {
+    /// The furniture boxes of the pieces standing on the floor (FUN_1016e930: pos.y >= -0.1), and every piece's mesh
+    /// triangles (world space) for the camera.
+    pub fn set_furniture(&mut self, boxes: Vec<(glam::Mat4, Vec3)>, meshes: Vec<Vec<[Vec3; 3]>>) {
+        self.furniture = boxes.into_iter().filter(|(m, _)| m.w_axis.y >= -0.1).map(|(m, size)| (m.w_axis.truncate(), furniture_box(m, size))).collect();
+        // Normals as the zone's: against cross(b - a, c - a), which inside() expects.
+        self.furn_mesh = meshes
+            .into_iter()
+            .filter(|t| !t.is_empty())
+            .map(|t| {
+                let lo = t.iter().flatten().fold(Vec3::splat(f32::MAX), |a, &p| a.min(p));
+                let hi = t.iter().flatten().fold(Vec3::splat(f32::MIN), |a, &p| a.max(p));
+                (lo, hi, t.into_iter().map(|[a, b, c]| ([a, b, c], (c - a).cross(b - a).normalize_or_zero())).filter(|(_, n)| *n != Vec3::ZERO).collect())
+            })
+            .collect();
+    }
+
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new() },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
         }
     }
 
@@ -258,7 +301,7 @@ impl Ground {
         let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone() }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     /// FUN_10182700's cells: the MZB cell of `c` (truncated) and its neighbours clamped to the grid; None without one.
@@ -467,6 +510,29 @@ impl Ground {
                 }
             }
         }
+        // Then the furniture meshes (FUN_100c4bc0), both sides.
+        if self.furcc {
+            for (bl, bh, tris) in &self.furn_mesh {
+                if bh.x < lo.x || bl.x > hi.x || bh.y < lo.y || bl.y > hi.y || bh.z < lo.z || bl.z > hi.z {
+                    continue;
+                }
+                for &([a, b, c], n) in tris {
+                    let d = n.dot(e - s);
+                    if d == 0.0 {
+                        continue;
+                    }
+                    let t = n.dot(a - s) / d;
+                    if !(0.0..1.0).contains(&t) {
+                        continue;
+                    }
+                    let p = s + (e - s) * t;
+                    let d2 = (p - s).length_squared();
+                    if d2 < best && inside(a, b, c, p, n) {
+                        (best, hit) = (d2, Some(p));
+                    }
+                }
+            }
+        }
         hit
     }
 
@@ -583,6 +649,16 @@ impl Ground {
                 let n = self.normals[i];
                 cands.push(Cand { v, n, nz: n.dot(fz) });
             }
+        }
+        // FUN_1016e930 / FUN_1016d580: the boxes of furniture within 4 units (xz) of the start, 12 each while under 0x3fc.
+        for (pos, tris) in &self.furniture {
+            if xz(*pos - from).length() > 4.0 {
+                continue;
+            }
+            if cands.len() + 12 > 0x3fc {
+                break;
+            }
+            cands.extend(tris.iter().map(|&(v, n)| Cand { v, n, nz: n.dot(fz) }));
         }
         let mut sw = Sweep { out: s, first: true, wall: false, floor_fixed: false, floor_touched: false, best_floor: 0.0, best_wall: 0.0 };
         let mut t = 0.0f32;
@@ -774,11 +850,26 @@ mod tests {
         // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
         let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
         let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n] }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
         [Vec3::new(x0, y0, -5.0), Vec3::new(x1, y1, -5.0), Vec3::new(x1, y1, 5.0), Vec3::new(x0, y0, 5.0)]
+    }
+
+    /// Furniture: a bed's box stops a walk into it, its mesh stops the camera ray while /furcc is on.
+    #[test]
+    fn furniture_box_and_camera() {
+        let mut g = ground(&[(quad(-10.0, 10.0, 0.0, 0.0), Vec3::NEG_Y)]);
+        let bed = glam::Mat4::from_translation(Vec3::new(-4.8, 0.0, 0.0));
+        let wall = vec![[Vec3::new(-3.6, -1.0, -1.0), Vec3::new(-3.6, 0.0, -1.0), Vec3::new(-3.6, 0.0, 1.0)], [Vec3::new(-3.6, -1.0, -1.0), Vec3::new(-3.6, 0.0, 1.0), Vec3::new(-3.6, -1.0, 1.0)]];
+        g.set_furniture(vec![(bed, Vec3::new(2.4, 0.7, 3.6))], vec![wall]);
+        let (to, _) = g.sweep(Vec3::new(-2.0, 0.0, 0.0), Vec3::new(-3.4, 0.0, 0.0));
+        assert!(to.x > -3.2, "walked into the bed: {to:?}");
+        let hit = g.cam_ray(Vec3::new(0.0, -0.5, 0.0), Vec3::new(-6.0, -0.5, 0.0));
+        assert!(hit.is_some_and(|h| (h.x + 3.6).abs() < 1e-3), "{hit:?}");
+        g.furcc = false;
+        assert_eq!(g.cam_ray(Vec3::new(0.0, -0.5, 0.0), Vec3::new(-6.0, -0.5, 0.0)), None);
     }
 
     /// Floor at y 0 for x < 0, a riser at x 0 and a top at y -h beyond.

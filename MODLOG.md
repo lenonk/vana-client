@@ -8258,6 +8258,11 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix in the San d'Oria house, char_inventory rows with the exdata): Simple Bed, Desk with the Porcelain
   Flowerpot on it (level 5), Fire Lamp with its flame (g000 / g001), the fish aquarium (sak1 / sak2 / sakc / awa1),
   the Clockwork Egg ('init' started), the Imperial Standard in wall slot 3; the 2F-only Oak Table left out.
-- Not done: collision boxes and the camera ray (/furcc), skinned furniture (models 0x108..0x12b: statues, campfires),
+- Collision (FUN_1016e930 / FUN_1016d580): every piece standing on the floor (pos.y >= -0.1) within 4 units (xz) of
+  the sweep start adds a 12-triangle box: footprint size x 0.6 by size z x 0.6 (turned with the piece), top at local
+  y -1.0, bottom height x 0.01 / 2 below the origin, table 0x103769c8 with its (2, 6, 5) triangle, normals 0x10376a28.
+  Camera (FUN_1016b1d0): after the zone mesh, every piece's mesh triangles (plants too) while config 0x99 bit 6 is
+  clear (/furcc on). Ground::set_furniture. Live: walking at the Simple Bed stops at its edge.
+- Not done: skinned furniture (models 0x108..0x12b: statues, campfires),
   mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
 
