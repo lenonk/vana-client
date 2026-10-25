@@ -263,7 +263,7 @@ pub enum NetEvent {
     /// s2c 0x086 (GUILD_OPEN): Stat @4 (0 open, 1 closed, 2 holiday), Time @8 (open hour bits / weekday; bit 31 passive).
     GuildOpen { stat: u8, time: u32 },
     /// s2c 0x01D (ITEM_SAME): State @4 (1: the item updates are all in).
-    ItemsSettled(u8),
+    ItemsSettled(u8, u32),
     /// s2c 0x062 (CLISTATUS2): skill_base[64] u16 from @0x80 (crafts: the rank in bits 0..4).
     SkillBase([u16; 64]),
     /// s2c 0x083 / 0x085 (GUILD_BUYLIST / GUILD_SELLLIST): up to 30 {ItemNo u16, Count u8, Max u8, Price i32} from @4,
@@ -978,7 +978,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x03F => tx.send(NetEvent::ShopBuy { index: p.u16(4), count: p.u32(8) })?,
                     0x03D => tx.send(NetEvent::ShopSell { price: p.u32(4), slot: p.u8(8), kind: p.u8(9), count: p.u32(0xc) })?,
                     0x086 => tx.send(NetEvent::GuildOpen { stat: p.u8(4), time: p.u32(8) })?,
-                    0x01D => tx.send(NetEvent::ItemsSettled(p.u8(4)))?,
+                    0x01D => tx.send(NetEvent::ItemsSettled(p.u8(4), p.u32(8)))?,
                     0x062 => tx.send(NetEvent::SkillBase(std::array::from_fn(|i| p.u16(0x80 + 2 * i))))?,
                     0x083 | 0x085 => {
                         let n = (p.u8(0xf4) as usize).min(30);

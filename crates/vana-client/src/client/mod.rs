@@ -1448,6 +1448,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.bazaar.is_some() => bazaar::key(world, *key),
                 _ if world.currencies.is_some() => currencies::key(world, *key),
                 _ if world.unity.is_some() => unity::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.pupequip.is_some() => equipwin::pup_key(world, gu, *key),
                 _ if world.merits_ui.is_some() => merits::key(world, gu, *key),
                 _ if world.jp_ui.is_some() => jobpoints::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.status.is_some() => status::key(world, gu, *key),
@@ -1609,7 +1610,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         match (world.menu_page, id) {
             // Child 1 Status (FUN_10140400 case 5): persona, level and statcom2.
             (0, 1) => status::open(world),
-            (0, 2) => items::open_equipment(world),
+            (0, 2) => items::menu_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
@@ -2244,6 +2245,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(currencies::draw(gu, world, sw, sh));
     blockers.extend(unity::draw(gu, world, sw, sh));
     blockers.extend(merits::draw(gu, world, sw, sh));
+    blockers.extend(equipwin::pup_draw(gu, world, sw, sh));
     blockers.extend(jobpoints::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
@@ -2699,6 +2701,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     currencies::bars(gu, world, &mut bars);
     unity::bars(gu, world, &mut bars);
     merits::bars(gu, world, &mut bars);
+    equipwin::pup_bars(gu, world, &mut bars);
     jobpoints::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
@@ -3742,6 +3745,8 @@ struct World {
     /// Merit Points (client/merits.rs): the windows, the tables, s2c 0x08C by merit index (next cost, level) with its
     /// change stamp, the category list's remembered row (+0x54, for the session).
     merits_ui: Option<merits::MeritUi>,
+    /// The main menu's pupequip (client/equipwin.rs).
+    pupequip: Option<equipwin::PupMenu>,
     merit_tables: Option<Arc<crate::dat::merits::MeritTables>>,
     merit_list: std::collections::BTreeMap<u16, (u8, u8)>,
     merit_stamp: u32,
@@ -3955,6 +3960,8 @@ struct World {
     stats: Option<items::CharStats>,
     /// The player flags the item updates keep (+0x3c35c): 0x800 settled since the last update, 0x200000 storage seen.
     inv_flags: u32,
+    /// s2c 0x01D's u32 @8 (+0x198cc): the containers whose items have all come, bit = container.
+    inv_loaded: u32,
     /// s2c 0x062 skill_base (DAT_104856a4): craft ranks in bits 0..4.
     skill_base: Option<[u16; 64]>,
     /// The zone's NPC name list (FUN_10093bd0), for NPCs whose 0x00E carries no name.
@@ -4956,6 +4963,7 @@ impl App {
                             area_line: None,
                             pos_zone: 0,
                             unsettled: false,
+                            inv_loaded: 0,
                             actors: HashMap::new(),
                             moving: false,
                             walk: false,
@@ -5021,6 +5029,7 @@ impl App {
                             merits: None,
                             jp_access: None,
                             merits_ui: None,
+                            pupequip: None,
                             merit_tables: None,
                             merit_list: Default::default(),
                             merit_stamp: 0,
@@ -5919,10 +5928,11 @@ impl App {
                 NetEvent::SynthOthers(a) => synth::on_others(world, a),
                 // FUN_100ec6c0: 0x01D State 1 sets the settled bits; each item update clears 0x800, and a storage
                 // container's 0x01F / 0x020 sets 0x200000 (never cleared).
-                NetEvent::ItemsSettled(state) => {
+                NetEvent::ItemsSettled(state, loaded) => {
                     if state == 1 {
                         world.inv_flags |= 0x0020_0800;
                     }
+                    world.inv_loaded = loaded;
                 }
                 NetEvent::ItemNum { container, index, count } => {
                     world.inv_flags &= !0x800;

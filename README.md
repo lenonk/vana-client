@@ -14,24 +14,33 @@ Linux is the current platform. Windows and macOS are planned.
 
 ## Status
 
-Early, but playable on a local LSB server. Working today:
+Playable on a local LSB server. Working today:
 
-- Login, the lobby, character creation (with the original creator scenes) and character select
+- Login, the lobby, character creation (with the original creator scenes), character select and the new-character
+  openings
 - Zones with GPU skinning, compressed textures with mipmaps, lighting, sky, fog and weather
-- Players, NPCs and monsters with their motions, name plates and ground collision
+- Players, NPCs and monsters with their motions, collision (characters, doors, lifts) and name plates with their
+  icons (GM, bazaar, New Adventurer, mentor, linkshell and the rest)
 - NPC dialogue, event scripts and cutscenes
-- The HUD, chat log and input line, targeting and lock-on, combat and the action menu
-- Items, equipment, the map window, and the in-game and lobby Config menus
+- Effects: spells, abilities, weapon skills and skillchains, damage numbers, footsteps, level up and the other
+  milestone effects
+- The retail key set: numpad movement, autorun, first person, F-key targeting, macros and palettes
+- The HUD, chat log and chat line (chat modes, auto-translate, text commands), targeting, combat, and the magic,
+  ability and mount menus
+- The main menu: Status (merit points, job points, currencies, Unity), Equipment and equipment sets, Items and
+  storage, the map, Party and Level Sync, Linkshell, Search, Missions, Quests, Key Items, Region Info, Bazaar, the
+  Help Desk and the macro editor
+- Trading, NPC and guild shops, the Delivery Box and the treasure pool
+- The in-game and lobby Config menus, with an Extras page for additions such as a map overlay and chat timestamps
+- Game updates from the PlayOnline patch server, and HD texture packs through a built-in mod overlay
 - Music and sound effects
 
 Not done yet:
 
-- The full retail key set: numpad movement, autorun, first person, F-key targeting, macros and palettes
-- The magic, ability, weapon skill and pet menus
-- Spell and ability effects
-- Collision with characters and moving platforms
-- A patcher for game updates
-- Windows and macOS builds
+- Alter Ego Points, automaton customization, blue magic sets, the mount under its rider and the Friend List
+- Some event script operations and chat log details (the block list among them)
+- An in-client update button, a settings page for mods, a minimap
+- macOS builds; Windows builds work through a MinGW cross build
 
 ## Requirements
 
@@ -62,6 +71,12 @@ target/release/vana-client install /path/to/FFXIFullSetup_US.part1.exe
 This unpacks the game to `~/.local/share/vana-client/game/FINAL FANTASY XI` with the same layout the Windows
 installer uses. Use `--game-dir` to put it somewhere else. An existing Windows install can also be copied there,
 or pointed at with `game_dir` in the config (see below).
+
+The installer's data is years old. To bring it up to the current retail version from the PlayOnline patch server:
+
+```sh
+target/release/vana-client update
+```
 
 ## Play
 

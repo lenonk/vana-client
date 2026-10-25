@@ -2,7 +2,7 @@
 //! the item list "menu    inventor" at (314, 48) (source vt 0x103336c0) and the grid "menu    equip", with the list's
 //! Storage Options row and "menu    mnstorag". Mode 2 (slot first): Enter on a slot lists its pieces; mode 1 (Num+,
 //! item first): a picked item limits the grid to its slots. Equipping sends c2s 0x050 {index, slot, container}.
-//! Not done: the open refusals (synthesis, fishing), "menu    pupequip" for PUP, the mouse beyond the list rows.
+//! A PUP (main or sub) gets "menu    pupequip" first. Not done: its "Customize automaton" (FUN_10207670).
 
 use super::World;
 use super::game_ui::GameUi;
@@ -78,14 +78,80 @@ fn win_mut(w: &mut World) -> Option<&mut EquipWin> {
     }
 }
 
+const PUPEQUIP: &str = "menu    pupequip";
+
+/// "menu    pupequip": its cursor and the main menu row to return to.
+pub struct PupMenu {
+    sel: u16,
+    return_menu: Option<usize>,
+}
+
+/// Main menu row 2 (FUN_10140400 case 2): PUP as main or sub job (0x12) opens pupequip, else the Equipment screen.
+pub fn menu_open(w: &mut World) {
+    if w.stats.as_ref().is_some_and(|s| s.main.0 == 0x12 || s.sub.0 == 0x12) {
+        w.pupequip = Some(PupMenu { sel: w.cursor_recall(PUPEQUIP), return_menu: w.menu });
+        w.menu = None;
+    } else {
+        open(w);
+    }
+}
+
+/// pupequip's keys (generic window; Enter FUN_10140750(5, child)): 1 the Equipment screen, 2 Customize automaton.
+pub fn pup_key(w: &mut World, gu: &GameUi, key: egui::Key) {
+    let Some(p) = w.pupequip.as_ref() else { return };
+    let sel = p.sel;
+    match key {
+        egui::Key::ArrowUp | egui::Key::ArrowDown => {
+            let to = gu.menu_links(PUPEQUIP, sel).map_or(sel, |l| l[if key == egui::Key::ArrowUp { 2 } else { 3 }] as u16);
+            if to != sel && (1..=2).contains(&to) {
+                if let Some(p) = w.pupequip.as_mut() {
+                    p.sel = to;
+                }
+                w.sounds.push(Ui::Cursor as u32);
+            }
+        }
+        egui::Key::Escape => {
+            w.sounds.push(Ui::Cancel as u32);
+            if let Some(p) = w.pupequip.take() {
+                w.menu = p.return_menu;
+            }
+        }
+        egui::Key::Enter => {
+            w.sounds.push(Ui::Select as u32);
+            if sel == 1 {
+                if let Some(p) = w.pupequip.take() {
+                    w.menu = p.return_menu;
+                }
+                open(w);
+            } else {
+                log::info!("pupequip: Customize automaton (FUN_10207670) is not implemented yet");
+            }
+        }
+        _ => {}
+    }
+}
+
+/// pupequip's title 0xd 0x14 and its rows' help (0xe 0x284 / 0x285).
+pub fn pup_bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    let Some(p) = &w.pupequip else { return };
+    bars.title[1] = gu.title_msg(0x14).unwrap_or_default();
+    bars.help[1] = gu.focus_text(PUPEQUIP, p.sel)[0].clone().unwrap_or_default();
+}
+
+pub fn pup_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    let p = w.pupequip.as_ref()?;
+    gu.lobby_window_off(PUPEQUIP, sw, sh, (0.0, 0.0), Some(p.sel), w.confirm.is_none(), &[]).map(|win| win.frame)
+}
+
 /// FUN_10133130: persona, money, the list on the Inventory with every piece of gear, the grid (focused, mode 2); c2s
 /// 0x061 {1}. The main menu is hidden and comes back on close.
 pub fn open(w: &mut World) {
-    // Refusals first: synthesis (status 0x2c, 7 0x4e), fishing (6, 7 0x4d). Not done: 7 0xa8 while the items are not
-    // loaded (+0x198cc bit 0, not tracked).
+    // Refusals first: synthesis (status 0x2c, 7 0x4e), fishing (6, 7 0x4d), the inventory not all in yet (0x01D's
+    // +0x198cc bit 0, 7 0xa8).
     let line = match w.my_motion.status {
         0x2c => Some(0x4e),
         6 => Some(0x4d),
+        _ if w.inv_loaded & 1 == 0 => Some(0xa8),
         _ => None,
     };
     if let Some(l) = line {
@@ -503,11 +569,20 @@ pub fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 /// Mouse on the list while it has the focus: hover moves the cursor, a click on the highlighted row acts as Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
     let Some(e) = win(w) else { return };
+    let Some(r) = gu.window_rect(LIST, sw, sh) else { return };
+    let x0 = r[0] + LIST_X as f32 - gu.window_rect_x(LIST);
+    // C.7 (FUN_10132c30 / FUN_101f27a0): the pointer over the other window sends message 8, as Num+: the grid's goes
+    // to the list (mode 1), the list's back to the grid when nothing is picked.
+    let in_list = p.0 >= x0 && p.0 < x0 + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3];
+    let in_grid = gu.window_rect(GRID, sw, sh).is_some_and(|g| p.0 >= g[0] && p.0 < g[0] + g[2] && p.1 >= g[1] && p.1 < g[1] + g[3]);
+    if (moved || clicked) && ((e.focus == Focus::Grid && in_list) || (e.focus == Focus::List && in_grid)) {
+        num_plus(w);
+        return;
+    }
+    let Some(e) = win(w) else { return };
     if e.focus != Focus::List {
         return;
     }
-    let Some(r) = gu.window_rect(LIST, sw, sh) else { return };
-    let x0 = r[0] + LIST_X as f32 - gu.window_rect_x(LIST);
     let row = ((p.1 - r[1] - 4.0) / crate::inventory::ROW_PITCH).floor();
     let inside = p.0 >= x0 && p.0 < x0 + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3] && row >= 0.0 && (row as usize) < VISIBLE_ROWS;
     if inside {

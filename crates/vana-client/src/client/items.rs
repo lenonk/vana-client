@@ -272,6 +272,11 @@ pub fn open_equipment(w: &mut World) {
     super::equipwin::open(w);
 }
 
+/// The main menu's Equipment row: pupequip first for a PUP.
+pub fn menu_equipment(w: &mut World) {
+    super::equipwin::menu_open(w);
+}
+
 /// The focused window and its cursor child, for the bars' slot 1 (FUN_10115380). The equipment's candidate
 /// list is taken as an inventor list (inferred).
 pub fn focus(w: &World) -> Option<(&'static str, u16)> {

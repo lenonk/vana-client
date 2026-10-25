@@ -7341,3 +7341,15 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` sections 1, 2 (client/merits.rs, 
   the quad that size with the full texture cell. Checked against the user's retail shots of Testerthree: the GM orb
   (15 units) is ~68 px and the name ~367 px = ~81 units; fontshp's widths sum to 89 for "Testerthree" (78 at extent -
   1, plus the last letter's ink). Ours drew whole sprites at full width, about 1 unit wider per letter.
+
+## Equipment: pupequip, the not-loaded refusal, the pointer focus swap (2026-10-25)
+
+- s2c 0x01D (FUN_100ec6c0) copies u32 @8 into +0x198cc in either state: the containers whose items have all come
+  (LSB: inventorySyncState's flags). Equipment (FUN_10133130) refuses with 7 0xa8 "That cannot be used right now."
+  while bit 0 (the Inventory) is clear.
+- Main menu Equipment with PUP as main or sub job (0x12) opens "menu    pupequip" (384, 48): "Master" (windowps 587,
+  help 0xe 0x284) opens the Equipment screen, "Automaton" (588, 0xe 0x285) is FUN_10207670, the automaton
+  customization: not done (logged). Title 0xd 0x14. Checked offscreen (topbar-shot --window pupequip:N); not tried
+  live (a PUP sub job would unlock PUP on the test character).
+- C.7: the pointer over the list while the grid has the focus, or over the grid while the list has it, sends
+  message 8 as Num+ (FUN_10132c30 / FUN_101f27a0) *(inf: on any pointer move inside)*.
