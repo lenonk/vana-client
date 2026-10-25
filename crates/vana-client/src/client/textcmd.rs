@@ -2279,10 +2279,10 @@ fn misspelt(w: &mut World) {
 }
 
 /// FUN_1007c6c0 (/blacklist, /blist): "add Name" / "delete Name" look the name up (FUN_1007c740, the search server),
-/// then c2s 0x03D and the server's 0x042 answer; fewer words open the list window "menu    blklist" *(not done)*.
+/// then c2s 0x03D and the server's 0x042 answer; fewer words open the list window (FUN_101def10, blklist.rs).
 fn blacklist(w: &mut World, args: &[String]) -> Done {
     if args.len() < 3 {
-        log::info!("/blacklist: the list window (menu    blklist) is not done");
+        super::blklist::open(w);
         return Ok(());
     }
     let mode = match args[1].as_str() {

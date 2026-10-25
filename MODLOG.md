@@ -8197,3 +8197,25 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   (started from outside FFXiMain, inf), the local player's wait for its stand motion before `coff` (FUN_100d65b0),
   op 0xab 3's status write lock.
 
+## The block list window (2026-10-25; spec ~/ffxi/lab/research/blklist_spec.md)
+
+- Only /blacklist (/blist) with under 3 words opens it (FUN_1007c6c0 -> FUN_101def10; one caller); a second one
+  closes and remakes it at the top. "menu    blklist" (frame (16, 48) 366 x 248, 15 rows): the names in list order,
+  shape font at (21, 4 + 16 i), 0x80808080; empty: group 7 0x67 "No entries in blacklist." in the game font at (35,
+  28), 0x80804040; the windowps 75 band only while it has the focus; no count, no header. client/blklist.rs.
+- Keys (the list base, FUN_101f6c70): Up / Down stop at the ends; Left / Right page by 15 with the hand on its screen
+  row (at the ends to the first / last row; no modifier needed); Enter opens "menu    blkmain" (nothing on an empty
+  list); Escape closes both. blkmain (comwin 0 frame, the windowps 260 Delete button, the Options tab; its layout at
+  (384, 48) puts it at the screen's right edge): Enter = FUN_101defc0, c2s 0x03D {ID, Name, Mode 1} at once (no
+  prompt, no chat line; the list not in: ask 0x03C and rebuild), blkmain closes; Escape closes it.
+- Rows rebuild at open and on every s2c 0x042 (the "changed" byte), top 0; s2c 0x041 never refreshes an open window.
+  0x042 now also marks the list loaded, and prints its 9 0x74..0x77 line only for the command's edit (the window's
+  Delete clears the pending line). The 0x03C ask is ask_blacklist (60 s from the session's start).
+- Fixed: the list now empties at each zone-in (FUN_100e0560 at the session's open); LSB sends 1..11 names in 0x041
+  without the reset bit at every game-ok, so ours had appended the same names again in every zone.
+- Live (Lnxcsfix, char_blacklist rows for Tuxedo and Lnxtest): /blacklist listed both, Down + Enter opened blkmain
+  ("Delete from blacklist."), Enter removed Lnxtest (no line); after !zone 230 the list held Tuxedo once. Rows
+  removed afterwards.
+- Not done: the mouse on both windows, the window groups (blklist group 0x1c suspends gaugewin and the other 0x1c
+  lists; blkmain 0x81).
+

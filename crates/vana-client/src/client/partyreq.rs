@@ -22,7 +22,8 @@ pub struct State {
     pub black_loaded: bool,
     /// FUN_100e0aa0: the last c2s 0x03C.
     black_asked: Option<Instant>,
-    /// The mode of the c2s 0x03D waiting for its answer (0 add, 1 delete).
+    /// The /blacklist command's edit waiting for its answer (0 add, 1 delete): its line comes with the 0x042 (the
+    /// callback G+0x1c78c); the window's Delete clears it (no line).
     black_pending: Option<u8>,
 }
 
@@ -86,17 +87,29 @@ fn letters(s: &str) -> &str {
     &s[..n]
 }
 
-/// FUN_100e0a50: 1 on the blacklist, 2 not loaded yet (asking for it, c2s 0x03C at most every 60 s), else 0.
-pub fn blacklisted(w: &mut World, name: &str) -> u8 {
+/// FUN_100e0aa0: c2s 0x03C, at most every 60 s (counted from the session's start).
+pub fn ask_blacklist(w: &mut World) {
     let s = &mut w.partyreq;
-    if !s.black_loaded {
-        if s.black_asked.is_none_or(|t| t.elapsed() >= Duration::from_secs(60)) {
-            s.black_asked = Some(Instant::now());
-            let _ = w.net.commands.send(NetCommand::Packet { id: 0x03C, body: vec![0; 0x18] });
-        }
+    if s.black_asked.is_none_or(|t| t.elapsed() >= Duration::from_secs(60)) {
+        s.black_asked = Some(Instant::now());
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x03C, body: vec![0; 0x18] });
+    }
+}
+
+/// FUN_100e0560 at the session's start (each zone): the list empties until 0x041 comes again (LSB sends 1..11 names
+/// without the reset bit, so they would pile up), and the 60 s before an ask start now.
+pub fn black_reset(w: &mut World) {
+    let s = &mut w.partyreq;
+    (s.blacklist, s.black_loaded, s.black_asked, s.black_pending) = (Vec::new(), false, Some(Instant::now()), None);
+}
+
+/// FUN_100e0a50: 1 on the blacklist, 2 not loaded yet (asking for it), else 0.
+pub fn blacklisted(w: &mut World, name: &str) -> u8 {
+    if !w.partyreq.black_loaded {
+        ask_blacklist(w);
         return 2;
     }
-    s.blacklist.iter().any(|(_, n)| letters(n) == letters(name)) as u8
+    w.partyreq.blacklist.iter().any(|(_, n)| letters(n) == letters(name)) as u8
 }
 
 /// FUN_100a1a00: a message from `id` is dropped while its sender (not ourselves; FUN_100a1770's name: party and
@@ -116,8 +129,8 @@ pub fn sender_blocked(w: &mut World, id: u32, msg: u16, kind: u8) -> bool {
     blacklisted(w, &name) != 0
 }
 
-/// FUN_100e0bc0: c2s 0x03D {ID u32, Name[16], Mode i8} for /blacklist add (0) / delete (1).
-pub fn black_edit(w: &mut World, id: u32, name: &str, mode: u8) {
+/// FUN_100e0c30: c2s 0x03D {ID u32, Name[16], Mode i8}.
+fn send_edit(w: &mut World, id: u32, name: &str, mode: u8) {
     let mut b = vec![0u8; 0x18];
     b[0..4].copy_from_slice(&id.to_le_bytes());
     for (k, c) in name.bytes().take(15).enumerate() {
@@ -125,11 +138,27 @@ pub fn black_edit(w: &mut World, id: u32, name: &str, mode: u8) {
     }
     b[0x14] = mode;
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x03D, body: b });
+}
+
+/// FUN_100e0bc0 for /blacklist add (0) / delete (1): its line comes with the answer.
+pub fn black_edit(w: &mut World, id: u32, name: &str, mode: u8) {
+    send_edit(w, id, name, mode);
     w.partyreq.black_pending = Some(mode);
 }
 
-/// s2c 0x042: the list gains or loses the name (9 0x74 "Added to blacklist." / 0x76 "Removed from blacklist."), or the
-/// edit failed (0x75 / 0x77 by the edit asked) *(inf: the list update; LSB sends only this, not a new 0x041)*.
+/// FUN_100e0bc0(entry, 1, 0, 0) from blkmain's Delete: no line; false when the list is not in (asking for it).
+pub fn black_delete(w: &mut World, id: u32, name: &str) -> bool {
+    w.partyreq.black_pending = None;
+    if !w.partyreq.black_loaded {
+        ask_blacklist(w);
+        return false;
+    }
+    send_edit(w, id, name, 1);
+    true
+}
+
+/// s2c 0x042 (LAB_100e0770): the list gains or loses the name, is then loaded and changed (an open blklist rebuilds);
+/// the command's line: 9 0x74 "Added to blacklist." / 0x76 "Removed from blacklist.", or 0x75 / 0x77 by the edit asked.
 pub fn black_result(w: &mut World, id: u32, name: String, mode: u8) {
     let pending = w.partyreq.black_pending.take();
     let s = &mut w.partyreq;
@@ -147,7 +176,11 @@ pub fn black_result(w: &mut World, id: u32, name: String, mode: u8) {
         _ if pending == Some(1) => 0x77,
         _ => 0x75,
     };
-    super::textcmd::log9(w, line);
+    s.black_loaded = true;
+    if pending.is_some() {
+        super::textcmd::log9(w, line);
+    }
+    super::blklist::rebuild(w);
 }
 
 /// FUN_100e0620: s2c 0x041; Stat bit 0 starts the list over, bit 1 is its last packet.
