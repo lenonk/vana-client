@@ -1214,6 +1214,15 @@ mod tests {
         assert_eq!((l.len(), hidden), (8, [2, 0, 0]));
     }
 
+    /// The luopan at level 99: 1650 HP draining 24 a tick (69 ticks, 207 s); with Blaze of Glory half of it.
+    #[test]
+    fn luopan() {
+        let mut c = durations::Caster { main: (21, 99), ..Default::default() };
+        assert_eq!(luopan_life(&c), 207.0);
+        c.statuses.insert(569);
+        assert_eq!(luopan_life(&c), 105.0);
+    }
+
     #[test]
     fn places() {
         let p = place(Dock::Left, 1280.0, 800.0, 3, 650.0, 600.0);

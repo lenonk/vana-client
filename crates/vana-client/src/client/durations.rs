@@ -815,6 +815,50 @@ mod tests {
         assert!(ends(134).contains(&135));
     }
 
+    /// Weapon skills by TP (spec 70.9): Armor Break 120 + 6 TP / 100, Full Break's TP term, Blade: Retsu's fTP.
+    #[test]
+    fn weapon_skills() {
+        let mut c = Caster { main: (1, 75), tp: 2000.0, ..Default::default() };
+        assert_eq!(predict(&c, row(Kind::Ws, 83), &Target::default(), false, None), Some(240.0));
+        c.tp = 3000.0;
+        assert_eq!(predict(&c, row(Kind::Ws, 87), &Target::default(), false, None), Some(150.0));
+        c.tp = 1500.0;
+        assert_eq!(predict(&c, row(Kind::Ws, 129), &Target::default(), false, None), Some(45.0));
+    }
+
+    /// Avatar wards add the Summoning skill over 300 (at most 200); Perfect Defense 30 + skill / 20.
+    #[test]
+    fn wards() {
+        let mut c = Caster { main: (15, 75), ..Default::default() };
+        c.skills.insert(38, 420.0);
+        assert_eq!(predict(&c, row(Kind::Pet, 595), &Target::default(), false, None), Some(300.0));
+        c.skills.insert(38, 600.0);
+        assert_eq!(predict(&c, row(Kind::Pet, 595), &Target::default(), false, None), Some(380.0));
+        assert_eq!(predict(&c, row(Kind::Pet, 671), &Target::default(), false, None), Some(60.0));
+    }
+
+    /// Dancer: Chocobo Jig II (120 + JP) x (1 + mod %, at most 50); a samba (120 + mod + 2 JP) x (100 + pmod) / 100.
+    #[test]
+    fn dancer() {
+        let mut c = Caster { main: (19, 99), ..Default::default() };
+        c.jps.insert(613, 10);
+        c.mods.insert(492, 60.0);
+        assert_eq!(predict(&c, row(Kind::Ability, 381), &Target::default(), false, None), Some(195.0));
+        c.mods.insert(490, 10.0);
+        c.mods.insert(498, 10.0);
+        assert_eq!(predict(&c, row(Kind::Ability, 189), &Target { me: true, ..Default::default() }, false, None), Some(143.0));
+    }
+
+    /// Helix: 30, +60 from main level 60, + HELIX_DURATION; Indi on an Entrust target 180 + INDI_DURATION.
+    #[test]
+    fn helix_and_indi() {
+        let mut c = Caster { main: (20, 75), ..Default::default() };
+        c.mods.insert(477, 72.0);
+        assert_eq!(predict(&c, row(Kind::Spell, 278), &Target::default(), false, None), Some(162.0));
+        c.mods.insert(960, 21.0);
+        assert_eq!(predict(&c, row(Kind::Spell, 768), &Target::default(), false, None), Some(201.0));
+    }
+
     /// Merits count only for the main job at 75 (Winning Streak is COR's).
     #[test]
     fn merits() {
