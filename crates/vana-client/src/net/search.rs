@@ -30,6 +30,8 @@ pub const FRIEND: u32 = 0x1000;
 pub const RANK: u32 = 0x10000;
 pub const COMMENT: u32 = 0x20000;
 pub const LS2: u32 = 0x80000;
+/// FUN_10108010: the party request list (View Request, FUN_1020c390).
+pub const REQUEST: u32 = 0x100_0000;
 
 /// What to search for: FUN_10103ec0's condition (0x68 bytes) with the fields set so far.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -60,6 +62,8 @@ pub struct Cond {
     pub comment: u32,
     /// A group list instead (kind 2, FUN_100e2f10; setters FUN_10107640..670): party, alliance, LS1, LS2 ids.
     pub group: Option<[u32; 4]>,
+    /// With REQUEST: cond+0x390, the request history's names (FUN_100e3130 fills it at every send; 64 at most).
+    pub requests: Vec<String>,
 }
 
 impl Cond {
@@ -269,6 +273,9 @@ pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
     if c.flags & FRIEND != 0 {
         b.put(0b01100, 5);
     }
+    if c.flags & REQUEST != 0 {
+        b.put(0b11000, 5);
+    }
     if c.flags & COMMENT != 0 {
         b.put(0b10001, 5);
         b.put(c.comment, 32);
@@ -279,6 +286,18 @@ pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
     }
     let mut out = vec![b.bytes.len() as u8];
     out.extend(b.bytes);
+    // After the block: u16 n and n 16-byte names (search_spec 1.5).
+    if c.flags & REQUEST != 0 {
+        let names = &c.requests[..c.requests.len().min(64)];
+        out.extend((names.len() as u16).to_le_bytes());
+        for n in names {
+            let mut rec = [0u8; 16];
+            for (d, ch) in rec.iter_mut().zip(n.bytes().take(15)) {
+                *d = ch;
+            }
+            out.extend(rec);
+        }
+    }
     (if c.area_given { 3 } else { 0 }, out)
 }
 
@@ -457,6 +476,13 @@ mod tests {
         // [00000 0 1][0][0011][1000001 1100010 1100011]: "Abc".
         let (w, p) = condition(&Cond::name("Abc"));
         assert_eq!((w, p), (0, vec![5, 0x02, 0x38, 0x38, 0xb1, 0x80]));
+        // [00000 0 0][11000], MSB first: the request type after the empty name entry; the names at 0x11 + size.
+        let c = Cond { flags: REQUEST, requests: vec!["Ab".into(), "Lnxtest".into()], ..Default::default() };
+        let (w, p) = condition(&c);
+        assert_eq!((w, &p[..3]), (0, &[2u8, 0x01, 0x80][..]));
+        let t = 1 + p[0] as usize;
+        assert_eq!(u16::from_le_bytes([p[t], p[t + 1]]), 2);
+        assert_eq!((&p[t + 2..t + 4], p[t + 4], &p[t + 18..t + 25], p.len()), (&b"Ab"[..], 0, &b"Lnxtest"[..], t + 2 + 32));
     }
 
     /// Type 0xd: three 8-bit ranks, then three 32-bit linkshell ids (the group list's linkshell members).

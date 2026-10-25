@@ -55,6 +55,7 @@ mod jobpoints;
 mod merits;
 mod plate;
 mod partymenu;
+mod partyreq;
 mod levelsync;
 mod viewhouse;
 mod currencies;
@@ -2546,6 +2547,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             jobpoints::answer(world, a);
         }
+        (Some(yes), Some((Confirm::Request(a), _))) => {
+            world.confirm = None;
+            partyreq::answer(world, a, yes);
+        }
         (Some(true), Some((Confirm::NewAdventurer, _))) => {
             world.confirm = None;
             helpdesk::new_adventurer_off(world);
@@ -2765,6 +2770,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
+        (Confirm::Request(_), _) => partyreq::ask_text(world),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3945,6 +3951,8 @@ struct World {
     pick_points: HashMap<u32, HashMap<u16, Vec3>>,
     /// Synthesis: tskill1, the request state, the result lines and the animations.
     synth: synth::State,
+    /// Party join requests: the history (pec.dat) and the blacklist (client/partyreq.rs).
+    partyreq: partyreq::State,
     /// The server message's transfer, its one request per lobby login (first zone) still to come, and the world's
     /// name for its header.
     servmes: Option<servmes::Transfer>,
@@ -4029,6 +4037,8 @@ enum Confirm {
     /// link7 / link8 / link9's Kick (FUN_101e6620): group 10 0x36.
     LinkKick(linklist::Kick),
     JobPoint(jobpoints::Ask),
+    /// group 9 0x140 "Really reset request history?" (the Request toggle, scoption's Clear History).
+    Request(partyreq::Ask),
 }
 
 impl World {
@@ -5174,6 +5184,7 @@ impl App {
                             pick_rect: HashSet::new(),
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
+                            partyreq: partyreq::State::default(),
                             treasure: Default::default(),
                             loot: None,
                             linkshells: Default::default(),
@@ -5564,6 +5575,11 @@ impl App {
                     {
                         synth::load_history(world, &dir);
                     }
+                    if !world.partyreq.loaded
+                        && let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf())
+                    {
+                        partyreq::load(world, &dir);
+                    }
                     // Any game-state change shows the UI again.
                     world.ui_hidden = false;
                     (world.mogdoor, world.leaving_room) = (None, false);
@@ -5869,6 +5885,7 @@ impl App {
                     log::info!("logged out of the zone (0x00B state {state})");
                     if let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf()) {
                         synth::save_history(world, &dir);
+                        partyreq::save(world, &dir);
                     }
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
@@ -6115,6 +6132,8 @@ impl App {
                 }
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
+                NetEvent::PartyRequest { status, name } => partyreq::received(world, status, name),
+                NetEvent::Blacklist { stat, entries } => partyreq::blacklist(world, stat, entries),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),

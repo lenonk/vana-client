@@ -21,6 +21,8 @@ pub enum Then {
     LevelSync,
     /// A linkshell's group list: the rows of "menu    link12" (client/linklist.rs).
     LinkList,
+    /// LAB_1007dc00 (kind 0) / LAB_1007dd40 (kind 1): /prcmd add / remove for someone not in the zone.
+    Request(String, u8),
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -55,7 +57,8 @@ pub struct Results {
     pub option: Option<u16>,
     /// Title slot 2 (group 0xd): 0 "Search", 0x13 "Party" from the party menu's Find Member (FUN_10204c60).
     pub title: usize,
-    /// W+0x58: 1 a search, 3 a group list (no header help, no summary line, Enter on the header does nothing).
+    /// W+0x58: 1 a search, 2 the request list (languages on every row), 3 a group list (no header help, no summary
+    /// line, Enter on the header does nothing).
     pub mode: u8,
 }
 
@@ -346,8 +349,12 @@ pub fn parse(text: &str, words: &SearchWords, ctx: &Ctx) -> Cond {
     c
 }
 
-/// FUN_1020a9d0 mode 1: the query, and the window open on " [Searching]"; W+0x5c keeps the condition.
-pub fn run(w: &mut World, cond: Cond, scope: Scope) {
+/// FUN_1020a9d0 mode 1: the query, and the window open on " [Searching]"; W+0x5c keeps the condition. A request-list
+/// condition takes the history's names at every send (FUN_100e29c0), refines too.
+pub fn run(w: &mut World, mut cond: Cond, scope: Scope) {
+    if cond.flags & search::REQUEST != 0 {
+        cond.requests = super::partyreq::names(w);
+    }
     log::info!("search: {cond:?}");
     w.search_cond = cond.clone();
     if w.search_status0 == 0 {
@@ -356,6 +363,23 @@ pub fn run(w: &mut World, cond: Cond, scope: Scope) {
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
     w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0, mode: 1 });
+}
+
+/// FUN_1020c390 (View Request, /recruitlist): once s2c 0x119 came, the request list in every area (mode 2, title
+/// "Search"), replacing open results; nothing while a query is out.
+pub fn run_requests(w: &mut World) {
+    if !w.recasts_seen || busy(w) {
+        return;
+    }
+    run(w, Cond { flags: search::REQUEST, last_area: -1, ..Default::default() }, Scope::World);
+    if let Some(r) = w.search.as_mut() {
+        r.mode = 2;
+    }
+}
+
+/// scoption+0x20: the request list's rows 4 / 5 (decided by the condition, so a refine keeps them).
+fn request_mode(w: &World, res: &Results) -> bool {
+    res.mode != 3 && w.search_cond.flags & search::REQUEST != 0
 }
 
 /// FUN_1020a9d0 mode 3 (FUN_100e2f10): the group list of the ids (party, alliance, LS1, LS2) in the results window,
@@ -427,6 +451,15 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             };
             log::info!("search: {name} is {:#x} in zone {}", r.id, r.zone);
             invite(w, r.id, r.flags);
+        }
+        // 3.5: an exact name; a request checks the blacklist first (no self check here, LSB refuses it).
+        Then::Request(name, kind) => {
+            let Some(id) = reply.and_then(|r| r.records.iter().find(|r| r.name == name).map(|r| r.id)) else { return };
+            match if kind == 0 { super::partyreq::blacklisted(w, &name) } else { 0 } {
+                1 => super::textcmd::refuse(w, 0xc5),
+                2 => super::textcmd::refuse(w, 0xc6),
+                _ => super::partyreq::send(w, id, 0, kind, &name),
+            }
         }
         Then::LevelSync => super::levelsync::filled(w, reply),
         Then::LinkList => super::linklist::filled(w, reply),
@@ -514,8 +547,21 @@ pub fn key(w: &mut World, key: egui::Key) {
                 if let Some(r) = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i)).cloned() {
                     if option_enabled(w, c, &r) {
                         w.sounds.push(Ui::Select as u32);
-                        res.option = None;
-                        option(w, c, &r);
+                        match c {
+                            // Clear History: the prompt over scoption, which stays open.
+                            4 if request_mode(w, &res) => w.confirm = Some((super::Confirm::Request(super::partyreq::Ask::Clear), false)),
+                            // Delete Request: delete (9 0x141), everything closes (FUN_1020c010), View Request again.
+                            5 if request_mode(w, &res) => {
+                                super::partyreq::delete_named(w, &r.name);
+                                w.search_status0 = 0;
+                                run_requests(w);
+                                return;
+                            }
+                            _ => {
+                                res.option = None;
+                                option(w, c, &r);
+                            }
+                        }
                     } else {
                         w.sounds.push(Ui::Error as u32);
                     }
@@ -573,12 +619,11 @@ pub fn toggle_view(w: &mut World) {
     }
 }
 
-/// FUN_1020c540's disabled rows: 2 Befriend (the Friend List is PlayOnline's), 5 on ourselves, 3 when the person is in
-/// our party, a party member but not its leader, recruiting, or on MON.
+/// FUN_1020c540's disabled rows: 2 Befriend (the Friend List is PlayOnline's; retail dims it on ourselves), 3 when the
+/// person is in our party, a party member but not its leader, recruiting, or on MON. 4 / 5 never.
 pub fn option_enabled(w: &World, c: u16, r: &Record) -> bool {
     match c {
         2 => false,
-        5 => r.name != w.name,
         3 => {
             let in_party = w.party.members().any(|m| m.id == r.id && m.id != 0);
             !(in_party || (r.flags & 0x2000 != 0 && r.flags & 8 == 0) || r.flags & 0x1000_0000 != 0 || r.job.0 == 0x17 || r.name == w.name)
@@ -780,7 +825,7 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
             G
         };
         gu.shape_fit(&r.name, rx + 150.0, ry + 2.0, 80.0, nc);
-        if f & 0x1000_8021 != 0 {
+        if f & 0x1000_8021 != 0 || res.mode == 2 {
             for b in 0..5 {
                 if r.languages >> b & 1 != 0 {
                     gu.sprite("menu    windowps", 595 + b, rx + 238.0 + 6.0 * b as f32, ry + 5.0, G);
@@ -807,7 +852,9 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     if let Some(c) = res.option {
         let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
         let off: Vec<u16> = OPTION_ORDER.iter().copied().filter(|&o| r.is_some_and(|r| !option_enabled(w, o, r))).collect();
-        if let Some(win) = gu.lobby_window_off(SCOPTION, sw, sh, (0.0, 0.0), Some(c), !off.contains(&c), &off) {
+        // FUN_1020c7a0: Clear History / Delete Request in the request list.
+        let swaps: &[(u16, usize)] = if request_mode(w, res) { &[(4, 785), (5, 786)] } else { &[] };
+        if let Some(win) = gu.lobby_window_swaps(SCOPTION, sw, sh, (0.0, 0.0), Some(c), !off.contains(&c), &off, swaps) {
             gu.disabled_children(SCOPTION, win.frame[0], win.frame[1], &off, Some(c));
             rects.push(win.frame);
         }
@@ -821,7 +868,10 @@ pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::Ba
     let Some(res) = &w.search else { return };
     bars.title[2] = gu.title_msg(res.title).unwrap_or_default();
     if let Some(c) = res.option {
-        let [help, title] = gu.focus_text(SCOPTION, c);
+        let [mut help, title] = gu.focus_text(SCOPTION, c);
+        if request_mode(w, res) && matches!(c, 4 | 5) {
+            help = Some(gu.menu_msg(if c == 4 { 0x3bc } else { 0x3bd }, ""));
+        }
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
         return;
     }

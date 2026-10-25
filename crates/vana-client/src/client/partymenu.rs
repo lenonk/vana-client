@@ -346,11 +346,20 @@ fn not_done(name: &str, sel: u16) {
 /// The row actions (FUN_102059a0, FUN_10205da0, FUN_10205ed0, FUN_10206110, FUN_10206280, FUN_10206330, FUN_10205ba0,
 /// FUN_10205cc0, FUN_102063d0).
 fn enter(w: &mut World, name: &'static str, sel: u16) {
-    let request = |w: &mut World| super::textcmd::config_flag(w, 0xb, !conf(w, 0xb));
+    // FUN_10204ee0: turning on with a history asks to reset it first (default No).
+    let request = |w: &mut World| {
+        let set = !conf(w, 0xb);
+        if set && !w.partyreq.recs.is_empty() {
+            w.confirm = Some((super::Confirm::Request(super::partyreq::Ask::Reset), false));
+        } else {
+            super::textcmd::config_flag(w, 0xb, set);
+        }
+    };
     match (name, sel) {
         (PRTY1, 1) => super::textcmd::config_flag(w, 2, !conf(w, 2)),
         (PRTY1, 2) | (PRTY3 | PRTY7, 1) => find_member(w),
         (PRTY1, 5) | (PRTY2, 6) | (PRTY3 | PRTY7, 11) => request(w),
+        (PRTY1, 6) | (PRTY2, 7) | (PRTY3 | PRTY7, 12) => super::search::run_requests(w),
         (PRTY1, 3) => super::textcmd::config_flag(w, 6, !conf(w, 6)),
         // Languages: the mask from config 0x98 (none: the client language's own), sent once on the first show.
         (PRTY1, 4) => {

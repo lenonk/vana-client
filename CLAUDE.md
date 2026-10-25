@@ -102,8 +102,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     list behind View Wares (c2s 0x105);
   - main menu rows (specs in `~/ffxi/lab/research/`: `party_menu_spec.md`, `status_window_spec.md`,
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
-    levelsync.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange"; left View Request; the
-    invite side untested live);
+    levelsync.rs, partyreq.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange", "Party
+    requests"; the invite side untested live);
     Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, MODLOG "Status window",
     "Currencies", "Unity", "Merit Points and Job Points"; left Alter Ego Points, spec `status_rows_spec.md`; Raise /
     Lower and spending job points not tried live);

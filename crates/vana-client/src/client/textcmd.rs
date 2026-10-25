@@ -83,6 +83,8 @@ mod id {
     pub const CHECKNAME: u16 = 0x46;
     pub const CHECKPARAM: u16 = 0x47;
     pub const PCMD: u16 = 0x56;
+    pub const RECRUITLIST: u16 = 0x60;
+    pub const PRCMD: u16 = 0x61;
     pub const ACMD: u16 = 0x57;
     pub const JOIN: u16 = 0x58;
     pub const DECLINE: u16 = 0x59;
@@ -1139,6 +1141,8 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
+        id::RECRUITLIST => recruitlist(w, args),
+        id::PRCMD => prcmd(w, args, mode),
         id::JOIN | id::DECLINE => {
             // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}; the invite is no longer pending.
             send(w, NetCommand::Packet { id: 0x074, body: vec![(cid == id::JOIN) as u8, 0, 0, 0] });
@@ -1722,7 +1726,7 @@ fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
         match args.get(i).and_then(|n| name_case(n)) {
             Some(n) => Ok(n),
             None => {
-                log9(w, 0x65);
+                misspelt(w);
                 Err(())
             }
         }
@@ -1758,6 +1762,57 @@ fn party(w: &mut World, kind: u8, args: &[String], mode: Mode) -> Done {
             send(w, NetCommand::Packet { id: 0x077, body: super::party::change_body(&name, kind, change) });
         }
         _ => {}
+    }
+    Ok(())
+}
+
+/// FUN_10077e30 with group 9 0x65 "Spelling of name is incorrect." in mode 0x9d.
+fn misspelt(w: &mut World) {
+    let Some(bt) = w.battle.clone() else { return };
+    let colour = bt.colour_in(0x9d, &w.game);
+    w.chat.push_colour(bt.group9(0x65).unwrap_or_default(), colour);
+}
+
+/// FUN_1007d910 (/recruitlist, /rlist): none or "list" View Request, "delete Name" (group 9 0x141, there or not),
+/// "clear" (0x142); another word does nothing.
+fn recruitlist(w: &mut World, args: &[String]) -> Done {
+    match args.get(1).map(String::as_str) {
+        None | Some("list") => super::search::run_requests(w),
+        Some("delete") => {
+            let Some(name) = args.get(2).and_then(|n| name_case(n)) else {
+                misspelt(w);
+                return Err(());
+            };
+            super::partyreq::delete_named(w, &name);
+        }
+        Some("clear") => super::partyreq::clear(w),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// FUN_1007d9c0 (/partyrequestcmd, /prcmd): add [target] asks to join that player's party (c2s 0x11C kind 0, group 10
+/// 0x76), remove [target] takes it back (kind 1); someone not here is looked up by name. Refusals 7 0xc4 / 0xc5 (on
+/// our blacklist) / 0xc6 (blacklist not in yet). Not done: the own actor's +0x124 bits 22 / 23 (0xc6).
+fn prcmd(w: &mut World, args: &[String], mode: Mode) -> Done {
+    let kind = match args.get(1).map(String::as_str) {
+        Some("add") => 0,
+        Some("remove") => 1,
+        _ => return Ok(()),
+    };
+    let arg = args.get(2).map(String::as_str);
+    let Some((id, index)) = resolve(w, arg, true, false, mode) else {
+        if let Some(name) = arg {
+            super::search::lookup(w, name, |n| super::search::Then::Request(n, kind));
+        }
+        return Ok(());
+    };
+    let name = if id == w.my_id { w.name.clone() } else { w.entities.get(&id).map(|e| e.name.clone()).unwrap_or_default() };
+    match if kind == 0 { super::partyreq::blacklisted(w, &name) } else { 0 } {
+        1 => refuse(w, 0xc5),
+        2 => refuse(w, 0xc6),
+        _ if (kind == 0 && id == w.my_id) || id >> 24 == 1 => refuse(w, 0xc4),
+        _ => super::partyreq::send(w, id, index, kind, &name),
     }
     Ok(())
 }
