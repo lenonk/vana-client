@@ -108,7 +108,8 @@ fn view_yaw(c: &LockCam) -> Option<f32> {
 /// Puts the camera behind the player facing `yaw` (zone-in, after events, test drives): FUN_10021680's (-4, -2, 0) in
 /// the player's frame, (-3, -1.5, 0) in the Mog House (FUN_10096640).
 pub fn face(w: &mut World, yaw: f32) {
-    let look = look_target(w);
+    // Without a model yet (a login's zone-in) the look is 1 above the feet, not the old look's height.
+    let look = if w.actors.get(&w.my_id).is_some_and(|a| -a.top > 0.1) { look_target(w) } else { super::drawn_pos(w) + Vec3::new(0.0, -1.0, 0.0) };
     let f = Vec3::new(yaw.sin(), 0.0, yaw.cos());
     let (back, up) = if w.myroom.is_some() { (3.0, 1.5) } else { (4.0, 2.0) };
     let mut eye = super::drawn_pos(w) - f * back + Vec3::new(0.0, -up, 0.0);
@@ -120,8 +121,10 @@ pub fn face(w: &mut World, yaw: f32) {
     w.camst.prev = w.cam;
     w.camst.acc = 0.0;
     w.camst.started = true;
-    // FUN_10184380 -> FUN_1001d480: 60 frames *(inf: also after events and drives, which face() serves too)*.
+    // FUN_10184380 -> FUN_1001d480: 60 frames *(inf: also after events and drives, which face() serves too)*. The
+    // height memory starts from this view *(inf)*.
     (w.camst.zone_in, w.camst.path_n, w.camst.path_mode) = (120, 0, false);
+    w.camst.last_dy = (eye.y - look.y).abs();
     w.yaw = yaw;
 }
 

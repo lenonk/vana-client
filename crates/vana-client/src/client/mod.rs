@@ -4184,6 +4184,8 @@ pub struct Drive {
     pub(crate) started: bool,
     pub(crate) zone_ready_at: Option<Instant>,
     pub(crate) shot_taken: bool,
+    /// `act:relogin`: the character is picked no sooner than this (time to photograph the select screen).
+    pub(crate) pick_after: Option<Instant>,
 }
 
 impl Drive {
@@ -8037,6 +8039,7 @@ impl App {
                 }
             }
             // A script that logs in walks the title menu itself; pick the character once it reaches Select.
+            Phase::Characters { .. } if self.drive.pick_after.is_some_and(|t| Instant::now() < t) => {}
             Phase::Characters { lobby, chars, screen, .. } if !self.drive.input.as_ref().is_some_and(|s| s.logs_in) || *screen == LobbyScreen::Select => {
                 if let (Some(name), Some(_)) = (self.drive.character.clone(), lobby.as_ref()) {
                     if let Some(c) = chars.iter().find(|c| c.name.eq_ignore_ascii_case(&name)).cloned() {
@@ -8397,6 +8400,11 @@ impl App {
             }
             if let Some(k) = dik("up:") {
                 self.input.set(k, false);
+            }
+            // act:relogin (test drives): after a logout the drive logs in again, and waits 8 s on the select screen.
+            if action.as_deref() == Some("relogin") {
+                (self.drive.started, self.drive.zone_ready_at) = (false, None);
+                self.drive.pick_after = Some(Instant::now() + std::time::Duration::from_secs(8));
             }
             // Test drives only: target the nearest living monster with a model (Tab picks NPCs first at gates).
             if let (Some("target-mob"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {
