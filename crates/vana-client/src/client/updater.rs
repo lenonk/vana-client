@@ -110,7 +110,8 @@ fn agent() -> ureq::Agent {
 
 /// The latest GitHub release and this platform's asset in it (None: no release, or no such asset).
 fn latest_release() -> Result<Option<Release>> {
-    let url = format!("https://api.github.com/repos/{RELEASE_REPO}/releases/latest");
+    // VANA_RELEASE_API: another endpoint for the test drives (a local mock of the GitHub answer).
+    let url = std::env::var("VANA_RELEASE_API").unwrap_or_else(|_| format!("https://api.github.com/repos/{RELEASE_REPO}/releases/latest"));
     let mut resp = match agent().get(&url).header("Accept", "application/vnd.github+json").call() {
         Ok(r) => r,
         Err(ureq::Error::StatusCode(404)) => return Ok(None),
@@ -176,10 +177,17 @@ pub fn download(url: &str, dest: &Path, progress: &dyn Fn(u64, u64)) -> Result<(
     Ok(())
 }
 
+/// The executable as it was at start: once replace_self renames the new binary over it, Linux names the running one
+/// "<path> (deleted)", and a restart from that path fails.
+pub fn exe() -> Option<PathBuf> {
+    static EXE: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
+    EXE.get_or_init(|| std::env::current_exe().ok()).clone()
+}
+
 /// Puts a downloaded binary in place of the running one: Windows cannot overwrite a running exe, so the old one is
 /// renamed aside first (and removed at the next start).
 fn replace_self(new: &Path) -> Result<()> {
-    let exe = std::env::current_exe()?;
+    let exe = exe().context("no executable path")?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -194,9 +202,9 @@ fn replace_self(new: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Removes what replace_self left behind.
+/// Removes what replace_self left behind (at start, which also takes the executable's path).
 pub fn tidy() {
-    if let Ok(exe) = std::env::current_exe() {
+    if let Some(exe) = exe() {
         let _ = std::fs::remove_file(exe.with_extension("old"));
     }
 }
@@ -311,7 +319,7 @@ impl UpdateUi {
                     lines.push(format!("Game files updated to {version} ({total_files} files)."));
                 }
                 if let Some(r) = release {
-                    let dest = std::env::current_exe()?.with_extension("new");
+                    let dest = exe().context("no executable path")?.with_extension("new");
                     download(&r.url, &dest, &|d, t| set(Progress { label: format!("Downloading vana-client {}", r.tag), done: d, total: t.max(r.size), detail: format!("{:.1} of {:.1} MB", d as f64 / 1e6, t.max(r.size) as f64 / 1e6) }))?;
                     replace_self(&dest)?;
                     status.lock().unwrap().client = Client::Current;

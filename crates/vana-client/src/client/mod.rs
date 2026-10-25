@@ -4889,6 +4889,8 @@ impl App {
         let phase = Phase::login(&cfg);
         let installed = crate::dat::installed(&cfg.ffxi_dir());
         let monitor = cfg.monitor.clone();
+        // The executable's path while it is still the running file (a restart after an update needs it).
+        let _ = updater::exe();
         // A test drive checks for updates only with FFXI_UPDATE_CHECK set.
         let drive_checks = drive.login.is_none() || std::env::var_os("FFXI_UPDATE_CHECK").is_some();
         let updates = (drive_checks && cfg.ffxi_dir().join("VTABLE.DAT").is_file()).then(|| {
@@ -8521,8 +8523,10 @@ impl App {
                                         self.index = None;
                                     }
                                     if out.restart {
-                                        if let Ok(exe) = std::env::current_exe() {
-                                            let _ = std::process::Command::new(exe).args(std::env::args().skip(1)).spawn();
+                                        match updater::exe().map(|exe| std::process::Command::new(&exe).args(std::env::args().skip(1)).spawn().map(|c| (exe, c.id()))) {
+                                            Some(Ok((exe, pid))) => log::info!("update: restarted as {} (pid {pid})", exe.display()),
+                                            Some(Err(e)) => log::warn!("update: restart failed: {e}"),
+                                            None => log::warn!("update: restart failed: no executable path"),
                                         }
                                         self.exit_requested = true;
                                     }

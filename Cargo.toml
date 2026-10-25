@@ -6,8 +6,10 @@ members = ["crates/vana-client"]
 [profile.release]
 incremental = true
 
-# Binaries we ship (GitHub releases): `cargo build --profile dist`, out in target/dist.
+# Binaries we ship (GitHub releases): `cargo build --profile dist`, out in target/dist. As fast as it can be (user):
+# whole-program LTO and one codegen unit; release/build-*.sh add the CPU baseline.
 [profile.dist]
 inherits = "release"
 incremental = false
-lto = "thin"
+lto = "fat"
+codegen-units = 1

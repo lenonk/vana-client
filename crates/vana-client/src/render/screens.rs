@@ -250,8 +250,8 @@ fn first_button_pos(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<(f32, 
     Some((x, y, sx, sy))
 }
 
-/// Design pixels the extra button keeps above the retail ones, beyond their pitch (one pitch alone read as too close).
-const UPDATE_GAP: f32 = 6.0;
+/// Design pixels the extra button keeps above the retail ones beyond their pitch (user: none read too close, 6 too far).
+const UPDATE_GAP: f32 = 2.0;
 
 /// The extra button sits a button pitch and UPDATE_GAP above Select Character (children 1 and 2 of loby2win), placed in
 /// design space and then scaled as the retail buttons are.
