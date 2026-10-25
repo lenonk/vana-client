@@ -7916,3 +7916,16 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   event::Screen::flash / blur; the ops reach it through Effects::screen_ops. Our copy is full size (retail's
   DAT_10456938 size not checked). Tests flash_adds, feedback_keeps_last_frame, fx_screen_ops.
 
+## Eye blink, scheduler ops 0xb5 and 0x79 / 0x8c / 0xa4 / 0xa5 (2026-10-25)
+
+- FUN_100cdf90 (cur 152461, from the actor update 148501): actor +0x8b8 counts down by the frame's ticks; below 0 it
+  becomes rand() % 480 and, unless +0x8aa != 0 or FUN_100d12d0 says no (+0x8a4 set, parts not loaded), motion kind
+  0x2b `eye3` from the actor's own files plays once in region 3 (FUN_100cd4e0 -> FUN_1001a660, rate 1, count 1).
+  Hume M has it in 7072 next to mou4; frame 3 is closed. We had no blink at all: now Actor::blink_wait / blink push
+  eye3's tracks over the pose like the mouth motion (actors without eye3 do nothing).
+- Op 0xb5 (FUN_10061af0, 87062): actor1 +0x8aa += 1 for dur x speed (its scheduler's life at most), -1 after: no
+  blink. Effects::no_blink.
+- Ops 0x79 / 0x8c / 0xa4 / 0xa5 (FUN_1005e770 / 740 / 760 / 750): actor1's battle / idle / run / walk names from set
+  u32 @8 (motion::MotionNames::apply, as dat/npc.rs does for a model's init); kept per actor (Actor::motion_names)
+  until its model changes. Not done: the entity copies (+0x190..+0x1b4) the 0x8c / 0xa4 / 0xa5 setters also write.
+

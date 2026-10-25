@@ -827,6 +827,10 @@ pub struct Effects {
     next_drive: u64,
     /// Op 0x88's colour guards: (owner task uid, actor, ticks left).
     color_guards: Vec<(u64, u32, f32)>,
+    /// Op 0xb5's blink holds: (owner task uid, actor1, ticks left).
+    blink_holds: Vec<(u64, u32, f32)>,
+    /// Actors that do not blink this frame (actor +0x8aa != 0).
+    pub no_blink: HashSet<u32>,
     /// Op 0x7a's pins: (owner task uid, actor1, actor2, point, offset, ticks left).
     pins: Vec<(u64, u32, u32, u16, Vec3, f32)>,
     /// Where each pinned actor stands this frame, and its yaw (atan2(-z, x) of its facing) for ordinary points.
@@ -838,6 +842,8 @@ pub struct Effects {
     /// Scheduler ops 0x0f / 0x72 / 0x0e for the screen (client/event.rs Screen): code, the RGBA bytes @8, f32 @0xc
     /// (0x0e's zoom), dur x speed.
     pub screen_ops: Vec<(u8, [u8; 4], f32, f32)>,
+    /// Ops 0x79 / 0x8c / 0xa4 / 0xa5: actor1's battle / idle / run / walk motion set (motion::MotionNames::apply).
+    pub motion_sets: Vec<(u32, u8, u32)>,
     pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
@@ -932,11 +938,14 @@ impl Effects {
             next_drive: 0,
             color_guards: Vec::new(),
             pins: Vec::new(),
+            blink_holds: Vec::new(),
+            no_blink: HashSet::new(),
             pinned: HashMap::new(),
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),
             screen_ops: Vec::new(),
+            motion_sets: Vec::new(),
             lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,

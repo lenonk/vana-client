@@ -3059,6 +3059,9 @@ struct Actor {
     failed: bool,
     /// Mouth motion of a spoken line, the head look, and the emote scheduler playing (actor +0x1b8).
     mouth: Option<actmotion::Mouth>,
+    /// FUN_100cdf90: ticks to the next blink (actor +0x8b8), and ticks into the playing `eye3`.
+    blink_wait: f32,
+    blink: Option<f32>,
     look: actmotion::Look,
     emote: Option<String>,
     /// Rest-pose bones (model space), for attach points of a look target.
@@ -3067,6 +3070,8 @@ struct Actor {
     jump: f32,
     /// The pick's bones (FUN_100cff40): those with geometry whose parent has some too, once per model.
     pick_bones: Option<Vec<u16>>,
+    /// Status motion names changed by scheduler ops 0x79 / 0x8c / 0xa4 / 0xa5 (actor +0x7c8..+0x7d4), else the model's.
+    motion_names: Option<crate::motion::MotionNames>,
 }
 
 impl Actor {
@@ -3107,7 +3112,10 @@ impl Actor {
             top_key: String::new(),
             find_cache: Default::default(),
             failed: false,
+            motion_names: None,
             mouth: None,
+            blink_wait: (actmotion::crand() % 480) as f32,
+            blink: None,
             look: Default::default(),
             emote: None,
             rest: Vec::new(),
@@ -5362,6 +5370,7 @@ impl App {
                         for a in world.actors.values_mut().filter(|a| a.key == key) {
                             a.character = Some(ch.clone());
                             a.gpu = None;
+                            a.motion_names = None;
                         }
                         world.models.insert(key, ch);
                         // Looks no actor wears any more go once there are more than MODEL_CACHE.
@@ -6333,6 +6342,7 @@ impl App {
             if let Some(m) = world.models.get(&key) {
                 actor.character = Some(m.clone());
                 actor.gpu = None;
+                actor.motion_names = None;
             } else if world.models_loading.insert(key.clone()) {
                 wanted.push((key, source));
             }
@@ -6521,6 +6531,13 @@ impl App {
                 if op.byte == 0 {
                     a.wep_show_at[n] = op.show_after.then(|| Instant::now() + std::time::Duration::from_secs_f32(op.ticks / 60.0));
                 }
+            }
+        }
+        for (id, op, set) in std::mem::take(&mut world.effects.motion_sets) {
+            if let Some(a) = world.actors.get_mut(&id)
+                && let Some(ch) = a.character.as_ref()
+            {
+                a.motion_names.get_or_insert(ch.motions).apply(op, set);
             }
         }
         for (code, c, zoom, ticks) in std::mem::take(&mut world.effects.screen_ops) {
@@ -8829,7 +8846,7 @@ impl App {
                         // otherwise; ours takes the prefix).
                         (None, None) if a.jump >= 0.0 && matches!(status, 0 | 1) => ("jmp".to_string(), 1.0, false, crate::motion::BLEND_TICKS),
                         (None, None) => {
-                            let (n, r) = crate::motion::choose(&ch.motions, status, ratio);
+                            let (n, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
                             (n.to_string(), r, false, crate::motion::BLEND_TICKS)
                         }
                     };
@@ -8869,7 +8886,7 @@ impl App {
                     // FUN_1001ad00's queue replaces only the regions a new motion keys: under a one-shot or scheduler motion
                     // the status motion goes on (an Elvaan's moving swing amf1 keys the upper body over the run), so it
                     // goes first and the motion's tracks win where it has them.
-                    let (base, base_rate) = crate::motion::choose(&ch.motions, status, ratio);
+                    let (base, base_rate) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
                     a.base_ticks += dt * 60.0 * base_rate;
                     let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(base, a.base_ticks, false) } else { Vec::new() };
                     anims.extend(frames_of(&name, a.ticks, once));
@@ -8888,6 +8905,29 @@ impl App {
                         }
                         if !playing {
                             m.ticks = None;
+                        }
+                    }
+                    // FUN_100cdf90: every rand() % 480 ticks the eyes blink (eye3, region 3) unless op 0xb5 holds them.
+                    a.blink_wait -= dt * 60.0;
+                    if a.blink_wait < 0.0 {
+                        a.blink_wait = (actmotion::crand() % 480) as f32;
+                        if !w.effects.no_blink.contains(id) {
+                            a.blink = Some(0.0);
+                        }
+                    }
+                    if let Some(bt) = a.blink.as_mut() {
+                        *bt += dt * 60.0;
+                        let eyes = actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, "eye3");
+                        let mut playing = false;
+                        for x in eyes {
+                            let f = *bt * x.speed * 0.5;
+                            if f < x.frames.max(1) as f32 - 1.0 {
+                                anims.push((x, f));
+                                playing = true;
+                            }
+                        }
+                        if !playing {
+                            a.blink = None;
                         }
                     }
                     a.blend += dt * 60.0;

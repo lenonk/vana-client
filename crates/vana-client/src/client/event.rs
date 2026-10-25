@@ -1499,7 +1499,7 @@ fn sync(live: &mut Live, w: &mut World, ticks: f32, dt: f32) {
             && let Some(ch) = a.character.clone()
             && super::actmotion::scheduler(&a.extra, &ch, name).is_some()
         {
-            let base = crate::motion::choose(&ch.motions, 0, ratio).0.to_string();
+            let base = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), 0, ratio).0.to_string();
             if super::actmotion::start(a, &ch, name, &base) {
                 super::actmotion::fx_too(&mut w.effects, id, name);
             }

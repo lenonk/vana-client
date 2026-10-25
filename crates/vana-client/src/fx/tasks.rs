@@ -536,6 +536,15 @@ impl Effects {
         }
         let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
         self.step_shine(f.dt, &live);
+        // Op 0xb5's holds end with their time or their task (FUN_100ce0c0).
+        self.no_blink.clear();
+        for (owner, id, left) in std::mem::take(&mut self.blink_holds) {
+            let left = left - f.dt;
+            if left >= 0.0 && live.contains(&owner) {
+                self.no_blink.insert(id);
+                self.blink_holds.push((owner, id, left));
+            }
+        }
         // Op 0x7a's pins end with their time or their task (FUN_10061f50).
         self.pinned.clear();
         let eye = Some(f.eye);
@@ -1004,6 +1013,20 @@ impl Effects {
             0x88 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
                     self.color_guards.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
+            // FUN_10061af0: actor1 does not blink for dur x speed (actor +0x8aa += 1, FUN_100ce0b0).
+            0xb5 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.blink_holds.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
+            // FUN_1005e770 / 740 / 760 / 750: actor1's battle / idle / run / walk names from set u32 @8.
+            0x79 | 0x8c | 0xa4 | 0xa5 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.motion_sets.push((id, op.code, op.u32_at(8)));
                 }
                 Flow::Next
             }

@@ -47,6 +47,15 @@ pub struct Mouth {
     pub ticks: Option<f32>,
 }
 
+/// The C runtime's rand() (0..0x7fff), for the blink timer.
+pub fn crand() -> u32 {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static SEED: AtomicU32 = AtomicU32::new(1);
+    let s = SEED.load(Ordering::Relaxed).wrapping_mul(214_013).wrapping_add(2_531_011);
+    SEED.store(s, Ordering::Relaxed);
+    (s >> 16) & 0x7fff
+}
+
 impl Mouth {
     pub fn new(chars: usize) -> Mouth {
         Mouth { left: (chars as u32 + 20) / 20, next: 0.0, ticks: None }
@@ -402,7 +411,8 @@ pub(super) fn status_motion(w: &World, id: u32, ch: &Character) -> String {
     } else {
         w.entities.get(&id).map_or((0, 0.0), |e| (e.motion.status, e.ratio))
     };
-    crate::motion::choose(&ch.motions, status, ratio).0.to_string()
+    let names = w.actors.get(&id).and_then(|a| a.motion_names).unwrap_or(ch.motions);
+    crate::motion::choose(&names, status, ratio).0.to_string()
 }
 
 fn status(w: &World, id: u32) -> u8 {
