@@ -3119,6 +3119,8 @@ struct Actor {
     rate_scale: f32,
     /// The load fade (+0x59c): 0 for a new actor, up 1/32 a tick once its model (and a rider's animal) is in.
     appear: f32,
+    /// The face motion a spoken line plays (entity +0x168, FUN_100846b0: 'mou4', event op 0xae 3 'kut4').
+    mouth_name: &'static str,
     /// The riding files on `extra`.
     ride_on: Vec<u32>,
 }
@@ -3165,6 +3167,7 @@ impl Actor {
             rate_scale: 1.0,
             ride_on: Vec::new(),
             appear: 0.0,
+            mouth_name: "mou4",
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
@@ -9106,7 +9109,8 @@ impl App {
                     if let Some(m) = &mut a.mouth
                         && let Some(mt) = m.ticks
                     {
-                        let mouth: Vec<_> = ["mou4", "mou6"].iter().map(|n| actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, n)).find(|v| !v.is_empty()).unwrap_or_default();
+                        // FUN_100ce0e0: the entity's face motion, else 'mou6'.
+                        let mouth: Vec<_> = [a.mouth_name, "mou6"].iter().map(|n| actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, n)).find(|v| !v.is_empty()).unwrap_or_default();
                         let mut playing = false;
                         for x in mouth {
                             let f = mt * x.speed * 0.5;

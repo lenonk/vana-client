@@ -795,6 +795,16 @@ impl Host for LiveHost<'_> {
                     e.no_bump = s == 0x0b;
                 }
             }
+            // FUN_100bb620 subs 3 / 4: actor@2's face motion (entity +0x168) from DAT_1035d000 {mou4, kut4} by val@6 (above
+            // 1 left alone); 4 always mou4.
+            Effect::Op { op: 0xae, sub: Some(s @ (3 | 4)), args, .. } => {
+                if let Some(id) = self.arg_actor(&args, 0) {
+                    let v = if s == 4 { 0 } else { Self::arg_int(&args, 1).unwrap_or(-1) };
+                    if let (Some(n), Some(a)) = (usize::try_from(v).ok().and_then(|v| ["mou4", "kut4"].get(v)), self.w.actors.get_mut(&id)) {
+                        a.mouth_name = n;
+                    }
+                }
+            }
             // FUN_100b9120: the moogle menu as 0x02E opens it (FUN_101d6110(0)).
             Effect::Op { op: 0x85, .. } => super::moogle::open(self.w, false),
             // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (8 also its mount id).
