@@ -1768,6 +1768,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
         magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
+    // The party cursor (<stpc>, a party menu pick): the mouse over the party windows' rows.
+    if let Some(p) = input.pointer.filter(|_| world.party_cursor.is_some() && world.confirm.is_none()) {
+        target::party_cursor_pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
         let row = event::choice(world).and_then(|_| {

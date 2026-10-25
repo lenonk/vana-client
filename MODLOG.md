@@ -7385,3 +7385,10 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
 - LSB sends the oldest unread `help_desk.response` at zone-in as 0x0B6 chunks; 0x0D5 marks it read and sends the
   next. Not tried live (needs a reply written into help_desk by hand: the user's OK first). Not done: netstat's
   "reply waiting" mark (+0x30 = 2, its drawing not traced).
+
+## The party cursor with the mouse (2026-10-25)
+
+- The `<stpc>` / party menu party cursor (FUN_102036f0) takes the party windows' generic mouse events *(inf, as the
+  other windows)*: hovering a used row of ptw*/raid1/raid2 inside the cursor's range (Rearrange's second stage: that
+  member's window party) moves it with SE 0001, a click on the cursor row is Enter, a right click on a party window
+  Escape. The world click stays off there (the party window is a blocker). Not tried live (needs a party).

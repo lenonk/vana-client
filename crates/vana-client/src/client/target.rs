@@ -190,6 +190,48 @@ pub fn party_cursor_key(w: &mut World, key: egui::Key) -> bool {
     true
 }
 
+/// The cursor with the mouse over the party windows' rows (the windows' generic events *(inf)*): hovering a used row
+/// moves it (SE 0001), a click on the cursor row is Enter, a right click on a party window Escape.
+#[allow(clippy::too_many_arguments)]
+pub fn party_cursor_pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(pc) = w.party_cursor.as_ref() else { return };
+    let mut used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
+    used[0] = true;
+    let (lo, hi) = pc.moving.map_or((0, pc.count), |(_, base)| (base, base + 6));
+    let index = pc.index;
+    let inside = |r: [f32; 4]| p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3];
+    let mut hit = None;
+    let mut over = false;
+    for (name, base) in [(w.party.slots().window(), 0usize), ("menu    raid1".into(), 6), ("menu    raid2".into(), 12)] {
+        let (Some((x, y)), Some(l)) = (gu.window_xy(&name, sw, sh), gu.layout(&name)) else { continue };
+        if !used.iter().skip(base).take(6).any(|&u| u) {
+            continue;
+        }
+        over |= gu.window_rect(&name, sw, sh).is_some_and(inside);
+        for e in l.elements.iter().skip(1).filter(|e| (1..=6).contains(&e.id)) {
+            if inside([x + e.x as f32, y + e.y as f32, e.w as f32, e.h as f32]) {
+                hit = Some(base + e.id as usize - 1);
+            }
+        }
+    }
+    if right {
+        if over {
+            party_cursor_key(w, egui::Key::Escape);
+        }
+        return;
+    }
+    let Some(i) = hit.filter(|&i| used.get(i).copied().unwrap_or(false) && (lo..hi).contains(&i)) else { return };
+    gu.hover.set(true);
+    if (moved || clicked) && i != index {
+        if let Some(pc) = w.party_cursor.as_mut() {
+            pc.index = i;
+        }
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    } else if clicked {
+        party_cursor_key(w, egui::Key::Enter);
+    }
+}
+
 /// FUN_10203c80: a slot that emptied under the cursor steps it back to the previous used one (0 at the least).
 pub fn party_cursor_update(w: &mut World) {
     let used: Vec<bool> = w.party.slots().slots.iter().map(|m| m.is_some()).collect();
