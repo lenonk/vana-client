@@ -3152,6 +3152,20 @@ impl Actor {
     }
 }
 
+/// FUN_100cd040 with R 0.5 / r 0.2 (the 0x5e-chunk radii of a few large models are not kept): the eye's horizontal
+/// distance h from point `p`; 0 within 0.2, linear to 1 at 0.5; no fade with the eye more than 0.5 above the point.
+fn near_camera_fade(p: Vec3, eye: Vec3) -> f32 {
+    let dy = if p.y < eye.y { 0.0 } else { p.y - eye.y };
+    let h = Vec3::new(p.x - eye.x, 0.0, p.z - eye.z).length();
+    if h >= 0.5 || dy > 0.5 {
+        1.0
+    } else if h < 0.2 {
+        0.0
+    } else {
+        (h - 0.2) / 0.3
+    }
+}
+
 /// Zone NPC names (FUN_10093bd0): file 0x1a40 + zone (0x150db + zone from 256), 0x20-byte records of
 /// name (24 bytes; the client clears +0x18) and u32 server id at +0x1c.
 fn npc_names(index: &DatIndex, zone: u16) -> HashMap<u32, String> {
@@ -8817,6 +8831,7 @@ impl App {
                 }
                 r.begin_poses();
                 let (cview, cproj) = (camera.view(), camera.proj(aspect));
+                let eye = camera.eye;
                 let mut visible = HashSet::new();
                 // Doors: a +-0.6 cube at the door (FUN_100ac8e0's class), tested like the rest.
                 let cube = box_corners([-0.6, 0.6, 0.6, -0.6, 0.6, -0.6]);
@@ -8983,13 +8998,30 @@ impl App {
                     }
                     // CPU bones only where they are read: the locked camera (player bone 13, target bone 5), first
                     // person, and the attach points of actors with live effects.
+                    let pose_now = || if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
                     if (w.locked && (*id == w.my_id || w.target == Some(*id))) || (w.camst.first && *id == w.my_id) || fx_posed.contains(id) {
-                        a.bones = if from.is_empty() { crate::dat::character::pose(&ch.skeleton, &anims) } else { crate::render::character::pose_blend(&ch, &from, &anims, t) };
+                        a.bones = pose_now();
                     } else {
                         a.bones.clear();
                     }
                     let frame = actor_matrix(pos, forward) * tilt_matrix(tilt);
                     let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));
+                    // FUN_100cd040 (camera_collision_spec.md 2.2): the eye near posed point 12 fades the actor (not the
+                    // player in first person, who fades on its own). A CPU pose only when the rest pose is close.
+                    let cam_fade = if *id == w.my_id && w.camst.first {
+                        1.0
+                    } else {
+                        let (b12, off12) = ch.skeleton.points.get(12).copied().unwrap_or((0, Vec3::ZERO));
+                        let at = |bones: &[(glam::Quat, Vec3)]| model.transform_point3(bones.get(b12 as usize).map_or(Vec3::ZERO, |(q, t)| *t + *q * off12));
+                        let rest = at(&a.rest);
+                        if Vec3::new(rest.x - eye.x, 0.0, rest.z - eye.z).length() > 0.5 + 2.0 * a.scale {
+                            1.0
+                        } else if a.bones.is_empty() {
+                            near_camera_fade(at(&pose_now()), eye)
+                        } else {
+                            near_camera_fade(at(&a.bones), eye)
+                        }
+                    };
                     // FUN_100d5b10: an event's look, else the target / face target; eased and weighted in world space.
                     let point = |k: usize| ch.skeleton.points.get(k).copied().unwrap_or((0, Vec3::ZERO));
                     let p3 = model.transform_point3(a.rest.get(point(3).0 as usize).map_or(Vec3::ZERO, |(q, t)| *t + *q * point(3).1));
@@ -9029,7 +9061,11 @@ impl App {
                         }
                     }
                     let g = a.gpu.as_mut().unwrap();
-                    g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
+                    // FUN_100cbde0: k = model alpha x the near-camera fade, drawn as 1 from 0.8 up, else 1.25 k; then
+                    // the first-person fade.
+                    let k = (a.alpha / actmotion::OPAQUE).max(0.0) * cam_fade;
+                    let k = if k >= 0.8 { 1.0 } else { k * 1.25 };
+                    g.alpha = (k * if *id == w.my_id { w.camst.self_alpha } else { 1.0 }).min(1.0);
                     if let Some(k) = invis.get(id) {
                         g.alpha = g.alpha.min(*k);
                     }
@@ -9083,7 +9119,8 @@ impl App {
                 visible.retain(|id| r.occl.results.get(id) != Some(&false));
                 w.visible = visible;
                 r.upload_poses(&gfx.gpu, &mut encoder);
-                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).collect();
+                // FUN_100cbde0: a drawn alpha under 0.0001 is not drawn (the near-camera fade, first person).
+                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0 };
                 m_actors = Instant::now();
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
@@ -9677,6 +9714,20 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// camera_collision_spec.md 2.2: 0 within 0.2, linear to 0.5, nothing with the eye more than 0.5 above the point
+    /// (y down), no lower limit below it.
+    #[test]
+    fn near_camera_fade_cylinder() {
+        let p = Vec3::new(0.0, -1.5, 0.0);
+        let at = |x: f32, y: f32| near_camera_fade(p, Vec3::new(x, y, 0.0));
+        assert_eq!(at(0.1, -1.5), 0.0);
+        assert!((at(0.35, -1.5) - 0.5).abs() < 1e-5);
+        assert_eq!(at(0.6, -1.5), 1.0);
+        assert_eq!(at(0.1, -2.1), 1.0);
+        assert_eq!(at(0.1, -1.9), 0.0);
+        assert_eq!(at(0.1, 5.0), 0.0);
+    }
 
     /// s2c 0x017 lines and modes (LAB_100e37a0): GM tag, yell zone, system header, dropped kinds.
     #[test]

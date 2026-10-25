@@ -7552,8 +7552,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   closed doors' boxes, both sides, 0 <= t < 1, edges inclusive 1e-4, the hit strictly nearest the start. Faces with a
   non-zero mesh word (+0xe) and v2 bit 14 are camera-passable (crate / stall sides and low walls in towns, some trunks):
   collision.rs keeps them as `cam_pass`. The floor ray keeps every face. Characters are never tested.
-- Not done yet: the near-camera character fade (FUN_100cd040: alpha 0 within 0.2 of point 12 horizontally, full from
-  about 0.44; the draw's 0.8 / 1.25 rule), Mog House furniture in the camera ray.
+- Not done yet: Mog House furniture in the camera ray. (The near-camera character fade: done since, section "The
+  near-camera character fade".)
 
 ## Relogging: the effects' GPU caches (2026-10-25)
 
@@ -7992,4 +7992,16 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   without a selection is still retail's /linkshell2 line, Ctrl+C outside the line still /check. Ctrl+V pastes through
   egui-winit's clipboard (arboard). Drawn as a blue box behind the selected text (fep::selection, World::chat_anchor;
   the copy goes out as egui's CopyText command after the frame).
+
+## The near-camera character fade (2026-10-25; spec camera_collision_spec.md 2.2)
+
+- FUN_100cd040 every frame for every skeleton actor: P = posed attach point 12 (the head point first person uses),
+  E = the eye; h = horizontal distance; with P above E the height is ignored, with the eye more than 0.5 above P no
+  fade; alpha x 0 within 0.2, x (h - 0.2) / 0.3 to 0.5 (radii from a model's 0x5e chunk for a few large models: not
+  kept). Nothing pushes the camera out of a character; it fades instead. The player in first person keeps its own fade.
+- Draw FUN_100cbde0: k = model alpha x that fade, drawn as 1 from 0.8 up, else 1.25 k; then the first-person fade;
+  under 0.0001 not drawn. So a model faded to 0x40 by op 0x6c / kesu now draws at 0.625 as retail (ours drew 0.5).
+- Ours: client/mod.rs near_camera_fade; the rest pose of point 12 screens actors first (0.5 + 2 x scale), a CPU pose
+  only for an actor that close; actors under 0.0001 leave the draw list (they wrote depth before). Seen live in the
+  Mog House walking toward the camera into the wall: the character goes see-through, then away.
 
