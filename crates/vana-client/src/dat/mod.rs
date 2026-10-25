@@ -191,3 +191,4 @@ pub mod generator;
 pub mod actions;
 pub mod autotrans;
 pub mod furniture;
+pub mod tpoints;

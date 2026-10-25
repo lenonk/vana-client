@@ -4,6 +4,7 @@
 use super::World;
 use super::game_ui::GameUi;
 use crate::dat::DatIndex;
+use crate::dat::tpoints::{self, Point};
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, channel};
@@ -14,6 +15,13 @@ const REGIONS_MAX: usize = 765;
 const NO_MAP: u32 = 0x1592;
 /// keytops3 sprites: the player marker (table 0x10375f6c[2]).
 const MARKER: usize = 159;
+/// The map's marker sprites (keytops3 ids, list 0x1038214c), indexed by a point kind's icon.
+const ICON_SPRITE: [usize; 20] = [0, 151, 159, 150, 152, 154, 155, 0, 363, 326, 327, 105, 516, 517, 522, 523, 524, 525, 526, 522];
+/// Mode 6's margins: the view may pass the image by +0x7c + +0x80 map pixels, and scroll targets move by +0x7c.
+const PREVIEW_MARGIN: f32 = 126.0;
+const PREVIEW_PAD: f32 = 30.0;
+/// Mode 6's backdrop (FUN_101cc620(0xd0c2), file 53442): a dark band around the image.
+pub const BACKDROP: &str = "menumap m_x36_00";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Region {
@@ -138,7 +146,7 @@ impl Region {
 type Loaded = Option<(String, u32, u32, Vec<u8>)>;
 
 /// FUN_101f9a50's modes: 0 the main menu or /map, 1 an event map, 2 an event illustration (zone <= -100), 3 a region
-/// map (zone -1..-99), 5 Change Map's other zone.
+/// map (zone -1..-99), 5 Change Map's other zone, 6 an op 0xd4 sub 0 menu's preview.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
     Menu,
@@ -146,6 +154,7 @@ pub enum Mode {
     Illustration,
     RegionMap,
     Other,
+    Preview,
 }
 
 impl Mode {
@@ -189,10 +198,62 @@ const SET_SPRITE: [usize; 4] = [150, 152, 154, 155];
 /// mapv3's row icons (table 0x10382178).
 const ROW_ICON: [usize; 8] = [151, 150, 153, 152, 154, 154, 155, 155];
 
+/// A teleport point's marker (FUN_101f99a0): map pixel, sprite, label, blinking (flag 0x1000: not registered), alpha
+/// and its direction.
+#[derive(Clone, Debug)]
+struct PointMark {
+    px: (f32, f32),
+    sprite: usize,
+    name: &'static str,
+    blink: bool,
+    alpha: f32,
+    falling: bool,
+}
+
+/// The point buffers (+0x6b4 / +0x6bc, FUN_101f92e0): the table once the masks are in, the markers, the last
+/// followed (kind, id) (+0x6c0 / +0x6c2).
+#[derive(Clone, Debug)]
+struct Points {
+    table: Option<Arc<Vec<Point>>>,
+    masks: [u8; 64],
+    marks: Vec<PointMark>,
+    last: (u16, u16),
+}
+
+impl Default for Points {
+    fn default() -> Self {
+        Points { table: None, masks: [0; 64], marks: Vec::new(), last: (0xffff, 0xffff) }
+    }
+}
+
+/// What following a menu option's point asks of the caller (FUN_101f9530).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Follow {
+    Keep,
+    /// The point is on another map: this one closes and the preview opens there.
+    Reopen,
+    /// "You do not possess a map of %s." (group 10 #7) for the zone.
+    NotOwned(u16),
+    /// Group 7 0x62: no map record.
+    NoMap,
+}
+
 pub struct MapWin {
     pub region: Region,
+    /// The sub-key asked for (+0x102; the record may be the zone's key 0), and no record at all (+0xa47).
+    key: u8,
+    no_record: bool,
     need: Need,
     owned: bool,
+    /// Teleport points (modes 1 / 3 / 6, 0 / 5 with the map).
+    points: Option<Points>,
+    /// helpwind slot 2 (+0xb4): the map's place name; mode 6 only while shown.
+    help: bool,
+    /// The zone "You do not possess a map" was said for (+0x108).
+    told: Option<u16>,
+    /// Mode 6: the margins around the image (bounds) and the scroll targets' offset.
+    margin: f32,
+    pad: f32,
     /// The .MRK sets 0 / 1, where they live, and whether to save them on close (+0xa44).
     marks: super::mapmark::MarkFile,
     mark_dir: Option<std::path::PathBuf>,
@@ -438,6 +499,7 @@ impl MapWin {
         let facing = w.net.me.lock().map_or(0.0, |m| super::event::rad_of(m.dir));
         log::info!("map: event map zone {zone} key {key} mode {mode:?} owned {owned}");
         let mut m = Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, mode, w.game.get(0x8a), show_player);
+        m.key = key;
         m.attach(w);
         // Mode 1 opens mapv3 on set 1 instead of map0 (map records only).
         if mode == Mode::Event && m.need != Need::Nothing {
@@ -447,9 +509,33 @@ impl MapWin {
         Some(m)
     }
 
+    /// The preview of an op 0xd4 sub 0 menu (FUN_101f9a50 mode 6): fit zoom, no keys, no sets or map0, hidden until
+    /// a point shows it; the cursor point midway between the top bar and the menu (`point_y`); the key -1 is the
+    /// sub-map under the player. A zone without a record opens anyway and only says so.
+    #[allow(clippy::too_many_arguments)]
+    pub fn open_preview(w: &World, regions: &[Region], zone: i16, key: i16, arrow: bool, sw: f32, sh: f32, point_y: f32) -> Self {
+        let key = if key >= 0 { key as u8 } else if zone == w.pos_zone as i16 { w.ground.as_ref().map_or(0, |g| g.map_key(w.pos)) } else { 0 };
+        let found = Region::find_key(regions, zone as u16, key).or_else(|| Region::find(regions, zone as u16));
+        let region = found.unwrap_or(Region { zone, key: 0, num: 0, flags: 0, scale: 0, ki: 0, file: 0, ox: 0, oy: 0 });
+        // FUN_101f7480: 0x180 leaves +0xa46 clear, so such a map never shows.
+        let owned = found.is_some() && region.need() != Need::Nothing && owned(w, &region);
+        let facing = w.net.me.lock().map_or(0.0, |m| super::event::rad_of(m.dir));
+        log::info!("map: preview zone {zone} key {key} owned {owned} record {}", found.is_some());
+        let mut m = Self::new(region, owned, w.index.clone(), (w.pos.x, w.pos.z), facing, sw, sh, Mode::Preview, 0, arrow);
+        (m.key, m.no_record) = (key, found.is_none());
+        m.point.1 = point_y.trunc();
+        if m.show_player {
+            m.view = (m.home.0 - m.point.0, m.home.1 - m.point.1);
+            m.scroll_to_px(m.home);
+        }
+        m.clamp();
+        m.attach(w);
+        m
+    }
+
     /// FUN_101f8360 and the callers' zoom: the image, zoom W / 512 x config 0x8a / 1000 in mode 0 (W / 512 for a no-map
-    /// record), x 1.75 in mode 1, W / 512 otherwise; fade 0x80 -> 0 at 8 a frame; then the player under the cursor
-    /// point (FUN_101f8ea0, FUN_101ef990).
+    /// record), x 1.75 in mode 1, W / 512 otherwise; fade 0x80 -> 0 at 8 a frame (mode 6: hidden at once); then the
+    /// player under the cursor point (FUN_101f8ea0, FUN_101ef990). Modes with points ask for the masks (FUN_101f93d0).
     #[allow(clippy::too_many_arguments)]
     pub fn new(region: Region, owned: bool, index: Option<Arc<DatIndex>>, pos: (f32, f32), facing: f32, sw: f32, sh: f32, mode: Mode, zoom_cfg: u32, show_player: bool) -> Self {
         let need = region.need();
@@ -466,10 +552,23 @@ impl MapWin {
         let (px, py) = region.px(pos.0, pos.1);
         let home = (px as f32, py as f32);
         let rx = index.map(|index| load(index, file));
+        let preview = mode == Mode::Preview;
+        let points = match mode {
+            Mode::Event | Mode::RegionMap | Mode::Preview => true,
+            Mode::Menu | Mode::Other => owned && need != Need::Nothing,
+            Mode::Illustration => false,
+        };
         let mut m = Self {
             region,
+            key: region.key as u8,
+            no_record: false,
             need,
             owned,
+            points: points.then(Points::default),
+            help: !preview,
+            told: None,
+            margin: if preview { PREVIEW_MARGIN } else { 0.0 },
+            pad: if preview { PREVIEW_PAD } else { 0.0 },
             marks: Default::default(),
             mark_dir: None,
             char_id: 0,
@@ -483,7 +582,7 @@ impl MapWin {
             set: 0,
             sounds: Vec::new(),
             party_asked: false,
-            outs: Vec::new(),
+            outs: if points { vec![Out::AskPoints] } else { Vec::new() },
             scan_ok: false,
             scan: None,
             scan_kept: false,
@@ -494,7 +593,7 @@ impl MapWin {
             mode,
             cursor: 1,
             return_menu: None,
-            keys: mode != Mode::Illustration,
+            keys: !matches!(mode, Mode::Illustration | Mode::Preview),
             show_player: show_player && need != Need::Nothing,
             fit,
             zoom,
@@ -507,7 +606,7 @@ impl MapWin {
             home,
             heading: facing,
             scroll_to: None,
-            fade: (128.0, 0.0, 8.0),
+            fade: if preview { (255.0, 255.0, 8.0) } else { (128.0, 0.0, 8.0) },
             closing: None,
             scripted: None,
             screen: (sw, sh),
@@ -898,11 +997,13 @@ impl MapWin {
         self.list = Some(l);
     }
 
-    /// FUN_101ee040: the view stays over the image (min the image base, max base + the part past the screen).
+    /// FUN_101ee040: the view stays over the image (min the image base, max base + the part past the screen), widened
+    /// by the margins in mode 6.
     fn bounds(&self) -> [f32; 4] {
         let (sw, sh) = self.screen;
-        let z = self.zoom;
-        [self.base.0, self.base.1, self.base.0 + ((512.0 * z - sw) / z).max(0.0), self.base.1 + ((512.0 * z - sh) / z).max(0.0)]
+        let (z, m) = (self.zoom, self.margin);
+        let max = |s: f32| (((512.0 + m) * z - s) / z).max(0.0);
+        [self.base.0 - m, self.base.1 - m, self.base.0 + max(sw), self.base.1 + max(sh)]
     }
 
     fn clamp(&mut self) {
@@ -931,8 +1032,9 @@ impl MapWin {
         (self.point.0 / self.zoom + self.view.0 + 0.5 + self.shift.0, self.point.1 / self.zoom + self.view.1 + 0.5 + self.shift.1)
     }
 
-    /// FUN_101ef990: start easing `to` under the cursor point unless it is already there.
+    /// FUN_101ef990: start easing `to` (moved by the mode 6 pad) under the cursor point unless it is already there.
     fn scroll_to_px(&mut self, to: (f32, f32)) {
+        let to = (to.0 + self.pad, to.1 + self.pad);
         let p = self.under_point();
         if (to.0 - p.0).powi(2) + (to.1 - p.1).powi(2) >= 0.8 {
             self.clamp();
@@ -1071,6 +1173,19 @@ impl MapWin {
                 }
             }
         }
+        if self.fade.0 == 0.0
+            && let Some(p) = self.points.as_mut()
+        {
+            // FUN_101eef90 (flags 0x81): fade in 6 a tick; with 0x1000 (not registered) out again and back, blinking.
+            for m in &mut p.marks {
+                m.alpha += if m.falling { -6.0 } else { 6.0 } * ticks;
+                if m.alpha >= 128.0 {
+                    (m.alpha, m.falling) = (128.0, m.blink);
+                } else if m.alpha <= 0.0 {
+                    (m.alpha, m.falling) = (0.0, false);
+                }
+            }
+        }
         if self.fade.0 == 0.0 && self.show_player {
             // FUN_101eef90 (flags 0x9f): fade in 6 a tick, then blink between 0 and 0x80 at the same speed.
             self.alpha += if self.rising { 6.0 } else { -6.0 } * ticks;
@@ -1126,11 +1241,16 @@ impl MapWin {
         }
         let z = self.zoom;
         let level = self.fade.0;
+        let a = if level == 0.0 { 160.0 } else { (255.0 - level).min(160.0) } / 128.0;
+        if self.mode == Mode::Preview && level < 255.0 {
+            let at = |b: f32, v: f32| ((b - PREVIEW_PAD - v) * z + 0.5).trunc();
+            gu.sprite_scaled(BACKDROP, 0, at(self.base.0, self.view.0), at(self.base.1, self.view.1), z, z, ((a * 128.0) as u32).min(0xff) << 24 | 0x40_4040);
+        }
         if let Some(t) = &self.texture {
-            let a = if level == 0.0 { 160.0 } else { (255.0 - level).min(160.0) } / 128.0;
             gu.image_rect(t, (self.base.0 - self.view.0) * z + 0.5, (self.base.1 - self.view.1) * z + 0.5, 512.0 * z, 512.0 * z, [0.5, 0.5, 0.5, a.min(1.0)]);
         }
         if level == 0.0 {
+            self.draw_points(gu);
             if self.scan.is_some() {
                 self.draw_scan_markers(gu);
             } else {
@@ -1144,8 +1264,10 @@ impl MapWin {
             // The sprite points east; turned to our facing (forward (cos r, 0, -sin r) is (cos r, sin r) on the map).
             let (s, c) = self.heading.sin_cos();
             gu.sprite_affine("menu    keytops3", MARKER, sx, sy, [c, -s, s, c], (self.alpha as u32) << 24 | 0x80_8080);
-            // FUN_101fa9c0: "(G-9)" at (titlewin x0, titlewin y1 + 3) in fontshp.
-            gu.shape_text(&self.region.grid(px as i32, py as i32), 16.0, 49.0, 0x8080_8080, false);
+            // FUN_101fa9c0: "(G-9)" at (titlewin x0, titlewin y1 + 3) in fontshp; not in mode 6.
+            if self.mode != Mode::Preview {
+                gu.shape_text(&self.region.grid(px as i32, py as i32), 16.0, 49.0, 0x8080_8080, false);
+            }
         }
         // The tracked target's ring (keytops3 105, centred by its own bounds).
         if let Some((px, py)) = self.tracked.filter(|_| level == 0.0) {
@@ -1225,23 +1347,113 @@ impl MapWin {
     /// FUN_101ee7b0 for the four sets: the sprite centred on its pixel, alpha << 24 | 0x808080; a label (colour 2,
     /// 0x606070, scaled by the alpha) at (+16, +1) for sets 0 / 1 and the picked member.
     fn draw_markers(&self, gu: &mut GameUi) {
-        let z = self.zoom;
         for s in 0..4 {
             for i in 0..10 {
                 let a = self.mark_alpha[s][i];
-                let Some(((px, py), label, k)) = self.slot(s, i).filter(|_| a > 0.0) else { continue };
-                let b = gu.cell_bounds("menu    keytops3", k, 0).unwrap_or([0.0; 4]);
-                let x = ((px - self.shift.0 - self.view.0) * z + 0.5).trunc() - ((b[2] - b[0]) / 2.0).trunc();
-                let y = ((py - self.shift.1 - self.view.1) * z + 0.5).trunc() - ((b[3] - b[1]) / 2.0).trunc();
-                let a = a as u32;
-                gu.sprite("menu    keytops3", k, x, y, a << 24 | 0x80_8080);
+                let Some((px, label, k)) = self.slot(s, i).filter(|_| a > 0.0) else { continue };
                 let labelled = s < 2 || (s == self.set as usize && self.label_only == Some(i));
-                if let Some(t) = label.filter(|t| labelled && !t.is_empty()) {
-                    let c = |v: u32| (v * a) >> 7;
-                    gu.shape_text(t, x + 16.0, y + 1.0, a << 24 | c(0x60) << 16 | c(0x60) << 8 | c(0x70), false);
-                }
+                self.draw_mark(gu, px, k, label.filter(|_| labelled), a);
             }
         }
+    }
+
+    /// The point list (+0x9c), drawn before the sets.
+    fn draw_points(&self, gu: &mut GameUi) {
+        for m in self.points.iter().flat_map(|p| &p.marks).filter(|m| m.alpha > 0.0) {
+            self.draw_mark(gu, m.px, m.sprite, Some(m.name), m.alpha);
+        }
+    }
+
+    /// FUN_101ee7b0: one marker.
+    fn draw_mark(&self, gu: &mut GameUi, (px, py): (f32, f32), k: usize, label: Option<&str>, a: f32) {
+        let z = self.zoom;
+        let b = gu.cell_bounds("menu    keytops3", k, 0).unwrap_or([0.0; 4]);
+        let x = ((px - self.shift.0 - self.view.0) * z + 0.5).trunc() - ((b[2] - b[0]) / 2.0).trunc();
+        let y = ((py - self.shift.1 - self.view.1) * z + 0.5).trunc() - ((b[3] - b[1]) / 2.0).trunc();
+        let a = a as u32;
+        gu.sprite("menu    keytops3", k, x, y, a << 24 | 0x80_8080);
+        if let Some(t) = label.filter(|t| !t.is_empty()) {
+            let c = |v: u32| (v * a) >> 7;
+            gu.shape_text(t, x + 16.0, y + 1.0, a << 24 | c(0x60) << 16 | c(0x60) << 8 | c(0x70), false);
+        }
+    }
+
+    /// FUN_101f9420 (each update): once the masks are in, the table, then every point on this map unnamed.
+    pub(super) fn load_points(&mut self, table: impl FnOnce() -> Option<Arc<Vec<Point>>>, masks: Option<[u8; 64]>) {
+        let Some(p) = self.points.as_mut().filter(|p| p.table.is_none()) else { return };
+        let (Some(masks), Some(t)) = (masks, table()) else { return };
+        (p.table, p.masks) = (Some(t), masks);
+        self.place_points((0xffff, 0xffff));
+    }
+
+    /// FUN_101f9760: markers for this zone and sub-map's points, at most 16 (FUN_101f99a0): the others unnamed, then
+    /// `sel` named with its kind (the cut can leave it out); unregistered ones blink.
+    fn place_points(&mut self, sel: (u16, u16)) {
+        let (zone, key, region) = (self.region.zone, self.key, self.region);
+        let Some(p) = self.points.as_mut() else { return };
+        let Some(table) = p.table.clone() else { return };
+        let here: Vec<&Point> = table.iter().filter(|t| t.zone as i16 == zone && t.map == key).collect();
+        let is_sel = |t: &Point| (tpoints::kind_row(t.kind), t.id) == sel;
+        p.marks.clear();
+        for t in here.iter().filter(|t| !is_sel(t)).chain(here.iter().filter(|t| is_sel(t))).take(16) {
+            let (name, icon, _) = tpoints::KINDS[tpoints::kind_row(t.kind) as usize];
+            let (x, y) = region.px(t.x, t.z);
+            let blink = !tpoints::registered(&p.masks, t.kind, t.bit);
+            p.marks.push(PointMark { px: (x as f32, y as f32), sprite: ICON_SPRITE[icon as usize], name: if is_sel(t) { name } else { "" }, blink, alpha: 0.0, falling: false });
+        }
+    }
+
+    /// LAB_101f9510 -> FUN_101f9530, each frame for the menu's cursor option (kind, id): 0xffff hides; a point on
+    /// another map reopens the preview there; on this one it eases toward the cursor point, named, and the map shows
+    /// when owned (else the caller says why, once per zone).
+    pub fn follow(&mut self, sel: (u16, u16)) -> Follow {
+        let Some(p) = self.points.as_mut().filter(|p| p.last != sel && self.closing.is_none()) else { return Follow::Keep };
+        let Some(table) = p.table.clone() else { return Follow::Keep };
+        let hide = (255.0, 255.0, self.fade.2);
+        if sel.1 == 0xffff {
+            p.last = (sel.0, 0xffff);
+            (self.fade, self.help) = (hide, false);
+            return Follow::Keep;
+        }
+        // Not found: the shown step only, every frame (the pair is not kept).
+        if let Some(t) = table.iter().find(|t| t.kind == sel.0 && t.id == sel.1) {
+            if t.zone as i16 != self.region.zone || t.map != self.key {
+                self.reopen = Some((t.zone as i16, t.map as i16));
+                return Follow::Reopen;
+            }
+            p.last = sel;
+            let (x, y) = self.region.px(t.x, t.z);
+            self.scroll_to_px((x as f32, y as f32));
+            self.place_points(sel);
+        }
+        let out = if self.owned {
+            (self.fade, self.help) = ((0.0, 0.0, self.fade.2), true);
+            Follow::Keep
+        } else {
+            self.fade = hide;
+            if self.no_record {
+                Follow::NoMap
+            } else if self.told != Some(self.region.zone as u16) {
+                self.told = Some(self.region.zone as u16);
+                Follow::NotOwned(self.region.zone as u16)
+            } else {
+                Follow::Keep
+            }
+        };
+        if self.no_record {
+            self.fade = hide;
+        }
+        out
+    }
+
+    /// helpwind slot 2's place (+0xb4): the map's zone, in mode 6 only while a point shows it.
+    pub fn help_zone(&self) -> Option<u16> {
+        self.help.then_some(self.region.zone as u16)
+    }
+
+    /// The image has loaded (FUN_101f9a20: the last request done).
+    pub fn image_ready(&self) -> bool {
+        self.rx.is_none()
     }
 
     /// mapv3 (FUN_101fbec0): per row the icon at (16, 5 + 16 i) and the name at (0x1f, 7 + 16 i) (font 0x44 taken as
@@ -1296,6 +1508,8 @@ pub enum Out {
     AskStop,
     /// The help bar's busy strip ends.
     NotBusy,
+    /// FUN_10099680: c2s 0x114 for the teleport point masks (s2c 0x063 type 6).
+    AskPoints,
 }
 
 const SCAN_ROWS: usize = 10;
@@ -1509,11 +1723,24 @@ impl MapList {
     }
 }
 
-/// Builds Change Map's rows when its level changed (needs the records, names and key items).
+/// Builds Change Map's rows when its level changed (needs the records, names and key items); loads the points and
+/// follows the preview menu's cursor option.
 pub(super) fn refresh(w: &mut World, gu: &GameUi) {
     if let Some(mut m) = w.map.take() {
         m.rebuild_scan(w);
+        m.load_points(|| w.item_info.as_ref().map(|c| c.points()), w.point_masks);
+        let follow = super::event::option_point(w).map(|sel| m.follow(sel));
+        if follow == Some(Follow::Reopen) {
+            // FUN_101fa420(0) on the next update.
+            w.game.set(0x8a, m.zoom_cfg());
+            m.begin_close();
+        }
         w.map = Some(m);
+        match follow {
+            Some(Follow::NotOwned(zone)) => not_owned(w, zone),
+            Some(Follow::NoMap) => super::textcmd::refuse(w, 0x62),
+            _ => {}
+        }
     }
     let Some(mut l) = w.map.as_mut().and_then(|m| m.maplist.take()) else { return };
     if !l.built {
@@ -1537,6 +1764,20 @@ pub enum Cmd {
     Mark { zone: i16, key: i16, slot: usize, x: f32, z: f32, name: String },
     /// Ops 0xa8 / 0xb9: set 1's slot emptied; `file` (sub 0) loads, edits and saves the zone's .MRK.
     Unmark { zone: i16, key: i16, slot: usize, file: bool },
+    /// Op 0xd4 sub 0 (FUN_100b2570(6, zone, -1)) and its reopen for another zone (FUN_101f79e0, no arrow); `point_y`
+    /// is the cursor point's height.
+    Preview { zone: i16, key: i16, arrow: bool, point_y: f32 },
+    /// FUN_100b2a60 -> FUN_101fa420(1): an answer closes the event map (any event mode), no reopen.
+    CloseEvent,
+}
+
+/// FUN_101f8650: group 10 #7 "You do not possess a map of %s." with the place name (FUN_10129e80, mode 0x79).
+fn not_owned(w: &mut World, zone: u16) {
+    let Some(bt) = w.battle.clone() else { return };
+    let place = w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, zone as u32)).unwrap_or_default();
+    let line = bt.group10(7).unwrap_or_default().replacen("%s", &place, 1);
+    let colour = bt.colour_in(0x79, &w.game);
+    w.chat.push_colour(line, colour);
 }
 
 /// The character's USER folder, where the .MRK files sit with the macros (FUN_101c3d00).
@@ -1613,6 +1854,22 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
                         *s = Default::default();
                     }
                 });
+            }
+        }
+        Cmd::Preview { .. } if w.riding => super::textcmd::refuse(w, 0x61),
+        // FUN_100b2570 opens unless the preview is up; another event map is replaced. The reopen (no arrow) needs a
+        // record for that zone and sub-map.
+        Cmd::Preview { zone, key, arrow, point_y } => {
+            if w.map.as_ref().is_some_and(|m| m.mode == Mode::Preview && !m.closing()) || (!arrow && Region::find_key(regions, zone as u16, key as u8).is_none()) {
+                return;
+            }
+            w.map = Some(MapWin::open_preview(w, regions, zone, key, arrow, sw, sh, point_y));
+        }
+        Cmd::CloseEvent => {
+            if let Some(m) = w.map.as_mut().filter(|m| !matches!(m.mode, Mode::Menu | Mode::Other)) {
+                w.game.set(0x8a, m.zoom_cfg());
+                m.reopen = None;
+                m.begin_close();
             }
         }
         // Opening a map resets the scripted view, so one sent with no map open is dropped.
@@ -1785,6 +2042,53 @@ mod tests {
         o.pan(10_000.0, -10_000.0);
         let span = 512.0 - 512.0 / o.zoom;
         assert_eq!(o.view, Some((-256.0, -256.0 + span)));
+    }
+
+    /// Mode 6 on Southern San d'Oria: nothing before the masks; then its 7 points (4 Home Points, 3 Beginner) as
+    /// markers, the followed one last and named, unregistered Home Points blinking; following hides, shows, reopens.
+    #[test]
+    fn preview_points() {
+        let cfg = crate::config::Config::load();
+        let (Ok(dll), Ok(index)) = (std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")), DatIndex::open(&cfg.ffxi_dir())) else { return };
+        let Ok(items) = crate::dat::items::Items::load(&index, crate::dat::items::Lang::En) else { return };
+        let table = Arc::new(tpoints::load(&items));
+        let region = Region::find(&regions(&dll), 230).unwrap();
+        let open = |owned: bool| MapWin::new(region, owned, None, (0.0, 0.0), 0.0, 1024.0, 896.0, Mode::Preview, 0, false);
+        let mut m = open(true);
+        assert_eq!((m.outs.clone(), m.fade.0, m.help_zone()), (vec![Out::AskPoints], 255.0, None));
+        m.load_points(|| Some(table.clone()), None);
+        assert_eq!((m.follow((0, 0)), m.fade.0), (Follow::Keep, 255.0));
+        // Home Point bits 0 and 1 registered.
+        let mut masks = [0u8; 64];
+        masks[0] = 3;
+        m.load_points(|| Some(table.clone()), Some(masks));
+        let marks = |m: &MapWin| m.points.as_ref().unwrap().marks.clone();
+        assert_eq!(marks(&m).len(), 7);
+        assert!(marks(&m).iter().all(|k| k.name.is_empty()));
+
+        assert_eq!(m.follow((0, 0)), Follow::Keep);
+        let k = marks(&m);
+        assert_eq!((k[6].name, k[6].sprite, k[6].blink), ("Home Point", 516, false));
+        let blinks = |s: usize| k[..6].iter().filter(|k| k.sprite == s).map(|k| k.blink).collect::<Vec<_>>();
+        assert_eq!((blinks(516), blinks(524)), (vec![false, true, true], vec![false; 3]));
+        let (x, y) = region.px(-85.468, -66.454);
+        assert_eq!(m.scroll_to, Some((x as f32 + 30.0, y as f32 + 30.0)));
+        assert_eq!((m.fade.0, m.help_zone()), (0.0, Some(230)));
+        // The same pair again changes nothing.
+        m.scroll_to = None;
+        assert_eq!((m.follow((0, 0)), m.scroll_to), (Follow::Keep, None));
+        // An option without a point hides the map.
+        assert_eq!(m.follow((0, 0xffff)), Follow::Keep);
+        assert_eq!((m.fade.0, m.help_zone()), (255.0, None));
+        // Northern San d'Oria's Home Point #4 (id 3): this map closes and the preview reopens there.
+        assert_eq!(m.follow((0, 3)), Follow::Reopen);
+        assert_eq!(m.reopen, Some((231, 0)));
+
+        // Without the map: hidden, told once per zone.
+        let mut m = open(false);
+        m.load_points(|| Some(table.clone()), Some(masks));
+        assert_eq!(m.follow((0, 0)), Follow::NotOwned(230));
+        assert_eq!((m.follow((0, 97)), m.fade.0), (Follow::Keep, 255.0));
     }
 
     /// Sub-keys from MZB object flags, and Pso'Xja (9): records for keys 1..16, none for key 0.

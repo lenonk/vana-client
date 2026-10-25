@@ -138,11 +138,12 @@ pub struct ItemCache {
     cache: RefCell<HashMap<u16, Option<Arc<Item>>>>,
     objectives: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Objective>>>>,
     categories: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Category>>>>,
+    points: std::cell::OnceCell<Arc<Vec<crate::dat::tpoints::Point>>>,
 }
 
 impl ItemCache {
     pub fn new(names: Arc<crate::dat::names::Names>) -> Self {
-        ItemCache { names, cache: RefCell::new(HashMap::new()), objectives: RefCell::default(), categories: RefCell::default() }
+        ItemCache { names, cache: RefCell::new(HashMap::new()), objectives: RefCell::default(), categories: RefCell::default(), points: Default::default() }
     }
 
     pub fn item(&self, id: u16) -> Option<Arc<Item>> {
@@ -159,6 +160,11 @@ impl ItemCache {
     pub fn category(&self, id: u16) -> Option<Arc<crate::dat::roe::Category>> {
         let items = &self.names.items;
         self.categories.borrow_mut().entry(id).or_insert_with(|| crate::dat::roe::category(items, id).map(Arc::new)).clone()
+    }
+
+    /// The teleport point table (records 0xf600..0xf613), read once.
+    pub fn points(&self) -> Arc<Vec<crate::dat::tpoints::Point>> {
+        self.points.get_or_init(|| Arc::new(crate::dat::tpoints::load(&self.names.items))).clone()
     }
 }
 

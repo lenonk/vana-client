@@ -459,6 +459,9 @@ pub enum NetEvent {
     LockStyleError(Vec<u16>),
     /// s2c 0x063 type 7: week @8 (0 previous, 1 current), dataType @9, 0x80 bytes from @0xc.
     UnityTable { week: u8, d: u8, data: [u8; 0x80] },
+    /// s2c 0x063 type 6 (0x10099330): the teleport point masks, 0x40 bytes from @8 (Home Points, Survival Guides,
+    /// Waypoints, Telepoints, Atmos(S), Eschan portals).
+    PointMasks([u8; 0x40]),
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
     AbilityRecasts(Vec<(u16, u16)>),
     /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
@@ -944,6 +947,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         let recs = (0..n).map(|i| (p.u16(4 + 4 * i), p.u16(6 + 4 * i))).filter(|r| r.0 != 0).map(|(id, v)| (id, (v >> 10) as u8, v & 0x3ff)).collect();
                         tx.send(NetEvent::JobPointList(recs))?
                     }
+                    0x063 if p.u16(4) == 6 && p.data.len() >= 0x48 => tx.send(NetEvent::PointMasks(p.data[8..0x48].try_into().unwrap()))?,
                     0x063 if p.u16(4) == 7 && p.data.len() >= 0x8c => {
                         tx.send(NetEvent::UnityTable { week: p.u8(8), d: p.u8(9), data: p.data[0xc..0x8c].try_into().unwrap() })?
                     }

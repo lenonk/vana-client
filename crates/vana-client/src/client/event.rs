@@ -339,10 +339,15 @@ pub struct State {
     pub choice: Option<Choice>,
     /// Op 0x71's input window ("menu    passinpu").
     pub input: Option<Input>,
-    /// Op 0xd4 3..5 option entries (select window +0x13c): option position -> item, extdata (subs 4 / 5).
-    pub option_items: HashMap<u32, (u16, Option<[u8; 24]>)>,
+    /// Op 0xd4 3..5 option entries (select window +0x13c): option position -> item, extdata (subs 4 / 5), flags (byte
+    /// 3: 2 for sub 5, no signature).
+    pub option_items: HashMap<u32, (u16, Option<[u8; 24]>, u8)>,
     /// The open choice is op 0xd4 sub 2: its cursor option's item shows (LAB_1013e6a0).
     pub item_preview: bool,
+    /// Op 0xd4 sub 1 entries: option position -> teleport point (kind, id).
+    pub option_points: HashMap<u32, (u16, u16)>,
+    /// The open choice is op 0xd4 sub 0: the map follows its cursor option's point (LAB_101f9510).
+    pub map_preview: bool,
     /// Actors hidden by the script (op 0x22 / 0x4e, actor +0x120 bit 0x20000; FUN_1008cdc0); seeded at bind
     /// with the server-hidden ones (FUN_100bb300 -> FUN_1008cda0).
     pub hidden: HashSet<u32>,
@@ -411,6 +416,8 @@ impl State {
             input: None,
             option_items: HashMap::new(),
             item_preview: false,
+            option_points: HashMap::new(),
+            map_preview: false,
             hidden: HashSet::new(),
             faded: HashSet::new(),
             idle: HashMap::new(),
@@ -1010,6 +1017,16 @@ impl Host for LiveHost<'_> {
             }
             // FUN_100b9d30: the item info window for val@1 (FUN_1013e520); 0 closes it.
             Effect::Op { op: 0xd4, sub: Some(2), .. } => self.st.item_preview = true,
+            // FUN_100b2570(6, zone, -1, 1, 1): the preview of this zone, the sub-map under the player, with the arrow.
+            Effect::Op { op: 0xd4, sub: Some(0), .. } => {
+                self.st.map_preview = true;
+                self.w.map_open = Some(self.w.pos_zone);
+                self.w.map_cmds.push(super::map::Cmd::Preview { zone: self.w.pos_zone as i16, key: -1, arrow: true, point_y: 0.0 });
+            }
+            Effect::Op { op: 0xd4, sub: Some(1), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                self.st.option_points.insert(int(0) as u32, (int(1) as u16, int(2) as u16));
+            }
             Effect::Op { op: 0xd4, sub: Some(s @ (3 | 4 | 5)), args, .. } => {
                 let int = |i| Self::arg_int(&args, i).unwrap_or(0);
                 let ext = (s != 3).then(|| {
@@ -1019,7 +1036,7 @@ impl Host for LiveHost<'_> {
                     }
                     e
                 });
-                self.st.option_items.insert(int(0) as u32, (int(1) as u16, ext));
+                self.st.option_items.insert(int(0) as u32, (int(1) as u16, ext, if s == 5 { 2 } else { 0 }));
             }
             Effect::Op { op: 0x93, args, .. } => {
                 let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
@@ -1180,6 +1197,11 @@ impl Host for LiveHost<'_> {
             }
             _ => false,
         }
+    }
+
+    /// FUN_100b2550(6) -> FUN_101f9a20: no map image still loading, and the key item table in (FUN_10087650).
+    fn map_ready(&self) -> bool {
+        self.w.map.as_ref().is_none_or(|m| m.image_ready()) && !self.w.key_items.is_empty()
     }
 
     /// FUN_10089c70 and +0x120 bit 9: the actor exists (all bound ones do once the event starts).
@@ -1902,16 +1924,30 @@ pub fn keeps_target(w: &World) -> bool {
 
 /// Keys while an event runs: Enter advances / picks, arrows move the choice cursor. Escape (key function
 /// 0x0f) cancels only while DAT_10473068 allows it, with SE "0003"; c2s 0x05B then carries 0x40000000.
-/// FUN_100b2940 / FUN_100b2aa0 after an answer: the item info window closes, whoever opened it, and the option
-/// entries go.
+/// FUN_100b2940 / FUN_100b2aa0 after an answer: an event map closes (FUN_100b2a60), the item info window too,
+/// whoever opened it, and the option entries go.
 fn choice_done(w: &mut World, l: &mut Live) {
+    if w.map_open.take().is_some() {
+        w.map_cmds.push(super::map::Cmd::CloseEvent);
+    }
     w.info_win = None;
     l.st.option_items.clear();
     l.st.item_preview = false;
+    l.st.option_points.clear();
+    l.st.map_preview = false;
 }
 
-/// The item of the open op 0xd4 sub 2 choice's cursor option (LAB_1013e6a0 -> FUN_1013e6d0): item, extdata.
-pub fn option_item(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
+/// The open op 0xd4 sub 0 choice's cursor option's point (FUN_1014e0a0: none past option 0x1f; 0xffff for an
+/// option without an entry).
+pub fn option_point(w: &World) -> Option<(u16, u16)> {
+    let l = w.event.as_ref()?;
+    let c = l.st.choice.as_ref().filter(|_| l.st.map_preview)?;
+    let pos = c.options.get(c.cursor)?.0;
+    (pos < 0x20).then(|| l.st.option_points.get(&pos).copied().unwrap_or((0xffff, 0xffff)))
+}
+
+/// The item of the open op 0xd4 sub 2 choice's cursor option (LAB_1013e6a0 -> FUN_1013e6d0): item, extdata, flags.
+pub fn option_item(w: &World) -> Option<(u16, Option<[u8; 24]>, u8)> {
     let l = w.event.as_ref()?;
     let c = l.st.choice.as_ref().filter(|_| l.st.item_preview)?;
     let pos = c.options.get(c.cursor)?.0;
@@ -2088,7 +2124,8 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         _ if named => speaker.clone(),
         _ => String::new(),
     };
-    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), ..Default::default() };
+    let g = w.event.as_ref().map_or(w.event_mem.g, |l| l.rt.mem.g).map(|v| v as i32);
+    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, g, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), ..Default::default() };
     let e = dialog::expand(&raw, &ctx);
     // The log mode: Type below 8 by table 0x1035b944, else 0; a 1f code in the text overrides it.
     const MODES: [u8; 8] = [0x8e, 0xa1, 0x90, 0x91, 0x92, 0xa1, 0x94, 0x95];

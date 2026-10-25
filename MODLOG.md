@@ -575,6 +575,7 @@ It then loads two files:
   | +0xc00 | target |
   | +0xc50 | work[5] (`DAT_10474618`) |
   | +0xc64 | num[8] |
+  | +0xc84 | num[8..40]: the VM's G registers 0x1700..0x171f (`DAT_10488980`), copied by `FUN_100c2e20` for every message |
   | +0xd04 | strings |
 
 - The queue is processed by `FUN_100c1420`, which runs the expander `FUN_100bf790`. `FUN_100c14d0` sends the result to the log (`FUN_10124050`) and plays the speaker's talk motion for modes 9/0xb/0x32/0x2cf/0x2d.
@@ -4247,7 +4248,8 @@ FUN_1013d760. Ours: client/iteminfo.rs (build / pages / draw), World::info_win, 
   opens it in mode 4 ((16, 16), stacked on region 3, taken as the choice window *(inf)*). An answer
   (FUN_100b2940 / FUN_100b2aa0) closes the item info window whoever opened it. Guild point and reward menus use it
   (Southern San d'Oria 0x2b2: sub 3 entries #3..#11 with item ids). Ours: State::option_items / item_preview,
-  event::option_item. Not seen live.
+  event::option_item; sub 5's byte 3 (flag 2, no signature) goes to the info window since 2026-10-25. Not seen live.
+  Sub 1 and sub 0's map preview: "Op 0xd4 sub 0: the map preview" below.
 - Op 0xd8 (FUN_100bc060, 118 sites, audit R20): actor@2 event body rotation = val x 2 pi / 4096 (constants
   0x10329d2c 6.283, 0x10330250 1/4096): sub 1 x (+0x150, len 8), 2 y = the direction (+0x154, len 8), 3 z (+0x158,
   len 8), 4 all three (val@6 / @8 / @10, len 12); sub 0 copies the actor rotation +0x34..+0x40 (len 6). With no body
@@ -8303,3 +8305,57 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live: the Tiger mount (key item 3074, file 102707, leg mode 2) on the East Ronfaure hill at (41, 170) follows the
   slope with the rider upright on its saddle.
 
+## Op 0xd4 sub 0: the map preview, and the teleport points on every map (2026-10-25; spec
+## ~/ffxi/lab/research/event_select_data_spec.md)
+
+- Teleport point table: item records 0xf600..0xf613 (file 55504, every language), 32 points of 20 bytes from record
+  + 4: u16 id, u16 kind, u16 zone (0 empty), u8 sub-map key, u8 mask bit, i32 x / z / height (x 0.001). 576 points in
+  30261006_0. Kinds (table 0x10382190: icon, locked value, name): Home Point, Telepoint, Survival Guide, Waypoint,
+  Beginner, ZoneChange, Atmos, Up, Down, Atmos(S), Eschan Portal, Ethereal Ingress; kinds 12+ read row 0. Icons index
+  the map's sprite list 0x1038214c (keytops3 0, 151, 159, 150, 152, 154, 155, 0, 363, 326, 327, 105, 516, 517, 522,
+  523, 524, 525, 526, 522). Ours: dat/tpoints.rs, ItemCache::points.
+- Masks: c2s 0x114 (header only, FUN_10099680) at every map open in modes 1 / 3 / 6 and 0 / 5 with an owned map
+  (FUN_101f93d0; it also clears the "masks in" bit 8 of DAT_10485824); s2c 0x063 type 6 answers with 0x40 bytes from
+  @8 (Home Point u32[4] @0, Survival Guide @0x10, Waypoint @0x20, Telepoint @0x30, Atmos(S) @0x34, Eschan @0x38).
+  FUN_101cbc70 and siblings test bit b at offset + (b >> 5) x 4. LSB fills the first three.
+- Points on a map (FUN_101f9420 each update, once the masks are in; FUN_101f9760 -> FUN_101f97a0 x 2 ->
+  FUN_101f99a0): up to 16 markers (+0x6b4), every point on the map's zone and asked sub-key (+0x102) but the
+  followed one unnamed, then the followed one named with its kind (so a 17th never shows). Flags 0x81, | 0x1000 when
+  the kind has a mask and the bit is clear: FUN_101eef90 fades it in at 6 a tick, then (0x1000) out and in again,
+  blinking. Drawn by the base draw (FUN_101eebd0) at fade level 0 before the set markers, label colour 2 at (+16, +1).
+- Op 0xd4 sub 0 (FUN_100b2280): FUN_100b2550(6) waits (pc unchanged) while the map's image request is pending or
+  before the key item table came (FUN_10087650); the 0x24 menu builder; then FUN_100b2570(6, current zone, -1, 1, 1)
+  opens the map unless mode / zone / key match the open event map (DAT_104882b4 / DAT_104896e6 / DAT_104897f6), and
+  the query object's callback +0x53c becomes LAB_101f9510. Sub 1 entries {u16 kind, u16 id}.
+- Mode 6 (FUN_101f9a50 case 6): .MRK loaded but no sets, map0 or mapv3; owned only for 0x17f or a held key item
+  (0x180 leaves +0xa46 clear: never shown); no record still opens (+0xa47, region -1). Zoom fit twice, keys off (+0x14
+  & ~3 | 0x800), hidden at once (FUN_101efb10). Margins +0x7c / +0x7e = 30 and +0x80 / +0x82 = 96: FUN_101ee040's
+  bounds widen to [base - 126, base + (512 + 126) - screen / zoom], and FUN_101ef990 adds +0x7c / +0x7e to every
+  scroll target (so the followed point settles 30 map px up-left of the cursor point, as decompiled). Backdrop
+  "menumap m_x36_00" (file 53442: an opaque black 32 x 32 texture; one sprite of 4 cells forming a 128-wide band
+  around the image) drawn at (base - 30 - view) x zoom, scale zoom, before the image with its tint. Cursor point x =
+  ftol(W / 512 x 200), y = h + (t - h) / 2 (C division), h = helpwind's rect bottom, t = the top of "menu query" if
+  open, else of the log. Grid text (FUN_101fa9c0) is off in mode 6. Help / title slot 2 (+0xb4 / +0xb8) cleared at
+  open; the base draw clears slot 2 for -1, leaves it for 0, else sets it.
+- The callback (LAB_101f9510 -> FUN_101f9530), every VM frame while the 0x25 / 0x7f wait is pending
+  (FUN_1014e0a0: entries only for options < 0x20; an option without one reads 0xffff), nothing until all 20
+  records are in, and nothing for the last pair (+0x6c0 / +0x6c2): id 0xffff hides, clears slot 2 and keeps
+  (kind, 0xffff); a point (raw kind and id) on another zone or sub-map: close callback LAB_101faff0, FUN_101f7d80
+  (+0x110 / +0x112, +0x10d) closes the map next update and FUN_101f79e0(6, zone, map) reopens it there without the
+  arrow if that record exists; on this map: scroll-to its pixel, markers, keep the pair; then (also when not found,
+  pair not kept) owned: shown at once (FUN_101efb00), slot 2 = the map zone's place name; not owned: hidden, and
+  FUN_101f8650 prints group 10 #7 "You do not possess a map of %s." once per zone (+0x108), or with no record
+  FUN_101f86b0 (group 7 0x62).
+- An answer or cancel (FUN_100b2a60 from the 0x25 / 0x7f waits) closes any event map FUN_100b2570 opened, mode 1
+  included (FUN_101fa420(1): no reopen; config 0x8a gets the zoom), and resets the three globals.
+- Helpwind slot 2 for every open map is the map's zone (+0x100), not the player's: they differ after Change Map's
+  reopen and in the preview (ours used pos_zone).
+- The menu titles: "Teleport where?（{place num 33}）": num 33 is G25 (0x1719), which the event sets from L19 before
+  the menu; message slots 8..39 are the G registers (FUN_100c2e20). Ours read only 8 slots and printed "（）".
+- Ours: map.rs Mode::Preview / open_preview / load_points / place_points / follow / Cmd::Preview / CloseEvent;
+  event.rs option_points / map_preview / option_point; Host::map_ready. Live on Lnxcsfix (Southern San d'Oria Home
+  Point #1 with !addallwarps, char_unlocks restored after): the zone list "Teleport where? (Southern San d'Oria)",
+  Home Points #2..#4 ease toward the cursor point with "Home Point" labelled, the other Home Points and the three
+  Beginner points as icons, the arrow, helpwind "Southern San d'Oria"; "Nowhere." hides it and empties the bar; a Jeuno
+  list reopened the preview on Ru'Lude Gardens (243, not owned): hidden, "You do not possess a map of Ru'Lude
+  Gardens." once; Escape ended the event with the map gone.

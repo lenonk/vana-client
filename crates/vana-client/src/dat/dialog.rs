@@ -199,12 +199,21 @@ pub struct Ctx {
     pub player: String,
     pub speaker: String,
     pub num: [i32; 8],
+    /// num[8..40] (+0xc84): the VM's G registers (0x1700.., DAT_10488980), copied into every message (FUN_100c2e20).
+    pub g: [i32; 32],
     pub strings: Vec<String>,
     pub female: bool,
     /// Message work[5] (msg+0xc50, DAT_10474618), read by the "work" grammar forms.
     pub work: [i32; 5],
     /// Item, key item and other names for 0x01 grammar blocks.
     pub names: Option<std::sync::Arc<dyn super::names::NameSource>>,
+}
+
+impl Ctx {
+    /// num[a] of the message's 40.
+    fn num_at(&self, a: usize) -> Option<i32> {
+        self.num.get(a).or_else(|| self.g.get(a.wrapping_sub(8))).copied()
+    }
 }
 
 /// Article pending for the next noun (FUN_1024fcd0): line, byte position, definite.
@@ -222,7 +231,7 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
         let a = arg? as usize;
         match k {
             0 => Some(a as u32),
-            1 => ctx.num.get(a).map(|&v| v as u32),
+            1 => ctx.num_at(a).map(|v| v as u32),
             _ => ctx.work.get(a).map(|&v| v as u32),
         }
     };
@@ -269,7 +278,7 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
             };
             let val = |i: Option<usize>| -> Option<u32> {
                 let i = i?;
-                if kind == 0x29 { ctx.num.get(i).map(|&v| v as u32) } else { ctx.work.get(i).map(|&v| v as u32) }
+                if kind == 0x29 { ctx.num_at(i).map(|v| v as u32) } else { ctx.work.get(i).map(|&v| v as u32) }
             };
             let count = val(idx(args));
             let item = val(args.get(4..).and_then(idx));
@@ -362,7 +371,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 1
             }
             0x0a => {
-                push(&mut lines, ctx.num.get(a).copied().unwrap_or(0).to_string().as_bytes());
+                push(&mut lines, ctx.num_at(a).unwrap_or(0).to_string().as_bytes());
                 2
             }
             0x0b => {
@@ -370,7 +379,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 1
             }
             0x0c => {
-                let (t, n) = alt(i + 2, ctx.num.get(a).copied().unwrap_or(0).max(0) as usize);
+                let (t, n) = alt(i + 2, ctx.num_at(a).unwrap_or(0).max(0) as usize);
                 push(&mut lines, &t);
                 n + 2
             }
@@ -390,7 +399,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 3
             }
             0x10 | 0x11 | 0x16 | 0x1a => {
-                let v = if c == 0x10 || c == 0x16 { ctx.work.get(a).copied() } else { ctx.num.get(a).copied() };
+                let v = if c == 0x10 || c == 0x16 { ctx.work.get(a).copied() } else { ctx.num_at(a) };
                 let names = ctx.names.as_deref();
                 let t = match (c, v) {
                     (0x10 | 0x11, Some(id)) => names.and_then(|n| n.spell(id as u32)),
@@ -421,7 +430,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 // unless the value is 1 (Japanese and language 3: above 1).
                 0x86 | 0x92 => {
                     let n = s.get(i + 2).copied().unwrap_or(0) as usize;
-                    let v = if a as u8 == 0x86 { ctx.work.get(n).copied() } else { ctx.num.get(n).copied() };
+                    let v = if a as u8 == 0x86 { ctx.work.get(n).copied() } else { ctx.num_at(n) };
                     let (t, len) = alt(i, (v.unwrap_or(0) != 1) as usize);
                     push(&mut lines, &t);
                     len

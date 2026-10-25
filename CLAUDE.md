@@ -71,8 +71,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   mode keys, Ctrl / Alt page modifier (0xa8) in the lists other than items (done there). The chat line's
   selection, copy, cut and paste are done (ours, not retail; MODLOG "Chat line: selection").
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
-  REPORT.md). Done since: R1..R7, R10, R13 (0x7e, MODLOG "Riding"), R14, R16..R18, R21. Left: R8 0xd4 subs 1 / 3 /
-  4 / 5 (option data) and the map preview, R9 0x20 / 0x30 control lock, R11 0xae, R12 0xab toggles, R15 0xb6 0x11 /
+  REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),
+  R14, R16..R18, R21. Left: R9 0x20 / 0x30 control lock, R11 0xae, R12 0xab toggles, R15 0xb6 0x11 /
   0x12..0x15 (0xd / 0xe chocobo looks done), 0x46/3 camera seed (4 sites), 0xb3 mini-game (0xd8 done).
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;

@@ -147,6 +147,10 @@ pub trait Host {
     fn config_word(&self) -> u32 {
         0
     }
+    /// FUN_100b2550(6): op 0xd4 sub 0 waits while the map's image loads or before the key item table came.
+    fn map_ready(&self) -> bool {
+        true
+    }
     fn rand(&mut self) -> u32 {
         0
     }
@@ -917,6 +921,7 @@ impl Runtime {
             player: host.name(PLAYER),
             speaker: speaker.map(|s| host.name(s)).unwrap_or_default(),
             num,
+            g: self.mem.g.map(|v| v as i32),
             strings: self.start.strings.clone(),
             female: host.female(),
             names: self.names.clone(),
@@ -1218,16 +1223,25 @@ impl Runtime {
             },
             0x24 => self.choice_op(v, host, 0, 7),
             0x25 => self.wait_choice(v, true),
-            // FUN_100b2280 subs 0 / 2: the 0x24 menu one byte on (sub 0 also previews the map: not done yet).
-            // Sub 2 is the choice whose cursor option shows its item (LAB_1013e6a0): the host is told each frame.
+            // FUN_100b2280 subs 0 / 2: the 0x24 menu one byte on. Sub 2 is the choice whose cursor option shows its item
+            // (LAB_1013e6a0): the host is told each frame. Sub 0 waits for the map, and once the menu is up opens the
+            // map preview (FUN_100b2570 mode 6): the host is told then.
             0xd4 if matches!(sub, Some(0) | Some(2)) => {
                 if sub == Some(2) {
                     host.effect(Effect::Op { op: opc, sub, actor, args: Vec::new() });
                 }
-                self.choice_op(v, host, 1, 8)
+                if sub == Some(0) && !host.map_ready() {
+                    self.yield_(v);
+                } else {
+                    let was = self.choice.open;
+                    self.choice_op(v, host, 1, 8);
+                    if sub == Some(0) && !was && self.choice.open {
+                        host.effect(Effect::Op { op: opc, sub, actor, args: Vec::new() });
+                    }
+                }
             }
-            // FUN_100b2290 1 / 3 / 4 / 5: option val@2's 32-byte entry (FUN_1014e070): val@4 (an item for 3..5), sub 1
-            // also val@6 (the map preview's), subs 4 / 5 the extdata words val@6 / @8 / @10.
+            // FUN_100b2280 1 / 3 / 4 / 5: option val@2's 32-byte entry (FUN_1014e070): val@4 (an item for 3..5, a point
+            // kind for 1), sub 1 also val@6 (the point id), subs 4 / 5 the extdata words val@6 / @8 / @10.
             0xd4 if matches!(sub, Some(1 | 3 | 4 | 5)) => {
                 let offs: &[usize] = match sub {
                     Some(1) => &[2, 4, 6],
@@ -2470,6 +2484,8 @@ pub struct Scripted {
     pub race: u8,
     /// Texts typed into op 0x71's input window, in order (empty once used up).
     pub inputs: std::collections::VecDeque<Vec<u8>>,
+    /// The map is not ready (op 0xd4 sub 0 waits).
+    pub map_busy: bool,
     running: Vec<(Busy, u32)>,
     seed: u32,
     frame: u32,
@@ -2523,6 +2539,7 @@ impl Scripted {
             sched_ticks: None,
             race: 0,
             inputs: Default::default(),
+            map_busy: false,
             running: Vec::new(),
             seed: 1,
             frame: 0,
@@ -2533,6 +2550,10 @@ impl Scripted {
 impl Host for Scripted {
     fn race(&self, actor: u32) -> u8 {
         if actor == PLAYER { self.race } else { 0 }
+    }
+
+    fn map_ready(&self) -> bool {
+        !self.map_busy
     }
 
     fn effect(&mut self, e: Effect) {
@@ -2794,6 +2815,42 @@ mod tests {
         assert!(f.is_some());
         assert!(log.iter().any(|e| matches!(e, Effect::Choice { id: 7284, options, cursor: 2, .. } if options.len() == 3)), "{log:?}");
         assert!(log.iter().any(|e| matches!(e, Effect::Choice { id: 7279, .. })));
+    }
+
+    /// Southern San d'Oria Home Point #1 (event 0x21fc, LSB's params with every Home Point registered): the zone
+    /// list's op 0xd4 sub 1 entries name the Home Point options, the sub 0 menu then opens the map preview; while the
+    /// map is not ready the VM stays on the op.
+    #[test]
+    fn home_point_preview() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        if event::load(&index, 230).is_err() {
+            return;
+        }
+        let run = |busy: bool| {
+            let mut host = Scripted::new(&[Some(0), Some(2), Some(1), Some(0), None]);
+            host.map_busy = busy;
+            let start = Start { zone: 230, event: 0x21fc, target: 0x010e_6087, ..Default::default() };
+            let mut rt = Runtime::start(event::load(&index, 230).unwrap(), Dialog::load(&index, 230).ok(), start, Memory::default(), &mut host);
+            rt.params([1, u32::MAX, u32::MAX, u32::MAX, u32::MAX, 100_000, 4095, 0]);
+            if let Ok(n) = crate::dat::names::Names::load(&index, crate::dat::items::Lang::En) {
+                rt.set_names(std::sync::Arc::new(n));
+            }
+            run_scripted(&mut rt, &mut host, 60 * 60);
+            host.log
+        };
+        let log = run(false);
+        let at = |log: &[Effect], f: &dyn Fn(&Effect) -> bool| log.iter().position(f);
+        let entry = |o: i32, id: i32| move |e: &Effect| matches!(e, Effect::Op { op: 0xd4, sub: Some(1), args, .. } if args[..] == [Arg::Int(o), Arg::Int(0), Arg::Int(id)]);
+        let (e2, e4) = (at(&log, &entry(2, 1)).unwrap(), at(&log, &entry(4, 97)).unwrap());
+        let menu = at(&log, &|e| matches!(e, Effect::Choice { id: 30, .. })).unwrap();
+        let open = at(&log, &|e| matches!(e, Effect::Op { op: 0xd4, sub: Some(0), .. })).unwrap();
+        assert!(e2 < e4 && e4 < menu && menu < open, "{e2} {e4} {menu} {open}");
+        // The title's place name is num[33]: G25 (message slots 8.. are the G registers).
+        assert!(matches!(&log[menu], Effect::Choice { question, .. } if question.contains("Southern San d'Oria")), "{:?}", log[menu]);
+
+        let log = run(true);
+        assert!(at(&log, &entry(4, 97)).is_some());
+        assert!(at(&log, &|e| matches!(e, Effect::Choice { id: 30, .. } | Effect::Op { op: 0xd4, sub: Some(0), .. })).is_none());
     }
 
     /// Southern San d'Oria actor 0x01b, event 0x0249: the Mog House explanation and its choice.

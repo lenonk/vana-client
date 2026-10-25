@@ -1203,7 +1203,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         return Vec::new();
     }
-    for c in std::mem::take(&mut world.map_cmds) {
+    for mut c in std::mem::take(&mut world.map_cmds) {
+        if let map::Cmd::Preview { point_y, .. } = &mut c {
+            *point_y = preview_point_y(gu, world, sw, sh);
+        }
         map::apply(world, gu.map_regions(), c, sw, sh);
     }
     if let Some(mode) = world.region_cmd.take() {
@@ -2055,6 +2058,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 map::Out::AskStop => world.confirm = Some((Confirm::StopTracking, false)),
                 map::Out::NotBusy => world.scan.busy = false,
+                // FUN_10099680: the masks are stale until s2c 0x063 type 6 answers.
+                map::Out::AskPoints => {
+                    let _ = world.net.commands.send(NetCommand::Packet { id: 0x114, body: Vec::new() });
+                    world.point_masks = None;
+                }
             }
         }
     }
@@ -2721,18 +2729,27 @@ fn missing_place(zone: u16) {
 /// The top bars' text slots. Slot 1: the focused window's cursor item or header (FUN_10115380). Slot 0: the
 /// action menu, the command's help and "Battle Mode" (engaged) or "Commands" (group 0xd 7 / 5; 6 "Ready Mode"
 /// is for a FUN_101c26a0 target, not modelled), FUN_10127790.
+/// Mode 6's cursor point height (FUN_101f9a50): midway between helpwind's bottom and the top of the menu, else of the
+/// log (C integer division).
+fn preview_point_y(gu: &GameUi, world: &World, sw: f32, sh: f32) -> f32 {
+    let h = 16 + 30;
+    let menu = event::choice(world).and_then(|_| gu.window_rect("menu    query", sw, sh)).map(|r| r[1]);
+    let t = menu.or(gu.log_top).unwrap_or(sh) as i32;
+    (h + (t - h) / 2) as f32
+}
+
 fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::BarText {
     let mut bars = hudtop::BarText::default();
     let map0 = world.map.as_ref().and_then(|m| m.focus());
     let cfg_focus = world.config.as_ref().and_then(|c| c.focus());
     let focus = cfg_focus.as_ref().map(|(n, c)| (n.as_str(), *c)).or(items::focus(world)).or(map0).or_else(|| world.menu.and_then(|k| items.get(k)).map(|(i, _)| (crate::render::screens::menu_window(world.menu_page), *i as u16 + 1)));
-    // mapframe's base draw (FUN_101e6ca0) puts the zone name (FUN_101c2090(zone, 1)) in helpwind slot 2.
-    if world.map.is_some()
+    // mapframe's base draw (FUN_101eebd0, +0xb4) puts the map's place name (FUN_101cbc10(zone, 1)) in helpwind slot 2.
+    if let Some(zone) = world.map.as_ref().and_then(|m| m.help_zone())
         && let Some(names) = world.names.as_ref()
     {
-        match crate::dat::names::NameSource::place(&**names, world.pos_zone as u32).filter(|n| !n.is_empty()) {
+        match crate::dat::names::NameSource::place(&**names, zone as u32).filter(|n| !n.is_empty()) {
             Some(n) => bars.help[2] = n,
-            None => missing_place(world.pos_zone),
+            None => missing_place(zone),
         }
     }
     // A prompt (comyn) has the focus, and its items carry no text.
@@ -3352,7 +3369,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = treasure::info_source(world) => (id, ext, None, false, 0, 0),
-        (None, Some((id, ext))) => (id, ext, None, false, 4, 0),
+        (None, Some((id, ext, f))) => (id, ext, None, false, 4, f as u32),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
     };
     let it = cache.item(id)?;
@@ -4126,6 +4143,8 @@ struct World {
     map_open: Option<u16>,
     /// Event map requests for the next HUD frame (map::apply).
     map_cmds: Vec<map::Cmd>,
+    /// s2c 0x063 type 6's teleport point masks (DAT_104858c4); None from c2s 0x114 until the answer.
+    point_masks: Option<[u8; 64]>,
     /// Wide Scan results and tracking (the session store, lost on zoning).
     scan: widescan::Scan,
     /// The item info window opened by event ops 0x93 / 0xcc (FUN_1013e520): item, extdata, flags (+0x374).
@@ -5446,6 +5465,7 @@ impl App {
                             self_lock: None,
                             map_open: None,
                             map_cmds: Vec::new(),
+                            point_masks: None,
                             scan: Default::default(),
                             info_win: None,
                             info_page: std::cell::Cell::new((0, 0, 1)),
@@ -6509,6 +6529,7 @@ impl App {
                 NetEvent::LockStyleFlag(v) => equipsets::on_flag(world, v),
                 NetEvent::LockStyleError(ids) => equipsets::on_lock_error(world, &ids),
                 NetEvent::UnityTable { week, d, data } => world.unity_tables.store(week, d, &data),
+                NetEvent::PointMasks(m) => world.point_masks = Some(m),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
                 NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
                 NetEvent::TrackState(s) => {
@@ -7289,10 +7310,12 @@ impl App {
         if let Some(m) = world.map.as_mut()
             && !m.update(&mut self.input, dt * 60.0, drag)
         {
-            let (back, reopen) = (m.return_menu, m.reopen);
+            let (back, reopen, mode) = (m.return_menu, m.reopen, m.mode);
             world.map = None;
             world.scan.party_busy = false;
             match reopen {
+                // LAB_101faff0 -> FUN_101f79e0(6, zone, map): the preview reopens there, without the arrow.
+                Some((zone, key)) if mode == map::Mode::Preview => world.map_cmds.push(map::Cmd::Preview { zone, key, arrow: false, point_y: 0.0 }),
                 Some((zone, key)) => world.map_cmds.push(map::Cmd::Other { zone, key, return_menu: back }),
                 None if back.is_some() => world.menu = back,
                 None => {}

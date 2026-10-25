@@ -108,6 +108,10 @@ impl GameUiData {
         for &c in companions(LOBBY_US) {
             lobby.absorb(parse(c)?, true);
         }
+        match parse(crate::dat::ui::MAP_BACKDROP) {
+            Ok(f) => lobby.absorb(f, true),
+            Err(e) => log::warn!("map backdrop: {e:#}"),
+        }
         // FUN_1011ad50 (non-Japanese clients, called by the dead windows' open): the window takes its frame sprite's
         // bounds, framesus 65's 144 x 44 for "menu    dead".
         for name in ["menu    dead", "menu    mp_dead"] {
