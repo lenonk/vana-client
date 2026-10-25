@@ -8066,3 +8066,15 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   did not run for Lnxcsfix), /ignorepet / /hidetrust (no other players' pets or trusts near).
 - Not done: /furcc (no Mog House furniture actors yet).
 
+## /autogroup, /recruit, /mentor, /itemsearch (2026-10-25; spec textcmds2_spec.md part C 1 / 2)
+
+- /autogroup (FUN_1007d740, solo only), /recruit (FUN_1007d870), /mentor (FUN_1007f320; a window up: group 7 0x45):
+  exactly "on" / "off" set / clear c2s 0x0DC which 6 / 0xb / 8, another word sends nothing, other token counts flip
+  the flag from s2c 0x0B4 (byte 1 bit 7, byte 3 bits 5 / 1). No line. Not modelled: the /recruit refusal while a
+  party request operation is pending; the /mentor window test is ours (the main or action menu up).
+- /itemsearch (FUN_1007b0a0): c2s 0x02C {Language 1 English @4, Name[0x40] @8 = the first token}; s2c 0x049 {ItemNo
+  @4, Flag @6, ItemName @8}: Flag set is an auto-translate lookup (no line); else no item or none held 7031 0x11d,
+  else 0x11c with the item and each bag holding it in table 0x1032c9c8 order (bag 3 not searched).
+- Live (Lnxcsfix): "No instances of that item were found." for a Bronze Sword; "Instances of Hume tunics were found
+  in the following systems:" and "Inventory".
+

@@ -3802,6 +3802,8 @@ struct World {
     /// Config `party_tp` (retail config 0xae bit 0); /partyinfo asks the App to save it.
     party_tp: bool,
     party_tp_save: bool,
+    /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
+    item_search: bool,
     target_since: Instant,
     cam_turn: (f32, f32),
     /// UI sound effects to play ("0002", "0009" ...), by SE id.
@@ -5169,6 +5171,7 @@ impl App {
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
                             party_tp_save: false,
+                            item_search: false,
                             overlay: None,
                             map_opacity: self.cfg.map_overlay_opacity,
                             map_overlay: self.cfg.map_overlay,
@@ -6354,6 +6357,7 @@ impl App {
                 NetEvent::PartyRequest { status, name } => partyreq::received(world, status, name),
                 NetEvent::Blacklist { stat, entries } => partyreq::blacklist(world, stat, entries),
                 NetEvent::BlackEdit { id, name, mode } => partyreq::black_result(world, id, name, mode),
+                NetEvent::ItemSearch { item, flag } => textcmd::item_search_result(world, item, flag),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),

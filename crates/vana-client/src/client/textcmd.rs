@@ -85,6 +85,10 @@ mod id {
     pub const PCMD: u16 = 0x56;
     pub const RECRUITLIST: u16 = 0x60;
     pub const AUTOTARGET: u16 = 0x63;
+    pub const ITEMSEARCH: u16 = 0x23;
+    pub const AUTOGROUP: u16 = 0x5e;
+    pub const RECRUIT: u16 = 0x5f;
+    pub const MENTOR: u16 = 0x94;
     pub const DISPLAYHEAD: u16 = 0x64;
     pub const JOBMASTERDISP: u16 = 0x8b;
     pub const PARTYINFO: u16 = 0x1ad;
@@ -1147,6 +1151,42 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::RECRUITLIST => recruitlist(w, args),
+        // FUN_1007d740: solo only (else it fails); exactly "on" / "off" set / clear c2s 0x0DC which 6 (another word
+        // nothing), else a toggle from s2c 0x0B4 byte 1 bit 7. No line.
+        id::AUTOGROUP => {
+            if w.party.members().count() > 1 {
+                return Err(());
+            }
+            server_flag(w, args, 6, w.conf_sys[1] & 0x80 != 0);
+            Ok(())
+        }
+        // FUN_1007d870: the same with which 0xb (RecruitFlg, 0x0B4 byte 3 bit 5). Not modelled: its refusal while a
+        // party request operation is pending (DAT_106643a6).
+        id::RECRUIT => {
+            server_flag(w, args, 0xb, w.conf_sys[3] & 0x20 != 0);
+            Ok(())
+        }
+        // FUN_1007f320: with a window up group 7 0x45 (done); else which 8 (MentorFlg, 0x0B4 byte 3 bit 1) the same way.
+        id::MENTOR => {
+            if w.menu.is_some() || w.action_menu.is_some() {
+                refuse(w, 0x45);
+                return Ok(());
+            }
+            server_flag(w, args, 8, w.conf_sys[3] & 2 != 0);
+            Ok(())
+        }
+        // FUN_1007b0a0: c2s 0x02C {Language 1 (English) @4, Name[0x40] @8}; s2c 0x049 answers (item_search_result).
+        id::ITEMSEARCH => {
+            let Some(name) = args.get(1) else { return Err(()) };
+            let mut b = vec![0u8; 0x44];
+            b[0] = 1;
+            for (k, c) in name.bytes().take(0x3f).enumerate() {
+                b[4 + k] = c;
+            }
+            send(w, NetCommand::Packet { id: 0x02C, body: b });
+            w.item_search = true;
+            Ok(())
+        }
         // FUN_1007ddc0: c2s 0x0DC which 10; exactly "on" shows the head gear, "off" hides it, another word nothing;
         // else a toggle from s2c 0x0B4's mirror (byte 3 bit 3). No line: the server answers (0x009, 0x051).
         id::DISPLAYHEAD => {
@@ -1612,6 +1652,38 @@ fn item(w: &mut World, args: &[String], mode: Mode) -> Done {
     let _ = id;
     super::items::use_slot(w, bag, slot, t.0);
     Ok(())
+}
+
+/// The on / off / toggle shape of /autogroup, /recruit and /mentor: exactly one word "on" sets, "off" clears, another
+/// sends nothing; otherwise the flag flips from its 0x0B4 mirror `cur`.
+fn server_flag(w: &World, args: &[String], which: u8, cur: bool) {
+    if args.len() == 2 {
+        match args[1].as_str() {
+            "on" => config_flag(w, which, true),
+            "off" => config_flag(w, which, false),
+            _ => {}
+        }
+    } else {
+        config_flag(w, which, !cur);
+    }
+}
+
+/// /itemsearch's answer (LAB_1007b0f0): Flag set is an auto-translate lookup (nothing printed); else no item 7031
+/// 0x11d, or the item's line 0x11c then each bag holding it (table 0x1032c9c8, bag 3 not searched), none 0x11d.
+pub(super) fn item_search_result(w: &mut World, item: u16, flag: u8) {
+    if !std::mem::take(&mut w.item_search) || flag != 0 {
+        return;
+    }
+    const BAGS: [(u8, u16); 17] = [(0, 0x114), (1, 0x115), (9, 0x124), (2, 0x116), (4, 0x117), (5, 0x118), (6, 0x119), (7, 0x11a), (8, 0x11b), (10, 0x12f), (11, 0x130), (12, 0x131), (13, 0x13f), (14, 0x140), (15, 0x141), (16, 0x142), (17, 0x143)];
+    let held: Vec<u16> = if item == 0 { Vec::new() } else { BAGS.iter().filter(|(b, _)| w.inv.slots.iter().any(|(k, v)| k.0 == *b && v.0 == item)).map(|b| b.1).collect() };
+    if held.is_empty() {
+        super::post::system_line(w, 0x11d, [item as i32, 0, 0, 0, 0], String::new());
+        return;
+    }
+    super::post::system_line(w, 0x11c, [item as i32, 0, 0, 0, 0], String::new());
+    for m in held {
+        super::post::system_line(w, m, [item as i32, 0, 0, 0, 0], String::new());
+    }
 }
 
 /// FUN_100e46a0(which, set): c2s 0x0DC, flag bytes +4..+7 and SetFlg @0x10 (1 set, 2 clear): which 0 anonymous (+4
