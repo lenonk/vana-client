@@ -74,6 +74,8 @@ pub struct Ground {
     /// Per triangle: the door whose box it is (0 none), and the doors open now (their boxes are skipped).
     doors: Vec<u32>,
     open: std::cell::RefCell<std::collections::HashSet<u32>>,
+    /// Per triangle: the camera's rays pass it (cam_ray).
+    cam_pass: Vec<bool>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -82,6 +84,8 @@ struct Grid {
     h: usize,
     cells: Vec<Vec<u32>>,
     entries: Vec<(u32, u32, bool)>,
+    /// Per entry: its triangles' bounds (ours: entries a segment's box misses are skipped, the result is the same).
+    bounds: Vec<(Vec3, Vec3)>,
 }
 
 impl Grid {
@@ -214,7 +218,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default() },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new() },
         }
     }
 
@@ -249,9 +253,10 @@ impl Ground {
             }
         }
         let entries = c.entries.iter().map(|e| (e.first, e.count, c.objects[e.object as usize].flags & 2 != 0)).collect();
-        let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries });
+        let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
+        let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default() }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone() }
     }
 
     /// FUN_1017ac40: a door's box is skipped while it is open (state 0), solid while closed.
@@ -368,6 +373,60 @@ impl Ground {
                 (u >= 0.0 && v >= 0.0 && u + v <= 1.0).then(|| (a.y + u * (b.y - a.y) + v * (c.y - a.y), i))
             })
             .collect()
+    }
+
+    /// FUN_10169140: the camera's segment test. A segment of 4 or more goes in 1 + trunc(len / 4) equal pieces, tested
+    /// in order; the first piece with a hit gives its point.
+    pub fn cam_ray(&self, from: Vec3, to: Vec3) -> Option<Vec3> {
+        let g = self.grid.as_ref()?;
+        let n = 1 + ((to - from).length() * 0.25) as usize;
+        (0..n).find_map(|k| self.cam_piece(g, from.lerp(to, k as f32 / n as f32), from.lerp(to, (k + 1) as f32 / n as f32)))
+    }
+
+    /// FUN_1016b1d0: the MZB cells within 2 of the start's (none when the start is off the grid), objects whose y range
+    /// meets the piece's, closed doors' boxes; faces the camera passes are skipped. Both sides count, 0 <= t < 1, edges
+    /// inclusive (FUN_10165570, 1e-4); the hit strictly nearest the start.
+    fn cam_piece(&self, g: &Grid, s: Vec3, e: Vec3) -> Option<Vec3> {
+        let (cx, cz) = (((s.x + g.w as f32 * 2.0) * 0.25) as i32, ((s.z + g.h as f32 * 2.0) * 0.25) as i32);
+        if cx < 0 || cz < 0 || cx >= g.w as i32 || cz >= g.h as i32 {
+            return None;
+        }
+        let (lo, hi) = (s.min(e), s.max(e));
+        let mut seen = std::collections::HashSet::new();
+        let (mut best, mut hit) = (1e6f32, None);
+        for z in (cz - 2).max(0)..=(cz + 2).min(g.h as i32 - 1) {
+            for x in (cx - 2).max(0)..=(cx + 2).min(g.w as i32 - 1) {
+                for &en in &g.cells[z as usize * g.w + x as usize] {
+                    let (bl, bh) = g.bounds[en as usize];
+                    if !seen.insert(en) || bh.x < lo.x || bl.x > hi.x || bh.y < lo.y || bl.y > hi.y || bh.z < lo.z || bl.z > hi.z {
+                        continue;
+                    }
+                    let (first, count, _) = g.entries[en as usize];
+                    for i in first as usize..(first + count) as usize {
+                        let (ylo, yhi) = self.y_range[i];
+                        if self.cam_pass[i] || yhi < lo.y || ylo > hi.y || !self.live(i) {
+                            continue;
+                        }
+                        let [a, b, c] = self.tris[i];
+                        let n = self.normals[i];
+                        let d = n.dot(e - s);
+                        if d == 0.0 {
+                            continue;
+                        }
+                        let t = n.dot(a - s) / d;
+                        if !(0.0..1.0).contains(&t) {
+                            continue;
+                        }
+                        let p = s + (e - s) * t;
+                        let d2 = (p - s).length_squared();
+                        if d2 < best && inside(a, b, c, p, n) {
+                            (best, hit) = (d2, Some(p));
+                        }
+                    }
+                }
+            }
+        }
+        hit
     }
 
     /// Distance along the segment `from -> to` to the first collision triangle, if any.
@@ -671,7 +730,10 @@ mod tests {
             }
         }
         let n = tris.len();
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid: None, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default() }
+        // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
+        let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
+        let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n] }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {

@@ -4941,6 +4941,9 @@ impl App {
                             _ => String::new(),
                         };
                         let expansions = if let Phase::Characters { expansions, .. } = &self.phase { *expansions & self.installed } else { 0 };
+                        // The effects' GPU side caches by the World's registry ids (library, texture, mesh); a new
+                        // World starts a new registry, so the old session's cache would draw the wrong ones.
+                        self.effects_gpu = None;
                         self.phase = Phase::World(Box::new(World {
                             features,
                             net,
@@ -6150,7 +6153,16 @@ impl App {
                     world.party.list(&u, world.my_id, create);
                 }
                 NetEvent::PartyAttr(u) => world.party.attr(&u),
-                NetEvent::MagicKnown(bits) => world.spells_known = bits,
+                NetEvent::MagicKnown(bits) => {
+                    // A spell learned mid-session (a blue spell, a scroll) shows in the log as its new bit.
+                    if !world.spells_known.is_empty() {
+                        let new: Vec<usize> = (0..bits.len() * 8).filter(|&i| bits[i / 8] >> (i % 8) & 1 != 0 && world.spells_known.get(i / 8).is_none_or(|b| b >> (i % 8) & 1 == 0)).collect();
+                        if !new.is_empty() {
+                            log::info!("0x0AA: spells now known {new:?}");
+                        }
+                    }
+                    world.spells_known = bits;
+                }
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
                 NetEvent::ResOffer { id, kind } if id == world.my_id && world.dead() => {
                     log::info!("0x0F9 offer {kind}");

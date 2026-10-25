@@ -7525,3 +7525,50 @@ Spec: `~/ffxi/lab/research/blue_magic_spec.md`. Ours: dat/blumagic.rs, client/bl
   0x7f; window fields (FUN_101c6790) use the same mode. Confirmed by the user's retail screenshot ("/p Hello!": the
   phrase light blue, the rest white). Replaces the inferred 2019 log table entry 0x69 (pink-violet) of
   "Auto-translate".
+
+## Camera collision as retail (2026-10-25)
+
+Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_1001e030], same code in both builds).
+
+- Correction to "Free camera": there is no sweep from the frame's start eye. The final ray runs from a stack copy of
+  the **look** (2019 asm 0x1001fc5d `[ESP+0xe4]`, slot +0xe0; Ghidra's `local_114` label is wrong). Ours swept from
+  the tick's start eye and stopped 0.2 short, which froze the orbit whenever that chord clipped relief (pilasters,
+  door frames, crate corners, uneven ground under a low eye): the user's "camera gets stuck".
+- Per tick now (ours; retail per frame): (A) when the unlock hold is over, the look -> eye ray puts the eye 0.5 in
+  front of a hit, toward the look (no lower bound), or, blocked with no camera input after 4 trail points, path mode;
+  an unblocked view records the look's trail (FUN_1001e320: a point 0.1 from the newest, count a wrapping i8). Path mode
+  replaces chase, spring, height memory and (A): the eye eases 5 % a tick toward the oldest point, ends within 0.05,
+  on camera input, or with the look 10 away. Then the tail, shared with the locked branch: (B) when the eye moved more
+  than 0.005 this tick *(inf: retail 0.01 a frame)* or in the 120 ticks after face() *(inf: 60 frames after a zone load)*,
+  0.17 clear of the floor below, else 0.17 under the ceiling above (each within 10); (C) the side bar (+-0.17 along the
+  camera x: two faces crossing it move the eye until the +x end touches the face nearest the -x end; one face, the same
+  point within 1e-4 from both ends *(inf)*, changes nothing); (D) free branch outside the unlock hold: the eye 0.2 in front
+  of what the look -> eye ray hits; (E) a move under 0.0001 snaps back.
+- Chase cam's push gate: with 0x91 on and the eye 1..3 out horizontally, a hit within 3.1 out from the look stops the
+  spring's push that tick.
+- Locked: the player (y - 1) -> eye ray, 0.2 in front (no lower bound), then the tail without (D).
+- The camera's segment test (Ground::cam_ray = FUN_10169140 / FUN_1016b1d0): pieces of 1 + trunc(len / 4), the first
+  with a hit; per piece the MZB cells within 2 of its start (none off the grid), object y range against the piece,
+  closed doors' boxes, both sides, 0 <= t < 1, edges inclusive 1e-4, the hit strictly nearest the start. Faces with a
+  non-zero mesh word (+0xe) and v2 bit 14 are camera-passable (crate / stall sides and low walls in towns, some trunks):
+  collision.rs keeps them as `cam_pass`. The floor ray keeps every face. Characters are never tested.
+- Not done yet: the near-camera character fade (FUN_100cd040: alpha 0 within 0.2 of point 12 horizontally, full from
+  about 0.44; the draw's 0.8 / 1.25 rule), Mog House furniture in the camera ray.
+
+## Relogging: the effects' GPU caches (2026-10-25)
+
+- The user's report: after logging out and back in without restarting, the sky and hit effects drew wrong (stretched
+  cloud textures over the sky, broken sparks). EffectsGpu (App-level) cached bind groups by (library, texture) and
+  meshes by mesh id, both indices into the World's effect registry; a new World starts a new registry at 0, so the old
+  session's textures and models came back under the new ids. The World's EffectsGpu is now dropped when a World starts
+  (the lobby's LobbyFx owns its own and was not affected). Not yet seen relogged live.
+- Open: the gray select screen on the same relog (the select scene loaded, effects and 24 textures, but drew nothing).
+
+## Blue learning (2026-10-25)
+
+- LSB (blueutils TryLearningSpells, at the mob's death with our claim, no call for help): BLU main, within 100, the
+  spell's skill cap - 31 <= our Blue Magic skill, then 33 %; one try a kill. The mob's used-move list is cleared
+  whenever it is at full HP out of a fight (mob_controller), so a move forced before engaging never counts.
+- The user learned Pollen on Testerthree but saw no "learns" line. Battle message 419 (filter kind 7, every table word
+  0, no screen kind, mode 0x81) prints when injected (`!inject` of the 0x029 LSB sends). Not found yet; the log now
+  records battle messages to and from us (debug) and new 0x0AA spell bits (info).

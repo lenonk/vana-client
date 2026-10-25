@@ -856,24 +856,14 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let goal = len.clamp(near + d / 2.0, far + d / 2.0);
     let len = len + (goal - len) * k;
     let mut eye = c.look + dir * len;
-    // FUN_1017a6b0: a ray from the player (y - 1) to the eye; on a hit the eye goes 0.2 in front.
+    // FUN_101815b0: a ray from the player (y - 1) to the eye; on a hit the eye goes 0.2 in front, toward the player.
+    // Then the shared tail without its final ray (the lock keeps the unlock hold at 20).
     let from = me + Vec3::new(0.0, -1.0, 0.0);
-    if let Some(hit) = w.ground.as_ref().and_then(|g| g.raycast(from, eye)) {
-        eye = from + (eye - from).normalize_or(Vec3::X) * (hit - 0.2).max(0.2);
-    }
-    // FUN_1001ee60's shared tail, after both branches: 0.17 clear of the floor below (within 10), and the eye never
-    // passes through a wall: a sweep from where it was stops 0.2 short (as camera.rs does for the free camera).
     if let Some(g) = w.ground.as_ref().filter(|g| !g.is_empty()) {
-        if let Some(f) = g.floor(eye.x, eye.z, eye.y, 0.0).filter(|f| f - eye.y <= 10.0)
-            && eye.y > f - 0.17
-        {
-            eye.y = f - 0.17;
+        if let Some(h) = g.cam_ray(from, eye) {
+            eye = h + (h - eye).normalize_or_zero() * 0.2;
         }
-        if g.raycast(from, c.eye).is_none()
-            && let Some(t) = g.raycast(c.eye, eye)
-        {
-            eye = c.eye + (eye - c.eye).normalize_or(Vec3::X) * (t - 0.2).max(0.0);
-        }
+        eye = super::camera::tail(g, eye, c.look, c.eye, false, false);
     }
     c.eye = eye;
     w.cam = c;

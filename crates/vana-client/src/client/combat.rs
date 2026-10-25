@@ -370,6 +370,9 @@ pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
         log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
         w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
     }
+    if m.actor == w.my_id || m.target == w.my_id {
+        log::debug!("battle message {} {:#x} -> {:#x} data {:?}", m.message, m.actor, m.target, m.data);
+    }
     print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
 }
 

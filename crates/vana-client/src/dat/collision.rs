@@ -13,6 +13,8 @@ pub struct Collision {
     pub tris: Vec<[Vec3; 3]>,
     /// Geometry flags per triangle; bit 0: does not block line of sight.
     pub flags: Vec<u16>,
+    /// The camera's rays pass the face: its mesh word (+0xe) is non-zero and its v2 word has bit 14 (FUN_1016b1d0).
+    pub cam_pass: Vec<bool>,
     /// Stored face normal in world space (y < 0 faces up).
     pub normals: Vec<Vec3>,
     /// Surface type: bit 15 of v0 | v1 << 1 | v2 << 2 | normal << 3 (FUN_10162590 +0x34148).
@@ -88,7 +90,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
     };
     let mut objects: HashMap<usize, u32> = HashMap::new();
     let mut seen: HashMap<(usize, usize), u32> = HashMap::new();
-    let mut out = Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: (w, h) };
+    let mut out = Collision { tris: Vec::new(), flags: Vec::new(), cam_pass: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: (w, h) };
     for y in 0..h {
         for x in 0..w {
             let Some(entry) = u32_at(p, grid_at + (y * w + x) * 4).map(|e| e as usize) else { continue };
@@ -156,6 +158,7 @@ impl Collision {
                 self.tris.push([verts[t[0]], verts[t[1]], verts[t[2]]]);
                 self.normals.push(turn(Vec3::from(NORMALS[t[3]])));
                 self.flags.push(0);
+                self.cam_pass.push(false);
                 self.kinds.push(0);
                 self.object.push(obj);
             }
@@ -176,7 +179,7 @@ impl Collision {
     }
 
     pub fn empty(grid: (usize, usize)) -> Collision {
-        Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); grid.0 * grid.1], grid }
+        Collision { tris: Vec::new(), flags: Vec::new(), cam_pass: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); grid.0 * grid.1], grid }
     }
 
     /// The zone's collision with a sub-area's merged in (FUN_10167be0): its faces join the zone's grid cells after
@@ -184,7 +187,7 @@ impl Collision {
     /// loaded id, FUN_10182700).
     pub fn merged(&self, sub: &Collision, link: u32) -> Collision {
         let (w, h) = self.grid;
-        let mut out = Collision { tris: Vec::new(), flags: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: self.grid };
+        let mut out = Collision { tris: Vec::new(), flags: Vec::new(), cam_pass: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: self.grid };
         for (src, skip) in [(self, Some(link)), (sub, None)] {
             let base = out.objects.len() as u32;
             out.objects.extend(src.objects.iter().cloned());
@@ -197,6 +200,7 @@ impl Collision {
                 let first = out.tris.len() as u32;
                 out.tris.extend_from_slice(&src.tris[r.clone()]);
                 out.flags.extend_from_slice(&src.flags[r.clone()]);
+                out.cam_pass.extend_from_slice(&src.cam_pass[r.clone()]);
                 out.normals.extend_from_slice(&src.normals[r.clone()]);
                 out.kinds.extend_from_slice(&src.kinds[r.clone()]);
                 out.object.extend(src.object[r].iter().map(|o| o + base));
@@ -245,6 +249,7 @@ fn add_geometry(p: &[u8], xf: usize, geo: usize, obj: u32, out: &mut Collision) 
         out.normals.push(nmat * n);
         out.kinds.push(((w[0] >> 15) | (w[1] >> 15) << 1 | (w[2] >> 15) << 2 | (w[3] >> 15) << 3) as u8);
         out.flags.push(flags);
+        out.cam_pass.push(flags != 0 && w[2] & 0x4000 != 0);
         out.object.push(obj);
     }
 }

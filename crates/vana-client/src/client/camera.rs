@@ -1,7 +1,8 @@
-//! The game camera (FUN_1001e030): one eye and look point (camera object +0x44 / +0x50) for the free, locked and
-//! first-person views. The free branch runs in whole 1/60 s ticks and is drawn between the last two tick states.
-//! Spec with addresses: MODLOG "Free camera".
+//! The game camera (FUN_1001ee60 [FUN_1001e030]): one eye and look point (camera object +0x44 / +0x50) for the free,
+//! locked and first-person views. The free branch runs in whole 1/60 s ticks and is drawn between the last two tick
+//! states. Specs: MODLOG "Free camera", ~/ffxi/lab/research/camera_collision_spec.md (the collision).
 
+use super::ground::Ground;
 use super::target::LockCam;
 use super::World;
 use crate::render::Camera;
@@ -49,6 +50,13 @@ pub struct State {
     /// Our own model's fade (actor +0x167): out in first person, 0.0625 a tick.
     pub self_alpha: f32,
     started: bool,
+    /// Path mode (DAT_10456d70): the look's last four points (+0xbc, newest first), how many were recorded (+0xf0, a
+    /// signed char), and the eye retracing them.
+    path: [Vec3; 4],
+    path_n: i8,
+    path_mode: bool,
+    /// DAT_10456d80: ticks after a zone load that run the floor / ceiling / bar tests with the eye at rest.
+    zone_in: i32,
 }
 
 impl State {
@@ -105,13 +113,15 @@ pub fn face(w: &mut World, yaw: f32) {
     let (back, up) = if w.myroom.is_some() { (3.0, 1.5) } else { (4.0, 2.0) };
     let mut eye = super::drawn_pos(w) - f * back + Vec3::new(0.0, -up, 0.0);
     // Not inside the hill behind: in front of what the look -> eye ray hits.
-    if let Some(t) = w.ground.as_ref().and_then(|g| g.raycast(look, eye)) {
-        eye = look + (eye - look).normalize_or(Vec3::Z) * (t - 0.5).max(0.3);
+    if let Some(h) = w.ground.as_ref().and_then(|g| g.cam_ray(look, eye)) {
+        eye = look + (eye - look).normalize_or(Vec3::Z) * ((h - look).length() - 0.5).max(0.3);
     }
     w.cam = LockCam { eye, look };
     w.camst.prev = w.cam;
     w.camst.acc = 0.0;
     w.camst.started = true;
+    // FUN_10184380 -> FUN_1001d480: 60 frames *(inf: also after events and drives, which face() serves too)*.
+    (w.camst.zone_in, w.camst.path_n, w.camst.path_mode) = (120, 0, false);
     w.yaw = yaw;
 }
 
@@ -168,6 +178,8 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
         first_person(w, ticks, inp);
         return;
     }
+    // The frame's start eye (slot +0xd4) is taken before any of its turns; the collision tail's gate measures from it.
+    let mut frame_start = Some(w.cam.eye);
     // Direct turns: mouse drag (applied by drag()), screen edge and the player's Q / E turn.
     let turn = inp.edge + inp.turn;
     if turn != 0.0 {
@@ -197,19 +209,22 @@ pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
             break;
         }
         w.camst.prev = w.cam;
-        tick(w, target, player, facing, chase, inp);
+        tick(w, target, player, facing, chase, inp, frame_start.take());
     }
     if let Some(y) = view_yaw(&w.cam) {
         w.yaw = y;
     }
 }
 
-/// One tick of the free branch: look easing, the axes, the spring, chase, height memory, Home and the eye's
-/// collision (section 6 without path mode and the side rays).
-fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, inp: &Inputs) {
+/// One tick of the free branch: look easing, the axes, the spring (or path mode), chase, height memory, the look ->
+/// eye ray (A), Home and the shared collision tail. `frame_start`: the eye before this frame's direct turns (first tick).
+fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, inp: &Inputs, frame_start: Option<Vec3>) {
+    // _DAT_10456d7c: (A) and the final ray wait for the unlock hold (20 after the lock, 8 after first person).
+    let unlocked = w.unlock_ticks <= 0.0;
+    let ground = w.ground.as_ref().filter(|g| !g.is_empty());
     let st = &mut w.camst;
     let c = &mut w.cam;
-    let start = c.eye;
+    let start = frame_start.unwrap_or(c.eye);
     c.look += (target - c.look) * 0.25;
     if let Some(off) = st.face {
         c.eye = c.look + off;
@@ -225,7 +240,9 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
             }
         }
         w.unlock_ticks = (w.unlock_ticks - 1.0).max(0.0);
-        if w.unlock_ticks <= 0.0 {
+        if st.path_mode {
+            path_tick(st, c);
+        } else if w.unlock_ticks <= 0.0 {
             let d_vec = c.look - c.eye;
             let d = d_vec.length();
             // Chase cam (0x91): waits after manual input until the player has moved, then drifts 2.5 % a tick
@@ -249,16 +266,35 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
                     }
                 }
             }
-            if spring(c, d_vec) {
+            // 2019 0x1001eb4a: with chase cam on and the eye 1..3 out horizontally, a wall within 3.1 out from the look
+            // stops the spring's push this tick.
+            let h = Vec3::new(c.eye.x - c.look.x, 0.0, c.eye.z - c.look.z);
+            let push = !(chase && h.length() > 1.0 && h.length() < REST_NEAR && ground.is_some_and(|g| g.cam_ray(c.look, c.look + h.normalize() * 3.1).is_some()));
+            if spring(c, d_vec, push) {
                 st.hold = MANUAL_HOLD;
             }
         }
         st.hold = (st.hold - 1).max(0);
         // Height memory: walking uphill the eye keeps its height above the look.
-        if st.hold == 0 && w.unlock_ticks <= 0.0 {
+        if !st.path_mode && st.hold == 0 && w.unlock_ticks <= 0.0 {
             let dy = (c.eye.y - c.look.y).abs();
             if dy < st.last_dy && c.eye.y < c.look.y {
                 c.eye.y -= st.last_dy - dy;
+            }
+        }
+        // (A) 2019 0x1001f0cc: the eye 0.5 in front of what the look -> eye ray hits; with the view blocked after the
+        // look has moved on (4 points recorded) and no camera input, path mode instead. An unblocked view records the
+        // look's trail.
+        if !st.path_mode && unlocked && let Some(g) = ground {
+            match g.cam_ray(c.look, c.eye) {
+                Some(_) if st.hold == 0 && st.path_n >= 4 => (st.path_mode, st.hold) = (true, 0),
+                Some(h) => c.eye = h + (h - c.eye).normalize_or_zero() * 0.5,
+                // FUN_1001e320: a point 0.1 or more from the newest.
+                None if (c.look - st.path[0]).length() >= 0.1 => {
+                    st.path = [c.look, st.path[0], st.path[1], st.path[2]];
+                    st.path_n = st.path_n.wrapping_add(1);
+                }
+                None => {}
             }
         }
     }
@@ -273,31 +309,90 @@ fn tick(w: &mut World, target: Vec3, player: Vec3, facing: Vec3, chase: bool, in
             st.home = 0;
         }
     }
-    if let Some(g) = w.ground.as_ref().filter(|g| !g.is_empty()) {
-        // The look -> eye ray puts the eye 0.5 in front of a wall.
-        if let Some(t) = g.raycast(c.look, c.eye) {
-            c.eye = c.look + (c.eye - c.look).normalize_or(Vec3::Z) * (t - 0.5).max(0.0);
-        }
-        // 0.17 clear of the floor below (within 10).
-        if let Some(f) = g.floor(c.eye.x, c.eye.z, c.eye.y, 0.0).filter(|f| f - c.eye.y <= 10.0)
-            && c.eye.y > f - 0.17
-        {
-            c.eye.y = f - 0.17;
-        }
-        // The eye never passes through a wall: a sweep from where it was stops 0.2 short. Not from an eye the look
-        // could not see (inside geometry), or it would stay there *(inf)*.
-        if g.raycast(c.look, start).is_none()
-            && let Some(t) = g.raycast(start, c.eye)
-        {
-            c.eye = start + (c.eye - start).normalize_or(Vec3::Z) * (t - 0.2).max(0.0);
-        }
+    if let Some(g) = ground {
+        c.eye = tail(g, c.eye, c.look, start, st.zone_in > 0, unlocked);
     }
+    st.zone_in = (st.zone_in - 1).max(0);
     st.last_dy = (c.eye.y - c.look.y).abs();
 }
 
+/// Path mode (2019 0x1001e7e9), in place of chase, spring, height memory and (A): camera input ends it; otherwise the
+/// eye eases 5 % a tick toward the oldest trail point and stops within 0.05 of it, or when the look is 10 away.
+fn path_tick(st: &mut State, c: &mut LockCam) {
+    if st.hold != 0 {
+        st.path_n = 0;
+    }
+    if st.path_n < 4 {
+        (st.path_n, st.path_mode) = (0, false);
+        return;
+    }
+    let p = st.path[3];
+    if (p - c.eye).length() <= 0.05 {
+        (st.path_n, st.path_mode) = (0, false);
+    } else {
+        c.eye += (p - c.eye) * 0.05;
+    }
+    if (p - c.look).length() > 10.0 {
+        (st.path_n, st.path_mode) = (0, false);
+    }
+}
+
+/// FUN_1001ee60's tail for the free and locked branches: when the eye moved this frame (or just after a zone load),
+/// (B) 0.17 clear of the floor below or else of the ceiling above (each within 10) and (C) the side bar; then (D) on
+/// the free branch outside the unlock hold, the eye 0.2 in front of what the look -> eye ray hits; (E) a move under
+/// 0.0001 snaps back. Nothing refuses a move: the eye always lands where the look can see it.
+pub(super) fn tail(g: &Ground, mut eye: Vec3, look: Vec3, start: Vec3, zone_in: bool, final_ray: bool) -> Vec3 {
+    // 2019 0x1001f958: |eye - start| > 0.01 a frame *(inf: 0.005 a tick)*.
+    if (eye - start).length() > 0.005 || zone_in {
+        let floor = g.floor(eye.x, eye.z, eye.y, 0.0).filter(|f| f - eye.y <= 10.0);
+        match floor {
+            Some(f) if eye.y > f - 0.17 => eye.y = f - 0.17,
+            _ => {
+                let up = Vec3::new(eye.x + 1e-6, eye.y, eye.z + 1e-6);
+                if let Some(h) = g.cam_ray(up, up - Vec3::new(0.0, 10.0, 0.0))
+                    && eye.y < h.y + 0.17
+                {
+                    eye.y = h.y + 0.17;
+                }
+            }
+        }
+        eye = side_bar(g, eye, look);
+    }
+    if final_ray && let Some(h) = g.cam_ray(look, eye) {
+        eye = h + (h - eye).normalize_or_zero() * 0.2;
+    }
+    if (eye - start).length() < 0.0001 { start } else { eye }
+}
+
+/// (C) 2019 0x1001fa16: a bar of +-0.17 along the camera's x through the eye; crossing two faces (a pole, a corner, a
+/// thin wall) the eye moves sideways until the bar's +x end touches the face nearest its -x end. One face crossing it
+/// (the same point from both ends) changes nothing *(inf: within 1e-4, retail compares exactly in camera space)*.
+fn side_bar(g: &Ground, eye: Vec3, look: Vec3) -> Vec3 {
+    let x = Vec3::NEG_Y.cross(eye - look).normalize_or_zero();
+    if x == Vec3::ZERO {
+        return eye;
+    }
+    let (l, r) = (eye - x * 0.17, eye + x * 0.17);
+    let (h1, h2) = (g.cam_ray(r, l), g.cam_ray(l, r));
+    if let (Some(a), Some(b)) = (h1, h2)
+        && (a - b).length() < 1e-4
+    {
+        return eye;
+    }
+    let mut out = eye;
+    if let Some(h) = h1 {
+        out = eye + x * ((h - eye).dot(x) + 0.17);
+    }
+    if let Some(h) = h2 {
+        out = eye + x * ((h - eye).dot(x) - 0.17);
+    }
+    out
+}
+
 /// The distance spring, one tick, `d_vec` = look - eye before the chase: reeled in beyond 6 (past 100 by half the
-/// excess), pushed out below 3 and to 3 horizontally. True when it pushed (that holds like manual input).
-fn spring(c: &mut LockCam, d_vec: Vec3) -> bool {
+/// excess), pushed out below 3 and to 3 horizontally unless `push` is off. True when it pushed (that holds like manual
+/// input).
+fn spring(c: &mut LockCam, d_vec: Vec3, push: bool) -> bool {
     let d = d_vec.length();
     if d > 100.0 {
         c.eye += d_vec / d * (d - 100.0) * 0.5;
@@ -305,6 +400,9 @@ fn spring(c: &mut LockCam, d_vec: Vec3) -> bool {
         c.eye += d_vec * (d - REST_FAR) * 0.012;
     }
     let mut pushed = false;
+    if !push {
+        return pushed;
+    }
     if d < REST_NEAR {
         c.eye -= d_vec * (REST_NEAR - d) * 0.125;
         pushed = true;
@@ -417,7 +515,7 @@ mod tests {
             let mut c = LockCam { eye: Vec3::new(0.0, 0.0, -start), look: Vec3::ZERO };
             for _ in 0..2000 {
                 let d = c.look - c.eye;
-                spring(&mut c, d);
+                spring(&mut c, d, true);
             }
             let d = (c.eye - c.look).length();
             assert!((d - rest).abs() < 0.02, "{start} -> {d}");
