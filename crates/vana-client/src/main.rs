@@ -1107,7 +1107,9 @@ fn main() -> Result<()> {
                         fx.load_sub_area(fx::lib::Library::load(dat::zone::file_id(*id), f.clone())?);
                     }
                     fx.set_weather(&weather, 0.0);
-                    if let Some(name) = start.as_deref().and_then(|s| <[u8; 4]>::try_from(s.as_bytes()).ok())
+                    // Names under 4 letters are NUL padded ("c37" is c37 NUL).
+                    let fourcc = |s: &str| (s.len() <= 4).then(|| std::array::from_fn::<u8, 4, _>(|i| s.as_bytes().get(i).copied().unwrap_or(0)));
+                    if let Some(name) = start.as_deref().and_then(fourcc)
                         && let Some(l) = fx.reg.lib_of(dat::zone::file_id(zone))
                         && let Some(n) = fx.reg.libs[l].find_global(dat::generator::kind::GENERATOR, u32::from_le_bytes(name))
                     {

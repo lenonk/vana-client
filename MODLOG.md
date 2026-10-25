@@ -3242,7 +3242,13 @@ From classes2.md section 3 and ~/ffxi/lab/research/effects/point_lights.md.
   the actor lighting. The light buffer's second vec4 is now (rgb / 128 or 0 when unlit, I). Not checked on screen
   (no lamp near the test character); retail copies the lights at the ground probe (every 121 updates), here every
   frame; the per-material light factor f (FUN_100216a0) is not applied.
-- Not done: moving parts (FUN_1017ce60, no 'c' skip), the bump-map vertex-shader path (config 0017),
+- Moving parts (2026-10-25): FUN_10173ee0 walks the door-group objects FUN_10173a50 builds (placements with ids
+  '_' / '@', at most 4 parts) and draws each part through FUN_1017ce60, which enables every light ref, 'c' keys too.
+  Ours: a door part's instance takes every key (ZoneGeometry::build_keyed). In this install no door part has a 'c'
+  ref (a scan of zones 0..299: only Port Jeuno's ent_iri1 x 4, ids ent4..ent7, carry c37 / c41 / c45 / c49, and
+  'e' ids are neither scenery nor door groups), so nothing changes on screen today. zone-shot --start pads short
+  names (c37).
+- Not done: the bump-map vertex-shader path (config 0017),
   the slot leak for refs to 'c' / unknown keys, the windowed-mode gamma boost (FUN_1000b290), the two-area-light
   scenery mode, unnormalised normals of scaled placements.
 

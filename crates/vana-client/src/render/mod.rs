@@ -913,9 +913,9 @@ impl ZoneGeometry {
         // A placement's refs become their table slot + 1, except keys starting with 'c', which the main scenery
         // path skips (FUN_10175ac0).
         let light_keys: Vec<u32> = keys.iter().copied().take(LIGHTS).collect();
-        let slot_of = |key: u32| -> u32 {
+        let slot_of = |key: u32, part: bool| -> u32 {
             match light_keys.iter().position(|&k| k == key) {
-                Some(s) if key != 0 && key as u8 != b'c' => s as u32 + 1,
+                Some(s) if key != 0 && (part || key as u8 != b'c') => s as u32 + 1,
                 _ => 0,
             }
         };
@@ -927,7 +927,6 @@ impl ZoneGeometry {
         let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
         let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool)>> = HashMap::new();
         for p in scene.placements.iter().filter(|p| p.drawn()) {
-            let lights = p.lights.map(slot_of);
             let area = match area_keys.iter().position(|&k| k == p.area) {
                 _ if p.area == 0 => 0,
                 Some(s) => s as u32 + 1,
@@ -967,6 +966,8 @@ impl ZoneGeometry {
                     door_bases.entry(p.id).or_default().push(glam::Mat4::from_cols_array_2d(&p.matrix()));
                 }
             }
+            // Door parts draw through FUN_1017ce60 (2019), which takes every ref, 'c' keys too.
+            let lights = p.lights.map(|k| slot_of(k, part != 0));
             for (name, b) in bands {
                 let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, 0.0] };
                 by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0));
