@@ -7262,7 +7262,8 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   black silhouette in the user's retail shot. Ours faded alpha only.
 - Ours: Actor.rgb (bytes, 0x80 = 1.0) faded with the alpha (Fade::argb); the pose header's second row carries it
   (area, r, g, b) and lit_actor multiplies the ambient and diffuse terms (not the cloth emissive) by it.
-- Not done: FUN_1005f6c0's other colour (param 6 set: vtable +0x40c / +0x60 (the overlay colour +0x74c; +0x410 is the overlay U setter)), the CMoLockColorDriveTask check.
+- FUN_1005f6c0's other colour (param 6 = 1, ops 0x46 / 0x47: the overlay colour +0x74c) and the
+  CMoLockColorDriveTask check: done (section "Colour drives: op 0x88's lock, op 0xa0, drives with their scheduler").
 - The user checked level down's text height against retail again: ours is right (start 0.7 above point 0, the feet;
   elem +0x128 from op 0x72 is only the sort key, FUN_100440d0).
 
@@ -8531,3 +8532,19 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   with status 0 on the riding run `6un`; `coff` 7 ms after `6hi`.
 - Left as the spec found: op 0x6e for actors other than a leaving animal (no data reaches it), `cdam` (only through
   s2c 0x038 on the rider, which ours routes), ops 0x9c / 0x9d (no file), the 0x038 handler's filters.
+
+## Colour drives: op 0x88's lock, op 0xa0, drives with their scheduler (2026-10-25; spec ~/ffxi/lab/research/fx_sched_misc_spec.md 1)
+
+- CMoActorColorDriveTask (FUN_1005f6c0, 0x88 bytes): ops 0x29 (actor1) / 0x2a (actor2) / 0xa0 (actor1) channel 0
+  (model colour), 0x46 / 0x47 channel 1 (overlay colour); a child of its scheduler task. The constructor walks the
+  actor's task list: a CMoLockColorDriveTask (op 0x88, FUN_1005f320) whose scheduler is another sets +0x85 (this drive
+  never writes; its first update deletes it); a drive of the same channel is deleted (its destructor runs) first.
+  Update FUN_1005f820: rem -= frame ticks, per byte trunc(start + (target - start) k), deleted below 0. Destructor
+  FUN_1005f990: +0x86 (param 7, only op 0xa0) writes the target. So a scheduler cut short freezes its fades where
+  they are and snaps 0xa0's; a lock made after a drive started does not stop it. Op 0x88's own destructor with time
+  left writes 0x80808080.
+- Data: no 0x29 (8,085) or 0x2a (1,850) drive runs past its scheduler's end op, so the freeze shows only when a
+  scheduler is killed early; 0xa0 has no use in any DAT.
+- Ours: Effects::fades is ColorOp (Drive / Freeze / Snap); fx keeps the running channel-0 drives (owner task, ticks,
+  target, snap) and the locks; the client steps the fades as before, Freeze clears the fade, Snap sets the colour.
+  Tests color_lock, color_drive_ends, blocked_drive_stops_running_fade.
