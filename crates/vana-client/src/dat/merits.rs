@@ -14,14 +14,12 @@ fn u32_at(d: &[u8], o: usize) -> u32 {
 }
 
 /// A merit category (file 89, 96 x 12, the record number = the list position, FUN_10160f00): u16 @0 its name id
-/// (FUN_10161070: strings[2 x u16 @0]), @3 the category id, @4 the cap (total upgrades), u32 @8 the job mask.
+/// (FUN_10161070: strings[2 x u16 @0]), @3 the category id, @4 the cap (total upgrades); u32 @8 a job mask (unread).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct MeritCat {
-    pub pos: u16,
     pub name: u16,
     pub id: u8,
     pub cap: u8,
-    pub jobs: u32,
 }
 
 /// A merit (file 88, 3072 x 12, record = index = category * 32 + k): @4 the most upgrades (0 = none), u32 @8 the jobs.
@@ -41,7 +39,7 @@ impl MeritTables {
     pub fn load(index: &DatIndex, names: Option<u32>) -> MeritTables {
         let read = |f: u32| index.read(f).map_err(|e| log::warn!("merit table {f}: {e:#}")).unwrap_or_default();
         let (c, e) = (read(89), read(88));
-        let cats = c.chunks_exact(12).enumerate().map(|(i, r)| MeritCat { pos: i as u16, name: u16_at(r, 0), id: r[3], cap: r[4], jobs: u32_at(r, 8) }).collect();
+        let cats = c.chunks_exact(12).map(|r| MeritCat { name: u16_at(r, 0), id: r[3], cap: r[4] }).collect();
         let entries = e.chunks_exact(12).map(|r| MeritEntry { max: r[4], jobs: u32_at(r, 8) }).collect();
         let names = names.and_then(|f| DMsg::load(index, f).map_err(|e| log::warn!("merit names {f}: {e:#}")).ok());
         MeritTables { cats, entries, names }

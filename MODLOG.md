@@ -7327,3 +7327,10 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` sections 1, 2 (client/merits.rs, 
   points (Mog House only; a raise would leave merit rows on the test character), the mouse on jbpcat's page areas
   (children 11 / 12). Not done: Alter Ego Points (fp_cat / fp_cat2 / fp_info, 0x08E).
 - statcom2's rows link 1, 2, 12, 3, 4, 5, 6, 10, 11, 9, 7, 8, 13 (wrapping): Merit Points is three Ups from row 1.
+
+## Chat line text, width and caret (2026-10-25)
+
+- FUN_101b7fd0 draws the line at (x0 + 2, y0 + 3); FUN_10190280 cuts and scrolls it to inline +0x34 = the log text
+  width - 86 (its fifth argument). The caret is a game-font "|" put after the text before the 7F FF marker, not
+  counted in the width, drawn while inline +0x20 (0..25, one a draw at 30 fps) is 10..24. Ours drew a 2 x 14 bar on a
+  1 s blink, the text at (+4, +2), cut at width - 20.

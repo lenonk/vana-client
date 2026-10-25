@@ -2136,7 +2136,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let at = fep::caret(world);
         let mut before = fep::pieces(world, &world.chat_input.chars().take(at).collect::<String>());
         let after = fep::pieces(world, &world.chat_input.chars().skip(at).collect::<String>());
-        let room = tw - 20.0;
+        // FUN_10190280 cuts the line to inline +0x34 = the log's text width - 86.
+        let room = tw - 86.0;
         let width = |p: &[(String, bool)]| p.iter().map(|(t, _)| gu.text_width(t)).sum::<f32>();
         while width(&before) > room && !before.is_empty() {
             let t = &mut before[0].0;
@@ -2167,18 +2168,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 break;
             }
         }
-        let mut cx = x + 2.0 + 2.0;
+        // FUN_101b8660 at (x0 + 2, y0 + 3).
+        let mut cx = x + 2.0;
         let caret_x = cx + width(&before);
         let mut word_x = cx;
         for (t, phrase) in &pieces {
-            gu.text(t, cx, y + 2.0, 0, if *phrase { PHRASE } else { WHITE });
+            gu.text(t, cx, y + 3.0, 0, if *phrase { PHRASE } else { WHITE });
             if !*phrase {
                 word_x = cx + t.rfind(' ').map_or(0.0, |i| gu.text_width(&t[..=i]));
             }
             cx += gu.text_width(t);
         }
-        if gu.blink() {
-            gu.rect(caret_x, y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
+        // The caret: a '|' after the text before it, not counted in the width, while inline +0x20 (0..25 a draw at 30
+        // fps) is 10..24.
+        let phase = (world.started.elapsed().as_secs_f32() * 30.0) as u64 % 26;
+        if (10..=24).contains(&phase) {
+            gu.text("|", caret_x, y + 3.0, 0, WHITE);
         }
         blockers.push([x, y, w, 22.0]);
         if let Some(f) = &world.fep {
