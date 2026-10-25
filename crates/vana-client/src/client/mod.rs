@@ -85,6 +85,7 @@ mod seacom;
 mod region;
 mod radar;
 mod ride;
+mod indi;
 mod status;
 mod inspect;
 mod linehist;
@@ -339,6 +340,8 @@ struct Entity {
     spawn_fx: bool,
     /// 0x00D's riding fields (ride.rs).
     ride: net::Ride,
+    /// The Geomancer Indi aura (0x00D @0x42, client/indi.rs).
+    aura: indi::Aura,
     /// Entity +0x1d8: an "menu    ncol" index event op 0xae 1 forces the name colour to, 0x17 none (op 0xae 2).
     name_ncol: u16,
     /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
@@ -976,6 +979,7 @@ fn self_entity(w: &World) -> Entity {
         face: 0,
         spawn_fx: false,
         ride: Default::default(),
+        aura: Default::default(),
         name_ncol: 0x17,
         marks: net::Marks::default(),
         female: false,
@@ -2977,6 +2981,7 @@ fn place_mogdoor(w: &mut World) {
             face: 0,
             spawn_fx: false,
             ride: Default::default(),
+            aura: Default::default(),
             name_ncol: 0x17,
             marks: net::Marks::default(),
             female: false,
@@ -3442,6 +3447,11 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     if let Some((pos, yaw)) = w.furniture.place_of(id) {
         return Some(Place { pos, forward: Vec3::new(yaw.cos(), 0.0, -yaw.sin()), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
     }
+    // FUN_100c9810: an Indi aura stands at its owner's ground place, scaled by its size.
+    if id & indi::AURA != 0 {
+        let p = base_place(w, id & !indi::AURA, my_dir)?;
+        return Some(Place { status: 0, tilt: [0.0; 2], ratio: 0.0, size: indi::size(w, id)?, ..p });
+    }
     if id & ride::ANIMAL != 0 {
         if let Some((pos, forward)) = ride::left_at(w, id) {
             return Some(Place { pos, forward, tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
@@ -3807,6 +3817,8 @@ struct World {
     event_looks: Vec<(u32, Source)>,
     /// Our riding fields (0x037, 0x067), and every rider's state (ride.rs).
     my_ride: net::Ride,
+    /// Our Geomancer Indi aura (s2c 0x037 @0x58, client/indi.rs).
+    my_aura: indi::Aura,
     rides: HashMap<u32, ride::Riding>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
@@ -5450,6 +5462,7 @@ impl App {
                             event_voices: false,
                             event_looks: Vec::new(),
                             my_ride: Default::default(),
+                            my_aura: Default::default(),
                             rides: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
@@ -6036,6 +6049,7 @@ impl App {
                         if !event::holds(world, e.id) {
                             world.entities.remove(&e.id);
                             world.actors.remove(&e.id);
+                            world.effects.forget_actor(e.id);
                         }
                         continue;
                     }
@@ -6097,6 +6111,7 @@ impl App {
                         face: 0,
                         spawn_fx: false,
                         ride: Default::default(),
+                        aura: Default::default(),
                         name_ncol: 0x17,
                         marks: net::Marks::default(),
                         female: false,
@@ -6137,6 +6152,13 @@ impl App {
                     }
                     if let Some(r) = e.ride {
                         entry.ride = r;
+                    }
+                    // FUN_1009ad20: a new element or size while on drops the shown aura now.
+                    if let Some(b) = e.indi
+                        && indi::set(&mut entry.aura, indi::Indi::from_byte(b))
+                    {
+                        world.actors.remove(&(indi::AURA | e.id));
+                        world.effects.forget_actor(indi::AURA | e.id);
                     }
                     if let Some(m) = e.marks {
                         entry.marks = m;
@@ -6454,8 +6476,10 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi } => {
                     (world.my_ride.chocobo, world.my_ride.mount) = ride;
+                    let me = world.my_id;
+                    indi::apply(world, me, indi);
                     world.my_plate = plate;
                     world.my_fellow = fellow;
                     world.self_flags = flags;
@@ -6864,6 +6888,7 @@ impl App {
             actmotion::play_op(world, id, m);
         }
         ride::update(world, dt);
+        indi::update(world, dt);
         actmotion::update(world, dt);
         // Inferred safety: a talk the server never answers stops blocking after 10 s.
         if world.talk_lock.is_some_and(|t| t.elapsed().as_secs_f32() > 10.0) {
@@ -8999,7 +9024,7 @@ impl App {
                 hidden.extend(pcs[cap..].iter().map(|p| p.1));
             }
             // A riding animal goes with its rider; a rider waits hidden for its mount.
-            let animals: Vec<u32> = hidden.iter().map(|id| ride::ANIMAL | id).collect();
+            let animals: Vec<u32> = hidden.iter().flat_map(|id| [ride::ANIMAL | id, indi::AURA | id]).collect();
             hidden.extend(animals);
             hidden.extend(ride::hidden(w));
             let idles = event::idles(w);

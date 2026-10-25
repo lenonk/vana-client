@@ -303,6 +303,29 @@ impl Effects {
         }
     }
 
+    /// The actor's destructor (FUN_10082b10): every effect that has it as caster or target forgets it and runs on
+    /// without (the attach modes then give the identity, 0x1003c5f0); starts waiting on its own files go.
+    pub fn forget_actor(&mut self, id: u32) {
+        let who = Who::Actor(id);
+        let clear = |w: &mut Who| {
+            if *w == who {
+                *w = Who::None;
+            }
+        };
+        self.pending.retain(|p| p.actor != Some(id));
+        for p in &mut self.pending {
+            clear(&mut p.a1);
+            clear(&mut p.a2);
+        }
+        for t in self.tasks.iter_mut().flatten() {
+            clear(&mut t.a1);
+            clear(&mut t.a2);
+        }
+        for x in self.insts.iter_mut().flatten() {
+            x.actors.iter_mut().for_each(|w| clear(w));
+        }
+    }
+
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
         self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
@@ -1511,6 +1534,16 @@ impl Effects {
         let pc = ((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16;
         let pt = ((w >> 10) & 0x3f) as u16;
         let [a1, a2] = x.actors;
+        // 0x1003c5f0: the mode's actor missing (never linked, or deleted) gives the identity.
+        let missing = match x.mode {
+            1 | 7 | 9 | 0xb | 0x10 => a1 == Who::None,
+            2 | 8 | 0xa | 0xc | 0x11 | 0x13 => a2 == Who::None,
+            3..=6 | 0xd | 0x12 | 0x16..=0x1b => a1 == Who::None && a2 == Who::None,
+            _ => false,
+        };
+        if missing {
+            return Some((Some(Mat4::IDENTITY), Vec3::ONE, Vec3::ONE, 0.0));
+        }
         let rot = |m: Mat4| Mat4::from_cols(m.x_axis, m.y_axis, m.z_axis, glam::Vec4::W);
         let at = |m: Mat4, p: Vec3| {
             let mut r = rot(m);

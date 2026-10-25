@@ -77,6 +77,8 @@ pub struct EntityUpdate {
     /// 0x00D mask 0x04: ChocoboIndex u32 @0x20 bits 5..7 (asm 0x1009a1e7), the mount id u32 @0x44 bits 4..11 (asm
     /// 0x1009aa8d), CustomProperties @0x34 / @0x38 (FUN_1009ab40).
     pub ride: Option<Ride>,
+    /// 0x00D (General) u8 @0x42: the Geomancer Indi aura byte (client/indi.rs).
+    pub indi: Option<u8>,
 }
 
 /// Riding (mount_model_spec.md 1.2): ChocoboIndex, the mount id (0 none) and CustomProperties (a personal or Noble
@@ -380,7 +382,7 @@ pub enum NetEvent {
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
     /// `ride`: ChocoboIndex u32 @0x28 bits 13..15 and the mount id u8 @0x5B.
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8) },
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8 },
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
     /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
@@ -793,6 +795,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
         king: kind == EntityKind::Npc && p.u32(0x18) >> 16 & 1 != 0,
+        indi: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() > 0x42).then(|| p.u8(0x42)),
         ride: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x48).then(|| Ride { chocobo: (p.u32(0x20) >> 5 & 7) as u8, mount: (p.u32(0x44) >> 4) as u8, custom: [p.u32(0x34), p.u32(0x38)] }),
     }
 }
@@ -905,7 +908,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }) })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 } })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.

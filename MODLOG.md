@@ -8400,3 +8400,25 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Ours: Effects::death_picks, Actor.death_pick, combat::death_scheduler for status_schedulers and die() (a picked
   scheduler without a motion plays none: no `ded` fallback). Tests death_pick_op, death_pick_data, death_schedulers.
   Not seen live (no Ghrah near the test characters).
+
+## Geomancer Indi aura, and an actor's deletion unlinking its effects (2026-10-25; spec ~/ffxi/lab/research/fx_indi_aura_spec.md)
+
+- Value: s2c 0x00D u8 @0x42 (General mask bit 2) and 0x037 u8 @0x58 (bit 7 the job master flag): element (+8 enemy
+  spells) bits 0..3, size 4..5, on bit 6. 0x00E writes only the low nibble, so NPCs never show it. Setter FUN_1009ad20:
+  a new element or size while on deletes the shown aura at once (rebuilt next frame).
+- Each frame (FUN_1008f740, asm 0x100916ae..0x10091af5): on and allowed by the Effects filter (caster = target = the
+  owner, `c | c << 4`) -> a second actor of kind 0x25 + element (FUN_100c59b0) whose model file is 52211 + element (a
+  self-contained effect file: its 0x1000 generators clone on, FUN_100d0fc0 plays `init` -> `star` -> `kill`, `eff0`
+  at tick 70); the filter saying no deletes it at once; off -> `dead` (-> `stop`: soft stop, sound 7197) and the
+  actor goes 90 ticks later. Placement: the owner's ground place (FUN_100c9810); scale info[10 + size] / 100 (0.37 /
+  0.75 / 1.12 / 1.51). The luopan is an ordinary pet NPC (files 53145..53151, 53160), already drawn.
+- The actor destructor (FUN_10082b10, every actor) walks its caster (+0x68) and target (+0x6c) link lists and unlinks
+  each effect: they run on without the actor, and FUN_1003be10 gives the identity for a mode whose actor is null
+  (asm 0x1003c177 mode 1, 0x1003c1b0 mode 2 -> 0x1003c5f0). Ours: Effects::forget_actor (tasks, instances, pending
+  starts on its files dropped), called on despawn and for the aura; attach_matrix returns the identity for a missing
+  actor (so op 0x11 pulls such generators to the origin, as retail).
+- Ours: client/indi.rs (Indi, Aura, set, step, update; AURA = 0x2000_0000 | owner), Entity.aura / World.my_aura,
+  EntityUpdate.indi / SelfStatus.indi, actor_place, hidden with its owner. Tests indi_bits, indi_steps, indi_files.
+- Live (Lnxcsfix, `!addeffect colure_active 6 30`): 0x037 turned it on; init / star / kill, eff0 1.4 s later with
+  its generators (oya1, fla1, gl01..05, yr01 / yr02, rg02..04, sen2 / sen8 / sen9, pk01 / pk04): the light intro
+  burst around the body, then the faint bubble; at expiry dead / stop and the actor gone. Not compared with retail.
