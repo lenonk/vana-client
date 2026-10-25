@@ -8097,6 +8097,12 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - /volunteer (FUN_10079810): the line from the first word, "%s T1 %s" with the target's name; c2s 0x01E.
 - Live (Lnxcsfix in Southern San d'Oria): /targetnpc picked Rumoie, /follow <t> ran to it, Num7 printed "Follow
   canceled.".
-- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list), /translate (c2s 0x02B, s2c
-  0x047), the polls (/nominate /vote, s2c 0x078 / 0x079), /seacom /seacomup.
+- /translate (FUN_10079b30): letters J 0, E 1, G 2, F 3 (one letter the target, two from and to; ours English);
+  c2s 0x02B {From, To, 0, Name[64]}; s2c 0x047 {ItemNo @4, From @6, To @7, FromString @8, ToString @0x48}: printed
+  in mode 0x79 through printf (FUN_10129e80, plain %s): no item group 10 0x67 (name, letters); else the item block FD
+  k (to + 1) hi lo FD (k 7; 9 with hi 0, 10 with lo 0, the zero byte written 0xff) with 0x69 when from == to, else
+  0x68 (names and letters) then 0x6a. Live: "{Hume tunic} has been added to your Auto-Translate dictionary.", the
+  missing-item line, and Hume Tunic (E) to its Japanese name (J).
+- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list), the polls (/nominate /vote, s2c
+  0x078 / 0x079), /seacom /seacomup.
 

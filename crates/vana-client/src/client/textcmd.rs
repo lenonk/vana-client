@@ -87,6 +87,7 @@ mod id {
     pub const AUTOTARGET: u16 = 0x63;
     pub const ITEMSEARCH: u16 = 0x23;
     pub const VOLUNTEER: u16 = 0x11;
+    pub const TRANSLATE: u16 = 0x15;
     pub const TARGETPC: u16 = 0x18;
     pub const TARGETNPC: u16 = 0x19;
     pub const TARGETBNPC: u16 = 0x1a;
@@ -1246,6 +1247,32 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
+        // FUN_10079b30: an item name between languages (letters J 0, E 1, G 2, F 3; ours English): one letter is the
+        // target, two are from and to; c2s 0x02B {From, To, 0, Name[64]}; s2c 0x047 answers (translate_result).
+        id::TRANSLATE => {
+            if !(2..=3).contains(&args.len()) {
+                return Err(());
+            }
+            let lang = |c: char| match c.to_ascii_uppercase() {
+                'J' => 0,
+                'G' => 2,
+                'F' => 3,
+                _ => 1,
+            };
+            let (from, to) = match args.get(2).map(|s| s.chars().collect::<Vec<char>>()) {
+                Some(l) if l.len() == 2 => (lang(l[0]), lang(l[1])),
+                Some(l) if l.len() == 1 => (1, lang(l[0])),
+                _ => (1, 1),
+            };
+            let mut b = vec![0u8; 0x44];
+            (b[0], b[1]) = (from, to);
+            for (k, c) in args[1].bytes().take(0x3f).enumerate() {
+                b[4 + k] = c;
+            }
+            send(w, NetCommand::Packet { id: 0x02B, body: b });
+            w.translating = true;
+            Ok(())
+        }
         // FUN_10079810: the rest of the line from the first word, with a target "%s T1 %s" (its name); c2s 0x01E.
         id::VOLUNTEER => {
             if args.len() < 2 {
@@ -1777,6 +1804,47 @@ fn server_flag(w: &World, args: &[String], which: u8, cur: bool) {
         }
     } else {
         config_flag(w, which, !cur);
+    }
+}
+
+/// /translate's answer (LAB_10079d40), mode 0x79: no item group 10 0x67 (the name, the letters); else the item's
+/// auto-translate block (FD k lang+1 hi lo FD: k 7, 9 with hi 0 written 0xff, 10 with lo 0) with 0x69 when from ==
+/// to, else 0x68 (both names and letters) then 0x6a.
+pub(super) fn translate_result(w: &mut World, item: u16, from: u8, to: u8, from_text: &str, to_text: &str) {
+    if !std::mem::take(&mut w.translating) {
+        return;
+    }
+    let Some(bt) = w.battle.clone() else { return };
+    let letter = |l: u8| bt.group12(0x5e + (l as usize).min(3)).unwrap_or_default();
+    // FUN_10129e80 is printf: each %s in order.
+    let fmt = |id: usize, strs: &[&str]| -> String {
+        let text = bt.group10(id).unwrap_or_default();
+        let mut parts = text.split("%s");
+        let mut out = parts.next().unwrap_or_default().to_string();
+        for (k, p) in parts.enumerate() {
+            out.push_str(strs.get(k).copied().unwrap_or_default());
+            out.push_str(p);
+        }
+        out
+    };
+    let lines: Vec<String> = if item == 0 {
+        vec![fmt(0x67, &[from_text, &letter(from), &letter(to)])]
+    } else {
+        let (hi, lo) = ((item >> 8) as u8, item as u8);
+        let kind = if hi == 0 { 9 } else if lo == 0 { 10 } else { 7 };
+        let block: String = [kind, to + 1, if hi == 0 { 0xff } else { hi }, if lo == 0 { 0xff } else { lo }]
+            .iter()
+            .enumerate()
+            .map(|(k, &b)| char::from_u32(crate::dat::font::PHRASE_BASE + 0x100 * k as u32 + b as u32).unwrap())
+            .collect();
+        if from == to {
+            vec![fmt(0x69, &[&block])]
+        } else {
+            vec![fmt(0x68, &[from_text, &letter(from), to_text, &letter(to)]), fmt(0x6a, &[&block])]
+        }
+    };
+    for l in lines {
+        super::push_chat_mode(w, l, 0x79, 0);
     }
 }
 

@@ -3804,6 +3804,8 @@ struct World {
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
     item_search: bool,
+    /// /translate's c2s 0x02B is waiting for s2c 0x047 (G+0x3c140).
+    translating: bool,
     /// /follow's target (0x10487f74): autorun steers at it each tick.
     follow: Option<u32>,
     target_since: Instant,
@@ -5175,6 +5177,7 @@ impl App {
                             party_tp_save: false,
                             item_search: false,
                             follow: None,
+                            translating: false,
                             overlay: None,
                             map_opacity: self.cfg.map_overlay_opacity,
                             map_overlay: self.cfg.map_overlay,
@@ -6361,6 +6364,7 @@ impl App {
                 NetEvent::Blacklist { stat, entries } => partyreq::blacklist(world, stat, entries),
                 NetEvent::BlackEdit { id, name, mode } => partyreq::black_result(world, id, name, mode),
                 NetEvent::ItemSearch { item, flag } => textcmd::item_search_result(world, item, flag),
+                NetEvent::Translate { item, from, to, from_text, to_text } => textcmd::translate_result(world, item, from, to, &from_text, &to_text),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),

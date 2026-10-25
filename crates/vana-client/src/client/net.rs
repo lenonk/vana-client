@@ -421,6 +421,8 @@ pub enum NetEvent {
     PartyRequest { status: u8, name: String },
     /// s2c 0x041 BLACK_LIST: List[12] {u32 ID, Name[16]} @4, Stat @0xf4 (bit 0 reset, bit 1 last), Num @0xf5.
     Blacklist { stat: u8, entries: Vec<(u32, String)> },
+    /// s2c 0x047 TRANSLATE: ItemNo u16 @4, From @6, To @7, FromString[64] @8, ToString[64] @0x48.
+    Translate { item: u16, from: u8, to: u8, from_text: String, to_text: String },
     /// s2c 0x049 ITEMSEARCH: ItemNo u16 @4, Flag u8 @6, ItemName @8.
     ItemSearch { item: u16, flag: u8 },
     /// s2c 0x042 BLACK_EDIT: {u32 ID, Name[16]} @4, Mode @0x18 (0 added, 1 removed, 2 failed).
@@ -958,6 +960,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x11C => tx.send(NetEvent::LockStyleError((0..p.u8(4).min(16) as usize).map(|i| p.u16(8 + 2 * i)).collect()))?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x11D => tx.send(NetEvent::PartyRequest { status: p.u8(0xb), name: text(&p, 0xc, 16) })?,
+                    0x047 => tx.send(NetEvent::Translate { item: p.u16(4), from: p.u8(6), to: p.u8(7), from_text: text(&p, 8, 64), to_text: text(&p, 0x48, 64) })?,
                     0x049 => tx.send(NetEvent::ItemSearch { item: p.u16(4), flag: p.u8(6) })?,
                     0x042 => tx.send(NetEvent::BlackEdit { id: p.u32(4), name: text(&p, 8, 16), mode: p.u8(0x18) })?,
                     0x041 => tx.send(NetEvent::Blacklist { stat: p.u8(0xf4), entries: (0..p.u8(0xf5).min(12) as usize).map(|k| (p.u32(4 + 0x14 * k), text(&p, 8 + 0x14 * k, 16))).collect() })?,
