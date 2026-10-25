@@ -199,8 +199,12 @@ enum Cmd {
         #[arg(long, default_value_t = 720)]
         height: u32,
     },
-    /// List the chunks of a game DAT by file id.
-    DatInfo { id: u32 },
+    /// List the chunks of a game DAT by file id (the first 12 unless --all).
+    DatInfo {
+        id: u32,
+        #[arg(long)]
+        all: bool,
+    },
     /// Print English client messages of a group (thunk_FUN_1014c660(group, id)); all when no ids given.
     MsgDump { group: u8, ids: Vec<usize> },
     /// Decode a menu DAT (default 79, the US lobby): images, sprite sheets and a listing.
@@ -622,6 +626,24 @@ enum Cmd {
         #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         walk: Vec<f32>,
     },
+    /// Effects audit: every weapon skill, mob TP move, spell, ability and item effect file run headless ("main" of
+    /// base + animation, as 0x028 starts it) against stand-in actors; mob moves cast by a model that uses them (a TSV
+    /// of animation, look hex). Writes one row per file and a ranked summary of skipped ops and unresolved parts.
+    FxSweep {
+        #[arg(long)]
+        out: PathBuf,
+        /// ws, mob, spell, ja, item (comma separated); all by default.
+        #[arg(long, default_value = "ws,mob,spell,ja,item")]
+        kinds: String,
+        /// Ticks to run each file (it ends sooner when no task is left).
+        #[arg(long, default_value_t = 900)]
+        ticks: u32,
+        #[arg(long)]
+        mob_models: Option<PathBuf>,
+        /// Only this category,animation (e.g. 11,79), printing its schedulers' ops.
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<u32>,
+    },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
         zone: u32,
@@ -1020,6 +1042,7 @@ fn main() -> Result<()> {
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour),
+        Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -1350,7 +1373,7 @@ fn main() -> Result<()> {
             }
             Ok(())
         }
-        Cmd::DatInfo { id } => {
+        Cmd::DatInfo { id, all } => {
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
             let file = index.read(id)?;
             println!("{} ({} bytes, index of {} ids)", index.path(id).unwrap().display(), file.len(), index.len());
@@ -1360,7 +1383,7 @@ fn main() -> Result<()> {
                 *kinds.entry(c.kind).or_default() += 1;
             }
             println!("{} chunks; by type: {:?}", chunks.len(), kinds);
-            for c in chunks.iter().filter(|c| c.kind != 0 && c.kind != 1).take(12) {
+            for c in chunks.iter().filter(|c| c.kind != 0 && c.kind != 1).take(if all { usize::MAX } else { 12 }) {
                 println!("  {:#08x} {:<4} type {:#04x} {} bytes", c.offset, c.name(), c.kind, c.data.len());
             }
             Ok(())
@@ -1682,6 +1705,191 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
     }
     let pts: Vec<String> = keep.iter().skip(1).map(|&k| format!("{},{}", cells[k].0, cells[k].1)).collect();
     println!("{}", pts.join(";"));
+    Ok(())
+}
+
+/// fx-sweep's actors: a Hume M (PC) and a monster facing each other 4 apart, attach points at chest height; the
+/// monster's files are the caster model's when one is given.
+struct SweepActors {
+    mob_files: (Vec<u32>, Vec<u32>),
+}
+
+const SWEEP_PC: u32 = 0x0001_0001;
+const SWEEP_MOB: u32 = 0x0100_0001;
+
+impl fx::Actors for SweepActors {
+    fn matrix(&self, id: u32) -> Option<glam::Mat4> {
+        let (p, f) = if id == SWEEP_PC { (glam::Vec3::ZERO, glam::Vec3::Z) } else { (glam::Vec3::new(0.0, 0.0, 4.0), glam::Vec3::NEG_Z) };
+        Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), p.extend(1.0)))
+    }
+    fn foot(&self, id: u32) -> Option<glam::Vec3> {
+        self.matrix(id).map(|m| m.w_axis.truncate())
+    }
+    fn point(&self, _: u32, k: u16) -> Option<glam::Vec3> {
+        Some(if k == 0 { glam::Vec3::ZERO } else { glam::Vec3::new(0.0, -1.2, 0.0) })
+    }
+    fn scale(&self, _: u32) -> f32 {
+        1.0
+    }
+    fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+        if id == SWEEP_PC { (vec![8392], vec![9672, 7072]) } else { self.mob_files.clone() }
+    }
+    fn hidden(&self, _: u32) -> bool {
+        false
+    }
+    fn models(&self) -> Vec<(u32, Vec<u32>)> {
+        Vec::new()
+    }
+}
+
+/// The effect file of an action (fx/tasks.rs effect_base).
+fn sweep_file(category: u8, anim: u32) -> Option<u32> {
+    Some(match category {
+        3 => 0xd48,
+        4 => 0xaf0,
+        5 => if anim > 99 { 0xdca5 } else { 0x1330 },
+        6 => 0x113c,
+        11 => match anim {
+            0x800.. => 0x14b07,
+            0x600.. => 0xe739,
+            0x200.. => 0xc1ef,
+            _ => 0xf3c,
+        },
+        _ => return None,
+    } + anim)
+}
+
+fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&std::path::Path>, only: &[u32]) -> Result<()> {
+    use std::collections::BTreeMap;
+    use std::fmt::Write as _;
+    let cfg = config::Config::load();
+    let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
+    let keys = dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?)?;
+    let models: BTreeMap<u32, String> = mob_models
+        .map(std::fs::read_to_string)
+        .transpose()?
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|l| {
+            let mut c = l.split('\t');
+            Some((c.next()?.parse().ok()?, c.next()?.to_string()))
+        })
+        .collect();
+    let mut fx = fx::Effects::new();
+    fx.set_keys(std::sync::Arc::new(keys));
+    fx.set_index(index.clone());
+    fx.set_global(fx::lib::Library::load(0, index.read(0)?)?);
+    fx.load_zone(fx::lib::Library::load(dat::zone::file_id(230), index.read(dat::zone::file_id(230))?)?);
+    let frame = fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: glam::Mat4::IDENTITY, view_rot: glam::Mat4::IDENTITY, eye: glam::Vec3::new(0.0, -2.0, -6.0), draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+    let ranges: Vec<(u8, std::ops::Range<u32>, &str)> = [(3u8, 0..0x100, "ws"), (11, 0..0x1000, "mob"), (4, 0..0x400, "spell"), (6, 0..0x300, "ja"), (5, 0..0x400, "item")]
+        .into_iter()
+        .filter(|r| kinds.split(',').any(|k| k == r.2))
+        .collect();
+    let mut rows = String::from("kind\tcategory\tanim\tfile\tcaster\tticks\tleft\tsched_ops\tstream_ops\tno_sched\tmissing\tno_attach\tattach\n");
+    // Summary: per gap, the files it touches.
+    let mut gaps: BTreeMap<String, Vec<u32>> = BTreeMap::new();
+    let mut runs = 0;
+    for (category, range, kind) in ranges {
+        for anim in range {
+            if !only.is_empty() && (only[0] != category as u32 || only.get(1) != Some(&anim)) {
+                continue;
+            }
+            let Some(file) = sweep_file(category, anim) else { continue };
+            if index.path(file).is_none() {
+                continue;
+            }
+            let (mob, caster) = match (category, models.get(&anim)) {
+                (11, Some(hex)) => {
+                    let bytes: Vec<u8> = (0..hex.len() / 2).filter_map(|i| u8::from_str_radix(&hex[i * 2..i * 2 + 2], 16).ok()).collect();
+                    match dat::npc::parse_look(&bytes).and_then(|l| dat::npc::load_npc(&index, &l)) {
+                        Ok(ch) => ((ch.part_files.clone(), ch.files.clone()), hex.clone()),
+                        Err(_) => ((Vec::new(), vec![1300]), "orc".into()),
+                    }
+                }
+                _ => ((Vec::new(), vec![1300]), "orc".into()),
+            };
+            let actors = SweepActors { mob_files: mob.clone() };
+            fx.preload(&mob.1);
+            fx.reg.audit = Some(fx::Audit::default());
+            let (a, t) = if category == 11 { (SWEEP_MOB, SWEEP_PC) } else { (SWEEP_PC, if category == 5 { SWEEP_PC } else { SWEEP_MOB }) };
+            let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim as u16, ..Default::default() };
+            let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }] };
+            fx.on_action(&action, None);
+            let mut n = 0;
+            while n < ticks {
+                fx.tick(&frame, &actors);
+                n += 1;
+                // Started (the file loads in the background) and nothing left to run.
+                if n > 30 && fx.task_count() == 0 && fx.pending_count() == 0 {
+                    break;
+                }
+            }
+            let left = fx.task_count();
+            if !only.is_empty() {
+                let l = (0..3).find_map(|_| {
+                    let l = fx.reg.lib_of(file);
+                    if l.is_none() {
+                        fx.tick(&frame, &actors);
+                    }
+                    l
+                });
+                if let Some(l) = l {
+                    let lib = &fx.reg.libs[l];
+                    for (i, node) in lib.tree.nodes.iter().enumerate().filter(|(_, n)| n.kind == dat::generator::kind::SCHEDULER) {
+                        println!("scheduler {} (node {i})", node.name());
+                        for op in fx::sched::parse(lib.data(i)) {
+                            println!("  {:#04x} wait {:4} dur {:4} {:02x?}", op.code, op.wait, op.dur, &op.raw[..op.raw.len().min(32)]);
+                        }
+                    }
+                }
+            }
+            fx.reset_runs();
+            let au = fx.reg.audit.take().unwrap_or_default();
+            let list = |m: &BTreeMap<u8, u32>| m.iter().map(|(k, v)| format!("{k:#04x}x{v}")).collect::<Vec<_>>().join(" ");
+            let four = |n: u32| String::from_utf8_lossy(&n.to_le_bytes()).trim_end_matches('\0').to_string();
+            let stream: Vec<String> = au.stream.iter().map(|((s, k), v)| format!("{s}/{k:#04x}x{v}")).collect();
+            let no_sched: Vec<String> = au.no_sched.keys().map(|n| four(*n)).collect();
+            let missing: Vec<String> = au.missing.keys().map(|(f, n, k)| format!("{f}:{}:{k:#x}", four(*n))).collect();
+            let attach: Vec<String> = au.attach.iter().map(|((m, a, b), v)| format!("m{m:#x}/{a:#x}/{b:#x}x{v}")).collect();
+            let _ = writeln!(rows, "{kind}\t{category}\t{anim}\t{file}\t{caster}\t{n}\t{left}\t{}\t{}\t{}\t{}\t{}\t{}", list(&au.sched), stream.join(" "), no_sched.join(" "), missing.join(" "), list(&au.no_attach), attach.join(" "));
+            for k in au.sched.keys() {
+                gaps.entry(format!("task op {k:#04x}")).or_default().push(file);
+            }
+            for (s, k) in au.stream.keys() {
+                gaps.entry(format!("stream {s} op {k:#04x}")).or_default().push(file);
+            }
+            for m in au.no_attach.keys() {
+                gaps.entry(format!("attach mode {m:#x} unplaced")).or_default().push(file);
+            }
+            for ((m, a, b), _) in au.attach.iter() {
+                // Special points (0x30..) whose placement is ours or inferred.
+                for p in [a, b] {
+                    if *p >= 0x30 {
+                        gaps.entry(format!("attach point {p:#x} (mode {m:#x})")).or_default().push(file);
+                    }
+                }
+            }
+            if !no_sched.is_empty() {
+                gaps.entry("scheduler not found".into()).or_default().push(file);
+            }
+            if left > 0 {
+                gaps.entry(format!("still running after {ticks} ticks")).or_default().push(file);
+            }
+            runs += 1;
+            if runs % 100 == 0 {
+                eprintln!("{runs} files...");
+            }
+        }
+    }
+    std::fs::write(out, rows)?;
+    let mut ranked: Vec<(String, Vec<u32>)> = gaps.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.len().cmp(&a.1.len()));
+    let mut summary = format!("{runs} files run\n");
+    for (gap, files) in &ranked {
+        let _ = writeln!(summary, "{:5}  {gap}  e.g. {:?}", files.len(), &files[..files.len().min(8)]);
+    }
+    std::fs::write(out.with_extension("summary.txt"), &summary)?;
+    print!("{summary}");
     Ok(())
 }
 

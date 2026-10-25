@@ -7569,6 +7569,25 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - LSB (blueutils TryLearningSpells, at the mob's death with our claim, no call for help): BLU main, within 100, the
   spell's skill cap - 31 <= our Blue Magic skill, then 33 %; one try a kill. The mob's used-move list is cleared
   whenever it is at full HP out of a fight (mob_controller), so a move forced before engaging never counts.
-- The user learned Pollen on Testerthree but saw no "learns" line. Battle message 419 (filter kind 7, every table word
-  0, no screen kind, mode 0x81) prints when injected (`!inject` of the 0x029 LSB sends). Not found yet; the log now
-  records battle messages to and from us (debug) and new 0x0AA spell bits (info).
+- The user learned Pollen on Testerthree and later found the "learns" line (battle message 419: filter kind 7, every
+  table word 0, no screen kind, mode 0x81); it had been missed. The log now records battle messages to and from us
+  (debug) and new 0x0AA spell bits (info).
+
+## Effects audit: fx-sweep (2026-10-25)
+
+- `vana-client fx-sweep --out F.tsv [--kinds ws,mob,spell,ja,item] [--mob-models TSV] [--only CAT,ANIM]` runs "main"
+  of every effect file 0x028 would start (FUN_100a7380's base + animation: 3 weapon skill, 4 spell, 5 item, 6
+  ability, 11 mob move with the 0x200 / 0x600 / 0x800 bases) headless against stand-in actors: a Hume at the origin and
+  a monster 4 ahead. Mob moves are cast by a model that uses them (the TSV: animation, LSB look hex, from mob_skills,
+  mob_skill_lists and mob_pools). A file runs until no task, no pending load and 30 ticks are behind it (900 at most).
+- Registry::audit records, per file: task ops that fell to the default arm (motion ops played by combat.rs are not
+  gaps), generator / emission stream ops not handled, schedulers and resources not found, and the attachments started
+  (mode, caster point, target point). F.tsv has a row per file; F.summary.txt ranks every gap by file count with
+  example file ids. `--only` also prints the schedulers' ops.
+- First full run: 5564 files. Largest gaps: task ops 0x01 (4271 files), 0x2e, 0x56, 0x2f, 0x1f, 0x75, 0x69 / 0x6a,
+  0x2a, 0x40..0x47 (actor transforms; Pollen's spin); stream 1 ops 0x56, 0x32, 0x55, 0x3a, 0x08, 0x46, 0x43, 0x42;
+  stream 0 ops 0x5d, 0x0f; the special attach points 0x30 / 0x31.
+- 908 "main not found": LSB mob moves 0xc00..0xcdb and 0xedc..0xefe land on model data (0x14b07 + 0xc00 = 87815:
+  textures, skeleton motions), not gaps. 644 item and 14 ability files are effect files with other entry names (4972:
+  goal / kill / open / clos; 56695: str0 / str1 / dis0..2 / trg0): which of their schedulers retail starts is not
+  traced yet. `dat-info ID --all` lists every chunk.

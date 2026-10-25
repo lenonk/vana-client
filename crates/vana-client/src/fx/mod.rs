@@ -365,6 +365,24 @@ pub struct Registry {
     zone: Option<usize>,
     logged: HashSet<(u8, u8)>,
     missed: HashSet<(usize, u32)>,
+    /// fx-sweep's record of what runs skipped or could not resolve (off in the client).
+    pub audit: Option<Audit>,
+}
+
+/// What effect runs skipped or could not resolve (the fx-sweep command, main.rs).
+#[derive(Default, Debug)]
+pub struct Audit {
+    /// Task VM ops run, and those that fell to its default arm, by code.
+    pub ops: std::collections::BTreeMap<u8, u32>,
+    pub sched: std::collections::BTreeMap<u8, u32>,
+    /// Generator (0) / emission (1) stream ops not handled.
+    pub stream: std::collections::BTreeMap<(u8, u8), u32>,
+    /// Schedulers asked for and not found, and resources not found (file, 4cc, kind).
+    pub no_sched: std::collections::BTreeMap<u32, u32>,
+    pub missing: std::collections::BTreeMap<(u32, u32, u8), u32>,
+    /// Attachments started: (mode, caster point, target point), and modes that placed nothing.
+    pub attach: std::collections::BTreeMap<(u8, u16, u16), u32>,
+    pub no_attach: std::collections::BTreeMap<u8, u32>,
 }
 
 impl Registry {
@@ -404,6 +422,7 @@ impl Registry {
             zone: None,
             logged: HashSet::new(),
             missed: HashSet::new(),
+            audit: None,
         }
     }
 
@@ -597,6 +616,9 @@ impl Registry {
 
 
     pub fn miss(&mut self, lib: usize, from: usize, name: u32, k: u8) {
+        if let Some(a) = self.audit.as_mut() {
+            *a.missing.entry((self.libs[lib].file_id, name, k)).or_default() += 1;
+        }
         if self.missed.insert((lib, name)) {
             log::debug!("effects: DAT {} {}: {} (kind {k:#x}) not found", self.libs[lib].file_id, self.libs[lib].tree.nodes[from].name(), String::from_utf8_lossy(&name.to_le_bytes()));
         }
@@ -604,6 +626,9 @@ impl Registry {
 
     /// Logs an op of `stream` (0 generator, 1 emission) once.
     pub fn unhandled(&mut self, stream: u8, code: u8) {
+        if let Some(a) = self.audit.as_mut() {
+            *a.stream.entry((stream, code)).or_default() += 1;
+        }
         if self.logged.insert((stream, code)) {
             log::debug!("effects: stream {stream} op {code:#04x} not handled");
         }

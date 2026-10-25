@@ -354,6 +354,9 @@ impl Effects {
                             }
                         }
                         None => {
+                            if let Some(a) = self.reg.audit.as_mut() {
+                                *a.no_sched.entry(p.name).or_default() += 1;
+                            }
                             log::debug!("effects: scheduler {} not found", String::from_utf8_lossy(&p.name.to_le_bytes()));
                             self.end_action(&p.action);
                         }
@@ -527,6 +530,9 @@ impl Effects {
     fn run_op(&mut self, me: usize, t: &mut Task, op: &SOp, actors: &dyn Actors) -> Flow {
         let scope = |s: &Self, k: u8| s.reg.resolve(t.res.0, t.res.1, k, op.name());
         log::trace!("effects: task {:?} op {:#04x} {}", t.res, op.code, String::from_utf8_lossy(&op.name().to_le_bytes()));
+        if let Some(a) = self.reg.audit.as_mut() {
+            *a.ops.entry(op.code).or_default() += 1;
+        }
         match op.code {
             0x00 => Flow::End,
             0x02 => {
@@ -992,7 +998,15 @@ impl Effects {
                 self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
                 Flow::Next
             }
-            _ => Flow::Next,
+            _ => {
+                // The motion-gated arms (client/combat.rs plays those) are not gaps.
+                if !matches!(op.code, 0x05 | 0x28 | 0x20 | 0x59 | 0x2b | 0x80 | 0x4a)
+                    && let Some(a) = self.reg.audit.as_mut()
+                {
+                    *a.sched.entry(op.code).or_default() += 1;
+                }
+                Flow::Next
+            }
         }
     }
 
@@ -1308,7 +1322,19 @@ impl Effects {
 
     /// At start (FUN_10052220 -> FUN_10052eb0).
     pub(super) fn attach_now(&mut self, i: usize, actors: &dyn Actors) {
-        if let Some((m, a, b, d)) = self.attach_matrix(i, None, actors)
+        if let (Some(au), Some(x)) = (self.reg.audit.as_mut(), self.insts[i].as_ref()) {
+            let w = x.attach;
+            let (pc, pt) = (((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16, ((w >> 10) & 0x3f) as u16);
+            *au.attach.entry((x.mode, pc, pt)).or_default() += 1;
+        }
+        let placed = self.attach_matrix(i, None, actors);
+        if placed.as_ref().is_none_or(|p| p.0.is_none())
+            && let (Some(au), Some(x)) = (self.reg.audit.as_mut(), self.insts[i].as_ref())
+            && x.mode != 0
+        {
+            *au.no_attach.entry(x.mode).or_default() += 1;
+        }
+        if let Some((m, a, b, d)) = placed
             && let Some(x) = self.insts[i].as_mut()
         {
             if m.is_some() {
@@ -1390,6 +1416,22 @@ impl Effects {
 
     pub fn task_count(&self) -> usize {
         self.tasks.iter().filter(|t| t.is_some()).count()
+    }
+
+    /// Starts still waiting for their files (fx-sweep).
+    pub fn pending_count(&self) -> usize {
+        self.pending.len()
+    }
+
+    /// fx-sweep between runs: every task, pending start and generator gone.
+    pub fn reset_runs(&mut self) {
+        self.pending.clear();
+        self.tasks.iter_mut().for_each(|t| *t = None);
+        for i in 0..self.insts.len() {
+            if self.insts[i].is_some() {
+                self.kill(i);
+            }
+        }
     }
 }
 
