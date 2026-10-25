@@ -143,8 +143,12 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists; the mouse and the wheel on them;
-  - collision and lifts (MODLOG "Actor collision and lifts"): NPCs hold you 0.5 s then let you through, idle players never (MODLOG "Character bump"); lifts ride and move, the zone-in waits for them; left
-    Mog House furniture boxes;
+  - collision and lifts (MODLOG "Actor collision and lifts"): NPCs hold you 0.5 s then let you through, idle players never (MODLOG "Character bump"); lifts ride and move, the zone-in waits for them; Mog
+    House furniture boxes done;
+  - Mog House furniture (client/furniture.rs, dat/furniture.rs, MODLOG "Mog House furniture"; spec
+    `~/ffxi/lab/research/furniture_spec.md`): the installed pieces drawn at their grid / wall places, plants, the
+    files' generators and 'init', skinned pieces, collision boxes, the camera ray (/furcc) done; left mannequins
+    (type 14, s2c 0x026), actor lighting (+ the house's 'l_01'), the item-gated zone NPC, layout mode;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
@@ -195,8 +199,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: invisible talk, /equip refusals, the command gate's
   lines (window open, layout, charmed), the map on an elevator, s2c 0x0B4 (PvP, the system message
-  filter); /furcc (needs Mog House furniture actors; the other toggles' consumers are done, MODLOG "The toggles'
-  consumers"); the spec's part C (window, list and server-flag commands).
+  filter); the spec's part C (window, list and server-flag commands) left: /mutelist, /guide /primer, /layout
+  /remodel /garden (the toggles' consumers, /furcc included, are done).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
