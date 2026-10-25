@@ -52,6 +52,7 @@ mod servmes;
 mod chatctrl;
 mod linklist;
 mod blklist;
+mod furniture;
 mod aepoints;
 mod jobpoints;
 mod merits;
@@ -138,6 +139,7 @@ impl Task {
             Task::Battle(_) => "battle text",
             Task::Names(_) => "names",
             Task::Actions(_) => "actions",
+            Task::Furniture(_) => "furniture",
         }
     }
 }
@@ -166,6 +168,8 @@ enum Task {
     Names(Result<(Arc<crate::dat::names::Names>, crate::dat::msgshift::MsgShift)>),
     /// Spell and ability records (file 81).
     Actions(Result<crate::dat::actions::Actions>),
+    /// Mog House furniture geometry (client/furniture.rs).
+    Furniture(Result<furniture::Loaded>),
 }
 
 /// A pick read-back key: bit 63, the actor, a bone or 0x8000 | attach point.
@@ -3459,6 +3463,14 @@ struct FxActors<'a> {
     ground: Option<&'a ground::Ground>,
     /// /bellsw (config 0x99 bit 1): scheduler op 0xb3 sounds.
     bells: bool,
+    /// Mog House furniture: id, model file, matrix (client/furniture.rs).
+    furniture: &'a [(u32, u32, glam::Mat4)],
+}
+
+impl FxActors<'_> {
+    fn furniture(&self, id: u32) -> Option<&(u32, u32, glam::Mat4)> {
+        self.furniture.iter().find(|f| f.0 == id)
+    }
 }
 
 impl crate::fx::Actors for FxActors<'_> {
@@ -3467,6 +3479,9 @@ impl crate::fx::Actors for FxActors<'_> {
     }
 
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
+        if let Some(f) = self.furniture(id) {
+            return Some(f.2);
+        }
         let p = self.places.get(&id)?;
         Some(actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt))
     }
@@ -3557,6 +3572,9 @@ impl crate::fx::Actors for FxActors<'_> {
     }
 
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+        if let Some(f) = self.furniture(id) {
+            return (Vec::new(), vec![f.1]);
+        }
         let Some(a) = self.actors.get(&id) else { return (Vec::new(), Vec::new()) };
         let Some(ch) = a.character.as_ref() else { return (Vec::new(), Vec::new()) };
         (ch.part_files.clone(), a.extra.iter().rev().map(|(_, f)| f.id).chain(ch.files.iter().copied()).collect())
@@ -3564,11 +3582,12 @@ impl crate::fx::Actors for FxActors<'_> {
 
     /// Actor +0xb2 bit 1 (the server's hide bits), not alpha: a 'spop' actor at alpha 0 still takes generators.
     fn hidden(&self, id: u32) -> bool {
-        !self.actors.contains_key(&id) || self.entities.get(&id).is_some_and(|e| e.flags & 2 != 0)
+        self.furniture(id).is_none() && (!self.actors.contains_key(&id) || self.entities.get(&id).is_some_and(|e| e.flags & 2 != 0))
     }
 
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
-        self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.clone()))).collect()
+        let actors = self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.clone())));
+        actors.chain(self.furniture.iter().map(|f| (f.0, vec![f.1]))).collect()
     }
 
     fn pc(&self, id: u32) -> Option<(u8, i8)> {
@@ -3987,6 +4006,8 @@ struct World {
     linklist: Option<linklist::LinkList>,
     /// The block list window (client/blklist.rs).
     blklist: Option<blklist::BlkList>,
+    /// Mog House furniture (client/furniture.rs).
+    furniture: furniture::State,
     /// The main menu's pupequip (client/equipwin.rs).
     pupequip: Option<equipwin::PupMenu>,
     merit_tables: Option<Arc<crate::dat::merits::MeritTables>>,
@@ -5065,6 +5086,11 @@ impl App {
                 (Err(e), _) => log::warn!("spell / ability records: {e:#}"),
                 _ => {}
             },
+            Task::Furniture(res) => match (res, &mut self.phase) {
+                (Ok(l), Phase::World(w)) if w.furniture.current(l.seq) => w.furniture.ready = Some(l),
+                (Err(e), _) => log::warn!("furniture: {e:#}"),
+                _ => {}
+            },
             Task::Battle(res) => match (res, &mut self.phase) {
                 (Ok(b), Phase::World(w)) => w.battle = Some(Arc::new(b)),
                 (Err(e), _) => log::warn!("battle messages: {e:#}"),
@@ -5321,6 +5347,7 @@ impl App {
                             merits_ui: None,
                             linklist: None,
                             blklist: None,
+                            furniture: Default::default(),
                             pupequip: None,
                             merit_tables: None,
                             merit_list: Default::default(),
@@ -5617,6 +5644,7 @@ impl App {
             Task::ZoneLoaded(zone_id, map_no, result) => {
                 let Phase::World(world) = &mut self.phase else { return };
                 world.loading = None;
+                world.furniture.reset();
                 world.area = AreaSwitch::default();
                 match result {
                     Ok((mut scene, ground, weather, geometry, (zone_fx, global_fx))) => {
@@ -6574,6 +6602,16 @@ impl App {
                 }),
                 Err(e) => self.status = format!("{e:#}"),
             }
+        }
+        // Mog House furniture: the installed set changed (client/furniture.rs).
+        let job = match &mut self.phase {
+            Phase::World(w) => furniture::changed(w),
+            _ => None,
+        };
+        if let Some((seq, want, map, floor)) = job
+            && let Ok((index, keys)) = self.game_data()
+        {
+            self.spawn(move || Task::Furniture(furniture::load(&index, &keys, seq, &want, map, floor)));
         }
     }
 
@@ -8954,6 +8992,15 @@ impl App {
             doors::moves(w, &gfx.gpu);
             lifts::moves(w, &gfx.gpu);
             let invis: HashMap<u32, f32> = w.actors.keys().filter_map(|id| invisible_alpha(w, *id).map(|k| (*id, k))).collect();
+            // Mog House furniture loaded for this scene goes up.
+            if w.renderer.is_some()
+                && let Some(l) = w.furniture.ready.take()
+            {
+                let files = furniture::State::apply(w, l);
+                if let Some(r) = w.renderer.as_mut() {
+                    r.set_furniture(&gfx.gpu, files);
+                }
+            }
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.
@@ -9349,7 +9396,7 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0 };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }

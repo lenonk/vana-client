@@ -190,3 +190,4 @@ pub mod animpack;
 pub mod generator;
 pub mod actions;
 pub mod autotrans;
+pub mod furniture;

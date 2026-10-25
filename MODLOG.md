@@ -8233,3 +8233,31 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   (the entity init, all.c 107535) means the usual rules. Entity::name_ncol. Seen in zone 50: npc0ca gets 'kut4' (sub
   3 with 1) and 'mou4' back (sub 4).
 
+## Mog House furniture (2026-10-25; spec ~/ffxi/lab/research/furniture_spec.md)
+
+- The scan (FUN_101d2af0 / FUN_101d2b10, every frame): containers 1 and 9, slots 1..0x50, item types 10 / 12 / 14
+  with exdata[1] bit 6 (installed) and exdata[1] & 3 == the floor (0x00A (u8 @0xa8 >> 1) & 3). Only in a furnished
+  room (FUN_100f9650 = myroom::has_floors: a nation house 0x121..0x123 or any 2F); none in zone 280. Exdata: [0] plant
+  stage, [4] plant kind, [6] column (or the wall slot), [7] level in 0.1 units, [8] row, [9] rotation.
+- The model: file 32922 (0x809a) chunk 0x59 'furn', 1024 x {u16 flags (1 wall, 2 surface, 4 on a surface, 8 pot),
+  u16 model, u8 size x, u8 size z, u16 height in 0.01} by item id (id - 0xc00 from 0xe00); file = model + 0x809f
+  below 0x100, + 0xc7ef below 0x200, + 0xe75b for 0xe00..0xfff (FUN_101cce00); model == item id in this build
+  (Simple Bed 2 -> 32929, Desk 21 -> 32948, Moogle Bed 0xe9f -> 62970). Chunk 0x5b 'mode': plant models by kind 1..8
+  and stage 0..11 (999 none). dat::furniture.
+- The place (FUN_101cdd90 / FUN_101cdf50): 0.6-unit cells from origin column 10, row 12 (13 on 2F): x = (col - 10)
+  x 0.6 + w x 0.3, y = -level x 0.1, z = (row - 12) x 0.6 + d x 0.3 (w, d the footprint, swapped for odd rotations),
+  yaw = rot x pi / 2 (D3DX RotationY, as an MZB placement); wall pieces take a slot table (1F 5 slots, x +-6.5, San
+  d'Oria's +-6.2325; 2F 92 slots). A pot's plant is 0.3 above it. client/furniture.rs.
+- The drawing (XiFurnitureActor, FUN_100c4410): the file's first MMB, static, no fade. Ours: each file its own
+  geometry (MMB and texture names repeat across files) with a placement per piece, drawn with the scenery pass
+  (render set_furniture, textures after the zone's; a '_' name gets the alpha test as retail's +0x770), loaded on a
+  thread whenever the scanned set changes. Lit as scenery for now *(retail lights it as an actor plus the house's
+  'l_01' light)*.
+- Effects: each piece is an actor to the effect system (id 0x04000000 | an index down from 0x3ff, its file, its
+  matrix): the file's auto model generators start (FUN_10085060), and a file with an 'init' scheduler runs it once.
+- Live (Lnxcsfix in the San d'Oria house, char_inventory rows with the exdata): Simple Bed, Desk with the Porcelain
+  Flowerpot on it (level 5), Fire Lamp with its flame (g000 / g001), the fish aquarium (sak1 / sak2 / sakc / awa1),
+  the Clockwork Egg ('init' started), the Imperial Standard in wall slot 3; the 2F-only Oak Table left out.
+- Not done: collision boxes and the camera ray (/furcc), skinned furniture (models 0x108..0x12b: statues, campfires),
+  mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
+

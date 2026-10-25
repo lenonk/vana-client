@@ -344,6 +344,9 @@ pub struct ZoneRenderer {
     pub occl: occlusion::Occlusion,
     /// The loaded sub-area (an interior), drawn after the zone's scenery.
     sub: Option<SubGeometry>,
+    /// Mog House furniture (client/furniture.rs): a geometry per model file, its textures after `furn_base`.
+    furniture: Vec<SubGeometry>,
+    furn_base: Option<usize>,
     /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
     /// `light_keys` are the zone's own.
     links: Vec<(u32, u32, Instance)>,
@@ -1139,6 +1142,8 @@ impl ZoneRenderer {
             points: points::Points::new(gpu),
             occl: occlusion::Occlusion::new(gpu),
             sub: None,
+            furniture: Vec::new(),
+            furn_base: None,
             links: geo.links.clone(),
             hidden: 0,
             zone_keys: geo.light_keys.len(),
@@ -1183,6 +1188,8 @@ impl ZoneRenderer {
     /// A sub-area's scenery replaces the loaded one (FUN_101787c0 state 2); `light_keys` is the zone's table with
     /// the sub-area's keys after it. The stand-ins for `link` hide once it is on the GPU (FUN_1017a630).
     pub fn set_sub(&mut self, gpu: &Gpu, link: u32, geo: &ZoneGeometry, textures: Vec<crate::dat::zone::Texture>, light_keys: Vec<u32>) {
+        // Furniture textures sit after the zone's; no Mog House has a sub-area.
+        self.clear_furniture();
         self.clear_sub();
         let device = &gpu.device;
         let buffer = |label, bytes: &[u8], usage| {
@@ -1216,6 +1223,55 @@ impl ZoneRenderer {
             if let Some(s) = &mut self.sub {
                 s.shown = true;
             }
+        }
+    }
+
+    /// Mog House furniture replaces the set before it: each model file is its own geometry with its own textures
+    /// (names repeat across files), drawn once all of the set's textures are up.
+    pub fn set_furniture(&mut self, gpu: &Gpu, files: Vec<(std::sync::Arc<ZoneGeometry>, Vec<crate::dat::zone::Texture>)>) {
+        self.clear_furniture();
+        let device = &gpu.device;
+        let buffer = |label, bytes: &[u8], usage| {
+            let b = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (bytes.len() as u64).max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+            gpu.queue.write_buffer(&b, 0, bytes);
+            b
+        };
+        self.furn_base = Some(self.textures.len());
+        for (geo, textures) in files {
+            let [v, i, m] = geo.parts();
+            let tex_base = self.textures.len();
+            let white = self.textures[0].clone();
+            self.textures.extend(std::iter::repeat_n(white, textures.len()));
+            self.pending.extend(textures.into_iter().enumerate().map(|(k, t)| (tex_base + k, t, None)));
+            let draws = geo.draws.iter().map(|d| Draw { texture: if d.texture == 0 { 0 } else { tex_base + d.texture - 1 }, instances: d.instances.clone(), mirrored: d.mirrored.clone(), ..*d }).collect();
+            self.furniture.push(SubGeometry {
+                vertices: buffer("furniture vertices", v, wgpu::BufferUsages::VERTEX),
+                indices: buffer("furniture indices", i, wgpu::BufferUsages::INDEX),
+                instances: buffer("furniture instances", m, wgpu::BufferUsages::VERTEX),
+                draws,
+                tex_base,
+                link: 0,
+                shown: false,
+            });
+        }
+        if !self.budgeted {
+            let base = self.furn_base.unwrap_or(0);
+            let (now, keep): (Vec<_>, Vec<_>) = std::mem::take(&mut self.pending).into_iter().partition(|p| p.0 >= base);
+            self.pending = keep.into();
+            for (slot, t, _) in now {
+                self.put_texture(gpu, slot, &t);
+            }
+            for f in &mut self.furniture {
+                f.shown = true;
+            }
+        }
+    }
+
+    pub fn clear_furniture(&mut self) {
+        if let Some(base) = self.furn_base.take() {
+            self.textures.truncate(base);
+            self.pending.retain(|p| p.0 < base);
+            self.furniture.clear();
         }
     }
 
@@ -1306,6 +1362,16 @@ impl ZoneRenderer {
             self.hide_links(gpu, link);
             if let Some(s) = &mut self.sub {
                 s.shown = true;
+            }
+        }
+        if let Some(base) = self.furn_base
+            && self.furniture.iter().any(|f| !f.shown)
+            && self.geo_pending.is_none()
+            && !self.pending.iter().any(|p| p.0 >= base)
+            && gpu.mips_done() >= self.mips_seq
+        {
+            for f in &mut self.furniture {
+                f.shown = true;
             }
         }
         let mut i = 0;
@@ -1661,6 +1727,19 @@ impl ZoneRenderer {
                 for d in s.draws.iter().filter(|d| d.mode == mode) {
                     self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
                 }
+                pass.set_vertex_buffer(1, self.instances.slice(..));
+                pass.set_vertex_buffer(0, self.vertices.slice(..));
+                pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
+            }
+            for f in self.furniture.iter().filter(|f| f.shown) {
+                pass.set_vertex_buffer(1, f.instances.slice(..));
+                pass.set_vertex_buffer(0, f.vertices.slice(..));
+                pass.set_index_buffer(f.indices.slice(..), wgpu::IndexFormat::Uint16);
+                for d in f.draws.iter().filter(|d| d.mode == mode) {
+                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
+                }
+            }
+            if self.furniture.iter().any(|f| f.shown) {
                 pass.set_vertex_buffer(1, self.instances.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
