@@ -84,6 +84,7 @@ mod id {
     pub const CHECKPARAM: u16 = 0x47;
     pub const PCMD: u16 = 0x56;
     pub const RECRUITLIST: u16 = 0x60;
+    pub const BLACKLIST: u16 = 0x3b;
     pub const PRCMD: u16 = 0x61;
     pub const ACMD: u16 = 0x57;
     pub const JOIN: u16 = 0x58;
@@ -1142,6 +1143,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::RECRUITLIST => recruitlist(w, args),
+        id::BLACKLIST => blacklist(w, args),
         id::PRCMD => prcmd(w, args, mode),
         id::JOIN | id::DECLINE => {
             // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}; the invite is no longer pending.
@@ -1320,6 +1322,11 @@ fn tell(w: &mut World, args: &[String], line: &str) -> Done {
         }
         return Err(());
     };
+    // FUN_100785a0: not to a name on the blacklist (group 7 0xb3, nothing sent).
+    if super::partyreq::blacklisted(w, &name) == 1 {
+        refuse(w, 0xb3);
+        return Ok(());
+    }
     let msg = tail(line, 2).trim().to_string();
     super::push_chat_mode(w, format!(">>{name} : {msg}"), 4, 3);
     // FUN_1018d6e0: the sent-tell names, newest first, 8 at most (exact match moves to the front).
@@ -1771,6 +1778,22 @@ fn misspelt(w: &mut World) {
     let Some(bt) = w.battle.clone() else { return };
     let colour = bt.colour_in(0x9d, &w.game);
     w.chat.push_colour(bt.group9(0x65).unwrap_or_default(), colour);
+}
+
+/// FUN_1007c6c0 (/blacklist, /blist): "add Name" / "delete Name" look the name up (FUN_1007c740, the search server),
+/// then c2s 0x03D and the server's 0x042 answer; fewer words open the list window "menu    blklist" *(not done)*.
+fn blacklist(w: &mut World, args: &[String]) -> Done {
+    if args.len() < 3 {
+        log::info!("/blacklist: the list window (menu    blklist) is not done");
+        return Ok(());
+    }
+    let mode = match args[1].as_str() {
+        "add" => 0,
+        "delete" => 1,
+        _ => return Ok(()),
+    };
+    super::search::lookup(w, &args[2], |n| super::search::Then::Black(n, mode));
+    Ok(())
 }
 
 /// FUN_1007d910 (/recruitlist, /rlist): none or "list" View Request, "delete Name" (group 9 0x141, there or not),

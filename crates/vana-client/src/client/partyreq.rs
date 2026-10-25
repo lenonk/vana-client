@@ -22,6 +22,8 @@ pub struct State {
     pub black_loaded: bool,
     /// FUN_100e0aa0: the last c2s 0x03C.
     black_asked: Option<Instant>,
+    /// The mode of the c2s 0x03D waiting for its answer (0 add, 1 delete).
+    black_pending: Option<u8>,
 }
 
 /// comyn group 9 0x140 "Really reset request history?" (default No) from the Request toggle or scoption.
@@ -95,6 +97,57 @@ pub fn blacklisted(w: &mut World, name: &str) -> u8 {
         return 2;
     }
     s.blacklist.iter().any(|(_, n)| letters(n) == letters(name)) as u8
+}
+
+/// FUN_100a1a00: a message from `id` is dropped while its sender (not ourselves; FUN_100a1770's name: party and
+/// alliance first, then the actors, else empty) is on the blacklist or the list is not in yet. Kind 0 (s2c 0x009 from
+/// a PC) only for messages 0x59 / 0x5a / 0x64..0x67; kinds 1 (0x029 / 0x02D) and 2 (0x05A emotes) always.
+pub fn sender_blocked(w: &mut World, id: u32, msg: u16, kind: u8) -> bool {
+    if kind == 0 && !matches!(msg, 0x59 | 0x5a | 0x64..=0x67) {
+        return false;
+    }
+    if id == w.my_id {
+        return false;
+    }
+    let name = w.party.members().find(|m| m.id == id).map(|m| m.name.clone()).or_else(|| w.entities.get(&id).map(|e| e.name.clone())).unwrap_or_default();
+    if !name.is_empty() && name == w.name {
+        return false;
+    }
+    blacklisted(w, &name) != 0
+}
+
+/// FUN_100e0bc0: c2s 0x03D {ID u32, Name[16], Mode i8} for /blacklist add (0) / delete (1).
+pub fn black_edit(w: &mut World, id: u32, name: &str, mode: u8) {
+    let mut b = vec![0u8; 0x18];
+    b[0..4].copy_from_slice(&id.to_le_bytes());
+    for (k, c) in name.bytes().take(15).enumerate() {
+        b[4 + k] = c;
+    }
+    b[0x14] = mode;
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x03D, body: b });
+    w.partyreq.black_pending = Some(mode);
+}
+
+/// s2c 0x042: the list gains or loses the name (9 0x74 "Added to blacklist." / 0x76 "Removed from blacklist."), or the
+/// edit failed (0x75 / 0x77 by the edit asked) *(inf: the list update; LSB sends only this, not a new 0x041)*.
+pub fn black_result(w: &mut World, id: u32, name: String, mode: u8) {
+    let pending = w.partyreq.black_pending.take();
+    let s = &mut w.partyreq;
+    let line = match mode {
+        0 => {
+            if !s.blacklist.iter().any(|(_, n)| letters(n) == letters(&name)) {
+                s.blacklist.push((id, name));
+            }
+            0x74
+        }
+        1 => {
+            s.blacklist.retain(|(_, n)| letters(n) != letters(&name));
+            0x76
+        }
+        _ if pending == Some(1) => 0x77,
+        _ => 0x75,
+    };
+    super::textcmd::log9(w, line);
 }
 
 /// FUN_100e0620: s2c 0x041; Stat bit 0 starts the list over, bit 1 is its last packet.

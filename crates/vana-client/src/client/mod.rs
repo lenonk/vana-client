@@ -6018,6 +6018,10 @@ impl App {
                     }
                 }
                 NetEvent::Chat { kind, attr, data, from, text } => {
+                    // The block list (LAB_100e37a0 step 6): a blacklisted sender's line goes, but kind 0x19 and GM lines.
+                    if kind != 0x19 && attr & 1 == 0 && partyreq::blacklisted(world, &from) == 1 {
+                        continue;
+                    }
                     // Tells (and kind 0x15) go into the reply history.
                     if matches!(kind, 3 | 0x15) && !from.is_empty() {
                         world.tells.retain(|t| *t != from);
@@ -6297,6 +6301,7 @@ impl App {
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
                 NetEvent::PartyRequest { status, name } => partyreq::received(world, status, name),
                 NetEvent::Blacklist { stat, entries } => partyreq::blacklist(world, stat, entries),
+                NetEvent::BlackEdit { id, name, mode } => partyreq::black_result(world, id, name, mode),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),

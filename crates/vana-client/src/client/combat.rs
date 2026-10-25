@@ -94,10 +94,11 @@ pub(super) fn who(w: &World, id: u32) -> Option<Who> {
 /// s2c 0x05A (LAB_100a06e0): dropped for emote 0x61+ or a caster / target not here. The caster plays it (FUN_100a0b90)
 /// unless busy with one, not idle / sitting / seated, or Mode 1; /aim failing prints group 9 0x66 instead. The line
 /// (file 7025, emote * 2 + no target) in mode 7 for our own untargeted emote, else 0x0f, unless Mode 2 or the Emotes
-/// filter (config 0x32 bit 3). Not done: the block list, the pet copying the motion, trusts copying it.
+/// filter (config 0x32 bit 3), and dropped for a caster on the block list (FUN_100a1a00 kind 2). Not done: the pet
+/// copying the motion, trusts copying it.
 pub(super) fn on_emote(w: &mut World, caster: u32, target: u32, emote: u16, param: u16, mode: u8) {
     let here = |id: u32| id == w.my_id || w.entities.contains_key(&id);
-    if emote >= 0x61 || !here(caster) || (target != 0 && !here(target)) {
+    if emote >= 0x61 || !here(caster) || (target != 0 && !here(target)) || super::partyreq::sender_blocked(w, caster, emote, 2) {
         return;
     }
     let status = if caster == w.my_id { w.my_motion.status } else { w.entities.get(&caster).map_or(0, |e| e.motion.status) };
@@ -304,8 +305,12 @@ pub(super) fn on_system_message(w: &mut World, id: u16, work: [i32; 2]) {
 
 /// s2c 0x009 (LAB_100fbd40 -> FUN_100a1ab0): a 7031 line; the actor from CasUniqueNo (none for 0), no target, work
 /// = Para0..3, string slots 2 / 3 = string2 / string3 (e.g. 88 "Dice roll! X rolls N!", 89 "X examines you.").
-/// Not done: the block list (Attr 0x10), SysMesFilterLevel (s2c 0x0B4), the Mode key's event window.
+/// A PC's messages 0x59 / 0x5a / 0x64..0x67 go by the block list. Not done: SysMesFilterLevel (s2c 0x0B4), the Mode
+/// key's event window.
 pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], strings: [String; 2]) {
+    if cas != 0 && cas >> 24 == 0 && super::partyreq::sender_blocked(w, cas, id, 0) {
+        return;
+    }
     let Some(bt) = w.battle.clone() else { return };
     let ctx = Ctx { actor: if cas != 0 { who(w, cas) } else { None }, target: None, me: w.name.clone(), work: [para[0], para[1], para[2], para[3], 0], strings };
     match bt.system(id, &ctx) {
@@ -372,6 +377,10 @@ pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
     }
     if m.actor == w.my_id || m.target == w.my_id {
         log::debug!("battle message {} {:#x} -> {:#x} data {:?}", m.message, m.actor, m.target, m.data);
+    }
+    // The block list (FUN_100a1a00 kind 1): the caster's lines are not printed *(inf: the effect above still runs)*.
+    if super::partyreq::sender_blocked(w, m.actor, m.message, 1) {
+        return;
     }
     print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
 }

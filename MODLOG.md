@@ -8005,3 +8005,22 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   only for an actor that close; actors under 0.0001 leave the draw list (they wrote depth before). Seen live in the
   Mog House walking toward the camera into the wall: the character goes see-through, then away.
 
+## The block list (blacklist): its readers and /blacklist add / delete (2026-10-25)
+
+- FUN_100e0a50 (1 listed, 2 the list not in yet and asking, c2s 0x03C at most every 60 s; names by their leading
+  letters) is read by: s2c 0x017 (LAB_100e37a0 at 0x100e38ed: the line goes when listed, but kind 0x19 and GM lines);
+  /tell (FUN_100785a0: group 7 0xb3, nothing sent); the trade on a player (FUN_1013fd30: 7 0xb3); /prcmd and party
+  requests (done before); FUN_100a1a00 (below); and FUN_100f8d30 / the asm-only code at 0x100f8f10 / 0x100f9026, packets
+  0xa1 / 0xa2 of another session (DAT_104dfd98's) *(not traced: not the map server's)*.
+- FUN_100a1a00(name, message, kind): not for our own name; kind 0 (s2c 0x009 from a PC, FUN_100a1ab0) only for
+  messages 0x59 / 0x5a / 0x64..0x67, kinds 1 (s2c 0x029 / 0x02D, asm 0x1009eaa7 / 0x1009ec45) and 2 (s2c 0x05A
+  emotes, FUN_100a0660) always; dropped when FUN_100e0a50 is not 0, so also while the list is not in. The name is
+  FUN_100a1770's: party and alliance first, then the actor table, else empty. Ours: partyreq::sender_blocked; for
+  0x029 / 0x02D only the printed line goes *(inf: the level-up effect of the same handler still runs)*.
+- /blacklist (FUN_1007c6c0): "add Name" / "delete Name" (exact words) look the name up with the search server
+  (FUN_1007c740, the name capitalised); not found: group 9 0x75 "Failed to add to blacklist." / 0x77; found: c2s
+  0x03D {u32 ID, Name[16], i8 Mode 0 / 1} (FUN_100e0bc0). LSB resolves the name itself and answers s2c 0x042 {ID,
+  Name[16]} @4, Mode @0x18 (0 added, 1 removed, 2 failed): ours adds / removes the name and prints 9 0x74 / 0x76, or
+  0x75 / 0x77 by the edit asked *(inf: the list update on 0x042)*. Fewer words open "menu    blklist": not done.
+- Live (Lnxcsfix): `/blacklist add Nobodyhere` printed "Failed to add to blacklist.".
+

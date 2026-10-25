@@ -23,6 +23,8 @@ pub enum Then {
     LinkList,
     /// LAB_1007dc00 (kind 0) / LAB_1007dd40 (kind 1): /prcmd add / remove for someone not in the zone.
     Request(String, u8),
+    /// LAB_1007c7c0 / LAB_1007c920: /blacklist add (0) / delete (1).
+    Black(String, u8),
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -461,6 +463,11 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
                 _ => super::partyreq::send(w, id, 0, kind, &name),
             }
         }
+        // An exact name: c2s 0x03D; none: group 9 0x75 / 0x77.
+        Then::Black(name, mode) => match reply.and_then(|r| r.records.iter().find(|r| r.name == name).map(|r| r.id)) {
+            Some(id) => super::partyreq::black_edit(w, id, &name, mode),
+            None => super::textcmd::log9(w, if mode == 0 { 0x75 } else { 0x77 }),
+        },
         Then::LevelSync => super::levelsync::filled(w, reply),
         Then::LinkList => super::linklist::filled(w, reply),
         Then::Summary(scope) => {

@@ -419,6 +419,8 @@ pub enum NetEvent {
     PartyRequest { status: u8, name: String },
     /// s2c 0x041 BLACK_LIST: List[12] {u32 ID, Name[16]} @4, Stat @0xf4 (bit 0 reset, bit 1 last), Num @0xf5.
     Blacklist { stat: u8, entries: Vec<(u32, String)> },
+    /// s2c 0x042 BLACK_EDIT: {u32 ID, Name[16]} @4, Mode @0x18 (0 added, 1 removed, 2 failed).
+    BlackEdit { id: u32, name: String, mode: u8 },
     /// s2c 0x0E1 GROUP_CHECKID (LAB_100ea7f0): GroupID @4, the answer to c2s 0x078.
     GroupId(u32),
     /// s2c 0x113 (mode 1) / 0x118 (mode 2): the currencies, the whole packet (status_rows_spec.md appendix A).
@@ -947,6 +949,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x11C => tx.send(NetEvent::LockStyleError((0..p.u8(4).min(16) as usize).map(|i| p.u16(8 + 2 * i)).collect()))?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x11D => tx.send(NetEvent::PartyRequest { status: p.u8(0xb), name: text(&p, 0xc, 16) })?,
+                    0x042 => tx.send(NetEvent::BlackEdit { id: p.u32(4), name: text(&p, 8, 16), mode: p.u8(0x18) })?,
                     0x041 => tx.send(NetEvent::Blacklist { stat: p.u8(0xf4), entries: (0..p.u8(0xf5).min(12) as usize).map(|k| (p.u32(4 + 0x14 * k), text(&p, 8 + 0x14 * k, 16))).collect() })?,
                     0x044 => tx.send(NetEvent::ExtJob((0..0x9c).map(|i| p.u8(4 + i)).collect()))?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,

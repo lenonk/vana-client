@@ -62,6 +62,12 @@ pub(super) fn start(w: &mut World) -> bool {
         return false;
     }
     if t < 0x0100_0000 {
+        // Not a player on the blacklist (group 7 0xb3).
+        let name = w.entities.get(&t).map(|e| e.name.clone()).unwrap_or_default();
+        if super::partyreq::blacklisted(w, &name) == 1 {
+            super::textcmd::refuse(w, 0xb3);
+            return false;
+        }
         return request(w, t, index, pos);
     }
     if !super::textcmd::status_gate(w, 0x43) {
