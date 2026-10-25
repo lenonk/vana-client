@@ -5474,6 +5474,8 @@ Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
   its status; +0x130 bit 22 is s2c 0x067 @0x10 bit 2 (Level Sync, 0x1009cf90), +0xee 3..5 the lift / ship model
   kinds. LSB clears the claim (m_OwnerID) only in the death's drop-item callback and sends no update for it, so the
   corpse keeps our claim until it despawns and the music goes on *(inf: the retail server clears it at death)*.
+  Ours skips a dead monster (status 2 / 3) in the flag, so the field music comes back at the kill (live 2026-10-25:
+  at the disengage, not 11 s later with the corpse).
 - Title slot 0 while engaged: retail shows group 0xd 5 "Commands" (seen live twice by the user), although FUN_1012b4b0
   reads as 7 "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred). Ours: 5.
 - Choosing Magic / Abilities / Trust / Items closes the battle menu (its close animation plays) and the list opens
