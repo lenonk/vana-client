@@ -12,6 +12,7 @@ pub mod sound;
 pub mod spline;
 mod tasks;
 pub mod trail;
+pub mod voyage;
 pub use tasks::{HOLD_REACT, HOLD_STATUS};
 pub use tasks::event_action_file;
 pub use tasks::{effects_allowed, filter_class};
@@ -1472,7 +1473,12 @@ impl Effects {
             emitted: 0,
             attach: g.attach,
             mode: g.attach_mode(),
-            matrix: None,
+            // FUN_100531d0: the generator's matrix taken at the start; the voyage modes' is V (or its rotation).
+            matrix: match g.attach_mode() {
+                0x14 => Some(self.voyage),
+                0x15 => Some(Mat4::from_cols(self.voyage.x_axis, self.voyage.y_axis, self.voyage.z_axis, glam::Vec4::W)),
+                _ => None,
+            },
             scale_a: Vec3::ONE,
             scale_b: Vec3::ONE,
             dist: 0.0,
@@ -1670,9 +1676,10 @@ impl Effects {
         }
         self.step_quakes(f);
         self.step_decals(actors);
+        let voyage = self.voyage;
         for i in 0..self.insts.len() {
             let Some(inst) = self.insts[i].as_mut().filter(|x| !x.held) else { continue };
-            attach(inst, f);
+            attach(inst, f, voyage);
             // Generator op 0x11: follow the actors every frame.
             if let Some(word) = inst.streams[0].iter().find(|o| o.code == 0x11).map(|o| o.u32(1))
                 && !matches!(inst.mode, 0 | 0xe | 0xf)
@@ -2401,18 +2408,21 @@ fn roofed(g: &crate::dat::generator::Generator) -> bool {
 }
 
 /// FUN_10052eb0 / FUN_1003afd0 for the modes the zone uses; actor modes come with the battle triggers.
-fn attach(inst: &mut Instance, f: &Frame) {
-    use std::f32::consts::PI;
+fn attach(inst: &mut Instance, f: &Frame, voyage: Mat4) {
     match inst.mode {
         0 => inst.matrix = None,
         // Sun / moon (FUN_10180700): a = day fraction x 2pi; moon dir (sin a, cos a, 0), the sun opposite;
         // placed 1000 / 900 units from the eye against the direction *(inf: the rotation of DAT_105ec978 is
-        // left out)*.
-        0xe | 0xf => {
-            let a = f.dayfrac * 2.0 * PI;
-            let (dir, d) = if inst.mode == 0xe { (Vec3::new((a + PI).sin(), (a + PI).cos(), 0.0), 1000.0) } else { (Vec3::new(a.sin(), a.cos(), 0.0), 900.0) };
-            inst.matrix = Some(Mat4::from_translation(f.eye - dir * d));
-        }
+        // left out)*; FUN_1003be10 0xe / 0xf turn that point by the voyage matrix's rotation, eye included.
+        0xe | 0xf => inst.matrix = Some(Mat4::from_translation(sky_point(inst.mode == 0xe, f.dayfrac, f.eye, voyage))),
         _ => {}
     }
+}
+
+/// The sun's (or the moon's) place: 1000 (900) units from the eye against its direction, turned by V's rotation.
+fn sky_point(sun: bool, dayfrac: f32, eye: Vec3, voyage: Mat4) -> Vec3 {
+    use std::f32::consts::PI;
+    let a = dayfrac * 2.0 * PI;
+    let (dir, d) = if sun { (Vec3::new((a + PI).sin(), (a + PI).cos(), 0.0), 1000.0) } else { (Vec3::new(a.sin(), a.cos(), 0.0), 900.0) };
+    voyage.transform_vector3(eye - dir * d)
 }

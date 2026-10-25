@@ -202,6 +202,8 @@ pub struct Uniforms {
     sky_stops: [[f32; 4]; 2],
     /// x: the area slot of 'ev10' while a sub-area is shown (0 none).
     area_info: [f32; 4],
+    /// The voyage matrix (identity off a ship's voyage).
+    voyage: [[f32; 4]; 4],
 }
 
 /// Area environments (DAT_10631f24 area objects) the scenery is lit by, slot 0 unused.
@@ -369,6 +371,8 @@ pub struct ZoneRenderer {
     parts: Vec<PartGpu>,
     parts_gpu: wgpu::Buffer,
     pub now: f32,
+    /// FUN_10178b30's V for the world slot (zone +0x38e1c).
+    pub voyage: Mat4,
 }
 
 /// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
@@ -931,7 +935,8 @@ pub struct Instance {
     lights: [u32; 4],
     /// x: the area slot it is lit by (0 = the zone's).
     area: [u32; 4],
-    /// Level of detail: drawn while near² < d² <= far² from the camera to its origin; far 0 = always.
+    /// Level of detail: drawn while near² < d² <= far² from the camera to its origin; far 0 = always. z: the part,
+    /// w: 1 for a voyage zone's world (drawn through the voyage matrix).
     band: [f32; 4],
 }
 
@@ -1027,7 +1032,7 @@ impl ZoneGeometry {
             // Door parts draw through FUN_1017ce60 (2019), which takes every ref, 'c' keys too.
             let lights = p.lights.map(|k| slot_of(k, part != 0));
             for (name, b) in bands {
-                let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, 0.0] };
+                let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, p.world as u32 as f32] };
                 by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0));
             }
         }
@@ -1225,6 +1230,7 @@ impl ZoneRenderer {
             parts: vec![PartGpu::default(); PARTS],
             parts_gpu,
             now: 0.0,
+            voyage: Mat4::IDENTITY,
         }
     }
 
@@ -1713,6 +1719,7 @@ impl ZoneRenderer {
             sky_colors: [[0.0; 4]; 8],
             sky_stops: [[0.0; 4]; 2],
             area_info: [0.0; 4],
+            voyage: self.voyage.to_cols_array_2d(),
         };
         let mut clear = self.fog_color;
         if let Some(l) = &self.lighting {

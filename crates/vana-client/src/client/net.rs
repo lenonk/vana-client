@@ -189,6 +189,23 @@ fn queued_message(m: u16, kind: u8, two: bool) -> u16 {
 }
 
 /// 0x029: @4 caster, @8 target, @0xc / @0x10 data, @0x14 / @0x16 indices, @0x18 message, @0x1a Type.
+/// 0x00A's voyage (asm 0x100fb3a7..0x100fb3e8): ShipStart u32 @0x78, start + u16 @0x7c (LSB's "ShipEnd" is the
+/// length), reverse = u32 @0x24 bit 26, route = u32 @0x28 bits 19..20.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShipData {
+    pub start: u32,
+    pub end: u32,
+    pub reverse: bool,
+    pub route: u8,
+}
+
+/// FUN_10094190 starts a voyage only when both ends are non-zero.
+fn ship_data(p: &SubPacket) -> Option<ShipData> {
+    let start = p.u32(0x78);
+    let end = start.wrapping_add(p.u16(0x7c) as u32);
+    (start != 0 && end != 0 && end != start).then(|| ShipData { start, end, reverse: p.u32(0x24) >> 26 & 1 != 0, route: (p.u32(0x28) >> 19 & 3) as u8 })
+}
+
 pub fn battle_message(p: &SubPacket) -> BattleMessage {
     let message = p.u16(0x18);
     BattleMessage { actor: p.u32(4), target: p.u32(8), data: [p.u32(12) as i32, p.u32(16) as i32], actor_index: p.u16(0x14), target_index: p.u16(0x16), message, queued: queued_message(message, p.u8(0x1a), false) }
@@ -274,7 +291,7 @@ pub struct ZoneText {
 #[derive(Clone, Debug)]
 pub enum NetEvent {
     /// `game_time` @0x3C (Earth seconds since the Vana'diel epoch), `weather` number @0x68; `area` the log line.
-    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32, play_time: u32, mog_zone: bool, send_count: u16 },
+    ZoneIn { zone: u16, pos: [f32; 3], dir: u8, char_id: u32, index: u16, name: String, look: [u16; 9], motion: MotionState, game_time: u32, weather: u16, music: [u16; 5], event: Option<EventStart>, area: Option<AreaLine>, sub_map: u16, scene: u16, myroom: Option<MyRoom>, room_flag: bool, dead_counter: u32, play_time: u32, mog_zone: bool, send_count: u16, ship: Option<ShipData> },
     /// s2c 0x053 (GP_SERV_COMMAND_SYSTEMMES): para @4, para2 @8, Number @0xc (file 7031).
     SystemMessage { id: u16, para: u32, para2: u32 },
     /// s2c 0x03E (SHOP_OPEN): ShopListNum @4.
@@ -901,7 +918,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         // the login event itself, on the player (FUN_10094ea0).
                         let (event_num, event_para) = (p.u16(0x62), p.u16(0x64));
                         let event = (event_num != 0).then(|| EventStart { target: p.u32(4), index: p.u16(8), zone: event_num, event: event_para, mode: p.u16(0x66), zone2: p.u16(0x40), ..Default::default() });
-                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom, room_flag: matches!(p.u32(0x80), 1 | 4 | 5), dead_counter: p.u32(0xA4), play_time: p.u32(0xA0), mog_zone: p.u8(0xaf) & 1 != 0, send_count: p.u16(0xac) })?;
+                        tx.send(NetEvent::ZoneIn { zone: p.u32(48) as u16, pos, dir: p.u8(11), char_id: p.u32(4), index: p.u16(8), name: text(&p, 132, 16), look: look_at(&p, 68), motion: motion_state(&p), game_time: p.u32(0x3C), weather: p.u16(0x68), music: std::array::from_fn(|i| p.u16(0x56 + 2 * i)), event, area: area_line(&p), sub_map: if p.u16(0x60) != scene && myroom.is_none() { p.u16(0x60) } else { 0 }, scene, myroom, room_flag: matches!(p.u32(0x80), 1 | 4 | 5), dead_counter: p.u32(0xA4), play_time: p.u32(0xA0), mog_zone: p.u8(0xaf) & 1 != 0, send_count: p.u16(0xac), ship: ship_data(&p) })?;
                     }
                     0x00B => {
                         let state = p.u8(4);
@@ -1369,6 +1386,18 @@ mod tests {
             data[*at..*at + b.len()].copy_from_slice(b);
         }
         SubPacket { id, sync: 0, data }
+    }
+
+    /// 0x00A's voyage fields (spec 6): start, start + length, flags3 bit 26 reverse, flags4 bits 19..20 the route;
+    /// no start, no voyage; LSB's flags4 0x0100 is route 0.
+    #[test]
+    fn ship_data_parse() {
+        let p = sub(0x00A, 0x118, &[(0x78, &1_000_000u32.to_le_bytes()), (0x7c, &944u16.to_le_bytes()), (0x24, &0x0400_0000u32.to_le_bytes()), (0x28, &((2u32 << 19) | 0x100).to_le_bytes())]);
+        assert_eq!(ship_data(&p), Some(ShipData { start: 1_000_000, end: 1_000_944, reverse: true, route: 2 }));
+        let p = sub(0x00A, 0x118, &[(0x78, &1_000_000u32.to_le_bytes()), (0x7c, &944u16.to_le_bytes()), (0x28, &0x100u32.to_le_bytes())]);
+        assert_eq!(ship_data(&p), Some(ShipData { start: 1_000_000, end: 1_000_944, reverse: false, route: 0 }));
+        let p = sub(0x00A, 0x118, &[(0x7c, &944u16.to_le_bytes())]);
+        assert_eq!(ship_data(&p), None);
     }
 
     /// GP_SERV_COMMAND_EVENT / EVENTNUM / EVENTSTR as LSB lays them out.

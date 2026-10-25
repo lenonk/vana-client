@@ -1091,6 +1091,8 @@ impl Host for LiveHost<'_> {
                 self.w.map_open = None;
                 self.w.map_cmds.push(super::map::Cmd::Close);
             }
+            // FUN_100b0a00 0xd / 0xe: hold the voyage (V identity, t still) / let it go on.
+            Effect::Op { op: 0xb4, sub: Some(s @ (0xd | 0xe)), .. } => self.w.voyage.hold = s == 0xd,
             // FUN_100b0a00 0x14 -> FUN_101fb070: the map view to x, y, zoom factor, speed (each x 0.001) and flags.
             Effect::Op { op: 0xb4, sub: Some(0x14), args, .. } => {
                 let f = |i| Self::arg_int(&args, i).unwrap_or(0) as f32 * 0.001;

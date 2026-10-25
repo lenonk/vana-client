@@ -20,6 +20,8 @@ struct Uniforms {
     sky_stops: array<vec4<f32>, 2>,
     // x: the area slot of 'ev10' while a sub-area is shown (0 none).
     area_info: vec4<f32>,
+    // The voyage matrix (identity off a ship's voyage).
+    voyage: mat4x4<f32>,
 };
 
 // An area environment's lighting (sun.w = 1 when it has one); fog.xy = start, end.
@@ -163,6 +165,11 @@ fn vs_main(v: VertexIn) -> VertexOut {
     if (part != 0u) {
         model = model * part_matrix(part);
     }
+    // FUN_1017c9c0 for scene slot type 3 while a voyage runs: the instance through V.
+    let voyaged = v.band.w != 0.0;
+    if (voyaged) {
+        model = u.voyage * model;
+    }
     let world = model * vec4<f32>(v.pos, 1.0);
     var out: VertexOut;
     out.clip = u.view_proj * world;
@@ -177,7 +184,8 @@ fn vs_main(v: VertexIn) -> VertexOut {
     let ev10 = u32(u.area_info.x);
     out.area = select(v.area.x, ev10 | 0x8000u, (v.flags & 1u) != 0u && ev10 != 0u);
     // FUN_1017c9c0's LOD pick: an instance outside its band collapses to nothing.
-    let d = u.eye.xyz - v.m3.xyz;
+    let origin = select(v.m3.xyz, (u.voyage * v.m3).xyz, voyaged);
+    let d = u.eye.xyz - origin;
     let d2 = dot(d, d);
     if (v.band.y > 0.0 && !(d2 > v.band.x && d2 <= v.band.y)) {
         out.clip = vec4<f32>(0.0, 0.0, 0.0, 0.0);

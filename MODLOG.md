@@ -7783,8 +7783,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   "The bone-0 drop, the wade point 0x35"). Not done: the not-yet-posed skeleton's identity (load edge). Tests attach_bone_frame, attach_voyage_identity.
 - Modes 0x14 / 0x15: the voyage matrix DAT_10631ed0 (FUN_10178b30: the rigid inverse of a ship's pose on the zone's
   `c00N` path), whole / its rotation; identity off a voyage (Effects::voyage). Op 0x11 follows mode 0x14 too. The
-  voyage itself (ShipStart / ShipEnd from 0x00A, the path, op 0xb4 0xd / 0xe hold, the moving ship scenery, the sun /
-  moon rotation of modes 0xe / 0xf) is not done (fx_op_ac_attach14_spec.md 2.7 phase 2).
+  voyage itself: done (section "Ship voyages: the moving world").
 
 ## Camera shake and rumble: element update op 0x5f (2026-10-25; spec ~/ffxi/lab/research/fx_shake_spec.md)
 
@@ -8803,3 +8802,30 @@ interpolates between the hour keys in both clients.
   the next login screen fills it in with the cursor on Log in. The one-time code is never kept.
 - Live (test config): typed, ticked, logged in (the config then held 88 hex digits and no plaintext, the key file
   0600); the next start filled the password and Enter reached the title menu; unticking emptied it.
+
+## Ship voyages: the moving world (2026-10-25; spec ~/ffxi/lab/research/ship_voyage_spec.md)
+
+- The ship stands still, the world moves: a voyage zone DAT holds the world MZB (header byte 0x1c = 2, scene slot
+  type 3, no collision) and the ship MZB (byte 0 = 0, the grid). FUN_1017b510 draws a type-3 slot's instances through
+  V while the voyage runs (FUN_1017c9c0: world = inst x V, the LOD distance from V(inst position), the culling with V
+  view proj). Ours: Placement.world, Instance band.w = 1, Uniforms.voyage, vs_main `model = voyage * model` and the
+  LOD origin through V. Actors, camera, collision, the ship's own effects never see V. Collision reads the MZB's
+  offset at @8 only now (FUN_10179430; the old "skip zeros" fallback could have read a world MZB).
+- Time (0x00A only): ShipStart u32 @0x78, the length u16 @0x7c (LSB's ShipEnd), reverse u32 @0x24 bit 26, route
+  (u32 @0x28 >> 19) & 3; FUN_10094190 starts a voyage only with both ends non-zero: t = (now - start) / length, rate
+  1 / (length x 60) a tick; route, reverse set, hold cleared. Nothing resets it: a zone-in without ship data keeps
+  t / rate / route (retail's initial rate 1/54000). Each frame of a loaded zone (FUN_10178b30): V = inverse(pose at
+  max(t, 0)), then t += ticks x rate, past 1 back to 0; held (event op 0xb4 0xd, 0xe releases) or without a path: V
+  identity, t still. Ours steps by the real ticks (retail counts at least one a frame). client/voyage.rs.
+- The path (FUN_10055040 / FUN_10055780 / FUN_10055160): the type-6 chunk `c00<route>`, else `c000` (by presence);
+  u32 @0x10 & 0xff keys of 0x30 from @0x20 (A @+0, B @+0x10); two CMoSplines (fx/spline.rs's); pose = RotY(pi/2 -
+  atan2 of B - A (A - B reversed)) at A(u), u = t or 1 - t; V its rigid inverse. fx/voyage.rs.
+- The sun / moon (modes 0xe / 0xf, FUN_1003be10): their point (eye - dir x 1000 / 900) turned by V's rotation, the
+  eye included; voyage-mode generators (0x14 / 0x15) take V (its rotation) as their matrix at the start
+  (FUN_100531d0), so those without op 0x11 sit right too.
+- zone-shot --voyage T[r] renders a ship zone at t T. Tests: ship_data_parse, voyage start / step / wrap / hold, the
+  spec's paths and poses (files 101, 147, 320, 326), world slot counts, route fallback, the sun at t 0.5.
+- Live (Lnxcsfix, !pos onto zone 220 while LSB's Selbina leg ran): ship data and `c000` (18 keys) at t 0.059; on deck
+  Mhaura's coast receded over 35 s while the deck and sails stayed. LSB never sends a route (the barge's and
+  Manaclipper's other legs show c000) and has no data for the pirates' run (227 / 228). Not done: ship actors (0x00E
+  SubKind 4: the pirate ship, the port-side ships; MODLOG "Doors").

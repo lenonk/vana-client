@@ -235,6 +235,9 @@ pub struct Placement {
     pub id: u32,
     /// Record +0x38 / +0x3c: level-of-detail distances (high within the first, low beyond the larger; FUN_1017c9c0).
     pub lod: [f32; 2],
+    /// From an MZB whose byte 0x1c is 2 (scene slot type 3, FUN_10179430): a voyage zone's world, drawn through the
+    /// voyage matrix while the voyage runs (FUN_1017b510).
+    pub world: bool,
 }
 
 impl Placement {
@@ -291,6 +294,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
     let stride = [100usize, 84, 92].into_iter().find(|s| count * s + 32 == end).ok_or_else(|| anyhow::anyhow!("unknown MZB record size ({count} records end at {end})"))?;
     let version = p[3];
     let keys = light_list(p);
+    let world = p.get(0x1c) == Some(&2);
     let mut out = Vec::with_capacity(count);
     for i in 0..count {
         let r = 32 + i * stride;
@@ -304,7 +308,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
                 *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
             }
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c), id: u32_at(p, r + 0x34), lod: [f32_at(p, r + 0x38), f32_at(p, r + 0x3c)] });
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c), id: u32_at(p, r + 0x34), lod: [f32_at(p, r + 0x38), f32_at(p, r + 0x3c)], world });
     }
     Ok(out)
 }
@@ -546,10 +550,12 @@ pub struct ZoneScene {
     pub warnings: Vec<String>,
     /// The light table's keys (every MZB light list's, once each; slot = index, FUN_101737d0).
     pub light_keys: Vec<u32>,
+    /// The voyage paths `c000`..`c003` (type-6 chunks, the first of each name; FUN_10055040), payloads.
+    pub paths: [Option<Vec<u8>>; 4],
 }
 
 pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
-    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new() };
+    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default() };
     let list: Vec<Chunk> = chunks(file)?;
     for c in list {
         let mut data = c.data.to_vec();
@@ -573,6 +579,11 @@ pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
             0x20 => parse_img(&data).map(|t| scene.textures.push(t)),
             0x36 => {
                 scene.regions.extend(parse_rid(&data));
+                Ok(())
+            }
+            0x06 if c.name[..3] == *b"c00" && (b'0'..=b'3').contains(&c.name[3]) => {
+                let k = (c.name[3] - b'0') as usize;
+                scene.paths[k].get_or_insert_with(|| c.data.to_vec());
                 Ok(())
             }
             _ => Ok(()),

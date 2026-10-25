@@ -73,14 +73,8 @@ fn u16_at(b: &[u8], o: usize) -> Option<u16> {
 }
 
 pub fn parse(p: &[u8]) -> Result<Collision> {
-    let mut at = 8;
-    let table = loop {
-        let o = u32_at(p, at).unwrap_or(0) as usize;
-        if o != 0 || at >= 0x20 {
-            break o;
-        }
-        at += 4;
-    };
+    // FUN_10179430 reads the offset at @8 only (a voyage zone's world MZB has 0 there, and no grid).
+    let table = u32_at(p, 8).unwrap_or(0) as usize;
     if table == 0 || table >= p.len() {
         bail!("MZB has no collision table");
     }

@@ -98,6 +98,13 @@ mod trade;
 mod fep;
 mod timers;
 mod durations;
+mod voyage;
+
+/// A fresh voyage state for the fx tests.
+#[cfg(test)]
+pub fn voyage_for_tests() -> voyage::Voyage {
+    voyage::Voyage::default()
+}
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -4429,6 +4436,8 @@ struct World {
     extra_timers: bool,
     timers_dock: u32,
     timers: timers::Timers,
+    /// The ship voyage (kept across zone changes, as retail's globals).
+    voyage: voyage::Voyage,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
     cast_bar: Option<(f32, f32)>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -5744,6 +5753,7 @@ impl App {
                             extra_timers: self.cfg.timers,
                             timers_dock: self.cfg.timers_dock,
                             timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
+                            voyage: Default::default(),
                             recasts_seen: false,
                             cast_bar: None,
                             item_info: None,
@@ -5927,6 +5937,7 @@ impl App {
                         }
                         world.zone_lines = scene.regions.iter().filter(|r| r.name.starts_with(['z', 'Z']) && r.name.len() == 8).cloned().collect();
                         world.lifts = lifts::Lifts::load(&scene.regions);
+                        world.voyage.set_path(&scene.paths);
                         // Its geometry and textures go up over the next frames; the indicator stays until then.
                         if let Some(gfx) = &self.gfx {
                             world.effects.reg.light_keys = geometry.light_keys.clone();
@@ -6097,8 +6108,10 @@ impl App {
                     world.downloading = Some(Instant::now());
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count } => {
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship } => {
                     world.mog_zone = mog_zone;
+                    // FUN_100550f0: the old zone's path goes; the new one's comes with its scene.
+                    world.voyage.path = None;
                     world.play_time = Some((play_time, Instant::now()));
                     world.search = None;
                     world.blklist = None;
@@ -6181,6 +6194,10 @@ impl App {
                     }
                     log::info!("zone music {music:?}");
                     world.clock = Some((game_time, Instant::now()));
+                    if let Some(s) = ship {
+                        log::info!("voyage: zone {zone} ship data {s:?}");
+                        world.voyage.start(s, game_time);
+                    }
                     // 0x00A DeadCounter (@0xA4, 60 Hz): the end time from now when logging in or zoning while dead.
                     if dead_counter > 0 {
                         world.ko_deadline = (game_time as u64 + (dead_counter / 60) as u64).saturating_sub(360);
@@ -6939,6 +6956,8 @@ impl App {
         if world.in_scene() {
             doors::update(world);
             lifts::update(world);
+            // FUN_10178b30: V for this frame (the scenery's world slot, attach modes 0x14 / 0x15, the sun and moon).
+            world.effects.voyage = world.voyage.step(Instant::now());
         }
         // Weapon-skill motion files and motions the effect system's schedulers asked for last frame.
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
@@ -9416,6 +9435,7 @@ impl App {
             // Door parts animate against the zone's tick clock; the frame's scheduler moves go in first.
             if let Some(r) = w.renderer.as_mut() {
                 r.now = w.started.elapsed().as_secs_f32() * 60.0;
+                r.voyage = w.voyage.matrix;
             }
             doors::moves(w, &gfx.gpu);
             lifts::moves(w, &gfx.gpu);

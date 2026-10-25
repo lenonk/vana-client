@@ -220,7 +220,7 @@ pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, flo
         let Some(name) = scene.meshes.first().map(|m| m.name.clone()) else { continue };
         scene.placements = places
             .iter()
-            .map(|&(pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2] })
+            .map(|&(pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false })
             .collect();
         let local: Vec<[Vec3; 3]> = scene.meshes[0].models.iter().flat_map(model_tris).collect();
         for (p, &(_, _, size)) in scene.placements.iter().zip(&places) {

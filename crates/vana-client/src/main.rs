@@ -675,6 +675,9 @@ enum Cmd {
         /// Also start an event scheduler in the effects as FILE:TAG (DAT id, 4cc), as event opcode 0x45 does.
         #[arg(long)]
         sched: Option<String>,
+        /// A ship zone's voyage at this progress 0..1 (`r` after it: reversed), on its `c000` path.
+        #[arg(long)]
+        voyage: Option<String>,
     },
     /// Dump every table of an MSI as TSV, for inspection.
     DumpMsi { msi: PathBuf, out: PathBuf },
@@ -1044,7 +1047,7 @@ fn main() -> Result<()> {
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour),
         Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
-        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub } => {
+        Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub, voyage } => {
             use glam::Vec3;
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
@@ -1081,7 +1084,17 @@ fn main() -> Result<()> {
             let sub_file = sub.map(|id| index.read(dat::zone::file_id(id)).map(|f| (id, f))).transpose()?;
                     let sub_scene = sub_file.as_ref().map(|(id, f)| dat::zone::load_scene(&keys, f).map(|s| (*id, s))).transpose()?;
                     let weathers: Vec<dat::weather::ZoneWeather> = sub_file.iter().map(|(_, f)| f).chain([&file]).filter_map(|f| dat::weather::ZoneWeather::parse(f).ok()).collect();
+                    // --voyage T[r]: V of the zone's first path at T.
+                    let voyage_v = voyage.as_deref().and_then(|v| {
+                        let (t, rev) = v.strip_suffix('r').map_or((v, false), |t| (t, true));
+                        let m = fx::voyage::Path::parse(scene.paths[0].as_deref()?)?.matrix(t.parse().ok()?, rev);
+                        println!("voyage t {t} reversed {rev}: {m}");
+                        Some(m)
+                    });
                     let setup = |gpu: &render::Gpu, r: &mut render::ZoneRenderer| {
+                        if let Some(v) = voyage_v {
+                            r.voyage = v;
+                        }
                         if let Some((id, s)) = &sub_scene {
                             let mut all = scene.light_keys.clone();
                             all.extend(s.light_keys.iter().filter(|k| **k != 0 && !scene.light_keys.contains(k)));
