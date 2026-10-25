@@ -661,11 +661,22 @@ impl Effects {
             }
             self.pins.push((owner, a, b, k, off, left));
         }
+        // FUN_1005f820: a drive ends below 0; its scheduler's death deletes it early, frozen (0xa0: on its target).
+        for mut d in std::mem::take(&mut self.color_drives) {
+            d.left -= f.dt;
+            if !live.contains(&d.owner) {
+                if d.left >= 0.0 {
+                    self.fades.push(if d.snap { crate::fx::ColorOp::Snap(d.actor, d.target) } else { crate::fx::ColorOp::Freeze(d.actor) });
+                }
+            } else if d.left >= 0.0 {
+                self.color_drives.push(d);
+            }
+        }
         for (owner, id, mut left) in std::mem::take(&mut self.color_guards) {
             left -= f.dt;
             if !live.contains(&owner) {
                 if left >= 0.0 {
-                    self.fades.push((id, 0x8080_8080, 0.0));
+                    self.fades.push(crate::fx::ColorOp::Snap(id, 0x8080_8080));
                 }
             } else if left >= 0.0 {
                 self.color_guards.push((owner, id, left));
@@ -1028,10 +1039,11 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // FUN_1005f6c0: the real actor's model colour toward ARGB u32 @8 over dur * speed ticks (0x2a actor2).
-            0x29 | 0x2a => {
-                if let Some(id) = self.doll_of(if op.code == 0x29 { t.a1 } else { t.a2 }).id() {
-                    self.fades.push((id, op.u32_at(8), op.dur.max(0) as f32 * t.speed));
+            // FUN_1005f6c0 channel 0: the real actor's model colour toward ARGB u32 @8 over dur x speed ticks (0x2a
+            // actor2; 0xa0 actor1, landing on its target even when cut short).
+            0x29 | 0x2a | 0xa0 => {
+                if let Some(id) = self.doll_of(if op.code == 0x2a { t.a2 } else { t.a1 }).id() {
+                    self.color_drive(id, t.uid, op.u32_at(8), op.dur.max(0) as f32 * t.speed, op.code == 0xa0);
                 }
                 Flow::Next
             }
@@ -1110,6 +1122,10 @@ impl Effects {
                     }
                     0x46 | 0x47 => {
                         self.shine_drives.retain(|d| !(d.actor == id && matches!(d.kind, crate::fx::ShineKind::Tf { .. })));
+                        // Another scheduler's op 0x88 on the actor: the drive never writes (the running one is gone).
+                        if self.color_locked(id, t.uid) {
+                            return Flow::Next;
+                        }
                         crate::fx::ShineKind::Tf { start: self.shine.entry(id).or_default().tf, target: op.u32_at(8), total: left }
                     }
                     c => {
@@ -1140,12 +1156,12 @@ impl Effects {
                 if let Some(id) = self.doll_of(if op.code == 0xb1 { t.a1 } else { t.a2 }).id()
                     && matches!(actors.status(id), 2 | 3)
                 {
-                    self.fades.push((id, 0x8080_8080, 0.0));
+                    self.fades.push(crate::fx::ColorOp::Snap(id, 0x8080_8080));
                 }
                 Flow::Next
             }
-            // FUN_1005f320: a guard for dur x speed; when its scheduler task ends before that, actor1's model colour
-            // goes back to 0x80808080 (no tint left behind by a cut-short effect).
+            // FUN_1005f320 (CMoLockColorDriveTask): for dur x speed other schedulers' colour drives on actor1 do not
+            // write; when its scheduler task ends before that, actor1's model colour goes back to 0x80808080.
             0x88 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
                     self.color_guards.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
@@ -1976,6 +1992,29 @@ impl Effects {
         }
     }
 
+    /// FUN_1005f6c0's walk: a CMoLockColorDriveTask of another scheduler on the actor.
+    fn color_locked(&self, id: u32, owner: u64) -> bool {
+        self.color_guards.iter().any(|g| g.1 == id && g.0 != owner)
+    }
+
+    /// FUN_1005f6c0 channel 0: the actor's running drive is deleted first (its destructor: 0xa0's lands on its
+    /// target, others stay); a locked one never writes (0xa0's destructor still lands).
+    fn color_drive(&mut self, id: u32, owner: u64, target: u32, ticks: f32, snap: bool) {
+        use crate::fx::ColorOp;
+        if let Some(i) = self.color_drives.iter().position(|d| d.actor == id) {
+            let old = self.color_drives.remove(i);
+            self.fades.push(if old.snap { ColorOp::Snap(id, old.target) } else { ColorOp::Freeze(id) });
+        }
+        if self.color_locked(id, owner) {
+            if snap {
+                self.fades.push(ColorOp::Snap(id, target));
+            }
+            return;
+        }
+        self.fades.push(ColorOp::Drive { actor: id, argb: target, ticks });
+        self.color_drives.push(crate::fx::ColorDrive { actor: id, owner, left: ticks, target, snap });
+    }
+
     /// Actors with the refraction pass on, and its level.
     pub fn refractions(&self) -> Vec<(u32, f32)> {
         self.shine.iter().filter(|(_, s)| s.refract).map(|(id, s)| (*id, s.level)).collect()
@@ -2107,6 +2146,78 @@ mod tests {
         };
         assert_eq!(run(None), [(31, HUME, false)]);
         assert_eq!(run(Some(10)), [(10, HUME, false)]);
+    }
+
+    fn color_fx() -> Option<Effects> {
+        let index = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok()?;
+        let mut fx = Effects::new();
+        fx.set_global(Library::load(0, index.read(0).ok()?).ok()?);
+        Some(fx)
+    }
+
+    /// One op: code, wait, dur, u32 @8.
+    fn sop(code: u8, wait: i16, dur: i16, v: u32) -> SOp {
+        let mut raw = vec![0u8; 12];
+        raw[0] = code;
+        raw[1] = 3;
+        raw[4..6].copy_from_slice(&wait.to_le_bytes());
+        raw[6..8].copy_from_slice(&dur.to_le_bytes());
+        raw[8..12].copy_from_slice(&v.to_le_bytes());
+        SOp { code, wait, dur, raw }
+    }
+
+    fn color_task(fx: &mut Effects, ops: Vec<SOp>) {
+        fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(ORC), Who::Actor(HUME), None, 1.0)));
+    }
+
+    fn color_tick(fx: &mut Effects) -> Vec<crate::fx::ColorOp> {
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        fx.tick(&f, &Two);
+        std::mem::take(&mut fx.fades)
+    }
+
+    /// FUN_1005f6c0: another scheduler's op 0x88 on the actor keeps a drive from writing; the lock's own passes.
+    #[test]
+    fn color_lock() {
+        use crate::fx::ColorOp::*;
+        let Some(mut fx) = color_fx() else { return };
+        color_task(&mut fx, vec![sop(0x88, 0, 100, 0), sop(0x01, 200, 0, 0), sop(0, 0, 0, 0)]);
+        color_tick(&mut fx);
+        color_task(&mut fx, vec![sop(0x29, 0, 30, 0x8000_0000), sop(0x01, 100, 0, 0), sop(0, 0, 0, 0)]);
+        assert_eq!(color_tick(&mut fx), []);
+        let Some(mut fx) = color_fx() else { return };
+        color_task(&mut fx, vec![sop(0x88, 0, 100, 0), sop(0x29, 0, 30, 0x8000_0000), sop(0x01, 100, 0, 0), sop(0, 0, 0, 0)]);
+        assert_eq!(color_tick(&mut fx), [Drive { actor: ORC, argb: 0x8000_0000, ticks: 30.0 }]);
+    }
+
+    /// A drive whose scheduler ends first stops where it is; 0xa0 lands on its target, at once when locked out.
+    #[test]
+    fn color_drive_ends() {
+        use crate::fx::ColorOp::*;
+        let Some(mut fx) = color_fx() else { return };
+        color_task(&mut fx, vec![sop(0x29, 10, 60, 0x8000_0000), sop(0, 0, 0, 0)]);
+        let ops: Vec<_> = (0..20).flat_map(|_| color_tick(&mut fx)).collect();
+        assert_eq!(ops, [Drive { actor: ORC, argb: 0x8000_0000, ticks: 60.0 }, Freeze(ORC)]);
+        color_task(&mut fx, vec![sop(0xa0, 10, 60, 0x8000_0000), sop(0, 0, 0, 0)]);
+        let ops: Vec<_> = (0..20).flat_map(|_| color_tick(&mut fx)).collect();
+        assert_eq!(ops, [Drive { actor: ORC, argb: 0x8000_0000, ticks: 60.0 }, Snap(ORC, 0x8000_0000)]);
+        color_task(&mut fx, vec![sop(0x88, 0, 100, 0), sop(0x01, 200, 0, 0), sop(0, 0, 0, 0)]);
+        color_tick(&mut fx);
+        color_task(&mut fx, vec![sop(0xa0, 10, 60, 0x4000_0000), sop(0, 0, 0, 0)]);
+        assert_eq!(color_tick(&mut fx), [Snap(ORC, 0x4000_0000)]);
+    }
+
+    /// A locked-out drive still deletes the running one, which stops where it is.
+    #[test]
+    fn blocked_drive_stops_running_fade() {
+        use crate::fx::ColorOp::*;
+        let Some(mut fx) = color_fx() else { return };
+        color_task(&mut fx, vec![sop(0x29, 0, 60, 0x8000_0000), sop(0x01, 200, 0, 0), sop(0, 0, 0, 0)]);
+        assert_eq!(color_tick(&mut fx), [Drive { actor: ORC, argb: 0x8000_0000, ticks: 60.0 }]);
+        color_task(&mut fx, vec![sop(0x88, 0, 100, 0), sop(0x01, 200, 0, 0), sop(0, 0, 0, 0)]);
+        color_tick(&mut fx);
+        color_task(&mut fx, vec![sop(0x29, 0, 30, 0x0080_8080), sop(0x01, 100, 0, 0), sop(0, 0, 0, 0)]);
+        assert_eq!(color_tick(&mut fx), [Freeze(ORC)]);
     }
 
     /// A posed stand-in: point k's frame RotY(0.5) at height k / 100 above its bone, the actor at x 1, size 2.

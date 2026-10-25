@@ -6888,8 +6888,18 @@ impl App {
         for (id, ticks, speed) in std::mem::take(&mut world.effects.self_moves) {
             ride::self_move(world, id, ticks, speed);
         }
-        // Scheduler op 0x29: the model colour toward an ARGB target.
-        for (id, argb, frames) in std::mem::take(&mut world.effects.fades) {
+        // Scheduler ops 0x29 / 0x2a / 0xa0 / 0x88: the model colour toward an ARGB target, stopped, or set.
+        for op in std::mem::take(&mut world.effects.fades) {
+            let (id, argb, frames) = match op {
+                crate::fx::ColorOp::Drive { actor, argb, ticks } => (actor, argb, ticks),
+                crate::fx::ColorOp::Snap(actor, argb) => (actor, argb, 0.0),
+                crate::fx::ColorOp::Freeze(actor) => {
+                    if let Some(a) = world.actors.get_mut(&actor) {
+                        a.fade = None;
+                    }
+                    continue;
+                }
+            };
             if let Some(a) = world.actors.get_mut(&id) {
                 let f = actmotion::Fade::argb(a.alpha, a.rgb, argb, frames.round() as i32);
                 if frames <= 0.0 {

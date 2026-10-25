@@ -487,6 +487,28 @@ enum ShineKind {
     Refract { start: f32, target: f32, total: f32 },
 }
 
+/// A model colour change for the client.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ColorOp {
+    /// Toward ARGB over ticks from where it is.
+    Drive { actor: u32, argb: u32, ticks: f32 },
+    /// Stops where it is (its scheduler ended, or a newer drive deleted it).
+    Freeze(u32),
+    /// At once.
+    Snap(u32, u32),
+}
+
+/// A running colour drive: its scheduler task, ticks left, target, and whether its destructor lands on the target
+/// (op 0xa0, +0x86).
+#[derive(Clone, Copy, Debug)]
+struct ColorDrive {
+    actor: u32,
+    owner: u64,
+    left: f32,
+    target: u32,
+    snap: bool,
+}
+
 /// A timed shine change, a child of its scheduler task (`owner`, the task uid): it ends with it.
 #[derive(Clone, Copy, Debug)]
 struct ShineDrive {
@@ -816,8 +838,10 @@ pub struct Effects {
     models: HashMap<u32, Vec<u32>>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
-    /// Op 0x29 colour drives for the client: actor, target ARGB, frames.
-    pub fades: Vec<(u32, u32, f32)>,
+    /// The model colour for the client (FUN_1005f6c0 channel 0: ops 0x29 / 0x2a / 0xa0; 0x88, 0xb1 / 0xb2).
+    pub fades: Vec<ColorOp>,
+    /// The running channel-0 drives (CMoActorColorDriveTask), children of their scheduler task.
+    color_drives: Vec<ColorDrive>,
     /// Op 0x6e for the client: actor, ticks, units a tick along its facing.
     pub self_moves: Vec<(u32, f32, f32)>,
     /// Op 0x9a for the client: actor, entity +0x130 bit 1.
@@ -969,6 +993,7 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
+            color_drives: Vec::new(),
             self_moves: Vec::new(),
             gens_off: Vec::new(),
             holds: Vec::new(),
