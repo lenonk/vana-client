@@ -1932,6 +1932,23 @@ impl Overlay {
         Self { zone, region, texture: None, rx, zoom: 1.0, view: None, rect: [0.0; 4] }
     }
 
+    /// The player crossed onto another page of the zone (Windurst Waters' north and south): that map, at the same
+    /// zoom, the player where they were in the box.
+    pub fn follow(&mut self, w: &World, regions: &[Region]) {
+        let here = Region::here(regions, w).filter(|r| r.need() != Need::Nothing && owned(w, r));
+        if here == self.region {
+            return;
+        }
+        let old = std::mem::replace(self, Self::new(w.pos_zone, here, w.index.clone()));
+        if let (Some(from), Some(v), Some(to)) = (old.region, old.view, here) {
+            let (ox, oy) = from.px(w.pos.x, w.pos.z);
+            let (nx, ny) = to.px(w.pos.x, w.pos.z);
+            (self.rect, self.zoom) = (old.rect, old.zoom);
+            self.view = Some((nx as f32 - (ox as f32 - v.0), ny as f32 - (oy as f32 - v.1)));
+            self.clamp();
+        }
+    }
+
     /// A map to show.
     pub fn has_map(&self) -> bool {
         self.region.is_some()
@@ -2019,6 +2036,22 @@ pub(super) fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Windurst Waters (238): two pages and no key 0, north key 1 (file 5501), south key 2 (5502), told apart by the
+    /// collision under the player.
+    #[test]
+    fn windurst_waters_pages() {
+        let cfg = crate::config::Config::load();
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let regs = regions(&dll);
+        let pages: Vec<(i8, u32)> = regs.iter().filter(|r| r.zone == 238).map(|r| (r.key, r.file_id())).collect();
+        assert_eq!(pages, [(1, 5501), (2, 5502)]);
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let keys = crate::dat::zone::Keys::from_ffximain(&dll).unwrap();
+        let g = crate::client::ground::Ground::build(&crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(238)).unwrap()).unwrap());
+        let key = |x: f32, z: f32| g.map_key(glam::Vec3::new(x, g.snap(x, z, 0.0).unwrap(), z));
+        assert_eq!((key(0.0, 100.0), key(0.0, -150.0)), (1, 2));
+    }
 
     /// The overlay keeps the map pixel under the cursor while zooming, and the image over the whole box.
     #[test]

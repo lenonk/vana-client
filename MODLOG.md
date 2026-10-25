@@ -5031,6 +5031,10 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   baked into the text. The Extras switch stamps every line in 0xb5's format (seconds while 0xb5 is off).
 - The main menu opens on the page it was closed on (the user's account of retail; FUN_1013b3f0 / socialme's
   open path not traced). Cursor row 1.
+- The map overlay follows the page under the player (ours; 2026-10-25): a zone with several map records keyed by the
+  collision's map key (ground::map_key_of; Windurst Waters 238: no key 0, north key 1 file 5501, south key 2 file
+  5502) switches maps when the key under the player changes, at the same zoom, the player kept where they were in the
+  box. It switched only on a zone change before. The menu Map window keeps the page it opened on.
 
 ## Chat log fixes, first batch (2026-10-23; audit ~/ffxi/lab/research/chat_audit/REPORT.md)
 

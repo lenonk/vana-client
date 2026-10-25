@@ -2079,6 +2079,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     name_plates(gu, world, sw, sh, view_proj);
     if world.overlay.as_ref().is_some_and(|o| o.zone != world.pos_zone) {
         world.overlay = Some(map::Overlay::open(world, gu.map_regions()));
+    } else if let Some(mut o) = world.overlay.take() {
+        o.follow(world, gu.map_regions());
+        world.overlay = Some(o);
     }
     if let Some(o) = world.overlay.as_mut() {
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
