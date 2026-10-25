@@ -1738,9 +1738,8 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
   N 0 / 1 FUN_100d3d90 / 3f30 play the "!w01" / "!w11" and "!w02" / "!w12" effect schedulers. FUN_100d3cc0 / 3e90.
 - FUN_1008ad70 plays a model's "init" scheduler once loaded. Trion (model 64, file 1364, its own 99-bone elv_
   skeleton): init = op 0x3b -> "wof4" = op 0x75 N 4 hide, so in retail his sword and scabbard are hidden; event 0x1f4
-  never plays "won4". Ours follows init's 0x3b calls for 0x75 / 0xa3 and leaves hidden wepN parts out of the model
-  (dat/npc.rs; test trion_init_hides_the_sword). Not done: per-actor hide bytes, so a later op 0x75 show (won4) or
-  timed hide does nothing.
+  never plays "won4". Ours follows init's 0x3b calls for 0x75 / 0xa3 and seeds those hide bytes on the actor
+  (Character::init_hidden; test trion_init_hides_the_sword); the runtime `init` then owns them.
 - Draw / sheathe: vtable +0x31c = FUN_100a30c0(bool, slot) sets model +0x83c + slot (+0x320 reads both; override
   pair +0x83e via +0x324 / +0x328, scheduler ops 0xa7 / 0xa8, timed FUN_10060e50). FUN_10029320 (pose setup) remaps
   when drawn: bone(point 127) -> bone(main info[6], +0x87e), bone(point 126) -> bone(sub info[6], +0x888);
@@ -7697,12 +7696,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   is `weps` (no op names it). DAT 0 `hwmg` (casting) hides wep0 / wep1 while engaged, `hwat` (before melee swings)
   shows them.
 - Ours: SkinMesh groups carry N of their `wepN` part, ActorGpu::hidden_weps (bit N) skips them in the skinned pass;
-  the client keeps the hide bytes and the timed show per actor (Actor::wep_hide / wep_show_at); fx emits
-  Effects::weapons. The CPU-posed path (lobby scenes) has no weapon groups.
-- Not done: init's hides are still applied by dropping the meshes at load (dat/npc.rs), so a later show cannot bring
-  those back; the `!w01` / `!w02` / `!w11` / `!w12` weapon schedulers that FUN_100d6180 / FUN_100d5fe0 start on hide
-  and on show while engaged (bits 8 + N of actor +0x840); a timed hide cut short by its scheduler's death shows only at
-  its own end.
+  the client keeps the hide bytes per actor (Actor::wep_hide, client/wepfx.rs); fx emits Effects::weapons. The CPU-posed path (lobby scenes) has no weapon groups.
+- Done since: the glows, init's hides and the timed hides (section "Weapon glows, `!in?` / `!kl?`, timed hides").
 - Sweep note: a weapon-skill run of 2026-10-25 (ws2) recorded almost no gaps because no effect file loaded in it
   (every file sat 600 ticks, the pending start's timeout); runs before and after it are normal. The summary now ranks
   only inferred attach parts (modes 9..0xc, point 0x35), not every special point.
@@ -8446,3 +8441,51 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   colour (D3D8 fogs a pass's colour before the add) instead of fading out. flash-shot writes refract_*.png. Tests
   refract_drive, refract_tf_alpha. Offscreen (zone 230 noon): alpha 0x80 identical to the plain frame; 0x40 / 0x3c /
   0x0b glassy with the shifted background added. Not seen live (no Ghost near the test characters).
+
+## Weapon glows, `!in?` / `!kl?`, timed hides (2026-10-25; spec ~/ffxi/lab/research/fx_sched_misc_spec.md 2)
+
+- FUN_100cef00 (name, target): vtable +0x1ec = FUN_100ce9b0 looks the scheduler up in every mesh's resource file
+  (the part files), then vtable +0x1e0 (the model's own files); no motion files, no DAT 0; started on (actor,
+  actor). `!in?` (0x3f6e6921) tries `!in1`, `!in2`, `!in3` (DAT_10330f28) and starts the first found.
+- Actor +0x840 bits 8..17: `wepN` glow off. FUN_100d6180(N) off: bit clear and N 0 / 1 -> `!w02` / `!w12`, the bit
+  set only if found. FUN_100d5fe0(N) on: bit set -> `!w01` / `!w11` unless config 0xbe == 1 (Misc. 3 weapon effect
+  Off *(inf: row 2)*); the bit clears when skipped or found. FUN_100d60e0(N, b) hide byte b then off; FUN_100d5f10
+  (N, b) show, then on if the applied status (+0x170) is 1 and not InvisFlag, else off.
+- Bit 7: `!in?` ran. FUN_100cf060: model +0xb2 != 0 -> FUN_100cf0b0; else once (sets bit 7) `!in?`. FUN_100cf0b0:
+  bit 7 set -> cleared, `!kl1`, `!kl2`, `!kl3` each looked up and started.
+- Callers: FUN_1008c480 once per model, before `init` (+0x128 bit 31, model kinds 3..5 skipped): FUN_100cf100, for N
+  0..9 on when +0xb2 == 0, status 1, vtable +0x320 (model +0x83c, the weapon drawn) and no wepN hide byte, else off;
+  after `init` in the default status case (not 0x22) FUN_100cf060. FUN_100973f0 runs every frame for each PC (+0x78
+  high byte 0) from the name getter (vtable +0xcc = FUN_10082f20 -> FUN_10097840 -> FUN_100977f0; FUN_100d0510 calls
+  the getter even when no plate is drawn) after `init` (bit 29) and not bound (+0x120 bit 7): InvisFlag clear ->
+  FUN_100cf060 + FUN_100cf100, set -> FUN_100cf0b0 + FUN_100cf160 (all off). FUN_100977f0's gate: +0x120 bit 9, no
+  +0x128 bit 3, +0x120 bits 14 / 15 clear, +0x130 bit 7 clear.
+- FUN_100c83c0 (a new status motion, +0x7d8, on the entity's own actor, FUN_10085490 == 0): status 0x55 -> hide
+  wep0..8; chairs (0x3f..0x53) nothing; else for model kind 0 / 6, kind 2 / 7 or 1 with the monster bit (+0x120 bit
+  13), kind 1 bound (+0x120 bit 7 / 8), actor +0x840 bit 22 or entity +0x12c bit 22: show wep0, show wep1, hide wep2.
+  FUN_1008b460: state 2 (the frame after "in N") vtable +0x31c(1, 0) (drawn); states 6 / 0x11 (with "out N")
+  +0x31c(0, 0) and FUN_100cf160; mounting (state 0 -> 0xe) FUN_100d60c0; the chair state 0x18 FUN_100d5ef0 + hide
+  wep2; emote state 0xb hides / shows wep0 / 1 / 4 only for entities with +0x12c bit 22.
+- Op 0x75 (case at 0x1005be14): actor1 must exist; i16 @0xe set: only while actor1's status is 1 (FUN_10084390).
+  dur x speed == 0.0 (float, before truncation): @8 == 0 show byte 0, else hide. Otherwise a 0x80-byte child task
+  FUN_10061960 (hide byte 0 now) counting dur x speed down by frame ticks (FUN_100619d0, ends below 0); its
+  destructor FUN_10061920 shows byte 0 when @8 == 0, so a scheduler cut short shows the weapon then. 0xa3: byte 1,
+  untimed, ungated.
+- Data: `!w01` / `!w02` (`!w00` unused) in 203 part files, `!w11` / `!w12` in 84; `!in1` 391, `!in2` 77, `!in3` 197
+  files with matching `!kl1..3`. `!bd0..2` (49 head / body files: eye / glow generators) and `!wsl` / `!wsr` (called by
+  `skaz`, op 0x57) are named by no code: data only. `!f00..02` (14 files 39321..): the fishing rod's glow, FUN_100cf180
+  on the rod actor (+0x768) from FUN_100cae60 per frame: by status 6 / 0x32 / 0x38 mode 1 after 136 ticks (`!f01`
+  while fishing, FUN_100956c0, else `!f02`), 0x27 / 0x3a 102, 0x28 / 0x3b 40, 0x29 / 0x3c 44, 0x2a / 0x3d 68, 0x2b /
+  0x3e 0 mode 2 (`!f02`) (table 0x10330ef8); left with fishing, which we do not have.
+- Ours: fx/equip.rs keeps +0x840's bits per actor (EquipState) and runs EquipCall::Glow / In / Kill in order at the
+  start of each tick (an actor's later calls wait while one of its files loads); op 0x75's timed hides are fx
+  WepTimers swept with the live tasks. client/wepfx.rs: the hide bytes (Actor::wep_hide) with their glow calls,
+  refresh (FUN_100cf100) before `init`, start_in after it, frame (FUN_100973f0), status_start (FUN_100c83c0, detected
+  in actmotion::update when the chosen status motion changes and is in the files; "in N" / "out N" clear it as +0x7d8
+  = "    "), Actor::drawn from "in N" to "out N". Live (Lnxtest, Aphelion Knuckles 20514, Hume M main 483 = 8875):
+  `!w02` at the equip and each zone-in, `!w01` once the battle files are in, `!w02` at the sheathe, the hands glow. Init's hides are
+  seeded on a new actor (Character::init_hidden) instead of dropping the meshes, so a later op shows them. Our own
+  actor now runs `init` too (retail keeps the player in the entity array; again after each zone-in).
+- Not modelled: model kind +0xee beyond "a PC look is kind 0" *(inf)*, +0x120 bits 14 / 15, actor +0x840 bit 22, the
+  emote and chair hides (no chair state here; trusts' emotes), the hide bytes reset when a look change rebuilds a
+  mesh.

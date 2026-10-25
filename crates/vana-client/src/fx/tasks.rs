@@ -313,6 +313,8 @@ impl Effects {
             }
         };
         self.pending.retain(|p| p.actor != Some(id));
+        self.equip.remove(&id);
+        self.equip_calls.retain(|c| c.0 != id);
         for p in &mut self.pending {
             clear(&mut p.a1);
             clear(&mut p.a2);
@@ -585,6 +587,7 @@ impl Effects {
         }
         let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
         self.step_shine(f.dt, &live);
+        self.step_wep_timers(f.dt, &live);
         // Op 0xb5's holds end with their time or their task (FUN_100ce0c0).
         self.no_blink.clear();
         for (owner, id, left) in std::mem::take(&mut self.blink_holds) {
@@ -1169,14 +1172,23 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // Actor1's wepN meshes, N = i16 @0xc: 0x75 on hide byte 0 (hide u32 @8 != 0, show 0; with a length hidden
-            // for dur x speed and shown at its end when @8 is 0, FUN_10061960; i16 @0xe: only while engaged), 0xa3 on
-            // byte 1, untimed.
+            // Actor1's wepN meshes, N = i16 @0xc: 0x75 on hide byte 0 (hide u32 @8 != 0, show 0; i16 @0xe: only while
+            // actor1 is engaged; dur x speed != 0.0: hidden now and, when @8 is 0, shown at the end of that or of the
+            // scheduler, FUN_10061960), 0xa3 on byte 1, untimed and ungated.
             0x75 | 0xa3 => {
-                if let Some(id) = self.doll_of(t.a1).id() {
-                    let ticks = if op.code == 0x75 { (op.dur.max(0) as f32 * t.speed).trunc() } else { 0.0 };
-                    let off = op.u32_at(8) != 0;
-                    self.weapons.push(crate::fx::WeaponOp { actor: id, n: op.u16_at(0xc) as u8, byte: (op.code == 0xa3) as u8, hide: off || ticks > 0.0, ticks, show_after: ticks > 0.0 && !off, engaged_only: op.code == 0x75 && op.u16_at(0xe) != 0 });
+                let Some(id) = self.doll_of(t.a1).id() else { return Flow::Next };
+                let (n, show) = (op.u16_at(0xc) as u8, op.u32_at(8) == 0);
+                if op.code == 0xa3 {
+                    self.weapons.push(crate::fx::WeaponOp { actor: id, n, byte: 1, hide: !show });
+                    return Flow::Next;
+                }
+                if op.u16_at(0xe) != 0 && actors.status(id) != 1 {
+                    return Flow::Next;
+                }
+                let len = op.dur as f32 * t.speed;
+                self.weapons.push(crate::fx::WeaponOp { actor: id, n, byte: 0, hide: !show || len != 0.0 });
+                if len != 0.0 {
+                    self.wep_timers.push(super::equip::WepTimer { owner: t.uid, actor: id, n, left: len.trunc(), show });
                 }
                 Flow::Next
             }

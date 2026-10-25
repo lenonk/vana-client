@@ -185,12 +185,10 @@ pub fn update(w: &mut World, dt: f32) {
                 a.appear = 0.0;
             }
             a.motion_names = Some(names(mi.map_or(0, |mi| mi.variant(pc.race))));
-            // FUN_100d60c0(0): no weapons on a mount.
-            if mount {
-                for h in &mut a.wep_hide[..=8] {
-                    h[0] = true;
-                }
-            }
+        }
+        // FUN_100d60c0(0): no weapons on a mount.
+        if mount {
+            super::wepfx::hide_all(w, id);
         }
         // FUN_100cf210: the animal's size info[10 + rider info[13]] / 100 x the rider's; its motions the rider's names
         // at info[15] / 100 (a chocobo keeps step).
@@ -274,12 +272,19 @@ fn finish(w: &mut World, id: u32) {
     if let Some(a) = w.actors.get_mut(&id) {
         a.motion_names = None;
         if matches!(r.model, Model::Mount(_)) {
-            for (h, was) in a.wep_hide[..=8].iter_mut().zip(r.weps) {
-                h[0] = was;
-            }
             // Ours: the 600-tick cap can end a ride before coff's fade in.
             if a.fade.is_none() && a.alpha < actmotion::OPAQUE {
                 a.alpha = actmotion::OPAQUE;
+            }
+        }
+    }
+    // FUN_100d5ef0 (ours puts back what the mount hid, keeping an event's hides), each with its glow.
+    if matches!(r.model, Model::Mount(_)) && w.actors.contains_key(&id) {
+        for (n, was) in r.weps.into_iter().enumerate() {
+            if was {
+                super::wepfx::hide(w, id, n, 0);
+            } else {
+                super::wepfx::show(w, id, n, 0);
             }
         }
     }

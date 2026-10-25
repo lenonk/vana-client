@@ -52,8 +52,8 @@ pub struct InitScheduler {
     pub model: Option<u16>,
     /// (op, set) in scheduler order.
     pub motion_ops: Vec<(u8, u32)>,
-    /// Weapon meshes `wepN` hidden once init has run (ops 0x75 / 0xa3, through 0x3b calls).
-    pub hidden_weapons: Vec<u8>,
+    /// Weapon meshes `wepN`'s hide bytes 0 / 1 once init has run (ops 0x75 / 0xa3, through 0x3b calls).
+    pub hidden_weapons: [[bool; 2]; 10],
 }
 
 /// Op 0x3b calls a scheduler by name (u32 @8); op 0x75 (byte 0) and 0xa3 (byte 1) hide (u32 @8 = 1) or show
@@ -114,8 +114,9 @@ pub fn init_scheduler(file: &[u8]) -> InitScheduler {
     }
     let mut hide = HashMap::new();
     weapon_ops(&chunks, "init", 0, &mut hide);
-    out.hidden_weapons = hide.into_iter().filter(|(_, b)| b.iter().any(|&h| h)).map(|(n, _)| n).collect();
-    out.hidden_weapons.sort();
+    for (n, b) in hide {
+        out.hidden_weapons[n as usize] = b;
+    }
     out
 }
 
@@ -175,19 +176,13 @@ fn self_contained(id: u32, file: &[u8], f: super::character::CharFile, skeleton:
     )];
     log.extend(f.warnings);
     let mount = f.moun.map(|moun| super::character::MountInfo { moun, rate: f.info.map_or(0xff, |i| i[15]), cam: f.info.map_or(0xff, |i| i[14]) });
-    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, mount, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+    let mut ch = Character { skeleton, parts: f.parts, textures: f.textures, animations: f.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: f.schedulers, pc: None, mount, log, packed: None, skin: None, files: vec![id], part_files: Vec::new(), cib: [-1; 3], ranged: -1, init_hidden: Default::default() };
     ch.merge_size_info(f.info);
     let init = init_scheduler(file);
     apply_motion_ops(&mut ch, &init);
-    // FUN_1008ad70 plays init once the model is up; weapon meshes it hides are left out *(inf: nothing shows them
-    // again yet; a later op 0x75 / 0xa3 show needs per-actor hide bytes)*.
-    hide_weapons(&mut ch, &init.hidden_weapons);
+    // FUN_1008ad70 plays init once the model is up; its hides are seeded on the actor until then.
+    ch.init_hidden = init.hidden_weapons;
     ch
-}
-
-fn hide_weapons(ch: &mut Character, hidden: &[u8]) {
-    let names: Vec<String> = hidden.iter().map(|n| format!("wep{n}")).collect();
-    ch.parts.retain(|p| !names.iter().any(|w| p.name.trim_end_matches(['\0', ' ']) == w));
 }
 
 fn apply_motion_ops(ch: &mut Character, init: &InitScheduler) {
@@ -259,15 +254,18 @@ mod tests {
         assert!(flips > 100, "{flips}");
     }
 
-    /// Trion (model 64, file 1364): init calls wof4, whose op 0x75 hides the wep4 sword and scabbard, and "idl0"
-    /// gives every region's idl chunk (FUN_100cb500), so the carry bones are posed.
+    /// Trion (model 64, file 1364): init calls wof4, whose op 0x75 hides the wep4 sword and scabbard (kept, seeded
+    /// hidden), and "idl0" gives every region's idl chunk (FUN_100cb500), so the carry bones are posed.
     #[test]
     fn trion_init_hides_the_sword() {
         let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
         let Ok(file) = index.read(model_file(64)) else { return };
-        assert_eq!(init_scheduler(&file).hidden_weapons, [4]);
+        let mut want = [[false; 2]; 10];
+        want[4][0] = true;
+        assert_eq!(init_scheduler(&file).hidden_weapons, want);
         let ch = load_model(&index, 64).unwrap();
-        assert!(ch.parts.iter().all(|p| !p.name.starts_with("wep4")), "{:?}", ch.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>());
+        assert!(ch.parts.iter().any(|p| p.name.starts_with("wep4")), "{:?}", ch.parts.iter().map(|p| p.name.as_str()).collect::<Vec<_>>());
+        assert_eq!(ch.init_hidden_mask(), 1 << 4);
         let idle: Vec<&str> = ch.find_animations("idl0").iter().map(|a| a.name.trim_end()).collect();
         assert!(idle.contains(&"idl0") && idle.contains(&"idl1"), "{idle:?}");
     }
@@ -285,7 +283,7 @@ mod tests {
     #[test]
     fn size_info_order() {
         let skel = super::super::character::Skeleton { name: String::new(), bones: Vec::new(), points: Vec::new(), point_rots: Vec::new(), look_limits: [[0.0; 3]; 2], boxes: Vec::new() };
-        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, mount: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+        let mut ch = Character { skeleton: skel, parts: Vec::new(), textures: Vec::new(), animations: Vec::new(), size_info: [0xFF; 4], motions: Default::default(), schedulers: Vec::new(), pc: None, mount: None, log: Vec::new(), packed: None, skin: None, files: Vec::new(), part_files: Vec::new(), cib: [-1; 3], ranged: -1, init_hidden: Default::default() };
         let mut later = [0xFFu8; 16];
         later[10..14].copy_from_slice(&[85, 100, 115, 140]);
         ch.merge_size_info(Some(later));

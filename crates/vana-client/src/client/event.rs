@@ -1707,6 +1707,11 @@ pub fn holds(w: &mut World, id: u32) -> bool {
     false
 }
 
+/// The running event binds this actor (+0x120 bit 7).
+pub fn bound(w: &World, id: u32) -> bool {
+    w.event.as_ref().is_some_and(|l| l.st.bound.contains(&id))
+}
+
 /// A bound actor's drawn transform while the event runs.
 pub fn pose(w: &World, id: u32) -> Option<Pose> {
     w.event.as_ref()?.st.poses.get(&id).copied()

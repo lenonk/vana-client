@@ -86,6 +86,7 @@ mod region;
 mod radar;
 mod ride;
 mod indi;
+mod wepfx;
 mod status;
 mod inspect;
 mod linehist;
@@ -3114,9 +3115,12 @@ struct Actor {
     extra: actmotion::Extra,
     /// Effect files whose schedulers play motions from them (Kind::Effect), wanted on `extra`.
     fx_files: Vec<u32>,
-    /// `wepN` hide bytes 0 / 1 (a mesh draws while both are clear), and when byte 0 of a timed hide clears.
+    /// `wepN` hide bytes 0 / 1 (a mesh draws while both are clear; client/wepfx.rs).
     wep_hide: [[bool; 2]; 16],
-    wep_show_at: [Option<Instant>; 16],
+    /// Model +0x83c (vtable +0x320): the weapon drawn, from the draw ("in N") to the sheathe.
+    drawn: bool,
+    /// Actor +0x7d8: the status motion last started (FUN_100c83c0's weapon block runs on a new one).
+    status_motion: String,
     /// A scheduler's motions (event motions, weapon draw / sheathe), and one waiting for its files.
     play: Option<actmotion::Play>,
     pending: Option<actmotion::Pending>,
@@ -3195,7 +3199,8 @@ impl Actor {
             extra: Vec::new(),
             fx_files: Vec::new(),
             wep_hide: [[false; 2]; 16],
-            wep_show_at: [None; 16],
+            drawn: false,
+            status_motion: String::new(),
             play: None,
             pending: None,
             battle: Default::default(),
@@ -3632,6 +3637,13 @@ impl crate::fx::Actors for FxActors<'_> {
         self.actors.get(&id).map_or(1.0, |a| a.scale)
     }
 
+    fn model_files(&self, id: u32) -> Vec<u32> {
+        if let Some(f) = self.furniture(id) {
+            return vec![f.1];
+        }
+        self.actors.get(&id).and_then(|a| a.character.as_ref()).map_or(Vec::new(), |ch| ch.files.clone())
+    }
+
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
         if let Some(f) = self.furniture(id) {
             return (Vec::new(), vec![f.1]);
@@ -3819,6 +3831,8 @@ struct World {
     my_ride: net::Ride,
     /// Our Geomancer Indi aura (s2c 0x037 @0x58, client/indi.rs).
     my_aura: indi::Aura,
+    /// Our actor's "init" ran (+0x128 bit 29; again after each zone-in, as a new actor).
+    my_init_done: bool,
     rides: HashMap<u32, ride::Riding>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
@@ -5463,6 +5477,7 @@ impl App {
                             event_looks: Vec::new(),
                             my_ride: Default::default(),
                             my_aura: Default::default(),
+                            my_init_done: false,
                             rides: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
@@ -5622,6 +5637,9 @@ impl App {
                         let files: Vec<u32> = ch.files.iter().chain(&ch.part_files).copied().collect();
                         world.effects.preload(&files);
                         for a in world.actors.values_mut().filter(|a| a.key == key) {
+                            if a.character.is_none() {
+                                wepfx::seed(a, &ch);
+                            }
                             a.character = Some(ch.clone());
                             a.gpu = None;
                             a.motion_names = None;
@@ -6001,6 +6019,8 @@ impl App {
                     world.my_motion = motion;
                     looks.push((char_id, Source::Pc(look_from(look))));
                     world.actors.retain(|id, _| *id == char_id);
+                    world.my_init_done = false;
+                    world.effects.reset_equip(char_id);
                     world.zoning_since = None;
                     world.pos = Vec3::from(pos);
                     world.pos_zone = zone;
@@ -6639,6 +6659,9 @@ impl App {
             actor.source = Some(source);
             // A look already loaded is shared at once; one load serves every actor waiting for it.
             if let Some(m) = world.models.get(&key) {
+                if actor.character.is_none() {
+                    wepfx::seed(actor, m);
+                }
                 actor.character = Some(m.clone());
                 actor.gpu = None;
                 actor.motion_names = None;
@@ -6745,8 +6768,26 @@ impl App {
         // FUN_1008c480: a model's "init" once it is in ("inte" too for status 0x22; none seated, none fishing);
         // FUN_1008ef60: "ini<n>" when a monster's sub-animation changes (a worm burrows with ini1, comes up with init).
         const SUB: [[u8; 4]; 8] = [*b"init", *b"ini1", *b"ini2", *b"ini3", *b"init", *b"ini1", *b"ini2", *b"ini3"];
+        // Before it FUN_100cf100 (the weapon glows), after it FUN_100cf060 (`!in?`, not for 0x22). Our own actor
+        // too: retail keeps the player in the entity array.
         let mut starts: Vec<(u32, [u8; 4])> = Vec::new();
         let mut stops: Vec<(u32, [u8; 4])> = Vec::new();
+        let (mut readies, mut ins): (Vec<u32>, Vec<u32>) = (Vec::new(), Vec::new());
+        let mut first_init = |id: u32, status: u8, starts: &mut Vec<(u32, [u8; 4])>| {
+            readies.push(id);
+            if !matches!(status, 6 | 0x32 | 0x38 | 0x3f..=0x53) {
+                starts.push((id, *b"init"));
+                if status == 0x22 {
+                    starts.push((id, *b"inte"));
+                } else {
+                    ins.push(id);
+                }
+            }
+        };
+        if !world.my_init_done && world.actors.get(&world.my_id).is_some_and(|a| a.character.is_some()) {
+            world.my_init_done = true;
+            first_init(world.my_id, world.my_motion.status, &mut starts);
+        }
         for (id, e) in world.entities.iter_mut() {
             let ready = world.actors.get(id).is_some_and(|a| a.character.is_some());
             if !ready || e.door != 0 || matches!(e.sub_kind, 2..=4) {
@@ -6756,12 +6797,7 @@ impl App {
             if !e.init_done {
                 e.init_done = true;
                 e.sub[2] = e.sub[0];
-                if !matches!(status, 6 | 0x32 | 0x38 | 0x3f..=0x53) {
-                    starts.push((*id, *b"init"));
-                    if status == 0x22 {
-                        starts.push((*id, *b"inte"));
-                    }
-                }
+                first_init(*id, status, &mut starts);
             }
             let (want, applied) = (e.sub[0], e.sub[1]);
             if (want == 4 && applied == 0) || (want == 0 && applied == 4) {
@@ -6786,6 +6822,9 @@ impl App {
                 e.sub = [want, want, want];
             }
         }
+        for id in readies {
+            wepfx::refresh(world, id);
+        }
         for (id, name) in stops {
             world.effects.stop_actor_scheduler(id, u32::from_le_bytes(name));
         }
@@ -6793,6 +6832,10 @@ impl App {
             log::debug!(target: "motion", "actor {id:#x}: scheduler {}", String::from_utf8_lossy(&name));
             world.effects.on_scheduler(id, id, u32::from_le_bytes(name));
         }
+        for id in ins {
+            wepfx::start_in(world, id);
+        }
+        wepfx::frame(world);
         // FUN_100d1070: once the model's files are in, its 'spop' runs on it (actor files, then DAT 0).
         let spops: Vec<u32> = world.actors.iter_mut().filter(|(_, a)| a.spop && a.character.is_some()).map(|(id, a)| {
             a.spop = false;
@@ -6833,19 +6876,7 @@ impl App {
         for (id, ticks, kind) in std::mem::take(&mut world.effects.holds) {
             combat::fx_hold(world, id, ticks, kind);
         }
-        for op in std::mem::take(&mut world.effects.weapons) {
-            let engaged = if op.actor == world.my_id { world.my_motion.status == 1 } else { world.entities.get(&op.actor).is_some_and(|e| e.motion.status == 1) };
-            if (op.engaged_only && !engaged) || op.n >= 16 {
-                continue;
-            }
-            if let Some(a) = world.actors.get_mut(&op.actor) {
-                let n = op.n as usize;
-                a.wep_hide[n][op.byte as usize] = op.hide;
-                if op.byte == 0 {
-                    a.wep_show_at[n] = op.show_after.then(|| Instant::now() + std::time::Duration::from_secs_f32(op.ticks / 60.0));
-                }
-            }
-        }
+        wepfx::apply_ops(world);
         for (id, pick) in std::mem::take(&mut world.effects.death_picks) {
             if let Some(a) = world.actors.get_mut(&id) {
                 a.death_pick = pick;
@@ -9433,12 +9464,7 @@ impl App {
                         g.alpha = g.alpha.min(*k);
                     }
                     g.tint = a.rgb.map(|c| c.max(0.0) / actmotion::OPAQUE);
-                    for n in 0..16 {
-                        if a.wep_show_at[n].is_some_and(|t| Instant::now() >= t) {
-                            (a.wep_hide[n][0], a.wep_show_at[n]) = (false, None);
-                        }
-                    }
-                    g.hidden_weps = (0..16).filter(|&n| a.wep_hide[n].iter().any(|&h| h)).fold(0, |m, n| m | 1 << n);
+                    g.hidden_weps = wepfx::mask(&a.wep_hide);
                     g.shine = shines.get(id).copied();
                     // FUN_100d6d30: TFACTOR alpha (0x80 - model colour alpha) & 0xff; an opaque model adds nothing.
                     let r8 = crate::render::Refract::tf_alpha(a.alpha.clamp(0.0, 255.0) as u32);
@@ -9553,6 +9579,7 @@ impl App {
                         w.effects.set_alive(a.alive());
                     }
                     w.effects.filter = (w.game.get(0x92) as u32, matches!(w.my_motion.status, 1 | 3));
+                    w.effects.weapon_effect_off = w.game.get(0xbe) == 1;
                     w.effects.reg.aspect = aspect;
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
                     w.ambient = w.effects.ambient(minute);

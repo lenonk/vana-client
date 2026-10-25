@@ -431,9 +431,19 @@ pub(super) fn update(w: &mut World, dt: f32) {
     let Some(index) = w.index.clone() else { return };
     let ticks = dt * 60.0;
     let ids: Vec<u32> = w.actors.keys().copied().collect();
+    let mut status_starts: Vec<(u32, u8)> = Vec::new();
     for id in ids {
         let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { continue };
         let base = status_motion(w, id, &ch);
+        // FUN_100c83c0: a new status motion on an entity's own actor (+0x7d8), once it plays (FUN_100cd920 finds it).
+        let a = &w.actors[&id];
+        if a.status_motion != base && !find(&a.extra, &ch, &base).is_empty() {
+            if id == w.my_id || w.entities.contains_key(&id) {
+                let st = if super::event::pose(w, id).is_some() { super::event::event_status(w, id) } else { status(w, id) };
+                status_starts.push((id, st));
+            }
+            w.actors.get_mut(&id).unwrap().status_motion = base.clone();
+        }
         let engaged = status(w, id) == 1;
         let want = match (&ch.pc, engaged) {
             (Some(pc), true) => crate::dat::motionfile::battle_files(pc),
@@ -490,6 +500,10 @@ pub(super) fn update(w: &mut World, dt: f32) {
                 let drawing = a.battle.on.is_empty() || a.battle.leaving;
                 a.battle = Battle { on: want, leaving: false };
                 if drawing && let Some(pc) = &ch.pc {
+                    // State 2 after "in N": vtable +0x31c(1, 0), the weapon drawn; +0x7d8 = "    " restarts the status
+                    // motion.
+                    a.drawn = true;
+                    a.status_motion.clear();
                     let name = crate::dat::motionfile::draw_scheduler(pc, false);
                     if start(a, &ch, &name, &base) {
                         fx_too(&mut w.effects, id, &name);
@@ -499,6 +513,12 @@ pub(super) fn update(w: &mut World, dt: f32) {
         } else if want.is_empty() && !a.battle.on.is_empty() && !a.battle.leaving {
             a.battle.leaving = true;
             log::info!("actor {id:#x}: disengaged, sheathing");
+            // States 6 / 0x11 with "out N": vtable +0x31c(0, 0), every glow off (FUN_100cf160), +0x7d8 = "    ".
+            a.drawn = false;
+            a.status_motion.clear();
+            for n in 0..2 {
+                w.effects.equip(id, crate::fx::EquipCall::Glow { n, on: false });
+            }
             let out = ch.pc.as_ref().map(|pc| crate::dat::motionfile::draw_scheduler(pc, true));
             match out {
                 Some(n) if start(a, &ch, &n, &base) => fx_too(&mut w.effects, id, &n),
@@ -542,6 +562,9 @@ pub(super) fn update(w: &mut World, dt: f32) {
                 a.fade = None;
             }
         }
+    }
+    for (id, status) in status_starts {
+        super::wepfx::status_start(w, id, status);
     }
 }
 

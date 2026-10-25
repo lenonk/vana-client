@@ -1517,7 +1517,7 @@ impl ZoneRenderer {
                 vertices: None,
                 draws,
                 instance,
-                hidden_weps: 0,
+                hidden_weps: ch.init_hidden_mask(),
                 shine: None,
                 refract: None,
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),

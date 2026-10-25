@@ -713,6 +713,9 @@ pub struct Character {
     pub pc: Option<super::motionfile::PcMotion>,
     /// A mount (102705..): its `moun` chunk and info bytes 14 / 15.
     pub mount: Option<MountInfo>,
+    /// The `wepN` hide bytes 0 / 1 the model's `init` leaves set (ops 0x75 / 0xa3): seeded on the actor so the first
+    /// frames before `init` runs do not show them.
+    pub init_hidden: [[bool; 2]; 10],
     pub log: Vec<String>,
     /// The animations as GPU words (`prepare`), else packed when first posed.
     pub packed: Option<std::sync::Arc<super::animpack::Packed>>,
@@ -721,6 +724,11 @@ pub struct Character {
 }
 
 impl Character {
+    /// `init_hidden` as a `wepN` bit mask.
+    pub fn init_hidden_mask(&self) -> u16 {
+        (0..10).filter(|&n| self.init_hidden[n].iter().any(|&h| h)).fold(0, |m, n| m | 1 << n)
+    }
+
     /// Loader-thread work for a world actor: the packed animations and skinned vertices (mips are made on the GPU).
     /// Skeleton +0x14 bit 0x80 (FUN_100251a0 / FUN_10035330): the bones a loaded mesh weights, and their ancestors.
     pub fn geometry_bones(&self) -> Vec<bool> {
@@ -839,7 +847,7 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
     let Some(skeleton) = base.skeleton else { bail!("file {skel_id} has no skeleton") };
     let mut log = vec![format!("skeleton {skel_id}: {} bones, {} animations", skeleton.bones.len(), base.animations.len())];
     log.extend(base.warnings);
-    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, mount: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3], ranged: -1 };
+    let mut ch = Character { skeleton, parts: base.parts, textures: base.textures, animations: base.animations, size_info: [0xFF; 4], motions: Default::default(), schedulers: base.schedulers, pc: None, mount: None, log, packed: None, skin: None, files: vec![skel_id], part_files: Vec::new(), cib: [-1; 3], ranged: -1, init_hidden: Default::default() };
     ch.merge_size_info(base.info);
     let (mut body_info, mut sub_info, mut main_info) = (None, None, None);
     for (slot, model, id) in part_ids {

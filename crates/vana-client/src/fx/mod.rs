@@ -4,6 +4,7 @@
 
 pub mod elem;
 pub mod emit;
+mod equip;
 pub mod lib;
 pub mod math;
 pub mod sched;
@@ -36,6 +37,10 @@ pub trait Actors {
     fn scale(&self, id: u32) -> f32;
     /// Equipment part files (vtable +0x1ec), and the motion files newest first followed by the model's files.
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>);
+    /// The model's own files (vtable +0x1e0), without the motion files.
+    fn model_files(&self, id: u32) -> Vec<u32> {
+        self.files(id).1
+    }
     /// Hidden actors (+0xb2 bit 1) get no attached effects.
     fn hidden(&self, id: u32) -> bool;
     /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
@@ -488,19 +493,17 @@ struct ShineDrive {
     kind: ShineKind,
 }
 
-/// Scheduler ops 0x75 / 0xa3 (FUN_100d60e0 hide, FUN_100d5f10 show) on actor1's `wepN` meshes, hide byte 0 / 1.
+/// Scheduler ops 0x75 / 0xa3 (FUN_100d60e0 hide, FUN_100d5f10 show) on actor1's `wepN` meshes, hide byte 0 / 1;
+/// a timed hide's end shows byte 0.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct WeaponOp {
     pub actor: u32,
     pub n: u8,
     pub byte: u8,
     pub hide: bool,
-    /// 0x75 with a length: hidden for these ticks, shown again at the end when `show_after`.
-    pub ticks: f32,
-    pub show_after: bool,
-    /// i16 @0xe: only while the actor is engaged.
-    pub engaged_only: bool,
 }
+
+pub use equip::{EquipCall, EquipState};
 
 /// What effect runs skipped or could not resolve (the fx-sweep command, main.rs).
 #[derive(Default, Debug)]
@@ -822,6 +825,12 @@ pub struct Effects {
     pub locks: Vec<(u32, u8, f32)>,
     /// Ops 0x75 / 0xa3: an actor's `wepN` meshes hidden or shown.
     pub weapons: Vec<WeaponOp>,
+    wep_timers: Vec<equip::WepTimer>,
+    /// fx/equip.rs: per actor, and the calls waiting to run.
+    equip: HashMap<u32, EquipState>,
+    equip_calls: Vec<(u32, EquipCall)>,
+    /// Config 0xbe == 1 (Misc. 3 "weapon effect" Off): `!w01` / `!w11` are skipped.
+    pub weapon_effect_off: bool,
     pub releases: Vec<u32>,
     /// Load holds taken here (op 0x80's skillchain burst, FUN_100a8e30); released like the action's.
     pub loads: Vec<u32>,
@@ -953,6 +962,10 @@ impl Effects {
             holds: Vec::new(),
             locks: Vec::new(),
             weapons: Vec::new(),
+            wep_timers: Vec::new(),
+            equip: HashMap::new(),
+            equip_calls: Vec::new(),
+            weapon_effect_off: false,
             releases: Vec::new(),
             loads: Vec::new(),
             reacts: Vec::new(),
@@ -1480,6 +1493,7 @@ impl Effects {
         self.weather_step(f.seconds);
         self.poll_loads();
         self.model_generators(actors);
+        self.run_equip(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
         self.step_trails(f, actors);
