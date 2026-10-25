@@ -85,12 +85,12 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
 - Client sends 0x05E {u32 tag (first 4 chars), x, y, z (wire order), u16 ActIndex, u8 exit bit, u8 mode}.
   Server: 0x00B {u8 state @4 (2 = zone change, 1 = logout), u32 ip @8, u32 port @12}; reply 0x00D with the
   old key, then key counter += 2 and reconnect with 0x00A retries (server logs the session move).
-- Zone change crossfade *(ours, user's call 2026-10-25; retail fades to black)*: a touched zone line or the 0x00B
-  arms it once a world frame was drawn (client/zonecross.rs). The next frame first copies the scene texture (still
-  the last frame drawn, before the zone-in: 0x00B and 0x00A can come in one drain) and holds it at alpha 1 over the
-  scene under the 2D layer; the zoning fade leaves the scene alone meanwhile. Once the new zone stands ready (the
-  fade's target 0) and is on the GPU, the held frame dissolves over 1 s. A zone change during the dissolve holds the
-  blend on screen. Live: !zone 230 -> 100 -> 230 on Lnxcsfix, both ways (the return's 0x00B and 0x00A in one frame).
+- Zone change fade (user, 2026-10-25: a fade to black, then the new zone; a crossfade tried first was dropped): a
+  touched zone line or the 0x00B arms a hold once a world frame was drawn (client/zonefade.rs). The next frame first
+  copies the scene texture (still the last frame drawn, before the zone-in: 0x00B and 0x00A can come in one drain)
+  and draws it over the scene, under the zoning fade, until the screen is black (the camera has moved on by then).
+  The fade (0.4 s out) always runs to black; the new zone fades in (0.6 s) once it stands ready and is on the GPU
+  (zone_uploading clear).
 
 ## Zone session
 - New characters log in inside their intro cutscene (0x00A EventPara != 0); 0x0E7 logout is rejected

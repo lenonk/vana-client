@@ -99,7 +99,7 @@ mod fep;
 mod timers;
 mod durations;
 mod voyage;
-mod zonecross;
+mod zonefade;
 
 /// A fresh voyage state for the fx tests.
 #[cfg(test)]
@@ -4005,7 +4005,7 @@ struct World {
     /// Since when the zone-in fade waits for a lift actor.
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
-    zone_cross: Option<zonecross::ZoneCross>,
+    zone_hold: Option<zonefade::Hold>,
     /// The limited-time RoE record last seen in slot 63 this login (DAT_10487eec), and "New Challenge" waiting to play
     /// (DAT_104807ec bit 3).
     roe_timed: u16,
@@ -5486,7 +5486,7 @@ impl App {
                             ride_y: 0.0,
                             lift_wait: None,
                             zoning_since: None,
-                            zone_cross: None,
+                            zone_hold: None,
                             roe_timed: 0,
                             new_challenge: false,
                             vis_list: Vec::new(),
@@ -6141,8 +6141,8 @@ impl App {
                         m.save();
                     }
                     self.status = "Zoning...".into();
-                    // Its zone-in can come in the same drain, so the crossfade starts here, not from zoning_since.
-                    zonecross::arm(&mut world.zone_cross, world.last_camera.is_some());
+                    // Its zone-in can come in the same drain, so the hold starts here, not from zoning_since.
+                    zonefade::arm(&mut world.zone_hold, world.last_camera.is_some(), world.fade);
                     world.zoning_since = Some(Instant::now());
                     world.downloading = Some(Instant::now());
                 }
@@ -7436,15 +7436,15 @@ impl App {
             world.lift_wait = None;
         }
         let lift_wait = world.lift_wait.is_some_and(|t| t.elapsed().as_secs_f32() < 10.0);
-        let ready = world.zoning_since.is_none() && world.in_scene() && world.renderer.is_some() && !lift_wait;
-        let target = if ready && !world.unsettled { 0.0 } else { 1.0 };
+        let ready = world.zoning_since.is_none() && world.in_scene() && world.renderer.is_some() && world.zone_uploading.is_none() && !lift_wait;
+        // A zone change's fade to black runs to the end before the new zone fades in.
+        let target = if ready && !world.unsettled && world.zone_hold.is_none() { 0.0 } else { 1.0 };
         if target > world.fade {
             world.fade = (world.fade + dt / 0.4).min(1.0);
         } else if target < world.fade {
             world.fade = (world.fade - dt / 0.6).max(0.0);
         }
-        let shown = target == 0.0 && world.zone_uploading.is_none() && world.downloading.is_none();
-        zonecross::step(&mut world.zone_cross, world.zoning_since.is_some(), world.last_camera.is_some(), shown, Instant::now());
+        zonefade::step(&mut world.zone_hold, world.zoning_since.is_some(), world.last_camera.is_some(), world.fade);
         if world.unsettled && world.in_scene() {
             if let Some(y) = world.ground.as_ref().and_then(|g| g.settle(world.pos.x, world.pos.z, world.pos.y)) {
                 log::info!("settled from y {:.2} to {:.2}", world.pos.y, y);
@@ -9427,8 +9427,8 @@ impl App {
         let mut drew_world = false;
         if let Phase::World(world) = &mut self.phase {
             let w: &mut World = world;
-            // A zone change crossfade holds the last frame drawn, still in the scene texture.
-            if let Some(zc) = w.zone_cross.as_mut().filter(|zc| !zc.captured) {
+            // A zone change holds the last frame drawn, still in the scene texture.
+            if let Some(zc) = w.zone_hold.as_mut().filter(|zc| !zc.captured) {
                 self.screen_fx_zone.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt)).hold(&gfx.gpu, &mut encoder, &scene_tex);
                 zc.captured = true;
             }
@@ -10027,18 +10027,17 @@ impl App {
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
+                // A zone change's held frame under the fade to black (the camera has moved on).
+                if let (Some(_), Some(fx)) = (w.zone_hold.filter(|h| h.captured), &self.screen_fx_zone) {
+                    fx.draw_held(&gfx.gpu, &mut encoder, &scene_raw, 1.0);
+                }
                 // Event crossfade, the effect flash and feedback blur, and the fades over the scene, under the 2D layer;
-                // the zoning fade as a multiply too, unless the zone change crossfade holds the frame.
-                let fade = if w.zone_cross.is_some() { 0.0 } else { w.fade };
-                let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - fade)));
+                // the zoning fade as a multiply too.
+                let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
                 let (flash, blur) = (w.screen.flash(), w.screen.blur());
                 if cross.is_some() || flash.is_some() || blur.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
                     let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
                     fx.draw_all(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), bg, cross, flash, blur, m);
-                }
-                // The zone change crossfade's held frame over the scene.
-                if let (Some(a), Some(fx)) = (w.zone_cross.and_then(|zc| zc.alpha(Instant::now())), &self.screen_fx_zone) {
-                    fx.draw_held(&gfx.gpu, &mut encoder, &scene_raw, a);
                 }
                 w.last_camera = Some(camera);
                 drew_world = true;

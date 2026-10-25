@@ -222,7 +222,7 @@ impl ScreenFx {
         }
     }
 
-    /// Ours, the zone change crossfade: the scene texture `t` copied as the held picture.
+    /// Ours, a zone change's fade to black: the scene texture `t` copied as the held picture.
     pub fn hold(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, t: &wgpu::Texture) {
         self.prev_target(gpu, t);
         let (p, _) = self.prev.as_ref().unwrap();
