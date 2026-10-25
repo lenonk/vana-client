@@ -148,7 +148,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
-    run, and point lights on scenery and actors; left: the party roster for the filter, moving-part lights;
+    run, and point lights on scenery and actors; the 2026-10-25 audit (`fx-sweep`, repeatable): distortion
+    classes, ground projection, specular meshes, shine overlay, camera shake, screen flash / feedback blur / fade,
+    pins, the weapon after-image (fx/trail.rs), the view gate; left: the party roster for the filter, moving-part
+    lights, actor refraction (task ops 0x48 / 0x49, 5 files, retail's shader not traced), op 0xac (1 file), attach
+    mode 0x14 (1 file);
     parked (user's call, 2026-10-22): replace baked lamp shells with real lights plus soft particles (MODLOG
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
