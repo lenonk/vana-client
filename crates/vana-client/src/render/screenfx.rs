@@ -222,6 +222,30 @@ impl ScreenFx {
         }
     }
 
+    /// Ours, the zone change crossfade: the scene texture `t` copied as the held picture.
+    pub fn hold(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, t: &wgpu::Texture) {
+        self.prev_target(gpu, t);
+        let (p, _) = self.prev.as_ref().unwrap();
+        encoder.copy_texture_to_texture(t.as_image_copy(), p.as_image_copy(), t.size());
+    }
+
+    /// The held picture over `view` at alpha `a` (SRCALPHA / INVSRCALPHA).
+    pub fn draw_held(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, a: f32) {
+        let Some((_, g)) = &self.prev else { return };
+        gpu.queue.write_buffer(&self.uniforms[3], 0, bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, a, 0.0, 0.0, 0.0, 0.0]));
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("zone crossfade"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.image);
+        pass.set_bind_group(0, g, &[]);
+        pass.draw(0..3, 0..1);
+    }
+
     /// Op 0x0e's copy of the scene texture `t` (same size and format, read as stored), remade when those change.
     fn prev_target(&mut self, gpu: &Gpu, t: &wgpu::Texture) {
         if self.prev.as_ref().is_some_and(|(p, _)| p.size() == t.size() && p.format() == t.format()) {

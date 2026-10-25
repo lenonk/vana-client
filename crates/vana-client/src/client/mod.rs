@@ -99,6 +99,7 @@ mod fep;
 mod timers;
 mod durations;
 mod voyage;
+mod zonecross;
 
 /// A fresh voyage state for the fx tests.
 #[cfg(test)]
@@ -3989,6 +3990,7 @@ struct World {
     /// Since when the zone-in fade waits for a lift actor.
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
+    zone_cross: Option<zonecross::ZoneCross>,
     chat: combat::ChatLog,
     chat_input: String,
     /// The chat line's caret (char index; None the end of the line, where every new line starts).
@@ -4715,6 +4717,8 @@ pub struct App {
     screen_fx: Option<crate::render::screenfx::ScreenFx>,
     /// The world's, in the scene's plain format.
     screen_fx_world: Option<crate::render::screenfx::ScreenFx>,
+    /// The zone change crossfade's held frame.
+    screen_fx_zone: Option<crate::render::screenfx::ScreenFx>,
     effects_gpu: Option<crate::render::effects::EffectsGpu>,
     /// Lobby screen fades, and whether the window has been shown (it stays hidden until the title can draw).
     lobby_fade: LobbyFade,
@@ -4900,6 +4904,7 @@ impl App {
             ui_drawn: false,
             screen_fx: None,
             screen_fx_world: None,
+            screen_fx_zone: None,
             effects_gpu: None,
             lobby_fade: LobbyFade::default(),
             shown: false,
@@ -5460,6 +5465,7 @@ impl App {
                             ride_y: 0.0,
                             lift_wait: None,
                             zoning_since: None,
+                            zone_cross: None,
                             chat: Default::default(),
                             chat_input: String::new(),
                             chat_caret: None,
@@ -6104,6 +6110,8 @@ impl App {
                         m.save();
                     }
                     self.status = "Zoning...".into();
+                    // Its zone-in can come in the same drain, so the crossfade starts here, not from zoning_since.
+                    zonecross::arm(&mut world.zone_cross, world.last_camera.is_some());
                     world.zoning_since = Some(Instant::now());
                     world.downloading = Some(Instant::now());
                 }
@@ -7379,6 +7387,8 @@ impl App {
         } else if target < world.fade {
             world.fade = (world.fade - dt / 0.6).max(0.0);
         }
+        let shown = target == 0.0 && world.zone_uploading.is_none() && world.downloading.is_none();
+        zonecross::step(&mut world.zone_cross, world.zoning_since.is_some(), world.last_camera.is_some(), shown, Instant::now());
         if world.unsettled && world.in_scene() {
             if let Some(y) = world.ground.as_ref().and_then(|g| g.settle(world.pos.x, world.pos.z, world.pos.y)) {
                 log::info!("settled from y {:.2} to {:.2}", world.pos.y, y);
@@ -9361,6 +9371,11 @@ impl App {
         let mut drew_world = false;
         if let Phase::World(world) = &mut self.phase {
             let w: &mut World = world;
+            // A zone change crossfade holds the last frame drawn, still in the scene texture.
+            if let Some(zc) = w.zone_cross.as_mut().filter(|zc| !zc.captured) {
+                self.screen_fx_zone.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt)).hold(&gfx.gpu, &mut encoder, &scene_tex);
+                zc.captured = true;
+            }
             let camera = Self::camera(w);
             let mut hidden = event::hidden(w);
             let model_hidden = hidden.clone();
@@ -9957,12 +9972,17 @@ impl App {
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
                 // Event crossfade, the effect flash and feedback blur, and the fades over the scene, under the 2D layer;
-                // the zoning fade as a multiply too.
-                let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
+                // the zoning fade as a multiply too, unless the zone change crossfade holds the frame.
+                let fade = if w.zone_cross.is_some() { 0.0 } else { w.fade };
+                let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - fade)));
                 let (flash, blur) = (w.screen.flash(), w.screen.blur());
                 if cross.is_some() || flash.is_some() || blur.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
                     let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
                     fx.draw_all(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), bg, cross, flash, blur, m);
+                }
+                // The zone change crossfade's held frame over the scene.
+                if let (Some(a), Some(fx)) = (w.zone_cross.and_then(|zc| zc.alpha(Instant::now())), &self.screen_fx_zone) {
+                    fx.draw_held(&gfx.gpu, &mut encoder, &scene_raw, a);
                 }
                 w.last_camera = Some(camera);
                 drew_world = true;
