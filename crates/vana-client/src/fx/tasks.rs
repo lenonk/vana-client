@@ -1078,6 +1078,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_10057fb0 case 0xac -> vtable +0x130 (FUN_10084ad0): actor1's death scheduler pick, entity +0x130
+            // bits 5..6 = u32 @8 & 3, read when it dies (FUN_1008c6c0); instant.
+            0xac => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.death_picks.push((id, (op.u32_at(8) & 3) as u8));
+                }
+                Flow::Next
+            }
             // FUN_1005e770 / 740 / 760 / 750: actor1's battle / idle / run / walk names from set u32 @8.
             0x79 | 0x8c | 0xa4 | 0xa5 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
@@ -1908,6 +1916,48 @@ mod tests {
             fx.tick(&f, &Two);
         }
         assert!(!fx.pinned.contains_key(&ORC));
+    }
+
+    /// Op 0xac: actor1's death pick, u32 @8 & 3, at once.
+    #[test]
+    fn death_pick_op() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        for (v, want) in [(1u8, 1u8), (6, 2)] {
+            let ops = vec![SOp { code: 0xac, wait: 0, dur: 0, raw: vec![0xac, 3, 0, 0, 0, 0, 0, 0, v, 0, 0, 0] }];
+            fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(ORC), Who::Actor(HUME), None, 1.0)));
+            fx.tick(&f, &Two);
+            assert_eq!(std::mem::take(&mut fx.death_picks), vec![(ORC, want)]);
+        }
+    }
+
+    /// DAT 50713 (Core Meltdown) main picks 1 at tick 0; the Ghrah model 2461's `1ead` puts it back to 0 at tick 262.
+    #[test]
+    fn death_pick_data() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let find = |file: u32, name: &[u8; 4]| -> Option<(u32, u32)> {
+            let bytes = index.read(file).ok()?;
+            let lib = Library::load(file, bytes.clone()).ok()?;
+            let n = lib.find_global(crate::dat::generator::kind::SCHEDULER, u32::from_le_bytes(*name))?;
+            let ops = crate::dat::sched::ops(&bytes[lib.tree.nodes[n].data.clone()]);
+            let mut tick = 0u32;
+            // An op's wait runs after it.
+            for o in ops {
+                if o.code == 0xac {
+                    return Some((tick, u32::from_le_bytes(o.raw[8..12].try_into().ok()?)));
+                }
+                tick += o.wait as u32;
+            }
+            None
+        };
+        assert_eq!(find(50713, b"main"), Some((0, 1)));
+        assert_eq!(find(2461, b"1ead"), Some((262, 0)));
+        assert_eq!(find(2461, b"dead"), None);
     }
 
     /// A Hume with a motion file that cannot load (no such DAT).

@@ -8373,3 +8373,17 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   Beginner points as icons, the arrow, helpwind "Southern San d'Oria"; "Nowhere." hides it and empties the bar; a Jeuno
   list reopened the preview on Ru'Lude Gardens (243, not owned): hidden, "You do not possess a map of Ru'Lude
   Gardens." once; Escape ended the event with the map gone.
+
+## Scheduler op 0xac: the death scheduler pick (2026-10-25; spec ~/ffxi/lab/research/fx_op_ac_attach14_spec.md 1)
+
+- FUN_10057fb0 case 0xac (asm 0x1005c1cb..f4; 2019 FUN_10057000): `ac 03 | wait | dur (unread) | u32 @8`, actor1 with
+  dolls unwrapped (FUN_10062770), any actor kind; actor vtable +0x130 = FUN_10084ad0 in all 9 vtables: entity +0x130
+  bits 5..6 = value & 3. Instant, nothing else.
+- The only reader: FUN_1008c6c0 (applied status change) on death runs table 0x1032d5f0[pick] = `dead` / `1ead` /
+  `2ead` / `3ead` (unless the `sdep` rule). Reset by another op 0xac or the entity reset FUN_1008a350.
+- Uses (all DATs): 50713 Core Meltdown (Ghrah, mob skill 1442) `main` sets 1 at tick 0; the Ghrah model files
+  2461..2469 `1ead` set 0 at tick 262. No file has `2ead` / `3ead`. So a self-destructed Ghrah dies by `1ead` (a
+  generator kill, no motion) and skips `dsel` / `dea?`.
+- Ours: Effects::death_picks, Actor.death_pick, combat::death_scheduler for status_schedulers and die() (a picked
+  scheduler without a motion plays none: no `ded` fallback). Tests death_pick_op, death_pick_data, death_schedulers.
+  Not seen live (no Ghrah near the test characters).

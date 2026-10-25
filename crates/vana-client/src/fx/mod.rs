@@ -861,6 +861,8 @@ pub struct Effects {
     pub screen_ops: Vec<(u8, [u8; 4], f32, f32)>,
     /// Ops 0x79 / 0x8c / 0xa4 / 0xa5: actor1's battle / idle / run / walk motion set (motion::MotionNames::apply).
     pub motion_sets: Vec<(u32, u8, u32)>,
+    /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
+    pub death_picks: Vec<(u32, u8)>,
     pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
@@ -966,6 +968,7 @@ impl Effects {
             door_moves: Vec::new(),
             screen_ops: Vec::new(),
             motion_sets: Vec::new(),
+            death_picks: Vec::new(),
             lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,

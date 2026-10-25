@@ -3161,6 +3161,8 @@ struct Actor {
     /// The ground tilt state (client/tilt.rs) and this frame's tilted rotation (None: the plain Euler one).
     ground_tilt: tilt::GroundTilt,
     tilt_rot: Option<glam::Mat3>,
+    /// Entity +0x130 bits 5..6 (op 0xac): which death scheduler runs (combat::death_scheduler).
+    death_pick: u8,
     /// The riding files on `extra`.
     ride_on: Vec<u32>,
 }
@@ -3210,6 +3212,7 @@ impl Actor {
             mouth_name: "mou4",
             ground_tilt: Default::default(),
             tilt_rot: None,
+            death_pick: 0,
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
@@ -6817,6 +6820,11 @@ impl App {
                 if op.byte == 0 {
                     a.wep_show_at[n] = op.show_after.then(|| Instant::now() + std::time::Duration::from_secs_f32(op.ticks / 60.0));
                 }
+            }
+        }
+        for (id, pick) in std::mem::take(&mut world.effects.death_picks) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.death_pick = pick;
             }
         }
         for (id, op, set) in std::mem::take(&mut world.effects.motion_sets) {
