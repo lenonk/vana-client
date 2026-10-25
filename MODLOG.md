@@ -6140,7 +6140,12 @@ Spec `~/ffxi/lab/research/loot_spec.md`.
   with icons and " 1" on the crystal, Cast Lot -> "Lnxcsfix's lot for the fire crystal: 210 points." and an orange
   row, Pass -> a grey row, Cast Lot greyed on the lotted row, Num+ -> Done, Escape; at the expiry "Lnxcsfix obtains
   a fire crystal." / "Rokuro obtains a potion." and the row and chest went.
-- Not done: the zone-pool columns (Treasure-flag zones), lnowin's raid1 dodge, the mouse.
+- The mouse (generic window messages 9 / 5 / 6, as the other lists): hovering a loot row (up to the count) or Cast
+  Lot / Pass in lootope (its frame at the row's right edge) moves the hand there, a click on the hand's child is Enter,
+  a right click on the window is Escape. Built 2026-10-25, **not tried live**: the pool needs a party, and LSB drops the
+  bot's party when the test character logs out between runs (two solo !addtreasure went straight to the inventory;
+  removed).
+- Not done: the zone-pool columns (Treasure-flag zones), lnowin's raid1 dodge, lnowin by mouse.
 
 ## List scroll bars (2026-10-24)
 

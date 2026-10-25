@@ -303,6 +303,52 @@ pub fn key(w: &mut World, key: egui::Key) {
     w.loot = Some(l);
 }
 
+/// The mouse (the generic window messages 9 / 5 / 6): hovering a row of loot (or Cast Lot / Pass of lootope) moves
+/// the hand there, a click on the hand's child is Enter, a right click on the window is Escape.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(l) = w.loot.clone() else { return };
+    if l.done {
+        return;
+    }
+    let (Some((lx, ly)), Some(lay)) = (gu.window_xy(LOOT, sw, sh), gu.layout(LOOT)) else { return };
+    let inside = |x: f32, y: f32, e: &crate::dat::ui::MenuElement| p.0 >= x + e.x as f32 && p.0 < x + e.x as f32 + e.w as f32 && p.1 >= y + e.y as f32 && p.1 < y + e.y as f32 + e.h as f32;
+    // lootope's frame starts at its row's right edge (draw).
+    if let Some(o) = &l.ope {
+        let (Some(row), Some(ol), Some([_, _, ow, oh])) = (lay.elements.iter().skip(1).find(|e| e.id == o.row), gu.layout(LOOTOPE), gu.window_rect(LOOTOPE, sw, sh)) else { return };
+        let (x, y) = (lx + row.x as f32 + row.w as f32, ly + row.y as f32);
+        if right && p.0 >= x && p.0 < x + ow && p.1 >= y && p.1 < y + oh {
+            key(w, egui::Key::Escape);
+            return;
+        }
+        let Some(e) = ol.elements.iter().skip(1).find(|e| inside(x, y, e) && matches!(e.id, 1 | 2)) else { return };
+        gu.hover.set(true);
+        if e.id != o.cursor && (moved || clicked) {
+            if let Some(o) = w.loot.as_mut().and_then(|l| l.ope.as_mut()) {
+                o.cursor = e.id;
+            }
+            w.sounds.push(Ui::Cursor as u32);
+        } else if clicked {
+            key(w, egui::Key::Enter);
+        }
+        return;
+    }
+    let n = rows(w).len() as u16;
+    if right && gu.window_rect(LOOT, sw, sh).is_some_and(|[fx, fy, fw, fh]| p.0 >= fx && p.0 < fx + fw && p.1 >= fy && p.1 < fy + fh) {
+        key(w, egui::Key::Escape);
+        return;
+    }
+    let Some(e) = lay.elements.iter().skip(1).find(|e| inside(lx, ly, e) && e.id >= 1 && e.id <= n) else { return };
+    gu.hover.set(true);
+    if e.id != l.cursor && (moved || clicked) {
+        if let Some(l) = w.loot.as_mut() {
+            l.cursor = e.id;
+        }
+        w.sounds.push(Ui::Cursor as u32);
+    } else if clicked {
+        key(w, egui::Key::Enter);
+    }
+}
+
 /// Num+ (list message 8): the focus to lnowin, SE 0013; Num+ on lnowin gives it back.
 pub fn num_plus(w: &mut World) {
     if let Some(l) = w.loot.as_mut().filter(|l| l.ope.is_none()) {
