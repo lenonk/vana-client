@@ -3069,11 +3069,13 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     });
     let rows = iteminfo::rows(&info, page).max(cmp_info.as_ref().map_or(3, |(_, ci)| iteminfo::rows(ci, 0)));
     let layout = iteminfo::LAYOUTS[rows - 3];
-    let [_, fy, _, fh] = gu.window_rect(layout, sw, sh)?;
+    let [fx, fy, _, fh] = gu.window_rect(layout, sw, sh)?;
     // Mode 4 (FUN_1013e4b0): (16, 16) stacked on region 3, taken as the choice window *(inf)*.
     let query_top = gu.window_rect("menu    query", sw, sh).map_or(16.0 + fh + 2.0, |r| r[1]);
     let off = match mode {
-        1 => (114.0, 0.0),
+        // FUN_1013e590 case 1: (130, 240) from the top left, whatever the layout's anchor (item4inf..item6inf sit at
+        // the bottom).
+        1 => (130.0 - fx, 240.0 - fy),
         4 => (0.0, (query_top - fh - 2.0).max(16.0) - fy),
         _ => (0.0, (log_top - fh - 2.0).max(16.0) - fy),
     };

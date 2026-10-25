@@ -7065,3 +7065,13 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` M2.6 / M2.7; ours client/esedit.r
   0x116 with the sword; Num+, Hume Tunic picked (grid to Body) -> 0x052 -> 0x116; Remove picked onto Head; Storage
   Options; es0.dat after Escape held main / body / head-remove.
 - Not done: the mouse, the wardrobe number glyph.
+
+## Item info mode 1 placement (2026-10-25)
+
+- FUN_1013e590 places iteminfo by mode: 1 (130, 240), 2 (16, 48), 3 (130, 260), 4 (16, 16), 5 (130, 240), else
+  (16, 240); then FUN_101602f0 (the UI scale only) and FUN_10119110 (absolute). The word it writes at window +0x38 (10,
+  0x50, 0, 0xc) is the window's group, not an anchor (FUN_101f1fe0 writes 0x10 / 0x81 there for the item list).
+- item4inf .. item6inf have the bottom anchor in their layouts (head byte 0x13 = 2; iteminfo and item7inf .. item12in
+  do not), so ours, which placed mode 1 as layout + (114, 0), put the Equipment grid's and the shops' item info by the
+  chat log on a screen taller than 448. Mode 1 is now (130, 240) from the top left.
+- Live (Lnxcsfix): the Onion Sword's info right under the Equipment grid, as the user's retail shot.
