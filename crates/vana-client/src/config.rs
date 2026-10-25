@@ -27,6 +27,11 @@ pub fn log_path() -> PathBuf {
     }
 }
 
+/// A test run's copy of the config (FFXI_CONFIG): saving it never touches the user's file.
+pub fn is_copy() -> bool {
+    std::env::var_os("FFXI_CONFIG").is_some()
+}
+
 /// FFXI_CONFIG points test runs at a copy, so they never write the user's file.
 fn config_path() -> PathBuf {
     std::env::var_os("FFXI_CONFIG").map(PathBuf::from).unwrap_or_else(|| app_dir(dirs::config_dir()).join("config.json"))
@@ -41,6 +46,10 @@ pub struct Config {
 
     pub server: String,
     pub username: String,
+    /// The login screen's Remember password (not retail), and the password sealed for this server and account
+    /// (secret.rs; hex, empty when none).
+    pub remember_password: bool,
+    pub saved_password: String,
     pub auth_port: u16,
     pub data_port: u16,
     pub view_port: u16,
@@ -146,6 +155,8 @@ impl Default for Config {
             installed: false,
             server: "127.0.0.1".into(),
             username: String::new(),
+            remember_password: false,
+            saved_password: String::new(),
             auth_port: 54231,
             data_port: 54230,
             view_port: 54001,

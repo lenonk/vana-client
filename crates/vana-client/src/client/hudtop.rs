@@ -440,7 +440,8 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
     if login {
         let input = super::UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
         let (mut a, mut b, mut c, mut d) = ("127.0.0.1".to_string(), "tuxedo".to_string(), "secret".to_string(), String::new());
-        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut 0, false, "", &cfg.client_version, &mut Vec::new());
+        let mut remember = cfgset == Some("remember");
+        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut remember, &mut 0, false, "", &cfg.client_version, &mut Vec::new());
     } else if lobby {
         let slots = gu.title(sw, sh, Some(3), 0xfff, [true; 5]);
         let _ = slots;

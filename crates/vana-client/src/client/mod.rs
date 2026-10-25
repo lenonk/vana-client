@@ -484,21 +484,25 @@ enum LoginChoice {
 }
 
 /// The credentials window over the title art (ours: retail logged in through PlayOnline). Focus 0..3 are the
-/// fields, 4..6 Log in / Create account / Exit.
-#[allow(clippy::too_many_arguments)]
+/// fields, 4 Remember password, 5..7 Log in / Create account / Exit.
 /// Not retail (PlayOnline logged in): the generic window sounds (FUN_10118260) go to `sounds`: 0001 when the focus
 /// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>) -> Option<LoginChoice> {
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>) -> Option<LoginChoice> {
     let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
-    const ITEMS: usize = 7;
+    const ITEMS: usize = 8;
+    const CHECK: usize = 4;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
-    let (ww, wh) = (380.0, 140.0);
-    let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 440.0 / 768.0).round());
+    let (ww, wh) = (380.0, 162.0);
+    // Centred between the title logo's foot (about half the height) and the copyright line (about 0.8).
+    let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 0.65 - wh / 2.0).round());
     let row = |i: usize| wy + 14.0 + i as f32 * 22.0;
     let field_rect = |i: usize| [wx + 148.0, row(i), ww - 164.0, 18.0];
-    let ay = row(4) + 6.0;
+    // Remember password: the game font's box (filled when on) and its caption under the fields.
+    const CAPTION: &str = "Remember password";
+    let check_rect = [wx + 148.0, row(CHECK), lu.text_width(&format!("\u{25a1} {CAPTION}")) + 4.0, 18.0];
+    let ay = row(5) + 6.0;
     // Config-page buttons (88 px, wider for a longer caption), centred 24 px apart.
     const ACTIONS: [&str; 3] = ["Log in", "Create account", "Exit"];
     let widths = ACTIONS.map(|a| (lu.label_width(a) + 14.0).max(88.0).round());
@@ -513,21 +517,32 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     let enabled = [filled, filled, true];
 
     let mut chosen = None;
-    // Hovering an action moves the selection there, as in the game's menus.
+    // Hovering an action (or the box) moves the selection there, as in the game's menus.
     if let Some(k) = input.pointer.and_then(|p| (0..3).find(|&k| inside(&arects[k], p))) {
         lu.hover.set(true);
         if input.moved {
-            *focus = 4 + k;
+            *focus = 5 + k;
         }
     }
+    if input.pointer.is_some_and(|p| inside(&check_rect, p)) {
+        lu.hover.set(true);
+        if input.moved {
+            *focus = CHECK;
+        }
+    }
+    let mut toggled = false;
     if input.clicked
         && let Some(p) = input.pointer
     {
         if let Some(i) = (0..4).find(|&i| inside(&field_rect(i), p)) {
             *focus = i;
         }
+        if inside(&check_rect, p) && !busy {
+            *focus = CHECK;
+            toggled = true;
+        }
         if let Some(k) = (0..3).find(|&k| inside(&arects[k], p)) {
-            *focus = 4 + k;
+            *focus = 5 + k;
             chosen = enabled[k].then_some(CHOICES[k]);
             sounds.push(if enabled[k] { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
         }
@@ -542,20 +557,21 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
                 egui::Key::Tab => *focus = if modifiers.shift { (*focus + ITEMS - 1) % ITEMS } else { (*focus + 1) % ITEMS },
-                egui::Key::ArrowDown => *focus = (*focus + 1).min(4.max(*focus)),
-                egui::Key::ArrowUp => *focus = if *focus >= 4 { 3 } else { focus.saturating_sub(1) },
-                egui::Key::ArrowLeft if *focus > 4 => *focus -= 1,
-                egui::Key::ArrowRight if (4..6).contains(&*focus) => *focus += 1,
+                egui::Key::ArrowDown => *focus = (*focus + 1).min(5.max(*focus)),
+                egui::Key::ArrowUp => *focus = if *focus > CHECK { CHECK } else { focus.saturating_sub(1) },
+                egui::Key::ArrowLeft if *focus > 5 => *focus -= 1,
+                egui::Key::ArrowRight if (5..7).contains(&*focus) => *focus += 1,
+                egui::Key::Enter | egui::Key::Space if *focus == CHECK && !busy => toggled = true,
                 egui::Key::Backspace if *focus < 4 => {
                     fields[*focus].pop();
                 }
                 // Escape goes to Exit, as a menu's cancel lands on its back item.
                 egui::Key::Escape => {
-                    *focus = 6;
+                    *focus = 7;
                     escape = true;
                 }
                 egui::Key::Enter => {
-                    let k = focus.saturating_sub(4);
+                    let k = focus.saturating_sub(5);
                     chosen = enabled[k].then_some(CHOICES[k]);
                     sounds.push(if enabled[k] { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
                 }
@@ -565,20 +581,24 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         }
     }
 
-    if (*focus != was || escape) && chosen.is_none() {
+    if toggled {
+        *remember = !*remember;
+        sounds.push(crate::audio::Ui::Select);
+    } else if (*focus != was || escape) && chosen.is_none() {
         sounds.push(crate::audio::Ui::Cursor);
     }
     let help = if busy {
         "Connecting to the server..."
     } else if !status.is_empty() {
         status
-    } else if *focus >= 4 && !enabled[*focus - 4] {
+    } else if *focus >= 5 && !enabled[*focus - 5] {
         "Enter the server, account name and password first."
     } else {
         match *focus {
-            4 => "Log in with this account.",
-            5 => "Create a new account on this server with the account name and password above.",
-            6 => "Exit the game.",
+            CHECK => "Keep the password on this computer, encrypted, and fill it in next time.",
+            5 => "Log in with this account.",
+            6 => "Create a new account on this server with the account name and password above.",
+            7 => "Exit the game.",
             _ => "Enter your account information to log in.",
         }
     };
@@ -599,11 +619,13 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             lu.rect(r[0] + 4.0 + lu.text_width(&shown), r[1] + 2.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
         }
     }
+    let check = format!("{} {CAPTION}", if *remember { '\u{25a0}' } else { '\u{25a1}' });
+    lu.text(&check, check_rect[0], check_rect[1] + 1.0, 0, if busy { GREY } else { WHITE });
     // As the Config pages' buttons: the selected one gold (0x80805020) one pixel up-left, the hand over it last;
     // disabled grey.
-    let mut hand = None;
+    let mut hand = (*focus == CHECK && !busy).then_some((check_rect[0], check_rect[1]));
     for (k, r) in arects.iter().enumerate() {
-        let on = *focus == 4 + k && !busy;
+        let on = *focus == 5 + k && !busy;
         let d = if on { -1.0 } else { 0.0 };
         let tint = if busy || !enabled[k] { 0x8040_4040 } else if on { 0x8080_5020 } else { 0x8080_8080 };
         settings::button(lu, [r[0] + d, r[1] + d, r[2], r[3]], tint);
@@ -4552,7 +4574,16 @@ enum Phase {
 impl Phase {
     /// The credentials screen, with the cursor on the first field still to fill in.
     fn login(cfg: &Config) -> Self {
-        Phase::Login { password: String::new(), otp: String::new(), focus: if cfg.username.is_empty() { 1 } else { 2 } }
+        // A remembered password fills in, the cursor then on Log in.
+        let password = if cfg.remember_password { crate::secret::open(&cfg.server, &cfg.username, &cfg.saved_password).unwrap_or_default() } else { String::new() };
+        let focus = if cfg.username.is_empty() {
+            1
+        } else if password.is_empty() {
+            2
+        } else {
+            5
+        };
+        Phase::Login { password, otp: String::new(), focus }
     }
 }
 
@@ -5336,11 +5367,28 @@ impl App {
                 self.status.clear();
                 self.login_error = Some(format!("The account {} was created.\nYou can log in now.", self.cfg.username));
                 if let Phase::Login { focus, .. } = &mut self.phase {
-                    *focus = 4;
+                    *focus = 5;
                 }
             }
             Task::LoggedIn(Ok((lobby, chars))) | Task::Lobby(Ok((lobby, chars))) => {
                 self.status.clear();
+                // A login that worked: the password is remembered (sealed) or forgotten as the box says.
+                if let Phase::Login { password, .. } = &self.phase
+                    && !password.is_empty()
+                {
+                    self.cfg.saved_password = match self.cfg.remember_password {
+                        true => crate::secret::seal(&self.cfg.server, &self.cfg.username, password).unwrap_or_else(|e| {
+                            log::warn!("remembering the password: {e:#}");
+                            String::new()
+                        }),
+                        false => String::new(),
+                    };
+                    if (self.drive.login.is_none() || crate::config::is_copy())
+                        && let Err(e) = self.cfg.save()
+                    {
+                        log::warn!("saving the config: {e:#}");
+                    }
+                }
                 let (new_name, race, face, size, job, nation) = match &self.phase {
                     Phase::Characters { new_name, race, face, size, job, nation, .. } => (new_name.clone(), *race, *face, *size, *job, *nation),
                     _ => (String::new(), 0, 0, 1, 0, 0),
@@ -8097,11 +8145,19 @@ impl App {
                 if let Some(lu) = self.game_ui.as_mut() {
                     self.ui_drawn = true;
                     let fields = [&mut self.cfg.server, &mut self.cfg.username, &mut *password, &mut *otp];
+                    let remembered = self.cfg.remember_password;
                     // While an error shows, the fields take no input (the OK window has it).
                     let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
-                    let chosen = login_window(lu, shown, size, fields, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    // Unticked: the remembered password goes at once.
+                    if remembered && !self.cfg.remember_password {
+                        self.cfg.saved_password.clear();
+                        if self.drive.login.is_none() || crate::config::is_copy() {
+                            let _ = self.cfg.save();
+                        }
+                    }
                     if let Some(a) = self.audio.as_mut() {
                         for s in sounds {
                             a.ui(s);

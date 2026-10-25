@@ -38,6 +38,7 @@ mod motion;
 mod msi_db;
 mod net;
 mod render;
+mod secret;
 mod sounddump;
 mod uishot;
 mod inventory;

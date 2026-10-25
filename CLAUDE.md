@@ -161,8 +161,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
-    select screen after a relog"; a logout goes back to the lobby without the password, as retail) and a "Remember
-    Password" checkbox on the login screen (the password encrypted in the config).
+    select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
+    screen's Remember password is done (MODLOG "Remember password").
 - Updates (user's design, 2026-10-22). Never required, always offered:
   - After login, character select gets an "Update" button above Select Character when anything is out of date
     (checked in the background at start). Pressing it opens a window asking what to update, each with its size:

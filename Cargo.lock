@@ -4211,6 +4211,7 @@ dependencies = [
  "png",
  "pollster 1.0.1",
  "rfd",
+ "ring",
  "rustls",
  "serde",
  "serde_json",

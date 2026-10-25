@@ -8788,3 +8788,18 @@ interpolates between the hour keys in both clients.
   not at all; the wear-off or the predicted end ends them. Not done: blue magic's and pet damage moves' added
   effects, hidden ancient magic / elemental ninjutsu debuffs, charm timers (need the mob's level) and Spirit Link's
   copies are not timed (the server never shows them landing); TP Bonus from traits (Fencer) is not known.
+
+## Remember password on the login screen (2026-10-25)
+
+- Ours (retail's PlayOnline kept the password): a row under the login window's fields, the game font's box (U+25A1,
+  filled U+25A0 when on: Shift-JIS 81A0 / 81A1) and "Remember password", focus 4 between the fields and the
+  actions (Up / Down / Tab reach it; Enter, Space or a click toggles it; the hand points at it). The window grew to
+  162 px and now stands centred between the title logo's foot and the copyright line (y = 0.65 H - 81), which the
+  140-px one covered at 600 lines.
+- Saved only by a login that worked: config `saved_password` = hex(nonce 12 | ChaCha20-Poly1305 ciphertext and tag)
+  over the password, the associated data "server\0account" (a password opens only for the server and account it
+  was saved for); the 32-byte key is random, in its own file (data dir `secret.key`, or beside an FFXI_CONFIG copy;
+  mode 0600 on Unix), so a copied or shared config carries no password. src/secret.rs. Unticking clears it at once;
+  the next login screen fills it in with the cursor on Log in. The one-time code is never kept.
+- Live (test config): typed, ticked, logged in (the config then held 88 hex digits and no plaintext, the key file
+  0600); the next start filled the password and Enter reached the title menu; unticking emptied it.
