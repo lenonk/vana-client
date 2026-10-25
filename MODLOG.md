@@ -7796,8 +7796,10 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   exists); camera::Shake stepped in 2-tick retail frames, held between them (shake_step after camera::step), applied in
   App::camera after the event or game view, never written back; reset at zone-in. Test shake_follows_retail_frames
   against the spec's table for 3445 gob_/vib1. fx-sweep --only prints the kicks: 3445 gives 49, the largest 0.055.
-- 1263 files carry a shake factor (mostly mob moves). Not seen live yet (the test bee could not use a move that
-  shakes).
+- 1263 files carry a shake factor (mostly mob moves). Seen live 2026-10-25: Lnxtest (WAR, Bronze Axe) Raging Axe (WS
+  64, anim 46, file 3446) on a Valkurm Snipper: quake elements near 2 / far 15 at d 6.15 from the eye, kicks 0.0227,
+  x settling over about 30 two-tick steps. The kick and quake-element lines are debug level (client::camera needs
+  RUST_LOG).
 
 ## Distortion meshes: CMoDistModelElem (2026-10-25; spec ~/ffxi/lab/research/fx_dist_spec.md)
 

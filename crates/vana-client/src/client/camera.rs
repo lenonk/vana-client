@@ -133,7 +133,7 @@ pub fn shake_step(w: &mut World, dt: f32) {
         }
         sh.step(2.0);
         if !w.effects.quakes.is_empty() {
-            log::trace!("camera shake: kicks {:?} x {:.4} speed {:.4} scale {:.2}", w.effects.quakes, sh.x, sh.speed, sh.scale);
+            log::debug!("camera shake: kicks {:?} x {:.4} speed {:.4} scale {:.2}", w.effects.quakes, sh.x, sh.speed, sh.scale);
         }
     }
 }

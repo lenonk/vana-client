@@ -1750,7 +1750,9 @@ impl Effects {
         {
             let k = op.slot as usize;
             let factor = if op.words.len() >= 4 { op.f32(3) } else { 0.0 };
-            cpu.quake = Some(Quake { key: elem.s(k), prm: elem.s(k + 1), s2: f32::from_bits(elem.s(k + 2)), pos: elem.v3(w::POS), near: op.f32(1), far: op.f32(2), factor, eye_rel: cpu.flags & 4 != 0 });
+            let q = Quake { key: elem.s(k), prm: elem.s(k + 1), s2: f32::from_bits(elem.s(k + 2)), pos: elem.v3(w::POS), near: op.f32(1), far: op.f32(2), factor, eye_rel: cpu.flags & 4 != 0 };
+            log::debug!("effects: quake element near {} far {} player factor {} kick factor {} eye-relative {}", q.near, q.far, q.s2, q.factor, q.eye_rel);
+            cpu.quake = Some(q);
         }
         elem.0[w::SERIAL] = self.serial;
         if let Some(m) = cpu.snapshot {

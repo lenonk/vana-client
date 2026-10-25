@@ -271,6 +271,7 @@ pub(super) fn try_equip(w: &mut World, slot: usize, c: u8, index: u8, id: u16) -
     }
     // FUN_10132050 (can wear now) and FUN_10132180 (one of the item's slots); a closed wardrobe fails.
     if !super::shop::can_wear(w, &it, id) || it.slots & (1 << slot) == 0 || !bag_open(w, c) {
+        log::info!("equip: {id:#x} not into slot {slot}: wearable {}, slot fits {}, bag {c} open {}", super::shop::can_wear(w, &it, id), it.slots & (1 << slot) != 0, bag_open(w, c));
         return false;
     }
     log::info!("equip: {:?} into slot {slot} from container {c}", (index, id));

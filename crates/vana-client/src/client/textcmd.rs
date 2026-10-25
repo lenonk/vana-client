@@ -1897,7 +1897,10 @@ fn equip(w: &mut World, args: &[String]) -> Done {
         Some(b) if b.len() == 1 && b.as_bytes()[0].is_ascii_digit() && b.as_bytes()[0] <= b'8' => vec![EQUIP_BAGS[(b.as_bytes()[0] - b'0') as usize]],
         Some(_) => return Err(()),
     };
-    let Some((bag, index, id)) = find_item(w, name, &bags) else { return Ok(()) };
+    let Some((bag, index, id)) = find_item(w, name, &bags) else {
+        log::info!("/equip: no {name:?} in containers {bags:?}");
+        return Ok(());
+    };
     if w.inv.equip[slot as usize] == Some((bag, index)) {
         return Ok(());
     }
