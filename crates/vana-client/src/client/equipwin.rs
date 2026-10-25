@@ -81,6 +81,17 @@ fn win_mut(w: &mut World) -> Option<&mut EquipWin> {
 /// FUN_10133130: persona, money, the list on the Inventory with every piece of gear, the grid (focused, mode 2); c2s
 /// 0x061 {1}. The main menu is hidden and comes back on close.
 pub fn open(w: &mut World) {
+    // Refusals first: synthesis (status 0x2c, 7 0x4e), fishing (6, 7 0x4d). Not done: 7 0xa8 while the items are not
+    // loaded (+0x198cc bit 0, not tracked).
+    let line = match w.my_motion.status {
+        0x2c => Some(0x4e),
+        6 => Some(0x4d),
+        _ => None,
+    };
+    if let Some(l) = line {
+        super::textcmd::refuse(w, l);
+        return;
+    }
     let _ = w.net.commands.send(NetCommand::StatusRequest(1));
     let return_menu = w.menu;
     w.win = Some(Win::Equip(Box::new(EquipWin { grid: 1, mode: 2, focus: Focus::Grid, container: INVENTORY, mask: 0xffff, scroll: 0, cursor: 0, picked: None, allowed: 0, compare: None, alt: 0, ctrl: None, return_menu })));
