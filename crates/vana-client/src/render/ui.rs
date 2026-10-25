@@ -145,11 +145,17 @@ impl UiBatch {
 
     /// One cell through a 2x2 matrix about (x, y): screen = (x + a cx + b cy, y + c cx + d cy) (FUN_1011c880).
     pub fn push_cell_affine(&mut self, ui: &UiFile, cell: &Cell, x: f32, y: f32, m: [f32; 4], tint: u32) {
+        self.push_cell_affine_blend(ui, cell, x, y, m, tint, 0);
+    }
+
+    /// The same with a blend word (0: the cell's own).
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_cell_affine_blend(&mut self, ui: &UiFile, cell: &Cell, x: f32, y: f32, m: [f32; 4], tint: u32, blend_word: u32) {
         let corners = cell.corners.map(|c| {
             let (cx, cy) = (c[0] as f32, c[1] as f32);
             [x + m[0] * cx + m[1] * cy, y + m[2] * cx + m[3] * cy]
         });
-        self.cell_quad(ui, cell, corners, [cell.size[0] as f32, cell.size[1] as f32], tint, 0);
+        self.cell_quad(ui, cell, corners, [cell.size[0] as f32, cell.size[1] as f32], tint, blend_word);
     }
 
     fn cell_quad(&mut self, ui: &UiFile, cell: &Cell, corners: [[f32; 2]; 4], texels: [f32; 2], tint: u32, blend_word: u32) {

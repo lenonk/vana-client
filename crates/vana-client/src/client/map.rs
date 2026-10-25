@@ -2027,8 +2027,7 @@ impl Overlay {
             gu.rect(cx + dx - d / 2.0 - 1.0, cy + dy - d / 2.0 - 1.0, d + 2.0, d + 2.0, border);
             gu.rect(cx + dx - d / 2.0, cy + dy - d / 2.0, d, d, [r, g, b, 1.0]);
         }
-        let (sn, cs) = facing.sin_cos();
-        gu.sprite_affine("menu    keytops3", MARKER, cx, cy, [cs, -sn, sn, cs], 0x8080_8080);
+        bold_marker(gu, cx, cy, facing);
         gu.clip(None);
     }
 
@@ -2050,10 +2049,18 @@ impl Overlay {
         gu.image_rect(t, rect[0] + (region.ox as f32 - v.0) * z, rect[1] + (region.oy as f32 - v.1) * z, 512.0 * z, 512.0 * z, [1.0, 1.0, 1.0, opacity]);
         let (px, py) = region.px(pos.0, pos.1);
         let (sx, sy) = (rect[0] + (px as f32 - v.0) * z, rect[1] + (py as f32 - v.1) * z);
-        let (s, c) = facing.sin_cos();
-        gu.sprite_affine("menu    keytops3", MARKER, sx, sy, [c, -s, s, c], 0x8080_8080);
+        bold_marker(gu, sx, sy, facing);
         gu.clip(None);
     }
+}
+
+/// The overlay's and the minimap's marker: the map window's (keytops3 159, added light) at 1.3 over a dark
+/// copy, alpha blended by the cells' alpha, as the pale glow alone all but vanishes on the parchment.
+fn bold_marker(gu: &mut GameUi, x: f32, y: f32, facing: f32) {
+    let (s, c) = facing.sin_cos();
+    let m = |k: f32| [c * k, -s * k, s * k, c * k];
+    gu.sprite_affine_blend("menu    keytops3", MARKER, x, y, m(1.65), 0x8000_0000, 0x44);
+    gu.sprite_affine("menu    keytops3", MARKER, x, y, m(1.3), 0x8080_8080);
 }
 
 /// Reads and decodes the map DAT off the UI thread: its first image.

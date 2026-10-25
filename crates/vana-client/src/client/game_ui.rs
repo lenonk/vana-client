@@ -824,10 +824,16 @@ impl GameUi {
 
     /// Sprite `k` through a 2x2 matrix about (x, y) (the compass disk).
     pub fn sprite_affine(&mut self, lib: &str, k: usize, x: f32, y: f32, m: [f32; 4], tint: u32) {
+        self.sprite_affine_blend(lib, k, x, y, m, tint, 0);
+    }
+
+    /// The same with a blend word (0: the cells' own; 0x44 alpha blended).
+    #[allow(clippy::too_many_arguments)]
+    pub fn sprite_affine_blend(&mut self, lib: &str, k: usize, x: f32, y: f32, m: [f32; 4], tint: u32, blend: u32) {
         let Some(l) = self.data.lobby.lib(lib) else { return };
         if let Some(s) = l.sprites.get(k) {
             for c in &s.cells {
-                self.batch.push_cell_affine(&self.data.lobby, c, x, y, m, tint);
+                self.batch.push_cell_affine_blend(&self.data.lobby, c, x, y, m, tint, blend);
             }
         }
     }
