@@ -4006,6 +4006,10 @@ struct World {
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
     zone_cross: Option<zonecross::ZoneCross>,
+    /// The limited-time RoE record last seen in slot 63 this login (DAT_10487eec), and "New Challenge" waiting to play
+    /// (DAT_104807ec bit 3).
+    roe_timed: u16,
+    new_challenge: bool,
     /// The s2c 0x077 list (DAT_10480900): the listed-only NPCs shown.
     vis_list: Vec<u32>,
     chat: combat::ChatLog,
@@ -5483,6 +5487,8 @@ impl App {
                             lift_wait: None,
                             zoning_since: None,
                             zone_cross: None,
+                            roe_timed: 0,
+                            new_challenge: false,
                             vis_list: Vec::new(),
                             chat: Default::default(),
                             chat_input: String::new(),
@@ -6267,6 +6273,7 @@ impl App {
                     world.name = name;
                     timers::on_zone(world);
                     world.entities.clear();
+                    world.new_challenge = false;
                     // FUN_10093b10: the 0x077 list goes with the zone.
                     world.vis_list.clear();
                     // The zone's actors go, and with them their queued swings, messages and holds.
@@ -6839,6 +6846,7 @@ impl App {
                 NetEvent::RoeActive(r) => {
                     world.roe.active = r;
                     world.roe.flags |= 2;
+                    roe::timed_seen(world);
                     roe::active_changed(world);
                 }
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
@@ -7006,6 +7014,7 @@ impl App {
         }
         combat::tick(world);
         combat::message_queue(world, dt);
+        roe::new_challenge(world);
         ko_step(world);
         event::update(world, dt);
         if world.in_scene() {

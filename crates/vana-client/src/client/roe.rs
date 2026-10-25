@@ -179,6 +179,28 @@ fn siblings(c: &Ctx, parent: &Category, cur: u16) -> (u16, u16) {
     (next, prev)
 }
 
+/// The 0x111 handler (0x100990e0): a limited-time record in slot 63 other than the one last seen queues "New
+/// Challenge"; the id is kept either way (reset only at login, so a zone change with the same record shows nothing).
+pub fn timed_seen(w: &mut World) {
+    let id = (w.roe.active[63] & 0xfff) as u16;
+    if id != 0 && id != w.roe_timed {
+        w.new_challenge = true;
+    }
+    w.roe_timed = id;
+}
+
+/// FUN_10087230 each frame: once the zone is in, no event runs and our model is loaded, "New Challenge" (file 0xaf0 +
+/// 0x396, en / ja; fr 0x397, de 0x398: table 0x1035b53c) `main` on us, with no text.
+pub fn new_challenge(w: &mut World) {
+    if !w.new_challenge || !w.in_scene() || w.zone_uploading.is_some() || super::event::active(w) || !w.actors.get(&w.my_id).is_some_and(|a| a.character.is_some()) {
+        return;
+    }
+    w.new_challenge = false;
+    log::info!("RoE: New Challenge, limited-time record {}", w.roe_timed);
+    let me = crate::fx::sched::Who::Actor(w.my_id);
+    w.effects.on_event_scheduler(0xaf0 + 0x396, u32::from_le_bytes(*b"main"), me, me);
+}
+
 fn objective(w: &World, id: u16) -> Option<std::sync::Arc<Objective>> {
     w.item_info.as_ref().and_then(|c| c.objective(id))
 }

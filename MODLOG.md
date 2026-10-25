@@ -7514,6 +7514,19 @@ Spec: `~/ffxi/lab/research/roe_lists_spec.md`. Ours: dat/roe.rs, client/roe.rs, 
 - Live (Lnxcsfix): the root shows Tutorial and Other; Tutorial -> Basics -> First Step Forward (the bubble, 0/1);
   Set -> 0x10C, LSB's line; Current 1/30 with the green row; Remove (default No) -> Yes -> 0x10D, "No current
   objectives." 0/30.
+- "New Challenge" (2026-10-25): the 0x111 handler (0x100990e0, asm only) reads slot 63's id (FUN_100990c0, & 0xfff); one
+  that is non-zero and differs from the last seen (u16 DAT_10487eec) sets DAT_104807ec bit 3 (FUN_10087180(1)); the
+  id is stored either way. FUN_10093a90 at every zone load clears bit 3, but DAT_10487eec only while the login flag
+  (*(PTR_DAT_103601bc + 0x10), game state 5) is set *(inf: once per login)*. Each frame FUN_10087230 (from
+  FUN_10096640: zone in, field state) with our model in (+0x120 bit 9) and no event (FUN_10087070(0xff),
+  DAT_10487e48) runs file 0xaf0 + 0x396 (table 0x1035b53c by language: ja / en 0x396, fr 0x397, de 0x398) `main` on
+  us via FUN_100a9700, no text, and clears the bit. File 3718: jigen_en `newe` (the lettering), `gp` / `glw1`; 330
+  ticks, op 0x60 "0046" (se000046, the jingle), op 0x0e feedback blur 0.97. Message 705 ("You have undertaken the
+  limited-time ... challenge") does not trigger it. Ours: World roe_timed / new_challenge, roe::timed_seen /
+  new_challenge.
+- LSB assigns the limited-time record (0x111 slot 63 and message 705, AddActiveTimedRecord) only at a character load
+  (login and every zone change, once First Step Forward is done) and on its 4-hour cycle, not when First Step Forward
+  completes as retail does: there "New Challenge" follows the memorandoll scene at once (user's retail video).
 
 ## Blue magic sets (2026-10-25)
 
