@@ -440,7 +440,12 @@ pub(super) fn update(w: &mut World, dt: f32) {
             _ => Vec::new(),
         };
         let ride = ch.pc.map(|pc| super::ride::files(w, id, &pc)).unwrap_or_default();
+        let held = super::ride::fade_held(w, id);
         let a = w.actors.get_mut(&id).unwrap();
+        // FUN_100c63d0: the load fade, 32 ticks once the model is in (a rider's once its animal is).
+        if !held {
+            a.appear = (a.appear + ticks / 32.0).min(1.0);
+        }
         if ride != a.ride_on {
             if ride.is_empty() {
                 drop_kind(&mut a.extra, Kind::Ride);

@@ -8169,7 +8169,31 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix, Hume M, West Ronfaure): /mount Chocobo drew the chocobo with the rider (files [38603]), standing and
   running; /mount Raptor files [38608], offset (-0.128, 0.383, -0.110) = 0.17 forward and 0.38 down as the spec's CPU
   check (0.17, 0.38, 0); from the side the rider sits on the raptor's back.
-- Not done yet: the mount / dismount transitions (rider hidden until the mount loads, the 32-tick fade, `coff` on
-  both and the animal running off: ours drops the animal at once), the plate lift by variant, the riding camera height,
-  first person, event op 0x7e, the ground tilt of info[0] 1 / 2 models.
+- Transitions (FUN_1008b460, ride::Phase): on a mount the rider waits hidden (state 0xe) until the mount's model is
+  in or 150 updates pass, then its load fade restarts; leaving (states 0xf / 0x10) a mount's rider goes to colour
+  0x00808080, `coff` starts on both (the rider's from its riding files, kept on until it ends), they unlink (no offset,
+  the rider's names back) and the animal stays where it stood; the applied status stays 5 / 0x55 meanwhile
+  (ride::applied); when the rider's `coff` ends the animal is deleted, the riding files go and the weapons come back.
+- The load fade (+0x59c, FUN_100c63d0 asm 0x100c7676): every new actor starts at 0 and gains 1/32 a tick once its
+  model is in (a rider's once its animal is); the draw alpha takes it after the 0.8 rule (asm 0x100cbf27: k >= 0.8 -> 1
+  else 1.25 k, then x +0x59c). Actor::appear; it applies to every actor, not only riders.
+- Scheduler op 0x6e (FUN_10057fb0 -> FUN_100aad40): actor1 moves itself along its facing ((1, 0, 0) through its
+  rotation) for u16 @6 ticks at f32 @8 x 1/60 a tick; Effects::self_moves, used for the leaving animal only.
+- Plate (FUN_100d4560): the drawn position with the mount offset; a mount's lift by the linked mount's variant: 0 / 6
+  (or unlinked) -1.3, else -0.5, but the Buffalo (0x1d) {0 .5 .5 .5 1.1 -.7 -.7 .5 .05} and the Craklaw (0x25)
+  {0 .4 .4 .4 .4 -.8 -.8 .4 .4} by race (asm 0x100d464d.., the tables replace the -0.5).
+- Camera (FUN_1001ee60 asm 0x1001f3e7): riding, look y = feet - 0.6 x (riding box y1 - y0, raw model units) + the
+  mount's info[14] / 100, no 2.5 cap. First person (FUN_10020ba0): 0.91 x (point 5 - point 1) + 1.6 x the animal's
+  size, at most 2.
+- Event op 0x7e (FUN_100b8b80): subs 1 / 3 / 6 / 7 set the event status 5 / 0x55 and the animal (1 file 39275, 3 / 6 a
+  chocobo look race val@6 + 0x20, body @8, head @10, feet @12, hands @14, legs @16 for 6, 7 mount val@6 + 1), 8 also
+  clears it; sub 2 stays on the op until actor@2's animal has its model (only while it is getting one). Op 0xac sub 1
+  no longer skips 5 / 0x55. Bound actors ride by their event status.
+- Live: raptor mount: rider and raptor fade in together; /dismount: the raptor runs off and fades while the rider fades
+  in on foot (coff 38608 / 102706); the chocobo's: the rider climbs off (ch1) and stands beside it. Moogle (key item
+  3083, variant 3): saddle point 0x30 is on bone 19 (the pom-pom stalk, bone 17 the head) at 2.89 up, so the rider sits
+  on top of the pom-pom, as the data says.
+- Not done: the ground tilt of info[0] 1 / 2 models (FUN_100d54c0), op 0x6e for other actors, the riding `cdam`
+  (started from outside FFXiMain, inf), the local player's wait for its stand motion before `coff` (FUN_100d65b0),
+  op 0xab 3's status write lock.
 

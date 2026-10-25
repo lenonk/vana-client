@@ -1142,7 +1142,7 @@ fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4)
 
 /// FUN_100d23f0 for attach point 2 (FUN_1002b5e0): the actor position plus the skeleton's point 2 offset times
 /// the model scale, rest data only, so it does not move with the pose; then FUN_1002b7a0's lift by status
-/// for bone-0 points (5 chocobo -1.3, 85 mount -1.3, 63..83 chairs -0.5). Without points: the mesh top.
+/// for bone-0 points (5 chocobo -1.3, 85 mount by its variant, 63..83 chairs -0.5). Without points: the mesh top.
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
     // A door's screen point (XiDoorActor vtable +0x27c, FUN_100ac390) is its own position (+0x1bc), unlifted.
     if let Some(e) = world.entities.get(&id).filter(|e| e.door != 0) {
@@ -1150,12 +1150,15 @@ fn plate_point(world: &World, id: u32) -> Option<Vec3> {
     }
     let (pos, status) = if id == world.my_id { (drawn_pos(world), world.my_motion.status) } else { world.entities.get(&id).map(|e| (e.pos, e.motion.status))? };
     let pos = event::pose(world, id).map_or(pos, |p| p.pos);
+    // The drawn position (+0x678) has the mount offset; `coff` keeps the riding status.
+    let (pos, status) = (pos + ride::offset(world, id), ride::applied(world, id, status));
     let a = world.actors.get(&id).filter(|a| a.gpu.is_some());
     let point = a.and_then(|a| a.character.as_ref()?.skeleton.points.get(2).copied().map(|p| (p, a.scale)));
     match point {
         Some(((bone, t), s)) => {
             let lift = match status {
-                5 | 85 if bone == 0 => -1.3,
+                5 if bone == 0 => -1.3,
+                85 if bone == 0 => ride::plate_lift(world, id),
                 63..=83 if bone == 0 => -0.5,
                 _ => 0.0,
             };
@@ -3107,6 +3110,8 @@ struct Actor {
     motion_names: Option<crate::motion::MotionNames>,
     /// A mount's status motions run at this rate (info[15] / 100, ride.rs).
     rate_scale: f32,
+    /// The load fade (+0x59c): 0 for a new actor, up 1/32 a tick once its model (and a rider's animal) is in.
+    appear: f32,
     /// The riding files on `extra`.
     ride_on: Vec<u32>,
 }
@@ -3152,6 +3157,7 @@ impl Actor {
             motion_names: None,
             rate_scale: 1.0,
             ride_on: Vec::new(),
+            appear: 0.0,
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
@@ -3378,6 +3384,9 @@ fn turn_rate(a: &Actor, in_event: bool) -> f32 {
 /// yaw (FUN_100c9330; zero on a chocobo).
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     if id & ride::ANIMAL != 0 {
+        if let Some((pos, forward)) = ride::left_at(w, id) {
+            return Some(Place { pos, forward, tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
+        }
         let p = base_place(w, id & !ride::ANIMAL, my_dir)?;
         return Some(Place { status: 0, tilt: [0.0; 2], ..p });
     }
@@ -6651,6 +6660,9 @@ impl App {
                 e.gens_off = off;
             }
         }
+        for (id, ticks, speed) in std::mem::take(&mut world.effects.self_moves) {
+            ride::self_move(world, id, ticks, speed);
+        }
         // Scheduler op 0x29: the model colour toward an ARGB target.
         for (id, argb, frames) in std::mem::take(&mut world.effects.fades) {
             if let Some(a) = world.actors.get_mut(&id) {
@@ -6721,7 +6733,7 @@ impl App {
         for (id, m) in std::mem::take(&mut world.effects.motions) {
             actmotion::play_op(world, id, m);
         }
-        ride::update(world);
+        ride::update(world, dt);
         actmotion::update(world, dt);
         // Inferred safety: a talk the server never answers stops blocking after 10 s.
         if world.talk_lock.is_some_and(|t| t.elapsed().as_secs_f32() > 10.0) {
@@ -8854,9 +8866,10 @@ impl App {
                 pcs.sort_by(|a, b| a.0.total_cmp(&b.0));
                 hidden.extend(pcs[cap..].iter().map(|p| p.1));
             }
-            // A riding animal goes with its rider.
+            // A riding animal goes with its rider; a rider waits hidden for its mount.
             let animals: Vec<u32> = hidden.iter().map(|id| ride::ANIMAL | id).collect();
             hidden.extend(animals);
+            hidden.extend(ride::hidden(w));
             let idles = event::idles(w);
             // Placements first (look targets read other actors), then each actor's motion and pose.
             let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
@@ -9209,7 +9222,7 @@ impl App {
                     // FUN_100cbde0: k = model alpha x the near-camera fade, drawn as 1 from 0.8 up, else 1.25 k; then
                     // the first-person fade.
                     let k = (a.alpha / actmotion::OPAQUE).max(0.0) * cam_fade;
-                    let k = if k >= 0.8 { 1.0 } else { k * 1.25 };
+                    let k = if k >= 0.8 { 1.0 } else { k * 1.25 } * a.appear;
                     g.alpha = (k * if *id == w.my_id { w.camst.self_alpha } else { 1.0 }).min(1.0);
                     if let Some(k) = invis.get(id) {
                         g.alpha = g.alpha.min(*k);

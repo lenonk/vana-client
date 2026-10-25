@@ -233,6 +233,10 @@ mod tests {
         let moogle = load_file_model(&index, 102_716).unwrap();
         assert_eq!((moogle.mount.unwrap().variant(8), moogle.mount.unwrap().rate(), moogle.size_info), (3, 0.5, [100; 4]));
         assert!(load_file_model(&index, 39_275).unwrap().mount.is_none());
+        // The riding box (FUN_1001ee60 takes y1 - y0) stands up: y0 is its top.
+        let hume = load_character(&index, &Look { race: 1, ..Default::default() }).unwrap();
+        let b = hume.skeleton.boxes[1];
+        assert!(b[1] - b[0] > 1.0 && b[1] - b[0] < 3.0, "riding box {b:?}");
     }
 
     /// Pugil (model 348) keys flip quaternion sign between frames; samples between keys stay on the short arc

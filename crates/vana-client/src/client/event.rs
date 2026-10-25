@@ -354,6 +354,8 @@ pub struct State {
     pub poses: HashMap<u32, Pose>,
     /// Event status (+0x174) by actor, set by op 0xac sub 1: the status a bound actor poses with (+0x170).
     pub event_status: HashMap<u32, u8>,
+    /// Op 0x7e's chocobo or mount by actor (ChocoboIndex, the chocobo look, the mount id).
+    pub event_rides: HashMap<u32, super::ride::Model>,
     /// Snapped by 0x36 / 0x37 this frame (FUN_100917e0).
     snap: HashSet<u32>,
     /// Despawned while bound (0x1009a04d keeps an event participant); removed at the end.
@@ -413,6 +415,7 @@ impl State {
             bound: HashSet::new(),
             poses: HashMap::new(),
             event_status: HashMap::new(),
+            event_rides: HashMap::new(),
             snap: HashSet::new(),
             despawned: HashSet::new(),
             camera_flag: false,
@@ -776,11 +779,11 @@ impl Host for LiveHost<'_> {
                     }
                 }
             }
-            // FUN_100bb180 sub 1: the event actor's event status +0x174 = val@2, which a bound actor poses with. Riding
-            // (5 / 0x55) is left out: the chocobo / mount model isn't spawned here.
+            // FUN_100bb180 sub 1: the event actor's event status +0x174 = val@2, which a bound actor poses with (5 / 0x55
+            // ride on its own ChocoboIndex / mount id, ride.rs).
             Effect::Op { op: 0xac, sub: Some(1), actor, args } => {
                 let id = self.wid(actor);
-                if let Some(s) = Self::arg_int(&args, 0).filter(|s| !matches!(s, 5 | 0x55)) {
+                if let Some(s) = Self::arg_int(&args, 0) {
                     self.st.event_status.insert(id, s as u8);
                 }
             }
@@ -794,10 +797,34 @@ impl Host for LiveHost<'_> {
             }
             // FUN_100b9120: the moogle menu as 0x02E opens it (FUN_101d6110(0)).
             Effect::Op { op: 0x85, .. } => super::moogle::open(self.w, false),
-            // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (subs 1, 3, 6, 7 mount it: no mount model here).
-            Effect::Op { op: 0x7e, sub: Some(0 | 5 | 8), args, .. } => {
+            // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (8 also its mount id).
+            Effect::Op { op: 0x7e, sub: Some(s @ (0 | 5 | 8)), args, .. } => {
                 if let Some(id) = self.arg_actor(&args, 0) {
                     self.st.event_status.remove(&id);
+                    if s == 8 {
+                        self.st.event_rides.remove(&id);
+                    }
+                }
+            }
+            // Subs 1 / 3 / 6 / 7: actor@2 rides (+0x174 5 / 0x55): 1 the plain chocobo (ChocoboIndex 1), 3 / 6 a chocobo
+            // look (race val@6 + 0x20, body val@8, head val@10, feet val@12, hands val@14, legs val@16 for 6, else 0),
+            // 7 mount val@6 + 1.
+            Effect::Op { op: 0x7e, sub: Some(s @ (1 | 3 | 6 | 7)), args, .. } => {
+                if let Some(id) = self.arg_actor(&args, 0) {
+                    let v = |i| Self::arg_int(&args, i).unwrap_or(0);
+                    let model = match s {
+                        1 => Some(super::ride::Model::Chocobo(39_275)),
+                        7 => Some(super::ride::Model::Mount((v(1) + 1) as u8)),
+                        _ => {
+                            let look = crate::dat::character::Look { race: (v(1) + 0x20) as u8, body: v(2) as u16, head: v(3) as u16, feet: v(4) as u16, hands: v(5) as u16, legs: if s == 6 { v(6) as u16 } else { 0 }, ..Default::default() };
+                            (0x20..=0x24).contains(&look.race).then_some(super::ride::Model::Custom(look))
+                        }
+                    };
+                    self.st.event_status.insert(id, if s == 7 { 0x55 } else { 5 });
+                    match model {
+                        Some(m) => self.st.event_rides.insert(id, m),
+                        None => self.st.event_rides.remove(&id),
+                    };
                 }
             }
             // FUN_100b3540: the event actor hidden as op 0x22 1 (+0x120 bit 17).
@@ -1100,6 +1127,11 @@ impl Host for LiveHost<'_> {
             Busy::Op { op: 0x80, actor, .. } => {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(|a| (a.character.is_none() && self.w.models_loading.contains(&a.key)) || a.pending.is_some())
+            }
+            // FUN_100b8b80 sub 2: until actor@2's chocobo / mount has its model (only while it is getting one).
+            Busy::Op { op: 0x7e, sub: Some(2), actor } => {
+                let id = self.wid(*actor);
+                self.w.rides.contains_key(&id) && !self.w.actors.get(&(super::ride::ANIMAL | id)).is_some_and(|a| a.character.is_some())
             }
             // 0x9a: until the music change has loaded.
             Busy::Op { op: 0x9a, .. } => self.w.music_changing,
@@ -1624,6 +1656,16 @@ pub fn pose(w: &World, id: u32) -> Option<Pose> {
 }
 
 /// A bound actor's event status (+0x174, op 0xac sub 1); 0 when none was set.
+/// Op 0x7e's animal for a bound actor.
+pub fn ride_model(w: &World, id: u32) -> Option<super::ride::Model> {
+    w.event.as_ref()?.st.event_rides.get(&id).copied()
+}
+
+/// Bound actors whose event status rides (5 / 0x55).
+pub fn riding(w: &World) -> Vec<u32> {
+    w.event.as_ref().map_or_else(Vec::new, |l| l.st.event_status.iter().filter(|(_, s)| matches!(s, 5 | 0x55)).map(|(id, _)| *id).collect())
+}
+
 pub fn event_status(w: &World, id: u32) -> u8 {
     w.event.as_ref().and_then(|l| l.st.event_status.get(&id).copied()).unwrap_or(0)
 }

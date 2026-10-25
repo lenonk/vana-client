@@ -933,6 +933,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_100aad40: actor1 moves itself along its facing for u16 @6 ticks at f32 @8 / 60 units a tick (a dismounted
+            // animal running off).
+            0x6e => {
+                if let Some(id) = t.a1.id() {
+                    self.self_moves.push((id, op.dur.max(0) as f32, f32::from_bits(op.u32_at(8)) / 60.0));
+                }
+                Flow::Next
+            }
             // FUN_1005f6c0: the real actor's model colour toward ARGB u32 @8 over dur * speed ticks (0x2a actor2).
             0x29 | 0x2a => {
                 if let Some(id) = self.doll_of(if op.code == 0x29 { t.a1 } else { t.a2 }).id() {

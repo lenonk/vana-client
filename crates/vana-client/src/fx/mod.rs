@@ -800,6 +800,8 @@ pub struct Effects {
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// Op 0x29 colour drives for the client: actor, target ARGB, frames.
     pub fades: Vec<(u32, u32, f32)>,
+    /// Op 0x6e for the client: actor, ticks, units a tick along its facing.
+    pub self_moves: Vec<(u32, f32, f32)>,
     /// Op 0x9a for the client: actor, entity +0x130 bit 1.
     pub gens_off: Vec<(u32, bool)>,
     /// Skill / magic actions' holds for the client: op 0x20 (actor2) / 0x59 (actor1, no reactions) as (actor, ticks,
@@ -931,6 +933,7 @@ impl Effects {
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
+            self_moves: Vec::new(),
             gens_off: Vec::new(),
             holds: Vec::new(),
             locks: Vec::new(),

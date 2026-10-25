@@ -2,7 +2,7 @@
 //! (FUN_1008f740, entity +0xa4), drawn at the rider's place; the rider gets its riding motion files and names and, on a
 //! mount, is moved onto the saddle (FUN_100c9330).
 
-use super::{EntityKind, Source, World};
+use super::{EntityKind, Source, World, actmotion};
 use crate::client::net::Ride;
 use crate::dat::character::Look;
 use crate::dat::motionfile::PcMotion;
@@ -35,9 +35,20 @@ impl Model {
     }
 }
 
+/// FUN_1008b460's states for a rider: on a mount the rider waits hidden for it (state 0 -> 0xe, at most 150 updates),
+/// riding, then leaving (states 0xf / 0x10: `coff` on both, the animal unlinked where it stood).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Phase {
+    Mounting(f32),
+    Riding,
+    /// The animal's place, its op 0x6e run (ticks left, units a tick), and ticks since.
+    Leaving { pos: Vec3, forward: Vec3, run: Option<(f32, f32)>, ticks: f32 },
+}
+
 /// A rider's state.
 pub struct Riding {
     pub model: Model,
+    pub phase: Phase,
     race: u8,
     /// FUN_100d2800's v: 0 a chocobo, 3 a chocobo in the [S] zones, 5 a mount.
     v: u32,
@@ -110,16 +121,34 @@ pub fn names(k: u8) -> MotionNames {
     MotionNames { idle, battle: idle, walk, run }
 }
 
-/// Per frame, before the motion files: each rider's animal made, kept in step or dropped (at once: the dismount's
-/// `coff` is not done), the rider's names and weapons, the animal's names, size and rate.
-pub fn update(w: &mut World) {
+/// Per frame, before the motion files: each rider's animal made and kept in step, the rider's names and weapons, the
+/// animal's names, size and rate; a rider no longer riding leaves through `coff`.
+pub fn update(w: &mut World, dt: f32) {
     let zone = w.zone.unwrap_or(0);
     let mut riders: Vec<(u32, u8, Ride)> = w.entities.iter().filter(|(id, e)| **id != w.my_id && e.kind == EntityKind::Player).map(|(id, e)| (*id, e.motion.status, e.ride)).collect();
     riders.push((w.my_id, w.my_motion.status, w.my_ride));
+    // Bound actors an event put on a chocobo or mount (op 0x7e, op 0xac sub 1).
+    for id in super::event::riding(w) {
+        if !riders.iter().any(|r| r.0 == id) {
+            riders.push((id, 0, w.entities.get(&id).map_or_else(Ride::default, |e| e.ride)));
+        }
+    }
     let mut keep = HashSet::new();
     for (id, status, ride) in riders {
+        // A dismount runs to its end whatever the status does meanwhile.
+        if w.rides.get(&id).is_some_and(|r| matches!(r.phase, Phase::Leaving { .. })) {
+            keep.insert(id);
+            continue;
+        }
+        // A bound actor rides by its event status (FUN_1008e9a0 takes +0x174), on op 0x7e's animal or its own.
         let bound = super::event::pose(w, id).is_some();
-        let Some(m) = model(status, ride, zone, bound) else { continue };
+        let m = if bound {
+            let st = super::event::event_status(w, id);
+            super::event::ride_model(w, id).filter(|_| matches!(st, 5 | 0x55)).or_else(|| model(st, ride, zone, true))
+        } else {
+            model(status, ride, zone, false)
+        };
+        let Some(m) = m else { continue };
         let Some(rider) = w.actors.get(&id).filter(|a| a.character.as_ref().is_some_and(|c| c.pc.is_some())) else { continue };
         let (ch, rider_scale) = (rider.character.clone().unwrap(), rider.scale);
         let pc = ch.pc.unwrap();
@@ -131,14 +160,27 @@ pub fn update(w: &mut World) {
         }
         let animal = w.actors.get(&animal_id).and_then(|a| a.character.clone());
         let mi = animal.as_ref().and_then(|c| c.mount);
-        let r = w.rides.entry(id).or_insert(Riding { model: m, race: pc.race, v: 0, offset: Vec3::ZERO, yaw: 0.0, points: [None; 2] });
-        if r.model != m || r.race != pc.race {
-            *r = Riding { model: m, race: pc.race, v: 0, offset: Vec3::ZERO, yaw: 0.0, points: [None; 2] };
-        }
         let mount = matches!(m, Model::Mount(_));
+        let fresh = || Riding { model: m, phase: if mount { Phase::Mounting(0.0) } else { Phase::Riding }, race: pc.race, v: 0, offset: Vec3::ZERO, yaw: 0.0, points: [None; 2] };
+        let r = w.rides.entry(id).or_insert_with(fresh);
+        if r.model != m || r.race != pc.race {
+            *r = fresh();
+        }
+        // State 0xe: the counter runs to 150 updates, or jumps there once the mount is in; then the rider's fade
+        // restarts (+0x59c = 0) and it shows.
+        let mut shown = false;
+        if let Phase::Mounting(t) = &mut r.phase {
+            *t += dt * 60.0;
+            if animal.is_some() || *t >= 150.0 {
+                (r.phase, shown) = (Phase::Riding, true);
+            }
+        }
         r.v = if mount { 5 } else if past(zone) && !bound { 3 } else { 0 };
         r.yaw = mi.map_or(0.0, |mi| mi.yaw(pc.race));
         if let Some(a) = w.actors.get_mut(&id) {
+            if shown {
+                a.appear = 0.0;
+            }
             a.motion_names = Some(names(mi.map_or(0, |mi| mi.variant(pc.race))));
             // FUN_100d60c0(0): no weapons on a mount.
             if mount {
@@ -158,22 +200,168 @@ pub fn update(w: &mut World) {
     }
     let gone: Vec<u32> = w.rides.keys().filter(|id| !keep.contains(id)).copied().collect();
     for id in gone {
-        let r = w.rides.remove(&id).unwrap();
-        w.actors.remove(&(ANIMAL | id));
-        if let Some(a) = w.actors.get_mut(&id) {
-            a.motion_names = None;
-            if matches!(r.model, Model::Mount(_)) {
-                for h in &mut a.wep_hide[..=8] {
-                    h[0] = false;
-                }
-            }
-        }
+        leave(w, id);
+    }
+    let leaving: Vec<u32> = w.rides.iter().filter(|(_, r)| matches!(r.phase, Phase::Leaving { .. })).map(|(id, _)| *id).collect();
+    for id in leaving {
+        step_leave(w, id, dt);
     }
     // An animal whose rider stopped riding before it loaded.
     let stray: Vec<u32> = w.actors.keys().filter(|id| **id & ANIMAL != 0 && !w.rides.contains_key(&(**id & !ANIMAL))).copied().collect();
     for id in stray {
         w.actors.remove(&id);
     }
+}
+
+/// State 0xf: a mount's rider goes to colour 0x00808080; `coff` on both (the rider's from its riding files, which stay
+/// on until it ends); unlinked, the rider's own names back. The animal stays where it stood. Without a loaded animal or a
+/// `coff`, the ride ends at once.
+fn leave(w: &mut World, id: u32) {
+    let animal_id = ANIMAL | id;
+    let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
+    let place = super::base_place(w, id, my_dir);
+    let (Some(rch), Some(ach), Some(p)) = (w.actors.get(&id).and_then(|a| a.character.clone()), w.actors.get(&animal_id).and_then(|a| a.character.clone()), place) else {
+        finish(w, id);
+        return;
+    };
+    let Some(r) = w.rides.get_mut(&id) else { return };
+    let mount = matches!(r.model, Model::Mount(_));
+    (r.phase, r.offset, r.yaw, r.points) = (Phase::Leaving { pos: p.pos, forward: p.forward, run: None, ticks: 0.0 }, Vec3::ZERO, 0.0, [None; 2]);
+    if let Some(a) = w.actors.get_mut(&id) {
+        a.motion_names = None;
+        if mount {
+            (a.alpha, a.rgb, a.fade) = (0.0, [actmotion::OPAQUE; 3], None);
+        }
+    }
+    let base = actmotion::status_motion(w, id, &rch);
+    let started = w.actors.get_mut(&id).is_some_and(|a| actmotion::start(a, &rch, "coff", &base));
+    if started {
+        actmotion::fx_too(&mut w.effects, id, "coff");
+    }
+    let base = actmotion::status_motion(w, animal_id, &ach);
+    if w.actors.get_mut(&animal_id).is_some_and(|a| actmotion::start(a, &ach, "coff", &base)) {
+        actmotion::fx_too(&mut w.effects, animal_id, "coff");
+    }
+    log::info!("rider {id:#x}: dismount, coff {}", if started { "playing" } else { "missing" });
+    if !started {
+        finish(w, id);
+    }
+}
+
+/// State 0x10: the animal runs (op 0x6e); the ride ends with the rider's `coff` (or after 600 ticks).
+fn step_leave(w: &mut World, id: u32, dt: f32) {
+    let over = w.actors.get(&id).is_none_or(|a| a.play.as_ref().is_none_or(|p| p.name != "coff"));
+    let Some(Riding { phase: Phase::Leaving { pos, forward, run, ticks }, .. }) = w.rides.get_mut(&id) else { return };
+    *ticks += dt * 60.0;
+    if let Some((left, speed)) = run {
+        let n = (dt * 60.0).min(*left);
+        *pos += *forward * *speed * n;
+        *left -= n;
+    }
+    if over || *ticks > 600.0 {
+        finish(w, id);
+    }
+}
+
+/// FUN_1008c6c0 / FUN_10092870: the riding files go (ride::files has no ride), the animal is deleted, the weapons
+/// come back.
+fn finish(w: &mut World, id: u32) {
+    let Some(r) = w.rides.remove(&id) else { return };
+    w.actors.remove(&(ANIMAL | id));
+    if let Some(a) = w.actors.get_mut(&id) {
+        a.motion_names = None;
+        if matches!(r.model, Model::Mount(_)) {
+            for h in &mut a.wep_hide[..=8] {
+                h[0] = false;
+            }
+            if a.fade.is_none() && a.alpha < actmotion::OPAQUE {
+                log::warn!("rider {id:#x}: coff left the rider at alpha {}", a.alpha);
+            }
+        }
+    }
+}
+
+/// Op 0x6e on a leaving animal: it runs along its facing.
+pub fn self_move(w: &mut World, id: u32, ticks: f32, speed: f32) {
+    if id & ANIMAL != 0
+        && let Some(Riding { phase: Phase::Leaving { run, .. }, .. }) = w.rides.get_mut(&(id & !ANIMAL))
+    {
+        *run = Some((ticks, speed));
+    }
+}
+
+/// A leaving animal's own place.
+pub fn left_at(w: &World, animal: u32) -> Option<(Vec3, Vec3)> {
+    match w.rides.get(&(animal & !ANIMAL))?.phase {
+        Phase::Leaving { pos, forward, .. } => Some((pos, forward)),
+        _ => None,
+    }
+}
+
+/// Riders waiting hidden for their mount (+0xb2 bit 6).
+pub fn hidden(w: &World) -> Vec<u32> {
+    w.rides.iter().filter(|(_, r)| matches!(r.phase, Phase::Mounting(_))).map(|(id, _)| *id).collect()
+}
+
+/// FUN_100c63d0: a rider's load fade waits for its animal.
+pub fn fade_held(w: &World, id: u32) -> bool {
+    id & ANIMAL == 0 && w.rides.get(&id).is_some_and(|r| !matches!(r.phase, Phase::Leaving { .. })) && !w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_some())
+}
+
+/// FUN_1008b460 holds the applied status (+0x170) at the riding one while `coff` runs.
+pub fn applied(w: &World, id: u32, status: u8) -> u8 {
+    match w.rides.get(&id) {
+        Some(r) if matches!(r.phase, Phase::Leaving { .. }) => {
+            if matches!(r.model, Model::Mount(_)) {
+                0x55
+            } else {
+                5
+            }
+        }
+        _ => status,
+    }
+}
+
+/// A riding rider's draw offset (+0x60c), zero otherwise.
+pub fn offset(w: &World, id: u32) -> Vec3 {
+    w.rides.get(&id).filter(|r| r.phase == Phase::Riding).map_or(Vec3::ZERO, |r| r.offset)
+}
+
+/// The linked mount's riding data.
+fn linked(w: &World, id: u32) -> Option<(&Riding, crate::dat::character::MountInfo)> {
+    let r = w.rides.get(&id).filter(|r| r.phase == Phase::Riding)?;
+    Some((r, w.actors.get(&(ANIMAL | id))?.character.as_ref()?.mount?))
+}
+
+/// FUN_100d4560: a mount rider's plate lift: -1.3 unlinked or with variant 0 / 6, else -0.5, the Buffalo (0x1d) and
+/// the Craklaw (0x25) by race.
+pub fn plate_lift(w: &World, id: u32) -> f32 {
+    const BUFFALO: [f32; 9] = [0.0, 0.5, 0.5, 0.5, 1.1, -0.7, -0.7, 0.5, 0.05];
+    const CRAKLAW: [f32; 9] = [0.0, 0.4, 0.4, 0.4, 0.4, -0.8, -0.8, 0.4, 0.4];
+    let Some((r, mi)) = linked(w, id) else { return -1.3 };
+    let k = mi.variant(r.race);
+    let race = (r.race as usize).min(8);
+    match r.model {
+        _ if k == 0 || k == 6 => -1.3,
+        Model::Mount(0x1d) => BUFFALO[race],
+        Model::Mount(0x25) => CRAKLAW[race],
+        _ => -0.5,
+    }
+}
+
+/// FUN_1001ee60 riding: the height the camera looks at 0.6 of, the riding box (vtable +0x3c8) plus the linked mount's
+/// camera add (info[14] / 100); None when not riding.
+pub fn look_height(w: &World, id: u32, status: u8) -> Option<f32> {
+    if !matches!(applied(w, id, status), 5 | 0x55) {
+        return None;
+    }
+    let b = *w.actors.get(&id)?.character.as_ref()?.skeleton.boxes.get(1)?;
+    Some(b[1] - b[0] + linked(w, id).map_or(0.0, |(_, mi)| mi.cam_add()))
+}
+
+/// The animal's size (FUN_10020ba0's first-person eye), 0 without one.
+pub fn animal_scale(w: &World, id: u32) -> f32 {
+    w.actors.get(&(ANIMAL | id)).filter(|a| a.character.is_some()).map_or(0.0, |a| a.scale)
 }
 
 /// The readback key of a rider's point (slot 0) or its mount's saddle point (slot 1).
@@ -190,14 +378,14 @@ pub fn is_key(k: u64) -> bool {
 /// DAT_10330ed4[race] = 0x2f + race (0x30 for race 0); as (key, point index).
 pub fn query(rides: &HashMap<u32, Riding>, id: u32) -> Option<(u64, usize)> {
     let rider = id & !ANIMAL;
-    let r = rides.get(&rider).filter(|r| matches!(r.model, Model::Mount(_)))?;
+    let r = rides.get(&rider).filter(|r| matches!(r.model, Model::Mount(_)) && r.phase == Phase::Riding)?;
     Some(if id & ANIMAL != 0 { (key(rider, 1), 0x2f + r.race.max(1) as usize) } else { (key(rider, 0), 0x6b) })
 }
 
 /// The points read back (relative to each actor's drawn root, world axes): offset = saddle - rider point.
 pub fn points(w: &mut World, pts: Vec<(u64, Vec3)>) {
     for (k, p) in pts {
-        if let Some(r) = w.rides.get_mut(&((k >> 8) as u32)) {
+        if let Some(r) = w.rides.get_mut(&((k >> 8) as u32)).filter(|r| r.phase == Phase::Riding) {
             r.points[(k & 1) as usize] = Some(p);
             if let [Some(rp), Some(mp)] = r.points {
                 if r.offset == Vec3::ZERO {

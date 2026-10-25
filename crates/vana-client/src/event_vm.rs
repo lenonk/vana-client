@@ -1583,6 +1583,16 @@ impl Runtime {
                     self.adv(v, 7);
                 }
             }
+            // FUN_100b8b80 sub 2: stays on the op until actor@2's chocobo / mount has its model; then the frame ends.
+            0x7e if sub == Some(2) => {
+                let a = self.actor_at(v, 2);
+                if host.ready(a) && host.busy(&Busy::Op { op: 0x7e, sub, actor: a }) {
+                    self.yield_(v);
+                } else {
+                    self.adv(v, 6);
+                    self.yield_(v);
+                }
+            }
             0x99 => {
                 let a = self.actor_at(v, 1);
                 if host.ready(a) && host.busy(&Busy::Op { op: 0x99, sub: None, actor: a }) {

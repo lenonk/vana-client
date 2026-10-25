@@ -87,8 +87,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     tool);
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mouse in the lists, the sort windows and the
     order files, cursor memory, the mount list, the emote list, mouse in the prompt, blue magic sets (bluset.rs,
-    MODLOG "Blue magic sets"; live on Lnxcsfix as BLU 75, now back to WAR 21); left: the mount model under the
-    rider, the Friend List);
+    MODLOG "Blue magic sets"; live on Lnxcsfix as BLU 75, now back to WAR 21); the mount model under the rider
+    (ride.rs, MODLOG "Riding"); left: the Friend List (no LSB service));
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
     pointer and `<ht>`, the compass radar dots (MODLOG "Compass radar dots"); left: helpwind's other busy bits;

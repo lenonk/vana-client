@@ -164,6 +164,10 @@ pub struct Inputs {
 /// The look point the free camera eases toward: 0.6 of the model height above the feet, at most 2.5.
 fn look_target(w: &World) -> Vec3 {
     let p = super::drawn_pos(w);
+    // FUN_1001ee60 riding: the riding box's height plus the mount's camera add, x 0.6, no cap.
+    if let Some(h) = super::ride::look_height(w, w.my_id, w.my_motion.status) {
+        return p + Vec3::new(0.0, -h * 0.6, 0.0);
+    }
     match w.actors.get(&w.my_id).map(|a| -a.top).filter(|h| *h > 0.1) {
         Some(h) => p + Vec3::new(0.0, -h.min(2.5) * 0.6, 0.0),
         None if w.camst.started => Vec3::new(p.x, w.cam.look.y, p.z),
@@ -539,13 +543,20 @@ fn first_person(w: &mut World, ticks: f32, inp: &Inputs) {
     // FUN_10020ba0: attach point 6 resting or seated, else point 12 (vt+0x1c4, the posed point), 0.91 x its height
     // at most 2.
     let k = if matches!(status, 7 | 0x21 | 0x2c | 0x2f | 0x30 | 0x3f..=0x53) { 6 } else { 12 };
-    let point = |a: &super::Actor| {
+    let point = |a: &super::Actor, k: usize| {
         let (bone, off) = *a.character.as_ref()?.skeleton.points.get(k)?;
         let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
         bones.get(bone as usize).map(|(q, t)| -(*t + *q * off).y * a.scale)
     };
-    let h = w.actors.get(&w.my_id).and_then(point).unwrap_or(1.5);
-    let h = if k == 12 { (h * 0.91).min(2.0) } else { h };
+    let me = w.actors.get(&w.my_id);
+    let h = if matches!(super::ride::applied(w, w.my_id, status), 5 | 0x55) {
+        // Riding: 0.91 x point 5 over point 1, plus 1.6 x the animal's size, at most 2.
+        let hs = me.and_then(|a| Some((point(a, 5)?, point(a, 1)?)));
+        hs.map_or(1.5, |(p5, p1)| (0.91 * (p5 - p1) + 1.6 * super::ride::animal_scale(w, w.my_id)).min(2.0))
+    } else {
+        let h = me.and_then(|a| point(a, k)).unwrap_or(1.5);
+        if k == 12 { (h * 0.91).min(2.0) } else { h }
+    };
     let eye = Vec3::new(p.x - f.x * 0.5, p.y - h, p.z - f.z * 0.5);
     // 0.25 of the gap a retail frame *(inf: per 2 ticks)*.
     let k = 1.0 - 0.75f32.powf(ticks / 2.0);
