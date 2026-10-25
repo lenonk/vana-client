@@ -66,6 +66,9 @@ mod id {
     pub const HELP: u16 = 0x21;
     pub const ITEM: u16 = 0x22;
     pub const EQUIP: u16 = 0x24;
+    pub const LOCKSTYLE: u16 = 0x9b;
+    pub const LOCKSTYLESET: u16 = 0x9c;
+    pub const EQUIPSET: u16 = 0x9e;
     pub const MAGIC: u16 = 0x25;
     pub const WS: u16 = 0x26;
     pub const NINJUTSU: u16 = 0x29;
@@ -1099,6 +1102,42 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::MAGIC | id::NINJUTSU | id::SONG => magic(w, cid, args, mode),
         id::EQUIP => equip(w, args),
+        // FUN_1007b570: an argument; gate 0x46; N (strtol) 1..200; a second "echo" prints; the equip's refusal fails.
+        id::EQUIPSET => {
+            let n = atoi(arg(1).ok_or(())?);
+            if !status_gate(w, 0x46) {
+                return Ok(());
+            }
+            let n = (1..=200).contains(&n).then_some(n as usize).ok_or(())?;
+            super::equipsets::equip(w, n - 1, arg(2) == Some("echo")).then_some(()).ok_or(())
+        }
+        // FUN_1007f820: "on" Enable (4), or Continue (1) when locked; "off" Disable (0); else Query (2); no gate.
+        id::LOCKSTYLE => {
+            let mode = match on_off(args.get(1)) {
+                1 if w.game.get(0xbf) == 0 => 4,
+                1 => 1,
+                2 => 0,
+                _ => 2,
+            };
+            super::equipsets::lock_mode(w, mode, false, 0);
+            Ok(())
+        }
+        // FUN_1007f8b0: gate 0x46; no argument Enable; "echo" Enable printing; N ["echo"] the set's look.
+        id::LOCKSTYLESET => {
+            if !status_gate(w, 0x46) {
+                return Ok(());
+            }
+            match arg(1) {
+                None => super::equipsets::lock_mode(w, 4, false, 0),
+                Some("echo") => super::equipsets::lock_mode(w, 4, false, 1),
+                Some(n) => {
+                    let n = atoi(n);
+                    let ok = (1..=200).contains(&n) && super::equipsets::lock_set(w, n as usize - 1, arg(2) == Some("echo"));
+                    return ok.then_some(()).ok_or(());
+                }
+            }
+            Ok(())
+        }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::JOIN | id::DECLINE => {
             // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}; the invite is no longer pending.

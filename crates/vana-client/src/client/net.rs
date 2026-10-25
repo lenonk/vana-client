@@ -351,6 +351,13 @@ pub enum NetEvent {
     GroupId(u32),
     /// s2c 0x113 (mode 1) / 0x118 (mode 2): the currencies, the whole packet (status_rows_spec.md appendix A).
     Currencies { mode: u8, data: Vec<u8> },
+    /// s2c 0x116 EQUIPSET_VALID: the 16 slot entries at @4 (client/equipsets.rs).
+    EquipSetValid([[u8; 4]; 16]),
+    /// s2c 0x117 EQUIPSET_RES: Count @4, ItemsChanged @8 and ItemsEquipped @0x48 ({index, slot, container, 0}).
+    EquipSetRes { count: u8, changed: [[u8; 4]; 16], equipped: [[u8; 4]; 16] },
+    /// s2c 0x11b (u8 @4): the lockstyle flag; s2c 0x11c LOCKSTYLE_ERROR: Count @4 item ids from @8.
+    LockStyleFlag(u8),
+    LockStyleError(Vec<u16>),
     /// s2c 0x063 type 7: week @8 (0 previous, 1 current), dataType @9, 0x80 bytes from @0xc.
     UnityTable { week: u8, d: u8, data: [u8; 0x80] },
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
@@ -829,6 +836,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0E1 => tx.send(NetEvent::GroupId(p.u32(4)))?,
                     0x108 => tx.send(NetEvent::BazaarShopper { state: p.u32(8), hide: p.u16(0xc), name: text(&p, 0x10, 16) })?,
                     0x10A => tx.send(NetEvent::BazaarSale { count: p.u32(4), item: p.u16(8), name: text(&p, 0xa, 16) })?,
+                    0x116 => tx.send(NetEvent::EquipSetValid(std::array::from_fn(|i| std::array::from_fn(|k| p.u8(4 + 4 * i + k)))))?,
+                    0x117 => tx.send(NetEvent::EquipSetRes { count: p.u8(4), changed: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(8 + 4 * i + k))), equipped: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(0x48 + 4 * i + k))) })?,
+                    0x11B => tx.send(NetEvent::LockStyleFlag(p.u8(4)))?,
+                    0x11C => tx.send(NetEvent::LockStyleError((0..p.u8(4).min(16) as usize).map(|i| p.u16(8 + 2 * i)).collect()))?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,

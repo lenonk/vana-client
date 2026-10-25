@@ -256,6 +256,8 @@ pub struct Out {
     pub open_settings: bool,
     /// Enter on our Extras row.
     pub open_extras: bool,
+    /// The c2s 0x053 mode Misc. 3's style lock rows send (FUN_1019b9c0: Off 0, On 4, or 1 when already on).
+    pub lockstyle: Option<u8>,
 }
 
 /// Our Settings button under lobycwin and our rows under configwi's list (not retail): virtual children.
@@ -480,6 +482,9 @@ impl ConfigUi {
         }
         let Some(c) = Self::ctl(name, child) else { return };
         out.sounds.push(Se::Select);
+        if name == "conf12wi" && matches!(child, 3 | 4) {
+            out.lockstyle = Some(if child == 3 { 0 } else if v.get(0xbf) == 1 { 1 } else { 4 });
+        }
         match c {
             Pick(id, x, _) => Self::set(v, out, id, x),
             Bit(id, mask, on, _) => {

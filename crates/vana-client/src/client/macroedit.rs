@@ -1,8 +1,8 @@
 //! Social row 6 MacroPalette (spec ~/ffxi/lab/research/social_rows_spec.md M1): "menu    mcrmenu" -> Edit Macro:
 //! the book list "menu    mcrselec" with its options "menu    mcrselop", the edit palettes "menu    mcr1edit" /
 //! "menu    mcr2edit" (mcr?edlo long) with "menu    mcrbedit", and the macro editor "menu    macro" with
-//! "menu    mcrledit". No packets: everything is the USER files (client/macros.rs). Not done: Edit Equip. Set (M2),
-//! auto-translate in the fields, the mouse, the palettes' flip zoom.
+//! "menu    mcrledit". No packets: everything is the USER files (client/macros.rs). Edit Equip. Set: client/esmenu.rs.
+//! Not done: auto-translate in the fields, the mouse, the palettes' flip zoom.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -21,6 +21,8 @@ const SE_FOCUS: u32 = 13;
 pub struct MacroEdit {
     menu_sel: u16,
     book: Option<Book>,
+    /// Edit Equip. Set's windows.
+    pub(super) sets: Option<super::esmenu::SetList>,
 }
 
 /// mcrselec: the cursor child (1..20), the rename field's text, mcrselop's cursor, the palettes once a book is
@@ -64,7 +66,7 @@ fn alpha_index(c: u8) -> Option<usize> {
 }
 
 /// mcralpha text: advance = sprite width + 1, other bytes skipped without advancing, stopping before `max` px.
-fn alpha(gu: &mut GameUi, s: &[u8], x: f32, y: f32, max: f32) {
+pub(super) fn alpha(gu: &mut GameUi, s: &[u8], x: f32, y: f32, max: f32) {
     let mut at = x;
     for &c in s {
         let Some(i) = alpha_index(c) else { continue };
@@ -106,7 +108,7 @@ pub fn open(w: &mut World) {
     if w.macros.is_none() {
         return;
     }
-    w.macroedit = Some(MacroEdit { menu_sel: 1, book: None });
+    w.macroedit = Some(MacroEdit { menu_sel: 1, book: None, sets: None });
     w.sounds.push(Ui::Select as u32);
 }
 
@@ -116,7 +118,8 @@ fn book_of(w: &World, sel: u16) -> usize {
 
 /// The text fields take the keyboard: the book name (mode 4, 15 bytes) and the editor's (title 8, lines 60).
 pub fn typing(w: &World) -> bool {
-    w.macroedit.as_ref().and_then(|m| m.book.as_ref()).is_some_and(|b| b.rename.is_some() || b.edit.as_ref().and_then(|e| e.editor.as_ref()).is_some_and(|d| d.editing.is_some() && d.lopt.is_none()))
+    super::esmenu::typing(w)
+        || w.macroedit.as_ref().and_then(|m| m.book.as_ref()).is_some_and(|b| b.rename.is_some() || b.edit.as_ref().and_then(|e| e.editor.as_ref()).is_some_and(|d| d.editing.is_some() && d.lopt.is_none()))
 }
 
 /// The field's limits: 15 bytes for a book name, 8 for a title, 60 for a line (FUN_101c5be0 modes 4 / 8 / 9).
@@ -128,6 +131,10 @@ fn field_max(rename: bool, field: usize) -> usize {
 /// field keys: the rename commits on Enter and Escape (FUN_101a6750(1)); the editor moves between its fields.
 pub fn text_events(w: &mut World, events: &[egui::Event]) {
     use egui::Key as K;
+    if super::esmenu::typing(w) {
+        super::esmenu::text_events(w, events);
+        return;
+    }
     let page = w.mcr_page;
     for ev in events {
         let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()) else { return };
@@ -197,9 +204,13 @@ fn macro_of(e: &Edit) -> usize {
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     use egui::Key as K;
     let Some(me) = w.macroedit.as_ref() else { return };
+    if me.sets.is_some() {
+        super::esmenu::key(w, gu, key);
+        return;
+    }
     let menu_sel = me.menu_sel;
     let Some(b) = me.book.as_ref() else {
-        // mcrmenu: links wrap; Enter 1 the book list, 2 Edit Equip. Set (not done); Escape closes (socialme resumes).
+        // mcrmenu: links wrap; Enter 1 the book list, 2 the equipment sets; Escape closes (socialme resumes).
         match key {
             K::ArrowUp | K::ArrowDown => {
                 if let Some(m) = w.macroedit.as_mut() {
@@ -218,7 +229,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                         m.book = Some(Book { sel: 1, rename: None, opt: None, edit: None });
                     }
                 } else {
-                    log::info!("MacroPalette: Edit Equip. Set is not implemented yet");
+                    super::esmenu::open(w);
                 }
             }
             _ => {}
@@ -335,27 +346,39 @@ pub enum Ask {
     DeleteBook(u8),
     PasteSet,
     DeleteSet,
+    /// mcresmn's Paste, Delete and Overwrite on a row of the page.
+    EsPaste(u8),
+    EsDelete(u8),
+    EsOverwrite(u8),
 }
 
-/// The question: group 9 0xef / 0xf0 (book), 0xed / 0xee (set).
+/// The question: group 9 0xef / 0xf0 (book), 0xed / 0xee (set), 0x115..0x117 (equipment set).
 pub fn ask_text(w: &World, a: Ask) -> String {
     let id = match a {
         Ask::PasteBook(_) => 0xef,
         Ask::DeleteBook(_) => 0xf0,
         Ask::PasteSet => 0xed,
         Ask::DeleteSet => 0xee,
+        Ask::EsPaste(_) => 0x115,
+        Ask::EsDelete(_) => 0x116,
+        Ask::EsOverwrite(_) => 0x117,
     };
     w.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default()
 }
 
 /// Yes (LAB_101a6ad0 / LAB_101a6af0, FUN_101a2b60 / FUN_101a2b40).
 pub fn answer(w: &mut World, a: Ask) {
+    if matches!(a, Ask::EsPaste(_) | Ask::EsDelete(_) | Ask::EsOverwrite(_)) {
+        super::esmenu::answer(w, a);
+        return;
+    }
     let Some(m) = w.macros.as_mut() else { return };
     match a {
         Ask::PasteBook(b) => m.paste_book(b as usize),
         Ask::DeleteBook(b) => m.delete_book(b as usize),
         Ask::PasteSet => m.paste_set(),
         Ask::DeleteSet => m.clear_set(),
+        _ => {}
     }
 }
 
@@ -422,7 +445,7 @@ fn palette_key(w: &mut World, gu: &GameUi, key: egui::Key) {
     match (e.focus, key) {
         (_, K::ArrowLeft | K::ArrowRight) => {
             let name = if e.focus == 1 { "menu    mcr1edit" } else { "menu    mcr2edit" };
-            let k = if key == K::ArrowLeft { 0 } else { 1 };
+            let k = if key == K::ArrowLeft { 5 } else { 4 };
             let to = gu.menu_links(name, col + 1).map_or(col + 1, |l| l[k] as u16);
             if (1..=10).contains(&to) {
                 e.cols[p] = to - 1;
@@ -509,8 +532,8 @@ fn editor_key(w: &mut World, gu: &GameUi, key: egui::Key) {
     match key {
         K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight => {
             let k = match key {
-                K::ArrowLeft => 0,
-                K::ArrowRight => 1,
+                K::ArrowLeft => 5,
+                K::ArrowRight => 4,
                 K::ArrowUp => 2,
                 _ => 3,
             };
@@ -557,6 +580,10 @@ fn editor_key(w: &mut World, gu: &GameUi, key: egui::Key) {
 
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return };
+    if let Some(s) = &me.sets {
+        super::esmenu::bars(gu, w, s, bars);
+        return;
+    }
     let focus = |bars: &mut super::hudtop::BarText, name: &str, child: u16| {
         let [help, title] = gu.focus_text(name, child);
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
@@ -597,7 +624,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// A text field's caret phase (40 frames on, 20 off at 60 a second, inf).
-fn caret(w: &World) -> &'static str {
+pub(super) fn caret(w: &World) -> &'static str {
     if (w.started.elapsed().as_secs_f32() * 60.0) as u32 % 60 < 40 { "|" } else { "" }
 }
 
@@ -605,8 +632,12 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return rects };
     let free = w.confirm.is_none();
-    if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none(), &[]) {
+    if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none() && me.sets.is_none(), &[]) {
         rects.push(win.frame);
+    }
+    if let Some(s) = &me.sets {
+        rects.extend(super::esmenu::draw(gu, w, s, sw, sh, free));
+        return rects;
     }
     let Some(b) = &me.book else { return rects };
     // mcrselec: the active book's red bar (keytops3 87), the names in mcralpha at (8, 2) cut before 75 px, or the

@@ -91,6 +91,8 @@ pub struct BattleText {
     group9: Option<Messages>,
     /// Group 10: formatted client lines (the guild shop's hours, ...); group 0x10: the weekday names.
     group10: Option<Messages>,
+    /// Group 0xc: menu and command lines ("Set #%d equipped.", ...).
+    group12: Option<Messages>,
     days: Option<Messages>,
     /// Group 0x11: the moon phase names.
     moons: Option<Messages>,
@@ -188,6 +190,7 @@ impl BattleText {
             slot_names: super::msg::group_file(ffximain, 1, 0x17).and_then(msgs),
             group9: super::msg::group_file(ffximain, 1, 9).and_then(msgs),
             group10: super::msg::group_file(ffximain, 1, 10).and_then(msgs),
+            group12: super::msg::group_file(ffximain, 1, 0xc).and_then(msgs),
             days: super::msg::group_file(ffximain, 1, 0x10).and_then(msgs),
             moons: super::msg::group_file(ffximain, 1, 0x11).and_then(msgs),
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
@@ -310,6 +313,10 @@ impl BattleText {
 
     pub fn group10(&self, id: usize) -> Option<String> {
         self.group10.as_ref()?.get(id)
+    }
+
+    pub fn group12(&self, id: usize) -> Option<String> {
+        self.group12.as_ref()?.get(id)
     }
 
     /// A group 10 string's bytes, its FA 40 codes kept (for dat::msgfmt).

@@ -6985,3 +6985,26 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` M1; ours client/macroedit.rs, mac
   mcrbedit, Ctrl 1 edited (title and line 1), the cell's new title; mcr.ttl and mcr.dat held the edits.
 - Not done: auto-translate and Shift-JIS input in the fields, the caret position (always at the end), the palettes'
   flip zoom, the mouse.
+
+## MacroPalette: equipment sets (2026-10-25)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` M2; ours client/equipsets.rs (store, commands, packets), esmenu.rs
+(mcres20, mcresmn).
+- Store: es<page>.dat in USER/<id> (macros.rs container, version 1, payload 20 x 0x50: name[16] + 16 slot entries
+  {state | container << 2, index, u16 id}); pages read when the list opens and on every page turn, written on every page
+  turn and on Escape (so turning pages writes the page being left). Sets of other pages are read one record at a time
+  (version check only, no MD5) for /equipset and /lockstyleset; a missing file fails the command.
+- mcres20 / mcresmn as the spec; mcres20's links: rows [prev, next, up, down, right, left] = [r-1, r+1, r-1, r+1, r, r]
+  (Left / Right stay put and only turn the page), the arrows 21 / 22 have up / down -> 1. The link slots are
+  0 / 1 prev / next, 2 / 3 up / down, 4 right, 5 left (macroedit.rs used 0 / 1 for Left / Right: the macro editor's
+  Left / Right moved up / down instead of to Prev / Next; fixed).
+- comyn's Yes / No sit side by side (Left to Yes).
+- /equipset N [echo] (0x9e), /lockstyle [on|off] (0x9b, no status gate), /lockstyleset [N] [echo] (0x9c); "echo" is an
+  exact 5-byte compare. Misc. 3's style-lock rows send 0x053 (FUN_1019b9c0: Off mode 0, On mode 4, or 1 when 0xbf was
+  already 1) on every Enter, changed or not. Field entry: 0x053 mode 1 with config 0xbf set, else 0.
+- s2c 0x116 / 0x117 / 0x11b / 0x11c parsed (0x117 / 0x11b: LSB never sends them).
+- Live (Lnxcsfix, starter gear; USER/5 and the test config restored after): Overwrite set 1 with the worn gear, rename,
+  Copy / Paste to set 2 (confirm), Delete; /equipset 1 echo re-equipped from bare (0x051, 16 entries, "Set #1
+  equipped."), /lockstyleset 1 echo kept the tunic's look after /equip body took it off, the 9 s refusal, /lockstyle
+  query ("Style lock mode is enabled."), /lockstyle off dropped the look.
+- Not done: the slot editor mcresed with its item list and mcrmogc (c2s 0x052 / s2c 0x116), the Monstrosity refusals.

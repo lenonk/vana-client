@@ -58,6 +58,8 @@ mod unity;
 mod bazaar;
 mod helpdesk;
 mod macroedit;
+mod equipsets;
+mod esmenu;
 mod journal;
 mod missions;
 mod quests;
@@ -2465,6 +2467,9 @@ fn config_out(world: &mut World, out: configui::Out) {
     if out.open_extras {
         world.want_settings = Some(settings::Kind::Extras);
     }
+    if let Some(mode) = out.lockstyle {
+        equipsets::lock_mode(world, mode, false, 0);
+    }
 }
 
 /// The indicator's draw `n` (from 1).
@@ -3706,6 +3711,8 @@ struct World {
     /// Social row MacroPalette's windows, mcrselec's page (its object is permanent) and mcrledit's line clipboard.
     macroedit: Option<macroedit::MacroEdit>,
     mcr_page: usize,
+    /// The equipment sets (client/equipsets.rs), made at the first field entry.
+    equipsets: Option<equipsets::EquipSets>,
     mcr_line: Option<Vec<u8>>,
     /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
     mh_open: bool,
@@ -4920,6 +4927,7 @@ impl App {
                             helpdesk: None,
                             macroedit: None,
                             mcr_page: 0,
+                            equipsets: None,
                             mcr_line: None,
                             mh_open: false,
                             mog_pending: false,
@@ -5314,6 +5322,12 @@ impl App {
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
+                    if world.equipsets.is_none()
+                        && let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf())
+                    {
+                        world.equipsets = Some(equipsets::EquipSets::new(dir));
+                    }
+                    equipsets::field_entry(world);
                     if !world.synth.loaded
                         && let Some(dir) = world.macros.as_ref().map(|m| m.dir().to_path_buf())
                     {
@@ -5855,6 +5869,10 @@ impl App {
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),
                 NetEvent::Currencies { mode, data } => currencies::on_packet(world, mode, &data),
+                NetEvent::EquipSetValid(slots) => log::info!("s2c 0x116 {slots:?}"),
+                NetEvent::EquipSetRes { count, changed, equipped } => equipsets::on_res(world, count, &changed, &equipped),
+                NetEvent::LockStyleFlag(v) => equipsets::on_flag(world, v),
+                NetEvent::LockStyleError(ids) => equipsets::on_lock_error(world, &ids),
                 NetEvent::UnityTable { week, d, data } => world.unity_tables.store(week, d, &data),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),
                 NetEvent::TrackPos { index, level, pos, state } => world.scan.on_pos(index, level, pos, state),
