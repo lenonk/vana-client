@@ -1036,9 +1036,8 @@ fn world_volumes(w: &World) -> (f32, f32) {
     (f(10, w.bgm_mute), f(9, w.se_mute))
 }
 
-/// FUN_100973f0, InvisFlag on a PC: our own model at colour 0x27808080, another's at alpha 0, and no plate. A party or
-/// alliance member stays at 0x27 with a plate: the user's retail (LSB sends the flag to them too; *(inf: the retail
-/// server's side)*).
+/// FUN_100973f0, InvisFlag on a PC: our own model at colour 0x27808080, another's at alpha 0, and no plate. Not retail:
+/// a party or alliance member stays at 0x27 with its plate (an improvement, the user's call 2026-10-25).
 fn invisible_alpha(w: &World, id: u32) -> Option<f32> {
     let translucent = 0x27 as f32 / 128.0;
     if id == w.my_id {

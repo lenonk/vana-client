@@ -7293,3 +7293,11 @@ FUN_10086210 / FUN_10086900, the target window FUN_101501a0).
   case, so the retail server must send them something else *(inf)*. LSB sends the flag to everyone. Ours drew
   invisible players opaque before.
 - Live: Lnxcsfix shows the "?" (LSB's new player), `!togglegm` the grey "E" orb and a pink name.
+
+## Correction: invisible party members (2026-10-25)
+
+- Retail hides every invisible PC but ourselves, party members included (FUN_100973f0 has no party case; the user
+  remembered tracking party members by the target arrow, and had mixed it up with FFXIV). The previous note's
+  "the retail server must send them something else" is wrong.
+- Ours keeps party and alliance members translucent (0x27) with their plates anyway: a deliberate improvement, the
+  user's call ("this client is all about quality of life improvements").
