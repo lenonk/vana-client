@@ -846,6 +846,13 @@ pub struct Effects {
     models: HashMap<u32, Vec<u32>>,
     /// Actors whose model is hidden (+0xb2 bit 1, FUN_10085a50 ran).
     hidden_actors: HashSet<u32>,
+    /// DAT_1065cb18 (the time of day in 1/60 Vana'diel seconds) and DAT_1065cb0c (its change this frame), for op 0x52.
+    vana_now: i32,
+    vana_dt: f32,
+    vana_seen: bool,
+    /// Action contexts of looping tasks that restarted: retail drops them without the release, so their rest never
+    /// prints.
+    leaked: Vec<std::rc::Rc<std::cell::RefCell<sched::ActionCtx>>>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// The model colour for the client (FUN_1005f6c0 channel 0: ops 0x29 / 0x2a / 0xa0; 0x88, 0xb1 / 0xb2).
@@ -1007,6 +1014,10 @@ impl Effects {
             load_tx,
             load_rx,
             hidden_actors: HashSet::new(),
+            vana_now: 0,
+            vana_dt: 0.0,
+            vana_seen: false,
+            leaked: Vec::new(),
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
@@ -1112,11 +1123,14 @@ impl Effects {
     pub fn switch_zone(&mut self, l: usize) {
         // Actors are rebuilt at zone-in: no cast carries over (inf).
         self.casting.clear();
+        // FUN_1017b1e0 -> FUN_100446a0: every clone of the old zone's and sub-area's generators goes, whatever started it.
+        let old = [self.zone_lib, self.sub_lib];
         for i in 0..self.insts.len() {
-            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_))) {
+            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_)) || old.contains(&Some(x.src.0))) {
                 self.kill(i);
             }
         }
+        self.leaked.clear();
         self.weathers.clear();
         self.tasks.clear();
         self.trails.clear();
@@ -1147,6 +1161,9 @@ impl Effects {
         for node in starts {
             self.start((l, node), Owner::Zone);
         }
+        // FUN_10073430's link pass: the zone's self-starting schedulers, `weat` ones too (the weather that follows
+        // replaces those).
+        self.start_auto(l, None);
     }
 
     /// A sub-area DAT (an interior) loaded beside the zone: the old one's generators go and its auto-start world
@@ -1176,6 +1193,8 @@ impl Effects {
         for node in starts {
             self.start((l, node), Owner::SubArea);
         }
+        // Parsed again at each load, so its self-starting schedulers start again.
+        self.start_auto(l, None);
     }
 
     /// FUN_10072290 / FUN_100724c0: scheduler `name` inside the folder named `folder` (a door id) of the zone or the
@@ -1201,12 +1220,19 @@ impl Effects {
         false
     }
 
-    /// The sub-area unloads: its generators stop.
+    /// The sub-area unloads (FUN_1017b110 -> FUN_100446a0): its generators' clones and its schedulers' tasks stop.
     pub fn drop_sub_area(&mut self) {
-        self.sub_lib = None;
+        let sub = self.sub_lib.take();
         for i in 0..self.insts.len() {
-            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::SubArea)) {
+            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::SubArea) || Some(x.src.0) == sub) {
                 self.kill(i);
+            }
+        }
+        if let Some(s) = sub {
+            for t in self.tasks.iter_mut() {
+                if t.as_ref().is_some_and(|t| t.res.0 == s) {
+                    *t = None;
+                }
             }
         }
     }
@@ -1229,7 +1255,8 @@ impl Effects {
             tree.nodes.iter().enumerate().find(|(_, x)| x.kind == kind::FOLDER && x.name == n && (parent.is_none() || x.parent == parent)).map(|(i, _)| i)
         };
         let Some(weat) = named(None, "weat") else { return };
-        let folder = named(Some(weat), tag).or_else(|| named(Some(weat), "suny")).unwrap_or(weat);
+        // FUN_1018a7a0: neither the tag nor `suny`: nothing starts and nothing is killed.
+        let Some(folder) = named(Some(weat), tag).or_else(|| named(Some(weat), "suny")) else { return };
         let within = |mut i: usize| loop {
             match tree.nodes[i].parent {
                 Some(p) if p == folder => return true,
@@ -1250,6 +1277,20 @@ impl Effects {
             }
         }
         self.weathers.push(WeatherSet { serial, tag: tag4, duration: seconds, remaining: seconds });
+        // Its schedulers switch at once: every task of a `weat` scheduler ends, then the folder's self-starting ones.
+        let tree = &self.reg.libs[l].tree;
+        let under = |mut i: usize, f: usize| loop {
+            match tree.nodes[i].parent {
+                Some(p) if p == f => return true,
+                Some(p) => i = p,
+                None => return false,
+            }
+        };
+        let old: Vec<usize> = (0..tree.nodes.len()).filter(|&n| tree.nodes[n].kind == kind::SCHEDULER && under(n, weat)).collect();
+        for n in old {
+            self.kill_tasks((l, n), None);
+        }
+        self.start_auto(l, Some(folder));
     }
 
     /// The zone's ambient loop (FUN_10189ca0 via FUN_1018a220, played by FUN_10036170): a SeSep (type 0x3d) under the
@@ -1554,6 +1595,11 @@ impl Effects {
     /// One frame: attachments, generator updates and emissions, element lives (FUN_10043ca0) and expiry.
     pub fn tick(&mut self, f: &Frame, actors: &dyn Actors) {
         let dt = f.dt;
+        // FUN_1018c2b0: the time of day (rounded: 11:00 from an f32 day fraction must not land on 10:59:59.98) and
+        // its change since the last frame.
+        let now = ((f.dayfrac as f64 * tasks::VANA_DAY as f64).round() as i64).rem_euclid(tasks::VANA_DAY as i64) as i32;
+        self.vana_dt = if self.vana_seen { (now - self.vana_now).rem_euclid(tasks::VANA_DAY) as f32 } else { 0.0 };
+        (self.vana_now, self.vana_seen) = (now, true);
         self.weather_step(f.seconds);
         self.poll_loads();
         self.model_generators(actors);

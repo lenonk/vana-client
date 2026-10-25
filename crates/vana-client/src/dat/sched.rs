@@ -33,6 +33,48 @@ pub fn ops(data: &[u8]) -> Vec<Op<'_>> {
     out
 }
 
+/// FUN_10056e10: the end stream (header u32 @0x18, chunk-relative) until op 0; an op 0x01 there means the task starts
+/// over at its end (FUN_10057c20).
+pub fn loops(data: &[u8]) -> bool {
+    let Some(mut at) = data.get(0x18..0x1c).map(|b| (u32::from_le_bytes(b.try_into().unwrap()) as usize).wrapping_sub(0x10)) else { return false };
+    while at + 4 <= data.len() {
+        let (code, len) = (data[at], (data[at + 1] & 0x1f) as usize * 4);
+        if code == 1 {
+            return true;
+        }
+        if code == 0 || len == 0 {
+            return false;
+        }
+        at += len;
+    }
+    false
+}
+
+/// FUN_10056e80: started by itself when its file is parsed (FUN_10056a50) or its weather folder is set
+/// (FUN_1018a7a0): an end loop or an op 0x52 in the main stream, and no op 0xa2.
+pub fn auto_start(data: &[u8]) -> bool {
+    let main = ops(data);
+    (loops(data) || main.iter().any(|o| o.code == 0x52)) && !main.iter().any(|o| o.code == 0xa2)
+}
+
+/// FUN_10056ae0: max(start + dur) over the main stream, op 0 included (it overwrites the header's length).
+pub fn span(data: &[u8]) -> i32 {
+    let Some(mut at) = data.get(0x14..0x18).map(|b| (u32::from_le_bytes(b.try_into().unwrap()) as usize).saturating_sub(0x10)) else { return 0 };
+    let (mut t, mut best) = (0i32, 0i32);
+    while at + 8 <= data.len() {
+        let (code, len) = (data[at], (data[at + 1] & 0x1f) as usize * 4);
+        let wait = i16::from_le_bytes([data[at + 4], data[at + 5]]) as i32;
+        let dur = i16::from_le_bytes([data[at + 6], data[at + 7]]) as i32;
+        best = best.max(t + dur);
+        if code == 0 || len == 0 {
+            break;
+        }
+        t += wait;
+        at += len;
+    }
+    best
+}
+
 /// Header u32 @0x1c: the scheduler's length in ticks.
 pub fn length(data: &[u8]) -> u32 {
     data.get(0x1c..0x20).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()))

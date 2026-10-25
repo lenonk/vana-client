@@ -3186,8 +3186,8 @@ p(u) - S[s+3..5]; S[s+3..5] = p(u). Here the segments go to the GPU (update bind
 segment; the slot holds first vec4 + 1). Test worked_paths: DAT 202 'lin2' and DAT 265 'a7' match the spec's
 numbers. zone-shot `--start NAME` starts a zone generator: 102 `--start hat2` pigeons fly along 'lin2'.
 Corrections: S[0] is the keyframe (spec C.4 said spline); gen+0xa0 = op[1] of 0x54 is the KeyFrame; op 0x15's
-corners are its own op[1] (always 0: the unit cube). Not done: who starts f_la/mode/hato (flags 0x40000000, not
-auto), scheduler ops 0x26 / 0x27 (CMoPathDriveActorTask), CMoPathObject.
+corners are its own op[1] (always 0: the unit cube). f_la/mode/hato is started by its five op-0x52 schedulers
+(section "Self-starting schedulers"). Not done: scheduler ops 0x26 / 0x27 (CMoPathDriveActorTask), CMoPathObject.
 
 ## Effects filter (config 0x92; FUN_100ac4b0 / FUN_100ac560, fx/tasks.rs effects_allowed) (2026-10-22)
 
@@ -7680,7 +7680,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   rotation of network updates alone). World::face_locks; the entities' yaw ease is skipped while locked.
 - 0x2a: op 0x29's model colour drive on actor2.
 - 0x73: the child loops (FUN_10055cc0 with 1 -> +0x141; FUN_10057c20 restarts it at its end with speed 1.0) until
-  killed: Task::looping, restarted the next frame. 57 uses in 20 files (lpo0 / lpr1 ..., mostly items).
+  killed: Task::looping, restarted the step after its end op (as end-stream loops, section "Self-starting
+  schedulers"). 57 uses in 20 files (lpo0 / lpr1 ..., mostly items).
 - No cases in FUN_10057fb0's switch: 0x01 (opens most schedulers), 0x50, 0x74, 0x69; 0x7f and 0x86 write fields
   nothing reads. 0x6a and 0x67 reached in the main flow kill the task (vtable +0x18); 0x64 / 0x65 take their blocks
   as before (the wrapper 0x69 .. 0x6a around conditional schedulers was what reached the default arm).
@@ -8667,3 +8668,34 @@ interpolates between the hour keys in both clients.
 - CMoDist / VuDist pass 2 draws after pass 1's RS 0x103530d0 set ZBIAS 0: ours drew the fan with the effect pass's
   ZBIAS 15 (to_clip_z without it for variant 9).
 - Tests lit_cases, ambient_bytes, crossfade_6e (CPU references in fx/elem.rs), gpu_morph_crossfade (DAT 129).
+
+## Self-starting schedulers: end loops, the load-time start, op 0x52 time windows, op 0xa2, update op 0x64 (2026-10-25; spec ~/ffxi/lab/research/fx_sched_autostart_spec.md)
+
+- Scheduler chunk (type 7): @0x10 an unused stream, @0x14 the main stream, @0x18 the end stream, @0x1c the length
+  (overwritten at link by FUN_10056ae0 with max(start + dur), op 0 included). An op 0x01 in the end stream (a bare
+  flag, 562 schedulers) makes FUN_10057c20 restart the task at its end: FUN_100573e0(res, 0, 0) speed 1.0, the action
+  wrapper dropped without its release (the rest of that action never prints), the parent link dropped (a calling
+  parent waits for ever), the end callback dropped; the frame after the end op resets it and the next runs the ops,
+  so W ticks of waits repeat every W + 1 at 60 Hz. Op 0x73's children restart the same way.
+- FUN_10073430 parses every DAT the loader reads; its link pass (FUN_10056a50) starts every scheduler with (an end
+  loop or a main-stream op 0x52) and no op 0xa2 (FUN_10056e80), on no actors, speed 1.0, stepped at once: 1041 in
+  134 files (127 zone / area scene DATs: water, smoke, crystals, boats, birds, pigeons, butterflies, thunder; 7 event
+  files, whose actor-attached generators sit at the world origin). The weather object FUN_1018a7a0 kills every task
+  of a `weat` scheduler and starts the chosen folder's; when neither the tag nor `suny` exists under `weat` the
+  current build does nothing at all (ours fell back to `weat` itself). Zone / sub-area unload (FUN_100446a0) ends
+  every clone of the file's generators and every task of its schedulers, whatever started them.
+- Op 0x52 (case 0x100584b0): the task's countdown runs on the Vana'diel clock (+0x140; DAT_1065cb0c, the frame's
+  delta in 1/60 Vana'diel seconds); window start @8, end @0xc (equal = all day), period @0x10, tolerance @0x14. Outside
+  the window: sleep to the next start; inside: a copy (FUN_10074920, tick clock, not looping, countdown = the op's
+  wait x speed, inserted after the running task so it steps this frame) when the phase is within the tolerance of a
+  boundary, then sleep to the next boundary. The op stays (return 2): the source never ends. Op 0xa2 has no case; it
+  only keeps the scheduler from starting by itself (32 NPC / model file schedulers).
+- Update op 0x64 (case 0x1004b249): the element's angle about the slot centre S[k..k+2] against the direction
+  (S[k+3], S[k+5]) times the op's factors into rot x / y / z, wrapped (the ducks' heading as they circle).
+- Ours: dat::sched::{loops, auto_start, span}; Task::{ends_loop, restart, vana}; Flow::Pause; Effects::start_auto
+  (zone, sub-area at each load, the weather folder, every newly registered library), vana_now / vana_dt from the
+  frame's day fraction (rounded), leaked (the dropped action contexts, cleared at a zone change); switch_zone and
+  drop_sub_area kill by library. Offscreen zone 102: the pigeons at 11:00, none at 11:30. Tests end_stream_and_auto,
+  vana_windows, hato_at_eleven, end_loop_period (91), weather_switches_schedulers, clone_inherits_wait.
+- Not traced: which emission op fills update op 0x64's slot; whether the weather object comes in the zone parse's
+  frame; the sub-area weather; who starts the 32 op-0xa2 schedulers.

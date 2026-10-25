@@ -19,6 +19,8 @@ enum Flow {
     Wait,
     /// A file is still loading: run this op again next frame.
     Retry,
+    /// FUN_10057fb0 returned 2: stay on this op, its countdown set by the op.
+    Pause,
     End,
 }
 
@@ -106,6 +108,29 @@ fn skill_files(category: u8, anim: u16, race: u8, skirt: i8) -> Option<(u32, Opt
     Some((file, Some(second).filter(|_| skirt > 0)))
 }
 
+/// 0x4f1a00: a Vana'diel day in 1/60 seconds.
+pub const VANA_DAY: i32 = 0x4f1a00;
+
+/// FUN_10057fb0 case 0x52 for the time of day `now`: (a copy runs now, countdown in 1/60 Vana'diel seconds).
+pub fn vana_window(now: i32, start: u32, end: u32, period: i32, tol: i32) -> (bool, i32) {
+    let (s, mut e) = (start as i32, end as i32);
+    if s == e {
+        e = s + VANA_DAY;
+    }
+    let (mut n, mut len) = (now - s, e - s);
+    if len < 0 {
+        len += VANA_DAY;
+    }
+    if n < 0 {
+        n += VANA_DAY;
+    }
+    if n >= len || period <= 0 {
+        return (false, VANA_DAY - n);
+    }
+    let p = n % period;
+    (p < tol || (n + tol) % period < tol, period - p)
+}
+
 /// FUN_10053a00 / FUN_1003b700: no actor1 takes every clone; else actor1's clones whose actor2 is none or actor2.
 fn pair_match(actors: [Who; 2], a1: Who, a2: Who) -> bool {
     a1 == Who::None || (actors[0] == a1 && (actors[1] == Who::None || actors[1] == a2))
@@ -188,7 +213,9 @@ impl Effects {
         while let Ok((file, lib)) = self.load_rx.try_recv() {
             match lib {
                 Some(l) if self.reg.lib_of(file).is_none() => {
-                    self.reg.add(l);
+                    let l = self.reg.add(l);
+                    // FUN_10073430's link pass: its self-starting schedulers start (event files: on no actors).
+                    self.start_auto(l, None);
                 }
                 Some(_) => {}
                 None => {
@@ -532,6 +559,7 @@ impl Effects {
         let ops = self.sched_ops(r);
         log::debug!("effects: task {} (DAT {}) on {a1:?} -> {a2:?}", String::from_utf8_lossy(&self.reg.libs[r.0].tree.nodes[r.1].name), self.reg.libs[r.0].file_id);
         let mut t = Task::new(r, ops, a1, a2, action, speed);
+        t.ends_loop = crate::dat::sched::loops(self.reg.libs[r.0].data(r.1));
         t.parent = parent;
         if let Some(p) = parent.and_then(|p| self.tasks.get(p)?.as_ref()) {
             t.motions = p.motions;
@@ -581,17 +609,28 @@ impl Effects {
                 i += 1;
                 continue;
             }
+            // FUN_10057c20 a frame after the end op, then FUN_100573e0(res, 0, 0): speed 1.0, the action wrapper and the
+            // parent link dropped (the action never prints its rest; a calling parent waits for ever); no op runs.
+            if std::mem::take(&mut t.restart) {
+                (t.ip, t.speed, t.countdown, t.early, t.vana, t.parent) = (0, 1.0, 0.0, 0.0, false, None);
+                if let Some(a) = t.action.take() {
+                    self.leaked.push(a);
+                }
+                self.tasks[i] = Some(t);
+                i += 1;
+                continue;
+            }
             self.stepping = Some(i);
             if !t.waiting {
-                t.countdown -= f.dt;
+                t.countdown -= if t.vana { self.vana_dt } else { f.dt };
             }
             let mut guard = 0;
             while !t.done && !t.waiting && t.countdown <= 0.0 && guard < 512 {
                 guard += 1;
                 if t.ip >= t.ops.len() || t.stop_at == Some(t.ip) {
-                    // FUN_10057c20: a looping task starts over (speed 1.0) next frame.
-                    if t.looping && t.stop_at.is_none() {
-                        (t.ip, t.speed, t.countdown) = (0, 1.0, t.countdown.max(0.0));
+                    // FUN_10057c20: op 0x73's children and end-stream loops start over (the step after).
+                    if (t.looping || t.ends_loop) && t.stop_at.is_none() {
+                        t.restart = true;
                         break;
                     }
                     t.done = true;
@@ -610,6 +649,7 @@ impl Effects {
                         t.countdown = t.countdown.max(0.0) - op.wait as f32 * t.speed + 1e-3;
                         break;
                     }
+                    Flow::Pause => break,
                     Flow::End => t.done = true,
                 }
                 // FUN_10061e30: reaching the end op with +0xa0 resumes the parent that much sooner.
@@ -723,6 +763,23 @@ impl Effects {
         }
         match op.code {
             0x00 => Flow::End,
+            // FUN_10057fb0 case 0x52: a Vana'diel time window. The task counts on the Vana'diel clock and stays on the
+            // op; inside the window at a period boundary (or within the tolerance of one) a copy runs the rest on the
+            // tick clock, its countdown the op's wait x speed, stepped this frame (FUN_10074920 / FUN_100750b0).
+            0x52 => {
+                t.vana = true;
+                let (spawn, wait) = vana_window(self.vana_now, op.u32_at(8), op.u32_at(0xc), op.u32_at(0x10) as i32, op.u32_at(0x14) as i32);
+                if spawn {
+                    let mut c = Task::new(t.res, t.ops.clone(), t.a1, t.a2, t.action.clone(), t.speed);
+                    (c.ip, c.countdown, c.parent, c.motions, c.num, c.ends_loop) = (t.ip + 1, op.wait as f32 * t.speed, t.parent, t.motions, t.num, t.ends_loop);
+                    log::debug!("effects: {} window opens", String::from_utf8_lossy(&self.reg.libs[t.res.0].tree.nodes[t.res.1].name));
+                    self.tasks.push(Some(c));
+                }
+                t.countdown = wait as f32;
+                Flow::Pause
+            }
+            // No case (0x1005ac96): it only keeps the scheduler from starting by itself.
+            0xa2 => Flow::Next,
             0x02 => {
                 self.op_start_generator(me, t, op, actors);
                 Flow::Next
@@ -1564,8 +1621,30 @@ impl Effects {
         self.reg.libs[g.0].gens.iter().find(|x| x.node == g.1).is_some_and(|x| matches!(x.attach_mode(), 0 | 0xe | 0xf | 0x14) && (x.flags & 0x400 != 0 || x.template().is_some_and(|o| o.i16_at(0x22) == 0)))
     }
 
+    /// FUN_10056a50 / FUN_1018a7a0: every self-starting scheduler of library `l` (under folder `under` when given) starts
+    /// on no actors, speed 1.0 (retail steps it at once inside the load; ours at the next tick).
+    pub(super) fn start_auto(&mut self, l: usize, under: Option<usize>) {
+        let tree = &self.reg.libs[l].tree;
+        let inside = |mut i: usize, f: usize| loop {
+            match tree.nodes[i].parent {
+                Some(p) if p == f => return true,
+                Some(p) => i = p,
+                None => return false,
+            }
+        };
+        let nodes: Vec<usize> = (0..tree.nodes.len())
+            .filter(|&n| tree.nodes[n].kind == kind::SCHEDULER && under.is_none_or(|f| inside(n, f)) && crate::dat::sched::auto_start(self.reg.libs[l].data(n)))
+            .collect();
+        if !nodes.is_empty() {
+            log::debug!("effects: DAT {}: {} schedulers start by themselves", self.reg.libs[l].file_id, nodes.len());
+        }
+        for n in nodes {
+            self.spawn_task((l, n), Who::None, Who::None, None, 1.0, None);
+        }
+    }
+
     /// FUN_10055f00 / FUN_10055f40: tasks running scheduler `r` (on one actor pair when given) end now.
-    fn kill_tasks(&mut self, r: Ref, pair: Option<(Who, Who)>) {
+    pub(super) fn kill_tasks(&mut self, r: Ref, pair: Option<(Who, Who)>) {
         for t in self.tasks.iter_mut() {
             if t.as_ref().is_some_and(|t| t.res == r && pair.is_none_or(|(a, b)| t.a1 == a && t.a2 == b)) {
                 *t = None;
@@ -3177,5 +3256,146 @@ mod filter_tests {
         // Hiding "party -> monster" (bit 10: caster row 2, target column 1) hides our trust's hits too.
         assert!(!effects_allowed(1 << 10, false, 0xc | 2 << 4));
         assert!(effects_allowed(1 << 10, false, 8 | 2 << 4));
+    }
+}
+
+#[cfg(test)]
+mod auto_tests {
+    use super::*;
+    use crate::dat::generator::fourcc;
+
+    fn index() -> Option<std::sync::Arc<crate::dat::DatIndex>> {
+        crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).ok().map(std::sync::Arc::new)
+    }
+
+    /// The scheduler named `name` whose folder path ends with `path`.
+    fn sched(lib: &Library, path: &[&str], name: &str) -> usize {
+        let want: Vec<[u8; 4]> = path.iter().map(|p| fourcc(p)).collect();
+        lib.tree.of_kind(kind::SCHEDULER).find(|&n| lib.tree.nodes[n].name == fourcc(name) && lib.tree.path(n).ends_with(&want)).unwrap()
+    }
+
+    fn frame(dayfrac: f32) -> Frame {
+        Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 }
+    }
+
+    /// FUN_10056e10 / e80 / ae0 on the data: the end loops, the windows, op 0xa2's exception.
+    #[test]
+    fn end_stream_and_auto() {
+        let Some(index) = index() else { return };
+        let (Ok(f103), Ok(f202), Ok(f62870)) = (index.read(103), index.read(202), index.read(62870)) else { return };
+        let (l103, l202, l62870) = (Library::load(103, f103).unwrap(), Library::load(202, f202).unwrap(), Library::load(62870, f62870).unwrap());
+        let d = |l: &Library, n: usize| l.data(n).to_vec();
+        let lop0 = d(&l103, sched(&l103, &["s_pa", "effe", "nami"], "lop0"));
+        assert!(crate::dat::sched::loops(&lop0) && crate::dat::sched::auto_start(&lop0));
+        assert_eq!(crate::dat::sched::span(&lop0), 90);
+        let s002 = d(&l202, sched(&l202, &["f_la", "mode", "hato"], "s002"));
+        assert!(!crate::dat::sched::loops(&s002) && crate::dat::sched::auto_start(&s002));
+        assert_eq!(crate::dat::sched::span(&s002), 9380);
+        assert_eq!(crate::dat::sched::span(&d(&l202, sched(&l202, &["f_la", "mode", "hato"], "s001"))), 9000);
+        assert!(!crate::dat::sched::auto_start(&d(&l62870, sched(&l62870, &["m_ev", "bels"], "s000"))));
+        let count = |l: &Library| l.tree.of_kind(kind::SCHEDULER).filter(|&n| crate::dat::sched::auto_start(l.data(n))).count();
+        assert_eq!((count(&l202), count(&l103)), (5, 10));
+    }
+
+    #[test]
+    fn vana_windows() {
+        let hato = |now| vana_window(now, 2376000, 2592000, 216000, 10800);
+        assert_eq!([hato(2376000), hato(2383200), hato(2484000), hato(2592000), hato(2368800)], [(true, 216000), (true, 208800), (false, 108000), (false, 4968000), (false, 7200)]);
+        assert_eq!(vana_window(432000, 4536000, 1080000, 108000, 10800), (true, 108000));
+        assert_eq!(vana_window(18000, 0, 5162400, 43200, 21600), (true, 25200));
+        assert_eq!(vana_window(28800, 0, 5162400, 43200, 21600), (true, 14400));
+        assert_eq!(vana_window(500, 1000, 1000, 3600, 100), (false, 500));
+    }
+
+    /// La Theine (DAT 202) from 10:59:58: `f_la/mode/hato/s001` waits 120, 95 .. 20 units, and at 11:00 a copy starts
+    /// the `hato` flight in the same tick.
+    #[test]
+    fn hato_at_eleven() {
+        let Some(index) = index() else { return };
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let l = fx.load_zone(Library::load(202, index.read(202).unwrap()).unwrap());
+        assert_eq!(fx.tasks.iter().flatten().count(), 5);
+        let s001 = (l, sched(&fx.reg.libs[l], &["f_la", "mode", "hato"], "s001"));
+        let hatos = |fx: &Effects| fx.insts.iter().flatten().filter(|x| x.name == *b"hato").count();
+        let mut seen = Vec::new();
+        for i in 0..6 {
+            fx.tick(&frame((2375880 + 25 * i) as f32 / VANA_DAY as f32), &crate::fx::NoActors);
+            let cd = fx.tasks.iter().flatten().find(|t| t.res == s001 && t.vana).map(|t| t.countdown);
+            seen.push((cd, hatos(&fx)));
+        }
+        let cds: Vec<i32> = seen.iter().map(|x| x.0.unwrap().round() as i32).collect();
+        assert_eq!(&cds[..5], &[120, 95, 70, 45, 20]);
+        assert!(seen[..5].iter().all(|x| x.1 == 0) && seen[5].1 == 1, "{seen:?}");
+        assert_eq!(fx.tasks.iter().flatten().count(), 6);
+    }
+
+    /// DAT 103 `s_pa/effe/nami/lop0` (waits 90, an end loop): it starts over every 91 ticks, one frame after its end.
+    #[test]
+    fn end_loop_period() {
+        let Some(index) = index() else { return };
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let l = fx.load_zone(Library::load(103, index.read(103).unwrap()).unwrap());
+        let lop0 = (l, sched(&fx.reg.libs[l], &["s_pa", "effe", "nami"], "lop0"));
+        let mut starts = Vec::new();
+        let mut prev = 0;
+        for tick in 1..=200 {
+            fx.tick(&frame(0.5), &crate::fx::NoActors);
+            let ip = fx.tasks.iter().flatten().find(|t| t.res == lop0).map_or(0, |t| t.ip);
+            if prev == 0 && ip > 0 {
+                starts.push((tick, ip));
+            }
+            prev = ip;
+        }
+        let ticks: Vec<i32> = starts.iter().map(|s| s.0).collect();
+        assert_eq!(ticks, [1, 92, 183], "{starts:?}");
+    }
+
+    /// FUN_1018a7a0 on DAT 103: the tag folder's schedulers replace the `weat` ones; no scheduler in `clod`; a
+    /// missing tag takes `suny`; the same tag does nothing.
+    #[test]
+    fn weather_switches_schedulers() {
+        let Some(index) = index() else { return };
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let l = fx.load_zone(Library::load(103, index.read(103).unwrap()).unwrap());
+        let count = |fx: &Effects, tag: &str| {
+            let want = [fourcc("weat"), fourcc(tag), fourcc("kamo")];
+            fx.tasks.iter().flatten().filter(|t| t.res.0 == l && fx.reg.libs[l].tree.path(t.res.1).ends_with(&want)).count()
+        };
+        fx.set_weather("fine", 0.0);
+        assert_eq!((count(&fx, "fine"), count(&fx, "suny"), fx.tasks.iter().flatten().count()), (3, 0, 7));
+        fx.set_weather("suny", 0.0);
+        assert_eq!((count(&fx, "fine"), count(&fx, "suny")), (0, 3));
+        fx.set_weather("suny", 0.0);
+        assert_eq!((count(&fx, "fine"), count(&fx, "suny")), (0, 3));
+        fx.set_weather("clod", 0.0);
+        assert_eq!((count(&fx, "fine"), count(&fx, "suny")), (0, 0));
+        fx.set_weather("rain", 0.0);
+        assert_eq!(count(&fx, "suny"), 3);
+    }
+
+    /// DAT 62870 `m_ev/bels/s002` at 10:01:00 (inside 10:01..11:00, period 5 min): one copy at once with op 0x52's
+    /// wait (80) as its countdown, stepped in the same tick; the source sleeps 18000 units (to 10:06).
+    #[test]
+    fn clone_inherits_wait() {
+        let Some(index) = index() else { return };
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let Ok(bytes) = index.read(62870) else { return };
+        let l = fx.reg.add(Library::load(62870, bytes).unwrap());
+        let s002 = (l, sched(&fx.reg.libs[l], &["m_ev", "bels"], "s002"));
+        fx.spawn_task(s002, Who::None, Who::None, None, 1.0, None);
+        fx.tick(&frame(2163600.0 / VANA_DAY as f32), &crate::fx::NoActors);
+        let tasks: Vec<&Task> = fx.tasks.iter().flatten().filter(|t| t.res == s002).collect();
+        assert_eq!(tasks.len(), 2);
+        let (src, copy) = if tasks[0].vana { (tasks[0], tasks[1]) } else { (tasks[1], tasks[0]) };
+        assert_eq!(src.countdown, 18000.0);
+        assert!(!copy.vana && (79.0..=80.0).contains(&copy.countdown), "{}", copy.countdown);
     }
 }

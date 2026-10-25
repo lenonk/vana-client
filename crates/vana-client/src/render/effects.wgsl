@@ -367,6 +367,16 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                     }
                 }
             }
+            // Case 0x1004b249: the element's angle about the slot's centre S[s..s+2] against the direction (S[s+3], S[s+5])
+            // turns it by the op's factors (x / y / z), each wrapped to +-pi (ducks circling face their way).
+            case 0x64u: {
+                let dv = ev3(b, E_POS) - slv3(b, s);
+                let a = -atan2(slf(b, s + 5u), slf(b, s + 3u));
+                let tt = atan2(dv.x * sin(a) + dv.z * cos(a), dv.x * cos(a) - dv.z * sin(a));
+                if (opf(r) != 0.0) { set_ef(b, E_ROT, wrap_pi(tt * opf(r))); }
+                if (opf(r + 1u) != 0.0) { set_ef(b, E_ROT + 1u, wrap_pi(tt * opf(r + 1u))); }
+                if (opf(r + 2u) != 0.0) { set_ef(b, E_ROT + 2u, wrap_pi(tt * opf(r + 2u))); }
+            }
             // The moon (FUN_10184dc0): frame = phase, rotation z = pi/2.
             case 0x45u: {
                 if ((el[b + E_STATE] & ST_HAS_RES) != 0u) {
