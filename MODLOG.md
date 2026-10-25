@@ -7334,3 +7334,10 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` sections 1, 2 (client/merits.rs, 
   width - 86 (its fifth argument). The caret is a game-font "|" put after the text before the 7F FF marker, not
   counted in the width, drawn while inline +0x20 (0..25, one a draw at 30 fps) is 10..24. Ours drew a 2 x 14 bar on a
   1 s blink, the text at (+4, +2), cut at width - 20.
+
+## Name plate letters at extent - 1 (2026-10-25)
+
+- FUN_10086210 sizes and advances every glyph, letters included, by its first cell's corner extent - 1 (FUN_1011fa80),
+  the quad that size with the full texture cell. Checked against the user's retail shots of Testerthree: the GM orb
+  (15 units) is ~68 px and the name ~367 px = ~81 units; fontshp's widths sum to 89 for "Testerthree" (78 at extent -
+  1, plus the last letter's ink). Ours drew whole sprites at full width, about 1 unit wider per letter.

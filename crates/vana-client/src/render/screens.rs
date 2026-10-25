@@ -783,9 +783,10 @@ pub fn push_name_plate(b: &mut UiBatch, ui: &UiFile, prefix: &[u8], s: &[u8], x:
         }
     }
     glyphs.extend(shape_glyphs(s).into_iter().map(G::Letter));
-    // An icon's first cell, its size the corner extent - 1 (FUN_1011fa80), placed at the sprite's top-left (+0x20).
-    let icon = |c: u8| -> Option<(&crate::dat::ui::Cell, [f32; 2], [f32; 2])> {
-        let sp = lib.sprites.get((c - 0x20) as usize)?;
+    // A glyph's first cell, its size the corner extent - 1 (FUN_1011fa80), placed at the sprite's top-left (+0x20); the
+    // letters too (FUN_10120510).
+    let cell = |k: usize| -> Option<(&crate::dat::ui::Cell, [f32; 2], [f32; 2])> {
+        let sp = lib.sprites.get(k)?;
         let cell = sp.cells.first()?;
         let [tl, tr, bl, _] = cell.corners;
         let off = sp.cells.iter().flat_map(|c| c.corners).fold([f32::MAX; 2], |m, p| [m[0].min(p[0] as f32), m[1].min(p[1] as f32)]);
@@ -797,11 +798,12 @@ pub fn push_name_plate(b: &mut UiBatch, ui: &UiFile, prefix: &[u8], s: &[u8], x:
     for (i, g) in glyphs.iter().enumerate() {
         let size = match *g {
             G::Letter(k) => {
-                total += sprite_width(lib, k);
-                [0.0; 2]
+                let s = cell(k).map_or([0.0; 2], |c| c.1);
+                total += s[0];
+                s
             }
             G::Icon(c) => {
-                let [w, h] = icon(c).map_or([0.0; 2], |i| i.1);
+                let [w, h] = cell((c - 0x20) as usize).map_or([0.0; 2], |i| i.1);
                 match c {
                     0xad => [w, h],
                     _ if i == 0 => {
@@ -832,11 +834,13 @@ pub fn push_name_plate(b: &mut UiBatch, ui: &UiFile, prefix: &[u8], s: &[u8], x:
     for (i, (g, [w, h])) in glyphs.iter().zip(sizes).enumerate() {
         match *g {
             G::Letter(k) => {
-                b.push_sprite(ui, lib, k, x0 + pen * sx, py, sx, sy, tint, 0x44);
-                pen += sprite_width(lib, k);
+                if let Some((cell, _, off)) = cell(k) {
+                    b.push_cell_span(ui, cell, x0 + (pen + off[0]) * sx, py + off[1] * sy, w * sx, h * sy, tint, 0x44);
+                }
+                pen += w;
             }
             G::Icon(c) => {
-                let Some((cell, _, off)) = icon(c) else { continue };
+                let Some((cell, _, off)) = cell((c - 0x20) as usize) else { continue };
                 let (s, dx, dy, adv) = match c {
                     0xad => (0.5, -2.0 - w, -2.0, 0.0),
                     _ if i == 0 => (1.0, 0.0, 0.0, w),
