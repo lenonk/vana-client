@@ -7563,8 +7563,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   session's textures and models came back under the new ids. The World's EffectsGpu is now dropped when a World starts
   (the lobby's LobbyFx owns its own and was not affected). Not yet seen relogged live.
 - Open: the gray select screen on the same relog (the select scene loaded, effects and 24 textures, but drew nothing).
-  Not reproduced since the EffectsGpu fix: `act:relogin` now walks the title's Select Character like a player (it used
-  to pick from the title and never showed the screen), and the scene drew with the characters after a relog.
+  Found and fixed (next section): the window frame style.
 
 ## Blue learning (2026-10-25)
 
@@ -7602,3 +7601,21 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   did the same. Our plate sits on the screen centre, x = W / 2 - 0.5, exactly the rounding edge of its pen
   (`(x - W / 2).round()`), so the noise flipped it a pixel a frame. Both are now offsets from the older value
   (a + (b - a) t); standing, the camera and the plate hold still to the bit.
+
+## The gray select screen after a relog: window frame styles (2026-10-25)
+
+- The user's characters with window style 1 (config 0x12, file 14 + k) broke the select screen after a logout: the lobby
+  gray (0x808080) with "menu    newtex" over it, the text only. GameUi::set_style puts a style's images into the one
+  image table the lobby and the game's windows share (and replaces them in the UI renderer by name); style 1's images
+  include names the lobby screens draw (the select frame's newtex, opaque in that style, over the scene). Nothing put
+  them back. Retail loads style 0 at startup (FUN_10159a70(.., 0)) and its lobby draws from the lobby's own menu files.
+- Now set_style keeps the first image it replaces under each name, and App::to_login (every way back from the world)
+  calls GameUi::reset_style: those images return, style 0's sprite library is the style again.
+- Repro: any character with "0x12": 1 in config.json game.characters; log in, log out, Select Character. Test
+  characters Lnxcsfix / Tuxedo had no style set, which is why the drive's runs never showed it.
+- The logout destination (lobby Config children 2 / 3, config 0xac; help group 8 0xf6 title screen / 0xf7 character
+  selection) is stored only. Retail: the teardown after a logout sets DAT_10623ac4 when 0xac != 0 (FUN_10236150); the
+  title loop then returns Select Character at once (FUN_10235fa0) and the select screen keeps its list cursor
+  (FUN_102371c0, the flag cleared after). Only the title's Config has the option (no in-game Config page carries 0xac;
+  group 14 has only the main menu's Log Out texts). Ours goes back to the login screen after a logout: not retail,
+  which returns to the title without the password.

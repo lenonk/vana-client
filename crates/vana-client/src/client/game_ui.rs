@@ -189,6 +189,8 @@ pub struct GameUi {
     /// The window style in use and images to replace in the renderer.
     style_index: usize,
     replaced: Vec<(String, u32, u32, Vec<u8>)>,
+    /// The startup images a style replaced, for reset_style.
+    style_saved: std::collections::HashMap<String, crate::dat::ui::UiImage>,
     /// When each scrolling text (scroll_text) first showed.
     scroll_seen: std::collections::HashMap<String, Instant>,
     /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
@@ -270,7 +272,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -842,8 +844,26 @@ impl GameUi {
         self.style_index = k;
         self.data.style = lib.clone();
         for (name, img) in &f.images {
-            self.data.lobby.images.insert(name.clone(), crate::dat::ui::UiImage { width: img.width, height: img.height, rgba: img.rgba.clone() });
+            let old = self.data.lobby.images.insert(name.clone(), crate::dat::ui::UiImage { width: img.width, height: img.height, rgba: img.rgba.clone() });
+            if let Some(old) = old
+                && !self.style_saved.contains_key(name)
+            {
+                self.style_saved.insert(name.clone(), old);
+            }
             self.replaced.push((name.clone(), img.width, img.height, img.rgba.clone()));
+        }
+    }
+
+    /// Back to the lobby: the startup images return. Retail's lobby draws from its own menu files, which no style
+    /// touches; ours share one image table with the game's windows.
+    pub fn reset_style(&mut self) {
+        for (name, img) in self.style_saved.drain() {
+            self.replaced.push((name.clone(), img.width, img.height, img.rgba.clone()));
+            self.data.lobby.images.insert(name, img);
+        }
+        self.style_index = 0;
+        if let Some(lib) = self.data.styles.first().and_then(|f| f.libs.first()) {
+            self.data.style = lib.clone();
         }
     }
 

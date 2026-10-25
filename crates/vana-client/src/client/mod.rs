@@ -4618,6 +4618,10 @@ impl App {
         self.phase = Phase::login(&self.cfg);
         self.lobby_fade = LobbyFade::default();
         self.close_asked = false;
+        // The character's window style (config 0x12) replaced lobby images (the select screen drew gray).
+        if let Some(gu) = self.game_ui.as_mut() {
+            gu.reset_style();
+        }
         if error {
             log::warn!("back to the login screen: {}", self.status);
             self.login_error = Some(self.status.clone());
@@ -8042,14 +8046,16 @@ impl App {
                     }
                 }
             }
-            // A script that logs in walks the title menu itself; pick the character once it reaches Select.
-            Phase::Characters { screen, chars, .. } if self.drive.relogin && *screen == LobbyScreen::Main => {
-                if !chars.is_empty() {
+            // A script that logs in presses Select Character itself; the hold starts on the select screen.
+            Phase::Characters { screen, chars, .. } if self.drive.relogin && self.drive.pick_after.is_none_or(|t| Instant::now() < t) => {
+                if *screen == LobbyScreen::Main && !chars.is_empty() && !self.drive.input.as_ref().is_some_and(|s| s.logs_in) {
                     *screen = LobbyScreen::Select;
+                }
+                if *screen == LobbyScreen::Select && self.drive.pick_after.is_none() {
                     self.drive.pick_after = Some(Instant::now() + std::time::Duration::from_secs(8));
                 }
             }
-            Phase::Characters { .. } if self.drive.relogin && self.drive.pick_after.is_none_or(|t| Instant::now() < t) => {}
+            // A script that logs in walks the title menu itself; pick the character once it reaches Select.
             Phase::Characters { lobby, chars, screen, .. } if !self.drive.input.as_ref().is_some_and(|s| s.logs_in) || *screen == LobbyScreen::Select => {
                 if let (Some(name), Some(_)) = (self.drive.character.clone(), lobby.as_ref()) {
                     if let Some(c) = chars.iter().find(|c| c.name.eq_ignore_ascii_case(&name)).cloned() {
