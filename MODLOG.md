@@ -7872,3 +7872,16 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Seen offscreen: 3400 (weapon skill 0) ban_/po01, nam0, nam1, mjn0 / mjn1 (the magic circle) paint the floor of
   zone 230. fx-shot's stand-in actors now carry the zone's ground (ground_hit, decal cells).
 
+## Effects: DistMorph (D3b + 0x100000) (2026-10-25; spec fx_dist_spec.md section 4)
+
+- CMoDistMorphElem (FUN_10043590): the morph's blended key drawn shifted by (off, off, 0) in model space (off = +0x1c0,
+  emission op 0x32 / update op 0x24), each vertex sampling the scene copy (WRAP) at the screen point of its unshifted
+  position, plus the UV scroll; no texture of its own; the raw corner colour; TSS 0x10352258: rgb = 2 x sat(2 x copy x
+  d) x TF, a = 4 x sat(2 x 0x80 x d.a) x TF.a (no 'D' rule); alpha test GREATER 0x60 with res byte 2 bit 7.
+- Its weights never move (element-update ops 0x1e..0x22 are gated on IsType 0xf, the D3b class only), so all 13
+  generators show key 0 (FUN_1003f8a0 writes w[0] = 1 on the first draw).
+- Ours: Draw::DistMorph, dk 13, vs_distmorph (variants 14 / 15) sharing morph_vertex with vs_morph; the morph data now
+  keeps the raw corner colours and vs_morph doubles them (min(2c, 1), the same values as before).
+- Seen offscreen: 2860 rej_/dis0 (a lens inside the bubble shifting the wall and floor behind it).
+- Also: emission op 0x56 on a VuDist is no longer counted as a gap (its count is read when the draw is chosen).
+

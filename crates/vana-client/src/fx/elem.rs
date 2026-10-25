@@ -113,6 +113,8 @@ pub mod dk {
     pub const DIST_RING: u32 = 11;
     /// D3m + 0x200000 (FUN_10040e70): drawn top-down into an image painted onto the collision faces around it.
     pub const GROUND_PROJ: u32 = 12;
+    /// CMoDistMorphElem (D3b + 0x100000, FUN_10043590): the morph shifted over the scene copy.
+    pub const DIST_MORPH: u32 = 13;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -280,6 +282,7 @@ pub fn wgsl_consts() -> String {
         ("DK_DIST_MODEL", dk::DIST_MODEL as usize),
         ("DK_DIST_RING", dk::DIST_RING as usize),
         ("DK_GROUND_PROJ", dk::GROUND_PROJ as usize),
+        ("DK_DIST_MORPH", dk::DIST_MORPH as usize),
         ("E_GP_BLEND", w::GP_BLEND),
         ("E_RING_R", w::RING_R),
         ("E_RING_C", w::RING_C),

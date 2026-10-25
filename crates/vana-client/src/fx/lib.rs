@@ -116,7 +116,7 @@ pub struct Morph {
     pub v: u32,
     pub n: u32,
     pub t: u32,
-    /// Per corner: position index, normal index, RGBA (doubled, clamped), u, v (as bits).
+    /// Per corner: position index, normal index, RGBA (raw; vs_morph doubles it), u, v (as bits).
     pub corners: Vec<[u32; 5]>,
     pub positions: Vec<[f32; 3]>,
     pub normals: Vec<u32>,
@@ -160,8 +160,7 @@ impl Morph {
         let corners = (0..t * 3)
             .map(|c| {
                 let b = &d[col + c * 4..col + c * 4 + 4];
-                let dbl = |x: u8| (x as u32 * 2).min(255);
-                let rgba = dbl(b[2]) | dbl(b[1]) << 8 | dbl(b[0]) << 16 | dbl(b[3]) << 24;
+                let rgba = u32::from_le_bytes([b[2], b[1], b[0], b[3]]);
                 [u16_at(idx + c * 2) as u32, u16_at(idx + t * 6 + c * 2) as u32, rgba, u32_at(uv + c * 8), u32_at(uv + c * 8 + 4)]
             })
             .collect();

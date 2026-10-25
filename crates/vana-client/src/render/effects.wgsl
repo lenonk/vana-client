@@ -421,7 +421,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                 set_cb(b, 0u, u32(max(f32(sc & 0xffu) * p.area.z, 0.0)) & 0xffu);
             }
             // vtable +0x34(key(t)): CMoDist +0x194 (0 without a keyframe).
-            case 0x24u: { if (el[b + E_KIND] == DK_DIST || el[b + E_KIND] == DK_DIST_MODEL) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
+            case 0x24u: { if (el[b + E_KIND] == DK_DIST || el[b + E_KIND] == DK_DIST_MODEL || el[b + E_KIND] == DK_DIST_MORPH) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
             case 0x30u, 0x31u, 0x32u: {
                 let k = el[b + E_OP2_SLOT];
                 if (k != NONE) { set_slf(b, k + code - 0x30u, slf(b, s + 2u) + key_t(b, s, t)); }
@@ -594,8 +594,9 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     outs[ob + 22u] = f32(el[b + E_FRAME]);
     outs[ob + 23u] = select(0.0, 1.0, drawn);
     outs[ob + 24u] = pbias;
-    // FUN_1003ea60: morph weights divided by their sum; none -> the largest of last frame's gets 1.0.
-    if (kind == DK_MORPH) {
+    // FUN_1003ea60: morph weights divided by their sum; none -> the largest of last frame's gets 1.0. A DistMorph's
+    // weights never move (ops 0x1e..0x22 are D3b-only), so it shows key 0.
+    if (kind == DK_MORPH || kind == DK_DIST_MORPH) {
         let kk = min(el[b + E_FRAMES], 5u);
         var sum = 0.0;
         for (var q = 0u; q < kk; q = q + 1u) { sum = sum + ef(b, E_MORPH_W + q); }
@@ -1170,32 +1171,66 @@ fn vs_damv(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) ->
 
 // D3b morph (FUN_1003e600): corner k of the element's mesh, its position blended from the key meshes by the
 // normalised weights; colours come doubled from the loader. Variant 7 (8 with the alpha test).
+// A D3b corner k: the blended position (weights douts 32..36), the raw corner colour, its UV.
+struct MorphV {
+    ok: bool,
+    pos: vec3<f32>,
+    color: vec4<f32>,
+    uv: vec2<f32>,
+};
+
+fn morph_vertex(e: u32, o: u32, k: u32) -> MorphV {
+    var m: MorphV;
+    let base = dels[e * E_WORDS + E_SFRAMES];
+    let kk = mdata[base];
+    let nv = mdata[base + 1u];
+    let nt = mdata[base + 3u];
+    m.ok = k < nt * 3u;
+    if (!m.ok) { return m; }
+    let c = base + 4u + k * 5u;
+    let pi = mdata[c];
+    let keys = base + 4u + nt * 15u;
+    m.pos = vec3<f32>(0.0);
+    for (var q = 0u; q < min(kk, 5u); q = q + 1u) {
+        let a = keys + (q * nv + pi) * 3u;
+        m.pos = m.pos + douts[o + 32u + q] * vec3<f32>(bitcast<f32>(mdata[a]), bitcast<f32>(mdata[a + 1u]), bitcast<f32>(mdata[a + 2u]));
+    }
+    let col = mdata[c + 2u];
+    m.color = vec4<f32>(f32(col & 0xffu), f32((col >> 8u) & 0xffu), f32((col >> 16u) & 0xffu), f32(col >> 24u)) / 255.0;
+    m.uv = vec2<f32>(bitcast<f32>(mdata[c + 3u]), bitcast<f32>(mdata[c + 4u]));
+    return m;
+}
+
 @vertex
 fn vs_morph(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
     let e = inst / PER_ELEM;
     let o = e * OUT_WORDS;
     if (douts[o + 23u] < 0.5) { return hidden(); }
+    let m = morph_vertex(e, o, k);
+    if (!m.ok) { return hidden(); }
+    let atest = select(7u, 8u, (dels[e * E_WORDS + E_GLARE] & 1u) != 0u);
+    let vp = (out_mat(o) * vec4<f32>(m.pos, 1.0)).xyz;
+    // The D3b draw doubles the corner colour (clamped).
+    return vout(e, vp, min(2.0 * m.color, vec4<f32>(1.0)), m.uv, atest);
+}
+
+// CMoDistMorphElem (FUN_10043590): the morph drawn shifted by (off, off, 0) in model space, each vertex sampling the
+// scene copy (WRAP) at the screen point of its unshifted position, the UV scroll sliding the lookup; the raw corner
+// colour. Variants 14 / 15 (alpha test).
+@vertex
+fn vs_distmorph(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let m = morph_vertex(e, o, k);
+    if (!m.ok) { return hidden(); }
     let eb = e * E_WORDS;
-    let base = dels[eb + E_SFRAMES];
-    let kk = mdata[base];
-    let nv = mdata[base + 1u];
-    let nn = mdata[base + 2u];
-    let nt = mdata[base + 3u];
-    if (k >= nt * 3u) { return hidden(); }
-    let c = base + 4u + k * 5u;
-    let pi = mdata[c];
-    let keys = base + 4u + nt * 15u;
-    var pos = vec3<f32>(0.0);
-    for (var q = 0u; q < min(kk, 5u); q = q + 1u) {
-        let a = keys + (q * nv + pi) * 3u;
-        pos = pos + douts[o + 32u + q] * vec3<f32>(bitcast<f32>(mdata[a]), bitcast<f32>(mdata[a + 1u]), bitcast<f32>(mdata[a + 2u]));
-    }
-    let col = mdata[c + 2u];
-    let color = vec4<f32>(f32(col & 0xffu), f32((col >> 8u) & 0xffu), f32((col >> 16u) & 0xffu), f32(col >> 24u)) / 255.0;
-    let uv = vec2<f32>(bitcast<f32>(mdata[c + 3u]), bitcast<f32>(mdata[c + 4u]));
-    let atest = select(7u, 8u, (dels[eb + E_GLARE] & 1u) != 0u);
-    let vp = (out_mat(o) * vec4<f32>(pos, 1.0)).xyz;
-    return vout(e, vp, color, uv, atest);
+    let mv = out_mat(o);
+    let off = bitcast<f32>(dels[eb + E_DIST_OFF]);
+    let vp = (mv * vec4<f32>(m.pos + vec3<f32>(off, off, 0.0), 1.0)).xyz;
+    var out = vout(e, vp, m.color, vec2<f32>(0.0), select(14u, 15u, (dels[eb + E_GLARE] & 1u) != 0u));
+    out.uv = screen_uv((mv * vec4<f32>(m.pos, 1.0)).xyz) + vec2<f32>(douts[o + 20u], -douts[o + 21u]);
+    return out;
 }
 
 fn sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
@@ -1256,6 +1291,16 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
         rgb = t;
         a = sat(select(4.0, 2.0, mode == 0x44u) * (128.0 / 255.0) * sat(2.0 * dd.a * f.a));
+    } else if (variant == 14u || variant == 15u) {
+        // DistMorph (TSS 0x10352258): copy x raw diffuse x 2, then x TFACTOR x 2; alpha the copy's 0x80 x diffuse x 2,
+        // then x TFACTOR x 4; alpha test GREATER 0x60 with res byte 2 bit 7.
+        var t = textureSample(tex, samp, i.uv).rgb;
+        if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
+        let s0 = sat3(2.0 * t * dd.rgb);
+        let s0a = sat(2.0 * (128.0 / 255.0) * dd.a);
+        rgb = sat3(2.0 * s0 * f.rgb);
+        a = sat(4.0 * s0a * f.a);
+        if (variant == 15u && a <= 96.0 / 255.0) { discard; }
     } else if (variant == 13u) {
         // The ground decal: the image draw's stages (0x103524a8) over the image, which is not alpha-doubled.
         let t = textureSample(tex, samp, i.uv);
@@ -1284,7 +1329,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u || variant == 12u || variant == 13u) && (flags & 0x2000000u) == 0u) {
+    if ((variant < 4u || variant == 7u || variant == 8u || variant >= 11u) && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }

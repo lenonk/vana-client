@@ -219,6 +219,7 @@ pub struct EffectsGpu {
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     ring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     distmodel_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    distmorph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     distring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     spec_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     spec_layout: wgpu::BindGroupLayout,
@@ -392,6 +393,7 @@ impl EffectsGpu {
         let mut damv_pipes = HashMap::new();
         let mut ring_pipes = HashMap::new();
         let mut distmodel_pipes = HashMap::new();
+        let mut distmorph_pipes = HashMap::new();
         let mut distring_pipes = HashMap::new();
         // CMoD3mSpecularElem: group 2 the specular image (2D, cube) and its sampler.
         let spec_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -441,6 +443,7 @@ impl EffectsGpu {
                 morph_pipes.insert((class, zwrite), pipe("vs_morph", &[], class, zwrite));
                 ring_pipes.insert((class, zwrite), pipe("vs_ring", &[], class, zwrite));
                 distmodel_pipes.insert((class, zwrite), pipe("vs_distmodel", &vbuf, class, zwrite));
+                distmorph_pipes.insert((class, zwrite), pipe("vs_distmorph", &[], class, zwrite));
                 distring_pipes.insert((class, zwrite), pipe("vs_distring", &[], class, zwrite));
                 spec_pipes.insert((class, zwrite), spec_pipe(class, zwrite));
                 gp_rt_pipes.insert((class, zwrite), gp_pipe("vs_mesh_rt", &vbuf, class, zwrite, wgpu::TextureFormat::Rgba8Unorm, wgpu::ColorWrites::ALL));
@@ -512,6 +515,7 @@ impl EffectsGpu {
             morph_pipes,
             ring_pipes,
             distmodel_pipes,
+            distmorph_pipes,
             distring_pipes,
             spec_pipes,
             spec_layout,
@@ -899,7 +903,7 @@ impl EffectsGpu {
             return;
         }
         let order = fx.draw_order();
-        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_) | Draw::DistRing)));
+        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_) | Draw::DistMorph(_) | Draw::DistRing)));
         let copy_src = color_tex.filter(|t| any_dist && t.usage().contains(wgpu::TextureUsages::COPY_SRC));
         if let Some(t) = copy_src
             && self.scene_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
@@ -1094,6 +1098,19 @@ impl EffectsGpu {
                     for r in &m.dist {
                         pass.draw(r.clone(), base..base + 1);
                     }
+                }
+                // FUN_10043590: the scene so far copied, then the morph's triangles over it (no texture of its own).
+                Draw::DistMorph(id) => {
+                    let Some(m) = fx.reg.morph_data_of(id) else { continue };
+                    let (Some(src), Some((copy, _)), Some(g)) = (copy_src, self.scene_copy.as_ref(), self.copy_wrap.as_ref()) else { continue };
+                    drop(pass);
+                    encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                    pass = new_pass(encoder);
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    pass.set_pipeline(&self.distmorph_pipes[&(class, c.flags & 0x1000 != 0)]);
+                    bound = None;
+                    pass.set_bind_group(1, g, &[]);
+                    pass.draw(0..m.t * 3, base..base + 1);
                 }
                 // CMoD3mSpecularElem: one pass with the specular stage; no 'I' blend, per-run variants (FUN_100412b0).
                 Draw::Mesh(id) if c.spec.is_some() && self.meshes.get(id as usize).is_some_and(|m| m.as_ref().is_some_and(|m| !m.mmb)) => {

@@ -151,6 +151,8 @@ pub enum Draw {
     Ring,
     /// CMoDistModelElem (D3m + 0x100000, FUN_10043320): a registered mesh drawn over the scene copy.
     DistModel(u32),
+    /// CMoDistMorphElem (D3b + 0x100000, FUN_10043590): a registered morph drawn shifted over the scene copy.
+    DistMorph(u32),
     /// CMoVuDist (batched 0x22, FUN_10043110): the element's own CMoDist diamond n times, each over a new copy.
     VuDist(u32),
     /// CMoDistRingElem (ring + 0x100000, FUN_10043720).
@@ -2069,6 +2071,7 @@ impl Effects {
                 Draw::Dist => "dist".into(),
                 Draw::Ring => "ring".into(),
                 Draw::DistModel(id) => format!("distmodel {id}"),
+                Draw::DistMorph(id) => format!("distmorph {id}"),
                 Draw::VuDist(n) => format!("vudist x{n}"),
                 Draw::DistRing => "distring".into(),
                 Draw::GroundProj(id) => format!("groundproj {id}"),

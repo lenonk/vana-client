@@ -137,8 +137,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                     return None;
                 }
             },
+            // D3b, or with 0x100000 CMoDistMorphElem (FUN_10043590).
             0x25 => match reg.resolve(lib, from, 0x25, name) {
-                Some(r) => reg.morph(r).map(Draw::Morph).unwrap_or(Draw::None),
+                Some(r) => reg.morph(r).map(if flags & 0x10_0000 != 0 { Draw::DistMorph } else { Draw::Morph }).unwrap_or(Draw::None),
                 None => {
                     reg.miss(lib, from, name, res_kind);
                     return None;
@@ -208,12 +209,12 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             dk::DAMV
         }
         Draw::Mesh(_) => dk::MESH,
-        Draw::Morph(id) => {
+        Draw::Morph(id) | Draw::DistMorph(id) => {
             e.0[w::FRAMES] = reg.morph_data_of(id).map_or(0, |m| m.k);
-            // Byte 2 bit 7: the alpha test, read by vs_morph.
+            // Byte 2 bit 7: the alpha test, read by vs_morph / vs_distmorph.
             e.0[w::GLARE] = reg.morph_data_of(id).is_some_and(|m| m.alpha_test) as u32;
             e.0[w::SFRAMES] = reg.morph_at[id as usize];
-            dk::MORPH
+            if matches!(draw, Draw::DistMorph(_)) { dk::DIST_MORPH } else { dk::MORPH }
         }
         Draw::Sprite(id) => {
             e.0[w::FRAMES] = reg.sprite_frames(id);
@@ -374,8 +375,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::L_ISCALE, op.f32(4) + 1.0);
             }
             // vtable +0x34 = FUN_10051dc0 on CMoDist: +0x194 = op+8.
-            // vtable +0x34: CMoDist / VuDist / DistModel +0x194 (DistRing's +0x1b6 is never read); a no-op on the rest.
-            0x32 if matches!(draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_)) => e.set(w::DIST_OFF, op.f32(2)),
+            // vtable +0x34: CMoDist / VuDist / DistModel +0x194, DistMorph +0x1c0 (DistRing's +0x1b6 is never read); a
+            // no-op on the rest.
+            0x32 if matches!(draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_) | Draw::DistMorph(_)) => e.set(w::DIST_OFF, op.f32(2)),
             0x32 => {}
             // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
             0x8e => {
@@ -680,8 +682,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             }
             // No-ops in retail: 0x56 on every class but VuAnm / VuLine / VuDist / Disintegrate (the `vib?` NullProg
             // generators carry it for their per-frame op 0x5f), 0x06 / 0x08 in batched mode (data for 0x56), 0x7b
-            // (the attachment reads its offsets).
-            0x56 if !(batched && res_kind == 0x22) => {}
+            // (the attachment reads its offsets). VuDist takes its 0x56 count at the draw choice.
+            0x56 => {}
             0x06 | 0x08 if batched => {}
             0x7b => {}
             _ => reg.unhandled(1, op.code),
