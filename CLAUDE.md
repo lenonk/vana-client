@@ -107,8 +107,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, MODLOG "Status window",
     "Currencies", "Unity", "Merit Points and Job Points"; left Alter Ego Points, spec `status_rows_spec.md`; Raise /
     Lower and spending job points not tried live);
-    Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
-    lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
+    Missions and Quests done (client/missions.rs, quests.rs, journal.rs, roe.rs, MODLOG "Missions", "Quests", "Records
+    of Eminence lists"; left Vana'Bout's hold prompt, unreachable on LSB); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
     seacom.rs; left /seacom and /seacomup, arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:
     the item list, equip / unequip, naming, Drop, the message and /lsmes done, not seen with a real shell yet; the
     Link List and member actions (linklist.rs, link12 and link7..10) built, not seen live); Region Info done (region.rs; left the Campaign windows, which LSB never

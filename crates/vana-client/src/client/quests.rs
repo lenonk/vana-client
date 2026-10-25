@@ -22,6 +22,8 @@ pub struct Roe {
     pub sparks: u32,
     pub deeds: u16,
     pub plaudits: u16,
+    /// 0x110 @0xc: the bytes the type-6 conditions test (DAT_104804d8).
+    pub rot: [u8; 8],
     /// 0x111: 64 records {Id:12, Count:20}.
     pub active: [u32; 64],
     /// 0x112: Data[128] at Offset * 0x80 (0..3).
@@ -32,7 +34,7 @@ pub struct Roe {
 
 impl Default for Roe {
     fn default() -> Self {
-        Roe { sparks: 0, deeds: 0, plaudits: 0, active: [0; 64], log: [0; 512], flags: 0 }
+        Roe { sparks: 0, deeds: 0, plaudits: 0, rot: [0; 8], active: [0; 64], log: [0; 512], flags: 0 }
     }
 }
 
@@ -48,7 +50,7 @@ impl Roe {
     }
 
     /// Row 2's count (FUN_10230ad0 + records 63 and 42): the objectives taken, over 30.
-    fn taken(&self) -> u32 {
+    pub(super) fn taken(&self) -> u32 {
         if self.flags & 2 == 0 {
             return 0;
         }
@@ -62,7 +64,7 @@ impl Roe {
     }
 
     /// Vana'Bout (child 5) is open while a 0x111 came and one of records 43..62 is set.
-    fn vanabout(&self) -> bool {
+    pub(super) fn vanabout(&self) -> bool {
         self.flags & 2 != 0 && self.active[43..63].iter().any(|r| r & 0xfff != 0)
     }
 }
@@ -73,6 +75,8 @@ pub struct Quests {
     pub state: u8,
     pub sel: usize,
     pub list: Option<List>,
+    /// quest01 in the Records of Eminence modes (client/roe.rs).
+    pub roe: Option<super::roe::List>,
 }
 
 #[derive(Clone, Debug)]
@@ -93,7 +97,7 @@ pub fn open(w: &mut World) {
     super::missions::logs(w);
     let _ = w.net.commands.send(super::net::NetCommand::StatusRequest(0));
     let state = if w.journal.complete() { 1 } else { 0 };
-    w.quests = Some(Quests { state, sel: 0, list: None });
+    w.quests = Some(Quests { state, sel: 0, list: None, roe: None });
 }
 
 /// Per frame: the chooser waits for the store (FUN_10230280).
@@ -105,6 +109,7 @@ pub fn update(w: &mut World) {
     {
         q.state = 1;
     }
+    super::roe::update(w);
 }
 
 pub fn busy(w: &World) -> bool {
@@ -151,6 +156,7 @@ fn area_on(enabled: u32, area: usize) -> bool {
 }
 
 fn open_list(w: &mut World, mode: usize) {
+    super::roe::open_hook(w);
     let area = (w.journal.nation as usize).min(2);
     let rows = rows(w, area, mode);
     if let Some(q) = w.quests.as_mut() {
@@ -177,6 +183,15 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 /// quest00 (FUN_102300c0) or quest01 (FUN_102330b0) keys.
 pub fn key(w: &mut World, key: egui::Key, page: bool) {
     let Some(q) = w.quests.clone() else { return };
+    if let Some(mut l) = q.roe {
+        super::roe::key(w, &mut l, key, page);
+        if let Some(qq) = w.quests.as_mut()
+            && qq.roe.is_some()
+        {
+            qq.roe = Some(l);
+        }
+        return;
+    }
     if let Some(mut l) = q.list {
         list_key(w, &mut l, key, page);
         if let Some(qq) = w.quests.as_mut()
@@ -203,7 +218,8 @@ pub fn key(w: &mut World, key: egui::Key, page: bool) {
             w.sounds.push(Ui::Select as u32);
             match q.sel {
                 0 | 1 => open_list(w, q.sel),
-                r => log::info!("quests: row {r} (Records of Eminence lists) is not implemented yet"),
+                // Current, Objective List, Vana'Bout (FUN_10230740(row)).
+                r => super::roe::open(w, r),
             }
         }
         _ => {}
@@ -268,6 +284,14 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
             p.0 >= ex && p.0 < ex + e.w as f32 && p.1 >= ey && p.1 < ey + e.h as f32
         }).map(|e| e.id)
     };
+    if let Some(l) = &q.roe {
+        let c = hit(LIST);
+        if c.is_some() {
+            gu.hover.set(true);
+        }
+        super::roe::pointer(w, l, c, moved, clicked);
+        return;
+    }
     if let Some(l) = &q.list {
         let Some(c) = hit(LIST) else { return };
         gu.hover.set(true);
@@ -310,10 +334,13 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
-/// The frame's title "Quests" (group 0xd 0x64); no help.
+/// The frame's title "Quests" (group 0xd 0x64); no help. The RoE lists put "RoE" (0xc 0x85) in title slot 2.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    if w.quests.is_some() {
+    if let Some(q) = &w.quests {
         (bars.help[1], bars.title[1]) = (String::new(), gu.focus_text(CHOOSER, 0)[1].clone().unwrap_or_default());
+        if q.roe.is_some() {
+            bars.title[2] = gu.lobby_msg(0xc, 0x85, "");
+        }
     }
 }
 
@@ -335,7 +362,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(q) = &w.quests else { return rects };
     let all: Vec<u16> = (1..=5).collect();
-    let focused = q.list.is_none() && w.confirm.is_none();
+    let focused = q.list.is_none() && q.roe.is_none() && w.confirm.is_none();
     if let Some(win) = gu.lobby_window_off(CHOOSER, sw, sh, (0.0, 0.0), None, false, &all) {
         rects.push(win.frame);
         let Some((x, y)) = gu.window_xy(CHOOSER, sw, sh) else { return rects };
@@ -345,7 +372,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 text(gu, &bt.group9(0x61).unwrap_or_default(), x + 20.0, y + 20.0, WHITE);
                 text(gu, &bt.group9(0x62).unwrap_or_default(), x + 20.0, y + 40.0, WHITE);
             }
-        } else if q.list.is_none() {
+        } else if q.list.is_none() && q.roe.is_none() {
             let roe = &w.roe;
             let van = roe.vanabout();
             let labels = [
@@ -380,6 +407,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 value(gu, v, x + vx, y + ly);
             }
         }
+    }
+    if let Some(l) = &q.roe {
+        super::roe::draw(gu, w, l, sw, sh, &mut rects);
+        return rects;
     }
     let Some(l) = &q.list else { return rects };
     let Some(f) = w.logs.as_ref().and_then(|g| g.quests.get(l.area)) else { return rects };

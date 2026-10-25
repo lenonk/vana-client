@@ -136,15 +136,29 @@ impl Inventory {
 pub struct ItemCache {
     names: Arc<crate::dat::names::Names>,
     cache: RefCell<HashMap<u16, Option<Arc<Item>>>>,
+    objectives: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Objective>>>>,
+    categories: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Category>>>>,
 }
 
 impl ItemCache {
     pub fn new(names: Arc<crate::dat::names::Names>) -> Self {
-        ItemCache { names, cache: RefCell::new(HashMap::new()) }
+        ItemCache { names, cache: RefCell::new(HashMap::new()), objectives: RefCell::default(), categories: RefCell::default() }
     }
 
     pub fn item(&self, id: u16) -> Option<Arc<Item>> {
         self.cache.borrow_mut().entry(id).or_insert_with(|| self.names.items.item(id as u32).map(Arc::new)).clone()
+    }
+
+    /// A Records of Eminence objective record (0xe000 + n).
+    pub fn objective(&self, id: u16) -> Option<Arc<crate::dat::roe::Objective>> {
+        let items = &self.names.items;
+        self.objectives.borrow_mut().entry(id).or_insert_with(|| crate::dat::roe::objective(items, id).map(Arc::new)).clone()
+    }
+
+    /// A Records of Eminence category record (0xf200..).
+    pub fn category(&self, id: u16) -> Option<Arc<crate::dat::roe::Category>> {
+        let items = &self.names.items;
+        self.categories.borrow_mut().entry(id).or_insert_with(|| crate::dat::roe::category(items, id).map(Arc::new)).clone()
     }
 }
 

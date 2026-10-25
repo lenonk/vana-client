@@ -53,12 +53,12 @@ pub enum Kind {
     Keff8,
     /// FUN_101564c0: monstrosity species
     Monster,
-    /// FUN_10156630
-    Kf200,
+    /// FUN_10156630: the Records of Eminence categories (dat/roe.rs)
+    RoeCategory,
     /// FUN_10156790 (no strings)
     Kf600,
-    /// FUN_10156a20
-    Kf620,
+    /// FUN_10156a20: the guide pages ("menu    guide01", id - 0xf620)
+    Guide,
     /// FUN_101568d0
     Kf630,
     /// FUN_10156b70: gil and other currencies
@@ -80,9 +80,9 @@ pub const RANGES: [(u32, u32, Kind, [u32; 4]); 18] = [
     (0xe000, 0xeff8, Kind::Objective, [55552, 55672, 55792, 56212]),
     (0xeff8, 0xf000, Kind::Keff8, [95, 95, 95, 95]),
     (0xf000, 0xf200, Kind::Monster, [55549, 55669, 55789, 56209]),
-    (0xf200, 0xf600, Kind::Kf200, [55553, 55673, 55793, 56213]),
+    (0xf200, 0xf600, Kind::RoeCategory, [55553, 55673, 55793, 56213]),
     (0xf600, 0xf614, Kind::Kf600, [55504, 55504, 55504, 55504]),
-    (0xf620, 0xf630, Kind::Kf620, [55558, 55678, 55798, 56218]),
+    (0xf620, 0xf630, Kind::Guide, [55558, 55678, 55798, 56218]),
     (0xf630, 0xf720, Kind::Kf630, [55557, 55677, 55797, 56217]),
     (0xffff, 0x1000f, Kind::Currency, [9, 91, 55820, 56240]),
 ];
@@ -290,7 +290,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             // FUN_10155760: one string (the name).
             (Some(if wide { 0x74 } else { 0x70 }), 0, true)
         }
-        Kind::Kf200 => {
+        Kind::RoeCategory => {
             it.extra = vec![x32(0xd78, 4), x32(0xd30, 8)];
             (Some(0x238), 1, false)
         }
@@ -298,7 +298,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             it.extra = vec![x32(0xd80, 4)];
             (None, 0, false)
         }
-        Kind::Kf620 => {
+        Kind::Guide => {
             it.extra = vec![x16(0xd90, 4), x16(0xd94, 6), x32(0xd98, 8)];
             (Some(0x108), 1, false)
         }
@@ -386,6 +386,10 @@ impl Items {
         let paths: Vec<_> = RANGES.iter().map(|r| index.path(r.3[lang as usize]).map(|p| (stride(&p, r.1 - r.0), p)).map(|(n, p)| (p, n))).collect();
         paths.iter().any(|p| p.is_some()).then_some(()).context("no item files")?;
         Ok(Items { lang, paths })
+    }
+
+    pub fn lang(&self) -> Lang {
+        self.lang
     }
 
     /// Decrypted record bytes of `id`.

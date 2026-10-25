@@ -56,6 +56,7 @@ mod merits;
 mod plate;
 mod partymenu;
 mod partyreq;
+mod roe;
 mod levelsync;
 mod viewhouse;
 mod currencies;
@@ -2365,7 +2366,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some((kind, yes)) = world.confirm {
         let on_yes = world.confirm.map_or(yes, |c| c.1);
         let layout = if matches!(kind, Confirm::Merit(_) | Confirm::JobPoint(_)) { "menu    merityn" } else { "menu    comyn" };
-        let dy = gu.window_rect(layout, sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        let mut dy = gu.window_rect(layout, sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        // FUN_10232770's prompts sit under quest01 (FUN_10119110: bottom + 2).
+        if let Confirm::Roe(a) = kind
+            && roe::under_list(a)
+            && let (Some(q), Some(r)) = (gu.window_rect(quests::LIST, sw, sh), gu.window_rect(layout, sw, sh))
+        {
+            dy = q[1] + q[3] + 2.0 - r[1];
+        }
         let msg = confirm_msg(gu, world, kind);
         if let Some(win) = gu.lobby_window_off(layout, sw, sh, (0.0, dy), Some(if on_yes { 1 } else { 2 }), true, &[]) {
             let [fx, fy, fw, _] = win.frame;
@@ -2546,6 +2554,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         (Some(true), Some((Confirm::JobPoint(a), _))) => {
             world.confirm = None;
             jobpoints::answer(world, a);
+        }
+        (Some(true), Some((Confirm::Roe(a), _))) => {
+            world.confirm = None;
+            roe::answer(world, a);
         }
         (Some(yes), Some((Confirm::Request(a), _))) => {
             world.confirm = None;
@@ -2771,6 +2783,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::Request(_), _) => partyreq::ask_text(world),
+        (Confirm::Roe(a), _) => roe::ask_text(gu, a),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -4039,6 +4052,8 @@ enum Confirm {
     JobPoint(jobpoints::Ask),
     /// group 9 0x140 "Really reset request history?" (the Request toggle, scoption's Clear History).
     Request(partyreq::Ask),
+    /// The Records of Eminence prompts (FUN_10232770).
+    Roe(roe::Ask),
 }
 
 impl World {
@@ -6122,13 +6137,14 @@ impl App {
                 NetEvent::ResOffer { .. } => {}
                 NetEvent::ConfSys(c) => world.conf_sys = c,
                 NetEvent::MissionLog { port, data } => world.journal.record(port, data),
-                NetEvent::RoeUnity { sparks, deeds, plaudits } => {
-                    (world.roe.sparks, world.roe.deeds, world.roe.plaudits) = (sparks, deeds, plaudits);
+                NetEvent::RoeUnity { sparks, deeds, plaudits, rot } => {
+                    (world.roe.sparks, world.roe.deeds, world.roe.plaudits, world.roe.rot) = (sparks, deeds, plaudits, rot);
                     world.roe.flags |= 1;
                 }
                 NetEvent::RoeActive(r) => {
                     world.roe.active = r;
                     world.roe.flags |= 2;
+                    roe::active_changed(world);
                 }
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
@@ -6829,6 +6845,10 @@ impl App {
                 None => {}
             }
         }
+        // Key function 0x18 also turns an RoE description's page (FUN_102326b0).
+        if self.input.test(0x18, input::mode::PRESS) {
+            roe::flip_page(world);
+        }
         // FUN_1013c220: key function 0x18 (Num- / -) turns the item info window's page; past the last, back to 0.
         if self.input.test(0x18, input::mode::PRESS) && (world.info_win.is_some() || items::info_source(world).is_some()) {
             let mut p = world.info_page.get();
@@ -7073,7 +7093,13 @@ impl App {
                 }
                 self.dragging = pressed;
             }
-            MouseButton::Middle => self.middle_down = pressed,
+            MouseButton::Middle => {
+                // WM_MBUTTONDOWN turns an RoE description's page (FUN_102326b0).
+                if pressed && let Phase::World(w) = &mut self.phase {
+                    roe::flip_page(w);
+                }
+                self.middle_down = pressed;
+            }
             _ => {}
         }
     }

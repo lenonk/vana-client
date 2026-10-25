@@ -1117,9 +1117,9 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
 | e000-eff7 | 10156270 | Records of Eminence objectives | 55552 / 55672 / 55792 / 56212 |
 | eff8-efff | 101563d0 | no strings | 95 (all) |
 | f000-f1ff | 101564c0 | monstrosity species | 55549 / 55669 / 55789 / 56209 |
-| f200-f5ff | 10156630 | ? | 55553 / 55673 / 55793 / 56213 |
+| f200-f5ff | 10156630 | RoE categories (dat/roe.rs) | 55553 / 55673 / 55793 / 56213 |
 | f600-f613 | 10156790 | no strings | 55504 (all) |
-| f620-f62f | 10156a20 | ? | 55558 / 55678 / 55798 / 56218 |
+| f620-f62f | 10156a20 | guide pages (guide01, id - 0xf620) | 55558 / 55678 / 55798 / 56218 |
 | f630-f71f | 101568d0 | ? | 55557 / 55677 / 55797 / 56217 |
 | ffff-1000e | 10156b70 | currency (gil) | 9 / 91 / 55820 / 56240 |
 
@@ -7435,3 +7435,47 @@ Spec: `~/ffxi/lab/research/party_request_spec.md`. Ours: client/partyreq.rs, sea
 - Live (Lnxcsfix, s2c 0x11D injected with LSB's `!inject FILE`, a 34-byte file): lines, the 180 s silence, the
   stop line only for a known name, View Request listing two online bots, Delete Request, Clear History, the toggle
   prompt, /prcmd add / remove to a bot (the bot answered with a party invite).
+
+## Records of Eminence lists (2026-10-25)
+
+Spec: `~/ffxi/lab/research/roe_lists_spec.md`. Ours: dat/roe.rs, client/roe.rs, quests.rs.
+
+- The objectives and the Objective List are records of the item record store (FUN_1015b9e0, rotated right by 5, valid
+  when u32 +0 is the id and byte 0x13ff is 0xff): objectives 0xe000 + n (FUN_1015cb60: +8 repeatable, +0xc goal,
+  +0x10 sparks, +0x14 EXP, +0x18 CAP, +0x1c accolades, strings at +0x20: name and two description pages), categories
+  0xf200.. (FUN_1015cf20: u16 count @4 (<= 28), children of 20 bytes @8 {u16 id, u16 0, 4 conditions}, strings at
+  +0x238), root 0xf200. Strings by language: field 0 the name, the descriptions after 1 (ja) / 4 (en) / 8 (de) / 5 (fr)
+  fields; any other count leaves them empty. en: 121 non-empty categories, 1503 objectives in the tree.
+- Conditions (FUN_10230f60, all four; byte 3 the type, an unknown type fails): 0 none, 1 objective u16 completed (the
+  0x112 bit; needs the whole log), 2 every job of a 24-bit mask has a level, 3 level of job @1 >= @0, 4 zone u16 visited
+  (s2c 0x008 bit, < 0x180), 5 skill @2 >= u16 @0 (bit 15 with level 0 fails), 6 0x110 byte [@1] == @0 (needs the log),
+  7 Unity leader == @0 != 0, 8 some job 1..22 at level <= @0 (@0 != 0).
+- s2c 0x110 @0xc: 8 bytes kept for type 6 (LSB: Unity Shared day % 6, Leader week % 4).
+- quest00 rows 2 / 3 / 4 open quest01 in mode 2 Current (slot 63, 42, then 0..29; built again on every 0x111, the
+  cursor kept), 3 Objective List (a 5-deep category stack with saved cursors; Left / Right step to the next / previous
+  visible sibling, wrapping, itself excluded; the arrows work only with both; the list waits for 0x110, 0x111 and the
+  whole 0x112 and builds again from row 0 when one goes), 4 Vana'Bout (slots 43..62; LSB never fills them).
+- quest01's open (every mode, modes 0 / 1 too): after a 0x110 (flag bit 0) c2s 0x117 {u32 0}, the flag cleared.
+- Rows: keytops3 170 (the "new" bubble) at (0, 1) on an objective never completed and not claimable, else framesus 35
+  at (4, 5); the name at (18, 0) wrapped 301; the gauge windowps 97 at (249, 18) scaled by count / goal, frame 38 at
+  (245, 18), "%d/%d" in fontshp ending at (312, 15). Colour (FUN_10231140): mode 4 done for good 0x80404040 at the goal
+  else 0x80804040; claimable 0x80909040; slot 63 / 42 0x805050a0; taken 0x80509050; all 30 slots taken (rows of mode 3)
+  or done for good 0x80404040; else white; the cursor row 0x80803040. A record done for good and not taken shows
+  goal / goal (0x802060a0 in the description).
+- Description (FUN_102323d0 / FUN_10232090): the name at (50, 20), the text at (40, 50) wrapped 327 ("%s ▼" and the
+  page by key function 0x18 or a middle click when a second page exists), "Number Required：" (20, 180) and the count at
+  (180, 180), "(Not Repeatable)" (220, 200) 0x80804040, "Rewards:" (20, 200), "%d%s  %d%s  %s  %s" (20, 220) with
+  " Spa.", " EXP" and the non-zero "%d CAP" / "%d Acc." packed left. Title slot 2 "RoE" (0xc 0x85).
+- Enter opens the description and its prompt at once (FUN_10232770, comyn moved to quest01's bottom + 2): mode 2
+  claimable "Receive rewards?" (Yes) -> c2s 0x10E; mode 2 otherwise (not slot 63 / 42) "Remove objective?" (No);
+  mode 3 (not timed, not taken, <= 29 slots taken, not done for good) "Set objective?" (Yes) -> 0x10C, the description
+  stays; mode 4 (slots 43..52) "Remove objective?" (Yes). Remove (LAB_10232970): Vana'Bout -> the hold prompt 0xc
+  0x20d (not done); a count above 0 -> 0xc 0x74 "Your progress will be reset ..." (FUN_10210f10, default No; ours on the
+  log *(inf)*); else 0x10D. Bodies {u32 n}. Each send restarts a 30-frame cooldown (DAT_10668edc, also on describe and
+  every answer; ours 1 s *(inf: 30 fps)*) and a description goes back to the list (not after 0x10C).
+- Battle messages: grammar kinds 0x39 / 0x40 / 0x41 (FUN_100be760) name an objective, id + 0xe000 from the index,
+  num or work (704 "You have undertaken \"%s\"."). Not done: kinds 0x36 / 0x45 (706, an item through FUN_10153ff0 with
+  an article).
+- Live (Lnxcsfix): the root shows Tutorial and Other; Tutorial -> Basics -> First Step Forward (the bubble, 0/1);
+  Set -> 0x10C, LSB's line; Current 1/30 with the green row; Remove (default No) -> Yes -> 0x10D, "No current
+  objectives." 0/30.

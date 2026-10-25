@@ -411,6 +411,14 @@ impl BattleText {
                             let id = if k < 0x23 { idx as i32 } else { work(slot) };
                             noun(out, &mut start, self.item_noun(id as u32, (k - 0x20) % 3));
                         }
+                        // 0x39 / 0x40 / 0x41: an RoE objective's name, id + 0xe000 from the index, num or work (num read
+                        // as work here).
+                        Some(&k @ (0x39 | 0x40 | 0x41)) => {
+                            let n = if k == 0x39 { idx as i32 } else { work(slot) };
+                            if let Some(o) = self.items.as_ref().and_then(|it| super::roe::objective(it, (n + 0xe000) as u16)) {
+                                out.extend(encode_sjis(&o.name));
+                            }
+                        }
                         // 0x29 / 0x2a: a count index, then an item index; the singular for one, else the plural.
                         Some(0x29 | 0x2a) => {
                             let first = body.get(1..).unwrap_or_default();
@@ -652,6 +660,15 @@ mod tests {
         assert!(b.off_channel(1, 0, &cfg) && !b.off_channel(6, 0, &cfg));
         cfg.set(0x13, 0);
         assert!(b.off_channel(1, 1, &cfg) && b.off_channel(6, 1, &cfg));
+    }
+
+    /// 704 "You have undertaken \"%s\"." names the objective in work[0] (grammar kind 0x41, id + 0xe000).
+    #[test]
+    fn roe_objective_name() {
+        let Some(b) = load() else { return };
+        let ctx = Ctx { work: [1, 0, 0, 0, 0], ..Default::default() };
+        let l = b.expand(704, &ctx).unwrap();
+        assert!(l.lines[0].contains("First Step Forward"), "{:?}", l.lines);
     }
 
     /// DAT_1036eba0: <call> and <call0> are 0017, <call21> 0038; the <ncall> rows are left out.
