@@ -46,13 +46,18 @@ pub(super) struct Pending {
     pub own: bool,
 }
 
-/// A doll (CXiDollActor, FUN_100aa470): where an actor stood when a scheduler froze it.
+/// A doll (CXiDollActor, FUN_100abea0): the actor's placement and its 48 points when a scheduler froze it. Ops
+/// 0x22 / 0x23 make one that follows the actor's position each frame (FUN_100ac0f0), rotation and pose kept.
 pub struct Doll {
     pub of: u32,
     pub matrix: Mat4,
+    pub follow: bool,
+    pub points: Vec<Option<Vec3>>,
 }
 
 const MAIN: u32 = u32::from_le_bytes(*b"main");
+/// The points a doll copies (vtable +0x1c4, 0..0x30).
+const DOLL_POINTS: u16 = 0x30;
 
 /// Where an actor's equipment part files go in a scheduler lookup.
 #[derive(Clone, Copy)]
@@ -659,11 +664,11 @@ impl Effects {
                 }
             }
             0x15 | 0x22 => {
-                t.a1 = self.doll(t.a1, actors, me);
+                t.a1 = self.doll(t.a1, op.code == 0x22, actors, me);
                 Flow::Next
             }
             0x16 | 0x23 => {
-                t.a2 = self.doll(t.a2, actors, me);
+                t.a2 = self.doll(t.a2, op.code == 0x23, actors, me);
                 Flow::Next
             }
             0x17 => {
@@ -1113,11 +1118,12 @@ impl Effects {
 
     /// FUN_100abea0: a doll where the actor stands now; FUN_10062d50 moves the clones this task started (clone
     /// +0xf0 == the task) to it, others stay on the actor.
-    fn doll(&mut self, w: Who, actors: &dyn Actors, me: usize) -> Who {
+    fn doll(&mut self, w: Who, follow: bool, actors: &dyn Actors, me: usize) -> Who {
         let Who::Actor(id) = w else { return w };
         let Some(m) = actors.matrix(id) else { return w };
         let d = Who::Doll(self.dolls.len());
-        self.dolls.push(Doll { of: id, matrix: m });
+        let points = (0..DOLL_POINTS).map(|k| actors.point(id, k)).collect();
+        self.dolls.push(Doll { of: id, matrix: m, follow, points });
         self.move_clones(w, d, me);
         d
     }
@@ -1152,7 +1158,15 @@ impl Effects {
     fn who_matrix(&self, w: Who, actors: &dyn Actors) -> Option<(u32, Mat4)> {
         match w {
             Who::Actor(id) => Some((id, actors.matrix(id)?)),
-            Who::Doll(d) => self.dolls.get(d).map(|d| (d.of, d.matrix)),
+            Who::Doll(d) => self.dolls.get(d).map(|d| {
+                let mut m = d.matrix;
+                if d.follow
+                    && let Some(a) = actors.matrix(d.of)
+                {
+                    m.w_axis = a.w_axis;
+                }
+                (d.of, m)
+            }),
             Who::None => None,
         }
     }
@@ -1162,7 +1176,11 @@ impl Effects {
     /// later special indices use point 0 *(inf)*.
     fn who_point(&self, w: Who, k: u16, other: Who, eye: Option<Vec3>, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
         let (id, m) = self.who_matrix(w, actors)?;
-        let world = |k: u16| actors.point(id, k).map(|p| m.transform_point3(p));
+        let local = |k: u16| match w {
+            Who::Doll(d) if k < DOLL_POINTS => self.dolls.get(d).and_then(|d| d.points[k as usize]),
+            _ => actors.point(id, k),
+        };
+        let world = |k: u16| local(k).map(|p| m.transform_point3(p));
         let nearest = |to: Vec3| (0xd..=0x14u16).filter_map(world).min_by(|a, b| a.distance_squared(to).total_cmp(&b.distance_squared(to)));
         let p = match k {
             0x30 => Some(m.w_axis.truncate()),
@@ -1192,7 +1210,7 @@ impl Effects {
     pub(super) fn attach_matrix(&self, i: usize, f: Option<&Frame>, actors: &dyn Actors) -> Option<(Option<Mat4>, Vec3, Vec3, f32)> {
         let x = self.insts[i].as_ref()?;
         let g = self.reg.libs[x.src.0].generator(x.src.1)?;
-        let w = g.attach;
+        let w = x.attach;
         let pc = ((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16;
         let pt = ((w >> 10) & 0x3f) as u16;
         let [a1, a2] = x.actors;

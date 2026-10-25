@@ -177,6 +177,9 @@ pub struct ElemCpu {
     /// Flag 0x800000: the emitter frame at spawn, in its own matrix slot.
     pub snapshot: Option<Mat4>,
     pub mslot: u32,
+    /// The matrix slot its parent frame comes from (FUN_10046440), borrowed from another generator by op 0x45.
+    pub frame: u32,
+    pub borrowed: bool,
     /// Batched D3a: its particles in the pool (first, count).
     pub parts: Option<(u32, u32)>,
     /// A point light's table slot.
@@ -278,6 +281,8 @@ pub struct Instance {
     pub interval_rand: i16,
     /// +0x9c.
     pub emitted: u32,
+    /// The attach word (gen +0x34; emission op 0x45 copies the parent generator's) and its mode.
+    pub attach: u32,
     pub mode: u8,
     /// +0xa4 attach matrix (None = world).
     pub matrix: Option<Mat4>,
@@ -614,6 +619,9 @@ pub struct Effects {
     pub writes: Vec<Write>,
     pub slots: Vec<[u32; SLOT_WORDS]>,
     slot_free: Vec<u32>,
+    /// Slots borrowed by op-0x45 elements (count), and those whose instance has gone.
+    lent: HashMap<u32, u32>,
+    orphans: Vec<u32>,
     serial: u32,
     rng: math::Rng,
     zone_lib: Option<usize>,
@@ -713,6 +721,8 @@ impl Effects {
             writes: Vec::new(),
             slots: Vec::new(),
             slot_free: Vec::new(),
+            lent: HashMap::new(),
+            orphans: Vec::new(),
             serial: 0,
             rng: math::Rng::new(0x5eed_f00d),
             zone_lib: None,
@@ -1070,6 +1080,7 @@ impl Effects {
             interval: g.interval,
             interval_rand: g.interval_rand,
             emitted: 0,
+            attach: g.attach,
             mode: g.attach_mode(),
             matrix: None,
             scale_a: Vec3::ONE,
@@ -1142,7 +1153,11 @@ impl Effects {
         for e in inst.live {
             self.drop_elem(e);
         }
-        self.slot_free.push(inst.mslot);
+        if self.lent.contains_key(&inst.mslot) {
+            self.orphans.push(inst.mslot);
+        } else {
+            self.slot_free.push(inst.mslot);
+        }
     }
 
     fn drop_elem(&mut self, e: u32) {
@@ -1152,6 +1167,17 @@ impl Effects {
         }
         if c.mslot != NONE {
             self.slot_free.push(c.mslot);
+        }
+        if c.borrowed
+            && let Some(n) = self.lent.get_mut(&c.frame)
+        {
+            *n -= 1;
+            if *n == 0 {
+                self.lent.remove(&c.frame);
+                if let Some(k) = self.orphans.iter().position(|&s| s == c.frame) {
+                    self.slot_free.push(self.orphans.swap_remove(k));
+                }
+            }
         }
         if let Some(k) = self.sounds.iter().position(|s| s.elem == Some(e)) {
             let s = self.sounds.swap_remove(k);
@@ -1195,7 +1221,7 @@ impl Effects {
             c.key = f(back::KEY);
             c.drawn = r[back::STATUS] & back::DRAWN != 0;
             c.back = Some(emit::Parent {
-                pos: Vec3::ZERO,
+                pos: Vec3::new(f(back::LPOS), f(back::LPOS + 1), f(back::LPOS + 2)),
                 world: Vec3::new(f(back::WORLD), f(back::WORLD + 1), f(back::WORLD + 2)),
                 rot: Vec3::new(f(back::ROT), f(back::ROT + 1), f(back::ROT + 2)),
                 scale: Vec3::new(f(back::SCALE), f(back::SCALE + 1), f(back::SCALE + 2)),
@@ -1204,6 +1230,7 @@ impl Effects {
                 max_life: c.max_life,
                 uv: [0.0; 2],
                 bias: 0.0,
+                frame: None,
             });
             // Op 0x2e / 0x48 with the kill flag: life = 1, so it expires now.
             if r[back::STATUS] & back::KILL != 0 && c.max_life != 0.0 && c.life >= 1.0 {
@@ -1345,7 +1372,12 @@ impl Effects {
                 }
             }
         }
-        let parent = inst.parent_elem.and_then(|p| self.elems.get(p as usize)?.as_ref()?.back);
+        let parent = inst.parent_elem.and_then(|p| {
+            let c = self.elems.get(p as usize)?.as_ref()?;
+            let mut b = c.back?;
+            b.frame = self.parent_frame(c);
+            Some(b)
+        });
         let mut spawns = Vec::new();
         for _ in 0..emissions.min(512) {
             if let Some(s) = emit::emit(&mut self.reg, &mut inst, parent.as_ref(), f, &mut self.rng) {
@@ -1360,6 +1392,23 @@ impl Effects {
         for s in spawns {
             self.add_elem(i, s, f);
         }
+    }
+
+    /// What op 0x45 copies from parent element `c`: its frame slot's matrix and scales, its generator's attach
+    /// word and actors.
+    fn parent_frame(&self, c: &ElemCpu) -> Option<emit::ParentFrame> {
+        let x = self.insts.get(c.inst)?.as_ref()?;
+        let s = self.slots.get(c.frame as usize);
+        let v3 = |s: &[u32; SLOT_WORDS], k: usize| Vec3::new(f32::from_bits(s[k]), f32::from_bits(s[k + 1]), f32::from_bits(s[k + 2]));
+        let matrix = s.filter(|s| s[slot::HAS_MATRIX] != 0).map(|s| Mat4::from_cols_array(&std::array::from_fn(|k| f32::from_bits(s[slot::MATRIX + k]))));
+        Some(emit::ParentFrame {
+            slot: c.frame,
+            matrix,
+            scale_a: s.map_or(Vec3::ONE, |s| v3(s, slot::SCALE_A)),
+            scale_b: s.map_or(Vec3::ONE, |s| v3(s, slot::SCALE_B)),
+            attach: x.attach,
+            actors: x.actors,
+        })
     }
 
     fn add_elem(&mut self, inst: usize, s: emit::Spawn, f: &Frame) {
@@ -1410,7 +1459,12 @@ impl Effects {
             let (a, b, ss) = self.insts[inst].as_ref().map_or((Vec3::ONE, Vec3::ONE, false), |x| (x.scale_a, x.scale_b, x.size_scaled));
             self.put_slot(ms, Some(m), a, b, 1.0, ss);
             cpu.mslot = ms;
+            cpu.frame = ms;
             elem.0[w::PARENT] = ms;
+        }
+        // The lender's slot outlives it while borrowed (retail AddRefs the generator).
+        if cpu.borrowed {
+            *self.lent.entry(cpu.frame).or_default() += 1;
         }
         let parent = emit::Parent {
             pos: elem.v3(w::POS),
@@ -1422,6 +1476,7 @@ impl Effects {
             max_life: cpu.max_life,
             uv: [elem.f(w::UV), elem.f(w::UV + 1)],
             bias: elem.f(w::BIAS),
+            frame: None,
         };
         cpu.back = Some(parent);
         self.elems[e as usize] = Some(cpu);

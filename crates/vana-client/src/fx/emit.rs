@@ -30,7 +30,23 @@ pub struct Parent {
     pub max_life: f32,
     pub uv: [f32; 2],
     pub bias: f32,
+    /// Filled for an emission: what op 0x45 copies from the parent.
+    pub frame: Option<ParentFrame>,
 }
+
+/// The parent element's frame (FUN_10046440: its matrix slot) and its generator's attach word and actors.
+#[derive(Clone, Copy, Debug)]
+pub struct ParentFrame {
+    pub slot: u32,
+    pub matrix: Option<Mat4>,
+    pub scale_a: Vec3,
+    pub scale_b: Vec3,
+    pub attach: u32,
+    pub actors: [super::sched::Who; 2],
+}
+
+/// FUN_1003b900: the attach word fields op 0x45 copies (all but bit 17 and byte 3).
+const ATTACH_COPY: u32 = 0xfd_ffff;
 
 pub struct Spawn {
     pub elem: Elem,
@@ -119,7 +135,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     e.0[w::FLAGS] = flags;
     let mut pos = Vec3::new(op1.f32(5), op1.f32(6), op1.f32(7));
     // Step 4: flag 0x800000 snapshots the emitter frame at spawn.
-    let snapshot = flags & 0x80_0000 != 0 && (inst.matrix.is_some() || parent.is_some());
+    let mut snapshot = (flags & 0x80_0000 != 0 && (inst.matrix.is_some() || parent.is_some())).then(|| inst.matrix.unwrap_or(Mat4::IDENTITY));
+    let mut borrow = None;
     // Step 8: flag 0x4000000 = position in camera space (z negated, through the inverse view).
     if flags & 0x400_0000 != 0 {
         pos.z = -pos.z;
@@ -240,7 +257,29 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 let r = rng.uf(op.f32(1)) + op.f32(2);
                 pos += m.transform_point3(Vec3::new(r, 0.0, 0.0));
             }
-            0x45 | 0x86 | 0x9b => {
+            // Op 0x45: the parent generator's attach fields and actors; under 0x800000 the parent's frame becomes
+            // the snapshot, else a frameless element rides the parent generator's frame.
+            0x45 => {
+                if let Some(p) = parent {
+                    if let Some(pf) = p.frame {
+                        inst.attach = (inst.attach & !ATTACH_COPY) | (pf.attach & ATTACH_COPY);
+                        inst.mode = crate::dat::generator::attach_mode(inst.attach);
+                        inst.actors = pf.actors;
+                        if let Some(m) = pf.matrix {
+                            if snapshot.is_some() {
+                                snapshot = Some(m);
+                                inst.scale_a = pf.scale_a;
+                                inst.scale_b = pf.scale_b;
+                            } else if inst.matrix.is_none() {
+                                borrow = Some(pf.slot);
+                            }
+                        }
+                    }
+                    pos += p.pos;
+                    pos0 = pos;
+                }
+            }
+            0x86 | 0x9b => {
                 if let Some(p) = parent {
                     pos += p.pos;
                     pos0 = pos;
@@ -549,7 +588,12 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let (stream_at, op2) = reg.stream(inst.src);
     e.0[w::STREAM] = stream_at;
     e.0[w::OP2_SLOT] = op2.map_or(NONE, |s| s as u32);
-    e.0[w::PARENT] = if snapshot { NONE } else { inst.mslot };
+    let frame = match (snapshot, borrow) {
+        (Some(_), _) => NONE,
+        (None, Some(s)) => s,
+        (None, None) => inst.mslot,
+    };
+    e.0[w::PARENT] = frame;
     let cpu = ElemCpu {
         inst: usize::MAX,
         serial: 0,
@@ -562,8 +606,10 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         drawn: false,
         back: None,
         child: None,
-        snapshot: snapshot.then(|| inst.matrix.unwrap_or(Mat4::IDENTITY)),
+        snapshot,
         mslot: NONE,
+        frame,
+        borrowed: borrow.is_some(),
         parts: None,
         light: (e.0[w::KIND] == dk::LIGHT && e.0[w::L_SLOT] != NONE).then_some(e.0[w::L_SLOT]),
     };

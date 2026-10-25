@@ -615,6 +615,12 @@ enum Cmd {
         /// Instead of the action, a walking footstep at the caster that bursts this dust generator (e.g. w100).
         #[arg(long)]
         dust: Option<String>,
+        /// Instead of the action, effect file N's "main" on the caster (e.g. 3310, level up).
+        #[arg(long)]
+        file: Option<u32>,
+        /// The caster moves by this much a tick once the effect starts.
+        #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
+        walk: Vec<f32>,
     },
     /// Render a zone offscreen to a PNG. Coordinates are game units (Y points down).
     ZoneShot {
@@ -1013,7 +1019,7 @@ fn main() -> Result<()> {
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
         Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
-        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust), frames, every, hour),
+        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub } => {
             use glam::Vec3;
             let cfg = config::Config::load();
@@ -1682,16 +1688,26 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
 /// Two stand-in actors for fx-shot: fixed placements facing each other, attach points at chest height.
 struct ShotActors {
     at: [(u32, glam::Vec3, glam::Vec3); 2],
+    /// The caster's movement a tick, and the ticks walked.
+    walk: glam::Vec3,
+    ticks: std::cell::Cell<f32>,
+}
+
+impl ShotActors {
+    fn pos(&self, id: u32) -> Option<glam::Vec3> {
+        let a = self.at.iter().find(|a| a.0 == id)?;
+        Some(if id == self.at[0].0 { a.1 + self.walk * self.ticks.get() } else { a.1 })
+    }
 }
 
 impl fx::Actors for ShotActors {
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
-        let (_, p, fwd) = self.at.iter().find(|a| a.0 == id)?;
+        let (_, _, fwd) = self.at.iter().find(|a| a.0 == id)?;
         let f = fwd.normalize();
-        Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), p.extend(1.0)))
+        Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), self.pos(id)?.extend(1.0)))
     }
     fn foot(&self, id: u32) -> Option<glam::Vec3> {
-        self.at.iter().find(|a| a.0 == id).map(|a| a.1)
+        self.pos(id)
     }
     fn point(&self, _: u32, k: u16) -> Option<glam::Vec3> {
         // Feet for point 0, chest otherwise *(stand-in, not a skeleton)*.
@@ -1712,7 +1728,7 @@ impl fx::Actors for ShotActors {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust): (u8, u16, Option<String>), frames: u32, every: u32, hour: f32) -> Result<()> {
+fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust, fx_file): (u8, u16, Option<String>, Option<u32>), walk: &[f32], frames: u32, every: u32, hour: f32) -> Result<()> {
     use glam::Vec3;
     let cfg = config::Config::load();
     let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
@@ -1727,7 +1743,8 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         c.y = g.snap(c.x, c.z, c.y).unwrap_or(c.y);
         println!("caster on {c} surface {:?}", g.surface(c));
     }
-    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)] };
+    let walk = if walk.len() == 3 { v3(walk) } else { Vec3::ZERO };
+    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)], walk, ticks: std::cell::Cell::new(0.0) };
     let mut fx = fx::Effects::new();
     fx.set_keys(std::sync::Arc::new(keys));
     fx.set_index(index.clone());
@@ -1755,17 +1772,22 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
                 fx.tick(&f, &actors);
                 std::thread::sleep(std::time::Duration::from_millis(5));
             }
-            match &dust {
-                Some(d) => {
+            match (&dust, fx_file) {
+                (Some(d), _) => {
                     let name = <[u8; 4]>::try_from(d.as_bytes()).ok();
                     fx.footstep(0x0001_0001, c, *b"0000", name.filter(|n| n != b"fmrk"), name == Some(*b"fmrk"), false, 101);
                 }
-                None => fx.on_action(&action, (category == 1).then(|| "ati0".to_string())),
+                (None, Some(n)) => {
+                    let who = fx::sched::Who::Actor(0x0001_0001);
+                    fx.on_event_scheduler(n, u32::from_le_bytes(*b"main"), who, who);
+                }
+                (None, None) => fx.on_action(&action, (category == 1).then(|| "ati0".to_string())),
             }
             started = true;
         }
         for _ in 0..every {
             fx.tick(&f, &actors);
+            actors.ticks.set(actors.ticks.get() + 1.0);
             let mut e = gpu.device.create_command_encoder(&Default::default());
             eg.update(gpu, &mut e, &mut fx, &f);
             gpu.queue.submit([e.finish()]);

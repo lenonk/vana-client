@@ -227,13 +227,18 @@ impl Generator {
 
     /// Attach mode 0..0x1b (FUN_1003afd0).
     pub fn attach_mode(&self) -> u8 {
-        (((self.attach >> 16) & 1) << 4) as u8 | (self.attach & 0xf) as u8
+        attach_mode(self.attach)
     }
 
     /// The emission stream's op 0x01: the element template.
     pub fn template(&self) -> Option<&Op> {
         self.streams[stream::EMISSION].first().filter(|o| o.code == 0x01)
     }
+}
+
+/// The attach mode of an attach word: `(byte2 & 1) << 4 | (byte0 & 0xf)`.
+pub fn attach_mode(w: u32) -> u8 {
+    (((w >> 16) & 1) << 4) as u8 | (w & 0xf) as u8
 }
 
 /// Ops from `at` until op 0 or the end (FUN_10048300 and kin walk them the same way).

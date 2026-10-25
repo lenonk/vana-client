@@ -122,6 +122,8 @@ pub mod back {
     pub const SCALE: usize = 8;
     pub const COLOR: usize = 11;
     pub const SERIAL: usize = 12;
+    /// The local (emitter-space) position, for op 0x45.
+    pub const LPOS: usize = 13;
     /// STATUS: op 0x2e / 0x48 asked to expire (life = 1); drawn this frame.
     pub const KILL: u32 = 1;
     pub const DRAWN: u32 = 2;

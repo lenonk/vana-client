@@ -7212,3 +7212,24 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
 - Live (Lnxcsfix, !givexp 4800 / !takexp 4800): message 9 ran 3310 with "Level Up !!" and sparkles and sound 7;
   message 11 ran 3309 ("Level Down..."). The user: both look wrong while the character moves (retail has a
   "ghosting" look); not resolved yet. Not done: the +0x210 variants, the queue wait.
+
+## Level up / down ghost trails: following dolls, op 0x45 frames (2026-10-25)
+
+- Scheduler ops 0x22 / 0x23 differ from 0x15 / 0x16 only in FUN_100abea0's third argument (1): bytes doll +0x424 /
+  +0x425 / +0x426. The doll's vtable +0x20 (FUN_100ac0f0) then moves its position (+0x404, vtable +0x1bc) to the
+  source actor's x / y / z each frame and its 48 copied points (+0x104.., vtable +0x1c4) by the same delta. The
+  rotation (+0x414) and the pose stay as copied. Ours: Doll.follow takes the actor's matrix translation; dolls keep
+  their own points 0..0x2f (the actor's at the time).
+- DAT 3310 (level up): g000 emits the "Level Up!!" text (lvu1, life 150) with emission op 0x44 g004 and update op
+  0x25, so the element runs g004 every frame. g004 (lvu1, life 30, op-1 flags 0x800001, op 0x45) copies g000's frame
+  into each element (0x800000): the copies stay where they were emitted and fade, the trail along the path walked
+  (the user's retail shot). g001 (lvu4 every tick, op 0x3c g002) and g002 (op 0x45) are the other generators.
+- DAT 3309 (level down): g000 (lvd1 at point 0, y -0.7, falling 0.02 a tick) runs g001 every frame the same way. g001
+  has no 0x800000: op 0x45 copies g000's attach fields (point 1 becomes point 0) and actors, so each copy sits at the
+  falling text's local position in the same frame and rides with the character: the smear above the text in the
+  user's retail shot. Ours had kept g001's own point 1, a second copy a body height away.
+- Op 0x45 (emit_3c_45_spec.md section 3) is now complete: FUN_1003b900 copies the parent generator's attach word
+  (mask 0xfdffff) and actors; under 0x800000 the element's snapshot becomes the parent element's frame (and the
+  scale vectors); without it a frameless element borrows the parent's frame slot, kept alive while borrowed. The GPU
+  readback now returns each element's local position (back words 13..15), which op 0x45 adds; it was zero.
+- fx-shot takes --file N (that file's "main" on the caster) and --walk x,y,z (caster movement a tick).

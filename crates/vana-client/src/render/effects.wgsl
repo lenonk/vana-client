@@ -642,6 +642,10 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     back[bb + 10u] = bitcast<u32>(sc.z);
     back[bb + 11u] = el[b + E_COLOR];
     back[bb + 12u] = el[b + E_SERIAL];
+    let lp = ev3(b, E_POS);
+    back[bb + 13u] = bitcast<u32>(lp.x);
+    back[bb + 14u] = bitcast<u32>(lp.y);
+    back[bb + 15u] = bitcast<u32>(lp.z);
 }
 
 // ---- Drawing ----
