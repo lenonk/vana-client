@@ -8639,3 +8639,31 @@ interpolates between the hour keys in both clients.
 - FUN_10038330: se 2239 / 2063 (looping zone emitters, 44 files) start only while the shared flag DAT_104638f4 is
   clear, and take it; a voice of either stopping or its sound going clears it (FUN_10036b90 / FUN_10036af0). Ours:
   Effects::solo, voice_ended at every stop. Tests start_cap_per_pass, one_at_a_time.
+
+## Lit D3b / D3m effect elements, element-update op 0x6e, the CMoDist fan's ZBIAS (2026-10-25; spec ~/ffxi/lab/research/fx_element_render_spec.md)
+
+- Op-1 flag 16 lights a D3b (FUN_1003f440) or a plain D3m (FUN_10040670): both keep LIGHTING from the common draw
+  FUN_100467e0 and carry normals (FVF 0x152). D3a and CMoDist turn it off; specular D3m clears the flag. Light
+  matrix B = the element's view (FUN_10045c50, translation dropped); with a parent and generator +0xdf bit 1 clear
+  B Ry(3 pi / 2) P^-1 (literal, a quirk); orientation 1 / 2 with bit 0: rot(V_b50) Ry(pi). +0xdf bit 1 is set only
+  for the door parts of 83895 / 83896 / 83903 / 83904 (`0b11..0b32`), 83897 `pb41`, 83905..83908 (`0b10..0b22`). With
+  bump mapping on (our scenery's mode) one directional light: the eased background light (FUN_10187720) x the
+  background light scale, direction through B with the translation added (math +0x50); AMBIENT = FUN_10188e00 mode
+  0 = trunc(min(a, 1) x 128) bytes; material from the vertex colour (COLORVERTEX, AMBIENT / DIFFUSE MATERIALSOURCE
+  1), NORMALIZENORMALS off: the normal through WORLD's inverse transpose unnormalised (a scaled element lights by
+  1 / s). D3b normals: the packed key normals (10 bits each / 512) blended by the weights, not renormalised. Ours:
+  EffectsGpu::set_light (the client's and zone-shot's zone Lighting), Params.light, Draw.light_col / ambient, the
+  update pass writes the light direction into out words 37..39 of lit D3b / D3m elements, fx_lit in vs_mesh
+  (variants 0 / 1) and vs_morph. 599 lit D3b (pigeons, ducks, kites, butterflies, fish, door parts) and 8,360 lit
+  D3m generators were unlit. Not modelled: the two-light mode (bump mapping off), the DAT_10456a7c boost, the area
+  env by generator +0xc4, MMB stand-ins.
+- Element-update op 0x6e (case 0x1004b181, D3b only by IsType 0xf): d = vtable +0x44 = FUN_10045d00 (0 behind the
+  camera, else the eye distance); d == 0 nothing; else weight 0 = 0 below a, ramp a..b, 1 b..c, ramp c..e, 0 from e,
+  weight 1 = 1 - that. 277 generators in 10 files: the Riverne spatial-displacement warps (files 125 / 129 / 130 /
+  131) open into their disc within 11 yalms; ours showed the sliver for good. Offscreen (zone 29 aw01 gr01): disc at
+  8, sliver at 16.
+- The texture warp (elem +0x140 / +0x144 / +0x148, FUN_10075700) is dead code: nothing writes them, so the amplitude
+  is always 0. Closed.
+- CMoDist / VuDist pass 2 draws after pass 1's RS 0x103530d0 set ZBIAS 0: ours drew the fan with the effect pass's
+  ZBIAS 15 (to_clip_z without it for variant 9).
+- Tests lit_cases, ambient_bytes, crossfade_6e (CPU references in fx/elem.rs), gpu_morph_crossfade (DAT 129).

@@ -25,6 +25,8 @@ struct Params {
     extra: [f32; 4],
     /// The zone's area light (update op 0x69), 0
     area: [f32; 4],
+    /// FUN_100467e0: the background light's travel direction, the light count
+    light: [f32; 4],
 }
 
 #[repr(C)]
@@ -46,6 +48,9 @@ struct DrawU {
     /// "menu    dmgnum" sprites 0..10 ('0'..'9', ':'): UV rect, then (width, height) in units (dmgnum_glyphs).
     glyphs: [[f32; 4]; 22],
     view: [[f32; 4]; 4],
+    /// The light colour (eased, x the light scale; w = the light count) and AMBIENT (trunc(min(a, 1) x 128) / 255).
+    light_col: [f32; 4],
+    ambient: [f32; 4],
 }
 
 /// The ground projections' images: 256x256 (FUN_10044270's DAT_1047bb88).
@@ -285,11 +290,18 @@ pub struct EffectsGpu {
     sampler: wgpu::Sampler,
     count: u32,
     linearize: bool,
+    /// The zone's background light for lit D3b / D3m elements: travel direction, colour, ambient (set_light).
+    light: Option<(glam::Vec3, glam::Vec3, glam::Vec3)>,
 }
 
 const STAGES: usize = 3;
 
 impl EffectsGpu {
+    /// The zone's background light (weather::Lighting dir / diffuse / ambient) for FUN_100467e0; None: unlit.
+    pub fn set_light(&mut self, l: Option<(glam::Vec3, glam::Vec3, glam::Vec3)>) {
+        self.light = l;
+    }
+
     pub fn new(gpu: &Gpu, format: wgpu::TextureFormat) -> Self {
         let device = &gpu.device;
         let consts = crate::fx::elem::wgsl_consts();
@@ -588,6 +600,7 @@ impl EffectsGpu {
             sampler,
             count: 0,
             linearize: format.is_srgb(),
+            light: None,
         }
     }
 
@@ -855,6 +868,7 @@ impl EffectsGpu {
             eye: [f.eye.x, f.eye.y, f.eye.z, 1.0],
             extra: [f.moon_phase as f32, f.weekday as f32, 0.0, 0.0],
             area: [f.area_light.x, f.area_light.y, f.area_light.z, 0.0],
+            light: self.light.map_or([0.0; 4], |(d, _, _)| [d.x, d.y, d.z, 1.0]),
         };
         q.write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
         if self.count == 0 {
@@ -1000,6 +1014,11 @@ impl EffectsGpu {
             clip: [clip[0], clip[1], size[0] as f32, size[1] as f32],
             glyphs: self.dmgnum.as_ref().map_or([[0.0; 4]; 22], |d| d.1),
             view: view.to_cols_array_2d(),
+            light_col: self.light.map_or([0.0; 4], |(_, c, _)| [c.x, c.y, c.z, 1.0]),
+            ambient: self.light.map_or([0.0; 4], |(_, _, a)| {
+                let g = crate::fx::elem::ambient_ref(a);
+                [g.x, g.y, g.z, 0.0]
+            }),
         };
         gpu.queue.write_buffer(&self.draw_u, 0, bytemuck::bytes_of(&u));
         let mut u_rt = u;
@@ -1288,6 +1307,46 @@ mod tests {
 
     /// Port San d'Oria's auto-start generators (sea, water tint, lamps) run for a while on the GPU and through
     /// the CPU reference of the update stream; every live element must agree.
+    #[test]
+    /// Op 0x6e on the GPU (fx_element_render_spec 1.7 item 8): DAT 129 `d_ba/effe/warp/aw01/gr01` at 5 / 12.5 / 18
+    /// from the eye: (w0, w1) = (0, 1), (0.5, 0.5), (1, 0).
+    fn gpu_morph_crossfade() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let Ok(gpu) = Gpu::headless() else { return };
+        let at = glam::Vec3::new(734.682, -4.18383, -703.631);
+        for (d, want) in [(5.0, 0.0), (12.5, 0.5), (18.0, 1.0)] {
+            let mut fx = Effects::new();
+            fx.set_keys(Arc::new(crate::dat::zone::Keys::from_ffximain(&dll).unwrap()));
+            fx.set_global(crate::fx::lib::Library::load(0, index.read(0).unwrap()).unwrap());
+            fx.load_zone(crate::fx::lib::Library::load(129, index.read(129).unwrap()).unwrap());
+            let mut eg = EffectsGpu::new(&gpu, wgpu::TextureFormat::Rgba8UnormSrgb);
+            let eye = at + glam::Vec3::new(0.0, 0.0, d);
+            let view = glam::camera::rh::view::look_at_mat4(eye, at, glam::Vec3::NEG_Y);
+            let mut view_rot = view;
+            view_rot.w_axis = glam::Vec4::W;
+            let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot, eye, draw_distance: 2000.0, area_light: glam::Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+            for _ in 0..4 {
+                fx.tick(&f, &crate::fx::NoActors);
+                let mut enc = gpu.device.create_command_encoder(&Default::default());
+                eg.update(&gpu, &mut enc, &mut fx, &f);
+                gpu.queue.submit([enc.finish()]);
+                gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None }).unwrap();
+                eg.after_submit(&gpu, &mut fx);
+            }
+            let g = eg.read_elems(&gpu, fx.elems.len());
+            let gr01: Vec<usize> = fx.elems.iter().enumerate().filter(|(_, c)| c.as_ref().is_some_and(|c| fx.insts.get(c.inst).and_then(|x| x.as_ref()).is_some_and(|x| x.name == *b"gr01"))).map(|(e, _)| e).collect();
+            let near = gr01.iter().map(|&e| {
+                let gw = &g[e * w::WORDS..(e + 1) * w::WORDS];
+                let p = glam::Vec3::new(f32::from_bits(gw[w::POS]), f32::from_bits(gw[w::POS + 1]), f32::from_bits(gw[w::POS + 2]));
+                ((p - at).length(), f32::from_bits(gw[w::MORPH_W]), f32::from_bits(gw[w::MORPH_W + 1]))
+            }).min_by(|a, b| a.0.total_cmp(&b.0));
+            let Some((_, w0, w1)) = near else { panic!("no gr01 element") };
+            assert!((w0 - want).abs() < 0.05 && (w1 - (1.0 - want)).abs() < 0.05, "{d}: ({w0}, {w1})");
+        }
+    }
+
     #[test]
     fn gpu_update_matches_cpu() {
         let cfg = crate::config::Config::load();

@@ -17,6 +17,8 @@ struct Params {
     extra: vec4<f32>,
     // the zone's area light (DAT_106175ac, area_light.md)
     area: vec4<f32>,
+    // FUN_100467e0's light: the background light's travel direction (world), w = the light count (0 or 1)
+    light: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> p: Params;
@@ -214,6 +216,22 @@ fn world_of(b: u32, parent: u32) -> vec3<f32> {
     return (slot_mat(parent) * vec4<f32>(wp, 1.0)).xyz;
 }
 
+// FUN_10045d00 (CMoD3bElem vtable +0x44): 0 behind the camera (view z > 0), else the eye distance.
+fn cam_dist(b: u32, parent: u32) -> f32 {
+    let wp = world_of(b, parent);
+    if ((p.view * vec4<f32>(wp, 1.0)).z > 0.0) { return 0.0; }
+    return distance(p.eye.xyz, wp);
+}
+
+// The op-0x6e crossfade factor (weight of key 0; key 1 gets 1 - f), the retail order of tests.
+fn crossfade(dd: f32, a: f32, nb: f32, c: f32, ee: f32) -> f32 {
+    if (dd < a) { return 0.0; }
+    if (dd < nb) { return 1.0 - (dd - nb) / (a - nb); }
+    if (dd < c) { return 1.0; }
+    if (dd < ee) { return 1.0 - (dd - c) / (ee - c); }
+    return 0.0;
+}
+
 @compute @workgroup_size(64)
 fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     let i = gid.x;
@@ -336,6 +354,17 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                     let n = (prm >> 5u) & 0x1ffu;
                     if (n != 0u) { x = fract(x * f32(n)); }
                     set_ef(b, E_MORPH_W + code - 0x1eu, key_t(b, s, x));
+                }
+            }
+            // FUN_100499d0 case 0x1004b181: keys 0 / 1 by camera distance (CMoD3bElem only, IsType 0xf).
+            case 0x6eu: {
+                if (el[b + E_KIND] == DK_MORPH) {
+                    let dd = cam_dist(b, parent);
+                    if (dd != 0.0) {
+                        let f = crossfade(dd, opf(r), opf(r + 1u), opf(r + 2u), opf(r + 3u));
+                        set_ef(b, E_MORPH_W, f);
+                        set_ef(b, E_MORPH_W + 1u, 1.0 - f);
+                    }
                 }
             }
             // The moon (FUN_10184dc0): frame = phase, rotation z = pi/2.
@@ -613,6 +642,24 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
             set_ef(b, E_MORPH_PREV + q, ef(b, E_MORPH_W + q));
         }
     }
+    // FUN_100467e0 (op-1 flag 16 on a D3b or D3m): the light matrix B = the element's view rotation (+0xa0's base),
+    // with a parent (generator +0xdf bit 1 clear) B Ry(3 pi / 2) P^-1, or for orientation 1 / 2 with bit 0
+    // rot(V_b50) Ry(pi); the light's travel direction through it with the translation added (math +0x50).
+    if ((flags & 0x10000u) != 0u && (kind == DK_MORPH || kind == DK_MESH) && p.light.w > 0.0) {
+        var bm = mat4x4<f32>(vec4<f32>(xm[0].xyz, 0.0), vec4<f32>(xm[1].xyz, 0.0), vec4<f32>(xm[2].xyz, 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+        let r3 = rot_y(4.712389);
+        if (has_p && (el[b + E_GEN_BITS] & 2u) == 0u) {
+            bm = inverse4(pm) * mat4x4<f32>(vec4<f32>(r3[0], 0.0), vec4<f32>(r3[1], 0.0), vec4<f32>(r3[2], 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0)) * bm;
+        }
+        if (omode >= 1u && omode <= 2u && (flags & 1u) != 0u) {
+            let ry = rot_y(PI) * mat3x3<f32>(p.view[0].xyz, p.view[1].xyz, p.view[2].xyz);
+            bm = mat4x4<f32>(vec4<f32>(ry[0], 0.0), vec4<f32>(ry[1], 0.0), vec4<f32>(ry[2], 0.0), vec4<f32>(0.0, 0.0, 0.0, 1.0));
+        }
+        let l = normalize((bm * vec4<f32>(p.light.xyz, 1.0)).xyz);
+        outs[ob + 37u] = l.x;
+        outs[ob + 38u] = l.y;
+        outs[ob + 39u] = l.z;
+    }
     // CMoD3mSpecularElem (FUN_100412b0): the specular stage's texture matrix (bit 0: Rz(-a2) Ry(-(a1 + pi/2)) Rx(-a0),
     // times the camera rotation with bit 1; else Ry(-pi/2)) and its gain: the colour C (bit 0 clear: rgb = element x
     // specular / 128 per byte, wrapping) as 2 C over a 2D image, 1 when C is 0x80808080, 0 over a cube (its tinted copy
@@ -718,6 +765,10 @@ struct Draw {
     glyphs: array<vec4<f32>, 22>,
     // the scene view (world to view), for the ground projection's decal
     view: mat4x4<f32>,
+    // FUN_100467e0's light colour (the eased background light x its scale; w = the light count) and AMBIENT
+    // (FUN_10188e00: trunc(min(a, 1) x 128) / 255)
+    light_col: vec4<f32>,
+    ambient: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> d: Draw;
@@ -769,6 +820,11 @@ fn out_mat(o: u32) -> mat4x4<f32> {
 // View position to clip space with the projection depth bias (near and far pulled by f) and sky meshes past the
 // far plane kept at it.
 fn to_clip(vp: vec3<f32>, f: f32) -> vec4<f32> {
+    return to_clip_z(vp, f, true);
+}
+
+// The CMoDist / VuDist fan (variant 9) draws after pass 1 set ZBIAS 0 (RS 0x103530d0), which pass 2 keeps.
+fn to_clip_z(vp: vec3<f32>, f: f32, zbias: bool) -> vec4<f32> {
     var c = d.proj * vec4<f32>(vp, 1.0);
     if (f != 0.0) {
         let n = d.clip.x - f;
@@ -777,14 +833,15 @@ fn to_clip(vp: vec3<f32>, f: f32) -> vec4<f32> {
     }
     // D3DRS_ZBIAS 15 for the effect draw (FUN_10045950), as Wine's d3d8 maps it: -15 x 5e-6 in NDC depth
     // (inferred; D3D8 left the scale to the driver).
-    c.z = min(c.z - 7.5e-5 * c.w, c.w * 0.999999);
+    if (zbias) { c.z = c.z - 7.5e-5 * c.w; }
+    c.z = min(c.z, c.w * 0.999999);
     return c;
 }
 
 fn vout(e: u32, vp: vec3<f32>, color: vec4<f32>, uv: vec2<f32>, variant: u32) -> VOut {
     let o = e * OUT_WORDS;
     var out: VOut;
-    out.clip = to_clip(vp, douts[o + 24u]);
+    out.clip = to_clip_z(vp, douts[o + 24u], variant != 9u);
     out.color = color;
     out.uv = uv + vec2<f32>(douts[o + 20u], douts[o + 21u]);
     out.tf = vec4<f32>(douts[o + 16u], douts[o + 17u], douts[o + 18u], douts[o + 19u]);
@@ -800,13 +857,34 @@ fn hidden() -> VOut {
     return out;
 }
 
+// D3D8 fixed function for a lit D3b / D3m (op-1 flag 16): COLORVERTEX with the diffuse and ambient material from
+// the vertex colour, NORMALIZENORMALS off, so the normal goes through +0xa0's inverse transpose unnormalised (VIEW is
+// the identity during effects); one directional light from the update pass, AMBIENT from the env.
+fn fx_lit(e: u32, mv: mat4x4<f32>, n: vec3<f32>, cv: vec4<f32>) -> vec4<f32> {
+    let eb = e * E_WORDS;
+    let k = dels[eb + E_KIND];
+    if (d.light_col.w <= 0.0 || (dels[eb + E_FLAGS] & 0x10000u) == 0u || (k != DK_MORPH && k != DK_MESH)) { return cv; }
+    let o = e * OUT_WORDS;
+    let m = mat3x3<f32>(mv[0].xyz, mv[1].xyz, mv[2].xyz);
+    let cof = mat3x3<f32>(cross(m[1], m[2]), cross(m[2], m[0]), cross(m[0], m[1]));
+    let det = dot(m[0], cof[0]);
+    let nv = select(vec3<f32>(0.0), cof * n / det, det != 0.0);
+    let l = vec3<f32>(douts[o + 37u], douts[o + 38u], douts[o + 39u]);
+    let s = d.ambient.rgb + d.light_col.rgb * max(dot(nv, -l), 0.0);
+    return vec4<f32>(clamp(cv.rgb * s, vec3<f32>(0.0), vec3<f32>(1.0)), cv.a);
+}
+
 @vertex
 fn vs_mesh(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
     let e = inst / PER_ELEM;
     let o = e * OUT_WORDS;
     if (douts[o + 23u] < 0.5) { return hidden(); }
-    let vp = (out_mat(o) * vec4<f32>(v.pos, 1.0)).xyz;
-    return vout(e, vp, v.color, v.uv, inst % PER_ELEM);
+    let mv = out_mat(o);
+    let vp = (mv * vec4<f32>(v.pos, 1.0)).xyz;
+    let variant = inst % PER_ELEM;
+    var col = v.color;
+    if (variant <= 1u) { col = fx_lit(e, mv, v.normal, v.color); }
+    return vout(e, vp, col, v.uv, variant);
 }
 
 fn svert(i: u32) -> VIn {
@@ -1179,6 +1257,7 @@ struct MorphV {
     pos: vec3<f32>,
     color: vec4<f32>,
     uv: vec2<f32>,
+    normal: vec3<f32>,
 };
 
 fn morph_vertex(e: u32, o: u32, k: u32) -> MorphV {
@@ -1197,6 +1276,18 @@ fn morph_vertex(e: u32, o: u32, k: u32) -> MorphV {
         let a = keys + (q * nv + pi) * 3u;
         m.pos = m.pos + douts[o + 32u + q] * vec3<f32>(bitcast<f32>(mdata[a]), bitcast<f32>(mdata[a + 1u]), bitcast<f32>(mdata[a + 2u]));
     }
+    // FUN_1003f8a0: the normal blended the same way from the packed key normals (10 bits each / 512), not renormalised.
+    let nn = mdata[base + 2u];
+    let ni = mdata[c + 1u];
+    let norms = keys + kk * nv * 3u;
+    m.normal = vec3<f32>(0.0);
+    if (ni < nn) {
+        for (var q = 0u; q < min(kk, 5u); q = q + 1u) {
+            let w = mdata[norms + q * nn + ni];
+            let v = vec3<f32>(f32(i32(w << 22u) >> 22u), f32(i32(w << 12u) >> 22u), f32(i32(w << 2u) >> 22u)) / 512.0;
+            m.normal = m.normal + douts[o + 32u + q] * v;
+        }
+    }
     let col = mdata[c + 2u];
     m.color = vec4<f32>(f32(col & 0xffu), f32((col >> 8u) & 0xffu), f32((col >> 16u) & 0xffu), f32(col >> 24u)) / 255.0;
     m.uv = vec2<f32>(bitcast<f32>(mdata[c + 3u]), bitcast<f32>(mdata[c + 4u]));
@@ -1211,9 +1302,10 @@ fn vs_morph(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -
     let m = morph_vertex(e, o, k);
     if (!m.ok) { return hidden(); }
     let atest = select(7u, 8u, (dels[e * E_WORDS + E_GLARE] & 1u) != 0u);
-    let vp = (out_mat(o) * vec4<f32>(m.pos, 1.0)).xyz;
-    // The D3b draw doubles the corner colour (clamped).
-    return vout(e, vp, min(2.0 * m.color, vec4<f32>(1.0)), m.uv, atest);
+    let mv = out_mat(o);
+    let vp = (mv * vec4<f32>(m.pos, 1.0)).xyz;
+    // The D3b draw doubles the corner colour (clamped), then lights it.
+    return vout(e, vp, fx_lit(e, mv, m.normal, min(2.0 * m.color, vec4<f32>(1.0))), m.uv, atest);
 }
 
 // CMoDistMorphElem (FUN_10043590): the morph drawn shifted by (off, off, 0) in model space, each vertex sampling the

@@ -323,6 +323,45 @@ pub fn wgsl_consts() -> String {
     s
 }
 
+#[cfg(test)]
+/// Op 0x6e's weight of key 0 at eye distance `d` for the record (a, b, c, e): key 1 below a and from e, key 0 from
+/// b to c, linear between (the retail order of tests).
+pub fn crossfade_ref(d: f32, a: f32, b: f32, c: f32, e: f32) -> f32 {
+    if d < a {
+        0.0
+    } else if d < b {
+        1.0 - (d - b) / (a - b)
+    } else if d < c {
+        1.0
+    } else if d < e {
+        1.0 - (d - c) / (e - c)
+    } else {
+        0.0
+    }
+}
+
+/// FUN_10188e00 mode 0: AMBIENT bytes trunc(min(a, 1) x 128), as colours.
+pub fn ambient_ref(a: glam::Vec3) -> glam::Vec3 {
+    a.min(glam::Vec3::ONE).map(|x| (x * 128.0).trunc() / 255.0)
+}
+
+#[cfg(test)]
+/// FUN_100467e0 + D3D8 fixed function, one light: the light matrix B from the view rotation `v`, a parent `p` (none
+/// with +0xdf bit 1), the travel direction `dir` through it, then sat(Cv Ga + Cv Ld max(N.L, 0)) with N through
+/// `mv`'s inverse transpose, unnormalised.
+pub fn fx_lit_ref(cv: glam::Vec3, ambient: glam::Vec3, light: glam::Vec3, dir: glam::Vec3, v: glam::Mat4, p: Option<glam::Mat4>, mv: glam::Mat3, n: glam::Vec3) -> (glam::Vec3, glam::Vec3) {
+    use glam::{Mat4, Vec4};
+    let mut b = Mat4::from_cols(v.x_axis.truncate().extend(0.0), v.y_axis.truncate().extend(0.0), v.z_axis.truncate().extend(0.0), Vec4::W);
+    if let Some(p) = p {
+        b = p.inverse() * Mat4::from_rotation_y(4.712389) * b;
+    }
+    let l = (b * dir.extend(1.0)).truncate().normalize();
+    let det = mv.determinant();
+    let nv = if det != 0.0 { mv.inverse().transpose() * n } else { glam::Vec3::ZERO };
+    let s = ambient_ref(ambient) + light * nv.dot(-l).max(0.0);
+    ((cv * s).clamp(glam::Vec3::ZERO, glam::Vec3::ONE), l)
+}
+
 /// The update stream on the CPU, for checking the GPU pass (render/effects.wgsl `update`) in tests; the same ops
 /// and the same order.
 #[cfg(test)]
@@ -412,6 +451,17 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool, Option
                 e.set(w::UV + 1, e.f(w::UV + 1) + of(1) * dt);
                 e.0[w::STATE] |= st::SCROLL_V;
             }
+            // Case 0x1004b181: a D3b's keys 0 / 1 by camera distance (0 behind the camera: unchanged).
+            0x6e if e.0[w::KIND] == dk::MORPH => {
+                let wp = world(e);
+                let behind = f.view.transform_point3(wp).z > 0.0;
+                let dd = if behind { 0.0 } else { (f.eye - wp).length() };
+                if dd != 0.0 {
+                    let g = crossfade_ref(dd, of(1), of(2), of(3), of(4));
+                    e.set(w::MORPH_W, g);
+                    e.set(w::MORPH_W + 1, 1.0 - g);
+                }
+            }
             // FUN_100499d0 case 0x1004a0a2: kept below near, faded to far, else 0 (near is tested first).
             0x2e => {
                 let d = (f.eye - world(e)).length();
@@ -447,5 +497,47 @@ pub fn update_ref(e: &mut Elem, ops: &[u32], key: &dyn Fn(u32, f32, bool, Option
             _ => {}
         }
         ip += len;
+    }
+}
+
+#[cfg(test)]
+mod lit_tests {
+    use super::{ambient_ref, crossfade_ref, fx_lit_ref};
+    use glam::{Mat3, Mat4, Vec3};
+
+    fn lit(mv: Mat3, n: Vec3, p: Option<Mat4>) -> (f32, Vec3) {
+        let (c, l) = fx_lit_ref(Vec3::splat(128.0 / 255.0), Vec3::splat(80.0 / 255.0), Vec3::splat(192.0 / 255.0 * 1.4), Vec3::Y, Mat4::IDENTITY, p, mv, n);
+        (c.x, l)
+    }
+
+    /// fx_element_render_spec 1.2's worked numbers: Cv 0x80, ambient 0x50 (Ga 40 / 255), light 0xc0 x 1.4.
+    #[test]
+    fn lit_cases() {
+        let close = |a: f32, b: f32| (a - b).abs() < 1e-4;
+        assert!(close(lit(Mat3::IDENTITY, Vec3::NEG_Y, None).0, 0.60786));
+        assert!(close(lit(Mat3::from_diagonal(Vec3::splat(1.5)), Vec3::NEG_Y, None).0, 0.43149));
+        assert!(close(lit(Mat3::IDENTITY, Vec3::Y, None).0, 0.07874));
+        let (c, l) = lit(Mat3::IDENTITY, Vec3::NEG_Y, Some(Mat4::from_translation(Vec3::new(100.0, 0.0, 0.0))));
+        assert!(close(c, 0.08403) && (l - Vec3::new(-0.99995, 0.0099995, 0.0)).length() < 1e-5, "{c} {l}");
+    }
+
+    #[test]
+    fn ambient_bytes() {
+        assert_eq!(ambient_ref(Vec3::splat(80.0 / 255.0)).x * 255.0, 40.0);
+        assert_eq!(ambient_ref(Vec3::ONE).x * 255.0, 128.0);
+        assert!((ambient_ref(Vec3::splat(0.999)).x * 255.0 - 127.0).abs() < 1e-4);
+    }
+
+    /// Op 0x6e: (11, 14, 100, 120) and (11, 13, 22, 28).
+    #[test]
+    fn crossfade_6e() {
+        let r = |d: f32| crossfade_ref(d, 11.0, 14.0, 100.0, 120.0);
+        for (d, w) in [(5.0, 0.0), (11.0, 0.0), (12.5, 0.5), (14.0, 1.0), (50.0, 1.0), (110.0, 0.5), (120.0, 0.0), (130.0, 0.0)] {
+            assert!((r(d) - w).abs() < 1e-5, "{d}: {}", r(d));
+        }
+        let r = |d: f32| crossfade_ref(d, 11.0, 13.0, 22.0, 28.0);
+        for (d, w) in [(12.0, 0.5), (20.0, 1.0), (25.0, 0.5), (30.0, 0.0)] {
+            assert!((r(d) - w).abs() < 1e-5, "{d}: {}", r(d));
+        }
     }
 }

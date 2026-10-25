@@ -9789,6 +9789,7 @@ impl App {
                         play_fx_sound(a, c);
                     }
                     eg.set_lights(&r.lights);
+                    eg.set_light(r.lighting.as_ref().map(|l| (l.dir, l.diffuse, l.ambient)));
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);

@@ -81,6 +81,18 @@ fn needs_no_resource(k: u8) -> bool {
 /// resolve (retail returns without emitting).
 /// `me`: whether the instance's actor1 / actor2 is our own player (emission op 0x82).
 #[allow(clippy::too_many_arguments)]
+/// Generator +0xdf bit 1 (asm 0x10047e42..0x10047f13): set at its start only for these door parts, whose lighting then
+/// skips the parent branch of FUN_100467e0.
+fn lit_parent_off(file: u32, name: [u8; 4]) -> bool {
+    let n = &name[..];
+    match file {
+        83895 | 83896 | 83903 | 83904 => [b"0b11", b"0b12", b"0b21", b"0b22", b"0b31", b"0b32"].iter().any(|x| &x[..] == n),
+        83897 => n == b"pb41",
+        83905..=83908 => [b"0b10", b"0b11", b"0b12", b"0b20", b"0b21", b"0b22"].iter().any(|x| &x[..] == n),
+        _ => false,
+    }
+}
+
 pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f: &Frame, rng: &mut Rng, ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>, me: [bool; 2]) -> Option<Spawn> {
     let lib = inst.src.0;
     let from = inst.src.1;
@@ -188,7 +200,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     e.0[w::STATE] = st::ALIVE | if inst.flags & 0x2000_0000 != 0 { st::BATCHED } else { 0 } | if matches!(draw, Draw::None) { 0 } else { st::HAS_RES };
     inst.emitted += 1;
     let batched = inst.flags & 0x2000_0000 != 0;
-    e.0[w::GEN_BITS] = (inst.de as u32) << 8;
+    e.0[w::GEN_BITS] = (inst.de as u32) << 8 | lit_parent_off(reg.libs[lib].file_id, inst.name) as u32 * 2;
     e.0[w::KIND] = match draw {
         // FUN_10055340: key = the generator's 4cc; FUN_10171720 finds its table entry (none: it does nothing).
         Draw::None if res_kind == 0x47 => {

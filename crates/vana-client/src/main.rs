@@ -1127,6 +1127,7 @@ fn main() -> Result<()> {
                     let mut post = |gpu: &render::Gpu, enc: &mut wgpu::CommandEncoder, (color, color_tex): (&wgpu::TextureView, &wgpu::Texture), depth: &wgpu::TextureView, cam: &render::Camera, l: Option<&dat::weather::Lighting>, zr: &render::ZoneRenderer| {
                         let eg = eg_keep.get_or_insert_with(|| render::effects::EffectsGpu::new(gpu, wgpu::TextureFormat::Rgba8Unorm));
                         eg.set_lights(&zr.lights);
+                        eg.set_light(l.map(|l| (l.dir, l.diffuse, l.ambient)));
                         fx.reg.light_keys = zr.light_keys.clone();
                         let view = cam.view();
                         let mut view_rot = view;
