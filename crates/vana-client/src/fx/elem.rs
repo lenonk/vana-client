@@ -66,6 +66,8 @@ pub mod w {
     pub const SPEC_ANG: usize = 44;
     pub const SPEC_COL: usize = 47;
     pub const SPEC_BITS: usize = 48;
+    /// The ground projection's decal blend (+0x198, emission op 0x43).
+    pub const GP_BLEND: usize = 44;
     /// Emission op 0x8e: the ground frame FUN_100d3750 multiplied into the local matrix (columns side, down, front).
     pub const GROUND: usize = 54;
     pub const SLOTS: usize = 64;
@@ -109,6 +111,8 @@ pub mod dk {
     pub const DIST_MODEL: u32 = 10;
     /// CMoDistRingElem (ring + 0x100000): the S-gon rings over the scene copy at their own screen points.
     pub const DIST_RING: u32 = 11;
+    /// D3m + 0x200000 (FUN_10040e70): drawn top-down into an image painted onto the collision faces around it.
+    pub const GROUND_PROJ: u32 = 12;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -275,6 +279,8 @@ pub fn wgsl_consts() -> String {
         ("DK_RING", dk::RING as usize),
         ("DK_DIST_MODEL", dk::DIST_MODEL as usize),
         ("DK_DIST_RING", dk::DIST_RING as usize),
+        ("DK_GROUND_PROJ", dk::GROUND_PROJ as usize),
+        ("E_GP_BLEND", w::GP_BLEND),
         ("E_RING_R", w::RING_R),
         ("E_RING_C", w::RING_C),
         ("E_RING_SR", w::RING_SR),

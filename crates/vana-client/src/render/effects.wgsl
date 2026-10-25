@@ -645,6 +645,17 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
         outs[ob + 42u] = g.y;
         outs[ob + 43u] = g.z;
     }
+    // The ground projection: its local 3x3 (elem +0x60) for the image, its world position for the decal.
+    if (kind == DK_GROUND_PROJ) {
+        for (var k = 0u; k < 3u; k = k + 1u) {
+            outs[ob + 32u + 3u * k] = l3[k].x;
+            outs[ob + 33u + 3u * k] = l3[k].y;
+            outs[ob + 34u + 3u * k] = l3[k].z;
+        }
+        outs[ob + 25u] = wpos.x;
+        outs[ob + 26u] = wpos.y;
+        outs[ob + 27u] = wpos.z;
+    }
     // Batched particles (d3a_particles.md 4.4 / 4.5): count, t, placement M1 = parent rotation x inverse(V_b90).
     if (kind == DK_BATCHED) {
         let nn = el[b + E_PART_N];
@@ -704,6 +715,8 @@ struct Draw {
     clip: vec4<f32>,
     // "menu    dmgnum" glyphs 0..10: UV rect, then (width, height, 0, 0) in units
     glyphs: array<vec4<f32>, 22>,
+    // the scene view (world to view), for the ground projection's decal
+    view: mat4x4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> d: Draw;
@@ -922,6 +935,42 @@ fn screen_uv(vp: vec3<f32>) -> vec2<f32> {
     var w = abs(c.w);
     if (w == 0.0) { w = 1.0; }
     return vec2<f32>(0.5 + 0.5 * c.x / w, 0.5 - 0.5 * c.y / w);
+}
+
+// D3m + 0x200000 (FUN_10040e70 / FUN_10054d70): the mesh with its local matrix only (no translation), scaled 0.25,
+// seen from 2 above looking down (LookAtRH, up (0, 0, -1)) through the scene's own projection, into a 256x256 image.
+@vertex
+fn vs_mesh_rt(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let l3 = mat3x3<f32>(vec3<f32>(douts[o + 32u], douts[o + 33u], douts[o + 34u]), vec3<f32>(douts[o + 35u], douts[o + 36u], douts[o + 37u]), vec3<f32>(douts[o + 38u], douts[o + 39u], douts[o + 40u]));
+    let q = 0.25 * (l3 * v.pos);
+    let vp = vec3<f32>(-q.x, -q.z, -2.0 - q.y);
+    var out = vout(e, vp, v.color, v.uv, inst % PER_ELEM);
+    out.clip = d.proj * vec4<f32>(vp, 1.0);
+    return out;
+}
+
+// FUN_10182700: the collision faces around the element, diffuse 0xff808080, UV = (world xz - c xz) x 0.1 + 0.5 over the
+// image (CLAMP), the blend of op 0x43 (+0x198) and the TFACTOR of the image's draw ('D' rule of +0x16c). Variant 13.
+struct DIn {
+    @location(0) pos: vec3<f32>,
+};
+
+@vertex
+fn vs_decal(v: DIn, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let c = vec3<f32>(douts[o + 25u], douts[o + 26u], douts[o + 27u]);
+    let vp = (d.view * vec4<f32>(v.pos, 1.0)).xyz;
+    var out = vout(e, vp, vec4<f32>(128.0 / 255.0, 128.0 / 255.0, 128.0 / 255.0, 1.0), vec2<f32>(0.0), 13u);
+    out.uv = (v.pos.xz - c.xz) * 0.1 + 0.5;
+    let eb = e * E_WORDS;
+    if ((dels[eb + E_BLEND] & 0xffu) == 0x44u && out.tf.a > 126.0 / 255.0) { out.tf.a = 1.0; }
+    out.mode.y = dels[eb + E_GP_BLEND];
+    return out;
 }
 
 // CMoD3mSpecularElem (FUN_100412b0): the specular stage reads the camera-space normal (NORMALIZENORMALS, the
@@ -1207,6 +1256,11 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
         rgb = t;
         a = sat(select(4.0, 2.0, mode == 0x44u) * (128.0 / 255.0) * sat(2.0 * dd.a * f.a));
+    } else if (variant == 13u) {
+        // The ground decal: the image draw's stages (0x103524a8) over the image, which is not alpha-doubled.
+        let t = textureSample(tex, samp, i.uv);
+        rgb = sat3(2.0 * sat3(2.0 * dd.rgb * t.rgb) * f.rgb);
+        a = sat(4.0 * sat(2.0 * dd.a * t.a) * f.a);
     } else if (variant == 12u) {
         // DistRing: colour 2 x diffuse x copy, alpha 4 x diffuse a x copy alpha (0x80).
         var t = textureSample(tex, samp, i.uv).rgb;
@@ -1230,7 +1284,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u || variant == 12u) && (flags & 0x2000000u) == 0u) {
+    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u || variant == 12u || variant == 13u) && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }

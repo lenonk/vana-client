@@ -7852,3 +7852,23 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - 0xb1 / 0xb2 (FUN_100618a0): actor1 / actor2 dead (status 2 / 3): model colour 0x80808080 at once (Raise and the
   like). Actors::status (the client's placement status).
 
+## Effects: the ground projection (D3m + 0x200000, emission op 0x43) (2026-10-25; spec fx_groundproj_spec.md)
+
+- FUN_10040e70 / FUN_10054d70: the element's mesh is drawn with its local 3x3 only (no translation), scaled 0.25, seen
+  from 2.0 above looking down (up (0, 0, -1)) through the scene's own projection (unchanged, so the image is mirrored
+  in x and squashed in x by the screen aspect: a retail quirk, kept), into a 256x256 target cleared to 0 (depth 1),
+  under the mesh's own +0x16c states, colour and alpha written.
+- FUN_10182700 then paints that image on the collision faces of the MZB cells around the element (its cell, truncated,
+  and the 8 neighbours clamped to the grid; z outer, x inner; each listed run in order, repeats kept, at most 1501
+  per run): only geometry word 0 faces whose stored normal through the object matrix (not the normal matrix) has
+  y <= 0. UV = (world xz - element xz) x 0.1 + 0.5, CLAMP; diffuse 0xff808080; the stages left over from the image
+  draw (0x103524a8: rgb = 2 x sat(2 x d x T) x TF, a = 4 x sat(2 x d.a x T.a) x TF.a, T not alpha-doubled); the
+  blend +0x198 set by emission op 0x43 (u16 @4, default 0x48; a no-op on the other element classes); fog black for
+  0x48. Drawn at the element's turn in the effect order, depth-tested against the scene.
+- Ours: Draw::GroundProj, dk 12, an Rgba8Unorm 256x256 array layer per projection this frame (render/effects.rs
+  gp_layers, vs_mesh_rt with a second draw uniform without the gamma output), vs_decal / fs variant 13. The faces are
+  gathered on the CPU (Ground::decal_tris) only when the element enters another cell, from the readback position
+  (a frame late), not per frame on the GPU as the spec's plan had it. Collision::decal marks the eligible faces.
+- Seen offscreen: 3400 (weapon skill 0) ban_/po01, nam0, nam1, mjn0 / mjn1 (the magic circle) paint the floor of
+  zone 230. fx-shot's stand-in actors now carry the zone's ground (ground_hit, decal cells).
+

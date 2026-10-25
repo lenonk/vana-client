@@ -51,6 +51,13 @@ pub trait Actors {
     fn ground_hit(&self, _from: Vec3, _to: Vec3) -> Option<Vec3> {
         None
     }
+    /// The ground projection's cells around a world point, and their paintable faces (client/ground.rs).
+    fn decal_cell(&self, _c: Vec3) -> Option<(usize, usize)> {
+        None
+    }
+    fn decal_tris(&self, _c: Vec3) -> Vec<Vec3> {
+        Vec::new()
+    }
     /// The actor's status (2 / 3 dead, scheduler ops 0xb1 / 0xb2).
     fn status(&self, _id: u32) -> u8 {
         0
@@ -148,6 +155,8 @@ pub enum Draw {
     VuDist(u32),
     /// CMoDistRingElem (ring + 0x100000, FUN_10043720).
     DistRing,
+    /// D3m + 0x200000 (FUN_10040e70): the mesh rendered top-down and painted onto the ground (render/effects.rs).
+    GroundProj(u32),
 }
 
 /// A damage number for kind 0x5c elements: glyphs ('0'..'9' = 0..9, ':' = 10, up to 16) and the message colour
@@ -187,6 +196,8 @@ pub struct ElemCpu {
     pub quake: Option<Quake>,
     /// CMoD3mSpecularElem's specular image.
     pub spec: Option<SpecTex>,
+    /// A ground projection's decal: its blend (+0x198), the cell its faces were taken for, and those faces.
+    pub gp: Option<GroundDecal>,
     pub inst: usize,
     pub serial: u32,
     pub life: f32,
@@ -393,6 +404,15 @@ pub struct Registry {
     missed: HashSet<(usize, u32)>,
     /// fx-sweep's record of what runs skipped or could not resolve (off in the client).
     pub audit: Option<Audit>,
+}
+
+/// A ground projection's decal (FUN_10182700): blend +0x198, and the collision faces of the 3x3 cells around the
+/// element (world vertices), taken again when it moves into another cell.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroundDecal {
+    pub blend: u16,
+    pub cell: Option<(usize, usize)>,
+    pub verts: Vec<Vec3>,
 }
 
 /// CMoD3mSpecularElem's specular image (op 0x55, else DAT 0's `cubemap spec`): (library, texture index), a cube
@@ -821,6 +841,8 @@ pub struct Effects {
     /// This frame's op 0x5f camera kicks (v x factor, element order) and rumble (the sum of v, for a pad backend).
     pub quakes: Vec<f32>,
     pub rumble: i32,
+    /// Bumped whenever a ground projection's faces change (the renderer re-uploads them).
+    pub decal_version: u64,
     /// Footstep dust to start next tick: generator and actor; actors that left a footprint.
     dust: Vec<(Ref, u32)>,
     prints: Vec<u32>,
@@ -911,6 +933,7 @@ impl Effects {
             in_event: false,
             quakes: Vec::new(),
             rumble: 0,
+            decal_version: 0,
             dust: Vec::new(),
             prints: Vec::new(),
             sound_cmds: Vec::new(),
@@ -1420,6 +1443,7 @@ impl Effects {
             }
         }
         self.step_quakes(f);
+        self.step_decals(actors);
         for i in 0..self.insts.len() {
             let Some(inst) = self.insts[i].as_mut() else { continue };
             attach(inst, f);
@@ -1617,6 +1641,19 @@ impl Effects {
             self.rumble += v;
             if q.factor != 0.0 {
                 self.quakes.push(v as f32 * q.factor);
+            }
+        }
+    }
+
+    /// Ground projections: their faces follow the element's cell (its world position from the readback).
+    fn step_decals(&mut self, actors: &dyn Actors) {
+        for c in self.elems.iter_mut().flatten() {
+            let (Some(gp), Some(b)) = (c.gp.as_mut(), c.back.as_ref()) else { continue };
+            let cell = actors.decal_cell(b.world);
+            if cell != gp.cell {
+                gp.cell = cell;
+                gp.verts = actors.decal_tris(b.world);
+                self.decal_version += 1;
             }
         }
     }
@@ -2034,6 +2071,7 @@ impl Effects {
                 Draw::DistModel(id) => format!("distmodel {id}"),
                 Draw::VuDist(n) => format!("vudist x{n}"),
                 Draw::DistRing => "distring".into(),
+                Draw::GroundProj(id) => format!("groundproj {id}"),
                 Draw::DamValue => "damv".into(),
                 Draw::None => "none".into(),
             };

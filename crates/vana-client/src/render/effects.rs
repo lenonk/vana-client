@@ -45,7 +45,11 @@ struct DrawU {
     clip: [f32; 4],
     /// "menu    dmgnum" sprites 0..10 ('0'..'9', ':'): UV rect, then (width, height) in units (dmgnum_glyphs).
     glyphs: [[f32; 4]; 22],
+    view: [[f32; 4]; 4],
 }
+
+/// The ground projections' images: 256x256 (FUN_10044270's DAT_1047bb88).
+const GP_SIZE: u32 = 256;
 
 /// FUN_10120730 for sprites 0..10 of "menu    dmgnum": the cell's UV rect over its texture and its size,
 /// (corner x1 - x0 - 1, corner y2 - y0 - 1) (FUN_1011fa80).
@@ -242,6 +246,16 @@ pub struct EffectsGpu {
     flare_u: wgpu::Buffer,
     params: wgpu::Buffer,
     draw_u: wgpu::Buffer,
+    /// The same with gamma output off, for the ground projections' images; their bind group.
+    draw_u_rt: wgpu::Buffer,
+    draw_group_rt: Option<wgpu::BindGroup>,
+    gp_rt_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    gp_decal_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    /// The image array (a layer per projection this frame), its layer views and groups (CLAMP), the shared depth.
+    gp_rt: Option<(wgpu::Texture, Vec<wgpu::TextureView>, Vec<wgpu::BindGroup>)>,
+    gp_depth: wgpu::TextureView,
+    /// The decal faces of every projection in one buffer: its version, and (first vertex, count) per element.
+    gp_vb: Option<(wgpu::Buffer, u64, HashMap<u32, (u32, u32)>)>,
     elems: wgpu::Buffer,
     outs: wgpu::Buffer,
     back: wgpu::Buffer,
@@ -403,6 +417,23 @@ impl EffectsGpu {
             })
         };
         let mut spec_pipes = HashMap::new();
+        // The ground projection: its image (the mesh pipeline into Rgba8Unorm, colour and alpha written) and its decal.
+        let gp_pipe = |vs_entry: &str, buffers: &[Option<wgpu::VertexBufferLayout>], class: usize, zwrite: bool, target: wgpu::TextureFormat, mask: wgpu::ColorWrites| {
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("effects ground projection"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState { module: &dmod, entry_point: Some(vs_entry), compilation_options: Default::default(), buffers },
+                primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+                depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(zwrite), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: Default::default(), bias: Default::default() }),
+                multisample: Default::default(),
+                fragment: Some(wgpu::FragmentState { module: &dmod, entry_point: Some("fs"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format: target, blend: Some(blend_state(class)), write_mask: mask })] }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let dbuf = [Some(wgpu::VertexBufferLayout { array_stride: 12, step_mode: wgpu::VertexStepMode::Vertex, attributes: &wgpu::vertex_attr_array![0 => Float32x3] })];
+        let mut gp_rt_pipes = HashMap::new();
+        let mut gp_decal_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
@@ -412,6 +443,8 @@ impl EffectsGpu {
                 distmodel_pipes.insert((class, zwrite), pipe("vs_distmodel", &vbuf, class, zwrite));
                 distring_pipes.insert((class, zwrite), pipe("vs_distring", &[], class, zwrite));
                 spec_pipes.insert((class, zwrite), spec_pipe(class, zwrite));
+                gp_rt_pipes.insert((class, zwrite), gp_pipe("vs_mesh_rt", &vbuf, class, zwrite, wgpu::TextureFormat::Rgba8Unorm, wgpu::ColorWrites::ALL));
+                gp_decal_pipes.insert((class, zwrite), gp_pipe("vs_decal", &dbuf, class, zwrite, format, wgpu::ColorWrites::COLOR));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -422,6 +455,19 @@ impl EffectsGpu {
         let n = MAX_ELEMS as u64;
         let params = buf("effects params", std::mem::size_of::<Params>() as u64, U::UNIFORM | U::COPY_DST);
         let draw_u = buf("effects draw", std::mem::size_of::<DrawU>() as u64, U::UNIFORM | U::COPY_DST);
+        let draw_u_rt = buf("effects draw, ground images", std::mem::size_of::<DrawU>() as u64, U::UNIFORM | U::COPY_DST);
+        let gp_depth = device
+            .create_texture(&wgpu::TextureDescriptor {
+                label: Some("effects ground image depth"),
+                size: wgpu::Extent3d { width: GP_SIZE, height: GP_SIZE, depth_or_array_layers: 1 },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: DEPTH_FORMAT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            })
+            .create_view(&Default::default());
         let flare_u = buf("effects flare", std::mem::size_of::<FlareU>() as u64, U::UNIFORM | U::COPY_DST);
         let elems = buf("effects elements", n * w::WORDS as u64 * 4, U::STORAGE | U::COPY_DST | U::COPY_SRC);
         let outs = buf("effects outs", n * OUT_WORDS as u64 * 4, U::STORAGE);
@@ -486,6 +532,13 @@ impl EffectsGpu {
             flare_u,
             params,
             draw_u,
+            draw_u_rt,
+            draw_group_rt: None,
+            gp_rt_pipes,
+            gp_decal_pipes,
+            gp_rt: None,
+            gp_depth,
+            gp_vb: None,
             elems,
             outs,
             back,
@@ -520,6 +573,29 @@ impl EffectsGpu {
         let view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, image.width, image.height, image.rgba.clone()), false);
         let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.sampler, &view);
         self.dmgnum = Some((g, dmgnum_glyphs(lib, image.width as f32, image.height as f32)));
+    }
+
+    /// The ground images' array: at least `n` layers (grown by powers of two), a view and a CLAMP group per layer.
+    fn gp_layers(&mut self, gpu: &Gpu, n: u32) {
+        if self.gp_rt.as_ref().is_some_and(|(t, _, _)| t.size().depth_or_array_layers >= n) {
+            return;
+        }
+        let layers = n.next_power_of_two().max(4);
+        let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+            label: Some("effects ground images"),
+            size: wgpu::Extent3d { width: GP_SIZE, height: GP_SIZE, depth_or_array_layers: layers },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            view_formats: &[],
+        });
+        let views: Vec<wgpu::TextureView> = (0..layers)
+            .map(|k| tex.create_view(&wgpu::TextureViewDescriptor { dimension: Some(wgpu::TextureViewDimension::D2), base_array_layer: k, array_layer_count: Some(1), ..Default::default() }))
+            .collect();
+        let groups = views.iter().map(|v| Self::tex_group(&gpu.device, &self.tex_layout, &self.clamp_sampler, v)).collect();
+        self.gp_rt = Some((tex, views, groups));
     }
 
     /// FUN_10039e50 for a `cubemap ` image: every face black (rgb 0), face -Z (layer 5) the image.
@@ -694,6 +770,19 @@ impl EffectsGpu {
             }));
         }
         if redraw {
+            self.draw_group_rt = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("effects draw, ground images"),
+                layout: &self.draw_layout,
+                entries: &[
+                    wgpu::BindGroupEntry { binding: 0, resource: self.draw_u_rt.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 1, resource: self.outs.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 2, resource: self.elems.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 3, resource: self.parts.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 4, resource: self.sverts.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 5, resource: self.sframes.0.as_entire_binding() },
+                    wgpu::BindGroupEntry { binding: 6, resource: self.mdata.0.as_entire_binding() },
+                ],
+            }));
             self.draw_group = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("effects draw"),
                 layout: &self.draw_layout,
@@ -837,6 +926,26 @@ impl EffectsGpu {
                 self.spec_group(gpu, fx, sp);
             }
         }
+        // Ground projections: a layer each this frame, and the decal faces when any changed.
+        let gps: Vec<u32> = order.iter().copied().filter(|&e| e < self.count && fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::GroundProj(_)))).collect();
+        if !gps.is_empty() {
+            self.gp_layers(gpu, gps.len() as u32);
+        }
+        if self.gp_vb.as_ref().is_none_or(|v| v.1 != fx.decal_version) {
+            use wgpu::util::DeviceExt;
+            let mut verts: Vec<[f32; 3]> = Vec::new();
+            let mut ranges = HashMap::new();
+            for (e, c) in fx.elems.iter().enumerate() {
+                let Some(gp) = c.as_ref().and_then(|c| c.gp.as_ref()) else { continue };
+                ranges.insert(e as u32, (verts.len() as u32, gp.verts.len() as u32));
+                verts.extend(gp.verts.iter().map(|v| v.to_array()));
+            }
+            if verts.is_empty() {
+                verts.push([0.0; 3]);
+            }
+            let b = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("effects ground decal"), contents: bytemuck::cast_slice(&verts), usage: wgpu::BufferUsages::VERTEX });
+            self.gp_vb = Some((b, fx.decal_version, ranges));
+        }
         let Some(group) = self.draw_group.as_ref() else { return };
         let (color, depth, size) = target;
         let (proj, view, eye) = cam;
@@ -846,8 +955,40 @@ impl EffectsGpu {
             fog: [fog[0], fog[1].max(fog[0] + 1.0), self.linearize as u32 as f32, 0.0],
             clip: [clip[0], clip[1], size[0] as f32, size[1] as f32],
             glyphs: self.dmgnum.as_ref().map_or([[0.0; 4]; 22], |d| d.1),
+            view: view.to_cols_array_2d(),
         };
         gpu.queue.write_buffer(&self.draw_u, 0, bytemuck::bytes_of(&u));
+        let mut u_rt = u;
+        u_rt.fog[2] = 0.0;
+        gpu.queue.write_buffer(&self.draw_u_rt, 0, bytemuck::bytes_of(&u_rt));
+        // FUN_10040e70 steps 2-4: each projection's image, cleared to 0 (depth 1), the mesh as its own mode draws it.
+        let mut gp_layer: HashMap<u32, usize> = HashMap::new();
+        if let (Some((_, views, _)), Some(g_rt)) = (self.gp_rt.as_ref(), self.draw_group_rt.as_ref()) {
+            for (k, &e) in gps.iter().enumerate() {
+                let (Some(c), Some(view_k)) = (fx.elems[e as usize].as_ref(), views.get(k)) else { continue };
+                let Draw::GroundProj(id) = c.draw else { continue };
+                let Some(Some(m)) = self.meshes.get(id as usize) else { continue };
+                gp_layer.insert(e, k);
+                let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("effects ground image"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: view_k, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store } })],
+                    depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: &self.gp_depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Clear(1.0), store: wgpu::StoreOp::Discard }), stencil_ops: None }),
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                let class = blend_class(c.blend, !m.mmb).unwrap_or(2);
+                rp.set_pipeline(&self.gp_rt_pipes[&(class, c.flags & 0x1000 != 0)]);
+                rp.set_bind_group(0, g_rt, &[]);
+                rp.set_vertex_buffer(0, m.vb.slice(..));
+                let base = e * PER_ELEM;
+                for (tex, range, _) in &m.groups {
+                    let variant = if m.mmb { 2 } else { 0 } + tex.is_none() as u32;
+                    rp.set_bind_group(1, tex.and_then(|t| self.textures.get(&t)).unwrap_or(&self.white), &[]);
+                    rp.draw(range.clone(), base + variant..base + variant + 1);
+                }
+            }
+        }
         // Lens flares count their visible sky samples against this frame's scene depth first.
         let flares: Vec<u32> = fx.draw_order().into_iter().filter(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Sprite(id) if fx.reg.sprite_is_flare(id)))).collect();
         if !flares.is_empty() {
@@ -911,6 +1052,17 @@ impl EffectsGpu {
                         pass.draw(0..12, base..base + 1);
                     }
                     bound = None;
+                }
+                // FUN_10182700: the faces around the element with its image (CLAMP), in op 0x43's blend.
+                Draw::GroundProj(_) => {
+                    let (Some(&k), Some((vb, _, ranges)), Some((_, _, groups)), Some(gp)) = (gp_layer.get(&e), self.gp_vb.as_ref(), self.gp_rt.as_ref(), c.gp.as_ref().filter(|g| !g.verts.is_empty())) else { continue };
+                    let Some(&(first, n)) = ranges.get(&e).filter(|r| r.1 > 0) else { continue };
+                    let cl = blend_class(gp.blend, false).unwrap_or(class);
+                    pass.set_pipeline(&self.gp_decal_pipes[&(cl, c.flags & 0x1000 != 0)]);
+                    bound = None;
+                    pass.set_bind_group(1, &groups[k], &[]);
+                    pass.set_vertex_buffer(0, vb.slice(..));
+                    pass.draw(first..first + n, base..base + 1);
                 }
                 Draw::DistRing => {
                     let (Some(src), Some((copy, g))) = (copy_src, self.scene_copy.as_ref()) else { continue };

@@ -115,8 +115,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     } else {
         match remap(res_kind) {
             kind::D3M => match reg.resolve(lib, from, kind::D3M, name).map(|r| (r, true)).or_else(|| reg.resolve(lib, from, kind::MMB, name).map(|r| (r, false))) {
-                // The ground projection (0x200000) is never drawn as a plain mesh (its pass is not done yet).
-                Some(_) if flags & 0x20_0000 != 0 => Draw::None,
+                // The ground projection (0x200000, FUN_10040e70): never a plain mesh.
+                Some((r, _)) if flags & 0x20_0000 != 0 => reg.mesh(r).map(Draw::GroundProj).unwrap_or(Draw::None),
                 // DistModel (0x100000, FUN_10043320); an MMB in its place draws nothing (+0x179).
                 Some((r, true)) if flags & 0x10_0000 != 0 => reg.mesh(r).map(Draw::DistModel).unwrap_or(Draw::None),
                 Some(_) if flags & 0x10_0000 != 0 => Draw::None,
@@ -198,6 +198,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         Draw::DistModel(_) => dk::DIST_MODEL,
         Draw::VuDist(_) => dk::DIST,
         Draw::DistRing => dk::DIST_RING,
+        Draw::GroundProj(_) => dk::GROUND_PROJ,
         Draw::DamValue => {
             let d = inst.dam.as_ref().unwrap();
             let pack = |gs: &[u8]| gs.iter().enumerate().fold(0u32, |a, (k, &g)| a | (g as u32 & 0xf) << (4 * k));
@@ -648,6 +649,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.0[w::SPEC_BITS] = 32 | (op.u32(9) & 7) | if clamp { 8 } else { 0 } | if cube { 16 } else { 0 };
             }
             0x55 => {}
+            // vtable +0x38: the ground projection's decal blend +0x198 (u16 @4); a no-op on the other classes.
+            0x43 if matches!(draw, Draw::GroundProj(_)) => e.0[w::GP_BLEND] = op.u32(1) & 0xffff,
+            0x43 => {}
             // FUN_1004e8d0 0x10051b5b (any class): ring radii f32 @4.., colours @0x14.. (file RGBA), segments byte
             // @0x24, rings byte @0x25 + 2 (at most 4).
             0x3a => {
@@ -695,7 +699,11 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         (None, None) => inst.mslot,
     };
     e.0[w::PARENT] = frame;
+    if matches!(draw, Draw::GroundProj(_)) && e.0[w::GP_BLEND] == 0 {
+        e.0[w::GP_BLEND] = 0x48;
+    }
     let cpu = ElemCpu {
+        gp: matches!(draw, Draw::GroundProj(_)).then(|| crate::fx::GroundDecal { blend: e.0[w::GP_BLEND] as u16, cell: None, verts: Vec::new() }),
         quake: None,
         spec: spec_tex,
         inst: usize::MAX,

@@ -76,6 +76,8 @@ pub struct Ground {
     open: std::cell::RefCell<std::collections::HashSet<u32>>,
     /// Per triangle: the camera's rays pass it (cam_ray).
     cam_pass: Vec<bool>,
+    /// Per triangle: effect ground projections paint it (Collision::decal).
+    decal: Vec<bool>,
 }
 
 /// 4-unit cells centred on the origin, each listing (first triangle, count, resolved late) runs.
@@ -218,7 +220,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new() },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new() },
         }
     }
 
@@ -256,7 +258,46 @@ impl Ground {
         let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone() }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone() }
+    }
+
+    /// FUN_10182700's cells: the MZB cell of `c` (truncated) and its neighbours clamped to the grid; None without one.
+    fn decal_range(&self, c: Vec3) -> Option<(usize, usize, usize, usize)> {
+        let g = self.grid.as_ref()?;
+        let (cx, cz) = (((c.x + g.w as f32 * 2.0) * 0.25) as i32, ((c.z + g.h as f32 * 2.0) * 0.25) as i32);
+        let clamp = |v: i32, n: usize| if v < 0 { 0 } else { (v as usize).min(n.saturating_sub(1)) };
+        Some((clamp(cx - 1, g.w), clamp(cx + 1, g.w), clamp(cz - 1, g.h), clamp(cz + 1, g.h)))
+    }
+
+    /// The cells a ground projection at `c` paints (changes only when `c` moves to another cell).
+    pub fn decal_cell(&self, c: Vec3) -> Option<(usize, usize)> {
+        self.decal_range(c).map(|(x0, _, z0, _)| (x0, z0))
+    }
+
+    /// FUN_10182700's faces around `c`: z outer, x inner, each cell's listed runs in order (repeats kept), the
+    /// eligible triangles of each, at most 1501 per listing; world vertices, three a triangle.
+    pub fn decal_tris(&self, c: Vec3) -> Vec<Vec3> {
+        let (Some(g), Some((x0, x1, z0, z1))) = (self.grid.as_ref(), self.decal_range(c)) else { return Vec::new() };
+        let mut out = Vec::new();
+        for z in z0..=z1 {
+            for x in x0..=x1 {
+                for &k in g.cells.get(z * g.w + x).map_or(&[][..], |v| &v[..]) {
+                    let Some(&(first, count, _)) = g.entries.get(k as usize) else { continue };
+                    let mut n = 0;
+                    for t in first as usize..(first + count) as usize {
+                        if self.decal.get(t) != Some(&true) {
+                            continue;
+                        }
+                        out.extend_from_slice(&self.tris[t]);
+                        n += 1;
+                        if n > 1500 {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        out
     }
 
     /// FUN_1017ac40: a door's box is skipped while it is open (state 0), solid while closed.
@@ -733,7 +774,7 @@ mod tests {
         // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
         let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
         let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n] }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n] }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
