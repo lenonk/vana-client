@@ -81,6 +81,10 @@ pub trait Actors {
     fn status(&self, _id: u32) -> u8 {
         0
     }
+    /// The wade point in the world (actor+0x64c, attach point 0x35): the position, y the water surface while wading.
+    fn wade(&self, _id: u32) -> Option<Vec3> {
+        None
+    }
     /// The last foot contact in the world (actor+0x63c, attach point 0x34).
     fn foot(&self, _id: u32) -> Option<Vec3> {
         None
@@ -895,6 +899,10 @@ pub struct Effects {
     knock_table: [[f32; 3]; 8],
     /// Model +0x800: the footstep folder an actor's last step used (true = 'fser', the rain set), for op 0x78.
     foot_folder: HashMap<u32, bool>,
+    /// +0x9e8 / +0x808: the actor's wading ripple `i900` (None: the flag set without a clone).
+    wading: HashMap<u32, Option<usize>>,
+    /// Op 0x99: actor1's entity scale (+0x204).
+    pub entity_scales: Vec<(u32, f32)>,
     /// Messages that print now: (action, record, which: 0 main (op 0x2b, the action's end), 1 proc / 2 react (op 0x71)).
     pub action_prints: Vec<(crate::net::action::Action, usize, u8)>,
     /// Motion files to put on an actor's list (FUN_100d22a0 kind 6: weapon-skill files).
@@ -1042,6 +1050,8 @@ impl Effects {
             knocks_later: Vec::new(),
             knock_table: [[0.0; 3]; 8],
             foot_folder: HashMap::new(),
+            wading: HashMap::new(),
+            entity_scales: Vec::new(),
             action_prints: Vec::new(),
             motion_files: Vec::new(),
             effect_motions: Vec::new(),
@@ -1132,6 +1142,7 @@ impl Effects {
         }
         self.leaked.clear();
         self.weathers.clear();
+        self.wading.clear();
         self.tasks.clear();
         self.trails.clear();
         self.trails_dirty = true;
@@ -1218,6 +1229,36 @@ impl Effects {
             }
         }
         false
+    }
+
+    /// FUN_100d64d0 / FUN_100d6550: on water near the eye, `i900` from the actor's footstep folder (known from an
+    /// earlier frame, +0x800) cloned once on (actor, actor) and left running; off water it goes with its elements.
+    /// `folder`: this frame's fses / fser choice (Some(rain)), stored after the check as retail does.
+    pub fn wade(&mut self, id: u32, water: bool, near: bool, folder: Option<bool>) {
+        if water && near && !self.wading.contains_key(&id) {
+            let found = self.foot_folder.get(&id).copied().and_then(|rain| {
+                let l = self.zone_lib?;
+                let lib = &self.reg.libs[l];
+                let f = lib.tree.nodes.iter().position(|n| n.kind == kind::FOLDER && n.name == crate::dat::generator::fourcc(if rain { "fser" } else { "fses" }))?;
+                Some((l, lib.find_in(f, kind::GENERATOR, *b"i900")?))
+            });
+            // The flag is set even without the folder (no ripple until it clears).
+            let inst = found.and_then(|g| self.start(g, Owner::Step(id)));
+            if let Some(x) = inst.and_then(|i| self.insts[i].as_mut()) {
+                x.actors = [sched::Who::Actor(id); 2];
+            }
+            if inst.is_some() {
+                log::debug!("effects: wading ripple on {id:#x}");
+            }
+            self.wading.insert(id, inst);
+        } else if !water && let Some(inst) = self.wading.remove(&id) {
+            if let Some(i) = inst.filter(|&i| self.insts[i].as_ref().is_some_and(|x| &x.name == b"i900" && x.owner == Owner::Step(id))) {
+                self.kill(i);
+            }
+        }
+        if let Some(rain) = folder {
+            self.foot_folder.insert(id, rain);
+        }
     }
 
     /// The sub-area unloads (FUN_1017b110 -> FUN_100446a0): its generators' clones and its schedulers' tasks stop.

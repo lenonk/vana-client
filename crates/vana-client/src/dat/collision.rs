@@ -38,6 +38,12 @@ pub struct Entry {
     pub object: u32,
 }
 
+/// The water surface of an object's type-9 faces (the floor hit's collision +0x3414c): flags bits 6..25, signed,
+/// in 1/256 units.
+pub fn water_of(flags: u32) -> f32 {
+    ((flags << 6) as i32 >> 12) as f32 / 256.0
+}
+
 /// The object record a triangle is placed by.
 #[derive(Clone)]
 pub struct Object {
@@ -271,6 +277,18 @@ mod tests {
         crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(zone)).ok()?).ok()?.collision
     }
 
+    /// East Ronfaure's river (fx_point_specials_spec 2.4): the wade heights over its type-9 beds.
+    #[test]
+    fn east_ronfaure_water() {
+        let Some(c) = load(101) else { return };
+        let g = crate::client::ground::Ground::from_collision(&c, &[]);
+        let wade = |x: f32, y: f32, z: f32| g.wade(glam::Vec3::new(x, y, z));
+        assert_eq!(wade(458.558, -16.5, -316.667), Some(-17.0));
+        assert_eq!(wade(114.878, -57.75, 179.357), Some(-58.0));
+        assert_eq!(wade(498.667, -6.5, -500.727), Some(-7.0));
+        assert_eq!(wade(498.667, -6.5, -556.667), Some(0.0));
+    }
+
     /// What the sweep relies on: unit normals, faces wound against them (FUN_101688a0), and cells covering
     /// x 4i - 2w .. 4i - 2w + 4 (FUN_10167b10: cell = (x + half width) / 4).
     #[test]
@@ -304,5 +322,21 @@ mod tests {
         };
         let (inside, total) = meets(false);
         assert!(inside as f64 > total as f64 * 0.9 && (meets(true).0 as f64) < total as f64 * 0.1, "{inside} of {total} entries meet their cell");
+    }
+}
+
+#[cfg(test)]
+mod water_tests {
+    use super::water_of;
+
+    /// East Ronfaure's river levels, the map-key bits out of the way, Port San d'Oria, a Windurst object with none.
+    #[test]
+    fn water_heights() {
+        assert_eq!(water_of(0x03fe4000), -7.0);
+        assert_eq!(water_of(0x0ffe4000), -7.0);
+        assert_eq!(water_of(0x03f6d340), -36.69921875);
+        assert_eq!(water_of(0x03f18000), -58.0);
+        assert_eq!(water_of(0x00006640), 1.59765625);
+        assert_eq!(water_of(0x00000010), 0.0);
     }
 }

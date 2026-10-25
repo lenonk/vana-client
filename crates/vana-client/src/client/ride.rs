@@ -376,20 +376,36 @@ fn linked(w: &World, id: u32) -> Option<(&Riding, crate::dat::character::MountIn
     Some((r, w.actors.get(&(ANIMAL | id))?.character.as_ref()?.mount?))
 }
 
-/// FUN_100d4560: a mount rider's plate lift: -1.3 unlinked or with variant 0 / 6, else -0.5, the Buffalo (0x1d) and
-/// the Craklaw (0x25) by race.
-pub fn plate_lift(w: &World, id: u32) -> f32 {
+/// FUN_100d4560's d for a point on bone 0 by the applied status: 0x55 by the linked mount's variant k (-1.3
+/// unlinked or k 0 / 6, the Buffalo 0x1d and the Craklaw 0x25 by race, else -0.5), 5 -1.3, chairs 0x3f..0x53 -0.5.
+/// `mount` = (k, mount id); `race` the rider's (FUN_10084420).
+pub fn drop_for(status: u8, mount: Option<(u8, u8)>, race: u8) -> f32 {
     const BUFFALO: [f32; 9] = [0.0, 0.5, 0.5, 0.5, 1.1, -0.7, -0.7, 0.5, 0.05];
     const CRAKLAW: [f32; 9] = [0.0, 0.4, 0.4, 0.4, 0.4, -0.8, -0.8, 0.4, 0.4];
-    let Some((r, mi)) = linked(w, id) else { return -1.3 };
-    let k = mi.variant(r.race);
-    let race = (r.race as usize).min(8);
-    match r.model {
-        _ if k == 0 || k == 6 => -1.3,
-        Model::Mount(0x1d) => BUFFALO[race],
-        Model::Mount(0x25) => CRAKLAW[race],
-        _ => -0.5,
+    let r = (race as usize).min(8);
+    match (status, mount) {
+        (0x55, Some((k, id))) if k != 0 && k != 6 => match id {
+            0x1d => BUFFALO[r],
+            0x25 => CRAKLAW[r],
+            _ => -0.5,
+        },
+        (0x55 | 5, _) => -1.3,
+        (0x3f..=0x53, _) => -0.5,
+        _ => 0.0,
     }
+}
+
+/// The drop of actor `id` this frame (none for the animals, kind 0x54 / 1..4).
+pub fn bone0_drop(w: &World, id: u32, status: u8) -> f32 {
+    if id & ANIMAL != 0 {
+        return 0.0;
+    }
+    let mount = linked(w, id).and_then(|(r, mi)| match r.model {
+        Model::Mount(m) => Some((mi.variant(r.race), m)),
+        _ => None,
+    });
+    let race = w.rides.get(&id).map_or(0, |r| r.race);
+    drop_for(applied(w, id, status), mount, race)
 }
 
 /// FUN_1001ee60 riding: the height the camera looks at 0.6 of, the riding box (vtable +0x3c8) plus the linked mount's
@@ -442,6 +458,24 @@ pub fn points(w: &mut World, pts: Vec<(u64, Vec3)>) {
 
 #[cfg(test)]
 mod tests {
+    use super::drop_for;
+
+    #[test]
+    fn bone0_drops() {
+        assert_eq!(drop_for(5, None, 1), -1.3);
+        assert_eq!(drop_for(0x55, None, 1), -1.3);
+        assert_eq!(drop_for(0x55, Some((6, 2)), 1), -1.3);
+        assert_eq!(drop_for(0x55, Some((0, 34)), 1), -1.3);
+        assert_eq!(drop_for(0x55, Some((3, 3)), 2), -0.5);
+        assert_eq!(drop_for(0x55, Some((3, 0x1d)), 5), -0.7);
+        assert_eq!(drop_for(0x55, Some((2, 0x1d)), 4), 1.1);
+        assert_eq!(drop_for(0x55, Some((7, 0x1d)), 8), 0.05);
+        assert_eq!(drop_for(0x55, Some((2, 0x25)), 8), 0.4);
+        assert_eq!(drop_for(0x55, Some((3, 0x25)), 6), -0.8);
+        assert_eq!((drop_for(0x3f, None, 1), drop_for(0x53, None, 1)), (-0.5, -0.5));
+        assert_eq!((drop_for(0x54, None, 1), drop_for(0, Some((3, 3)), 1)), (0.0, 0.0));
+    }
+
     /// FUN_100d65b0's riding test: letters 2..3 of the idle name "chi ".
     #[test]
     fn stand_motions() {

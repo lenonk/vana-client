@@ -1171,8 +1171,8 @@ fn target_point(world: &World, id: u32, sw: f32, sh: f32, view_proj: glam::Mat4)
 }
 
 /// FUN_100d23f0 for attach point 2 (FUN_1002b5e0): the actor position plus the skeleton's point 2 offset times
-/// the model scale, rest data only, so it does not move with the pose; then FUN_1002b7a0's lift by status
-/// for bone-0 points (5 chocobo -1.3, 85 mount by its variant, 63..83 chairs -0.5). Without points: the mesh top.
+/// the model scale, rest data only, so it does not move with the pose; then FUN_100d4560's bone-0 drop
+/// (ride::bone0_drop). Without points: the mesh top.
 fn plate_point(world: &World, id: u32) -> Option<Vec3> {
     // A door's screen point (XiDoorActor vtable +0x27c, FUN_100ac390) is its own position (+0x1bc), unlifted.
     if let Some(e) = world.entities.get(&id).filter(|e| e.door != 0) {
@@ -1186,12 +1186,7 @@ fn plate_point(world: &World, id: u32) -> Option<Vec3> {
     let point = a.and_then(|a| a.character.as_ref()?.skeleton.points.get(2).copied().map(|p| (p, a.scale)));
     match point {
         Some(((bone, t), s)) => {
-            let lift = match status {
-                5 if bone == 0 => -1.3,
-                85 if bone == 0 => ride::plate_lift(world, id),
-                63..=83 if bone == 0 => -0.5,
-                _ => 0.0,
-            };
+            let lift = if bone == 0 { ride::bone0_drop(world, id, status) } else { 0.0 };
             Some(pos + t * s + Vec3::new(0.0, lift * s, 0.0))
         }
         None => Some(pos + Vec3::new(0.0, a.map_or(-2.0, |a| a.top) - 0.1, 0.0)),
@@ -3532,8 +3527,9 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
     let a = w.actors.get(&id)?;
     let ch = a.character.as_ref()?;
     let model = actor_frame(p, a) * glam::Mat4::from_scale(Vec3::splat(a.scale));
-    match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| *t + *q * *off)) {
-        Some(local) => Some(model.transform_point3(local)),
+    let drop = |bone: u16| if bone == 0 { ride::bone0_drop(w, id, p.status) * a.scale } else { 0.0 };
+    match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| (*bone, *t + *q * *off))) {
+        Some((bone, local)) => Some(model.transform_point3(local) + Vec3::new(0.0, drop(bone), 0.0)),
         None => Some(p.pos + Vec3::new(0.0, a.top * 1.2, 0.0)),
     }
 }
@@ -3559,6 +3555,9 @@ struct FxActors<'a> {
     furniture: &'a [(u32, u32, glam::Mat4)],
     /// FUN_1008e4d0's hidden models (+0xb2 bit 1): event::hidden.
     model_hidden: &'a HashSet<u32>,
+    /// FUN_100d4560's bone-0 drop by actor (riders, chair sitters), ride::bone0_drop.
+    drops: &'a HashMap<u32, f32>,
+    wades: &'a HashMap<u32, Vec3>,
 }
 
 impl FxActors<'_> {
@@ -3623,15 +3622,19 @@ impl crate::fx::Actors for FxActors<'_> {
 
     // FUN_100d4560 -> FUN_1002c400: point 2 is the root plus its offset (no bone, no pose); the others ride the drawn
     // pose's bones (posed for effect actors, see posed_actors).
+    /// FUN_100d4560 -> FUN_1002c400; a point on bone 0 then drops by size x d in world y (riding, chairs).
     fn point(&self, id: u32, k: u16) -> Option<Vec3> {
         let a = self.actors.get(&id)?;
         let ch = a.character.as_ref()?;
         let (bone, off) = ch.skeleton.points.get(k as usize)?;
-        if k == 2 {
-            return Some(*off * a.scale);
-        }
-        let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
-        bones.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)
+        let p = if k == 2 {
+            *off * a.scale
+        } else {
+            let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
+            bones.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)?
+        };
+        let d = if *bone == 0 { self.drops.get(&id).copied().unwrap_or(0.0) } else { 0.0 };
+        Some(if d == 0.0 { p } else { p + self.matrix(id).map_or(Vec3::new(0.0, d * a.scale, 0.0), |m| point_drop(m, d * a.scale)) })
     }
 
     fn point_frame(&self, id: u32, k: u16) -> Option<glam::Mat4> {
@@ -3714,6 +3717,10 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn foot(&self, id: u32) -> Option<Vec3> {
         self.contacts.get(&id).map(|c| c.0)
+    }
+
+    fn wade(&self, id: u32) -> Option<Vec3> {
+        self.wades.get(&id).copied()
     }
 
     fn floor(&self, id: u32) -> Option<Vec3> {
@@ -3801,6 +3808,11 @@ fn plain_frame(pos: Vec3, forward: Vec3, t: [f32; 2]) -> glam::Mat4 {
         return m;
     }
     glam::Mat4::from_translation(pos) * glam::Mat4::from_rotation_x(t[0]) * glam::Mat4::from_translation(-pos) * m * glam::Mat4::from_rotation_z(t[1])
+}
+
+/// World y `dy` as a model-space vector for frame `m` (rotation only).
+fn point_drop(m: glam::Mat4, dy: f32) -> Vec3 {
+    glam::Mat3::from_mat4(m).transpose() * Vec3::new(0.0, dy, 0.0)
 }
 
 fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
@@ -3892,6 +3904,8 @@ struct World {
     feet: HashMap<u32, [f32; 4]>,
     /// Per actor: the last step's foot contact in the world (actor+0x63c) and the floor normal there.
     contacts: HashMap<u32, (Vec3, Vec3)>,
+    /// Actor +0x64c: the wade point (attach point 0x35), footsteps::wade.
+    wades: HashMap<u32, Vec3>,
     /// Our pet's ActIndex (0x037 u32 @0x34 >> 3; 0 = none).
     my_pet: u16,
     /// Area environment tints (area 4cc -> Env::area_light) at the current time and weather.
@@ -5329,6 +5343,7 @@ impl App {
                             effects: crate::fx::Effects::new(),
                             feet: HashMap::new(),
                             contacts: HashMap::new(),
+                            wades: HashMap::new(),
                             my_pet: 0,
                             area_lights: HashMap::new(),
                             ground: None,
@@ -6978,6 +6993,12 @@ impl App {
         for (id, pick) in std::mem::take(&mut world.effects.death_picks) {
             if let Some(a) = world.actors.get_mut(&id) {
                 a.death_pick = pick;
+            }
+        }
+        // Scheduler op 0x99: the entity scale +0x204 (event op 0xb6 0xf / 0x17's field), over the model's size.
+        for (id, s) in std::mem::take(&mut world.effects.entity_scales) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                a.event_scale = Some(s);
             }
         }
         // Scheduler op 0xab: entity +0x130 bit 4 = @8 & 1.
@@ -9222,6 +9243,7 @@ impl App {
             // Placements first (look targets read other actors), then each actor's motion and pose.
             let my_dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
             let mut places: HashMap<u32, Place> = w.actors.keys().filter_map(|id| actor_place(w, *id, my_dir).map(|p| (*id, p))).collect();
+            let drops: HashMap<u32, f32> = places.iter().map(|(id, p)| (*id, ride::bone0_drop(w, *id, p.status))).filter(|(_, d)| *d != 0.0).collect();
             // Doors have no model; their schedulers' sounds play at the door's own position (op 0x0b, actor2).
             for (id, e) in w.entities.iter().filter(|(_, e)| e.door != 0 || e.lift.is_some()) {
                 places.entry(*id).or_insert(Place { pos: e.pos, forward: forward_from_dir(e.dir), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
@@ -9271,6 +9293,8 @@ impl App {
                 w.pick_points.retain(|id, _| w.pick_rect.contains(id));
                 footsteps::steps(w, &places, steps);
             }
+            let eye = w.cam.eye;
+            footsteps::wade(w, &places, eye);
             // Door parts animate against the zone's tick clock; the frame's scheduler moves go in first.
             if let Some(r) = w.renderer.as_mut() {
                 r.now = w.started.elapsed().as_secs_f32() * 60.0;
@@ -9771,7 +9795,7 @@ impl App {
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
                     let party: Vec<u32> = std::iter::once(w.my_id).chain(w.party.party().map(|m| m.id).filter(|&id| id != w.my_id)).collect();
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces, model_hidden: &model_hidden };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces, model_hidden: &model_hidden, drops: &drops, wades: &w.wades };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
@@ -10327,6 +10351,18 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Hume M point 0x15 (bone 0, (0, -1.24, -0.04)) on a raptor at size 1: model y -1.24 -> -2.54; under a tilt
+    /// the drop stays world y.
+    #[test]
+    fn point_drop_is_world_y() {
+        let flat = actor_matrix(Vec3::new(10.0, 0.0, 5.0), Vec3::X);
+        let p = Vec3::new(0.0, -1.24, -0.04);
+        assert!((p + point_drop(flat, -1.3) - Vec3::new(0.0, -2.54, -0.04)).length() < 1e-6);
+        let tilted = flat * glam::Mat4::from_rotation_x(0.3);
+        let moved = tilted.transform_point3(p + point_drop(tilted, -0.65)) - tilted.transform_point3(p);
+        assert!((moved - Vec3::new(0.0, -0.65, 0.0)).length() < 1e-5);
+    }
 
     /// Op 0x7a on us: an entity yaw of pi faces west (-1, 0, 0); our face (sin Y, 0, cos Y) matches it.
     #[test]

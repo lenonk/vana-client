@@ -1275,6 +1275,13 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Case 0x99 (FUN_10084980): actor1's entity scale +0x204 = f32 @8.
+            0x99 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.entity_scales.push((id, f32::from_bits(op.u32_at(8))));
+                }
+                Flow::Next
+            }
             // Case 0x1005c18f (FUN_1005e720): actor1's entity +0x130 bit 4 = u32 @8 & 1.
             0xab => {
                 if let Some(id) = self.doll_of(t.a1).id() {
@@ -1731,8 +1738,8 @@ impl Effects {
             0x36 => world(0x7e),
             0x37 => world(0x7f),
             0x38..=0x3c => world(k - 0x38 + 0x66),
-            // Retail takes the water surface for y while wading (actor+0x64c) *(not kept here)*.
-            0x35 => None,
+            // FUN_100d4bc0's +0x64c, raw: no op-0x7b offset, no drop.
+            0x35 => actors.wade(id),
             _ => world(k),
         };
         Some((m, p.unwrap_or(m.w_axis.truncate())))
@@ -2756,6 +2763,69 @@ mod tests {
         fn foot(&self, _: u32) -> Option<Vec3> {
             Some(FOOT)
         }
+    }
+
+    /// Walker wading: its wade point (3, -0.5, -2).
+    struct Wader;
+
+    impl Actors for Wader {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            Walker.matrix(id)
+        }
+        fn point(&self, _: u32, _: u16) -> Option<Vec3> {
+            None
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), Vec::new())
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn wade(&self, _: u32) -> Option<Vec3> {
+            Some(Vec3::new(3.0, -0.5, -2.0))
+        }
+    }
+
+    /// Point 0x35 is the wade point as stored, without op 0x7b's offset; none stored: the position.
+    #[test]
+    fn wade_point() {
+        let fx = Effects::new();
+        let (_, p) = fx.who_point(Who::Actor(7), 0x35, Who::None, None, Vec3::new(0.1, 0.0, 0.0), &Wader).unwrap();
+        assert_eq!(p, Vec3::new(3.0, -0.5, -2.0));
+        let (_, p) = fx.who_point(Who::Actor(7), 0x35, Who::None, None, Vec3::ZERO, &Walker).unwrap();
+        assert_eq!(p, Vec3::new(3.0, 0.0, -2.0));
+    }
+
+    /// FUN_100d64d0 / FUN_100d6550 in East Ronfaure (DAT 201): with the footstep folder known, wading starts one
+    /// endless `i900` on the actor; leaving the water ends it.
+    #[test]
+    fn wading_ripple() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let mut fx = Effects::new();
+        fx.set_keys(std::sync::Arc::new(crate::dat::zone::Keys::from_ffximain(&dll).unwrap()));
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.load_zone(Library::load(201, index.read(201).unwrap()).unwrap());
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let ripples = |fx: &Effects| fx.insts.iter().flatten().filter(|x| &x.name == b"i900").count();
+        fx.wade(7, false, true, Some(false));
+        fx.wade(7, true, true, Some(false));
+        fx.wade(7, true, true, Some(false));
+        assert_eq!(ripples(&fx), 1);
+        for _ in 0..600 {
+            fx.tick(&f, &Wader);
+        }
+        assert_eq!(ripples(&fx), 1);
+        fx.wade(7, false, true, Some(false));
+        fx.tick(&f, &Wader);
+        assert_eq!(ripples(&fx), 0);
     }
 
     /// footsteps_sound.md 1.3 step 7: a walking step in zone 232 bursts fses/fefs 'w100' once (attach mode 1,

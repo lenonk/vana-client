@@ -3123,8 +3123,8 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
   which is what fmrk's flat-lying rotation needs.)* Not modelled: an update op that rewrites rotation or scale
   sets +0x187 and drops the ground frame (fmrk's stream has none).
 - Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
-  (+0x840 bits 20..21), 'fvib', the i900 wading ripples (point 0x35 not filled), the footstep-effects option
-  DAT_10444158 (taken as on).
+  (+0x840 bits 20..21), 'fvib', the footstep-effects option DAT_10444158 (taken as on). The i900 wading ripple and
+  point 0x35: done (section "The bone-0 drop, the wade point 0x35").
 
 ### Keyframe sampling in the update stream (FUN_100499d0, jump table 0x1004d08c = op - 1) (2026-10-22)
 - FUN_10053520 / FUN_10053740 (linear / eased, by S[s+1] & 0xf) sample with the **first key's value (+0x34)
@@ -7779,9 +7779,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   translation from FUN_1003ba20 / vt+0x1c4 (the point resolver: point 2 and the specials), not the bone frame.
   Dolls (FUN_10082180): the generator's last matrix times T(doll position), no rotation, the point ignored: a rebuild
   (op 0x11, spin ops) adds the position again (copied); a doll's 0xb / 0xc heading is the math pool's scratch *(inf:
-  identity)*. Model / furniture actors: their placement (as ours' fallback). Not done: the bone-0 point drop while
-  riding or in some statuses (FUN_1002c5c0; the statuses not traced), the not-yet-posed skeleton's identity (load
-  edge). Tests attach_bone_frame, attach_voyage_identity.
+  identity)*. Model / furniture actors: their placement (as ours' fallback). The bone-0 point drop: done (section
+  "The bone-0 drop, the wade point 0x35"). Not done: the not-yet-posed skeleton's identity (load edge). Tests attach_bone_frame, attach_voyage_identity.
 - Modes 0x14 / 0x15: the voyage matrix DAT_10631ed0 (FUN_10178b30: the rigid inverse of a ship's pose on the zone's
   `c00N` path), whole / its rotation; identity off a voyage (Effects::voyage). Op 0x11 follows mode 0x14 too. The
   voyage itself (ShipStart / ShipEnd from 0x00A, the path, op 0xb4 0xd / 0xe hold, the moving ship scenery, the sun /
@@ -8699,3 +8698,31 @@ interpolates between the hour keys in both clients.
   vana_windows, hato_at_eleven, end_loop_period (91), weather_switches_schedulers, clone_inherits_wait.
 - Not traced: which emission op fills update op 0x64's slot; whether the weather object comes in the zone parse's
   frame; the sub-area weather; who starts the 32 op-0xa2 schedulers.
+
+## The bone-0 drop, the wade point 0x35, the wading ripple, op 0x99 (2026-10-25; spec ~/ffxi/lab/research/fx_point_specials_spec.md)
+
+- CXiSkeletonActor vtable +0x1c4 = FUN_100d4560: after the point, a record on bone 0 (also k >= 0x80, no skeleton)
+  gets y += size x d by the applied status: 0x55 by the linked mount's variant k (FUN_10022340: moun[8 + t(race)]):
+  -1.3 unlinked or k 0 / 6, the Buffalo (mount id entity +0x1db = 0x1d) and the Craklaw (0x25) by race
+  {0 .5 .5 .5 1.1 -.7 -.7 .5 .05} / {0 .4 .4 .4 .4 -.8 -.8 .4 .4}, else -0.5; status 5 -1.3; chairs 0x3f..0x53 -0.5; the
+  mount / chocobo / chair actors (actor +0xa4 kinds 0x54 / 1..4 / 0x3d..0x51) none. size = vtable +0x110 (entity
+  +0x204, op 0x99 / event op 0xb6 0xf / 0x17) else +0x75c else +0x754 (ours Actor.scale). It reaches every point
+  through FUN_1003ba20 (plain k, 0x30, 0x31..0x33, the 0x36..0x3c remap, the dolls), not 0x34 / 0x35. Ours:
+  ride::drop_for / bone0_drop for the plate (plate_lift gone), FxActors::point (the drop as world y through the
+  actor's rotation) and attach_point. About a third of all generators resolve a bone-0 point.
+- Point 0x35 = actor +0x64c, raw (no op-0x7b offset, no drop). Its only writer is the footstep function FUN_100d4bc0
+  [2019 FUN_100d2970] each update in statuses 0 / 1 / 4 / 0x1c / 0x1f / 5 / 0x55 with the model in: the position
+  (+0x5fc, no mount offset), y the floor's water height (actor +0x178) when the floor's surface type (+0x174) is 9 and
+  the leg mode is not 3 (with the footstep effects option on). The height comes with the floor hit (FUN_10168f40):
+  the collision object's flags bits 6..25 signed, / 256 (East Ronfaure's river -7 / -17 / -27 ... -58, 0.25..0.5
+  over its beds; some type-9 objects carry 0, which retail takes too). Within 30 of the eye on water it starts the
+  footstep folder's (`fses`, or `fser` in rain / squall / thunder outside cover) `i900` wading ripple once on
+  (actor, actor) (+0x9e8 / +0x808, endless; its `ai90` distortion child); off water it goes with its elements. The
+  folder is the one the last near frame found (+0x800).
+- Scheduler op 0x99 (FUN_10084980): actor1's entity scale +0x204 = f32 @8 (7 `init` schedulers: models 1771..1775,
+  2060, 52474 draw at 1.25 / 1.5).
+- Ours: dat::collision::water_of, Ground::wade, footsteps::wade (World::wades, every frame for the placed actors),
+  Effects::wade, Actors::wade (who_point 0x35), Effects::entity_scales -> Actor::event_scale. Live (Lnxcsfix in the
+  East Ronfaure river): the ripple started on arrival, the 0900 / w900 splashes on the water surface.
+- Tests bone0_drops, point_drop_is_world_y, water_heights, east_ronfaure_water, wade_on_type9, wade_point,
+  wading_ripple.

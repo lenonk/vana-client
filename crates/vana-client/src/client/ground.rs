@@ -69,8 +69,9 @@ pub struct Ground {
     /// Per triangle: its object's area 4cc (+0xb0), and its object's index.
     areas: Vec<u32>,
     objs: Vec<u32>,
-    /// Per object: its four point lights (table slot + 1, 0 = none or past slot 254).
+    /// Per object: its four point lights (table slot + 1, 0 = none or past slot 254), and its type-9 water height.
     obj_lights: Vec<[u8; 4]>,
+    obj_water: Vec<f32>,
     /// Per triangle: the door whose box it is (0 none), and the doors open now (their boxes are skipped).
     doors: Vec<u32>,
     open: std::cell::RefCell<std::collections::HashSet<u32>>,
@@ -263,7 +264,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), obj_water: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
         }
     }
 
@@ -285,6 +286,7 @@ impl Ground {
             _ => 0,
         };
         let obj_lights = c.objects.iter().map(|o| o.lights.map(slot)).collect();
+        let obj_water = c.objects.iter().map(|o| crate::dat::collision::water_of(o.flags)).collect();
         let degenerate = tris.iter().map(|[a, b, c]| *a == *b || *b == *c || *c == *a).collect();
         let mut cells: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
         for (i, t) in tris.iter().enumerate() {
@@ -301,7 +303,7 @@ impl Ground {
         let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, obj_water, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     /// FUN_10182700's cells: the MZB cell of `c` (truncated) and its neighbours clamped to the grid; None without one.
@@ -386,6 +388,13 @@ impl Ground {
     pub fn area(&self, p: Vec3) -> Option<u32> {
         let (_, i) = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
         self.areas.get(i).copied()
+    }
+
+    /// The wade height under `p` (FUN_100d4bc0: the floor's type 9 and its object's water, actor +0x174 / +0x178);
+    /// None off a type-9 floor (the face `surface` takes).
+    pub fn wade(&self, p: Vec3) -> Option<f32> {
+        let (h, i) = self.heights(p.x, p.z).into_iter().filter(|h| h.0 >= p.y - 0.5).min_by(|a, b| a.0.total_cmp(&b.0))?;
+        (h - p.y <= 0.4 && self.kinds.get(i) == Some(&9)).then(|| self.objs.get(i).and_then(|&o| self.obj_water.get(o as usize)).copied().unwrap_or(0.0))
     }
 
     pub fn surface(&self, p: Vec3) -> (u8, bool) {
@@ -855,11 +864,22 @@ mod tests {
         // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
         let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
         let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], obj_water: vec![0.0], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
         [Vec3::new(x0, y0, -5.0), Vec3::new(x1, y1, -5.0), Vec3::new(x1, y1, 5.0), Vec3::new(x0, y0, 5.0)]
+    }
+
+    /// A type-9 face gives its object's water height within 0.4 below the point; 0.5 above it, none.
+    #[test]
+    fn wade_on_type9() {
+        let mut g = ground(&[(quad(-10.0, 10.0, -6.5, -6.5), Vec3::NEG_Y)]);
+        g.obj_water = vec![-7.0];
+        assert_eq!(g.wade(Vec3::new(0.0, -6.5, 0.0)), None);
+        g.kinds = vec![9; g.kinds.len()];
+        assert_eq!(g.wade(Vec3::new(0.0, -6.5, 0.0)), Some(-7.0));
+        assert_eq!(g.wade(Vec3::new(0.0, -7.0, 0.0)), None);
     }
 
     /// Furniture: a bed's box stops a walk into it, its mesh stops the camera ray while /furcc is on.

@@ -20,6 +20,43 @@ pub fn wanted(ch: &crate::dat::character::Character, status: u8, pos: Vec3, eye:
     ch.cib[1] >= 1 && matches!(status, 0 | 1 | 4 | 0x1c | 0x1f | 5 | 0x55) && pos.distance_squared(eye) < 900.0
 }
 
+/// FUN_100d4bc0 (asm 0x100d4c93..0x100d4d03): the wade point +0x64c (the position, y the water surface on a type-9
+/// floor) for actors in statuses 0 / 1 / 4 / 0x1c / 0x1f / 5 / 0x55 with a model (others keep theirs), and the
+/// wading ripple `i900` started near the eye on water, stopped off it.
+pub(super) fn wade(w: &mut World, places: &HashMap<u32, Place>, eye: Vec3) {
+    let actors = &w.actors;
+    w.wades.retain(|id, _| actors.contains_key(id));
+    let Some(g) = &w.ground else { return };
+    let rain_tag = matches!(crate::dat::weather::weather_tag(w.weather), "rain" | "squl" | "bolt");
+    let mut calls = Vec::new();
+    for (id, pl) in places {
+        let Some(ch) = w.actors.get(id).and_then(|a| a.character.as_ref()) else { continue };
+        if !matches!(super::ride::applied(w, *id, pl.status), 0 | 1 | 4 | 0x1c | 0x1f | 5 | 0x55) {
+            continue;
+        }
+        // +0x5fc: the position without the mount offset.
+        let pos = pl.pos - super::ride::offset(w, *id);
+        let leg3 = ch.cib[0] == 3;
+        // On a lift the shaft's type (FUN_100a4ed0), never water.
+        let water = if w.lifts.ride(pos, pos).is_some() { None } else { g.wade(pos) };
+        let y = match water {
+            Some(h) if !leg3 => h,
+            _ => pos.y,
+        };
+        w.wades.insert(*id, Vec3::new(pos.x, y, pos.z));
+        if leg3 {
+            continue;
+        }
+        let near = pos.distance_squared(eye) < 900.0;
+        let (kind, covered) = g.surface(pos);
+        let folder = (near && ch.cib[1] >= 1 && kind != 0).then_some(rain_tag && !covered);
+        calls.push((*id, water.is_some(), near, folder));
+    }
+    for (id, water, near, folder) in calls {
+        w.effects.wade(id, water, near, folder);
+    }
+}
+
 /// Heights that came back: a crossing on a moving actor plays its step.
 pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u64, Vec3)>) {
     // The last point to touch down (tested 9, 8, 0xb, 0xa), relative to the root.
