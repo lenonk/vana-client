@@ -8025,3 +8025,21 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix): `/blacklist add Nobodyhere` printed "Failed to add to blacklist."; `add Perrin` (a bot online)
   "Added to blacklist.", `delete Perrin` "Removed from blacklist." (char_blacklist empty again).
 
+## Alter Ego Points (2026-10-25; spec ~/ffxi/lab/research/status_rows_spec.md 5)
+
+- statcom2 row 13 (enabled once main level > 98 with key item 0xd21 cipher bracelet): "menu    fp_cat  " (the
+  categories of file 98 with an id and a first attribute: HP/MP, Attributes, Skills), "menu    fp_info " (s2c 0x08E's
+  points "%d/1000" right at (x1 - 8, y0 + 0x14), blue above 999) and bluehelp (names / descriptions from language
+  slot 0x20 at [2 id] / [2 id + 1] for categories and attributes alike); Enter opens "menu    fp_cat2 " (the
+  category's attribute ids, max from file 97 byte 3). fp_cat is in fp_cat2's window group: suspended (not drawn)
+  while fp_cat2 is up.
+- FUN_1014bdb0's row cells take value + 1 (0 = no value): the level shown is upgrades[e], the max max, the cost
+  costs[e] (spec 5.2's "+1" is this encoding; LSB's zero costs show "NEXT 0 P"). Grey with no cost outside the Mog
+  House (or before 0x08E); maxed: the level blue, no cost; unaffordable (costs[e] > points): the cost grey.
+- Enter on an attribute: outside the Mog House group 7 0xb2 + SE 0004; affordable: group 10 0x7b with (name,
+  costs[e]) through merityn, Yes sends c2s 0x0C1 {u16 e}. Opening without 0x08E sends c2s 0x0C2 (LSB: no handler).
+  s2c 0x08E: u16 points @4, u8 upgrades[32] @8, u16 costs[32] @0x28.
+- Ours: client/aepoints.rs, dat/merits.rs AeTables. Live (Lnxcsfix at 99 with the cipher bracelet, both undone):
+  0/1000, the three categories, Max HP / Max MP and STR..CHR at 0/60, grey in Southern San d'Oria. Not tried: a raise
+  in the Mog House (LSB does not apply it).
+

@@ -106,6 +106,42 @@ impl JobPointTables {
     }
 }
 
+/// Alter ego tables (FUN_10161670): categories file 98 (8 x 0x24: u16 @0 k, u16[16] @4 attribute ids), attributes
+/// file 97 (128 x 4: u8 @0 k, @3 max); names from language slot 0x20 at [2 id] / [2 id + 1] for both.
+pub struct AeTables {
+    /// The categories with an id and a first attribute: (k, attribute ids).
+    pub cats: Vec<(u16, Vec<u16>)>,
+    pub max: Vec<u8>,
+    names: Option<DMsg>,
+}
+
+impl AeTables {
+    pub fn load(index: &DatIndex, names: Option<u32>) -> AeTables {
+        let read = |f: u32| index.read(f).map_err(|e| log::warn!("alter ego table {f}: {e:#}")).unwrap_or_default();
+        let (c, e) = (read(98), read(97));
+        let cats = c
+            .chunks_exact(0x24)
+            .map(|r| (u16_at(r, 0), (0..16).map(|k| u16_at(r, 4 + 2 * k)).filter(|&id| id != 0).collect::<Vec<_>>()))
+            .filter(|(k, es)| *k != 0 && !es.is_empty())
+            .collect();
+        let max = e.chunks_exact(4).map(|r| r[3]).collect();
+        let names = names.and_then(|f| DMsg::load(index, f).map_err(|e| log::warn!("alter ego names {f}: {e:#}")).ok());
+        AeTables { cats, max, names }
+    }
+
+    pub fn entries(&self, k: u16) -> &[u16] {
+        self.cats.iter().find(|c| c.0 == k).map_or(&[], |c| &c.1)
+    }
+
+    pub fn name(&self, i: u16) -> String {
+        self.names.as_ref().and_then(|n| n.text(2 * i as usize)).unwrap_or_default()
+    }
+
+    pub fn desc(&self, i: u16) -> String {
+        self.names.as_ref().and_then(|n| n.text(2 * i as usize + 1)).unwrap_or_default()
+    }
+}
+
 /// A job's gifts (FUN_101613d0): file 100407 + job, 256 x u16 the job points spent each needs (0 = none); names from
 /// slot 0x1f at 2 ((job - 1) * 256 + i).
 pub struct Gifts {

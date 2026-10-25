@@ -378,6 +378,8 @@ pub enum NetEvent {
     GmMessage { id: u32, seq: u16, last: bool, text: Vec<u8> },
     /// s2c 0x08D (LAB_100e4fd0): 64 job point records @4 {u16 entry id, u16 next cost | level << 10}.
     JobPointList(Vec<(u16, u8, u16)>),
+    /// s2c 0x08E: u16 points @4, u8 upgrades[32] @8, u16 costs[32] @0x28.
+    AlterEgo(super::aepoints::AeData),
     Monstrosity { kind: u16, rank: u32, prestige: u16 },
     /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
     StatusTimers { ids: [u16; 32], ends: [u32; 32] },
@@ -908,6 +910,11 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         let n = (p.u16(4) as usize).min(p.data.len().saturating_sub(8) / 4);
                         tx.send(NetEvent::MeritList((0..n).map(|i| (p.u16(8 + 4 * i), p.u8(10 + 4 * i), p.u8(11 + 4 * i))).collect()))?
                     }
+                    0x08E if p.data.len() >= 0x68 => tx.send(NetEvent::AlterEgo(super::aepoints::AeData {
+                        points: p.u16(4),
+                        upgrades: std::array::from_fn(|i| p.u8(8 + i)),
+                        costs: std::array::from_fn(|i| p.u16(0x28 + 2 * i)),
+                    }))?,
                     0x08D => {
                         let n = (p.data.len().saturating_sub(4) / 4).min(64);
                         let recs = (0..n).map(|i| (p.u16(4 + 4 * i), p.u16(6 + 4 * i))).filter(|r| r.0 != 0).map(|(id, v)| (id, (v >> 10) as u8, v & 0x3ff)).collect();

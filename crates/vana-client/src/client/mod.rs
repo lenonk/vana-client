@@ -51,6 +51,7 @@ mod treasure;
 mod servmes;
 mod chatctrl;
 mod linklist;
+mod aepoints;
 mod jobpoints;
 mod merits;
 mod plate;
@@ -1460,6 +1461,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.pupequip.is_some() => equipwin::pup_key(world, gu, *key),
                 _ if world.merits_ui.is_some() => merits::key(world, gu, *key),
                 _ if world.jp_ui.is_some() => jobpoints::key(world, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.ae_ui.is_some() => aepoints::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
@@ -2276,6 +2278,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(merits::draw(gu, world, sw, sh));
     blockers.extend(equipwin::pup_draw(gu, world, sw, sh));
     blockers.extend(jobpoints::draw(gu, world, sw, sh));
+    blockers.extend(aepoints::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
@@ -2577,6 +2580,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             jobpoints::answer(world, a);
         }
+        (Some(true), Some((Confirm::AlterEgo(a), _))) => {
+            world.confirm = None;
+            aepoints::answer(world, a);
+        }
         (Some(true), Some((Confirm::BlueRemoveAll, _))) => {
             world.confirm = None;
             bluset::remove_all(world);
@@ -2758,6 +2765,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     merits::bars(gu, world, &mut bars);
     equipwin::pup_bars(gu, world, &mut bars);
     jobpoints::bars(gu, world, &mut bars);
+    aepoints::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
@@ -2809,6 +2817,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
+        (Confirm::AlterEgo(a), _) => aepoints::ask_text(world, a),
         (Confirm::Request(_), _) => partyreq::ask_text(world),
         (Confirm::Roe(a), _) => roe::ask_text(gu, a),
         (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
@@ -3891,6 +3900,10 @@ struct World {
     /// came, 0x063 type 5's (capacity, current, spent) by job.
     jp_ui: Option<jobpoints::JpUi>,
     jp_tables: Option<Arc<crate::dat::merits::JobPointTables>>,
+    /// Alter Ego Points: the window, the tables and s2c 0x08E's data.
+    ae_ui: Option<aepoints::AeUi>,
+    ae_tables: Option<Arc<crate::dat::merits::AeTables>>,
+    ae_data: Option<aepoints::AeData>,
     jp_list: HashMap<u16, (u8, u16)>,
     jp_seen: bool,
     jp_jobs: Option<[[u16; 3]; 24]>,
@@ -4158,6 +4171,7 @@ enum Confirm {
     /// link7 / link8 / link9's Kick (FUN_101e6620): group 10 0x36.
     LinkKick(linklist::Kick),
     JobPoint(jobpoints::Ask),
+    AlterEgo(aepoints::Ask),
     /// group 9 0x140 "Really reset request history?" (the Request toggle, scoption's Clear History).
     Request(partyreq::Ask),
     /// The Records of Eminence prompts (FUN_10232770).
@@ -5210,6 +5224,9 @@ impl App {
                             merit_mem: 0,
                             jp_ui: None,
                             jp_tables: None,
+                            ae_ui: None,
+                            ae_tables: None,
+                            ae_data: None,
                             jp_list: HashMap::new(),
                             jp_seen: false,
                             jp_jobs: None,
@@ -6164,6 +6181,7 @@ impl App {
                 NetEvent::MeritList(recs) => merits::on_list(world, &recs),
                 NetEvent::GmMessage { id, seq, last, text } => faqmain::on_message(world, id, seq, last, &text),
                 NetEvent::JobPointList(recs) => jobpoints::on_list(world, &recs),
+                NetEvent::AlterEgo(d) => aepoints::on_data(world, d),
                 NetEvent::Monstrosity { kind, rank, prestige } => {
                     let m = world.monstrosity.get_or_insert((0, 0, 0));
                     m.0 |= 1 << kind;

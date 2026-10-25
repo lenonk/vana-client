@@ -147,6 +147,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 11 => super::unity::open(w),
                 7 => super::merits::open(w, gu),
                 8 => super::jobpoints::open(w, gu),
+                13 => super::aepoints::open(w, gu),
                 c if page(c).is_none() => log::info!("status: statcom2 row {c} is not implemented yet"),
                 _ => {}
             }

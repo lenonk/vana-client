@@ -107,8 +107,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
     levelsync.rs, partyreq.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange", "Party
     requests"; the invite side untested live);
-    Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, MODLOG "Status window",
-    "Currencies", "Unity", "Merit Points and Job Points"; left Alter Ego Points, spec `status_rows_spec.md`; Raise /
+    Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, aepoints.rs, MODLOG "Status window",
+    "Currencies", "Unity", "Merit Points and Job Points", "Alter Ego Points"; Raise /
     Lower and spending job points not tried live);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, roe.rs, MODLOG "Missions", "Quests", "Records
     of Eminence lists"; left Vana'Bout's hold prompt, unreachable on LSB); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
