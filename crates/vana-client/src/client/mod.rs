@@ -9104,6 +9104,7 @@ impl App {
                         w.effects.set_alive(a.alive());
                     }
                     w.effects.filter = (w.game.get(0x92) as u32, matches!(w.my_motion.status, 1 | 3));
+                    w.effects.reg.aspect = aspect;
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
                     w.ambient = w.effects.ambient(minute);
                     // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.

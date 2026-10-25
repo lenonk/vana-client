@@ -373,6 +373,8 @@ pub struct Registry {
     pub keys_dirty: bool,
     /// The zone's point-light table keys by slot (render ZoneGeometry::light_keys).
     pub light_keys: Vec<u32>,
+    /// The scene projection's aspect (width / height), for generator op 0x15's view gate.
+    pub aspect: f32,
     /// Vtx paths as splines (fx/spline.rs gpu_words), back to back; an element slot holds first vec4 + 1.
     pub path_data: Vec<[f32; 4]>,
     path_id: HashMap<Ref, (u32, Vec<spline::Seg>)>,
@@ -509,6 +511,7 @@ impl Registry {
             key_id: HashMap::new(),
             keys_dirty: false,
             light_keys: Vec::new(),
+            aspect: 16.0 / 9.0,
             path_data: Vec::new(),
             path_id: HashMap::new(),
             paths_dirty: false,

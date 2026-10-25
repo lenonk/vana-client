@@ -808,8 +808,29 @@ pub fn generator_stream(reg: &mut Registry, inst: &mut Instance, f: &Frame) -> b
                     break;
                 }
             }
+            // FUN_100496f0 case 0x15 / FUN_1004a870: the box diag(f32 @0xc, @0x10, @0x14) about the emission position,
+            // through the generator's matrix and the view; off screen, no emission this frame and the stream stops.
+            // Retail projects the 8 corners (and runs an occlusion query when it can); ours: off screen = all corners
+            // outside one frustum plane of the scene projection (fovy 2 atan(192 / focal)). The path offset is not added.
+            0x15 => {
+                let p = inst.streams[1].first().map(|o| Vec3::new(o.f32(5), o.f32(6), o.f32(7))).unwrap_or_default();
+                let s = Vec3::new(op.f32(3), op.f32(4), op.f32(5));
+                let m = f.view * inst.matrix.unwrap_or(glam::Mat4::IDENTITY);
+                let ys = f.focal / 192.0;
+                let xs = ys / reg.aspect.max(0.1);
+                let corners: Vec<Vec3> = (0..8).map(|k| m.transform_point3(p + s * Vec3::new([-1.0, 1.0][k & 1], [-1.0, 1.0][k >> 1 & 1], [-1.0, 1.0][k >> 2]))).collect();
+                let out = |test: &dyn Fn(Vec3) -> bool| corners.iter().all(|&c| test(c));
+                let hidden = out(&|c| -c.z < crate::render::NEAR)
+                    || out(&|c| c.x * xs > -c.z)
+                    || out(&|c| -c.x * xs > -c.z)
+                    || out(&|c| c.y * ys > -c.z)
+                    || out(&|c| -c.y * ys > -c.z);
+                if hidden {
+                    emit = false;
+                    break;
+                }
+            }
             // 0x11 follow and the 0x0e..0x10 spins are the attachment (fx/mod.rs, every frame); 0x5d is never read.
-            // 0x15 (view-box gate) is not handled yet.
             0x11 => inst.flags |= 0x200,
             0x0e..=0x10 | 0x5d => {}
             _ => reg.unhandled(0, op.code),

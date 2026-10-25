@@ -7929,3 +7929,15 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   u32 @8 (motion::MotionNames::apply, as dat/npc.rs does for a model's init); kept per actor (Actor::motion_names)
   until its model changes. Not done: the entity copies (+0x190..+0x1b4) the 0x8c / 0xa4 / 0xa5 setters also write.
 
+## Generator op 0x15: the view gate (2026-10-25; spec fx_stream_attach_spec.md 2.13)
+
+- FUN_100496f0 case 0x15 (cur c:54220): the box diag(f32 @0xc, @0x10, @0x14) (data `0 0 2 2 2 0`) at the op-1
+  position (+ the path offset, FUN_10063b70), times the generator matrix +0xa4 and the view; FUN_1004a870 projects
+  its 8 corners (and runs an occlusion query when one is free); not visible: no emission this frame and the stream
+  stops, as op 0x0a's distance gate. Used by weapon skill 3400, fireworks 4959 / 4960 `hana/*`, and zone generators
+  (torch flames, e.g. 290 `effe/hi/lp14`).
+- Ours (fx/emit.rs generator_stream): off screen = every corner outside one plane of the scene frustum (fovy
+  2 atan(192 / focal), Registry::aspect from the client each frame) *(inf: the exact test of FUN_1004a870's
+  vtable +0x8c call; no occlusion query, no path offset)*. Zone 230 from a fixed camera: 12 fewer live elements
+  (off-screen emitters); 3400's own elements unchanged frame by frame.
+
