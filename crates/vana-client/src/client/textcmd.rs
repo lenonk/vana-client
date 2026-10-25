@@ -75,6 +75,7 @@ mod id {
     pub const SONG: u16 = 0x2a;
     pub const JA: u16 = 0x2b;
     pub const PET: u16 = 0x2c;
+    pub const BSTPET: u16 = 0x2d;
     pub const HEAL: u16 = 0x32;
     pub const SIT: u16 = 0x33;
     pub const LOGOUT: u16 = 0x43;
@@ -1548,6 +1549,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::ITEM => item(w, args, mode),
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
+        id::BSTPET => bstpet(w, args, mode),
         c if is_emote(c) => emote(w, c, args, mode),
         _ => {
             log::info!("{}: not supported yet", args[0]);
@@ -2460,6 +2462,35 @@ fn ability(w: &mut World, _pet: bool, args: &[String], mode: Mode) -> Done {
         }
     }
     let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
+    act(w, t, cat::JA, (id - 0x200) as u32);
+    Ok(())
+}
+
+/// FUN_1007b9d0 (/bstpet): no word lists the known Ready moves (ability type 0x12, in the ability list's order) as
+/// "[n]name Charges required: c." in mode 0x9d, failing with none; else the n-th (1..99 in one or two characters) or
+/// one by name, then the target and 0x01A category 9 (as /pet).
+fn bstpet(w: &mut World, args: &[String], mode: Mode) -> Done {
+    if !status_gate(w, 0x7f) {
+        return Ok(());
+    }
+    let (Some(acts), Some(names), Some(bt)) = (w.actions.clone(), w.names.clone(), w.battle.clone()) else { return Err(()) };
+    let ready: Vec<&crate::dat::actions::Ability> = super::magic::ability_rows(w, 0x12).iter().filter_map(|&i| acts.abilities.get(i as usize)).collect();
+    let name = |a: &crate::dat::actions::Ability| crate::dat::names::NameSource::ability(&*names, a.id as u32).unwrap_or_default();
+    let Some(word) = args.get(1) else {
+        let colour = bt.colour_in(0x9d, &w.game);
+        for (n, a) in ready.iter().enumerate() {
+            let charges = printf(&bt.group9(0x135).unwrap_or_default(), &[a.cost.to_string()]);
+            w.chat.push_colour(format!("[{}]{} {charges}", n + 1, name(a)), colour);
+        }
+        return if ready.is_empty() { Err(()) } else { Ok(()) };
+    };
+    let id = match number(word).filter(|n| word.len() <= 2 && (1..=99).contains(n)) {
+        Some(n) => ready.get(n as usize - 1).map(|a| a.id),
+        None => ability_named(w, word, super::magic::ability_rows(w, 0x12).into_iter()),
+    }
+    .filter(|&id| (0x200..0x700).contains(&id))
+    .ok_or(())?;
+    let t = resolve(w, args.get(2).map(String::as_str), false, false, mode).ok_or(())?;
     act(w, t, cat::JA, (id - 0x200) as u32);
     Ok(())
 }

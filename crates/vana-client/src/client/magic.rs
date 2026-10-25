@@ -193,7 +193,7 @@ pub(super) fn blue_known(w: &World) -> Vec<u16> {
 
 /// FUN_10223ec0's rows: known abilities (0x0AC bits by table index) in the aix.dat order, of the type; pet commands
 /// only with a pet.
-fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
+pub(super) fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     let Some(acts) = w.actions.as_ref() else { return Vec::new() };
     if ty == 2 && w.my_pet == 0 {
         return Vec::new();

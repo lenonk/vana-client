@@ -8117,5 +8117,13 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   sent. /seacomup [type] [n] (FUN_1007f020): expparty 0, battlecontent 1, mission&quest 2, item 3, linkshell 4,
   lookingforfriends 5 (n 1), others 6 (n 3, the default); msgType (type + 1) << 4 | n; c2s 0x0E0 when changed (as the
   editor's close); group 9 0xe1 "Registration successful.". Live: both printed the line (set, then cleared again).
-- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list).
+- /bstpet (FUN_1007b9d0, gate 0x7f): the known abilities of type 0x12 (record +2) in the ability list's order
+  (FUN_10223c90: aix.dat merged with s2c 0x0AC's bits, magic::ability_rows). No word: FUN_102230d0 prints "[%d]%s %s"
+  (n, name, group 9 0x135 "Charges required: %d." with record +6) in mode 0x9d, failing with none; a 1..99 of one or
+  two characters is the n-th (FUN_10223040), else a name (FUN_10222e20 type 0x12); then the target (no fallback, not
+  wide), id < 0x700, c2s 0x01A category 9 param id - 0x200 (as /pet). The third %s is inferred (the decompile drops
+  the argument). LSB fills the bits for a jug pet with BST main 25+ (BuildingCharPetAbilityTable). Live (Lnxcsfix
+  as BST 75, !exec player:spawnPet(21)): [1]Lamb Chop Charges required: 1. .. [4]Sheep Song; /bstpet 1 <me> sent
+  param 689, LSB "Unable to use job ability." in town; an unquoted two-word name fails as /ja does.
+- Not done from part D: /monsterskill (no Monstrosity).
 
