@@ -126,7 +126,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state", "Engaged menu", "Action menu: the
     mouse hold", "Chat mode window"); Sprint / Scout / Quarry show only in Conflict;
   - the treasure pool (client/treasure.rs, MODLOG "Treasure pool window"): loot / lootope / lnowin, lot, pass, Done,
-    the party-window chest done and live-tested with a bot; left the zone-pool columns, the mouse;
+    the party-window chest done and live-tested with a bot; the mouse built (not tried live); left the zone-pool columns;
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
     skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
     "Per-record reactions"); guards, parries and counters not seen live yet;
