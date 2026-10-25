@@ -22,6 +22,10 @@ enum Flow {
     End,
 }
 
+/// Hold kinds (`Effects::holds`): the status change waits (FUN_100a4140, +0x11c), no hit reactions (+0x80).
+pub const HOLD_STATUS: u8 = 1;
+pub const HOLD_REACT: u8 = 2;
+
 /// A start that waits for a file (an effect file, or an actor's files).
 pub(super) struct Pending {
     pub file: Option<u32>,
@@ -486,6 +490,11 @@ impl Effects {
             while !t.done && !t.waiting && t.countdown <= 0.0 && guard < 512 {
                 guard += 1;
                 if t.ip >= t.ops.len() || t.stop_at == Some(t.ip) {
+                    // FUN_10057c20: a looping task starts over (speed 1.0) next frame.
+                    if t.looping && t.stop_at.is_none() {
+                        (t.ip, t.speed, t.countdown) = (0, 1.0, t.countdown.max(0.0));
+                        break;
+                    }
                     t.done = true;
                     break;
                 }
@@ -556,12 +565,21 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // 0x73 (FUN_10055cc0 with 1): the child loops (+0x141) until killed.
             0x03 | 0x73 => {
                 if let Some(r) = scope(self, kind::SCHEDULER) {
-                    self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, None);
+                    let i = self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, None);
+                    if let Some(c) = self.tasks[i].as_mut() {
+                        c.looping = op.code == 0x73;
+                    }
                 }
                 Flow::Next
             }
+            // No case in FUN_10057fb0's switch: 0x01 opens most schedulers, 0x69 opens a block (0x64 / 0x65 take it);
+            // 0x50, 0x74; 0x7f and 0x86 write fields nothing reads.
+            0x01 | 0x50 | 0x74 | 0x69 | 0x7f | 0x86 => Flow::Next,
+            // Reached in the main flow (no 0x64 took the block): the task is killed (vtable +0x18).
+            0x6a | 0x67 => Flow::End,
             0x3b => match scope(self, kind::SCHEDULER) {
                 Some(r) => {
                     self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
@@ -853,9 +871,9 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // FUN_1005f6c0: the real actor's model colour toward ARGB u32 @8 over dur * speed ticks.
-            0x29 => {
-                if let Some(id) = self.doll_of(t.a1).id() {
+            // FUN_1005f6c0: the real actor's model colour toward ARGB u32 @8 over dur * speed ticks (0x2a actor2).
+            0x29 | 0x2a => {
+                if let Some(id) = self.doll_of(if op.code == 0x29 { t.a1 } else { t.a2 }).id() {
                     self.fades.push((id, op.u32_at(8), op.dur.max(0) as f32 * t.speed));
                 }
                 Flow::Next
@@ -887,18 +905,42 @@ impl Effects {
                 t.ip = else_end + 1;
                 Flow::Jump
             }
-            0x67 => {
-                if t.ops.get(t.ip + 1).is_some_and(|o| o.code == 0x69) {
-                    t.ip = block_end(&t.ops, t.ip + 1) + 1;
-                    return Flow::Jump;
+            // FUN_100a4140 for op dur x speed: 0x20 holds actor2, 0x1f actor1 (their status changes wait); 0x59
+            // actor1 with no reactions; 0x07 / 0x08 actor1 / actor2 no reactions only (+0x80, FUN_100607e0).
+            0x20 | 0x1f | 0x59 | 0x07 | 0x08 if t.motions => {
+                let (who, kind) = match op.code {
+                    0x20 => (t.a2, HOLD_STATUS),
+                    0x1f => (t.a1, HOLD_STATUS),
+                    0x59 => (t.a1, HOLD_STATUS | HOLD_REACT),
+                    0x07 => (t.a1, HOLD_REACT),
+                    _ => (t.a2, HOLD_REACT),
+                };
+                if let Some(id) = self.doll_of(who).id() {
+                    self.holds.push((id, op.dur.max(0) as f32 * t.speed, kind));
                 }
                 Flow::Next
             }
-            // FUN_100a4140 for op dur x speed: 0x20 holds actor2 (its status changes wait), 0x59 actor1, no reactions.
-            0x20 | 0x59 if t.motions => {
-                let (who, noreact) = if op.code == 0x20 { (t.a2, false) } else { (t.a1, true) };
-                if let Some(id) = self.doll_of(who).id() {
-                    self.holds.push((id, op.dur.max(0) as f32 * t.speed, noreact));
+            // Every record's target (FUN_100601f0 each); without an action, op 0x20.
+            0x56 if t.motions => {
+                let ticks = op.dur.max(0) as f32 * t.speed;
+                match &t.action {
+                    Some(a) => {
+                        let ids: Vec<u32> = a.borrow().action.targets.iter().map(|x| x.id).collect();
+                        self.holds.extend(ids.into_iter().map(|id| (id, ticks, HOLD_STATUS)));
+                    }
+                    None => {
+                        if let Some(id) = self.doll_of(t.a2).id() {
+                            self.holds.push((id, ticks, HOLD_STATUS));
+                        }
+                    }
+                }
+                Flow::Next
+            }
+            // Actor1's move input (FUN_10062310, +0xfc: the player's walk is ignored) and facing (FUN_100624b0,
+            // +0x838: no heading ease, network headings left alone) for dur x speed.
+            0x2e | 0x2f => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.locks.push((id, op.code, op.dur.max(0) as f32 * t.speed));
                 }
                 Flow::Next
             }

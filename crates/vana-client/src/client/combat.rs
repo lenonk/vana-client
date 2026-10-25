@@ -567,12 +567,14 @@ pub(super) fn fx_load(w: &mut World, id: u32) {
     e.1 = Instant::now() + Duration::from_secs(30);
 }
 
-/// The skill holds from fx: op 0x20 / 0x59 for their ticks (the longest wins), and a load hold's end.
-pub(super) fn fx_hold(w: &mut World, id: u32, ticks: f32, noreact: bool) {
+/// The skill holds from fx (ops 0x20 / 0x1f / 0x56 / 0x59 / 0x07 / 0x08) for their ticks, the longest winning.
+pub(super) fn fx_hold(w: &mut World, id: u32, ticks: f32, kind: u8) {
     let until = Instant::now() + Duration::from_secs_f32(ticks.max(0.0) / 60.0);
-    let e = w.holds.entry(id).or_insert(until);
-    *e = (*e).max(until);
-    if noreact {
+    if kind & crate::fx::HOLD_STATUS != 0 {
+        let e = w.holds.entry(id).or_insert(until);
+        *e = (*e).max(until);
+    }
+    if kind & crate::fx::HOLD_REACT != 0 {
         let e = w.noreact.entry(id).or_insert(until);
         *e = (*e).max(until);
     }

@@ -3633,6 +3633,9 @@ struct World {
     rounds: HashMap<u32, (Instant, std::collections::VecDeque<crate::net::action::Action>)>,
     held_status: HashMap<u32, u8>,
     noreact: HashMap<u32, Instant>,
+    /// Scheduler ops 0x2e (our walk input) and 0x2f (an actor's facing) locked until then.
+    move_lock: Option<Instant>,
+    face_locks: HashMap<u32, Instant>,
     /// Skill actions' load holds (busy counts, FUN_100a4140) with their safety deadline.
     loads: HashMap<u32, (u32, Instant)>,
     /// Running knockbacks (op 0x5e), by actor.
@@ -5014,6 +5017,8 @@ impl App {
                             holds: HashMap::new(),
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
+                            move_lock: None,
+                            face_locks: HashMap::new(),
                             loads: HashMap::new(),
                             knocks: HashMap::new(),
                             action_menu: None,
@@ -6470,8 +6475,19 @@ impl App {
         for id in std::mem::take(&mut world.effects.releases) {
             combat::fx_release(world, id);
         }
-        for (id, ticks, noreact) in std::mem::take(&mut world.effects.holds) {
-            combat::fx_hold(world, id, ticks, noreact);
+        for (id, ticks, kind) in std::mem::take(&mut world.effects.holds) {
+            combat::fx_hold(world, id, ticks, kind);
+        }
+        for (id, op, ticks) in std::mem::take(&mut world.effects.locks) {
+            let until = Instant::now() + std::time::Duration::from_secs_f32(ticks.max(0.0) / 60.0);
+            if op == 0x2e {
+                if id == world.my_id {
+                    world.move_lock = Some(world.move_lock.map_or(until, |t| t.max(until)));
+                }
+            } else {
+                let e = world.face_locks.entry(id).or_insert(until);
+                *e = (*e).max(until);
+            }
         }
         for r in std::mem::take(&mut world.effects.reacts) {
             combat::react_op(world, &r);
@@ -6592,8 +6608,11 @@ impl App {
             let want = if moved > 0.0 { (-flat.z).atan2(flat.x) } else { event::rad_of(e.dir) };
             let tau = std::f32::consts::TAU;
             let diff = (want - e.yaw + std::f32::consts::PI).rem_euclid(tau) - std::f32::consts::PI;
+            // Scheduler op 0x2f: the drawn facing stays while the effect runs (FUN_100c63d0 skips the ease).
             let rate = world.actors.get(eid).map_or(0.125, |a| turn_rate(a, in_event));
-            e.yaw += diff * (1.0 - (1.0 - rate).powf(ticks));
+            if world.face_locks.get(eid).is_none_or(|t| Instant::now() >= *t) {
+                e.yaw += diff * (1.0 - (1.0 - rate).powf(ticks));
+            }
             e.ratio = crate::motion::move_ratio(e.ratio, moved, dt, e.motion.speed, e.motion.speed_base, e.motion.status);
             bump::active_tick(e, ticks);
             e.last_pos = e.pos;
@@ -6679,7 +6698,9 @@ impl App {
         } else {
             self.stand_sent = false;
         }
-        if resting {
+        // Scheduler op 0x2e: the effect of our own action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
+        let move_locked = world.move_lock.is_some_and(|t| Instant::now() < t);
+        if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
         // Camera axes 6 / 7: the arrows (with Shift in a window) or the compact I / J / K / L stick.
@@ -6712,7 +6733,7 @@ impl App {
         if world.autorun && (in_event || world.dead() || matches!(world.my_motion.status, 6 | 7 | 0x21 | 0x26..=0x2c | 0x2f | 0x30 | 0x32..=0x35 | 0x38..=0x53)) {
             world.autorun = false;
         }
-        if world.autorun && !world.locked {
+        if world.autorun && !world.locked && !move_locked {
             if world.autorun_dir == Vec3::ZERO && step != Vec3::ZERO {
                 world.autorun_dir = step.normalize();
             }

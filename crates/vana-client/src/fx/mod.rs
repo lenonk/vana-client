@@ -10,6 +10,7 @@ pub mod sched;
 pub mod sound;
 pub mod spline;
 mod tasks;
+pub use tasks::{HOLD_REACT, HOLD_STATUS};
 pub use tasks::event_action_file;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
@@ -685,7 +686,9 @@ pub struct Effects {
     pub gens_off: Vec<(u32, bool)>,
     /// Skill / magic actions' holds for the client: op 0x20 (actor2) / 0x59 (actor1, no reactions) as (actor, ticks,
     /// no reactions), and the actors whose load hold ends (their "main" started or was given up, FUN_100a9610).
-    pub holds: Vec<(u32, f32, bool)>,
+    pub holds: Vec<(u32, f32, u8)>,
+    /// Ops 0x2e (actor1's move input, our own player only) and 0x2f (actor1's facing) locked for ticks.
+    pub locks: Vec<(u32, u8, f32)>,
     pub releases: Vec<u32>,
     /// Load holds taken here (op 0x80's skillchain burst, FUN_100a8e30); released like the action's.
     pub loads: Vec<u32>,
@@ -779,6 +782,7 @@ impl Effects {
             fades: Vec::new(),
             gens_off: Vec::new(),
             holds: Vec::new(),
+            locks: Vec::new(),
             releases: Vec::new(),
             loads: Vec::new(),
             reacts: Vec::new(),

@@ -7645,3 +7645,26 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Not done from the specs yet: ops 0x40..0x47 (the shine overlay: an additive, camera-normal mapped texture pass with
   U / V scroll and colour fades; Pollen's green wave), op 0x7b's two-point offsets, 0x33 and modes 7 / 8 at start
   (attach_now has no Frame), the spin ops' attachment rebuild.
+
+## Scheduler task ops: holds, locks, loops, flow (2026-10-25; spec ~/ffxi/lab/research/task_ops_rest_spec.md)
+
+- Holds (FUN_100601f0, the busy +0x11c the status changes wait for): 0x56 every record's target (without an action,
+  0x20 on actor2), 0x1f actor1, as 0x20 actor2. No reactions (+0x80, FUN_100607e0): 0x07 actor1, 0x08 actor2; 0x59 is
+  both on actor1. Effects::holds carries the kinds (HOLD_STATUS, HOLD_REACT). Without 0x56 a target killed by a skill
+  fell up to ~165 ticks early (3430's per-target tgt0 and its 0x20 start late), and on area moves every target but
+  the first was unheld. Not done: +0x80's other reader, FUN_100c63d0 skipping the status / move motion re-pick.
+- 0x2e: actor1's move input for dur x speed (+0xfc; FUN_100a5ec0 skips FUN_100a6240, the local player's walk, keys,
+  pad and autorun). World::move_lock, our own player only. Not done: the end's status-motion restart (FUN_100ca9b0:
+  +0x7d8 cleared unless idl / 1dl..3dl / btl / 1tl..3tl / cor / rx1).
+- 0x2f: actor1's facing for dur x speed (+0x838: FUN_100c63d0 skips the heading ease, FUN_100ab880 leaves the
+  rotation of network updates alone). World::face_locks; the entities' yaw ease is skipped while locked.
+- 0x2a: op 0x29's model colour drive on actor2.
+- 0x73: the child loops (FUN_10055cc0 with 1 -> +0x141; FUN_10057c20 restarts it at its end with speed 1.0) until
+  killed: Task::looping, restarted the next frame. 57 uses in 20 files (lpo0 / lpr1 ..., mostly items).
+- No cases in FUN_10057fb0's switch: 0x01 (opens most schedulers), 0x50, 0x74, 0x69; 0x7f and 0x86 write fields
+  nothing reads. 0x6a and 0x67 reached in the main flow kill the task (vtable +0x18); 0x64 / 0x65 take their blocks
+  as before (the wrapper 0x69 .. 0x6a around conditional schedulers was what reached the default arm).
+- TexInfo (kind 0x0a): the current loader (FUN_10073430, cur all.c 86283) makes one beside every IMG chunk (types 0x20
+  and 0x1b), same 4cc, pointing at the image; no DAT has the chunk type itself. So ops 0x40 / 0x41 / 0x54 / 0x55
+  (the shine overlay) and emission op 0x55 resolve their texture by an IMG 4cc in scope.
+- The weapon-skill sweep after this: 0x75 (weapon hide / show), the shine ops, stream 1 ops 0x43 / 0x56 / 0x32 left.
