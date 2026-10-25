@@ -6523,6 +6523,9 @@ impl App {
                 }
             }
         }
+        for (code, c, zoom, ticks) in std::mem::take(&mut world.effects.screen_ops) {
+            world.screen.fx_op(code, c, zoom, ticks);
+        }
         for (id, op, ticks) in std::mem::take(&mut world.effects.locks) {
             let until = Instant::now() + std::time::Duration::from_secs_f32(ticks.max(0.0) / 60.0);
             if op == 0x2e {
@@ -9073,11 +9076,13 @@ impl App {
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
-                // Event crossfade and fades over the scene, under the 2D layer; the zoning fade as a multiply too.
+                // Event crossfade, the effect flash and feedback blur, and the fades over the scene, under the 2D layer;
+                // the zoning fade as a multiply too.
                 let (cross, m) = (w.screen.cross_alpha(), w.screen.multiply().map(|c| c * (1.0 - w.fade)));
-                if cross.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
+                let (flash, blur) = (w.screen.flash(), w.screen.blur());
+                if cross.is_some() || flash.is_some() || blur.is_some() || m.iter().any(|c| (c - 1.0).abs() > 0.005) {
                     let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
-                    fx.draw(&gfx.gpu, &mut encoder, &scene_raw, bg, cross, m);
+                    fx.draw_all(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), bg, cross, flash, blur, m);
                 }
                 w.last_camera = Some(camera);
                 drew_world = true;

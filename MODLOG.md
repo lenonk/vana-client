@@ -7897,3 +7897,22 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   player as actor1 (retail moves the actor itself, which for the player is the position sent to the server).
   Test pin_holds_actor1.
 
+## Effect scheduler screen ops 0x0f / 0x72 / 0x0e (2026-10-25; spec task_ops_rest_spec.md section 3)
+
+- FUN_10057000 cases 0x0f, 0x51, 0x72 each keep one global task (DAT_1047bf28 / bf2c / bf30, vtable 0x1032b8bc, type
+  +0x48); a new op kills the last of its type first, whose dtor FUN_10060750 sets its target at once, so the new lerp
+  starts from the old target (ours: Screen::fade / flash / blur start from the last target; the event 0x0f path too,
+  which used to start from the current value). 0x0e has its own slot DAT_1047bf20 (vtable 0x1032b8e8) and is tied to
+  its scheduler (FUN_10074790(param_1)); every 0x0e start sets DAT_1045692c = 0, restarting the capture.
+- Bytes @8 are R, G, B, A (the deltas compare data[8] with the colour's red byte).
+- 0x72 (flash): dur x speed - 1 ticks; FUN_100132b0's first block draws a screen quad of cam +0x324 (copied from +0x328
+  each frame) when its RGB is not 0: flat diffuse RGB, alpha min(2A, 255), SRCALPHA / ONE, no z.
+- 0x0e (feedback blur): dur x speed ticks, RGBA @8 and f32 zoom f @0xc lerped; while A != 0, FUN_100132b0's second
+  block: on the first frame after a start the scene is copied into DAT_10456938; each frame that copy is drawn over the
+  scene with colour MODULATE2X(texture, RGB), alpha min(2A, 255), SRCALPHA / INVSRCALPHA, CLAMP, UV 1 - f .. f
+  *(inf: FUN_1000a5a0's uv order)*, then the composite is copied back: a zoom trail (808080 1e, f 0.99).
+- Order into the scene target (FUN_10010d20 / 0x10012471): crossfade (0x10), flash, feedback; the 0x0f multiply comes
+  when the target is copied out. Ours: ScreenFx::draw_all in that order over the scene (render/screenfx.rs), from
+  event::Screen::flash / blur; the ops reach it through Effects::screen_ops. Our copy is full size (retail's
+  DAT_10456938 size not checked). Tests flash_adds, feedback_keeps_last_frame, fx_screen_ops.
+

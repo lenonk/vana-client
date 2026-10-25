@@ -130,11 +130,18 @@ pub struct Screen {
     /// from, to, start tick, length.
     fade: ([f32; 3], [f32; 3], f32, f32),
     pub cross: Option<Cross>,
+    /// Op 0x72: the additive flash, RGBA / 255: from, to, start tick, length.
+    flash: ([f32; 4], [f32; 4], f32, f32),
+    /// Op 0x0e: the feedback blur, RGBA / 255 and the zoom f: from, to, start, length; and its starts (each restarts
+    /// the capture, DAT_1045692c = 0).
+    blur: ([f32; 5], [f32; 5], f32, f32),
+    blur_starts: u32,
 }
+
 
 impl Default for Screen {
     fn default() -> Self {
-        Screen { scheds: Vec::new(), files: HashMap::new(), shot: None, tick: 0.0, fade: ([1.0; 3], [1.0; 3], 0.0, 0.0), cross: None }
+        Screen { scheds: Vec::new(), files: HashMap::new(), shot: None, tick: 0.0, fade: ([1.0; 3], [1.0; 3], 0.0, 0.0), cross: None, flash: ([0.0; 4], [0.0; 4], 0.0, 0.0), blur: ([0.5, 0.5, 0.5, 0.0, 1.0], [0.5, 0.5, 0.5, 0.0, 1.0], 0.0, 0.0), blur_starts: 0 }
     }
 }
 
@@ -155,6 +162,39 @@ impl Screen {
         let (from, to, start, len) = self.fade;
         let t = if len <= 0.0 { 1.0 } else { ((self.tick - start) / len).clamp(0.0, 1.0) };
         std::array::from_fn(|i| from[i] + (to[i] - from[i]) * t)
+    }
+
+    /// An effect scheduler's screen op (fx/tasks.rs): 0x0f the multiply, 0x72 the flash over dur x speed - 1 ticks,
+    /// 0x0e the feedback blur over dur x speed. Each starts from the last one's target (its task is killed first).
+    pub fn fx_op(&mut self, code: u8, c: [u8; 4], zoom: f32, ticks: f32) {
+        let f = |v: u8| v as f32 / 255.0;
+        let now = self.tick;
+        match code {
+            0x0f => self.fade = (self.fade.1, [c[0], c[1], c[2]].map(|v| v as f32 * 2.0 / 255.0), now, (ticks - 1.0).max(0.0)),
+            0x72 => self.flash = (self.flash.1, c.map(f), now, (ticks - 1.0).max(0.0)),
+            0x0e => {
+                self.blur = (self.blur.1, [f(c[0]), f(c[1]), f(c[2]), f(c[3]), zoom], now, ticks.max(0.0));
+                self.blur_starts += 1;
+            }
+            _ => {}
+        }
+    }
+
+    fn lerp<const N: usize>(&self, (from, to, start, len): ([f32; N], [f32; N], f32, f32)) -> [f32; N] {
+        let t = if len <= 0.0 { 1.0 } else { ((self.tick - start) / len).clamp(0.0, 1.0) };
+        std::array::from_fn(|i| from[i] + (to[i] - from[i]) * t)
+    }
+
+    /// FUN_100132b0's first block: the flash quad when its RGB is not 0, alpha doubled (SRCALPHA / ONE).
+    pub fn flash(&self) -> Option<[f32; 4]> {
+        let c = self.lerp(self.flash);
+        (c[..3].iter().any(|v| *v * 255.0 >= 0.5)).then(|| [c[0], c[1], c[2], (2.0 * c[3]).min(1.0)])
+    }
+
+    /// FUN_100132b0's second block: last frame drawn over the scene while the alpha is not 0.
+    pub fn blur(&self) -> Option<crate::render::screenfx::Blur> {
+        let b = self.lerp(self.blur);
+        (b[3] * 255.0 >= 0.5).then(|| crate::render::screenfx::Blur { rgb: [b[0], b[1], b[2]], a: (2.0 * b[3]).min(1.0), zoom: b[4], start: self.blur_starts })
     }
 
     /// Alpha of the crossfade image (FUN_1005f020: remaining / total), None when there is none.
@@ -203,7 +243,7 @@ impl Screen {
             self.shot = Some(Shot { file: f, tag, path, start: at, ticks, from: current.map(key_of), follow });
         }
         if let Some((to, at, ticks)) = fade {
-            self.fade = (self.multiply(), to, at, ticks);
+            self.fade = (self.fade.1, to, at, ticks);
         }
         if cross.is_some() {
             self.cross = cross;
@@ -2120,6 +2160,27 @@ mod tests {
     }
 
     /// fdo1 (0, 0, 0, 0x80) then fdi1 (0x80, 0x80, 0x80, 0) over 60 ticks: a multiply, halfway scene x 0.5.
+    #[test]
+    fn fx_screen_ops() {
+        let mut sc = Screen::default();
+        // 0x72 white 0x80 over 11 ticks: half way at 5, the alpha doubled.
+        sc.fx_op(0x72, [0xff, 0xff, 0xff, 0x80], 0.0, 11.0);
+        sc.tick = 5.0;
+        let f = sc.flash().unwrap();
+        assert!((f[0] - 0.5).abs() < 1e-3 && (f[3] - 0.502).abs() < 1e-2, "{f:?}");
+        // The "off" op starts from the last target.
+        sc.fx_op(0x72, [0, 0, 0, 0], 0.0, 1.0);
+        sc.tick = 6.0;
+        assert!(sc.flash().is_none());
+        // 0x0e on, then off: each start counts.
+        sc.fx_op(0x0e, [0x80, 0x80, 0x80, 0x1e], 0.99, 0.0);
+        let b = sc.blur().unwrap();
+        assert_eq!(b.start, 1);
+        assert!((b.zoom - 0.99).abs() < 1e-6 && (b.a - 60.0 / 255.0).abs() < 1e-3, "{b:?}");
+        sc.fx_op(0x0e, [0x80, 0x80, 0x80, 0], 1.0, 0.0);
+        assert!(sc.blur().is_none());
+    }
+
     #[test]
     fn fade_is_a_multiply() {
         let mut sc = Screen::default();

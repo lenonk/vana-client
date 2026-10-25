@@ -835,6 +835,9 @@ pub struct Effects {
     owned_motions: Vec<(u64, u32, u32)>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
     pub door_moves: Vec<DoorMove>,
+    /// Scheduler ops 0x0f / 0x72 / 0x0e for the screen (client/event.rs Screen): code, the RGBA bytes @8, f32 @0xc
+    /// (0x0e's zoom), dur x speed.
+    pub screen_ops: Vec<(u8, [u8; 4], f32, f32)>,
     pub lift_moves: Vec<LiftMove>,
     /// W+0x1bc: the camera is under a covered object (FUN_101845c0).
     covered: bool,
@@ -933,6 +936,7 @@ impl Effects {
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
             door_moves: Vec::new(),
+            screen_ops: Vec::new(),
             lift_moves: Vec::new(),
             sub_lib: None,
             covered: false,

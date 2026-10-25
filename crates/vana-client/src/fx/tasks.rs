@@ -1007,6 +1007,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // FUN_10057000 cases 0x0f / 0x72 / 0x0e: the scene multiply, the additive screen flash and the feedback
+            // blur, a global task each (a new one ends the last at its target).
+            0x0f | 0x72 | 0x0e => {
+                let c = op.u32_at(8).to_le_bytes();
+                let zoom = if op.code == 0x0e { f32::from_bits(op.u32_at(0xc)) } else { 0.0 };
+                self.screen_ops.push((op.code, c, zoom, op.dur.max(0) as f32 * t.speed));
+                Flow::Next
+            }
             // FUN_10061fd0: for dur x speed, actor1 stands at actor2's point (u32 @0x20) + offset (vec3 @0x10) turned
             // by actor2's yaw, facing actor2's yaw + pi for ordinary points (FUN_100c63d0).
             0x7a => {
