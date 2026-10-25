@@ -104,13 +104,14 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
     levelsync.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange"; left View Request; the
     invite side untested live);
-    Status done (client/status.rs, currencies.rs, unity.rs, MODLOG "Status window", "Currencies", "Unity"; left Merit /
-    Job / Alter Ego Points, spec `status_rows_spec.md`);
+    Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, MODLOG "Status window",
+    "Currencies", "Unity", "Merit Points and Job Points"; left Alter Ego Points, spec `status_rows_spec.md`; Raise /
+    Lower and spending job points not tried live);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
     lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
     seacom.rs; left /seacom and /seacomup, arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:
-    the item list, equip / unequip, naming, Drop, the message and /lsmes done, not seen with a real shell yet; left the
-    Link List (link12) and member actions); Region Info done (region.rs; left the Campaign windows, which LSB never
+    the item list, equip / unequip, naming, Drop, the message and /lsmes done, not seen with a real shell yet; the
+    Link List and member actions (linklist.rs, link12 and link7..10) built, not seen live); Region Info done (region.rs; left the Campaign windows, which LSB never
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done
     (bazaar.rs, shop.rs, seacom.rs; left the name's bazaar glyph, View Wares), Help Desk's faqsub and the GM call done
     (helpdesk.rs, faqmain.rs; left the Adventuring Primer, the GM reply page, Execute not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set

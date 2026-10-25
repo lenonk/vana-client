@@ -50,6 +50,7 @@ mod synth;
 mod treasure;
 mod servmes;
 mod chatctrl;
+mod linklist;
 mod jobpoints;
 mod merits;
 mod plate;
@@ -1457,6 +1458,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if helpdesk::focused(world) => helpdesk::key(world, *key),
                 _ if world.macroedit.is_some() => macroedit::key(world, gu, *key),
+                _ if world.linklist.is_some() => linklist::key(world, gu, *key),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
                 _ if world.moogle.is_some() => {
@@ -1726,7 +1728,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.linklist.is_none() && world.confirm.is_none()) {
         linkshell::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.arealist.is_some() && world.confirm.is_none()) {
@@ -2251,6 +2253,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
     blockers.extend(linkshell::draw(gu, world, sw, sh));
+    blockers.extend(linklist::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
@@ -2527,6 +2530,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             macroedit::answer(world, a);
         }
+        (Some(true), Some((Confirm::LinkKick(k), _))) => {
+            world.confirm = None;
+            linklist::kick(world, &k);
+        }
         (Some(true), Some((Confirm::Merit(a), _))) => {
             world.confirm = None;
             merits::answer(world, a);
@@ -2707,6 +2714,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
     linkshell::bars(gu, world, &mut bars);
+    linklist::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     arealist::bars(gu, world, &mut bars);
@@ -2751,6 +2759,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::NewAdventurer, _) => world.battle.as_ref().and_then(|b| b.group9(0xd4)).unwrap_or_default(),
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
+        (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
@@ -3745,6 +3754,8 @@ struct World {
     /// Merit Points (client/merits.rs): the windows, the tables, s2c 0x08C by merit index (next cost, level) with its
     /// change stamp, the category list's remembered row (+0x54, for the session).
     merits_ui: Option<merits::MeritUi>,
+    /// Linkshell's Link List (client/linklist.rs).
+    linklist: Option<linklist::LinkList>,
     /// The main menu's pupequip (client/equipwin.rs).
     pupequip: Option<equipwin::PupMenu>,
     merit_tables: Option<Arc<crate::dat::merits::MeritTables>>,
@@ -4009,6 +4020,8 @@ enum Confirm {
     Macro(macroedit::Ask),
     /// merityn (FUN_10210e30, its own instance): raise / lower a merit, raise a job point.
     Merit(merits::Ask),
+    /// link7 / link8 / link9's Kick (FUN_101e6620): group 10 0x36.
+    LinkKick(linklist::Kick),
     JobPoint(jobpoints::Ask),
 }
 
@@ -5029,6 +5042,7 @@ impl App {
                             merits: None,
                             jp_access: None,
                             merits_ui: None,
+                            linklist: None,
                             pupequip: None,
                             merit_tables: None,
                             merit_list: Default::default(),
@@ -6823,6 +6837,8 @@ impl App {
             }
         } else if self.input.test(0x11, input::mode::PRESS) && world.search.as_ref().is_some_and(|s| s.option.is_none()) && !searchmenu::refining(world) {
             search::toggle_view(world);
+        } else if self.input.test(0x11, input::mode::PRESS) && world.linklist.is_some() {
+            linklist::toggle_view(world);
         }
         // Key function 0x11 (Num+): the item list's focus to itmsort2 and back (list message 8, FUN_101f3740), SE 0013.
         if self.input.test(0x11, input::mode::PRESS)

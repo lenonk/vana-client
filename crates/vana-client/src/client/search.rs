@@ -19,6 +19,8 @@ pub enum Then {
     Summary(Scope),
     /// LAB_10204da0's query: the rows of "menu    levelsyn".
     LevelSync,
+    /// A linkshell's group list: the rows of "menu    link12" (client/linklist.rs).
+    LinkList,
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -384,7 +386,7 @@ pub fn run_quiet(w: &mut World, cond: Cond, scope: Scope) {
 
 /// DAT_10385a04 != 4: a query for the results window or a summary is out.
 pub fn busy(w: &World) -> bool {
-    w.searches.iter().any(|s| matches!(s.1, Then::Results | Then::Summary(_)))
+    w.searches.iter().any(|s| matches!(s.1, Then::Results | Then::Summary(_) | Then::LinkList))
 }
 
 /// The summary scope from the areas searched: one area, several, none (all areas).
@@ -427,6 +429,7 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             invite(w, r.id, r.flags);
         }
         Then::LevelSync => super::levelsync::filled(w, reply),
+        Then::LinkList => super::linklist::filled(w, reply),
         Then::Summary(scope) => {
             if let Some(r) = reply {
                 summary(w, scope, r.total as usize, r.records.len());
@@ -645,7 +648,7 @@ fn status_icon(f: u32) -> (usize, Option<(usize, usize)>) {
 }
 
 /// The icon array W+0x898 by index: keytops3 0..11, windowps 12..21, pname 22..24.
-fn icon(k: usize) -> Option<(&'static str, usize)> {
+pub(super) fn icon(k: usize) -> Option<(&'static str, usize)> {
     match k {
         0..=11 => Some(("menu    keytops3", STATUS[k])),
         12..=21 => Some(("menu    windowps", GENRE[k - 12])),

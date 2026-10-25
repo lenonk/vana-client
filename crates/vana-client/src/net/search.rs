@@ -145,6 +145,9 @@ pub struct Record {
     pub flags: u32,
     pub comment: u32,
     pub languages: u16,
+    /// Type 0xd: the ranks (1 holder, 2 pearlsack, 3 pearl) and ids of the person's three linkshells.
+    pub ls_ranks: [u8; 3],
+    pub ls_ids: [u32; 3],
 }
 
 #[derive(Clone, Debug, Default)]
@@ -360,8 +363,11 @@ pub fn decode(entry: &[u8]) -> Record {
                 7 => r.master_level = get(8)? as u8,
                 8 => r.id = get(20)?,
                 0xd => {
-                    for w in [8, 8, 8, 32, 32, 32] {
-                        get(w)?;
+                    for k in 0..3 {
+                        r.ls_ranks[k] = get(8)? as u8;
+                    }
+                    for k in 0..3 {
+                        r.ls_ids[k] = get(32)?;
                     }
                 }
                 0xe => {
@@ -451,6 +457,25 @@ mod tests {
         // [00000 0 1][0][0011][1000001 1100010 1100011]: "Abc".
         let (w, p) = condition(&Cond::name("Abc"));
         assert_eq!((w, p), (0, vec![5, 0x02, 0x38, 0x38, 0xb1, 0x80]));
+    }
+
+    /// Type 0xd: three 8-bit ranks, then three 32-bit linkshell ids (the group list's linkshell members).
+    #[test]
+    fn linkshell_entry() {
+        let mut b = Bits::default();
+        b.put(0, 5);
+        b.put(2, 4);
+        b.put(b'A' as u32, 7);
+        b.put(b'b' as u32, 7);
+        b.put(0xd, 5);
+        for v in [2, 0, 3] {
+            b.put(v, 8);
+        }
+        for v in [0x1234_5678, 0, 0x9abc] {
+            b.put(v, 32);
+        }
+        let r = decode(&b.bytes);
+        assert_eq!((r.name.as_str(), r.ls_ranks, r.ls_ids), ("Ab", [2, 0, 3], [0x1234_5678, 0, 0x9abc]));
     }
 
     /// Against the local xi_search: everyone, then the first of them by name (`cargo test -- --ignored live`).

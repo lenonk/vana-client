@@ -567,7 +567,13 @@ fn select(w: &mut World, name: &'static str, child: u16) {
         (HOLDER | SACK, 3) if n != 0 => {
             let _ = w.net.commands.send(NetCommand::Packet { id: 0x0C3, body: vec![0, n] });
         }
-        (HOLDER | SACK | PEARL, 1) => log::info!("linkshell: Link List (link12) is not implemented yet"),
+        // FUN_101e5c50(n): the member list (link12); our rank is the shell's Flag @8.
+        (HOLDER | SACK | PEARL, 1) if n != 0 => {
+            if let Some(r) = cursor_row(w) {
+                let g = group(&ext(w, r.bag, r.slot));
+                super::linklist::open(w, n, g, r.state);
+            }
+        }
         _ => {}
     }
     if let Some(l) = w.linkshell.as_mut() {
@@ -903,6 +909,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         Some(nm) => draw_naming(gu, w, nm, sw, sh),
         None => draw_header(gu, w, row, sw, sh),
     });
+    // link12 closes link5 and its submenus while it is up (FUN_101e4570); its close reopens them (FUN_101e5030).
+    if w.linklist.is_some() {
+        return rects;
+    }
     let focused = focused(w);
     let sel = if focused && !rows.is_empty() { (l.cursor.saturating_sub(l.top) + 1) as u16 } else { 0 };
     if let Some((wx, wy)) = gu.menu_sel(LIST, sw, sh, sel) {

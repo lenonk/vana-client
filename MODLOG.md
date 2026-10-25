@@ -7353,3 +7353,22 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` sections 1, 2 (client/merits.rs, 
   live (a PUP sub job would unlock PUP on the test character).
 - C.7: the pointer over the list while the grid has the focus, or over the grid while the list has it, sends
   message 8 as Num+ (FUN_10132c30 / FUN_101f27a0) *(inf: on any pointer move inside)*.
+
+## Linkshell: the Link List and member actions (2026-10-25)
+
+Spec `~/ffxi/lab/research/menu_rows2_spec.md` L4.5 (client/linklist.rs).
+- Link List (link2 / link3 / link4 row 1, FUN_101e5c50(n)): the search server's group list with the shell's group id
+  (exdata u32 @0) in the LS1 or LS2 place; link12 replaces link5 (FUN_101e4570) under link6's header and its close
+  brings link5 back (FUN_101e5030). Rows (FUN_101e4e50): only records carrying our group id among their three
+  linkshells (search entry type 0xd: three 8-bit ranks, then three 32-bit ids; ours skipped it before): the rank's item
+  icon at half size (0x201 holder or other, 0x202 pearlsack, 0x203 pearl), the job / level cell (Num+ the other
+  view), the comment-genre icon with flag 0x10, the name (leader / party colours), the short zone name when not ours.
+  10 rows of 18 px; "No applicable entries." (7 0x6b) / "Search failed." (7 0x65).
+- Enter (FUN_101e4d10) opens the member window by our rank and theirs: we hold it: a holder -> link10 (Tell), a
+  pearlsack -> link8 (Tell, To Pearl, Kick), a pearl -> link7 (Tell, To Sack, Kick); we have a sack: link9 (Tell,
+  Kick); a pearl: link10. Disabled: rank changes and Kick unless through linkshell 1; the rank change unless the member
+  wears it as linkshell 1 *(inf)*; Kick on a holder, on our own rank, on ourselves. Tell opens the chat line on
+  "/tell Name "; To Sack / To Pearl c2s 0x077 {name, kind 1, change 2 / 3}; Kick asks group 10 0x36 (name, pronoun)
+  then c2s 0x071 {0, 0, kind 1, name}. Every action closes link12.
+- Not seen live (needs a linkshell on the test character); the record parse has a unit test. Not done: the comment
+  fetch on Enter (kind 4), as in scresult.
