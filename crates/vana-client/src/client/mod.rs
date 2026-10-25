@@ -9182,6 +9182,8 @@ impl App {
                     let c = |sh: u32| ((tf >> sh) & 0xff) as f32 / 255.0;
                     shines.insert(id, crate::render::Shine { key, u, v, tf: [c(16), c(8), c(0), c(24)] });
                 }
+                // Ops 0x48 / 0x49: the refraction level per actor.
+                let refracts: HashMap<u32, f32> = w.effects.refractions().into_iter().collect();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -9438,6 +9440,9 @@ impl App {
                     }
                     g.hidden_weps = (0..16).filter(|&n| a.wep_hide[n].iter().any(|&h| h)).fold(0, |m, n| m | 1 << n);
                     g.shine = shines.get(id).copied();
+                    // FUN_100d6d30: TFACTOR alpha (0x80 - model colour alpha) & 0xff; an opaque model adds nothing.
+                    let r8 = crate::render::Refract::tf_alpha(a.alpha.clamp(0.0, 255.0) as u32);
+                    g.refract = refracts.get(id).filter(|_| r8 > 0.0).map(|&level| crate::render::Refract { level, r: r8 });
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).
@@ -9494,6 +9499,18 @@ impl App {
                 let budget = if w.zone_uploading.is_some() || w.downloading.is_some() { crate::render::MIP_BUDGET } else { crate::render::MIP_BUDGET_WORLD };
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, budget));
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
+                // Refracting actors, farthest first (retail's sorted list), after the opaque scene.
+                let mut refracting: Vec<(f32, &crate::render::ActorGpu)> = w
+                    .actors
+                    .iter()
+                    .filter(|(id, a)| !a.vanished() && !hidden.contains(id))
+                    .filter_map(|(id, a)| Some((places.get(id)?.pos.distance(camera.eye), a.gpu.as_ref().filter(|g| g.refract.is_some() && g.alpha >= 1e-4)?)))
+                    .collect();
+                if !refracting.is_empty() {
+                    refracting.sort_by(|x, y| y.0.total_cmp(&x.0));
+                    let list: Vec<&crate::render::ActorGpu> = refracting.iter().map(|x| x.1).collect();
+                    r.render_refraction(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), &scene_depth, &camera, aspect, &list);
+                }
                 r.occl.run(&gfx.gpu, &mut encoder, &scene_depth);
                 // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the

@@ -7764,7 +7764,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   *(inf)*.
 - Pollen (3979): `nami` (bee_mitunami) for 131 ticks from tick 130; seen live 2026-10-25: the bee's body turns a pale
   olive green under the burst during the fade-in and scroll; not compared with retail.
-- Ops 0x48 / 0x49 (+0x734 bit 1, the refraction pass) are not done.
+- Ops 0x48 / 0x49 (+0x734 bit 1, the refraction pass): see "The actor refraction pass" below.
 
 ## Effect attach modes 9..0xc: the bone frame (2026-10-25)
 
@@ -8422,3 +8422,27 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix, `!addeffect colure_active 6 30`): 0x037 turned it on; init / star / kill, eff0 1.4 s later with
   its generators (oya1, fla1, gl01..05, yr01 / yr02, rg02..04, sen2 / sen8 / sen9, pk01 / pk04): the light intro
   burst around the body, then the faint bubble; at expiry dead / stop and the actor gone. Not compared with retail.
+
+## The actor refraction pass: scheduler ops 0x48 / 0x49 (2026-10-25; spec ~/ffxi/lab/research/fx_refraction_spec.md)
+
+- Ops: FUN_10061240 (0x48 actor1, 0x49 actor2, dolls unwrapped, CXiSkeletonActor only): +0x734 |= 2 at once, the
+  level +0x744 (0.1 from the skeleton constructors) linearly to f32 @8 over trunc(dur x speed) (update FUN_100612b0);
+  the end FUN_100611e0 (also when the scheduler task dies first) snaps to the target, and a target of exactly 0 clears
+  bit 1. Drives do not replace each other.
+- Bit 1 puts the actor in the depth-sorted translucent list (asm 0x100c7e0a): after the opaque scene, before nearly
+  every effect. FUN_100d6d30: TFACTOR = (0x80 - model colour alpha) << 24 | 0x808080. Per actor FUN_10025870 copies the
+  whole scene target so far into DAT_10456e6c (scene size, shared); per batch after the base and the shine
+  (FUN_1002dc10) FUN_10025330 draws it again: the copy through D3DTS_TEXTURE0 = PROJ x T + (L P11, L P22) on _41 / _42
+  (CAMERASPACEPOSITION, COUNT4 | PROJECTED): the pixel's screen uv shifted by (L P11, L P22) / w, right and down;
+  colour the copy, alpha sat(4 sat(2 copy.a r) r), SRCALPHA / ONE, z tested not written, fog on, WRAP. An opaque
+  model (alpha 0x80) adds nothing; an actor at alpha 0 is not drawn at all (0x100cbf51). (task_ops_actor_spec.md 3's
+  FUN_10024a40 is the copy; the pass is FUN_10024500, cur FUN_10025330.)
+- Uses: 4025 (mob anim 125, a warp-in), 4119 (Terror Touch, Ghost / Bhoot), 50703 (mob anim 1056, a jump), 5022 /
+  5030 (abilities 610 / 618).
+- Ours: Shine.refract / level (default 0.1), ShineKind::Refract, Effects::refractions; ActorGpu.refract (Refract
+  {level, r = Refract::tf_alpha}); ZoneRenderer::render_refraction after the zone render, farthest first: a full-size
+  copy per actor, its base batches, its shine, then vs_skinned_refract / fs_actor_refract (copy decoded to the
+  shaders' working space, fogged as shade(), encoded again; k the draw alpha). The shine pass now fogs toward the fog
+  colour (D3D8 fogs a pass's colour before the add) instead of fading out. flash-shot writes refract_*.png. Tests
+  refract_drive, refract_tf_alpha. Offscreen (zone 230 noon): alpha 0x80 identical to the plain frame; 0x40 / 0x3c /
+  0x0b glassy with the shifted background added. Not seen live (no Ghost near the test characters).

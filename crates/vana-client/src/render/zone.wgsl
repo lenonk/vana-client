@@ -261,8 +261,43 @@ fn fs_actor_shine(in: VertexOut) -> @location(0) vec4<f32> {
     let a = clamp(clamp(t.a, 0.0, 1.0) * 2.0 * shine.tf.a, 0.0, 1.0);
     let dist = distance(in.world, u.eye.xyz);
     let fog = clamp((dist - u.fog.x) / (u.fog.y - u.fog.x), 0.0, 1.0);
-    let o = rgb * (1.0 - fog);
+    // D3D8 fogs the pass's colour toward the fog colour before the add (the base pass's fog state stays on).
+    let o = mix(rgb, u.fog_color.rgb, fog);
     return vec4<f32>(select(o, pow(o, vec3<f32>(1.0 / 2.2)), u.fog.z > 0.5), a);
+}
+
+// The actor refraction pass (scheduler ops 0x48 / 0x49): a = (L, r, k, 0), p = (P00, P11, 0, 0).
+struct RefrU {
+    a: vec4<f32>,
+    p: vec4<f32>,
+};
+@group(3) @binding(0) var<uniform> refr: RefrU;
+
+// D3DTS_TEXTURE0 = PROJ x T(0.5, -0.5 scale, 0.5 offset) + (L P11, L P22) on _41 / _42, CAMERASPACEPOSITION, COUNT4 |
+// PROJECTED: the pixel's screen uv shifted by (L P11, L P22) / w (right and down).
+@vertex
+fn vs_skinned_refract(v: SkinIn) -> VertexOut {
+    var out = skin(v);
+    let c = out.clip;
+    out.uv = vec2<f32>(0.5 * c.x + 0.5 * c.w + refr.a.x * refr.p.x, -0.5 * c.y + 0.5 * c.w + refr.a.x * refr.p.y);
+    out.depth = c.w;
+    return out;
+}
+
+// Stage 0 colour = the copy, alpha MODULATE2X(copy, TFACTOR r); stage 1 colour MODULATE2X(CURRENT, 0x80), alpha
+// MODULATE4X(CURRENT, r); times the draw alpha k (retail composites a translucent actor at k); fogged as the base pass.
+@fragment
+fn fs_actor_refract(in: VertexOut) -> @location(0) vec4<f32> {
+    let c = textureSample(tex, samp, in.uv / in.depth);
+    let enc = u.fog.z > 0.5;
+    let lin = select(c.rgb, pow(c.rgb, vec3<f32>(2.2)), enc);
+    let rgb = min(lin * 2.0 * (128.0 / 255.0), vec3<f32>(1.0));
+    let a0 = min(2.0 * c.a * refr.a.y, 1.0);
+    let a = min(4.0 * a0 * refr.a.y, 1.0) * refr.a.z;
+    let dist = distance(in.world, u.eye.xyz);
+    let fog = clamp((dist - u.fog.x) / (u.fog.y - u.fog.x), 0.0, 1.0);
+    let o = mix(rgb, u.fog_color.rgb, fog);
+    return vec4<f32>(select(o, pow(o, vec3<f32>(1.0 / 2.2)), enc), a);
 }
 
 // FFXI vertex colours are half intensity (0x80 = 1.0).

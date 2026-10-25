@@ -310,6 +310,11 @@ pub struct ZoneRenderer {
     shine_pipeline: wgpu::RenderPipeline,
     shine_buf: wgpu::Buffer,
     shine_group: wgpu::BindGroup,
+    refract_pipeline: wgpu::RenderPipeline,
+    refract_buf: wgpu::Buffer,
+    refract_group: wgpu::BindGroup,
+    /// The refraction pass's scene copy (DAT_10456e6c: scene size, one per frame per refracting actor).
+    refract_copy: Option<(wgpu::Texture, wgpu::BindGroup)>,
     /// Shine images by (effect file, IMG node).
     shine_tex: HashMap<(u32, usize), wgpu::BindGroup>,
     pose_layout: wgpu::BindGroupLayout,
@@ -480,6 +485,8 @@ pub struct ActorGpu {
     pub hidden_weps: u16,
     /// The shine overlay this frame (skinned actors).
     pub shine: Option<Shine>,
+    /// The refraction pass this frame (skinned actors; drawn by render_refraction, not render).
+    pub refract: Option<Refract>,
     skin: Option<Skinned>,
     /// Model colour alpha, 1 = opaque (actor fades); goes into the vertex alpha.
     pub alpha: f32,
@@ -521,6 +528,21 @@ pub struct Shine {
     pub u: f32,
     pub v: f32,
     pub tf: [f32; 4],
+}
+
+/// The actor refraction pass (scheduler ops 0x48 / 0x49): the level L (+0x744) and the TFACTOR alpha r = ((0x80 -
+/// model colour alpha) & 0xff) / 255 (FUN_100d6d30).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Refract {
+    pub level: f32,
+    pub r: f32,
+}
+
+impl Refract {
+    /// FUN_100d6d30's TFACTOR alpha from the model colour alpha byte: (0x80 - a) & 0xff, over 255 (0 for an opaque model).
+    pub fn tf_alpha(colour_alpha: u32) -> f32 {
+        (0x80u32.wrapping_sub(colour_alpha) & 0xff) as f32 / 255.0
+    }
 }
 
 /// Shined actors drawn a frame at most, and the stride of their parameters in the shine uniform buffer.
@@ -626,6 +648,7 @@ pub struct ZonePipes {
     skin_pipeline: wgpu::RenderPipeline,
     shine_layout: wgpu::BindGroupLayout,
     shine_pipeline: wgpu::RenderPipeline,
+    refract_pipeline: wgpu::RenderPipeline,
 }
 
 impl ZonePipes {
@@ -858,7 +881,42 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline }
+        // The refraction pass (FUN_10025330): the scene copy sampled through D3DTS_TEXTURE0, SRCALPHA / ONE, z tested but
+        // not written, cull as the base pass (none).
+        let refract_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("actor refraction"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("actor refraction"),
+                bind_group_layouts: &[Some(&globals_layout), Some(&texture_layout), Some(&pose_layout), Some(&shine_layout)],
+                immediate_size: 0,
+            })),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_skinned_refract"), compilation_options: Default::default(), buffers: &skin_buffers },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                stencil: Default::default(),
+                bias: Default::default(),
+            }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_actor_refract"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: color_format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::SrcAlpha, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                        alpha: wgpu::BlendComponent { src_factor: wgpu::BlendFactor::Zero, dst_factor: wgpu::BlendFactor::One, operation: wgpu::BlendOperation::Add },
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline }
     }
 }
 
@@ -1101,6 +1159,12 @@ impl ZoneRenderer {
             layout: &p.shine_layout,
             entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &shine_buf, offset: 0, size: wgpu::BufferSize::new(32) }) }],
         });
+        let refract_buf = device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor refraction"), size: SHINE_SLOTS as u64 * SHINE_STRIDE, usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        let refract_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("actor refraction"),
+            layout: &p.shine_layout,
+            entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding { buffer: &refract_buf, offset: 0, size: wgpu::BufferSize::new(32) }) }],
+        });
         let [v, i, m] = geo.parts().map(|b| b.len() as u64);
         let buffer = |label, size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
         Self {
@@ -1123,6 +1187,10 @@ impl ZoneRenderer {
             shine_pipeline: p.shine_pipeline,
             shine_buf,
             shine_group,
+            refract_pipeline: p.refract_pipeline,
+            refract_buf,
+            refract_group,
+            refract_copy: None,
             shine_tex: HashMap::new(),
             pose_layout: p.pose_layout,
             poses: Vec::new(),
@@ -1451,6 +1519,7 @@ impl ZoneRenderer {
                 instance,
                 hidden_weps: 0,
                 shine: None,
+                refract: None,
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 tint: [1.0; 3],
@@ -1572,7 +1641,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, shine: None, refract: None, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
     }
 
     /// A shine image goes up once (effect file, IMG node).
@@ -1748,7 +1817,7 @@ impl ZoneRenderer {
         }
         if let Some((_, group, _)) = &self.pose_gpu {
             pass.set_pipeline(&self.skin_pipeline);
-            for a in actors.iter().filter(|a| a.mips <= done) {
+            for a in actors.iter().filter(|a| a.mips <= done && a.refract.is_none()) {
                 let Some(skin) = a.skin.as_ref().filter(|s| s.frame == self.pose_frame) else { continue };
                 pass.set_bind_group(2, group, &[skin.offset]);
                 pass.set_vertex_buffer(0, skin.vertices.slice(..));
@@ -1762,7 +1831,7 @@ impl ZoneRenderer {
             }
             // The shine overlay: every batch of the actor again, its image mapped by the world normal.
             let mut slot = 0u64;
-            for a in actors.iter().filter(|a| a.mips <= done) {
+            for a in actors.iter().filter(|a| a.mips <= done && a.refract.is_none()) {
                 let (Some(s), Some(skin)) = (a.shine, a.skin.as_ref().filter(|s| s.frame == self.pose_frame)) else { continue };
                 let Some(tex) = self.shine_tex.get(&s.key) else { continue };
                 if slot >= SHINE_SLOTS as u64 {
@@ -1797,6 +1866,94 @@ impl ZoneRenderer {
 }
 
 impl ZoneRenderer {
+    /// Actors with the refraction pass (scheduler ops 0x48 / 0x49), in the given order (farthest first, retail's sorted
+    /// list): per actor the scene so far is copied whole (FUN_10025870 into DAT_10456e6c), then its batches, its shine
+    /// and the refraction pass (FUN_1002dc10 -> FUN_10025330) sampling that copy at the pixel's own screen point shifted
+    /// by (L P11, L P22) / w. Without a copyable target they draw plainly.
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_refraction(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, color: &wgpu::TextureView, color_tex: Option<&wgpu::Texture>, depth: &wgpu::TextureView, camera: &Camera, aspect: f32, actors: &[&ActorGpu]) {
+        let done = gpu.mips_done();
+        let list: Vec<&ActorGpu> = actors.iter().copied().filter(|a| a.mips <= done && a.refract.is_some() && a.skin.as_ref().is_some_and(|s| s.frame == self.pose_frame)).take(SHINE_SLOTS).collect();
+        if list.is_empty() || self.pose_gpu.is_none() {
+            return;
+        }
+        let src = color_tex.filter(|t| t.usage().contains(wgpu::TextureUsages::COPY_SRC));
+        if let Some(t) = src
+            && self.refract_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
+        {
+            let c = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("actor refraction copy"),
+                size: t.size(),
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: t.format(),
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[t.format().remove_srgb_suffix()],
+            });
+            // Read as the zone pass wrote it: raw bytes when the shaders encode gamma themselves.
+            let vf = if self.encode_gamma { t.format().remove_srgb_suffix() } else { t.format() };
+            let view = c.create_view(&wgpu::TextureViewDescriptor { format: Some(vf), ..Default::default() });
+            let g = view_bind_group(gpu, &self.texture_layout, &self.sampler, &view);
+            self.refract_copy = Some((c, g));
+        }
+        let proj = camera.proj(aspect);
+        let (p00, p11) = (proj.x_axis.x, proj.y_axis.y);
+        let Some((_, group, _)) = &self.pose_gpu else { return };
+        for (slot, a) in list.iter().enumerate() {
+            let (Some(rf), Some(skin)) = (a.refract, a.skin.as_ref()) else { continue };
+            let off = (slot as u64 * SHINE_STRIDE) as u32;
+            gpu.queue.write_buffer(&self.refract_buf, off as u64, bytemuck::cast_slice(&[rf.level, rf.r, a.alpha, 0.0, p00, p11, 0.0, 0.0]));
+            if let (Some(t), Some((c, _))) = (src, self.refract_copy.as_ref()) {
+                encoder.copy_texture_to_texture(t.as_image_copy(), c.as_image_copy(), t.size());
+            }
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("actor refraction"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment { view: depth, depth_ops: Some(wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store }), stencil_ops: None }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_bind_group(0, &self.globals, &[]);
+            pass.set_bind_group(2, group, &[skin.offset]);
+            pass.set_vertex_buffer(0, skin.vertices.slice(..));
+            let shown = |wep: u8| wep == NO_WEP || a.hidden_weps & (1 << wep) == 0;
+            pass.set_pipeline(&self.skin_pipeline);
+            for (tex, range, wep) in &a.draws {
+                if shown(*wep) {
+                    pass.set_bind_group(1, &a.textures[*tex], &[]);
+                    pass.draw(range.clone(), 0..1);
+                }
+            }
+            // Its shine in a slot from the top of the shine buffer (render's own take the bottom).
+            if let Some(s) = a.shine
+                && let Some(tex) = self.shine_tex.get(&s.key)
+            {
+                let so = (SHINE_SLOTS - 1 - slot) as u64 * SHINE_STRIDE;
+                gpu.queue.write_buffer(&self.shine_buf, so, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                pass.set_pipeline(&self.shine_pipeline);
+                pass.set_bind_group(3, &self.shine_group, &[so as u32]);
+                pass.set_bind_group(1, tex, &[]);
+                for (_, range, wep) in &a.draws {
+                    if shown(*wep) {
+                        pass.draw(range.clone(), 0..1);
+                    }
+                }
+            }
+            if let Some((_, g)) = self.refract_copy.as_ref().filter(|_| src.is_some()) {
+                pass.set_pipeline(&self.refract_pipeline);
+                pass.set_bind_group(1, g, &[]);
+                pass.set_bind_group(3, &self.refract_group, &[off]);
+                for (_, range, wep) in &a.draws {
+                    if shown(*wep) {
+                        pass.draw(range.clone(), 0..1);
+                    }
+                }
+            }
+        }
+    }
+
     /// One model: both-sided models in one draw; otherwise the normal instances culled back, the mirrored front.
     fn draw_scenery(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize) {
         if d.texture != *bound {
@@ -1907,6 +2064,7 @@ pub fn render_pngs_post(
         });
         let mut encoder = gpu.device.create_command_encoder(&Default::default());
         renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
+        renderer.render_refraction(&gpu, &mut encoder, &view, Some(&target), &depth, camera, width as f32 / height as f32, &actor_refs);
         post(&gpu, &mut encoder, (&view, &target), &depth, camera, lighting.as_ref(), &renderer);
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo { texture: &target, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
@@ -1928,4 +2086,17 @@ pub fn render_pngs_post(
         enc.write_header()?.write_image_data(&pixels)?;
     }
     Ok(renderer.draw_count())
+}
+
+#[cfg(test)]
+mod refract_tests {
+    use super::Refract;
+
+    /// FUN_100d6d30: TFACTOR alpha 0x80 -> 0, 0x40 -> 0x40, 0x0b -> 0x75, 0xff -> 0x81 (it wraps).
+    #[test]
+    fn refract_tf_alpha() {
+        let near = |a: f32, b: f32| (a - b).abs() < 1e-6;
+        assert_eq!(Refract::tf_alpha(0x80), 0.0);
+        assert!(near(Refract::tf_alpha(0x40), 0.250_980) && near(Refract::tf_alpha(0x0b), 0.458_824) && near(Refract::tf_alpha(0xff), 0.505_882));
+    }
 }

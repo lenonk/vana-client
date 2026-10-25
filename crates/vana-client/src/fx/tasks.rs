@@ -1058,6 +1058,19 @@ impl Effects {
                 self.shine_drives.push(crate::fx::ShineDrive { id: self.next_drive, owner: t.uid, actor: id, left, kind });
                 Flow::Next
             }
+            // FUN_10061240 (0x48 actor1, 0x49 actor2): the refraction pass on at once (+0x734 |= 2) and its level from
+            // where it is to f32 @8, linearly over trunc(dur x speed); the end (or the scheduler's death) snaps to the
+            // target, and a target of 0 turns the pass off. Drives do not replace each other.
+            0x48 | 0x49 => {
+                let Some(id) = self.doll_of(if op.code == 0x48 { t.a1 } else { t.a2 }).id() else { return Flow::Next };
+                let left = (op.dur.max(0) as f32 * t.speed).trunc();
+                let s = self.shine.entry(id).or_default();
+                s.refract = true;
+                let kind = crate::fx::ShineKind::Refract { start: s.level, target: f32::from_bits(op.u32_at(8)), total: left };
+                self.next_drive += 1;
+                self.shine_drives.push(crate::fx::ShineDrive { id: self.next_drive, owner: t.uid, actor: id, left, kind });
+                Flow::Next
+            }
             // FUN_100618a0: a dead (status 2 / 3) actor2 (0xb2) or actor1 (0xb1): model colour 0x80808080 at once.
             0xb1 | 0xb2 => {
                 if let Some(id) = self.doll_of(if op.code == 0xb1 { t.a1 } else { t.a2 }).id()
@@ -1867,11 +1880,27 @@ impl Effects {
                     s.tf = u32::from_le_bytes(std::array::from_fn(|i| (a[i] as f32 + (b[i] as f32 - a[i] as f32) * k) as u8));
                 }
                 ShineKind::Tf { .. } => {}
+                // FUN_100612b0 / FUN_100611e0.
+                ShineKind::Refract { start, target, total } => {
+                    if done || total <= 0.0 {
+                        s.level = target;
+                        if target == 0.0 {
+                            s.refract = false;
+                        }
+                    } else {
+                        s.level = start + (target - start) * (1.0 - d.left / total);
+                    }
+                }
             }
             if !done {
                 self.shine_drives.push(d);
             }
         }
+    }
+
+    /// Actors with the refraction pass on, and its level.
+    pub fn refractions(&self) -> Vec<(u32, f32)> {
+        self.shine.iter().filter(|(_, s)| s.refract).map(|(id, s)| (*id, s.level)).collect()
     }
 
     /// Actors with the shine overlay on: (actor, its image, U, V, TFACTOR as ARGB).
@@ -2026,6 +2055,32 @@ mod tests {
     fn attach_voyage_identity() {
         let Some((m, a)) = attached(56775, 0x14, None, &Two) else { return };
         assert_eq!((m, a), (Mat4::IDENTITY, Vec3::ONE));
+    }
+
+    /// Ops 0x48 / 0x49's drive: linear from the start, the target at the end; to 0 (or the owner gone) turns it off.
+    #[test]
+    fn refract_drive() {
+        use crate::fx::{ShineDrive, ShineKind};
+        assert_eq!(crate::fx::Shine::default().level, 0.1);
+        let mut fx = Effects::new();
+        let drive = |fx: &mut Effects, start: f32, target: f32, total: f32| {
+            let s = fx.shine.entry(7).or_default();
+            s.refract = true;
+            s.level = start;
+            fx.shine_drives.push(ShineDrive { id: 1, owner: 1, actor: 7, left: total, kind: ShineKind::Refract { start, target, total } });
+        };
+        drive(&mut fx, 0.1, 0.12, 28.0);
+        fx.step_shine(14.0, &[1]);
+        assert!((fx.shine[&7].level - 0.11).abs() < 1e-6 && fx.shine[&7].refract);
+        fx.step_shine(15.0, &[1]);
+        assert!(fx.shine[&7].level == 0.12 && fx.shine[&7].refract && fx.shine_drives.is_empty());
+        drive(&mut fx, 0.12, 0.0, 25.0);
+        fx.step_shine(10.0, &[]);
+        assert!(fx.shine[&7].level == 0.0 && !fx.shine[&7].refract);
+        drive(&mut fx, 0.3, 0.0, 0.0);
+        fx.step_shine(1.0, &[1]);
+        assert!(fx.shine[&7].level == 0.0 && !fx.shine[&7].refract);
+        assert_eq!(fx.refractions(), vec![]);
     }
 
     /// Op 0xac: actor1's death pick, u32 @8 & 3, at once.

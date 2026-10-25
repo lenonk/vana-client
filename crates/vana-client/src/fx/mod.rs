@@ -452,13 +452,22 @@ pub struct Quake {
 }
 
 /// The actor shine overlay (CXiSkeletonActor +0x734 bit 0): the image (+0x750; with the drive that set it), U / V
-/// (+0x73c / +0x740) and TFACTOR (+0x74c, ARGB). U / V / colour stay on the actor when the overlay goes.
-#[derive(Clone, Copy, Debug, Default)]
+/// (+0x73c / +0x740) and TFACTOR (+0x74c, ARGB). U / V / colour stay on the actor when the overlay goes. The
+/// refraction pass (+0x734 bit 1) and its level (+0x744, 0.1 from the actor's constructor).
+#[derive(Clone, Copy, Debug)]
 pub struct Shine {
     pub tex: Option<(Ref, u64)>,
     pub u: f32,
     pub v: f32,
     pub tf: u32,
+    pub refract: bool,
+    pub level: f32,
+}
+
+impl Default for Shine {
+    fn default() -> Self {
+        Shine { tex: None, u: 0.0, v: 0.0, tf: 0, refract: false, level: 0.1 }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -466,6 +475,7 @@ enum ShineKind {
     Overlay,
     Uv { v: bool, start: f32, target: f32, total: f32 },
     Tf { start: u32, target: u32, total: f32 },
+    Refract { start: f32, target: f32, total: f32 },
 }
 
 /// A timed shine change, a child of its scheduler task (`owner`, the task uid): it ends with it.

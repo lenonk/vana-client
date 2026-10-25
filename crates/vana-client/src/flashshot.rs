@@ -1,5 +1,6 @@
 //! flash-shot: a Hume in a zone at an hour, GPU-skinned as the client draws actors, with the target flash at
-//! k = 0, 0.5 and 1 (client/flash.rs), each to a PNG.
+//! k = 0, 0.5 and 1 (client/flash.rs), then the refraction pass (ops 0x48 / 0x49) at a few levels and model colour
+//! alphas, each to a PNG.
 
 use crate::{config, dat, render};
 use anyhow::Result;
@@ -36,13 +37,30 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
     let mut actor = r.new_skinned(&gpu, &ch);
     let idle: Vec<_> = ch.find_animations("idl").into_iter().map(|a| (a, 0.0)).collect();
     let model = Mat4::from_translation(p) * Mat4::from_rotation_y(-std::f32::consts::FRAC_PI_4);
-    for (k, name) in [(0.0f32, "flash_k0.png"), (0.5, "flash_k05.png"), (1.0, "flash_k1.png")] {
+    // (flash k, refraction level and model colour alpha byte, name).
+    let runs: [(f32, Option<(f32, u32)>, &str); 7] = [
+        (0.0, None, "flash_k0.png"),
+        (0.5, None, "flash_k05.png"),
+        (1.0, None, "flash_k1.png"),
+        (0.0, Some((0.1, 0x80)), "refract_80.png"),
+        (0.0, Some((0.1, 0x40)), "refract_40.png"),
+        (0.0, Some((0.5, 0x3c)), "refract_3c.png"),
+        (0.0, Some((0.22, 0x0b)), "refract_0b.png"),
+    ];
+    for (k, refract, name) in runs {
         actor.flash = [k, k];
+        // FUN_100cbde0's draw alpha from the model colour alpha, and FUN_100d6d30's TFACTOR alpha.
+        actor.alpha = refract.map_or(1.0, |(_, a)| {
+            let f = a as f32 / 128.0;
+            if f >= 0.8 { 1.0 } else { f * 1.25 }
+        });
+        actor.refract = refract.map(|(level, a)| render::Refract { level, r: render::Refract::tf_alpha(a) }).filter(|r| r.r > 0.0);
         r.begin_poses();
         r.pose_actor_gpu(&mut actor, &ch, &[], &idle, &[], 1.0, model, None, None);
         let mut enc = gpu.device.create_command_encoder(&Default::default());
         r.upload_poses(&gpu, &mut enc);
         r.render(&gpu, &mut enc, &view, &depth, &camera, w as f32 / h as f32, &[&actor]);
+        r.render_refraction(&gpu, &mut enc, &view, Some(&target), &depth, &camera, w as f32 / h as f32, &[&actor]);
         let row = (w * 4).div_ceil(256) * 256;
         let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size: (row * h) as u64, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
         enc.copy_texture_to_buffer(
@@ -58,7 +76,7 @@ pub fn run(zone: u32, hour: f32, pos: [f32; 3], out_dir: &std::path::Path) -> Re
         drop(data);
         let path = out_dir.join(name);
         render::ui::write_png(&path, w, h, &px)?;
-        println!("wrote {} (flash k {k})", path.display());
+        println!("wrote {} (flash k {k}, refraction {refract:?})", path.display());
     }
     Ok(())
 }
