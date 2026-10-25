@@ -42,6 +42,8 @@ pub struct CharStats {
     /// u32 @0x58 (faction bits 0..4, rank, points; FUN_100994a0) and @0x60 (bit 0: in the Unity chat, FUN_100a3680).
     pub unity: u32,
     pub unity_flag: u32,
+    /// u32 @0x5c: the Unity evaluation, this week (low u16) and the previous one (high u16).
+    pub unity_eval: u32,
     /// EXP / to the next level (u16 @0x10 / @0x12), title @0x44, rank @0x46, rank points @0x48, home point zone @0x4a,
     /// nation @0x50; master level @0x65, its flags @0x66 (bit 0 unlocked), exemplar points @0x68 / next @0x6c.
     pub exp: (u16, u16),

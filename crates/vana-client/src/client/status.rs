@@ -144,6 +144,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 // FUN_1022a620(1 / 2): evitem with the currencies.
                 6 => super::currencies::open(w, 1),
                 10 => super::currencies::open(w, 2),
+                11 => super::unity::open(w),
                 c if page(c).is_none() => log::info!("status: statcom2 row {c} is not implemented yet"),
                 _ => {}
             }
@@ -388,7 +389,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             r
         }));
     }
-    let focused = w.confirm.is_none() && w.currencies.is_none();
+    let focused = w.confirm.is_none() && w.currencies.is_none() && w.unity.is_none();
     if let Some(win) = gu.lobby_window_off(STATCOM, sw, sh, (0.0, 0.0), Some(s.sel), focused, &s.off) {
         if let Some((wx, wy)) = gu.window_xy(STATCOM, sw, sh) {
             gu.disabled_children(STATCOM, wx, wy, &s.off, Some(s.sel).filter(|_| focused));

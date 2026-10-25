@@ -104,8 +104,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
     levelsync.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange"; left View Request; the
     invite side untested live);
-    Status done (client/status.rs, currencies.rs, MODLOG "Status window", "Currencies"; left Unity, Merit / Job / Alter
-    Ego Points, spec `status_rows_spec.md`);
+    Status done (client/status.rs, currencies.rs, unity.rs, MODLOG "Status window", "Currencies", "Unity"; left Merit /
+    Job / Alter Ego Points, spec `status_rows_spec.md`);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, MODLOG "Missions", "Quests"; left the RoE
     lists); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
     seacom.rs; left /seacom and /seacomup, arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:

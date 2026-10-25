@@ -347,6 +347,8 @@ pub enum NetEvent {
     GroupId(u32),
     /// s2c 0x113 (mode 1) / 0x118 (mode 2): the currencies, the whole packet (status_rows_spec.md appendix A).
     Currencies { mode: u8, data: Vec<u8> },
+    /// s2c 0x063 type 7: week @8 (0 previous, 1 current), dataType @9, 0x80 bytes from @0xc.
+    UnityTable { week: u8, d: u8, data: [u8; 0x80] },
     /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
     AbilityRecasts(Vec<(u16, u16)>),
     /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
@@ -793,6 +795,9 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     0x063 if p.u16(4) == 2 => tx.send(NetEvent::Merits { limit: p.u16(8), bits: p.u16(0xa), max: p.u8(0xc) })?,
                     0x063 if p.u16(4) == 5 => tx.send(NetEvent::JobPoints(p.u8(8)))?,
+                    0x063 if p.u16(4) == 7 && p.data.len() >= 0x8c => {
+                        tx.send(NetEvent::UnityTable { week: p.u8(8), d: p.u8(9), data: p.data[0xc..0x8c].try_into().unwrap() })?
+                    }
                     0x063 if matches!(p.u16(4), 3 | 4) => tx.send(NetEvent::Monstrosity { kind: p.u16(4), rank: p.u32(0xc), prestige: p.u16(0x14) })?,
                     0x063 if p.u16(4) == 9 => {
                         tx.send(NetEvent::StatusTimers { ids: std::array::from_fn(|i| p.u16(8 + 2 * i)), ends: std::array::from_fn(|i| p.u32(0x48 + 4 * i)) })?;
@@ -1019,6 +1024,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         ilvl: p.u8(0x55),
                         unity: p.u32(0x58),
                         unity_flag: p.u32(0x60),
+                        unity_eval: p.u32(0x5c),
                         exp: (p.u16(0x10), p.u16(0x12)),
                         title: p.u16(0x44),
                         rank: p.u16(0x46),

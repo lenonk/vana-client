@@ -1247,6 +1247,10 @@ impl GameUi {
 
     /// A HUD window at frame alpha a (skipped when 0); returns its position either way.
     pub fn window_alpha(&mut self, name: &str, w: f32, h: f32, a: f32) -> Option<(f32, f32)> {
+        // A window the walk suspends draws nothing, its content neither (titlewin under persona's 0x30).
+        if !self.want(name) {
+            return None;
+        }
         let m = self.data.lobby.menu(name)?;
         let pos = screens::window_pos(m, w, h, 1.0, 1.0);
         let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);

@@ -6871,3 +6871,36 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` 3 and appendix A; ours client/cur
   Enter nothing. The bar at (374, 48, 248), 8 visible.
 - Live (Lnxcsfix): `!addcurrency sandoria_cp 1234`, `kindred_seal 7`, `bayld 56789` showed 1234, 7, 56789 in their rows
   (u32 @4, u16 @0x12, 0x118 u32 @4); removed with `!delcurrency` (char_points back to 0).
+
+## Unity (statcom2 row 11) (2026-10-24)
+
+Spec `~/ffxi/lab/research/status_rows_spec.md` 4; ours client/unity.rs.
+- statcom2 child 11 (FUN_1014c260): c2s 0x116 {u32 week} for each complete week, which is then downloaded again;
+  "menu    ut_menu" (group 0x81: statcom2 suspended) and "menu    ut_point" (group 2, flag 0x2000 on the party
+  window: "%d/%d" of the accolades (0x061 @0x58 >> 10 & 0x1ffff) and 99999 right-aligned at (100, 0x14)). ut_menu
+  rows: 1 Unity Info -> quest00 mode 1, 2 Ranking Info -> quest00 mode 2, 3 Unity Lists -> the area list's Unity mode
+  (group 0, flag 0x1000: stacked on the log).
+- s2c 0x063 type 7: week @8, dataType @9, 0x80 bytes from @0xc into the week's 32 blocks; dataType 0x1f completes the
+  week. Unity u's value of kind k (1 members, 2 points) = dword u of block k (FUN_100fddf0). Ranking FUN_100fde80:
+  average = points / members (0 without members; entry 0 always 0), sorted by average down then id up (LAB_100fde10)
+  unless every average is 0 (FUN_100fde50); rank FUN_100fdf20 = competition rank (ties share it, the next skips), 0
+  while all are 0.
+- **LSB's layout is off by one dword**: it writes a u16 status flag at @0x10 and members / points [11] from @0x14, so
+  the client's unity 1 reads the flag (members 0x0108, points 0x0207 / 0x0208: Pieuje 1pt) and unity u reads LSB's
+  leader u - 1. Seen live; ours reads as retail.
+- quest00 mode 1 "Unity Information" (FUN_1022fb50): the texts of group 0xc 0x18b, 0x1b7, 0x18d..0x18f, 0x1c4,
+  0x1c5 at their places; our unity's name (0xc 0x192 + u), each week's rank ("--" 0x1b2, 0x1b3..0x1b5, else "%d"
+  0x1b6) and "%dpt" average, the personal evaluations (0x061 @0x5c, high u16 the previous week) right-aligned at
+  0x15e; unity 0: "None" and "--" only; not ready (s2c 0x119 and both weeks): 9 0x61 / 0x62. Rows at window y 195 /
+  218: the yellow marker (keytops3 170) on the current chat setting, framesus 35 on the other, "Active" / "Inactive"
+  (0xc 0x1b8 + r). Enter sets the setting; per frame after a hold of 30 a changed setting goes out as c2s 0x118 {u8};
+  the close stores it in config 0xb2.
+- quest00 mode 2 "Ranking Information": rows at y 52 / 82 (0xc 400 + r); Enter opens quest01 mode 5 (previous week)
+  / 6 (current week): the 11 unities in ranking order (rank, name, "%dpt"), the week's title (0xc 400 / 0x191) at
+  (0x3c, 10); Left / Right the other week when complete (with Ctrl / Alt a page).
+- quest00 / quest01 have no help strings (help slots cleared); titlewin slot 2 0xc 0x18b / 0x18c.
+- GameUi::window_alpha draws nothing for a window the walk suspends: hudtop drew titlewin's text without its frame
+  under persona (group 0x30 in Status mode).
+- Live (Lnxcsfix, no unity): ut_menu and ut_point (0/99999 over the party window); Unity Information with None and
+  "--"; both weeks' rankings (LSB's offset as above); Unity Lists stacked on the log. Not done: the mouse in these
+  windows.
