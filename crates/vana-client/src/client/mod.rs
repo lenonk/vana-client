@@ -52,6 +52,7 @@ mod servmes;
 mod chatctrl;
 mod partymenu;
 mod levelsync;
+mod viewhouse;
 mod journal;
 mod missions;
 mod quests;
@@ -164,7 +165,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -796,7 +797,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1352,6 +1353,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.search.is_some() => search::key(world, *key),
                 _ if world.searchmenu.is_some() => searchmenu::key(world, gu, *key),
                 _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
+                _ if world.viewhouse.is_some() => viewhouse::key(world, gu, *key),
                 _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
@@ -1583,6 +1585,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 textcmd::run(world, "/clock", textcmd::Mode::Internal);
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
+            // Child 4 View House (FUN_1014e7b0 case 4): mogcont.
+            (1, 4) => viewhouse::open(world),
             (1, 11) => world.confirm = Some((Confirm::Shutdown, false)),
             (1, 12) => world.confirm = Some((Confirm::Logout, false)),
             _ => log::info!("main menu item {id} on page {} is not implemented yet", world.menu_page),
@@ -1625,6 +1629,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| partymenu::focused(world)) {
         partymenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| viewhouse::focused(world)) {
+        viewhouse::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.keyitems.is_some() && world.confirm.is_none()) {
         keyitems::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2066,6 +2073,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(chatctrl::draw(gu, world, sw, sh));
     blockers.extend(partymenu::draw(gu, world, sw, sh));
     blockers.extend(levelsync::draw(gu, world, sw, sh));
+    blockers.extend(viewhouse::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
@@ -2514,6 +2522,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     searchmenu::bars(gu, world, &mut bars);
     partymenu::bars(gu, world, &mut bars);
     levelsync::bars(gu, world, &mut bars);
+    viewhouse::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
@@ -3657,6 +3666,10 @@ struct World {
     mog_zone: bool,
     mh_owner: u32,
     mh_floors: bool,
+    /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
+    mh_seen: bool,
+    /// Social row View House: "menu    mogcont".
+    viewhouse: Option<viewhouse::ViewHouse>,
     /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
     mh_open: bool,
     /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
@@ -4855,6 +4868,8 @@ impl App {
                             mog_zone: false,
                             mh_owner: 0,
                             mh_floors: false,
+                            mh_seen: false,
+                            viewhouse: None,
                             mh_open: false,
                             mog_pending: false,
                             moogle: None,
@@ -5242,6 +5257,7 @@ impl App {
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
                     world.room_flag = room_flag;
+                    (world.mh_seen, world.viewhouse) = (false, None);
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
@@ -5598,6 +5614,7 @@ impl App {
                 NetEvent::CharSync { id, owner, floors, open, level } => {
                     if id == world.my_id {
                         world.real_level = Some(level);
+                        world.mh_seen = true;
                     }
                     if id == world.my_id && (world.mh_owner, world.mh_floors, world.mh_open) != (owner, floors, open) {
                         log::info!("char sync: Mog House owner {owner:#x}, 2F {floors}, open {open}");

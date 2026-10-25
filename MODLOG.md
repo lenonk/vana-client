@@ -6836,3 +6836,21 @@ Spec `~/ffxi/lab/research/party_menu_spec.md` 3; ours client/partymenu.rs, level
   ("Level Sync will be deactivated in 30 seconds."); /pcmd breakup. Brakka's level came back (RUN30) after the sync.
 - Not done: View Request (/recruitlist and the party-request history), the request-history prompt, the stage-1 mark
   (if retail draws one), Level Sync's empty list text, the mouse in levelsyn.
+
+## View House: "menu    mogcont" (2026-10-24)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` part V; ours client/viewhouse.rs.
+- Social page child 4 (FUN_1014e7b0 case 4): in a room (FUN_101cc070(0), ours room_flag) the row checks first: in the
+  nations' residential zones (230..232, 234..236, 238..241) before our first s2c 0x067 kind 2 of the zone
+  (FUN_100f9680 / S+0x40c41, ours `mh_seen`, cleared at zone-in *(inf)*) SE 0004 + 0002 only; visiting another's Mog
+  House group 7 0xbc + the same two sounds. Else "menu    mogcont" (group 0x81: menuwind / socialme come back on its
+  close, cursor kept), SE 0002.
+- mogcont (vtable 0x10336588): children 1 Mog Safe, 8 Safe 2, 2 Storage, 3 Locker, 4 Satchel, 5 Sack, 6 Case,
+  7 Wardrobe, 9..15 Wardrobe 2..8 (screen order 1, 8, 2, 3, 4..7, 9..15; links wrap). Disabled at open
+  (FUN_1014eaf0): the Satchel under 30, the Sack with no size, Safe 2 without the 2F flag, Wardrobes 2..8 with no
+  size; never the Mog Safe (unlike the moogle's storage). Enter: FUN_101dae10 (Safe, Safe 2, Storage, Locker) or
+  FUN_101daf70 (container, Satchel needed for the Satchel) with nomad 0, results ignored; Escape SE 0003.
+- The read-only list ("menu    inventor", group 0) leaves mogcont drawn, unfocused; the two-list view (bank + itmsortw
+  group 0x01) suspends it *(inf: the registry groups)*. Both come back to mogcont on Escape.
+- Live (Lnxcsfix in Metalworks): Safe 2 and Satchel dim; the Mog Safe read-only beside mogcont; the Mog Case two-list
+  view with mogcont hidden; Escape back to mogcont, then to the social page on View House. Not tried in a Mog House.
