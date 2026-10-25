@@ -7941,3 +7941,13 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   vtable +0x8c call; no occlusion query, no path offset)*. Zone 230 from a fixed camera: 12 fewer live elements
   (off-screen emitters); 3400's own elements unchanged frame by frame.
 
+## Emission ops 0x4e (batched) and 0x94 (2026-10-25; spec fx_stream_attach_spec.md 2.11 / 2.12)
+
+- 0x4e / 0x4f on a batched D3a (0x1004ec2c): P+0x14 = the emission count for 0x4f, else -1; at draw each particle adds
+  point[(P+0x14 >= 0 ? P+0x14 : rand % c) % c] of the Vtx list, the local generator reseeded with P+0x10 each frame
+  (fixed for the element's life). Ours: chosen per particle when the 0x56 records are built. Files 50357 `m_hy/g007`,
+  50738 `pr_h/g007`, 4446 `hyak/g007` (list `sann`).
+- 0x94 (0x1004fed3, needs a parent): this generator's op 0x4e handle = the parent generator's (86948 `ygd_/ko03`: 0x94
+  first, then a 0x4e without a list of its own). Ours: emit::Parent::src, the list resolved in the parent's scope
+  and used by this stream's 0x4e / 0x4f (plain and batched).
+

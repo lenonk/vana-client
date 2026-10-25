@@ -1430,6 +1430,7 @@ impl Effects {
                 bias: 0.0,
                 vel: has_drift.then(|| Vec3::new(f(back::VEL), f(back::VEL + 1), f(back::VEL + 2))),
                 frame: None,
+                src: self.insts.get(c.inst).and_then(|x| x.as_ref()).map(|x| x.src),
             });
             // Op 0x2e / 0x48 with the kill flag: life = 1, so it expires now.
             if r[back::STATUS] & back::KILL != 0 && c.max_life != 0.0 && c.life >= 1.0 {
@@ -1756,6 +1757,7 @@ impl Effects {
             bias: elem.f(w::BIAS),
             vel: self.insts[inst].as_ref().and_then(|x| self.reg.update_op_slot(x.src, 2)).map(|k| elem.sv3(k)),
             frame: None,
+            src: self.insts[inst].as_ref().map(|x| x.src),
         };
         cpu.back = Some(parent);
         self.elems[e as usize] = Some(cpu);

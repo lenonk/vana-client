@@ -34,6 +34,8 @@ pub struct Parent {
     pub vel: Option<Vec3>,
     /// Filled for an emission: what op 0x45 copies from the parent.
     pub frame: Option<ParentFrame>,
+    /// The parent's generator (op 0x94 takes its op 0x4e point list).
+    pub src: Option<Ref>,
 }
 
 /// The parent element's frame (FUN_10046440: its matrix slot) and its generator's attach word and actors.
@@ -232,6 +234,15 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let count = inst.emitted;
     let gen_dist = inst.dist;
     let key = |reg: &mut Registry, op: &Op| reg.key_ref(lib, from, op.u32(2));
+    // Op 0x94: this stream's point list is the parent generator's op 0x4e / 0x4f list (its own scope).
+    let parent_vtx = if stream.iter().any(|o| o.code == 0x94) {
+        parent.and_then(|p| p.src).and_then(|(pl, pn)| {
+            let name = reg.libs[pl].generator(pn)?.streams[1].iter().find(|o| matches!(o.code, 0x4e | 0x4f))?.u32(2);
+            reg.resolve(pl, pn, kind::VTX, name)
+        })
+    } else {
+        None
+    };
     for op in stream.iter().skip(1) {
         let s = op.slot as usize;
         let v3 = |k: usize| Vec3::new(op.f32(k), op.f32(k + 1), op.f32(k + 2));
@@ -321,7 +332,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             // Point list (Vtx, kind 0x3e): u32 count, points from +0x10 (vec4); random (0x4e) or by emission count
             // (0x4f) *(the attach-rotation option, byte op+0xc bit 0, is not applied)*.
             0x4e | 0x4f if !batched => {
-                if let Some(r) = reg.resolve(lib, from, kind::VTX, op.u32(2)) {
+                if let Some(r) = parent_vtx.or_else(|| reg.resolve(lib, from, kind::VTX, op.u32(2))) {
                     let d = reg.libs[r.0].data(r.1);
                     let n = d.get(0..4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
                     if n > 0 {
@@ -622,10 +633,24 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 let gravity = find(2, 0x03).map_or(Vec3::ZERO, |o| Vec3::new(o.f32(1), o.f32(2), o.f32(3)));
                 let drag = find(2, 0x2c).map_or(1.0, |o| o.f32(1)) - 1.0;
                 let n = (inst.flags & 0x1ff) as usize + 1;
+                // Op 0x4e / 0x4f (0x1004ec2c): each particle starts at a point of the list, random per particle or
+                // the generator's emission count for all (fixed for the element's life, d3a_particles.md 4.4).
+                let list = find(1, 0x4e).or_else(|| find(1, 0x4f)).and_then(|o| {
+                    let r = parent_vtx.or_else(|| reg.resolve(lib, from, kind::VTX, o.u32(2)))?;
+                    let d = reg.libs[r.0].data(r.1);
+                    let c = d.get(0..4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+                    let f = |o: usize| d.get(o..o + 4).map_or(0.0, |b| f32::from_le_bytes(b.try_into().unwrap()));
+                    let pts: Vec<Vec3> = (0..c as usize).map(|i| Vec3::new(f(0x10 + i * 16), f(0x14 + i * 16), f(0x18 + i * 16))).collect();
+                    (c > 0).then_some((o.code, pts))
+                });
                 for _ in 0..n {
                     let (r1, r2, r3) = (rng.us(1.0), rng.us(1.0), rng.us(1.0));
                     let u = Vec3::new(r3, r2, r1);
-                    let p0 = u * r * bscale;
+                    let mut p0 = u * r * bscale;
+                    if let Some((code, pts)) = &list {
+                        let c = pts.len() as u32;
+                        p0 += pts[(if *code == 0x4f { count % c } else { rng.un(c) } % c) as usize];
+                    }
                     let dir = u.normalize_or_zero();
                     let vel = dir * speed + base;
                     parts.push([p0.x, p0.y, p0.z, dir.x, dir.y, dir.z, vel.x, vel.y, vel.z]);
@@ -684,7 +709,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
             // generators carry it for their per-frame op 0x5f), 0x06 / 0x08 in batched mode (data for 0x56), 0x7b
             // (the attachment reads its offsets). VuDist takes its 0x56 count at the draw choice.
             0x56 => {}
-            0x06 | 0x08 if batched => {}
+            0x06 | 0x08 | 0x4e | 0x4f if batched => {}
+            // 0x1004fed3: the parent generator's op 0x4e list stands for this stream's (parent_vtx).
+            0x94 => {}
             0x7b => {}
             _ => reg.unhandled(1, op.code),
         }
