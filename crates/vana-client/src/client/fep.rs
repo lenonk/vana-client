@@ -56,10 +56,39 @@ fn set_caret(w: &mut World, at: usize) {
     w.chat_caret = (at < w.chat_input.chars().count()).then_some(at);
 }
 
-/// Left / Right (FUN_101ac4e0 / FUN_101ac520): one unit; Home / End (VK 0x24 / 0x23): the start / the end.
-pub(super) fn caret_key(w: &mut World, key: egui::Key) {
+/// The selected chars (an addition: retail's line has no selection): between the anchor Shift left and the caret.
+pub(super) fn selection(w: &World) -> Option<(usize, usize)> {
+    let a = w.chat_anchor?.min(w.chat_input.chars().count());
+    let c = caret(w);
+    (a != c).then(|| (a.min(c), a.max(c)))
+}
+
+/// The selection as plain text (phrases written out), for the clipboard.
+pub(super) fn selected_text(w: &World) -> Option<String> {
+    let (s, e) = selection(w)?;
+    Some(plain(w, &w.chat_input.chars().skip(s).take(e - s).collect::<String>()))
+}
+
+/// Removes the selection; false when there is none.
+pub(super) fn delete_selection(w: &mut World) -> bool {
+    let Some((s, e)) = selection(w) else { return false };
+    w.chat_input = w.chat_input.chars().take(s).chain(w.chat_input.chars().skip(e)).collect();
+    w.chat_anchor = None;
+    set_caret(w, s);
+    true
+}
+
+pub(super) fn select_all(w: &mut World) {
+    w.chat_anchor = Some(0);
+    w.chat_caret = None;
+}
+
+/// Left / Right (FUN_101ac4e0 / FUN_101ac520): one unit; Home / End (VK 0x24 / 0x23): the start / the end. With
+/// Shift the selection grows from where the caret was.
+pub(super) fn caret_key(w: &mut World, key: egui::Key, shift: bool) {
     let chars: Vec<char> = w.chat_input.chars().collect();
     let (at, b) = (caret(w), bounds(&chars));
+    w.chat_anchor = if shift { Some(w.chat_anchor.unwrap_or(at)) } else { None };
     let to = match key {
         egui::Key::ArrowLeft => b.into_iter().filter(|&x| x < at).max().unwrap_or(0),
         egui::Key::ArrowRight => b.into_iter().find(|&x| x > at).unwrap_or(chars.len()),
@@ -76,14 +105,17 @@ fn spliced(line: &str, at: usize, text: &str) -> String {
 /// Typed or pasted text at the caret (FUN_101abc50): in whole only while the raw and the expanded line stay within
 /// 120 bytes.
 pub(super) fn insert(w: &mut World, text: &str) {
-    let at = caret(w);
-    let next = spliced(&w.chat_input, at, text);
+    // A selection is replaced, when the result fits.
+    let (line, at) = match selection(w) {
+        Some((s, e)) => (w.chat_input.chars().take(s).chain(w.chat_input.chars().skip(e)).collect(), s),
+        None => (w.chat_input.clone(), caret(w)),
+    };
+    let next = spliced(&line, at, text);
     let (raw, plain) = lengths(w, &next);
     if raw <= MAX && plain <= MAX {
         w.chat_input = next;
-        if w.chat_caret.is_some() {
-            w.chat_caret = Some(at + text.chars().count());
-        }
+        w.chat_anchor = None;
+        set_caret(w, at + text.chars().count());
     }
 }
 
@@ -221,6 +253,9 @@ pub(super) fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
 /// Backspace / Delete with the list closed (FUN_101abef0 / FUN_101abf40(1 / 0)): the unit before / at the caret goes;
 /// a phrase becomes its plain text minus its last / first letter.
 pub(super) fn erase(w: &mut World, back: bool) {
+    if delete_selection(w) {
+        return;
+    }
     let chars: Vec<char> = w.chat_input.chars().collect();
     let (at, b) = (caret(w), bounds(&chars));
     let unit = if back { b.windows(2).find(|u| u[1] == at) } else { b.windows(2).find(|u| u[0] == at) };

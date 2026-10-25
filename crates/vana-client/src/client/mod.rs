@@ -794,7 +794,7 @@ fn chat_prefix(world: &mut World, prefix: &str) {
     let typed = if world.typing { std::mem::take(&mut world.chat_input) } else { String::new() };
     let body = strip_channel(typed.trim_start());
     world.chat_input = format!("{prefix}{body}");
-    world.chat_caret = None;
+    (world.chat_caret, world.chat_anchor) = (None, None);
     world.typing = true;
 }
 
@@ -1241,8 +1241,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 let t: String = t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')).collect();
                 fep::insert(world, &t);
             }
-            // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events.
-            egui::Event::Copy if !world.typing && !event::active(world) => check_target(world),
+            // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events. In the chat line they copy / cut the
+            // selection (ours; Ctrl+V pastes through egui-winit's clipboard), else /check and the /linkshell2 line.
+            egui::Event::Copy if world.typing => world.copied = fep::selected_text(world),
+            egui::Event::Copy if !event::active(world) => check_target(world),
+            egui::Event::Cut if world.typing && fep::selection(world).is_some() => {
+                world.copied = fep::selected_text(world);
+                fep::delete_selection(world);
+            }
             egui::Event::Cut => chat_prefix(world, "/linkshell2 "),
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
                 // The auto-translate list takes its keys first (FUN_101b5d10).
@@ -1251,33 +1257,34 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // FUN_101ac2c0 / FUN_101ac3d0: the line history (no sound, no wrap; Shift / Ctrl the same).
                 egui::Key::ArrowUp if world.typing && !modifiers.alt => {
                     if let Some(l) = world.line_hist.up(&world.chat_input) {
-                        (world.chat_input, world.chat_caret) = (l, None);
+                        (world.chat_input, world.chat_caret, world.chat_anchor) = (l, None, None);
                     }
                 }
                 egui::Key::ArrowDown if world.typing && !modifiers.alt => {
                     if let Some(l) = world.line_hist.down(&world.chat_input) {
-                        (world.chat_input, world.chat_caret) = (l, None);
+                        (world.chat_input, world.chat_caret, world.chat_anchor) = (l, None, None);
                     }
                 }
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     let text = std::mem::take(&mut world.chat_input);
-                    world.chat_caret = None;
+                    (world.chat_caret, world.chat_anchor) = (None, None);
                     world.line_hist.record(&text);
                     let text = fep::outgoing(world, text);
                     textcmd::run(world, &text, textcmd::Mode::Typed);
                 }
                 egui::Key::Escape if world.typing => {
                     world.typing = false;
-                    (world.chat_input, world.chat_caret) = (String::new(), None);
+                    (world.chat_input, world.chat_caret, world.chat_anchor) = (String::new(), None, None);
                     world.sounds.push(crate::audio::Ui::Cancel as u32);
                 }
                 egui::Key::Backspace | egui::Key::Delete if world.typing => {
                     world.line_hist.edited();
                     fep::erase(world, *key == egui::Key::Backspace);
                 }
-                egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End if world.typing => fep::caret_key(world, *key),
+                egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End if world.typing => fep::caret_key(world, *key, modifiers.shift),
+                egui::Key::A if world.typing && modifiers.ctrl => fep::select_all(world),
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
                 k if (modifiers.ctrl || modifiers.alt) && !opened && let Some(p) = chat_shortcut(*k) => {
                     chat_prefix(world, p);
@@ -2181,6 +2188,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         // FUN_101b8660 at (x0 + 2, y0 + 3).
         let mut cx = x + 2.0;
         let caret_x = cx + width(&before);
+        // Our selection: a box behind the selected text, placed from the prefix widths relative to the caret.
+        if let Some((s, e)) = fep::selection(world) {
+            let upto = |n: usize| width(&fep::pieces(world, &world.chat_input.chars().take(n).collect::<String>()));
+            let full = upto(at);
+            let (x0, x1) = (caret_x - (full - upto(s)), caret_x - (full - upto(e)));
+            let (x0, x1) = (x0.max(cx), x1.min(cx + room));
+            if x1 > x0 {
+                gu.rect(x0, y + 3.0, x1 - x0, 16.0, [0.35, 0.5, 0.85, 0.5]);
+            }
+        }
         let mut word_x = cx;
         // FUN_101b8dc0: 7F 69 is mode 0xcf (a blue), alpha forced to 0x7f.
         let mut phrase_c = world.battle.as_ref().map_or([0x80, 0x50, 0x40, 0x80], |b| b.colour_in(0xcf, &world.game));
@@ -3653,6 +3670,9 @@ struct World {
     chat_input: String,
     /// The chat line's caret (char index; None the end of the line, where every new line starts).
     chat_caret: Option<usize>,
+    /// The other end of the chat line's selection (Shift + arrows; ours), and text for the clipboard this frame.
+    chat_anchor: Option<usize>,
+    copied: Option<String>,
     /// The auto-translate candidate list (menu fep) while open.
     fep: Option<fep::Fep>,
     /// The log window's size and scroll state, and the top bar / Network / compass state.
@@ -5045,6 +5065,8 @@ impl App {
                             chat: Default::default(),
                             chat_input: String::new(),
                             chat_caret: None,
+                            chat_anchor: None,
+                            copied: None,
                             fep: None,
                             log: Default::default(),
                             hud_top: Default::default(),
@@ -8609,6 +8631,11 @@ impl App {
         // Once the game UI draws, the cursor is the game's: its sprite (the system pointer hidden) or, with config
         // 0021, the Windows cursors set after the frame.
         let mut platform = output.platform_output;
+        if let Phase::World(w) = &mut self.phase
+            && let Some(t) = w.copied.take()
+        {
+            platform.commands.push(egui::OutputCommand::CopyText(t));
+        }
         if self.ui_drawn {
             platform.cursor_icon = if self.cfg.tool("0021") == 0 { egui::CursorIcon::None } else { egui::CursorIcon::Default };
         } else {

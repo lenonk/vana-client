@@ -7980,3 +7980,16 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Open (spec 7): whether retail finds the Afbs that sit only in mob-move effect files (ours does, once op 0x05 has put
   the file on the actor); which callback the actor's removal fires (ours drops the trail with its actor).
 
+## Chat line: selection, copy, cut, paste (ours; 2026-10-25)
+
+- Retail has none of it: the chat line keeps a caret only; FFXiMain's reachable clipboard write is the party-request
+  list's copy option (FUN_10001d20, CF_UNICODETEXT, from 0x10138e1d); the CF_TEXT writer's callers at 0x10001634 /
+  0x1000165c sit in unreachable debug blocks; there is no GetClipboardData. FUN_10188060 (2019; keys_spec's "Shift
+  selection") is a list widget whose Shift pages, not text. Added on the user's call, always on.
+- Shift + Left / Right / Home / End grow a selection from where the caret was (unit bounds: an auto-translate phrase
+  is one unit); Ctrl+A selects the line; typing or a paste replaces it (when the result fits the 120-byte limits);
+  Backspace / Delete remove it. While typing, Ctrl+C copies it (phrases written out) and Ctrl+X cuts it; Ctrl+X
+  without a selection is still retail's /linkshell2 line, Ctrl+C outside the line still /check. Ctrl+V pastes through
+  egui-winit's clipboard (arboard). Drawn as a blue box behind the selected text (fep::selection, World::chat_anchor;
+  the copy goes out as egui's CopyText command after the frame).
+
