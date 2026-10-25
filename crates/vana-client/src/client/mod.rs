@@ -6242,6 +6242,14 @@ impl App {
                     world.my_motion = motion;
                     looks.push((char_id, Source::Pc(look_from(look))));
                     world.actors.retain(|id, _| *id == char_id);
+                    // Retail makes every actor anew at a zone load (FUN_10093720 clears the table); ours keeps its model,
+                    // but its colour (a warp's op 0x29 left it at alpha 0) and the +0x204 scale start over.
+                    if let Some(a) = world.actors.get_mut(&char_id) {
+                        if a.alpha != actmotion::OPAQUE || a.rgb != [actmotion::OPAQUE; 3] || a.fade.is_some() {
+                            log::info!("zone-in: own model colour {:?} alpha {} back to opaque", a.rgb, a.alpha);
+                        }
+                        (a.alpha, a.rgb, a.fade, a.event_scale) = (actmotion::OPAQUE, [actmotion::OPAQUE; 3], None, None);
+                    }
                     world.my_init_done = false;
                     world.effects.reset_equip(char_id);
                     world.zoning_since = None;

@@ -7277,6 +7277,11 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   CMoLockColorDriveTask check: done (section "Colour drives: op 0x88's lock, op 0xa0, drives with their scheduler").
 - The user checked level down's text height against retail again: ours is right (start 0.7 above point 0, the feet;
   elem +0x128 from op 0x72 is only the sort key, FUN_100440d0).
+- A zone load makes every actor anew in retail (FUN_10093720 zeroes the 0x901-slot entity table at DAT_10480af0), so
+  the player's model colour starts at 0x80808080. Ours keeps the player's actor for its model, so it carried a warp's
+  colour over: Home Point (event 0x2200, DAT 70611 `main`) and Instant Warp end on op 0x29 to alpha 0, and the player
+  zoned in invisible (user, 2026-10-25). The zone-in now resets the kept actor's colour, its colour drive and the
+  +0x204 scale. Live: Instant Warp on Lnxcsfix (home in the same zone), invisible before, drawn after.
 
 ## The chat line's channel tab (2026-10-25)
 
