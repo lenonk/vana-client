@@ -96,6 +96,8 @@ mod shop;
 mod gauge;
 mod trade;
 mod fep;
+mod timers;
+mod durations;
 
 use crate::config::Config;
 use crate::dat::character::{Character as Model, Look};
@@ -1933,6 +1935,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     for l in page_lines {
         world.chat.push(l);
     }
+    let foot = timers_foot(gu, world, sw, sh);
+    timers::prepare(gu, world, sw, sh, foot);
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
     let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
@@ -2078,6 +2082,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
     }
+    timers::draw(gu, &mut world.timers, sw);
     let slots = gu.hud(sw, sh, &st);
 
     // Target cursor (FUN_10149900): anc_l at the target's point, 6 frames of 4 ticks, tint 0xe0808080;
@@ -2128,6 +2133,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.log.chat_line(world.typing);
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
+    // The Timers window stacks on the log (next frame) where the log reaches under it.
+    world.timers.log = Some(log.rect);
     gu.log_top = Some(log.rect[1]);
     gu.log_faded = world.log.faded();
     // FUN_101626e0 (asm 0x10162a52): with the log held by a stacked window, a height change moves the pointer with
@@ -2682,8 +2689,28 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         (Some(false), _) => world.confirm = None,
         _ => {}
     }
+    // The Timers window under every other window: its clicks only where none is over it.
+    blockers.extend(timers::pointer(world, gu, input.pointer, input.clicked, &blockers));
 
     blockers
+}
+
+/// Where the right-docked Timers window stands: on the party window, the target window's room kept (it comes and goes
+/// with targets), or on the alliance windows while there is an alliance (kept while menus hide them).
+fn timers_foot(gu: &GameUi, world: &World, sw: f32, sh: f32) -> f32 {
+    let slots = world.party.slots();
+    let rows = 1 + slots.slots[1..6].iter().take_while(|m| m.is_some()).count();
+    let party = if rows > 1 || slots.leaders[0] != 0 { slots.window() } else { "menu    ptw0".into() };
+    let mut foot = gu.window_rect(&party, sw, sh).map_or(sh - 16.0, |r| r[1]);
+    foot -= gu.window_rect("menu    targetwi", sw, sh).map_or(46.0, |r| r[3] + 2.0);
+    for (k, n) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
+        if slots.counts[k + 1] > 0
+            && let Some(r) = gu.window_rect(n, sw, sh)
+        {
+            foot = foot.min(r[1]);
+        }
+    }
+    foot
 }
 
 /// What a lobycwin change needs from the app (FUN_10196390): title music 0xaf, volume 0xa8 / aspect 0xab.
@@ -4373,7 +4400,13 @@ struct World {
     /// When each spell recast (DAT_106671e0) and 0x119 ability timer ends; 0x119 seen (DAT_10485824 bit 0).
     spell_recast: HashMap<u16, Instant>,
     ability_recast: HashMap<u16, Instant>,
+    /// Each 0x119 timer's Calc1 / Calc2 (the charge shares' adjustments).
+    ability_calc: HashMap<u16, (u8, i16)>,
     recasts_seen: bool,
+    /// Extras: the Timers window (on, dock) and its state.
+    extra_timers: bool,
+    timers_dock: u32,
+    timers: timers::Timers,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
     cast_bar: Option<(f32, f32)>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -4891,6 +4924,8 @@ impl App {
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;
             w.stamp_all_lines = self.cfg.stamp_all_lines;
+            w.extra_timers = self.cfg.timers;
+            w.timers_dock = self.cfg.timers_dock;
         }
         // Applied at the next frame start: during the UI pass the window is out of self.gfx.
         self.window_dirty = true;
@@ -5657,6 +5692,10 @@ impl App {
                             res_rdy: ResRdy::default(),
                             spell_recast: HashMap::new(),
                             ability_recast: HashMap::new(),
+                            ability_calc: HashMap::new(),
+                            extra_timers: self.cfg.timers,
+                            timers_dock: self.cfg.timers_dock,
+                            timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
                             recasts_seen: false,
                             cast_bar: None,
                             item_info: None,
@@ -6120,6 +6159,7 @@ impl App {
                     camera::face(world, f.x.atan2(f.z));
                     world.my_id = char_id;
                     world.name = name;
+                    timers::on_zone(world);
                     world.entities.clear();
                     // The zone's actors go, and with them their queued swings, messages and holds.
                     world.pending.clear();
@@ -6156,6 +6196,7 @@ impl App {
                             world.entities.remove(&e.id);
                             world.actors.remove(&e.id);
                             world.effects.forget_actor(e.id);
+                            timers::on_gone(world, e.id, false);
                         }
                         continue;
                     }
@@ -6282,6 +6323,10 @@ impl App {
                     if died && let Some(a) = world.actors.get_mut(&e.id) {
                         combat::die(a, sd);
                     }
+                    // Effects end with a death.
+                    if died {
+                        world.timers.died(e.id);
+                    }
                     if let Some((old, new)) = status_change {
                         combat::status_schedulers(&mut world.effects, &world.actors, e.id, old, new, sd);
                     }
@@ -6406,8 +6451,14 @@ impl App {
                     return;
                 }
                 NetEvent::StatusTimers { ids, ends } => world.buff_timers = Some((ids, ends)),
-                NetEvent::PartyEffects(rows) => world.party_buffs = rows.into_iter().collect(),
-                NetEvent::Battle(m) => combat::on_battle_message(world, &m),
+                NetEvent::PartyEffects(rows) => {
+                    world.party_buffs = rows.into_iter().collect();
+                    timers::on_party_effects(world);
+                }
+                NetEvent::Battle(m) => {
+                    timers::on_message(world, m.target, m.data[0] as u32, m.message);
+                    combat::on_battle_message(world, &m);
+                }
                 NetEvent::Event(s) => event::queue(world, s),
                 NetEvent::EventParams(n) => event::params(world, n),
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
@@ -6436,6 +6487,7 @@ impl App {
                 NetEvent::ItemMax(s, s2) => (world.inv.sizes, world.inv.sizes2) = (s, s2),
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
+                NetEvent::PetTp(tp) => world.timers.pet_tp = tp,
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
                 // LAB_1009b6xx: the entity at ActIndex `index` with server id `id` takes its master.
                 NetEvent::EntityMaster { index, id, master } => {
@@ -6532,7 +6584,10 @@ impl App {
                     }
                 }
                 NetEvent::SkillBase(s) => world.skill_base = Some(s),
-                NetEvent::Action(a) => combat::on_action(world, &a),
+                NetEvent::Action(a) => {
+                    timers::on_action(world, &a);
+                    combat::on_action(world, &a);
+                }
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
@@ -6724,7 +6779,8 @@ impl App {
                 NetEvent::AbilityRecasts(timers) => {
                     world.recasts_seen = true;
                     let now = Instant::now();
-                    world.ability_recast = timers.into_iter().filter(|t| t.1 > 0).map(|(id, s)| (id, now + std::time::Duration::from_secs(s as u64))).collect();
+                    world.ability_calc = timers.iter().filter(|t| t.1 > 0).map(|t| (t.0, (t.2, t.3))).collect();
+                    world.ability_recast = timers.into_iter().filter(|t| t.1 > 0).map(|(id, s, _, _)| (id, now + std::time::Duration::from_secs(s as u64))).collect();
                 }
                 NetEvent::Error(e) => {
                     self.status = format!("Disconnected: {e}");
@@ -8640,6 +8696,12 @@ impl App {
                 }
                 if std::mem::take(&mut world.party_tp_save) {
                     self.cfg.party_tp = world.party_tp;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
+                if std::mem::take(&mut world.timers.dirty) {
+                    (self.cfg.timers_out, self.cfg.timers_folded) = (world.timers.out, world.timers.folded);
                     if let Err(e) = self.cfg.save() {
                         log::warn!("config: {e:#}");
                     }

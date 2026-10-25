@@ -562,6 +562,16 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     // A line without a command goes to the chat mode (/chatmode).
     let line = if line.starts_with('/') { line.to_string() } else { format!("{}{line}", w.chat_prefix) };
     let first = line.split([' ', '\t']).next().unwrap_or("");
+    // Ours (Extras, not retail): /timers [in | out] slides the timers window's drawer; alone it toggles.
+    if first.eq_ignore_ascii_case("/timers") && w.extra_timers {
+        match line.split_whitespace().nth(1).map(str::to_ascii_lowercase).as_deref() {
+            Some("in") if w.timers.out => w.timers.toggle(),
+            Some("out") if !w.timers.out => w.timers.toggle(),
+            None => w.timers.toggle(),
+            _ => {}
+        }
+        return;
+    }
     let first_flags = table().get(first).map_or(0, |e| e.1);
     let target_cmd = first_flags & flag::TARGET != 0;
     // With the prompt up a typed line runs only with flag 0x02 (else group 7 0xa4); a macro line is dropped.
@@ -1771,7 +1781,8 @@ fn find_item(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
 /// FUN_1007bc10: /recast NAME: a spell (FUN_1022b430, then FUN_1022b2f0: (ticks + 59) / 60) or an ability
 /// (FUN_10222e20 / FUN_10222c90) as "[%s] %s" with FUN_101c93c0's time ("%d:%02d", "%d:%02d:%02d" from an hour),
 /// the name as typed, mode 0x79; a name known but not usable (not learned, out of the jobs' reach) "[%s] --:--".
-/// Not done: an ability's charges ("[%s] %s (%d)"), which we do not keep.
+/// A charge ability (FUN_10222c90: Quick Draw, Stratagems, Ready) "[%s] %s (%d)": the time to the next charge and
+/// the charges ready.
 /// printf's %s / %d / %% over string arguments (the group 10 lines that go through sprintf).
 pub(super) fn printf(f: &str, args: &[String]) -> String {
     let (mut out, mut k, mut it) = (String::new(), 0, f.chars().peekable());
@@ -1825,6 +1836,7 @@ fn recast(w: &mut World, args: &[String]) -> Done {
     let left = |t: Option<&std::time::Instant>| t.map_or(0, |t| t.saturating_duration_since(std::time::Instant::now()).as_secs_f32().ceil() as u32);
     let mut unusable = false;
     let mut secs = None;
+    let mut ready = None;
     let spell = w.names.as_ref().zip(w.actions.as_ref()).and_then(|(names, acts)| {
         acts.spells
             .iter()
@@ -1845,15 +1857,25 @@ fn recast(w: &mut World, args: &[String]) -> Done {
         let bit = id.wrapping_sub(0x200) as usize;
         let known = id >= 0x400 || w.commands_known.get(64 + bit / 8).is_some_and(|b| b & (1 << (bit % 8)) != 0);
         match rec {
-            Some(t) if known => secs = Some(if t == 900 { 0 } else { left(w.ability_recast.get(&t)) }),
+            Some(t) if known => {
+                let s = if t == 900 { 0 } else { left(w.ability_recast.get(&t)) };
+                secs = Some(s);
+                let calc = w.ability_calc.get(&t).copied().unwrap_or((0, 0));
+                let kind = w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).map_or(0, |a| if a.sub != 0 { a.sub } else { a.kind });
+                // A job without the charges (n 0) divides by zero in retail; ours prints the plain line (inferred).
+                if let Some((next, n, _)) = super::timers::charge_rule(w, kind).and_then(|(n, full)| super::timers::charges(s as i32, n, full, calc)) {
+                    (secs, ready) = (Some(next as u32), Some(n));
+                }
+            }
             _ => unusable = true,
         }
     }
-    let line = match secs {
-        Some(s) if s >= 3600 => format!("[{name}] {}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60),
-        Some(s) => format!("[{name}] {}:{:02}", s / 60, s % 60),
-        None if unusable => format!("[{name}] --:--"),
-        None => return Err(()),
+    let time = |s: u32| if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s % 3600 / 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) };
+    let line = match (secs, ready) {
+        (Some(s), Some(n)) => format!("[{name}] {} ({n})", time(s)),
+        (Some(s), None) => format!("[{name}] {}", time(s)),
+        (None, _) if unusable => format!("[{name}] --:--"),
+        (None, _) => return Err(()),
     };
     if let Some(bt) = w.battle.clone() {
         let colour = bt.colour_in(0x79, &w.game);

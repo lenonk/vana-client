@@ -247,6 +247,14 @@ impl BattleText {
         decode_sjis(&t)
     }
 
+    /// A mob skill's name (kind 7, ids from 0x100), as the 16 n code expands it.
+    pub fn mob_skill(&self, id: u16) -> String {
+        if id < 0x100 {
+            return String::new();
+        }
+        decode_sjis(&Self::name_of(&self.mob_skills, id as u32 - 0x100))
+    }
+
     pub fn screen_kind(&self, id: u16) -> u8 {
         self.screen_kinds.get(id as usize).copied().unwrap_or(0)
     }

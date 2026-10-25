@@ -8726,3 +8726,65 @@ interpolates between the hour keys in both clients.
   East Ronfaure river): the ripple started on arrival, the 0900 / w900 splashes on the water surface.
 - Tests bone0_drops, point_drop_is_world_y, water_heights, east_ronfaure_water, wade_on_type9, wade_point,
   wading_ripple.
+
+## Timers (an Extra): recasts, our effects and the ones we put on others (2026-10-25; spec ~/ffxi/lab/research/timers_durations_spec.md)
+
+- Not retail: the user's Ashita "Timers" add-on built in (Extras rows Timers and Timers Position; /timers [in | out]).
+  client/timers.rs (rows, the window, the drawer, the tracking), client/durations.rs (LSB's lengths), tables
+  data/timers/*.tsv made by ~/ffxi/lab/tools/timers_data.py from the spec's research tables (ids and numbers only).
+- Retail's charge abilities (/recast's "[%s] %s (%d)", now done too): FUN_10222c90 maps an ability (or the sub-list
+  row opening it, record +0xe 9 / 0xf / 0x12, via FUN_10222c10) by its kind (+2): 9 Quick Draw (COR main or sub;
+  2 charges from level 0x28; full 0x78 s), 0xf Stratagems (SCH main or sub; (level - 10) / 0x14 + 1; full 0xf0 s),
+  0x12 Ready (main BST, or a sub job of 0x14 - retail tests SCH there; 3 from 0x19; full 0x5a s). FUN_10225120 /
+  FUN_10225220: the 0x119 slot's i16 @+4 (Calc2) is added to the full time when non-zero, then full - (u8 @+2 & 0x3f)
+  x full / 60 (the float at 0x1032b160 is 1/60); a charge's share = that / n (ftol), the time to the next charge =
+  ceil(left) mod the share (the share when it divides and time is left), charges ready = (total - left) / (total /
+  n). 0x119's Calc1 / Calc2 are now kept (NetEvent::AbilityRecasts).
+- s2c 0x068 type 4 (LSB CPetSyncPacket): u8 @4 low 6 bits the type, pet target index u16 @0xc (0 none), HP% @0xe,
+  MP% @0xf, TP u16 @0x10, its target u32 @0x14 while attacking, the name from @0x18. We keep the TP (jug pet moves'
+  TP-scaled lengths).
+- Recasts: the 0x119 timers named by the ability we know on them (a sub-list row such as Phantom Roll over its
+  moves), spells from our own casts; the list icons of the magic / ability lists; the gauge fills toward ready over
+  the longest time seen. Our effects: 0x037 / 0x063's end times (exact), named by what we cast when it was ours.
+- Others' effects (spec 1.1): our 0x028 (and our pet's: categories 11 / 13, a pet's spells without our inputs)
+  looked up by (spell / ability / weapon skill / pet move, id); a row lands on its own messages with the value its
+  param kind expects (the effect, damage for Dia / Bio / helix, a roll total, a step level); several effects in one
+  result land together when the value names the action's first. Lengths: the formulas of spec sections 10-75 over
+  our job, levels, merits (0x08C; the main job at 75, the level's cap), job points (main 99), gear mods (equipped
+  items' rows, standard augment slots 0..3, none above our level, two latents by zone), our effects (and those that
+  wore off in the last 1.5 s: the action that used them reports after their wear-off), working skills (0x062),
+  the target's level (party) and icons (0x076, Embolden). Resist rolls and random terms are not known: the longest
+  is predicted (Bind 60, Stun 7, Sneak + 120), the monster taken as no NM.
+- Ends: 0x029 204 / 206 by icon (sleep II / lullaby as 2, Copy Image's 444..446, Doubt as 22; copies of a song: the
+  one ending first), 0x028 removals (83, 123, 159, 321, 341, 343, 378, 453, proc 168, bust 426 / 427), defeats
+  (0x029 6 / 20 / 97, result info bit 0; the death flag on players), despawns (party members' stay), a party
+  member's zone change (their zone-flagged effects), their 0x076 list (as many song copies as icons), another
+  player's landing of the same effect (a song: the same tier), the predicted end (+3 s while a wear-off is due;
+  at once where none comes: icon 0 / no-loss effects, pets', songs and Valiance on others, Gambit).
+- Replacement on our landing: the same effect (songs and other ignore_duplicate ones by tier), the effect's remove,
+  negative and exclusion group, Dia ending Bio, the stat boosts and storms; songs: at our cap (1, 2 with a string /
+  wind instrument, + MAXIMUM_SONGS_BONUS, Clarion Call) ours ending first goes (LSB counts the replaced copy);
+  rolls: 2 of ours a target as COR main, else 1; Double-Up keeps the end and renames; steps from anyone add 30 s up
+  to 120; Arise's Reraise when the raised player's own Arise action comes; a Geo- spell's luopan (min(600, ceil(HP /
+  drain) x 3), Bolster and Blaze of Glory at the cast) once it is our pet.
+- The window (layout pixels): one frame 184 wide, sections Recasts / Buffs / Debuffs (headings in the Config
+  captions, a click folds one), groups by bearer in fontshp (us first, then party order; the targeted monster
+  first), rows of a 16-px icon, the name in the game font, windowps 38 / 97 (recasts, tinted 0x800060b0) or 98
+  (effects) gauge and the time (fontshp, "m:ss" / "h:mm:ss"); an effect's icon dims as the status icons do in its
+  last 15 s; past the predicted end it greys at 0:00. Rows drop from the last section up when out of room (a
+  heading counts them). Docks: Left (16, from 122 or below the status icon rows, to the compass's top), Right (its
+  foot on the party / target windows, the target's room kept, the alliance windows, the log where it reaches
+  under; up to the main menu's foot at 252), Top (centred, clear of the icons and the main menu column, from 50).
+  The drawer slides over 12 ticks (smoothstep) to a 22-px sliver at the dock's edge (the top dock into the help
+  bar's foot, clipped at y 48); the red page arrows (frames 25 / 26, turned for the top) point where it goes. Drawn
+  before the party / target windows and every menu; hidden in events, under the map, and with nothing to show;
+  its clicks only where no window is over it; the drawer and folds are kept in the config.
+- Live (Lnxcsfix as RDM / BRD / COR 75 with bots Nonopiko and Kazuto, West Ronfaure): Haste / Refresh on a level-21
+  party member 94.5 / 76.8 s (the level penalty) and gone at their ends; Slow / Paralyze / Blind / Dia on a Forest
+  Hare, cleared at its death; Dia's and Paralyze's wear-offs came 0.7 / 0.1 s after the predicted ends; Minuet IV
+  then Victory March on us and Kazuto (no instrument: March evicted Minuet in both); Chaos Roll (4) on both, Double-Up
+  renamed it (10) with the end kept; all three docks and the drawer, the right dock on the log.
+- Weapon skill debuffs start on the skill's damage (185 / 264, value > 0) as probably landed, the chance-gated ones
+  not at all; the wear-off or the predicted end ends them. Not done: blue magic's and pet damage moves' added
+  effects, hidden ancient magic / elemental ninjutsu debuffs, charm timers (need the mob's level) and Spirit Link's
+  copies are not timed (the server never shows them landing); TP Bonus from traits (Fencer) is not known.

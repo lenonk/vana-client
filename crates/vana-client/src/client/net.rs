@@ -357,6 +357,8 @@ pub enum NetEvent {
     Mounts(u64),
     /// s2c 0x119 u32 @0xfc: the mount recast in seconds (one shared timer).
     MountRecast(u32),
+    /// s2c 0x068 type 4 (LSB CPetSyncPacket): our pet's TP (u16 @0x10), none without a pet.
+    PetTp(Option<u16>),
     /// 0x01C: container sizes (ItemNum, 1 + size).
     ItemMax([u8; 18], [u16; 18]),
     /// 0x01E: count of a slot (0 = emptied).
@@ -477,8 +479,9 @@ pub enum NetEvent {
     /// s2c 0x063 type 6 (0x10099330): the teleport point masks, 0x40 bytes from @8 (Home Points, Survival Guides,
     /// Waypoints, Telepoints, Atmos(S), Eschan portals).
     PointMasks([u8; 0x40]),
-    /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8, u8 timer id, u16, u16} (FUN_10099430).
-    AbilityRecasts(Vec<(u16, u16)>),
+    /// s2c 0x119 ABIL_RECAST: 31 x {u16 seconds, u8 Calc1, u8 timer id, i16 Calc2, u16} (FUN_10099430), kept as
+    /// (timer id, seconds, Calc1, Calc2).
+    AbilityRecasts(Vec<(u16, u16, u8, i16)>),
     /// s2c 0x0AA MAGIC_DATA: learned spells, one bit per spell id.
     MagicKnown(Vec<u8>),
     /// s2c 0x0AC COMMAND_DATA: weapon skill, job ability, pet command bits (64 bytes each), traits (32).
@@ -1018,7 +1021,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
                     0x119 if { let _ = tx.send(NetEvent::MountRecast(p.u32(0xfc))); false } => {}
-                    0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i))).collect()))?,
+                    0x068 if p.u8(4) & 0x3f == 4 => tx.send(NetEvent::PetTp((p.u16(0xc) != 0).then(|| p.u16(0x10))))?,
+                    0x119 => tx.send(NetEvent::AbilityRecasts((0..31).map(|i| (p.u8(4 + 8 * i + 3) as u16, p.u16(4 + 8 * i), p.u8(4 + 8 * i + 2), p.u16(4 + 8 * i + 4) as i16)).collect()))?,
                     0x0AA => tx.send(NetEvent::MagicKnown((0..128).map(|i| p.u8(4 + i)).collect()))?,
                     0x0AC => tx.send(NetEvent::CommandsKnown((0..224).map(|i| p.u8(4 + i)).collect()))?,
                     0x0DF => {

@@ -431,6 +431,11 @@ fn row_icon(w: &World, kind: Kind, id: u16) -> Option<(&'static str, usize)> {
     })
 }
 
+/// A spell's (or an ability record's) list icon, as the magic and ability lists draw it.
+pub fn list_icon_of(w: &World, spell: bool, id: u16) -> Option<(&'static str, usize)> {
+    row_icon(w, if spell { Kind::Magic } else { Kind::Ability }, id)
+}
+
 fn spell_name(w: &World, s: u16) -> String {
     w.names.as_ref().and_then(|n| n.spell(s as u32)).unwrap_or_default()
 }

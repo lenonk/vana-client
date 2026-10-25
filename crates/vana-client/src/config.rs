@@ -65,6 +65,12 @@ pub struct Config {
     /// Extra (the timestamp add-on): retail's chat timestamps (config 0xb5) on every log line; seconds while 0xb5 is
     /// off.
     pub stamp_all_lines: bool,
+    /// Extra (the Timers add-on): the timers window, its dock (0 left, 1 right, 2 top), its drawer out, folded
+    /// sections (a bit each).
+    pub timers: bool,
+    pub timers_dock: u32,
+    pub timers_out: bool,
+    pub timers_folded: u8,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -154,6 +160,10 @@ impl Default for Config {
             map_overlay_opacity: 0.6,
             synth_amount: false,
             stamp_all_lines: false,
+            timers: false,
+            timers_dock: 0,
+            timers_out: true,
+            timers_folded: 0,
             cursor_size: 0,
             mods: Vec::new(),
             tool: Default::default(),

@@ -283,7 +283,7 @@ pub fn grow(name: &str) -> f32 {
 pub fn our_help(child: u16) -> Option<&'static str> {
     match child {
         SETTINGS => Some(SETTINGS_HELP),
-        EXTRAS => Some("Gameplay additions from the add-ons: the map overlay, the synthesis amount, timestamps on every line."),
+        EXTRAS => Some("Gameplay additions from the add-ons: the map overlay, the synthesis amount, timestamps on every line, timers."),
         _ => None,
     }
 }
