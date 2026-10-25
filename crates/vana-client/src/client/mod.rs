@@ -6311,6 +6311,11 @@ impl App {
 
     fn update_movement(&mut self, dt: f32) {
         let Phase::World(world) = &mut self.phase else { return };
+        // c2s 0x015's facetarget: the current target's ActIndex.
+        let target = world.target.and_then(|id| if id == world.my_id { Some(world.my_index) } else { world.entities.get(&id).map(|e| e.index) }).unwrap_or(0);
+        if let Ok(mut me) = world.net.me.lock() {
+            me.target = target;
+        }
         combat::tick(world);
         ko_step(world);
         event::update(world, dt);

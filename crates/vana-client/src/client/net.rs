@@ -594,6 +594,8 @@ pub struct SelfState {
     pub pos: [f32; 3],
     pub dir: u8,
     pub moving: bool,
+    /// The current target's ActIndex (0 none): c2s 0x015 @0x16 facetarget, the server's cursor target.
+    pub target: u16,
 }
 
 pub struct NetHandle {
@@ -839,7 +841,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x00A => {
                         let pos = [p.f32(12), p.f32(16), p.f32(20)];
                         let (scene, myroom) = scene_of(&p);
-                        *me.lock().unwrap() = SelfState { pos, dir: p.u8(11), moving: false };
+                        *me.lock().unwrap() = SelfState { pos, dir: p.u8(11), moving: false, target: 0 };
                         zoned = true;
                         my_index = p.u16(8);
                         queue.push(build(0x00C, &[0u8; 8]));
@@ -1263,6 +1265,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                 }
                 body[14..16].copy_from_slice(&(s.moving as u16).to_le_bytes());
                 body[16] = s.dir;
+                // FUN_10096c00: @0x16 the current target's ActIndex (FUN_10152f20).
+                body[18..20].copy_from_slice(&s.target.to_le_bytes());
                 queue.push(build(0x015, &body));
             }
             map.send(&queue)?;
