@@ -28,6 +28,8 @@ pub struct TitleState {
     /// Not retail: the Update button above Select Character, (selected, enabled); `selected` above is ignored
     /// while it is selected.
     pub update: Option<(bool, bool)>,
+    /// The hand: off while a window over the title has the focus (its highlight stays, as the Config pages').
+    pub hand: bool,
     /// The account's features word from the lobby (FUN_100ed7e0 case 0xf -> *0x103601bc + 0xb4): bits 2..7 are
     /// mog wardrobes 3..8 (containers 11..16).
     pub wardrobes: u32,
@@ -142,13 +144,17 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
                 for cell in &spr.cells {
                     b.push_cell(lobby, cell, ux + d, uy + d, sx, sy, if upd_sel { 0x8080_5020 } else { 0x8080_8080 }, 0);
                 }
-                if upd_sel && let Some(anc) = lobby.lib("anc     anc_s") {
+                if upd_sel
+                    && st.hand
+                    && let Some(anc) = lobby.lib("anc     anc_s")
+                {
                     let ox = (i16::from_le_bytes([c.head[6], c.head[7]]) + i16::from_le_bytes([m.elements[0].head[6], m.elements[0].head[7]])) as f32;
                     let oy = (i16::from_le_bytes([c.head[8], c.head[9]]) + i16::from_le_bytes([m.elements[0].head[8], m.elements[0].head[9]])) as f32;
                     b.push_sprite(lobby, anc, st.cursor_frame % anc.sprites.len().max(1), ux + ox, uy + oy, 1.0, 1.0, 0x8080_8080, 0);
                 }
             }
             if selected
+                && st.hand
                 && let Some(anc) = lobby.lib("anc     anc_s")
             {
                 // Cursor at child pos + child/window header (+6, +8) (FUN_10116b10), unscaled.

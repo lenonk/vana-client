@@ -8337,6 +8337,7 @@ impl App {
                         const UPDATE: usize = 5;
                         // FUN_10235fa0: while lobycwin (or our settings screen) is up the title takes no input.
                         let config_open = self.lobby_cfg.is_some() || self.lobby_settings.is_some() || self.update_ui.is_some();
+                        let window_over = config_open;
                         // Not retail: Update (menu 5) above Select Character while something is out of date.
                         let upd = self.updates.as_ref().is_some_and(|s| s.lock().unwrap().any());
                         if !upd && *menu == UPDATE {
@@ -8390,7 +8391,7 @@ impl App {
                             let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
                             let wardrobes = lobby.as_ref().map_or(0, |l| l.features);
                             let press = self.title_press.filter(|p| p.0 == *menu && p.0 != UPDATE).map(|p| ((9.0 - p.1.elapsed().as_secs_f32() * 60.0).max(0.0), p.2));
-                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press);
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over);
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
                                 (None, Some(s), _) => s.help(),
