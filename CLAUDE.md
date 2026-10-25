@@ -51,7 +51,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Git (branch `master`): commit after each piece of work has been built, tested and checked. Subagents never
   commit or change the tree; `git status` / `git diff` are fine.
 - Live tests use only account lnxtest01 (characters Lnxtest, Lnxcsfix, Tuxedo). Never touch the user's account
-  (lenon) or the server DB or settings without asking.
+  (lenon) or the server settings without asking. DB writes a test needs (GM commands, rows) need no OK: the DB can be
+  rebuilt (user, 2026-10-25).
   - Lnxcsfix has GM level 5 (user's OK, 2026-10-22): `key:Space;type:!pos X Y Z;key:Enter` in a script moves it.
   - Tuxedo logs in to the "Start Seekers of Adoulin?" prompt (login event 0x36e); a script must answer it.
   - For DB reads, use a 0600 defaults file (`~/ffxi/lab/tools/mkcnf.py`) and delete it afterwards.

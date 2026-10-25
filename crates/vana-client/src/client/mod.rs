@@ -749,9 +749,6 @@ fn chat_line(kind: u8, attr: u8, data: u16, from: &str, text: &str, zone: &str) 
     })
 }
 
-/// The 7F 69 colour of a phrase in the line being typed (log colour table entry 0x69: d0 60 c0, BGRA).
-const PHRASE: [u8; 4] = [0xd0, 0x60, 0xc0, 0x80];
-
 /// A chat line in its log mode's colour (the config colour before the message tables load), auto-translate blocks
 /// expanded with their brackets (FUN_10127c00 with param 5).
 /// FUN_10127990: a party line (modes 5 / 0x0d) with a call tag outside quotes plays its sound (the first tag that
@@ -2185,8 +2182,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let mut cx = x + 2.0;
         let caret_x = cx + width(&before);
         let mut word_x = cx;
+        // FUN_101b8dc0: 7F 69 is mode 0xcf (a blue), alpha forced to 0x7f.
+        let mut phrase_c = world.battle.as_ref().map_or([0x80, 0x50, 0x40, 0x80], |b| b.colour_in(0xcf, &world.game));
+        phrase_c[3] = 0x7f;
         for (t, phrase) in &pieces {
-            gu.text(t, cx, y + 3.0, 0, if *phrase { PHRASE } else { WHITE });
+            gu.text(t, cx, y + 3.0, 0, if *phrase { phrase_c } else { WHITE });
             if !*phrase {
                 word_x = cx + t.rfind(' ').map_or(0.0, |i| gu.text_width(&t[..=i]));
             }
