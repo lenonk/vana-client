@@ -57,6 +57,8 @@ pub struct Riding {
     pub offset: Vec3,
     pub yaw: f32,
     points: [Option<Vec3>; 2],
+    /// The rider's `wepN` byte 0 before the mount hid them (FUN_100d5ef0 clears them all; ours keeps an event's).
+    weps: [bool; 9],
 }
 
 /// The [S] zones (FUN_100fd3a0).
@@ -158,13 +160,14 @@ pub fn update(w: &mut World, dt: f32) {
         if w.actors.get(&animal_id).is_none_or(|a| a.key != format!("{src:?}")) && !w.event_looks.iter().any(|(i, _)| *i == animal_id) {
             w.event_looks.push((animal_id, src));
         }
-        let animal = w.actors.get(&animal_id).and_then(|a| a.character.clone());
+        let animal = w.actors.get(&animal_id).filter(|a| a.key == format!("{src:?}")).and_then(|a| a.character.clone());
         let mi = animal.as_ref().and_then(|c| c.mount);
         let mount = matches!(m, Model::Mount(_));
-        let fresh = || Riding { model: m, phase: if mount { Phase::Mounting(0.0) } else { Phase::Riding }, race: pc.race, v: 0, offset: Vec3::ZERO, yaw: 0.0, points: [None; 2] };
-        let r = w.rides.entry(id).or_insert_with(fresh);
+        let weps = rider.wep_hide;
+        let fresh = |weps: [bool; 9]| Riding { model: m, phase: if mount { Phase::Mounting(0.0) } else { Phase::Riding }, race: pc.race, v: 0, offset: Vec3::ZERO, yaw: 0.0, points: [None; 2], weps };
+        let r = w.rides.entry(id).or_insert_with(|| fresh(std::array::from_fn(|n| weps[n][0])));
         if r.model != m || r.race != pc.race {
-            *r = fresh();
+            *r = fresh(r.weps);
         }
         // State 0xe: the counter runs to 150 updates, or jumps there once the mount is in; then the rider's fade
         // restarts (+0x59c = 0) and it shows.
@@ -198,7 +201,7 @@ pub fn update(w: &mut World, dt: f32) {
             a.rate_scale = mi.map_or(1.0, |mi| mi.rate());
         }
     }
-    let gone: Vec<u32> = w.rides.keys().filter(|id| !keep.contains(id)).copied().collect();
+    let gone: Vec<u32> = w.rides.iter().filter(|(id, r)| !keep.contains(id) && !matches!(r.phase, Phase::Leaving { .. })).map(|(id, _)| *id).collect();
     for id in gone {
         leave(w, id);
     }
@@ -229,13 +232,13 @@ fn leave(w: &mut World, id: u32) {
     (r.phase, r.offset, r.yaw, r.points) = (Phase::Leaving { pos: p.pos, forward: p.forward, run: None, ticks: 0.0 }, Vec3::ZERO, 0.0, [None; 2]);
     if let Some(a) = w.actors.get_mut(&id) {
         a.motion_names = None;
-        if mount {
-            (a.alpha, a.rgb, a.fade) = (0.0, [actmotion::OPAQUE; 3], None);
-        }
     }
     let base = actmotion::status_motion(w, id, &rch);
     let started = w.actors.get_mut(&id).is_some_and(|a| actmotion::start(a, &rch, "coff", &base));
     if started {
+        if mount && let Some(a) = w.actors.get_mut(&id) {
+            (a.alpha, a.rgb, a.fade) = (0.0, [actmotion::OPAQUE; 3], None);
+        }
         actmotion::fx_too(&mut w.effects, id, "coff");
     }
     let base = actmotion::status_motion(w, animal_id, &ach);
@@ -271,11 +274,12 @@ fn finish(w: &mut World, id: u32) {
     if let Some(a) = w.actors.get_mut(&id) {
         a.motion_names = None;
         if matches!(r.model, Model::Mount(_)) {
-            for h in &mut a.wep_hide[..=8] {
-                h[0] = false;
+            for (h, was) in a.wep_hide[..=8].iter_mut().zip(r.weps) {
+                h[0] = was;
             }
+            // Ours: the 600-tick cap can end a ride before coff's fade in.
             if a.fade.is_none() && a.alpha < actmotion::OPAQUE {
-                log::warn!("rider {id:#x}: coff left the rider at alpha {}", a.alpha);
+                a.alpha = actmotion::OPAQUE;
             }
         }
     }
@@ -303,9 +307,11 @@ pub fn hidden(w: &World) -> Vec<u32> {
     w.rides.iter().filter(|(_, r)| matches!(r.phase, Phase::Mounting(_))).map(|(id, _)| *id).collect()
 }
 
-/// FUN_100c63d0: a rider's load fade waits for its animal.
+/// FUN_100c63d0: a rider's load fade waits for its animal (ours: not for one whose model failed or is not asked for).
 pub fn fade_held(w: &World, id: u32) -> bool {
-    id & ANIMAL == 0 && w.rides.get(&id).is_some_and(|r| !matches!(r.phase, Phase::Leaving { .. })) && !w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_some())
+    id & ANIMAL == 0
+        && w.rides.get(&id).is_some_and(|r| !matches!(r.phase, Phase::Leaving { .. }))
+        && w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_none() && !a.failed)
 }
 
 /// FUN_1008b460 holds the applied status (+0x170) at the riding one while `coff` runs.

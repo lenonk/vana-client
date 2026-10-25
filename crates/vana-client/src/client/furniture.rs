@@ -46,7 +46,9 @@ impl State {
     /// A loaded set goes up: its pieces get ids (XiFurnitureActor's entity: 0x04000000 | an index down from 0x3ff)
     /// and their 'init' schedulers start (FUN_100c47f0); returns the geometry.
     pub fn apply(w: &mut World, l: Loaded) -> Vec<(Arc<ZoneGeometry>, Vec<Texture>)> {
-        w.furniture.pieces.clear();
+        for (id, _, _) in std::mem::take(&mut w.furniture.pieces) {
+            w.effects.stop_actor_scheduler(id, u32::from_le_bytes(*b"init"));
+        }
         if let Some(g) = w.ground.as_mut() {
             g.set_furniture(l.boxes, l.meshes);
         }
@@ -118,8 +120,8 @@ const WALL_2F: [[f32; 3]; 92] = [
 ];
 
 /// FUN_101cdd90 / FUN_101cdf50: a piece's position (the centre of its turned footprint, 0.6-unit cells, its level in
-/// 0.1 units up) or its wall slot's, and its yaw (rot x pi / 2).
-pub fn place(f: &Furn, map: u16, floor: u8, col: i8, level: i8, row: i8, rot: u8) -> (Vec3, f32) {
+/// 0.1 units up) or its wall slot's (none past the table), and its yaw (rot x pi / 2).
+pub fn place(f: &Furn, map: u16, floor: u8, col: i8, level: i8, row: i8, rot: u8) -> Option<(Vec3, f32)> {
     let yaw = rot as f32 * 1.570_796;
     if f.wall() {
         let t: &[[f32; 3]] = if floor != 0 {
@@ -129,20 +131,24 @@ pub fn place(f: &Furn, map: u16, floor: u8, col: i8, level: i8, row: i8, rot: u8
         } else {
             &WALL_1F
         };
-        return (Vec3::from(t.get(col as u8 as usize).copied().unwrap_or([0.0; 3])), yaw);
+        return t.get(col as u8 as usize).map(|&p| (Vec3::from(p), yaw));
     }
     let o = ORIGIN[(floor != 0) as usize];
     let (w, d) = f.footprint(rot);
-    (Vec3::new((col as f32 - o[0]) * 0.6 + w as f32 * 0.3, -(level as f32 - o[1]) * 0.1, (row as f32 - o[2]) * 0.6 + d as f32 * 0.3), yaw)
+    Some((Vec3::new((col as f32 - o[0]) * 0.6 + w as f32 * 0.3, -(level as f32 - o[1]) * 0.1, (row as f32 - o[2]) * 0.6 + d as f32 * 0.3), yaw))
 }
 
 /// FUN_101d2af0 / FUN_101d2b10 (every frame): the installed pieces (exdata[1] bit 6) of this floor (exdata[1] & 3) in
 /// containers 1 and 9, slots 1..0x50; none outside a furnished room (FUN_101d5fe0 hides them) or in the Mog Garden
 /// (zone 280). A changed set gives the load to start: (its number, the pieces, map, floor).
 pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
-    let room = w.myroom.filter(|_| w.in_scene() && w.zone != Some(280));
-    let want: Vec<Key> = match room {
-        Some(r) if super::myroom::has_floors(&r) => {
+    // /furcc (config 0x99 bit 6 clear): the camera stops at furniture.
+    if let Some(g) = w.ground.as_mut() {
+        g.furcc = w.game.get(0x99) & 0x40 == 0;
+    }
+    let r = w.myroom.filter(|_| w.in_scene() && w.zone != Some(280))?;
+    let want: Vec<Key> = match r {
+        r if super::myroom::has_floors(&r) => {
             let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
             w.inv
                 .slots
@@ -156,16 +162,11 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
         }
         _ => Vec::new(),
     };
-    // /furcc (config 0x99 bit 6 clear): the camera stops at furniture.
-    if let Some(g) = w.ground.as_mut() {
-        g.furcc = w.game.get(0x99) & 0x40 == 0;
-    }
     if want == w.furniture.want {
         return None;
     }
     w.furniture.want = want.clone();
     w.furniture.seq += 1;
-    let r = room?;
     Some((w.furniture.seq, want, r.map, r.floor))
 }
 
@@ -181,30 +182,29 @@ fn model_tris(m: &crate::dat::zone::Model) -> Vec<[Vec3; 3]> {
 /// Skinned pieces (models 0x108..0x12b: statues, campfires) become actors.
 pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, floor: u8) -> Result<Loaded> {
     let table = FurnTable::load(index)?;
-    let mut by_file: BTreeMap<u32, Vec<(Vec3, f32)>> = BTreeMap::new();
-    let mut boxes = Vec::new();
+    // Per file: each piece's place and its box size (none for a plant).
+    let mut by_file: BTreeMap<u32, Vec<(Vec3, f32, Option<Vec3>)>> = BTreeMap::new();
     let mut skinned = Vec::new();
     for &(_, _, item, ext) in want {
         let Some(f) = table.entry(item) else { continue };
         let Some(file) = model_file(f.model) else { continue };
-        let (pos, yaw) = place(&f, map, floor, ext[6] as i8, ext[7] as i8, ext[8] as i8, ext[9]);
+        let Some((pos, yaw)) = place(&f, map, floor, ext[6] as i8, ext[7] as i8, ext[8] as i8, ext[9]) else { continue };
         if (0x108..=0x12b).contains(&f.model) {
             skinned.push((file, pos, yaw));
             continue;
         }
         log::debug!("furniture {item:#x}: file {file}, {pos:?} yaw {yaw:.2}");
-        by_file.entry(file).or_default().push((pos, yaw));
-        let m = Placement { name: String::new(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2] }.matrix();
-        boxes.push((glam::Mat4::from_cols_array_2d(&m), Vec3::new(f.size[0] as f32 * 0.6, f.height as f32 * 0.01, f.size[1] as f32 * 0.6)));
+        by_file.entry(file).or_default().push((pos, yaw, Some(Vec3::new(f.size[0] as f32 * 0.6, f.height as f32 * 0.01, f.size[1] as f32 * 0.6))));
         if f.pot()
             && let Some(pf) = table.plant_model(ext[4], ext[0]).and_then(model_file)
         {
-            by_file.entry(pf).or_default().push((pos - Vec3::new(0.0, 0.3, 0.0), yaw));
+            by_file.entry(pf).or_default().push((pos - Vec3::new(0.0, 0.3, 0.0), yaw, None));
         }
     }
     let mut files = Vec::new();
     let mut pieces = Vec::new();
     let mut meshes = Vec::new();
+    let mut boxes = Vec::new();
     for (file, places) in by_file {
         let bytes = index.read(file);
         let init = bytes.as_ref().is_ok_and(|b| crate::dat::chunks(b).is_ok_and(|c| c.iter().any(|c| c.kind == 0x07 && c.name() == "init")));
@@ -220,13 +220,16 @@ pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, flo
         let Some(name) = scene.meshes.first().map(|m| m.name.clone()) else { continue };
         scene.placements = places
             .iter()
-            .map(|&(pos, yaw)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2] })
+            .map(|&(pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2] })
             .collect();
-        pieces.extend(scene.placements.iter().map(|p| (file, glam::Mat4::from_cols_array_2d(&p.matrix()), init)));
         let local: Vec<[Vec3; 3]> = scene.meshes[0].models.iter().flat_map(model_tris).collect();
-        for p in &scene.placements {
+        for (p, &(_, _, size)) in scene.placements.iter().zip(&places) {
             let m = glam::Mat4::from_cols_array_2d(&p.matrix());
+            pieces.push((file, m, init));
             meshes.push(local.iter().map(|t| t.map(|v| m.transform_point3(v))).collect());
+            if let Some(size) = size {
+                boxes.push((m, size));
+            }
         }
         let geo = ZoneGeometry::build(&scene);
         files.push((Arc::new(geo), std::mem::take(&mut scene.textures)));
@@ -245,14 +248,16 @@ mod tests {
     fn places() {
         let bed = Furn { flags: 0, model: 2, size: [4, 6], height: 70 };
         let near = |(p, y): (Vec3, f32), q: [f32; 3], yaw: f32| (p - Vec3::from(q)).length() < 1e-4 && (y - yaw).abs() < 1e-4;
-        assert!(near(place(&bed, 0x122, 0, 0, 0, 0, 0), [-4.8, 0.0, -5.4], 0.0));
-        assert!(near(place(&bed, 0x122, 0, 0, 0, 0, 1), [-4.2, 0.0, -6.0], 1.570_796));
+        let at = |f: &Furn, map, floor, col, level, row, rot| place(f, map, floor, col, level, row, rot).unwrap();
+        assert!(near(at(&bed, 0x122, 0, 0, 0, 0, 0), [-4.8, 0.0, -5.4], 0.0));
+        assert!(near(at(&bed, 0x122, 0, 0, 0, 0, 1), [-4.2, 0.0, -6.0], 1.570_796));
         let pot = Furn { flags: 0xc, model: 216, size: [1, 1], height: 100 };
-        assert!(near(place(&pot, 0x122, 0, 17, 5, 5, 0), [4.5, -0.5, -3.9], 0.0));
-        assert!(near(place(&pot, 0x267, 1, 10, 0, 13, 0), [0.3, 0.0, 0.3], 0.0));
+        assert!(near(at(&pot, 0x122, 0, 17, 5, 5, 0), [4.5, -0.5, -3.9], 0.0));
+        assert!(near(at(&pot, 0x267, 1, 10, 0, 13, 0), [0.3, 0.0, 0.3], 0.0));
         let flag = Furn { flags: 1, model: 129, size: [1, 1], height: 60 };
-        assert!(near(place(&flag, 0x122, 0, 3, 0, 0, 3), [-6.5, -3.0, 0.0], 3.0 * 1.570_796));
-        assert!(near(place(&flag, 0x121, 0, 3, 0, 0, 3), [-6.2325, -3.0, 0.0], 3.0 * 1.570_796));
-        assert!(near(place(&flag, 0x267, 1, 40, 0, 0, 0), [0.0, -5.6, 8.0], 0.0));
+        assert!(near(at(&flag, 0x122, 0, 3, 0, 0, 3), [-6.5, -3.0, 0.0], 3.0 * 1.570_796));
+        assert!(near(at(&flag, 0x121, 0, 3, 0, 0, 3), [-6.2325, -3.0, 0.0], 3.0 * 1.570_796));
+        assert!(near(at(&flag, 0x267, 1, 40, 0, 0, 0), [0.0, -5.6, 8.0], 0.0));
+        assert_eq!(place(&flag, 0x122, 0, 5, 0, 0, 0), None);
     }
 }
