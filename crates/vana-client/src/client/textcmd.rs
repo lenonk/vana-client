@@ -1479,9 +1479,9 @@ pub(super) fn log9(w: &mut World, id: usize) {
     }
 }
 
-/// FUN_1007b390: /equip slot (unequip, group 9 0x44 "Equipment removed.") or /equip slot item [bag] (c2s 0x050, 0x43
-/// "Equipment changed."); gate 0x46; already worn: nothing. Not done: the client's job / Dual Wield checks (group 7
-/// 0x8b / 0x98 / 0x99, the server refuses those too), the equipment-message setting.
+/// FUN_1007b390: /equip slot (unequip, group 9 0x44 "Equipment removed.") or /equip slot item [bag] (0x43 "Equipment
+/// changed."), both through FUN_101327d0 (its own refusals 7 0x8b / 0x98 / 0x99); gate 0x46; already worn or not found:
+/// nothing; a locked item (+8) or a failed equip: 7 0x8e. Not done: the equipment-message setting (FUN_100e48d0).
 fn equip(w: &mut World, args: &[String]) -> Done {
     if !status_gate(w, 0x46) {
         return Ok(());
@@ -1492,10 +1492,13 @@ fn equip(w: &mut World, args: &[String]) -> Done {
     let slot = SLOT_OF[k];
     let Some(name) = args.get(2) else {
         if let Some((c, i)) = w.inv.equip[slot as usize] {
-            let name = w.inv.slots.get(&(c, i)).and_then(|(id, _)| w.item_info.as_ref()?.item(*id)).map(|it| it.name.clone());
-            log::info!("/equip: removing {name:?} from slot {slot}");
-            send(w, NetCommand::Equip { index: 0, slot, container: c });
-            log9(w, 0x44);
+            let id = w.inv.slots.get(&(c, i)).map_or(0, |s| s.0);
+            log::info!("/equip: removing {id:#x} from slot {slot}");
+            if super::equipwin::try_equip(w, slot as usize, c, i, id) {
+                log9(w, 0x44);
+            } else {
+                refuse(w, 0x8e);
+            }
         }
         return Ok(());
     };
@@ -1504,12 +1507,16 @@ fn equip(w: &mut World, args: &[String]) -> Done {
         Some(b) if b.len() == 1 && b.as_bytes()[0].is_ascii_digit() && b.as_bytes()[0] <= b'8' => vec![EQUIP_BAGS[(b.as_bytes()[0] - b'0') as usize]],
         Some(_) => return Err(()),
     };
-    let Some((bag, index, _)) = find_item(w, name, &bags) else { return Ok(()) };
+    let Some((bag, index, id)) = find_item(w, name, &bags) else { return Ok(()) };
     if w.inv.equip[slot as usize] == Some((bag, index)) {
         return Ok(());
     }
-    send(w, NetCommand::Equip { index, slot, container: bag });
-    log9(w, 0x43);
+    let locked = w.inv.locks.get(&(bag, index)).is_some_and(|&l| l != 0);
+    if !locked && super::equipwin::try_equip(w, slot as usize, bag, index, id) {
+        log9(w, 0x43);
+    } else {
+        refuse(w, 0x8e);
+    }
     Ok(())
 }
 

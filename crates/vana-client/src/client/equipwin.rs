@@ -229,22 +229,27 @@ fn encumbered(w: &World, slot: usize) -> bool {
     w.job_info.as_ref().is_some_and(|j| j.encumbrance & (1 << slot) != 0)
 }
 
-/// FUN_10132b90 / FUN_101327d0: the grid slot's worn piece picked again comes off (c2s 0x050 index 0); else the checks,
-/// then c2s 0x050 {index, slot, container}. False on a refusal (its group 7 line printed) or a silent failure.
+/// FUN_10132b90: the grid's slot and the list's container through FUN_101327d0.
 fn equip(w: &mut World, item: Option<Slot>) -> bool {
     let Some(e) = win(w) else { return false };
     let (slot, c) = (slot_of(e.grid), e.container);
     let Some(s) = item else { return false };
+    try_equip(w, slot, c, s.index, s.id)
+}
+
+/// FUN_101327d0: the piece worn there picked again comes off (c2s 0x050 index 0); else the checks, then c2s 0x050
+/// {index, slot, container}. False on a refusal (its group 7 line printed) or a silent failure. /equip uses it too.
+pub(super) fn try_equip(w: &mut World, slot: usize, c: u8, index: u8, id: u16) -> bool {
     if encumbered(w, slot) {
         return false;
     }
-    if w.inv.equip[slot] == Some((c, s.index)) {
+    if w.inv.equip[slot] == Some((c, index)) {
         log::info!("equip: slot {slot} off (0x050 index 0)");
         let _ = w.net.commands.send(NetCommand::Equip { index: 0, slot: slot as u8, container: c });
         return true;
     }
     let Some(info) = w.item_info.clone() else { return false };
-    let Some(it) = info.item(s.id) else { return false };
+    let Some(it) = info.item(id) else { return false };
     // The sub-weapon rules: a weapon that also fits Main.
     if slot == 1 && it.item_type == 4 && it.slots & 1 != 0 {
         let st = w.stats.clone().unwrap_or_default();
@@ -265,11 +270,11 @@ fn equip(w: &mut World, item: Option<Slot>) -> bool {
         }
     }
     // FUN_10132050 (can wear now) and FUN_10132180 (one of the item's slots); a closed wardrobe fails.
-    if !super::shop::can_wear(w, &it, s.id) || it.slots & (1 << slot) == 0 || !bag_open(w, c) {
+    if !super::shop::can_wear(w, &it, id) || it.slots & (1 << slot) == 0 || !bag_open(w, c) {
         return false;
     }
-    log::info!("equip: {:?} into slot {slot} from container {c}", (s.index, s.id));
-    let _ = w.net.commands.send(NetCommand::Equip { index: s.index, slot: slot as u8, container: c });
+    log::info!("equip: {:?} into slot {slot} from container {c}", (index, id));
+    let _ = w.net.commands.send(NetCommand::Equip { index, slot: slot as u8, container: c });
     true
 }
 

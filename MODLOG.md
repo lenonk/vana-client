@@ -7392,3 +7392,11 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
   other windows)*: hovering a used row of ptw*/raid1/raid2 inside the cursor's range (Rearrange's second stage: that
   member's window party) moves it with SE 0001, a click on the cursor row is Enter, a right click on a party window
   Escape. The world click stays off there (the party window is a blocker). Not tried live (needs a party).
+
+## /equip refusals (2026-10-25)
+
+- FUN_1007b390 (/equip) runs both its paths through FUN_101327d0 (ours equipwin::try_equip, shared with the Equipment
+  screen): its own refusals print (7 0x8b no Dual Wield, 0x98 no main weapon, 0x99 a two-handed main), and any failure
+  then prints 7 0x8e "You were unable to change your equipped items."; so does an item with its lock byte (+8) set.
+  Already worn or not found: nothing. Live: `/equip sub "Bronze Dagger"` on WAR prints 0x8b then 0x8e;
+  `/equip head "Hume Tunic"` 0x8e. Not done: the equipment-message setting FUN_100e48d0 that drops 9 0x43 / 0x44.
