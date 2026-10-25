@@ -1584,6 +1584,16 @@ impl Runtime {
                 }
             }
             // FUN_100b8b80 sub 2: stays on the op until actor@2's chocobo / mount has its model; then the frame ends.
+            // FUN_100bac90 sub 4: stays on the op while the event actor's event status is 0 and its riding transition
+            // (+0x1bc) runs, then its status lock (+0x120 bit 2) clears.
+            0xab if sub == Some(4) => {
+                if host.busy(&Busy::Op { op: 0xab, sub, actor }) {
+                    self.yield_(v);
+                } else {
+                    host.effect(Effect::Op { op: opc, sub, actor, args: Vec::new() });
+                    self.adv(v, 2);
+                }
+            }
             0x7e if sub == Some(2) => {
                 let a = self.actor_at(v, 2);
                 if host.ready(a) && host.busy(&Busy::Op { op: 0x7e, sub, actor: a }) {

@@ -8200,7 +8200,11 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   on top of the pom-pom, as the data says.
 - Not done: the ground tilt of info[0] 1 / 2 models (FUN_100d54c0), op 0x6e for other actors, the riding `cdam`
   (started from outside FFXiMain, inf), the local player's wait for its stand motion before `coff` (FUN_100d65b0),
-  op 0xab 3's status write lock.
+  (op 0xab 3 / 4 done since, below).
+- Op 0xab (FUN_100bac90) subs 3 / 4: 3 sets the event actor's +0x120 bit 2, which keeps ops 0x7e and 0xac 1 from
+  writing its event status; 4 stays on the op (the frame ends) while that status is 0 and the riding transition
+  (+0x1bc) still runs, then clears the bit. Ours: EventState::status_lock; the wait while a bound actor still has a
+  ride (riding or leaving).
 
 ## The block list window (2026-10-25; spec ~/ffxi/lab/research/blklist_spec.md)
 

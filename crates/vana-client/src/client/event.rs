@@ -356,6 +356,8 @@ pub struct State {
     pub event_status: HashMap<u32, u8>,
     /// Op 0x7e's chocobo or mount by actor (ChocoboIndex, the chocobo look, the mount id).
     pub event_rides: HashMap<u32, super::ride::Model>,
+    /// Op 0xab sub 3 (+0x120 bit 2): the event status of these actors is not written (ops 0x7e, 0xac 1).
+    status_lock: HashSet<u32>,
     /// Snapped by 0x36 / 0x37 this frame (FUN_100917e0).
     snap: HashSet<u32>,
     /// Despawned while bound (0x1009a04d keeps an event participant); removed at the end.
@@ -416,6 +418,7 @@ impl State {
             poses: HashMap::new(),
             event_status: HashMap::new(),
             event_rides: HashMap::new(),
+            status_lock: HashSet::new(),
             snap: HashSet::new(),
             despawned: HashSet::new(),
             camera_flag: false,
@@ -783,8 +786,17 @@ impl Host for LiveHost<'_> {
             // ride on its own ChocoboIndex / mount id, ride.rs).
             Effect::Op { op: 0xac, sub: Some(1), actor, args } => {
                 let id = self.wid(actor);
-                if let Some(s) = Self::arg_int(&args, 0) {
+                if let Some(s) = Self::arg_int(&args, 0).filter(|_| !self.st.status_lock.contains(&id)) {
                     self.st.event_status.insert(id, s as u8);
+                }
+            }
+            // FUN_100bac90 sub 3 locks the event actor's event status; sub 4 (after its wait) unlocks it.
+            Effect::Op { op: 0xab, sub: Some(s @ (3 | 4)), actor, .. } => {
+                let id = self.wid(actor);
+                if s == 3 {
+                    self.st.status_lock.insert(id);
+                } else {
+                    self.st.status_lock.remove(&id);
                 }
             }
             // FUN_100bac90 subs 0x0b / 0x0c: the event actor passable / solid to the player's bump (entity +0x120 bit 6,
@@ -817,7 +829,7 @@ impl Host for LiveHost<'_> {
             Effect::Op { op: 0x85, .. } => super::moogle::open(self.w, false),
             // FUN_100b8b80 subs 0 / 5 / 8: actor@2's +0x174 = 0 (8 also its mount id).
             Effect::Op { op: 0x7e, sub: Some(s @ (0 | 5 | 8)), args, .. } => {
-                if let Some(id) = self.arg_actor(&args, 0) {
+                if let Some(id) = self.arg_actor(&args, 0).filter(|id| !self.st.status_lock.contains(id)) {
                     self.st.event_status.remove(&id);
                     if s == 8 {
                         self.st.event_rides.remove(&id);
@@ -828,7 +840,7 @@ impl Host for LiveHost<'_> {
             // look (race val@6 + 0x20, body val@8, head val@10, feet val@12, hands val@14, legs val@16 for 6, else 0),
             // 7 mount val@6 + 1.
             Effect::Op { op: 0x7e, sub: Some(s @ (1 | 3 | 6 | 7)), args, .. } => {
-                if let Some(id) = self.arg_actor(&args, 0) {
+                if let Some(id) = self.arg_actor(&args, 0).filter(|id| !self.st.status_lock.contains(id)) {
                     let v = |i| Self::arg_int(&args, i).unwrap_or(0);
                     let model = match s {
                         1 => Some(super::ride::Model::Chocobo(39_275)),
@@ -1145,6 +1157,11 @@ impl Host for LiveHost<'_> {
             Busy::Op { op: 0x80, actor, .. } => {
                 let id = self.wid(*actor);
                 self.w.actors.get(&id).is_some_and(|a| (a.character.is_none() && self.w.models_loading.contains(&a.key)) || a.pending.is_some())
+            }
+            // FUN_100bac90 sub 4: while the event status is 0 and the actor still rides or dismounts (+0x1bc).
+            Busy::Op { op: 0xab, sub: Some(4), actor } => {
+                let id = self.wid(*actor);
+                self.st.bound.contains(&id) && self.st.event_status.get(&id).copied().unwrap_or(0) == 0 && self.w.rides.contains_key(&id)
             }
             // FUN_100b8b80 sub 2: until actor@2's chocobo / mount has its model (only while it is getting one).
             Busy::Op { op: 0x7e, sub: Some(2), actor } => {
