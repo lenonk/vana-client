@@ -326,6 +326,8 @@ pub enum NetEvent {
     /// @0x25: the main job's level before any level restriction (player +0x40c42).
     /// `custom`: CustomProperties @0x18 / @0x1C, our own personal chocobo's look (FUN_1009ab40).
     CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8, sync: u8, custom: [u32; 2] },
+    /// s2c 0x067 kind 3 (FUN_1009b4xx, 2019 asm 0x1009b6ad): ActIndex @6, id @8, the master's ActIndex u16 @0x0C.
+    EntityMaster { index: u16, id: u32, master: u16 },
     /// s2c 0x11A (the answer to c2s 0x119): unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8).
     EmoteUnlocks { jobs: u32, chairs: u16 },
     /// s2c 0x04B (GP_SERV_COMMAND_PBX_RESULT).
@@ -1138,6 +1140,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         strings: vec![text(&p, 0x10, 16)],
                         ..Default::default()
                     }))?,
+                    0x067 if p.u8(4) & 0x3f == 3 => tx.send(NetEvent::EntityMaster { index: p.u16(6), id: p.u32(8), master: p.u16(0xc) })?,
                     0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25), sync: p.u8(0x10), custom: [p.u32(0x18), p.u32(0x1c)] })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,

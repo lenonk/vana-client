@@ -3203,9 +3203,15 @@ or the player's pet (FUN_101c2990 = DAT_1046e0f8[player+0x1f6], +0xa0 its actor)
 bit 0 of 0x00D / 0x00E); otherwise 4 when in your party's roster (FUN_100e5dd0 / FUN_100e5ec0, same party number) or
 a dynamic-range entity (ActIndex >= 0x700) whose master (0x067 sub 3 @0x0C, +0x2a0) has +0x1cc & 4; 8 when not in
 the roster. Also read by the Geomancer Indi aura (FUN_1008dfb0: the entity as both caster and target, 0x00D u8
-@0x42). Here: Actors::fx_class, Effects::filter, 0x037 u32 @0x34 >> 3 = our pet's ActIndex (World.my_pet). Not
-done *(party members count as others: the roster, s2c 0x0DD, and the 0x067 masters are not tracked)*: the quake
-(op 0x5f not implemented), the Indi aura. Test filter_rows.
+@0x42). Here: Actors::fx_class, Effects::filter, 0x037 u32 @0x34 >> 3 = our pet's ActIndex (World.my_pet). Test
+filter_rows.
+- Since 2026-10-25 (2019 FUN_100ac560 read whole): class 4 = listed in roster mode 0 (FUN_100e5dd0(0): our own party,
+  ourselves first), or a dynamic entity (ActIndex > 0x6ff, FUN_1008ca20) whose master (+0x2a0, FUN_1008cb10) has
+  +0x1cc bit 2, which FUN_1008cb80 sets for entities in roster mode 0; then 8 is added unless the entity itself is
+  listed, so a party member is 4, a stranger 8, a trust of ours 0xc (both rows apply). The master comes from s2c 0x067
+  kind 3 (2019 asm 0x1009b6ad: entity at ActIndex @6 with id @8 takes u16 @0x0C; LSB sends it to a trust's master
+  only). Ours: fx::filter_class, Entity.master, FxActors.party; test filter_classes. Not seen live. The Indi aura:
+  its own section once done.
 
 ## Point lights on scenery (CMoPointLightProgElem -> the light table -> zone.wgsl) (2026-10-22)
 

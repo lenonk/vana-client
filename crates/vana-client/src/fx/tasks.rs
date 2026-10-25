@@ -1842,6 +1842,17 @@ pub fn effects_allowed(cfg: u32, battle: bool, class: u8) -> bool {
     !(1..=16u32).any(|b| cfg & (1 << b) != 0 && class & (1 << ((b - 1) / 4)) != 0 && class & (0x10 << ((b - 1) % 4)) != 0)
 }
 
+/// FUN_100ac560's class of one side (the target's is shifted 4 up): 1 the player or its pet, 2 a monster (+0x120 bit
+/// 13); else 4 in our party, or a dynamic entity whose master is, and 8 when not itself listed (so such a pet or
+/// trust is 0xc).
+pub fn filter_class(mine: bool, monster: bool, listed: bool, master_listed: bool) -> u8 {
+    let c = mine as u8 | (monster as u8) << 1;
+    if c != 0 {
+        return c;
+    }
+    (if listed || master_listed { 4 } else { 0 }) | if listed { 0 } else { 8 }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2366,5 +2377,20 @@ mod filter_tests {
         // Others hitting others: bit 16 (non-party PC -> non-party PC).
         assert!(!effects_allowed(1 << 16, false, 8 | 8 << 4));
         assert!(effects_allowed(1 << 17, false, 8 | 8 << 4));
+    }
+
+    /// FUN_100ac560: a party member is 4, a stranger 8, our trust (master in the party) 0xc; the player and monsters
+    /// stop there.
+    #[test]
+    fn filter_classes() {
+        use super::filter_class;
+        assert_eq!(filter_class(true, false, true, false), 1);
+        assert_eq!(filter_class(false, true, false, true), 2);
+        assert_eq!(filter_class(false, false, true, false), 4);
+        assert_eq!(filter_class(false, false, false, false), 8);
+        assert_eq!(filter_class(false, false, false, true), 0xc);
+        // Hiding "party -> monster" (bit 10: caster row 2, target column 1) hides our trust's hits too.
+        assert!(!effects_allowed(1 << 10, false, 0xc | 2 << 4));
+        assert!(effects_allowed(1 << 10, false, 8 | 2 << 4));
     }
 }

@@ -13,6 +13,7 @@ mod tasks;
 pub mod trail;
 pub use tasks::{HOLD_REACT, HOLD_STATUS};
 pub use tasks::event_action_file;
+pub use tasks::filter_class;
 
 use crate::dat::generator::{KeyFrame, Op, kind};
 use crate::dat::zone;

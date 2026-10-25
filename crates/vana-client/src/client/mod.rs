@@ -318,6 +318,8 @@ struct Entity {
     sync: u8,
     /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
     sub: [u8; 3],
+    /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
+    master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
     init_done: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
@@ -963,6 +965,7 @@ fn self_entity(w: &World) -> Entity {
         sync: 0,
         monstrosity: 0,
         sub: [0, 8, 0],
+        master: 0,
         init_done: false,
         door: 0,
         lift: None,
@@ -2963,6 +2966,7 @@ fn place_mogdoor(w: &mut World) {
             sync: 0,
             monstrosity: 0,
             sub: [0, 8, 0],
+            master: 0,
             init_done: false,
             door: 0,
             lift: None,
@@ -3496,6 +3500,9 @@ struct FxActors<'a> {
     me: u32,
     me_moving: bool,
     pet: u16,
+    /// Our party (roster mode 0, FUN_100e5dd0(0)): ourselves first; our ActIndex (we are not in `entities`).
+    party: Vec<u32>,
+    my_index: u16,
     /// The area environments' tints this frame, and the floor to find an actor's area on.
     areas: &'a HashMap<u32, Vec3>,
     ground: Option<&'a ground::Ground>,
@@ -3656,13 +3663,11 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn fx_class(&self, id: u32) -> u8 {
         let e = self.entities.get(&id);
-        if id == self.me || (self.pet != 0 && e.is_some_and(|e| e.index == self.pet)) {
-            1
-        } else if e.is_some_and(|e| e.flags & 1 != 0) {
-            2
-        } else {
-            8
-        }
+        let mine = id == self.me || (self.pet != 0 && e.is_some_and(|e| e.index == self.pet));
+        // FUN_1008ca20 / FUN_1008cb10: a dynamic entity's master, its +0x1cc bit 2 (in our party, FUN_1008cb80).
+        let master = e.filter(|e| e.index > 0x6ff && e.master != 0).map(|e| e.master);
+        let master_listed = master.is_some_and(|m| m == self.my_index || self.entities.iter().any(|(mid, me)| me.index == m && self.party.contains(mid)));
+        crate::fx::filter_class(mine, e.is_some_and(|e| e.flags & 1 != 0), self.party.contains(&id), master_listed)
     }
 }
 
@@ -6078,6 +6083,7 @@ impl App {
                         sync: 0,
                         monstrosity: 0,
                         sub: [0, 8, 0],
+                        master: 0,
                         init_done: false,
                         door: 0,
                         lift: None,
@@ -6296,6 +6302,12 @@ impl App {
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
+                // LAB_1009b6xx: the entity at ActIndex `index` with server id `id` takes its master.
+                NetEvent::EntityMaster { index, id, master } => {
+                    if let Some(e) = world.entities.get_mut(&id).filter(|e| e.index == index) {
+                        e.master = master;
+                    }
+                }
                 NetEvent::CharSync { id, owner, floors, open, level, sync, custom } => {
                     if id == world.my_id {
                         world.my_ride.custom = custom;
@@ -9482,7 +9494,8 @@ impl App {
                         moon_phase: w.clock.map_or(0, |(t, at)| ((((t as f64 + at.elapsed().as_secs_f64()) / 2.4 + 720.0) / 1440.0) as u64 / 7 % 12) as u32),
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces };
+                    let party: Vec<u32> = std::iter::once(w.my_id).chain(w.party.party().map(|m| m.id).filter(|&id| id != w.my_id)).collect();
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }
