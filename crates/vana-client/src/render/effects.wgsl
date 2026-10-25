@@ -686,6 +686,11 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
     back[bb + 13u] = bitcast<u32>(lp.x);
     back[bb + 14u] = bitcast<u32>(lp.y);
     back[bb + 15u] = bitcast<u32>(lp.z);
+    let k2 = el[b + E_OP2_SLOT];
+    let vel = select(vec3<f32>(0.0), slv3(b, k2), k2 != NONE);
+    back[bb + 16u] = bitcast<u32>(vel.x);
+    back[bb + 17u] = bitcast<u32>(vel.y);
+    back[bb + 18u] = bitcast<u32>(vel.z);
 }
 
 // ---- Drawing ----

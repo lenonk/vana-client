@@ -7833,3 +7833,11 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   toad/hm00): the golden hammer with its sheen; not compared with retail. 3445 gob_/bm00 (no texture groups) runs as
   the class.
 
+## Emission op 0x46: the parent particle's drift (2026-10-25)
+
+- FUN_1004e8d0 0x1004fc85 (needs a parent element): k = the slot of element-update op 0x02 in the parent's generator
+  (FUN_10049330(2)); S[s..s+2] = parent S[k..k+2] x f32 @4, S[s+3] = 1.0: a child (e.g. 3457 mm_k/tam1) drifts on with
+  its parent particle (its own update op 0x02 integrates it). 290 files carry it (D3m 62, D3a 30, specular 2 by class).
+- Ours: the readback gets three words (BACK_WORDS 19, back::VEL) with the slot vector at E_OP2_SLOT; Parent::vel is
+  that (at spawn, the element's own slot), set only when the parent's generator has update op 0x02.
+

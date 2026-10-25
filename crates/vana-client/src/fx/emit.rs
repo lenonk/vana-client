@@ -30,6 +30,8 @@ pub struct Parent {
     pub max_life: f32,
     pub uv: [f32; 2],
     pub bias: f32,
+    /// The slot vector at its generator's update op 0x02 (its drift), when it has one (emission op 0x46).
+    pub vel: Option<Vec3>,
     /// Filled for an emission: what op 0x45 copies from the parent.
     pub frame: Option<ParentFrame>,
 }
@@ -663,6 +665,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 let wp = m.map_or(pos, |m| m.transform_point3(pos));
                 if let Some(h) = ground(wp - Vec3::Y, wp + Vec3::Y * 6.0) {
                     pos = m.map_or(h, |m| m.inverse().transform_point3(h));
+                }
+            }
+            // FUN_1004e8d0 0x1004fc85: the parent element's drift (its update op 0x02 slot) x f32 @4, and S[s+3] = 1.
+            0x46 => {
+                if let Some(v) = parent.and_then(|p| p.vel) {
+                    e.set_sv3(s, v * op.f32(1));
+                    e.set_sf(s + 3, 1.0);
                 }
             }
             // No-ops in retail: 0x56 on every class but VuAnm / VuLine / VuDist / Disintegrate (the `vib?` NullProg

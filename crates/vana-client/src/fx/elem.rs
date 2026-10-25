@@ -129,7 +129,7 @@ pub const NONE: u32 = u32::MAX;
 pub const OUT_WORDS: usize = 44;
 /// Per element back to the CPU (a frame late): sort key +0x12c, status bits, world position, rotation, scale,
 /// colour.
-pub const BACK_WORDS: usize = 16;
+pub const BACK_WORDS: usize = 19;
 pub mod back {
     pub const KEY: usize = 0;
     pub const STATUS: usize = 1;
@@ -140,6 +140,8 @@ pub mod back {
     pub const SERIAL: usize = 12;
     /// The local (emitter-space) position, for op 0x45.
     pub const LPOS: usize = 13;
+    /// The slot vector at the update stream's op 0x02 (its drift), for emission op 0x46.
+    pub const VEL: usize = 16;
     /// STATUS: op 0x2e / 0x48 asked to expire (life = 1); drawn this frame.
     pub const KILL: u32 = 1;
     pub const DRAWN: u32 = 2;

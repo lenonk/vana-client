@@ -1361,6 +1361,7 @@ impl Effects {
                 continue;
             }
             let f = |k: usize| f32::from_bits(r[k]);
+            let has_drift = self.insts.get(c.inst).and_then(|x| x.as_ref()).is_some_and(|x| self.reg.update_op_slot(x.src, 2).is_some());
             c.key = f(back::KEY);
             c.drawn = r[back::STATUS] & back::DRAWN != 0;
             c.back = Some(emit::Parent {
@@ -1373,6 +1374,7 @@ impl Effects {
                 max_life: c.max_life,
                 uv: [0.0; 2],
                 bias: 0.0,
+                vel: has_drift.then(|| Vec3::new(f(back::VEL), f(back::VEL + 1), f(back::VEL + 2))),
                 frame: None,
             });
             // Op 0x2e / 0x48 with the kill flag: life = 1, so it expires now.
@@ -1684,6 +1686,7 @@ impl Effects {
             max_life: cpu.max_life,
             uv: [elem.f(w::UV), elem.f(w::UV + 1)],
             bias: elem.f(w::BIAS),
+            vel: self.insts[inst].as_ref().and_then(|x| self.reg.update_op_slot(x.src, 2)).map(|k| elem.sv3(k)),
             frame: None,
         };
         cpu.back = Some(parent);
