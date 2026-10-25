@@ -58,7 +58,7 @@ No game data is included in this repository.
 cargo build --release
 ```
 
-The binary is `target/release/vana-client`.
+The binary is `target/release/vana-client`. Release builds are incremental, without link-time optimisation; for a binary to hand out, `cargo build --profile dist` (thin LTO) writes `target/dist/vana-client`.
 
 ## Install the game data
 

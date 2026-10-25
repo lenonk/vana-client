@@ -2,5 +2,12 @@
 resolver = "3"
 members = ["crates/vana-client"]
 
+# Day-to-day builds: incremental, no LTO. A one-file change rebuilds in seconds (60 s with thin LTO).
 [profile.release]
+incremental = true
+
+# Binaries we ship (GitHub releases): `cargo build --profile dist`, out in target/dist.
+[profile.dist]
+inherits = "release"
+incremental = false
 lto = "thin"

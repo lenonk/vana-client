@@ -34,7 +34,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - `nice -n 19 taskset -c 0-11 cargo build --release`, `nice -n 19 taskset -c 0-11 cargo test --release` (cores
   12..15 left free; `-j` alone doesn't do it, rustc's codegen threads still take every core. A busier build trips the
   LSB map server's 2 s tick watchdog while its bots and their chat model run, and it is killed). The user runs
-  `target/release/vana-client play`.
+  `target/release/vana-client play`. Release builds are incremental without LTO (user, 2026-10-25: keep the fast
+  builds; a one-file change takes seconds). Shipped binaries: `cargo build --profile dist` (thin LTO).
 - Offscreen tools for checking without a window: `npc-shot`, `char-shot`, `select-shot`, `creator-shot`,
   `zone-shot`, `topbar-shot`, `cs-shot`, `flash-shot` and others (`--help`).
 - Live test runs: `play --credentials ~/ffxi/lab/lnxtest01.json --input '<script>'` (steps in client/script.rs).
