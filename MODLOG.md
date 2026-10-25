@@ -7247,3 +7247,23 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
 - Not done: FUN_1005f6c0's other colour (param 6 set: vtable +0x40c / +0x410), the CMoLockColorDriveTask check.
 - The user checked level down's text height against retail again: ours is right (start 0.7 above point 0, the feet;
   elem +0x128 from op 0x72 is only the sort key, FUN_100440d0).
+
+## The chat line's channel tab (2026-10-25)
+
+Spec `~/ffxi/lab/research/chat_mode_tab_spec.md`.
+- The chat line is "menu    inline" (registry 0x103723b4, layer 6, no open animation), not msgline (the event input).
+  Its draw FUN_101b7fd0 puts a "menu    fep" tab at (x0, y0 - 12) = (16, H - 50): the full log's unselected tabs,
+  label baked in (Say 10, Shout 11, Tell 12, Party 13, Linkshell 14, Linkshell 2 16, Unity 17, Assist J 29, Assist E
+  30; FUN_101b8cc0). Linkshell / Linkshell 2 add the shell's half-size icon at (x0 + 66, y0 - 14) and name at (x0 + 82,
+  y0 - 12) or "No Linkshell"; Unity the Unity name at (x0 + 66, y0 - 12), as chatctrl draws them.
+- The mode is picked every draw (FUN_101b8c80 / FUN_101ad840): the line's own prefix with its trailing space
+  ("/say " "/s " "/tell " "/t " "/party " "/p " "/shout " "/sh " "/linkshell " "/l " "/linkshell2 " "/l2 " "/unity "
+  "/u " "/assistj " "/aj " "/assiste " "/ae "), any other leading "/" = mode 1 (no tab), else the default chat mode.
+  Tell shows no name. Emote / message / yell modes have no tab.
+- Opening the line (inline init FUN_101b7f00) runs FUN_10162560 twice on the log: two periods open, 40 to slide, no
+  line pending; the log keeps 2 lines under the open line, its text gliding up into place. The event input window
+  does not. The full log while typing moves its lines up 16 more (FUN_10138020 offset -16), the hand with them.
+- Live (Lnxcsfix): Say on open, none on "/", Party on "/p hi", Linkshell 2 + "No Linkshell" on "/l2 x". The user's
+  retail shot showed the Say tab.
+- Not done (side findings, spec section 6): the line's text origin (x0 + 2, y0 + 3; ours + 4, + 2), its width (log
+  width - 86), the blinking '|' caret.

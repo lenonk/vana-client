@@ -147,6 +147,75 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
 }
 
+/// FUN_101ad840: the chat line's own channel, case-sensitive with the trailing space; any other "/" is 1 (no tab);
+/// none is the default chat mode (FUN_101b8c80).
+pub fn line_mode(line: &str, default: u8) -> u8 {
+    const PREFIXES: [(&str, u8); 18] = [
+        ("/say ", 2), ("/s ", 2), ("/tell ", 4), ("/t ", 4), ("/party ", 5), ("/p ", 5), ("/shout ", 3), ("/sh ", 3), ("/linkshell ", 6),
+        ("/l ", 6), ("/linkshell2 ", 0xc), ("/l2 ", 0xc), ("/unity ", 0xb), ("/u ", 0xb), ("/assistj ", 0xe), ("/aj ", 0xe), ("/assiste ", 0xf), ("/ae ", 0xf),
+    ];
+    match PREFIXES.iter().find(|(p, _)| line.starts_with(p)) {
+        Some(&(_, m)) => m,
+        None if line.starts_with('/') => 1,
+        None => default,
+    }
+}
+
+/// FUN_101b8cc0: the chat line's tab, a "menu    fep" sprite (the full log's unselected tabs) by chat mode.
+pub fn tab_sprite(mode: u8) -> Option<usize> {
+    Some(match mode {
+        2 => 10,
+        3 => 11,
+        4 => 12,
+        5 => 13,
+        6 => 14,
+        0xc => 16,
+        0xb => 17,
+        0xe => 29,
+        0xf => 30,
+        _ => return None,
+    })
+}
+
+/// FUN_100a3800: linkshell `n`'s icon in the shell's colour at (x, y - 2), half size, and its name at (x + 16, y); "No
+/// Linkshell" at (x, y) without one.
+pub fn ls_line(gu: &mut GameUi, w: &World, n: usize, x: f32, y: f32) {
+    let (index, bag) = w.linkshells[n];
+    let ext = w.inv.ext.get(&(bag, index)).filter(|_| ls_on(w, n));
+    match (ext, w.inv.slots.get(&(bag, index))) {
+        (Some(e), Some(&(item, _))) => {
+            let colour = u16::from_le_bytes([e[6], e[7]]) as u32;
+            let ch = |s: u32| (((colour >> s) & 0xf) * 13 + 0x38) as f32 / 128.0;
+            if let Some(info) = &w.item_info {
+                super::items::upload_icons(gu, info, std::iter::once(item));
+            }
+            let icon = crate::render::invwin::icon_texture(item);
+            if gu.has_image(&icon) {
+                gu.image_rect(&icon, x, y - 2.0, 16.0, 16.0, [ch(0), ch(4), ch(8), 1.0]);
+            }
+            let mut packed = [0u8; 16];
+            packed[..15].copy_from_slice(&e[9..24]);
+            gu.shape_text(&super::linkshell::ls_name(&packed), x + 16.0, y, 0x8080_6060, false);
+        }
+        _ => {
+            let none = gu.lobby_msg(0xc, 0x55, "");
+            gu.shape_text(&none, x, y, 0x8080_8080, false);
+        }
+    }
+}
+
+/// FUN_100a3740: group 0xc 0x1a2 + the faction (0 "No Unity", 12 and up as 0); grey outside the Unity chat.
+pub fn unity_line(gu: &mut GameUi, w: &World, x: f32, y: f32) {
+    let f = unity(w);
+    let f = if f > 11 { 0 } else { f };
+    let tint = match (f, w.stats.as_ref().is_some_and(|s| s.unity_flag & 1 != 0)) {
+        (0, _) => 0x8080_3040,
+        (_, true) => 0x8080_8080,
+        _ => 0x8040_4040,
+    };
+    gu.shape_text(&gu.lobby_msg(0xc, 0x1a2 + f as usize, ""), x, y, tint, false);
+}
+
 /// FUN_1012ce90: the tell name at (+100, +23), the linkshells (icon in the shell's colour at +0x4f, name at +0x5f) or
 /// "No Linkshell" on rows 4 / 5, the Unity on row 6, all in fontshp; then subwindo in mode 0 (FUN_1014f960): windowps
 /// 283 "Chat Range" and the cursor row's range under it.
@@ -167,39 +236,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         if let Some((n, tint)) = tell {
             gu.shape_text(&n, x + 100.0, y + 23.0, tint, false);
         }
-        for (n, dy) in [(1usize, 0.0), (2, 16.0)] {
-            let (index, bag) = w.linkshells[n];
-            let ext = w.inv.ext.get(&(bag, index)).filter(|_| ls_on(w, n));
-            match (ext, w.inv.slots.get(&(bag, index))) {
-                (Some(e), Some(&(item, _))) => {
-                    let colour = u16::from_le_bytes([e[6], e[7]]) as u32;
-                    let ch = |s: u32| (((colour >> s) & 0xf) * 13 + 0x38) as f32 / 128.0;
-                    if let Some(info) = &w.item_info {
-                        super::items::upload_icons(gu, info, std::iter::once(item));
-                    }
-                    let icon = crate::render::invwin::icon_texture(item);
-                    if gu.has_image(&icon) {
-                        gu.image_rect(&icon, x + 79.0, y + 52.0 + dy, 16.0, 16.0, [ch(0), ch(4), ch(8), 1.0]);
-                    }
-                    let mut packed = [0u8; 16];
-                    packed[..15].copy_from_slice(&e[9..24]);
-                    gu.shape_text(&super::linkshell::ls_name(&packed), x + 95.0, y + 54.0 + dy, 0x8080_6060, false);
-                }
-                _ => {
-                    let none = gu.lobby_msg(0xc, 0x55, "");
-                    gu.shape_text(&none, x + 79.0, y + 54.0 + dy, 0x8080_8080, false);
-                }
-            }
-        }
-        // FUN_100a3740: group 0xc 0x1a2 + the faction (0 "No Unity", 12 and up as 0); grey outside the Unity chat.
-        let f = unity(w);
-        let f = if f > 11 { 0 } else { f };
-        let tint = match (f, w.stats.as_ref().is_some_and(|s| s.unity_flag & 1 != 0)) {
-            (0, _) => 0x8080_3040,
-            (_, true) => 0x8080_8080,
-            _ => 0x8040_4040,
-        };
-        gu.shape_text(&gu.lobby_msg(0xc, 0x1a2 + f as usize, ""), x + 80.0, y + 86.0, tint, false);
+        ls_line(gu, w, 1, x + 79.0, y + 54.0);
+        ls_line(gu, w, 2, x + 79.0, y + 70.0);
+        unity_line(gu, w, x + 80.0, y + 86.0);
         rects.push(win.frame);
     }
     // FUN_1012cc20: the range by row (table 0x10371b6c): Say Vicinity, Tell Target only, Party, Linkshell (2), Unity,

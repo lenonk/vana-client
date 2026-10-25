@@ -84,6 +84,8 @@ pub struct LogWin {
     pub new_lines: usize,
     /// Size and timing from the config (Windows / Window 1 page).
     pub cfg: LogCfg,
+    /// The chat line ("menu    inline") was open last frame.
+    inline: bool,
 }
 
 /// The full log (menu fulllog, FUN_10132e60 / FUN_10133890): cursor row 1..=lines (+0x1c) and the lines
@@ -305,6 +307,21 @@ impl LogWin {
         self.pending += 1;
     }
 
+    /// Inline's open (FUN_101b7f00) runs FUN_10162560 twice: two periods open and 40 to slide, no line pending. The log
+    /// shows 2 lines at least under the chat line, its text gliding up into place. The event input window does not.
+    pub fn chat_line(&mut self, open: bool) {
+        if open && !self.inline {
+            for _ in 0..2 {
+                let t = self.period();
+                self.open = if self.open < 0 { t } else { self.open + t };
+                self.slide += 20;
+                self.open = self.open.min(self.cfg.max as i32 * t);
+                self.round_up();
+            }
+        }
+        self.inline = open;
+    }
+
     /// FUN_101624b0 (Escape, key 0x95): a period off, not under the min lines, rounded up; 20 off the slide.
     fn escape(&mut self) {
         let t = self.period();
@@ -388,8 +405,8 @@ impl LogWin {
     }
 
     /// The full log (FUN_10133680): frame (16, 48, text width + 14, H - 64), the tab strip at y0 - 9, lines 16 px
-    /// apart from the text rect's bottom (y1 - 4; 16 more while typing), the hand on the cursor row. Returns
-    /// the frame rect.
+    /// apart from the text rect's bottom (y1 - 4); while typing the rect ends 16 higher and the lines move up 16 more
+    /// (FUN_10138020's offset -16), the hand with them. Returns the frame rect.
     pub fn draw_full(&self, gu: &mut GameUi, fl: &FullLog, sw: f32, sh: f32, typing: bool, second: bool) -> [f32; 4] {
         let (x0, y0, w, h) = (16.0, 48.0, text_width(sw, self.cfg.pct) + 14.0, sh - 64.0);
         gu.frame(x0, y0, w, h);
@@ -398,12 +415,12 @@ impl LogWin {
         let bottom = y0 + h - 4.0 + yoff;
         gu.clip(Some([x0, y0 + 3.0, w, (bottom - (y0 + 3.0)).max(0.0)]));
         for (i, (line, colour, st)) in self.wrapped.iter().rev().skip(fl.scroll).take(n).enumerate() {
-            stamped(gu, line, *st, x0 + 4.0, bottom - 16.0 - 16.0 * i as f32, *colour, self.stamps.colour);
+            stamped(gu, line, *st, x0 + 4.0, bottom + yoff - 16.0 - 16.0 * i as f32, *colour, self.stamps.colour);
         }
         gu.clip(None);
         // Child 1 (the hand, anc_s) at the cursor row: (x0 + 3, yb - 15), yb = bottom + 16 (row - lines) (inferred
         // from FUN_10133430's highlight rect).
-        let yb = bottom + 16.0 * (fl.row as f32 - lines as f32);
+        let yb = bottom + yoff + 16.0 * (fl.row as f32 - lines as f32);
         gu.cursor(x0 + 3.0, yb - 15.0);
         // FUN_10137840: the bar at x1 - 6 (resized at open), the log's lines, bottom-anchored top.
         let total = self.wrapped.len();

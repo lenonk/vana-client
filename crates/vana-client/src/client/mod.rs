@@ -2011,6 +2011,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.log_focus = 0;
     }
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
+    world.log.chat_line(world.typing);
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
     gu.log_top = Some(log.rect[1]);
@@ -2064,11 +2065,23 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         blockers.push(log.rect);
     }
-    // msgline (16, H - 38), (textw + 14) x 22, windowps 37, text at +2, +2 (FUN_101f62a0).
+    // The chat line ("menu    inline") (16, H - 38), (textw + 14) x 22, windowps 37; FUN_101b7fd0.
     if world.typing {
         let (x, y, w) = (16.0, sh - 38.0, tw + 14.0);
         gu.frame(x, y, w, 22.0);
         gu.sprite_from("menu    windowps", 37, 1, x, y, 0x8080_8080);
+        // The channel tab on the line's top edge, by the line's prefix or the chat mode; the linkshell or Unity after it.
+        let mode = chatctrl::line_mode(&world.chat_input, world.chat_mode);
+        if let Some(k) = chatctrl::tab_sprite(mode) {
+            gu.sprite("menu    fep", k, x, y - 12.0, 0x8080_8080);
+            match mode {
+                6 => chatctrl::ls_line(gu, world, 1, x + 66.0, y - 12.0),
+                0xc => chatctrl::ls_line(gu, world, 2, x + 66.0, y - 12.0),
+                0xb => chatctrl::unity_line(gu, world, x + 66.0, y - 12.0),
+                _ => {}
+            }
+            blockers.push([x, y - 14.0, 64.0, 14.0]);
+        }
         // Phrases in the 7F 69 colour, without brackets (FUN_101b5470); the line's tail when it is too long.
         // A long line keeps the caret in view: the text before it loses chars at the left, the text after it is cut at
         // the right (inf: retail's scroll is not traced; as the event input window).
