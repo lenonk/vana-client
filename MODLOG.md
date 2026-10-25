@@ -7875,8 +7875,14 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 
 - 0x3f (FUN_10053a00, cur 66848): every running instance of generator A (4cc @8) on the task's pair ends, each of its
   live elements bursting generator B (4cc @0x10) once at its place (FUN_10052930, our Effects::burst with the element
-  as the parent): travelling orbs turn into explosions where they are. Not done: a static, unattached A morphing in
-  place (FUN_10052930 on A itself), and B's lone emission when no A runs. 43 files.
+  as the parent): travelling orbs turn into explosions where they are. 43 files.
+- 0x3f fully (spec fx_sched_misc_spec.md 3, 2026-10-25): an unattached (mode 0 / 0xe / 0xf / 0x14) static A (flags
+  0x400, or op 1's life i16 @0x22 == 0; FUN_1005e0b0 / FUN_100539e0) morphs as its template: every instance, whatever
+  the actors (661 ops in 55 files, mostly zone event scenery: file 110 `pks1` turns `yaa0` into `idy0`). Else
+  FUN_10053a00: no actor1 -> every clone of A; else actor1's clones whose actor2 is none or the task's (ours had the
+  exact pair). With no A running, retail runs B once on a fresh clone and deletes it with its elements in the same op
+  (FUN_100543a0): nothing to show. Same rule for ops 0x1e / 0x2d (stop_generator) on an unattached static generator
+  (generators.md D.3). Tests morph_pair_match, morph_static_world_in_place.
 - 0x88 (FUN_1005f320): a guard for dur x speed; when its scheduler task ends first (the guard dies with it, flag still
   set), actor1's model colour goes back to 0x80808080 at once. Effects::color_guards, swept with the live tasks.
 - 0xb1 / 0xb2 (FUN_100618a0): actor1 / actor2 dead (status 2 / 3): model colour 0x80808080 at once (Raise and the

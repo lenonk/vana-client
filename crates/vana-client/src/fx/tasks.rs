@@ -106,6 +106,11 @@ fn skill_files(category: u8, anim: u16, race: u8, skirt: i8) -> Option<(u32, Opt
     Some((file, Some(second).filter(|_| skirt > 0)))
 }
 
+/// FUN_10053a00 / FUN_1003b700: no actor1 takes every clone; else actor1's clones whose actor2 is none or actor2.
+fn pair_match(actors: [Who; 2], a1: Who, a2: Who) -> bool {
+    a1 == Who::None || (actors[0] == a1 && (actors[1] == Who::None || actors[1] == a2))
+}
+
 /// FUN_100a7380: the effect file base by action category.
 fn effect_base(category: u8, anim: u32) -> Option<u32> {
     Some(match category {
@@ -1235,8 +1240,11 @@ impl Effects {
             0x3f => {
                 let (Some(ga), Some(gb)) = (scope(self, kind::GENERATOR), self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.u32_at(0x10))) else { return Flow::Next };
                 let f = self.last_frame;
+                // An unattached static A morphs as its template (every instance); else FUN_10053a00's actor match. With
+                // no A running, retail's lone B emission is deleted in the same op: nothing.
+                let any = self.template_wide(ga);
                 for i in 0..self.insts.len() {
-                    if !self.insts[i].as_ref().is_some_and(|x| x.src == ga && x.actors == [t.a1, t.a2] && x.driven.is_none()) {
+                    if !self.insts[i].as_ref().is_some_and(|x| x.src == ga && x.driven.is_none() && (any || pair_match(x.actors, t.a1, t.a2))) {
                         continue;
                     }
                     if let Some(f) = f.as_ref() {
@@ -1513,8 +1521,10 @@ impl Effects {
     /// FUN_10052a50: instances of `g` on (a1, a2): killed now, or soft-stopped (emission ends, elements finish). No a1:
     /// every instance; a clone with no actor2 matches any a2 (asm 0x10052b38).
     fn stop_generator(&mut self, g: Ref, a1: Who, a2: Who, soft: bool) {
+        // An unattached static generator is stopped as its template, whatever the actors (generators.md D.3).
+        let any = self.template_wide(g);
         for i in 0..self.insts.len() {
-            let hit = self.insts[i].as_ref().is_some_and(|x| x.src == g && (a1 == Who::None || (x.actors[0] == a1 && (x.actors[1] == Who::None || x.actors[1] == a2))));
+            let hit = self.insts[i].as_ref().is_some_and(|x| x.src == g && (any || pair_match(x.actors, a1, a2)));
             if !hit {
                 continue;
             }
@@ -1527,6 +1537,12 @@ impl Effects {
                 self.kill(i);
             }
         }
+    }
+
+    /// FUN_1005e0b0 / FUN_100539e0: unattached (mode 0 / 0xe / 0xf / 0x14) and static (flags 0x400, or op 1's life
+    /// i16 @0x22 is 0): ops act on the template, i.e. every instance.
+    fn template_wide(&self, g: Ref) -> bool {
+        self.reg.libs[g.0].gens.iter().find(|x| x.node == g.1).is_some_and(|x| matches!(x.attach_mode(), 0 | 0xe | 0xf | 0x14) && (x.flags & 0x400 != 0 || x.template().is_some_and(|o| o.i16_at(0x22) == 0)))
     }
 
     /// FUN_10055f00 / FUN_10055f40: tasks running scheduler `r` (on one actor pair when given) end now.
@@ -2218,6 +2234,70 @@ mod tests {
         color_tick(&mut fx);
         color_task(&mut fx, vec![sop(0x29, 0, 30, 0x0080_8080), sop(0x01, 100, 0, 0), sop(0, 0, 0, 0)]);
         assert_eq!(color_tick(&mut fx), [Freeze(ORC)]);
+    }
+
+    /// FUN_10053a00's match: no actor1 takes every clone; else actor1's clones with actor2 none or the task's.
+    #[test]
+    fn morph_pair_match() {
+        let (h, o) = (Who::Actor(HUME), Who::Actor(ORC));
+        assert!(pair_match([o, Who::None], o, h) && pair_match([o, h], o, h) && pair_match([h, o], Who::None, h));
+        assert!(!pair_match([o, o], o, h) && !pair_match([h, Who::None], o, h));
+    }
+
+    /// File 110 `pks1`'s op 0x3f: the zone's static `yaa0` (unattached, one element) morphs into `idy0` whatever the
+    /// task's actors; with no `yaa0` running nothing is made.
+    #[test]
+    fn morph_static_world_in_place() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let (Ok(zone), Ok(dat0)) = (index.read(110), index.read(0)) else { return };
+        let index = std::sync::Arc::new(index);
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let morph = |fx: &mut Effects, zl: usize| {
+            let node = fx.reg.libs[zl].find_global(kind::SCHEDULER, u32::from_le_bytes(*b"pks1")).unwrap();
+            let mut raw = vec![0x3f, 7, 0, 0, 0, 0, 0, 0];
+            raw.extend_from_slice(b"yaa0\0\0\0\0idy0\0\0\0\0\0\0\0\0");
+            let ops = vec![SOp { code: 0x3f, wait: 0, dur: 0, raw }, SOp { code: 0x01, wait: 100, dur: 0, raw: vec![1, 2, 0, 0, 100, 0, 0, 0] }];
+            fx.tasks.push(Some(Task::new((zl, node), Rc::new(ops), Who::Actor(HUME), Who::Actor(ORC), None, 1.0)));
+        };
+        let live = |fx: &Effects, n: &[u8; 4]| -> Vec<(usize, Vec<u32>, Option<u32>)> {
+            fx.insts.iter().enumerate().filter_map(|(i, x)| x.as_ref().filter(|x| x.name == *n).map(|x| (i, x.live.clone(), x.parent_elem))).collect()
+        };
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, dat0.clone()).unwrap());
+        let zl = fx.load_zone(Library::load(110, zone.clone()).unwrap());
+        let node = fx.reg.libs[zl].find_global(kind::SCHEDULER, u32::from_le_bytes(*b"pks1")).unwrap();
+        let ga = fx.reg.resolve(zl, node, kind::GENERATOR, u32::from_le_bytes(*b"yaa0")).unwrap();
+        let of_a = |fx: &Effects| fx.insts.iter().flatten().filter(|x| x.src == ga).flat_map(|x| x.live.clone()).collect::<Vec<u32>>();
+        // The camera on yaa0's emission point (its op 0x0a / 0x15 gates).
+        let p = fx.insts.iter().flatten().find(|x| x.src == ga).and_then(|x| x.streams[1].first().map(|o| Vec3::new(o.f32(5), o.f32(6), o.f32(7)))).unwrap();
+        let eye = p + Vec3::new(0.0, -2.0, 10.0);
+        let f = Frame { eye, view: glam::camera::rh::view::look_at_mat4(eye, p, Vec3::NEG_Y), ..f };
+        let mut elem = None;
+        for _ in 0..600 {
+            fx.tick(&f, &Two);
+            elem = of_a(&fx).first().copied();
+            if elem.is_some() {
+                break;
+            }
+        }
+        let Some(e) = elem else { panic!("pks1's yaa0 never emits") };
+        morph(&mut fx, zl);
+        fx.tick(&f, &Two);
+        assert!(of_a(&fx).is_empty(), "{:?}", of_a(&fx));
+        assert!(live(&fx, b"idy0").iter().any(|x| x.2 == Some(e)), "{:?}", live(&fx, b"idy0"));
+        // No yaa0 running: no idy0.
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, dat0).unwrap());
+        let zl = fx.load_zone(Library::load(110, zone).unwrap());
+        for i in 0..fx.insts.len() {
+            fx.kill(i);
+        }
+        morph(&mut fx, zl);
+        fx.tick(&f, &Two);
+        assert!(live(&fx, b"idy0").is_empty());
     }
 
     /// A posed stand-in: point k's frame RotY(0.5) at height k / 100 above its bone, the actor at x 1, size 2.
