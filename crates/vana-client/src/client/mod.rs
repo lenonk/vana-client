@@ -9274,6 +9274,22 @@ impl App {
                         if let Some(n) = n {
                             tilt::set_normal(&mut a.ground_tilt, n);
                         }
+                        // FUN_100a4d10: info[0] == info[2] == 2 (behemoth, adamantoise, morbol ...) pitch with the ground under
+                        // the front feet (points 10 / 11) and the rear feet (8 / 9), each snapped *(inf: the rest pose through
+                        // last frame's matrix for retail's posed points)*.
+                        if ch.cib[0] == 2 && ch.cib[2] == 2
+                            && let Some(g) = w.ground.as_ref()
+                        {
+                            let m = actor_frame(&Place { pos, forward, tilt, status, ratio, size }, a) * glam::Mat4::from_scale(Vec3::splat(a.scale));
+                            let pt = |k: usize| ch.skeleton.points.get(k).and_then(|(b, off)| a.rest.get(*b as usize).map(|(q, t)| m.transform_point3(*t + *q * *off)));
+                            let snapped = |p: Vec3| g.snap(p.x, p.z, p.y).map(|y| Vec3::new(p.x, y, p.z));
+                            if let (Some(p10), Some(p11), Some(p8), Some(p9)) = (pt(10), pt(11), pt(8), pt(9))
+                                && let (Some(fa), Some(fb)) = (snapped((p10 + p11) * 0.5), snapped((p8 + p9) * 0.5))
+                                && let Some(n) = tilt::feet_normal(fa, fb)
+                            {
+                                tilt::set_normal(&mut a.ground_tilt, n);
+                            }
+                        }
                         let zf = plain_frame(pos, forward, tilt).z_axis.truncate();
                         let bx = ch.skeleton.boxes.get(box_index(gate_status)).or(ch.skeleton.boxes.first()).copied().unwrap_or([f32::NAN; 6]);
                         a.tilt_rot = Some(a.ground_tilt.step(zf, Vec3::splat(a.scale), bx, tilt::rate(dt * 60.0)));

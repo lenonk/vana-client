@@ -31,6 +31,17 @@ pub fn set_normal(t: &mut GroundTilt, n: Vec3) {
     }
 }
 
+/// FUN_100a4d10 (info[0] == info[2] == 2): the normal from the snapped front and rear feet midpoints, in the vertical
+/// plane through them (pitch only), facing up; None when they share x and z.
+pub fn feet_normal(front: Vec3, rear: Vec3) -> Option<Vec3> {
+    if front.x == rear.x && front.z == rear.z {
+        return None;
+    }
+    let d = rear - front;
+    let n = d.cross(d.cross(UP)).normalize_or_zero();
+    (n != Vec3::ZERO).then_some(if n.y > 0.0 { -n } else { n })
+}
+
 /// The eased fraction for `ticks` (FUN_100d54c0 eases 0.1875 a drawn 30 fps frame).
 pub fn rate(ticks: f32) -> f32 {
     1.0 - 0.8125f32.powf(ticks / 2.0)
@@ -118,5 +129,8 @@ mod tests {
         }
         assert!((angle(up.e) - 20.0).abs() < 0.01 && angle(across.e) < 0.01, "{} {}", angle(up.e), angle(across.e));
         assert!(eligible(0, 2) && !eligible(0, 0) && eligible(2, 0) && !eligible(3, 0) && !eligible(-1, 0));
+        let f = feet_normal(Vec3::new(1.0, -0.5, 0.0), Vec3::new(-1.0, 0.0, 0.0)).unwrap();
+        assert!((f - Vec3::new(-0.2425, -0.9701, 0.0)).length() < 1e-4, "{f:?}");
+        assert_eq!(feet_normal(Vec3::new(1.0, 0.0, 2.0), Vec3::new(1.0, -1.0, 2.0)), None);
     }
 }

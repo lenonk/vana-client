@@ -8283,8 +8283,10 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   x scale| (a long body pitches up a slope and stays upright across it). Starts w 0, e up. client/tilt.rs; checked
   against the spec's reference vectors (0, 3.711, 6.744, 9.218 degrees on a 20-degree slope; 30 on 60).
 - The normal: ours the player's walk normal (Ground::player_normal), else the face under the position each frame (the
-  rider's for its animal) *(retail probes a far moving actor only every 121 frames, and quadrupeds with info[0] ==
-  info[2] == 2 take a pitch-only normal from the ground under their front and rear feet (FUN_100a4d10): not done)*.
+  rider's for its animal) *(retail probes a far moving actor only every 121 frames)*. Quadrupeds with info[0] ==
+  info[2] == 2 (behemoth, adamantoise, morbol, treant, wyrms ...) then take FUN_100a4d10's pitch-only normal: the
+  front feet points 10 / 11 and rear 8 / 9 (ours from the rest pose through last frame's matrix *(inf)*), their
+  midpoints snapped, N = normalize(d x (d x up)) facing up (tilt::feet_normal; the spec's (-0.2425, -0.9701, 0)).
   The tilted frame goes to the pose, attach_point and the effects (actor_frame).
 - Op 0xd8 (the plain path, FUN_100843b0): D3DX Scale . RotZ(z) . RotY(yaw) . RotX(x), i.e. glam T Rx(x) Ry(yaw) Rz(z):
   z about the model's Z, x about the world X after the yaw, both positive. Ours had z then x in the model frame with
