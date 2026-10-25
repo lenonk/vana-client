@@ -7510,3 +7510,18 @@ Spec: `~/ffxi/lab/research/blue_magic_spec.md`. Ours: dat/blumagic.rs, client/bl
 - Live with injected 0x01B / 0x061 / 0x0AA / 0x044 (Lnxcsfix stays WAR on the server): the screen, help, filter,
   both flows and Remove All send the expected 0x102 (LSB refuses them: not BLU). A real BLU test needs `!changejob BLU`,
   which writes BLU's level.
+
+## Blue magic sets: live on LSB (2026-10-25)
+
+- Lnxcsfix `!changejob BLU 75` (it knew every blue spell): Set Spells set Maelstrom and Venom Shell (spell first),
+  then Metallic Body; each c2s 0x102 got its s2c 0x044 within 0.3 s; 8/45 points; persona's MND +4 from the set traits.
+  Enter on an unset spell in the list prints group 7 0xb5. Casting Metallic Body right after a change: LSB answers
+  "Unable to cast spells at this time." (its 60 s server recast after any 0x102; no packet, the client stamp stays 0).
+  Remove All emptied the three slots (0/45). Back to `!changejob WAR 21`.
+
+## Chat line: the auto-translate phrase colour (2026-10-25)
+
+- FUN_101b8dc0: 7F 69 switches the line to mode 0xcf (colour id 0x46, 0x60405080: a light blue), alpha forced to
+  0x7f; window fields (FUN_101c6790) use the same mode. Confirmed by the user's retail screenshot ("/p Hello!": the
+  phrase light blue, the rest white). Replaces the inferred 2019 log table entry 0x69 (pink-violet) of
+  "Auto-translate".
