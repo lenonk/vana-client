@@ -116,7 +116,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     the item list, equip / unequip, naming, Drop, the message and /lsmes done, not seen with a real shell yet; the
     Link List and member actions (linklist.rs, link12 and link7..10) built, not seen live); Region Info done (region.rs; left the Campaign windows, which LSB never
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done
-    (bazaar.rs, shop.rs, seacom.rs; left the name's bazaar glyph, View Wares), Help Desk's faqsub and the GM call done
+    (bazaar.rs, shop.rs, seacom.rs, the plate's bag glyph 0x9c in plate.rs; left View Wares), Help Desk's faqsub and the GM call done
     (helpdesk.rs, faqmain.rs; left the Adventuring Primer, the GM reply page, Execute not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
     done (equipsets.rs, esmenu.rs, esedit.rs, /equipset, /lockstyle, /lockstyleset; left the mouse);
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
