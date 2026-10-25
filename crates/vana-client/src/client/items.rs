@@ -70,6 +70,8 @@ pub struct Inventory {
     pub locks: BTreeMap<(u8, u8), u8>,
     /// (container, index) -> the item's 24-byte extdata (s2c 0x020 Attr).
     pub ext: BTreeMap<(u8, u8), [u8; 24]>,
+    /// (container, index) -> s2c 0x020 Price (our bazaar price with LockFlg 0x19).
+    pub prices: BTreeMap<(u8, u8), u32>,
     /// The list's view per container (FUN_1021c210 / FUN_1021c5b0 append a new slot, FUN_1021c680 drops an emptied
     /// one; sorting reorders it): slot indexes.
     pub order: BTreeMap<u8, Vec<u8>>,

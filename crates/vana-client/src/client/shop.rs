@@ -6,6 +6,10 @@
 //! Guild shops (~/ffxi/lab/research/guild_shop_spec.md) use the same windows: s2c 0x086 opens "menu    guildsho", Buy
 //! asks for the list (c2s 0x0AB, s2c 0x083), Sell for the guild's wanted list (0x0AD, 0x085), whose rows lead to the
 //! inventory; c2s 0x0AA buys, 0x0AC sells, s2c 0x082 / 0x084 answer.
+//!
+//! Set Bazaar's Set Prices (social_rows_spec.md B3 / B4) is the same list with the price source (vtable 0x10338ed4):
+//! the inventory, "menu    moneyctr" for the price and shopsell to confirm; c2s 0x10B on opening, 0x10A per price, 0x109
+//! on leaving with a priced row.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -20,6 +24,7 @@ const SHOP: &str = "menu    shop";
 const SHOPBUY: &str = "menu    shopbuy";
 const SHOPSELL: &str = "menu    shopsell";
 const ITEMCTRL: &str = "menu    itemctrl";
+const MONEYCTR: &str = "menu    moneyctr";
 /// Rows of the list (FUN_101f6700(10)), 18 px apart from the window's (3, 4).
 const ROWS: usize = 10;
 /// The English list: the price column ends at 258 and the window is 18 px wider than its layout (FUN_1020f6c0).
@@ -81,6 +86,8 @@ pub enum View {
     Wanted,
     /// The inventory for the guild, only the item with this id (0 all).
     Inv(u16),
+    /// The inventory with our bazaar prices.
+    Bazaar,
 }
 
 /// The shop's windows and the buy / sell sources (DAT_10664508..1c; the guild's DAT_106636ac..b8).
@@ -103,6 +110,9 @@ pub struct Shop {
     wanted_at: usize,
     qty: Option<(u32, u32)>,
     confirm: Option<(u32, u16)>,
+    /// Set Prices: no shopmain, no reach; moneyctr's (step, max, value) while a price is typed.
+    bazaar: bool,
+    money: Option<(u32, u32, u32)>,
 }
 
 impl Shop {
@@ -122,6 +132,8 @@ impl Shop {
             wanted_at: 0,
             qty: None,
             confirm: None,
+            bazaar: false,
+            money: None,
         }
     }
 
@@ -139,6 +151,8 @@ struct Row {
     price: Option<String>,
     price_tint: u32,
     req: Option<Req>,
+    /// The bazaar list's count column (stackables).
+    count: Option<u32>,
 }
 
 /// A stock entry's requirement (FUN_1020f8a0): a craft rank, a job level, or a line of group 0xc.
@@ -309,6 +323,58 @@ pub(super) fn on_guild_result(w: &mut World, sell: bool, item: u16, count: u8, t
     }
 }
 
+/// Set Bazaar's Set Prices (FUN_102107d0 on the price source): its open (FUN_101de740) sends c2s 0x10B {0}.
+pub fn open_bazaar(w: &mut World) {
+    packet(w, 0x10B, vec![0; 4]);
+    let mut s = Shop::new(false, 0, (w.pos.x, w.pos.z));
+    (s.bazaar, s.view) = (true, Some(View::Bazaar));
+    w.shop = Some(s);
+}
+
+/// The source's close (FUN_101de6f0): c2s 0x109 when a row is priced.
+fn close_bazaar(w: &World) {
+    if sell_rows(w).iter().any(|r| w.inv.locks.get(&(super::items::INVENTORY, r.index)) == Some(&0x19)) {
+        packet(w, 0x109, Vec::new());
+    }
+}
+
+/// FUN_101de790: grey for an augmented item marked so (ext byte 1 bit 1), worn, a linkshell or Exclusive (0x4000);
+/// orange for the row being priced; else white. NoSale items and priced rows are not grey.
+fn bazaar_tint(w: &World, s: &Shop, r: &crate::inventory::Slot) -> u32 {
+    let it = w.item_info.as_ref().and_then(|c| c.item(r.id));
+    let ext = w.inv.ext.get(&(super::items::INVENTORY, r.index));
+    let aug = it.as_ref().zip(ext).is_some_and(|(it, e)| super::augment::applies(r.id, it.item_type, e) && e[1] & 2 != 0);
+    let flags = w.item_info.as_ref().map_or(0, |c| c.flags(r.id));
+    if aug || r.equipped || (0x201..=0x203).contains(&r.id) || flags & 0x4000 != 0 {
+        crate::inventory::TINT_DIM
+    } else if s.busy == Some(r.index) {
+        ORANGE
+    } else {
+        WHITE
+    }
+}
+
+/// FUN_101deaf0: a row not grey becomes the one being priced; moneyctr from its price (0 unpriced), max 99,999,999.
+fn enter_bazaar(w: &mut World, s: &mut Shop, at: usize) -> bool {
+    let Some(r) = sell_rows(w).get(at).cloned() else { return false };
+    if bazaar_tint(w, s, &r) == crate::inventory::TINT_DIM {
+        return false;
+    }
+    let key = (super::items::INVENTORY, r.index);
+    let start = if w.inv.locks.get(&key) == Some(&0x19) { w.inv.prices.get(&key).copied().unwrap_or(0) } else { 0 };
+    s.busy = Some(r.index);
+    s.money = Some((1, 99_999_999, start));
+    true
+}
+
+/// c2s 0x10A (FUN_100e0250): u8 slot @4, u32 price @8.
+fn send_price(w: &World, slot: u8, price: u32) {
+    let mut b = vec![0u8; 8];
+    b[0] = slot;
+    b[4..8].copy_from_slice(&price.to_le_bytes());
+    packet(w, 0x10A, b);
+}
+
 fn buy_rows(s: &Shop) -> Vec<(u8, Entry)> {
     s.stock.iter().enumerate().filter_map(|(i, e)| e.map(|e| (i as u8, e))).take(s.count.max(1) as usize).collect()
 }
@@ -470,14 +536,14 @@ fn rows(w: &World, s: &Shop) -> Vec<Row> {
                 .items
                 .iter()
                 .enumerate()
-                .map(|(k, g)| Row { id: g.item, text: None, tint: guild_buy_tint(w, s, k, g), price: gil(g.price & 0x7fff_ffff), price_tint: price_tint(g.item), req: None })
+                .map(|(k, g)| Row { id: g.item, text: None, tint: guild_buy_tint(w, s, k, g), price: gil(g.price & 0x7fff_ffff), price_tint: price_tint(g.item), req: None, count: None })
                 .collect(),
             None => Vec::new(),
         },
-        Some(View::Buy) => buy_rows(s).iter().map(|(_, e)| Row { id: e.item, text: None, tint: buy_tint(w, e), price: gil(e.price), price_tint: price_tint(e.item), req: requirement(e) }).collect(),
+        Some(View::Buy) => buy_rows(s).iter().map(|(_, e)| Row { id: e.item, text: None, tint: buy_tint(w, e), price: gil(e.price), price_tint: price_tint(e.item), req: requirement(e), count: None }).collect(),
         Some(View::Sell) => sell_rows(w)
             .iter()
-            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: Some(price_of(s, r.id).map_or_else(|| "? G".to_string(), |p| crate::inventory::gil_text(p as i64))), price_tint: WHITE, req: None })
+            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: Some(price_of(s, r.id).map_or_else(|| "? G".to_string(), |p| crate::inventory::gil_text(p as i64))), price_tint: WHITE, req: None, count: None })
             .collect(),
         // FUN_101ecd10: nothing while loading; row 0 group 9 0x2c, then the entries, grey unless held and wanted.
         Some(View::Wanted) => {
@@ -485,17 +551,28 @@ fn rows(w: &World, s: &Shop) -> Vec<Row> {
                 return Vec::new();
             }
             let first = w.battle.as_ref().and_then(|b| b.group9(0x2c)).unwrap_or_default();
-            std::iter::once(Row { id: 0, text: Some(first), tint: WHITE, price: None, price_tint: WHITE, req: None })
+            std::iter::once(Row { id: 0, text: Some(first), tint: WHITE, price: None, price_tint: WHITE, req: None, count: None })
                 .chain(wanted(w).iter().map(|g| {
                     let ok = held(w, g.item).0 && g.count < g.max;
-                    Row { id: g.item, text: None, tint: if ok { WHITE } else { crate::inventory::TINT_DIM }, price: gil(g.price), price_tint: WHITE, req: None }
+                    Row { id: g.item, text: None, tint: if ok { WHITE } else { crate::inventory::TINT_DIM }, price: gil(g.price), price_tint: WHITE, req: None, count: None }
                 }))
                 .collect()
         }
+        // FUN_101de860: the inventory; "N G" for a priced row (lock 0x19) in its tint, the count for stackables.
+        Some(View::Bazaar) => sell_rows(w)
+            .iter()
+            .map(|r| {
+                let key = (super::items::INVENTORY, r.index);
+                let tint = bazaar_tint(w, s, r);
+                let price = (w.inv.locks.get(&key) == Some(&0x19)).then(|| crate::inventory::gil_text(w.inv.prices.get(&key).copied().unwrap_or(0) as i64));
+                let stack = w.item_info.as_ref().map_or(1, |c| c.stack(r.id));
+                Row { id: r.id, text: None, tint, price, price_tint: tint, req: None, count: (stack > 1).then_some(r.count) }
+            })
+            .collect(),
         // FUN_101ed150: the price only for items on the guild's list (hidden ones too).
         Some(View::Inv(filter)) => inv_rows(w, filter)
             .iter()
-            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: w.guild[1].find(r.id).and_then(|g| gil(g.price & 0x7fff_ffff)), price_tint: WHITE, req: None })
+            .map(|r| Row { id: r.id, text: None, tint: sell_tint(w, s, r), price: w.guild[1].find(r.id).and_then(|g| gil(g.price & 0x7fff_ffff)), price_tint: WHITE, req: None, count: None })
             .collect(),
     }
 }
@@ -546,7 +623,7 @@ fn request_guild(w: &World, sell: bool) -> bool {
 
 /// Per frame (FUN_10210b70 / FUN_101ed6d0): walking off (or an NPC shop's second complete list) closes everything.
 pub fn update(w: &mut World) {
-    let Some(s) = &w.shop else { return };
+    let Some(s) = w.shop.as_ref().filter(|s| !s.bazaar) else { return };
     let (dx, dz) = (w.pos.x - s.origin.0, w.pos.z - s.origin.1);
     if s.again || dx * dx + dz * dz > REACH * REACH {
         w.shop = None;
@@ -607,6 +684,8 @@ pub fn key(w: &mut World, key: egui::Key) {
                 let held = |w: &World, at: u8| w.inv.slots.get(&(super::items::INVENTORY, at)).map_or((0, 0), |x| (x.0, x.1));
                 if let Some(at) = s.busy.filter(|_| yes) {
                     match s.view {
+                        // LAB_101dec10: c2s 0x10A with the price.
+                        Some(View::Bazaar) => send_price(w, at, v),
                         // LAB_101eccc0: c2s 0x0AA.
                         Some(View::Buy) if s.guild => {
                             if let Some(g) = w.guild[0].items.get(at as usize).copied() {
@@ -633,6 +712,40 @@ pub fn key(w: &mut World, key: egui::Key) {
                 }
                 w.sounds.push(if key == egui::Key::Enter { Ui::Select as u32 } else { Ui::Cancel as u32 });
                 (s.confirm, s.busy) = (None, None);
+            }
+            _ => {}
+        }
+    } else if let Some((mut step, max, mut v)) = s.money {
+        // moneyctr (FUN_10140bc0): Down / Up by the step, Right a tenth of it (at 1: 0), Left ten times (past the max:
+        // the max). Enter (LAB_101deba0): a price asks shopsell (cursor on Cancel), 0 takes the item off sale at once
+        // (c2s 0x10A 0); Escape nothing.
+        match key {
+            egui::Key::ArrowDown if v >= step => v -= step,
+            egui::Key::ArrowUp if v < max => v = (v + step).min(max),
+            egui::Key::ArrowRight if step > 1 => step /= 10,
+            egui::Key::ArrowRight => v = 0,
+            egui::Key::ArrowLeft if max / step.max(1) < 10 => v = max,
+            egui::Key::ArrowLeft => step *= 10,
+            _ => {}
+        }
+        s.money = Some((step, max, v));
+        match key {
+            egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowRight | egui::Key::ArrowLeft => w.sounds.push(Ui::Cursor as u32),
+            egui::Key::Enter => {
+                w.sounds.push(Ui::Select as u32);
+                s.money = None;
+                if v > 0 {
+                    s.confirm = Some((v, 2));
+                } else {
+                    if let Some(at) = s.busy {
+                        send_price(w, at, 0);
+                    }
+                    s.busy = None;
+                }
+            }
+            egui::Key::Escape => {
+                w.sounds.push(Ui::Cancel as u32);
+                (s.money, s.busy) = (None, None);
             }
             _ => {}
         }
@@ -676,11 +789,18 @@ pub fn key(w: &mut World, key: egui::Key) {
                     View::Sell => enter_sell(w, &mut s, at),
                     View::Wanted => enter_wanted(w, &mut s, at),
                     View::Inv(filter) => enter_inv(w, &mut s, filter, at),
+                    View::Bazaar => enter_bazaar(w, &mut s, at),
                 };
                 w.sounds.push(if ok { Ui::Select as u32 } else { Ui::Error as u32 });
             }
             // The inventory goes back to the wanted list on its row (FUN_101ed430 / FUN_101ed590); the others close
             // (FUN_10210840), the main window has the keys again.
+            // The price source's Escape (FUN_101ddfd0) closes the list, and with it Set Prices.
+            egui::Key::Escape if view == View::Bazaar => {
+                close_bazaar(w);
+                close = true;
+                w.sounds.push(Ui::Cancel as u32);
+            }
             egui::Key::Escape => {
                 if matches!(view, View::Inv(_)) {
                     (s.view, s.list) = (Some(View::Wanted), list_at(s.wanted_at));
@@ -823,6 +943,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
         View::Sell => sell_rows(w).get(at).map(slot),
         View::Wanted => wanted(w).get(at.checked_sub(1)?).map(|g| (g.item, None)),
         View::Inv(filter) => inv_rows(w, filter).get(at).map(slot),
+        View::Bazaar => sell_rows(w).get(at).map(slot),
     }
 }
 
@@ -836,6 +957,12 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     };
     if let Some((_, child)) = s.confirm {
         focus(if s.view == Some(View::Buy) { SHOPBUY } else { SHOPSELL }, child, bars);
+    } else if s.money.is_some() {
+        focus(MONEYCTR, 1, bars);
+    } else if s.view == Some(View::Bazaar) {
+        // The source's title 0xd 0x0f "Set Bazaar" and help 0xe 0x31.
+        bars.title[1] = gu.title_msg(0x0f).unwrap_or_default();
+        bars.help[1] = gu.menu_msg(0x31, "");
     } else if s.qty.is_some() {
         bars.help[1] = gu.menu_msg(0x10c, "");
         bars.title[1] = gu.title_msg(0x3e).unwrap_or_default();
@@ -844,7 +971,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         let help = match v {
             View::Buy => 0x2f,
             View::Wanted => 0x33,
-            View::Sell | View::Inv(_) => 0x30,
+            View::Sell | View::Inv(_) | View::Bazaar => 0x30,
         };
         bars.help[1] = gu.menu_msg(help, "");
     } else {
@@ -883,7 +1010,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
     let (Some(s), Some(info)) = (&w.shop, w.item_info.clone()) else { return rects };
     let stacked = |gu: &GameUi, name: &str| gu.window_rect(name, sw, sh).map_or((0.0, 0.0), |r| (0.0, (log_top - r[3] - 2.0).max(16.0) - r[1]));
     let main_focus = s.view.is_none() && s.confirm.is_none();
-    if s.view.is_none() || s.confirm.is_some() {
+    if !s.bazaar && (s.view.is_none() || s.confirm.is_some()) {
         let main = s.main_window();
         let off = stacked(gu, main);
         if s.confirm.is_none()
@@ -898,7 +1025,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         let rows = rows(w, s);
         // A requirement on any row adds its column (FUN_10210880: the window 0x69 wider, cells up to + 0x16e).
         let column = rows.iter().any(|r| r.req.is_some());
-        let (ww, wh) = (size[2] + WIDE + if column { REQ_W } else { 0.0 }, size[3]);
+        // The price source sets no +0x12 for English: the list keeps the layout's width (columns 0x1037f044).
+        let wide = if s.bazaar { 0.0 } else { WIDE };
+        let (ww, wh) = (size[2] + wide + if column { REQ_W } else { 0.0 }, size[3]);
+        let price_end = if s.bazaar { 240.0 } else { PRICE_END };
         if !gu.gate_rect(SHOP, [wx, wy, ww, wh]) {
             rects.push([wx, wy, ww, wh]);
             return rects;
@@ -908,7 +1038,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         // Rows from (3, 4), 18 px apart: the half-size icon, the name at +18 (y + 2), the price right-aligned at the
         // column's end - 2 (y + 4) in the sprite font.
         super::items::upload_icons(gu, &info, rows.iter().skip(s.list.0).take(ROWS).filter(|r| r.id != 0).map(|r| r.id));
-        let focused = s.qty.is_none() && s.confirm.is_none();
+        let focused = s.qty.is_none() && s.confirm.is_none() && s.money.is_none();
         for (k, r) in rows.iter().skip(s.list.0).take(ROWS).enumerate() {
             let (rx, ry) = (wx + 3.0, wy + 4.0 + 18.0 * k as f32);
             let icon = crate::render::invwin::icon_texture(r.id);
@@ -918,7 +1048,11 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
             let name = r.text.clone().unwrap_or_else(|| info.name(r.id).unwrap_or_default());
             gu.text(&name, rx + 18.0, ry + 2.0, 0, r.tint.to_le_bytes());
             if let Some(p) = &r.price {
-                gu.shape_text(p, rx + PRICE_END - 2.0, ry + 4.0, r.price_tint, true);
+                gu.shape_text(p, rx + price_end - 2.0, ry + 4.0, r.price_tint, true);
+            }
+            // The count cell from 240 to the row's end *(inf: the end at the window's width - 6)*.
+            if let Some(n) = r.count {
+                gu.shape_text(&n.to_string(), wx + ww - 8.0, ry + 4.0, WHITE, true);
             }
             if let Some(req) = r.req {
                 draw_req(gu, req, wx + REQ_END, ry, r.tint);
@@ -942,6 +1076,12 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, WHITE, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, WHITE, false);
+        rects.push(win.frame);
+    }
+    if let Some((step, max, v)) = s.money
+        && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
+    {
+        super::post::draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }
     if let Some((_, child)) = s.confirm {

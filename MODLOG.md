@@ -6904,3 +6904,27 @@ Spec `~/ffxi/lab/research/status_rows_spec.md` 4; ours client/unity.rs.
 - Live (Lnxcsfix, no unity): ut_menu and ut_point (0/99999 over the party window); Unity Information with None and
   "--"; both weeks' rankings (LSB's offset as above); Unity Lists stacked on the log. Not done: the mouse in these
   windows.
+
+## Set Bazaar: "menu    bazaar", Set Prices, Edit Comment (2026-10-24)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` part B; ours client/bazaar.rs, shop.rs (View::Bazaar), seacom.rs (mode 0).
+- Social child 5: "menu    bazaar" (group 0x81) over the main menu: 1 Set Prices, 2 Edit Comment (links 1 <-> 2);
+  Escape gives the social page back.
+- Set Prices = the shop list with the price source (vtable 0x10338ed4): its open sends c2s 0x10B {u32 0}; the rows are
+  the inventory once settled, "N G" (lock 0x19, s2c 0x020 Price @8, now kept per slot) in the row's tint and the count
+  for stackables (columns 0x1037f044 {0, 18, 180, 240}; the count cell's end is *(inf)* the window's width - 8); the
+  list keeps the layout's 256 px (no +18 for English). Tint FUN_101de790: grey for an augmented item with ext byte 1
+  bit 1, worn, a linkshell, Exclusive (0x4000); orange the row being priced; NoSale and priced rows stay white. Title
+  0xd 0x0f, help 0xe 0x31.
+- Enter (FUN_101deaf0): moneyctr from the row's price (0 unpriced), max 99,999,999 (post.rs's keys and draw); Enter
+  with a price -> shopsell with the cursor on Cancel (its help on Cancel is retail's 0xe 0x1a5 "Cancel search.");
+  Sell -> c2s 0x10A {u8 slot, u32 price}; a price of 0 -> 0x10A {slot, 0} at once; Escape nothing. The row shows the
+  price when the server's 0x020 comes. Escape on the list closes Set Prices; c2s 0x109 only when a row is priced.
+- Edit Comment: the comment editor in mode 0 (x0 + 4, no genre dot, title 0xd 0x0f) once our own s2c 0x0CA (MyFlag
+  @0x7f bit 1, sent by LSB at every zone-in) filled the bazaar store (FUN_101ddae0); else SE 0004 after the 0002. Close
+  sends c2s 0x0DE {the 123 padded bytes, NUL} (0x80 bytes) when the lines changed.
+- s2c 0x108: group 10 0x0e / 0x0f with the name (HideLevel 0, the 0x0B4 word's bits 11..12 under 2), the customer
+  count; s2c 0x10A: 7031 line 0x5c (item, count, buyer).
+- Live (Lnxcsfix in Metalworks): worn gear grey, Fire Crystal priced 3 ("3 G") and back to 0 (char_inventory.bazaar
+  0 again), the editor opened and closed unchanged (nothing sent; bazaar_message still NULL).
+- Not done: the name's bazaar glyph (0x9c), the row disabled in Monstrosity, the buyer side (View Wares).

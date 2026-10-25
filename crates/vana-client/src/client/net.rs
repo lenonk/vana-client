@@ -274,7 +274,11 @@ pub enum NetEvent {
     /// 0x01F / 0x020: item in a slot.
     /// 0x01F / 0x020; 0x020 carries the 24-byte extdata (Attr @0x11).
     /// LockFlg (0x01F @0xc, 0x020 @0x10): 0 free, 5 equipped, 0x0F in use, 0x13 linkshell, 0x19, 0x1B mannequin.
-    Item { container: u8, index: u8, id: u16, count: u32, ext: Option<[u8; 24]>, lock: u8 },
+    Item { container: u8, index: u8, id: u16, count: u32, ext: Option<[u8; 24]>, lock: u8, price: Option<u32> },
+    /// s2c 0x108 BAZAAR_SHOPPING: State @8, HideLevel @0xc, the customer's name @0x10.
+    BazaarShopper { state: u32, hide: u16, name: String },
+    /// s2c 0x10A BAZAAR_SALE: ItemNum @4, ItemNo @8, the buyer's name @0xa.
+    BazaarSale { count: u32, item: u16, name: String },
     /// 0x050: equipment slot -> container slot (index 0 = removed).
     Equip { slot: u8, index: u8, container: u8 },
     /// 0x061: our stats.
@@ -823,6 +827,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x056 => tx.send(NetEvent::MissionLog { port: p.u16(0x24), data: std::array::from_fn(|i| p.u32(4 + 4 * i)) })?,
                     0x0B4 => tx.send(NetEvent::ConfSys(std::array::from_fn(|i| p.u8(4 + i))))?,
                     0x0E1 => tx.send(NetEvent::GroupId(p.u32(4)))?,
+                    0x108 => tx.send(NetEvent::BazaarShopper { state: p.u32(8), hide: p.u16(0xc), name: text(&p, 0x10, 16) })?,
+                    0x10A => tx.send(NetEvent::BazaarSale { count: p.u32(4), item: p.u16(8), name: text(&p, 0xa, 16) })?,
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
@@ -1002,10 +1008,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }))?,
                     0x01C => tx.send(NetEvent::ItemMax(std::array::from_fn(|i| p.u8(4 + i)), std::array::from_fn(|i| p.u16(0x24 + 2 * i))))?,
                     0x01E => tx.send(NetEvent::ItemNum { container: p.u8(8), index: p.u8(9), count: p.u32(4) })?,
-                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc) })?,
+                    0x01F => tx.send(NetEvent::Item { container: p.u8(0xa), index: p.u8(0xb), id: p.u16(8), count: p.u32(4), ext: None, lock: p.u8(0xc), price: None })?,
                     0x020 => {
                         let ext = std::array::from_fn(|k| p.u8(0x11 + k));
-                        tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext), lock: p.u8(0x10) })?
+                        tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext), lock: p.u8(0x10), price: Some(p.u32(8)) })?
                     }
                     0x050 => tx.send(NetEvent::Equip { index: p.u8(4), slot: p.u8(5), container: p.u8(6) })?,
                     // CLISTATUS: hpmax @4, mpmax @8, jobs @0xc..0xf, bp_base @0x14, bp_adj @0x22, atk @0x30,

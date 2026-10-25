@@ -171,6 +171,13 @@ fn open(w: &mut World) {
 /// s2c 0x0CA: the title line (group 10 0x33 in mode 0x29, not for ourselves), the bazaar flag from the target's 0x00D
 /// (actor +0x128 bit 9), "arrived", and the message cut into 3 lines of 40.
 pub fn on_message(w: &mut World, p: &[u8]) {
+    // MyFlag (@0x7f bit 1): our own message, also sent at every zone-in (LAB_10133870 -> FUN_101ddae0).
+    if p.get(0x7f).is_some_and(|b| b & 2 != 0) {
+        super::seacom::own_message(w, p.get(4..4 + 120).unwrap_or(&[]));
+        if w.inspect.expect.0 != w.my_id {
+            return;
+        }
+    }
     let text = |a: usize, n: usize| -> String {
         let b: Vec<u8> = p.get(a..(a + n).min(p.len())).unwrap_or(&[]).iter().copied().take_while(|&c| c != 0).collect();
         crate::dat::font::decode_sjis(&b)

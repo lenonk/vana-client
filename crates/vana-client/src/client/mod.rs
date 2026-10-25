@@ -55,6 +55,7 @@ mod levelsync;
 mod viewhouse;
 mod currencies;
 mod unity;
+mod bazaar;
 mod journal;
 mod missions;
 mod quests;
@@ -167,7 +168,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -799,7 +800,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1356,6 +1357,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.searchmenu.is_some() => searchmenu::key(world, gu, *key),
                 _ if world.partymenu.is_some() => partymenu::key(world, gu, *key),
                 _ if world.viewhouse.is_some() => viewhouse::key(world, gu, *key),
+                _ if world.bazaar.is_some() => bazaar::key(world, *key),
                 _ if world.currencies.is_some() => currencies::key(world, *key),
                 _ if world.unity.is_some() => unity::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.status.is_some() => status::key(world, gu, *key),
@@ -1591,6 +1593,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
             // Child 4 View House (FUN_1014e7b0 case 4): mogcont.
             (1, 4) => viewhouse::open(world),
+            // Child 5 Set Bazaar: "menu    bazaar".
+            (1, 5) => bazaar::open(world),
             (1, 11) => world.confirm = Some((Confirm::Shutdown, false)),
             (1, 12) => world.confirm = Some((Confirm::Logout, false)),
             _ => log::info!("main menu item {id} on page {} is not implemented yet", world.menu_page),
@@ -1636,6 +1640,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| viewhouse::focused(world)) {
         viewhouse::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| bazaar::focused(world)) {
+        bazaar::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.keyitems.is_some() && world.confirm.is_none()) {
         keyitems::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2081,6 +2088,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(partymenu::draw(gu, world, sw, sh));
     blockers.extend(levelsync::draw(gu, world, sw, sh));
     blockers.extend(viewhouse::draw(gu, world, sw, sh));
+    blockers.extend(bazaar::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(currencies::draw(gu, world, sw, sh));
@@ -2532,6 +2540,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     partymenu::bars(gu, world, &mut bars);
     levelsync::bars(gu, world, &mut bars);
     viewhouse::bars(gu, world, &mut bars);
+    bazaar::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
     currencies::bars(gu, world, &mut bars);
     unity::bars(gu, world, &mut bars);
@@ -3686,6 +3695,10 @@ struct World {
     /// statcom2's Unity row (ut_menu, ut_point, quest00 / quest01 in the Unity modes) and the weeks' tables.
     unity: Option<unity::Unity>,
     unity_tables: unity::Tables,
+    /// Social row Set Bazaar, our bazaar message (comment holder slots 0 / 4) and its customers (s2c 0x108).
+    bazaar: Option<bazaar::Bazaar>,
+    bazaar_msg: seacom::Store,
+    bazaar_customers: i32,
     /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
     mh_open: bool,
     /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
@@ -4889,6 +4902,9 @@ impl App {
                             currencies: None,
                             unity: None,
                             unity_tables: Default::default(),
+                            bazaar: None,
+                            bazaar_msg: Default::default(),
+                            bazaar_customers: 0,
                             mh_open: false,
                             mog_pending: false,
                             moogle: None,
@@ -5276,7 +5292,7 @@ impl App {
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
                     world.room_flag = room_flag;
-                    (world.mh_seen, world.viewhouse, world.currencies, world.unity) = (false, None, None, None);
+                    (world.mh_seen, world.viewhouse, world.currencies, world.unity, world.bazaar) = (false, None, None, None, None);
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
@@ -5668,7 +5684,7 @@ impl App {
                     world.inv_flags &= !0x800;
                     world.inv.count(container, index, count)
                 }
-                NetEvent::Item { container, index, id, count, ext, lock } => {
+                NetEvent::Item { container, index, id, count, ext, lock, price } => {
                     world.inv_flags &= !0x800;
                     if matches!(container, 1..=7 | 9) {
                         world.inv_flags |= 0x0020_0000;
@@ -5679,6 +5695,11 @@ impl App {
                     }
                     if let Some(e) = ext.filter(|_| id != 0) {
                         world.inv.ext.insert((container, index), e);
+                    }
+                    match price {
+                        Some(p) if id != 0 => _ = world.inv.prices.insert((container, index), p),
+                        _ if id == 0 => _ = world.inv.prices.remove(&(container, index)),
+                        _ => {}
                     }
                 }
                 NetEvent::Equip { slot, index, container } => world.inv.set_equip(slot, index, container),
@@ -5813,6 +5834,8 @@ impl App {
                 NetEvent::RoeLog { offset, data } => world.roe.log_part(offset, &data),
                 NetEvent::Invite { anon, kind, name, race } => partymenu::invited(world, anon, kind, name, race),
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
+                NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
+                NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),
                 NetEvent::Currencies { mode, data } => currencies::on_packet(world, mode, &data),
                 NetEvent::UnityTable { week, d, data } => world.unity_tables.store(week, d, &data),
                 NetEvent::TrackEntry(e) => world.scan.on_entry(e),

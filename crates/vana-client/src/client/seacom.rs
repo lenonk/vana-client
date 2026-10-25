@@ -1,6 +1,7 @@
-//! The own search comment (arealist_spec section 3): searchma's Edit Comment through comgenre mode 0 (and the
-//! sub-genre windows) opens "menu    comment" mode 2 (FUN_101dd2b0 / FUN_101ddcb0 / FUN_101dde60 / FUN_101dd330):
-//! three lines of 40 bytes, sent on close as c2s 0x0E0 when they or the type changed.
+//! "menu    comment" (FUN_101dd2b0 / FUN_101ddcb0 / FUN_101dde60 / FUN_101dd330): three lines of 40 bytes. Mode 2 the
+//! own search comment (arealist_spec section 3: searchma's Edit Comment through comgenre), sent on close as c2s 0x0E0
+//! when it or the type changed; mode 0 our bazaar message (social_rows_spec B5: Set Bazaar's Edit Comment), as c2s
+//! 0x0DE.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -19,24 +20,47 @@ pub struct Store {
     sent: [String; 3],
     pub kind: u8,
     sent_kind: u8,
+    /// +0x19: our own message came (s2c 0x0CA with MyFlag; the bazaar store only).
+    pub own_in: bool,
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Store { lines: Default::default(), sent: Default::default(), kind: 0, sent_kind: 0xff }
+        Store { lines: Default::default(), sent: Default::default(), kind: 0, sent_kind: 0xff, own_in: false }
     }
 }
 
-/// The open editor: +0x15, the line whose box is open.
+/// The open editor: +0x15, the line whose box is open; +0x16 the mode (0 bazaar, 2 search comment).
 #[derive(Clone, Copy, Debug)]
 pub struct Editor {
     pub line: usize,
+    pub mode: u8,
 }
 
 /// FUN_101dd2b0 (mode 2): the type, line 0 edited at once; stacked on the chat log (window flag 0x1000).
 pub fn open(w: &mut World, kind: u8) {
     w.seacom.kind = kind;
-    w.seacom_edit = Some(Editor { line: 0 });
+    w.seacom_edit = Some(Editor { line: 0, mode: 2 });
+}
+
+/// FUN_101dd2b0 (mode 0, type 0x73): our bazaar message.
+pub fn open_bazaar(w: &mut World) {
+    w.seacom_edit = Some(Editor { line: 0, mode: 0 });
+}
+
+fn store(w: &mut World, mode: u8) -> &mut Store {
+    if mode == 0 { &mut w.bazaar_msg } else { &mut w.seacom }
+}
+
+/// FUN_101ddae0(msg, 1): our own s2c 0x0CA message (MyFlag) cut into three lines of 40, trailing spaces trimmed, into
+/// the bazaar store's lines and its last-sent copy.
+pub fn own_message(w: &mut World, raw: &[u8]) {
+    let lines: [String; 3] = std::array::from_fn(|k| {
+        let line: Vec<u8> = raw.iter().skip(LINE * k).take(LINE).copied().take_while(|&c| c != 0).collect();
+        crate::dat::font::decode_sjis(&line).trim_end().to_string()
+    });
+    let s = &mut w.bazaar_msg;
+    (s.lines, s.sent, s.own_in) = (lines.clone(), lines, true);
 }
 
 /// The box is open the whole time the editor is.
@@ -49,7 +73,7 @@ pub fn typing(w: &World) -> bool {
 pub fn text_events(w: &mut World, events: &[egui::Event]) {
     let Some(mut e) = w.seacom_edit else { return };
     for ev in events {
-        let line = &mut w.seacom.lines[e.line];
+        let line = &mut store(w, e.mode).lines[e.line];
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) => {
                 for c in t.chars().filter(|c| (' '..='~').contains(c)) {
@@ -74,10 +98,33 @@ pub fn text_events(w: &mut World, events: &[egui::Event]) {
     w.seacom_edit = Some(e);
 }
 
-/// FUN_101dd330 (mode 2): when the lines or the type changed, all blank sends "" (block 5 line 0 cleared), else the
-/// lines padded with spaces to 40 each (123 bytes, FUN_101dd5a0); then c2s 0x0E0 (FUN_100e5980).
+/// The lines padded with spaces to 40 each (123 bytes, FUN_101dd5a0).
+fn padded(lines: &[String; 3]) -> Vec<u8> {
+    let mut t = vec![b' '; 123];
+    for (k, l) in lines.iter().enumerate() {
+        let b = crate::dat::font::encode_sjis(l);
+        let n = b.len().min(LINE);
+        t[LINE * k..LINE * k + n].copy_from_slice(&b[..n]);
+    }
+    t
+}
+
+/// FUN_101dd330. Mode 0: when the lines changed, c2s 0x0DE {the 123 bytes, NUL} (FUN_100e55b0, 0x80 bytes). Mode 2:
+/// when the lines or the type changed, all blank sends "" (block 5 line 0 cleared), else the padded lines; then c2s
+/// 0x0E0 (FUN_100e5980).
 fn close(w: &mut World) {
-    w.seacom_edit = None;
+    let Some(e) = w.seacom_edit.take() else { return };
+    if e.mode == 0 {
+        let s = &mut w.bazaar_msg;
+        if s.lines == s.sent {
+            return;
+        }
+        s.sent = s.lines.clone();
+        let mut b = vec![0u8; 0x7c];
+        b[..123].copy_from_slice(&padded(&s.lines));
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x0DE, body: b });
+        return;
+    }
     let s = &mut w.seacom;
     if s.lines == s.sent && s.kind == s.sent_kind {
         return;
@@ -86,12 +133,8 @@ fn close(w: &mut World) {
         s.sent[0].clear();
         Vec::new()
     } else {
-        let mut t = vec![b' '; 123];
-        for (k, l) in s.lines.iter().enumerate() {
-            t[LINE * k..LINE * k + l.len()].copy_from_slice(l.as_bytes());
-        }
         s.sent = s.lines.clone();
-        t
+        padded(&s.lines)
     };
     s.sent_kind = s.kind;
     let kind = s.kind;
@@ -124,15 +167,18 @@ fn install_time() -> u32 {
     now
 }
 
-/// Help slot 2: 0xe 0x32 while the editor is open (no title in mode 2).
+/// Help slot 2: 0xe 0x32 while the editor is open; title slot 2 0xd 0x0f "Set Bazaar" in mode 0 (none in mode 2).
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    if w.seacom_edit.is_some() {
+    if let Some(e) = w.seacom_edit {
         bars.help[2] = gu.menu_msg(0x32, "");
+        if e.mode == 0 {
+            bars.title[2] = gu.title_msg(0x0f).unwrap_or_default();
+        }
     }
 }
 
-/// FUN_101ddcb0 (mode 2): the lines at (x0 + 0x14, y0 + 4 + 16 k), 335 px, the edited one as the live box; the genre
-/// dot (FUN_1020b4b0) at (x0 + 8, y0 + 8).
+/// FUN_101ddcb0: the lines at (x0 + 0x14, y0 + 4 + 16 k), 335 px, the edited one as the live box, and the genre dot
+/// (FUN_1020b4b0) at (x0 + 8, y0 + 8) in mode 2; in mode 0 at x0 + 4, x1 - x0 - 8 wide, no dot.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(e) = w.seacom_edit else {
@@ -141,18 +187,21 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     };
     gu.force_flags(EDITOR, Some(0x1000));
     let Some(win) = gu.lobby_window_off(EDITOR, sw, sh, (0.0, 0.0), None, false, &[]) else { return rects };
-    let [x0, y0, ..] = win.frame;
-    for (k, l) in w.seacom.lines.iter().enumerate() {
-        let (x, y) = (x0 + 20.0, y0 + 4.0 + 16.0 * k as f32);
+    let [x0, y0, ww, _] = win.frame;
+    let (s, dx, width) = if e.mode == 0 { (&w.bazaar_msg, 4.0, ww - 8.0) } else { (&w.seacom, 20.0, 335.0) };
+    for (k, l) in s.lines.iter().enumerate() {
+        let (x, y) = (x0 + dx, y0 + 4.0 + 16.0 * k as f32);
         if k == e.line {
             let caret = if (w.started.elapsed().as_secs_f32() * 60.0) as u32 % 30 < 20 { "|" } else { "" };
             gu.text(&format!("{l}{caret}"), x, y, 0, [0x80; 4]);
         } else {
-            gu.text_fit(l, x, y, 335.0, WHITE);
+            gu.text_fit(l, x, y, width, WHITE);
         }
     }
     let g = (w.seacom.kind >> 4 & 0xf) as usize;
-    if let Some(&s) = super::search::GENRE.get(g.wrapping_sub(1)) {
+    if e.mode == 2
+        && let Some(&s) = super::search::GENRE.get(g.wrapping_sub(1))
+    {
         gu.sprite("menu    windowps", s, x0 + 8.0, y0 + 8.0, WHITE);
     }
     rects.push(win.frame);
