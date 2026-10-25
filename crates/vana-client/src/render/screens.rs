@@ -250,15 +250,19 @@ fn first_button_pos(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<(f32, 
     Some((x, y, sx, sy))
 }
 
-/// The extra button sits one button pitch above Select Character (children 1 and 2 of loby2win).
+/// Design pixels the extra button keeps above the retail ones, beyond their pitch (one pitch alone read as too close).
+const UPDATE_GAP: f32 = 6.0;
+
+/// The extra button sits a button pitch and UPDATE_GAP above Select Character (children 1 and 2 of loby2win), placed in
+/// design space and then scaled as the retail buttons are.
 pub fn update_button_pos(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Option<(f32, f32, f32, f32)> {
     let m = lobby.menu("menu    loby2win")?;
     let c1 = m.elements.iter().find(|e| e.id == 1)?;
     let c2 = m.elements.iter().find(|e| e.id == 2)?;
     let (sx, sy) = (w / 1024.0, h / 768.0);
-    let (x, y) = button_pos(m, c1, sx, sy, shift);
-    let pitch = ((c2.y - c1.y) as f32 * sy).trunc();
-    Some((x, y - pitch, sx, sy))
+    let (x, _) = button_pos(m, c1, sx, sy, shift);
+    let y = (((m.elements[0].y + c1.y) as f32 - (c2.y - c1.y) as f32 - UPDATE_GAP) * sy).trunc();
+    Some((x, y, sx, sy))
 }
 
 /// Child rect = window pos + child offset, then scaled by (sx, sy) (FUN_10235620).
