@@ -89,14 +89,20 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     let name = op1.u32(3);
     // Link step FUN_10047270 / FUN_100485c0: D3m kinds fall back to an MMB of the same name.
     let draw = if res_kind == 0x22 && inst.flags & 0x2000_0000 == 0 {
-        // CMoDist (FUN_10051d90); the batched CMoVuDist is not drawn here.
+        // CMoDist (FUN_10051d90).
         Draw::Dist
+    } else if res_kind == 0x22 {
+        // CMoVuDist (FUN_10043110 -> FUN_10063c80): its particles only count the draws, n = N under 20, else half N
+        // for weather generators (gen +0xde bit 0, density 1); N = gen flags & 0x1ff + 1 with op 0x56, else 0.
+        let n = if stream.iter().any(|o| o.code == 0x56) { (inst.flags & 0x1ff) + 1 } else { 0 };
+        let n = if n < 20 || inst.de & 1 == 0 { n } else { (n as f32 * 0.5) as u32 };
+        if n == 0 { Draw::None } else { Draw::VuDist(n) }
     } else if res_kind == 0x5c && inst.dam.as_ref().is_some_and(|d| !d.glyphs.is_empty()) {
         // DamValueProg (FUN_10041f40): without a task's number the string is empty and nothing draws.
         Draw::DamValue
-    } else if res_kind == 0x24 && flags & 0x10_0000 == 0 {
-        // RingProg (FUN_100555f0); DistRing (0x100000) is a distortion, not drawn yet.
-        Draw::Ring
+    } else if res_kind == 0x24 {
+        // RingProg (FUN_100555f0), or with 0x100000 CMoDistRingElem (FUN_10043720).
+        if flags & 0x10_0000 == 0 { Draw::Ring } else { Draw::DistRing }
     } else if needs_no_resource(res_kind) {
         Draw::None
     } else {
@@ -179,6 +185,8 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         Draw::Dist => dk::DIST,
         Draw::Ring => dk::RING,
         Draw::DistModel(_) => dk::DIST_MODEL,
+        Draw::VuDist(_) => dk::DIST,
+        Draw::DistRing => dk::DIST_RING,
         Draw::DamValue => {
             let d = inst.dam.as_ref().unwrap();
             let pack = |gs: &[u8]| gs.iter().enumerate().fold(0u32, |a, (k, &g)| a | (g as u32 & 0xf) << (4 * k));
@@ -354,7 +362,9 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::L_ISCALE, op.f32(4) + 1.0);
             }
             // vtable +0x34 = FUN_10051dc0 on CMoDist: +0x194 = op+8.
-            0x32 if matches!(draw, Draw::Dist | Draw::DistModel(_)) => e.set(w::DIST_OFF, op.f32(2)),
+            // vtable +0x34: CMoDist / VuDist / DistModel +0x194 (DistRing's +0x1b6 is never read); a no-op on the rest.
+            0x32 if matches!(draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_)) => e.set(w::DIST_OFF, op.f32(2)),
+            0x32 => {}
             // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
             0x8e => {
                 if let Some((p, m)) = inst.ground {

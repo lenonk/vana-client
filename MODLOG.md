@@ -7795,7 +7795,18 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Ours: Draw::DistModel / dk::DIST_MODEL (10), Mesh::dist ranges, vs_distmodel (screen_uv), fragment variant 11, a
   Repeat-sampled bind group on the scene copy; per element a copy then the draw, in the effect order. Seen offscreen
   (weapon skill 41, 3441 fs_i/md00): the band around the burst shows the wall displaced; not compared with retail.
-- Not done from the spec: VuDist (batched 0x22: the element's own diamond n times, each over a copy holding the last),
-  DistRing (an S-gon ring over the copy, colours x the element colour), DistMorph (key mesh 0 only, geometry shifted,
-  UVs unshifted); the D3m loader's format-7 fallback (FUN_1003fee0; 4 meshes parse 6 bytes off).
+- CMoVuDist (batched kind 0x22, FUN_10043110): FUN_10063c80 runs the CMoDist draw once per particle, but that draw
+  rebuilds the element matrix first, so each iteration is the element's own diamond at its own place, each over a new
+  copy that holds the previous one: the shift compounds n times. n = N (gen flags & 0x1ff + 1 with op 0x56, else 0)
+  under 20, else half N for weather generators (gen +0xde bit 0, density 1). Ours: Draw::VuDist(n) through vs_dist,
+  n copies and draws (64 at most). The particle ops change nothing visible.
+- CMoDistRingElem (ring + 0x100000, FUN_10043720): a closed S-gon per ring pair (angle (q mod S) 2 pi / S; the plain
+  ring is an (S-1)-gon), the ring colours per byte x the faded element colour >> 7 (wrapping), each vertex sampling the
+  copy at its own screen point (no offset: op 0x32 goes to +0x1b6, never read), TSS 0x10353378 (colour 2 x diffuse x
+  copy, alpha 4 x diffuse a x 0x80, MIRROR). Ours: Draw::DistRing / dk::DIST_RING (11), vs_distring, variant 12. With
+  our full-size copy it re-samples the background in place, so it barely shows (retail: a soft band from the 256^2
+  copy).
+- Seen offscreen: weapon skill 41 (16 VuDist draws per frame for fs_i/ds00 / ds01), weapon skill 83 (evw_/pr00, pr01).
+- Not done: DistMorph (13 files; key mesh 0 only, geometry shifted, UVs unshifted, raw corner colours); the D3m
+  loader's format-7 fallback (FUN_1003fee0; 4 meshes parse 6 bytes off).
 

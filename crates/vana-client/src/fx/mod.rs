@@ -140,6 +140,10 @@ pub enum Draw {
     Ring,
     /// CMoDistModelElem (D3m + 0x100000, FUN_10043320): a registered mesh drawn over the scene copy.
     DistModel(u32),
+    /// CMoVuDist (batched 0x22, FUN_10043110): the element's own CMoDist diamond n times, each over a new copy.
+    VuDist(u32),
+    /// CMoDistRingElem (ring + 0x100000, FUN_10043720).
+    DistRing,
 }
 
 /// A damage number for kind 0x5c elements: glyphs ('0'..'9' = 0..9, ':' = 10, up to 16) and the message colour
@@ -2007,6 +2011,8 @@ impl Effects {
                 Draw::Dist => "dist".into(),
                 Draw::Ring => "ring".into(),
                 Draw::DistModel(id) => format!("distmodel {id}"),
+                Draw::VuDist(n) => format!("vudist x{n}"),
+                Draw::DistRing => "distring".into(),
                 Draw::DamValue => "damv".into(),
                 Draw::None => "none".into(),
             };

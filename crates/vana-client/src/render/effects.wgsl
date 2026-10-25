@@ -890,6 +890,36 @@ fn vs_distmodel(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
     return out;
 }
 
+// CMoDistRingElem (FUN_10043720): a closed S-gon per ring pair (angle (q mod S) 2 pi / S), each vertex sampling the
+// scene copy at its own screen point (no offset, no scroll); the ring colour per byte x the faded element colour >> 7,
+// wrapping. Variant 12 (TSS 0x10353378, MIRROR).
+@vertex
+fn vs_distring(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let eb = e * E_WORDS;
+    let sr = dels[eb + E_RING_SR];
+    let segs = sr & 0xffu;
+    let rings = (sr >> 8u) & 0xffu;
+    if (segs == 0u || rings < 2u) { return hidden(); }
+    let per = 6u * segs;
+    let p = k / per;
+    if (p + 1u >= rings) { return hidden(); }
+    let j = (k % per) / 3u + k % 3u;
+    let ang = f32((j / 2u) % segs) * 6.2831853 / f32(segs);
+    let ring = p + j % 2u;
+    let r = bitcast<f32>(dels[eb + E_RING_R + ring]);
+    let vp = (out_mat(o) * vec4<f32>(sin(ang) * r, cos(ang) * r, 0.0, 1.0)).xyz;
+    let c = dels[eb + E_RING_C + ring];
+    let tf = vec4<u32>(round(vec4<f32>(douts[o + 16u], douts[o + 17u], douts[o + 18u], douts[o + 19u]) * 255.0));
+    let cb = vec4<u32>((c >> 16u) & 0xffu, (c >> 8u) & 0xffu, c & 0xffu, c >> 24u);
+    let dc = vec4<f32>(((cb * tf) >> vec4<u32>(7u)) & vec4<u32>(0xffu)) / 255.0;
+    var out = vout(e, vp, dc, vec2<f32>(0.0), 12u);
+    out.uv = screen_uv(vp);
+    return out;
+}
+
 // RingProg (FUN_100555f0): per ring pair p a triangle strip of 2S + 2 vertices, as triangles (strip index t + c);
 // strip pair q at angle 0 for q 0 and S, else (q - 1) 2 pi / S (the literal degenerate first pair); even strip
 // vertices on ring p, odd on ring p + 1, at (sin a r, cos a r, 0) with that ring's colour. Colour diffuse x TFACTOR
@@ -1072,6 +1102,12 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
         rgb = t;
         a = sat(select(4.0, 2.0, mode == 0x44u) * (128.0 / 255.0) * sat(2.0 * dd.a * f.a));
+    } else if (variant == 12u) {
+        // DistRing: colour 2 x diffuse x copy, alpha 4 x diffuse a x copy alpha (0x80).
+        var t = textureSample(tex, samp, i.uv).rgb;
+        if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
+        rgb = sat3(2.0 * dd.rgb * t);
+        a = sat(4.0 * dd.a * (128.0 / 255.0));
     } else if (variant == 7u || variant == 8u) {
         // D3b stages (TSS 0x103470b8): texture x diffuse x 2, then x TFACTOR x 2 (alpha x 4).
         let t = textureSample(tex, samp, i.uv);
@@ -1089,7 +1125,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u) && (flags & 0x2000000u) == 0u) {
+    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u || variant == 12u) && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }

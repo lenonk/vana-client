@@ -102,6 +102,8 @@ pub mod dk {
     pub const RING: u32 = 9;
     /// CMoDistModelElem (D3m + 0x100000): the mesh over the scene copy looked up at shifted screen points.
     pub const DIST_MODEL: u32 = 10;
+    /// CMoDistRingElem (ring + 0x100000): the S-gon rings over the scene copy at their own screen points.
+    pub const DIST_RING: u32 = 11;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -265,6 +267,7 @@ pub fn wgsl_consts() -> String {
         ("DK_DAMV", dk::DAMV as usize),
         ("DK_RING", dk::RING as usize),
         ("DK_DIST_MODEL", dk::DIST_MODEL as usize),
+        ("DK_DIST_RING", dk::DIST_RING as usize),
         ("E_RING_R", w::RING_R),
         ("E_RING_C", w::RING_C),
         ("E_RING_SR", w::RING_SR),

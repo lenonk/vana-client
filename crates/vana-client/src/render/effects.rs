@@ -214,6 +214,7 @@ pub struct EffectsGpu {
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     ring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     distmodel_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    distring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     /// The scene copy with a Repeat sampler (DistModel's stage address WRAP).
     copy_wrap: Option<wgpu::BindGroup>,
     wrap_sampler: wgpu::Sampler,
@@ -370,6 +371,7 @@ impl EffectsGpu {
         let mut damv_pipes = HashMap::new();
         let mut ring_pipes = HashMap::new();
         let mut distmodel_pipes = HashMap::new();
+        let mut distring_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
@@ -377,6 +379,7 @@ impl EffectsGpu {
                 morph_pipes.insert((class, zwrite), pipe("vs_morph", &[], class, zwrite));
                 ring_pipes.insert((class, zwrite), pipe("vs_ring", &[], class, zwrite));
                 distmodel_pipes.insert((class, zwrite), pipe("vs_distmodel", &vbuf, class, zwrite));
+                distring_pipes.insert((class, zwrite), pipe("vs_distring", &[], class, zwrite));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -423,6 +426,7 @@ impl EffectsGpu {
             morph_pipes,
             ring_pipes,
             distmodel_pipes,
+            distring_pipes,
             copy_wrap: None,
             wrap_sampler,
             dist_pipes,
@@ -711,7 +715,7 @@ impl EffectsGpu {
             return;
         }
         let order = fx.draw_order();
-        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::DistModel(_))));
+        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::VuDist(_) | Draw::DistModel(_) | Draw::DistRing)));
         let copy_src = color_tex.filter(|t| any_dist && t.usage().contains(wgpu::TextureUsages::COPY_SRC));
         if let Some(t) = copy_src
             && self.scene_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
@@ -794,15 +798,30 @@ impl EffectsGpu {
             match c.draw {
                 // FUN_100418b0 pass 1: the scene so far is copied (retail: the diamond's screen box into a 256x256
                 // texture, a 2002 limit; here the whole target at full size), then the shifted redraw.
-                Draw::Dist => {
+                // VuDist: the same diamond n times, each copy holding the last draw (the shift compounds).
+                Draw::Dist | Draw::VuDist(_) => {
+                    let (Some(src), Some((copy, g))) = (copy_src, self.scene_copy.as_ref()) else { continue };
+                    let n = if let Draw::VuDist(n) = c.draw { n.min(64) } else { 1 };
+                    for _ in 0..n {
+                        drop(pass);
+                        encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                        pass = new_pass(encoder);
+                        pass.set_pipeline(&self.dist_pipes[&(c.flags & 0x1000 != 0)]);
+                        pass.set_bind_group(1, g, &[]);
+                        pass.draw(0..12, base..base + 1);
+                    }
+                    bound = None;
+                }
+                Draw::DistRing => {
                     let (Some(src), Some((copy, g))) = (copy_src, self.scene_copy.as_ref()) else { continue };
                     drop(pass);
                     encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
                     pass = new_pass(encoder);
-                    pass.set_pipeline(&self.dist_pipes[&(c.flags & 0x1000 != 0)]);
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    pass.set_pipeline(&self.distring_pipes[&(class, c.flags & 0x1000 != 0)]);
                     bound = None;
                     pass.set_bind_group(1, g, &[]);
-                    pass.draw(0..12, base..base + 1);
+                    pass.draw(0..3 * 2 * 255 * 3, base..base + 1);
                 }
                 // FUN_10043320: the scene so far copied (retail: squeezed into 256x256; here full size), then the mesh's
                 // DistModel ranges over it.
