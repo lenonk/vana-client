@@ -204,4 +204,4 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
-  user in WinBoat) left: the exe icon (a resource), a fully static link (it still imports libwinpthread-1.dll).
+  user in WinBoat) left: the exe icon (a resource). release/build-windows.sh links everything in (no MinGW DLLs).
