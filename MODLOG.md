@@ -8216,6 +8216,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix, char_blacklist rows for Tuxedo and Lnxtest): /blacklist listed both, Down + Enter opened blkmain
   ("Delete from blacklist."), Enter removed Lnxtest (no line); after !zone 230 the list held Tuxedo once. Rows
   removed afterwards.
-- Not done: the mouse on both windows, the window groups (blklist group 0x1c suspends gaugewin and the other 0x1c
+- Mouse: hovering a row (not past the count) moves the hand there (SE 0001), a click on the hand row or on Delete is
+  Enter, a right click on the window is Escape (live: hover, click, Delete and right click as the keys).
+- Not done: the wheel / scroll bar drag, the window groups (blklist group 0x1c suspends gaugewin and the other 0x1c
   lists; blkmain 0x81).
 

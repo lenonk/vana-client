@@ -104,6 +104,44 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// The mouse (the list base, message 9 / 5 / 6): hovering a row (not past the count) moves the hand there, a click on
+/// the hand's row or on Delete is Enter, a right click on the window is Escape.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(b) = w.blklist.as_ref() else { return };
+    let (win, child) = if b.main { (MAIN, None) } else { (LIST, Some(())) };
+    let (Some((x, y)), Some(lay)) = (gu.window_xy(win, sw, sh), gu.layout(win)) else { return };
+    let inside = |e: &crate::dat::ui::MenuElement| {
+        let (ex, ey) = (x + e.x as f32, y + e.y as f32);
+        p.0 >= ex && p.0 < ex + e.w as f32 && p.1 >= ey && p.1 < ey + e.h as f32
+    };
+    if gu.window_rect(win, sw, sh).is_some_and(|[fx, fy, fw, fh]| p.0 >= fx && p.0 < fx + fw && p.1 >= fy && p.1 < fy + fh) {
+        gu.hover.set(true);
+        if right {
+            key(w, egui::Key::Escape);
+            return;
+        }
+    }
+    let Some(e) = lay.elements.iter().skip(1).find(|e| inside(e)) else { return };
+    if child.is_none() {
+        if e.id == 1 && clicked {
+            key(w, egui::Key::Enter);
+        }
+        return;
+    }
+    let row = b.top + e.id as usize - 1;
+    if row >= b.rows.len() {
+        return;
+    }
+    if row != b.cursor && (moved || clicked) {
+        if let Some(b) = w.blklist.as_mut() {
+            b.cursor = row;
+        }
+        w.sounds.push(Ui::Cursor as u32);
+    } else if clicked {
+        key(w, egui::Key::Enter);
+    }
+}
+
 /// FUN_101f6a60: the names in the shape font at (21, 4 + 16 i); empty, group 7 0x67 in the game font at (35, 28); the
 /// cursor band windowps 75 while the list has the focus; the scroll bar; blkmain from its layout.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
