@@ -166,7 +166,9 @@ impl UiBatch {
         } else if cell.blend[0] != 0 {
             Blend::from_ps2(cell.blend[1], cell.blend[2], cell.blend[3])
         } else {
-            Blend::Alpha
+            // Byte 0 is the blend enable: 0 draws opaque (FUN_1011f300, ALPHABLENDENABLE FALSE), cut only by the alpha
+            // test (the Equipment window's element balls, gauges, icons).
+            Blend::Replace
         };
         self.push_quad(image.map(|_| cell.texture.as_str()), blend, corners, uvs, colors);
     }

@@ -7126,3 +7126,15 @@ Spec `~/ffxi/lab/research/mainmenu_panels_spec.md`.
 - Not done: the Monstrosity overrides of rows 2 / 5 / 6 / 10, the Synthesis row's rule (DAT_106634ac / FUN_101e15c0).
 - Live: the Mog House door was not reached by !pos this time (the earlier run entered by the zmr0zmr1 rect from the
   sub-area); checked offscreen.
+
+## Sprite cells with blending off (2026-10-25)
+
+Spec `~/ffxi/lab/research/equip_screen_spec.md` D.
+- A cell's blend byte 0 is the enable: 0 makes FUN_1011e980 -> FUN_1011f2d0 -> FUN_1011f300 set ALPHABLENDENABLE
+  FALSE, so the cell draws opaque (texel x vertex colour), cut only by the UI's alpha test (GREATER 0); its low vertex
+  alpha only feeds that test. Ours drew those cells alpha-blended, so the Equipment window's element balls (framesus 13
+  cells 1..8: 10x10 quads of "menu    colorbal", vertex alpha 25 / 49) came out near-black. Now Blend::Replace.
+- About 350 cells have byte 0 = 0 (gauges, the hand cursor, icons, colorbal balls in windowps 492..497 and framesus
+  13 / 31 / 106..113 / 125 / 169, keytops3 icons ...); checked offscreen: the equipment, topbar (menu, target and party
+  gauges) and inventory shots are unchanged apart from the balls, now red / green / violet / white / cyan / yellow /
+  blue / dark as the user's retail shot.
