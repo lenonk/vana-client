@@ -754,6 +754,7 @@ fn chat_prefix(world: &mut World, prefix: &str) {
     let typed = if world.typing { std::mem::take(&mut world.chat_input) } else { String::new() };
     let body = strip_channel(typed.trim_start());
     world.chat_input = format!("{prefix}{body}");
+    world.chat_caret = None;
     world.typing = true;
 }
 
@@ -779,6 +780,7 @@ fn reply(world: &mut World) {
         Some(name) => format!("/tell {name} {body}"),
         None => format!("/tell {body}"),
     };
+    world.chat_caret = None;
     world.typing = true;
 }
 
@@ -1159,12 +1161,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.line_hist.edited();
                 // Space moves the open candidate list instead (FUN_101b6810 returns -1).
                 let open = world.fep.is_some();
-                let next: String = world.chat_input.chars().chain(t.chars().filter(|c| !c.is_control() && !(open && *c == ' '))).collect();
-                // FUN_101abc50: the text goes in whole only while the raw and the expanded line stay within 120 bytes.
-                let (raw, plain) = fep::lengths(world, &next);
-                if raw <= fep::MAX && plain <= fep::MAX {
-                    world.chat_input = next;
-                }
+                let t: String = t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')).collect();
+                fep::insert(world, &t);
             }
             // egui turns Ctrl+C / Ctrl+X into Copy / Cut instead of key events.
             egui::Event::Copy if !world.typing && !event::active(world) => check_target(world),
@@ -1176,31 +1174,33 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // FUN_101ac2c0 / FUN_101ac3d0: the line history (no sound, no wrap; Shift / Ctrl the same).
                 egui::Key::ArrowUp if world.typing && !modifiers.alt => {
                     if let Some(l) = world.line_hist.up(&world.chat_input) {
-                        world.chat_input = l;
+                        (world.chat_input, world.chat_caret) = (l, None);
                     }
                 }
                 egui::Key::ArrowDown if world.typing && !modifiers.alt => {
                     if let Some(l) = world.line_hist.down(&world.chat_input) {
-                        world.chat_input = l;
+                        (world.chat_input, world.chat_caret) = (l, None);
                     }
                 }
                 egui::Key::Enter if world.typing => {
                     world.typing = false;
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     let text = std::mem::take(&mut world.chat_input);
+                    world.chat_caret = None;
                     world.line_hist.record(&text);
                     let text = fep::outgoing(world, text);
                     textcmd::run(world, &text, textcmd::Mode::Typed);
                 }
                 egui::Key::Escape if world.typing => {
                     world.typing = false;
-                    world.chat_input.clear();
+                    (world.chat_input, world.chat_caret) = (String::new(), None);
                     world.sounds.push(crate::audio::Ui::Cancel as u32);
                 }
-                egui::Key::Backspace if world.typing => {
+                egui::Key::Backspace | egui::Key::Delete if world.typing => {
                     world.line_hist.edited();
-                    fep::backspace(world);
+                    fep::erase(world, *key == egui::Key::Backspace);
                 }
+                egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End if world.typing => fep::caret_key(world, *key),
                 // Ctrl / Alt shortcuts (DAT_103619f0 flag 0x10, FUN_101a5e80). Mode 2 (chat) works while typing.
                 k if (modifiers.ctrl || modifiers.alt) && !opened && let Some(p) = chat_shortcut(*k) => {
                     chat_prefix(world, p);
@@ -2032,18 +2032,44 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         gu.frame(x, y, w, 22.0);
         gu.sprite_from("menu    windowps", 37, 1, x, y, 0x8080_8080);
         // Phrases in the 7F 69 colour, without brackets (FUN_101b5470); the line's tail when it is too long.
-        let mut pieces = fep::pieces(world, &world.chat_input);
+        // A long line keeps the caret in view: the text before it loses chars at the left, the text after it is cut at
+        // the right (inf: retail's scroll is not traced; as the event input window).
+        let at = fep::caret(world);
+        let mut before = fep::pieces(world, &world.chat_input.chars().take(at).collect::<String>());
+        let after = fep::pieces(world, &world.chat_input.chars().skip(at).collect::<String>());
+        let room = tw - 20.0;
         let width = |p: &[(String, bool)]| p.iter().map(|(t, _)| gu.text_width(t)).sum::<f32>();
-        while width(&pieces) > tw - 20.0 && !pieces.is_empty() {
-            let t = &mut pieces[0].0;
+        while width(&before) > room && !before.is_empty() {
+            let t = &mut before[0].0;
             let mut c = t.chars();
             c.next();
             *t = c.as_str().to_string();
             if t.is_empty() {
-                pieces.remove(0);
+                before.remove(0);
+            }
+        }
+        let mut left = room - width(&before);
+        let mut pieces = before.clone();
+        for (t, phrase) in after {
+            let mut cut = String::new();
+            for ch in t.chars() {
+                let cw = gu.text_width(&ch.to_string());
+                if cw > left {
+                    left = -1.0;
+                    break;
+                }
+                left -= cw;
+                cut.push(ch);
+            }
+            if !cut.is_empty() {
+                pieces.push((cut, phrase));
+            }
+            if left < 0.0 {
+                break;
             }
         }
         let mut cx = x + 2.0 + 2.0;
+        let caret_x = cx + width(&before);
         let mut word_x = cx;
         for (t, phrase) in &pieces {
             gu.text(t, cx, y + 2.0, 0, if *phrase { PHRASE } else { WHITE });
@@ -2053,7 +2079,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             cx += gu.text_width(t);
         }
         if gu.blink() {
-            gu.rect(cx, y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
+            gu.rect(caret_x, y + 3.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
         }
         blockers.push([x, y, w, 22.0]);
         if let Some(f) = &world.fep {
@@ -3390,6 +3416,8 @@ struct World {
     zoning_since: Option<Instant>,
     chat: combat::ChatLog,
     chat_input: String,
+    /// The chat line's caret (char index; None the end of the line, where every new line starts).
+    chat_caret: Option<usize>,
     /// The auto-translate candidate list (menu fep) while open.
     fep: Option<fep::Fep>,
     /// The log window's size and scroll state, and the top bar / Network / compass state.
@@ -4716,6 +4744,7 @@ impl App {
                             zoning_since: None,
                             chat: Default::default(),
                             chat_input: String::new(),
+                            chat_caret: None,
                             fep: None,
                             log: Default::default(),
                             hud_top: Default::default(),

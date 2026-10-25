@@ -588,7 +588,7 @@ pub fn option_enabled(w: &World, c: u16, r: &Record) -> bool {
 fn option(w: &mut World, c: u16, r: &Record) {
     match c {
         1 => {
-            w.chat_input = format!("/tell {} ", r.name);
+            (w.chat_input, w.chat_caret) = (format!("/tell {} ", r.name), None);
             w.typing = true;
         }
         3 => invite(w, r.id, r.flags),

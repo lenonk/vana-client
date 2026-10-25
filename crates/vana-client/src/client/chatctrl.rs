@@ -130,7 +130,7 @@ pub fn key(w: &mut World, key: egui::Key) {
                 6 => super::textcmd::set_chat_mode(w, 0xb, None),
                 _ => super::textcmd::set_chat_mode(w, 3, None),
             }
-            w.chat_input.clear();
+            (w.chat_input, w.chat_caret) = (String::new(), None);
             w.typing = true;
             w.chatctrl = None;
             return;

@@ -1063,6 +1063,7 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
                 Some(n) => format!("/tell {n} "),
                 None => String::new(),
             };
+            w.chat_caret = None;
             w.typing = true;
         }
         // FUN_1012b880 cases 6 / 7 / 0x18: Abilities opens abiselec, Magic the list without trusts, Trust only them.

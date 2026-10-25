@@ -34,6 +34,59 @@ fn is_phrase(c: char) -> bool {
     (PHRASE_BASE..PHRASE_BASE + 0x400).contains(&(c as u32))
 }
 
+/// The line's unit boundaries (FUN_1018fb00 / FUN_1018fa80): a phrase block is one unit, any other char one.
+fn bounds(chars: &[char]) -> Vec<usize> {
+    let mut out = vec![0];
+    let mut i = 0;
+    while i < chars.len() {
+        i += if is_phrase(chars[i]) && i + 4 <= chars.len() { 4 } else { 1 };
+        out.push(i);
+    }
+    out
+}
+
+/// The caret (E+0xa58) as a char index: None is the end of the line; never inside a block.
+pub(super) fn caret(w: &World) -> usize {
+    let chars: Vec<char> = w.chat_input.chars().collect();
+    let at = w.chat_caret.map_or(chars.len(), |c| c.min(chars.len()));
+    bounds(&chars).into_iter().filter(|&b| b <= at).max().unwrap_or(0)
+}
+
+fn set_caret(w: &mut World, at: usize) {
+    w.chat_caret = (at < w.chat_input.chars().count()).then_some(at);
+}
+
+/// Left / Right (FUN_101ac4e0 / FUN_101ac520): one unit; Home / End (VK 0x24 / 0x23): the start / the end.
+pub(super) fn caret_key(w: &mut World, key: egui::Key) {
+    let chars: Vec<char> = w.chat_input.chars().collect();
+    let (at, b) = (caret(w), bounds(&chars));
+    let to = match key {
+        egui::Key::ArrowLeft => b.into_iter().filter(|&x| x < at).max().unwrap_or(0),
+        egui::Key::ArrowRight => b.into_iter().find(|&x| x > at).unwrap_or(chars.len()),
+        egui::Key::Home => 0,
+        _ => chars.len(),
+    };
+    set_caret(w, to);
+}
+
+fn spliced(line: &str, at: usize, text: &str) -> String {
+    line.chars().take(at).chain(text.chars()).chain(line.chars().skip(at)).collect()
+}
+
+/// Typed or pasted text at the caret (FUN_101abc50): in whole only while the raw and the expanded line stay within
+/// 120 bytes.
+pub(super) fn insert(w: &mut World, text: &str) {
+    let at = caret(w);
+    let next = spliced(&w.chat_input, at, text);
+    let (raw, plain) = lengths(w, &next);
+    if raw <= MAX && plain <= MAX {
+        w.chat_input = next;
+        if w.chat_caret.is_some() {
+            w.chat_caret = Some(at + text.chars().count());
+        }
+    }
+}
+
 /// The word being completed: the chars after the last space at the end of the line (FUN_101b7c20).
 fn word(line: &str) -> &str {
     let tail = line.rsplit(' ').next().unwrap_or("");
@@ -97,6 +150,11 @@ pub(super) fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
         egui::Key::Tab | egui::Key::ArrowUp => f.sel = (f.sel + n - 1) % n,
         egui::Key::PageDown => f.sel = (f.sel + ROWS).min(n - 1),
         egui::Key::PageUp => f.sel = f.sel.saturating_sub(ROWS),
+        // These move the Japanese composition cursor (FUN_101b4fc0 / FUN_101b5020); nothing in English.
+        egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Home | egui::Key::End => {
+            w.fep = Some(f);
+            return true;
+        }
         egui::Key::Escape | egui::Key::Backspace | egui::Key::Delete => {
             // A category goes back to the root list, else the list closes.
             if f.filter.take().is_some() {
@@ -110,17 +168,21 @@ pub(super) fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
         }
         egui::Key::Enter => {
             let Some(c) = f.cands.get(f.sel).cloned() else { return true };
-            // The word being completed goes (FUN_101ad0d0), then the candidate in (FUN_101b6c00).
+            // The word being completed goes from the end of the line (FUN_101ad0d0), then the candidate in at the
+            // caret (FUN_101b6c00).
             let keep = w.chat_input.chars().count().saturating_sub(f.word_len);
-            let mut line: String = w.chat_input.chars().take(keep).collect();
+            let line: String = w.chat_input.chars().take(keep).collect();
+            let at_end = caret(w) >= keep;
+            let at = caret(w).min(keep);
+            let put = |w: &mut World, line: String, n: usize| {
+                w.chat_input = line;
+                w.chat_caret = if at_end { None } else { Some(at + n) };
+            };
             match c.id {
-                None => {
-                    line.push_str(&c.text);
-                    w.chat_input = line;
-                }
+                None => put(w, spliced(&line, at, &c.text), c.text.chars().count()),
                 Some(id) if id[3] == 0 && id[0] < 7 => {
                     // A category: nothing goes in; the list reopens on its phrases.
-                    w.chat_input = line;
+                    put(w, line, 0);
                     if f.filter.is_none() {
                         f.root.1 = f.sel;
                     }
@@ -134,13 +196,13 @@ pub(super) fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
                 }
                 Some(id) => {
                     let block: String = id.iter().enumerate().map(|(k, &b)| char::from_u32(PHRASE_BASE + 0x100 * k as u32 + b as u32).unwrap()).collect();
-                    let next = format!("{line}{block}");
+                    let next = spliced(&line, at, &block);
                     let (raw, plain) = lengths(w, &next);
                     if raw > MAX || plain > MAX {
                         w.sounds.push(Se::Error as u32);
                         return true;
                     }
-                    w.chat_input = next;
+                    put(w, next, 4);
                 }
             }
             w.sounds.push(Se::Select as u32);
@@ -156,17 +218,26 @@ pub(super) fn key(w: &mut World, key: egui::Key, shift: bool) -> bool {
     true
 }
 
-/// Backspace with the list closed (FUN_101abef0 / FUN_101abf40): a phrase at the end becomes its plain text minus
-/// its last letter; else the last char goes.
-pub(super) fn backspace(w: &mut World) {
+/// Backspace / Delete with the list closed (FUN_101abef0 / FUN_101abf40(1 / 0)): the unit before / at the caret goes;
+/// a phrase becomes its plain text minus its last / first letter.
+pub(super) fn erase(w: &mut World, back: bool) {
     let chars: Vec<char> = w.chat_input.chars().collect();
-    if chars.len() >= 4 && chars[chars.len() - 4..].iter().all(|&c| is_phrase(c)) {
-        let tail: String = chars[chars.len() - 4..].iter().collect();
-        let mut text = plain(w, &tail);
-        text.pop();
-        w.chat_input = chars[..chars.len() - 4].iter().collect::<String>() + &text;
-    } else {
-        w.chat_input.pop();
+    let (at, b) = (caret(w), bounds(&chars));
+    let unit = if back { b.windows(2).find(|u| u[1] == at) } else { b.windows(2).find(|u| u[0] == at) };
+    let Some(&[s, e]) = unit else { return };
+    let mut text = String::new();
+    if e - s == 4 {
+        text = plain(w, &chars[s..e].iter().collect::<String>());
+        if back {
+            text.pop();
+        } else if !text.is_empty() {
+            text.remove(0);
+        }
+    }
+    let n = text.chars().count();
+    w.chat_input = chars[..s].iter().collect::<String>() + &text + &chars[e..].iter().collect::<String>();
+    if w.chat_caret.is_some() {
+        set_caret(w, if back { s + n } else { s });
     }
 }
 
@@ -243,4 +314,18 @@ pub(super) fn draw(gu: &mut GameUi, f: &Fep, x: f32, line_y: f32) -> [f32; 4] {
         }
     }
     [x, y, w, h]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn units_and_splices() {
+        let p = |b: u32| char::from_u32(PHRASE_BASE + b).unwrap();
+        let line: Vec<char> = vec!['a', p(2), p(0x101), p(0x203), p(0x300), 'b'];
+        assert_eq!(bounds(&line), vec![0, 1, 5, 6]);
+        assert_eq!(spliced("abcdef", 3, "X"), "abcXdef");
+        assert_eq!(spliced("ab", 2, "c"), "abc");
+    }
 }

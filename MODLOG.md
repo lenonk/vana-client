@@ -7008,3 +7008,21 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` M2; ours client/equipsets.rs (sto
   equipped."), /lockstyleset 1 echo kept the tunic's look after /equip body took it off, the 9 s refusal, /lockstyle
   query ("Style lock mode is enabled."), /lockstyle off dropped the look.
 - Not done: the slot editor mcresed with its item list and mcrmogc (c2s 0x052 / s2c 0x116), the Monstrosity refusals.
+
+## The chat line's caret (2026-10-25)
+
+Spec `~/ffxi/lab/research/autotranslate_spec.md` 3.1 (FUN_101b5d10, English direct path, list closed); ours
+client/fep.rs, World.chat_caret.
+- Left / Right (VK 0x25 / 0x27, FUN_101ac4e0 / FUN_101ac520): one unit, a phrase block crossed in one step; Home /
+  End (VK 0x24 / 0x23): the caret (+0xa58) to 0 / the raw length. Typing and pasting go in at the caret
+  (FUN_101abc50, the 120-byte limits as before); Backspace / Delete (FUN_101abf40(1 / 0)) take the unit before / at
+  the caret, a phrase becoming its plain text minus its last / first letter. With the candidate list open the four
+  keys move the Japanese composition cursor (FUN_101b4fc0 / FUN_101b5020): nothing in English.
+- Tab still completes the word at the end of the line (FUN_101b7c20); the candidate goes in at the caret.
+- Every new line (open, history recall, Ctrl / Alt channel prefixes, /tell from a menu) starts with the caret at the
+  end.
+- Drawing: a line wider than the box keeps the caret in view, the text before it cut at the left and the rest cut at
+  the right *(inf: msgline's own scroll not traced; the event input window does the same)*.
+- Before this the line had no caret: Left / Right did nothing while typing (user report) and Delete was ignored.
+- Live (Lnxcsfix): "/echo abcdef", Left x3, X, Right, Backspace, Delete, End, "!", Home, Right x6, "<" echoed
+  "<abcXf!"; a Helldive phrase crossed by one Left ("QHelldiveZ").
