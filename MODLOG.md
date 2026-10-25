@@ -8554,3 +8554,25 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Ours: Effects::fades is ColorOp (Drive / Freeze / Snap); fx keeps the running channel-0 drives (owner task, ticks,
   target, snap) and the locks; the client steps the fades as before, Freeze clears the fade, Snap sets the colour.
   Tests color_lock, color_drive_ends, blocked_drive_stops_running_fade.
+
+## Model hide / show and the part files' generators (2026-10-25; spec ~/ffxi/lab/research/fx_sched_misc_spec.md 5)
+
+- FUN_1008e4d0 decides the model's hidden state each frame (bound to the running event: the script hide; else the
+  server hide bits, the event's filter of non-participants, /hidetrust): ours event::hidden, now what
+  Actors::hidden answers (it had the server bit only).
+- Hide, once (FUN_10085a50 [2019 FUN_10084360], model +0xb2 bit 1): vtable +0x48 (FUN_10085570) deletes every
+  non-static generator clone on the actor (static: flags 0x400 or op 1's life 0, FUN_100539e0); FUN_10085620: a
+  static clone with no live element is soft-stopped, else its first live element gets +0x17a = 1 (FUN_10046070 does not
+  draw it; it still updates); FUN_10085820 pauses the actor's scheduler tasks (FUN_10074a30, +0x22, children too;
+  the file-root flag +0x1a bit 4 exemption not traced).
+- Show (FUN_10085a10 [FUN_10084320]): FUN_100856f0 restarts the static clones with no element (FUN_100531d0) and
+  clears +0x17a; FUN_100858f0 resumes the tasks; vtable +0x308 runs FUN_10085060 on the model file and, for a
+  skeleton (FUN_100d62c0), every mesh's file: each 0x1000 generator with an attached mode (1, 2, 4, 5, 7..0xc,
+  0x10..0x13) has its clones on the actor deleted and a new one started on (actor, none). FUN_10085060 also runs as each
+  of those files comes in, so PC part files' looping generators start (14 Hume M files: 7419 eyes, 8372 feet,
+  8700 / 8708 / 8926 / 41221 mains `gm01..gm06`, ...); ours never started them.
+- Ours: fx model_hide (Effects::hidden_actors) before model_generators: kill / Instance::held (no update while hidden;
+  restarted at the show) / ElemCpu::hidden (left out of draw_items) / Task::paused; at the show the actor's
+  Owner::Actor instances go and model_generators starts them fresh. Actors::models gives the model files then the
+  part files. Not done: the skeleton's `fvib` clone made (not started) at the show; the +0x764 / +0x814 clones.
+  Tests model_gens_unhide (model 1526 `g000`), part_file_gens (8700).

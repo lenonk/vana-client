@@ -744,6 +744,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         draw,
         key: e.f(w::BIAS),
         drawn: false,
+        hidden: false,
         back: None,
         child: None,
         snapshot,

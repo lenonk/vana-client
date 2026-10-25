@@ -225,6 +225,8 @@ pub struct ElemCpu {
     /// Sort key +0x12c from the GPU (the bias until the first readback).
     pub key: f32,
     pub drawn: bool,
+    /// +0x17a: its actor's model is hidden; it updates but is not drawn (FUN_10046070).
+    pub hidden: bool,
     pub back: Option<emit::Parent>,
     /// Generator instance linked to this element (+0x164).
     pub child: Option<usize>,
@@ -326,6 +328,8 @@ pub struct Instance {
     pub flags: u32,
     /// +0xdc bit 0: soft-stopped (no emission; live elements finish).
     pub stopping: bool,
+    /// Its actor's model is hidden and it had no element: no update until shown (then restarted, FUN_100531d0).
+    pub held: bool,
     /// +0xde weather bits.
     pub de: u8,
     pub life: f32,
@@ -836,6 +840,8 @@ pub struct Effects {
     load_rx: std::sync::mpsc::Receiver<(u32, Option<Library>)>,
     /// Actors whose model generators run, by the model files they were started for.
     models: HashMap<u32, Vec<u32>>,
+    /// Actors whose model is hidden (+0xb2 bit 1, FUN_10085a50 ran).
+    hidden_actors: HashSet<u32>,
     /// Scheduler motions for the client to play: op 0x05 (FUN_100cb8e0), or None for op 0x28 (back to the stance).
     pub motions: Vec<(u32, Option<crate::dat::sched::Motion>)>,
     /// The model colour for the client (FUN_1005f6c0 channel 0: ops 0x29 / 0x2a / 0xa0; 0x88, 0xb1 / 0xb2).
@@ -990,6 +996,7 @@ impl Effects {
             failed: HashSet::new(),
             load_tx,
             load_rx,
+            hidden_actors: HashSet::new(),
             models: HashMap::new(),
             motions: Vec::new(),
             fades: Vec::new(),
@@ -1360,6 +1367,7 @@ impl Effects {
             streams: g.streams.clone(),
             flags: g.flags | 0x800,
             stopping: false,
+            held: false,
             de,
             life: g.life,
             elapsed: 0.0,
@@ -1562,7 +1570,7 @@ impl Effects {
         self.step_quakes(f);
         self.step_decals(actors);
         for i in 0..self.insts.len() {
-            let Some(inst) = self.insts[i].as_mut() else { continue };
+            let Some(inst) = self.insts[i].as_mut().filter(|x| !x.held) else { continue };
             attach(inst, f);
             // Generator op 0x11: follow the actors every frame.
             if let Some(word) = inst.streams[0].iter().find(|o| o.code == 0x11).map(|o| o.u32(1))
@@ -2190,7 +2198,7 @@ impl Effects {
             .elems
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
+            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
             .chain(self.trails.iter().enumerate().filter_map(|(i, t)| t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), TRAIL_ITEM | i as u32))))
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0));
@@ -2202,7 +2210,7 @@ impl Effects {
             .elems
             .iter()
             .enumerate()
-            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
+            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None && !c.hidden).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0));
         v.into_iter().map(|(_, i)| i).collect()

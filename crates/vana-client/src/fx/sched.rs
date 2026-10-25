@@ -137,6 +137,8 @@ pub struct Task {
     pub uid: u64,
     /// +0x141 (op 0x73's children): back to the first op at the end, until killed.
     pub looping: bool,
+    /// +0x22: paused while an actor of it is hidden (FUN_10074a30); no op progress, no time.
+    pub paused: u32,
 }
 
 impl Task {
@@ -149,7 +151,7 @@ impl Task {
         });
         static UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let uid = UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false }
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false, paused: 0 }
     }
 }
 

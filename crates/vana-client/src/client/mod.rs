@@ -3539,6 +3539,8 @@ struct FxActors<'a> {
     bells: bool,
     /// Mog House furniture: id, model file, matrix (client/furniture.rs).
     furniture: &'a [(u32, u32, glam::Mat4)],
+    /// FUN_1008e4d0's hidden models (+0xb2 bit 1): event::hidden.
+    model_hidden: &'a HashSet<u32>,
 }
 
 impl FxActors<'_> {
@@ -3674,11 +3676,12 @@ impl crate::fx::Actors for FxActors<'_> {
 
     /// Actor +0xb2 bit 1 (the server's hide bits), not alpha: a 'spop' actor at alpha 0 still takes generators.
     fn hidden(&self, id: u32) -> bool {
-        self.furniture(id).is_none() && (!self.actors.contains_key(&id) || self.entities.get(&id).is_some_and(|e| e.flags & 2 != 0))
+        self.furniture(id).is_none() && (!self.actors.contains_key(&id) || self.model_hidden.contains(&id))
     }
 
     fn models(&self) -> Vec<(u32, Vec<u32>)> {
-        let actors = self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.clone())));
+        // The model's files, then every mesh's (FUN_100d62c0: part files too).
+        let actors = self.actors.iter().filter(|(id, _)| self.places.contains_key(id)).filter_map(|(id, a)| a.character.as_ref().map(|ch| (*id, ch.files.iter().chain(&ch.part_files).copied().collect())));
         actors.chain(self.furniture.iter().map(|f| (f.0, vec![f.1]))).collect()
     }
 
@@ -9108,6 +9111,7 @@ impl App {
             let w: &mut World = world;
             let camera = Self::camera(w);
             let mut hidden = event::hidden(w);
+            let model_hidden = hidden.clone();
             // Misc.: Character Models Displayed (0x3c, 25..50; FUN_10081680): the nearest other PCs only *(inf: which
             // ones retail drops)*.
             let cap = w.game.get(0x3c) as usize;
@@ -9646,7 +9650,7 @@ impl App {
                         weekday: w.clock.map_or(0, |(t, at)| (((t as f64 + at.elapsed().as_secs_f64()) / 2.4 / 1440.0) as u64 & 7) as u32),
                     };
                     let party: Vec<u32> = std::iter::once(w.my_id).chain(w.party.party().map(|m| m.id).filter(|&id| id != w.my_id)).collect();
-                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces };
+                    let fa = FxActors { actors: &w.actors, places: &places, contacts: &w.contacts, entities: &w.entities, me: w.my_id, me_moving: w.moving, pet: w.my_pet, party, my_index: w.my_index, areas: &w.area_lights, ground: w.ground.as_ref(), bells: w.game.get(0x99) & 2 != 0, furniture: &w.furniture.pieces, model_hidden: &model_hidden };
                     if let Some(g) = &w.ground {
                         w.effects.set_covered(g.covered(camera.eye));
                     }

@@ -576,6 +576,11 @@ impl Effects {
                 i += 1;
                 continue;
             };
+            if t.paused > 0 {
+                self.tasks[i] = Some(t);
+                i += 1;
+                continue;
+            }
             self.stepping = Some(i);
             if !t.waiting {
                 t.countdown -= f.dt;
@@ -1893,7 +1898,66 @@ impl Effects {
 
     /// FUN_10083970: every looping (0x1000) generator of an actor's model files with an actor-attached mode (1, 2,
     /// 4, 5, 7-0xc, 0x10-0x13) runs cloned onto the actor; they go when the actor or its model does.
+    /// FUN_100539e0: flags 0x400, or op 1's life i16 @0x22 is 0.
+    fn static_gen(&self, g: Ref) -> bool {
+        self.reg.libs[g.0].gens.iter().find(|x| x.node == g.1).is_some_and(|x| x.flags & 0x400 != 0 || x.template().is_some_and(|o| o.i16_at(0x22) == 0))
+    }
+
+    /// FUN_10085a50 (hide, once): the actor's non-static clones go, its static ones stop (none live: held here) or
+    /// hide their first live element, its tasks pause. FUN_10085a10 (show): undone, and the model's generators start
+    /// again (FUN_10085060 replaces their clones).
+    fn model_hide(&mut self, actors: &dyn Actors) {
+        let mut ids: Vec<u32> = actors.models().into_iter().map(|m| m.0).collect();
+        ids.extend(self.hidden_actors.iter().filter(|id| !ids.contains(id)).copied().collect::<Vec<_>>());
+        for id in ids {
+            let hide = actors.hidden(id);
+            if hide == self.hidden_actors.contains(&id) {
+                continue;
+            }
+            let who = Who::Actor(id);
+            log::debug!("effects: model of {id:#x} {}", if hide { "hidden" } else { "shown" });
+            for i in 0..self.insts.len() {
+                let Some(x) = self.insts[i].as_ref().filter(|x| x.actors.contains(&who) && x.driven.is_none()) else { continue };
+                let (src, first) = (x.src, x.live.first().copied());
+                if hide && !self.static_gen(src) {
+                    self.kill(i);
+                    continue;
+                }
+                match first {
+                    Some(e) => {
+                        if let Some(Some(c)) = self.elems.get_mut(e as usize) {
+                            c.hidden = hide;
+                        }
+                    }
+                    None => {
+                        if let Some(x) = self.insts[i].as_mut() {
+                            x.held = hide;
+                            if !hide {
+                                (x.elapsed, x.countdown, x.emitted, x.stopping, x.finished) = (0.0, 0.0, 0, false, false);
+                            }
+                        }
+                    }
+                }
+            }
+            for t in self.tasks.iter_mut().flatten().filter(|t| t.a1 == who || t.a2 == who) {
+                t.paused = if hide { t.paused + 1 } else { t.paused.saturating_sub(1) };
+            }
+            if hide {
+                self.hidden_actors.insert(id);
+            } else {
+                self.hidden_actors.remove(&id);
+                self.models.remove(&id);
+                for i in 0..self.insts.len() {
+                    if self.insts[i].as_ref().is_some_and(|x| x.owner == Owner::Actor(id)) {
+                        self.kill(i);
+                    }
+                }
+            }
+        }
+    }
+
     pub(super) fn model_generators(&mut self, actors: &dyn Actors) {
+        self.model_hide(actors);
         let present = actors.models();
         let gone: Vec<u32> = self.models.keys().filter(|id| !present.iter().any(|(p, files)| p == *id && self.models.get(p) == Some(files))).copied().collect();
         for id in gone {
@@ -2298,6 +2362,103 @@ mod tests {
         morph(&mut fx, zl);
         fx.tick(&f, &Two);
         assert!(live(&fx, b"idy0").is_empty());
+    }
+
+    /// An actor with these model files whose model can be hidden.
+    struct Hideable {
+        files: Vec<u32>,
+        hidden: std::cell::Cell<bool>,
+    }
+
+    impl Actors for Hideable {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            Two.matrix(id)
+        }
+        fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+            Two.point(id, k)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, _: u32) -> (Vec<u32>, Vec<u32>) {
+            (Vec::new(), self.files.clone())
+        }
+        fn hidden(&self, id: u32) -> bool {
+            id == ORC && self.hidden.get()
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            vec![(ORC, self.files.clone())]
+        }
+    }
+
+    fn gen_insts(fx: &Effects) -> Vec<(String, f32, bool, [Who; 2])> {
+        fx.insts.iter().flatten().filter(|x| x.owner == Owner::Actor(ORC)).map(|x| (String::from_utf8_lossy(&x.name).into_owned(), x.elapsed, x.held, x.actors)).collect()
+    }
+
+    /// FUN_10085a50 / FUN_10085a10: model 1526's looping `g000` goes while the model is hidden and starts fresh when
+    /// it shows; the actor's tasks pause meanwhile.
+    #[test]
+    fn model_gens_unhide() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.preload(&[1526]);
+        while fx.reg.lib_of(1526).is_none() {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let a = Hideable { files: vec![1526], hidden: std::cell::Cell::new(false) };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        for _ in 0..30 {
+            fx.tick(&f, &a);
+        }
+        let before = gen_insts(&fx);
+        assert!(before.iter().any(|x| x.0 == "g000"), "{before:?}");
+        let ops = vec![SOp { code: 0x01, wait: 500, dur: 0, raw: vec![1, 2, 0, 0, 0xf4, 1, 0, 0] }];
+        fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(ORC), Who::Actor(HUME), None, 1.0)));
+        a.hidden.set(true);
+        fx.tick(&f, &a);
+        let hidden = gen_insts(&fx);
+        assert!(hidden.iter().all(|x| x.0 != "g000" || x.2), "{hidden:?}");
+        assert!(fx.tasks.iter().flatten().any(|t| t.paused == 1));
+        for _ in 0..10 {
+            fx.tick(&f, &a);
+        }
+        a.hidden.set(false);
+        fx.tick(&f, &a);
+        let shown = gen_insts(&fx);
+        let g = shown.iter().filter(|x| x.0 == "g000").collect::<Vec<_>>();
+        assert!(g.len() == 1 && g[0].1 <= 1.0 && !g[0].2, "{shown:?}");
+        assert!(fx.tasks.iter().flatten().all(|t| t.paused == 0));
+    }
+
+    /// FUN_100d62c0: a part file's looping generators start on the actor too (Hume M main 8700: `gm01..gm06`).
+    #[test]
+    fn part_file_gens() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        let a = Hideable { files: vec![7072, 8700], hidden: std::cell::Cell::new(false) };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        for _ in 0..200 {
+            fx.poll_loads();
+            fx.tick(&f, &a);
+            if fx.reg.lib_of(8700).is_some() && !gen_insts(&fx).is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }
+        let mut names: Vec<String> = gen_insts(&fx).into_iter().map(|x| x.0).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names, ["gm01", "gm02", "gm03", "gm04", "gm05", "gm06"]);
+        assert!(gen_insts(&fx).iter().all(|x| x.3 == [Who::Actor(ORC), Who::None]));
     }
 
     /// A posed stand-in: point k's frame RotY(0.5) at height k / 100 above its bone, the actor at x 1, size 2.
