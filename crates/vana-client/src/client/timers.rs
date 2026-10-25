@@ -1039,10 +1039,9 @@ pub fn draw_panel(gu: &mut GameUi, secs: &[Vec<Group>; 3], folded: u8, p: &Place
                     let f = (r.left / r.total).clamp(0.0, 1.0);
                     let f = if r.fills { 1.0 - f } else { f };
                     let (gx, gy) = (rx + GAUGE_X, ly + 14.0);
-                    // Frame 38's own fill (97, 64 x 6); effects take the MP fill's gold (98: 73, 73, 33; green caps at 65).
-                    let tint = if r.fills { 0x8000_60b0 } else { 0x8056_ff71 };
+                    // Frame 38's own fill (97, 64 x 6), coloured by the time left.
                     if f > 0.0 {
-                        gu.sprite_scaled_blend("menu    windowps", 97, gx + 4.0, gy + 1.0, f, 1.0, tint, 8);
+                        gu.sprite_coloured("menu    windowps", 97, gx + 4.0, gy + 1.0, f, 1.0, bar_colour(r.left), 8);
                     }
                     gu.sprite("menu    windowps", 38, gx, gy, if f == 0.0 { 0x3050_5050 } else { N });
                 }
@@ -1052,6 +1051,17 @@ pub fn draw_panel(gu: &mut GameUi, secs: &[Vec<Group>; 3], folded: u8, p: &Place
     }
     gu.clip(None);
     Some((visible(p.dock, [x, y, WIDTH, h]), hits))
+}
+
+/// The Ashita Timers add-on's bar colours (timer.lua), every bar: green from 30 s left, yellow from 20, orange from 10,
+/// else red (vertex colours, 0x80 = 1.0; alpha as fill 97's).
+fn bar_colour(left: f32) -> [u8; 4] {
+    match left {
+        l if l >= 30.0 => [0x00, 0x80, 0x00, 0xa9],
+        l if l >= 20.0 => [0x80, 0x80, 0x1a, 0xa9],
+        l if l >= 10.0 => [0x80, 0x53, 0x27, 0xa9],
+        _ => [0x80, 0x00, 0x00, 0xa9],
+    }
 }
 
 /// The part of the window on show (the top dock's is clipped at the help bar's foot).

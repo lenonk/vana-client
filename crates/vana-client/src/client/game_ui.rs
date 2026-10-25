@@ -811,6 +811,16 @@ impl GameUi {
         }
     }
 
+    /// Sprite `k` scaled, its cells' vertex colours replaced by `rgba` (0x80 = 1.0).
+    #[allow(clippy::too_many_arguments)]
+    pub fn sprite_coloured(&mut self, lib: &str, k: usize, x: f32, y: f32, sx: f32, sy: f32, rgba: [u8; 4], blend: u32) {
+        let Some(sp) = self.data.lobby.lib(lib).and_then(|l| l.sprites.get(k)) else { return };
+        for c in &sp.cells {
+            let c = crate::dat::ui::Cell { colors: [rgba; 4], ..c.clone() };
+            self.batch.push_cell(&self.data.lobby, &c, x, y, sx, sy, 0x8080_8080, blend);
+        }
+    }
+
     /// Sprite `k` through a 2x2 matrix about (x, y) (the compass disk).
     pub fn sprite_affine(&mut self, lib: &str, k: usize, x: f32, y: f32, m: [f32; 4], tint: u32) {
         let Some(l) = self.data.lobby.lib(lib) else { return };
