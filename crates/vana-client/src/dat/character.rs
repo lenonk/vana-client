@@ -43,6 +43,8 @@ pub struct Skeleton {
     /// Attach points after the bones (FUN_100343f0): (bone, translation); point 2 anchors the name plate and
     /// the target arrow (actor +0x8a6 / +0x8a7 default 2).
     pub points: Vec<(u16, Vec3)>,
+    /// Each point's rotation (x, y, z radians), for the bone-frame attach modes 9..0xc.
+    pub point_rots: Vec<Vec3>,
     /// Head look limits (FUN_10035270): {horizontal, vertical, depth} for the bones of points 3 and 7, at the end
     /// of the point table + 0x48.
     pub look_limits: [[f32; 3]; 2],
@@ -78,11 +80,15 @@ pub fn parse_skeleton(name: String, d: &[u8]) -> Result<Skeleton> {
         let o = at + 4 + i * 26;
         (o + 26 <= d.len()).then(|| (u16_at(d, o), vec3_at(d, o + 14)))
     }).collect();
+    let point_rots = (0..count).map_while(|i| {
+        let o = at + 4 + i * 26;
+        (o + 26 <= d.len()).then(|| vec3_at(d, o + 2))
+    }).collect();
     let lim = at + 4 + count * 26 + 0x48;
     let look_limits = [0, 1].map(|i| [0, 1, 2].map(|k| if lim + 12 * i + 4 * k + 4 <= d.len() { f32_at(d, lim + 12 * i + 4 * k) } else { 0.0 }));
     let at_box = at + 4 + count * 26;
     let boxes = (0..3).take_while(|i| at_box + 0x18 * i + 0x18 <= d.len()).map(|i| std::array::from_fn(|k| f32_at(d, at_box + 0x18 * i + 4 * k))).collect();
-    Ok(Skeleton { name, bones, points, look_limits, boxes })
+    Ok(Skeleton { name, bones, points, point_rots, look_limits, boxes })
 }
 
 /// One bone's share of a vertex. `pos`/`normal` are pre-scaled by `weight` in the file.

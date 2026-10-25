@@ -42,6 +42,11 @@ pub trait Actors {
     fn pc(&self, _id: u32) -> Option<(u8, i8)> {
         None
     }
+    /// Point `k`'s whole frame in model space (FUN_1002a780: Rx Ry Rz of the point with its offset, times the drawn
+    /// bone; translation with the model scale), for attach modes 9..0xc.
+    fn point_frame(&self, _id: u32, _k: u16) -> Option<Mat4> {
+        None
+    }
     /// The first collision face on a segment (FUN_10181590's vertical test: attach point 0x30, emission op 0x42).
     fn ground_hit(&self, _from: Vec3, _to: Vec3) -> Option<Vec3> {
         None

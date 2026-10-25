@@ -1874,10 +1874,10 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             for m in au.no_attach.keys() {
                 gaps.entry(format!("attach mode {m:#x} unplaced")).or_default().push(file);
             }
-            // What is still inferred: modes 9..0xc (the bone matrix rotation) and point 0x35 (the water height).
+            // What is still inferred: modes 0xb / 0xc (the heading of the bone frame) and point 0x35 (the water height).
             for ((m, a, b), _) in au.attach.iter() {
-                if (9..=0xc).contains(m) {
-                    gaps.entry(format!("attach mode {m:#x} (bone rotation inferred)")).or_default().push(file);
+                if (0xb..=0xc).contains(m) {
+                    gaps.entry(format!("attach mode {m:#x} (bone heading inferred)")).or_default().push(file);
                 }
                 if *a == 0x35 || *b == 0x35 {
                     gaps.entry("attach point 0x35 (water height)".into()).or_default().push(file);

@@ -3391,6 +3391,19 @@ impl crate::fx::Actors for FxActors<'_> {
         bones.get(*bone as usize).map(|(q, t)| (*t + *q * *off) * a.scale)
     }
 
+    fn point_frame(&self, id: u32, k: u16) -> Option<glam::Mat4> {
+        let a = self.actors.get(&id)?;
+        let ch = a.character.as_ref()?;
+        let (bone, off) = *ch.skeleton.points.get(k as usize)?;
+        let r = ch.skeleton.point_rots.get(k as usize).copied().unwrap_or(Vec3::ZERO);
+        let bones = if a.bones.is_empty() { &a.rest } else { &a.bones };
+        let (q, t) = *bones.get(bone as usize)?;
+        let local = glam::Mat4::from_translation(off) * glam::Mat4::from_rotation_z(r.z) * glam::Mat4::from_rotation_y(r.y) * glam::Mat4::from_rotation_x(r.x);
+        let mut f = glam::Mat4::from_rotation_translation(q, t) * local;
+        f.w_axis = (f.w_axis.truncate() * a.scale).extend(1.0);
+        Some(f)
+    }
+
     fn ground_hit(&self, from: Vec3, to: Vec3) -> Option<Vec3> {
         let d = self.ground?.raycast(from, to)?;
         Some(from + (to - from).normalize_or_zero() * d)

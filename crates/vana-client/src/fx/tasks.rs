@@ -1376,9 +1376,30 @@ impl Effects {
         let p1 = |k: u16| self.who_point(a1, k, a2, eye, off_a, actors);
         let p2 = |k: u16| self.who_point(a2, k, a1, eye, off_b, actors);
         let mut dist = 0.0;
+        // FUN_1003bd90 -> vtable +0x1d0: the point's frame on its drawn bone, through the placement (9 / 0xa); 0xb /
+        // 0xc keep only its heading, RotY(-atan2(B._33, B._31)), at the point *(inf: the decompile's arguments there are
+        // garbled; FUN_100d4a90 not traced)*. Dolls keep the point with the actor's turn.
+        let bone_frame = |w: Who, k: u16| match w {
+            Who::Actor(id) => Some(actors.matrix(id)? * actors.point_frame(id, k)?),
+            _ => None,
+        };
+        let heading = |b: Mat4| {
+            let mut r = Mat4::from_rotation_y(-b.z_axis.z.atan2(b.z_axis.x));
+            r.w_axis = b.w_axis;
+            r
+        };
         let m = match x.mode {
-            1 | 9 | 0xb => p1(pc).map(|(m, p)| at(m, p)),
-            2 | 0xa | 0xc => p2(pt).map(|(m, p)| at(m, p)),
+            9 | 0xa => bone_frame(if x.mode == 9 { a1 } else { a2 }, if x.mode == 9 { pc } else { pt }).map(|b| {
+                let mut r = rot(b);
+                r.x_axis = r.x_axis.normalize_or_zero();
+                r.y_axis = r.y_axis.normalize_or_zero();
+                r.z_axis = r.z_axis.normalize_or_zero();
+                r.w_axis = b.w_axis;
+                r
+            }).or_else(|| if x.mode == 9 { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
+            0xb | 0xc => bone_frame(if x.mode == 0xb { a1 } else { a2 }, if x.mode == 0xb { pc } else { pt }).map(heading).or_else(|| if x.mode == 0xb { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
+            1 => p1(pc).map(|(m, p)| at(m, p)),
+            2 => p2(pt).map(|(m, p)| at(m, p)),
             3 | 0xd | 0x16 | 0x1a => match (p1(pc), p2(pt)) {
                 (Some((_, p1)), Some((_, p2))) => {
                     let (m, d) = two(p1, p2);

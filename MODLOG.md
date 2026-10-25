@@ -7746,3 +7746,14 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Pollen (3979): `nami` (bee_mitunami) for 131 ticks from tick 130; seen live 2026-10-25: the bee's body turns a pale
   olive green under the burst during the fade-in and scroll; not compared with retail.
 - Ops 0x48 / 0x49 (+0x734 bit 1, the refraction pass) are not done.
+
+## Effect attach modes 9..0xc: the bone frame (2026-10-25)
+
+- Modes 9 / 0xa (FUN_1003bd90 -> actor vtable +0x1d0): the generator rides point pc of the caster / pt of the target
+  with its whole frame: Rx Ry Rz of the point (the skeleton keeps the three angles, Skeleton::point_rots, bytes 2..13 of
+  each 26-byte point) with its offset, times the drawn bone, through the placement (Actors::point_frame; the rotation
+  normalised, the translation with the model scale). 0xb / 0xc: only that frame's heading, RotY(-atan2(B._33, B._31)),
+  at the point *(inf: the decompile's arguments are garbled there)*. FUN_100d4a90's details (translation +0x6a8 when
+  +0xa00 == 0) are not traced. Dolls keep the point with the actor's turn. 152 files use mode 9 (weapon and limb
+  effects that turn with the swing). Not seen live yet.
+
