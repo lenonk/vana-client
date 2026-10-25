@@ -2,8 +2,8 @@
 //! questionnaire of DAT 5813 (Shift-JIS text: nodes, slots, DISP conditions, links) through its select, question and
 //! leaf pages (FUN_102185d0 / FUN_10218ac0 / FUN_102194a0), the question's text field, and the report c2s 0x0D3
 //! (Return on a question or leaf page: type 1; Execute: type 2 with the queue line, or 3 / 1), c2s 0x0D4 on open and
-//! 0x0F0 for EXEC.RESCUE. Not done: the GM reply page (s2c 0x0B6, gmNotice.fdt, c2s 0x0D5), the language row (area
-//! code 2 only), the mouse.
+//! 0x0F0 for EXEC.RESCUE; the GM reply page (s2c 0x0B6 assembled into the one-node gmNotice script, c2s 0x0D5 on
+//! "Delete this message."). Not done: the language row (area code 2 only), the mouse, netstat's reply mark.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -223,8 +223,50 @@ impl FaqMain {
     }
 }
 
-/// faqsub's Help Desk row (FUN_10217a40): c2s 0x0D4 {u16 counter (never 0), u16 0}, the script read from the root.
+/// A GM reply being assembled: msgId, the last seqId, the text, complete.
+type Reply = Option<(u32, u16, Vec<u8>, bool)>;
+
+/// s2c 0x0B6 (LAB_101132b0): a new msgId starts over, its next seqId appends (0x400 bytes at most), pktNum 0 ends it.
+fn assemble(r: &mut Reply, id: u32, seq: u16, last: bool, text: &[u8]) {
+    match r.as_mut() {
+        Some(r) if r.0 == id => {
+            if seq == r.1.wrapping_add(1) && !r.3 {
+                r.2.extend_from_slice(text);
+                r.2.truncate(0x400);
+                r.1 = seq;
+                r.3 = last;
+            }
+        }
+        _ => *r = Some((id, seq, text.to_vec(), last)),
+    }
+}
+
+pub fn on_message(w: &mut World, id: u32, seq: u16, last: bool, text: &[u8]) {
+    assemble(&mut w.gm_reply, id, seq, last, text);
+    if last {
+        log::info!("help desk: a GM reply is waiting ({} bytes)", w.gm_reply.as_ref().map_or(0, |r| r.2.len()));
+    }
+}
+
+/// FUN_10115020's gmNotice.fdt: `DEF SELECTNODE 0`, `LABEL "NOTICE"`, `HEADER "<the text>"`: a leaf page.
+fn reply_script(text: &[u8]) -> Script {
+    let node = Node { header: crate::dat::font::decode_sjis(text), ..Default::default() };
+    Script { version: 0, nodes: HashMap::from([(0, node)]), links: Vec::new() }
+}
+
+/// faqsub's Help Desk row (FUN_10217a40): c2s 0x0D4 {u16 counter (never 0), u16 0}, the script read from the root; the
+/// GM's reply instead while one is waiting.
 pub fn open(w: &mut World) -> Option<FaqMain> {
+    if let Some((_, _, text, true)) = &w.gm_reply {
+        let script = reply_script(text);
+        w.faq_counter = w.faq_counter.wrapping_add(1).max(1);
+        let mut b = vec![0u8; 4];
+        b[..2].copy_from_slice(&w.faq_counter.to_le_bytes());
+        let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x0D4, body: b });
+        let mut f = FaqMain { script, path: vec![0], cursor: 0, scroll: 0.0, follow: true, field: None, inputs: HashMap::new(), remembered: None };
+        f.enter_page();
+        return Some(f);
+    }
     let bytes = w.index.clone()?.read(FILE).map_err(|e| log::warn!("help desk: DAT {FILE}: {e:#}")).ok()?;
     w.faq_counter = w.faq_counter.wrapping_add(1).max(1);
     let mut b = vec![0u8; 4];
@@ -360,6 +402,7 @@ fn enter(w: &mut World) {
         (_, 0) => {
             w.sounds.push(Ui::Select as u32);
             let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x0D5, body: vec![0; 8] });
+            w.gm_reply = None;
             report(w, 1);
             close(w);
         }
@@ -638,5 +681,26 @@ mod tests {
         assert_eq!((f.page(), f.rows()), (Page::Select, vec![1, -1]));
         f.path.push(3);
         assert_eq!((f.page(), f.rows()), (Page::Question, vec![1, 2, 0, -1]));
+    }
+}
+
+
+#[cfg(test)]
+mod reply_tests {
+    use super::*;
+
+    /// Chunks of one msgId append in order; a repeat or a gap is dropped; pktNum 0 completes; a new msgId restarts.
+    #[test]
+    fn assembly() {
+        let mut r: Reply = None;
+        assemble(&mut r, 7, 1, false, b"Hello ");
+        assemble(&mut r, 7, 1, false, b"again ");
+        assemble(&mut r, 7, 3, false, b"gap ");
+        assemble(&mut r, 7, 2, true, b"there.");
+        assert_eq!(r.as_ref().map(|r| (r.2.as_slice(), r.3)), Some((&b"Hello there."[..], true)));
+        assemble(&mut r, 8, 1, false, b"New");
+        assert_eq!(r.as_ref().map(|r| (r.0, r.2.as_slice(), r.3)), Some((8, &b"New"[..], false)));
+        let s = reply_script(b"Hi");
+        assert_eq!(s.nodes.get(&0).map(|n| (n.header.as_str(), n.slots.len())), Some(("Hi", 0)));
     }
 }

@@ -371,6 +371,8 @@ pub enum NetEvent {
     JobPoints(u8, [[u16; 3]; 24]),
     /// s2c 0x08C (0x100e4ca0): merit records {u16 id (index * 2, bit 0 = delete), u8 next cost, u8 level} from @8.
     MeritList(Vec<(u16, u8, u8)>),
+    /// s2c 0x0B6 SET_GMMSG (LAB_101132b0): msgId u32 @4, seqId u16 @8, pktNum u16 @0xa (0 = the last), text @0xc (244).
+    GmMessage { id: u32, seq: u16, last: bool, text: Vec<u8> },
     /// s2c 0x08D (LAB_100e4fd0): 64 job point records @4 {u16 entry id, u16 next cost | level << 10}.
     JobPointList(Vec<(u16, u8, u16)>),
     Monstrosity { kind: u16, rank: u32, prestige: u16 },
@@ -884,6 +886,12 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x063 if p.u16(4) == 5 => {
                         let jobs = std::array::from_fn(|j| [0, 2, 4].map(|k| p.u16(0xc + 6 * j + k)));
                         tx.send(NetEvent::JobPoints(p.u8(8), jobs))?
+                    }
+                    0x0B6 => {
+                        let end = p.data.len().min(0xc + 244);
+                        let raw = p.data.get(0xc..end).unwrap_or_default();
+                        let text = raw.iter().take_while(|&&c| c != 0).copied().collect();
+                        tx.send(NetEvent::GmMessage { id: p.u32(4), seq: p.u16(8), last: p.u16(0xa) == 0, text })?
                     }
                     0x08C => {
                         let n = (p.u16(4) as usize).min(p.data.len().saturating_sub(8) / 4);

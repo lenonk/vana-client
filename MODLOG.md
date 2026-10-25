@@ -7372,3 +7372,16 @@ Spec `~/ffxi/lab/research/menu_rows2_spec.md` L4.5 (client/linklist.rs).
   then c2s 0x071 {0, 0, kind 1, name}. Every action closes link12.
 - Not seen live (needs a linkshell on the test character); the record parse has a unit test. Not done: the comment
   fetch on Enter (kind 4), as in scresult.
+
+## Help Desk: the GM reply page (2026-10-25)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
+- s2c 0x0B6 SET_GMMSG (LAB_101132b0): msgId u32 @4, seqId u16 @8, pktNum u16 @0xa (0 = the last), text @0xc (244).
+  A new msgId starts over; the next seqId of the same one appends (0x400 bytes at most); a repeat or a gap is dropped;
+  pktNum 0 completes it (unit test). Retail writes it as "gmNotice.fdt" (DEF SELECTNODE 0, LABEL "NOTICE", HEADER
+  "<text>") and the next Help Desk call (faqmain) reads that instead of DAT 5813: ours builds the same one-node
+  script in memory, a leaf page whose row 0 reads "Delete this message." (9 0x7b) and sends c2s 0x0D5 {0}, then the
+  0x0D3 type 1 report and close, as the other Return paths. The waiting reply is cleared on 0x0D5.
+- LSB sends the oldest unread `help_desk.response` at zone-in as 0x0B6 chunks; 0x0D5 marks it read and sends the
+  next. Not tried live (needs a reply written into help_desk by hand: the user's OK first). Not done: netstat's
+  "reply waiting" mark (+0x30 = 2, its drawing not traced).

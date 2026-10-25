@@ -3906,6 +3906,8 @@ struct World {
     helpdesk: Option<helpdesk::HelpDesk>,
     /// The GM call's packet counters: c2s 0x0D4's Id (DAT_104e1b5c) and 0x0D3's pktId (DAT_104e1b64), never 0.
     faq_counter: u16,
+    /// s2c 0x0B6's GM reply (msgId, last seqId, text, complete): the next Help Desk call shows it (client/faqmain.rs).
+    gm_reply: Option<(u32, u16, Vec<u8>, bool)>,
     faq_report: u8,
     /// Social row MacroPalette's windows, mcrselec's page (its object is permanent) and mcrledit's line clipboard.
     macroedit: Option<macroedit::MacroEdit>,
@@ -5148,6 +5150,7 @@ impl App {
                             bazaar_customers: 0,
                             helpdesk: None,
                             faq_counter: 0,
+                            gm_reply: None,
                             faq_report: 0,
                             macroedit: None,
                             mcr_page: 0,
@@ -5981,6 +5984,7 @@ impl App {
                     world.jp_jobs = Some(jobs);
                 }
                 NetEvent::MeritList(recs) => merits::on_list(world, &recs),
+                NetEvent::GmMessage { id, seq, last, text } => faqmain::on_message(world, id, seq, last, &text),
                 NetEvent::JobPointList(recs) => jobpoints::on_list(world, &recs),
                 NetEvent::Monstrosity { kind, rank, prestige } => {
                     let m = world.monstrosity.get_or_insert((0, 0, 0));
