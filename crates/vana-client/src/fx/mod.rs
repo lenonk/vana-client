@@ -10,6 +10,7 @@ pub mod sched;
 pub mod sound;
 pub mod spline;
 mod tasks;
+pub mod trail;
 pub use tasks::{HOLD_REACT, HOLD_STATUS};
 pub use tasks::event_action_file;
 
@@ -409,6 +410,9 @@ pub struct Registry {
     /// fx-sweep's record of what runs skipped or could not resolve (off in the client).
     pub audit: Option<Audit>,
 }
+
+/// `Effects::draw_items` marks an after-image slot with this bit.
+pub const TRAIL_ITEM: u32 = 0x8000_0000;
 
 /// A ground projection's decal (FUN_10182700): blend +0x198, and the collision faces of the 3x3 cells around the
 /// element (world vertices), taken again when it moves into another cell.
@@ -830,6 +834,9 @@ pub struct Effects {
     next_drive: u64,
     /// Op 0x88's colour guards: (owner task uid, actor, ticks left).
     color_guards: Vec<(u64, u32, f32)>,
+    /// Op 0x2c's after-images by GPU slot (they outlive their scheduler task), and whether any changed this frame.
+    pub trails: Vec<Option<trail::Trail>>,
+    pub trails_dirty: bool,
     /// Op 0xb5's blink holds: (owner task uid, actor1, ticks left).
     blink_holds: Vec<(u64, u32, f32)>,
     /// Actors that do not blink this frame (actor +0x8aa != 0).
@@ -942,6 +949,8 @@ impl Effects {
             color_guards: Vec::new(),
             pins: Vec::new(),
             blink_holds: Vec::new(),
+            trails: Vec::new(),
+            trails_dirty: false,
             no_blink: HashSet::new(),
             pinned: HashMap::new(),
             effect_motions_done: Vec::new(),
@@ -1011,6 +1020,8 @@ impl Effects {
         }
         self.weathers.clear();
         self.tasks.clear();
+        self.trails.clear();
+        self.trails_dirty = true;
         self.dolls.clear();
         self.pending.clear();
         self.models.clear();
@@ -1447,6 +1458,7 @@ impl Effects {
         self.model_generators(actors);
         self.run_pending(f, actors);
         self.step_tasks(f, actors);
+        self.step_trails(f, actors);
         // Op 0xbf: the push starts when its delay has counted down (its task's destructor).
         for k in self.knocks_later.iter_mut() {
             k.0 -= dt;
@@ -2066,6 +2078,43 @@ impl Effects {
     }
 
     /// Live elements to draw, back to front (the CMoOT walk: larger keys first, insertion order within one).
+    /// The after-images (op 0x2c) a retail frame on; one goes with its actor. Afb points are placed through the
+    /// actor's posed root, point 0, whose rest turn RotY(pi / 2) cancels (stand-ins without one: the placement).
+    fn step_trails(&mut self, f: &Frame, actors: &dyn Actors) {
+        for slot in 0..self.trails.len() {
+            let Some(tr) = self.trails[slot].as_mut() else { continue };
+            let Some(m) = actors.matrix(tr.actor) else {
+                self.trails[slot] = None;
+                self.trails_dirty = true;
+                continue;
+            };
+            let id = tr.actor;
+            let place = || {
+                let s = Mat4::from_scale(Vec3::splat(actors.scale(id)));
+                Some(actors.point_frame(id, 0).map_or(m * s, |p| m * p * s * Mat4::from_rotation_y(std::f32::consts::FRAC_PI_2)))
+            };
+            let (live, changed) = tr.step(f.dt, place);
+            if !live {
+                self.trails[slot] = None;
+            }
+            self.trails_dirty |= changed;
+        }
+    }
+
+    /// The draw order with the after-images among the elements (`TRAIL_ITEM | slot`), farthest first.
+    pub fn draw_items(&self) -> Vec<u32> {
+        let view = self.last_frame.map_or(Mat4::IDENTITY, |f| f.view);
+        let mut v: Vec<(f32, u32)> = self
+            .elems
+            .iter()
+            .enumerate()
+            .filter_map(|(i, c)| c.as_ref().filter(|c| c.draw != Draw::None).map(|c| (c.key.clamp(0.0, 512.0), i as u32)))
+            .chain(self.trails.iter().enumerate().filter_map(|(i, t)| t.as_ref().filter(|t| t.count >= 2).map(|t| (t.key(&view), TRAIL_ITEM | i as u32))))
+            .collect();
+        v.sort_by(|a, b| b.0.total_cmp(&a.0));
+        v.into_iter().map(|(_, i)| i).collect()
+    }
+
     pub fn draw_order(&self) -> Vec<u32> {
         let mut v: Vec<(f32, u32)> = self
             .elems

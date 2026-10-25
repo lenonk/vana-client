@@ -434,6 +434,32 @@ impl Effects {
         Ok(None)
     }
 
+    /// FUN_100ce480 / vtable +0x1e8 for an Afb: the motion files in order, matched on 3 letters, then the first Afb of
+    /// any name in the part files. Err while one of them is still loading.
+    fn find_afb(&mut self, actor: u32, name: u32, actors: &dyn Actors) -> Result<Option<super::trail::Afb>, ()> {
+        let (parts, motions) = actors.files(actor);
+        let want = name.to_le_bytes();
+        let mut waiting = false;
+        for (files, any) in [(motions, false), (parts, true)] {
+            for file in files {
+                match self.lib_for(file) {
+                    Some(l) => {
+                        let lib = &self.reg.libs[l];
+                        if let Some(n) = lib.tree.nodes.iter().position(|x| x.kind == kind::AFB && (any || x.name[..3] == want[..3])) {
+                            return Ok(super::trail::Afb::parse(lib.data(n)));
+                        }
+                    }
+                    None if self.failed.contains(&file) => {}
+                    None => waiting = true,
+                }
+            }
+            if waiting {
+                return Err(());
+            }
+        }
+        Ok(None)
+    }
+
     pub(super) fn spawn_task(&mut self, r: Ref, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32, parent: Option<usize>) -> usize {
         let ops = self.sched_ops(r);
         log::debug!("effects: task {} (DAT {}) on {a1:?} -> {a2:?}", String::from_utf8_lossy(&self.reg.libs[r.0].tree.nodes[r.1].name), self.reg.libs[r.0].file_id);
@@ -1013,6 +1039,24 @@ impl Effects {
             0x88 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
                     self.color_guards.push((t.uid, id, op.dur.max(0) as f32 * t.speed));
+                }
+                Flow::Next
+            }
+            // FUN_1005a432: actor1's Afb by the 4cc's first three letters (motion files newest first, then the model's;
+            // failing those the first Afb in its part files) starts a top-level after-image; none: nothing.
+            0x2c => {
+                let Some(id) = self.doll_of(t.a1).id() else { return Flow::Next };
+                match self.find_afb(id, op.u32_at(8), actors) {
+                    Err(()) => return Flow::Retry,
+                    Ok(Some(afb)) => {
+                        let tr = super::trail::Trail::new(id, afb, &op.raw);
+                        match self.trails.iter().position(|t| t.is_none()) {
+                            Some(i) => self.trails[i] = Some(tr),
+                            None => self.trails.push(Some(tr)),
+                        }
+                        self.trails_dirty = true;
+                    }
+                    Ok(None) => {}
                 }
                 Flow::Next
             }
@@ -1703,7 +1747,8 @@ impl Effects {
         let insts = self.insts.iter().flatten().filter(|x| x.mode != 0).flat_map(|x| x.actors);
         let tasks = self.tasks.iter().flatten().flat_map(|t| [t.a1, t.a2]);
         let pending = self.pending.iter().flat_map(|p| [p.a1, p.a2]);
-        insts.chain(tasks).chain(pending).filter_map(|w| self.doll_of(w).id()).chain(self.dolls.iter().map(|d| d.of)).collect()
+        let trails = self.trails.iter().flatten().filter(|t| t.placing()).map(|t| t.actor);
+        insts.chain(tasks).chain(pending).filter_map(|w| self.doll_of(w).id()).chain(self.dolls.iter().map(|d| d.of)).chain(trails).collect()
     }
 
     pub fn task_count(&self) -> usize {
@@ -1763,6 +1808,7 @@ impl Effects {
     }
 
     pub fn reset_runs(&mut self) {
+        self.trails.clear();
         self.shine.clear();
         self.shine_drives.clear();
         self.pending.clear();

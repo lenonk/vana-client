@@ -272,6 +272,11 @@ pub struct EffectsGpu {
     sverts: (wgpu::Buffer, usize),
     sframes: (wgpu::Buffer, usize),
     mdata: (wgpu::Buffer, usize),
+    /// Op 0x2c's after-images (fx/trail.rs gpu_words), their bind group (group 3) and pipeline.
+    trails: (wgpu::Buffer, usize),
+    trail_layout: wgpu::BindGroupLayout,
+    trail_group: Option<wgpu::BindGroup>,
+    trail_pipe: wgpu::RenderPipeline,
     update_group: Option<wgpu::BindGroup>,
     draw_group: Option<wgpu::BindGroup>,
     meshes: Vec<Option<GpuMesh>>,
@@ -394,6 +399,20 @@ impl EffectsGpu {
         let mut ring_pipes = HashMap::new();
         let mut distmodel_pipes = HashMap::new();
         let mut distmorph_pipes = HashMap::new();
+        // The after-image ribbon (0x1001c930): SRCALPHA / ONE, z test without z write, cull none.
+        let trail_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor { label: Some("effects trails"), entries: &[storage(0, true, vs)] });
+        let trail_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("effects trails"), bind_group_layouts: &[Some(&draw_layout), None, None, Some(&trail_layout)], immediate_size: 0 });
+        let trail_pipe = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("effects trail"),
+            layout: Some(&trail_pl),
+            vertex: wgpu::VertexState { module: &dmod, entry_point: Some("vs_trail"), compilation_options: Default::default(), buffers: &[] },
+            primitive: wgpu::PrimitiveState { cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState { format: DEPTH_FORMAT, depth_write_enabled: Some(false), depth_compare: Some(wgpu::CompareFunction::LessEqual), stencil: Default::default(), bias: Default::default() }),
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState { module: &dmod, entry_point: Some("fs_trail"), compilation_options: Default::default(), targets: &[Some(wgpu::ColorTargetState { format, blend: Some(blend_state(2)), write_mask: wgpu::ColorWrites::COLOR })] }),
+            multiview_mask: None,
+            cache: None,
+        });
         let mut distring_pipes = HashMap::new();
         // CMoD3mSpecularElem: group 2 the specular image (2D, cube) and its sampler.
         let spec_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -516,6 +535,10 @@ impl EffectsGpu {
             ring_pipes,
             distmodel_pipes,
             distmorph_pipes,
+            trails: table("effects trails"),
+            trail_layout,
+            trail_group: None,
+            trail_pipe,
             distring_pipes,
             spec_pipes,
             spec_layout,
@@ -728,6 +751,23 @@ impl EffectsGpu {
             q.write_buffer(&self.mdata.0, 0, bytemuck::cast_slice(&reg.morph_data));
             reg.morphs_dirty = false;
         }
+        if fx.trails_dirty {
+            let words: Vec<u32> = fx.trails.iter().flat_map(|t| t.as_ref().map_or_else(|| vec![0u32; crate::fx::trail::WORDS], |t| t.gpu_words())).collect();
+            if !words.is_empty() {
+                if Self::fit(gpu, &mut self.trails, words.len() * 4, "effects trails") {
+                    self.trail_group = None;
+                }
+                q.write_buffer(&self.trails.0, 0, bytemuck::cast_slice(&words));
+            }
+            fx.trails_dirty = false;
+        }
+        if self.trail_group.is_none() {
+            self.trail_group = Some(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("effects trails"),
+                layout: &self.trail_layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: self.trails.0.as_entire_binding() }],
+            }));
+        }
         rebind |= Self::fit(gpu, &mut self.slots, fx.slots.len() * SLOT_WORDS * 4, "effects slots");
         if !fx.slots.is_empty() {
             q.write_buffer(&self.slots.0, 0, bytemuck::cast_slice(&fx.slots));
@@ -899,7 +939,7 @@ impl EffectsGpu {
     /// is not drawn).
     #[allow(clippy::too_many_arguments)]
     pub fn draw(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: (&wgpu::TextureView, &wgpu::TextureView, [u32; 2]), color_tex: Option<&wgpu::Texture>, fx: &Effects, cam: (Mat4, Mat4, glam::Vec3), clip: [f32; 2], fog_color: [f32; 3], fog: [f32; 2]) {
-        if self.draw_group.is_none() || self.count == 0 {
+        if self.draw_group.is_none() || (self.count == 0 && fx.trails.iter().all(|t| t.is_none())) {
             return;
         }
         let order = fx.draw_order();
@@ -1034,7 +1074,17 @@ impl EffectsGpu {
         // Unknown modes keep the previous element's blend (additive before the first).
         let mut class = 2usize;
         let mut bound: Option<(bool, usize, bool)> = None;
-        for e in order {
+        for e in fx.draw_items() {
+            // An after-image among the elements (0x1001c930 from the shared depth list).
+            if e & crate::fx::TRAIL_ITEM != 0 {
+                let slot = e & !crate::fx::TRAIL_ITEM;
+                let (Some(tr), Some(g)) = (fx.trails.get(slot as usize).and_then(|t| t.as_ref()), self.trail_group.as_ref()) else { continue };
+                pass.set_pipeline(&self.trail_pipe);
+                bound = None;
+                pass.set_bind_group(3, g, &[]);
+                pass.draw(0..6 * (tr.count as u32 - 1) * (1 + tr.split as u32), slot..slot + 1);
+                continue;
+            }
             let Some(c) = fx.elems[e as usize].as_ref() else { continue };
             if e >= self.count {
                 continue;

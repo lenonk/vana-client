@@ -7951,3 +7951,32 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   first, then a 0x4e without a list of its own). Ours: emit::Parent::src, the list resolved in the parent's scope
   and used by this stream's 0x4e / 0x4f (plain and batched).
 
+## Weapon after-image: scheduler op 0x2c, Afb chunks (2026-10-25; spec ~/ffxi/lab/research/fx_afterimage_spec.md)
+
+- Op 0x2c (case at c:66561; 2322 ops in 1477 files, nearly all the PC weapon-skill motion files 33228.. per race, plus
+  NPC swings and some mob moves): actor1's Afb (chunk 0x54) by the first three letters of the 4cc in its motion files
+  newest first, then the model's; failing those the first Afb of any name in its part files; none: nothing, no log.
+  It starts two top-level tasks (the ribbon outlives the scheduler); `ticks` is never read, the ribbon ends when one
+  sample is left. Record: colours A / B @0x10 / @0x14 (R G B A), V18 @0x18 (RGB decrement for both, A's alpha
+  decrement), V28.w @0x34 (B's alpha), shrink A / B @0x38 / @0x3c, RGB delay @0x40, split @0x44, speed % @0x56;
+  vec3 @0x48 and V28.xyz have no reader.
+- Afb: u8 N, u8 R (points per 30 units), f32 x3 scale (1/128), u8 start @0x10, u8 length @0x12 (the rate numerator),
+  rails A (blade tip) / B (grip) at u32 @0x14 / @0x18 of {i16 x, y, z, u8 0x80, u8 0}, version byte @0x1f = 0. A
+  baked trajectory in the actor's own frame, placed through skeleton point 0 (the root) x RotY(pi / 2), which
+  cancels the root's rest quarter turn.
+- FUN_1001bc80 per frame: t += ticks x 2 len / max(dur, 1) x (u56 ? u56 x 0.005 : 0.5); point i is taken once
+  T(i + 1) <= t; from the third control point each adds 4 quadratic B-spline samples (u 0.25..1) to an 80-entry ring,
+  each followed by an aging (FUN_1001c260: rails close along their line, alpha down, RGB down after the delay); a
+  frame with no point ages once; the tail is trimmed by the dead pairs (both edges < 0.005, no alpha or no RGB).
+  Draw (0x1001c930, in the effects' depth list): world-space triangle strip, newest first, (A, B) or with split
+  (mid, A) / (mid, B), vertex colours only, SRCALPHA / ONE, no z write, no fog.
+- Ours: fx/trail.rs (Afb, Trail: the points, spline and counters a retail frame of 2 ticks; the aging as the spec's
+  closed form, for the trim), Effects::trails / draw_items (trails among the elements by the newest tip's depth),
+  effects.wgsl vs_trail / fs_trail (group 3: 32-word header + 80 samples a trail; the closed form per vertex;
+  retail's NaN rails (a zero-shrink rail meeting an equal sample) drop their triangles). Trail actors are posed while
+  points are due. Tests parse_fast_blade, fast_blade_timeline (9 / 13 samples at ticks 28 / 30, done at 92, as the
+  spec's literal model). Seen offscreen (fx-shot --file 33228): the arc from 1.1 up behind the caster over its head
+  to the ground 2.8 ahead, the tip half flat grey, the grip half fading, narrowing.
+- Open (spec 7): whether retail finds the Afbs that sit only in mob-move effect files (ours does, once op 0x05 has put
+  the file on the actor); which callback the actor's removal fires (ours drops the trail with its actor).
+

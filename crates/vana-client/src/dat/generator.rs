@@ -20,6 +20,8 @@ pub mod kind {
     pub const MMB: u8 = 0x2e;
     pub const VTX: u8 = 0x3e;
     pub const SPH: u8 = 0x4a;
+    /// Afb: a weapon after-image's two rails (fx/trail.rs).
+    pub const AFB: u8 = 0x54;
 }
 
 /// One chunk of a DAT in its folder: type-1 chunks open a folder, type-0 chunks close it.

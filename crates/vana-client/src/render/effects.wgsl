@@ -732,6 +732,8 @@ struct Draw {
 @group(2) @binding(0) var spec2d: texture_2d<f32>;
 @group(2) @binding(1) var speccube: texture_cube<f32>;
 @group(2) @binding(2) var spec_samp: sampler;
+// fx/trail.rs gpu_words: per after-image a 32-word header and 80 samples of 8 words.
+@group(3) @binding(0) var<storage, read> trails: array<u32>;
 
 // Instances are element x 512 + (particle, or the shading variant for meshes).
 const PER_ELEM: u32 = 512u;
@@ -1231,6 +1233,122 @@ fn vs_distmorph(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u3
     var out = vout(e, vp, m.color, vec2<f32>(0.0), select(14u, 15u, (dels[eb + E_GLARE] & 1u) != 0u));
     out.uv = screen_uv((mv * vec4<f32>(m.pos, 1.0)).xyz) + vec2<f32>(douts[o + 20u], -douts[o + 21u]);
     return out;
+}
+
+// The weapon after-image (op 0x2c, CYyAfterImage; fx/trail.rs). One sample after (aged - birth) agings of
+// FUN_1001c260 in closed form: the rails close along their line (A by p, B by q, swapping once they cross), alpha
+// down per aging, RGB down per aging after the delay; colours as the bytes retail draws (floored).
+const TRAIL_WORDS: u32 = 672u;
+struct TrailRails {
+    a: vec3<f32>,
+    b: vec3<f32>,
+    col_a: vec4<f32>,
+    col_b: vec4<f32>,
+    void_a: bool,
+    void_b: bool,
+};
+
+fn trail_f(o: u32) -> f32 { return bitcast<f32>(trails[o]); }
+fn trail_v4(o: u32) -> vec4<f32> { return vec4<f32>(trail_f(o), trail_f(o + 1u), trail_f(o + 2u), trail_f(o + 3u)); }
+
+fn trail_rails(slot: u32, k: u32) -> TrailRails {
+    let h = slot * TRAIL_WORDS;
+    let aged = trails[h + 2u];
+    let fade_from = trails[h + 3u];
+    let si = h + 32u + ((trails[h + 1u] + 79u - k) % 80u) * 8u;
+    let a0 = vec3<f32>(trail_f(si), trail_f(si + 1u), trail_f(si + 2u));
+    let birth = trails[si + 3u];
+    let b0 = vec3<f32>(trail_f(si + 4u), trail_f(si + 5u), trail_f(si + 6u));
+    let p = trail_f(h + 20u);
+    let q = trail_f(h + 21u);
+    let n = f32(aged - min(birth, aged));
+    let d = a0 - b0;
+    let l0 = length(d);
+    var sa = l0;
+    var sb = 0.0;
+    if (p + q > 0.0 && l0 > 0.0) {
+        let n1 = floor(l0 / (p + q));
+        if (n <= n1) {
+            sa = l0 - n * p;
+            sb = n * q;
+        } else {
+            let sa1 = l0 - n1 * p;
+            let sb1 = n1 * q;
+            let l1 = sa1 - sb1;
+            let x = sa1 - min(p, l1);
+            let y = sb1 + min(q, l1);
+            if ((u32(n - n1 - 1.0) & 1u) == 0u) { sa = x; sb = y; } else { sa = y; sb = x; }
+        }
+    }
+    var u0 = vec3<f32>(0.0);
+    if (l0 > 0.0) { u0 = d / l0; }
+    var m = 0.0;
+    if (fade_from != 0xffffffffu && aged >= fade_from) { m = f32(aged - max(birth, fade_from - 1u)); }
+    let ca = trail_v4(h + 8u);
+    let cb = trail_v4(h + 12u);
+    let dec = trail_v4(h + 16u);
+    var r: TrailRails;
+    r.a = b0 + u0 * sa;
+    r.b = b0 + u0 * sb;
+    r.col_a = floor(clamp(vec4<f32>(ca.xyz - m * dec.xyz, ca.w - n * dec.w), vec4<f32>(0.0), vec4<f32>(255.0))) / 255.0;
+    r.col_b = floor(clamp(vec4<f32>(cb.xyz - m * dec.xyz, cb.w - n * trail_f(h + 22u)), vec4<f32>(0.0), vec4<f32>(255.0))) / 255.0;
+    r.void_a = birth < trails[h + 5u];
+    r.void_b = birth < trails[h + 6u];
+    return r;
+}
+
+struct TrailOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) col: vec4<f32>,
+};
+
+// The draw callback 0x1001c930: newest first, one strip (A_k, B_k) in colours A / B, or with the split flag two
+// strips (mid_k, A_k) all in colour A and (mid_k in colour A, B_k in colour B); D3D strip order, a triangle with a
+// NaN corner (retail's void rails) not drawn. World space, additive, no texture, no fog.
+@vertex
+fn vs_trail(@builtin(vertex_index) v: u32, @builtin(instance_index) slot: u32) -> TrailOut {
+    let split = trails[slot * TRAIL_WORDS + 4u];
+    let per = 6u * (1u + split);
+    let seg = v / per;
+    let half = (v % per) / 6u;
+    let corner = array<u32, 6>(0u, 1u, 2u, 1u, 2u, 3u)[v % 6u];
+    let r0 = trail_rails(slot, seg);
+    let r1 = trail_rails(slot, seg + 1u);
+    // X / Y void per sample: split 0 X = A, Y = B; split 1 X = mid, Y = A (half 0) or B (half 1).
+    let xv0 = select(r0.void_a, r0.void_a || r0.void_b, split == 1u);
+    let xv1 = select(r1.void_a, r1.void_a || r1.void_b, split == 1u);
+    let yv0 = select(r0.void_b, select(r0.void_a, r0.void_b, half == 1u), split == 1u);
+    let yv1 = select(r1.void_b, select(r1.void_a, r1.void_b, half == 1u), split == 1u);
+    let tri0 = (v % 6u) < 3u;
+    if ((tri0 && (xv0 || yv0 || xv1)) || (!tri0 && (yv0 || xv1 || yv1))) {
+        var off: TrailOut;
+        off.clip = vec4<f32>(2.0, 2.0, 2.0, 1.0);
+        return off;
+    }
+    var r = r0;
+    if ((corner >> 1u) == 1u) { r = r1; }
+    var pos = r.a;
+    var col = r.col_a;
+    let is_y = (corner & 1u) == 1u;
+    if (split == 0u) {
+        if (is_y) { pos = r.b; col = r.col_b; }
+    } else if (!is_y) {
+        pos = 0.5 * (r.a + r.b);
+    } else if (half == 1u) {
+        pos = r.b;
+        col = r.col_b;
+    }
+    var out: TrailOut;
+    out.clip = d.proj * d.view * vec4<f32>(pos, 1.0);
+    out.col = col;
+    return out;
+}
+
+@fragment
+fn fs_trail(i: TrailOut) -> @location(0) vec4<f32> {
+    var rgb = i.col.rgb;
+    if (d.fog.z > 0.5) { rgb = pow(rgb, vec3<f32>(2.2)); }
+    return vec4<f32>(rgb, i.col.a);
 }
 
 fn sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
