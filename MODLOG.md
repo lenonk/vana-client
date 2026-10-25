@@ -2374,6 +2374,11 @@ live1_* / live2_* on lnxtest01 / Lnxtest in zone 230).
   (SE "0004" instead), the mouse wheel and scrollbar, ~100-line history (ours keeps 512 wrapped lines).
 - Live (zone 230): numpad + holds 8 lines (live2_2), Enter opens the full log with the tabs (live2_4), Escape back
   to the focused log (live2_5), Escape, shrinking (live2_6), two presses: reset then focus (live2_7).
+- Focus over an open window (user, 2026-10-25: + then Enter must expand the log while engaged): a window that takes
+  the keys (main menu, item windows, action menu, confirm, config) takes the focus from the log when it opens, not
+  while it stays open *(inf: the newest window has the focus)*; ours dropped the log's focus every frame the action
+  menu was up, so engaged the log could never be focused. While the log has the focus the action menu and the main
+  menu take no keys and draw no hand.
 
 ### Lock-on and target release (FUN_10151100, FUN_10151bb0, FUN_10152c70, FUN_10089d50 case 3, FUN_1001e030)
 - Per frame, in events too: own death unlocks (FUN_10150e30). Our status leaving 1 for anything but 3 unlocks and
@@ -8890,3 +8895,26 @@ interpolates between the hour keys in both clients.
   event::hidden() adds `unlisted` (events included); target.rs candidate and auto_target; radar::shown.
 - Live (Lnxcsfix, !pos onto (90, -4.5, -26) in 241; its zone-in plays event 0x347, the Seekers prompt): both models
   hidden at once, the glow's generators never start, Tab picks Sevah Kummekihn.
+
+## Motion regions: a region the new motion lacks keeps playing (2026-10-25)
+
+- Seven region queues per model (motion object *(model + 0x674), +0x24 + 0x14 r): 0 legs / whole body, 1 upper body,
+  2 skirt, 3 eyes, 4 mouth, 5 / 6 overlays. FUN_100cb8e0 [30261006: FUN_100cd920] -> FUN_100cb500 [FUN_100cd540]
+  appends an entry only to the regions the motion has a chunk for (fill mask DAT_1047797c); the others keep theirs and
+  go on advancing (FUN_100195b0 -> FUN_1001a3c0 -> FUN_10019ab0 [FUN_1001a8e0]). The one exception (asm
+  0x100cbc85..0x100cbcd3): when the new motion fills region 0, regions 0..2 it does not fill that hold a finished
+  counted entry (FUN_1001a530: entry +0x2c < 0) are emptied (FUN_1001a310). Same function for status motions
+  (FUN_100c6380 [FUN_100c83c0], loop, blend 16), scheduler op 0x05 and one-shots.
+- Pose (FUN_100195f0 [FUN_1001a420]): regions 4 down to 0, the first to write a bone keeps it (flag 0x40 in
+  DAT_1044c710): a higher region wins. A track with bit 31 in its rotation index claims no bone in regions 1..4
+  (FUN_10018d00; ours drops those tracks, dat/character.rs).
+- A status rate change on the same motion sets the new rate on every region's newest entry (asm 0x100c6452..
+  0x100c648d).
+- The Bumblebee (model 273, file 1573): idl1 / btl1 key the wings (12 bones), but wlk0 / run0 hold them folded and
+  there is no wlk1 / run1: moving, retail keeps idl1 flapping in region 1; ours folded them (one motion name, the last
+  track winning). Its at00 / at10 / at20 are region 0 only: btl1 keeps the wings through a swing.
+- Ours: Actor.keep (regions 0..2: the motion still playing where the current one has no chunk, its ticks, once), set at
+  each motion change, the finished-counted clear included; kept regions advance at the status rate *(inf: every
+  frame)*, add their own chunks (not under a one-shot, whose status motion layer covers them), the list is sorted by
+  region (stable, newer last in a region) so higher regions win, and the blend's old pose takes the kept regions live.
+  Not done: FUN_10019ed0 carries the old entry's frame into a status motion's start frame (ours starts at 0).

@@ -222,6 +222,11 @@ pub fn find<'a>(extra: &'a Extra, ch: &'a Character, name: &str) -> Vec<&'a Anim
     region_chunks(sets.flat_map(|s| s.iter()), name)
 }
 
+/// A chunk's body region, the digit after its 3-letter name (0 legs / whole body, 1 upper body, 2 skirt, 3 eyes, ...).
+pub fn region(a: &Animation) -> u8 {
+    a.name.as_bytes().get(3).map_or(0, |c| c.wrapping_sub(b'0'))
+}
+
 /// The first chunk per region among `chunks` whose name shares `name`'s first 3 letters.
 pub fn region_chunks<'a>(chunks: impl Iterator<Item = &'a Animation>, name: &str) -> Vec<&'a Animation> {
     let prefix = name.get(..3).unwrap_or(name);

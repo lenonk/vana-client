@@ -1576,7 +1576,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // Only its own keys: Space (the chat line) and the rest go on as usual. The main menu opened over it (-
                 // while engaged; engaging closes the main menu) is newer and has the focus.
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape
-                    if world.action_menu.is_some() && world.prompt.is_none() && world.menu.is_none() =>
+                    if world.action_menu.is_some() && world.prompt.is_none() && world.menu.is_none() && !world.log_active =>
                 {
                     let engaged = world.my_motion.status == 1;
                     let m = world.action_menu.as_mut().unwrap();
@@ -1620,10 +1620,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                     shrink_log = true;
                 }
-                egui::Key::ArrowDown if world.menu.is_some() => world.menu = world.menu.map(|m| (m + 1) % items.len().max(1)),
-                egui::Key::ArrowUp if world.menu.is_some() => world.menu = world.menu.map(|m| (m + items.len().max(1) - 1) % items.len().max(1)),
+                egui::Key::ArrowDown if world.menu.is_some() && !world.log_active => world.menu = world.menu.map(|m| (m + 1) % items.len().max(1)),
+                egui::Key::ArrowUp if world.menu.is_some() && !world.log_active => world.menu = world.menu.map(|m| (m + items.len().max(1) - 1) % items.len().max(1)),
                 // Left / right swap the commands and social pages on the same row (FUN_1013b3c0).
-                egui::Key::ArrowLeft | egui::Key::ArrowRight if world.menu.is_some() => world.menu_page ^= 1,
+                egui::Key::ArrowLeft | egui::Key::ArrowRight if world.menu.is_some() && !world.log_active => world.menu_page ^= 1,
                 egui::Key::Enter if world.menu.is_some() => pick = world.menu,
                 // The raise prompt (resynus, FUN_102110c0): Up to Accept, Down to Decline (no wrap), Enter answers.
                 _ if dead && world.ko_offer == 2 && world.confirm.is_none() => match key {
@@ -2073,7 +2073,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
         menu_swap: menu_swap(world),
-        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
+        menu_focused: !world.log_active && world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
     gu.clear();
@@ -2165,10 +2165,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // shops, the lists ...), the chat line at 2 lines or fewer, a message page waiting.
     let stacked = gu.open_with_flag(0x1000) || (dead && world.ko_offer == 2) || event::choice(world).is_some() || world.confirm.is_some();
     let keep = (world.typing && world.log.at_most_two()) || stacked || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
-    // Another window taking the keys takes the focus; an event closes the full log (FUN_10133000).
-    if world.menu.is_some() || world.win.is_some() || world.action_menu.is_some() || world.confirm.is_some() || world.config.is_some() || event::active(world) || (dead && world.ko_offer == 2) {
+    // A window taking the keys takes the focus as it opens: Num+ may focus the log over one already open (the action menu
+    // while engaged) *(inf: the newest window has the focus)*; an event closes the full log (FUN_10133000).
+    let takers = [world.menu.is_some(), world.win.is_some(), world.action_menu.is_some(), world.confirm.is_some(), world.config.is_some()].iter().enumerate().fold(0u8, |m, (i, &on)| m | (on as u8) << i);
+    if takers & !world.log_takers != 0 || event::active(world) || (dead && world.ko_offer == 2) {
         world.log_active = false;
     }
+    world.log_takers = takers;
     if event::active(world) && world.full_log.take().is_some() {
         world.log_focus = 0;
     }
@@ -2349,7 +2352,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
-        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none() && world.menu.is_none();
+        let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none() && world.menu.is_none() && !world.log_active;
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
             let (lib, sprite) = combat::label(*c);
             gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
@@ -3172,6 +3175,9 @@ struct Actor {
     ticks: f32,
     /// The motion being blended out, its ticks and whether it played once, and blend progress in ticks (16 = done).
     prev: Option<(String, f32, bool)>,
+    /// Regions 0..2 the current motion has no chunk for: the motion still playing there, its ticks, played once
+    /// (FUN_100cb500 leaves those region queues alone).
+    keep: [Option<(String, f32, bool)>; 3],
     /// The current motion plays once (a one-shot or a single-count scheduler motion): it holds its last frame,
     /// also as the pose a switch blends from (FUN_1001a8e0: regions < 3 hold the last frame when the count ends).
     once: bool,
@@ -3277,6 +3283,7 @@ impl Actor {
             motion: String::new(),
             ticks: 0.0,
             prev: None,
+            keep: Default::default(),
             once: false,
             blend: 0.0,
             top: -2.0,
@@ -4286,6 +4293,8 @@ struct World {
     /// logwindo is the active menu, and the full log (menu fulllog) when open.
     log_focus: u8,
     log_active: bool,
+    /// The windows that take the log's focus open last frame (main menu, item windows, action menu, confirm, config).
+    log_takers: u8,
     full_log: Option<logwin::FullLog>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
     map: Option<map::MapWin>,
@@ -5686,6 +5695,7 @@ impl App {
                             typing: false,
                             log_focus: 0,
                             log_active: false,
+                            log_takers: 0,
                             full_log: None,
                             map: None,
                             key_items: Vec::new(),
@@ -9676,8 +9686,35 @@ impl App {
                         }
                     };
                     a.rate_now = rate;
+                    // Fall back to idle when a model lacks a motion; chocobos idle with chi.
+                    let frames_of = |motion: &str, ticks: f32, once: bool| -> Vec<_> {
+                        [motion, ch.motions.idle, "idl", "chi"]
+                            .iter()
+                            .map(|n| actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, n))
+                            .find(|a| !a.is_empty())
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|x| {
+                                let f = ticks * x.speed * 0.5;
+                                (x, if once { f.min(x.frames.max(1) as f32 - 1.0) } else { crate::motion::loop_frame(f, x.frames) })
+                            })
+                            .collect()
+                    };
+                    let mask = |v: &[(&crate::dat::character::Animation, f32)]| v.iter().fold(0u8, |m, (x, _)| m | 1u8.checked_shl(actmotion::region(x) as u32).unwrap_or(0));
                     if name != a.motion || std::mem::take(&mut a.restart) || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
                         log::debug!(target: "motion", "actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
+                        // FUN_100cb500: a new motion takes only the regions it has chunks for; the others go on with what
+                        // they play, but a finished counted one goes once region 0 is taken (FUN_100cb8e0's tail).
+                        let new = mask(&frames_of(&name, 0.0, false));
+                        let old = if a.motion.is_empty() { 0 } else { mask(&frames_of(&a.motion, 0.0, false)) };
+                        for r in 0..3u8 {
+                            let cur = if old >> r & 1 != 0 { Some((a.motion.clone(), a.ticks, a.once)) } else { a.keep[r as usize].take() };
+                            let done = |(n, t, o): &(String, f32, bool)| *o && frames_of(n, *t, true).iter().any(|(x, f)| actmotion::region(x) == r && *f >= x.frames.max(1) as f32 - 1.0);
+                            a.keep[r as usize] = if new >> r & 1 != 0 || (new & 1 != 0 && cur.as_ref().is_some_and(done)) { None } else { cur };
+                        }
+                        if a.keep.iter().any(|k| k.is_some()) {
+                            log::debug!(target: "motion", "actor {id:#x}: {name} keeps {:?}", a.keep.iter().map(|k| k.as_ref().map(|k| k.0.as_str())).collect::<Vec<_>>());
+                        }
                         if !a.motion.is_empty() {
                             a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                             a.blend = 0.0;
@@ -9695,20 +9732,11 @@ impl App {
                     if let Some(o) = &mut a.oneshot {
                         o.ticks += dt * 60.0;
                     }
-                    // Fall back to idle when a model lacks a motion; chocobos idle with chi.
-                    let frames_of = |motion: &str, ticks: f32, once: bool| -> Vec<_> {
-                        [motion, ch.motions.idle, "idl", "chi"]
-                            .iter()
-                            .map(|n| actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, n))
-                            .find(|a| !a.is_empty())
-                            .unwrap_or_default()
-                            .into_iter()
-                            .map(|x| {
-                                let f = ticks * x.speed * 0.5;
-                                (x, if once { f.min(x.frames.max(1) as f32 - 1.0) } else { crate::motion::loop_frame(f, x.frames) })
-                            })
-                            .collect()
-                    };
+                    // The kept regions run on at the status rate (FUN_100c83c0 sets a new rate on every region's newest
+                    // entry *(inf: every frame)*).
+                    for k in a.keep.iter_mut().flatten() {
+                        k.1 += dt * 60.0 * rate;
+                    }
                     // FUN_1001ad00's queue replaces only the regions a new motion keys: under a one-shot or scheduler motion
                     // the status motion goes on (an Elvaan's moving swing amf1 keys the upper body over the run), so it
                     // goes first and the motion's tracks win where it has them.
@@ -9721,8 +9749,21 @@ impl App {
                     };
                     a.base_rate_now = base_rate;
                     a.base_ticks += dt * 60.0 * base_rate * a.rate_scale;
-                    let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(&base, a.base_ticks, false) } else { Vec::new() };
+                    let under = name != base && (a.oneshot.is_some() || a.play.is_some());
+                    // The kept regions' own chunks (the status motion under a one-shot covers them).
+                    let kept: Vec<_> = if under {
+                        Vec::new()
+                    } else {
+                        (0..3u8).filter_map(|r| a.keep[r as usize].as_ref().map(|k| (r, k))).flat_map(|(r, (n, t, o))| frames_of(n, *t, *o).into_iter().filter(move |(x, _)| actmotion::region(x) == r)).collect()
+                    };
+                    let mut anims = kept.clone();
+                    if under {
+                        anims.extend(frames_of(&base, a.base_ticks, false));
+                    }
                     anims.extend(frames_of(&name, a.ticks, once));
+                    // FUN_1001a420 poses regions 4 down to 0 and the first to write a bone keeps it: higher regions win, so
+                    // they go last here (the last track wins); within a region the newer motion stays last.
+                    anims.sort_by_key(|(x, _)| actmotion::region(x));
                     // The mouth motion of a spoken line goes over the body motion (its face tracks win).
                     if let Some(m) = &mut a.mouth
                         && let Some(mt) = m.ticks
@@ -9769,7 +9810,18 @@ impl App {
                         a.prev = None;
                     }
                     // Motions are evaluated and skinned on the GPU (render/anim.rs, vs_skinned).
-                    let from = a.prev.as_ref().map(|(old, old_ticks, old_once)| frames_of(old, *old_ticks, *old_once)).unwrap_or_default();
+                    // The old pose: its own regions, the kept ones live (a kept region does not blend).
+                    let kept_mask = mask(&kept);
+                    let from = a
+                        .prev
+                        .as_ref()
+                        .map(|(old, old_ticks, old_once)| {
+                            let mut v: Vec<_> = frames_of(old, *old_ticks, *old_once).into_iter().filter(|(x, _)| kept_mask >> actmotion::region(x).min(7) & 1 == 0).collect();
+                            v.extend(kept.iter().copied());
+                            v.sort_by_key(|(x, _)| actmotion::region(x));
+                            v
+                        })
+                        .unwrap_or_default();
                     // The reaction overlay, its first animation found; dropped once faded out.
                     let overlay = a.overlay.as_mut().and_then(|o| {
                         o.ticks += dt * 60.0;

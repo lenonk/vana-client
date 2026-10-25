@@ -555,7 +555,8 @@ enum Cmd {
         /// LSB look column, e.g. 0x0100030212201230...
         #[arg(long)]
         look: Option<String>,
-        /// Motion: 3 letters for all body regions, a chunk name, or an index. Default idl.
+        /// Motion: 3 letters for all body regions, a chunk name, several of them comma-separated (posed in order, the last
+        /// winning), or an index. Default idl.
         #[arg(long, default_value = "idl")]
         anim: String,
         #[arg(long, default_value_t = 0.0)]
@@ -1468,6 +1469,7 @@ fn npc_shot(model: Option<u16>, look: Option<String>, anim: &str, frame: f32, ya
     }
     let found: Vec<_> = match anim.parse::<usize>() {
         Ok(i) => ch.animations.get(i).into_iter().collect(),
+        Err(_) if anim.contains(',') => anim.split(',').flat_map(|a| ch.animations.iter().filter(move |x| x.name.trim_end() == a)).collect(),
         Err(_) => ch.find_animations(anim),
     };
     if found.is_empty() {
