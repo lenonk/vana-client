@@ -50,6 +50,8 @@ mod synth;
 mod treasure;
 mod servmes;
 mod chatctrl;
+mod jobpoints;
+mod merits;
 mod plate;
 mod partymenu;
 mod levelsync;
@@ -1416,6 +1418,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         answer = world.confirm.map(|c| c.1);
                         world.sounds.push(crate::audio::Ui::Select as u32);
                     }
+                    egui::Key::Escape if matches!(world.confirm, Some((Confirm::Merit(_) | Confirm::JobPoint(_), _))) => {
+                        world.sounds.push(crate::audio::Ui::Error as u32);
+                    }
                     egui::Key::Escape => {
                         answer = Some(false);
                         world.sounds.push(crate::audio::Ui::Cancel as u32);
@@ -1443,6 +1448,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.bazaar.is_some() => bazaar::key(world, *key),
                 _ if world.currencies.is_some() => currencies::key(world, *key),
                 _ if world.unity.is_some() => unity::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.merits_ui.is_some() => merits::key(world, gu, *key),
+                _ if world.jp_ui.is_some() => jobpoints::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.status.is_some() => status::key(world, gu, *key),
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
@@ -1748,7 +1755,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.currencies.is_some() && world.confirm.is_none()) {
         currencies::pointer(world, gu, sw, sh, p, input.moved);
     }
-    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| world.merits_ui.is_some() && world.confirm.is_none()) {
+        merits::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.confirm.is_none()) {
         status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     // Mouse on the magic / ability lists and their category windows.
@@ -2228,6 +2238,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(currencies::draw(gu, world, sw, sh));
     blockers.extend(unity::draw(gu, world, sw, sh));
+    blockers.extend(merits::draw(gu, world, sw, sh));
+    blockers.extend(jobpoints::draw(gu, world, sw, sh));
     blockers.extend(missions::draw(gu, world, sw, sh));
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
@@ -2337,9 +2349,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // - 88 - 2, at least 16), the question at (+4, +4) wrapped to w - 8 (FUN_10211050), Yes / No children 1 / 2.
     if let Some((kind, yes)) = world.confirm {
         let on_yes = world.confirm.map_or(yes, |c| c.1);
-        let dy = gu.window_rect("menu    comyn", sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        let layout = if matches!(kind, Confirm::Merit(_) | Confirm::JobPoint(_)) { "menu    merityn" } else { "menu    comyn" };
+        let dy = gu.window_rect(layout, sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
         let msg = confirm_msg(gu, world, kind);
-        if let Some(win) = gu.lobby_window_off("menu    comyn", sw, sh, (0.0, dy), Some(if on_yes { 1 } else { 2 }), true, &[]) {
+        if let Some(win) = gu.lobby_window_off(layout, sw, sh, (0.0, dy), Some(if on_yes { 1 } else { 2 }), true, &[]) {
             let [fx, fy, fw, _] = win.frame;
             for (i, line) in gu.wrap(&msg, fw - 8.0).iter().enumerate() {
                 gu.text(line, fx + 4.0, fy + 4.0 + 16.0 * i as f32, 0, WHITE);
@@ -2507,6 +2520,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             macroedit::answer(world, a);
         }
+        (Some(true), Some((Confirm::Merit(a), _))) => {
+            world.confirm = None;
+            merits::answer(world, a);
+        }
+        (Some(true), Some((Confirm::JobPoint(a), _))) => {
+            world.confirm = None;
+            jobpoints::answer(world, a);
+        }
         (Some(true), Some((Confirm::NewAdventurer, _))) => {
             world.confirm = None;
             helpdesk::new_adventurer_off(world);
@@ -2672,6 +2693,8 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     status::bars(gu, world, &mut bars);
     currencies::bars(gu, world, &mut bars);
     unity::bars(gu, world, &mut bars);
+    merits::bars(gu, world, &mut bars);
+    jobpoints::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
@@ -2719,6 +2742,8 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Sync { id, race, off }, _) => levelsync::ask_text(world, id, race, off),
         (Confirm::NewAdventurer, _) => world.battle.as_ref().and_then(|b| b.group9(0xd4)).unwrap_or_default(),
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
+        (Confirm::Merit(a), _) => merits::ask_text(world, a),
+        (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3709,6 +3734,20 @@ struct World {
     status: Option<status::StatusUi>,
     merits: Option<(u16, u16, u8)>,
     jp_access: Option<u8>,
+    /// Merit Points (client/merits.rs): the windows, the tables, s2c 0x08C by merit index (next cost, level) with its
+    /// change stamp, the category list's remembered row (+0x54, for the session).
+    merits_ui: Option<merits::MeritUi>,
+    merit_tables: Option<Arc<crate::dat::merits::MeritTables>>,
+    merit_list: std::collections::BTreeMap<u16, (u8, u8)>,
+    merit_stamp: u32,
+    merit_mem: usize,
+    /// Job Points (client/jobpoints.rs): the windows, the tables, s2c 0x08D (level, next cost) by entry and whether one
+    /// came, 0x063 type 5's (capacity, current, spent) by job.
+    jp_ui: Option<jobpoints::JpUi>,
+    jp_tables: Option<Arc<crate::dat::merits::JobPointTables>>,
+    jp_list: HashMap<u16, (u8, u16)>,
+    jp_seen: bool,
+    jp_jobs: Option<[[u16; 3]; 24]>,
     monstrosity: Option<(u8, u32, u16)>,
     real_level: Option<u8>,
     /// The Party row's windows, a pending invite (s2c 0x0DC) and the s2c 0x0B4 config bytes (SAVE_CONF @4..@0xf).
@@ -3956,6 +3995,9 @@ enum Confirm {
     NewAdventurer,
     /// MacroPalette's book / set paste and delete prompts.
     Macro(macroedit::Ask),
+    /// merityn (FUN_10210e30, its own instance): raise / lower a merit, raise a job point.
+    Merit(merits::Ask),
+    JobPoint(jobpoints::Ask),
 }
 
 impl World {
@@ -4973,6 +5015,16 @@ impl App {
                             status: None,
                             merits: None,
                             jp_access: None,
+                            merits_ui: None,
+                            merit_tables: None,
+                            merit_list: Default::default(),
+                            merit_stamp: 0,
+                            merit_mem: 0,
+                            jp_ui: None,
+                            jp_tables: None,
+                            jp_list: HashMap::new(),
+                            jp_seen: false,
+                            jp_jobs: None,
                             monstrosity: None,
                             real_level: None,
                             partymenu: None,
@@ -5895,7 +5947,12 @@ impl App {
                     status::on_stats(world);
                 }
                 NetEvent::Merits { limit, bits, max } => world.merits = Some((limit, bits, max)),
-                NetEvent::JobPoints(access) => world.jp_access = Some(access),
+                NetEvent::JobPoints(access, jobs) => {
+                    world.jp_access = Some(access);
+                    world.jp_jobs = Some(jobs);
+                }
+                NetEvent::MeritList(recs) => merits::on_list(world, &recs),
+                NetEvent::JobPointList(recs) => jobpoints::on_list(world, &recs),
                 NetEvent::Monstrosity { kind, rank, prestige } => {
                     let m = world.monstrosity.get_or_insert((0, 0, 0));
                     m.0 |= 1 << kind;
@@ -6293,6 +6350,8 @@ impl App {
         partymenu::update(world);
         status::update(world);
         currencies::update(world, dt * 60.0);
+        merits::update(world);
+        jobpoints::update(world, dt * 60.0);
         unity::update(world, dt * 60.0);
         world.cursor_keep();
         missions::update(world);

@@ -7301,3 +7301,29 @@ FUN_10086210 / FUN_10086900, the target window FUN_101501a0).
   "the retail server must send them something else" is wrong.
 - Ours keeps party and alliance members translucent (0x27) with their plates anyway: a deliberate improvement, the
   user's call ("this client is all about quality of life improvements").
+
+## Merit Points and Job Points (2026-10-25)
+
+Spec `~/ffxi/lab/research/status_rows_spec.md` sections 1, 2 (client/merits.rs, client/jobpoints.rs, dat/merits.rs).
+- Tables: file 89 (merit categories) is indexed by list position = record number (FUN_10160f00), u16 @0 is the
+  name id (FUN_10161070 reads strings[2 x u16 @0]; for categories it equals @3, the category id); file 88 by merit
+  index; files 93 / 94 the job point entries / jobs; 100407 + job the gifts. Names from the d_msg files of language
+  slots 0x1d..0x20 (current numbering, resolved through FFXiMain's slot table at UI load). The spec's "names by
+  position" was wrong; the dump's names-by-u16-@0 is right.
+- s2c 0x08C (merit records {u16 id = index x 2, bit 0 delete, u8 next, u8 level} from @8), 0x08D (64 x {u16 entry,
+  u16 next | level << 10}), 0x063 type 5's per-job (capacity, current, spent) from @0xc are parsed.
+- merit1 / levmerit / merit2 (mode switch, c2s 0x0BE {2, flag}) / meritcat (the category list, a category's merits,
+  a job's two groups under windowps 592 / 593 headers with their caps) / meritinf / bluehelp (name and wrapped
+  description, growing) / merit3 (Raise / Lower) -> sortyn -> merityn (group 10 0x50 / 0x51) -> c2s 0x0BE {3, raise,
+  index}. Colours per FUN_101491a0 (grey outside the Mog House or for other jobs, group colours, blue maxed, white
+  affordable costs).
+- merit2ca (jobs, white at 99) / levmeri2 / jbpcat (page 0 the job's entries with level / max / next, page 1 the
+  gifts with thresholds and JP spent; Left / Right switch pages) -> merityn (group 10 0x74) -> c2s 0x0BF {u16 entry},
+  30 frames before the next prompt; c2s 0x0C0 on open while no 0x08D came.
+- merityn is our Confirm drawn with "menu    merityn"; its Escape only plays SE 0004 (+0x39 = 0).
+- Live (Lnxcsfix at 99 with Limit Breaker 606 / Job Breaker 2544, `!setmerits 5`, `!setjobpoints 20`,
+  `!setcapacitypoints 1234`, all undone after): every window draws with the right values; outside the Mog House all
+  merits are grey with no costs (LSB zeroes next costs outside it). Not tried live: Raise / Lower and spending job
+  points (Mog House only; a raise would leave merit rows on the test character), the mouse on jbpcat's page areas
+  (children 11 / 12). Not done: Alter Ego Points (fp_cat / fp_cat2 / fp_info, 0x08E).
+- statcom2's rows link 1, 2, 12, 3, 4, 5, 6, 10, 11, 9, 7, 8, 13 (wrapping): Merit Points is three Ups from row 1.

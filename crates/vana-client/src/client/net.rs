@@ -368,7 +368,11 @@ pub enum NetEvent {
     /// EXP capped or merit mode), max merits @0xc; type 5 the job point access @8; types 3 / 4 (Monstrosity): type 3's
     /// u32 @0xc (gladiator rank bits 2..3) and u16 @0x14 (prestige).
     Merits { limit: u16, bits: u16, max: u8 },
-    JobPoints(u8),
+    JobPoints(u8, [[u16; 3]; 24]),
+    /// s2c 0x08C (0x100e4ca0): merit records {u16 id (index * 2, bit 0 = delete), u8 next cost, u8 level} from @8.
+    MeritList(Vec<(u16, u8, u8)>),
+    /// s2c 0x08D (LAB_100e4fd0): 64 job point records @4 {u16 entry id, u16 next cost | level << 10}.
+    JobPointList(Vec<(u16, u8, u16)>),
     Monstrosity { kind: u16, rank: u32, prestige: u16 },
     /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
     StatusTimers { ids: [u16; 32], ends: [u32; 32] },
@@ -876,7 +880,20 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         tx.send(NetEvent::PartyEffects(rows))?;
                     }
                     0x063 if p.u16(4) == 2 => tx.send(NetEvent::Merits { limit: p.u16(8), bits: p.u16(0xa), max: p.u8(0xc) })?,
-                    0x063 if p.u16(4) == 5 => tx.send(NetEvent::JobPoints(p.u8(8)))?,
+                    // Type 5: access @8, then per job 0..23 {u16 capacity, u16 current, u16 spent} from @0xc.
+                    0x063 if p.u16(4) == 5 => {
+                        let jobs = std::array::from_fn(|j| [0, 2, 4].map(|k| p.u16(0xc + 6 * j + k)));
+                        tx.send(NetEvent::JobPoints(p.u8(8), jobs))?
+                    }
+                    0x08C => {
+                        let n = (p.u16(4) as usize).min(p.data.len().saturating_sub(8) / 4);
+                        tx.send(NetEvent::MeritList((0..n).map(|i| (p.u16(8 + 4 * i), p.u8(10 + 4 * i), p.u8(11 + 4 * i))).collect()))?
+                    }
+                    0x08D => {
+                        let n = (p.data.len().saturating_sub(4) / 4).min(64);
+                        let recs = (0..n).map(|i| (p.u16(4 + 4 * i), p.u16(6 + 4 * i))).filter(|r| r.0 != 0).map(|(id, v)| (id, (v >> 10) as u8, v & 0x3ff)).collect();
+                        tx.send(NetEvent::JobPointList(recs))?
+                    }
                     0x063 if p.u16(4) == 7 && p.data.len() >= 0x8c => {
                         tx.send(NetEvent::UnityTable { week: p.u8(8), d: p.u8(9), data: p.data[0xc..0x8c].try_into().unwrap() })?
                     }
