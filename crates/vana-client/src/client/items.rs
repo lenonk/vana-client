@@ -8,8 +8,8 @@ use super::net::NetCommand;
 use super::scrollbar::{Msg, Owner, rows};
 use crate::audio::Ui;
 use crate::dat::items::Item;
-use crate::inventory::{Equipment, ItemInfo, ItemList, Persona, ROW_PITCH, SLOT_CHILD, Slot, Stats, VISIBLE_ROWS, build_rows, gil_text};
-use crate::render::invwin::{icon_texture, push_equipment, push_inventory, push_item_list, push_money, push_persona};
+use crate::inventory::{ItemInfo, ItemList, Persona, ROW_PITCH, Slot, Stats, VISIBLE_ROWS, build_rows};
+use crate::render::invwin::{icon_texture, push_inventory, push_item_list};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
@@ -20,8 +20,6 @@ pub const INVENTORY: u8 = 0;
 const BIN: u8 = 17;
 /// The inventory list's x beside the bin (the partner source's position kind 1, FUN_101f1fe0).
 const BIN_LIST_X: i16 = 200;
-/// Item list x while equipping.
-const LIST_X: i16 = 314;
 
 pub(super) const JOBS: [&str; 23] = ["", "WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD", "RNG", "SAM", "NIN", "DRG", "SMN", "BLU", "COR", "PUP", "DNC", "SCH", "GEO", "RUN"];
 
@@ -174,8 +172,8 @@ pub enum Win {
     /// Main menu Items: the inventory list, and iuse / sortyn over it. `direct`: the action menu's list of usable items,
     /// where Enter uses at once (FUN_1012b880 case 8, FUN_101f0a10).
     Items { scroll: usize, cursor: usize, sub: Option<Sub>, direct: bool, sort: Option<SortWin>, manual: Option<Option<u8>>, store: Option<Storage> },
-    /// Equipment: grid cursor (row, column), and the list of candidates once a slot is picked.
-    Equip { row: usize, col: usize, pick: Option<Pick> },
+    /// The Equipment screen (client/equipwin.rs).
+    Equip(Box<super::equipwin::EquipWin>),
 }
 
 /// "menu    itmsort2" with the focus (FUN_101f36b0 / FUN_101f3740): 1 Auto, 2 Manual, 3 Recycle Bin; `ask` is the
@@ -240,17 +238,6 @@ pub enum Sub {
     Drop { index: u8, id: u16, yes: bool },
 }
 
-pub struct Pick {
-    /// Container slot indexes of the candidates.
-    pub indexes: Vec<u8>,
-    pub scroll: usize,
-    pub cursor: usize,
-    /// itemxinf: the worn piece compared (Some(None) for an empty slot), the slot-bit turn and Ctrl last frame.
-    pub compare: Option<Option<(u8, u8)>>,
-    pub alt: u8,
-    pub ctrl: Option<bool>,
-}
-
 pub fn open_items(w: &mut World) {
     w.win = Some(Win::Items { scroll: 0, cursor: 0, sub: None, direct: false, sort: None, manual: None, store: None });
     w.menu = None;
@@ -282,11 +269,7 @@ fn listed(w: &World, direct: bool) -> Vec<Slot> {
 }
 
 pub fn open_equipment(w: &mut World) {
-    // FUN_1012ec60 asks for fresh stats (FUN_100967e0(0, 1)).
-    let _ = w.net.commands.send(NetCommand::StatusRequest(1));
-    w.win = Some(Win::Equip { row: 0, col: 0, pick: None });
-    w.menu = None;
-    w.action_menu = None;
+    super::equipwin::open(w);
 }
 
 /// The focused window and its cursor child, for the bars' slot 1 (FUN_10115380). The equipment's candidate
@@ -307,15 +290,8 @@ pub fn focus(w: &World) -> Option<(&'static str, u16)> {
             (None, None, false) => ("menu    inventor", *cursor as u16 + 1),
         }),
         Win::Items { cursor, .. } => Some(("menu    inventor", *cursor as u16 + 1)),
-        Win::Equip { pick: Some(p), .. } => Some(("menu    inventor", p.cursor as u16 + 1)),
-        Win::Equip { row, col, pick: None } => Some(("menu    equip", (1 + col * 4 + row) as u16)),
+        Win::Equip(_) => super::equipwin::focus(w),
     }
-}
-
-/// Equipment slot of grid cell (row, col): children run 1 + col * 4 + row (table 0x103639d4).
-fn slot_at(row: usize, col: usize) -> usize {
-    let child = (1 + col * 4 + row) as u16;
-    SLOT_CHILD.iter().position(|&c| c == child).unwrap_or(0)
 }
 
 /// Up / Down a row (wrapping); true when the cursor moved (the generic handler's SE 0001).
@@ -359,24 +335,29 @@ pub(super) fn page_keys(scroll: &mut usize, cursor: &mut usize, n: usize, right:
 
 /// A scroll bar or wheel message (FUN_101f6c70) to the focused item list. True when it moved.
 pub(super) fn bar(w: &mut World, owner: Owner, m: Msg) -> bool {
+    if owner == Owner::EquipPick {
+        return super::equipwin::bar(w, m);
+    }
     let direct = matches!(w.win, Some(Win::Items { direct: true, .. }));
     let n = match (&w.win, owner) {
         (Some(Win::Items { store: None, .. }), Owner::Items) => listed(w, direct).len(),
         (Some(Win::Items { store: Some(b), .. }), Owner::Bank) => store_rows(w, b.bank).len(),
         (Some(Win::Items { store: Some(b), .. }), Owner::StoreInv) => store_rows(w, b.side).len(),
-        (Some(Win::Equip { pick: Some(p), .. }), Owner::EquipPick) => p.indexes.len(),
         _ => return false,
     };
     match (&mut w.win, owner) {
         (Some(Win::Items { scroll, cursor, store: None, .. }), Owner::Items) | (Some(Win::Items { scroll, cursor, store: Some(_), .. }), Owner::StoreInv) => rows(m, scroll, cursor, n, VISIBLE_ROWS),
         (Some(Win::Items { store: Some(b), .. }), Owner::Bank) => rows(m, &mut b.scroll, &mut b.cursor, n, VISIBLE_ROWS),
-        (Some(Win::Equip { pick: Some(p), .. }), Owner::EquipPick) => rows(m, &mut p.scroll, &mut p.cursor, n, VISIBLE_ROWS),
         _ => false,
     }
 }
 
 /// Keys while a window is open; `page` is key function 0xa8 (Ctrl / Alt held). Returns true when the key was used.
 pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
+    if matches!(w.win, Some(Win::Equip(_))) {
+        super::equipwin::key(w, key);
+        return true;
+    }
     let Some(info) = w.item_info.clone() else {
         if key == egui::Key::Escape {
             w.win = None;
@@ -390,7 +371,6 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
         store_key(w, &info, key, page, alt);
         return true;
     }
-    let mut send = None;
     let mut close = false;
     let mut open_recycle = false;
     match &mut w.win {
@@ -568,60 +548,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                 }
             }
         },
-        Some(Win::Equip { row, col, pick }) => {
-            let slot = slot_at(*row, *col);
-            // FUN_101306f0: the list's messages 1..6 drop the compare.
-            if let Some(p) = pick {
-                p.compare = None;
-            }
-            match pick {
-                Some(p) => match key {
-                    egui::Key::Escape => {
-                        *pick = None;
-                        w.sounds.push(Ui::Cancel as u32);
-                    }
-                    egui::Key::Enter => {
-                        if let Some(&index) = p.indexes.get(p.scroll + p.cursor) {
-                            send = Some(NetCommand::Equip { index, slot: slot as u8, container: INVENTORY });
-                        }
-                        *pick = None;
-                        w.sounds.push(Ui::Select as u32);
-                    }
-                    k => {
-                if list_keys(&mut p.scroll, &mut p.cursor, p.indexes.len(), k) {
-                    w.sounds.push(crate::audio::Ui::Cursor as u32);
-                }
-            }
-                },
-                None => match key {
-                    egui::Key::Escape => {
-                        close = true;
-                        w.sounds.push(Ui::Cancel as u32);
-                    }
-                    egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::ArrowRight | egui::Key::ArrowLeft => {
-                        match key {
-                            egui::Key::ArrowDown => *row = (*row + 1) % 4,
-                            egui::Key::ArrowUp => *row = (*row + 3) % 4,
-                            egui::Key::ArrowRight => *col = (*col + 1) % 4,
-                            _ => *col = (*col + 3) % 4,
-                        }
-                        w.sounds.push(Ui::Cursor as u32);
-                    }
-                    // Inferred binding: Backspace / Delete removes the piece in the slot (0x050 index 0).
-                    egui::Key::Backspace | egui::Key::Delete => {
-                        if let Some((c, _)) = w.inv.equip[slot] {
-                            send = Some(NetCommand::Equip { index: 0, slot: slot as u8, container: c });
-                        }
-                    }
-                    egui::Key::Enter => {
-                        let indexes = candidates_world(&w.inv, w.stats.as_ref(), w.my_race, &info, slot);
-                        *pick = Some(Pick { indexes, scroll: 0, cursor: 0, compare: None, alt: 0, ctrl: None });
-                        w.sounds.push(Ui::Select as u32);
-                    }
-                    _ => {}
-                },
-            }
-        }
+        Some(Win::Equip(_)) => {}
     }
     if close {
         w.win = None;
@@ -629,63 +556,16 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
     if open_recycle {
         open_bin(w, true);
     }
-    if let Some(c) = send {
-        log::info!("equip: {c:?}");
-        let _ = w.net.commands.send(c);
-    }
     true
 }
 
-/// FUN_10130a80 / FUN_1013ac50: in the candidate list a Ctrl press (key function 0x76, pad 0x89) opens itemxinf with
-/// the piece worn in a slot the focused item fits, taking its slot bits in turn (rings and earrings alternate) and
-/// moving the grid cursor there; the next press closes it.
 pub fn compare_key(w: &mut World, held: bool) {
-    let info = w.item_info.clone();
-    let Some(Win::Equip { row, col, pick: Some(p) }) = &mut w.win else { return };
-    let rising = held && p.ctrl.is_some_and(|c| !c);
-    p.ctrl = Some(held);
-    if !rising || p.compare.take().is_some() {
-        return;
-    }
-    let Some(&index) = p.indexes.get(p.scroll + p.cursor) else { return };
-    let Some(&(id, _)) = w.inv.slots.get(&(INVENTORY, index)) else { return };
-    let bits = info.as_ref().and_then(|c| c.item(id)).map_or(0, |it| it.slots);
-    // FUN_101317b0 takes the first or second set bit; two misses clear the turn (FUN_10130be0).
-    for _ in 0..2 {
-        let nth = (p.alt & 1) as usize;
-        p.alt = (p.alt + 1) & 3;
-        if let Some(slot) = (0..16).filter(|b| bits & (1 << b) != 0).nth(nth) {
-            let child = SLOT_CHILD[slot] as usize - 1;
-            (*col, *row) = (child / 4, child % 4);
-            p.compare = Some(w.inv.equip[slot]);
-            return;
-        }
-    }
-    p.alt = 0;
+    super::equipwin::compare_key(w, held);
 }
 
-/// The compared piece while itemxinf is open: Some(None) for an empty slot; (item, extdata, container).
+/// The compared piece while itemxinf is open (client/equipwin.rs).
 pub fn compare(w: &World) -> Option<Option<(u16, Option<[u8; 24]>, u8)>> {
-    let Some(Win::Equip { pick: Some(p), .. }) = &w.win else { return None };
-    let at = (*p.compare.as_ref()?).and_then(|(c, i)| Some((w.inv.slots.get(&(c, i))?.0, w.inv.ext.get(&(c, i)).copied(), c)));
-    Some(at)
-}
-
-/// Inventory items that fit `slot` (item +0x10 slot bits), and the character's level, job and race when known.
-fn candidates_world(inv: &Inventory, st: Option<&CharStats>, race: u8, info: &ItemCache, slot: usize) -> Vec<u8> {
-    inv.slots_of(INVENTORY)
-        .into_iter()
-        .filter(|s| s.index != 0)
-        .filter(|s| {
-            let Some(it) = info.item(s.id) else { return false };
-            let fits = it.slots & (1 << slot) != 0;
-            let level = st.is_none_or(|st| it.level <= st.main.1 as u16);
-            let job = st.is_none_or(|st| it.jobs & (1 << st.main.0) != 0);
-            let ok_race = race == 0 || it.races & (1 << race) != 0;
-            fits && level && job && ok_race
-        })
-        .map(|s| s.index)
-        .collect()
+    super::equipwin::compare(w)
 }
 
 pub(super) fn upload_icons(gu: &mut GameUi, info: &ItemCache, ids: impl Iterator<Item = u16>) {
@@ -718,6 +598,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
         Some(Win::Items { manual: Some(held), sort: None, .. }) => {
             bars.help[2] = gu.menu_msg(if held.is_some() { 6 } else { 5 }, "");
         }
+        Some(Win::Equip(_)) => super::equipwin::bars(gu, w, bars),
         _ => {}
     }
 }
@@ -726,7 +607,6 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// for the inventory, mode 1 for the equipment grid or its candidates; (item, extdata, container, index, equipped,
 /// mode).
 pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8)> {
-    let slots = w.inv.slots_of(INVENTORY);
     let (slot, container, mode) = match w.win.as_ref()? {
         // FUN_101f2740: the list and iteminfo are hidden while the item's target prompt is up.
         Win::Items { .. } if item_prompt(w) => return None,
@@ -734,15 +614,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
         Win::Items { store: Some(b), .. } if b.on_bank || b.read_only => (store_rows(w, b.bank).get(b.scroll + b.cursor)?.clone(), b.bank, if b.qty.is_some() { 1 } else { 0 }),
         Win::Items { store: Some(b), scroll, cursor, .. } => (store_rows(w, b.side).get(scroll + cursor)?.clone(), b.side, if b.qty.is_some() { 1 } else { 0 }),
         Win::Items { scroll, cursor, direct, .. } => (listed(w, *direct).get(scroll + cursor)?.clone(), INVENTORY, 0),
-        Win::Equip { pick: Some(p), .. } => {
-            let i = *p.indexes.get(p.scroll + p.cursor)?;
-            (slots.iter().find(|s| s.index == i)?.clone(), INVENTORY, 1)
-        }
-        Win::Equip { row, col, pick: None } => {
-            let (c, i) = w.inv.equip[slot_at(*row, *col)]?;
-            let &(id, count) = w.inv.slots.get(&(c, i))?;
-            (Slot { index: i, id, count, equipped: true, equipped_ex: false }, c, 1)
-        }
+        Win::Equip(_) => return super::equipwin::info_source(w),
     };
     Some((slot.id, w.inv.ext.get(&(container, slot.index)).copied(), container, slot.index, slot.equipped, mode))
 }
@@ -964,7 +836,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let (Some(win), Some(info)) = (&w.win, w.item_info.as_ref()) else { return rects };
     let frame = gu.cursor_frame();
-    let slots = w.inv.slots_of(INVENTORY);
     match win {
         Win::Items { .. } if item_prompt(w) => {}
         Win::Items { scroll, cursor, store: Some(b), .. } => rects.extend(draw_storage(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
@@ -1009,67 +880,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 rects.extend(draw_iuse(gu, w, *s, sw, sh));
             }
         }
-        Win::Equip { row, col, pick } => {
-            let slot = slot_at(*row, *col);
-            let mut eq = Equipment::default();
-            for (k, e) in w.inv.equip.iter().enumerate() {
-                if let Some((c, i)) = e
-                    && let Some(&(id, count)) = w.inv.slots.get(&(*c, *i))
-                {
-                    eq.slots[k] = Some(Slot { index: *i, id, count, equipped: true, equipped_ex: false });
-                }
-            }
-            if let Some(st) = &w.stats {
-                eq.fields[..8].copy_from_slice(&st.elem);
-                eq.fields[8] = st.atk;
-                eq.fields[9] = st.def;
-            }
-            upload_icons(gu, info, eq.slots.iter().flatten().map(|s| s.id));
-            let persona = persona(w);
-            let gil = gil_text(w.inv.gil() as i64);
-            let rows: Vec<Slot> = match pick {
-                Some(p) => p.indexes.iter().filter_map(|i| slots.iter().find(|s| s.index == *i).cloned()).collect(),
-                None => Vec::new(),
-            };
-            let list = pick.as_ref().map(|p| ItemList { rows: build_rows(&rows, info.as_ref(), false), scroll: p.scroll, cursor: p.cursor });
-            if let Some(l) = &list {
-                upload_icons(gu, info, l.visible().iter().map(|r| r.id));
-            }
-            let open = ["menu    persona", "menu    money", "menu    equip"].map(|n| gu.gate_layout(n, sw, sh, None));
-            let list_open = list.is_some() && gu.gate_layout("menu    inventor", sw, sh, Some(LIST_X as i16));
-            let mut pick_bar = None;
-            let (b, ui, style, font) = gu.parts();
-            if let Some(m) = ui.menu("menu    persona").filter(|_| open[0]) {
-                push_persona(b, ui, style, m, &persona, sw, sh);
-            }
-            if let Some(m) = ui.menu("menu    money").filter(|_| open[1]) {
-                push_money(b, ui, style, m, &gil, sw, sh);
-            }
-            if let (Some(m), Some(l)) = (ui.menu("menu    inventor").filter(|_| list_open), &list) {
-                // Inferred: the equippable source puts the list at (314, 48), right of equip (vfunc +4).
-                let mut m = m.clone();
-                if let Some(e) = m.elements.first_mut() {
-                    e.x = LIST_X;
-                }
-                pick_bar = Some((push_inventory(b, ui, style, font, GameUi::ATLAS, &m, l, sw, sh, frame), l.rows.len(), l.scroll));
-            }
-            if let Some(m) = ui.menu("menu    equip").filter(|_| open[2]) {
-                let cursor = pick.is_none().then_some(SLOT_CHILD[slot] as usize);
-                push_equipment(b, ui, style, m, &eq, info.as_ref(), sw, sh, cursor, frame);
-            }
-            if let Some(([x, y, h], n, top)) = pick_bar {
-                gu.bar_site(Owner::EquipPick, x, y, h, n, VISIBLE_ROWS, top);
-            }
-            for n in ["menu    persona", "menu    money", "menu    equip"] {
-                rects.extend(gu.window_rect(n, sw, sh));
-            }
-            if list.is_some()
-                && let Some(mut r) = gu.window_rect("menu    inventor", sw, sh)
-            {
-                r[0] += LIST_X as f32 - gu.window_rect_x("menu    inventor");
-                rects.push(r);
-            }
-        }
+        Win::Equip(_) => rects.extend(super::equipwin::draw(gu, w, sw, sh)),
     }
     rects
 }
@@ -1756,6 +1567,10 @@ fn draw_count(gu: &mut GameUi, n: usize, size: u8, sw: f32, sh: f32) {
 
 /// Mouse on the item list: hover moves the cursor, a click on the highlighted row acts as Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+    if matches!(w.win, Some(Win::Equip(_))) {
+        super::equipwin::pointer(w, gu, sw, sh, p, moved, clicked);
+        return;
+    }
     // The bin view moves the list; its mouse handling (hover messages 3 / 4) is not done.
     if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
         return;
@@ -1763,7 +1578,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     let Some(r) = gu.window_rect("menu    inventor", sw, sh) else { return };
     let row = ((p.1 - r[1] - 4.0) / ROW_PITCH).floor();
     let inside = p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3] && row >= 0.0 && (row as usize) < VISIBLE_ROWS;
-    if inside && matches!(w.win, Some(Win::Items { .. }) | Some(Win::Equip { pick: Some(_), .. })) {
+    if inside && matches!(w.win, Some(Win::Items { .. })) {
         gu.hover.set(true);
     }
     if !inside || !(moved || clicked) {
@@ -1772,7 +1587,6 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     let row = row as usize;
     let (cur, enter) = match &mut w.win {
         Some(Win::Items { cursor, .. }) => (cursor, true),
-        Some(Win::Equip { pick: Some(p), .. }) => (&mut p.cursor, true),
         _ => return,
     };
     let same = *cur == row;

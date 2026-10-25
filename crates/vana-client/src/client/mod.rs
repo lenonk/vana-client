@@ -62,6 +62,7 @@ mod equipsets;
 mod esmenu;
 mod esedit;
 mod faqmain;
+mod equipwin;
 mod journal;
 mod missions;
 mod quests;
@@ -6631,6 +6632,9 @@ impl App {
         }
         if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Items { store: Some(_), .. })) {
             items::store_num_plus(world);
+        }
+        if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Equip(_))) {
+            equipwin::num_plus(world);
         }
         if self.input.test(0x11, input::mode::PRESS) && synth::active(world) {
             synth::num_plus(world);

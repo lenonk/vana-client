@@ -76,15 +76,19 @@ fn close(w: &mut World) {
     }
 }
 
-/// The list's items (the source's row tint, FUN_10135120): equipment with slots and jobs, through the slot filter.
+/// The list's items: view 2 of the container (FUN_10134f00 = FUN_1021c7e0, sorted by (resource, item id)) through the
+/// slot filter, rows without a level or races dropped (FUN_10135120: record +0x14d0 / +0x14d8).
 fn items(w: &World, e: &Editor) -> Vec<crate::inventory::Slot> {
     let Some(info) = w.item_info.as_ref() else { return Vec::new() };
-    w.inv
-        .viewed(e.container)
+    let mut out: Vec<crate::inventory::Slot> = w
+        .inv
+        .slots_of(e.container)
         .into_iter()
         .filter(|s| s.index != 0 && s.id != 0)
-        .filter(|s| info.item(s.id).is_some_and(|it| it.slots != 0 && it.jobs != 0 && e.filter.is_none_or(|m| it.slots & m != 0)))
-        .collect()
+        .filter(|s| info.item(s.id).is_some_and(|it| it.level != 0 && it.races != 0 && e.filter.is_none_or(|m| it.slots & m != 0)))
+        .collect();
+    out.sort_by_key(|s| (info.item(s.id).map_or(0, |it| it.resource), s.id));
+    out
 }
 
 /// FUN_10131f10: a list item is in the working set (container and index of any slot).
@@ -439,13 +443,21 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, free: bool) -> Vec<[f3
             el.x = LIST_X;
         }
         crate::render::invwin::push_item_list(b, ui, style, font, GameUi::ATLAS, &m, &list, sw, sh, frame, 3.0, free && e.on_list && e.mogc.is_none(), crate::render::invwin::INVENTOR_BAR);
-        // The storage strip (framesus 185, its text baked in, drawn from x 16 of its origin) on row 0 at (x - 18, y + 2)
-        // of the icon column *(inf: the source draws this cell itself; the wardrobe number's glyph is not known)*.
-        if e.scroll == 0
-            && let Some(lib) = ui.lib("menu    framesus")
-        {
+        // The storage strip (cell 1 kind 0x41: framesus 185, its text baked in) at the row origin + (0, 2); cell 0 kind
+        // 0x40 the wardrobe number right-aligned at (row x + 13, y + 4) (its badge sprites have alpha 0).
+        if e.scroll == 0 {
             let (wx, wy) = crate::render::screens::window_pos(&m, sw, sh, 1.0, 1.0);
-            b.push_sprite(ui, lib, 185, wx + 3.0 - 18.0, wy + 4.0 + 2.0, 1.0, 1.0, WHITE, 0);
+            if let Some(lib) = ui.lib("menu    framesus") {
+                b.push_sprite(ui, lib, 185, wx + 3.0, wy + 4.0 + 2.0, 1.0, 1.0, WHITE, 0);
+            }
+            let n = match e.container {
+                8 => 1,
+                c @ 10..=16 => c - 8,
+                _ => 0,
+            };
+            if n > 0 {
+                crate::render::screens::push_shape_text_right(b, ui, n.to_string().as_bytes(), wx + 3.0 + 13.0, wy + 4.0 + 4.0, WHITE);
+            }
         }
     }
     if let Some(mut r) = gu.window_rect(LIST, sw, sh) {

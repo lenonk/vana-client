@@ -407,7 +407,7 @@ fn held(w: &World, id: u16) -> (bool, bool) {
 /// FUN_10132050: the main job can wear it now. 0x119 seen; a race / job / level record (automaton items have no race);
 /// the race and main-job bits; level up to the main job's (retail: the unsynced level, s2c 0x067 @0x25, not parsed;
 /// 0x061's is its fallback); the superior level's low byte up to 0x061 @0x52; none of its slots encumbered (0x01B @0x60).
-fn can_wear(w: &World, it: &crate::dat::items::Item, id: u16) -> bool {
+pub(super) fn can_wear(w: &World, it: &crate::dat::items::Item, id: u16) -> bool {
     let (Some(st), Some(jobs)) = (w.stats.as_ref(), w.job_info.as_ref()) else { return false };
     w.recasts_seen
         && it.slots != 0

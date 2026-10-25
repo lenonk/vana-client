@@ -7138,3 +7138,40 @@ Spec `~/ffxi/lab/research/equip_screen_spec.md` D.
   13 / 31 / 106..113 / 125 / 169, keytops3 icons ...); checked offscreen: the equipment, topbar (menu, target and party
   gauges) and inventory shots are unchanged apart from the balls, now red / green / violet / white / cyan / yellow /
   blue / dark as the user's retail shot.
+
+## Equipment screen as retail: the list, both modes, mnstorag (2026-10-25)
+
+Spec `~/ffxi/lab/research/equip_screen_spec.md` (FUN_10133130, list source vt 0x103336c0, equip vt 0x10333728);
+ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
+- Open: persona, money, the list (always, at (314, 48), unfocused) on the Inventory with every piece of gear, the grid
+  focused in mode 2; c2s 0x061 {1}; the main menu is hidden and comes back (with its cursor) when the screen closes.
+- Rows: the strip (framesus 185 at the row origin + (0, 2), its text "Storage Options" baked in; the wardrobe number
+  right-aligned at (row x + 13, y + 4)), then the container's items whose record has a level and races and whose slots
+  meet the view mask (0xffff, or 1 << slot after a grid Enter), sorted by (record resource, id) as the retail shot.
+  Tints FUN_10130540: closed wardrobe (3..8 without the feature bit) grey, picked orange, worn green, wearable now white
+  else grey; any lock status but 0 / 5 / 0x1b grey (not over orange).
+- Mode 2: grid arrows wrap; Enter on an encumbered slot SE 0004, else the list on the container of the slot's piece,
+  filtered to the slot, top row reset, cursor row kept, focused. List Enter: masks reset, the piece into the slot (the
+  slot's worn piece again: c2s 0x050 index 0), the grid again; Escape resets the masks and returns to the grid. Up /
+  Down do not wrap, plain Left / Right page.
+- Mode 1 (Num+, SE 0013): list Enter picks (orange), the grid limited to its slots (or the slot already holding it),
+  its cursor to the first allowed child of 0x1036f744; Left / Right walk them, Up / Down nothing; grid Enter equips and
+  unpicks, Escape unpicks; list Escape closes everything; list Num+ with nothing picked back to mode 2.
+- Equip checks (FUN_101327d0): encumbered slot; Sub with a weapon that fits Main: no NIN / THF / DNC / BLU as main or
+  sub -> 7 0x8b, no main weapon -> 7 0x98, a two-handed main (FUN_1015aa70: skills 1, 4, 6, 7, 8, 10, 12) -> 7 0x99;
+  can wear now (shop.rs can_wear); one of the item's slots; a closed wardrobe. c2s 0x050 carries the list's container.
+- mnstorag (the strip's Enter): Inventory, Wardrobe 1..8, rows 3..9 off without a size (s2c 0x01C), cursor on the
+  current container; Enter switches the list's container.
+- Grid extras: an encumbered slot's keytops3 429, a wardrobe piece's number at (child + 30 right, + 2).
+- Compare: mode 1 walks the item's slot bits (as before); mode 2 compares with the grid slot's piece, nothing moves.
+- Bars: title slot 2 "Equipment" (0xd 0x14) always; list rows help 0xe 0x3c9 in slot 2, cleared on the strip.
+- The inferred Backspace / Delete removal is gone (retail removes by Enter on the worn piece).
+- esedit.rs (the slot editor's list, same base): the strip at the row origin (it was 18 px left), the wardrobe number,
+  rows filtered on level / races (FUN_10135120 reads record +0x14d0 / +0x14d8, not slots / jobs), sorted by (resource,
+  id).
+- Live (Lnxcsfix WAR 21): the list at open with the strip and the order Dagger, Bronze Dagger, Onion Sword (green),
+  Hume Tunic, M Gloves, Slacks, M Boots; Enter on Main -> the three weapons; Dagger into Main (0x050); a dagger to Sub
+  -> "You need the Dual Wield ability to equip that as a sub-weapon."; Num+, Hume Slacks picked (orange), the grid to
+  Legs, Enter equipped them; Storage Options focused; Escape back to the main menu.
+- Not done: the open refusals (synthesis 7 0x4e, fishing 0x4d, not loaded 0xa8), "menu    pupequip" for PUP, the
+  mouse model of C.7, the unequip toggle not seen live yet.
