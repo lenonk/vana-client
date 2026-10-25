@@ -73,7 +73,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R7, R10, R14, R16..R18, R21. Left: R8 0xd4 subs 1 / 3 / 4 / 5 (option data) and
   the map preview, R9 0x20 / 0x30 control lock, R11 0xae, R12 0xab toggles, R13 0x7e mounts (needs the chocobo /
-  mount model; subs 0 / 5 / 8 done), R15 0xb6 0x11 / 0x12..0x15 (0xd / 0xe chocobo looks done), R20 0xd8 body rotation, 0x46/3 camera seed, 0xb3 mini-game.
+  mount model; subs 0 / 5 / 8 done), R15 0xb6 0x11 / 0x12..0x15 (0xd / 0xe chocobo looks done), 0x46/3 camera seed (4 sites), 0xb3 mini-game (0xd8 done).
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);
@@ -142,7 +142,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
-    the mouse and the wheel on them; left the key item / quest / mission lists;
+    the key item / quest / mission / currency lists; the mouse and the wheel on them;
   - collision and lifts (MODLOG "Actor collision and lifts"): NPCs hold you 0.5 s then let you through, idle players never (MODLOG "Character bump"); lifts ride and move, the zone-in waits for them; left
     Mog House furniture boxes;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
