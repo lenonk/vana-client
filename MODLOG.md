@@ -8022,5 +8022,6 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   0x03D {u32 ID, Name[16], i8 Mode 0 / 1} (FUN_100e0bc0). LSB resolves the name itself and answers s2c 0x042 {ID,
   Name[16]} @4, Mode @0x18 (0 added, 1 removed, 2 failed): ours adds / removes the name and prints 9 0x74 / 0x76, or
   0x75 / 0x77 by the edit asked *(inf: the list update on 0x042)*. Fewer words open "menu    blklist": not done.
-- Live (Lnxcsfix): `/blacklist add Nobodyhere` printed "Failed to add to blacklist.".
+- Live (Lnxcsfix): `/blacklist add Nobodyhere` printed "Failed to add to blacklist."; `add Perrin` (a bot online)
+  "Added to blacklist.", `delete Perrin` "Removed from blacklist." (char_blacklist empty again).
 

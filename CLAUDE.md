@@ -194,7 +194,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
   check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: invisible talk, /equip refusals, the command gate's
-  lines (window open, layout, charmed), the map on an elevator, the block list, s2c 0x0B4 (PvP, the system message
+  lines (window open, layout, charmed), the map on an elevator, the block list's window "menu    blklist" (its
+  filters and /blacklist add / delete are done, MODLOG "The block list"), s2c 0x0B4 (PvP, the system message
   filter); the toggles' consumers for /ignorepet, /ignoretrust, /hidetrust (no pet owner / trust flag on entities),
   /battlebgm (party battle music), /bellsw (op 0xb3), /furcc; /displayhead, /partyinfo, /jobmasterdisp, /autotarget; the spec's part C (window, list and server-flag commands).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
