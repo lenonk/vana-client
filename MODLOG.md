@@ -6952,3 +6952,36 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` part H (H1, H2); ours client/help
 - Live (Lnxcsfix): the menu page beside the social page, Q&A refused, the Config page (mentor rows grey, the terms
   wrapped and scrolled to Back), Mentor Search (0 results on LSB). Not done: the Adventuring Primer (guide00), the GM
   call (faqmain, DAT 5813's script), the keyword box's field frame, the mouse.
+
+## MacroPalette: Edit Macro (2026-10-24)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` M1; ours client/macroedit.rs, macros.rs.
+- Social child 6: "menu    mcrmenu" (group 0x81: the social page is suspended, the main menu keeps its cursor);
+  Edit Macro -> "menu    mcrselec": 20 rows of the page's books (page 0 books 1..20, 1 books 21..40; Left / Right flip,
+  the page kept across opens), the active book's red bar (keytops3 87), the names in mcralpha at (8, 2) cut before 75
+  px (letters and digits only; other bytes skipped); help "Macro Book (#%d)" (10 0x6d), title the name; Escape writes
+  mcr.ttl / mcr_2.ttl. Edit Equip. Set (M2) is not done.
+- "menu    mcrselop" left of the cursor row (x = row x - its width, y = min(row y, mcrselec bottom - its height)):
+  Confirm (the book becomes the active one at the same set, the palettes open), Change Name (the field: 15 bytes,
+  Enter and Escape both commit, empty -> "Book%02d"), Copy (nmcr.dat .. nmcr9.dat), Paste (dim until a copy; 9 0xef),
+  Delete (9 0xf0); every Enter closes it.
+- The edit palettes "menu    mcr1edit" / "mcr2edit" (mcr?edlo long, as the play palettes), Alt 42 lower, both 0x82
+  right while gaugewin is up; Left / Right the column; Ctrl Down / Alt Up the other palette at the column; Ctrl Up /
+  Alt Down the set before / after (the old set file written, the new one read) then the other palette; Enter the
+  editor; Escape back to the book list. Help "Macro Set %s (#%d)", title "Edit Macros", title slot 2 the macro's
+  title. "menu    mcrbedit" beside them, Num+ (key function 0x11) gives it the focus (SE 0013): Copy / Paste / Delete
+  of the macro (memory), or with Ctrl / Alt held 31 frames *(inf: at 30 fps)* of the set (smcr.dat; 9 0xed / 0xee).
+- "menu    macro": "Ctrl %d" / "Alt %d" (10 0x5b / 0x5c), the title (8 bytes) at child 3 and the six lines (60) at
+  (28, 73 + 30 k) cut at 315; Enter on a field edits it (typing appends at the end; Down / Enter the next field, Up the
+  previous, Enter on line 6 or Escape stops); Prev / Next store the fields and step across Ctrl 1..Alt 0 (SE 0004 at
+  the ends); Escape stores (a title over 8 or a line over 60 is refused) and gives the palettes back. Num+ on a line:
+  "menu    mcrledit" (copy / paste / delete the line).
+- macros.rs: set_title / set_line with retail's limits, the macro / set / book clipboards (smcr.dat, nmcr*.dat),
+  rename_book, save_titles, the "BookNN" names before the ttl files are read (empty ones from our old files filled
+  too).
+- The play palettes' 0x82 shift tests gaugewin and cnttime (FUN_101a3840 reads DAT_105781ec and DAT_10578184 =
+  "menu    cnttime"), not the cast bar as ours did.
+- Live (Lnxcsfix, its USER folder backed up and restored after): rename to "Test", Confirm, the palettes and
+  mcrbedit, Ctrl 1 edited (title and line 1), the cell's new title; mcr.ttl and mcr.dat held the edits.
+- Not done: auto-translate and Shift-JIS input in the fields, the caret position (always at the end), the palettes'
+  flip zoom, the mouse.

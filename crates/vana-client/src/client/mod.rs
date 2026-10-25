@@ -57,6 +57,7 @@ mod currencies;
 mod unity;
 mod bazaar;
 mod helpdesk;
+mod macroedit;
 mod journal;
 mod missions;
 mod quests;
@@ -169,7 +170,7 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -801,7 +802,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1126,7 +1127,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let search_typing = searchmenu::typing(world);
     let ls_typing = linkshell::typing(world);
     let comment_typing = seacom::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing;
+    let macro_typing = macroedit::typing(world);
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1138,6 +1140,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keys.clear();
     } else if comment_typing {
         seacom::text_events(world, &input.events);
+        keys.clear();
+    } else if macro_typing {
+        macroedit::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -1367,6 +1372,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if helpdesk::focused(world) => helpdesk::key(world, *key),
+                _ if world.macroedit.is_some() => macroedit::key(world, gu, *key),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
                 _ if world.moogle.is_some() => {
@@ -1598,6 +1604,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (1, 4) => viewhouse::open(world),
             // Child 5 Set Bazaar: "menu    bazaar".
             (1, 5) => bazaar::open(world),
+            // Child 6 MacroPalette: mcrmenu, SE 0002.
+            (1, 6) => macroedit::open(world),
             // Child 8 Help Desk (FUN_102174c0): faqsub beside the social page, SE 0002.
             (1, 8) => {
                 helpdesk::open(world);
@@ -1872,7 +1880,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
-        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none(),
+        menu_focused: world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
     gu.clear();
@@ -2098,6 +2106,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(viewhouse::draw(gu, world, sw, sh));
     blockers.extend(bazaar::draw(gu, world, sw, sh));
     blockers.extend(helpdesk::draw(gu, world, sw, sh));
+    blockers.extend(macroedit::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
     blockers.extend(currencies::draw(gu, world, sw, sh));
@@ -2197,40 +2206,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let p = world.palette.0 as usize;
         let long = world.game.get(0x9d) == 0 && sw >= 1024.0;
         let name = format!("menu    mcr{p}{}", if long { "long" } else { "pall" });
-        // 0x82 to the right while the gauge window or the cast bar is up (FUN_101a3840, mode DAT_106218ee 0).
-        let dx = if world.gauge.is_some() || world.cast_bar.is_some() { 130.0 } else { 0.0 };
+        // 0x82 to the right while gaugewin or cnttime is up (FUN_101a3840, mode DAT_106218ee 0).
+        let dx = macroedit::palette_dx(world);
         if let Some(win) = gu.lobby_window_off(&name, sw, sh, (dx, 0.0), Some(world.palette.3[p - 1] as u16 + 1), true, &[]) {
             let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
             for (k, (_, r)) in win.children.iter().take(10).enumerate() {
-                let title = m.recs[k + 10 * (p - 1)].title();
-                if title.is_empty() {
-                    continue;
-                }
-                if title.chars().all(|c| c.is_ascii_alphanumeric()) {
-                    // 62 glyphs in the order 1..9, 0, a..z, A..Z; advance = width + 1, stopping before max(w, 38).
-                    let mut x = r[0] + pad;
-                    for c in title.chars() {
-                        let i = match c {
-                            '1'..='9' => c as usize - '1' as usize,
-                            '0' => 9,
-                            'a'..='z' => 10 + c as usize - 'a' as usize,
-                            _ => 36 + c as usize - 'A' as usize,
-                        };
-                        let adv = gu.sprite_width("menu    mcralpha", i) + 1.0;
-                        if x + adv > r[0] + r[2].max(38.0) {
-                            break;
-                        }
-                        gu.sprite("menu    mcralpha", i, x, r[1] + 4.0, 0x8080_8080);
-                        x += adv;
-                    }
-                } else {
-                    let max = r[2].max(48.0) - 14.0;
-                    let mut t = title.clone();
-                    while !t.is_empty() && gu.text_width(&t) > max {
-                        t.pop();
-                    }
-                    gu.text(&t, r[0] + pad, r[1] + 2.0, 0, WHITE);
-                }
+                macroedit::cell_title(gu, &m.recs[k + 10 * (p - 1)].title(), *r, pad);
             }
             blockers.push(win.frame);
         }
@@ -2405,6 +2386,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             linkshell::answer(world, a);
         }
+        (Some(true), Some((Confirm::Macro(a), _))) => {
+            world.confirm = None;
+            macroedit::answer(world, a);
+        }
         (Some(true), Some((Confirm::NewAdventurer, _))) => {
             world.confirm = None;
             helpdesk::new_adventurer_off(world);
@@ -2555,6 +2540,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     viewhouse::bars(gu, world, &mut bars);
     bazaar::bars(gu, world, &mut bars);
     helpdesk::bars(gu, world, &mut bars);
+    macroedit::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
     currencies::bars(gu, world, &mut bars);
     unity::bars(gu, world, &mut bars);
@@ -2604,6 +2590,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Ls(a), _) => linkshell::ask_text(gu, a),
         (Confirm::Sync { id, race, off }, _) => levelsync::ask_text(world, id, race, off),
         (Confirm::NewAdventurer, _) => world.battle.as_ref().and_then(|b| b.group9(0xd4)).unwrap_or_default(),
+        (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3716,6 +3703,10 @@ struct World {
     bazaar_customers: i32,
     /// Social row Help Desk: "menu    faqsub".
     helpdesk: Option<helpdesk::HelpDesk>,
+    /// Social row MacroPalette's windows, mcrselec's page (its object is permanent) and mcrledit's line clipboard.
+    macroedit: Option<macroedit::MacroEdit>,
+    mcr_page: usize,
+    mcr_line: Option<Vec<u8>>,
     /// 0x067 kind 2 @0x24: our Mog House is open to visitors (FUN_100f96e0).
     mh_open: bool,
     /// s2c 0x02E arrived (DAT_1047faae), the moogle menu open (myroom / mogext and its storage menu).
@@ -3817,6 +3808,8 @@ enum Confirm {
     Sync { id: u32, race: u8, off: bool },
     /// Help Desk Config's Cancel New Adventurer Status (group 9 0xd4).
     NewAdventurer,
+    /// MacroPalette's book / set paste and delete prompts.
+    Macro(macroedit::Ask),
 }
 
 impl World {
@@ -4925,6 +4918,9 @@ impl App {
                             bazaar_msg: Default::default(),
                             bazaar_customers: 0,
                             helpdesk: None,
+                            macroedit: None,
+                            mcr_page: 0,
+                            mcr_line: None,
                             mh_open: false,
                             mog_pending: false,
                             moogle: None,
@@ -5314,6 +5310,7 @@ impl App {
                     world.room_flag = room_flag;
                     (world.mh_seen, world.viewhouse, world.currencies, world.unity, world.bazaar) = (false, None, None, None, None);
                     world.helpdesk = None;
+                    world.macroedit = None;
                     // Field entry reads every macro file (FUN_101ba030); LSB's content id is the character id.
                     let bt = world.battle.clone();
                     world.macros = Some(macros::Macros::load(&self.cfg.ffxi_dir(), world.my_id, Box::new(move |id| bt.as_ref().and_then(|b| b.group9(id)))));
@@ -6561,6 +6558,12 @@ impl App {
         if self.input.test(0x11, input::mode::PRESS) && treasure::active(world) {
             treasure::num_plus(world);
         }
+        if self.input.test(0x11, input::mode::PRESS) && world.macroedit.is_some() {
+            macroedit::num_plus(world);
+        }
+        // mcrbedit's set mode: Ctrl (0x76) or Alt (0x77) held.
+        let held = self.input.test(0x76, input::mode::HELD) || self.input.test(0x77, input::mode::HELD);
+        macroedit::update(world, dt * 60.0, held);
         // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
         if self.input.test(0x11, input::mode::PRESS) && world.arealist.is_some() {
             if let Some(gu) = self.game_ui.as_ref() {

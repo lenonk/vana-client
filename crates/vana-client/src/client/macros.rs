@@ -59,6 +59,15 @@ impl Macro {
         self.lines[k] = [0; 61];
         self.lines[k][..n].copy_from_slice(&text[..n]);
     }
+
+    /// A title or any line (FUN_101a2af0's test).
+    pub fn is_empty(&self) -> bool {
+        cstr(&self.title).is_empty() && self.lines.iter().all(|l| cstr(l).is_empty())
+    }
+
+    pub fn raw_title(&self) -> &[u8] {
+        cstr(&self.title)
+    }
 }
 
 /// The user-file container (FUN_101b9a10 / FUN_101b9bc0): u32 version (as registered: 1 for the macro files, 2
@@ -84,6 +93,14 @@ pub(super) fn write_file(path: &Path, version: u32, payload: &[u8]) {
     if let Err(e) = std::fs::write(path, out) {
         log::warn!("macro file {}: {e}", path.display());
     }
+}
+
+/// FUN_101a2a10: "Book%02d" (group 10 0x6c), the names every book has before the ttl files are read.
+fn default_name(b: usize) -> [u8; 16] {
+    let mut t = [0u8; 16];
+    let s = format!("Book{:02}", b + 1);
+    t[..s.len()].copy_from_slice(s.as_bytes());
+    t
 }
 
 /// mcr.dat's defaults (FUN_101a1fe0): titles from FFXiMain, lines from group 9 (read until an empty one).
@@ -193,6 +210,11 @@ pub struct Macros {
     acc: f32,
     /// Lines of group 9 for the defaults, by id.
     group9: Box<dyn Fn(usize) -> Option<String>>,
+    /// +0x21d0 / +0x235c the macro clipboard, +0x235d a set copied to smcr.dat, +0x234c / +0x235e a book copied to
+    /// nmcr*.dat and its name.
+    clip: Option<Macro>,
+    pub set_copied: bool,
+    book_copied: Option<[u8; 16]>,
 }
 
 impl Macros {
@@ -202,12 +224,19 @@ impl Macros {
         let (mix, aix) = (Order::load(&dir.join("mix.dat"), 2, 0x400, 0x400), Order::load(&dir.join("aix.dat"), 4, 0xb00, 0x700));
         let moix = read_file(&dir.join("moix.dat"), 1).filter(|p| p.len() == 0x80).map_or_else(|| (0..0x40).collect(), |p| p.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
         let eix = read_file(&dir.join("eix.dat"), 1).filter(|p| p.len() == 0x100).map_or_else(|| (0..0x80).collect(), |p| p.chunks(2).map(|c| u16::from_le_bytes([c[0], c[1]])).collect());
-        let mut m = Macros { dir, mix, aix, moix, eix, book: 0, set: 0, recs: vec![Macro::default(); 20], titles: vec![[0; 16]; BOOKS], run: None, acc: 0.0, group9 };
+        let titles = (0..BOOKS).map(default_name).collect();
+        let mut m = Macros { dir, mix, aix, moix, eix, book: 0, set: 0, recs: vec![Macro::default(); 20], titles, run: None, acc: 0.0, group9, clip: None, set_copied: false, book_copied: None };
         for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
             if let Some(p) = read_file(&m.dir.join(name), 1).filter(|p| p.len() == 0x140) {
                 for i in 0..20 {
                     m.titles[k * 20 + i].copy_from_slice(&p[16 * i..16 * i + 16]);
                 }
+            }
+        }
+        // Retail's files always hold a name ("BookNN" from the start); ours before 2026-10-24 wrote empty ones.
+        for (b, t) in m.titles.iter_mut().enumerate() {
+            if t[0] == 0 {
+                *t = default_name(b);
             }
         }
         // mcr.sys: book * 20 + 2 * set.
@@ -226,9 +255,13 @@ impl Macros {
         &self.dir
     }
 
+    /// FUN_101a2610: prefix ("", "n", "s") + "mcr" + (n when not 0) + ".dat".
+    fn file(&self, prefix: &str, n: usize) -> PathBuf {
+        self.dir.join(if n == 0 { format!("{prefix}mcr.dat") } else { format!("{prefix}mcr{n}.dat") })
+    }
+
     fn set_path(&self) -> PathBuf {
-        let n = self.book * 10 + self.set;
-        self.dir.join(if n == 0 { "mcr.dat".to_string() } else { format!("mcr{n}.dat") })
+        self.file("", self.book * 10 + self.set)
     }
 
     /// FUN_101a26c0 / FUN_101a1e20: the set file; missing or bad: mcr.dat takes the defaults, others are cleared
@@ -275,10 +308,7 @@ impl Macros {
         write_file(&self.dir.join("moix.dat"), 1, &self.moix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
         write_file(&self.dir.join("eix.dat"), 1, &self.eix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
         write_file(&self.dir.join("mcr.sys"), 1, &((self.book * 20 + 2 * self.set) as u32).to_le_bytes());
-        for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
-            let p: Vec<u8> = self.titles[k * 20..k * 20 + 20].iter().flatten().copied().collect();
-            write_file(&self.dir.join(name), 1, &p);
-        }
+        self.save_titles();
         self.save_set();
     }
 
@@ -288,6 +318,155 @@ impl Macros {
         let wrap = |v: usize, n: usize| if v < n { v } else if v - n < n { v - n } else { 0 };
         (self.book, self.set) = (wrap(book, BOOKS), wrap(set, 10));
         self.load_set();
+    }
+
+    /// Set file n's records as read without writing anything back (book copy): missing or bad, mcr.dat's defaults for
+    /// n 0, else cleared.
+    fn read_set(&self, n: usize) -> Vec<u8> {
+        match read_file(&self.file("", n), 1) {
+            Some(p) if p.len() == SET_PAYLOAD => p,
+            _ => {
+                let recs = if n == 0 { self.defaults() } else { vec![Macro::default(); 20] };
+                let mut p = Vec::with_capacity(SET_PAYLOAD);
+                for m in &recs {
+                    m.write(&mut p);
+                }
+                p
+            }
+        }
+    }
+
+    /// FUN_101a1940 / FUN_101a18a0: a title over 8 bytes or a line over 60 is refused (the old text stays).
+    pub fn set_title(&mut self, i: usize, text: &[u8]) -> bool {
+        let Some(m) = self.recs.get_mut(i).filter(|_| text.len() <= 8) else { return false };
+        m.title = [0; 10];
+        m.title[..text.len()].copy_from_slice(text);
+        true
+    }
+
+    pub fn set_line(&mut self, i: usize, k: usize, text: &[u8]) -> bool {
+        let Some(m) = self.recs.get_mut(i).filter(|_| text.len() <= 60 && k < 6) else { return false };
+        m.set_line(k, text);
+        true
+    }
+
+    /// FUN_101a2af0 / FUN_101a2ac0 / FUN_101a2a90: the button clipboard (copy only from a macro with something in it),
+    /// memory only.
+    pub fn copy_macro(&mut self, i: usize) {
+        if let Some(m) = self.recs.get(i).filter(|m| !m.is_empty()) {
+            self.clip = Some(m.clone());
+        }
+    }
+
+    pub fn macro_copied(&self) -> bool {
+        self.clip.is_some()
+    }
+
+    pub fn paste_macro(&mut self, i: usize) {
+        if let (Some(c), Some(m)) = (self.clip.clone(), self.recs.get_mut(i)) {
+            *m = c;
+        }
+    }
+
+    pub fn clear_macro(&mut self, i: usize) {
+        if let Some(m) = self.recs.get_mut(i) {
+            *m = Macro::default();
+        }
+    }
+
+    fn payload(&self) -> Vec<u8> {
+        let mut p = Vec::with_capacity(SET_PAYLOAD);
+        for m in &self.recs {
+            m.write(&mut p);
+        }
+        p
+    }
+
+    /// FUN_101a2bc0: the set as in memory to smcr.dat.
+    pub fn copy_set(&mut self) {
+        write_file(&self.file("s", 0), 1, &self.payload());
+        self.set_copied = true;
+    }
+
+    /// FUN_101a2b60: smcr.dat written as the current set file, then read back.
+    pub fn paste_set(&mut self) {
+        if let Some(p) = read_file(&self.file("s", 0), 1).filter(|p| p.len() == SET_PAYLOAD) {
+            write_file(&self.set_path(), 1, &p);
+        }
+        self.load_set();
+    }
+
+    /// FUN_101a2b40: the 20 macros cleared in memory.
+    pub fn clear_set(&mut self) {
+        self.recs = vec![Macro::default(); 20];
+    }
+
+    /// FUN_101a2d30: the current set written; book b's ten sets (as read, nothing written back) to nmcr.dat ..
+    /// nmcr9.dat; the current set read again; the name kept for the paste.
+    pub fn copy_book(&mut self, b: usize) {
+        self.save_set();
+        for k in 0..10 {
+            let p = self.read_set(b * 10 + k);
+            write_file(&self.file("n", k), 1, &p);
+        }
+        self.load_set();
+        self.book_copied = self.titles.get(b).copied();
+    }
+
+    pub fn book_copied(&self) -> bool {
+        self.book_copied.is_some()
+    }
+
+    /// FUN_101a2c80: the current set written; nmcr{k}.dat to book b's set k; the current set read again; the copied
+    /// name.
+    pub fn paste_book(&mut self, b: usize) {
+        let Some(name) = self.book_copied else { return };
+        self.save_set();
+        for k in 0..10 {
+            if let Some(p) = read_file(&self.file("n", k), 1).filter(|p| p.len() == SET_PAYLOAD) {
+                write_file(&self.file("", b * 10 + k), 1, &p);
+            }
+        }
+        self.load_set();
+        self.titles[b] = name;
+    }
+
+    /// FUN_101a2be0: the current set written; an empty set over book b's ten; the current set read again; "BookNN".
+    pub fn delete_book(&mut self, b: usize) {
+        self.save_set();
+        let mut empty = Vec::with_capacity(SET_PAYLOAD);
+        for m in &vec![Macro::default(); 20] {
+            m.write(&mut empty);
+        }
+        for k in 0..10 {
+            write_file(&self.file("", b * 10 + k), 1, &empty);
+        }
+        self.load_set();
+        self.titles[b] = default_name(b);
+    }
+
+    /// FUN_101a2980: up to 15 bytes; empty -> "Book%02d" (group 10 0x6c).
+    pub fn rename_book(&mut self, b: usize, raw: &[u8]) {
+        let Some(t) = self.titles.get_mut(b) else { return };
+        if raw.is_empty() {
+            *t = default_name(b);
+        } else {
+            let n = raw.len().min(15);
+            *t = [0; 16];
+            t[..n].copy_from_slice(&raw[..n]);
+        }
+    }
+
+    pub fn raw_book_title(&self, b: usize) -> &[u8] {
+        cstr(&self.titles[b])
+    }
+
+    /// FUN_101a27e0: mcr.ttl and mcr_2.ttl (0x140 bytes each).
+    pub fn save_titles(&self) {
+        for (k, name) in ["mcr.ttl", "mcr_2.ttl"].iter().enumerate() {
+            let p: Vec<u8> = self.titles[k * 20..k * 20 + 20].iter().flatten().copied().collect();
+            write_file(&self.dir.join(name), 1, &p);
+        }
     }
 
     /// The book's title, "Book%02d" when empty (group 10 0x6c).
@@ -393,6 +572,40 @@ mod tests {
         let mut w = again;
         w.switch(80, 10);
         assert_eq!((w.book, w.set), (0, 0));
+        let _ = std::fs::remove_dir_all(&game);
+    }
+
+    /// The editing API: limits, the clipboards and the files each one writes.
+    #[test]
+    fn editing_and_files() {
+        let game = scratch("t3");
+        let mut m = Macros::load(&game, 7, Box::new(|_| None));
+        assert_eq!(m.raw_book_title(4), b"Book05");
+        assert!(!m.set_title(0, b"123456789") && m.set_title(0, b"Echo"));
+        assert!(!m.set_line(0, 0, &[b'a'; 61]) && m.set_line(0, 0, b"/echo hi"));
+        // Default 4 has no title and no lines.
+        m.copy_macro(4);
+        assert!(!m.macro_copied());
+        m.copy_macro(0);
+        m.paste_macro(1);
+        assert_eq!((m.recs[1].title(), m.recs[1].line(0)), ("Echo".to_string(), &b"/echo hi"[..]));
+        m.copy_set();
+        assert!(game.join("USER/7/smcr.dat").exists());
+        m.clear_set();
+        assert!(m.recs[0].is_empty());
+        m.paste_set();
+        assert_eq!(m.recs[1].line(0), b"/echo hi");
+        m.rename_book(0, b"Mine");
+        m.copy_book(0);
+        assert!((0..10).all(|k| game.join(if k == 0 { "USER/7/nmcr.dat".to_string() } else { format!("USER/7/nmcr{k}.dat") }).exists()));
+        m.paste_book(2);
+        assert_eq!(m.raw_book_title(2), b"Mine");
+        m.switch(2, 0);
+        assert_eq!(m.recs[1].line(0), b"/echo hi");
+        m.delete_book(2);
+        assert!(m.recs.iter().all(|r| r.is_empty()) && m.raw_book_title(2) == b"Book03");
+        m.rename_book(1, b"");
+        assert_eq!(m.raw_book_title(1), b"Book02");
         let _ = std::fs::remove_dir_all(&game);
     }
 
