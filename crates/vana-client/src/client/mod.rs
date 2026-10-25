@@ -3804,6 +3804,8 @@ struct World {
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
     item_search: bool,
+    /// /follow's target (0x10487f74): autorun steers at it each tick.
+    follow: Option<u32>,
     target_since: Instant,
     cam_turn: (f32, f32),
     /// UI sound effects to play ("0002", "0009" ...), by SE id.
@@ -5172,6 +5174,7 @@ impl App {
                             party_tp: self.cfg.party_tp,
                             party_tp_save: false,
                             item_search: false,
+                            follow: None,
                             overlay: None,
                             map_opacity: self.cfg.map_overlay_opacity,
                             map_overlay: self.cfg.map_overlay,
@@ -6905,6 +6908,19 @@ impl App {
         if world.autorun && (in_event || world.dead() || matches!(world.my_motion.status, 6 | 7 | 0x21 | 0x26..=0x2c | 0x2f | 0x30 | 0x32..=0x35 | 0x38..=0x53)) {
             world.autorun = false;
         }
+        // /follow (FUN_100a6070's users): autorun points at the target each tick; the target gone, dead or without a
+        // model ends it.
+        if let Some(t) = world.follow {
+            match world.entities.get(&t).filter(|e| !matches!(e.motion.status, 2 | 3) && world.actors.contains_key(&t)) {
+                Some(e) if world.autorun => {
+                    let d = Vec3::new(e.pos.x - world.pos.x, 0.0, e.pos.z - world.pos.z);
+                    if d.length() > 1e-3 {
+                        world.autorun_dir = d.normalize();
+                    }
+                }
+                _ => world.autorun = false,
+            }
+        }
         if world.autorun && !world.locked && !move_locked {
             if world.autorun_dir == Vec3::ZERO && step != Vec3::ZERO {
                 world.autorun_dir = step.normalize();
@@ -6922,6 +6938,10 @@ impl App {
         }
         if !world.autorun {
             world.autorun_dir = Vec3::ZERO;
+            // Autorun ending for any reason ends the follow: group 9 0x41 "Follow canceled.".
+            if world.follow.take().is_some() {
+                textcmd::log9(world, 0x41);
+            }
         }
         // FUN_100a5f60: |v| > 0.9 full speed, 0.05..0.9 a third; walking caps at a third.
         let mag = if world.autorun && !world.locked { 1.0 } else { ax.hypot(ay) };

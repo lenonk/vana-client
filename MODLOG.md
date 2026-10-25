@@ -8078,3 +8078,25 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix): "No instances of that item were found." for a Bronze Sword; "Instances of Hume tunics were found
   in the following systems:" and "Inventory".
 
+## Text commands: targets, linkshells, /fish, /automove, /follow, /returntrust, /volunteer (2026-10-25; spec
+## textcmds2_spec.md part D)
+
+- /targetpc /targetnpc /targetbnpc /targetopp (FUN_1007a600..6c0): nothing while engaged; the nearest PC, non-PC or
+  monster in front (opponents only in PvP: nothing). No line.
+- /makelinkshell[2] (FUN_1007d110 / d1d0): trading -> group 7 0x53; else c2s 0x0C3 {State = the number, Linkshell
+  1 / 2}. /breaklinkshell (FUN_1007d160): a valid name only, c2s 0x071 kind 1 with the name.
+- /fish (FUN_1007abf0): silent in a Mog House or engaged, the status gate 0x75 prints, else c2s 0x01A category 0x0E
+  on ourselves (the water-in-front test FUN_10177730 is left to the server *(inf)*; no fishing state yet).
+- /automove (FUN_1007e170): autorun on, forward as we face *(inf)*.
+- /follow (FUN_1007e190): a target that is not us (else the command fails), dead or without a model group 7 0xa5;
+  then autorun steers at it every tick; the target gone / dead / modelless, or autorun ending any way (Num7, events),
+  ends it with group 9 0x41 "Follow canceled.". World::follow.
+- /returntrust /returnfaith (FUN_1007bd80): nothing while engaged, mounted 7 0x4b; "all" or a trust of ours by name:
+  the talk action (c2s 0x01A category 0) with param 1 each (LSB releases it). Ours: our trusts are our party rows from
+  index 0x700 *(inf: retail tests the owner index +0x2a4)*.
+- /volunteer (FUN_10079810): the line from the first word, "%s T1 %s" with the target's name; c2s 0x01E.
+- Live (Lnxcsfix in Southern San d'Oria): /targetnpc picked Rumoie, /follow <t> ran to it, Num7 printed "Follow
+  canceled.".
+- Not done from part D: /monsterskill (no Monstrosity), /bstpet (the Ready move list), /translate (c2s 0x02B, s2c
+  0x047), the polls (/nominate /vote, s2c 0x078 / 0x079), /seacom /seacomup.
+

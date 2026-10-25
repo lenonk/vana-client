@@ -86,6 +86,19 @@ mod id {
     pub const RECRUITLIST: u16 = 0x60;
     pub const AUTOTARGET: u16 = 0x63;
     pub const ITEMSEARCH: u16 = 0x23;
+    pub const VOLUNTEER: u16 = 0x11;
+    pub const TARGETPC: u16 = 0x18;
+    pub const TARGETNPC: u16 = 0x19;
+    pub const TARGETBNPC: u16 = 0x1a;
+    pub const TARGETOPP: u16 = 0x1b;
+    pub const RETURNFAITH: u16 = 0x2f;
+    pub const RETURNTRUST: u16 = 0x30;
+    pub const FISH: u16 = 0x36;
+    pub const MAKELS: u16 = 0x48;
+    pub const MAKELS2: u16 = 0x49;
+    pub const BREAKLS: u16 = 0x4a;
+    pub const AUTOMOVE: u16 = 0x5a;
+    pub const FOLLOW: u16 = 0x5b;
     pub const AUTOGROUP: u16 = 0x5e;
     pub const RECRUIT: u16 = 0x5f;
     pub const MENTOR: u16 = 0x94;
@@ -1151,6 +1164,105 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         id::PCMD | id::ACMD => party(w, if cid == id::PCMD { 0 } else { 5 }, args, mode),
         id::RECRUITLIST => recruitlist(w, args),
+        // FUN_1007a600..6c0: nothing while engaged; the nearest PC / non-PC / monster in front (opponents: none
+        // outside PvP). No line, never fails.
+        id::TARGETPC | id::TARGETNPC | id::TARGETBNPC | id::TARGETOPP => {
+            if w.my_motion.status != 1 {
+                match cid {
+                    id::TARGETPC => super::target::nearest_kind(w, 0, false, true),
+                    id::TARGETNPC => super::target::nearest_npc(w),
+                    id::TARGETBNPC => super::target::nearest_kind(w, 0, true, false),
+                    _ => {}
+                }
+            }
+            Ok(())
+        }
+        // FUN_1007d110 / FUN_1007d1d0: not while trading (group 7 0x53); c2s 0x0C3 {State = the number, Linkshell 1 / 2}.
+        id::MAKELS | id::MAKELS2 => {
+            if super::trade::active(w) {
+                refuse(w, 0x53);
+                return Ok(());
+            }
+            let n = arg(1).and_then(number).unwrap_or(0) as u8;
+            send(w, NetCommand::Packet { id: 0x0C3, body: vec![n, if cid == id::MAKELS { 1 } else { 2 }, 0, 0] });
+            Ok(())
+        }
+        // FUN_1007d160: a valid name only (else nothing): c2s 0x071 kind 1 with the name (linkshell 1).
+        id::BREAKLS => {
+            if let Some(name) = arg(1).and_then(name_case) {
+                send(w, NetCommand::Packet { id: 0x071, body: super::party::kick_body(1, &name) });
+            }
+            Ok(())
+        }
+        // FUN_1007abf0: silent in a Mog House, engaged or in Conflict; the status gate 0x75 prints; else c2s 0x01A
+        // category 0x0E on ourselves (the water test is left to the server *(inf)*).
+        id::FISH => {
+            if w.room_flag || w.my_motion.status == 1 || !status_gate(w, 0x75) {
+                return Ok(());
+            }
+            act(w, (w.my_id, w.my_index), 0x0e, 0);
+            Ok(())
+        }
+        // FUN_1007e170: autorun on (key 0x1c's flag), forward as we face *(inf: retail's first frame)*.
+        id::AUTOMOVE => {
+            w.autorun = true;
+            w.autorun_dir = glam::Vec3::new(w.yaw.sin(), 0.0, w.yaw.cos());
+            Ok(())
+        }
+        // FUN_1007e190: a target that is not us (else the command fails); not followable (dead, no model) group 7
+        // 0xa5; else follow it with autorun on.
+        id::FOLLOW => {
+            let Some((t, _)) = resolve(w, arg(1), true, false, mode).filter(|t| t.0 != w.my_id) else { return Err(()) };
+            if !w.actors.contains_key(&t) || w.entities.get(&t).is_none_or(|e| matches!(e.motion.status, 2 | 3)) {
+                refuse(w, 0xa5);
+                return Ok(());
+            }
+            w.follow = Some(t);
+            w.autorun = true;
+            w.autorun_dir = glam::Vec3::ZERO;
+            Ok(())
+        }
+        // FUN_1007bd80: nothing while engaged; "all" or a trust of ours by name: the talk action with param 1
+        // (released), mounted refused (group 7 0x4b). Ours: our trusts are the party rows from 0x700.
+        id::RETURNFAITH | id::RETURNTRUST => {
+            if w.my_motion.status == 1 {
+                return Ok(());
+            }
+            if matches!(w.my_motion.status, 5 | 0x55) {
+                refuse(w, 0x4b);
+                return Ok(());
+            }
+            let trusts: Vec<(u32, u16, String)> = w.party.party().filter(|m| (0x700..0x900).contains(&m.index)).map(|m| (m.id, m.index, m.name.clone())).collect();
+            let picked: Vec<(u32, u16)> = match arg(1) {
+                Some("all") if args.len() == 2 => trusts.iter().map(|t| (t.0, t.1)).collect(),
+                Some(n) => trusts.iter().filter(|t| t.2.eq_ignore_ascii_case(n)).map(|t| (t.0, t.1)).collect(),
+                None => Vec::new(),
+            };
+            if picked.is_empty() {
+                return Err(());
+            }
+            for t in picked {
+                act(w, t, 0, 1);
+            }
+            Ok(())
+        }
+        // FUN_10079810: the rest of the line from the first word, with a target "%s T1 %s" (its name); c2s 0x01E.
+        id::VOLUNTEER => {
+            if args.len() < 2 {
+                return Err(());
+            }
+            let text = tail(line, 1).trim().to_string();
+            let text = match w.target.and_then(|t| w.entities.get(&t)) {
+                Some(e) => format!("{text} T1 {}", e.name),
+                None => text,
+            };
+            let mut b = vec![0u8; 0x98];
+            for (k, c) in text.bytes().take(0x95).enumerate() {
+                b[k] = c;
+            }
+            send(w, NetCommand::Packet { id: 0x01E, body: b });
+            Ok(())
+        }
         // FUN_1007d740: solo only (else it fails); exactly "on" / "off" set / clear c2s 0x0DC which 6 (another word
         // nothing), else a toggle from s2c 0x0B4 byte 1 bit 7. No line.
         id::AUTOGROUP => {

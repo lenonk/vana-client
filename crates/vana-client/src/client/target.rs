@@ -729,6 +729,16 @@ pub fn nearest_kind(w: &mut World, prefer: u32, enemies: bool, pcs: bool) {
     }
 }
 
+/// /targetnpc (FUN_1007a640 -> FUN_10083ee0(-1)): the nearest non-PC in front, any kind.
+pub fn nearest_npc(w: &mut World) {
+    if !picks_allowed(w) {
+        return;
+    }
+    if let Some(t) = nearest(w, |id, _| id >> 24 != 0) {
+        set(w, Some(t));
+    }
+}
+
 /// A target key's pick (FUN_10157b40 from FUN_101587f0): nothing while locked; picking the target already held
 /// plays "0010" again (FUN_10037dd0).
 pub fn pick(w: &mut World, t: Option<u32>) {
