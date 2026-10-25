@@ -7184,3 +7184,14 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   a search name, a linkshell name, a bazaar comment, a mail name, a map marker, the GM call field or the event input
   window also moved the character and ran their key functions (user report, macro editor). Now text_field_open() feeds
   Frame.typing and the log cycle (key function 0x78) test.
+
+## Macros while engaged (2026-10-25)
+
+- FUN_101a2e80's gate FUN_101a33e0: in the field (state 0x60), no event (FUN_10087070), not K.O. (+0x170 2 / 3), the
+  unknowns +0x59, +0xc4 and DAT_106631d4 clear; then refused only when a window has the focus (FUN_1015edb0, or
+  DAT_1057876c +0x68 set *(inf: unknown flag)*) and that window is none of playermo (DAT_10578170, the action /
+  battle command menu), DAT_106627a0 / DAT_106627a4 (the palettes) and mp_pmode (DAT_10578250, Monstrosity's command
+  menu; reg_all.txt).
+- Ours counted the action menu as a blocking window, and combat mode keeps it up while engaged, so Ctrl / Alt + digit
+  did nothing in battle (user report). Now the gate takes every other open window (window_over_actions: also the magic
+  and ability lists, the macro editor ..., which the old list missed) but not the action menu alone.
