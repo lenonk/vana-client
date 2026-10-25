@@ -7668,3 +7668,22 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   and 0x1b), same 4cc, pointing at the image; no DAT has the chunk type itself. So ops 0x40 / 0x41 / 0x54 / 0x55
   (the shine overlay) and emission op 0x55 resolve their texture by an IMG 4cc in scope.
 - The weapon-skill sweep after this: 0x75 (weapon hide / show), the shine ops, stream 1 ops 0x43 / 0x56 / 0x32 left.
+
+## Weapon meshes hidden and shown: scheduler ops 0x75 / 0xa3 (2026-10-25)
+
+- FUN_100d60e0(N, b) sets hide byte b of every mesh named `wepN` (FUN_1002c730); FUN_100d5f10(N, b) clears it; a mesh
+  draws while all its bytes are 0. 0x75: byte 0, N = i16 @0xc, u32 @8 1 hide / 0 show, i16 @0xe set: only while
+  actor1 is engaged; with a length (dur x speed, truncated) hidden now and, when @8 is 0, shown at the end
+  (FUN_10061960, its dtor). 0xa3: byte 1, untimed, ungated. PC weapon parts are `wep0` (main) / `wep1` (sub); a shield
+  is `weps` (no op names it). DAT 0 `hwmg` (casting) hides wep0 / wep1 while engaged, `hwat` (before melee swings)
+  shows them.
+- Ours: SkinMesh groups carry N of their `wepN` part, ActorGpu::hidden_weps (bit N) skips them in the skinned pass;
+  the client keeps the hide bytes and the timed show per actor (Actor::wep_hide / wep_show_at); fx emits
+  Effects::weapons. The CPU-posed path (lobby scenes) has no weapon groups.
+- Not done: init's hides are still applied by dropping the meshes at load (dat/npc.rs), so a later show cannot bring
+  those back; the `!w01` / `!w02` / `!w11` / `!w12` weapon schedulers that FUN_100d6180 / FUN_100d5fe0 start on hide
+  and on show while engaged (bits 8 + N of actor +0x840); a timed hide cut short by its scheduler's death shows only at
+  its own end.
+- Sweep note: a weapon-skill run of 2026-10-25 (ws2) recorded almost no gaps because no effect file loaded in it
+  (every file sat 600 ticks, the pending start's timeout); runs before and after it are normal. The summary now ranks
+  only inferred attach parts (modes 9..0xc, point 0x35), not every special point.

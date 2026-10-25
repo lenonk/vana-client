@@ -466,8 +466,10 @@ pub struct ActorGpu {
     textures: Vec<wgpu::BindGroup>,
     slot: HashMap<String, usize>,
     vertices: Option<(wgpu::Buffer, usize)>,
-    draws: Vec<(usize, std::ops::Range<u32>)>,
+    draws: Vec<(usize, std::ops::Range<u32>, u8)>,
     instance: wgpu::Buffer,
+    /// `wepN` meshes not drawn (bit N; scheduler ops 0x75 / 0xa3, MODLOG "Weapon meshes hidden and shown").
+    pub hidden_weps: u16,
     skin: Option<Skinned>,
     /// Model colour alpha, 1 = opaque (actor fades); goes into the vertex alpha.
     pub alpha: f32,
@@ -498,10 +500,14 @@ struct SkinVertex {
     mat: [f32; 2],
 }
 
+/// A draw group that is no `wepN` mesh.
+const NO_WEP: u8 = 0xff;
+
 /// A model's skinned bind-pose corners grouped by texture name, built on the loader thread (Character::skin).
 pub struct SkinMesh {
     verts: Vec<SkinVertex>,
-    groups: Vec<(String, std::ops::Range<u32>)>,
+    /// Texture, vertices, and N of a `wepN` part (NO_WEP otherwise).
+    groups: Vec<(String, std::ops::Range<u32>, u8)>,
     bones: usize,
 }
 
@@ -512,6 +518,8 @@ impl SkinMesh {
         let mut verts: Vec<SkinVertex> = Vec::new();
         let mut groups = Vec::new();
         for part in &ch.parts {
+            let n = part.name.trim_end_matches(['\0', ' ']);
+            let wep = n.strip_prefix("wep").and_then(|d| d.parse::<u8>().ok()).filter(|d| *d < 16).unwrap_or(NO_WEP);
             for g in &part.groups {
                 let start = verts.len() as u32;
                 for t in &g.triangles {
@@ -532,7 +540,7 @@ impl SkinMesh {
                         });
                     }
                 }
-                groups.push((g.texture.clone(), start..verts.len() as u32));
+                groups.push((g.texture.clone(), start..verts.len() as u32, wep));
             }
         }
         if verts.is_empty() {
@@ -1269,7 +1277,7 @@ impl ZoneRenderer {
     pub fn new_skinned(&self, gpu: &Gpu, ch: &crate::dat::character::Character) -> ActorGpu {
         let mut a = self.new_actor(gpu, ch);
         let mesh = ch.skin.clone().unwrap_or_else(|| std::sync::Arc::new(SkinMesh::build(ch)));
-        a.draws = mesh.groups.iter().map(|(tex, r)| (a.slot.get(tex.as_str()).copied().unwrap_or(0), r.clone())).collect();
+        a.draws = mesh.groups.iter().map(|(tex, r, wep)| (a.slot.get(tex.as_str()).copied().unwrap_or(0), r.clone(), *wep)).collect();
         let vertices = gpu.device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some("skinned actor"), contents: bytemuck::cast_slice(&mesh.verts), usage: wgpu::BufferUsages::VERTEX });
         a.skin = Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX });
         a
@@ -1288,7 +1296,7 @@ impl ZoneRenderer {
             for (i, t) in ch.textures.iter().enumerate() {
                 slot.entry(t.name.clone()).or_insert(i + 1);
             }
-            let draws = mesh.groups.iter().map(|(tex, r)| (slot.get(tex.as_str()).copied().unwrap_or(0), r.clone())).collect();
+            let draws = mesh.groups.iter().map(|(tex, r, wep)| (slot.get(tex.as_str()).copied().unwrap_or(0), r.clone(), *wep)).collect();
             let size = (std::mem::size_of_val(mesh.verts.as_slice()) as u64).max(4);
             let vertices = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("skinned actor"), size, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
             let instance = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: Some("actor instance"), size: INSTANCE_BYTES, usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
@@ -1298,6 +1306,7 @@ impl ZoneRenderer {
                 vertices: None,
                 draws,
                 instance,
+                hidden_weps: 0,
                 skin: Some(Skinned { vertices, bones: mesh.bones, offset: 0, frame: u64::MAX }),
                 alpha: 1.0,
                 tint: [1.0; 3],
@@ -1419,7 +1428,7 @@ impl ZoneRenderer {
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
+        ActorGpu { textures, slot, vertices: None, draws: Vec::new(), instance, hidden_weps: 0, skin: None, alpha: 1.0, tint: [1.0; 3], flash: [0.0, 1.0], lights: [0; 4], area: 0, mips }
     }
 
     /// Uploads this frame's posed mesh and placement.
@@ -1433,7 +1442,7 @@ impl ZoneRenderer {
             // As vs_skinned: red the light factor (0x80 = 1.0), green the cloth flag.
             let color = [(mat[0] * 128.0).round().clamp(0.0, 255.0) as u8, if mat[1] > 0.5 { 255 } else { 0 }, 128, a];
             verts.extend(tris.iter().map(|v| GpuVertex { pos: [v[0], v[1], v[2]], normal: [v[3], v[4], v[5]], color, uv: [v[6], v[7]], flags: 0 }));
-            actor.draws.push((actor.slot.get(tex.as_str()).copied().unwrap_or(0), start..verts.len() as u32));
+            actor.draws.push((actor.slot.get(tex.as_str()).copied().unwrap_or(0), start..verts.len() as u32, NO_WEP));
         }
         let bytes: &[u8] = bytemuck::cast_slice(&verts);
         if actor.vertices.as_ref().is_none_or(|(_, cap)| *cap < bytes.len()) {
@@ -1576,7 +1585,10 @@ impl ZoneRenderer {
                 let Some(skin) = a.skin.as_ref().filter(|s| s.frame == self.pose_frame) else { continue };
                 pass.set_bind_group(2, group, &[skin.offset]);
                 pass.set_vertex_buffer(0, skin.vertices.slice(..));
-                for (tex, range) in &a.draws {
+                for (tex, range, wep) in &a.draws {
+                    if *wep != NO_WEP && a.hidden_weps & (1 << wep) != 0 {
+                        continue;
+                    }
                     pass.set_bind_group(1, &a.textures[*tex], &[]);
                     pass.draw(range.clone(), 0..1);
                 }
@@ -1587,7 +1599,7 @@ impl ZoneRenderer {
             let Some((buf, _)) = &a.vertices else { continue };
             pass.set_vertex_buffer(0, buf.slice(..));
             pass.set_vertex_buffer(1, a.instance.slice(..));
-            for (tex, range) in &a.draws {
+            for (tex, range, _) in &a.draws {
                 pass.set_bind_group(1, &a.textures[*tex], &[]);
                 pass.draw(range.clone(), 0..1);
             }

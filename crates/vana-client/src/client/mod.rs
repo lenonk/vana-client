@@ -3029,6 +3029,9 @@ struct Actor {
     extra: actmotion::Extra,
     /// Effect files whose schedulers play motions from them (Kind::Effect), wanted on `extra`.
     fx_files: Vec<u32>,
+    /// `wepN` hide bytes 0 / 1 (a mesh draws while both are clear), and when byte 0 of a timed hide clears.
+    wep_hide: [[bool; 2]; 16],
+    wep_show_at: [Option<Instant>; 16],
     /// A scheduler's motions (event motions, weapon draw / sheathe), and one waiting for its files.
     play: Option<actmotion::Play>,
     pending: Option<actmotion::Pending>,
@@ -3088,6 +3091,8 @@ impl Actor {
             last_attack: String::new(),
             extra: Vec::new(),
             fx_files: Vec::new(),
+            wep_hide: [[false; 2]; 16],
+            wep_show_at: [None; 16],
             play: None,
             pending: None,
             battle: Default::default(),
@@ -6478,6 +6483,19 @@ impl App {
         for (id, ticks, kind) in std::mem::take(&mut world.effects.holds) {
             combat::fx_hold(world, id, ticks, kind);
         }
+        for op in std::mem::take(&mut world.effects.weapons) {
+            let engaged = if op.actor == world.my_id { world.my_motion.status == 1 } else { world.entities.get(&op.actor).is_some_and(|e| e.motion.status == 1) };
+            if (op.engaged_only && !engaged) || op.n >= 16 {
+                continue;
+            }
+            if let Some(a) = world.actors.get_mut(&op.actor) {
+                let n = op.n as usize;
+                a.wep_hide[n][op.byte as usize] = op.hide;
+                if op.byte == 0 {
+                    a.wep_show_at[n] = op.show_after.then(|| Instant::now() + std::time::Duration::from_secs_f32(op.ticks / 60.0));
+                }
+            }
+        }
         for (id, op, ticks) in std::mem::take(&mut world.effects.locks) {
             let until = Instant::now() + std::time::Duration::from_secs_f32(ticks.max(0.0) / 60.0);
             if op == 0x2e {
@@ -8892,6 +8910,12 @@ impl App {
                         g.alpha = g.alpha.min(*k);
                     }
                     g.tint = a.rgb.map(|c| c.max(0.0) / actmotion::OPAQUE);
+                    for n in 0..16 {
+                        if a.wep_show_at[n].is_some_and(|t| Instant::now() >= t) {
+                            (a.wep_hide[n][0], a.wep_show_at[n]) = (false, None);
+                        }
+                    }
+                    g.hidden_weps = (0..16).filter(|&n| a.wep_hide[n].iter().any(|&h| h)).fold(0, |m, n| m | 1 << n);
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).

@@ -374,6 +374,20 @@ pub struct Registry {
     pub audit: Option<Audit>,
 }
 
+/// Scheduler ops 0x75 / 0xa3 (FUN_100d60e0 hide, FUN_100d5f10 show) on actor1's `wepN` meshes, hide byte 0 / 1.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct WeaponOp {
+    pub actor: u32,
+    pub n: u8,
+    pub byte: u8,
+    pub hide: bool,
+    /// 0x75 with a length: hidden for these ticks, shown again at the end when `show_after`.
+    pub ticks: f32,
+    pub show_after: bool,
+    /// i16 @0xe: only while the actor is engaged.
+    pub engaged_only: bool,
+}
+
 /// What effect runs skipped or could not resolve (the fx-sweep command, main.rs).
 #[derive(Default, Debug)]
 pub struct Audit {
@@ -689,6 +703,8 @@ pub struct Effects {
     pub holds: Vec<(u32, f32, u8)>,
     /// Ops 0x2e (actor1's move input, our own player only) and 0x2f (actor1's facing) locked for ticks.
     pub locks: Vec<(u32, u8, f32)>,
+    /// Ops 0x75 / 0xa3: an actor's `wepN` meshes hidden or shown.
+    pub weapons: Vec<WeaponOp>,
     pub releases: Vec<u32>,
     /// Load holds taken here (op 0x80's skillchain burst, FUN_100a8e30); released like the action's.
     pub loads: Vec<u32>,
@@ -783,6 +799,7 @@ impl Effects {
             gens_off: Vec::new(),
             holds: Vec::new(),
             locks: Vec::new(),
+            weapons: Vec::new(),
             releases: Vec::new(),
             loads: Vec::new(),
             reacts: Vec::new(),

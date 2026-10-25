@@ -936,6 +936,17 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Actor1's wepN meshes, N = i16 @0xc: 0x75 on hide byte 0 (hide u32 @8 != 0, show 0; with a length hidden
+            // for dur x speed and shown at its end when @8 is 0, FUN_10061960; i16 @0xe: only while engaged), 0xa3 on
+            // byte 1, untimed.
+            0x75 | 0xa3 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    let ticks = if op.code == 0x75 { (op.dur.max(0) as f32 * t.speed).trunc() } else { 0.0 };
+                    let off = op.u32_at(8) != 0;
+                    self.weapons.push(crate::fx::WeaponOp { actor: id, n: op.u16_at(0xc) as u8, byte: (op.code == 0xa3) as u8, hide: off || ticks > 0.0, ticks, show_after: ticks > 0.0 && !off, engaged_only: op.code == 0x75 && op.u16_at(0xe) != 0 });
+                }
+                Flow::Next
+            }
             // Actor1's move input (FUN_10062310, +0xfc: the player's walk is ignored) and facing (FUN_100624b0,
             // +0x838: no heading ease, network headings left alone) for dur x speed.
             0x2e | 0x2f => {
