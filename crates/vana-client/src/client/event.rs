@@ -795,6 +795,14 @@ impl Host for LiveHost<'_> {
                     e.no_bump = s == 0x0b;
                 }
             }
+            // FUN_100bb620 subs 1 / 2: actor@2's name colour index (+0x1d8) = val@6, or 0x17 (none) for 2.
+            Effect::Op { op: 0xae, sub: Some(s @ (1 | 2)), args, .. } => {
+                if let Some(id) = self.arg_actor(&args, 0)
+                    && let Some(e) = self.w.entities.get_mut(&id)
+                {
+                    e.name_ncol = if s == 1 { Self::arg_int(&args, 1).unwrap_or(0x17) as u16 } else { 0x17 };
+                }
+            }
             // FUN_100bb620 subs 3 / 4: actor@2's face motion (entity +0x168) from DAT_1035d000 {mou4, kut4} by val@6 (above
             // 1 left alone); 4 always mou4.
             Effect::Op { op: 0xae, sub: Some(s @ (3 | 4)), args, .. } => {

@@ -332,6 +332,8 @@ struct Entity {
     spawn_fx: bool,
     /// 0x00D's riding fields (ride.rs).
     ride: net::Ride,
+    /// Entity +0x1d8: an "menu    ncol" index event op 0xae 1 forces the name colour to, 0x17 none (op 0xae 2).
+    name_ncol: u16,
     /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
     marks: net::Marks,
     female: bool,
@@ -966,15 +968,20 @@ fn self_entity(w: &World) -> Entity {
         face: 0,
         spawn_fx: false,
         ride: Default::default(),
+        name_ncol: 0x17,
         marks: net::Marks::default(),
         female: false,
         sub_kind: 0,
     }
 }
 
-/// FUN_1008db40: the name colour, an "menu    ncol" entry (`c`) or the alliance claim blend. Not done: the event
-/// op 0xae override, PvP teams and ballista sides, the charmed-pet master's colour, the shared-claim zone flag.
+/// FUN_1008db40: the name colour, an "menu    ncol" entry (`c`) or the alliance claim blend; first an event's forced
+/// index (+0x1d8 below 0x17). Not done: PvP teams and ballista sides, the charmed-pet master's colour, the shared-claim
+/// zone flag.
 fn name_colour(id: u32, e: &Entity, w: &World, c: impl Fn(usize) -> u32) -> u32 {
+    if e.name_ncol < 0x17 {
+        return c(e.name_ncol as usize);
+    }
     let m = &e.marks;
     let monster = e.flags & 1 != 0;
     let pc = id >> 24 == 0;
@@ -2941,6 +2948,7 @@ fn place_mogdoor(w: &mut World) {
             face: 0,
             spawn_fx: false,
             ride: Default::default(),
+            name_ncol: 0x17,
             marks: net::Marks::default(),
             female: false,
             sub_kind: 3,
@@ -6005,6 +6013,7 @@ impl App {
                         face: 0,
                         spawn_fx: false,
                         ride: Default::default(),
+                        name_ncol: 0x17,
                         marks: net::Marks::default(),
                         female: false,
                         sub_kind: 0,

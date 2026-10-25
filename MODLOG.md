@@ -8221,11 +8221,15 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Not done: the wheel / scroll bar drag, the window groups (blklist group 0x1c suspends gaugewin and the other 0x1c
   lists; blkmain 0x81).
 
-## Event op 0xae subs 3 / 4: the face motion (2026-10-25)
+## Event op 0xae subs 1..4: the name colour and the face motion (2026-10-25)
 
 - STATUS.md R11 read sub 3 as a walk speed: entity +0x168 is the face motion a spoken line plays (FUN_100846b0
   returns it, 'mou4' without an entity; the entity init at all.c 107506 sets 0x34756f6d 'mou4'). FUN_100bb620 sub 3:
   actor@2 (id checked) +0x168 = DAT_1035d000[val@6] = {'mou4', 'kut4'}, values above 1 leave it; sub 4: 'mou4'.
 - FUN_100ce0e0 plays that motion (FUN_100cd4e0 params 16.0, 1.0, region 4), or 'mou6' (16.0, 8.0, region 6) when the
   model lacks it. Ours: Actor::mouth_name, tried before 'mou6' (the two param sets are not told apart yet).
+- Subs 1 / 2 (289 sites): actor@2 (id checked) +0x1d8 = val@6, or 0x17 for 2. FUN_1008db40 checks it first: below
+  0x17 the name colour is "menu    ncol" entry +0x1d8 (DAT_104e1b98, the 0x17 ncol colours, FUN_1011c8b0); 0x17
+  (the entity init, all.c 107535) means the usual rules. Entity::name_ncol. Seen in zone 50: npc0ca gets 'kut4' (sub
+  3 with 1) and 'mou4' back (sub 4).
 
