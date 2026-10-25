@@ -7267,3 +7267,29 @@ Spec `~/ffxi/lab/research/chat_mode_tab_spec.md`.
   retail shot showed the Say tab.
 - Not done (side findings, spec section 6): the line's text origin (x0 + 2, y0 + 3; ours + 4, + 2), its width (log
   width - 86), the blinking '|' caret.
+
+## Name plate icons, job master stars, invisible players (2026-10-25)
+
+Spec `~/ffxi/lab/research/nameplate_icons_spec.md` (FUN_10097840 / 10097500 / 10097730 / 100977a0 / 100979b0, the draw
+FUN_10086210 / FUN_10086900, the target window FUN_101501a0).
+- The icons are fontshp glyph bytes 0x8e..0xb1 (sprites 110..145, texture "menu    ustatshd") put in front of the
+  name with a space; one main glyph from the priority chain (POL, link dead, Monstrosity, Campaign / Ballista side,
+  away, GM by level, Campaign sword, recruiter, auto party, seeking party, level sync, trial, mentor, New Adventurer,
+  bazaar, else the linkshell pearl in the shell's colour), a badge after it on a side or in Campaign, a Belligerency
+  rank in front. GM table 0x1035b61c: 1-2 leaf, 3 blue orb, 4-6 red "GM", 7 grey "E" orb; GmIconFlag drops only the
+  badge. User-confirmed on the retail client (Testerthree at visible levels 1..7, pale blue name at 3, red 4..6, pink 7).
+- Drawn per FUN_10086210: the first cell only, size = corner extent - 1, placed at the sprite's top-left; a badge
+  after the first glyph at 0.8 x 0.8, a rank star at half; the recruiter's star 0xad at half on the icon's corner;
+  icons in 0x80808080 (the pearl in the shell's colour), alpha 0x80, no target pulse. Our letters keep their current
+  widths (retail uses extent - 1 for them too: not changed, unchecked against retail).
+- Line 2 (FUN_10086900): the job master stars, 16 glyph units above the name: glyph 0xad small, big, small.
+- The target window draws the plate glyph (no pearl; 0xa9 for a rank) at (R - 24, T - 8), the whole sprite.
+- Our own plate now takes its icons from 0x037 and its GM name colour from 0x037's GM level.
+- Fields: 0x00D Flags1 b14 / b16..18, @0x24..0x26 the shell colour, Flags2 b28, Flags3 b23 / b24, @0x32 / @0x33 on
+  every non-despawn update; 0x037 Flags0..3, @0x31..0x33, @0x39, @0x54, @0x58, @0x5a; 0x067 type 2 @0x10 (bit 1
+  Campaign, bit 2 Level Sync; LSB writes it at 0x10). The Petra word (+0x29c) is not read *(inf: LSB has no Ballista)*.
+- InvisFlag (FUN_100973f0): our own model at colour 0x27808080 and no plate, another PC at alpha 0 and no plate. A
+  party / alliance member stays translucent (0x27) with a plate, as the user knows retail; the client has no party
+  case, so the retail server must send them something else *(inf)*. LSB sends the flag to everyone. Ours drew
+  invisible players opaque before.
+- Live: Lnxcsfix shows the "?" (LSB's new player), `!togglegm` the grey "E" orb and a pink name.

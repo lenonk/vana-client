@@ -586,6 +586,8 @@ pub struct HudState {
     /// The target window: Some(HP fraction) with a gauge, Some(None) without one; its gauge's eased value (+0x64).
     pub target: Option<Option<f32>>,
     pub target_anim: Option<f32>,
+    /// The target's plate glyph (client/plate.rs), drawn on the window's top-right corner.
+    pub target_glyph: Option<u8>,
     /// Highlighted main menu item (child index from 0), None = menu closed.
     pub menu_selected: Option<usize>,
     /// Main menu page: 0 commands (menuwind), 1 social (socialme); the arrows swap them.
@@ -760,14 +762,102 @@ pub fn sprite_tint(ui: &UiFile, lib: &str, k: usize) -> u32 {
 /// A name plate (FUN_10084b20): fontshp glyphs scaled by (sx, sy), each advancing its full width,
 /// centred on x and hanging down from y (the letters' top edge, min y 0, sits on the anchor), alpha blended
 /// (the pass sets SRCALPHA / INVSRCALPHA).
-pub fn push_name_plate(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, sx: f32, sy: f32, tint: u32) {
+pub fn push_name_plate(b: &mut UiBatch, ui: &UiFile, prefix: &[u8], s: &[u8], x: f32, y: f32, sx: f32, sy: f32, tint: u32, icon_tint: u32) {
     let Some(lib) = ui.lib("font    fontshp") else { return };
-    let glyphs = shape_glyphs(s);
-    let total: f32 = glyphs.iter().map(|&g| sprite_width(lib, g)).sum();
-    let (mut px, py) = ((x - total * sx * 0.5).round(), y.round());
-    for g in glyphs {
-        b.push_sprite(ui, lib, g, px, py, sx, sy, tint, 0x44);
-        px += sprite_width(lib, g) * sx;
+    // FUN_10086210: rank bytes 0xc8..0xcd become 0xa9 and 0 / 1 / 2 stars 0xaa, the recruiter 0xac gets its star 0xad.
+    enum G {
+        Letter(usize),
+        Icon(u8),
+    }
+    let mut glyphs = Vec::new();
+    for &c in prefix {
+        match c {
+            0xc8..=0xcd => {
+                glyphs.push(G::Icon(0xa9));
+                glyphs.extend((0..(c - 0xc8) % 3).map(|_| G::Icon(0xaa)));
+            }
+            0xac => glyphs.extend([G::Icon(0xac), G::Icon(0xad)]),
+            0x8e..=0xb1 => glyphs.push(G::Icon(c)),
+            0x20..0x8e => glyphs.push(G::Letter((c - 0x20) as usize)),
+            _ => {}
+        }
+    }
+    glyphs.extend(shape_glyphs(s).into_iter().map(G::Letter));
+    // An icon's first cell, its size the corner extent - 1 (FUN_1011fa80), placed at the sprite's top-left (+0x20).
+    let icon = |c: u8| -> Option<(&crate::dat::ui::Cell, [f32; 2], [f32; 2])> {
+        let sp = lib.sprites.get((c - 0x20) as usize)?;
+        let cell = sp.cells.first()?;
+        let [tl, tr, bl, _] = cell.corners;
+        let off = sp.cells.iter().flat_map(|c| c.corners).fold([f32::MAX; 2], |m, p| [m[0].min(p[0] as f32), m[1].min(p[1] as f32)]);
+        Some((cell, [(tr[0] - tl[0] - 1) as f32, (bl[1] - tl[1] - 1) as f32], off))
+    };
+    // Pass 1: the width; a badge (0x8e..0xa8 after the first glyph) shrinks to 0.8, a rank star 0xaa to half.
+    let mut total = 0.0f32;
+    let mut sizes = Vec::with_capacity(glyphs.len());
+    for (i, g) in glyphs.iter().enumerate() {
+        let size = match *g {
+            G::Letter(k) => {
+                total += sprite_width(lib, k);
+                [0.0; 2]
+            }
+            G::Icon(c) => {
+                let [w, h] = icon(c).map_or([0.0; 2], |i| i.1);
+                match c {
+                    0xad => [w, h],
+                    _ if i == 0 => {
+                        total += w;
+                        [w, h]
+                    }
+                    0x8e..=0xa8 => {
+                        total += (w / 2.0).trunc();
+                        [(w * 0.8).trunc(), (h * 0.8).trunc()]
+                    }
+                    0xaa => {
+                        let s = [(w / 2.0).trunc(), (h / 2.0).trunc()];
+                        total = (total + s[0] / 2.0).trunc();
+                        s
+                    }
+                    _ => {
+                        total += w;
+                        [w, h]
+                    }
+                }
+            }
+        };
+        sizes.push(size);
+    }
+    // Pass 2: the pen from -W / 2; icons in their own colour with alpha 0x80 (no pulse).
+    let (x0, py) = ((x - total * sx * 0.5).round(), y.round());
+    let mut pen = 0.0f32;
+    for (i, (g, [w, h])) in glyphs.iter().zip(sizes).enumerate() {
+        match *g {
+            G::Letter(k) => {
+                b.push_sprite(ui, lib, k, x0 + pen * sx, py, sx, sy, tint, 0x44);
+                pen += sprite_width(lib, k);
+            }
+            G::Icon(c) => {
+                let Some((cell, _, off)) = icon(c) else { continue };
+                let (s, dx, dy, adv) = match c {
+                    0xad => (0.5, -2.0 - w, -2.0, 0.0),
+                    _ if i == 0 => (1.0, 0.0, 0.0, w),
+                    0x8e..=0xa8 => (0.8, -(w / 2.0), h / 2.0, w * 0.625),
+                    0xaa => (1.0, -w, h, w / 2.0),
+                    _ => (1.0, 0.0, 0.0, w),
+                };
+                let (qx, qy) = (x0 + (pen + off[0] + dx) * sx, py + (off[1] + dy) * sy);
+                b.push_cell_span(ui, cell, qx, qy, w * s * sx, h * s * sy, icon_tint & 0x00ff_ffff | 0x8000_0000, 0x44);
+                pen += adv;
+            }
+        }
+    }
+}
+
+/// FUN_10086900: line 2, 16 glyph units above the name: the job master stars (glyph 0xad) small, big, small.
+pub fn push_plate_stars(b: &mut UiBatch, ui: &UiFile, x: f32, y: f32, sx: f32, sy: f32) {
+    let Some(cell) = ui.lib("font    fontshp").and_then(|l| l.sprites.get(0xad - 0x20)).and_then(|s| s.cells.first()) else { return };
+    let (x, y) = (x.round(), (y - 16.0 * sy).round());
+    for (l, t, r, bt) in [(-14.5, 5.0, -7.5, 12.0), (-7.5, -2.0, 7.5, 13.0), (7.5, 5.0, 14.5, 12.0)] {
+        b.push_cell_span(ui, cell, x + l * sx, y + t * sy, (r - l) * sx, (bt - t) * sy, 0x8080_8080, 0x44);
     }
 }
 
@@ -915,6 +1005,11 @@ pub fn hud_screen(ui: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &HudState)
         text.push(TextSlot { what: "target name", x: x + 5.0, y: y + 6.0, align: 0 });
         if let Some(hp) = hp {
             push_gauge_eased(&mut b, ui, wps, x + 28.0, y + 29.0, GAUGE_HP.0, GAUGE_HP.1, hp, st.target_anim.unwrap_or(hp));
+        }
+        // FUN_101501a0: the plate glyph's whole fontshp sprite at (R - 24, T - 8), over the frame's corner.
+        if let (Some(g), Some(lib)) = (st.target_glyph, ui.lib("font    fontshp")) {
+            let r = x + m.elements[0].w as f32;
+            b.push_sprite(ui, lib, (g - 0x20) as usize, r - 24.0, y - 8.0, 1.0, 1.0, 0x8080_8080, 0);
         }
     }
     if let Some(m) = ui.menu(&st.party_window) {

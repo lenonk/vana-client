@@ -1113,11 +1113,16 @@ impl GameUi {
     }
 
     /// A name plate in a name colour (an "menu    ncol" tint, FUN_10119590), bottom at (x, y).
-    pub fn name_plate(&mut self, name: &str, x: f32, y: f32, scale: [f32; 2], colour: u32, pulse: f32) {
+    /// A name plate: the icon bytes (client/plate.rs) and the name, the job master stars above it.
+    #[allow(clippy::too_many_arguments)]
+    pub fn name_plate(&mut self, prefix: &[u8], name: &str, x: f32, y: f32, scale: [f32; 2], colour: u32, pulse: f32, icon: u32, stars: bool) {
         // Alpha is MODULATE4X in that pass: a full-alpha tint saturates it as the card does; `pulse` scales it.
         let a = (255.0 * pulse.clamp(0.0, 1.0)) as u32;
         let tint = colour & 0x00ff_ffff | a << 24;
-        screens::push_name_plate(&mut self.batch, &self.data.lobby, &encode_sjis(name), x, y, scale[0], scale[1], tint);
+        screens::push_name_plate(&mut self.batch, &self.data.lobby, prefix, &encode_sjis(name), x, y, scale[0], scale[1], tint, icon);
+        if stars {
+            screens::push_plate_stars(&mut self.batch, &self.data.lobby, x, y, scale[0], scale[1]);
+        }
     }
 
     /// Sprite-font text ("font    fontshp"), left aligned or ending at x.

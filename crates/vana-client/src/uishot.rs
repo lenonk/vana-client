@@ -139,7 +139,7 @@ pub fn ui_shot(out: &Path, width: u32, height: u32) -> Result<()> {
         (n > 0).then(|| std::array::from_fn(|i| (i < n).then(|| crate::render::screens::AllyRow { hp: 0.3 + 0.1 * i as f32, hp_anim: 0.3 + 0.1 * i as f32, away: i == 1, marks: (i == 0) as u8 })))
     });
     let hand = (!ally.is_empty()).then_some((7, 0xa040_40d0u32, 0usize));
-    let st = HudState { party, party_anim: Vec::new(), target_anim: None, party_window, party_hand: hand, alliance, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_off: Vec::new(), menu_swap: Vec::new(), menu_focused: true, chat_log: true };
+    let st = HudState { party, party_anim: Vec::new(), target_anim: None, target_glyph: None, party_window, party_hand: hand, alliance, party_away: Vec::new(), party_marks: vec![1], target: Some(Some(0.7)), menu_selected: Some(0), menu_page: 0, menu_off: Vec::new(), menu_swap: Vec::new(), menu_focused: true, chat_log: true };
     let (mut batch, text) = hud_screen(&menu, style, width as f32, height as f32, &st);
     push_party_hand(&mut batch, &menu, &st, width as f32, height as f32);
     for t in &text {

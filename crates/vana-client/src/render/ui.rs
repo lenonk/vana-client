@@ -137,6 +137,12 @@ impl UiBatch {
         self.cell_quad(ui, cell, [[x, y], [x1, y], [x, y1], [x1, y1]], [w, h], tint, blend_word);
     }
 
+    /// One cell's whole texture area over a screen rect (w x h pixels), whatever its size in sprite units.
+    pub fn push_cell_span(&mut self, ui: &UiFile, cell: &Cell, x: f32, y: f32, w: f32, h: f32, tint: u32, blend_word: u32) {
+        let (x1, y1) = (x + w, y + h);
+        self.cell_quad(ui, cell, [[x, y], [x1, y], [x, y1], [x1, y1]], [cell.size[0] as f32, cell.size[1] as f32], tint, blend_word);
+    }
+
     /// One cell through a 2x2 matrix about (x, y): screen = (x + a cx + b cy, y + c cx + d cy) (FUN_1011c880).
     pub fn push_cell_affine(&mut self, ui: &UiFile, cell: &Cell, x: f32, y: f32, m: [f32; 4], tint: u32) {
         let corners = cell.corners.map(|c| {

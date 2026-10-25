@@ -38,6 +38,7 @@ pub struct EntityUpdate {
     pub mob: Option<bool>,
     /// Name-colour marks (mask 0x04), FUN_1008db40's inputs.
     pub marks: Option<Marks>,
+    pub plate: Option<PlateExtra>,
     /// 0x00D mask 0x04, u32 @0x20 bit 15: male (the emote lines' [his/her]).
     pub male: Option<bool>,
     /// u32 @0x24 bits 29 (named: no article) and 30 (plural verbs), read by the 0x00D/0x00E handlers.
@@ -93,6 +94,64 @@ pub struct Marks {
     pub lfg_master: bool,
     /// Flags1 u32 @0x20 bit 31 (actor +0x128 bit 9): the player has a bazaar.
     pub bazaar: bool,
+    /// The name plate's icon flags (nameplate_icons_spec.md 6): Flags1 b14 away, b16 PlayOnline, b17 linkshell, b18
+    /// link dead; Flags2 @0x24..0x26 the linkshell colour, b28 GmIconFlag; Flags3 b23 New Adventurer, b24 mentor.
+    pub away: bool,
+    pub pol: bool,
+    pub ls: bool,
+    pub link_dead: bool,
+    pub ls_colour: [u8; 3],
+    pub gm_icon_off: bool,
+    pub new_char: bool,
+    pub mentor: bool,
+}
+
+/// Our own plate's fields from 0x037 (nameplate_icons_spec.md 6): Flags0 u32 @0x28, Flags1 @0x2c, the linkshell colour
+/// @0x31..0x33, Flags2 @0x34, Flags3 @0x38 (Ballista info @0x39), Monstrosity u16 @0x54, job master @0x58 bit 7, the
+/// ranks @0x5a.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SelfPlate {
+    pub marks: Marks,
+    pub extra: PlateExtra,
+    pub invisible: bool,
+    pub monstrosity: u16,
+}
+
+fn self_plate(p: &SubPacket) -> SelfPlate {
+    let (f0, f1, f2, f3) = (p.u32(0x28), p.u32(0x2c), p.u32(0x34), p.u32(0x38));
+    let bit = |w: u32, b: u32| w >> b & 1 != 0;
+    let marks = Marks {
+        alleg: (f2 >> 21) as u8,
+        gm: (f0 >> 29) as u8,
+        lfg: bit(f0, 4),
+        anon: bit(f0, 5),
+        auto: bit(f2, 2),
+        lfg_master: bit(f3, 0),
+        bazaar: bit(f1, 29),
+        away: bit(f0, 7),
+        pol: bit(f0, 24),
+        ls: bit(f0, 25),
+        link_dead: bit(f0, 26),
+        ls_colour: [p.u8(0x31), p.u8(0x32), p.u8(0x33)],
+        gm_icon_off: bit(f1, 31),
+        new_char: bit(f3, 3),
+        mentor: bit(f3, 4),
+        ..Marks::default()
+    };
+    let r = p.u8(0x5a);
+    let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
+    SelfPlate { marks, extra, invisible: bit(f1, 15), monstrosity: p.u16(0x54) }
+}
+
+/// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /
+/// 2..3 the Belligerency ranks (+0x13c bits 2..3 / 4..5), read on every 0x00D but a despawn; 0x037 has its own places.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PlateExtra {
+    pub ballista: u8,
+    pub trial: bool,
+    pub job_master: bool,
+    /// +0x13c bits 2..5: bits 0..1 the gladiator rank, 2..3 the Monstrosity rank.
+    pub ranks: u8,
 }
 
 /// A battle message packet: 0x029 (FUN_1009cf70) or 0x02D (FUN_1009d1b0).
@@ -253,7 +312,7 @@ pub enum NetEvent {
     /// s2c 0x067 kind 2 (char sync): the character, the owner of the Mog House being visited (@0x20, our own client
     /// only; 0 = none / our own) and the 2F flag (@0x27 bit 0, the owner's when visiting).
     /// @0x25: the main job's level before any level restriction (player +0x40c42).
-    CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8 },
+    CharSync { id: u32, owner: u32, floors: bool, open: bool, level: u8, sync: u8 },
     /// s2c 0x11A (the answer to c2s 0x119): unlocked job emotes (u32 @4, bit job - 1) and chairs (u16 @8).
     EmoteUnlocks { jobs: u32, chairs: u16 },
     /// s2c 0x04B (GP_SERV_COMMAND_PBX_RESULT).
@@ -302,7 +361,7 @@ pub enum NetEvent {
     /// epoch), the time the server sends us home (@0x38 is Flags3).
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16 },
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate },
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
     /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
@@ -655,7 +714,19 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
                 auto: pc && p.u32(0x24) >> 31 != 0,
                 lfg_master: pc && p.u8(0x28) & 0x02 != 0,
                 bazaar: pc && p.u32(0x20) >> 31 != 0,
+                away: p.u32(0x20) >> 14 & 1 != 0,
+                pol: pc && p.u32(0x20) >> 16 & 1 != 0,
+                ls: pc && p.u32(0x20) >> 17 & 1 != 0,
+                link_dead: pc && p.u32(0x20) >> 18 & 1 != 0,
+                ls_colour: [p.u8(0x24), p.u8(0x25), p.u8(0x26)],
+                gm_icon_off: p.u32(0x24) >> 28 & 1 != 0,
+                new_char: pc && p.u32(0x28) >> 23 & 1 != 0,
+                mentor: p.u8(0x2B) & 1 != 0,
             }
+        }),
+        plate: (kind == EntityKind::Player && flags & 0x20 == 0 && p.data.len() >= 0x34).then(|| {
+            let b = p.u8(0x33);
+            PlateExtra { ballista: p.u8(0x32), trial: b & 2 != 0, job_master: b & 0x40 != 0, ranks: (b >> 4 & 3) | (b >> 2 & 3) << 2 }
         }),
         name_flags: (flags & 0x04 != 0 && p.data.len() >= 0x28).then(|| (p.u32(0x24) >> 29 & 1 != 0, p.u32(0x24) >> 30 & 1 != 0)),
         counter: p.u16(0x18) & 0x1fff,
@@ -786,7 +857,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48) })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p) })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.
@@ -981,7 +1052,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         strings: vec![text(&p, 0x10, 16)],
                         ..Default::default()
                     }))?,
-                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25) })?,
+                    0x067 if p.u8(4) == 2 => tx.send(NetEvent::CharSync { id: p.u32(8), owner: p.u32(0x20), floors: p.u8(0x27) & 1 != 0, open: p.u8(0x24) != 0, level: p.u8(0x25), sync: p.u8(0x10) })?,
                     0x02E => tx.send(NetEvent::MogMenu)?,
                     0x11A => tx.send(NetEvent::EmoteUnlocks { jobs: p.u32(4), chairs: p.u16(8) })?,
                     0x11E => tx.send(NetEvent::Jump(p.u16(4)))?,

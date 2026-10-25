@@ -50,6 +50,7 @@ mod synth;
 mod treasure;
 mod servmes;
 mod chatctrl;
+mod plate;
 mod partymenu;
 mod levelsync;
 mod viewhouse;
@@ -298,6 +299,9 @@ struct Entity {
     invisible: bool,
     radar_off: bool,
     monstrosity: u16,
+    /// The name plate's other fields (0x00D @0x32 / @0x33) and 0x067 @0x10 (Campaign bit 1, Level Sync bit 2).
+    plate: net::PlateExtra,
+    sync: u8,
     /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
     sub: [u8; 3],
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
@@ -940,6 +944,8 @@ fn self_entity(w: &World) -> Entity {
         untargetable: false,
         invisible: false,
         radar_off: false,
+        plate: net::PlateExtra::default(),
+        sync: 0,
         monstrosity: 0,
         sub: [0, 8, 0],
         init_done: false,
@@ -1030,6 +1036,31 @@ fn world_volumes(w: &World) -> (f32, f32) {
     (f(10, w.bgm_mute), f(9, w.se_mute))
 }
 
+/// FUN_100973f0, InvisFlag on a PC: our own model at colour 0x27808080, another's at alpha 0, and no plate. A party or
+/// alliance member stays at 0x27 with a plate: the user's retail (LSB sends the flag to them too; *(inf: the retail
+/// server's side)*).
+fn invisible_alpha(w: &World, id: u32) -> Option<f32> {
+    let translucent = 0x27 as f32 / 128.0;
+    if id == w.my_id {
+        return w.my_plate.invisible.then_some(translucent);
+    }
+    if !w.entities.get(&id).is_some_and(|e| id >> 24 == 0 && e.invisible) {
+        return None;
+    }
+    Some(if w.party.members().any(|r| r.id == id) { translucent } else { 0.0 })
+}
+
+/// The name plate fields of an entity (client/plate.rs).
+fn entity_plate(id: u32, e: &Entity) -> plate::Plate {
+    plate::Plate { pc: id >> 24 == 0, npc: id >> 24 == 1, marks: e.marks, extra: e.plate, monstrosity: e.monstrosity, sync: e.sync, mon_stat: e.sub[0] }
+}
+
+/// Ours, from 0x037 and our 0x067.
+fn self_plate(world: &World) -> plate::Plate {
+    let p = &world.my_plate;
+    plate::Plate { pc: true, npc: false, marks: p.marks, extra: p.extra, monstrosity: p.monstrosity, sync: world.my_sync, mon_stat: 0 }
+}
+
 fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
     let project = |p: Vec3| -> Option<(f32, f32, [f32; 2], f32)> {
         let clip = view_proj * p.extend(1.0);
@@ -1057,7 +1088,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         None => true,
         Some(others) => others && (*id >> 24 != 0 || *id == world.my_id),
     };
-    for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id)) {
+    for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id) && invisible_alpha(world, **id).is_none_or(|k| k > 0.0)) {
         if let Some((x, y, scale, z)) = plate_point(world, *id).and_then(project) {
             // FUN_100819d0: the target's plate alpha pulses, a * (sin(ticks * 16 deg) * 32 + 96) / 128.
             let pulse = if world.target == Some(*id) {
@@ -1069,16 +1100,23 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             // Pre-transformed quads at the projected depth (FUN_10080100): walls in front hide them.
             gu.depth(Some(z));
             let tint = name_colour(*id, e, world, |i| gu.ncol(i));
-            gu.name_plate(&e.name, x, y, scale, faded(tint), pulse);
+            let p = entity_plate(*id, e);
+            let (prefix, icon) = plate::prefix(&p);
+            gu.name_plate(&prefix, &e.name, x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
         }
     }
     if !hidden.contains(&world.my_id)
         && named(&world.my_id)
+        && !world.my_plate.invisible
         && let Some((x, y, scale, z)) = plate_point(world, world.my_id).and_then(project)
     {
         gu.depth(Some(z));
-        let tint = faded(gu.ncol(0));
-        gu.name_plate(&world.name, x, y, scale, tint, 1.0);
+        // FUN_1008db40 on our own actor: the GM colours from 0x037's GM level.
+        let gm = world.my_plate.marks.gm as usize;
+        let tint = faded(gu.ncol(if gm >= 3 { 0x0c + gm - 3 } else { 0 }));
+        let p = self_plate(world);
+        let (prefix, icon) = plate::prefix(&p);
+        gu.name_plate(&prefix, &world.name, x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
     }
     gu.depth(None);
 }
@@ -1903,6 +1941,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
         target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
+        target_glyph: world.target.and_then(|id| if id == world.my_id { plate::target_glyph(&self_plate(world)) } else { world.entities.get(&id).and_then(|e| plate::target_glyph(&entity_plate(id, e))) }),
         party: rows.iter().filter_map(|m| match m {
             None => mine,
             Some(m) => Some((m.hpp as f32 / 100.0, m.mpp as f32 / 100.0)),
@@ -2773,6 +2812,8 @@ fn place_mogdoor(w: &mut World) {
             untargetable: false,
             invisible: false,
             radar_off: false,
+            plate: net::PlateExtra::default(),
+            sync: 0,
             monstrosity: 0,
             sub: [0, 8, 0],
             init_done: false,
@@ -3520,6 +3561,9 @@ struct World {
     buff_cursor: usize,
     /// Our PvP team byte (+0x1ff): Conflict rows by FUN_101cc350.
     my_team: u8,
+    /// Our plate's fields from 0x037 and our 0x067 @0x10.
+    my_plate: net::SelfPlate,
+    my_sync: u8,
     /// FUN_101347b0's repeat guard: the last check's id and time (DAT_105781c4).
     last_check: Option<(u32, Instant)>,
     /// /blockhelp (DAT_10578175): Right on Disengage refuses Call for help.
@@ -4833,6 +4877,8 @@ impl App {
                             buff_timers: None,
                             buff_cursor: 0,
                             my_team: 0,
+                            my_plate: net::SelfPlate::default(),
+                            my_sync: 0,
                             last_check: None,
                             block_help: false,
                             party_buffs: HashMap::new(),
@@ -5570,6 +5616,8 @@ impl App {
                         untargetable: false,
                         invisible: false,
                         radar_off: false,
+                        plate: net::PlateExtra::default(),
+                        sync: 0,
                         monstrosity: 0,
                         sub: [0, 8, 0],
                         init_done: false,
@@ -5679,6 +5727,9 @@ impl App {
                     if let Some(u) = e.untargetable {
                         entry.untargetable = u;
                     }
+                    if let Some(x) = e.plate {
+                        entry.plate = x;
+                    }
                     if let Some((inv, off, mon)) = e.radar {
                         (entry.invisible, entry.radar_off, entry.monstrosity) = (inv, off, mon);
                     }
@@ -5777,7 +5828,13 @@ impl App {
                 NetEvent::Mounts(bits) => world.mount_bits = Some(bits),
                 NetEvent::EmoteUnlocks { jobs, chairs } => (world.emote_jobs, world.emote_chairs) = (jobs, chairs),
                 NetEvent::MountRecast(s) => world.mount_recast = (s > 0).then(|| Instant::now() + std::time::Duration::from_secs(s as u64)),
-                NetEvent::CharSync { id, owner, floors, open, level } => {
+                NetEvent::CharSync { id, owner, floors, open, level, sync } => {
+                    // @0x10 bit 1 Campaign (+0x1da), bit 2 Level Sync (+0x130 bit 23): name plate icons.
+                    if id == world.my_id {
+                        world.my_sync = sync;
+                    } else if let Some(e) = world.entities.get_mut(&id) {
+                        e.sync = sync;
+                    }
                     if id == world.my_id {
                         world.real_level = Some(level);
                         world.mh_seen = true;
@@ -5902,7 +5959,8 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate } => {
+                    world.my_plate = plate;
                     world.my_fellow = fellow;
                     world.self_flags = flags;
                     world.buffs = icons;
@@ -8327,6 +8385,7 @@ impl App {
             }
             doors::moves(w, &gfx.gpu);
             lifts::moves(w, &gfx.gpu);
+            let invis: HashMap<u32, f32> = w.actors.keys().filter_map(|id| invisible_alpha(w, *id).map(|k| (*id, k))).collect();
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.
@@ -8561,6 +8620,9 @@ impl App {
                     }
                     let g = a.gpu.as_mut().unwrap();
                     g.alpha = (a.alpha / actmotion::OPAQUE).clamp(0.0, 1.0) * if *id == w.my_id { w.camst.self_alpha } else { 1.0 };
+                    if let Some(k) = invis.get(id) {
+                        g.alpha = g.alpha.min(*k);
+                    }
                     g.tint = a.rgb.map(|c| c.max(0.0) / actmotion::OPAQUE);
                     // The flash runs only while the actor is drawn, in 60 Hz ticks whatever the frame rate.
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
