@@ -193,6 +193,7 @@ struct GpuMesh {
     vb: wgpu::Buffer,
     groups: Vec<(Option<(usize, usize)>, std::ops::Range<u32>)>,
     mmb: bool,
+    dist: Vec<std::ops::Range<u32>>,
 }
 
 /// A staging buffer for the readback and whether it is free (0), copied (1) or mapping (2).
@@ -212,6 +213,10 @@ pub struct EffectsGpu {
     sprite_pipes: HashMap<usize, wgpu::RenderPipeline>,
     morph_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
     ring_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    distmodel_pipes: HashMap<(usize, bool), wgpu::RenderPipeline>,
+    /// The scene copy with a Repeat sampler (DistModel's stage address WRAP).
+    copy_wrap: Option<wgpu::BindGroup>,
+    wrap_sampler: wgpu::Sampler,
     /// CMoDist: SRCALPHA / INVSRCALPHA, z write by flag 12.
     dist_pipes: HashMap<bool, wgpu::RenderPipeline>,
     /// DamValueProg by blend class; no z write (flag 0x1000 clear in DAT 27).
@@ -364,12 +369,14 @@ impl EffectsGpu {
         let mut morph_pipes = HashMap::new();
         let mut damv_pipes = HashMap::new();
         let mut ring_pipes = HashMap::new();
+        let mut distmodel_pipes = HashMap::new();
         let dist_pipes: HashMap<bool, wgpu::RenderPipeline> = [false, true].into_iter().map(|z| (z, pipe("vs_dist", &[], 1, z))).collect();
         for class in 0..6 {
             for zwrite in [false, true] {
                 mesh_pipes.insert((class, zwrite), pipe("vs_mesh", &vbuf, class, zwrite));
                 morph_pipes.insert((class, zwrite), pipe("vs_morph", &[], class, zwrite));
                 ring_pipes.insert((class, zwrite), pipe("vs_ring", &[], class, zwrite));
+                distmodel_pipes.insert((class, zwrite), pipe("vs_distmodel", &vbuf, class, zwrite));
             }
             // D3a never writes z (FUN_1003db60).
             sprite_pipes.insert(class, pipe("vs_sprite", &[], class, false));
@@ -395,6 +402,14 @@ impl EffectsGpu {
             min_filter: wgpu::FilterMode::Linear,
             ..Default::default()
         });
+        let wrap_sampler = device.create_sampler(&wgpu::SamplerDescriptor {
+            label: Some("effects scene copy, wrapped"),
+            address_mode_u: wgpu::AddressMode::Repeat,
+            address_mode_v: wgpu::AddressMode::Repeat,
+            mag_filter: wgpu::FilterMode::Linear,
+            min_filter: wgpu::FilterMode::Linear,
+            ..Default::default()
+        });
         let white_view = super::upload_texture(gpu, &crate::dat::zone::Texture::new(String::new(), 0, 1, 1, vec![255; 4]), false);
         let white = Self::tex_group(device, &tex_layout, &sampler, &white_view);
         let table = |label: &str| (buf(label, 1024, U::STORAGE | U::COPY_DST), 1024usize);
@@ -407,6 +422,9 @@ impl EffectsGpu {
             sprite_pipes,
             morph_pipes,
             ring_pipes,
+            distmodel_pipes,
+            copy_wrap: None,
+            wrap_sampler,
             dist_pipes,
             damv_pipes,
             dmgnum: None,
@@ -680,7 +698,7 @@ impl EffectsGpu {
         for t in groups.iter().filter_map(|g| g.0) {
             self.texture(gpu, fx, t);
         }
-        self.meshes[id as usize] = Some(GpuMesh { vb, groups, mmb: m.mmb });
+        self.meshes[id as usize] = Some(GpuMesh { vb, groups, mmb: m.mmb, dist: m.dist.clone() });
     }
 
     /// Draws the live elements over the scene (same targets, depth tested, back to front).
@@ -693,7 +711,7 @@ impl EffectsGpu {
             return;
         }
         let order = fx.draw_order();
-        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| c.draw == Draw::Dist));
+        let any_dist = order.iter().any(|&e| fx.elems[e as usize].as_ref().is_some_and(|c| matches!(c.draw, Draw::Dist | Draw::DistModel(_))));
         let copy_src = color_tex.filter(|t| any_dist && t.usage().contains(wgpu::TextureUsages::COPY_SRC));
         if let Some(t) = copy_src
             && self.scene_copy.as_ref().is_none_or(|(c, _)| c.size() != t.size() || c.format() != t.format())
@@ -710,7 +728,9 @@ impl EffectsGpu {
             });
             // Drawing in gamma space (not linearize), the copy is read as stored, without the sRGB decode.
             let vf = if self.linearize { t.format() } else { t.format().remove_srgb_suffix() };
-            let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &c.create_view(&wgpu::TextureViewDescriptor { format: Some(vf), ..Default::default() }));
+            let view = c.create_view(&wgpu::TextureViewDescriptor { format: Some(vf), ..Default::default() });
+            let g = Self::tex_group(&gpu.device, &self.tex_layout, &self.copy_sampler, &view);
+            self.copy_wrap = Some(Self::tex_group(&gpu.device, &self.tex_layout, &self.wrap_sampler, &view));
             self.scene_copy = Some((c, g));
         }
         let Some(group) = self.draw_group.as_ref() else { return };
@@ -783,6 +803,26 @@ impl EffectsGpu {
                     bound = None;
                     pass.set_bind_group(1, g, &[]);
                     pass.draw(0..12, base..base + 1);
+                }
+                // FUN_10043320: the scene so far copied (retail: squeezed into 256x256; here full size), then the mesh's
+                // DistModel ranges over it.
+                Draw::DistModel(id) => {
+                    let Some(Some(m)) = self.meshes.get(id as usize) else { continue };
+                    let (Some(src), Some((copy, _)), Some(g)) = (copy_src, self.scene_copy.as_ref(), self.copy_wrap.as_ref()) else { continue };
+                    if m.dist.is_empty() {
+                        continue;
+                    }
+                    drop(pass);
+                    encoder.copy_texture_to_texture(src.as_image_copy(), copy.as_image_copy(), src.size());
+                    pass = new_pass(encoder);
+                    class = blend_class(c.blend, false).unwrap_or(class);
+                    pass.set_pipeline(&self.distmodel_pipes[&(class, c.flags & 0x1000 != 0)]);
+                    bound = None;
+                    pass.set_bind_group(1, g, &[]);
+                    pass.set_vertex_buffer(0, m.vb.slice(..));
+                    for r in &m.dist {
+                        pass.draw(r.clone(), base..base + 1);
+                    }
                 }
                 Draw::Mesh(id) => {
                     let Some(Some(m)) = self.meshes.get(id as usize) else { continue };

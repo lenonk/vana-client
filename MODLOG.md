@@ -7780,3 +7780,22 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - 1263 files carry a shake factor (mostly mob moves). Not seen live yet (the test bee could not use a move that
   shakes).
 
+## Distortion meshes: CMoDistModelElem (2026-10-25; spec ~/ffxi/lab/research/fx_dist_spec.md)
+
+- D3m + op-1 flag 0x100000 (1191 generators in 852 files, mostly weapon skills and spells): FUN_10043320 draws the
+  mesh unshifted through +0xa0; each vertex's UV is the screen point of pos + (off, off, 0) in model space (off: op 0x32
+  / update op 0x24, +0x194) through FUN_10042d00's projection with |w|, into a copy of the scene so far (retail: the
+  whole viewport squeezed into one 256x256 target, flipped; ours full size, as CMoDist). An MMB in the D3m's place draws
+  nothing (+0x179). FUN_10040670 with its last argument 0: TSS 0x10352740 (+0x10352848 for mode 0x44): colour = the
+  copy alone (the mesh texture is never bound), alpha = k x copy alpha (0x80) x sat(2 x diffuse a x TFACTOR a), k 2 for
+  0x44 else 4; TFACTOR alpha 0xff when >= 0x7f in 0x44; WRAP addressing; the UV scroll slides the lookup; the common
+  draw's blend, fog, z write flag 12, cull none.
+- Ranges: the textured runs, then the untextured tail only with header byte 5, from triangle 1 when there are no texture
+  groups and the format is 5..7 (FUN_1003fcb0; 870 of the 1191).
+- Ours: Draw::DistModel / dk::DIST_MODEL (10), Mesh::dist ranges, vs_distmodel (screen_uv), fragment variant 11, a
+  Repeat-sampled bind group on the scene copy; per element a copy then the draw, in the effect order. Seen offscreen
+  (weapon skill 41, 3441 fs_i/md00): the band around the burst shows the wall displaced; not compared with retail.
+- Not done from the spec: VuDist (batched 0x22: the element's own diamond n times, each over a copy holding the last),
+  DistRing (an S-gon ring over the copy, colours x the element colour), DistMorph (key mesh 0 only, geometry shifted,
+  UVs unshifted); the D3m loader's format-7 fallback (FUN_1003fee0; 4 meshes parse 6 bytes off).
+

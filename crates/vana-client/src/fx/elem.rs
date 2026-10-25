@@ -100,6 +100,8 @@ pub mod dk {
     pub const DAMV: u32 = 8;
     /// RingProg (FUN_100555f0): untextured rings, built by vs_ring from the vertex index.
     pub const RING: u32 = 9;
+    /// CMoDistModelElem (D3m + 0x100000): the mesh over the scene copy looked up at shifted screen points.
+    pub const DIST_MODEL: u32 = 10;
 }
 
 /// Particle record in the pool: pos0, dir, vel (9 floats).
@@ -262,6 +264,7 @@ pub fn wgsl_consts() -> String {
         ("DK_DIST", dk::DIST as usize),
         ("DK_DAMV", dk::DAMV as usize),
         ("DK_RING", dk::RING as usize),
+        ("DK_DIST_MODEL", dk::DIST_MODEL as usize),
         ("E_RING_R", w::RING_R),
         ("E_RING_C", w::RING_C),
         ("E_RING_SR", w::RING_SR),

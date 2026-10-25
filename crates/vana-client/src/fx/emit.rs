@@ -101,11 +101,13 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         Draw::None
     } else {
         match remap(res_kind) {
-            kind::D3M => match reg.resolve(lib, from, kind::D3M, name).or_else(|| reg.resolve(lib, from, kind::MMB, name)) {
-                // DistModel (0x100000) and the ground projection (0x200000) are never drawn as a plain mesh; their
-                // passes are not done yet.
-                Some(_) if flags & 0x30_0000 != 0 => Draw::None,
-                Some(r) => reg.mesh(r).map(Draw::Mesh).unwrap_or(Draw::None),
+            kind::D3M => match reg.resolve(lib, from, kind::D3M, name).map(|r| (r, true)).or_else(|| reg.resolve(lib, from, kind::MMB, name).map(|r| (r, false))) {
+                // The ground projection (0x200000) is never drawn as a plain mesh (its pass is not done yet).
+                Some(_) if flags & 0x20_0000 != 0 => Draw::None,
+                // DistModel (0x100000, FUN_10043320); an MMB in its place draws nothing (+0x179).
+                Some((r, true)) if flags & 0x10_0000 != 0 => reg.mesh(r).map(Draw::DistModel).unwrap_or(Draw::None),
+                Some(_) if flags & 0x10_0000 != 0 => Draw::None,
+                Some((r, _)) => reg.mesh(r).map(Draw::Mesh).unwrap_or(Draw::None),
                 None => {
                     reg.miss(lib, from, name, res_kind);
                     return None;
@@ -176,6 +178,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         Draw::None => dk::NONE,
         Draw::Dist => dk::DIST,
         Draw::Ring => dk::RING,
+        Draw::DistModel(_) => dk::DIST_MODEL,
         Draw::DamValue => {
             let d = inst.dam.as_ref().unwrap();
             let pack = |gs: &[u8]| gs.iter().enumerate().fold(0u32, |a, (k, &g)| a | (g as u32 & 0xf) << (4 * k));
@@ -351,7 +354,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 e.set(w::L_ISCALE, op.f32(4) + 1.0);
             }
             // vtable +0x34 = FUN_10051dc0 on CMoDist: +0x194 = op+8.
-            0x32 if matches!(draw, Draw::Dist) => e.set(w::DIST_OFF, op.f32(2)),
+            0x32 if matches!(draw, Draw::Dist | Draw::DistModel(_)) => e.set(w::DIST_OFF, op.f32(2)),
             // On the source actor: local matrix times its ground frame, position = its foot contact (+0x63c).
             0x8e => {
                 if let Some((p, m)) = inst.ground {

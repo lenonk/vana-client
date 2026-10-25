@@ -138,6 +138,8 @@ pub enum Draw {
     DamValue,
     /// RingProg (kind 0x24): concentric rings from emission op 0x3a (render/effects.rs vs_ring).
     Ring,
+    /// CMoDistModelElem (D3m + 0x100000, FUN_10043320): a registered mesh drawn over the scene copy.
+    DistModel(u32),
 }
 
 /// A damage number for kind 0x5c elements: glyphs ('0'..'9' = 0..9, ':' = 10, up to 16) and the message colour
@@ -2004,6 +2006,7 @@ impl Effects {
                 Draw::Morph(id) => format!("morph {id}"),
                 Draw::Dist => "dist".into(),
                 Draw::Ring => "ring".into(),
+                Draw::DistModel(id) => format!("distmodel {id}"),
                 Draw::DamValue => "damv".into(),
                 Draw::None => "none".into(),
             };

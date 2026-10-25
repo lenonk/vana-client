@@ -415,7 +415,7 @@ fn update(@builtin(global_invocation_id) gid: vec3<u32>) {
                 set_cb(b, 0u, u32(max(f32(sc & 0xffu) * p.area.z, 0.0)) & 0xffu);
             }
             // vtable +0x34(key(t)): CMoDist +0x194 (0 without a keyframe).
-            case 0x24u: { if (el[b + E_KIND] == DK_DIST) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
+            case 0x24u: { if (el[b + E_KIND] == DK_DIST || el[b + E_KIND] == DK_DIST_MODEL) { set_ef(b, E_DIST_OFF, select(0.0, key_t(b, s, t), sl(b, s) != NONE)); } }
             case 0x30u, 0x31u, 0x32u: {
                 let k = el[b + E_OP2_SLOT];
                 if (k != NONE) { set_slf(b, k + code - 0x30u, slf(b, s + 2u) + key_t(b, s, t)); }
@@ -864,6 +864,32 @@ fn vs_dist(@builtin(vertex_index) k: u32, @builtin(instance_index) inst: u32) ->
     return out;
 }
 
+// The scene copy's lookup at a view point (FUN_10042d00 / FUN_1006eb70: through the projection with |w|, the copy
+// flipped back; top-left origin).
+fn screen_uv(vp: vec3<f32>) -> vec2<f32> {
+    let c = d.proj * vec4<f32>(vp, 1.0);
+    var w = abs(c.w);
+    if (w == 0.0) { w = 1.0; }
+    return vec2<f32>(0.5 + 0.5 * c.x / w, 0.5 - 0.5 * c.y / w);
+}
+
+// CMoDistModelElem (FUN_10043320): the mesh drawn unshifted; each vertex samples the scene copy at the screen point of
+// pos + (off, off, 0) in model space through the element matrix; the UV scroll slides the lookup (V flipped back).
+// Variant 11.
+@vertex
+fn vs_distmodel(v: VIn, @builtin(instance_index) inst: u32) -> VOut {
+    let e = inst / PER_ELEM;
+    let o = e * OUT_WORDS;
+    if (douts[o + 23u] < 0.5) { return hidden(); }
+    let mv = out_mat(o);
+    let off = bitcast<f32>(dels[e * E_WORDS + E_DIST_OFF]);
+    let vp = (mv * vec4<f32>(v.pos, 1.0)).xyz;
+    let su = (mv * vec4<f32>(v.pos + vec3<f32>(off, off, 0.0), 1.0)).xyz;
+    var out = vout(e, vp, v.color, vec2<f32>(0.0), 11u);
+    out.uv = screen_uv(su) + vec2<f32>(douts[o + 20u], -douts[o + 21u]);
+    return out;
+}
+
 // RingProg (FUN_100555f0): per ring pair p a triangle strip of 2S + 2 vertices, as triangles (strip index t + c);
 // strip pair q at angle 0 for q 0 and S, else (q - 1) 2 pi / S (the literal degenerate first pair); even strip
 // vertices on ring p, odd on ring p + 1, at (sin a r, cos a r, 0) with that ring's colour. Colour diffuse x TFACTOR
@@ -1003,7 +1029,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
     var rgb: vec3<f32>;
     var a: f32;
     let vonly = (flags & 0x10000000u) != 0u;
-    if (variant <= 1u && mode == 0x44u && f.a > 126.0 / 255.0) { f.a = 1.0; }
+    if ((variant <= 1u || variant == 11u) && mode == 0x44u && f.a > 126.0 / 255.0) { f.a = 1.0; }
     if (variant == 0u) {
         let t = textureSample(tex, samp, i.uv);
         rgb = sat3(sat3(2.0 * dd.rgb * t.rgb) * 2.0 * f.rgb);
@@ -1039,6 +1065,13 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
         rgb = sat3(2.0 * dd.rgb * t);
         a = sat(dd.a * (128.0 / 255.0) * 4.0);
+    } else if (variant == 11u) {
+        // DistModel (TSS 0x10352740, 0x10352848 for 0x44): the copy's colour; alpha k x copy alpha (0x80) x stage 0's
+        // 2 x diffuse x TFACTOR, k 2 for 0x44 else 4. The mesh texture is never bound.
+        var t = textureSample(tex, samp, i.uv).rgb;
+        if (d.fog.z > 0.5) { t = pow(t, vec3<f32>(1.0 / 2.2)); }
+        rgb = t;
+        a = sat(select(4.0, 2.0, mode == 0x44u) * (128.0 / 255.0) * sat(2.0 * dd.a * f.a));
     } else if (variant == 7u || variant == 8u) {
         // D3b stages (TSS 0x103470b8): texture x diffuse x 2, then x TFACTOR x 2 (alpha x 4).
         let t = textureSample(tex, samp, i.uv);
@@ -1056,7 +1089,7 @@ fn fs(i: VOut) -> @location(0) vec4<f32> {
         if (mode == 0x40u) { a = f.a; }
     }
     // Scenery fog on view depth unless flag 25; black in mode 0x48 (FUN_10045950). D3a turns fog off.
-    if ((variant < 4u || variant == 7u || variant == 8u) && (flags & 0x2000000u) == 0u) {
+    if ((variant < 4u || variant == 7u || variant == 8u || variant == 11u) && (flags & 0x2000000u) == 0u) {
         let ff = sat((d.fog.y - i.depth) / (d.fog.y - d.fog.x));
         var fc = d.fog_color.rgb;
         if (mode == 0x48u) { fc = vec3<f32>(0.0); }

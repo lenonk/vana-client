@@ -32,6 +32,9 @@ pub struct Mesh {
     pub verts: Vec<MeshVertex>,
     pub groups: Vec<MeshGroup>,
     pub mmb: bool,
+    /// DistModel's ranges (FUN_10040670 untextured): the textured runs, then the tail only with header byte 5, one
+    /// triangle in when there are no texture groups and the format is 5..7 (FUN_1003fcb0).
+    pub dist: Vec<std::ops::Range<u32>>,
 }
 
 /// A D3a sprite animation (chunk 0x21, FUN_1003d870; d3a_particles.md 1): frames of quads as triangle lists, one
@@ -223,7 +226,7 @@ impl Library {
                     zone::decode_mmb(keys, &mut d);
                     // Type 2 (48-byte vertices) draws nothing on the effect path (its VB stays empty).
                     if d.get(4) == Some(&2) {
-                        Ok(Mesh { verts: Vec::new(), groups: Vec::new(), mmb: true })
+                        Ok(Mesh { verts: Vec::new(), groups: Vec::new(), mmb: true, dist: Vec::new() })
                     } else {
                         zone::parse_mmb(&d).map(|m| from_mmb(&m))
                     }
@@ -395,7 +398,14 @@ fn from_d3m(m: &D3m) -> Mesh {
     if (m.textures.is_empty() || m.untextured_tail) && at < total {
         groups.push(MeshGroup { name: None, texture: None, range: at..total });
     }
-    Mesh { verts, groups, mmb: false }
+    let skip = m.textures.is_empty() && (5..=7).contains(&(m.format & 0xf));
+    let dist = groups
+        .iter()
+        .filter(|g| g.name.is_some() || m.untextured_tail)
+        .map(|g| if g.name.is_none() && skip { (g.range.start + 3).min(g.range.end)..g.range.end } else { g.range.clone() })
+        .filter(|r| !r.is_empty())
+        .collect();
+    Mesh { verts, groups, mmb: false, dist }
 }
 
 /// The MMB node of FUN_10168eb0: every model de-indexed into a triangle list with its texture.
@@ -415,7 +425,7 @@ fn from_mmb(m: &zone::Mmb) -> Mesh {
             groups.push(MeshGroup { name: Some(model.texture.clone()), texture: None, range: start..end });
         }
     }
-    Mesh { verts, groups, mmb: true }
+    Mesh { verts, groups, mmb: true, dist: Vec::new() }
 }
 
 /// Strip to list, dropping the degenerate triangles that join strips (as render/mod.rs does for scenery).
