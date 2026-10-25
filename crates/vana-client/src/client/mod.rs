@@ -183,6 +183,20 @@ fn menu_swap(w: &World) -> Vec<(u16, usize)> {
     if w.menu_page == 0 && w.myroom.is_some() { vec![(12, if w.mh_owner == 0 { 44 } else { 443 })] } else { Vec::new() }
 }
 
+/// The text engine has the keyboard (FUN_101adbd0: mode 4 the chat line, 5 a window's field): key functions with mask
+/// 0x41 and movement stay off, as while typing in the chat line.
+fn text_field_open(w: &World) -> bool {
+    w.typing
+        || event::input(w).is_some()
+        || w.map.as_ref().is_some_and(|m| m.typing())
+        || post::typing(w)
+        || searchmenu::typing(w)
+        || linkshell::typing(w)
+        || seacom::typing(w)
+        || macroedit::typing(w)
+        || faqmain::typing(w)
+}
+
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
 fn world_window_open(w: &World) -> bool {
     w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.action_menu.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some()
@@ -813,7 +827,7 @@ fn chat_shortcut(k: egui::Key) -> Option<&'static str> {
 /// Key function 0x78 (numpad +, Ctrl / Alt + F), FUN_10151550: with focus somewhere (or nowhere to go) back
 /// to 0, else SE "0013" and the next of logwindo / buff (not modelled: no buff window) / none.
 fn log_cycle(w: &mut World) {
-    if w.full_log.is_some() || w.typing || event::active(w) {
+    if w.full_log.is_some() || text_field_open(w) || event::active(w) {
         return;
     }
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
@@ -6592,7 +6606,7 @@ impl App {
         if let Phase::World(w) = &self.phase {
             self.input.assign(&w.game);
             self.input.context = if w.map.is_some() || w.cnq.is_some() { 0x26 } else { 0xffff };
-            f.typing = w.typing;
+            f.typing = text_field_open(w);
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state). The log counts only
             // while focused: Escape or another window unfocuses it and leaves the 0x78 state at 1.

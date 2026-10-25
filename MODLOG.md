@@ -7175,3 +7175,12 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   Legs, Enter equipped them; Storage Options focused; Escape back to the main menu.
 - Not done: the open refusals (synthesis 7 0x4e, fishing 0x4d, not loaded 0xa8), "menu    pupequip" for PUP, the
   mouse model of C.7, the unequip toggle not seen live yet.
+
+## Text fields block the game keys (2026-10-25)
+
+- Retail's "typing" test (FUN_101adbd0) is the text engine in mode 4 (the chat line) or 5 (a window's field), so key
+  functions with mask 0x41 and movement are off in every text field, not only the chat line. Ours told the input layer
+  only about the chat line (Frame.typing = World.typing): letters typed into a macro title or line, a book or set name,
+  a search name, a linkshell name, a bazaar comment, a mail name, a map marker, the GM call field or the event input
+  window also moved the character and ran their key functions (user report, macro editor). Now text_field_open() feeds
+  Frame.typing and the log cycle (key function 0x78) test.
