@@ -23,6 +23,9 @@ const DANCE: u32 = u32::from_le_bytes(*b"main");
 /// s2c 0x01B: the jobs we have (bit n = job n), each job's level, and whether a support job is unlocked.
 #[derive(Clone, Copy, Debug)]
 pub struct JobInfo {
+    /// @8 / @0xb: the main and support job (s2c 0x044 is kept only for these, FUN_100f1050).
+    pub main: u8,
+    pub sub: u8,
     pub flags: u32,
     pub levels: [u8; 24],
     pub sub_ok: bool,

@@ -166,8 +166,8 @@ fn order_mut<'a>(w: &'a mut World, aix: bool) -> Option<&'a mut super::macros::O
     Some(o)
 }
 
-/// FUN_1022c3a0's rows: known spells (0x0AA) in the mix.dat order, by type and exclusion; cast mode needs 0x119 seen, the job / level rule, SCH / GEO main for flags 8 /
-/// 0x20, and leaves out blue magic (needs the set spells, s2c 0x044, not read yet).
+/// FUN_1022c3a0's rows: known spells (0x0AA) in the mix.dat order, by type and exclusion; cast mode needs 0x119 seen,
+/// the job / level rule, SCH / GEO main for flags 8 / 0x20, and for blue magic 0x200..0x2df a set spell (s2c 0x044).
 fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
     let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref()) else { return Vec::new() };
     order(w, false, &w.spells_known)
@@ -177,12 +177,18 @@ fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
             let shown = exclude & (1 << (r.kind & 0x1f)) == 0 && (ty == 0 || r.kind == ty);
             let castable = w.recasts_seen
                 && acts.can_cast(s, st.main, st.sub, 0)
-                && !(0x200..0x2e0).contains(&s)
+                && (!(0x200..0x2e0).contains(&s) || super::bluset::is_set(w, s))
                 && (r.flags & 8 == 0 || st.main.0 == 20)
                 && (r.flags & 0x20 == 0 || st.main.0 == 21);
             shown && (list_mode || castable)
         })
         .collect()
+}
+
+/// The known blue magic (type 6) in the mix.dat order, for the Set Spells screen's bluinven.
+pub(super) fn blue_known(w: &World) -> Vec<u16> {
+    let Some(acts) = w.actions.as_ref() else { return Vec::new() };
+    order(w, false, &w.spells_known).into_iter().filter(|&s| acts.spell(s).is_some_and(|r| r.kind == 6)).collect()
 }
 
 /// FUN_10223ec0's rows: known abilities (0x0AC bits by table index) in the aix.dat order, of the type; pet commands
@@ -371,7 +377,14 @@ fn magic_check(w: &World, s: u16) -> Option<usize> {
     if acts.spell(s).is_some_and(|r| mp < r.mp as u32) {
         return Some(0x58);
     }
-    None
+    // Blue magic: the reset lockout (0xb7), an unset spell (0xb5); Unbridled spells need Unbridled Learning (485) or
+    // Wisdom (505).
+    match s {
+        0x200..0x2e0 if super::bluset::reset_active(w) => Some(0xb7),
+        0x200..0x2e0 if !super::bluset::is_set(w, s) => Some(0xb5),
+        0x2e0..0x300 if !w.buffs.iter().any(|&b| b == 485 || b == 505) => Some(0x57),
+        _ => None,
+    }
 }
 
 /// FUN_10224b70: the line refusing an ability, or None (traits: "Job traits are always active.").
@@ -761,15 +774,11 @@ fn sort_key(w: &mut World, kind: Kind, key: egui::Key) -> bool {
                 w.sounds.push(Ui::Select as u32);
                 return true;
             }
-            // blusortw row 3 (FUN_101df020): 0x119 seen and BLU main or sub, else group 7 0x57; the set screen is
-            // not done.
+            // blusortw row 3 (FUN_101df020): the Set Spells screen (0x119 seen and BLU main or sub, else group 7 0x57).
             K::Enter => {
-                let blu = w.recasts_seen && w.stats.as_ref().is_some_and(|s| s.main.0 == 16 || s.sub.0 == 16);
-                if blu {
-                    log::info!("the blue magic set screen is not implemented");
-                    w.sounds.push(Ui::Error as u32);
-                } else {
-                    refuse(w, 0x57);
+                super::bluset::open(w);
+                if w.bluset.is_some() {
+                    w.sounds.push(Ui::Select as u32);
                 }
                 return true;
             }

@@ -7479,3 +7479,34 @@ Spec: `~/ffxi/lab/research/roe_lists_spec.md`. Ours: dat/roe.rs, client/roe.rs, 
 - Live (Lnxcsfix): the root shows Tutorial and Other; Tutorial -> Basics -> First Step Forward (the bubble, 0/1);
   Set -> 0x10C, LSB's line; Current 1/30 with the green row; Remove (default No) -> Yes -> 0x10D, "No current
   objectives." 0/30.
+
+## Blue magic sets (2026-10-25)
+
+Spec: `~/ffxi/lab/research/blue_magic_spec.md`. Ours: dat/blumagic.rs, client/bluset.rs, magic.rs.
+
+- s2c 0x044 (FUN_100fcb70): 0x9c bytes from @4 kept per side (@5 IsSubJob) only when @4 is the job s2c 0x01B gave that
+  side (0x01B @8 main, @0xb sub, not 0x061). BLU block: @8..@0x1b 20 slots (spell - 0x200, 0 empty), u32 stamp @0x1c;
+  a new non-zero stamp starts the 60 s lockout (recast slot 0x400, FUN_1022b290); LSB sends 0.
+- File 90 (ROM/165/113.DAT): 256 x {idx, set points, description + 1, family 1..19, level, 0 magical / 1 physical}
+  for spells 0x200 + idx (points 0: Unbridled, 0xff: placeholders, named "."); descriptions are the d_msg of language
+  slot 0x1a (en 55685), entry idx - 1. Points / slots by band ceil(level / 10) (tables 0x10364470 / 0x1036447c), the
+  points plus s2c 0x063 type 2 u16 @0xa bits 7..12.
+- Magic lists: cast mode lists 0x200..0x2df only when set on the side (main BLU, else sub BLU); FUN_1022cf30 adds
+  group 7 0xb7 (the lockout), 0xb5 (not set), and 0x57 for 0x2e0..0x2ff without status 485 / 505.
+- Set Spells (blusortw row 3, FUN_101df020; 0x57 without 0x119 or BLU): persona, bluepoin ("%d/%d" right-aligned at
+  (x1 - 8, 0x1f), 0x802060a0 once full), bluequip (slots: keytops3 400 + i in the band colour of DAT_1037f1e8, the
+  standard icon at +18, the name at +36; the picked slot 0x80804020), bluinven (framesus 130 "Type", group 9 0xe3
+  "(Remove All)" in 0x80909040, the known blue spells in mix.dat order with points and the family filter: picked
+  0x80804020, set 0x80509050, too dear or too high 0x80404040), bluehelp (name, "(%s - %s) " group 10 0x54 right at
+  x1 - 4, the description from (16, 20), group 10 0x55 "Lv.%d  MP cost %d  Blue Magic Points %d"; both sprintf
+  formats; the window stays open and empty (FUN_101ec3c0 only clears) off a spell), bluesibo (18 families; rows
+  15..18 are families 16..19). The window walk suspends the magic list, blusortw and mgcmenu while it is open.
+- Flows: a spell then a slot, or a slot then a spell (bluinven's cursor jumps to the slot's spell; bluequip's to the
+  slot holding a picked spell); the same spell in its slot removes it; grey rows refuse (SE 0004), green ones are
+  taken; Escape drops a pick (back to the other list) or closes; Num+ swaps the lists with nothing picked.
+- c2s 0x102 (0xa4 bytes): @4 the spell (0 to remove), @8 the block's first dword, @0xc + slot the spell (or the
+  slots to empty); Remove All lists every set slot. One per second (FUN_100fc3c0), extras dropped; not sent when
+  nothing changes.
+- Live with injected 0x01B / 0x061 / 0x0AA / 0x044 (Lnxcsfix stays WAR on the server): the screen, help, filter,
+  both flows and Remove All send the expected 0x102 (LSB refuses them: not BLU). A real BLU test needs `!changejob BLU`,
+  which writes BLU's level.

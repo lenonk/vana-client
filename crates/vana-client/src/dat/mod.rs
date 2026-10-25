@@ -176,6 +176,7 @@ pub mod items;
 pub mod names;
 pub mod merits;
 pub mod roe;
+pub mod blumagic;
 pub mod journal;
 pub mod event;
 pub mod event_ops;

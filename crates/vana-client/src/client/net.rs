@@ -320,6 +320,9 @@ pub enum NetEvent {
     /// s2c 0x01B (GP_MYROOM_DANCER): get_job_flag @0xc, job_lev @0x10 (jobs 0..15), job_lev2 @0x48 (16..23),
     /// sjobflg @0x44.
     JobInfo(super::moogle::JobInfo),
+    /// s2c 0x044 EXTENDED_JOB (FUN_100fcb70): 0x9c bytes from @4 (job, IsSubJob, pad, then the job's data: BLU's 20
+    /// set spells and a u32 stamp; PUP's attachments).
+    ExtJob(Vec<u8>),
     /// s2c 0x02E (header only): open the moogle menu.
     MogMenu,
     /// s2c 0x0AE: the owned mounts, 64 bits (LSB: key items 3072 + n).
@@ -943,6 +946,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x113 | 0x118 => tx.send(NetEvent::Currencies { mode: if p.id == 0x113 { 1 } else { 2 }, data: p.data.clone() })?,
                     0x11D => tx.send(NetEvent::PartyRequest { status: p.u8(0xb), name: text(&p, 0xc, 16) })?,
                     0x041 => tx.send(NetEvent::Blacklist { stat: p.u8(0xf4), entries: (0..p.u8(0xf5).min(12) as usize).map(|k| (p.u32(4 + 0x14 * k), text(&p, 8 + 0x14 * k, 16))).collect() })?,
+                    0x044 => tx.send(NetEvent::ExtJob((0..0x9c).map(|i| p.u8(4 + i)).collect()))?,
                     0x0DC => tx.send(NetEvent::Invite { anon: p.u8(0xa), kind: p.u8(0xb), name: text(&p, 0xc, 16), race: p.u16(0x1c) })?,
                     0x0AE => tx.send(NetEvent::Mounts(p.u32(4) as u64 | (p.u32(8) as u64) << 32))?,
                     0x119 if { let _ = tx.send(NetEvent::MountRecast(p.u32(0xfc))); false } => {}
@@ -1110,6 +1114,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         slot: super::post::Slot { stat: p.u32(0x10), name: text(&p, 0x14, 16), work_no: p.u32(0x2c), item: p.u16(0x30), stack: p.u32(0x38), ext: std::array::from_fn(|i| p.u8(0x3c + i)) },
                     }))?,
                     0x01B => tx.send(NetEvent::JobInfo(super::moogle::JobInfo {
+                        main: p.u8(8),
+                        sub: p.u8(0xb),
                         flags: p.u32(0xc),
                         levels: std::array::from_fn(|n| if n < 16 { p.u8(0x10 + n) } else { p.u8(0x48 + n) }),
                         sub_ok: p.u8(0x44) != 0,

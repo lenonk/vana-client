@@ -56,6 +56,7 @@ mod merits;
 mod plate;
 mod partymenu;
 mod partyreq;
+mod bluset;
 mod roe;
 mod levelsync;
 mod viewhouse;
@@ -1381,7 +1382,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     egui::Key::W => magic::open_ability(world, 3, false),
                     _ => magic::open_ability(world, 2, false),
                 },
-                _ if world.prompt.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
+                _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
+                _ if world.prompt.is_none() && world.confirm.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
                     magic::key(world, *key);
                 }
                 egui::Key::H if modifiers.ctrl || modifiers.alt => {
@@ -1766,8 +1768,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.confirm.is_none()) {
         status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
-    // Mouse on the magic / ability lists and their category windows.
-    if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
+    // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.
+    if let Some(p) = input.pointer.filter(|_| world.bluset.is_some() && world.confirm.is_none()) {
+        bluset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    } else if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
         magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // The party cursor (<stpc>, a party menu pick): the mouse over the party windows' rows.
@@ -2263,6 +2267,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
+    blockers.extend(bluset::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = world.config.as_mut() {
         c.covered = world.settings.is_some();
@@ -2555,6 +2560,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             jobpoints::answer(world, a);
         }
+        (Some(true), Some((Confirm::BlueRemoveAll, _))) => {
+            world.confirm = None;
+            bluset::remove_all(world);
+        }
         (Some(true), Some((Confirm::Roe(a), _))) => {
             world.confirm = None;
             roe::answer(world, a);
@@ -2714,6 +2723,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     magic::bars(gu, world, &mut bars);
+    bluset::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
@@ -2784,6 +2794,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::Request(_), _) => partyreq::ask_text(world),
         (Confirm::Roe(a), _) => roe::ask_text(gu, a),
+        (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3966,6 +3977,12 @@ struct World {
     synth: synth::State,
     /// Party join requests: the history (pec.dat) and the blacklist (client/partyreq.rs).
     partyreq: partyreq::State,
+    /// s2c 0x044 blocks (main, sub), the BLU stamp and reset timer, the Set Spells screen (client/bluset.rs).
+    ext_job: [[u8; 0x9c]; 2],
+    blu_stamp: u32,
+    blu_reset: Option<Instant>,
+    blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
+    bluset: Option<bluset::Screen>,
     /// The server message's transfer, its one request per lobby login (first zone) still to come, and the world's
     /// name for its header.
     servmes: Option<servmes::Transfer>,
@@ -4054,6 +4071,8 @@ enum Confirm {
     Request(partyreq::Ask),
     /// The Records of Eminence prompts (FUN_10232770).
     Roe(roe::Ask),
+    /// bluinven's Remove All (FUN_10210e30): group 9 0xe4 "Remove all set blue magic spells?".
+    BlueRemoveAll,
 }
 
 impl World {
@@ -4237,6 +4256,7 @@ pub struct App {
     keys_table: Option<Arc<zone::Keys>>,
     knock_table: Option<[[f32; 3]; 8]>,
     search_words: Option<Arc<crate::dat::tables::SearchWords>>,
+    blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
     cnq_tables: Option<Arc<crate::dat::tables::CnqTables>>,
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
@@ -4420,6 +4440,7 @@ impl App {
             keys_table: None,
             knock_table: None,
             search_words: None,
+            blu_data: None,
             cnq_tables: None,
             game_ui: None,
             game_ui_state: LoadState::Idle,
@@ -4766,6 +4787,8 @@ impl App {
             self.keys_table = Some(Arc::new(zone::Keys::from_ffximain(&dll)?));
             self.knock_table = crate::dat::tables::knockback(&dll).ok();
             self.search_words = crate::dat::tables::search_words(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+            let blu_desc = crate::dat::msg::current_slot_file(&dll, 1, 0x1a);
+            self.blu_data = Some(Arc::new(crate::dat::blumagic::BluData::load(self.index.as_ref().unwrap(), blu_desc)));
             self.cnq_tables = crate::dat::tables::conquest(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
             self.input.load(&dll);
         }
@@ -5200,6 +5223,11 @@ impl App {
                             pick_points: HashMap::new(),
                             synth: synth::State::default(),
                             partyreq: partyreq::State::default(),
+                            ext_job: [[0; 0x9c]; 2],
+                            blu_stamp: 0,
+                            blu_reset: None,
+                            blu_data: self.blu_data.clone(),
+                            bluset: None,
                             treasure: Default::default(),
                             loot: None,
                             linkshells: Default::default(),
@@ -5967,6 +5995,7 @@ impl App {
                 }
                 NetEvent::MogMenu => world.mog_pending = true,
                 NetEvent::JobInfo(j) => world.job_info = Some(j),
+                NetEvent::ExtJob(b) => bluset::ext_job(world, &b),
                 NetEvent::Pbx(p) => post::on_pbx(world, p),
                 // LAB_100a2760: the actor's jump flag (FUN_1008b410 -> FUN_100c63d0: 32 ticks of "jmp"). LSB also echoes it
                 // to the jumper; retail's toggle would answer that with another 0x11D, so ours ignores our own (inferred).
@@ -6856,7 +6885,9 @@ impl App {
             world.info_page.set(p);
         }
         items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
-        if self.input.test(0x11, input::mode::PRESS) && (world.magic.is_some() || world.ability.is_some()) {
+        if self.input.test(0x11, input::mode::PRESS) && world.bluset.is_some() {
+            bluset::num_plus(world);
+        } else if self.input.test(0x11, input::mode::PRESS) && (world.magic.is_some() || world.ability.is_some()) {
             magic::num_plus(world);
         }
         if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Items { store: Some(_), .. })) {
