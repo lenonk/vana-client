@@ -41,6 +41,10 @@ pub trait Actors {
     fn model_files(&self, id: u32) -> Vec<u32> {
         self.files(id).1
     }
+    /// Vtable +0x1e4 (FUN_100d12d0): the model and every file on its list are in; None without an actor.
+    fn ready(&self, _id: u32) -> Option<bool> {
+        Some(true)
+    }
     /// Hidden actors (+0xb2 bit 1) get no attached effects.
     fn hidden(&self, id: u32) -> bool;
     /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
@@ -823,6 +827,11 @@ pub struct Effects {
     pub holds: Vec<(u32, f32, u8)>,
     /// Ops 0x2e (actor1's move input, our own player only) and 0x2f (actor1's facing) locked for ticks.
     pub locks: Vec<(u32, u8, f32)>,
+    /// Op 0x2e: (owner task uid, actor1, ticks left); the actors whose move input is off this frame, and those whose
+    /// root ended (their status motion restarts).
+    roots: Vec<(u64, u32, f32)>,
+    pub rooted: HashSet<u32>,
+    pub status_restarts: Vec<u32>,
     /// Ops 0x75 / 0xa3: an actor's `wepN` meshes hidden or shown.
     pub weapons: Vec<WeaponOp>,
     wep_timers: Vec<equip::WepTimer>,
@@ -873,6 +882,9 @@ pub struct Effects {
     pub pinned: HashMap<u32, (Vec3, Option<f32>)>,
     pub effect_motions_done: Vec<(u32, u32)>,
     owned_motions: Vec<(u64, u32, u32)>,
+    /// Skill `main` tasks (uid, caster), and the casters whose skill files go now (0x100a8db0).
+    skill_mains: Vec<(u64, u32)>,
+    pub skill_files_done: Vec<u32>,
     /// Door part moves from scheduler ops 0x0c / 0x0d this frame, for the renderer.
     pub door_moves: Vec<DoorMove>,
     /// Scheduler ops 0x0f / 0x72 / 0x0e for the screen (client/event.rs Screen): code, the RGBA bytes @8, f32 @0xc
@@ -961,6 +973,9 @@ impl Effects {
             gens_off: Vec::new(),
             holds: Vec::new(),
             locks: Vec::new(),
+            roots: Vec::new(),
+            rooted: HashSet::new(),
+            status_restarts: Vec::new(),
             weapons: Vec::new(),
             wep_timers: Vec::new(),
             equip: HashMap::new(),
@@ -990,6 +1005,8 @@ impl Effects {
             pinned: HashMap::new(),
             effect_motions_done: Vec::new(),
             owned_motions: Vec::new(),
+            skill_mains: Vec::new(),
+            skill_files_done: Vec::new(),
             door_moves: Vec::new(),
             screen_ops: Vec::new(),
             motion_sets: Vec::new(),

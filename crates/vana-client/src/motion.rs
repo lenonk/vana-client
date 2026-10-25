@@ -76,6 +76,11 @@ impl MotionNames {
 /// Motion name (3 letters plus the region digit, "idl" -> idl0/idl1/idl2) and playback rate for a
 /// status (0x00D/0x00E byte @0x1F, LSB `Animation`) and movement ratio (FUN_100c6b70). The client
 /// also falls back from "id1" to "idl" when the first is missing (FUN_100c6380).
+/// FUN_100ca9b0: status motions an op 0x2e's end leaves playing (the first three letters).
+pub fn keeps_status_motion(n: &str) -> bool {
+    matches!(n.get(..3).unwrap_or(n), "idl" | "1dl" | "2dl" | "3dl" | "btl" | "1tl" | "2tl" | "3tl" | "cor" | "rx1")
+}
+
 pub fn choose(names: &MotionNames, status: u8, ratio: f32) -> (&'static str, f32) {
     match status {
         2 | 3 => return ("cor", 1.0),
@@ -121,5 +126,18 @@ mod tests {
         let (name, rate) = choose(&MotionNames::default(), 0, r);
         assert_eq!(name, "wlk");
         assert!((rate - 0.975).abs() < 1e-3, "{rate}");
+    }
+}
+
+#[cfg(test)]
+mod keep_tests {
+    #[test]
+    fn keeps_status_motion() {
+        for n in ["idl", "3dl", "btl", "2tl", "cor", "rx1", "idl0"] {
+            assert!(super::keeps_status_motion(n), "{n}");
+        }
+        for n in ["wlk", "run", "2un", "chi", "6hi", "fh1", "si1", "ci1"] {
+            assert!(!super::keeps_status_motion(n), "{n}");
+        }
     }
 }

@@ -40,6 +40,8 @@ pub(super) struct Pending {
     pub age: f32,
     /// A skill category and animation whose file depends on the caster (FUN_100d0570), not chosen yet.
     pub skill: Option<(u8, u16)>,
+    /// The caster whose skill files this `main` keeps (task +0xac = 0x100a8db0).
+    pub skill_caster: Option<u32>,
     /// Wait until the actor lists this motion file (the client adds it).
     pub wait_motion: Option<(u32, u32)>,
     /// A damage number for the task (Task::num).
@@ -79,27 +81,29 @@ fn action_speed(a: &Action) -> f32 {
     if a.records().len() > 1 && !matches!(a.category, 0xe | 0xf) { 0.7 } else { 1.0 }
 }
 
-/// FUN_100d0570's files for a skill on a PC skeleton (tables 0x10353be4..0x10353cb8, indexed by race code 0..8):
-/// the motion and effect file, and the second file when body info byte 9 > 0 (0x...c30 table when it is 1).
+/// FUN_100d25e0's files for a skill on a PC skeleton (tables 0x1035f484..0x1035f550, indexed by race code 0..8):
+/// the motion and effect file, and the skirt file when body info byte 9 > 0 (the pair's first when it is 1).
 fn skill_files(category: u8, anim: u16, race: u8, skirt: i8) -> Option<(u32, Option<u32>)> {
     const WS: [u32; 9] = [33227, 33227, 33995, 34763, 35531, 36299, 36299, 37067, 37835];
     const WS2: [[u32; 2]; 9] = [[33483, 33739], [33483, 33739], [34251, 34507], [35019, 35275], [35787, 36043], [36555, 36811], [36555, 36811], [37323, 37579], [38091, 38347]];
     const WS_HI: [u32; 9] = [61451, 61451, 61499, 61547, 61595, 61643, 61643, 61691, 61739];
+    const WS_HI2: [[u32; 2]; 9] = [[61467, 61483], [61467, 61483], [61515, 61531], [61563, 61579], [61611, 61627], [61659, 61675], [61659, 61675], [61707, 61723], [61755, 61771]];
     const DANCE: [u32; 9] = [58041, 58041, 58425, 58809, 59193, 59577, 59577, 59961, 60345];
+    const DANCE2: [[u32; 2]; 9] = [[58169, 58297], [58169, 58297], [58553, 58681], [58937, 59065], [59321, 59449], [59705, 59833], [59705, 59833], [60089, 60217], [60473, 60601]];
     const RUNE: [u32; 9] = [88035, 88035, 89571, 91107, 92643, 94179, 94179, 95715, 97251];
+    const RUNE2: [[u32; 2]; 9] = [[88547, 89059], [88547, 89059], [90083, 90595], [91619, 92131], [93155, 93667], [94691, 95203], [94691, 95203], [96227, 96739], [97763, 98275]];
     let r = race as usize;
     if r >= 9 {
         return None;
     }
-    let a = anim as u32;
+    let (a, k) = (anim as u32, (skirt != 1) as usize);
     let (file, second) = match category {
-        0xe => (DANCE[r] + a, None),
-        0xf => (RUNE[r] + a, None),
-        _ if a < 0x100 => (WS[r] + a, Some(WS2[r][(skirt != 1) as usize] + a)),
-        // The 0x10353bf8 skirt table is not read *(inf: its values)*.
-        _ => (WS_HI[r] + a - 0x100, None),
+        0xe => (DANCE[r] + a, DANCE2[r][k] + a),
+        0xf => (RUNE[r] + a, RUNE2[r][k] + a),
+        _ if a < 0x100 => (WS[r] + a, WS2[r][k] + a),
+        _ => (WS_HI[r] + a - 0x100, WS_HI2[r][k] + a - 0x100),
     };
-    Some((file, second.filter(|_| skirt > 0)))
+    Some((file, Some(second).filter(|_| skirt > 0)))
 }
 
 /// FUN_100a7380: the effect file base by action category.
@@ -200,7 +204,7 @@ impl Effects {
         let client_swing = swing.is_some();
         let ctx = Rc::new(RefCell::new(ActionCtx { action: a.clone(), cur: 0, swing, printed: vec![matches!(a.category, 1 | 2); records], last: 0, client_swing }));
         match a.category {
-            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false }),
+            1 | 2 => self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false }),
             3..=6 | 0xb | 0xd..=0xf => {
                 let anim = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.animation as u32);
                 let Some(base) = effect_base(a.category, anim) else {
@@ -211,14 +215,14 @@ impl Effects {
                 };
                 // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
                 // *(inf: falls back to the generic file)*.
-                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
             }
             7..=0xa | 0xc => {
                 // Starts: the cmd_arg scheduler on the caster itself; "ca??" goes through FUN_10083d60 first.
                 if a.arg & 0xffff == 0x6163 {
                     self.cast_state(caster, a.arg);
                 }
-                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
+                self.pending.push(Pending { file: None, actor: Some(caster), name: a.arg, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
             }
             _ => {}
         }
@@ -229,7 +233,7 @@ impl Effects {
     fn cast_state(&mut self, caster: u32, arg: u32) {
         if let Some(prev) = self.casting.remove(&caster) {
             let st = (prev & 0xffff_7473) | 0x7473;
-            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
+            self.pending.push(Pending { file: None, actor: Some(caster), name: st, a1: Who::Actor(caster), a2: Who::Actor(caster), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
         }
         if arg != 0 {
             self.casting.insert(caster, arg);
@@ -240,7 +244,7 @@ impl Effects {
     /// event's camera runner follows (its camera / fade ops are the runner's; the rest run here).
     pub fn on_event_scheduler(&mut self, file: u32, name: u32, a1: Who, a2: Who) {
         log::debug!("effects: event scheduler {} of DAT {file}", String::from_utf8_lossy(&name.to_le_bytes()));
-        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
+        self.pending.push(Pending { file: Some(file), actor: None, name, a1, a2, action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
     }
 
     /// Event opcodes 0x52 and family: that scheduler's tasks on (a1, a2) end.
@@ -276,12 +280,12 @@ impl Effects {
             3 => *b"misv",
             _ => return,
         };
-        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: Some((value, rgb)), quiet: false, own: false });
+        self.pending.push(Pending { file: Some(27), actor: None, name: u32::from_le_bytes(name), a1: Who::Actor(a1), a2: Who::Actor(a2), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: Some((value, rgb)), quiet: false, own: false });
     }
 
     /// A status scheduler on the actor with its motions left to the client (FUN_1008c6c0's `dead`).
     pub fn on_scheduler_quiet(&mut self, actor: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: true, own: false });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(actor), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: true, own: false });
     }
 
     /// FUN_10083650: a scheduler `name` waiting or running on the actor (as actor1).
@@ -330,7 +334,7 @@ impl Effects {
 
     /// 0x038: a scheduler by 4cc on an actor (FUN_100cce00 with no action).
     pub fn on_scheduler(&mut self, actor: u32, target: u32, name: u32) {
-        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: true });
+        self.pending.push(Pending { file: None, actor: Some(actor), name, a1: Who::Actor(actor), a2: Who::Actor(target), action: None, speed: 1.0, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: true });
     }
 
     /// Starts waiting for files, when they are in.
@@ -346,6 +350,7 @@ impl Effects {
             {
                 p.file = Some(file);
                 p.wait_motion = Some((caster, file));
+                p.skill_caster = Some(caster);
                 self.motion_files.push((caster, std::iter::once(file).chain(second).collect()));
             }
             if let Some((actor, file)) = p.wait_motion
@@ -353,8 +358,30 @@ impl Effects {
             {
                 if p.age < 600.0 {
                     self.pending.push(p);
+                } else {
+                    self.release(&p.action);
+                    self.end_action(&p.action);
                 }
                 continue;
+            }
+            // FUN_100a9500 (the 0x028 skill, spell and ability starts): the caster's model and files first; without
+            // the caster's actor the wait ends with no `main`.
+            if p.end_cast.is_some()
+                && let Some(caster) = p.a1.id()
+            {
+                match actors.ready(caster) {
+                    None => {
+                        log::debug!("effects: {caster:#x} has no actor, no main");
+                        self.release(&p.action);
+                        self.end_action(&p.action);
+                        continue;
+                    }
+                    Some(false) if p.age < 600.0 => {
+                        self.pending.push(p);
+                        continue;
+                    }
+                    _ => {}
+                }
             }
             let found = match (p.file, p.actor) {
                 (Some(file), _) => match self.lib_for(file) {
@@ -373,6 +400,14 @@ impl Effects {
                     if p.name == MAIN {
                         self.release(&p.action);
                     }
+                    // FUN_100a9500 then checks every target once: one without an actor or still loading and `main`
+                    // does not start.
+                    let blocked = p.end_cast.is_some() && p.action.as_ref().is_some_and(|a| a.borrow().action.targets.iter().any(|t| actors.ready(t.id) != Some(true)));
+                    if blocked && res.is_some() {
+                        log::debug!("effects: main not started, a target's model is not in");
+                        self.end_action(&p.action);
+                        continue;
+                    }
                     match res {
                         Some(r) => {
                             log::debug!("effects: scheduler {} started", String::from_utf8_lossy(&p.name.to_le_bytes()));
@@ -380,6 +415,9 @@ impl Effects {
                             if let Some(Some(t)) = self.tasks.get_mut(ti) {
                                 t.num = p.num;
                                 t.motions &= !p.quiet;
+                                if let Some(c) = p.skill_caster {
+                                    self.skill_mains.push((t.uid, c));
+                                }
                             }
                         }
                         None => {
@@ -597,6 +635,18 @@ impl Effects {
                 self.blink_holds.push((owner, id, left));
             }
         }
+        // Op 0x2e's roots end below 0 (FUN_10062380) or with their task; each end restarts actor1's status motion
+        // (FUN_100622c0 -> FUN_100ca9b0).
+        self.rooted.clear();
+        for (owner, id, left) in std::mem::take(&mut self.roots) {
+            let left = left - f.dt;
+            if left < 0.0 || !live.contains(&owner) {
+                self.status_restarts.push(id);
+            } else {
+                self.rooted.insert(id);
+                self.roots.push((owner, id, left));
+            }
+        }
         // Op 0x7a's pins end with their time or their task (FUN_10061f50).
         self.pinned.clear();
         let eye = Some(f.eye);
@@ -620,6 +670,17 @@ impl Effects {
             } else if left >= 0.0 {
                 self.color_guards.push((owner, id, left));
             }
+        }
+        // 0x100a8db0: a skill `main`'s end drops its caster's skill files (FUN_100d44b0(6)) unless another skill `main`
+        // of that caster still runs.
+        if !self.skill_mains.is_empty() {
+            let (keep, gone): (Vec<_>, Vec<_>) = std::mem::take(&mut self.skill_mains).into_iter().partition(|(o, _)| live.contains(o));
+            for (_, c) in gone {
+                if !keep.iter().any(|k| k.1 == c) && !self.skill_files_done.contains(&c) {
+                    self.skill_files_done.push(c);
+                }
+            }
+            self.skill_mains = keep;
         }
         // Effect motion files whose every owning task has ended come off their actors.
         if !self.owned_motions.is_empty() {
@@ -904,7 +965,7 @@ impl Effects {
                 Flow::Next
             }
             0x19 => {
-                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(0xaf0 + op.u32_at(8)), actor: None, name: MAIN, a1: t.a1, a2: t.a2, action: None, speed: t.speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
                 Flow::Next
             }
             // One of the ops up to 0x3e at random (FUN_1006afb0).
@@ -1192,11 +1253,16 @@ impl Effects {
                 }
                 Flow::Next
             }
-            // Actor1's move input (FUN_10062310, +0xfc: the player's walk is ignored) and facing (FUN_100624b0,
-            // +0x838: no heading ease, network headings left alone) for dur x speed.
+            // Actor1's move input (FUN_10062310, +0xfc: the player's walk is ignored; a child of the scheduler) and
+            // facing (FUN_100624b0, +0x838: no heading ease, network headings left alone) for dur x speed.
             0x2e | 0x2f => {
                 if let Some(id) = self.doll_of(t.a1).id() {
-                    self.locks.push((id, op.code, op.dur.max(0) as f32 * t.speed));
+                    let len = op.dur.max(0) as f32 * t.speed;
+                    if op.code == 0x2e {
+                        self.roots.push((t.uid, id, len));
+                    } else {
+                        self.locks.push((id, op.code, len));
+                    }
                 }
                 Flow::Next
             }
@@ -1321,7 +1387,7 @@ impl Effects {
                 self.loads.extend(recs.iter().map(|r| r.0));
                 let speed = action_speed(&a);
                 let clone = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true; n], last: 0, client_swing: false }));
-                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, wait_motion: None, num: None, quiet: false, own: false });
+                self.pending.push(Pending { file: Some(0xaf0 + anim as u32), actor: None, name: MAIN, a1: Who::Actor(caster), a2: Who::Actor(target), action: Some(clone), speed, end_cast: None, age: 0.0, skill: None, skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
                 Flow::Next
             }
             _ => {
@@ -2012,6 +2078,37 @@ mod tests {
         assert!(!fx.pinned.contains_key(&ORC));
     }
 
+    /// Op 0x2e (dur 30): the root holds while its counter is not below 0, so the restart comes on the 31st frame;
+    /// a scheduler killed at frame 10 ends it there.
+    #[test]
+    fn root_end_restarts_status_motion() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let run = |kill_at: Option<usize>| -> Vec<(usize, u32, bool)> {
+            let mut fx = Effects::new();
+            fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+            let mut root = vec![0u8; 16];
+            root[..8].copy_from_slice(&[0x2e, 4, 0, 0, 0, 0, 30, 0]);
+            let ops = vec![SOp { code: 0x2e, wait: 0, dur: 30, raw: root }, SOp { code: 0x01, wait: 200, dur: 0, raw: vec![1, 2, 0, 0, 200, 0, 0, 0] }];
+            fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(HUME), Who::Actor(ORC), None, 1.0)));
+            let mut out = Vec::new();
+            for frame in 1..=40 {
+                if kill_at == Some(frame) {
+                    fx.tasks.clear();
+                }
+                fx.tick(&f, &Two);
+                out.extend(fx.status_restarts.drain(..).map(|id| (frame, id, fx.rooted.contains(&HUME))));
+                if frame == 5 {
+                    assert!(fx.rooted.contains(&HUME));
+                }
+            }
+            out
+        };
+        assert_eq!(run(None), [(31, HUME, false)]);
+        assert_eq!(run(Some(10)), [(10, HUME, false)]);
+    }
+
     /// A posed stand-in: point k's frame RotY(0.5) at height k / 100 above its bone, the actor at x 1, size 2.
     struct Skel;
 
@@ -2377,6 +2474,9 @@ mod tests {
     fn weapon_skill_files() {
         assert_eq!(skill_files(3, 16, 1, 0), Some((33243, None)));
         assert_eq!(skill_files(3, 16, 2, 2), Some((33995 + 16, Some(34507 + 16))));
+        assert_eq!(skill_files(3, 0x105, 1, 1), Some((61456, Some(61472))));
+        assert_eq!(skill_files(0xe, 3, 2, 2), Some((58428, Some(58684))));
+        assert_eq!(skill_files(0xf, 1, 8, 1), Some((97252, Some(97764))));
         let cfg = crate::config::Config::load();
         let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
         let index = std::sync::Arc::new(index);
@@ -2408,6 +2508,98 @@ mod tests {
         for g in ["g006", "g000"] {
             assert!(gens.iter().any(|n| n == g), "{g}: {gens:?}");
         }
+    }
+
+    /// HumeWs with the orc's model still loading.
+    struct OrcLoading;
+
+    impl Actors for OrcLoading {
+        fn matrix(&self, id: u32) -> Option<Mat4> {
+            HumeWs.matrix(id)
+        }
+        fn point(&self, id: u32, k: u16) -> Option<Vec3> {
+            HumeWs.point(id, k)
+        }
+        fn scale(&self, _: u32) -> f32 {
+            1.0
+        }
+        fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>) {
+            HumeWs.files(id)
+        }
+        fn hidden(&self, _: u32) -> bool {
+            false
+        }
+        fn models(&self) -> Vec<(u32, Vec<u32>)> {
+            Vec::new()
+        }
+        fn pc(&self, id: u32) -> Option<(u8, i8)> {
+            HumeWs.pc(id)
+        }
+        fn ready(&self, id: u32) -> Option<bool> {
+            Some(id != ORC)
+        }
+    }
+
+    /// FUN_100a9500: a target whose model is not in stops the skill's `main` (no task), and its lines print.
+    #[test]
+    fn main_needs_ready_targets() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let mut fx = Effects::new();
+        fx.set_index(index.clone());
+        fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+        fx.preload(&[8392, 9672, 7072, 1300, 33243]);
+        while [8392, 9672, 7072, 1300, 33243].iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+            fx.poll_loads();
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
+        fx.on_action(&a, None);
+        for _ in 0..5 {
+            fx.tick(&f, &OrcLoading);
+        }
+        assert!(fx.tasks.iter().flatten().all(|t| fx.reg.libs[t.res.0].tree.nodes[t.res.1].name != *b"main"));
+        assert_eq!(fx.action_prints.len(), 1);
+    }
+
+    /// 0x100a8db0: Combo's skill file goes when its `main` (waits summing to 140 ticks) ends, once; a second Combo at
+    /// frame 60 keeps it until that one's `main` ends too.
+    #[test]
+    fn skill_files_dropped_at_main_end() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let index = std::sync::Arc::new(index);
+        let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
+        let combo = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
+        let run = |second: Option<usize>| -> Vec<usize> {
+            let mut fx = Effects::new();
+            fx.set_index(index.clone());
+            fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
+            fx.preload(&[8392, 9672, 7072, 1300, 33243]);
+            while [8392, 9672, 7072, 1300, 33243].iter().any(|f| fx.reg.lib_of(*f).is_none()) {
+                fx.poll_loads();
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            fx.on_action(&combo, None);
+            let mut done = Vec::new();
+            for frame in 1..=400 {
+                if second == Some(frame) {
+                    fx.on_action(&combo, None);
+                }
+                fx.tick(&f, &HumeWs);
+                for c in fx.skill_files_done.drain(..) {
+                    assert_eq!(c, HUME);
+                    done.push(frame);
+                }
+            }
+            done
+        };
+        let once = run(None);
+        assert!(once.len() == 1 && (139..=142).contains(&once[0]), "{once:?}");
+        let twice = run(Some(60));
+        assert!(twice.len() == 1 && (199..=202).contains(&twice[0]), "{twice:?}");
     }
 }
 

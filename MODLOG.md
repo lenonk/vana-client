@@ -7229,7 +7229,7 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   generator of 3309 / 3310 attaches to actor1 (mode 1), i.e. the doll.
 - Live (Lnxcsfix, !givexp 4800 / !takexp 4800): message 9 ran 3310 with "Level Up !!" and sparkles and sound 7;
   message 11 ran 3309 ("Level Down..."). The user: both look wrong while the character moves (retail has a
-  "ghosting" look); not resolved yet. Not done: the +0x210 variants, the queue wait.
+  "ghosting" look); not resolved yet. The +0x210 variants and the queue wait: done (section "Actor flow").
 
 ## Level up / down ghost trails: following dolls, op 0x45 frames (2026-10-25)
 
@@ -7670,10 +7670,10 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   0x20 on actor2), 0x1f actor1, as 0x20 actor2. No reactions (+0x80, FUN_100607e0): 0x07 actor1, 0x08 actor2; 0x59 is
   both on actor1. Effects::holds carries the kinds (HOLD_STATUS, HOLD_REACT). Without 0x56 a target killed by a skill
   fell up to ~165 ticks early (3430's per-target tgt0 and its 0x20 start late), and on area moves every target but
-  the first was unheld. Not done: +0x80's other reader, FUN_100c63d0 skipping the status / move motion re-pick.
+  the first was unheld. +0x80's re-pick skip (FUN_100c83c0): done (section "Actor flow").
 - 0x2e: actor1's move input for dur x speed (+0xfc; FUN_100a5ec0 skips FUN_100a6240, the local player's walk, keys,
-  pad and autorun). World::move_lock, our own player only. Not done: the end's status-motion restart (FUN_100ca9b0:
-  +0x7d8 cleared unless idl / 1dl..3dl / btl / 1tl..3tl / cor / rx1).
+  pad and autorun). Effects::rooted (ended with its time or its scheduler), our own player only; the end's
+  status-motion restart (FUN_100ca9b0) done (section "Actor flow").
 - 0x2f: actor1's facing for dur x speed (+0x838: FUN_100c63d0 skips the heading ease, FUN_100ab880 leaves the
   rotation of network updates alone). World::face_locks; the entities' yaw ease is skipped while locked.
 - 0x2a: op 0x29's model colour drive on actor2.
@@ -8489,3 +8489,45 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Not modelled: model kind +0xee beyond "a PC look is kind 0" *(inf)*, +0x120 bits 14 / 15, actor +0x840 bit 22, the
   emote and chair hides (no chair state here; trusts' emotes), the hide bytes reset when a look change rebuilds a
   mesh.
+
+## Actor flow: skill files, the +0x80 hold, op 0x2e's end, op 0x7a on us, the battle message queue, the dismount stand (2026-10-25; spec ~/ffxi/lab/research/fx_actor_flow_spec.md)
+
+- Skill files (FUN_100d25e0, cur tables 0x1035f484..0x1035f550): file A per race for WS < 0x100, WS >= 0x100, dances
+  (0xe), runes (0xf); the skirt file B for each when body info byte 9 > 0 (the pair's first when it is 1), the high WS
+  / dance / rune pairs included now. Both go on the model list as kind 6 (FUN_100d4410) and stack: nothing drops
+  them at the next skill. FUN_100a9500 starts `main` with task +0xac = 0x100a8db0, +0xb0 the caster; the task's
+  destructor (FUN_100574a0) calls it: unless another task with that callback still has the caster as actor1,
+  FUN_100d44b0(caster, 6) drops every kind-6 file. Ours: fx skill_mains (uid, caster) swept with the live tasks ->
+  Effects::skill_files_done; the client's Actor::skill_want stacks the files (no longer the one `pending` slot).
+  Live (Lnxtest Combo, Hume M): `[33243, 33755]` added, dropped 2.6 s later as `main` ended.
+- FUN_100a9500 (the wait task of the 0x028 starts for categories 3..6 / 0xb / 0xd..0xf): returns 0 until the caster's
+  vtable +0x1e4 (FUN_100d12d0: the model and every list entry loaded); no caster actor ends it with no `main`. Then
+  every target once: one with no actor or not ready and `main` does not start at all (the side note in the spec said
+  it waits; it does not). Ours: Actors::ready (character, no pending files, no skill files waiting).
+- +0x80 (ops 0x07 / 0x08 / 0x59, ours w.noreact): FUN_100c83c0 returns at once (asm 0x100c844b), so no status
+  motion start, no rate change, +0x7d8 kept. Ours: the pose loop keeps the current motion and rate (a counted one on
+  its last frame), the under-layer keeps the play's base, a base change does not end the play, and the
+  weapon block's status_start waits. Live: a swing's at0 holds its last frame until the op 0x59 hold ends.
+- Op 0x2e: a child of its scheduler (FUN_10062310; FUN_10062380 counts dur x speed down, ends below 0); its
+  destructor FUN_100622c0 frees the move input and calls FUN_100ca9b0(actor1): +0x7d8 = "    " unless the status
+  motion's first three letters are idl 1dl 2dl 3dl btl 1tl 2tl 3tl cor rx1. Ours: fx roots (owner, actor, ticks)
+  -> Effects::rooted (our move input off) and status_restarts; the client cuts the play and restarts the status
+  motion (Actor::restart) and clears status_motion (the weapon block runs again).
+- Op 0x7a with our player as actor1 (FUN_100c63d0 asm 0x100c6f4a..): our position is the pin point (no collision or
+  ease) and our facing actor2's + pi; it goes out in 0x015. Ours after the step loop (player_yaw converts the yaw).
+- Battle messages (s2c 0x029 LAB_1009e8d0, 0x02D LAB_1009eb10): FUN_100a1a00 blocked -> nothing at all (no line, no
+  effect); else FUN_100ad660 -> FUN_100c3300 queues it with +0x50 = the message for 9 / 0xb / 0x32 / 0x2cf / 0x2d (0x02D
+  also 0x32b / 0x32d), else the Type byte @0x1a (LSB 0). FUN_100c33d0 steps each entry from the next frame
+  (FUN_100c3480): state 0 for +0x50 in {1, 9, 0xb, 0x32, 0x2cf, 0x32b, 0x32d}: target (+0x48) present -> 600 ticks,
+  state 1; absent -> 60, state 2; others 0, state 2. State 1: count down (0 -> state 2), then the target gone -> 0, its
+  applied status 2 / 3 -> 60. State 2: count down, due at <= 0: kind 9 -> 0x1fe (Monstrosity +0x210: 0x388), 0xb
+  0x1fd, 0x32 0x2fe, 0x2cf 0x3a0, 0x2d only in Monstrosity 0x389, 0x32b 0x3f8, 0x32d 0x3f9 (DAT_1035d570); with the
+  caster's model the line prints and file 0xaf0 + id `main` runs on it (FUN_100a9700), else the line alone. So a
+  kill's level up waits for the mob's death to apply, then 60 ticks; a GM `!givexp` 600 ticks. Ours:
+  combat::message_queue (MsgWait). Live: `!givexp 10` -> "attains level 2" and DAT 3310 about 10 s later.
+- The dismount stand (FUN_1008b460 state 0xf): our own rider with its animal waits until FUN_100d65b0(0) (a `?hi`
+  stand motion, the riding idle "chi " on letters 2..3) before `coff`; riding goes on meanwhile. Ours: ride
+  Phase::Stopping (applied status, offset and plate lift as riding). Live (Lnxcsfix, Raptor): ran after /dismount
+  with status 0 on the riding run `6un`; `coff` 7 ms after `6hi`.
+- Left as the spec found: op 0x6e for actors other than a leaving animal (no data reaches it), `cdam` (only through
+  s2c 0x038 on the rider, which ours routes), ops 0x9c / 0x9d (no file), the 0x038 handler's filters.

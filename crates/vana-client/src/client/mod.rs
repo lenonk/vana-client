@@ -3115,12 +3115,19 @@ struct Actor {
     extra: actmotion::Extra,
     /// Effect files whose schedulers play motions from them (Kind::Effect), wanted on `extra`.
     fx_files: Vec<u32>,
+    /// Weapon-skill motion files asked for (FUN_100d4410 kind 6), stacked on `extra` once loaded.
+    skill_want: Vec<u32>,
     /// `wepN` hide bytes 0 / 1 (a mesh draws while both are clear; client/wepfx.rs).
     wep_hide: [[bool; 2]; 16],
     /// Model +0x83c (vtable +0x320): the weapon drawn, from the draw ("in N") to the sheathe.
     drawn: bool,
     /// Actor +0x7d8: the status motion last started (FUN_100c83c0's weapon block runs on a new one).
     status_motion: String,
+    /// The motion's and the status motion's rates last frame (kept while +0x80 holds the pick).
+    rate_now: f32,
+    base_rate_now: f32,
+    /// +0x7d8 was cleared: the status motion starts again from frame 0 even when its name is the same.
+    restart: bool,
     /// A scheduler's motions (event motions, weapon draw / sheathe), and one waiting for its files.
     play: Option<actmotion::Play>,
     pending: Option<actmotion::Pending>,
@@ -3198,9 +3205,13 @@ impl Actor {
             last_attack: String::new(),
             extra: Vec::new(),
             fx_files: Vec::new(),
+            skill_want: Vec::new(),
             wep_hide: [[false; 2]; 16],
             drawn: false,
             status_motion: String::new(),
+            rate_now: 1.0,
+            base_rate_now: 1.0,
+            restart: false,
             play: None,
             pending: None,
             battle: Default::default(),
@@ -3637,6 +3648,14 @@ impl crate::fx::Actors for FxActors<'_> {
         self.actors.get(&id).map_or(1.0, |a| a.scale)
     }
 
+    fn ready(&self, id: u32) -> Option<bool> {
+        if self.furniture(id).is_some() {
+            return Some(true);
+        }
+        let a = self.actors.get(&id)?;
+        Some(a.character.is_some() && a.pending.is_none() && a.skill_want.is_empty())
+    }
+
     fn model_files(&self, id: u32) -> Vec<u32> {
         if let Some(f) = self.furniture(id) {
             return vec![f.1];
@@ -3897,8 +3916,10 @@ struct World {
     rounds: HashMap<u32, (Instant, std::collections::VecDeque<crate::net::action::Action>)>,
     held_status: HashMap<u32, u8>,
     noreact: HashMap<u32, Instant>,
-    /// Scheduler ops 0x2e (our walk input) and 0x2f (an actor's facing) locked until then.
-    move_lock: Option<Instant>,
+    /// Battle messages waiting in FUN_100c3300's queue (combat::message_queue).
+    msg_queue: Vec<combat::QueuedMsg>,
+    /// Scheduler op 0x2f: an actor's facing locked until then (op 0x2e is fx's `rooted`).
+
     face_locks: HashMap<u32, Instant>,
     /// Skill actions' load holds (busy counts, FUN_100a4140) with their safety deadline.
     loads: HashMap<u32, (u32, Instant)>,
@@ -4670,6 +4691,11 @@ enum LoadState {
     Failed,
 }
 
+/// Our yaw (face (sin Y, 0, cos Y)) for an entity yaw (facing (cos y, 0, -sin y)).
+fn player_yaw(entity_yaw: f32) -> f32 {
+    entity_yaw.cos().atan2(-entity_yaw.sin())
+}
+
 fn dir_from_forward(f: Vec3) -> u8 {
     // FFXI dir: 0 east, 64 south, 128 west, 192 north.
     let theta = (-f.z).atan2(f.x);
@@ -5309,7 +5335,7 @@ impl App {
                             holds: HashMap::new(),
                             held_status: HashMap::new(),
                             noreact: HashMap::new(),
-                            move_lock: None,
+                            msg_queue: Vec::new(),
                             face_locks: HashMap::new(),
                             loads: HashMap::new(),
                             knocks: HashMap::new(),
@@ -6733,6 +6759,7 @@ impl App {
             me.target = target;
         }
         combat::tick(world);
+        combat::message_queue(world, dt);
         ko_step(world);
         event::update(world, dt);
         if world.in_scene() {
@@ -6742,7 +6769,13 @@ impl App {
         // Weapon-skill motion files and motions the effect system's schedulers asked for last frame.
         for (id, files) in std::mem::take(&mut world.effects.motion_files) {
             if let Some(a) = world.actors.get_mut(&id) {
-                a.pending = Some(actmotion::Pending { files, name: String::new(), kind: actmotion::Kind::Skill });
+                a.skill_want.extend(files);
+            }
+        }
+        for id in std::mem::take(&mut world.effects.skill_files_done) {
+            if let Some(a) = world.actors.get_mut(&id) {
+                log::info!("actor {id:#x}: skill files dropped (its last skill main ended)");
+                actmotion::drop_kind(&mut a.extra, actmotion::Kind::Skill);
             }
         }
         for (id, file) in std::mem::take(&mut world.effects.effect_motions) {
@@ -6892,15 +6925,23 @@ impl App {
         for (code, c, zoom, ticks) in std::mem::take(&mut world.effects.screen_ops) {
             world.screen.fx_op(code, c, zoom, ticks);
         }
-        for (id, op, ticks) in std::mem::take(&mut world.effects.locks) {
+        for (id, _, ticks) in std::mem::take(&mut world.effects.locks) {
             let until = Instant::now() + std::time::Duration::from_secs_f32(ticks.max(0.0) / 60.0);
-            if op == 0x2e {
-                if id == world.my_id {
-                    world.move_lock = Some(world.move_lock.map_or(until, |t| t.max(until)));
+            let e = world.face_locks.entry(id).or_insert(until);
+            *e = (*e).max(until);
+        }
+        // FUN_100ca9b0 at an op 0x2e's end: +0x7d8 = "    " unless the status motion is one it keeps.
+        for id in std::mem::take(&mut world.effects.status_restarts) {
+            let Some(ch) = world.actors.get(&id).and_then(|a| a.character.clone()) else { continue };
+            if crate::motion::keeps_status_motion(&actmotion::status_motion(world, id, &ch)) {
+                continue;
+            }
+            if let Some(a) = world.actors.get_mut(&id) {
+                if let Some(p) = a.play.as_mut() {
+                    p.cut();
                 }
-            } else {
-                let e = world.face_locks.entry(id).or_insert(until);
-                *e = (*e).max(until);
+                a.restart = true;
+                a.status_motion.clear();
             }
         }
         for r in std::mem::take(&mut world.effects.reacts) {
@@ -7125,7 +7166,7 @@ impl App {
             self.stand_sent = false;
         }
         // Scheduler op 0x2e: the effect of our own action holds the walk input (FUN_100a5ec0 skips FUN_100a6240).
-        let move_locked = world.move_lock.is_some_and(|t| Instant::now() < t);
+        let move_locked = world.effects.rooted.contains(&world.my_id);
         if resting || move_locked {
             (ax, ay) = (0.0, 0.0);
         }
@@ -7317,6 +7358,15 @@ impl App {
             }
             world.step_hist = [world.step_hist[1], world.step_hist[2], world.step_hist[3], world.pos];
         }
+        // Scheduler op 0x7a on us (FUN_100c63d0): at actor2's point, no collision or ease, facing actor2 + pi; that
+        // place goes out in 0x015.
+        let pin = world.effects.pinned.get(&world.my_id).copied();
+        if let Some((p, yaw)) = pin {
+            (world.pos, world.step_hist, world.step_ticks) = (p, [p; 4], 0.0);
+            if let Some(y) = yaw {
+                world.yaw = player_yaw(y);
+            }
+        }
         world.step_to = world.pos;
         world.draw_pos = drawn_between_steps(&world.step_hist, world.step_ticks / ground::STEP_TICKS);
         // On a lift the feet are drawn at its height now (the model is too), and the camera eye rides along
@@ -7351,7 +7401,9 @@ impl App {
         if let Ok(mut me) = world.net.me.lock() {
             me.pos = world.pos.to_array();
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
-            if lock_target.is_some() || face_cam || (turn != 0.0 && !stepping) {
+            if let Some((_, Some(y))) = pin {
+                me.dir = dir_from_forward(Vec3::new(y.cos(), 0.0, -y.sin()));
+            } else if lock_target.is_some() || face_cam || (turn != 0.0 && !stepping) {
                 me.dir = dir_from_forward(face);
             } else if stepping {
                 me.dir = dir_from_forward(step.normalize());
@@ -9215,6 +9267,7 @@ impl App {
                 }
                 // Ops 0x48 / 0x49: the refraction level per actor.
                 let refracts: HashMap<u32, f32> = w.effects.refractions().into_iter().collect();
+                let hold_now = Instant::now();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -9233,12 +9286,16 @@ impl App {
                     let has = |n: &str| !actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, n).is_empty();
                     // Motion and rate as FFXiMain picks them (FUN_100c6b70); frame += ticks * speed * 0.5.
                     // Then a scheduler's motion (event / weapon draw) over the status motion.
+                    // +0x80 up (ops 0x07 / 0x08 / 0x59, w.noreact): FUN_100c83c0 returns at once, no status motion re-pick.
+                    let held = w.noreact.get(id).is_some_and(|t| *t > hold_now);
                     let (name, rate, once, blend) = match (&a.oneshot, a.play.as_ref().and_then(|p| p.current())) {
                         (Some(o), _) => (o.name.clone(), o.speed, true, crate::motion::BLEND_TICKS),
                         (None, Some(m)) => {
                             let rate = actmotion::op_rate(actmotion::find_cached(&mut cache.borrow_mut(), &extra, &ch, &m.name).first().copied(), m.ticks as f32);
                             (m.name.clone(), rate, m.count == 1, m.blend.max(1) as f32)
                         }
+                        // The motion stays, a counted one on its last frame.
+                        (None, None) if held && !a.motion.is_empty() => (a.motion.clone(), a.rate_now, a.once, crate::motion::BLEND_TICKS),
                         // Op 0x5e / 0x6b: the event's idle motion while the actor stands.
                         (None, None) if ratio < 1e-3 && idles.get(id).is_some_and(|n| has(n)) => (idles[id].clone(), 1.0, false, crate::motion::BLEND_TICKS),
                         // FUN_100c8930 (LAB_100c8dde): while the jump timer runs, "jmp" at rate 1 ("jmp*" engaged, "jmp "
@@ -9249,7 +9306,8 @@ impl App {
                             (n.to_string(), r * a.rate_scale, false, crate::motion::BLEND_TICKS)
                         }
                     };
-                    if name != a.motion || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
+                    a.rate_now = rate;
+                    if name != a.motion || std::mem::take(&mut a.restart) || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
                         log::debug!(target: "motion", "actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
                         if !a.motion.is_empty() {
                             a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
@@ -9285,9 +9343,16 @@ impl App {
                     // FUN_1001ad00's queue replaces only the regions a new motion keys: under a one-shot or scheduler motion
                     // the status motion goes on (an Elvaan's moving swing amf1 keys the upper body over the run), so it
                     // goes first and the motion's tracks win where it has them.
-                    let (base, base_rate) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                    let (base, base_rate) = match a.play.as_ref().filter(|_| held) {
+                        Some(p) => (p.base.clone(), a.base_rate_now),
+                        None => {
+                            let (b, r) = crate::motion::choose(&a.motion_names.unwrap_or(ch.motions), status, ratio);
+                            (b.to_string(), r)
+                        }
+                    };
+                    a.base_rate_now = base_rate;
                     a.base_ticks += dt * 60.0 * base_rate * a.rate_scale;
-                    let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(base, a.base_ticks, false) } else { Vec::new() };
+                    let mut anims = if name != base && (a.oneshot.is_some() || a.play.is_some()) { frames_of(&base, a.base_ticks, false) } else { Vec::new() };
                     anims.extend(frames_of(&name, a.ticks, once));
                     // The mouth motion of a spoken line goes over the body motion (its face tracks win).
                     if let Some(m) = &mut a.mouth
@@ -10126,6 +10191,16 @@ pub fn run(cfg: Config, drive: Drive) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Op 0x7a on us: an entity yaw of pi faces west (-1, 0, 0); our face (sin Y, 0, cos Y) matches it.
+    #[test]
+    fn pinned_player_yaw() {
+        for y in [std::f32::consts::PI, 0.0, 1.0, -2.5] {
+            let (face, want) = (player_yaw(y), Vec3::new(y.cos(), 0.0, -y.sin()));
+            assert!(Vec3::new(face.sin(), 0.0, face.cos()).distance(want) < 1e-5, "{y}");
+        }
+        assert!((player_yaw(std::f32::consts::PI) + std::f32::consts::FRAC_PI_2).abs() < 1e-5);
+    }
 
     /// camera_collision_spec.md 2.2: 0 within 0.2, linear to 0.5, nothing with the eye more than 0.5 above the point
     /// (y down), no lower limit below it.

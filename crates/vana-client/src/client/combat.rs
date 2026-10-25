@@ -355,34 +355,113 @@ pub(super) fn area_line(w: &mut World) {
 
 /// 0x029 / 0x02D: work[0..2] = Data, Data2.
 pub(super) fn on_battle_message(w: &mut World, m: &BattleMessage) {
-    // FUN_100c3480: these also run an effect on the actor, file 0xaf0 + DAT_1035d570[kind] "main" (model vtable +0x2c4):
-    // level up 0x1fe, level down 0x1fd, merit point 0x2fe, job point 0x3a0, master level up / down 0x3f8 / 0x3f9 (the
-    // art and the jingle are the file's). Not done: the actor +0x210 variants (0x388 level up, 0x389 for message 45)
-    // and the wait before it (up to 600 ticks on the actor's state, not traced).
-    let anim = match m.message {
-        9 => Some(0x1fe),
-        11 => Some(0x1fd),
-        50 => Some(0x2fe),
-        719 => Some(0x3a0),
-        811 => Some(0x3f8),
-        813 => Some(0x3f9),
-        _ => None,
-    };
-    if let Some(id) = anim
-        && (m.actor == w.my_id || w.actors.contains_key(&m.actor))
-    {
-        let who = crate::fx::sched::Who::Actor(m.actor);
-        log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
-        w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
-    }
     if m.actor == w.my_id || m.target == w.my_id {
         log::debug!("battle message {} {:#x} -> {:#x} data {:?}", m.message, m.actor, m.target, m.data);
     }
-    // The block list (FUN_100a1a00 kind 1): the caster's lines are not printed *(inf: the effect above still runs)*.
+    // The block list (FUN_100a1a00 kind 1): the handler drops the caster's message, effect and all.
     if super::partyreq::sender_blocked(w, m.actor, m.message, 1) {
         return;
     }
-    print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
+    // FUN_100ad660 -> FUN_100c3300: into the queue, which FUN_100c33d0 steps from the next frame.
+    let wait = MsgWait::new(m.queued, msg_target_status(w, m));
+    w.msg_queue.push(QueuedMsg { m: m.clone(), wait, fresh: true });
+}
+
+/// A battle message in FUN_100c3300's queue.
+pub(super) struct QueuedMsg {
+    m: BattleMessage,
+    wait: MsgWait,
+    fresh: bool,
+}
+
+/// FUN_100c3480's wait (+0x54 state, +0x58 counter; ours a float, as frame ticks are under 1 at high frame rates).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MsgWait {
+    state: u8,
+    left: f32,
+}
+
+impl MsgWait {
+    /// State 0: the queue messages that wait for their target (600 ticks, or 60 once it is gone).
+    pub fn new(queued: u16, target_status: Option<u8>) -> MsgWait {
+        match target_status {
+            _ if !matches!(queued, 1 | 9 | 0xb | 0x32 | 0x2cf | 0x32b | 0x32d) => MsgWait { state: 2, left: 0.0 },
+            None => MsgWait { state: 2, left: 60.0 },
+            Some(_) => MsgWait { state: 1, left: 600.0 },
+        }
+    }
+
+    /// One frame; true when the entry is due. State 1 counts down and then looks at the target: gone ends the wait,
+    /// dead (applied status 2 / 3) leaves 60 ticks; state 2 counts down to due.
+    pub fn step(&mut self, ticks: f32, target_status: Option<u8>) -> bool {
+        if self.state == 1 {
+            self.left -= ticks;
+            if self.left <= 0.0 {
+                (self.state, self.left) = (2, 0.0);
+            }
+            match target_status {
+                None => (self.state, self.left) = (2, 0.0),
+                Some(2 | 3) => (self.state, self.left) = (2, 60.0),
+                Some(_) => {}
+            }
+            return false;
+        }
+        self.left -= ticks;
+        self.left <= 0.0
+    }
+}
+
+/// DAT_1035d570 by the queue message's kind (the four language columns are equal); Monstrosity (+0x210) picks 0x388
+/// for a level up and 0x389 for message 0x2d.
+fn effect_id(queued: u16, monstrosity: bool) -> Option<u32> {
+    Some(match queued {
+        9 if monstrosity => 0x388,
+        9 => 0x1fe,
+        0xb => 0x1fd,
+        0x32 => 0x2fe,
+        0x2cf => 0x3a0,
+        0x2d if monstrosity => 0x389,
+        0x32b => 0x3f8,
+        0x32d => 0x3f9,
+        _ => return None,
+    })
+}
+
+/// The queue's target (+0x48): its applied status, None when its entity is gone; ours when the packet names none.
+fn msg_target_status(w: &World, m: &BattleMessage) -> Option<u8> {
+    if m.target == w.my_id || m.target == 0 {
+        return Some(w.my_motion.status);
+    }
+    w.entities.get(&m.target).map(|e| e.motion.status)
+}
+
+/// FUN_100c33d0: every queued message steps on its own; a due one runs its effect (file 0xaf0 + id `main` on the
+/// caster's model, FUN_100a9700) and prints.
+pub(super) fn message_queue(w: &mut World, dt: f32) {
+    let mut due = Vec::new();
+    for mut q in std::mem::take(&mut w.msg_queue) {
+        if std::mem::take(&mut q.fresh) {
+            w.msg_queue.push(q);
+            continue;
+        }
+        let st = msg_target_status(w, &q.m);
+        if q.wait.step(dt * 60.0, st) {
+            due.push(q.m);
+        } else {
+            w.msg_queue.push(q);
+        }
+    }
+    for m in due {
+        let mon = if m.actor == w.my_id { w.my_plate.monstrosity != 0 } else { w.entities.get(&m.actor).is_some_and(|e| e.monstrosity != 0) };
+        if let Some(id) = effect_id(m.queued, mon)
+            && w.actors.get(&m.actor).is_some_and(|a| a.character.is_some())
+        {
+            let who = crate::fx::sched::Who::Actor(m.actor);
+            log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
+            w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
+        }
+        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
+    }
 }
 
 /// 0x028. A melee round of several records replays "atk0" per record (op 0x32 jumps back for the next one): one swing,
@@ -1298,5 +1377,68 @@ mod tests {
         assert_eq!(window_name(1), "menu    actionm1");
         assert_eq!(window_name(10), "menu    actiom10");
         assert_eq!(label(cmd::ATTACK), ("menu    keytops3", 0x10));
+    }
+}
+
+#[cfg(test)]
+mod queue_tests {
+    use super::*;
+
+    #[test]
+    fn battle_message_effects() {
+        assert_eq!((effect_id(9, false), effect_id(9, true)), (Some(0x1fe), Some(0x388)));
+        assert_eq!((effect_id(0xb, false), effect_id(0xb, true)), (Some(0x1fd), Some(0x1fd)));
+        assert_eq!((effect_id(0x2d, true), effect_id(0x2d, false)), (Some(0x389), None));
+        assert_eq!((effect_id(50, false), effect_id(719, false), effect_id(811, false), effect_id(813, true)), (Some(0x2fe), Some(0x3a0), Some(0x3f8), Some(0x3f9)));
+        assert_eq!((effect_id(8, true), effect_id(1, false)), (None, None));
+    }
+
+    /// FUN_100c3480: a kill's level up waits for the mob's death, then 60 ticks; a GM level up 600; a gone target 60;
+    /// other messages print on the first step.
+    #[test]
+    fn battle_message_waits() {
+        let mut w = MsgWait::new(9, Some(1));
+        assert_eq!(w, MsgWait { state: 1, left: 600.0 });
+        for _ in 0..10 {
+            assert!(!w.step(1.0, Some(1)));
+        }
+        assert!(!w.step(1.0, Some(3)));
+        assert_eq!(w, MsgWait { state: 2, left: 60.0 });
+        for _ in 0..59 {
+            assert!(!w.step(1.0, Some(3)));
+        }
+        assert!(w.step(1.0, Some(3)));
+        let mut w = MsgWait::new(9, Some(0));
+        for _ in 0..600 {
+            assert!(!w.step(1.0, Some(0)));
+        }
+        assert!(w.step(1.0, Some(0)));
+        let mut w = MsgWait::new(9, None);
+        for _ in 0..59 {
+            assert!(!w.step(1.0, None));
+        }
+        assert!(w.step(1.0, None));
+        assert!(MsgWait::new(8, Some(1)).step(1.0, Some(1)));
+        // At 300 fps (0.2 ticks a frame) the 60 ticks after the death take 300 frames.
+        let mut w = MsgWait::new(9, Some(1));
+        assert!(!w.step(0.2, Some(2)));
+        let n = (1..=400).find(|_| w.step(0.2, Some(2))).unwrap();
+        assert!((299..=301).contains(&n), "{n}");
+    }
+
+    /// The handlers queue 0x32b / 0x32d as themselves only from 0x02D; else the Type byte (LSB: 0).
+    #[test]
+    fn queued_messages() {
+        let pkt = |id: u8, msg: u16| {
+            let mut b = vec![0u8; 0x1c];
+            b[0] = id;
+            b[1] = (0x1c / 4) << 1;
+            b[0x18..0x1a].copy_from_slice(&msg.to_le_bytes());
+            crate::net::map::session::SubPacket { id: id as u16, sync: 0, data: b }
+        };
+        assert_eq!(crate::client::net::battle_message(&pkt(0x29, 9)).queued, 9);
+        assert_eq!(crate::client::net::battle_message(&pkt(0x29, 0x32b)).queued, 0);
+        assert_eq!(crate::client::net::battle_message2(&pkt(0x2d, 0x32b)).queued, 0x32b);
+        assert_eq!(crate::client::net::battle_message2(&pkt(0x2d, 6)).queued, 0);
     }
 }

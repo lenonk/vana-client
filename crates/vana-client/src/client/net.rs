@@ -177,16 +177,25 @@ pub struct BattleMessage {
     pub target_index: u16,
     pub data: [i32; 2],
     pub message: u16,
+    /// The queue's message (FUN_100c3300 +0x50): `message` for the ones the handler names, else Type i8 @0x1a.
+    pub queued: u16,
 }
 
-/// 0x029: @4 caster, @8 target, @0xc / @0x10 data, @0x14 / @0x16 indices, @0x18 message.
+/// LAB_1009e8d0 / LAB_1009eb10: 9, 0xb, 0x32, 0x2cf, 0x2d (0x02D also 0x32b, 0x32d) queue as themselves.
+fn queued_message(m: u16, kind: u8, two: bool) -> u16 {
+    if matches!(m, 9 | 0xb | 0x32 | 0x2cf | 0x2d) || (two && matches!(m, 0x32b | 0x32d)) { m } else { kind as i8 as i16 as u16 }
+}
+
+/// 0x029: @4 caster, @8 target, @0xc / @0x10 data, @0x14 / @0x16 indices, @0x18 message, @0x1a Type.
 pub fn battle_message(p: &SubPacket) -> BattleMessage {
-    BattleMessage { actor: p.u32(4), target: p.u32(8), data: [p.u32(12) as i32, p.u32(16) as i32], actor_index: p.u16(0x14), target_index: p.u16(0x16), message: p.u16(0x18) }
+    let message = p.u16(0x18);
+    BattleMessage { actor: p.u32(4), target: p.u32(8), data: [p.u32(12) as i32, p.u32(16) as i32], actor_index: p.u16(0x14), target_index: p.u16(0x16), message, queued: queued_message(message, p.u8(0x1a), false) }
 }
 
-/// 0x02D: @4 / @8 ids, @0xc / @0xe indices, @0x10 / @0x14 data, @0x18 message.
+/// 0x02D: @4 / @8 ids, @0xc / @0xe indices, @0x10 / @0x14 data, @0x18 message, @0x1a Type.
 pub fn battle_message2(p: &SubPacket) -> BattleMessage {
-    BattleMessage { actor: p.u32(4), target: p.u32(8), actor_index: p.u16(0xc), target_index: p.u16(0xe), data: [p.u32(0x10) as i32, p.u32(0x14) as i32], message: p.u16(0x18) }
+    let message = p.u16(0x18);
+    BattleMessage { actor: p.u32(4), target: p.u32(8), actor_index: p.u16(0xc), target_index: p.u16(0xe), data: [p.u32(0x10) as i32, p.u32(0x14) as i32], message, queued: queued_message(message, p.u8(0x1a), true) }
 }
 
 /// s2c 0x0D2 (GP_SERV_COMMAND_TROPHY_LIST): TrophyItemNum @4, TargetUniqueNo @8, Gold @0xc, TrophyItemNo @0x10,

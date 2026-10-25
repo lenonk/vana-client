@@ -437,7 +437,8 @@ pub(super) fn update(w: &mut World, dt: f32) {
         let base = status_motion(w, id, &ch);
         // FUN_100c83c0: a new status motion on an entity's own actor (+0x7d8), once it plays (FUN_100cd920 finds it).
         let a = &w.actors[&id];
-        if a.status_motion != base && !find(&a.extra, &ch, &base).is_empty() {
+        let held = w.noreact.get(&id).is_some_and(|t| *t > std::time::Instant::now());
+        if !held && a.status_motion != base && !find(&a.extra, &ch, &base).is_empty() {
             if id == w.my_id || w.entities.contains_key(&id) {
                 let st = if super::event::pose(w, id).is_some() { super::event::event_status(w, id) } else { status(w, id) };
                 status_starts.push((id, st));
@@ -473,13 +474,18 @@ pub(super) fn update(w: &mut World, dt: f32) {
         {
             add(&mut a.extra, Kind::Effect, files);
         }
+        // FUN_100d25e0: skill files stack (lookups go newest first); they go when the skill's `main` ends.
+        if !a.skill_want.is_empty()
+            && let Some(files) = w.motion_files.all(&index, &a.skill_want)
+        {
+            log::info!("actor {id:#x}: skill files {:?}", a.skill_want);
+            a.skill_want.clear();
+            add(&mut a.extra, Kind::Skill, files);
+        }
         if let Some(p) = a.pending.clone()
             && let Some(files) = w.motion_files.all(&index, &p.files)
         {
             a.pending = None;
-            if p.kind == Kind::Skill {
-                drop_kind(&mut a.extra, Kind::Skill);
-            }
             add(&mut a.extra, p.kind, files);
             if p.name.is_empty() {
                 // Files only: the effect system's scheduler plays from them.
@@ -528,7 +534,9 @@ pub(super) fn update(w: &mut World, dt: f32) {
         if let Some(p) = &mut a.play {
             p.ticks += ticks;
         }
-        if a.play.as_ref().is_some_and(|p| p.over(&base)) {
+        // +0x80 up: the status motion is not re-picked, so a base change does not end the play.
+        let held = w.noreact.get(&id).is_some_and(|t| *t > std::time::Instant::now());
+        if a.play.as_ref().is_some_and(|p| p.over(if held { &p.base } else { &base })) {
             a.play = None;
         }
         // State 0xb: the emote's scheduler is over; FUN_100d2340(3) drops its files.

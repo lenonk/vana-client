@@ -36,11 +36,13 @@ impl Model {
 }
 
 /// FUN_1008b460's states for a rider: on a mount the rider waits hidden for it (state 0 -> 0xe, at most 150 updates),
-/// riding, then leaving (states 0xf / 0x10: `coff` on both, the animal unlinked where it stood).
+/// riding, then leaving (states 0xf / 0x10: `coff` on both, the animal unlinked where it stood). Our own rider first
+/// comes to a stand (`Stopping`, state 0xf's FUN_100d65b0 wait).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Phase {
     Mounting(f32),
     Riding,
+    Stopping,
     /// The animal's place, its op 0x6e run (ticks left, units a tick), and ticks since.
     Leaving { pos: Vec3, forward: Vec3, run: Option<(f32, f32)>, ticks: f32 },
 }
@@ -150,7 +152,16 @@ pub fn update(w: &mut World, dt: f32) {
         } else {
             model(status, ride, zone, false)
         };
-        let Some(m) = m else { continue };
+        let Some(m) = m else {
+            // Still coming to a stand: riding goes on.
+            if w.rides.get(&id).is_some_and(|r| r.phase == Phase::Stopping) {
+                keep.insert(id);
+            }
+            continue;
+        };
+        if let Some(r) = w.rides.get_mut(&id).filter(|r| r.phase == Phase::Stopping) {
+            r.phase = Phase::Riding;
+        }
         let Some(rider) = w.actors.get(&id).filter(|a| a.character.as_ref().is_some_and(|c| c.pc.is_some())) else { continue };
         let (ch, rider_scale) = (rider.character.clone().unwrap(), rider.scale);
         let pc = ch.pc.unwrap();
@@ -201,6 +212,18 @@ pub fn update(w: &mut World, dt: f32) {
     }
     let gone: Vec<u32> = w.rides.iter().filter(|(id, r)| !keep.contains(id) && !matches!(r.phase, Phase::Leaving { .. })).map(|(id, _)| *id).collect();
     for id in gone {
+        // State 0xf: our own rider with its animal waits until a `?hi` stand plays (FUN_100d65b0(0)).
+        let animal = w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_some());
+        if id == w.my_id && animal && !standing(w, id) {
+            if let Some(r) = w.rides.get_mut(&id) {
+                r.phase = Phase::Stopping;
+            }
+        } else {
+            leave(w, id);
+        }
+    }
+    let stopped: Vec<u32> = w.rides.iter().filter(|(id, r)| r.phase == Phase::Stopping && keep.contains(id) && standing(w, **id)).map(|(id, _)| *id).collect();
+    for id in stopped {
         leave(w, id);
     }
     let leaving: Vec<u32> = w.rides.iter().filter(|(_, r)| matches!(r.phase, Phase::Leaving { .. })).map(|(id, _)| *id).collect();
@@ -319,10 +342,19 @@ pub fn fade_held(w: &World, id: u32) -> bool {
         && w.actors.get(&(ANIMAL | id)).is_some_and(|a| a.character.is_none() && !a.failed)
 }
 
-/// FUN_1008b460 holds the applied status (+0x170) at the riding one while `coff` runs.
+/// FUN_100d65b0(0) while riding: a motion matching the idle name "chi " on letters 2..3 plays (`chi0`, `6hi0`, ...).
+fn standing(w: &World, id: u32) -> bool {
+    w.actors.get(&id).is_some_and(|a| stand_motion(&a.motion))
+}
+
+fn stand_motion(m: &str) -> bool {
+    m.get(1..3) == Some("hi")
+}
+
+/// FUN_1008b460 holds the applied status (+0x170) at the riding one while it comes to a stand and `coff` runs.
 pub fn applied(w: &World, id: u32, status: u8) -> u8 {
     match w.rides.get(&id) {
-        Some(r) if matches!(r.phase, Phase::Leaving { .. }) => {
+        Some(r) if matches!(r.phase, Phase::Leaving { .. } | Phase::Stopping) => {
             if matches!(r.model, Model::Mount(_)) {
                 0x55
             } else {
@@ -335,12 +367,12 @@ pub fn applied(w: &World, id: u32, status: u8) -> u8 {
 
 /// A riding rider's draw offset (+0x60c), zero otherwise.
 pub fn offset(w: &World, id: u32) -> Vec3 {
-    w.rides.get(&id).filter(|r| r.phase == Phase::Riding).map_or(Vec3::ZERO, |r| r.offset)
+    w.rides.get(&id).filter(|r| matches!(r.phase, Phase::Riding | Phase::Stopping)).map_or(Vec3::ZERO, |r| r.offset)
 }
 
 /// The linked mount's riding data.
 fn linked(w: &World, id: u32) -> Option<(&Riding, crate::dat::character::MountInfo)> {
-    let r = w.rides.get(&id).filter(|r| r.phase == Phase::Riding)?;
+    let r = w.rides.get(&id).filter(|r| matches!(r.phase, Phase::Riding | Phase::Stopping))?;
     Some((r, w.actors.get(&(ANIMAL | id))?.character.as_ref()?.mount?))
 }
 
@@ -410,6 +442,17 @@ pub fn points(w: &mut World, pts: Vec<(u64, Vec3)>) {
 
 #[cfg(test)]
 mod tests {
+    /// FUN_100d65b0's riding test: letters 2..3 of the idle name "chi ".
+    #[test]
+    fn stand_motions() {
+        for m in ["chi", "chi0", "6hi", "6hi0"] {
+            assert!(super::stand_motion(m), "{m}");
+        }
+        for m in ["6un", "run", "idl", "chw", ""] {
+            assert!(!super::stand_motion(m), "{m}");
+        }
+    }
+
     use super::*;
 
     #[test]
