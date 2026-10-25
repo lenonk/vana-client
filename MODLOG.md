@@ -6363,7 +6363,7 @@ the bar holds the mouse the windows see no press and no pointer.
   Change Map, Wide Scan, search results; FUN_101f6c70): a row moves the top under the hand, a page as Left / Right,
   0x1b the top. The paged lists (magic, ability, emote, mount; FUN_10222150): rows move top and cursor together,
   0x18 back by min(top, 12) (cursor 0 at the top), 0x19 the cursor a whole page (the top with it, clamped). query
-  (FUN_1014e410): rows the selection (wrapping, as the keys), pages 3 keeping the screen row, 0x1b the top with the
+  (FUN_1014e410): rows the selection (clamped, as the keys), pages 3 keeping the screen row, 0x1b the top with the
   selection shifted. The Config lists (cfilter, fxfilter, k1assign, k2assign, textcol1): rows move top and hand
   against each other (the selection stays), 0x1b silent. The full log: its handler is not traced *(inf: the
   scroll-only Up / Down, Left / Right pages, 0x1b the bottom-anchored top)*.
@@ -8935,3 +8935,21 @@ interpolates between the hour keys in both clients.
   it, the top dock ends 4 left of it, the right dock's top stays 6 under a large one. Extras rows Minimap, Minimap
   Position, Minimap Size. Offscreen: topbar-shot --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] with sample dots.
 - Live (Lnxcsfix, 230, map key item 385): top right with the NPCs around the Westgate.
+
+## Event choice keys and the list's item preview (2026-10-25)
+
+- Keys (FUN_1014e410, after the base window's FUN_10118260): Down / Up (and the bar caps 0x17 / 0x16) move the cursor
+  one option, Right / Left (and the track 0x19 / 0x18) three; FUN_1014e0f0 clamps it to the options, no wrap. A step
+  keeps it inside the 3 rows (top = cursor when above, cursor - 2 when past the third); a page keeps its screen row,
+  the top at most options - 3. SE 0001 when it moved. Ours wrapped and ignored Left / Right (holding Down cycled the
+  spark list; user, 2026-10-25).
+- Escape (event 6): 0xff with SE 0003 while DAT_10485a70 allows it, else SE 0004. Op 0x25 then ends the event (Z0
+  0xfe, cancelled); only op 0x7f hands 0xff to the script. The spark exchange (Fhelm Jobeizat, event 850) waits on
+  both its menus with 0x25, so Escape in the item list ends the talk; the list's way back is its "None." row
+  (option 17: dec L8, back to the categories).
+- The item info window's group (+0x38) is set by its mode (FUN_1013e590): 1 (130, 240) 0x0a, 2 (16, 48) 0x50, 3 (130,
+  260) 0x0a, 4 (16, 16, stacked on the choice) 0x50, 5 (130, 240) 0, else (16, 240) 0x0c; 0 with +0x371. Ours took
+  the registry's 0x08 for every mode, so the walk hid the event list's preview (op 0xd4 sub 2) under the newer choice
+  window (0x0c). Now set per mode (GameUi::set_group).
+- Live (Lnxcsfix, Fhelm, the Items list): the preview shows above the list and follows the cursor; Down held stops
+  on "None."; Left / Right page by 3.

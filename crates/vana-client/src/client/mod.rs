@@ -3529,6 +3529,12 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         4 => (0.0, (query_top - fh - 2.0).max(16.0) - fy),
         _ => (0.0, (log_top - fh - 2.0).max(16.0) - fy),
     };
+    // FUN_1013e590: the window's group (+0x38) by mode, so it stays up beside the window it serves.
+    gu.set_group("menu    iteminfo", Some(match mode {
+        1 => 0x0a,
+        4 => 0x50,
+        _ => 0x0c,
+    }));
     let r = gu.window_swapped("menu    iteminfo", layout, sw, sh, off)?;
     items::upload_icons(gu, &cache, std::iter::once(id));
     let icon = crate::render::invwin::icon_texture(id);

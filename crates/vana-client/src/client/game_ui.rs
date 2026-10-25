@@ -434,8 +434,6 @@ impl GameUi {
 
     /// The title with the Update button above Select Character (selected, enabled).
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::too_many_arguments)]
     pub fn title_update(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5], update: Option<(bool, bool)>, wardrobes: u32, press: Option<(f32, bool)>, hand: bool) -> Vec<TextSlot> {
         let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update, hand, wardrobes, press };
         let (b, text) = screens::title_screen(&self.data.lobby, &self.data.style, w, h, &st);

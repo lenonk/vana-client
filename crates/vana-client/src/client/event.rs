@@ -1878,21 +1878,30 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     }
     let (was, max) = (c.cursor, n.saturating_sub(3));
     match m {
-        Msg::Up => c.cursor = (c.cursor + n - 1) % n,
-        Msg::Down => c.cursor = (c.cursor + 1) % n,
-        Msg::PageUp | Msg::PageDown => {
-            let row = c.cursor - c.scroll.min(c.cursor);
-            c.scroll = if m == Msg::PageUp { c.scroll.saturating_sub(3) } else { (c.scroll + 3).min(max) };
-            c.cursor = (c.scroll + row).min(n - 1);
-        }
+        Msg::Up => move_cursor(c, was as isize - 1, false),
+        Msg::Down => move_cursor(c, was as isize + 1, false),
+        Msg::PageUp => move_cursor(c, was as isize - 3, true),
+        Msg::PageDown => move_cursor(c, was as isize + 3, true),
         Msg::Set(t) => {
             let t = t.min(max);
             c.cursor = (c.cursor + t).saturating_sub(c.scroll).min(n - 1);
             c.scroll = t;
+            c.scroll = c.scroll.min(c.cursor).max(c.cursor.saturating_sub(2));
         }
     }
-    c.scroll = c.scroll.min(c.cursor).max(c.cursor.saturating_sub(2));
     c.cursor != was
+}
+
+/// FUN_1014e0f0: the cursor to `to`, clamped to the options (no wrap). A step keeps it inside the 3 rows; a page keeps
+/// its screen row, the top at most the last 3.
+fn move_cursor(c: &mut Choice, to: isize, page: bool) {
+    let n = c.options.len();
+    if n == 0 {
+        return;
+    }
+    let row = c.cursor.saturating_sub(c.scroll);
+    c.cursor = to.clamp(0, n as isize - 1) as usize;
+    c.scroll = if page { c.cursor.saturating_sub(row).min(n.saturating_sub(3)) } else { c.scroll.min(c.cursor).max(c.cursor.saturating_sub(2)) };
 }
 
 pub fn choice(w: &World) -> Option<&Choice> {
@@ -1986,12 +1995,18 @@ fn key_live(w: &mut World, l: &mut Live, key: egui::Key) {
         log::info!("event {:#x}: Escape, cancellable {allowed}", l.st.start.event);
     }
     if let Some(c) = &mut l.st.choice {
-        let n = c.options.len().max(1);
-        // FUN_1014e410: SE 0001 when the cursor moved; Enter 0002 (the generic handler's).
+        // FUN_1014e410: Down / Up one option, Right / Left a page of 3, SE 0001 when the cursor moved; Enter 0002 (the
+        // generic handler's).
         match key {
-            egui::Key::ArrowDown | egui::Key::ArrowUp => {
+            egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::ArrowRight | egui::Key::ArrowLeft => {
                 let was = c.cursor;
-                c.cursor = if key == egui::Key::ArrowDown { (c.cursor + 1) % n } else { (c.cursor + n - 1) % n };
+                let (step, page) = match key {
+                    egui::Key::ArrowDown => (1, false),
+                    egui::Key::ArrowUp => (-1, false),
+                    egui::Key::ArrowRight => (3, true),
+                    _ => (-3, true),
+                };
+                move_cursor(c, was as isize + step, page);
                 if c.cursor != was {
                     w.sounds.push(crate::audio::Ui::Cursor as u32);
                 }
@@ -2015,9 +2030,6 @@ fn key_live(w: &mut World, l: &mut Live, key: egui::Key) {
                 }
             }
             _ => {}
-        }
-        if let Some(c) = &mut l.st.choice {
-            c.scroll = c.scroll.min(c.cursor).max(c.cursor.saturating_sub(2));
         }
         return;
     }
