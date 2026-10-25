@@ -8269,3 +8269,26 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   not started *(inf: retail plays them as a server NPC's)*.
 - Not done: mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
 
+## Ground tilt (2026-10-25; spec ~/ffxi/lab/research/ground_tilt_spec.md)
+
+- FUN_100cbde0: models of leg mode (0x45 info byte 0, `cib[0]`) 1 or 2, and every dead actor (status 2 / 3, PCs too),
+  draw through FUN_100d54c0 instead of the Euler rotation (unless the event no-ground bits; not checked by ours). Leg
+  mode 1: beetle, crawler, spider, pugil, leech, slime, sandworm ...; 2: tiger, sheep, coeurl, dhalmel, behemoth,
+  adamantoise, morbol ... and the mounts Tiger, Byakko, Sheep, Morbol, Crawler, Beetle, Warmachine, Hippogryph, Coeurl,
+  Raaz, Adamantoise, Dhalmel, Buffalo, Wivre (a riding animal takes its rider's status: box 1).
+- FUN_100d54c0: the ground normal (+0x160, y < 0 up; only faces with |y| > 0.7 replace it) clamped to 30 degrees from
+  up (0x103313a4 cos 30, a pi / 6 quaternion), blended with up by last call's weight w (+0x828), eased 0.1875 a drawn
+  frame into +0x82c (ours per tick: 1 - 0.8125^(ticks / 2)); the frame keeps the Euler model Z: X = down x Z, Y = down,
+  Z = X x down. The next w: 1 for a status box ratio (b2 - b3) / (b4 - b5) in 0.6..1.4, else |fall line . long axis
+  x scale| (a long body pitches up a slope and stays upright across it). Starts w 0, e up. client/tilt.rs; checked
+  against the spec's reference vectors (0, 3.711, 6.744, 9.218 degrees on a 20-degree slope; 30 on 60).
+- The normal: ours the player's walk normal (Ground::player_normal), else the face under the position each frame (the
+  rider's for its animal) *(retail probes a far moving actor only every 121 frames, and quadrupeds with info[0] ==
+  info[2] == 2 take a pitch-only normal from the ground under their front and rear feet (FUN_100a4d10): not done)*.
+  The tilted frame goes to the pose, attach_point and the effects (actor_frame).
+- Op 0xd8 (the plain path, FUN_100843b0): D3DX Scale . RotZ(z) . RotY(yaw) . RotX(x), i.e. glam T Rx(x) Ry(yaw) Rz(z):
+  z about the model's Z, x about the world X after the yaw, both positive. Ours had z then x in the model frame with
+  negated signs (inferred, never seen); plain_frame now follows the decompile.
+- Live: the Tiger mount (key item 3074, file 102707, leg mode 2) on the East Ronfaure hill at (41, 170) follows the
+  slope with the rider upright on its saddle.
+

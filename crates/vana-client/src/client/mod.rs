@@ -53,6 +53,7 @@ mod chatctrl;
 mod linklist;
 mod blklist;
 mod furniture;
+mod tilt;
 mod aepoints;
 mod jobpoints;
 mod merits;
@@ -3133,6 +3134,9 @@ struct Actor {
     appear: f32,
     /// The face motion a spoken line plays (entity +0x168, FUN_100846b0: 'mou4', event op 0xae 3 'kut4').
     mouth_name: &'static str,
+    /// The ground tilt state (client/tilt.rs) and this frame's tilted rotation (None: the plain Euler one).
+    ground_tilt: tilt::GroundTilt,
+    tilt_rot: Option<glam::Mat3>,
     /// The riding files on `extra`.
     ride_on: Vec<u32>,
 }
@@ -3180,6 +3184,8 @@ impl Actor {
             ride_on: Vec::new(),
             appear: 0.0,
             mouth_name: "mou4",
+            ground_tilt: Default::default(),
+            tilt_rot: None,
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
@@ -3440,13 +3446,21 @@ fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), tilt: [0.0; 2], status: e.motion.status, ratio: e.ratio, size })
 }
 
+/// The drawn frame without the scale: the ground tilt's rotation at the position, else the plain one.
+fn actor_frame(p: &Place, a: &Actor) -> glam::Mat4 {
+    match a.tilt_rot {
+        Some(r) => glam::Mat4::from_translation(p.pos) * glam::Mat4::from_mat3(r),
+        None => plain_frame(p.pos, p.forward, p.tilt),
+    }
+}
+
 /// An actor's attach point `k` in the world from its rest pose (vtable +0x1c4); without one its position lifted
 /// by 1.2 x its height (FUN_10086820's fallback).
 fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Option<Vec3> {
     let p = places.get(&id)?;
     let a = w.actors.get(&id)?;
     let ch = a.character.as_ref()?;
-    let model = actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt) * glam::Mat4::from_scale(Vec3::splat(a.scale));
+    let model = actor_frame(p, a) * glam::Mat4::from_scale(Vec3::splat(a.scale));
     match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| *t + *q * *off)) {
         Some(local) => Some(model.transform_point3(local)),
         None => Some(p.pos + Vec3::new(0.0, a.top * 1.2, 0.0)),
@@ -3487,7 +3501,10 @@ impl crate::fx::Actors for FxActors<'_> {
             return Some(f.2);
         }
         let p = self.places.get(&id)?;
-        Some(actor_matrix(p.pos, p.forward) * tilt_matrix(p.tilt))
+        Some(match self.actors.get(&id) {
+            Some(a) => actor_frame(p, a),
+            None => plain_frame(p.pos, p.forward, p.tilt),
+        })
     }
 
     fn moving(&self, id: u32) -> bool {
@@ -3681,12 +3698,15 @@ fn box_index(status: u8) -> usize {
     }
 }
 
-/// Op 0xd8's x / z rotation in the actor's frame (x forward, y up): z then x *(inf: the order and signs)*.
-fn tilt_matrix(t: [f32; 2]) -> glam::Mat4 {
+/// FUN_100cbde0's plain frame: T . RotY(yaw); with op 0xd8's x / z (FUN_100843b0) D3DX Scale . RotZ(z) . RotY(yaw)
+/// . RotX(x), i.e. z about the model's Z and x about the world X after the yaw, both positive
+/// (ground_tilt_spec.md 6).
+fn plain_frame(pos: Vec3, forward: Vec3, t: [f32; 2]) -> glam::Mat4 {
+    let m = actor_matrix(pos, forward);
     if t == [0.0; 2] {
-        return glam::Mat4::IDENTITY;
+        return m;
     }
-    glam::Mat4::from_rotation_z(-t[1]) * glam::Mat4::from_rotation_x(-t[0])
+    glam::Mat4::from_translation(pos) * glam::Mat4::from_rotation_x(t[0]) * glam::Mat4::from_translation(-pos) * m * glam::Mat4::from_rotation_z(t[1])
 }
 
 fn actor_matrix(pos: Vec3, forward: Vec3) -> glam::Mat4 {
@@ -9238,7 +9258,27 @@ impl App {
                     } else {
                         a.bones.clear();
                     }
-                    let frame = actor_matrix(pos, forward) * tilt_matrix(tilt);
+                    // FUN_100cbde0: leg mode 1 / 2 models and dead actors follow the ground (FUN_100d54c0); a riding animal
+                    // by its rider's status (box 1) and ground normal.
+                    let rider = (*id & ride::ANIMAL != 0).then_some(*id & !ride::ANIMAL);
+                    let gate_status = rider.and_then(|r| places.get(&r)).map_or(status, |p| p.status);
+                    a.tilt_rot = None;
+                    if tilt::eligible(ch.cib[0], gate_status) {
+                        // Ours: the player's walk normal, else the face under the position each frame (the rider's for an
+                        // animal at its place) *(retail skips far moving actors, up to 121 frames)*.
+                        let n = if rider.unwrap_or(*id) == w.my_id {
+                            w.ground.as_ref().map(|g| g.player_normal())
+                        } else {
+                            w.ground.as_ref().and_then(|g| g.floor_normal(pos)).map(|n| -n)
+                        };
+                        if let Some(n) = n {
+                            tilt::set_normal(&mut a.ground_tilt, n);
+                        }
+                        let zf = plain_frame(pos, forward, tilt).z_axis.truncate();
+                        let bx = ch.skeleton.boxes.get(box_index(gate_status)).or(ch.skeleton.boxes.first()).copied().unwrap_or([f32::NAN; 6]);
+                        a.tilt_rot = Some(a.ground_tilt.step(zf, Vec3::splat(a.scale), bx, tilt::rate(dt * 60.0)));
+                    }
+                    let frame = actor_frame(&Place { pos, forward, tilt, status, ratio, size }, a);
                     let model = frame * glam::Mat4::from_scale(Vec3::splat(a.scale));
                     // FUN_100cd040 (camera_collision_spec.md 2.2): the eye near posed point 12 fades the actor (not the
                     // player in first person, who fades on its own). A CPU pose only when the rest pose is close.

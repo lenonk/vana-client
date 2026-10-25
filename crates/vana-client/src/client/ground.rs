@@ -786,6 +786,11 @@ impl Ground {
 
     /// The player's frame: walks from `from` towards `to` (horizontal), falling while in the air. Call it every
     /// frame the player could fall, also without input (`to == from`).
+    /// The player's ground normal (actor +0x160: y < 0 up, only faces with |y| > 0.7, (0, -1, 0) on a lift).
+    pub fn player_normal(&self) -> Vec3 {
+        self.body.get().normal
+    }
+
     pub fn walk_player(&self, from: Vec3, to: Vec3, ticks: f32, ride: Option<Ride>) -> Vec3 {
         let mut body = self.body.get();
         let pos = self.step(&mut body, from, to, ticks, ride);
