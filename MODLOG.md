@@ -5233,7 +5233,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   FUN_10183780; the effect generators already blended by it). Ours switched the zone lighting (fog, sun, ambient,
   area lights) in one frame, so fog vanished at once about a minute after login when the server's change came.
   Now the environment of the old weather blends into the new one over the change's time (Env::lerp; the linear
-  weight is inferred; StartTime not used: the blend starts on arrival). Live, East Ronfaure by the gate: !setweather
+  weight is confirmed and the objects chain, section "Time-of-day lighting"; StartTime not used: the blend starts on
+  arrival). Live, East Ronfaure by the gate: !setweather
   3 (mist) then 1: still foggy 1 s after, partly clear at 15 s, clear with a blue sky after the 31 s.
 
 ## NPC shops: buy and sell (2026-10-23)
@@ -8576,3 +8577,65 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   Owner::Actor instances go and model_generators starts them fresh. Actors::models gives the model files then the
   part files. Not done: the skeleton's `fvib` clone made (not started) at the show; the +0x764 / +0x814 clones.
   Tests model_gens_unhide (model 1526 `g000`), part_file_gens (8700).
+
+## Time-of-day lighting: the eased sun / moon light, retail's key blend, the weather chain (2026-10-25; spec ~/ffxi/lab/research/day_lighting_spec.md)
+
+The user saw the lighting change abruptly at dawn and dusk. Retail eases only the directional light; everything else
+interpolates between the hour keys in both clients.
+- Hour keys, FUN_1018a340 [2019 FUN_10183320], every frame: previous key FUN_10189e30 = the latest at or before now,
+  the first in file order on equal times (Qufim Island `ligt` has two 1200 keys: the second is never used); next key
+  FUN_1018a0f0 = the earliest strictly after now, else the day's first. t linear in clock units. FUN_10189490: bytes
+  prev + ftol((next - prev) t) (chopped; ours rounded, which moved byte thresholds such as the sky dome by up to 18
+  minutes), floats linear; with flags bit 0 the signed light directions (bg @0x30, actor @0x10) turn along the great
+  circle (FUN_10033360 axis prev x next, angle acos(prev . next) t; FUN_10032fe0 / FUN_10028200), x 127, chopped
+  *(inf: the sense toward next)*. Ours lerped them as unsigned bytes, so a component changing sign flipped the
+  light about 180 degrees in a frame (Tavnazian Safehold 02:14 / 05:16, Castle Zvahl Keep [S] mist 09:02, the ev01
+  areas of several [S] zones, Hall of the Gods 15:56).
+- The light, FUN_10187720 [2019 FUN_10180700], once a frame in game (mode 0x60): a = T / 5184000 x 6.283 (stored
+  constants 6.283 / 3.1415, so the switch falls at 05:59:59.4 and 18:00:00.6); moon (sin a, cos a, 0), sun at
+  a + 3.1415 wrapped; the target is the sun while sun.y >= 0, else the moon, with the background or actor group's
+  colour. Each frame dir = normalize(dir + 0.1 (target - dir)); |dot(target - old, new)| >= 0.5 -> colour x 0.7, else
+  colour += 0.1 (target - colour). The first frame after a zone load (FUN_10187030 clears E+0x148) copies the
+  targets; outside the game it always copies. Each environment object (the zone, every area) has its own state;
+  flags-bit-0 environments keep their data direction. FUN_10188ca0: diffuse = eased colour x the env's light scale
+  (not eased). Result at stock 30 fps: dusk fades in about 0.5 s (x 0.7 a frame), dawn stays dark about 2 s while the
+  direction swings over the zenith, then fades in by +3.5 s. Ours switched direction and colour in one frame: 1,328
+  of 1,472 zone switches (zones 0..299) jumped by more than 0.25.
+- The weather crossfade (FUN_101874f0, FUN_1018a7a0, thunk_FUN_1018ade0): a new object only for a new weather
+  number (a repeat does nothing; ours restarted or cut the blend); 0 minutes deletes the chain; each object blends its
+  child chain's output into its own env by (total - left) / total (the linear weight MODLOG had inferred), and a
+  finished one drops the chain before it, so a change mid-blend starts from the mixed state.
+- The clock DAT_1065cb18 (1/60 Vana seconds, rebuilt each frame by FUN_1018c2b0; its seconds field only reaches :39,
+  invisible in the lighting); ours is continuous.
+- Ours: dat/weather.rs sun_moon, EasedLight, LightEase, Lighting::from_env_eased, Env::lerp (chop, turn_dir),
+  ZoneWeather::at (ties, next key); client: World::light_ease / area_ease (by sub-area or zone, 4cc) stepped once a
+  2-tick retail frame (light_acc) and reset at zone, area and sub-area loads; World::weather_chain. Debug log target
+  `light` (bg direction and colour per step). Tests eased_light_steps, sun_moon_switch, dawn_dusk_ease,
+  env_lerp_retail, duplicate_keys.
+- Not traced: the light yaw world+0x1cc (a scheduler op at 0x100580a4), DAT_1047bf18's override of @0x50 / @0x54 /
+  @0x5c / @0x5d, the eased light positions' consumers, the D3D light's ambient DAT_1065ca34.
+
+## Motion name bases, `sdep`, event-reserved silence, the sound start cap, one-at-a-time loops (2026-10-25; spec ~/ffxi/lab/research/fx_sched_misc_spec.md 4, 6, 7, 8)
+
+- Ops 0x8c / 0xa4 / 0xa5 (FUN_1005e740 / 760 / 750) write actor1's current idle / run / walk names and, with an
+  entity, its copies and bases (FUN_1005e6b0..6f0: +0x1a4 / +0x1a8 / +0x1ac / +0x190, +0x1b4 / +0x19c, +0x1b0 /
+  +0x198); FUN_1008a1a0 (model creation FUN_1008f740, status changes, the sit / chair machine) rebuilds the current
+  names from the bases and FUN_1008a2f0 pushes them into the actor, so an op-set idle survives a new model and a
+  dismount; the battle name (0x79) has no copy and starts over. Scheduler op 0xab (case 0x1005c18f, FUN_1005e720):
+  entity +0x130 bit 4 = @8 & 1; while set each model creation resets the bases first (FUN_1008a160). Ours:
+  Entity::motion_bases / reset_bases (World::my_motion_bases for us), Actor::rebase / fresh at a model attach and a
+  ride's end. Not done: the idle variants +0x1a8 / +0x1ac (kind-2 `dft` / `df1` alternation, FUN_1008da00).
+- `sdep` (FUN_1008c6c0, a new status 2 / 3, model kinds not 3..5): entity +0x12f bit 0 (0x00D / 0x00E u8 @0x28 bit
+  3, LSB: a monster with HP in its death animation) or +0x12c bit 22 (u8 @0x28 bit 0, a trust) -> `sdep` through
+  vtable +0x298 (motion files, model files, DAT 0: DAT 0's runs file 3417 `main`, the trusts' own file 3722), its
+  motions its own (ours: on_scheduler, and die() plays no `ded`); else the death pick's table. Marks::death_flag.
+- The hide skip (asm 0x1005b760..0x1005b78e): a scheduler sound op's actor with entity +0x138 bit 31 and a hidden model
+  (+0xb2 bit 1) plays nothing. +0x138 bit 31 is event op 0xac sub 2 (set) / sub 3 (clear, then c2s 0x016 for the
+  entity through FUN_100aec70, which yields only when no packet slot is free): Entity::ev_reserved,
+  Actors::sound_muted.
+- FUN_10036460's start cap (cur 20; 2019 12): at most 20 distinct SeSep resources start voices per manager pass
+  (FUN_10036230, once a 2-tick retail frame, the list cleared at its end); once full every start waits, repeats too.
+  Ours had 20 se ids a frame of ours with repeats free: now Sound::res and Effects::start_window.
+- FUN_10038330: se 2239 / 2063 (looping zone emitters, 44 files) start only while the shared flag DAT_104638f4 is
+  clear, and take it; a voice of either stopping or its sound going clears it (FUN_10036b90 / FUN_10036af0). Ours:
+  Effects::solo, voice_ended at every stop. Tests start_cap_per_pass, one_at_a_time.

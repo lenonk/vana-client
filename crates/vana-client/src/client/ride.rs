@@ -252,7 +252,7 @@ fn leave(w: &mut World, id: u32) {
     let mount = matches!(r.model, Model::Mount(_));
     (r.phase, r.offset, r.yaw, r.points) = (Phase::Leaving { pos: p.pos, forward: p.forward, run: None, ticks: 0.0 }, Vec3::ZERO, 0.0, [None; 2]);
     if let Some(a) = w.actors.get_mut(&id) {
-        a.motion_names = None;
+        (a.motion_names, a.rebase) = (None, true);
     }
     let base = actmotion::status_motion(w, id, &rch);
     let started = w.actors.get_mut(&id).is_some_and(|a| actmotion::start(a, &rch, "coff", &base));
@@ -293,7 +293,7 @@ fn finish(w: &mut World, id: u32) {
     let Some(r) = w.rides.remove(&id) else { return };
     w.actors.remove(&(ANIMAL | id));
     if let Some(a) = w.actors.get_mut(&id) {
-        a.motion_names = None;
+        (a.motion_names, a.rebase) = (None, true);
         if matches!(r.model, Model::Mount(_)) {
             // Ours: the 600-tick cap can end a ride before coff's fade in.
             if a.fade.is_none() && a.alpha < actmotion::OPAQUE {

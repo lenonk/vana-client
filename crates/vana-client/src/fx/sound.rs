@@ -53,11 +53,16 @@ pub struct Sound {
     /// +0x1e4: counts as playing for 3 manager passes after a start.
     /// Ticks it counts as playing after a start.
     pub grace: f32,
+    /// The SeSep resource (library, node) that FUN_10036460's start list counts.
+    pub res: (usize, usize),
 }
+
+/// FUN_10038330: se ids of which one voice plays at a time (a shared flag, DAT_104638f4).
+pub const ONE_AT_A_TIME: [u32; 2] = [2239, 2063];
 
 impl Sound {
     pub fn new(se: u32, loops: bool) -> Self {
-        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, pan_in: 64.0, vol_key: None, sph: None, fade: 0.0, stream: false, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0 }
+        Self { se, loops, elem: None, gen_persistent: false, pos: Vec3::ZERO, near: 0.0, far: 0.0, keep: false, ymode: 0, vol: 127, pan_in: 64.0, vol_key: None, sph: None, fade: 0.0, stream: false, handle: 0, last_vol: 0, last_pan: 64, grace: 0.0, res: (usize::MAX, se as usize) }
     }
 
     /// vt+0x40 = FUN_10035950.
@@ -165,6 +170,60 @@ pub fn attenuate(pan_in: f32, vol: i32, pos: Vec3, eye: Vec3, view: Mat4, near: 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn stream(se: u32, res: usize) -> Sound {
+        let mut s = Sound::new(se, false);
+        (s.stream, s.res) = (true, (0, res));
+        s
+    }
+
+    fn frame(dt: f32) -> crate::fx::Frame {
+        crate::fx::Frame { dt, seconds: dt / 60.0, dayfrac: 0.5, view: glam::Mat4::IDENTITY, view_rot: glam::Mat4::IDENTITY, eye: Vec3::ZERO, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 }
+    }
+
+    fn plays(fx: &mut crate::fx::Effects) -> Vec<u32> {
+        std::mem::take(&mut fx.sound_cmds).into_iter().filter_map(|c| if let SoundCmd::Play { se, .. } = c { Some(se) } else { None }).collect()
+    }
+
+    /// FUN_10036460: 20 SeSep resources a 2-tick pass; once full a repeat waits too.
+    #[test]
+    fn start_cap_per_pass() {
+        let mut fx = crate::fx::Effects::new();
+        fx.sounds.extend((0..25).map(|k| stream(1000 + k, k as usize)));
+        let n: Vec<usize> = (0..5).map(|_| {
+            fx.tick(&frame(0.5), &crate::fx::NoActors);
+            plays(&mut fx).len()
+        }).collect();
+        assert_eq!(n, [20, 0, 0, 0, 5]);
+        let mut fx = crate::fx::Effects::new();
+        fx.sounds.extend((0..20).map(|k| stream(1000 + k, k as usize)));
+        fx.sounds.push(stream(1000, 0));
+        fx.tick(&frame(0.5), &crate::fx::NoActors);
+        assert_eq!(plays(&mut fx).len(), 20);
+    }
+
+    /// FUN_10038330: of 2239 / 2063 one voice at a time; the next starts after it stops.
+    #[test]
+    fn one_at_a_time() {
+        let mut fx = crate::fx::Effects::new();
+        fx.sounds.extend([stream(2063, 1), stream(2063, 2), stream(2239, 3)]);
+        fx.tick(&frame(2.0), &crate::fx::NoActors);
+        assert_eq!(plays(&mut fx), [2063]);
+        fx.tick(&frame(2.0), &crate::fx::NoActors);
+        assert_eq!(plays(&mut fx), Vec::<u32>::new());
+        // Each voice ends (not alive after its grace); the next one takes the flag, never two at once.
+        fx.set_alive(Vec::new());
+        let mut all = vec![2063];
+        for _ in 0..20 {
+            fx.tick(&frame(2.0), &crate::fx::NoActors);
+            let p = plays(&mut fx);
+            assert!(p.len() <= 1, "{p:?}");
+            all.extend(p);
+        }
+        all.sort();
+        assert_eq!(all, [2063, 2063, 2239]);
+        assert!(fx.solo.is_none());
+    }
 
     /// footsteps_sound.md 2.5: Cure's 0303 (far 60, near 3) on a target 12 units out and 1.5 up, behind the camera:
     /// volume 105, then x 0.65 = 68.

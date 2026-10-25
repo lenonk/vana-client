@@ -797,6 +797,17 @@ impl Host for LiveHost<'_> {
                     self.st.event_status.insert(id, s as u8);
                 }
             }
+            // FUN_100bb180 subs 2 / 3: the event actor's entity +0x138 bit 31 (its schedulers mute while its model is
+            // hidden); sub 3 clears it and asks for the entity again (c2s 0x016, FUN_100aec70).
+            Effect::Op { op: 0xac, sub: Some(s @ (2 | 3)), actor, .. } => {
+                let id = self.wid(actor);
+                if let Some(e) = self.w.entities.get_mut(&id) {
+                    e.ev_reserved = s == 2;
+                    if s == 3 {
+                        let _ = self.w.net.commands.send(NetCommand::CharReq(e.index));
+                    }
+                }
+            }
             // FUN_100bac90 sub 3 locks the event actor's event status; sub 4 (after its wait) unlocks it.
             Effect::Op { op: 0xab, sub: Some(s @ (3 | 4)), actor, .. } => {
                 let id = self.wid(actor);

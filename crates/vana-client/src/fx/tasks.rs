@@ -957,11 +957,16 @@ impl Effects {
                     }
                     _ => scope(self, 0x3d),
                 };
+                // asm 0x1005b760: an actor reserved by its event (+0x138 bit 31) whose model is hidden is silent.
+                if self.doll_of(who).id().is_some_and(|id| actors.sound_muted(id)) {
+                    return Flow::Next;
+                }
                 if let (Some(r), Some((_, m))) = (r, self.who_matrix(who, actors))
                     && let Some((se, loops)) = super::sound::sesep(self.reg.libs[r.0].data(r.1))
                 {
                     log::debug!("effects: sound {se} op {:#x}", op.code);
                     let mut s = super::sound::Sound::new(se, loops);
+                    s.res = r;
                     s.pos = m.w_axis.truncate();
                     s.far = f32::from_bits(op.u32_at(0x14));
                     s.near = f32::from_bits(op.u32_at(0x18));
@@ -980,6 +985,7 @@ impl Effects {
                 {
                     log::debug!("effects: stream {se}");
                     let mut s = super::sound::Sound::new(se, loops);
+                    s.res = r;
                     s.stream = true;
                     self.sounds.push(s);
                 }
@@ -1212,6 +1218,13 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Case 0x1005c18f (FUN_1005e720): actor1's entity +0x130 bit 4 = u32 @8 & 1.
+            0xab => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.base_resets.push((id, op.u32_at(8) & 1 != 0));
+                }
+                Flow::Next
+            }
             // FUN_1005e770 / 740 / 760 / 750: actor1's battle / idle / run / walk names from set u32 @8.
             0x79 | 0x8c | 0xa4 | 0xa5 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
@@ -1360,6 +1373,7 @@ impl Effects {
                 {
                     log::debug!("effects: sound {se} op 0x78 ({})", String::from_utf8_lossy(&name));
                     let mut snd = super::sound::Sound::new(se, loops);
+                    snd.res = (l, n);
                     snd.pos = m.w_axis.truncate();
                     snd.far = f32::from_bits(op.u32_at(8));
                     snd.near = f32::from_bits(op.u32_at(0xc));

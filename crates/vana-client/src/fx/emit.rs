@@ -156,6 +156,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
         let r = reg.resolve(lib, from, 0x3d, name)?;
         let (se, loops) = super::sound::sesep(reg.libs[r.0].data(r.1))?;
         let mut s = super::sound::Sound::new(se, loops);
+        s.res = r;
         // Op 0x4c on a world generator sets height mode 1; without 0x4c the defaults stand.
         if inst.mode == 0 {
             s.ymode = 0;

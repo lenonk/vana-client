@@ -324,6 +324,12 @@ struct Entity {
     master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
     init_done: bool,
+    /// The idle / run / walk names ops 0x8c / 0xa4 / 0xa5 set (bases +0x190 / +0x19c / +0x198): a new model and a
+    /// status change take them again (FUN_1008a1a0); op 0xab (+0x130 bit 4) clears them at each model creation.
+    motion_bases: Vec<(u8, u32)>,
+    reset_bases: bool,
+    /// +0x138 bit 31 (event op 0xac sub 2 / 3): while its model is hidden its schedulers' sounds stay off.
+    ev_reserved: bool,
     /// A door's id (0x00E SubKind 2, u32 @0x34); 0 for anything else.
     door: u32,
     /// A lift's (shaft id, move start, move end) (0x00E SubKind 3, client/lifts.rs).
@@ -971,6 +977,9 @@ fn self_entity(w: &World) -> Entity {
         sub: [0, 8, 0],
         master: 0,
         init_done: false,
+        motion_bases: Vec::new(),
+        reset_bases: false,
+        ev_reserved: false,
         door: 0,
         lift: None,
         active: 0.0,
@@ -2973,6 +2982,9 @@ fn place_mogdoor(w: &mut World) {
             sub: [0, 8, 0],
             master: 0,
             init_done: false,
+            motion_bases: Vec::new(),
+            reset_bases: false,
+            ev_reserved: false,
             door: 0,
             lift: None,
             active: 0.0,
@@ -3123,6 +3135,10 @@ struct Actor {
     drawn: bool,
     /// Actor +0x7d8: the status motion last started (FUN_100c83c0's weapon block runs on a new one).
     status_motion: String,
+    /// The motion names start over from the model and the entity's bases next frame (a new model, `fresh`, or a
+    /// ride's end).
+    rebase: bool,
+    fresh: bool,
     /// The motion's and the status motion's rates last frame (kept while +0x80 holds the pick).
     rate_now: f32,
     base_rate_now: f32,
@@ -3209,6 +3225,8 @@ impl Actor {
             wep_hide: [[false; 2]; 16],
             drawn: false,
             status_motion: String::new(),
+            rebase: false,
+            fresh: false,
             rate_now: 1.0,
             base_rate_now: 1.0,
             restart: false,
@@ -3658,6 +3676,10 @@ impl crate::fx::Actors for FxActors<'_> {
         Some(a.character.is_some() && a.pending.is_none() && a.skill_want.is_empty())
     }
 
+    fn sound_muted(&self, id: u32) -> bool {
+        self.model_hidden.contains(&id) && self.entities.get(&id).is_some_and(|e| e.ev_reserved)
+    }
+
     fn model_files(&self, id: u32) -> Vec<u32> {
         if let Some(f) = self.furniture(id) {
             return vec![f.1];
@@ -3855,6 +3877,9 @@ struct World {
     my_aura: indi::Aura,
     /// Our actor's "init" ran (+0x128 bit 29; again after each zone-in, as a new actor).
     my_init_done: bool,
+    /// Our own entity's motion name bases and op 0xab flag (Entity::motion_bases).
+    my_motion_bases: Vec<(u8, u32)>,
+    my_reset_bases: bool,
     rides: HashMap<u32, ride::Riding>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
@@ -4152,10 +4177,15 @@ struct World {
     /// The chat line's history (kept on the App between logins).
     line_hist: linehist::LineHistory,
     weather: u16,
-    /// A weather change still blending: the weather before it, when it began and how long it takes (0x057 @0x0a
-    /// Vana minutes x 2.4 s).
-    weather_from: Option<(u16, Instant, f32)>,
+    /// The weather objects, oldest first (FUN_1018a7a0 links the previous newest as the child): weather, when it came
+    /// and its blend time (0x057 @0x0a Vana minutes x 2.4 s; 0 for the base).
+    weather_chain: Vec<(u16, Instant, f32)>,
     zone_weather: Option<crate::dat::weather::ZoneWeather>,
+    /// FUN_10187720's eased lights: the zone's, each area's (by sub-area or zone, 4cc), and the time not yet stepped
+    /// (once a 2-tick retail frame).
+    light_ease: crate::dat::weather::LightEase,
+    area_ease: HashMap<(bool, u32), crate::dat::weather::LightEase>,
+    light_acc: f32,
     /// Typing a chat line (game keys go to the input line instead).
     typing: bool,
     /// Key function 0x78's focus cycle (FUN_10151550, DAT_10565d34 +0x68: 0 none, 1 logwindo, 2 buff), whether
@@ -5479,8 +5509,11 @@ impl App {
                             conf_sys: [0; 12],
                             client_version: self.cfg.client_version.clone(),
                             weather: 1,
-                            weather_from: None,
+                            weather_chain: Vec::new(),
                             zone_weather: None,
+                            light_ease: Default::default(),
+                            area_ease: HashMap::new(),
+                            light_acc: 0.0,
                             area: AreaSwitch::default(),
                             sub: Default::default(),
                             scene: None,
@@ -5507,6 +5540,8 @@ impl App {
                             my_ride: Default::default(),
                             my_aura: Default::default(),
                             my_init_done: false,
+                            my_motion_bases: Vec::new(),
+                            my_reset_bases: false,
                             rides: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
@@ -5671,7 +5706,7 @@ impl App {
                             }
                             a.character = Some(ch.clone());
                             a.gpu = None;
-                            a.motion_names = None;
+                            (a.motion_names, a.rebase, a.fresh) = (None, true, true);
                         }
                         world.models.insert(key, ch);
                         // Looks no actor wears any more go once there are more than MODEL_CACHE.
@@ -5709,6 +5744,7 @@ impl App {
                             w.effects.load_sub_area(lib);
                         }
                         w.sub.weather = l.weather;
+                        w.area_ease.retain(|k, _| !k.0);
                         if let Some(old) = w.ground.take() {
                             l.ground.keep_body(&old);
                             if w.sub.home.is_none() {
@@ -5737,6 +5773,8 @@ impl App {
                             world.area.home = Some((world.renderer.take(), world.ground.take(), world.zone_weather.take(), world.effects.zone_lib()));
                         }
                         world.zone_weather = weather;
+                        (world.light_ease, world.light_acc) = (Default::default(), 0.0);
+                        world.area_ease.clear();
                         if let Some(l) = fx {
                             world.effects.load_zone(l);
                             world.effects.set_weather(crate::dat::weather::weather_tag(world.weather), 0.0);
@@ -5767,6 +5805,8 @@ impl App {
                         world.sub = subarea::SubArea::new(scene.regions.clone(), scene.collision.take(), geometry.light_keys.clone(), geometry.area_keys.clone());
                         world.sub.asked = asked;
                         world.zone_weather = weather;
+                        (world.light_ease, world.light_acc) = (Default::default(), 0.0);
+                        world.area_ease.clear();
                         if let Some(g) = global_fx {
                             world.effects.set_global(g);
                         }
@@ -5884,6 +5924,8 @@ impl App {
             && let Some((renderer, ground, weather, fx)) = w.area.home.take()
         {
             (w.renderer, w.ground, w.zone_weather) = (renderer, ground, weather);
+            (w.light_ease, w.light_acc) = (Default::default(), 0.0);
+            w.area_ease.clear();
             if let Some(l) = fx {
                 w.effects.switch_zone(l);
                 w.effects.set_weather(crate::dat::weather::weather_tag(w.weather), 0.0);
@@ -6042,7 +6084,7 @@ impl App {
                         world.ko_deadline = (game_time as u64 + (dead_counter / 60) as u64).saturating_sub(360);
                     }
                     world.weather = weather;
-                    world.weather_from = None;
+                    world.weather_chain = vec![(weather, Instant::now(), 0.0)];
                     let m = crate::dat::weather::vana_minute(game_time, 0.0);
                     log::info!("vana'diel {:02}:{:02}, weather {} ({weather})", (m / 60.0) as u32, m as u32 % 60, crate::dat::weather::weather_tag(weather));
                     world.my_motion = motion;
@@ -6151,6 +6193,9 @@ impl App {
                         sub: [0, 8, 0],
                         master: 0,
                         init_done: false,
+                        motion_bases: Vec::new(),
+                        reset_bases: false,
+                        ev_reserved: false,
                         door: 0,
                         lift: None,
                         active: 0.0,
@@ -6218,11 +6263,12 @@ impl App {
                     if let Some((named, plural)) = e.name_flags {
                         (entry.named, entry.plural) = (named, plural);
                     }
+                    let sd = entry.marks.trust || entry.marks.death_flag;
                     if died && let Some(a) = world.actors.get_mut(&e.id) {
-                        combat::die(a);
+                        combat::die(a, sd);
                     }
                     if let Some((old, new)) = status_change {
-                        combat::status_schedulers(&mut world.effects, &world.actors, e.id, old, new);
+                        combat::status_schedulers(&mut world.effects, &world.actors, e.id, old, new, sd);
                     }
                     if let Some(p) = e.pos {
                         let mut p = Vec3::from(p);
@@ -6506,9 +6552,15 @@ impl App {
                     treasure::on_solution(world, slot, judge, loot, loot_point, entry, entry_point, entry_flg, loot_name, entry_name)
                 }
                 NetEvent::Weather(w, minutes) => {
-                    // The lighting blends from the old weather's environment to the new one over the change's time.
+                    // FUN_101874f0: a new weather object only for a new number; it blends from the current mix over
+                    // the change's time, at once with none (the chain goes).
                     let secs = minutes as f32 * 2.4;
-                    world.weather_from = (secs > 0.0 && w != world.weather).then(|| (world.weather, Instant::now(), secs));
+                    if world.weather_chain.last().is_none_or(|c| c.0 != w) {
+                        if secs <= 0.0 {
+                            world.weather_chain.clear();
+                        }
+                        world.weather_chain.push((w, Instant::now(), secs));
+                    }
                     world.weather = w;
                     // One Vana'diel minute is 2.4 s (FUN_101804d0's duration is u16 @0x0a x 3600 units).
                     world.effects.set_weather(crate::dat::weather::weather_tag(w), minutes as f32 * 2.4);
@@ -6693,7 +6745,7 @@ impl App {
                 }
                 actor.character = Some(m.clone());
                 actor.gpu = None;
-                actor.motion_names = None;
+                (actor.motion_names, actor.rebase, actor.fresh) = (None, true, true);
             } else if world.models_loading.insert(key.clone()) {
                 wanted.push((key, source));
             }
@@ -6928,7 +6980,49 @@ impl App {
                 a.death_pick = pick;
             }
         }
+        // Scheduler op 0xab: entity +0x130 bit 4 = @8 & 1.
+        for (id, on) in std::mem::take(&mut world.effects.base_resets) {
+            if id == world.my_id {
+                world.my_reset_bases = on;
+            } else if let Some(e) = world.entities.get_mut(&id) {
+                e.reset_bases = on;
+            }
+        }
+        // FUN_1008f740 / FUN_1008a1a0: a new model (its bases cleared first under op 0xab's flag) or a ride's end takes
+        // the model's names with the entity's bases; the battle names (0x79) start over.
+        for (id, a) in world.actors.iter_mut().filter(|(_, a)| a.rebase) {
+            let Some(ch) = a.character.as_ref() else { continue };
+            a.rebase = false;
+            let bases = if *id == world.my_id {
+                if std::mem::take(&mut a.fresh) && world.my_reset_bases {
+                    world.my_motion_bases.clear();
+                }
+                &world.my_motion_bases
+            } else if let Some(e) = world.entities.get_mut(id) {
+                if std::mem::take(&mut a.fresh) && e.reset_bases {
+                    e.motion_bases.clear();
+                }
+                &e.motion_bases
+            } else {
+                continue;
+            };
+            if !bases.is_empty() {
+                let mut n = ch.motions;
+                for &(op, set) in bases {
+                    n.apply(op, set);
+                }
+                a.motion_names = Some(n);
+            }
+        }
         for (id, op, set) in std::mem::take(&mut world.effects.motion_sets) {
+            // FUN_1005e6b0..: ops 0x8c / 0xa4 / 0xa5 write the entity's bases too.
+            if op != 0x79 {
+                let bases = if id == world.my_id { Some(&mut world.my_motion_bases) } else { world.entities.get_mut(&id).map(|e| &mut e.motion_bases) };
+                if let Some(b) = bases {
+                    b.retain(|x| x.0 != op);
+                    b.push((op, set));
+                }
+            }
             if let Some(a) = world.actors.get_mut(&id)
                 && let Some(ch) = a.character.as_ref()
             {
@@ -9212,27 +9306,54 @@ impl App {
                     let ev_time = w.event.as_ref().and_then(|l| l.st.time);
                     let clock = crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32());
                     let minute = ev_time.and_then(|(h, _)| h).map_or(clock, |h| h as f32 * 60.0);
-                    let weather = ev_time.and_then(|(_, x)| x).unwrap_or(w.weather);
-                    // A 0x057 change blends the old weather's environment into the new one over its time (retail
-                    // weights the two weather objects; the linear weight is inferred).
-                    if w.weather_from.is_some_and(|(_, at, secs)| at.elapsed().as_secs_f32() >= secs) {
-                        w.weather_from = None;
+                    // thunk_FUN_1018ade0: each weather object blends its child chain's output into its own env by
+                    // (total - left) / total; a finished one drops the chain before it. Op 0x77's weather stands alone.
+                    if let Some(k) = w.weather_chain.iter().rposition(|c| c.2 <= 0.0 || c.1.elapsed().as_secs_f32() >= c.2) {
+                        w.weather_chain.drain(..k);
                     }
-                    let blend = w.weather_from.filter(|_| ev_time.and_then(|(_, x)| x).is_none()).map(|(from, at, secs)| (crate::dat::weather::weather_tag(from), (at.elapsed().as_secs_f32() / secs).clamp(0.0, 1.0)));
-                    let tag = crate::dat::weather::weather_tag(weather);
-                    let mix = |a: &dyn Fn(&str) -> Option<crate::dat::weather::Env>| -> Option<crate::dat::weather::Env> {
-                        let now = a(tag)?;
-                        Some(match blend.and_then(|(from, t)| Some((a(from)?, t))) {
-                            Some((old, t)) => crate::dat::weather::Env::lerp(&old, &now, t),
-                            None => now,
-                        })
+                    let chain: Vec<(&str, f32)> = match ev_time.and_then(|(_, x)| x) {
+                        Some(x) => vec![(crate::dat::weather::weather_tag(x), 1.0)],
+                        None if w.weather_chain.is_empty() => vec![(crate::dat::weather::weather_tag(w.weather), 1.0)],
+                        None => w.weather_chain.iter().map(|c| (crate::dat::weather::weather_tag(c.0), if c.2 <= 0.0 { 1.0 } else { (c.1.elapsed().as_secs_f32() / c.2).min(1.0) })).collect(),
                     };
-                    r.lighting = mix(&|t| zw.at(t, minute)).map(|e| crate::dat::weather::Lighting::from_env(&e, minute));
+                    let mix = |a: &dyn Fn(&str) -> Option<crate::dat::weather::Env>| -> Option<crate::dat::weather::Env> {
+                        let mut env = a(chain[0].0)?;
+                        for &(tag, t) in &chain[1..] {
+                            if let Some(e) = a(tag) {
+                                env = crate::dat::weather::Env::lerp(&env, &e, t);
+                            }
+                        }
+                        Some(env)
+                    };
+                    // FUN_10187720 once a 2-tick retail frame (stock 30 fps), held between them.
+                    w.light_acc += dt * 60.0;
+                    let mut steps = 0;
+                    while w.light_acc >= 2.0 && steps < 8 {
+                        w.light_acc -= 2.0;
+                        steps += 1;
+                    }
+                    w.light_acc = w.light_acc.min(2.0);
+                    let step = |ease: &mut crate::dat::weather::LightEase, e: &crate::dat::weather::Env| {
+                        for _ in 0..steps {
+                            ease.step(e, minute);
+                        }
+                        crate::dat::weather::Lighting::from_env_eased(e, minute, ease)
+                    };
+                    r.lighting = mix(&|t| zw.at(t, minute)).map(|e| step(&mut w.light_ease, &e));
+                    if steps > 0 {
+                        log::debug!(target: "light", "{minute:.3}: bg dir {:.3} colour {:.4}", w.light_ease.bg.dir, w.light_ease.bg.color);
+                    }
                     let sub_areas = w.sub.weather.iter().flat_map(|s| s.areas.iter());
                     w.area_lights = zw.areas.iter().chain(sub_areas).filter_map(|(&id, a)| Some((id, mix(&|t| a.at(t, minute))?.area_light()))).collect();
-                    // Scenery areas (FUN_101889c0 finds the area object by 4cc, the sub-area's after the zone's).
-                    let env = |k: &u32| w.sub.weather.as_ref().and_then(|s| s.areas.get(k)).or_else(|| zw.areas.get(k)).and_then(|a| mix(&|t| a.at(t, minute)));
-                    let lights = r.area_keys().iter().map(|k| env(k).map(|e| crate::dat::weather::Lighting::from_env(&e, minute))).collect();
+                    // Scenery areas (FUN_101889c0 finds the area object by 4cc, the sub-area's after the zone's), each
+                    // with its own eased light.
+                    let keys: Vec<u32> = r.area_keys().to_vec();
+                    let mut lights = Vec::with_capacity(keys.len());
+                    for k in keys {
+                        let sub = w.sub.weather.as_ref().and_then(|s| s.areas.get(&k));
+                        let e = sub.or_else(|| zw.areas.get(&k)).and_then(|a| mix(&|t| a.at(t, minute)));
+                        lights.push(e.map(|e| step(w.area_ease.entry((sub.is_some(), k)).or_default(), &e)));
+                    }
                     r.set_area_lights(lights);
                 }
                 // Op 0x10: the frame before the cut, drawn once offscreen from the camera it had (last frame's

@@ -37,6 +37,10 @@ pub trait Actors {
     fn scale(&self, id: u32) -> f32;
     /// Equipment part files (vtable +0x1ec), and the motion files newest first followed by the model's files.
     fn files(&self, id: u32) -> (Vec<u32>, Vec<u32>);
+    /// Event op 0xac sub 2 (+0x138 bit 31) with the model hidden: the actor's scheduler sounds are skipped.
+    fn sound_muted(&self, _id: u32) -> bool {
+        false
+    }
     /// The model's own files (vtable +0x1e0), without the motion files.
     fn model_files(&self, id: u32) -> Vec<u32> {
         self.files(id).1
@@ -922,6 +926,8 @@ pub struct Effects {
     pub screen_ops: Vec<(u8, [u8; 4], f32, f32)>,
     /// Ops 0x79 / 0x8c / 0xa4 / 0xa5: actor1's battle / idle / run / walk motion set (motion::MotionNames::apply).
     pub motion_sets: Vec<(u32, u8, u32)>,
+    /// Op 0xab: actor1's entity +0x130 bit 4 (its motion bases reset at each model creation).
+    pub base_resets: Vec<(u32, bool)>,
     /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
     pub death_picks: Vec<(u32, u8)>,
     /// The voyage matrix (DAT_10631ed0, FUN_10178b30) attach modes 0x14 / 0x15 take: identity off a ship's voyage.
@@ -946,6 +952,10 @@ pub struct Effects {
     pub sound_cmds: Vec<sound::SoundCmd>,
     alive: HashSet<u32>,
     next_voice: u32,
+    /// FUN_10036460's start list this retail frame: ticks into the frame, SeSep resources started.
+    start_window: (f32, Vec<(usize, usize)>),
+    /// DAT_104638f4: the 2239 / 2063 voice playing.
+    solo: Option<u32>,
 }
 
 /// One weather's generators (FUN_10183780): its tag, crossfade length and what is left of it (seconds).
@@ -1042,6 +1052,7 @@ impl Effects {
             door_moves: Vec::new(),
             screen_ops: Vec::new(),
             motion_sets: Vec::new(),
+            base_resets: Vec::new(),
             death_picks: Vec::new(),
             voyage: Mat4::IDENTITY,
             lift_moves: Vec::new(),
@@ -1058,6 +1069,8 @@ impl Effects {
             sound_cmds: Vec::new(),
             alive: HashSet::new(),
             next_voice: 0,
+            start_window: (0.0, Vec::new()),
+            solo: None,
         }
     }
 
@@ -1478,6 +1491,7 @@ impl Effects {
             let s = self.sounds.swap_remove(k);
             if s.handle != 0 {
                 self.sound_cmds.push(sound::SoundCmd::Stop { handle: s.handle, ticks: s.fade as i32 });
+                self.voice_ended(s.handle);
             }
         }
         if let Some(run) = c.parts {
@@ -2064,6 +2078,7 @@ impl Effects {
         let Some(r) = found else { return };
         let Some((se, loops)) = sound::sesep(self.reg.libs[r.0].data(r.1)) else { return };
         let mut s = sound::Sound::new(se, loops);
+        s.res = r;
         s.pos = pos;
         s.pan_in = 0.0;
         s.vol = level;
@@ -2078,8 +2093,14 @@ impl Effects {
     /// The manager pass FUN_10035410 / FUN_100356c0 over every sound: volume and pan for the eye, voices started,
     /// updated, restarted (persistent) or let go; at most 20 distinct sounds start a frame, repeats of one free
     /// (FUN_10036460).
+    /// FUN_10036b90 / FUN_10036af0: a voice of the one-at-a-time ids stopping frees the flag.
+    fn voice_ended(&mut self, handle: u32) {
+        if self.solo == Some(handle) {
+            self.solo = None;
+        }
+    }
+
     fn step_sounds(&mut self, f: &Frame) {
-        let mut started: Vec<u32> = Vec::new();
         let mut gone = Vec::new();
         for k in 0..self.sounds.len() {
             let s = &self.sounds[k];
@@ -2113,7 +2134,8 @@ impl Effects {
                 if s.persistent() {
                     if s.handle != 0 {
                         self.sound_cmds.push(sound::SoundCmd::Stop { handle: s.handle, ticks: 0 });
-                        s.handle = 0;
+                        let h = std::mem::take(&mut s.handle);
+                        self.voice_ended(h);
                     }
                 } else {
                     gone.push(k);
@@ -2121,12 +2143,23 @@ impl Effects {
                 continue;
             };
             if s.handle == 0 {
-                if !started.contains(&s.se) && started.len() >= 20 {
+                // FUN_10036460: 20 SeSep resources a pass; once full every start waits, repeats too.
+                if self.start_window.1.len() >= 20 {
                     continue;
                 }
-                started.push(s.se);
+                // FUN_10038330: 2239 / 2063 wait while one of them plays.
+                let solo = sound::ONE_AT_A_TIME.contains(&s.se);
+                if solo && self.solo.is_some() {
+                    continue;
+                }
+                if !self.start_window.1.contains(&s.res) {
+                    self.start_window.1.push(s.res);
+                }
                 self.next_voice = self.next_voice.wrapping_add(1).max(1);
                 s.handle = self.next_voice;
+                if solo {
+                    self.solo = Some(s.handle);
+                }
                 s.last_vol = v;
                 s.last_pan = pan;
                 s.grace = sound::GRACE_TICKS;
@@ -2144,10 +2177,17 @@ impl Effects {
                 }
             } else if s.persistent() {
                 // Over: a persistent sound starts again next pass (loop by re-trigger).
-                s.handle = 0;
+                let h = std::mem::take(&mut s.handle);
+                self.voice_ended(h);
             } else {
                 gone.push(k);
             }
+        }
+        // FUN_10036230 clears FUN_10036460's start list at the end of its pass, once a retail frame (2 ticks).
+        self.start_window.0 += f.dt;
+        if self.start_window.0 >= 2.0 {
+            self.start_window.0 = (self.start_window.0 - 2.0).min(2.0);
+            self.start_window.1.clear();
         }
         // FUN_10035cd0: a generator's sound element that goes (voice over, out of range) fades its voice over the
         // element's life; drop_elem does it and removes the sound. Scheduler sounds play out.
@@ -2161,7 +2201,8 @@ impl Effects {
                     self.drop_elem(e);
                 }
                 None => {
-                    self.sounds.swap_remove(k);
+                    let s = self.sounds.swap_remove(k);
+                    self.voice_ended(s.handle);
                 }
             }
         }

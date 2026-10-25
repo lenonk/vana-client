@@ -98,6 +98,8 @@ pub struct Marks {
     pub charm: bool,
     pub trust: bool,
     pub npc_pet: bool,
+    /// u8 @0x28 bit 3 (entity +0x12f bit 0): LSB sets it for a monster still with HP in its death animation.
+    pub death_flag: bool,
     pub b2b1: bool,
     pub alleg: u8,
     pub gm: u8,
@@ -763,6 +765,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
                 charm: p.u8(0x27) & 0x08 != 0,
                 trust: p.u8(0x28) & 0x01 != 0,
                 npc_pet: p.u8(0x28) & 0x40 != 0,
+                death_flag: p.u8(0x28) & 0x08 != 0,
                 b2b1: p.u8(0x2B) & 0x02 != 0,
                 alleg: p.u8(0x29),
                 gm: p.u8(0x23) & 7,

@@ -710,17 +710,23 @@ pub(super) fn react_op(w: &mut World, r: &crate::fx::React) {
     a.overlay = Some(actmotion::Overlay { name: name.to_string(), ticks: 0.0, weight, cycles: r.count.clamp(1, 255) as u8, fade: r.fade, rate: if r.rate > 0.0 { r.rate } else { 1.0 }, blend_in: r.blend_in });
 }
 
-/// Table 0x1032d5f0: the death scheduler by entity +0x130 bits 5..6 (op 0xac).
-pub(super) fn death_scheduler(pick: u8) -> &'static str {
-    ["dead", "1ead", "2ead", "3ead"][(pick & 3) as usize]
+/// FUN_1008c6c0: `sdep` for a trust (+0x12c bit 22) or with entity +0x12f bit 0, else table 0x1032d5f0 by entity
+/// +0x130 bits 5..6 (op 0xac).
+pub(super) fn death_scheduler(pick: u8, sdep: bool) -> &'static str {
+    if sdep { "sdep" } else { ["dead", "1ead", "2ead", "3ead"][(pick & 3) as usize] }
+}
+
+/// The entity's `sdep` flags (0x00D / 0x00E u8 @0x28 bits 0 and 3).
+pub(super) fn sdep(w: &World, id: u32) -> bool {
+    w.entities.get(&id).is_some_and(|e| e.marks.trust || e.marks.death_flag)
 }
 
 /// A server status taking effect on an actor (+0x170 from +0x16c): falling dead plays the death; ours goes to the
 /// session state too. The server prints the defeat (0x029 #97 / #20).
 /// FUN_1008c6c0: the scheduler an applied status change runs: a model-id actor leaving battle `bton`, engaging
-/// `ntob`; a death the pick's (death_scheduler; its ded? / cor? are die()'s, so the task's motions are off). Not done:
-/// `sdep`, fishing.
-pub(super) fn status_schedulers(fx: &mut crate::fx::Effects, actors: &std::collections::HashMap<u32, Actor>, id: u32, old: u8, new: u8) {
+/// `ntob`; a death the pick's (death_scheduler; its ded? / cor? are die()'s, so the task's motions are off), or
+/// `sdep` with its own motions (vtable +0x298). Not done: fishing.
+pub(super) fn status_schedulers(fx: &mut crate::fx::Effects, actors: &std::collections::HashMap<u32, Actor>, id: u32, old: u8, new: u8, sdep: bool) {
     if old == new {
         return;
     }
@@ -732,19 +738,25 @@ pub(super) fn status_schedulers(fx: &mut crate::fx::Effects, actors: &std::colle
         fx.on_scheduler(id, id, u32::from_le_bytes(*b"ntob"));
     }
     if matches!(new, 2 | 3) && !matches!(old, 2 | 3) {
-        let name = death_scheduler(actors.get(&id).map_or(0, |a| a.death_pick));
-        fx.on_scheduler_quiet(id, u32::from_le_bytes(name.as_bytes().try_into().unwrap()));
+        let name = death_scheduler(actors.get(&id).map_or(0, |a| a.death_pick), sdep);
+        let n = u32::from_le_bytes(name.as_bytes().try_into().unwrap());
+        if sdep {
+            fx.on_scheduler(id, id, n);
+        } else {
+            fx.on_scheduler_quiet(id, n);
+        }
     }
 }
 
 pub(super) fn apply_status(w: &mut World, id: u32, status: u8) {
     let was = if id == w.my_id { w.my_motion.status } else { w.entities.get(&id).map_or(0, |e| e.motion.status) };
-    status_schedulers(&mut w.effects, &w.actors, id, was, status);
+    let sd = sdep(w, id);
+    status_schedulers(&mut w.effects, &w.actors, id, was, status, sd);
     if matches!(status, 2 | 3)
         && !matches!(was, 2 | 3)
         && let Some(a) = w.actors.get_mut(&id)
     {
-        die(a);
+        die(a, sd);
     }
     if id == w.my_id {
         w.my_motion.status = status;
@@ -871,9 +883,13 @@ pub(super) fn guard_op(w: &mut World, g: &crate::fx::Guard) {
 
 /// Death: the actor's death scheduler (dead, or the op 0xac pick's) plays "ded?" for its op length, then the corpse
 /// loop takes over; a picked one without a motion (the Ghrah's `1ead`) plays none.
-pub(super) fn die(actor: &mut Actor) {
+/// The death's motion from the death scheduler's plan; `sdep` plays its own through fx.
+pub(super) fn die(actor: &mut Actor, sdep: bool) {
     let Some(ch) = actor.character.clone() else { return };
-    let which = death_scheduler(actor.death_pick);
+    if sdep {
+        return;
+    }
+    let which = death_scheduler(actor.death_pick, false);
     let plan = actmotion::scheduler(&actor.extra, &ch, which).map(|d| sched::plan(d, &[]));
     let (name, len, speed) = match plan.as_ref().and_then(|p| p.motions.first()) {
         Some(m) => (m.name.clone(), m.ticks as f32, actmotion::op_rate(actmotion::find(&actor.extra, &ch, &m.name).first().copied(), m.ticks as f32)),
@@ -1222,7 +1238,8 @@ mod tests {
     /// Table 0x1032d5f0 by the pick's low two bits.
     #[test]
     fn death_schedulers() {
-        assert_eq!([0, 1, 2, 3, 5].map(death_scheduler), ["dead", "1ead", "2ead", "3ead", "1ead"]);
+        assert_eq!([0, 1, 2, 3, 5].map(|p| death_scheduler(p, false)), ["dead", "1ead", "2ead", "3ead", "1ead"]);
+        assert_eq!((death_scheduler(0, true), death_scheduler(1, true)), ("sdep", "sdep"));
     }
 
     /// FUN_1009e700: us before the party, the party (same party number) before the alliance, the caster first.
