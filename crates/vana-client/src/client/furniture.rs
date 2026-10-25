@@ -24,6 +24,8 @@ pub struct State {
     pub ready: Option<Loaded>,
     /// The drawn pieces for the effects (FUN_10085060's model generators, 'init'): id, model file, matrix.
     pub pieces: Vec<(u32, u32, glam::Mat4)>,
+    /// Skinned pieces (CXiSklFurnitureActor): actor id, position, yaw.
+    pub skinned: Vec<(u32, Vec3, f32)>,
 }
 
 impl State {
@@ -32,7 +34,13 @@ impl State {
         self.want.clear();
         self.ready = None;
         self.pieces.clear();
+        self.skinned.clear();
         self.seq += 1;
+    }
+
+    /// A skinned piece's place.
+    pub fn place_of(&self, id: u32) -> Option<(Vec3, f32)> {
+        self.skinned.iter().find(|s| s.0 == id).map(|s| (s.1, s.2))
     }
 
     /// A loaded set goes up: its pieces get ids (XiFurnitureActor's entity: 0x04000000 | an index down from 0x3ff)
@@ -48,6 +56,15 @@ impl State {
             if init {
                 w.effects.on_scheduler_quiet(id, u32::from_le_bytes(*b"init"));
             }
+        }
+        // FUN_100ab2f0 kind 2: a skinned model of the same file formula, an actor at the piece's place.
+        for (id, _, _) in std::mem::take(&mut w.furniture.skinned) {
+            w.actors.remove(&id);
+        }
+        for (k, &(file, pos, yaw)) in l.skinned.iter().enumerate() {
+            let id = 0x0400_0000 | (0x3ff - (l.pieces.len() + k) as u32);
+            w.furniture.skinned.push((id, pos, yaw));
+            w.event_looks.push((id, super::Source::File(file)));
         }
         l.files
     }
@@ -66,6 +83,8 @@ pub struct Loaded {
     pub boxes: Vec<(glam::Mat4, Vec3)>,
     /// Every piece's mesh triangles in world space (the camera ray).
     pub meshes: Vec<Vec<[Vec3; 3]>>,
+    /// Skinned pieces: model file, position, yaw.
+    pub skinned: Vec<(u32, Vec3, f32)>,
 }
 
 /// FUN_101d2b10's item types: furnishing 10, flowerpot 12 (mannequins, 14, are a race body: not drawn yet).
@@ -159,15 +178,20 @@ fn model_tris(m: &crate::dat::zone::Model) -> Vec<[Vec3; 3]> {
 
 /// The loader thread: each piece's model file (the 'furn' entry, FUN_101cce00) and place, a pot's plant model (kind
 /// exdata[4], stage exdata[0]) 0.3 above it; then per file its first MMB (FUN_100c4410) with a placement per piece.
-/// Skinned pieces (models 0x108..0x12b: statues, campfires) are not drawn yet.
+/// Skinned pieces (models 0x108..0x12b: statues, campfires) become actors.
 pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, floor: u8) -> Result<Loaded> {
     let table = FurnTable::load(index)?;
     let mut by_file: BTreeMap<u32, Vec<(Vec3, f32)>> = BTreeMap::new();
     let mut boxes = Vec::new();
+    let mut skinned = Vec::new();
     for &(_, _, item, ext) in want {
         let Some(f) = table.entry(item) else { continue };
-        let Some(file) = model_file(f.model).filter(|_| !(0x108..=0x12b).contains(&f.model)) else { continue };
+        let Some(file) = model_file(f.model) else { continue };
         let (pos, yaw) = place(&f, map, floor, ext[6] as i8, ext[7] as i8, ext[8] as i8, ext[9]);
+        if (0x108..=0x12b).contains(&f.model) {
+            skinned.push((file, pos, yaw));
+            continue;
+        }
         log::debug!("furniture {item:#x}: file {file}, {pos:?} yaw {yaw:.2}");
         by_file.entry(file).or_default().push((pos, yaw));
         let m = Placement { name: String::new(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2] }.matrix();
@@ -208,7 +232,7 @@ pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, flo
         files.push((Arc::new(geo), std::mem::take(&mut scene.textures)));
     }
     log::info!("furniture: {} pieces in {} files", want.len(), files.len());
-    Ok(Loaded { seq, files, pieces, boxes, meshes })
+    Ok(Loaded { seq, files, pieces, boxes, meshes, skinned })
 }
 
 #[cfg(test)]

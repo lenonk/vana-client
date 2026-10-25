@@ -3405,6 +3405,10 @@ fn turn_rate(a: &Actor, in_event: bool) -> f32 {
 /// An actor's place; a riding animal stands at its rider's (FUN_100c8ed0), a rider on a mount moves by its offset and
 /// yaw (FUN_100c9330; zero on a chocobo).
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
+    // Skinned furniture stands at its piece's place (client/furniture.rs).
+    if let Some((pos, yaw)) = w.furniture.place_of(id) {
+        return Some(Place { pos, forward: Vec3::new(yaw.cos(), 0.0, -yaw.sin()), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
+    }
     if id & ride::ANIMAL != 0 {
         if let Some((pos, forward)) = ride::left_at(w, id) {
             return Some(Place { pos, forward, tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });

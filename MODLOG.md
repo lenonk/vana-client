@@ -8263,6 +8263,9 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   y -1.0, bottom height x 0.01 / 2 below the origin, table 0x103769c8 with its (2, 6, 5) triangle, normals 0x10376a28.
   Camera (FUN_1016b1d0): after the zone mesh, every piece's mesh triangles (plants too) while config 0x99 bit 6 is
   clear (/furcc on). Ground::set_furniture. Live: walking at the Simple Bed stops at its edge.
-- Not done: skinned furniture (models 0x108..0x12b: statues, campfires),
-  mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
+- Skinned furniture (models 0x108..0x12b: statues, Yovra Replica, campfires; FUN_100ab2f0 kind 2,
+  CXiSklFurnitureActor): an actor (id after the MMB pieces') loading the same file formula through Source::File,
+  standing at the piece's place and idling. Live: the Prishe Statue (277) on its pedestal. Its 'pop0' / 'init' are
+  not started *(inf: retail plays them as a server NPC's)*.
+- Not done: mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
 
