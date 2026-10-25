@@ -6928,3 +6928,27 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` part B; ours client/bazaar.rs, sh
 - Live (Lnxcsfix in Metalworks): worn gear grey, Fire Crystal priced 3 ("3 G") and back to 0 (char_inventory.bazaar
   0 again), the editor opened and closed unchanged (nothing sent; bazaar_message still NULL).
 - Not done: the name's bazaar glyph (0x9c), the row disabled in Monstrosity, the buyer side (View Wares).
+
+## Help Desk: "menu    faqsub" (2026-10-24)
+
+Spec `~/ffxi/lab/research/social_rows_spec.md` part H (H1, H2); ours client/helpdesk.rs.
+- Social child 8 (FUN_102174c0, SE 0002) and /helpdesk, /supportdesk (0x54, FUN_1007d3c0): faqsub (group 0x1c) beside
+  the social page, which stays drawn unfocused; title slot 2 group 9 0xdd "Help Desk". faqsub draws its own text, not
+  its children: from the content origin (rect + (8, 10), rect height - 5; right pad 0x1c, bottom 0x14) each entry 10
+  below the last, rows indented 0x14 and wrapped to the width - 0x1c - 0x14 - 10, 16 px lines (FUN_10216d30); markers
+  at (x - 16, y): the hand on the cursor row, framesus 35 at y + 4 on the other rows (FUN_102167d0). The scroll keeps
+  the cursor row inside; the bar at x1 - 8.
+- Menu page (FUN_102133c0 / FUN_102136d0; its header has no height): Q&A, its keyword box (the label 9 0xc4 at
+  indent 0x28, then a 14 px field), Adventuring Primer, Mentor Search, Help Desk, Config, Back; group 9 texts by the
+  table FUN_10216a50. Help slot 2 per row (0xd5, 0x12c, 0xd8, 0xd7, 0xd9, none on Back); slot 1 stays empty.
+- Q&A searches PlayOnline's knowledge base (kb_faq*.pib / .pfb through the host DLL): never loaded here, so the row
+  and its box are grey (0x80404040) and Enter plays SE 0004, as retail does when the files fail to load.
+- Mentor Search (FUN_10216500): a search of all areas with status flag 1 into the results window.
+- Config page (FUN_102157c0 / FUN_10215a50): the "Config" header (drawn), Enable / Disable Mentor Status, Cancel New
+  Adventurer Status, the terms (not a row), Back. Rows enabled by the 0x0B4 byte @7 (bit 0 mentor unlocked, 1 mentor
+  on, 2 new adventurer off), else grey (Enter SE 0004). Enable / Disable send c2s 0x0DC which 8 (@7 |= 2) set / clear;
+  Cancel asks group 9 0xd4 (cursor on No) and Yes sends which 9 (@7 |= 4) with SE 0002. Escape / Back return to the
+  menu page; Escape there closes faqsub.
+- Live (Lnxcsfix): the menu page beside the social page, Q&A refused, the Config page (mentor rows grey, the terms
+  wrapped and scrolled to Back), Mentor Search (0 results on LSB). Not done: the Adventuring Primer (guide00), the GM
+  call (faqmain, DAT 5813's script), the keyword box's field frame, the mouse.

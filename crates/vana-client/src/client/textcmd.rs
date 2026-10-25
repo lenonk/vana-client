@@ -116,6 +116,7 @@ mod id {
     pub const LAYOUTCTRL: u16 = 0x85;
     pub const STATUSPARTY: u16 = 0x86;
     pub const FOCUSTARGET: u16 = 0x87;
+    pub const HELPDESK: u16 = 0x54;
     pub const STATUSTIMER: u16 = 0x88;
     pub const GTST: u16 = 0x89;
     pub const YELLSW: u16 = 0x91;
@@ -986,6 +987,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
+        // FUN_1007d3c0 (/helpdesk, /supportdesk): faqsub when it is not open.
+        id::HELPDESK => {
+            super::helpdesk::open(w);
+            Ok(())
+        }
         // FUN_1007ec90: config 0xc4 (atoi, 1..100), or the current value.
         id::GTST => {
             let Some(bt) = w.battle.clone() else { return Ok(()) };
@@ -1491,6 +1497,9 @@ pub(super) fn config_flag(w: &World, which: u8, set: bool) {
         0 => b[0] = 4,
         1 => b[0] = 2,
         6 => b[1] = 0x80,
+        // The mentor flags (Help Desk's Config page): mentor on, new adventurer off.
+        8 => b[3] = 2,
+        9 => b[3] = 4,
         0xb => b[3] = 0x20,
         _ => b[0] = 1,
     }
