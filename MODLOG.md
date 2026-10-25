@@ -7757,3 +7757,26 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   +0xa00 == 0) are not traced. Dolls keep the point with the actor's turn. 152 files use mode 9 (weapon and limb
   effects that turn with the swing). Not seen live yet.
 
+## Camera shake and rumble: element update op 0x5f (2026-10-25; spec ~/ffxi/lab/research/fx_shake_spec.md)
+
+- Op 0x5f (FUN_1004a980 0x1004c0d9; words near, far, optional factor): skipped whole when "Screen shaking" is off
+  (config 0x92 bit 17) outside events (FUN_10087070(0)); |sort key| > far skips; d = |element world position (+ the
+  eye with op-1 flag bit 2) - eye|, k = 1 within near, linear to 0 at far; v = max(0, trunc(key(S[s], t) x S[s+2] x
+  k x 255)) adds to the pad's rumble; with the factor, FUN_10021ba0(cam, v x factor) kicks the view shake.
+- Emission op 0x82 binds the slot: key, sampler flags, and S[s+2] = the player factor (FUN_1003c7d0): b = actor1
+  (unless flags @0x14 & 2) or actor2 (unless & 4) is us; flags & 1 clear: 1 if b, else f32 @0x10 or 0.5; set: 1
+  unless b, else @0x10 or 1. Ours left S[s+2] at 0 before.
+- The view shake (camera +0x7c x, +0x80 speed, +0x84 scale): the kick sets x and scale 1 only at rest, and the speed
+  to a / 8 when 2|speed| < a (FUN_10021ba0); the integrator (FUN_10021900, once a frame, n = whole ticks, 2 at stock
+  30 fps) runs x toward 0 by n x speed and on crossing it bounces 0.86 of the overshoot back at an eighth of it a tick
+  with a new scale in [0, 2), stopping under 1e-4; the view (FUN_10021c10) nudges the unit look direction's y by scale x
+  x (a nod in world y) and rebuilds the view; eye / look are never changed. Every view shakes (free, locked, first
+  person, events); a zone load resets it (FUN_1018b500 -> FUN_1001e4f0).
+- Ours: op 0x5f runs on the CPU per element after the lives (Effects::step_quakes; ElemCpu::quake from the generator's
+  update stream at spawn); Effects::quakes (this frame's kicks) and Effects::rumble (kept for a pad backend; none
+  exists); camera::Shake stepped in 2-tick retail frames, held between them (shake_step after camera::step), applied in
+  App::camera after the event or game view, never written back; reset at zone-in. Test shake_follows_retail_frames
+  against the spec's table for 3445 gob_/vib1. fx-sweep --only prints the kicks: 3445 gives 49, the largest 0.055.
+- 1263 files carry a shake factor (mostly mob moves). Not seen live yet (the test bee could not use a move that
+  shakes).
+

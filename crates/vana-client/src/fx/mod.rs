@@ -173,6 +173,8 @@ pub struct Frame {
 /// The CPU side of a live element (the GPU holds the rest).
 #[derive(Clone, Debug)]
 pub struct ElemCpu {
+    /// Element update op 0x5f's inputs (camera shake, rumble), evaluated on the CPU.
+    pub quake: Option<Quake>,
     pub inst: usize,
     pub serial: u32,
     pub life: f32,
@@ -379,6 +381,20 @@ pub struct Registry {
     missed: HashSet<(usize, u32)>,
     /// fx-sweep's record of what runs skipped or could not resolve (off in the client).
     pub audit: Option<Audit>,
+}
+
+/// Element update op 0x5f (FUN_1004a980 0x1004c0d9): the slot's key and sampler flags, the player factor (op 0x82),
+/// the spawn position, near / far, the shake factor (0 for the three-word form), op-1 flag bit 2 (eye-relative).
+#[derive(Clone, Copy, Debug)]
+pub struct Quake {
+    pub key: u32,
+    pub prm: u32,
+    pub s2: f32,
+    pub pos: Vec3,
+    pub near: f32,
+    pub far: f32,
+    pub factor: f32,
+    pub eye_rel: bool,
 }
 
 /// The actor shine overlay (CXiSkeletonActor +0x734 bit 0): the image (+0x750; with the drive that set it), U / V
@@ -777,6 +793,11 @@ pub struct Effects {
     sounds: Vec<sound::Sound>,
     /// Config 0x92 (the Effects filter) and whether the player's status is 1 or 3 (FUN_100ac4b0's bit-0 gate).
     pub filter: (u32, bool),
+    /// In an event or cutscene (FUN_10087070(0)): op 0x5f ignores the "Screen shaking" filter.
+    pub in_event: bool,
+    /// This frame's op 0x5f camera kicks (v x factor, element order) and rumble (the sum of v, for a pad backend).
+    pub quakes: Vec<f32>,
+    pub rumble: i32,
     /// Footstep dust to start next tick: generator and actor; actors that left a footprint.
     dust: Vec<(Ref, u32)>,
     prints: Vec<u32>,
@@ -863,6 +884,9 @@ impl Effects {
             covered: false,
             sounds: Vec::new(),
             filter: (0, false),
+            in_event: false,
+            quakes: Vec::new(),
+            rumble: 0,
             dust: Vec::new(),
             prints: Vec::new(),
             sound_cmds: Vec::new(),
@@ -1369,6 +1393,7 @@ impl Effects {
                 self.expire(e as u32, f, actors);
             }
         }
+        self.step_quakes(f);
         for i in 0..self.insts.len() {
             let Some(inst) = self.insts[i].as_mut() else { continue };
             attach(inst, f);
@@ -1487,7 +1512,8 @@ impl Effects {
         });
         let mut spawns = Vec::new();
         for _ in 0..emissions.min(512) {
-            if let Some(s) = emit::emit(&mut self.reg, &mut inst, parent.as_ref(), f, &mut self.rng, &|a, b| actors.ground_hit(a, b)) {
+            let me = self.me_pair(&inst, actors);
+            if let Some(s) = emit::emit(&mut self.reg, &mut inst, parent.as_ref(), f, &mut self.rng, &|a, b| actors.ground_hit(a, b), me) {
                 spawns.push(s);
             }
         }
@@ -1516,6 +1542,57 @@ impl Effects {
             attach: x.attach,
             actors: x.actors,
         })
+    }
+
+    /// Whether the instance's actor1 / actor2 (dolls as their owners) is our player (FUN_1003b8b0 / vtable +0x304).
+    fn me_pair(&self, inst: &Instance, actors: &dyn Actors) -> [bool; 2] {
+        let p = actors.player();
+        inst.actors.map(|w| p.is_some() && self.doll_of(w).id() == p)
+    }
+
+    /// A keyframe by GPU id with its sampler flags (0: linear, else eased), 0 for none.
+    fn sample_key(&self, id: u32, prm: u32, x: f32) -> f32 {
+        self.reg.key_desc.get(id as usize).map_or(0.0, |d| {
+            crate::dat::generator::KeyFrame { keys: self.reg.key_data[d[0] as usize..(d[0] + d[1]) as usize].iter().map(|p| (p[0], p[1])).collect() }.sample(x, prm & 0xf != 0)
+        })
+    }
+
+    /// Element update op 0x5f each frame, after the lives: |sort key| > far skips; k from the distance to the eye
+    /// (1 within near, 0 at far); v = trunc(key(t) x S2 x k x 255) >= 0 to the rumble, v x factor a camera kick.
+    /// Skipped with "Screen shaking" off (config 0x92 bit 17) outside events.
+    fn step_quakes(&mut self, f: &Frame) {
+        self.quakes.clear();
+        self.rumble = 0;
+        if !self.in_event && self.filter.0 & (1 << 17) != 0 {
+            return;
+        }
+        for e in 0..self.elems.len() {
+            let Some(c) = self.elems[e].as_ref() else { continue };
+            let Some(q) = c.quake else { continue };
+            if c.key.abs() > q.far {
+                continue;
+            }
+            let pf = self.parent_frame(c);
+            let sa = pf.as_ref().map_or(Vec3::ONE, |p| p.scale_a);
+            let mut p = pf.and_then(|p| p.matrix).map_or(q.pos * sa, |m| m.transform_point3(q.pos * sa));
+            if q.eye_rel {
+                p += f.eye;
+            }
+            let d = (p - f.eye).length();
+            let k = if d < q.near {
+                1.0
+            } else if d >= q.far {
+                continue;
+            } else {
+                1.0 - (d - q.near) / (q.far - q.near)
+            };
+            let t = if c.max_life == 0.0 { 0.0 } else { 1.0 - c.life / c.max_life };
+            let v = ((self.sample_key(q.key, q.prm, t) * q.s2 * k * 255.0) as i32).max(0);
+            self.rumble += v;
+            if q.factor != 0.0 {
+                self.quakes.push(v as f32 * q.factor);
+            }
+        }
     }
 
     fn add_elem(&mut self, inst: usize, s: emit::Spawn, f: &Frame, acts: &dyn Actors) {
@@ -1559,6 +1636,13 @@ impl Effects {
             // FUN_10035a90: generator sound elements never run out of life.
             cpu.max_life = 0.0;
             self.sounds.push(snd);
+        }
+        if let Some(x) = self.insts[inst].as_ref()
+            && let Some(op) = self.reg.libs[x.src.0].generator(x.src.1).and_then(|g| g.streams[2].iter().find(|o| o.code == 0x5f).cloned())
+        {
+            let k = op.slot as usize;
+            let factor = if op.words.len() >= 4 { op.f32(3) } else { 0.0 };
+            cpu.quake = Some(Quake { key: elem.s(k), prm: elem.s(k + 1), s2: f32::from_bits(elem.s(k + 2)), pos: elem.v3(w::POS), near: op.f32(1), far: op.f32(2), factor, eye_rel: cpu.flags & 4 != 0 });
         }
         elem.0[w::SERIAL] = self.serial;
         if let Some(m) = cpu.snapshot {
@@ -1696,7 +1780,8 @@ impl Effects {
         }
         self.ground_frame(i, actors);
         let Some(mut inst) = self.insts[i].take() else { return };
-        let spawn = emit::emit(&mut self.reg, &mut inst, None, f, &mut self.rng, &|a, b| actors.ground_hit(a, b));
+        let me = self.me_pair(&inst, actors);
+        let spawn = emit::emit(&mut self.reg, &mut inst, None, f, &mut self.rng, &|a, b| actors.ground_hit(a, b), me);
         inst.finished = true;
         self.insts[i] = Some(inst);
         if let Some(s) = spawn {

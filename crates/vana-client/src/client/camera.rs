@@ -30,6 +30,8 @@ const WHEEL_FOCAL: f32 = FOCAL_RATE * 2.0;
 /// The free camera's state beyond the eye and look in `World::cam`.
 #[derive(Default)]
 pub struct State {
+    /// Effect op 0x5f's view shake.
+    pub shake: Shake,
     /// The eye and look one tick ago, and ticks not yet stepped (the view is drawn between).
     prev: LockCam,
     acc: f32,
@@ -57,6 +59,83 @@ pub struct State {
     path_mode: bool,
     /// DAT_10456d80: ticks after a zone load that run the floor / ceiling / bar tests with the eye at rest.
     zone_in: i32,
+}
+
+/// The view shake (camera +0x7c offset, +0x80 speed, +0x84 scale; effect op 0x5f's kicks), stepped in retail frames
+/// of 2 ticks, held between them.
+#[derive(Default)]
+pub struct Shake {
+    x: f32,
+    speed: f32,
+    scale: f32,
+    acc: f32,
+    seed: u32,
+}
+
+impl Shake {
+    /// FUN_10021ba0: x and the scale only when at rest; the speed when a kick outruns it.
+    fn kick(&mut self, a: f32) {
+        if self.speed == 0.0 {
+            (self.scale, self.x) = (1.0, a);
+        }
+        if 2.0 * self.speed.abs() < a {
+            self.speed = a * 0.125;
+        }
+    }
+
+    /// FUN_10021900 over `n` ticks: x runs toward 0; crossing it, 0.86 of the overshoot bounces back at an eighth of
+    /// it a tick with a new scale in [0, 2) (FUN_1006bfd0); it stops once both are under 1e-4.
+    fn step(&mut self, n: f32) {
+        if self.x == 0.0 && self.speed == 0.0 {
+            return;
+        }
+        let s = n * self.speed;
+        if self.x > 0.0 {
+            self.x -= s;
+            if self.x >= 0.0 {
+                return;
+            }
+        } else {
+            self.x += s;
+            if self.x <= 0.0 {
+                return;
+            }
+        }
+        if self.x.abs() < 1e-4 && self.speed.abs() < 1e-4 {
+            (self.x, self.speed) = (0.0, 0.0);
+            return;
+        }
+        self.x *= 0.86;
+        self.speed = (self.x * 0.125).abs();
+        self.seed = self.seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+        self.scale = ((self.seed >> 8) % 200_000) as f32 * 1e-5;
+    }
+
+    /// FUN_10021c10: the unit look direction's y nudged by scale x, at the view build only.
+    pub fn apply(&self, c: &mut Camera) {
+        if self.x == 0.0 {
+            return;
+        }
+        let v = c.target - c.eye;
+        let d = (v.normalize_or_zero() + Vec3::Y * (self.scale * self.x)).normalize_or_zero();
+        c.target = c.eye + d * v.length();
+    }
+}
+
+/// Every frame, every view: this frame's op 0x5f kicks, then the integrator, in 2-tick steps (stock retail's n = 2).
+pub fn shake_step(w: &mut World, dt: f32) {
+    let sh = &mut w.camst.shake;
+    sh.acc += dt * 60.0;
+    while sh.acc >= 2.0 {
+        sh.acc -= 2.0;
+        for &a in &w.effects.quakes {
+            sh.kick(a);
+        }
+        sh.step(2.0);
+        if !w.effects.quakes.is_empty() {
+            log::trace!("camera shake: kicks {:?} x {:.4} speed {:.4} scale {:.2}", w.effects.quakes, sh.x, sh.speed, sh.scale);
+        }
+    }
 }
 
 impl State {
@@ -513,6 +592,19 @@ mod tests {
     }
 
     /// Far eyes are reeled in to 6 along their line, near ones pushed out to 3; between, the eye stays.
+    /// File 3445 gob_/vib1 (factor 0.0003, inside near): the first frames of fx_shake_spec.md 2.8, x and speed after
+    /// each 2-tick step.
+    #[test]
+    fn shake_follows_retail_frames() {
+        let mut sh = Shake::default();
+        let want = [(239, 0.0538, 0.0090), (239, 0.0359, 0.0090), (239, 0.0179, 0.0090), (224, 0.0011, 0.0084), (197, -0.0117, 0.0015)];
+        for (v, x, speed) in want {
+            sh.kick(v as f32 * 0.0003);
+            sh.step(2.0);
+            assert!((sh.x - x).abs() < 2e-4 && (sh.speed - speed).abs() < 2e-4, "{} {} want {x} {speed}", sh.x, sh.speed);
+        }
+    }
+
     #[test]
     fn spring_rests_between_3_and_6() {
         for (start, rest) in [(12.0f32, 6.0f32), (1.5, 3.0), (4.5, 4.5)] {

@@ -5724,6 +5724,8 @@ impl App {
                     world.pos_zone = zone;
                     world.unsettled = true;
                     log::info!("zone-in: zone {zone} at {:?} dir {dir}", pos);
+                    // FUN_1018b500 -> FUN_1001e4f0: the view shake stops at a zone load.
+                    world.camst.shake = camera::Shake::default();
                     // FUN_1008abe0: the event volume channels back to 1.0 at zone-in.
                     world.audio_cmds.push((0xf, 1.0, 0.0));
                     let f = forward_from_dir(dir);
@@ -6922,6 +6924,9 @@ impl App {
             log::info!("me t {:.4} steps {steps} y {:.4} drawn ({:.3}, {:.4}, {:.3}) eye ({:.3}, {:.4}, {:.3}) look ({:.3}, {:.4}, {:.3})", world.started.elapsed().as_secs_f32(), world.pos.y, world.draw_pos.x, world.draw_pos.y, world.draw_pos.z, c.eye.x, c.eye.y, c.eye.z, c.target.x, c.target.y, c.target.z);
         }
         camera::step(world, dt, &cam_in);
+        let in_event = event::active(world);
+        world.effects.in_event = in_event;
+        camera::shake_step(world, dt);
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && (cx != 0.0 || cy != 0.0 || (world.started.elapsed().as_secs_f32() * 2.0).fract() < dt * 2.0) {
             log::info!("cam t {:.3} eye {:.3} look {:.3} drawn {:.3} unlock {:.1} v6 {cx:.2} v7 {cy:.2} first {}", world.started.elapsed().as_secs_f32(), world.cam.eye, world.cam.look, world.draw_pos, world.unlock_ticks, world.camst.first);
         }
@@ -7242,7 +7247,9 @@ impl App {
     }
 
     fn camera(world: &World) -> Camera {
-        event::camera(world).unwrap_or_else(|| camera::view(world))
+        let mut c = event::camera(world).unwrap_or_else(|| camera::view(world));
+        world.camst.shake.apply(&mut c);
+        c
     }
 
     /// FUN_10083750: the actor under a cursor position and the actors whose screen rect holds it. Candidates

@@ -75,7 +75,9 @@ fn needs_no_resource(k: u8) -> bool {
 
 /// FUN_1004d920: builds one element from the instance's emission stream, or None when op 1's resource does not
 /// resolve (retail returns without emitting).
-pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f: &Frame, rng: &mut Rng, ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>) -> Option<Spawn> {
+/// `me`: whether the instance's actor1 / actor2 is our own player (emission op 0x82).
+#[allow(clippy::too_many_arguments)]
+pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f: &Frame, rng: &mut Rng, ground: &dyn Fn(Vec3, Vec3) -> Option<Vec3>, me: [bool; 2]) -> Option<Spawn> {
     let lib = inst.src.0;
     let from = inst.src.1;
     let stream = inst.streams[1].clone();
@@ -468,6 +470,23 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
                 }
             }
             // Keyframe bindings: S[s] = keyframe, S[s+1] = its parameter, S[s+2] = the base value.
+            // FUN_1004e8d0 0x10050cd2: op 0x5f's slot: the key, its sampler flags, and the player factor (FUN_1003c7d0):
+            // b = actor1 (unless flags @0x14 & 2) or actor2 (unless & 4) is us; flags & 1 clear: 1 if b, else f32
+            // @0x10 or 0.5; set: 1 unless b, else @0x10 or 1.
+            0x82 => {
+                e.set_s(s, key(reg, op));
+                e.set_s(s + 1, op.u32(3));
+                let (fl, p) = (op.u32(5), op.f32(4));
+                let b = (fl & 2 == 0 && me[0]) || (fl & 4 == 0 && me[1]);
+                let v = if fl & 1 == 0 {
+                    if b { 1.0 } else if p != 0.0 { p } else { 0.5 }
+                } else if !b || p == 0.0 {
+                    1.0
+                } else {
+                    p
+                };
+                e.set_sf(s + 2, v);
+            }
             0x21..=0x2f | 0x33..=0x39 | 0x59..=0x66 | 0x68 | 0x69 | 0x6c..=0x70 | 0x74..=0x78 | 0x7c | 0x7d | 0x80..=0x85 | 0x8b..=0x8d | 0x93 | 0x95..=0x97 => {
                 e.set_s(s, key(reg, op));
                 e.set_s(s + 1, op.u32(3));
@@ -627,6 +646,7 @@ pub fn emit(reg: &mut Registry, inst: &mut Instance, parent: Option<&Parent>, f:
     };
     e.0[w::PARENT] = frame;
     let cpu = ElemCpu {
+        quake: None,
         inst: usize::MAX,
         serial: 0,
         life,

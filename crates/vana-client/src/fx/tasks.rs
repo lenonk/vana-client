@@ -1263,7 +1263,7 @@ impl Effects {
     }
 
     /// The actor a doll stands for.
-    fn doll_of(&self, w: Who) -> Who {
+    pub(super) fn doll_of(&self, w: Who) -> Who {
         match w {
             Who::Doll(k) => self.dolls.get(k).map_or(w, |d| Who::Actor(d.of)),
             _ => w,

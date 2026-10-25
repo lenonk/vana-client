@@ -1827,10 +1827,12 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim as u16, ..Default::default() };
             let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }] };
             fx.on_action(&action, None);
-            let mut n = 0;
+            let (mut n, mut kicks, mut peak) = (0, 0usize, 0.0f32);
             while n < ticks {
                 fx.tick(&frame, &actors);
                 sync_fx_files(&mut fx, &actors.fx_files);
+                kicks += fx.quakes.len();
+                peak = fx.quakes.iter().copied().fold(peak, f32::max);
                 n += 1;
                 // Started (the file loads in the background) and nothing left to run.
                 if n > 30 && fx.task_count() == 0 && fx.pending_count() == 0 {
@@ -1839,6 +1841,7 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             }
             let left = fx.task_count();
             if !only.is_empty() {
+                println!("op 0x5f camera kicks: {kicks}, the largest {peak}");
                 let l = (0..3).find_map(|_| {
                     let l = fx.reg.lib_of(file);
                     if l.is_none() {
