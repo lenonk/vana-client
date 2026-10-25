@@ -3173,9 +3173,11 @@ fn drawn_pos(w: &World) -> Vec3 {
 /// physics steps, `t` of the way from the older one. Exact on a steady slope, one step late; it cancels the
 /// 3-step bob of running downhill (the ground move stays level, gravity catches up) and spreads step-ups.
 fn drawn_between_steps(h: &[Vec3; 4], t: f32) -> Vec3 {
-    let a = (h[0] + h[1] + h[2]) / 3.0;
-    let b = (h[1] + h[2] + h[3]) / 3.0;
-    a.lerp(b, t)
+    // As offsets from the middle step, so a player standing still is drawn exactly where they stand (a plain sum / 3
+    // wobbles in the last bit, and the camera and the name plate's pixel rounding with it).
+    let a = h[1] + (h[0] - h[1] + (h[2] - h[1])) / 3.0;
+    let b = h[2] + (h[1] - h[2] + (h[3] - h[2])) / 3.0;
+    a + (b - a) * t
 }
 
 /// The event input window (FUN_10206640) over the msgline rect: kinds 1..5 a group 0xb title, the text after it;
@@ -4184,7 +4186,9 @@ pub struct Drive {
     pub(crate) started: bool,
     pub(crate) zone_ready_at: Option<Instant>,
     pub(crate) shot_taken: bool,
-    /// `act:relogin`: the character is picked no sooner than this (time to photograph the select screen).
+    /// `act:relogin`: the next title opens Select Character, and the character is picked no sooner than
+    /// `pick_after` (time to photograph the select screen).
+    pub(crate) relogin: bool,
     pub(crate) pick_after: Option<Instant>,
 }
 
@@ -8039,10 +8043,17 @@ impl App {
                 }
             }
             // A script that logs in walks the title menu itself; pick the character once it reaches Select.
-            Phase::Characters { .. } if self.drive.pick_after.is_some_and(|t| Instant::now() < t) => {}
+            Phase::Characters { screen, chars, .. } if self.drive.relogin && *screen == LobbyScreen::Main => {
+                if !chars.is_empty() {
+                    *screen = LobbyScreen::Select;
+                    self.drive.pick_after = Some(Instant::now() + std::time::Duration::from_secs(8));
+                }
+            }
+            Phase::Characters { .. } if self.drive.relogin && self.drive.pick_after.is_none_or(|t| Instant::now() < t) => {}
             Phase::Characters { lobby, chars, screen, .. } if !self.drive.input.as_ref().is_some_and(|s| s.logs_in) || *screen == LobbyScreen::Select => {
                 if let (Some(name), Some(_)) = (self.drive.character.clone(), lobby.as_ref()) {
                     if let Some(c) = chars.iter().find(|c| c.name.eq_ignore_ascii_case(&name)).cloned() {
+                        self.drive.relogin = false;
                         let l = lobby.take().unwrap();
                         self.spawn(move || Task::Selected(l.select(&c)));
                     }
@@ -8401,10 +8412,11 @@ impl App {
             if let Some(k) = dik("up:") {
                 self.input.set(k, false);
             }
-            // act:relogin (test drives): after a logout the drive logs in again, and waits 8 s on the select screen.
+            // act:relogin (test drives): after a logout the drive logs in again, opens Select Character and
+            // waits 8 s there.
             if action.as_deref() == Some("relogin") {
                 (self.drive.started, self.drive.zone_ready_at) = (false, None);
-                self.drive.pick_after = Some(Instant::now() + std::time::Duration::from_secs(8));
+                (self.drive.relogin, self.drive.pick_after) = (true, None);
             }
             // Test drives only: target the nearest living monster with a model (Tab picks NPCs first at gates).
             if let (Some("target-mob"), Phase::World(world)) = (action.as_deref(), &mut self.phase) {

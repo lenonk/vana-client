@@ -493,7 +493,8 @@ fn first_person(w: &mut World, ticks: f32, inp: &Inputs) {
 pub fn view(w: &World) -> Camera {
     let (s, c) = (&w.camst, &w.cam);
     let t = s.acc.clamp(0.0, 1.0);
-    let (eye, look) = (s.prev.eye.lerp(c.eye, t), s.prev.look.lerp(c.look, t));
+    // Not glam's lerp (a(1 - t) + bt): a camera at rest must not wobble in the last bit with t.
+    let (eye, look) = (s.prev.eye + (c.eye - s.prev.eye) * t, s.prev.look + (c.look - s.prev.look) * t);
     Camera { eye, target: look, up: Vec3::NEG_Y, fov_y: crate::dat::title::fov_y(focal(w)) }
 }
 

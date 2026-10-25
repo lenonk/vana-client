@@ -7563,6 +7563,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   session's textures and models came back under the new ids. The World's EffectsGpu is now dropped when a World starts
   (the lobby's LobbyFx owns its own and was not affected). Not yet seen relogged live.
 - Open: the gray select screen on the same relog (the select scene loaded, effects and 24 textures, but drew nothing).
+  Not reproduced since the EffectsGpu fix: `act:relogin` now walks the title's Select Character like a player (it used
+  to pick from the title and never showed the screen), and the scene drew with the characters after a relog.
 
 ## Blue learning (2026-10-25)
 
@@ -7591,3 +7593,12 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   textures, skeleton motions), not gaps. 644 item and 14 ability files are effect files with other entry names (4972:
   goal / kill / open / clos; 56695: str0 / str1 / dis0..2 / trg0): which of their schedulers retail starts is not
   traced yet. `dat-info ID --all` lists every chunk.
+
+## Own name plate jitter at rest (2026-10-25)
+
+- The user saw our name plate shake a few pixels left and right while standing. The camera and the drawn position
+  wobbled in the last float bit every frame: glam's lerp is a(1 - t) + bt, which is not a when a == b, and the camera's
+  draw (prev -> current by the tick fraction) used it; the three-step average of the drawn position ((a + b + c) / 3)
+  did the same. Our plate sits on the screen centre, x = W / 2 - 0.5, exactly the rounding edge of its pen
+  (`(x - W / 2).round()`), so the noise flipped it a pixel a frame. Both are now offsets from the older value
+  (a + (b - a) t); standing, the camera and the plate hold still to the bit.
