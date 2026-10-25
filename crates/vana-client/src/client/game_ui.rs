@@ -949,8 +949,12 @@ impl GameUi {
         Some((x + dx, y + dy))
     }
 
-    /// A layout window's position (FUN_101160d0).
+    /// A layout window's position (FUN_101160d0); None once its gate ran this frame while it still opens, so its
+    /// contents wait for the zoom.
     pub fn window_xy(&self, name: &str, w: f32, h: f32) -> Option<(f32, f32)> {
+        if self.anims.get(name).is_some_and(|a| a.seen == self.anim_frame && a.open > 0.0) {
+            return None;
+        }
         let (x, y) = screens::window_pos(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
         Some((x, y + self.stack_dy(name, w, h)))
     }
