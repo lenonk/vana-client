@@ -145,6 +145,47 @@ impl Region {
 
 type Loaded = Option<(String, u32, u32, Vec<u8>)>;
 
+/// The overlay's image with its shade.
+type ShadedLoaded = Option<(String, u32, u32, Vec<u8>, Shade)>;
+
+/// Mean luminance of a map image in 8 x 8 pixel blocks, so the overlay's marker can take a colour that shows on it.
+struct Shade {
+    cols: usize,
+    rows: usize,
+    lum: Vec<f32>,
+}
+
+impl Shade {
+    const BLOCK: usize = 8;
+
+    fn new(w: u32, h: u32, rgba: &[u8]) -> Self {
+        let (w, h) = (w as usize, h as usize);
+        let (cols, rows) = (w.div_ceil(Self::BLOCK).max(1), h.div_ceil(Self::BLOCK).max(1));
+        let mut sum = vec![(0.0f32, 0u32); cols * rows];
+        for (i, p) in rgba.chunks_exact(4).enumerate().take(w * h) {
+            let b = &mut sum[(i / w / Self::BLOCK) * cols + i % w / Self::BLOCK];
+            b.0 += (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) / 255.0;
+            b.1 += 1;
+        }
+        Self { cols, rows, lum: sum.into_iter().map(|(s, n)| if n == 0 { 0.0 } else { s / n as f32 }).collect() }
+    }
+
+    /// The mean over the 3 x 3 blocks around image pixel (x, y), 0..1.
+    fn at(&self, x: f32, y: f32) -> f32 {
+        let (bx, by) = ((x / Self::BLOCK as f32).floor() as i64, (y / Self::BLOCK as f32).floor() as i64);
+        let (mut s, mut n) = (0.0, 0);
+        for cy in by - 1..=by + 1 {
+            for cx in bx - 1..=bx + 1 {
+                if (0..self.cols as i64).contains(&cx) && (0..self.rows as i64).contains(&cy) {
+                    s += self.lum[cy as usize * self.cols + cx as usize];
+                    n += 1;
+                }
+            }
+        }
+        if n == 0 { 0.0 } else { s / n as f32 }
+    }
+}
+
 /// FUN_101f9a50's modes: 0 the main menu or /map, 1 an event map, 2 an event illustration (zone <= -100), 3 a region
 /// map (zone -1..-99), 5 Change Map's other zone, 6 an op 0xd4 sub 0 menu's preview.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1909,7 +1950,8 @@ pub struct Overlay {
     pub zone: u16,
     region: Option<Region>,
     texture: Option<String>,
-    rx: Option<Receiver<Loaded>>,
+    shade: Option<Shade>,
+    rx: Option<Receiver<ShadedLoaded>>,
     /// Screen pixels per map pixel, and the map pixel at the box's top-left (None until the first draw).
     zoom: f32,
     view: Option<(f32, f32)>,
@@ -1928,8 +1970,8 @@ impl Overlay {
     }
 
     pub fn new(zone: u16, region: Option<Region>, index: Option<Arc<DatIndex>>) -> Self {
-        let rx = region.zip(index).map(|(r, index)| load(index, r.file_id()));
-        Self { zone, region, texture: None, rx, zoom: 1.0, view: None, rect: [0.0; 4] }
+        let rx = region.zip(index).map(|(r, index)| load_shaded(index, r.file_id()));
+        Self { zone, region, texture: None, shade: None, rx, zoom: 1.0, view: None, rect: [0.0; 4] }
     }
 
     /// The player crossed onto another page of the zone (Windurst Waters' north and south): that map, at the same
@@ -1956,9 +1998,9 @@ impl Overlay {
 
     /// Waits for the image (offscreen shots).
     pub fn wait_image(&mut self, gu: &mut GameUi) {
-        if let Some(Some((name, iw, ih, rgba))) = self.rx.take().and_then(|r| r.recv().ok()) {
+        if let Some(Some((name, iw, ih, rgba, shade))) = self.rx.take().and_then(|r| r.recv().ok()) {
             gu.image(&name, iw, ih, rgba);
-            self.texture = Some(name);
+            (self.texture, self.shade) = (Some(name), Some(shade));
         }
     }
 
@@ -1994,11 +2036,16 @@ impl Overlay {
 
     /// The image once it is decoded.
     fn poll(&mut self, gu: &mut GameUi) {
-        if let Some(Ok(Some((name, iw, ih, rgba)))) = self.rx.as_ref().map(|r| r.try_recv()) {
+        if let Some(Ok(Some((name, iw, ih, rgba, shade)))) = self.rx.as_ref().map(|r| r.try_recv()) {
             gu.image(&name, iw, ih, rgba);
-            self.texture = Some(name);
+            (self.texture, self.shade) = (Some(name), Some(shade));
             self.rx = None;
         }
+    }
+
+    /// The image's luminance under map pixel (px, py), 0..1 (dark until the image is in).
+    fn shade_at(&self, region: &Region, px: f32, py: f32) -> f32 {
+        self.shade.as_ref().map_or(0.0, |s| s.at(px - region.ox as f32, py - region.oy as f32))
     }
 
     /// Extra, the minimap (client/minimap.rs): the style frame at `rect`, inside it `span` map pixels across centred on
@@ -2027,7 +2074,8 @@ impl Overlay {
             gu.rect(cx + dx - d / 2.0 - 1.0, cy + dy - d / 2.0 - 1.0, d + 2.0, d + 2.0, border);
             gu.rect(cx + dx - d / 2.0, cy + dy - d / 2.0, d, d, [r, g, b, 1.0]);
         }
-        bold_marker(gu, cx, cy, facing);
+        let shade = self.shade_at(&region, px, py);
+        marker(gu, cx, cy, facing, shade);
         gu.clip(None);
     }
 
@@ -2049,27 +2097,54 @@ impl Overlay {
         gu.image_rect(t, rect[0] + (region.ox as f32 - v.0) * z, rect[1] + (region.oy as f32 - v.1) * z, 512.0 * z, 512.0 * z, [1.0, 1.0, 1.0, opacity]);
         let (px, py) = region.px(pos.0, pos.1);
         let (sx, sy) = (rect[0] + (px as f32 - v.0) * z, rect[1] + (py as f32 - v.1) * z);
-        bold_marker(gu, sx, sy, facing);
+        // At low opacity the scene shows through: the map counts for that much of what lies under the marker.
+        let shade = self.shade_at(&region, px as f32, py as f32) * opacity;
+        marker(gu, sx, sy, facing, shade);
         gu.clip(None);
     }
 }
 
-/// The overlay's and the minimap's marker: the map window's (keytops3 159, added light) at 1.3 over a dark
-/// copy, alpha blended by the cells' alpha, as the pale glow alone all but vanishes on the parchment.
-fn bold_marker(gu: &mut GameUi, x: f32, y: f32, facing: f32) {
+/// The overlay's and the minimap's marker: the map window's (keytops3 159) at its size. Its added orange glow fades
+/// out on light parchment, so over light ground (`shade`, the map's luminance under it) it turns into a solid dark
+/// red, alpha blended by the cells' alpha.
+fn marker(gu: &mut GameUi, x: f32, y: f32, facing: f32, shade: f32) {
     let (s, c) = facing.sin_cos();
-    let m = |k: f32| [c * k, -s * k, s * k, c * k];
-    gu.sprite_affine_blend("menu    keytops3", MARKER, x, y, m(1.65), 0x8000_0000, 0x44);
-    gu.sprite_affine("menu    keytops3", MARKER, x, y, m(1.3), 0x8080_8080);
+    let m = [c, -s, s, c];
+    let t = ((shade - 0.35) / 0.25).clamp(0.0, 1.0);
+    let glow = (0x80 as f32 * (1.0 - t)) as u32;
+    if glow > 0 {
+        gu.sprite_affine("menu    keytops3", MARKER, x, y, m, 0x8000_0000 | glow << 16 | glow << 8 | glow);
+    }
+    let a = (0x80 as f32 * t) as u32;
+    if a > 0 {
+        gu.sprite_affine_blend("menu    keytops3", MARKER, x, y, m, a << 24 | 0x60_0800, 0x44);
+    }
+}
+
+/// The map DAT's first image.
+fn decode(index: &DatIndex, file: u32) -> Loaded {
+    index.read(file).ok().and_then(|b| crate::dat::ui::UiFile::parse(&b).map_err(|e| log::warn!("map {file}: {e:#}")).ok()).and_then(|ui| {
+        let (name, img) = ui.images.into_iter().next()?;
+        Some((format!("map:{name}"), img.width, img.height, img.rgba))
+    })
 }
 
 /// Reads and decodes the map DAT off the UI thread: its first image.
 pub(super) fn load(index: Arc<DatIndex>, file: u32) -> Receiver<Loaded> {
     let (tx, rx) = channel();
     std::thread::spawn(move || {
-        let got = index.read(file).ok().and_then(|b| crate::dat::ui::UiFile::parse(&b).map_err(|e| log::warn!("map {file}: {e:#}")).ok()).and_then(|ui| {
-            let (name, img) = ui.images.into_iter().next()?;
-            Some((format!("map:{name}"), img.width, img.height, img.rgba))
+        let _ = tx.send(decode(&index, file));
+    });
+    rx
+}
+
+/// `load` with the image's shade, also worked out off the UI thread.
+fn load_shaded(index: Arc<DatIndex>, file: u32) -> Receiver<ShadedLoaded> {
+    let (tx, rx) = channel();
+    std::thread::spawn(move || {
+        let got = decode(&index, file).map(|(name, w, h, rgba)| {
+            let shade = Shade::new(w, h, &rgba);
+            (name, w, h, rgba, shade)
         });
         let _ = tx.send(got);
     });

@@ -8935,6 +8935,11 @@ interpolates between the hour keys in both clients.
   it, the top dock ends 4 left of it, the right dock's top stays 6 under a large one. Extras rows Minimap, Minimap
   Position, Minimap Size. Offscreen: topbar-shot --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] with sample dots.
 - Live (Lnxcsfix, 230, map key item 385): top right with the NPCs around the Westgate.
+- The marker (overlay and minimap, map::marker): the map window's at its own size. Its added orange glow fades out on
+  light parchment, so the map loader also keeps the image's mean luminance in 8 x 8 blocks (map::Shade, off the UI
+  thread); over the 3 x 3 blocks under the marker (times the overlay's opacity) it fades from the glow (luminance
+  0.35) to the same cells alpha blended in dark red 0x600800 (0.6). A bigger marker over a dark copy was rejected
+  (user, 2026-10-25: "the size was fine, just adjust the colour").
 
 ## Event choice keys and the list's item preview (2026-10-25)
 
