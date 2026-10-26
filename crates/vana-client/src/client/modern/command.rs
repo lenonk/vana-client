@@ -205,12 +205,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let Some(r) = rect else { return };
     // The submenu opens at the left of the menu, level with its category.
     let (mut sub_click, mut sub_hover) = (None, None);
-    let at = [(r.min.x - 262.0) / p.ctx.content_rect().width(), r.min.y / p.ctx.content_rect().height()];
-    p.reseed = true;
-    p.panel("command sub", Some(Title { icon: Some(TOP[c.top].icon), text: TOP[c.top].label, note: None }), 250.0, at, |ui| {
+    p.panel_at("command sub", Some(Title { icon: Some(TOP[c.top].icon), text: TOP[c.top].label, note: None }), 250.0, egui::pos2(r.min.x - 262.0, r.min.y), |ui| {
         (sub_click, sub_hover) = rows(ui, m, w, list, Some(sub), None);
     });
-    p.reseed = false;
     if let Some(k) = sub_hover.filter(|&k| k != sub && moved) {
         w.cmd.sub = Some(k);
         w.sounds.push(Se::Cursor as u32);

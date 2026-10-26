@@ -2097,7 +2097,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Action menu rows: hover moves the cursor; on the focused menu the left release over the cursor row picks it
     // (FUN_1015de50; on no row SE 0004), the button held 60 ticks on a row runs its Right function and starts again
     // (FUN_1012b4b0; a row change restarts it), and a right click is Escape (msg 6, FUN_1015def0; ours only over it).
-    let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
+    let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none() && !world.modern).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
     let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none() && world.loot.is_none() && world.chatctrl.is_none();
     let (mut held, mut right_click) = (false, false);
     if let (Some((r, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut()) {
@@ -2129,6 +2129,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
         right_click = focused && input.right_clicked && inside(r, p);
+    }
+    // The modern combat window's click picks its row.
+    if let Some(k) = world.action_click.take()
+        && let Some(m) = world.action_menu.as_mut()
+        && k < m.items.len()
+    {
+        m.sel = k;
+        act = m.items.get(k).copied();
     }
     // mp_pmode has no hold timer.
     if held && !monstrosity::active(world) {
@@ -4714,6 +4722,8 @@ struct World {
     /// The modern Command Menu's cursor, and a row it picked (page, child) for the menu dispatch.
     cmd: modern::CmdMenu,
     menu_click: Option<(u8, u16)>,
+    /// A row of the action menu the modern combat window clicked.
+    action_click: Option<usize>,
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -6233,6 +6243,7 @@ impl App {
                             menu_page: 0,
                             cmd: Default::default(),
                             menu_click: None,
+                            action_click: None,
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),
@@ -8897,15 +8908,17 @@ impl App {
         let swallow = ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut self.swallow_click);
         let notches = self.list_wheel.trunc();
         self.list_wheel -= notches;
+        // Over a modern panel the pointer is egui's: the game's windows get no clicks or wheel there.
+        let mine = !(matches!(&self.phase, Phase::World(w) if w.modern) && (ctx.is_pointer_over_egui() || ctx.egui_is_using_pointer()));
         let input = ctx.input(|i| UiInput {
-            wheel: notches as i32,
+            wheel: if mine { notches as i32 } else { 0 },
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
-            clicked: i.pointer.primary_clicked() && !swallow,
-            pressed: i.pointer.primary_pressed(),
-            down: i.pointer.primary_down(),
-            released: i.pointer.primary_released() && !swallow,
-            right_clicked: i.pointer.secondary_clicked(),
+            clicked: i.pointer.primary_clicked() && !swallow && mine,
+            pressed: i.pointer.primary_pressed() && mine,
+            down: i.pointer.primary_down() && mine,
+            released: i.pointer.primary_released() && !swallow && mine,
+            right_clicked: i.pointer.secondary_clicked() && mine,
             events: i.events.clone(),
         });
         if input.moved
@@ -9727,8 +9740,7 @@ impl App {
                     && let Some(gu) = self.game_ui.as_ref()
                 {
                     let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
-                    let layout = self.cfg.modern_layout.entry(world.name.clone()).or_default();
-                    save |= m.ui(ctx, gu, world, window, self.cfg.modern_scale, layout);
+                    save |= m.ui(ctx, gu, world, window, &mut self.cfg);
                 } else {
                     modern::off(ctx, self.modern.as_mut());
                 }
@@ -10200,18 +10212,21 @@ impl App {
                 Phase::World(w) => [event::shot_name(w).map(|n| format!("cam:{n}")), event::message_id(w).map(|i| format!("msg:{i}")), (!event::active(w)).then(|| "noevent".to_string())].into_iter().flatten().collect(),
                 _ => Vec::new(),
             };
-            let (events, shot, action) = sc.next(phase, &probes, gfx.window.scale_factor() as f32);
+            // egui's points per pixel (its zoom included: the modern layer sets one), as egui reads the events.
+            let (events, shot, action) = sc.next(phase, &probes, gfx.egui_ctx.pixels_per_point());
             for e in &events {
                 self.input.drive_event(e);
             }
-            // Script pointer steps go through the same world mouse path as the window's (physical pixels).
+            // Script pointer steps go through the same world mouse path as the window's (physical pixels), consumed as
+            // egui-winit consumes them.
             let ppp = gfx.window.scale_factor();
+            let consumed = gfx.egui_ctx.egui_wants_pointer_input();
             for e in &events {
                 match e {
                     egui::Event::PointerMoved(p) => self.last_cursor = Some((p.x as f64 * ppp, p.y as f64 * ppp)),
-                    egui::Event::PointerButton { button, pressed, .. } => {
+                    egui::Event::PointerButton { button, pressed, .. } if !consumed || !*pressed => {
                         let b = if *button == egui::PointerButton::Secondary { MouseButton::Right } else { MouseButton::Left };
-                        self.mouse_button(b, *pressed, false);
+                        self.mouse_button(b, *pressed, consumed);
                     }
                     _ => {}
                 }

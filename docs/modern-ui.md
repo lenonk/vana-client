@@ -139,17 +139,21 @@ scale.
 Milestone 1:
 
 - client/modern: `theme.rs` (palette, manifest, atlases as egui textures, the frames, fonts), `paint.rs` (windows of
-  any size, nine-slices, gauges), `hud.rs` (the panels from views gathered from the World), `mod.rs` (the layer,
-  zoom, panels with saved places), `shot.rs` (`vana-client modern-shot [--backdrop PNG] --out PNG`: the panels with
-  sample values and every frame at several sizes, offscreen).
+  any size, nine-slices, gauges), `hud.rs` (the panels from views gathered from the World), `chat.rs`, `command.rs`,
+  `combat.rs`, `mod.rs` (the layer, zoom, panels with saved places), `shot.rs` (`vana-client modern-shot
+  [--backdrop PNG] --out PNG`: the panels with sample values and every frame, offscreen).
 - egui's zoom follows the window height against 1080, times Settings > Linux > Interface Size (config modern_scale,
-  50 .. 150% in 5% steps, default 60%: the 1080 design at full size was far too big).
-- Panels in the normal frame: Status (job pictogram, name, jobs; HP / MP / TP gauges and values; no MP row without
-  MP), Party (the others in list rows: pictogram, name, HP; the party cursor or our target selected, hover, away
-  members greyed; a click targets the member), Target (the ring for its relation, name, HP). Movable; places saved
-  per character in config `modern_layout` when the pointer is let go.
-- The retail party, alliance and target windows are not drawn while Modern is on.
-- Seen live (Lnxcsfix, 2026-10-26): Status, Target, a panel moved and its place kept. Party only offscreen (the bots
-  did not accept invites).
-- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, reset layout, the
-  focused / inactive frames for focus.
+  50 .. 150% in 5% steps, default 60%).
+- Panels: Status, Party, Target, Location (zone, grid, time, day, weather, and the compass: retail's disk turned so
+  the camera's heading is up and tilted by cos 1.0996, N E S W, the radar dots, the tracking / call-for-help arrow),
+  the cast bar, Chat (tabs, the log, the chat line, the Enter key cap), the Command Menu (the main menu with
+  submenus), the combat window (the action menu's rows).
+- Every panel moves by a drag on its background (contents keep their clicks); places are screen fractions per
+  character in config `modern_places`, saved when the pointer is let go. Only the chat window resizes, by the glyph
+  in its corner: more room for the lines, nothing scales. Its settings button (the tabs' right) sets the font size
+  (config `modern_chat_font`, 10 .. 32, default 15). User's call (2026-10-26): no lock button, no other resizing.
+- The game's windows and the world take no click, press or wheel over a modern panel.
+- The retail party, alliance, target, log, chat line, effects, cast bar, compass and action menu are not drawn while
+  Modern is on.
+- Seen live (Lnxcsfix, 2026-10-26): every panel above but Party (offscreen only: the bots did not accept invites).
+- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, a way to reset places.

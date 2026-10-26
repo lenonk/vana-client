@@ -109,13 +109,28 @@ pub struct Config {
     pub game: crate::gamecfg::GameConfig,
     /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
     pub mods: Vec<ModRef>,
-    /// Not retail (docs/modern-ui.md): the modern UI layer instead of the retail HUD windows it replaces, and its
-    /// window places by character, then window.
+    /// Not retail (docs/modern-ui.md): the modern UI layer instead of the retail HUD windows it replaces, its panels'
+    /// places by character, then panel, and the chat window's font size in points.
     pub modern_ui: bool,
     /// The modern layer's size in percent of its 1080-line design.
     pub modern_scale: u32,
-    pub modern_layout: std::collections::BTreeMap<String, std::collections::BTreeMap<String, [f32; 2]>>,
+    pub modern_places: std::collections::BTreeMap<String, ModernLayout>,
+    pub modern_chat_font: f32,
 }
+
+/// A modern UI panel's place: its top left as fractions of the screen (so it keeps its place whatever the Interface Size
+/// or the resolution), and for the chat window its room in points (0: the default).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModernPlace {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+}
+
+/// A character's panel places by panel id.
+pub type ModernLayout = std::collections::BTreeMap<String, ModernPlace>;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ModRef {
@@ -207,7 +222,8 @@ impl Default for Config {
             mods: Vec::new(),
             modern_ui: false,
             modern_scale: 60,
-            modern_layout: Default::default(),
+            modern_places: Default::default(),
+            modern_chat_font: 15.0,
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

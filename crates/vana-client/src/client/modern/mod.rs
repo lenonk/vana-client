@@ -1,8 +1,12 @@
 //! The modern UI (docs/modern-ui.md; Settings > Linux > Interface): an egui layer over the world, drawn with the
 //! modern asset pack (assets/modern) and the bundled fonts, switched on at run time. The retail windows it replaces
 //! are not drawn while it is on; the rest of the retail UI stays.
+//!
+//! Each panel is an egui Area that a drag on its background moves (its contents keep their clicks), kept by character
+//! as screen fractions. The chat window also resizes by its corner grip: more room for the lines, nothing scaled.
 
 mod chat;
+mod combat;
 mod command;
 mod hud;
 mod paint;
@@ -11,54 +15,64 @@ mod theme;
 
 use super::World;
 use super::game_ui::GameUi;
-use egui::{Context, FontFamily, FontId, Rect, Shape, Ui, pos2, vec2};
-use std::collections::BTreeMap;
+use egui::{Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{CmdMenu, key as command_key};
 pub use theme::Theme;
 use theme::{Art, STRONG};
 
-/// A character's window places as fractions of the screen, by window id (config `modern_layout`): they keep their
-/// place whatever the Interface Size or the resolution.
-pub type Layout = BTreeMap<String, [f32; 2]>;
+pub use crate::config::{ModernLayout as Layout, ModernPlace as Place};
 
 pub struct Modern {
     pub theme: Theme,
     art: Art,
-    /// The chat window's tab; game textures (status icons) as egui textures, by key.
+    /// The chat window's tab and whether its settings are open; game textures (status icons) as egui textures, by key.
     chat_tab: std::cell::Cell<u8>,
+    chat_settings: std::cell::Cell<bool>,
     images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
     /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
     grid: std::cell::RefCell<(Option<std::time::Instant>, String)>,
     zoom: f32,
-    /// The screen in points last frame: when it changes (a resize, Interface Size) the panels are placed again from the
-    /// layout, as egui keeps its own places in points.
-    screen: egui::Vec2,
+    /// A place changed during a drag: saved once the pointer is let go.
+    dirty: bool,
 }
 
 impl Modern {
     pub fn new(ctx: &Context) -> Self {
         theme::install_fonts(ctx);
-        Self { theme: Theme::load(), art: Art::load(ctx), chat_tab: Default::default(), images: Default::default(), grid: Default::default(), zoom: 0.0, screen: egui::Vec2::ZERO }
+        Self {
+            theme: Theme::load(),
+            art: Art::load(ctx),
+            chat_tab: Default::default(),
+            chat_settings: Default::default(),
+            images: Default::default(),
+            grid: Default::default(),
+            zoom: 0.0,
+            dirty: false,
+        }
     }
 
-    /// One frame: egui's zoom for the window height, then the panels. True when a panel moved (the layout is to be
-    /// saved).
-    pub fn ui(&mut self, ctx: &Context, gu: &GameUi, w: &mut World, window: [u32; 2], scale: u32, layout: &mut Layout) -> bool {
+    /// One frame: egui's zoom for the window height, the panels. True when the config (the layout, the chat font) is
+    /// to be saved.
+    pub fn ui(&mut self, ctx: &Context, gu: &GameUi, w: &mut World, window: [u32; 2], cfg: &mut crate::config::Config) -> bool {
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-        let zoom = self.theme.zoom(window[1] as f32 / native, scale);
+        let zoom = self.theme.zoom(window[1] as f32 / native, cfg.modern_scale);
         if (zoom - self.zoom).abs() > 0.001 {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;
         }
-        let screen = ctx.content_rect().size();
-        let reseed = screen != self.screen;
-        self.screen = screen;
-        let mut moved = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, moved: &mut moved, reseed };
+        let layout = cfg.modern_places.entry(w.name.clone()).or_default();
+        let mut changed = false;
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font };
         hud::draw(&mut p, w);
         chat::panel(&mut p, &chat::view(w));
         command::draw(&mut p, w);
-        moved
+        combat::draw(&mut p, w);
+        self.dirty |= changed;
+        let save = self.dirty && !ctx.input(|i| i.pointer.any_down());
+        if save {
+            self.dirty = false;
+        }
+        save
     }
 }
 
@@ -92,47 +106,91 @@ struct Panels<'a> {
     /// The game's data (status icons and texts); none in the offscreen shot.
     gu: Option<&'a GameUi>,
     layout: &'a mut Layout,
-    moved: &'a mut bool,
-    reseed: bool,
+    changed: &'a mut bool,
+    chat_font: &'a mut f32,
 }
+
+/// The panel margins inside the frame.
+const MARGIN: egui::Margin = egui::Margin { left: 22, right: 22, top: 16, bottom: 18 };
 
 impl<'a> Panels<'a> {
     fn look(&self) -> Look<'a> {
         Look { m: self.m, ctx: self.ctx, gu: self.gu }
     }
 
-    /// A movable panel `width` points wide in the pack's normal window frame (any size: paint::window), its title row,
-    /// then `add`'s contents. Placed from the layout, else at `default`; a new place is kept once the pointer is let go.
+    /// A panel `width` points wide.
     fn panel(&mut self, id: &str, title: Option<Title>, width: f32, default: [f32; 2], add: impl FnOnce(&mut Ui)) -> Option<Rect> {
-        let m = self.m;
-        let screen = self.ctx.content_rect();
-        let at = self.layout.get(id).copied().unwrap_or(default);
-        let pos = pos2(screen.width() * at[0], screen.height() * at[1]);
-        let win = egui::Window::new(format!("modern {id}")).title_bar(false).resizable(false).frame(egui::Frame::NONE).constrain(true);
-        let win = if self.reseed { win.current_pos(pos) } else { win.default_pos(pos) };
-        let shown = win.show(self.ctx, |ui| {
-                let bg = ui.painter().add(Shape::Noop);
-                let inner = egui::Frame::NONE.inner_margin(egui::Margin { left: 22, right: 22, top: 16, bottom: 18 }).show(ui, |ui| {
-                    ui.set_width(width - 44.0);
-                    ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
-                    if let Some(t) = &title {
-                        title_row(ui, m, t);
-                        ui.add_space(6.0);
-                    }
-                    add(ui);
-                });
-                if let Some(f) = m.art.frame("window_normal") {
-                    ui.painter().set(bg, paint::window(f, inner.response.rect, 1.0));
+        self.show(id, title, vec2(width, 0.0), false, default, None, |ui, _| add(ui))
+    }
+
+    /// The chat window: `room` points (width, list height) by default, which its corner grip changes.
+    fn room_panel(&mut self, id: &str, room: Vec2, default: [f32; 2], add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
+        self.show(id, None, room, true, default, None, add)
+    }
+
+    /// A panel shown beside another (the command submenu): at a screen point, not moved.
+    fn panel_at(&mut self, id: &str, title: Option<Title>, width: f32, at: Pos2, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+        self.show(id, title, vec2(width, 0.0), false, [0.0; 2], Some(at), |ui, _| add(ui))
+    }
+
+    /// The panel itself: the pack's window frame behind its title row and contents, moved by a drag on its background
+    /// unless placed beside another; a resizable one has the resize glyph in its corner. Returns its rect.
+    #[allow(clippy::too_many_arguments)]
+    fn show(&mut self, id: &str, title: Option<Title>, size: Vec2, resizable: bool, default: [f32; 2], at: Option<Pos2>, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
+        let (m, ctx) = (self.m, self.ctx);
+        let screen = ctx.content_rect();
+        let mut place = self.layout.get(id).copied().unwrap_or(Place { x: default[0], y: default[1], ..Default::default() });
+        let pos = at.unwrap_or(pos2(screen.width() * place.x, screen.height() * place.y));
+        let room = if resizable { vec2(if place.w > 0.0 { place.w } else { size.x }, if place.h > 0.0 { place.h } else { size.y }) } else { size };
+        // The resizable one keeps a strip below its contents for the glyph.
+        let margin = if resizable { egui::Margin { bottom: 26, ..MARGIN } } else { MARGIN };
+        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(at.is_none()).show(ctx, |ui| {
+            let bg = ui.painter().add(Shape::Noop);
+            let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
+                ui.set_width(room.x - margin.sum().x);
+                ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
+                if let Some(t) = &title {
+                    title_row(ui, m, t);
+                    ui.add_space(6.0);
                 }
-                inner.response.rect
-            })?;
-        let rect = shown.response.rect;
-        let held = self.ctx.input(|i| i.pointer.any_down());
-        if !held && (rect.min - pos).length() > 0.5 {
-            self.layout.insert(id.to_string(), [rect.min.x / screen.width().max(1.0), rect.min.y / screen.height().max(1.0)]);
-            *self.moved = true;
+                add(ui, room);
+            });
+            let r = inner.response.rect;
+            if let Some(f) = m.art.frame("window_normal") {
+                ui.painter().set(bg, paint::window(f, r, 1.0));
+            }
+            if !resizable {
+                return None;
+            }
+            // The glyph sits left of the frame's corner ornament; the whole corner takes the drag.
+            let g = ui.interact(Rect::from_min_max(r.max - vec2(44.0, 28.0), r.max), Id::unique(("modern grip", id)), Sense::drag());
+            let lit = g.hovered() || g.dragged();
+            if let Some(s) = m.art.sprite("controls/resize") {
+                ui.painter().add(paint::image(&s, r.max - vec2(40.0, 24.0), 16.0, if lit { Color32::WHITE } else { Color32::from_gray(170) }));
+            }
+            if lit {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeNwSe);
+            }
+            g.dragged().then(|| g.drag_delta())
+        });
+        let r = shown.response.rect;
+        if at.is_some() {
+            return Some(r);
         }
-        shown.inner
+        let mut changed = false;
+        if shown.response.dragged() {
+            (place.x, place.y) = (r.min.x / screen.width().max(1.0), r.min.y / screen.height().max(1.0));
+            changed = true;
+        }
+        if let Some(g) = shown.inner {
+            (place.w, place.h) = ((room.x + g.x).max(240.0), (room.y + g.y).max(60.0));
+            changed = true;
+        }
+        if changed {
+            self.layout.insert(id.to_string(), place);
+            *self.changed = true;
+        }
+        Some(r)
     }
 }
 

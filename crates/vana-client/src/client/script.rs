@@ -83,7 +83,8 @@ impl Script {
                 }
                 "click" => {
                     let (x, y) = xy()?;
-                    steps.extend([Step::Move(x, y), Step::Button(true), Step::Button(false)]);
+                    // Held 50 ms as a hand does: egui misses a press and release in successive 3 ms frames.
+                    steps.extend([Step::Move(x, y), Step::Button(true), Step::Wait(0.05), Step::Button(false)]);
                 }
                 // The left button pressed at X,Y and left down; lup releases it where the pointer is.
                 "ldown" => {

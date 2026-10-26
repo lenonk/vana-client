@@ -1,12 +1,13 @@
 //! The modern HUD panels: ourselves (job icon, name, jobs, HP / MP / TP, our effects with their times), the party (the
 //! others: job icon, name, effects, HP; the party cursor, the target and hover marked by the list rows; a click
 //! targets the member), the target (its relation's ring, name, HP), where we are (zone, grid, Vana'diel time and day,
-//! weather) and the cast bar. What they show is gathered from the World first (the views), so the offscreen shot can
+//! weather, the compass) and the cast bar. What they show is gathered from the World first (the views), so the offscreen shot can
 //! draw them too.
 
-use super::super::{World, buffs, items::JOBS, monstrosity, self_entity, target, vana_now};
-use super::{Look, Modern, Panels, Title, paint};
-use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
+use super::super::{App, World, buffs, hudtop, items::JOBS, monstrosity, radar, self_entity, target, vana_now};
+use super::{Look, Modern, Panels, Title, chat, paint};
+use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
+use std::f32::consts::PI;
 
 fn job(j: u8) -> &'static str {
     if j == 23 { "MON" } else { JOBS.get(j as usize).copied().unwrap_or("") }
@@ -72,6 +73,20 @@ pub struct WhereView {
     pub day: (usize, String),
     /// The weather's element (day order) and whether it is the double weather.
     pub weather: Option<(usize, bool)>,
+    /// None where retail has no compass (ships and airships).
+    pub compass: Option<CompassView>,
+}
+
+/// The compass as retail's (hudtop draw_compass): turned so the camera's heading is up, in retail's local units
+/// (P.x - E.x, E.z - P.z).
+pub struct CompassView {
+    /// h = atan2(f.x, -f.z) of the camera's flattened forward.
+    pub heading: f32,
+    /// The radar dots (local x, local y, colour) and the radar's range.
+    pub dots: Vec<(f32, f32, Color32)>,
+    pub range: f32,
+    /// The arrow toward the tracked target or the call-for-help monster: its local direction and theme colour.
+    pub arrow: Option<(f32, f32, &'static str)>,
 }
 
 /// The pack's gauge pair (`kind`_empty, `kind`_full) cut at `f` over `r`.
@@ -203,31 +218,114 @@ pub fn target_panel(p: &mut Panels, v: &TargetView) {
     });
 }
 
+/// The compass's radius in points, and its tilt as retail's (cos 1.0996).
+const DIAL: f32 = 40.0;
+const TILT: f32 = 0.4536;
+
 pub fn where_panel(p: &mut Panels, v: &WhereView) {
     let m = p.m;
-    p.panel("where", None, 340.0, [0.012, 0.29], |ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::hover());
-        let painter = ui.painter();
-        painter.text(r.left_center(), Align2::LEFT_CENTER, &v.zone, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("gold"));
-        painter.text(r.right_center(), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
-        let painter = ui.painter();
+    p.panel("where", None, 430.0, [0.012, 0.29], |ui| {
+        // The zone over the time and day at the left, the compass, the grid over the weather at the right.
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::hover());
+        let right = r.max.x - 66.0;
+        let dial = pos2(right - 16.0 - DIAL, r.center().y);
+        let (top, low) = (r.center().y - 12.0, r.center().y + 13.0);
+        let painter = ui.painter().with_clip_rect(Rect::from_min_max(r.min, pos2(dial.x - DIAL - 14.0, r.max.y)));
+        painter.text(pos2(r.min.x, top), Align2::LEFT_CENTER, &v.zone, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("gold"));
         let mut x = r.min.x;
         if let Some(s) = m.art.sprite(ELEMENTS[v.day.0 % 8]) {
-            painter.add(paint::image(&s, pos2(x, r.center().y - 10.0), 20.0, Color32::WHITE));
+            painter.add(paint::image(&s, pos2(x, low - 10.0), 20.0, Color32::WHITE));
             x += 26.0;
         }
-        let t = painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, format!("{}:{:02}", v.time.0, v.time.1), FontId::proportional(m.theme.ui), m.theme.color("text"));
-        painter.text(pos2(t.max.x + 10.0, r.center().y), Align2::LEFT_CENTER, &v.day.1, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        let t = painter.text(pos2(x, low), Align2::LEFT_CENTER, format!("{}:{:02}", v.time.0, v.time.1), FontId::proportional(m.theme.ui), m.theme.color("text"));
+        painter.text(pos2(t.max.x + 10.0, low), Align2::LEFT_CENTER, &v.day.1, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        let painter = ui.painter();
+        if let Some(c) = &v.compass {
+            compass(painter, m, dial, c);
+        }
+        painter.text(pos2(r.max.x, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
         if let Some((e, double)) = v.weather
             && let Some(s) = m.art.sprite(ELEMENTS[e % 8])
         {
             let n = if double { 2 } else { 1 };
             for k in 0..n {
-                painter.add(paint::image(&s, pos2(r.max.x - 20.0 - 22.0 * k as f32, r.center().y - 10.0), 20.0, Color32::WHITE));
+                painter.add(paint::image(&s, pos2(r.max.x - 20.0 - 22.0 * k as f32, low - 10.0), 20.0, Color32::WHITE));
             }
         }
     });
+}
+
+/// The compass dial at `c` as retail's disk: turned so the camera's heading is up and tilted back (Rx(-1.0996)), with
+/// a rim of some depth, N (red) E S W on it, ticks, the camera's view as a wedge from us at the centre, the radar
+/// dots, and the arrow through the rim.
+fn compass(painter: &Painter, m: &Modern, c: Pos2, v: &CompassView) {
+    let (sn, cs) = v.heading.sin_cos();
+    // A local point at `k` points per unit: retail's Rz(h) then the tilt.
+    let at = |lx: f32, ly: f32, k: f32| c + vec2(lx * cs - ly * sn, (lx * sn + ly * cs) * TILT) * k;
+    let flat = |r: f32| vec2(r, r * TILT);
+    let (gold, bronze) = (m.theme.color("gold"), m.theme.color("bronze"));
+    let faint = Stroke::new(0.75, bronze.gamma_multiply(0.3));
+    // The disk's edge below its face, then the face and its rings.
+    painter.add(egui::Shape::ellipse_filled(c + vec2(0.0, 3.0), flat(DIAL), bronze.gamma_multiply(0.45)));
+    painter.add(egui::Shape::ellipse_filled(c, flat(DIAL), m.theme.color("charcoal")));
+    painter.add(egui::Shape::ellipse_stroke(c, flat(DIAL * 0.5), faint));
+    painter.add(egui::Shape::ellipse_stroke(c, flat(DIAL - 6.0), Stroke::new(0.75, bronze.gamma_multiply(0.7))));
+    painter.add(egui::Shape::ellipse_stroke(c, flat(DIAL), Stroke::new(1.5, gold)));
+    painter.line_segment([at(0.0, 1.0, DIAL - 6.0), at(0.0, -1.0, DIAL - 6.0)], faint);
+    painter.line_segment([at(1.0, 0.0, DIAL - 6.0), at(-1.0, 0.0, DIAL - 6.0)], faint);
+    // The view: a wedge up from the centre (the camera's heading is always up), on the disk.
+    let fan: Vec<Pos2> = std::iter::once(c)
+        .chain((0..=8).map(|i| {
+            let a = -PI / 2.0 + (i as f32 / 8.0 - 0.5) * 1.2;
+            c + vec2(a.cos(), a.sin() * TILT) * (DIAL - 6.0)
+        }))
+        .collect();
+    painter.add(egui::Shape::convex_polygon(fan, m.theme.color("focus").gamma_multiply(0.16), Stroke::NONE));
+    // Ticks every 15 degrees between the rings, longer every 45, none under the letters.
+    for i in (0..24).filter(|i| i % 6 != 0) {
+        let a = i as f32 * PI / 12.0;
+        let long = if i % 3 == 0 { 5.0 } else { 2.5 };
+        painter.line_segment([at(a.sin(), a.cos(), DIAL - 1.0), at(a.sin(), a.cos(), DIAL - 1.0 - long)], Stroke::new(1.0, bronze));
+    }
+    let k = (DIAL - 6.0) / v.range.max(1.0);
+    for &(lx, ly, col) in &v.dots {
+        painter.circle_filled(at(lx, ly, k), 1.8, col);
+    }
+    painter.circle_filled(c, 2.0, gold);
+    // Retail's letters on the rim, upright: s4 N at local +y, s1 E at -x, s3 S at -y, s2 W at +x.
+    let font = FontId::new(11.0, FontFamily::Name(super::STRONG.into()));
+    for ((lx, ly), letter) in [((0.0, 1.0), "N"), ((-1.0, 0.0), "E"), ((0.0, -1.0), "S"), ((1.0, 0.0), "W")] {
+        let p = at(lx, ly, DIAL);
+        painter.circle_filled(p, 6.5, m.theme.color("charcoal"));
+        let col = if letter == "N" { m.theme.color("hp") } else { gold };
+        painter.text(p, Align2::CENTER_CENTER, letter, font.clone(), col);
+    }
+    if let Some((lx, ly, col)) = v.arrow {
+        let (tip, base) = (at(lx, ly, DIAL + 5.0), at(lx, ly, DIAL - 5.0));
+        let n = (tip - base).normalized().rot90() * 4.5;
+        painter.add(egui::Shape::convex_polygon(vec![tip, base + n, base - n], m.theme.color(col), Stroke::new(1.0, Color32::from_black_alpha(180))));
+    }
+}
+
+fn compass_view(w: &World) -> Option<CompassView> {
+    if w.zone.is_some_and(hudtop::no_compass) {
+        return None;
+    }
+    let cam = App::camera(w);
+    let f = cam.target - cam.eye;
+    let f = glam::Vec3::new(f.x, 0.0, f.z).normalize_or(glam::Vec3::Z);
+    // The job fields as the open compass samples them (NIN sees further and monsters).
+    let rs = w.stats.as_ref().map_or_else(|| radar::sample(0, 0, 0), |st| radar::sample(st.main.0, st.sub.0, st.sub.1));
+    let dots = radar::dots(w, 0x80, &rs).into_iter().map(|(x, y, c)| (x as f32, y as f32, chat::colour(c.to_le_bytes()))).collect();
+    let aim = match w.scan.tracking() {
+        Some(t) => Some((t.pos[0], t.pos[2], "focus")),
+        None => target::call_for_help(w).and_then(|id| w.entities.get(&id)).map(|e| (e.pos.x, e.pos.z, "hp")),
+    };
+    let arrow = aim.and_then(|(x, z, col)| {
+        let d = vec2(w.pos.x - x, z - w.pos.z);
+        (d.length() > 1e-3).then(|| (d.normalized().x, d.normalized().y, col))
+    });
+    Some(CompassView { heading: f.x.atan2(-f.z), dots, range: rs.range, arrow })
 }
 
 pub fn cast_panel(p: &mut Panels, f: f32) {
@@ -318,6 +416,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
         time: (m / 60, m % 60),
         day: (day, name),
         weather: weather_element(w.weather),
+        compass: compass_view(w),
     })
 }
 

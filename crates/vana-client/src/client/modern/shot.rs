@@ -21,12 +21,14 @@ fn load_png(path: &Path) -> Result<([usize; 2], Vec<u8>)> {
 }
 
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
-    let mut moved = false;
-    let mut p = Panels { m, ctx, gu: None, layout, moved: &mut moved, reseed: false };
+    let (mut changed, mut chat_font) = (false, 15.0);
+    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font };
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630, effects: mine }, false);
-    hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some((2, false)) });
+    let dot = |x, y, c: u32| (x, y, super::chat::colour(c.to_le_bytes()));
+    let compass = hud::CompassView { heading: 0.6, dots: vec![dot(4.0, -9.0, 0x8030_60e0), dot(-11.0, 3.0, 0x8000_b040), dot(14.0, 13.0, 0x5000_b040)], range: 28.8, arrow: Some((0.6, -0.8, "focus")) };
+    hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some((2, false)), compass: Some(compass) });
     let theirs = vec![fx("icons/protect", None, false), fx("icons/sleep", None, false)];
     let row = |slot, name: &str, job, here, hp, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here, hp, marked, effects };
     hud::party_panel(&mut p, &[row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false);

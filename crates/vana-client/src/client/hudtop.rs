@@ -131,7 +131,7 @@ impl Fade {
 }
 
 /// Zones with no compass, time only (FUN_100abd90): ships and airships.
-fn no_compass(zone: u16) -> bool {
+pub(super) fn no_compass(zone: u16) -> bool {
     matches!(zone, 1 | 3 | 0x2e | 0x2f | 0x3a..=0x3c | 0xdc | 0xdd | 0xdf..=0xe4)
 }
 
