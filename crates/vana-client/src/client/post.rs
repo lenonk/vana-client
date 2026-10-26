@@ -1221,6 +1221,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         rects.extend(draw_money(gu, w, sw, sh));
         let off: &[u16] = if r.no_return { &[3] } else { &[] };
         if let Some(win) = gu.lobby_window_off(POST2, sw, sh, (0.0, 0.0), focused(RFocus::Post2).then_some(r.post2), focused(RFocus::Post2), off) {
+            super::winhits::record(w, POST2, &win);
             let [x, y, ..] = win.frame;
             gu.disabled_children(POST2, x, y, off, focused(RFocus::Post2).then_some(r.post2));
             // FUN_1014dab0 / FUN_1014dc80: "Sender:" and the cursor slot's name (FUN_101ca250, cut at 128 px).
@@ -1233,6 +1234,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             rects.push(win.frame);
         }
         if let Some(win) = gu.lobby_window_off(POST1, sw, sh, (0.0, 0.0), focused(RFocus::Post1).then_some(r.cursor), focused(RFocus::Post1), &[]) {
+            super::winhits::record(w, POST1, &win);
             let slots: Vec<(u16, u32, bool)> = w.post.recv.iter().map(|s| (s.item, s.stack, matches!(s.stat, 6 | 7 | 0xa..=0xe))).collect();
             let cursor = focused(RFocus::Post1).then_some(r.cursor);
             draw_slots(gu, &info, POST1, win.frame, &slots, Some(9), cursor, |_| [1.0, 1.0, 1.0, 0.75]);
@@ -1247,6 +1249,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects.extend(draw_list(gu, w, &info, s.list, focused(SFocus::List), Some(&tints), sw, sh));
     rects.extend(draw_money(gu, w, sw, sh));
     if let Some(win) = gu.lobby_window_off(DELIVERY, sw, sh, (0.0, 0.0), focused(SFocus::Delivery).then_some(s.cursor), focused(SFocus::Delivery), &[]) {
+        super::winhits::record(w, DELIVERY, &win);
         // FUN_1012e6d0: Stat 1 / 5 / 9 / 0x10 bright, 2 / 3 / 4 / 8 / 0xe / 0xf dim (0x80404040), others not drawn.
         let slots: Vec<(u16, u32, bool)> = (0..8)
             .map(|i| {
@@ -1263,6 +1266,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     // mode 2 56 / 59, the cursor one 0x80805020.
     let dl_focus = focused(SFocus::Stringdl);
     if let Some(win) = gu.lobby_window_off(STRINGDL, sw, sh, (16.0, 144.0), dl_focus.then_some(s.dl.cursor), dl_focus, &[2, 3]) {
+        // Children 2 / 3 are hidden from the base draw (their sprites are the code's), so the layout gives their rects.
+        let [x, y, ..] = win.frame;
+        let cells = gu.layout(STRINGDL).map_or(Vec::new(), |l| l.elements.iter().skip(1).map(|e| (e.id, [x + e.x as f32, y + e.y as f32, e.w as f32, e.h as f32])).collect());
+        super::winhits::record_rects(w, STRINGDL, win.frame, cells);
         let [x, y, ..] = win.frame;
         let label = gu.item_msg(9, s.dl.label).unwrap_or_default();
         gu.text(&label, x + 10.0, y + 6.0, 0, WHITE.to_le_bytes());
@@ -1290,6 +1297,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((_, v, max)) = s.qty
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, ITEMCTRL, &win);
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, WHITE, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, WHITE, false);
@@ -1298,10 +1306,78 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((step, max, v)) = s.money
         && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, MONEYCTR, &win);
         draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }
     rects
+}
+
+/// The mouse on the focused window (the generic window): post1 / post2, delivery, stringdl (not while typing); the
+/// inventory list's rows as the item list; itemctrl / moneyctr only the right click (Escape). Nothing while busy.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::{generic, over};
+    let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
+    if let Some(r) = &w.post.recv_ui {
+        if r.busy || r.state == 0x12 {
+            return;
+        }
+        match r.focus {
+            RFocus::Post1 => generic(w, gu, POST1, r.cursor, 1..=8, p, moved, clicked, right, |w, id| {
+                if let Some(r) = w.post.recv_ui.as_mut() {
+                    r.cursor = id;
+                }
+            }, keys),
+            RFocus::Post2 => generic(w, gu, POST2, r.post2, 1..=3, p, moved, clicked, right, |w, id| {
+                if let Some(r) = w.post.recv_ui.as_mut() {
+                    r.post2 = id;
+                }
+            }, keys),
+        }
+        return;
+    }
+    let Some(s) = &w.post.send_ui else { return };
+    if s.busy && s.focus != SFocus::Stringdl {
+        return;
+    }
+    match s.focus {
+        SFocus::Delivery => {
+            let last = if s.state == 0x10 { 10 } else { 11 };
+            generic(w, gu, DELIVERY, s.cursor, 1..=last, p, moved, clicked, right, |w, id| {
+                if let Some(s) = w.post.send_ui.as_mut() {
+                    s.cursor = id;
+                }
+            }, keys);
+        }
+        SFocus::Stringdl if s.dl.editing => {}
+        SFocus::Stringdl => generic(w, gu, STRINGDL, s.dl.cursor, 1..=3, p, moved, clicked, right, |w, id| {
+            if let Some(s) = w.post.send_ui.as_mut() {
+                s.dl.cursor = id;
+            }
+        }, keys),
+        SFocus::List => {
+            let (scroll, cursor) = s.list;
+            let row = picker_row(gu, sw, sh, p);
+            if right && row.is_some() {
+                key(w, gu, egui::Key::Escape);
+                return;
+            }
+            let Some(r) = row.filter(|r| scroll + r < picker_rows(w).len()) else { return };
+            gu.hover.set(true);
+            if r != cursor && (moved || clicked) {
+                if let Some(s) = w.post.send_ui.as_mut() {
+                    s.list.1 = r;
+                }
+            } else if clicked {
+                key(w, gu, egui::Key::Enter);
+            }
+        }
+        SFocus::Qty | SFocus::Money => {
+            if right && (over(w, ITEMCTRL, p) || over(w, MONEYCTR, p)) {
+                key(w, gu, egui::Key::Escape);
+            }
+        }
+    }
 }
 
 /// FUN_101409f0: the value with "  G" right-aligned at (+0x7f, +0x16), the step's digit in 0x80a06040 (below the step:

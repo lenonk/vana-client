@@ -9666,3 +9666,12 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - moogle.rs `pointer` (winhits.rs): myroom / mogext, the storage menu, mogpost, jobchang and jobcselu as the generic
   window on whichever has the focus; nothing while a storage view is up (the item lists take the mouse).
 - Live (Lnxcsfix in its San d'Oria house): hover Change Jobs, click Storage, hover Mog Sack, right clicks back out.
+
+## Delivery Box: the mouse (2026-10-26)
+
+- post.rs `pointer` (winhits.rs): post1 / post2 (receive), delivery and stringdl (send; stringdl's buttons are drawn by
+  code, so their rects come from the layout) as the generic window; the inventory list at x 200 as the item list;
+  itemctrl / moneyctr only the right click; nothing while busy or while the name is typed.
+- Live (Lnxcsfix, its Mog House): moogle menu Delivery Box, mogpost Send, hover Exit ("Cancel.") and OK ("Is
+  recipient's name correct?"), click Exit closes the send UI. The moogle menu and mogpost sit on the log and move with
+  it (a click must use where they are that frame).
