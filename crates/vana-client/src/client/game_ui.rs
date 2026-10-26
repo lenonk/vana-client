@@ -1663,17 +1663,44 @@ impl GameUi {
 
     /// A frameless window (registry flag 0x20, e.g. race1..8, nation1..3): its sprite, every cell.
     pub fn bare_window(&mut self, name: &str, w: f32, h: f32) {
-        let Some(m) = self.data.lobby.menu(name) else { return };
+        self.bare_window_off(name, w, h, (0.0, 0.0));
+    }
+
+    /// `bare_window` moved by `off`; its place once drawn (not while it opens).
+    pub fn bare_window_off(&mut self, name: &str, w: f32, h: f32, off: (f32, f32)) -> Option<(f32, f32)> {
+        let m = self.data.lobby.menu(name)?;
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
-        let Some((lib_name, k)) = m.elements[0].refs.iter().find(|r| r.kind == 0).map(|r| (r.lib.clone(), r.index as usize)) else { return };
+        let (x, y) = (x + off.0, y + off.1);
+        let (lib_name, k) = m.elements[0].refs.iter().find(|r| r.kind == 0).map(|r| (r.lib.clone(), r.index as usize))?;
         if !self.gate(name, Shape::Sprite(lib_name, k, x, y)) {
-            return;
+            return None;
         }
-        let Some(m) = self.data.lobby.menu(name) else { return };
+        let m = self.data.lobby.menu(name)?;
         if let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 0)
             && let Some(lib) = self.data.lobby.lib(&r.lib)
         {
             self.batch.push_sprite(&self.data.lobby, lib, r.index as usize, x, y, 1.0, 1.0, 0x8080_8080, 0);
+        }
+        Some((x, y))
+    }
+
+    /// menu netwait (FUN_102408a0), centred as the prompts: the status text in the frame rect, 28 px off the bottom.
+    pub fn netwait_window(&mut self, text: &str, w: f32, h: f32) {
+        let Some(win) = self.lobby_window("menu    netwait", w, h, true, None, false, &[]) else { return };
+        let r = Self::clamp_rect(win.frame, w, h);
+        self.text_block(text, [r[0], r[1], r[2], r[3] - 28.0]);
+    }
+
+    /// menu netbar (FUN_102409a0), centred, frameless: its track, then lobbywin 77 from the left edge at (2p, 0.99)
+    /// while 0.01 < p < 1.1 (the centred scale of FUN_1011fc80 cancels the (0.5 - p) * 128 shift).
+    pub fn netbar_window(&mut self, p: f32, w: f32, h: f32) {
+        let off = (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc());
+        let Some((x, y)) = self.bare_window_off("menu    netbar", w, h, off) else { return };
+        if p > 0.01
+            && p < 1.1
+            && let Some(lib) = self.data.lobby.lib("menu    lobbywin")
+        {
+            self.batch.push_sprite(&self.data.lobby, lib, 77, x, y, 2.0 * p, 0.99, 0x8080_8080, 0);
         }
     }
 

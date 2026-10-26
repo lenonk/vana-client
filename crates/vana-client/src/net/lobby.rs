@@ -4,6 +4,8 @@
 use anyhow::{Context, Result, bail};
 use md5::{Digest, Md5};
 use std::io::{Read, Write};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::net::{Ipv4Addr, TcpStream};
 
 const MAGIC: &[u8; 4] = b"IXFF";
@@ -136,17 +138,19 @@ pub struct Lobby {
     last_request: u8,
     pub expansions: u32,
     pub features: u32,
+    /// View replies read so far: the netbar's waits (client/netwait.rs).
+    pub replies: Arc<AtomicU32>,
 }
 
 impl Lobby {
-    pub fn connect(host: &str, view_port: u16, data_port: u16, account_id: u32, hash: [u8; 16], version: &str) -> Result<Self> {
+    pub fn connect(host: &str, view_port: u16, data_port: u16, account_id: u32, hash: [u8; 16], version: &str, replies: Arc<AtomicU32>) -> Result<Self> {
         let data = TcpStream::connect((host, data_port)).with_context(|| format!("connecting to lobby data {host}:{data_port}"))?;
         let view = TcpStream::connect((host, view_port)).with_context(|| format!("connecting to lobby view {host}:{view_port}"))?;
         let server_ip = match view.peer_addr()?.ip() {
             std::net::IpAddr::V4(ip) => ip,
             std::net::IpAddr::V6(ip) => ip.to_ipv4().unwrap_or(Ipv4Addr::LOCALHOST),
         };
-        let mut lobby = Self { view, data, hash, account_id, server_ip, key_counter: 0, last_request: 0, expansions: 0, features: 0 };
+        let mut lobby = Self { view, data, hash, account_id, server_ip, key_counter: 0, last_request: 0, expansions: 0, features: 0, replies };
 
         // Registers the data socket under the session hash.
         let mut hello = [0u8; 28];
@@ -193,6 +197,7 @@ impl Lobby {
         pkt[..4].copy_from_slice(&(size as u32).to_le_bytes());
         self.view.read_exact(&mut pkt[4..])?;
         let command = pkt[8];
+        self.replies.fetch_add(1, Ordering::Relaxed);
         if matches!(command, 0x03 | 0x0B | 0x20 | 0x23)
             || (command == 0x04 && matches!(self.last_request, 0x22 | 0x24 | 0x28 | 0x2B))
         {

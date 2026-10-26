@@ -10107,8 +10107,8 @@ FUN_1023b550). client/mod.rs (the creator block, `CreatorNext`, Task::NameChecke
   entered is unavailable."; "Lnxconfirm" -> nation step; the prompt on No with the emblem; No -> chmktown on San
   d'Oria; Escape -> the race step; Yes -> "Player data registered." -> OK -> logged in, the San d'Oria opening played
   out. The test character was deleted afterwards (delchar.py).
-- Not done: chmkserv / chmkpass (no world step), "menu    netwait" / "menu    netbar" during lobby operations (ours
-  shows nothing while they run), child 3's element state 0x10.
+- Not done: chmkserv / chmkpass (no world step), child 3's element state 0x10. Since done: netwait / netbar ("Lobby:
+  netwait and netbar").
 
 ## Monstrosity, part 1: the look, the predicate, the music (2026-10-26)
 
@@ -10267,3 +10267,28 @@ Spec section 3.8 (each read in the decompile).
   0x17 s since". While it holds, cmbmenu's rows 1 / 2 (FUN_101e28d0) and the main menu's Synthesis (FUN_10140090 /
   FUN_10140270: state 5, else 0xb) are off, answered or not. Ours tested the request state, which ends with the answer;
   now synth::menu_off reads the send time (kept over zones), and menu_disabled adds row 10.
+
+## Lobby: netwait and netbar (2026-10-26; spec ~/ffxi/lab/research/lobby_netwait_spec.md)
+
+client/netwait.rs, net/lobby.rs (`replies`), game_ui.rs (`netwait_window`, `netbar_window`, `bare_window_off`).
+- FUN_1023b550 runs a lobby op under "menu    netwait" (the status line) and "menu    netbar" (progress): op 0 connect
+  {1}, 1 log in {1, 3}, 2 delete {1, 5, 0x13, 2}, 3 create {1, 4, 0x13, 2}, 4 name check {1, 0x14}, 5 rename {1, 0x16,
+  0x13, 2}. One step-function call per 30 fps frame (FUN_100ed7e0 / 100edfb0 / 100ee160 / 100ee690 / 100ee900 /
+  100eeb70 / 100ef020 / 100ee0a0), each may set a group 8 status text; p = (finished steps' N + sub) / the op's
+  total (N: 1 -> 21, 2 -> 4, 3 -> 22, 4 / 0x14 / 0x16 -> 10, 5 -> 2, 0x13 -> 4); two pump frames before each step; at
+  the end p = 1 for 10 frames, then both close. A refusal (0x04) runs subs 6..9 and closes; a broken link closes at
+  once. Step 1 on a live link: "Searching for lobby server." -> "Initializing connection." -> sub 21.
+- Ours replays those calls from tables and never passes a wait for a view reply the worker has not read (Lobby.replies
+  counts view replies); the worker's Task is parked until the run ends (handle_task), so the screen stays blocked as
+  retail's caller does. The login task now also asks for the world list (0x24, step 1 sub 17), as retail.
+- netwait: centred as the prompts, the text in the frame clamped 16 px inside, 28 off the bottom (ok_window's path).
+  netbar: frameless, centred, lobbywin 77 from the track's left edge at (2p, 0.99) while 0.01 < p < 1.1 (FUN_1011fc80's
+  centred scale cancels the (0.5 - p) * 128 shift). Both animate open / closed; no sound, no input.
+- After a delete retail shows 8 0x83 (FUN_1023b230; the long "unused options on this ID" notice); ours now too.
+- The invented "Connecting to the server..." lines are gone (login screen help, select screen).
+- Live (lnxtest01): connect "Connecting to lobby server." -> "Acquiring player data." with the bar; the creator's name
+  check and "Registering character data onto the lobby server." then "Player data registered."; the delete of the
+  test character with 8 0x83; the log-in with "Disconnecting from lobby server." over the faded-in select screen.
+- Not done: retail opens hnbackwi (lobbywin 85) for op 1 and ptcbgwin for op 0 behind the run (ours shows the screen
+  below); op 5 is one Task with the log-in (retail: op 5, then op 1); the 3600-frame timeout (FFXI-3113); FFXI-3115
+  after a failed refresh.

@@ -5,6 +5,7 @@ pub mod combat;
 mod actmotion;
 mod flyover;
 mod creator;
+mod netwait;
 mod monstrosity;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use hudtop::topbar_shot;
@@ -649,8 +650,9 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     } else if (*focus != was || escape) && chosen.is_none() {
         sounds.push(crate::audio::Ui::Cursor);
     }
+    // While the netwait run is up the help line is empty (retail's op 0 shows none).
     let help = if busy {
-        "Connecting to the server..."
+        ""
     } else if !status.is_empty() {
         status
     } else if *focus >= 5 && !enabled[*focus - 5] {
@@ -3413,6 +3415,11 @@ fn cut_pages(text: &str, mode97: bool, spans: impl Fn(&str) -> Vec<(usize, Strin
     }
 }
 
+/// A lobby operation's Task that failed outright (the link): its netwait run closes at once.
+fn task_failed(t: &Task) -> bool {
+    matches!(t, Task::LoggedIn(Err(_)) | Task::Lobby(Err(_)) | Task::Selected(Err(_)) | Task::NameChecked(Err(_)) | Task::Created(Err(_)))
+}
+
 /// Where the creator's popup goes on OK (FUN_10239720).
 enum CreatorNext {
     Step(usize),
@@ -5201,6 +5208,9 @@ pub struct App {
     creator_yes: bool,
     /// The creator's menu ok popup and what its OK leads to.
     creator_ok: Option<(String, CreatorNext)>,
+    /// The lobby's netwait / netbar while an operation runs (client/netwait.rs); a delete's notice after it (8 0x83).
+    netwait: Option<netwait::NetWait>,
+    deleting: bool,
     /// HUD window rects this frame; clicks there do not pick in the world.
     hud_blockers: Vec<[f32; 4]>,
     /// Shut Down finished: close the window.
@@ -5387,6 +5397,8 @@ impl App {
             creator_step: 0,
             creator_yes: false,
             creator_ok: None,
+            netwait: None,
+            deleting: false,
             exit_requested: false,
             close_asked: false,
             scene_scale: None,
@@ -5759,20 +5771,32 @@ impl App {
             });
             return;
         }
+        let replies: Arc<std::sync::atomic::AtomicU32> = Default::default();
+        self.netwait = Some(netwait::NetWait::new(netwait::Op::Connect, replies.clone()));
         self.spawn(move || {
             Task::LoggedIn((|| {
                 let req = Request { username: &cfg.username, password: &password, otp: &otp, ..Default::default() };
                 let Reply::LoggedIn { account_id, session_hash, .. } = auth::send(&cfg.server, cfg.auth_port, Command::Login, &req)? else {
                     anyhow::bail!("unexpected reply from the login server");
                 };
-                let mut lobby = Lobby::connect(&cfg.server, cfg.view_port, cfg.data_port, account_id, session_hash, &cfg.client_version)?;
+                let mut lobby = Lobby::connect(&cfg.server, cfg.view_port, cfg.data_port, account_id, session_hash, &cfg.client_version, replies)?;
                 let chars = lobby.characters()?;
+                // Retail's connect step asks for the world list too (0x24, step 1 sub 17).
+                lobby.worlds()?;
                 Ok((lobby, chars))
             })())
         });
     }
 
     fn handle_task(&mut self, task: Task) {
+        // A lobby operation's Task waits for its netwait / netbar run to end (FUN_1023b550).
+        if let Some(nw) = self.netwait.as_mut()
+            && matches!(task, Task::LoggedIn(_) | Task::Lobby(_) | Task::Selected(_) | Task::NameChecked(_) | Task::Created(_))
+        {
+            let refused = matches!(&task, Task::NameChecked(Ok((_, Some(_)))) | Task::Created(Ok((_, Some(_), _))));
+            nw.park(task, refused);
+            return;
+        }
         // The lobby art loads in the background; nobody is waiting on it.
         if !matches!(task, Task::GameUi(_) | Task::Flyover(_) | Task::Nation(..) | Task::Select(..) | Task::CreatorBackdrop(_) | Task::Dancer(_) | Task::Battle(_) | Task::Names(_) | Task::Actions(_) | Task::AreaLoaded(..) | Task::SubAreaLoaded(..)) {
             self.busy = false;
@@ -5890,6 +5914,11 @@ impl App {
                 };
                 let expansions = lobby.expansions;
                 self.phase = Phase::Characters { lobby: Some(lobby), chars, new_name, race, face, size, job, nation, selected, screen, menu: 0, confirm: None, expansions };
+                if std::mem::take(&mut self.deleting)
+                    && let Some(gu) = self.game_ui.as_ref()
+                {
+                    self.select_ui.focus = select::Focus::Ok(gu.lobby_msg(8, 0x83, ""), Box::new(select::Focus::List));
+                }
             }
             Task::Selected(Ok(login)) => {
                 match crate::net::map::compress::Codec::from_ffximain(&std::fs::read(self.cfg.ffxi_dir().join("FFXiMain.dll")).unwrap_or_default()) {
@@ -6501,6 +6530,7 @@ impl App {
                 self.to_login(true);
             }
             Task::Lobby(Err(e)) | Task::NameChecked(Err(e)) | Task::Created(Err(e)) => {
+                self.deleting = false;
                 self.status = format!("{e:#}");
                 self.to_login(true);
             }
@@ -6543,6 +6573,14 @@ impl App {
                     });
                 }
             }
+        }
+    }
+
+    /// The netwait run's next frames; the parked Task goes on as the windows close.
+    fn update_netwait(&mut self, dt: f32) {
+        if let Some(t) = self.netwait.as_mut().and_then(|nw| nw.update(dt)) {
+            self.netwait = None;
+            self.handle_task(t);
         }
     }
 
@@ -8873,6 +8911,9 @@ impl App {
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    if let Some(nw) = self.netwait.as_ref() {
+                        netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                    }
                     // Unticked: the remembered password goes at once.
                     if remembered && !self.cfg.remember_password {
                         self.cfg.saved_password.clear();
@@ -9199,7 +9240,7 @@ impl App {
                         self.ui_drawn = true;
                         let (sw, sh) = (screen_size[0] as f32, screen_size[1] as f32);
                         let list = select::List::new(chars);
-                        let shown = if busy { Some(("Connecting to the server...", WHITE)) } else if !status.is_empty() { Some((status.as_str(), YELLOW)) } else { None };
+                        let shown = if busy { None } else if !status.is_empty() { Some((status.as_str(), YELLOW)) } else { None };
                         let sin = select::Input { events: &input.events, pointer: input.pointer, moved: input.moved, clicked: input.clicked, busy };
                         let out = self.select_ui.step(gu, &sin, &list, chars, deleting, sw, sh, shown);
                         if let Some(a) = self.audio.as_mut() {
@@ -9219,14 +9260,21 @@ impl App {
                         match out.action {
                             Some(select::Action::Login(i)) => {
                                 if let (Some(l), Some(c)) = (lobby.take(), chars.get(i).cloned()) {
-                                    action = Some(Box::new(move |app: &mut App| app.spawn(move || Task::Selected(l.select(&c)))));
+                                    let replies = l.replies.clone();
+                                    action = Some(Box::new(move |app: &mut App| {
+                                        app.netwait = Some(netwait::NetWait::new(netwait::Op::Login, replies));
+                                        app.spawn(move || Task::Selected(l.select(&c)))
+                                    }));
                                     fade_action = true;
                                 }
                             }
                             Some(select::Action::Rename(i, name)) => {
                                 // LSB view 0x28, then the login with the new name (LAB_102395b5).
                                 if let (Some(mut l), Some(mut c)) = (lobby.take(), chars.get(i).cloned()) {
+                                    let replies = l.replies.clone();
                                     action = Some(Box::new(move |app: &mut App| {
+                                        // Retail runs op 5 (rename) and then op 1 (log in); ours both in one Task.
+                                        app.netwait = Some(netwait::NetWait::new(netwait::Op::Rename, replies));
                                         app.spawn(move || {
                                             Task::Selected((|| {
                                                 l.rename(&c, &name)?;
@@ -9240,7 +9288,10 @@ impl App {
                             }
                             Some(select::Action::Delete(i)) => {
                                 if let (Some(mut l), Some(c)) = (lobby.take(), chars.get(i).cloned()) {
+                                    let replies = l.replies.clone();
                                     action = Some(Box::new(move |app: &mut App| {
+                                        app.netwait = Some(netwait::NetWait::new(netwait::Op::Delete, replies));
+                                        app.deleting = true;
                                         app.spawn(move || {
                                             Task::Lobby((|| {
                                                 l.delete_character(&c)?;
@@ -9395,7 +9446,9 @@ impl App {
                                     if let Some(mut l) = lobby.take() {
                                         ui_se(&mut self.audio, crate::audio::Ui::Select);
                                         let nm = new_name.clone();
+                                        let replies = l.replies.clone();
                                         action = Some(Box::new(move |app: &mut App| {
+                                            app.netwait = Some(netwait::NetWait::new(netwait::Op::NameCheck, replies));
                                             app.spawn(move || {
                                                 Task::NameChecked(crate::net::lobby::refusal(l.check_name(&nm)).map(|r| (l, r.err())))
                                             })
@@ -9429,7 +9482,11 @@ impl App {
                                     if let Some(l) = lobby.take() {
                                         *selected = chars.iter().position(|x| x.content_id == c.content_id);
                                         fade_action = true;
-                                        action = Some(Box::new(move |app: &mut App| app.spawn(move || Task::Selected(l.select(&c)))));
+                                        let replies = l.replies.clone();
+                                        action = Some(Box::new(move |app: &mut App| {
+                                            app.netwait = Some(netwait::NetWait::new(netwait::Op::Login, replies));
+                                            app.spawn(move || Task::Selected(l.select(&c)))
+                                        }));
                                     }
                                 }
                             }
@@ -9443,7 +9500,9 @@ impl App {
                                     self.music_created = true;
                                     // LSB face byte = face * 2 + hair.
                                     let (nm, r, f, sz, j, na) = (new_name.clone(), *race as u8 + 1, *face, *size, *job as u8 + 1, *nation as u8);
+                                    let replies = l.replies.clone();
                                     action = Some(Box::new(move |app: &mut App| {
+                                        app.netwait = Some(netwait::NetWait::new(netwait::Op::Create, replies));
                                         app.spawn(move || {
                                             Task::Created((|| {
                                                 let made = crate::net::lobby::refusal(l.create_character(&NewCharacter { name: &nm, race: r, face: f, size: sz, job: j, nation: na }))?;
@@ -9461,6 +9520,9 @@ impl App {
                     // The creator and its scene load behind the lobby fade (FUN_10245fb0 fades the scene in once
                     // the dancer shows); Config has no game screen yet.
                     _ => {}
+                }
+                if let (Some(nw), Some(gu)) = (self.netwait.as_ref(), self.game_ui.as_mut()) {
+                    netwait::draw(gu, nw, screen_size[0] as f32, screen_size[1] as f32);
                 }
             }
             Phase::World(world) => {
@@ -9672,6 +9734,7 @@ impl App {
                     if let Some(c) = chars.iter().find(|c| c.name.eq_ignore_ascii_case(&name)).cloned() {
                         self.drive.relogin = false;
                         let l = lobby.take().unwrap();
+                        self.netwait = Some(netwait::NetWait::new(netwait::Op::Login, l.replies.clone()));
                         self.spawn(move || Task::Selected(l.select(&c)));
                     }
                 }
@@ -10086,6 +10149,7 @@ impl App {
         }
         let shoot = shoot || script_shot.is_some();
         let ctx = gfx.egui_ctx.clone();
+        self.update_netwait(dt);
         let before = self.ui_snap();
         let output = perf::timed(|| "egui".into(), || ctx.run_ui(raw, |ui| self.ui(ui.ctx(), size)));
         let after = self.ui_snap();

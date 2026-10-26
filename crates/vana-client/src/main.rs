@@ -856,7 +856,7 @@ fn login(cfg: &config::Config, creds: &Credentials) -> Result<net::lobby::Lobby>
     };
     println!("Logged in: account {account_id}");
     let lobby =
-        net::lobby::Lobby::connect(&cfg.server, cfg.view_port, cfg.data_port, account_id, session_hash, &cfg.client_version)?;
+        net::lobby::Lobby::connect(&cfg.server, cfg.view_port, cfg.data_port, account_id, session_hash, &cfg.client_version, Default::default())?;
     println!("Lobby: expansions 0x{:08X}, features 0x{:08X}", lobby.expansions, lobby.features);
     Ok(lobby)
 }
