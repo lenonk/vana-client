@@ -97,8 +97,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     pointer and `<ht>`, the compass radar dots (MODLOG "Compass radar dots"); left: helpwind's other busy bits;
   - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual, the Recycle Bin (and
     `/recycle`, "menu    itemctrl") done; the storage views (text commands, both sides, itmsortw, itmstora,
-    Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); left the Delivery Box and
-    Remodel rows, the Mog Garden use rule; the Delivery Box done (send, receive, cancel mode);
+    Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); the Delivery Box (send,
+    receive, cancel mode) and Remodel (client/remodel.rs, MODLOG "Mog House Remodel") done; left the Mog Garden use rule;
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
     yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D) done; left the dice / attachment
     colours (need s2c 0x063 sub 4 and 0x044);

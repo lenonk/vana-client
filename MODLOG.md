@@ -9429,3 +9429,26 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   target).
 - Live (Lnxcsfix in its house, nothing targeted): main menu Trade -> the prompt on the Moogle, title and help as
   above; Enter -> the hand-over.
+
+## Mog House Remodel (2026-10-26)
+
+- /remodel (FUN_1007e7a0) and myroom row 7 (which runs it, as rows 4 / 5 run /garden / /layout): the Mog House
+  gate as /layout's (zone flag 0x100, own house else 7 0xbc, the myroom object, status gate 0x44, the job-change
+  cooldown, a busy window); FUN_101d5fe0 (not furnished) -> refusal index 5 (7 0x47); 2F not unlocked (FUN_100f97a0,
+  ours `mh_floors`) -> Err; open to visitors or asked to be (DAT_105782b4 +0x16 / FUN_100f96e0) -> SE 0004; then
+  FUN_101d6890 on DAT_106631e0. No moogle-home check (unlike /layout).
+- The list (FUN_101d6890 / FUN_101d6900, vtable 0x103384c8): "menu    roomlist" (FUN_101d6820 open / FUN_101d6840
+  close), FUN_101f6700(5) rows, column table DAT_1037ec5c (20, 245); five type-3 cells (game font in the row tint):
+  group 0xc 0x1c2 "No changes" (map 0), 0x1be "San d'Orian style" 0x267, 0x1bf "Bastokan style" 0x268, 0x1c0
+  "Windurstian style" 0x269, 0x1c1 "Mog Patio" 0x26a; the patio row 0x80808080 with key item 0xbeb (Mog Patio Design
+  Document, FUN_10097e80) else 0x80404040.
+- FUN_101d6b20 (event 5, Enter): map 0 closes (FUN_101d6b10, SE 0003); child 5 without the key item SE 0004 (stays);
+  else FUN_10210e30 yes / no group 0xc 0x1c3 "Make changes?" and SE 0002; Yes (LAB_101d6ab0 -> FUN_101d6ad0) sends
+  c2s 0x0CB {5, +0x50, map} (FUN_100f0a40), SE 0002, closes. Event 6 (Escape) closes with SE 0003. Sounds:
+  FUN_10037b90 "0002", FUN_10037bf0 "0003", FUN_10037c50 "0004". +0x50 is sent as Param1 *(inf: 0; LSB ignores it)*.
+- LSB (0x0cb_myroom_is): Kind 5 stores the style in mhflag bits 7..8 (map - 615), says MsgStd::SuccessfulRemodel and,
+  on 2F with a new style, rezones; the patio without the key item falls back to the nation's style.
+- Ours: client/remodel.rs (list, keys, mouse, bars, draw), `Confirm::Remodel(map)`, textcmd id 0x80.
+- Live (Lnxcsfix, its San d'Oria house, mhflag set to 0x20 for the test and restored to 0 after): /remodel -> the list
+  (title "Remodel", help "Select house style.", Mog Patio grey), Bastokan -> "Make changes?", Left, Enter -> c2s
+  0x0CB {5, 0, 0x268}; LSB wrote mhflag 0xa0 (style 1).

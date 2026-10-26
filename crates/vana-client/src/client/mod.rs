@@ -84,6 +84,7 @@ mod keyitems;
 mod linkshell;
 mod searchmenu;
 mod arealist;
+mod remodel;
 mod seacom;
 mod region;
 mod radar;
@@ -236,7 +237,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -1581,6 +1582,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
                 // Space and '/' still open the chat line with no layout window up (FUN_101ab630: the field).
+                _ if world.remodel.is_some() => remodel::key(world, *key),
                 _ if world.layout.is_some() && !(layout::in_field(world) && matches!(key, egui::Key::Space | egui::Key::Slash)) => {
                     layout::key(world, *key);
                 }
@@ -1866,6 +1868,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.loot.is_some() && world.confirm.is_none()) {
         treasure::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.remodel.is_some() && world.confirm.is_none()) {
+        remodel::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| trade::active(world) && world.confirm.is_none()) {
         trade::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
@@ -2380,6 +2385,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     buffs::draw(gu, world, sw, sh);
     buffs::draw_party(gu, world, sw, sh, log.rect);
     blockers.extend(moogle::draw(gu, world, sw, sh));
+    blockers.extend(remodel::draw(gu, world, sw, sh));
     blockers.extend(layout::draw(gu, world, sw, sh));
     blockers.extend(auction::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
@@ -2786,6 +2792,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             layout::confirmed(world, a);
         }
+        (Some(true), Some((Confirm::Remodel(map), _))) => {
+            world.confirm = None;
+            remodel::confirmed(world, map);
+        }
         (Some(true), Some((kind, _))) => {
             world.confirm = None;
             // LAB_10159f00 / LAB_10159ee0: Yes runs "/logout" or "/shutdown" again (a toggle, which also cancels).
@@ -2938,6 +2948,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     magic::bars(gu, world, &mut bars);
     bluset::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
+    remodel::bars(gu, world, &mut bars);
     layout::bars(gu, world, &mut bars);
     auction::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
@@ -3008,6 +3019,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
         (Confirm::Layout(a), _) => layout::ask_text(gu, a),
+        (Confirm::Remodel(_), _) => gu.lobby_msg(0x0c, 0x1c3, "Make changes?"),
         (Confirm::Auction(a), _) => auction::ask_text(world, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
@@ -4317,6 +4329,8 @@ struct World {
     search_status0: u32,
     /// The area picker and its view (+0x5c: by region; not saved).
     arealist: Option<arealist::AreaList>,
+    /// The Mog House 2F Remodel list (client/remodel.rs).
+    remodel: Option<remodel::Remodel>,
     arealist_by_region: bool,
     /// Region Info: the conquest data and marker tables, the region menu, the map (cnqframe), a /regionmap to open.
     conquest: region::Data,
@@ -4680,6 +4694,8 @@ enum Confirm {
     LinkKick(linklist::Kick),
     /// Layout mode's removal and Clear All prompts.
     Layout(layout::Ask),
+    /// The Remodel list's "Make changes?" for a 2F map.
+    Remodel(u16),
     /// The auction house's bid, fee, listing and Stop Sale prompts.
     Auction(auction::Ask),
     JobPoint(jobpoints::Ask),
@@ -5769,6 +5785,7 @@ impl App {
                             search_cond: Default::default(),
                             search_status0: 0,
                             arealist: None,
+                            remodel: None,
                             arealist_by_region: true,
                             seacom: Default::default(),
                             seacom_edit: None,
@@ -6399,6 +6416,7 @@ impl App {
                     world.map_open = None;
                     world.control_lock = None;
                     auction::close(world);
+                    world.remodel = None;
                     (world.layout, world.layout_view) = (None, 0);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display

@@ -1,6 +1,5 @@
 //! The moogle menus (s2c 0x02E, FUN_10097af0 -> FUN_101d6110): "menu    myroom" in one's own Mog House, "menu    mogext"
-//! by a nomad moogle, their storage menus (FUN_10145e70) and Change Jobs. The Delivery Box, Gardening / Layout's own
-//! modes and Remodel are not done yet.
+//! by a nomad moogle, their storage menus (FUN_10145e70) and Change Jobs. Gardening's own mode is not done yet.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -404,10 +403,15 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) -> bool {
                         mm.storage = Some((1, off));
                     }
                 }
-                // Gardening / Layout run their text commands and close myroom.
-                (false, 4 | 5) => {
+                // Gardening / Layout / Remodel run their text commands and close myroom.
+                (false, 4 | 5 | 7) => {
                     w.moogle = None;
-                    super::textcmd::run(w, if m.sel == 4 { "/garden" } else { "/layout" }, super::textcmd::Mode::Internal);
+                    let cmd = match m.sel {
+                        4 => "/garden",
+                        5 => "/layout",
+                        _ => "/remodel",
+                    };
+                    super::textcmd::run(w, cmd, super::textcmd::Mode::Internal);
                 }
                 // Open / Close Mog House: c2s 0x0CB {1 open | 2 close, 0, 0}; open waits for 0x067 @0x24.
                 (false, 6) => {
