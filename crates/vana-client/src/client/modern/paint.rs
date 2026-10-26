@@ -4,6 +4,20 @@
 use super::theme::{Frame, Sprite};
 use egui::{Align2, Color32, FontId, Mesh, Painter, Pos2, Rect, Shape, pos2, vec2};
 
+/// A shape at `a` of its alpha (the frames' fade).
+pub fn faded(s: Shape, a: f32) -> Shape {
+    match s {
+        Shape::Vec(v) => Shape::Vec(v.into_iter().map(|s| faded(s, a)).collect()),
+        Shape::Mesh(mut m) => {
+            for v in &mut std::sync::Arc::make_mut(&mut m).vertices {
+                v.color = v.color.gamma_multiply(a);
+            }
+            Shape::Mesh(m)
+        }
+        s => s,
+    }
+}
+
 /// Text with a black border a pixel wide (the bars' labels), placed by `align` at `at`; its rect.
 pub fn outlined(p: &Painter, at: Pos2, align: Align2, text: &str, font: FontId, colour: Color32) -> Rect {
     let galley = p.layout_no_wrap(text.to_string(), font, colour);

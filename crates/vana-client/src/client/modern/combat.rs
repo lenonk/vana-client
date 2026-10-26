@@ -51,7 +51,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let title = if engaged { "Battle" } else { "Commands" };
     let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let (mut hovered, mut clicked, mut arrow) = (None, None, None);
-    p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), 270.0, [0.62, 0.3], |ui| {
+    p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), 270.0, |ui| {
         for (k, &c) in menu.items.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
             let sprite = if k == menu.sel {

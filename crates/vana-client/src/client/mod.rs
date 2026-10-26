@@ -2411,6 +2411,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.log_focus = 0;
     }
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
+    // The same inputs for the modern chat window's run of the rule; its combat window is retail's playermo (flag 0x1000).
+    world.log_rule = logwin::LogRule {
+        stacked: stacked || (world.modern && world.action_menu.is_some()),
+        page_rows: event::prompt(world).then_some(page_rows),
+        typing: world.typing,
+        line_open,
+        focused: world.log_active,
+        shrink: shrink_log,
+        cfg: world.log.cfg,
+    };
     world.log.chat_line(world.typing);
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
@@ -2418,6 +2428,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.timers.log = Some(log.rect);
     gu.log_top = Some(log.rect[1]);
     gu.log_faded = world.log.faded();
+    // The modern chat window stands for the log: stacked windows 2 px above the part of it showing (as it fades it
+    // folds into its bottom edge).
+    if world.modern
+        && let Some((r, _)) = world.modern_chat_edge
+    {
+        gu.log_top = Some(r[1]);
+        gu.log_faded = false;
+        world.timers.log = Some(r);
+    }
     // FUN_101626e0 (asm 0x10162a52): with the log held by a stacked window, a height change moves the pointer with
     // it while it is inside one, so it stays on the same child. Ours shifts the drawn cursor (no warp on Wayland).
     if !stacked {
@@ -4727,6 +4746,11 @@ struct World {
     menu_click: Option<(u8, u16)>,
     /// A row of the action menu the modern combat window clicked.
     action_click: Option<usize>,
+    /// The modern chat window's run of the log's rule, the rule's inputs world_hud gathers for it, and its rect in UI
+    /// pixels and fade last frame (the game's stacked windows and the Timers window sit on it).
+    modern_log: logwin::ModernLog,
+    log_rule: logwin::LogRule,
+    modern_chat_edge: Option<([f32; 4], bool)>,
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -6247,6 +6271,9 @@ impl App {
                             cmd: Default::default(),
                             menu_click: None,
                             action_click: None,
+                            modern_log: Default::default(),
+                            log_rule: Default::default(),
+                            modern_chat_edge: None,
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),
@@ -9744,6 +9771,9 @@ impl App {
                 {
                     let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
                     save |= m.ui(ctx, gu, world, window, &mut self.cfg);
+                    // Its chat window in UI pixels for next frame's stacked windows.
+                    let (k, uk) = (ctx.pixels_per_point(), self.ui_k);
+                    world.modern_chat_edge = m.chat_rect().map(|(r, faded)| ([r.min.x * k * uk.0, r.min.y * k * uk.1, r.width() * k * uk.0, r.height() * k * uk.1], faded));
                 } else {
                     modern::off(ctx, self.modern.as_mut());
                 }

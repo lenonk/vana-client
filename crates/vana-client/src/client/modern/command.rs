@@ -176,7 +176,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let m = p.m;
     let c = w.cmd;
     let (mut top_click, mut top_hover) = (None, None);
-    let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None }), 250.0, [0.83, 0.07], |ui| {
+    let rect = p.panel("command", Some(Title { icon: None, text: "Menu", note: None }), 250.0, |ui| {
         (top_click, top_hover) = rows(ui, m, w, TOP, c.sub.is_none().then_some(c.top), c.sub.map(|_| c.top));
     });
     let mut c = w.cmd;

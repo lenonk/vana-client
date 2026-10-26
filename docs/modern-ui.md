@@ -152,6 +152,18 @@ Milestone 1:
   character in config `modern_places`, saved when the pointer is let go. Only the chat window resizes, by the glyph
   in its corner: more room for the lines, nothing scales. Its settings button (the tabs' right) sets the font size
   (config `modern_chat_font`, 10 .. 32, default 15). User's call (2026-10-26): no lock button, no other resizing.
+- The top bar: retail's titlewin, helpwind (marquee, busy strip, "Help" legend) and netstat (meter, %, S / R) in
+  their places and by their fade rule (hudtop.rs fills a TopView), in the pack's frames on a layer that takes no input.
+- The chat window runs the retail log's rule (logwin::LogAnim, shared with the retail log) on its own wrapped rows:
+  a period per new row up to the lines its room holds, a row off every period down to the min lines, Escape, the
+  chat line's two rows (the line in the bottom row, an empty row above it), the eased height, the slide-in, the full
+  log closing it. With no lines it goes on folding down through its tab row until it is gone, at the same rate
+  (user's call: no fade). It sits on the screen's bottom and grows upward; moving or resizing a panel holds it open.
+- Docking: a panel let go with its bottom within 5 px of another's top (over it) sits on it and keeps the distance
+  as the other moves, grows or folds away; chains follow, a hidden target counts as no height where it sits.
+  Defaults as retail: the location panel on the chat window (the compass on the log), the combat window on the
+  location panel, the target on the party window (targetwi on the party window). The game's windows still drawn
+  retail-style that stack on the log (flag 0x1000) stack on the modern chat window, the Timers window too.
 - The game's windows and the world take no click, press or wheel over a modern panel.
 - Bars carry their label and value over their top edge (Inter Bold Italic, 18 pt, a black border, the label a
   little in from the bar's start). The locked target as retail's windowps 212: the alert frame, red arrowheads out

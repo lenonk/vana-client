@@ -35,6 +35,28 @@ pub struct HudTop {
     busy_frame: usize,
     busy_wait: f32,
     busy_was: bool,
+    /// What the modern layer draws in place of the three windows (the same rule and state).
+    pub view: TopView,
+}
+
+/// The top bar's state for the modern layer: the shown texts, the fade, the busy strip's frame, the network numbers.
+#[derive(Default, Clone, Debug)]
+pub struct TopView {
+    pub title: String,
+    pub help: String,
+    pub alpha: f32,
+    /// The bars fully shown (retail's "Help" caption then).
+    pub shown: bool,
+    /// titlewin / netstat not suspended by the window walk.
+    pub title_up: bool,
+    pub net_up: bool,
+    /// The busy strip's frame (0..5) while a request is pending.
+    pub busy: Option<usize>,
+    pub pct: i32,
+    pub sent: u64,
+    pub recv: u64,
+    /// The meter's step (0..4) and its level: 0 none, 1 low, 2 fair, 3 good.
+    pub meter: (usize, u8),
 }
 
 /// Text slots of helpwind (+0x20) and titlewin (+0xa4), FUN_10217230: index 0 action menu, 1 focused window,
@@ -194,7 +216,31 @@ impl HudTop {
             || super::search::busy(w)
             || w.bid.pending;
         self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
-        self.draw_bars(gu, sw, sh, title, help, ticks, busy);
+        if w.modern {
+            self.step_busy(ticks, busy);
+            self.step_meter(ticks);
+            let base = self.meter_base();
+            self.view = TopView {
+                title: title.to_string(),
+                help: help.to_string(),
+                alpha: self.fade.alpha(),
+                shown: self.fade.fade == Fade::Shown,
+                title_up: gu.want("menu    titlewin"),
+                net_up: gu.want("menu    netstat"),
+                busy: busy.then_some(self.busy_frame),
+                pct: self.pct,
+                sent: self.sent_rate,
+                recv: self.recv_rate,
+                meter: (self.frame, match base {
+                    1 => 3,
+                    5 => 2,
+                    9 => 1,
+                    _ => 0,
+                }),
+            };
+        } else {
+            self.draw_bars(gu, sw, sh, title, help, ticks, busy);
+        }
         // The compass alone is hidden in events, and in the modern layer (its location panel).
         self.draw_compass(gu, w, log_top, ticks, !super::event::active(w) && !w.modern, camera_forward);
     }
@@ -223,21 +269,12 @@ impl HudTop {
         // FUN_102214d0 / FUN_102213e0: while a request is pending (helpwind +0x64), keytops3 165..169 (8 ticks each,
         // table 0x10385fcc; a new request restarts at 165) centred in the text box at y0 + 8, unfaded, in place of
         // the text; the marquee stands still.
+        self.step_busy(ticks, busy);
         if busy {
-            if !self.busy_was {
-                (self.busy_frame, self.busy_wait) = (0, 8.0);
-            } else {
-                self.busy_wait -= ticks;
-                while self.busy_wait < 1.0 {
-                    self.busy_frame = (self.busy_frame + 1) % 5;
-                    self.busy_wait += 8.0;
-                }
-            }
             let half = (165..170).filter_map(|f| gu.cell_bounds("menu    keytops3", f, 0)).map(|b| (b[2] - b[0]) / 2.0).fold(0.0, f32::max);
             let x0 = gu.cell_bounds("menu    keytops3", 165 + self.busy_frame, 0).map_or(0.0, |b| b[0]);
             gu.sprite("menu    keytops3", 165 + self.busy_frame, sw / 2.0 - half - x0, hy + 8.0, 0x8080_8080);
         }
-        self.busy_was = busy;
         let text = if busy { self.help.clone() } else { help.to_string() };
         if text != self.help {
             self.help = text;
@@ -268,15 +305,8 @@ impl HudTop {
         // content is drawn whatever the fade.
         if let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a) {
             let pct = self.pct;
-            // Netmeter sprites in order 12, 0..11 (table 0x10378d0c); base 0 / 9 / 5 / 1; a frame every
-            // (11 - pct / 10) draws, taken at 30 draws a second (inferred).
-            let base = if pct == 0 { 0 } else if pct < 30 { 9 } else if pct < 60 { 5 } else { 1 };
-            self.meter_ticks += ticks;
-            let every = (11 - pct / 10).max(1) as f32 * 2.0;
-            while self.meter_ticks >= every {
-                self.meter_ticks -= every;
-                self.frame = (self.frame + 1) % 4;
-            }
+            self.step_meter(ticks);
+            let base = self.meter_base();
             let order = [12, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
             let k = if base == 0 { order[0] } else { order[(base + self.frame).min(12)] };
             gu.sprite("menu    netmeter", k, x, y, 0x8080_8080);
@@ -287,6 +317,42 @@ impl HudTop {
             gu.shape_text(&self.sent_rate.to_string(), x + 68.0, y + 4.0, 0x6080_8080, false);
             gu.shape_text("R", x + 58.0, y + 16.0, 0x6080_8080, false);
             gu.shape_text(&self.recv_rate.to_string(), x + 68.0, y + 16.0, 0x6080_8080, false);
+        }
+    }
+
+    /// The busy strip (keytops3 165..169, 8 ticks each; a new request restarts at 165).
+    fn step_busy(&mut self, ticks: f32, busy: bool) {
+        if busy {
+            if !self.busy_was {
+                (self.busy_frame, self.busy_wait) = (0, 8.0);
+            } else {
+                self.busy_wait -= ticks;
+                while self.busy_wait < 1.0 {
+                    self.busy_frame = (self.busy_frame + 1) % 5;
+                    self.busy_wait += 8.0;
+                }
+            }
+        }
+        self.busy_was = busy;
+    }
+
+    /// Netmeter sprites in order 12, 0..11 (table 0x10378d0c); base 0 / 9 / 5 / 1; a frame every (11 - pct / 10)
+    /// draws, taken at 30 draws a second (inferred).
+    fn meter_base(&self) -> usize {
+        match self.pct {
+            0 => 0,
+            p if p < 30 => 9,
+            p if p < 60 => 5,
+            _ => 1,
+        }
+    }
+
+    fn step_meter(&mut self, ticks: f32) {
+        self.meter_ticks += ticks;
+        let every = (11 - self.pct / 10).max(1) as f32 * 2.0;
+        while self.meter_ticks >= every {
+            self.meter_ticks -= every;
+            self.frame = (self.frame + 1) % 4;
         }
     }
 

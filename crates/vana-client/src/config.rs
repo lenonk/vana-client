@@ -118,15 +118,26 @@ pub struct Config {
     pub modern_chat_font: f32,
 }
 
-/// A modern UI panel's place: its top left as fractions of the screen (so it keeps its place whatever the Interface Size
-/// or the resolution), and for the chat window its room in points (0: the default).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
+/// screen, so it keeps its place whatever the Interface Size or the resolution; for the chat window its room in points
+/// (0: the default); or docked on another panel.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ModernPlace {
     pub x: f32,
     pub y: f32,
     pub w: f32,
     pub h: f32,
+    pub b: f32,
+    pub dock: Option<ModernDock>,
+}
+
+/// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModernDock {
+    pub to: String,
+    pub gap: f32,
+    pub dx: f32,
 }
 
 /// A character's panel places by panel id.

@@ -158,7 +158,7 @@ fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, per: usize,
 
 pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     let (m, look) = (p.m, p.look());
-    p.panel("status", Some(Title { icon: v.icon.as_deref(), text: &v.name, note: Some(&v.jobs) }), 340.0, [0.012, 0.07], |ui| {
+    p.panel("status", Some(Title { icon: v.icon.as_deref(), text: &v.name, note: Some(&v.jobs) }), 340.0, |ui| {
         gauge_row(ui, m, "HP", "hp", v.hp.2, &format!("{} / {}", v.hp.0, v.hp.1));
         if let Some((now, max, f)) = v.mp {
             gauge_row(ui, m, "MP", "mp", f, &format!("{now} / {max}"));
@@ -180,7 +180,7 @@ pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usi
     let note = format!("{} / 6", rows.len() + 1);
     let row_h = 40.0;
     let mut clicked = None;
-    p.panel("party", Some(Title { icon: None, text: "Party", note: Some(&note) }), 340.0, [0.76, 0.5], |ui| {
+    p.panel("party", Some(Title { icon: None, text: "Party", note: Some(&note) }), 340.0, |ui| {
         for row in rows {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
             let sprite = if row.marked {
@@ -231,7 +231,7 @@ pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usi
 pub fn target_panel(p: &mut Panels, v: &TargetView) {
     let m = p.m;
     let frame = if v.locked { "window_alert" } else { "window_normal" };
-    let r = p.framed("target", Some(Title { icon: Some(v.ring), text: &v.name, note: None }), 340.0, [0.52, 0.5], frame, |ui| {
+    let r = p.framed("target", Some(Title { icon: Some(v.ring), text: &v.name, note: None }), 340.0, frame, |ui| {
         if let Some((pct, f)) = v.hp {
             gauge_row(ui, m, "HP", "hp", f, &format!("{pct}%"));
         }
@@ -271,7 +271,7 @@ const TILT: f32 = 0.4536;
 
 pub fn where_panel(p: &mut Panels, v: &WhereView) {
     let m = p.m;
-    p.panel("where", None, 430.0, [0.012, 0.29], |ui| {
+    p.panel("where", None, 430.0, |ui| {
         // The zone over the time and day at the left, the compass, the grid over the weather at the right.
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::hover());
         let right = r.max.x - 66.0;
@@ -377,7 +377,7 @@ fn compass_view(w: &World) -> Option<CompassView> {
 
 pub fn cast_panel(p: &mut Panels, f: f32) {
     let m = p.m;
-    p.panel("cast", None, 300.0, [0.41, 0.58], |ui| {
+    p.panel("cast", None, 300.0, |ui| {
         gauge_row(ui, m, "Casting", "cast", f, &format!("{}%", (f * 100.0) as u32));
     });
 }

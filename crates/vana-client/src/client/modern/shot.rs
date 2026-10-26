@@ -21,8 +21,34 @@ fn load_png(path: &Path) -> Result<([usize; 2], Vec<u8>)> {
 }
 
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
+    let top = crate::client::hudtop::TopView {
+        title: "Status".into(),
+        help: "View status.".into(),
+        alpha: 1.0,
+        shown: true,
+        title_up: true,
+        net_up: true,
+        busy: None,
+        pct: 100,
+        sent: 154,
+        recv: 276,
+        meter: (1, 3),
+    };
+    super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, 15.0);
-    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font };
+    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, this: Default::default() };
+    // The chat window first, as the layer draws it: the location panel sits on it.
+    let wh = [0x80, 0x80, 0x80, 0x80];
+    let lines = vec![
+        (String::new(), "=== Area: West Ronfaure ===", wh, false),
+        ("[18:42:10] ".to_string(), "Raven : rdy?", [0x80, 0x80, 0x80, 0x80], true),
+        (String::new(), "Lenon starts casting Protect on Koru.", [0x30, 0x78, 0x80, 0x80], false),
+        (String::new(), "Koru gains the effect of Protect.", wh, false),
+        (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], false),
+        ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], true),
+    ];
+    let shown = chat::Shown { rows: 8.0, draw_n: 8, pending: 0, slide: 0 };
+    chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630, effects: mine }, false);
@@ -33,28 +59,20 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     let row = |slot, name: &str, job, here, hp, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here, hp, marked, effects };
     hud::party_panel(&mut p, &[row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false);
     hud::cast_panel(&mut p, 0.6);
-    let wh = [0x80, 0x80, 0x80, 0x80];
-    let lines = vec![
-        (String::new(), "=== Area: West Ronfaure ===", wh, false),
-        ("[18:42:10] ".to_string(), "Raven : rdy?", [0x80, 0x80, 0x80, 0x80], true),
-        (String::new(), "Lenon starts casting Protect on Koru.", [0x30, 0x78, 0x80, 0x80], false),
-        (String::new(), "Koru gains the effect of Protect.", wh, false),
-        (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], false),
-        ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], true),
-    ];
-    chat::panel(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false });
     hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)) });
+    *m.rects.borrow_mut() = std::mem::take(&mut p.this);
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
     let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::unique("frames")));
     let screen = ctx.content_rect();
     let names = ["window_normal", "window_focused", "window_inactive", "window_alert", "window_tooltip"];
     let sizes = [vec2(90.0, 70.0), vec2(170.0, 110.0), vec2(260.0, 150.0)];
-    let mut x = 16.0;
+    let mut x = screen.center().x - 300.0;
     for (i, n) in names.iter().enumerate() {
         let Some(f) = m.art.frame(n) else { continue };
         let s = sizes[i % sizes.len()];
-        painter.add(paint::window(f, Rect::from_min_size(pos2(x, screen.max.y - s.y - 16.0), s), 1.0));
-        painter.text(pos2(x + 12.0, screen.max.y - s.y - 2.0), egui::Align2::LEFT_TOP, *n, egui::FontId::proportional(12.0), m.theme.color("muted"));
+        let y = screen.center().y - s.y;
+        painter.add(paint::window(f, Rect::from_min_size(pos2(x, y), s), 1.0));
+        painter.text(pos2(x + 12.0, y + 14.0), egui::Align2::LEFT_TOP, *n, egui::FontId::proportional(12.0), m.theme.color("muted"));
         x += s.x + 12.0;
     }
 }
