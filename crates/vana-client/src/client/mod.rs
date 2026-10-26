@@ -55,6 +55,7 @@ mod linklist;
 mod blklist;
 mod furniture;
 mod layout;
+mod mannequin;
 mod auction;
 mod tilt;
 mod aepoints;
@@ -933,7 +934,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1583,6 +1584,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
                 // Space and '/' still open the chat line with no layout window up (FUN_101ab630: the field).
                 _ if world.remodel.is_some() => remodel::key(world, *key),
+                _ if mannequin::active(world) => mannequin::key(world, gu, *key),
                 _ if world.layout.is_some() && !(layout::in_field(world) && matches!(key, egui::Key::Space | egui::Key::Slash)) => {
                     layout::key(world, *key);
                 }
@@ -1871,6 +1873,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.remodel.is_some() && world.confirm.is_none()) {
         remodel::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| mannequin::active(world) && world.confirm.is_none()) {
+        mannequin::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| trade::active(world) && world.confirm.is_none()) {
         trade::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
@@ -3577,6 +3582,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
         (None, _) if let Some((id, ext, mode)) = auction::info_source(world) => (id, ext, None, false, mode, 0),
+        (None, _) if let Some((id, ext)) = mannequin::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = layout::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
@@ -3655,6 +3661,7 @@ fn turn_rate(a: &Actor, in_event: bool) -> f32 {
 fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     // Skinned furniture stands at its piece's place (client/furniture.rs).
     if let Some((pos, yaw)) = w.furniture.place_of(id) {
+        let (pos, yaw) = mannequin::place(w, id, pos, yaw);
         return Some(Place { pos, forward: Vec3::new(yaw.cos(), 0.0, -yaw.sin()), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
     }
     // FUN_100c9810: an Indi aura stands at its owner's ground place, scaled by its size.
@@ -8038,6 +8045,9 @@ impl App {
         }
         if self.input.test(0x11, input::mode::PRESS) && matches!(world.win, Some(items::Win::Equip(_))) {
             equipwin::num_plus(world);
+        }
+        if self.input.test(0x11, input::mode::PRESS) && mannequin::active(world) && world.confirm.is_none() {
+            mannequin::num_plus(world);
         }
         if self.input.test(0x11, input::mode::PRESS) && synth::active(world) {
             synth::num_plus(world);

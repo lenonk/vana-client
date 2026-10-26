@@ -29,6 +29,8 @@ pub struct Layout {
     pub bank: Option<u16>,
     /// The furniture list ("menu    inventor" with layout's source): container, scroll, cursor.
     pub list: Option<(u8, usize, usize)>,
+    /// Mode 4: a mannequin being dressed.
+    pub dress: Option<super::mannequin::Dress>,
 }
 
 /// A piece in the room, with its item.
@@ -53,6 +55,8 @@ pub enum Ask {
     Dispose { c: u8, slot: u8 },
     ClearAll,
     DisposeAll,
+    /// The dressed mannequin's "Remove all equipment from the mannequin?" (9 0xe0).
+    Undress,
 }
 
 /// The item types layout mode handles: furnishing 10, flowerpot 12, mannequin 14.
@@ -195,7 +199,7 @@ pub fn enter(w: &mut World) {
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
     let win = sel.is_none().then_some((1, 1));
-    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None });
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None, dress: None });
     w.pos = park(r.floor);
 }
 
@@ -322,11 +326,16 @@ fn clear_all(w: &mut World, l: &mut Layout, ask_plants: bool) {
 
 /// A prompt's Yes.
 pub fn confirmed(w: &mut World, a: Ask) {
+    if a == Ask::Undress {
+        super::mannequin::confirmed(w);
+        return;
+    }
     let Some(mut l) = w.layout.take() else { return };
     match a {
         Ask::Dispose { c, slot } => remove(w, &mut l, c, slot, false),
         Ask::ClearAll => clear_all(w, &mut l, true),
         Ask::DisposeAll => clear_all(w, &mut l, false),
+        Ask::Undress => {}
     }
     w.layout = Some(l);
 }
@@ -334,6 +343,7 @@ pub fn confirmed(w: &mut World, a: Ask) {
 pub fn ask_text(gu: &super::game_ui::GameUi, a: Ask) -> String {
     match a {
         Ask::ClearAll => gu.menu_msg(0x267, "Clear away all furniture?"),
+        Ask::Undress => super::mannequin::ask_text(gu),
         _ => gu.lobby_msg(0x0c, 0x35, "Dispose of what is currently growing?"),
     }
 }
@@ -350,6 +360,11 @@ pub fn update(w: &mut World, input: &mut Input, dt: f32) {
     }
     let Some(mut l) = w.layout.take() else { return };
     l.ticks += dt * 60.0;
+    if let Some(d) = l.dress.as_mut() {
+        super::mannequin::update(w, d, dt * 60.0);
+        w.layout = Some(l);
+        return;
+    }
     if l.win.is_some() || w.confirm.is_some() {
         w.layout = Some(l);
         return;
@@ -455,7 +470,7 @@ fn dim_rows(w: &World, l: &Layout, kind: u8) -> Vec<u16> {
 /// 0x90) of select mode or of the held piece. The arrows and turns are key functions (`update`).
 /// No rmlo window, bankmenu or list up: the keys are the field's.
 pub fn in_field(w: &World) -> bool {
-    w.layout.as_ref().is_some_and(|l| l.win.is_none() && l.bank.is_none() && l.list.is_none())
+    w.layout.as_ref().is_some_and(|l| l.win.is_none() && l.bank.is_none() && l.list.is_none() && l.dress.is_none())
 }
 
 pub fn key(w: &mut World, key: egui::Key) -> bool {
@@ -523,13 +538,16 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                         return true;
                     }
                     // FUN_101d6c90: bankmenu over the window, which stays open under it.
+                    // rmlo4's closes (FUN_101f48e0 case 4).
                     Row::Place => {
-                        l.win = Some((kind, sel));
+                        l.win = (kind != 4).then_some((kind, sel));
                         l.bank = Some(1);
                     }
+                    // FUN_101f48e0 case 1: rmlo4 closes, the mannequin is dressed (mode 4).
                     Row::Equip => {
-                        log::info!("layout: {} row {sel} not done", win_name(kind));
-                        l.win = Some((kind, sel));
+                        if let Some(p) = cur {
+                            super::mannequin::open(&mut l, p.piece.c, p.piece.slot);
+                        }
                     }
                 }
             }
@@ -599,8 +617,8 @@ fn installed(w: &World, ty: u16) -> usize {
     w.inv.slots.iter().filter(|((c, _), (id, _))| matches!(c, 1 | 9) && item_type(w, *id) == ty).filter(|(k, _)| w.inv.ext.get(k).is_some_and(|e| e[1] & 0x40 != 0)).count()
 }
 
-/// The list's keys (FUN_101f42e0): Enter holds the piece (a new one at its start, 3.5); the eleventh flowerpot and the
-/// ninth mannequin are refused by the moogle (0x62 / 0x63); Escape back to select mode.
+/// The list's keys (FUN_101f42e0): Enter holds the piece (a new one at its start, 3.5); with 10 flowerpots or 8
+/// mannequins installed, any row of that type is refused by the moogle (0x62 / 0x63); Escape back to select mode.
 fn list_key(w: &mut World, l: &mut Layout, key: egui::Key) {
     use egui::Key as K;
     let Some((c, mut scroll, mut cursor)) = l.list else { return };
@@ -615,9 +633,9 @@ fn list_key(w: &mut World, l: &mut Layout, key: egui::Key) {
             let ty = item_type(w, s.id);
             if tint == 0x8040_4040 {
                 w.sounds.push(Ui::Error as u32);
-            } else if ty == 12 && installed(w, 12) >= 10 && tint != 0x8050_9050 {
+            } else if ty == 12 && installed(w, 12) >= 10 {
                 super::moogle::line(w, 0x62);
-            } else if ty == MANNEQUIN && installed(w, MANNEQUIN) >= 8 && tint != 0x8050_9050 {
+            } else if ty == MANNEQUIN && installed(w, MANNEQUIN) >= 8 {
                 super::moogle::line(w, 0x63);
             } else if let Some(f) = l.table.entry(s.id) {
                 w.sounds.push(Ui::Select as u32);
@@ -647,7 +665,7 @@ fn list_key(w: &mut World, l: &mut Layout, key: egui::Key) {
 /// The rmlo window at its layout with its dim rows, bankmenu over it, or the furniture list.
 pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let Some(l) = &w.layout else { return Vec::new() };
-    let mut out = Vec::new();
+    let mut out = super::mannequin::draw(gu, w, sw, sh);
     if let Some((kind, sel)) = l.win {
         let name = win_name(kind);
         let off = dim_rows(w, l, kind);
@@ -697,22 +715,27 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
 
 /// The context: 0x3e while a window or a prompt is up, else 0x42.
 pub fn context(w: &World) -> u16 {
-    if w.layout.as_ref().is_some_and(|l| l.win.is_some() || l.bank.is_some() || l.list.is_some()) || w.confirm.is_some() { 0x3e } else { 0x42 }
+    if w.layout.as_ref().is_some_and(|l| l.win.is_some() || l.bank.is_some() || l.list.is_some() || l.dress.is_some()) || w.confirm.is_some() { 0x3e } else { 0x42 }
 }
 
-/// The layout camera each frame (FUN_101d4080) into the world camera; true while laying out.
-pub fn camera(w: &mut World) -> bool {
+/// The layout camera each frame (FUN_101d4080, the dressing one in mode 4) into the world camera; true while laying
+/// out.
+pub fn camera(w: &mut World, ticks: f32) -> bool {
+    if super::mannequin::camera(w, ticks) {
+        return true;
+    }
     let Some(l) = &w.layout else { return false };
     let (view, floor, sel) = (l.view, l.floor, l.sel_pos(w));
     let (mut eye, mut look) = (w.cam.eye, w.cam.look);
-    camera_step(&mut eye, &mut look, view, floor, sel);
+    camera_step(&mut eye, &mut look, view, floor, sel, ticks);
     w.cam = super::target::LockCam { eye, look };
     true
 }
 
 /// The cursor (FUN_101d3fc0): anc_l at the selected piece's origin, a frame every 3 ticks.
 pub fn draw_cursor(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
-    let Some(l) = &w.layout else { return };
+    // Mode 1 only (FUN_101d5680).
+    let Some(l) = w.layout.as_ref().filter(|l| l.dress.is_none()) else { return };
     let Some(p) = l.sel_pos(w) else { return };
     let clip = view_proj * p.extend(1.0);
     let (x, y) = if clip.w > 0.0 { ((clip.x / clip.w + 1.0) / 2.0 * sw, (1.0 - clip.y / clip.w) / 2.0 * sh) } else { (100.0, 100.0) };
@@ -813,6 +836,7 @@ pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::Ba
         let [help, _] = gu.focus_text(win_name(kind), sel);
         bars.help[1] = help.unwrap_or_default();
     }
+    super::mannequin::bars(gu, w, bars);
 }
 
 /// Grid size in cells: 20 columns (x) by 26 rows (z).
@@ -1192,11 +1216,17 @@ pub fn camera_target(view: u8, floor: u8, sel: Option<Vec3>) -> (Vec3, Vec3) {
     (e, l)
 }
 
-/// One frame of the layout camera: both points 0.3 of the way; view 0 then keeps the eye 7 (2F 9) from the look.
-pub fn camera_step(eye: &mut Vec3, look: &mut Vec3, view: u8, floor: u8, sel: Option<Vec3>) {
+/// The layout cameras' ease: 0.3 of the way a retail frame *(inf: 2 ticks)*.
+pub fn ease(ticks: f32) -> f32 {
+    1.0 - 0.7f32.powf(ticks / 2.0)
+}
+
+/// One frame of the layout camera: both points eased; view 0 then keeps the eye 7 (2F 9) from the look.
+pub fn camera_step(eye: &mut Vec3, look: &mut Vec3, view: u8, floor: u8, sel: Option<Vec3>, ticks: f32) {
     let (e, l) = camera_target(view, floor, sel);
-    *look += (l - *look) * 0.3;
-    *eye += (e - *eye) * 0.3;
+    let k = ease(ticks);
+    *look += (l - *look) * k;
+    *eye += (e - *eye) * k;
     if view == 0 {
         let dist = if floor == 0 { 7.0 } else { 9.0 };
         *eye = *look + (*eye - *look).normalize_or(Vec3::NEG_Y) * dist;

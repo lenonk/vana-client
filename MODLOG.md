@@ -9489,3 +9489,43 @@ dat/motionfile.rs, net.rs (s2c 0x026).
   pose 0; Safe 6 a Galka, main = Storage 6, pose 1, rot 1; Storage 1..8 the Bronze set): LSB's two 0x026 records at
   zone-in, the Mithra standing in the Bronze Cap and Harness, the Galka seated with the Bronze Sword.
 - Not yet: dressing (layout mode 4, c2s 0x03B), the worn Storage rows greyed, the cap of 8 (spec 5, 6).
+
+## Mog House mannequins, part 2: dressing (2026-10-26)
+
+Spec `~/ffxi/lab/research/mannequin_spec.md` 5, 6; client/mannequin.rs, layout.rs, items.rs.
+- rmlo4 row 1 (FUN_101f48e0 case 1) closes rmlo4 and starts mode 4 (`Layout.dress`): "menu    inspect" in mannequin
+  mode plus the Storage list "menu    inventor" at (200, 48). Context 0x3e; the layout cursor (anc_l) is mode 1 only
+  (FUN_101d5680). rmlo4's Place closes rmlo4 too (case 4).
+- The grid: the ammo, neck, ear, ring, back and waist children disabled (FUN_10133560: FUN_100fe860 gives 8); the worn
+  Storage pieces' icons (exdata[10..17]); child 17 "Remove all" = windowps 545 with anything worn, else state 5 with
+  windowps 546. FUN_10119c00 settles a child's state sprite first and then lets the FUN_1011ae50 override (+8) win,
+  with +0x48 = 1 from the matched kind-4 ref: so the dim one draws 546 at full tint (cursor 0x80805020 at +1 px), not
+  the layout's kind-4 431 (closes spec 8.4). 545 / 546 are the same 88 x 17 button at alpha 169 / 97.
+- Keys (5.6, FUN_10134250 / FUN_10130e40), as the Equipment screen: mode 2 (slot first) Enter on a slot lists its
+  pieces, Enter on a row equips; Num+ to mode 1 (item first): a row is picked (orange) and the grid walks its slots
+  (Left / Right in 0x1036f744 order); Escape closes from the grid in mode 2 or the list in mode 1, back to mode 1 with
+  the mannequin selected. The list keys as the Equipment list: Up / Down no wrap, Left / Right a page (vt +0x1c is the
+  same function in both list sources, 0x10333778 and 0x103336c0).
+- FUN_10133410: the cursor slot's index (none fails, SE 0004); a piece not worn by this mannequin goes on (c2s 0x03B
+  kind 1 {c, slot, idx, 2, Storage slot, 0x12}), else the slot comes off (kind 2 {.., 0x12, 0}); Remove all asks
+  9 0xe0 and sends kind 5.
+- List rows: Storage view 2 by (resource, id), slots & 0x1f7 only; tints FUN_10130d30: race can't wear grey, picked
+  orange, worn here green, worn by another mannequin (one with a look record) grey, else white; locks grey as usual.
+- Mode 4 (FUN_101ce6a0): the mannequin at y min(y, -0.3), yaw from 0 turning 3° a retail frame (0.02618 a tick
+  *(inf: 2 ticks a frame)*), back to 0 when its look changes (a rebuild); `mannequin::place` over the furniture place.
+  Camera FUN_101d4760: h = halfway to attach point 12 (posed), kept when missing; eye 2.5 (h + 0.3) away towards the
+  room's axis; focal 300. Both layout cameras now ease 0.3 a retail frame (1 - 0.7^(ticks / 2)) instead of 0.3 a
+  frame of ours.
+- Bars: title slot 2 "Layout" (0xd 4), help slot 2 0xe 0x25c, the list's 0xe 3. Item info mode 0: the cursor slot's
+  worn piece or the list row. Mouse: hover / click on the grid children and the rows, the pointer over the other
+  window moves the focus (message 8), right click Escape; the list's bar and wheel.
+- Storage views (6.2, FUN_101db220 case 2 and FUN_101dbdb0): a Storage piece any mannequin wears is grey; Manual also
+  greys installed furniture (dark red on the other floor) and refuses grey rows (SE 0004).
+- The cap (6.3, FUN_101f42e0): 10 installed flowerpots / 8 mannequins refuse every row of that type, installed or not.
+- Live (Lnxcsfix, the Mithra in Safe 5, the Galka holding Storage 6's sword): keys and mouse; Sub lists the sword grey
+  and the shield, the shield goes on (kind 1, LSB's 0x026 back, the actor rebuilt); the sword refused (SE 0004); item
+  first (Num+) the mittens onto Hands; Remove all (prompt, kind 5) leaves her bare and child 17 dim; Escape back to
+  mode 1. The Storage view (moogle, Storage) shows the Galka's sword grey. Num+ also cycled the log focus (key
+  function 0x78) until the dressing windows joined log_cycle's blockers (/check's inspect too: main-class).
+- Not done: the see-through tint of pieces between the camera and the mannequin (FUN_101d4310), the 4 blinks on
+  entering (FUN_101ce9e0); retail's saved-focal quirk (8.3) not copied.

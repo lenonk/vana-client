@@ -1084,7 +1084,7 @@ pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
 }
 
 /// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
-/// Not done: the mannequin rule (6b), the equipped linkshell (7, s2c 0x0E0).
+/// Not done: the equipped linkshell (7, s2c 0x0E0).
 fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
     let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
@@ -1115,6 +1115,10 @@ fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) ->
         }
         return 0x8060_2020;
     }
+    // A Storage piece a mannequin wears (FUN_101334c0) stays.
+    if own == 2 && super::mannequin::worn_by_any(w, s.index) {
+        return TINT_DIM;
+    }
     let equipped = (own == INVENTORY || wardrobe(own)) && w.inv.equip.contains(&Some((own, s.index)));
     let gear = it.as_ref().is_some_and(|it| it.level != 0 && it.races != 0);
     let moogle_only = |c: u8| matches!(c, 1 | 2 | 4 | 9);
@@ -1127,12 +1131,19 @@ fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) ->
     TINT_WHITE
 }
 
-/// FUN_101dbdb0, Manual's colours: the held row orange, equipped gear green (still movable), else white.
+/// FUN_101dbdb0, Manual's colours: the held row orange, equipped gear green (still movable), a Storage piece a
+/// mannequin wears grey, installed furniture grey on this floor and dark red on another, else white.
 fn manual_tint(w: &World, c: u8, held: Option<u8>, s: &Slot) -> u32 {
+    let furniture = w.item_info.as_ref().and_then(|i| i.item(s.id)).is_some_and(|it| matches!(it.item_type, 10 | 12 | 14));
+    let installed = w.inv.ext.get(&(c, s.index)).filter(|e| matches!(c, 1 | 9) && furniture && e[1] & 0x40 != 0);
     if held == Some(s.index) {
         0x8080_4020
     } else if (c == INVENTORY || wardrobe(c)) && w.inv.equip.contains(&Some((c, s.index))) {
         0x8050_9050
+    } else if c == 2 && super::mannequin::worn_by_any(w, s.index) {
+        crate::inventory::TINT_DIM
+    } else if let Some(e) = installed {
+        if w.myroom.as_ref().is_some_and(|r| r.floor == e[1] & 3) { crate::inventory::TINT_DIM } else { 0x8060_2020 }
     } else {
         crate::inventory::TINT_WHITE
     }
@@ -1304,7 +1315,11 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: b
         let (sc, cu) = if bank_side { (&mut b.scroll, &mut b.cursor) } else { (&mut scroll, &mut cursor) };
         match key {
             K::Enter => {
-                if let Some(s) = rows.get(*sc + *cu).cloned() {
+                // A grey row takes no Enter (FUN_101f6c70: SE 0004).
+                let row = rows.get(*sc + *cu).cloned();
+                if row.as_ref().is_some_and(|s| manual_tint(w, c, held, s) == crate::inventory::TINT_DIM) {
+                    w.sounds.push(Ui::Error as u32);
+                } else if let Some(s) = row {
                     w.sounds.push(Ui::Select as u32);
                     match held {
                         None => b.manual = Some((bank_side, Some(s.index))),

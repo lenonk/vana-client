@@ -23,9 +23,9 @@ const GREY: u32 = 0x8040_4040;
 const GREEN: u32 = 0x8050_9050;
 const ORANGE: u32 = 0x8080_4020;
 /// SE 0013 (FUN_10037e90).
-const SE_FOCUS: u32 = 13;
+pub(super) const SE_FOCUS: u32 = 13;
 /// The grid children in a picked item's walk order (0x1036f744).
-const ORDER: [u16; 16] = [1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16];
+pub(super) const ORDER: [u16; 16] = [1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16];
 /// mnstorag's rows: Inventory, Wardrobe, Wardrobe 2..8.
 const STORE_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
 

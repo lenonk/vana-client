@@ -1402,6 +1402,9 @@ pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCac
 pub(super) fn picker_bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     use super::scrollbar::rows;
     use crate::inventory::VISIBLE_ROWS;
+    if super::mannequin::active(w) {
+        return super::mannequin::bar(w, m);
+    }
     let (n, crystals, confirm) = (picker_rows(w).len(), super::synth::crystal_count(w), w.confirm.is_some());
     if !confirm && let Some(s) = w.post.send_ui.as_mut().filter(|s| !s.busy && s.focus == SFocus::List) {
         return rows(m, &mut s.list.0, &mut s.list.1, n, VISIBLE_ROWS);

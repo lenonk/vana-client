@@ -388,13 +388,13 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
 }
 
 /// The child of window `name` (ids in `ids`) under the pointer, from its layout at its drawn place.
-fn child_at(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> Option<u16> {
+pub(super) fn child_at(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> Option<u16> {
     let ((x, y), lay) = (gu.window_xy(name, sw, sh)?, gu.layout(name)?);
     let hit = |e: &crate::dat::ui::MenuElement| p.0 >= x + e.x as f32 && p.0 < x + e.x as f32 + e.w as f32 && p.1 >= y + e.y as f32 && p.1 < y + e.y as f32 + e.h as f32;
     lay.elements.iter().skip(1).find(|e| ids.contains(&e.id) && hit(e)).map(|e| e.id)
 }
 
-fn over(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32)) -> bool {
+pub(super) fn over(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32)) -> bool {
     gu.window_rect(name, sw, sh).is_some_and(|[x, y, ww, hh]| p.0 >= x && p.0 < x + ww && p.1 >= y && p.1 < y + hh)
 }
 

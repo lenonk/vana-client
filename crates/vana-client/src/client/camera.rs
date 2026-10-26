@@ -248,9 +248,9 @@ pub fn toggle_first(w: &mut World) {
 
 /// The focal length in use.
 pub fn focal(w: &World) -> f32 {
-    if w.layout.is_some() {
-        // DAT_1037eb94[1]: layout mode's focal.
-        250.0
+    if let Some(l) = &w.layout {
+        // DAT_1037eb94[1] / [4]: layout mode's focal, 300 while dressing a mannequin.
+        if l.dress.is_some() { 300.0 } else { 250.0 }
     } else if w.camst.first {
         FIRST_FOCAL
     } else {
@@ -260,7 +260,7 @@ pub fn focal(w: &World) -> f32 {
 
 /// One frame of the camera, after the player has moved.
 pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
-    if super::layout::camera(w) {
+    if super::layout::camera(w, dt * 60.0) {
         w.camst.prev = w.cam;
         return;
     }

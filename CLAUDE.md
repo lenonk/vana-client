@@ -68,9 +68,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 ## Next up
 - The retail key set (`~/ffxi/lab/research/keys_spec.md`; its status column is out of date): done, including
   F1-F12 targeting, UI hide, screenshots, the Pause log-out prompt, macros and palettes, the Ctrl / Alt page
-  modifier (0xa8) in every list (MODLOG "The page modifier (0xa8) in the other lists"). Left: Mog House layout mode's
-  mannequin row (the rest done: client/layout.rs, MODLOG "Mog House layout mode" parts 1..4), the Adventuring Primer's keys
-  (with the Primer). The chat line's
+  modifier (0xa8) in every list (MODLOG "The page modifier (0xa8) in the other lists"). Mog House layout mode done
+  (client/layout.rs, mannequin.rs; MODLOG "Mog House layout mode" parts 1..4, "Mog House mannequins" parts 1 / 2).
+  Left: the Adventuring Primer's keys (with the Primer). The chat line's
   selection, copy, cut and paste are done (ours, not retail; MODLOG "Chat line: selection").
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),
@@ -153,8 +153,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     House furniture boxes done;
   - Mog House furniture (client/furniture.rs, dat/furniture.rs, MODLOG "Mog House furniture"; spec
     `~/ffxi/lab/research/furniture_spec.md`): the installed pieces drawn at their grid / wall places, plants, the
-    files' generators and 'init', skinned pieces, collision boxes, the camera ray (/furcc) done; left mannequins
-    (type 14, s2c 0x026), actor lighting (+ the house's 'l_01'), the item-gated zone NPC, layout mode's mannequin row;
+    files' generators and 'init', skinned pieces, collision boxes, the camera ray (/furcc), mannequins (look, poses,
+    dressing: client/mannequin.rs) done; left actor lighting (+ the house's 'l_01'), the item-gated zone NPC;
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
