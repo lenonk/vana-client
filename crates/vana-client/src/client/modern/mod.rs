@@ -17,7 +17,7 @@ mod topbar;
 
 use super::World;
 use super::game_ui::GameUi;
-use egui::{Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
+use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{CmdMenu, key as command_key};
 pub use theme::Theme;
 use theme::{Art, LABEL, STRONG};
@@ -75,6 +75,7 @@ impl Modern {
             self.zoom = zoom;
         }
         topbar::draw(self, ctx, &w.hud_top.view);
+        pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
         let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, this: HashMap::new() };
@@ -98,6 +99,32 @@ impl Modern {
     /// The chat window's rect this frame and whether it is fading (then only its bottom edge counts).
     pub fn chat_rect(&self) -> Option<(Rect, bool)> {
         self.chat_edge.get()
+    }
+}
+
+/// The target cursors in the pack's arrows, under the panels: gold over the target (dimmed on a prompt's saved
+/// target), the prompt's pick blue in range, gold at its edge, red past it (retail's range tint); turned to point
+/// down at the point, bobbing.
+fn pointers(m: &Modern, ctx: &Context, w: &World) {
+    let painter = ctx.layer_painter(LayerId::new(Order::Background, Id::unique("modern pointers")));
+    let s = ctx.content_rect();
+    let bob = (ctx.input(|i| i.time) as f32 * 5.0).sin() * 3.0;
+    for &(fx, fy, kind, tint) in &w.modern_pointers {
+        let (name, colour) = match (kind, tint & 0x00ff_ffff) {
+            (2, 0x40_40d0) => ("indicators/subtarget", Color32::WHITE),
+            (2, 0xd0_d040) => ("indicators/target_arrow", Color32::WHITE),
+            (2, _) => ("indicators/target_arrow", Color32::from_rgb(255, 110, 90)),
+            (1, _) => ("indicators/target_arrow", Color32::from_gray(170)),
+            _ => ("indicators/target_arrow", Color32::WHITE),
+        };
+        let Some(sp) = m.art.sprite(name) else { continue };
+        let tip = pos2(s.min.x + fx * s.width(), s.min.y + fy * s.height() + bob);
+        let size = 40.0;
+        let r = Rect::from_min_max(pos2(tip.x - size / 2.0, tip.y - size), pos2(tip.x + size / 2.0, tip.y));
+        let uv = Rect::from_min_max(pos2(sp.uv.min.x, sp.uv.max.y), pos2(sp.uv.max.x, sp.uv.min.y));
+        let mut mesh = egui::Mesh::with_texture(sp.tex);
+        mesh.add_rect_with_uv(r, uv, colour);
+        painter.add(Shape::mesh(mesh));
     }
 }
 

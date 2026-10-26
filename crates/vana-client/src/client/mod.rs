@@ -2379,23 +2379,35 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // locked, windowps 212 over the target window (0x10149bc0).
     // In a prompt (FUN_101501a0 with +0xc4 set) the saved target keeps it and the pick gets a second one 10 px up,
     // tinted by range (FUN_10150610), and flashes (+0x88 |= 0x600) unless red.
+    // The modern layer draws the pack's pointers where these go.
     let frame = (world.target_since.elapsed().as_secs_f32() * 60.0 / 4.0) as usize % gu.lib_len("anc     anc_l").max(1);
+    let mut pointers = Vec::new();
     if let Some(p) = world.prompt.as_ref() {
         if let Some((x, y)) = p.saved.and_then(|t| target_point(world, t, sw, sh, view_proj)) {
-            gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
+            pointers.push((x, y, 1u8, 0xe080_8080u32));
         }
         if let Some(t) = world.target {
             let tint = target::range_tint(world, t);
             if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
-                gu.sprite("anc     anc_l", frame, x.round(), (y - 10.0).round(), tint);
+                pointers.push((x, y - 10.0, 2, tint));
             }
         }
     }
     layout::draw_cursor(gu, world, sw, sh, view_proj);
-    if let (Some(t), true, None) = (world.target, target_up, world.prompt.as_ref()) {
-        if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
-            gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
+    if let (Some(t), true, None) = (world.target, target_up, world.prompt.as_ref())
+        && let Some((x, y)) = target_point(world, t, sw, sh, view_proj)
+    {
+        pointers.push((x, y, 0, 0xe080_8080));
+    }
+    world.modern_pointers.clear();
+    for (x, y, kind, tint) in pointers {
+        if world.modern {
+            world.modern_pointers.push((x / sw.max(1.0), y / sh.max(1.0), kind, tint));
+        } else {
+            gu.sprite("anc     anc_l", frame, x.round(), y.round(), tint);
         }
+    }
+    if let (Some(_), true, None) = (world.target, target_up, world.prompt.as_ref()) {
         if world.locked
             && !world.modern
             && let Some(r) = gu.window_rect("menu    targetwi", sw, sh)
@@ -4773,6 +4785,9 @@ struct World {
     list_search: Option<listsearch::ListSearch>,
     /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
     party_hp_max: HashMap<u32, u32>,
+    /// Where retail's target cursors (anc_l) go this frame, for the modern layer's own: screen fractions, the kind (0
+    /// the target, 1 a prompt's saved target, 2 its pick) and the pick's range tint.
+    modern_pointers: Vec<(f32, f32, u8, u32)>,
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -6298,6 +6313,7 @@ impl App {
                             modern_chat_edge: None,
                             list_search: None,
                             party_hp_max: HashMap::new(),
+                            modern_pointers: Vec::new(),
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),
