@@ -9,6 +9,7 @@ use egui::{Align2, Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pai
 const PAD: f32 = 16.0;
 const H: f32 = 46.0;
 const SIDE: f32 = 200.0;
+const NET: f32 = 168.0;
 const GAP: f32 = 4.0;
 /// The legends' and the network numbers' size: small, but readable at any Interface Size.
 const SMALL: f32 = 14.0;
@@ -40,14 +41,14 @@ pub fn draw(m: &Modern, ctx: &Context, v: &TopView) {
         p.with_clip_rect(r.shrink2(vec2(10.0, 0.0))).text(pos2(r.min.x + 12.0, r.center().y), Align2::LEFT_CENTER, &v.title, font, m.theme.color("gold"));
     }
     // helpwind between the two, its "Help" legend only while fully shown.
-    let r = Rect::from_min_max(pos2(screen.min.x + PAD + SIDE + GAP, screen.min.y + PAD), pos2(screen.max.x - PAD - SIDE - GAP, screen.min.y + PAD + H));
+    let r = Rect::from_min_max(pos2(screen.min.x + PAD + SIDE + GAP, screen.min.y + PAD), pos2(screen.max.x - PAD - NET - GAP, screen.min.y + PAD + H));
     frame(r);
     if v.shown {
         legend(&p, m, r, "Help", true);
     }
     help(m, ctx, &p, r, v);
     if v.net_up {
-        let r = Rect::from_min_size(pos2(screen.max.x - PAD - SIDE, screen.min.y + PAD), vec2(SIDE, H));
+        let r = Rect::from_min_size(pos2(screen.max.x - PAD - NET, screen.min.y + PAD), vec2(NET, H));
         frame(r);
         if v.alpha > 0.0 {
             legend(&p, m, r, "Network", false);
@@ -133,7 +134,11 @@ fn network(p: &Painter, m: &Modern, r: Rect, v: &TopView) {
     }
     let small = FontId::proportional(SMALL);
     p.text(pos2(x0 + 36.0, r.center().y + 2.0), Align2::LEFT_CENTER, format!("{}%", v.pct), FontId::proportional(m.theme.ui + 2.0), m.theme.color("text"));
-    let sx = r.max.x - 14.0;
-    p.text(pos2(sx, r.center().y - 6.0), Align2::RIGHT_CENTER, format!("S {}", v.sent), small.clone(), m.theme.color("muted"));
-    p.text(pos2(sx, r.center().y + 10.0), Align2::RIGHT_CENTER, format!("R {}", v.recv), small, m.theme.color("muted"));
+    // S and R in a column, their numbers right-aligned beside them.
+    let (lx, nx) = (r.max.x - 66.0, r.max.x - 14.0);
+    for (k, (label, n)) in [("S", v.sent), ("R", v.recv)].into_iter().enumerate() {
+        let y = r.center().y - 6.0 + 16.0 * k as f32;
+        p.text(pos2(lx, y), Align2::LEFT_CENTER, label, small.clone(), m.theme.color("muted"));
+        p.text(pos2(nx, y), Align2::RIGHT_CENTER, n.to_string(), small.clone(), m.theme.color("muted"));
+    }
 }
