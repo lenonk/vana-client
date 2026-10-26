@@ -2408,8 +2408,12 @@ impl Effects {
                 Draw::None => "none".into(),
             };
             let pos = c.back.map(|b| b.world).unwrap_or_default();
+            let frame = if c.frame == NONE { "-".to_string() } else { format!("{}{}", c.frame, if c.borrowed { " borrowed" } else { "" }) };
             out.push(format!(
-                "{i:4} {}/{} {what} blend {:#06x} flags {:#010x} key {:.1} life {:.0}/{:.0} at {:.1},{:.1},{:.1} argb {:08x}{}",
+                "{i:4} inst {} file {} actors {:?} frame {frame} {}/{} {what} blend {:#06x} flags {:#010x} key {:.1} life {:.0}/{:.0} at {:.1},{:.1},{:.1} argb {:08x}{}",
+                c.inst,
+                l.file_id,
+                inst.actors,
                 path.join("/"),
                 String::from_utf8_lossy(&inst.name),
                 c.blend,
