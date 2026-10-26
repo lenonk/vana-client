@@ -2263,6 +2263,11 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     if target >> 24 == 0 || e.index == 0 || !(w.actors.contains_key(&target) || e.door != 0) || e.flags & 6 != 0 {
         return false;
     }
+    // Not while invisible (own +0x128 bit 6 = 0x037 flags1 bit 15): system message 0xac.
+    if w.my_plate.invisible {
+        super::textcmd::system_line(w, 0xac);
+        return false;
+    }
     // LAB_1007c0ec: system message 9 "Target out of range." (FUN_100a1ab0, file 7031).
     if (e.pos - w.pos).length() > TALK_RANGE {
         super::textcmd::system_line(w, 9);

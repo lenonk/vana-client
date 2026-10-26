@@ -9608,3 +9608,13 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   beside it listing both. LSB sends 0x076 only for PC members in the same zone (CParty::PushEffectsPacket), never
   for trusts.
 - Undone: back to WAR 22 (its EXP restored), the enhancing magic skill row removed, /pcmd leave, the old place.
+
+## Talk refused while invisible (2026-10-26)
+
+- FUN_1007bf30 (Talk's checks), after the model checks and before the 6.0 range: own entity +0x128 bit 6 set ->
+  system message 0xac (file 7031 through FUN_100a1ab0, as "Target out of range." 9), no talk; the silent caller
+  (param 5) skips the line. The 0x037 handler (LAB_1009d0f0, asm 0x1009d578..0x1009d58b) puts flags1 (@0x2c) bit 15
+  there: LSB's InvisFlag (an Invisible-flagged effect or a GM hide). Ours: `my_plate.invisible` (event::talk).
+- Live (Lnxcsfix, `!addeffect invisible 1 120`, Tab, Enter): "You cannot use that command while invisible."; after
+  `!deleffect invisible` the same Enter gives "Target out of range." (the NPC was 8.2 away). The audit's "meaning
+  inferred" is settled.
