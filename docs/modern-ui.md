@@ -14,6 +14,8 @@ The plan for vana-client's modern interface, from the user's planning document (
   their official releases, in `crates/vana-client/assets/fonts` with their licence texts, embedded in the binary.
 - **Order.** Milestone 1 (theme and atlas loader, panels, movable windows with saved layout, HUD basics), then the Mog
   House storage slice.
+- **Config pages.** The modern Config pages leave out the options that mean nothing with the modern UI (window type,
+  chat window width and the like; user, 2026-10-26).
 - **Icons.** The pack's icons are placeholders. A full icon set (every job, spell, buff and debuff) may come later;
   game art is mapped by stable game ids, never by atlas sprite ids.
 
@@ -176,6 +178,13 @@ Milestone 1:
   letters in order; roman numerals as digits), from a category window every list behind it; Up / Down, Enter
   picks through retail's keys (the category, the row, Enter: checks and the target prompt as ever), Backspace,
   Escape ends it.
+- Suggestions (suggest.rs, tested; ids checked against LSB's spell list and effect enum): an ailment on a party
+  member or us -> its -na spell; the lowest at 75% HP or under -> the Cure tier fitting the HP missing (three or more:
+  Curaga); our Refresh, Haste, Protect, Shell, Regen, Phalanx, Stoneskin, Blink, Aquaveil or Reraise under 30 s ->
+  renew it; TP 1000 engaged -> a ready weapon skill. Castable ones only, three at most, each with its reason; taken
+  when a magic / ability window opens or changes and held while it is navigated. They head the category window
+  and the list: Tab moves into them (Up / Down, Enter takes one through retail's keys, Tab / Escape back), a click
+  takes one. Seen live as WHM 75: Poisona for our poison, Cure V at 29% HP, the pick cast Poisona.
 - The party window as retail's ptwN ("Solo" outside a party): us first, then the members; per row the job, the
   leader marks, the name over the HP bar with the HP number in its hpcol colour, the MP bar and number, TP with
   config 0xae bit 0 (never on trusts), a member elsewhere greyed with the zone; the hand on the party cursor's or

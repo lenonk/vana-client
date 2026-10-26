@@ -184,12 +184,13 @@ pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     let look = p.look();
     let per = v.effects.len().min(FX_ROW);
     let width = super::MARGIN.sum().x + (per - 1) as f32 * FX_STEP + FX;
-    p.panel("status", None, width, |ui| effects_grid(ui, look, &v.effects, FX, FX_STEP, FX_ROW, small));
+    // No frame: the icons alone (movable all the same).
+    p.framed("status", None, width, "none", |ui| effects_grid(ui, look, &v.effects, FX, FX_STEP, FX_ROW, small));
 }
 
 /// Row heights: party rows carry an MP bar under the HP bar, alliance rows not.
-const PARTY_ROW: f32 = 48.0;
-const ALLY_ROW: f32 = 38.0;
+const PARTY_ROW: f32 = 60.0;
+const ALLY_ROW: f32 = 50.0;
 
 /// The party window (ours first; "Solo" outside a party) or an alliance's, as retail's ptwN / raid1 / raid2: per row
 /// the job, leader marks, the name over the HP bar with the HP number in its colour, the MP bar and number and TP
@@ -260,7 +261,9 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                 }
                 continue;
             };
-            let hp_r = Rect::from_min_max(pos2(x, r.min.y + 18.0), pos2(right, r.min.y + 30.0));
+            // Room inside the row's frame lines: the labels start well under its top, the MP line ends well over its
+            // bottom.
+            let hp_r = Rect::from_min_max(pos2(x, r.min.y + 26.0), pos2(right, r.min.y + 38.0));
             let hp = v.hp_max.map_or(v.hp.to_string(), |max| format!("{} / {max}", v.hp));
             labelled_bar(ui, m, "hp", hp_r, v.hpf, (&row.name, m.theme.color("text")), (&hp, v.hp_colour));
             let small_font = FontId::new(14.0, FontFamily::Name(super::LABEL.into()));
@@ -289,7 +292,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                     if ex < name_end + 8.0 {
                         break;
                     }
-                    effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, r.min.y + 2.0), vec2(14.0, 14.0)), small);
+                    effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, r.min.y + 9.0), vec2(14.0, 14.0)), small);
                     ex -= 15.0;
                 }
             }

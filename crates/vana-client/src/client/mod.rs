@@ -16,6 +16,7 @@ mod buffs;
 mod game_ui;
 mod hudtop;
 mod listsearch;
+mod suggest;
 mod augment;
 mod iteminfo;
 mod map;
@@ -4781,8 +4782,11 @@ struct World {
     modern_log: logwin::ModernLog,
     log_rule: logwin::LogRule,
     modern_chat_edge: Option<([f32; 4], bool)>,
-    /// The modern magic and ability windows' search (listsearch.rs).
+    /// The modern magic and ability windows' search (listsearch.rs), their suggestions (taken when a window opens or
+    /// changes, held while it is navigated; by the window they were taken for) and the one Tab has the focus on.
     list_search: Option<listsearch::ListSearch>,
+    suggestions: Option<(listsearch::WindowKey, Vec<suggest::Suggestion>)>,
+    suggest_sel: Option<usize>,
     /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
     party_hp_max: HashMap<u32, u32>,
     /// Where retail's target cursors (anc_l) go this frame, for the modern layer's own: screen fractions, the kind (0
@@ -6312,6 +6316,8 @@ impl App {
                             log_rule: Default::default(),
                             modern_chat_edge: None,
                             list_search: None,
+                            suggestions: None,
+                            suggest_sel: None,
                             party_hp_max: HashMap::new(),
                             modern_pointers: Vec::new(),
                             confirm: None,
