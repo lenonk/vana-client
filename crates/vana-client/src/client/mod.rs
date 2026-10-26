@@ -3429,6 +3429,8 @@ enum CreatorNext {
     Then(String, Box<CreatorNext>),
     /// Leave the creator.
     Leave,
+    /// The world step again, in a new order (FUN_1023d6c0 mode 0).
+    World,
 }
 
 /// Nation step backdrop state: the flyover shown (nation, movie), the one loading, the scene brightness
@@ -5208,6 +5210,12 @@ pub struct App {
     creator_yes: bool,
     /// The creator's menu ok popup and what its OK leads to.
     creator_ok: Option<(String, CreatorNext)>,
+    /// The world step over the name step (FUN_10239720 step 6), and the name checks' memory: the last passed (name,
+    /// world, pass), the last refused (name, world, code) and the one being sent (local_800.. / local_500..).
+    creator_world: Option<creator::WorldStep>,
+    creator_passed: Option<(String, String, String)>,
+    creator_refused: Option<(String, String, u16)>,
+    creator_checking: Option<(String, String, String)>,
     /// The lobby's netwait / netbar while an operation runs (client/netwait.rs); a delete's notice after it (8 0x83).
     netwait: Option<netwait::NetWait>,
     deleting: bool,
@@ -5397,6 +5405,10 @@ impl App {
             creator_step: 0,
             creator_yes: false,
             creator_ok: None,
+            creator_world: None,
+            creator_passed: None,
+            creator_refused: None,
+            creator_checking: None,
             netwait: None,
             deleting: false,
             exit_requested: false,
@@ -6534,25 +6546,41 @@ impl App {
                 self.status = format!("{e:#}");
                 self.to_login(true);
             }
-            // After the world step retail sends 0x22: passed, the nation step; refused, the error popup and the name
-            // step again (FUN_10239720).
+            // Op 4 after the world step (FUN_10239720): passed, the nation step; refused, the error popup, then the name
+            // step for 313 / 322 (remembered with the world), out for 331, else the world step again.
             Task::NameChecked(Ok((l, refused))) => {
                 if let Phase::Characters { lobby, .. } = &mut self.phase {
                     *lobby = Some(l);
                 }
+                let checked = self.creator_checking.take();
                 if self.creator_step == 5 {
                     match refused {
                         None => {
+                            self.creator_passed = checked;
                             self.creator_step = 6;
                             self.creator_yes = false;
                         }
-                        Some(code) => self.creator_ok = self.game_ui.as_ref().map(|g| (g.error_text(3000 + code as u32), CreatorNext::Step(5))),
+                        Some(code) => {
+                            let next = match code {
+                                0x139 | 0x142 => {
+                                    self.creator_refused = checked.map(|(n, w, _)| (n, w, code));
+                                    CreatorNext::Step(5)
+                                }
+                                0x14b => CreatorNext::Leave,
+                                _ => CreatorNext::World,
+                            };
+                            self.creator_ok = self.game_ui.as_ref().map(|g| (g.error_text(3000 + code as u32), next));
+                        }
                     }
                 }
             }
             // Op 3: "Player data registered." (8 0x82), then the login with the new character; not in the list, FFXI-3117
             // and out. Refused: the error, then the race step with the name cleared (0x14b leaves).
             Task::Created(Ok((l, refused, list))) => {
+                // A refused op 3 forgets the passed check (local_800 / 600 / 700).
+                if refused.is_some() {
+                    self.creator_passed = None;
+                }
                 if let Phase::Characters { lobby, chars, new_name, .. } = &mut self.phase {
                     *lobby = Some(l);
                     let Some(gu) = self.game_ui.as_ref() else { return };
@@ -9212,6 +9240,7 @@ impl App {
                             Some(1) => {
                                 *screen = LobbyScreen::Create;
                                 self.creator_step = 0;
+                                (self.creator_world, self.creator_passed, self.creator_refused) = (None, None, None);
                             }
                             Some(2) => *screen = LobbyScreen::Delete,
                             // FUN_10235fa0 index 4: lobycwin over the title (FUN_10195e80 reads the values first).
@@ -9326,11 +9355,14 @@ impl App {
                             6 => *nation,
                             _ => 0,
                         };
-                        // Escape on the confirm does nothing (FUN_1023d050: +0xa5e1 clear).
-                        let (mut next, back, mut answer, mut ok) = (false, escape && keys && step < 7, None, false);
+                        // Escape on the confirm does nothing (FUN_1023d050: +0xa5e1 clear); the world step takes its own.
+                        let world_open = self.creator_world.is_some();
+                        let (mut next, back, mut answer, mut ok) = (false, escape && keys && step < 7 && !world_open, None, false);
+                        let (mut world_se, mut world_check) = (Vec::new(), None);
                         // FUN_102384d0: Num+ (DIK 0x4e) on the name step asks for a random name.
                         if step == 5
                             && keys
+                            && !world_open
                             && self.input.pressed(0x4e)
                             && let Some(index) = self.index.as_ref()
                         {
@@ -9347,6 +9379,18 @@ impl App {
                             match ev {
                                 egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } if popup => ok = true,
                                 _ if popup => {}
+                                _ if step == 5 && self.creator_world.is_some() && !matches!(ev, egui::Event::Key { key: egui::Key::Tab, .. }) => {
+                                    match self.creator_world.as_mut().map(|w| w.event(ev)) {
+                                        Some(creator::WorldAct::Sound(s)) => world_se.push(s),
+                                        // Back to the name, kept (FUN_10238a10 case 6, SE 0003).
+                                        Some(creator::WorldAct::Back) => {
+                                            self.creator_world = None;
+                                            world_se.push(crate::audio::Ui::Cancel);
+                                        }
+                                        Some(creator::WorldAct::Check) => world_check = self.creator_world.take(),
+                                        _ => {}
+                                    }
+                                }
                                 egui::Event::Text(t) | egui::Event::Paste(t) if step == 5 => {
                                     new_name.extend(t.chars().filter(|c| c.is_ascii_alphabetic()));
                                     new_name.truncate(15);
@@ -9377,7 +9421,13 @@ impl App {
                         if step >= 6 && self.nation.fade < 1.0 {
                             gu.rect(0.0, 0.0, sw, sh, [0.0, 0.0, 0.0, 1.0 - self.nation.fade]);
                         }
-                        let view = game_ui::CreatorView { step, race: *race, face: *face as usize / 2, hair: *face as usize % 2, size: *size as usize, job: *job, nation: *nation, name: new_name };
+                        if let Some(w) = self.creator_world.as_mut() {
+                            w.tick();
+                        }
+                        // Behind the checks, their popups and op 4 no creator window is up (FUN_10239720 step 7).
+                        let name_hidden = step == 5 && self.creator_world.is_none() && (popup || busy || world_check.is_some());
+                        let world = self.creator_world.as_ref().map(|w| w.view());
+                        let view = game_ui::CreatorView { step, race: *race, face: *face as usize / 2, hair: *face as usize % 2, size: *size as usize, job: *job, nation: *nation, name: new_name, world, name_hidden };
                         let rects = creator::draw_ui(gu, &view, sw, sh, (!status.is_empty()).then_some(status.as_str()), None);
                         let pointer = input.pointer.filter(|_| !busy);
                         if let Some((text, _)) = &self.creator_ok {
@@ -9386,6 +9436,21 @@ impl App {
                             {
                                 gu.hover.set(true);
                                 ok |= input.clicked;
+                            }
+                        } else if let Some(ws) = self.creator_world.as_mut().filter(|_| step == 5) {
+                            // worldsel's rows: hover moves the cursor (0001), a click is Enter (inf: the generic list).
+                            if let Some(p) = pointer
+                                && let Some(i) = rects.iter().position(|r| inside(r, p))
+                            {
+                                gu.hover.set(true);
+                                if (input.moved || input.clicked) && ws.hover(i) {
+                                    world_se.push(crate::audio::Ui::Cursor);
+                                }
+                                if input.clicked
+                                    && let creator::WorldAct::Sound(s) = ws.pick()
+                                {
+                                    world_se.push(s);
+                                }
                             }
                         } else if step < 7 {
                             if let Some(p) = pointer
@@ -9426,6 +9491,45 @@ impl App {
                                 a.ui(se);
                             }
                         };
+                        for se in world_se {
+                            ui_se(&mut self.audio, se);
+                        }
+                        // Enter on the pass: the checks in retail's order (FUN_10239720 448223..); the world is always
+                        // a table row here, so 3118 / 3119 cannot come up, and the local filter (3322) is not traced.
+                        if let Some(ws) = world_check {
+                            let world = ws.world().to_string();
+                            let pass = ws.pass.map(|p| p.0).unwrap_or_default();
+                            let name = new_name.clone();
+                            let triple = (name.clone(), world.clone(), pass.clone());
+                            if self.creator_passed.as_ref() == Some(&triple) {
+                                // Checked before: the nation step, no request (the step change plays 0002).
+                                self.creator_step = 6;
+                                self.creator_yes = false;
+                            } else {
+                                ui_se(&mut self.audio, crate::audio::Ui::Select);
+                                let refused = self.creator_refused.as_ref().filter(|r| r.0 == name && r.1 == world).map(|r| 3000 + r.2 as u32);
+                                let popup = if (1..10).contains(&pass.len()) {
+                                    Some((3111, CreatorNext::World))
+                                } else if name.len() < 3 {
+                                    Some((3110, CreatorNext::Step(5)))
+                                } else {
+                                    refused.map(|code| (code, CreatorNext::Step(5)))
+                                };
+                                match popup {
+                                    Some((code, then)) => self.creator_ok = Some((gu.error_text(code), then)),
+                                    None => {
+                                        if let Some(mut l) = lobby.take() {
+                                            self.creator_checking = Some(triple);
+                                            let replies = l.replies.clone();
+                                            action = Some(Box::new(move |app: &mut App| {
+                                                app.netwait = Some(netwait::NetWait::new(netwait::Op::NameCheck, replies));
+                                                app.spawn(move || Task::NameChecked(crate::net::lobby::refusal(l.check_name(&name, &world, &pass)).map(|r| (l, r.err()))))
+                                            }));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                         if next {
                             // A free slot is a status-1 one with no name; none stops the job step (FUN_1023dbb0
                             // +0x24: 2 with all 16 content IDs used, else 0).
@@ -9435,24 +9539,14 @@ impl App {
                                     ui_se(&mut self.audio, crate::audio::Ui::Select);
                                     self.creator_ok = Some((gu.lobby_msg(8, if chars.len() >= 16 { 0xc6 } else { 0xd8 }, ""), CreatorNext::Step(4)));
                                 }
-                                // chmkname (FUN_10238500): an empty name buzzes.
+                                // chmkname (FUN_10238500): an empty name buzzes, else 0002 and the world step; no world
+                                // is FFXI-3103 and out of the creator (chmkserv +0x18 = -1).
                                 5 if new_name.is_empty() => ui_se(&mut self.audio, crate::audio::Ui::Error),
-                                // Checked after the world step: under 3 letters FFXI-3110, else view 0x22.
-                                5 if new_name.len() < 3 => {
-                                    ui_se(&mut self.audio, crate::audio::Ui::Select);
-                                    self.creator_ok = Some((gu.error_text(3000 + 0x6e), CreatorNext::Step(5)));
-                                }
                                 5 => {
-                                    if let Some(mut l) = lobby.take() {
-                                        ui_se(&mut self.audio, crate::audio::Ui::Select);
-                                        let nm = new_name.clone();
-                                        let replies = l.replies.clone();
-                                        action = Some(Box::new(move |app: &mut App| {
-                                            app.netwait = Some(netwait::NetWait::new(netwait::Op::NameCheck, replies));
-                                            app.spawn(move || {
-                                                Task::NameChecked(crate::net::lobby::refusal(l.check_name(&nm)).map(|r| (l, r.err())))
-                                            })
-                                        }));
+                                    ui_se(&mut self.audio, crate::audio::Ui::Select);
+                                    self.creator_world = lobby.as_ref().and_then(|l| creator::WorldStep::new(&l.worlds));
+                                    if self.creator_world.is_none() {
+                                        self.creator_ok = Some((gu.error_text(3103), CreatorNext::Leave));
                                     }
                                 }
                                 _ => {
@@ -9476,6 +9570,10 @@ impl App {
                             ui_se(&mut self.audio, crate::audio::Ui::Select);
                             match then {
                                 CreatorNext::Step(k) => self.creator_step = k,
+                                CreatorNext::World => {
+                                    self.creator_step = 5;
+                                    self.creator_world = lobby.as_ref().and_then(|l| creator::WorldStep::new(&l.worlds));
+                                }
                                 CreatorNext::Then(text, then) => self.creator_ok = Some((text, *then)),
                                 CreatorNext::Leave => *screen = LobbyScreen::Main,
                                 CreatorNext::Login(c) => {
@@ -9499,13 +9597,13 @@ impl App {
                                     self.creator_step = 8;
                                     self.music_created = true;
                                     // LSB face byte = face * 2 + hair.
-                                    let (nm, r, f, sz, j, na) = (new_name.clone(), *race as u8 + 1, *face, *size, *job as u8 + 1, *nation as u8);
+                                    let (r, f, sz, j, na) = (*race as u8 + 1, *face, *size, *job as u8 + 1, *nation as u8);
                                     let replies = l.replies.clone();
                                     action = Some(Box::new(move |app: &mut App| {
                                         app.netwait = Some(netwait::NetWait::new(netwait::Op::Create, replies));
                                         app.spawn(move || {
                                             Task::Created((|| {
-                                                let made = crate::net::lobby::refusal(l.create_character(&NewCharacter { name: &nm, race: r, face: f, size: sz, job: j, nation: na }))?;
+                                                let made = crate::net::lobby::refusal(l.create_character(&NewCharacter { race: r, face: f, size: sz, job: j, nation: na }))?;
                                                 let chars = if made.is_ok() { l.characters()? } else { Vec::new() };
                                                 Ok((l, made.err(), chars))
                                             })())

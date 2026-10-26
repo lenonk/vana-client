@@ -48,8 +48,8 @@ pub struct MapLogin {
     pub key: [u8; 20],
 }
 
-pub struct NewCharacter<'a> {
-    pub name: &'a str,
+/// 0x21's make block; the name went with the 0x22 before it.
+pub struct NewCharacter {
     pub race: u8,
     pub face: u8,
     pub size: u8,
@@ -140,6 +140,8 @@ pub struct Lobby {
     pub features: u32,
     /// View replies read so far: the netbar's waits (client/netwait.rs).
     pub replies: Arc<AtomicU32>,
+    /// The world table (0x23), kept for the creator's world step.
+    pub worlds: Vec<(u32, String)>,
 }
 
 impl Lobby {
@@ -150,7 +152,7 @@ impl Lobby {
             std::net::IpAddr::V4(ip) => ip,
             std::net::IpAddr::V6(ip) => ip.to_ipv4().unwrap_or(Ipv4Addr::LOCALHOST),
         };
-        let mut lobby = Self { view, data, hash, account_id, server_ip, key_counter: 0, last_request: 0, expansions: 0, features: 0, replies };
+        let mut lobby = Self { view, data, hash, account_id, server_ip, key_counter: 0, last_request: 0, expansions: 0, features: 0, replies, worlds: Vec::new() };
 
         // Registers the data socket under the session hash.
         let mut hello = [0u8; 28];
@@ -252,20 +254,20 @@ impl Lobby {
         self.send_view(0x24, &[0u8; 0x24])?;
         let pkt = self.read_view(0x23)?;
         let count = rd_u32(&pkt, 28) as usize;
-        Ok((0..count)
+        let worlds: Vec<(u32, String)> = (0..count)
             .filter_map(|i| {
                 let o = 32 + i * 20;
                 (o + 20 <= pkt.len()).then(|| (rd_u32(&pkt, o), rd_name(&pkt[o + 4..o + 20])))
             })
-            .collect())
+            .collect();
+        self.worlds = worlds.clone();
+        Ok(worlds)
     }
 
-    /// View 0x22, the name check retail sends before the nation step (LSB keeps the name for the 0x21 after it).
-    pub fn check_name(&mut self, name: &str) -> Result<()> {
-        let mut check = vec![0u8; 0x60 - 28];
-        let name = name.as_bytes();
-        check[32 - 28..32 - 28 + name.len().min(NAME_LEN - 1)].copy_from_slice(&name[..name.len().min(NAME_LEN - 1)]);
-        self.send_view(0x22, &check)?;
+    /// View 0x22, the name check after the creator's world step (FUN_10116610 case 0x22): the name @0x20, the world's
+    /// name @0x40 and the Gold World Pass @0x50 (LSB reads the name and the pass, keeps them for the 0x21 after it).
+    pub fn check_name(&mut self, name: &str, world: &str, pass: &str) -> Result<()> {
+        self.send_view(0x22, &check_body(name, world, pass))?;
         self.read_view(0x03)?;
         Ok(())
     }
@@ -328,6 +330,17 @@ impl Lobby {
     }
 }
 
+/// 0x22's body (offsets from the packet start less the 28-byte header): name @0x20, world @0x40, pass @0x50, 15 + NUL.
+fn check_body(name: &str, world: &str, pass: &str) -> Vec<u8> {
+    let mut b = vec![0u8; 0x60 - 28];
+    for (at, s) in [(0x20, name), (0x40, world), (0x50, pass)] {
+        let s = s.as_bytes();
+        let n = s.len().min(NAME_LEN - 1);
+        b[at - 28..at - 28 + n].copy_from_slice(&s[..n]);
+    }
+    b
+}
+
 fn parse_char(b: &[u8]) -> Character {
     let info = &b[44..];
     let mut looks = [0u16; 8];
@@ -361,9 +374,17 @@ mod create_tests {
         // LSB: m_look.size = ref<uint8>(buf, 57), buf from the packet start.
         for size in 0..3u8 {
             let mut pkt = vec![0u8; 28];
-            pkt.extend(make_body(&NewCharacter { name: "Abc", race: 2, face: 5, size, job: 3, nation: 1 }));
+            pkt.extend(make_body(&NewCharacter { race: 2, face: 5, size, job: 3, nation: 1 }));
             assert_eq!((pkt[57], pkt[48], pkt[50], pkt[54], pkt[60]), (size, 2, 3, 1, 5));
         }
+    }
+
+    /// LSB view 0x22: the name @32 and the Gold World Pass @0x50 (15 each); the world @0x40 it ignores.
+    #[test]
+    fn name_check_lands_where_lsb_reads_it() {
+        let mut pkt = vec![0u8; 28];
+        pkt.extend(check_body("Abcde", "Nameless", "1234567890"));
+        assert_eq!((pkt.len(), &pkt[32..37], &pkt[0x40..0x48], &pkt[0x50..0x5a]), (0x60, &b"Abcde"[..], &b"Nameless"[..], &b"1234567890"[..]));
     }
 
     #[test]

@@ -868,7 +868,7 @@ fn draw(gu: &mut GameUi, st: &SelectUi, list: &List, chars: &[Character], deleti
         }
         Focus::Rename(name) => {
             gu.menu("menu    chmkname", w, h, 0);
-            gu.name_entry(name, w, h);
+            gu.name_entry(name, true, w, h);
         }
         _ => {}
     }

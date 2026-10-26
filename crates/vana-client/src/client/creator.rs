@@ -10,6 +10,7 @@ use crate::render::{Camera, Gpu, ZoneRenderer};
 use anyhow::{Context, Result};
 use glam::{Mat3, Mat4, Quat, Vec3};
 use std::sync::Arc;
+use std::time::Instant;
 
 /// Lobby clock for the creator (FUN_1022ef00: FUN_10184f30(0xb)).
 const MINUTE: f32 = 11.0 * 60.0;
@@ -338,12 +339,163 @@ pub const STEPS: [(&str, usize); 7] = [
     ("menu    chmktown", 3),
 ];
 
+/// worldsel's visible rows (FUN_101f6700(0xe)).
+pub const WORLD_ROWS: usize = 14;
+
+/// Retail's creator step 6 (FUN_10239720) over our name step: the world list (worldsel), then the Gold World Pass
+/// (chmkpass).
+pub struct WorldStep {
+    /// World names in the list's order.
+    pub rows: Vec<String>,
+    pub cursor: usize,
+    pub top: usize,
+    /// Phase 1: the pass (digits, at most 10) and its caret.
+    pub pass: Option<(String, usize)>,
+    /// chmkpass +0x34, the caret's frame count (30 a second, two a frame while the pass is empty), and its last tick.
+    pub blink: f32,
+    last: Instant,
+}
+
+/// What an input event did on the world step.
+pub enum WorldAct {
+    None,
+    Sound(crate::audio::Ui),
+    /// Escape on the list: back to the name.
+    Back,
+    /// Enter on the pass: the checks.
+    Check,
+}
+
+impl WorldStep {
+    /// FUN_1023d6c0 mode 0: worlds 1..=200 not "unknown", in a random order (new on every open); none, no list.
+    pub fn new(worlds: &[(u32, String)]) -> Option<Self> {
+        let mut rows: Vec<String> = worlds.iter().filter(|(id, n)| (1..=200).contains(id) && n != "unknown").map(|(_, n)| n.clone()).collect();
+        if rows.is_empty() {
+            return None;
+        }
+        for i in (1..rows.len()).rev() {
+            let mut b = [0u8; 4];
+            let _ = getrandom::fill(&mut b);
+            rows.swap(i, u32::from_le_bytes(b) as usize % (i + 1));
+        }
+        Some(Self { rows, cursor: 0, top: 0, pass: None, blink: 0.0, last: Instant::now() })
+    }
+
+    pub fn tick(&mut self) {
+        let dt = self.last.elapsed().as_secs_f32().min(0.5);
+        self.last = Instant::now();
+        if let Some((p, _)) = &self.pass {
+            self.blink += dt * if p.is_empty() { 60.0 } else { 30.0 };
+        }
+    }
+
+    /// chmkserv's text: the cursor row's world (frozen while the pass is open).
+    pub fn world(&self) -> &str {
+        &self.rows[self.cursor]
+    }
+
+    pub fn view(&self) -> super::game_ui::WorldView<'_> {
+        let pass = self.pass.as_ref().map(|(p, at)| (p.as_str(), *at, self.blink as u32 % 30 > 15));
+        super::game_ui::WorldView { rows: &self.rows, cursor: self.cursor, top: self.top, pass }
+    }
+
+    /// Phase 0 worldsel (FUN_101f6c70, chmkserv FUN_10238a10), phase 1 chmkpass (FUN_10238d60).
+    pub fn event(&mut self, ev: &egui::Event) -> WorldAct {
+        use crate::audio::Ui;
+        use egui::{Event, Key};
+        if let Some((p, at)) = self.pass.as_mut() {
+            match ev {
+                // Input class 1 (FUN_101b6d50): digits only, at most 10.
+                Event::Text(t) | Event::Paste(t) => {
+                    for c in t.chars().filter(|c| c.is_ascii_digit()) {
+                        if p.len() < 10 {
+                            p.insert(*at, c);
+                            *at += 1;
+                        }
+                    }
+                }
+                Event::Key { key, pressed: true, .. } => match key {
+                    Key::Backspace if *at > 0 => {
+                        *at -= 1;
+                        p.remove(*at);
+                    }
+                    Key::ArrowLeft => *at = at.saturating_sub(1),
+                    Key::ArrowRight => *at = (*at + 1).min(p.len()),
+                    Key::Enter => return WorldAct::Check,
+                    // The list again, same order (FUN_1023d6c0 mode 1); the cursor on row 1 (inf).
+                    Key::Escape => {
+                        self.pass = None;
+                        (self.cursor, self.top) = (0, 0);
+                        return WorldAct::Sound(Ui::Cancel);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+            return WorldAct::None;
+        }
+        match ev {
+            Event::Key { key: Key::ArrowDown, pressed: true, .. } => self.down(),
+            Event::Key { key: Key::ArrowUp, pressed: true, .. } => self.up(),
+            Event::Key { key: Key::Enter, pressed: true, .. } => self.pick(),
+            Event::Key { key: Key::Escape, pressed: true, .. } => WorldAct::Back,
+            _ => WorldAct::None,
+        }
+    }
+
+    /// Enter on a row: chmkpass opens empty (SE 0002).
+    pub fn pick(&mut self) -> WorldAct {
+        self.pass = Some((String::new(), 0));
+        self.blink = 0.0;
+        WorldAct::Sound(crate::audio::Ui::Select)
+    }
+
+    /// The layout links wrap rows 1 <-> 14; the list clamps a move past its count back, silently (FUN_101f6c70).
+    fn down(&mut self) -> WorldAct {
+        if self.cursor + 1 < self.rows.len() {
+            self.cursor += 1;
+            if self.cursor >= self.top + WORLD_ROWS {
+                self.top += 1;
+            }
+        } else if self.top == 0 && self.cursor == WORLD_ROWS - 1 {
+            self.cursor = 0;
+        } else {
+            return WorldAct::None;
+        }
+        WorldAct::Sound(crate::audio::Ui::Cursor)
+    }
+
+    fn up(&mut self) -> WorldAct {
+        if self.cursor > 0 {
+            self.cursor -= 1;
+            self.top = self.top.min(self.cursor);
+        } else {
+            // Row 1's link goes to row 14, clamped to the count (one world: back on row 1, the sound kept).
+            self.cursor = WORLD_ROWS.min(self.rows.len()) - 1;
+        }
+        WorldAct::Sound(crate::audio::Ui::Cursor)
+    }
+
+    /// The mouse on visible row `i`: the cursor there; true when it moved.
+    pub fn hover(&mut self, i: usize) -> bool {
+        let c = self.top + i;
+        let moved = c < self.rows.len() && c != self.cursor;
+        if moved {
+            self.cursor = c;
+        }
+        moved
+    }
+}
+
 /// The creator's 2D layer (after `gu.clear()`): help line, the step menu with its choice highlighted,
-/// then the race title, stats, name entry or nation emblem. Returns the menu's item rects.
+/// then the race title, stats, name entry or nation emblem. Returns the menu's item rects, or the world list's rows.
 pub fn draw_ui(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView, sw: f32, sh: f32, status: Option<&str>, dt: Option<f32>) -> Vec<[f32; 4]> {
-    let help = match status {
-        Some(s) => s.to_string(),
-        None => gu.creator_help(v.step),
+    // lobyhelp 0x19 / 0x22 on the world step (FUN_10241270); 0x22 stays through the checks (inf).
+    let help = match (status, &v.world) {
+        (Some(s), _) => s.to_string(),
+        (None, Some(w)) => gu.lobby_msg(8, if w.pass.is_some() { 0x71 } else { 0x70 }, ""),
+        (None, None) if v.step == 5 && v.name_hidden => gu.lobby_msg(8, 0x71, ""),
+        _ => gu.creator_help(v.step),
     };
     gu.help_line(&help, sw, sh, if status.is_some() { super::game_ui::YELLOW } else { super::game_ui::WHITE }, dt);
     let sel = match v.step {
@@ -355,8 +507,20 @@ pub fn draw_ui(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView,
         6 => v.nation,
         _ => 0,
     };
-    let rects = if v.step < 7 { gu.menu(STEPS[v.step].0, sw, sh, sel) } else { Vec::new() };
+    let mut rects = match v.step {
+        5 if v.name_hidden => Vec::new(),
+        // chmkserv's draw hides every chmkname child (FUN_1011a3d0).
+        5 if v.world.is_some() => {
+            gu.window_bare_frame(STEPS[5].0, sw, sh);
+            Vec::new()
+        }
+        s if s < 7 => gu.menu(STEPS[s].0, sw, sh, sel),
+        _ => Vec::new(),
+    };
     gu.creator_overlay(sw, sh, v);
+    if let Some(w) = &v.world {
+        rects = gu.world_step(w, sw, sh);
+    }
     rects
 }
 
@@ -370,6 +534,8 @@ pub struct ScreenShot {
     pub nation: usize,
     pub step: usize,
     pub name: String,
+    /// The world step: "list", or "pass:DIGITS".
+    pub world: Option<String>,
     /// Performance frame (30 per second) and view mode 0..2.
     pub frame: f32,
     pub view: u8,
@@ -421,7 +587,17 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
             fx.after_submit(&gpu);
         }
     }
-    let v = CreatorView { step: shot.step, race: shot.race, face: shot.face, hair: shot.hair, size: shot.size, job: shot.job, nation: shot.nation, name: &shot.name };
+    // --world list | pass:DIGITS: the world step over the name step, one world.
+    let ws = shot.world.as_deref().and_then(|w| {
+        let mut s = WorldStep::new(&[(0x20, "Nameless".to_string())])?;
+        if let Some(p) = w.strip_prefix("pass") {
+            let p = p.trim_start_matches(':').to_string();
+            s.pass = Some((p.clone(), p.len()));
+            s.blink = 20.0;
+        }
+        Some(s)
+    });
+    let v = CreatorView { step: shot.step, race: shot.race, face: shot.face, hair: shot.hair, size: shot.size, job: shot.job, nation: shot.nation, name: &shot.name, world: ws.as_ref().map(|s| s.view()), name_hidden: false };
     // The nation step plays file 24 + nation's mov1 instead (FUN_1023ae20); --frame is its time at 30 a second.
     let mut fly = if shot.step == 6 {
         let mut f = super::flyover::Flyover::new(super::flyover::FlyoverData::load_file(&index, &keys, 24 + shot.nation as u32, "mov1")?).unfaded();
@@ -449,6 +625,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     for _ in 0..(shot.help_time * 30.0) as u32 {
         gu.clear();
         draw_ui(&mut gu, &v, w as f32, h as f32, None, Some(1.0 / 30.0));
+        gu.end_frame(1.0 / 30.0);
     }
     if shot.bench > 0 {
         let (t0, pose0) = (std::time::Instant::now(), cr.pose_time);

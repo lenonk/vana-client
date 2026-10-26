@@ -444,6 +444,9 @@ enum Cmd {
         nation: usize,
         #[arg(long, default_value = "")]
         name: String,
+        /// With --screen --step 5: the world step, "list" or "pass:DIGITS".
+        #[arg(long)]
+        world: Option<String>,
         /// With --screen: seconds of help-line scrolling before the shot.
         #[arg(long, default_value_t = 0.0)]
         help_time: f32,
@@ -1013,8 +1016,8 @@ fn main() -> Result<()> {
             println!("bounds {} .. {}; wrote {}", mesh.min, mesh.max, out.display());
             Ok(())
         }
-        Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, help_time, bench, out, .. } => {
-            client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, frame, view, help_time, width, height, bench }, &out)
+        Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, world, help_time, bench, out, .. } => {
+            client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, world, frame, view, help_time, width, height, bench }, &out)
         }
         Cmd::CreatorShot { race, face, hair, frame, view, width, height, transparent, backdrop, flat, out, .. } => {
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
@@ -1450,8 +1453,8 @@ fn main() -> Result<()> {
             let mut lobby = login(&cfg, &creds)?;
             let mut chars = lobby.characters()?;
             if let Some(name) = &create_char {
-                lobby.check_name(name)?;
-                lobby.create_character(&net::lobby::NewCharacter { name, race, face, size, job, nation })?;
+                lobby.check_name(name, "", "")?;
+                lobby.create_character(&net::lobby::NewCharacter { race, face, size, job, nation })?;
                 println!("Created {name}");
                 chars = lobby.characters()?;
             }

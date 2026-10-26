@@ -10095,7 +10095,7 @@ FUN_1023b550). client/mod.rs (the creator block, `CreatorNext`, Task::NameChecke
 - Yes: view 0x21 alone (op 3), then menu ok "Player data registered." (8 0x82); OK logs in with the new character.
   Not in the new list: 0x82, then FFXI-3117, then out to the title. Refused: the error popup, the name cleared, the
   race step (0x14b leaves).
-- The name check (view 0x22) goes where retail's world step ends: Enter on chmkname (0002) sends it, passed -> the
+- The name check (view 0x22) goes where retail's world step ends (since: "Creator: the world step"): passed -> the
   nation step, refused -> FFXI-3000 + code and the name step. Before it: an empty name buzzes (0004), under 3
   letters FFXI-3110. LSB keeps the checked name in the session for the 0x21 (view_session.cpp case 0x22 / 0x21).
   The invented "Names are 3 to 15 letters." line and "Create this character?" are gone.
@@ -10107,8 +10107,8 @@ FUN_1023b550). client/mod.rs (the creator block, `CreatorNext`, Task::NameChecke
   entered is unavailable."; "Lnxconfirm" -> nation step; the prompt on No with the emblem; No -> chmktown on San
   d'Oria; Escape -> the race step; Yes -> "Player data registered." -> OK -> logged in, the San d'Oria opening played
   out. The test character was deleted afterwards (delchar.py).
-- Not done: chmkserv / chmkpass (no world step), child 3's element state 0x10. Since done: netwait / netbar ("Lobby:
-  netwait and netbar").
+- Not done: child 3's element state 0x10. Since done: netwait / netbar ("Lobby: netwait and netbar"), chmkserv /
+  chmkpass ("Creator: the world step").
 
 ## Monstrosity, part 1: the look, the predicate, the music (2026-10-26)
 
@@ -10292,3 +10292,34 @@ client/netwait.rs, net/lobby.rs (`replies`), game_ui.rs (`netwait_window`, `netb
 - Not done: retail opens hnbackwi (lobbywin 85) for op 1 and ptcbgwin for op 0 behind the run (ours shows the screen
   below); op 5 is one Task with the log-in (retail: op 5, then op 1); the 3600-frame timeout (FFXI-3113); FFXI-3115
   after a failed refresh.
+
+## Creator: the world step (2026-10-26; spec ~/ffxi/lab/research/creator_world_spec.md)
+
+client/creator.rs (`WorldStep`, `WorldAct`, draw_ui), game_ui.rs (`WorldView`, `world_step`, `window_bare_frame`,
+`name_entry`'s active flag), mod.rs (`creator_world` / `creator_passed` / `creator_refused` / `creator_checking`,
+`CreatorNext::World`, Task::NameChecked), net/lobby.rs (`worlds`, `check_name(name, world, pass)`, `check_body`).
+- Retail's step 6 (FUN_10239720) sits over our step 5: Enter on a name (0002) opens chmkserv and worldsel. The rows
+  are the 0x23 worlds 1..=200 not "unknown", shuffled on every open (FUN_1023d6c0 mode 0); none -> FFXI-3103 and out.
+- Windows keep their offsets from chmkname (FUN_10119110 from P = (32, 32)): chmkserv +4 below its layout, worldsel and
+  chmkpass +8. chmkname loses its children and the Namingway (FUN_1011a3d0) and its caret; chmkserv shows the cursor
+  row's world at (+16, +4); worldsel the names at (+16, 4 + 16 i), the hand on the cursor row; chmkpass the pass or 8
+  0x3e "Not specified.", a '|' over the caret's character on frames 16..29 of 30 (two counts a frame while empty).
+- Help: 8 0x70 on the list, 0x71 on the pass and through the checks (inf for the checks).
+- List: Up / Down (0001; a move past the count is clamped back silently, Up from row 1 wraps to the last row with
+  0001, as the layout links), Enter 0002 -> the pass, Escape 0003 -> the name (kept). Mouse: hover moves the cursor
+  (0001), a click is Enter (inf). Pass: digits only, at most 10, at the caret; Backspace, Left / Right (no sound);
+  Escape 0003 -> the list, same order, row 1; Enter 0002 -> the checks. Tab still turns the view.
+- Checks in retail's order: same (name, world, pass) as the last passed -> the nation step, no request; pass of 1..9
+  -> FFXI-3111 -> the world step again; name < 3 -> 3110 -> the name step; same (name, world) as the last refused ->
+  that code -> the name step; else op 4 with view 0x22 = name @0x20, world @0x40, pass @0x50. Op 4: passed -> nation,
+  remembered; 313 / 322 -> the name step, remembered as refused; 331 -> out; else the world step again. A refused op 3
+  forgets the passed check. Behind the checks, op 4 and their popups no creator window is drawn.
+- 3118 (unknown world) and 3119 (no world, a pass) cannot come up from a list; the local filter FUN_101ba240 (3322) is
+  not traced.
+- `NewCharacter` lost its unused name (0x21 carries none).
+- creator-shot `--world list | pass:DIGITS` (needs `--help-time` for the windows to open); the shot loop now ends each
+  frame (GameUi::end_frame), so windows that animate open draw in it.
+- Live (lnxtest01, 2026-10-26, nothing created): "Lnxworld" -> list "Nameless" -> pass "Not specified."; "123" ->
+  FFXI-3111 -> list; Escape pass -> list -> name; "1234567890" -> netwait "Checking name and Gold World Pass." ->
+  FFXI-3339 (LSB: the account has characters) -> list; empty pass -> op 4 -> nation; Escape, the steps again, the same
+  triple -> nation at once.

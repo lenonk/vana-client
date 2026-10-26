@@ -268,6 +268,19 @@ pub struct CreatorView<'a> {
     pub job: usize,
     pub nation: usize,
     pub name: &'a str,
+    /// The world step over the name step (creator::WorldStep).
+    pub world: Option<WorldView<'a>>,
+    /// chmkname closed: the name step's checks and their popups (FUN_10239720 step 7).
+    pub name_hidden: bool,
+}
+
+/// What the creator's world step shows.
+pub struct WorldView<'a> {
+    pub rows: &'a [String],
+    pub cursor: usize,
+    pub top: usize,
+    /// Phase 1: the pass, its caret and whether the caret shows.
+    pub pass: Option<(&'a str, usize, bool)>,
 }
 
 impl GameUi {
@@ -1718,19 +1731,23 @@ impl GameUi {
         if v.step == 6 {
             self.nation_text(v.nation.min(2), w, h);
         }
-        if v.step == 5 {
-            self.name_entry(v.name, w, h);
+        if v.step == 5 && !v.name_hidden {
+            self.name_entry(v.name, v.world.is_none(), w, h);
         }
     }
 
     /// The chmkname window's contents (FUN_1022d9b0): the name at window + (0x10, 4), first letter upper case and
-    /// the rest lower (FUN_1022dc60), caret on for frames 16..29 of every 30; sprite 140 at child 2 while active.
-    pub fn name_entry(&mut self, name: &str, w: f32, h: f32) {
+    /// the rest lower (FUN_1022dc60); while `active`, the caret on for frames 16..29 of every 30 and sprite 140 at
+    /// child 2 (FUN_1015ed80: only with the focus).
+    pub fn name_entry(&mut self, name: &str, active: bool, w: f32, h: f32) {
         let Some(m) = self.data.lobby.menu("menu    chmkname") else { return };
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
         let child = m.elements.iter().find(|e| e.id == 2).map(|c| (c.x as f32, c.y as f32));
         let name: String = name.chars().enumerate().map(|(i, c)| if i == 0 { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }).collect();
         self.text(&name, x + 16.0, y + 4.0, 0, WHITE);
+        if !active {
+            return;
+        }
         if (self.started.elapsed().as_secs_f32() * 30.0) as u32 % 30 > 15 {
             let cx = x + 16.0 + self.text_width(&name);
             self.rect(cx, y + 5.0, 2.0, 14.0, [1.0, 1.0, 1.0, 0.9]);
@@ -1740,6 +1757,52 @@ impl GameUi {
         {
             self.batch.push_sprite(&self.data.lobby, lib, 140, x + cx, y + cy, 1.0, 1.0, 0x8080_8080, 0);
         }
+    }
+
+    /// A step window's frame and sprite without its children, as `menu` draws it (no open animation).
+    pub fn window_bare_frame(&mut self, name: &str, w: f32, h: f32) {
+        if let Some(m) = self.data.lobby.menu(name) {
+            screens::push_window(&mut self.batch, &self.data.lobby, &self.data.style, m, w, h);
+        }
+    }
+
+    /// The creator's world step, placed as retail from chmkname's point (FUN_10119110): chmkserv 4 px below its
+    /// layout with the cursor row's world at (+0x10, 4) (FUN_10238960); then worldsel (8 px below) with the hand on
+    /// the cursor row and the names at (+16, 4 + 16 i) (FUN_101f6a60), or chmkpass with the pass or 8 0x3e, a '|'
+    /// over the caret's character (FUN_10238c60). Returns the list's rows that hold a world.
+    pub fn world_step(&mut self, v: &WorldView, w: f32, h: f32) -> Vec<[f32; 4]> {
+        let at = |gu: &Self, name: &str, dy: f32| gu.data.lobby.menu(name).map(|m| screens::window_pos(m, w, h, 1.0, 1.0)).map(|(x, y)| (x + 16.0, y + dy + 4.0));
+        if self.lobby_window_off("menu    chmkserv", w, h, (0.0, 4.0), None, false, &[]).is_some()
+            && let Some((x, y)) = at(self, "menu    chmkserv", 4.0)
+            && let Some(world) = v.rows.get(v.cursor)
+        {
+            self.text(world, x, y, 0, WHITE);
+        }
+        let Some((pass, caret, on)) = v.pass else {
+            let sel = (v.cursor - v.top + 1) as u16;
+            let Some(win) = self.lobby_window_off("menu    worldsel", w, h, (0.0, 8.0), Some(sel), true, &[]) else { return Vec::new() };
+            if let Some((x, y)) = at(self, "menu    worldsel", 8.0) {
+                for (i, world) in v.rows.iter().skip(v.top).take(super::creator::WORLD_ROWS).enumerate() {
+                    self.text(world, x, y + 16.0 * i as f32, 0, WHITE);
+                }
+            }
+            return win.children.iter().take(v.rows.len() - v.top).map(|c| c.1).collect();
+        };
+        if self.lobby_window_off("menu    chmkpass", w, h, (0.0, 8.0), None, false, &[]).is_some()
+            && let Some((x, y)) = at(self, "menu    chmkpass", 8.0)
+        {
+            if pass.is_empty() {
+                let t = self.lobby_msg(8, 0x3e, "");
+                self.text(&t, x, y, 0, WHITE);
+            } else {
+                self.text(pass, x, y, 0, WHITE);
+                if on {
+                    let cx = x + self.text_width(&pass[..caret]);
+                    self.text("|", cx, y, 0, WHITE);
+                }
+            }
+        }
+        Vec::new()
     }
 
     /// The highlighted nation's description (chmktown draw FUN_1022e7b0): the body (group 8 0x1e / 0x29 / 0x34)
