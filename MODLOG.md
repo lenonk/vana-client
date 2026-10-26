@@ -3777,9 +3777,9 @@ From the popup spec (scratchpad popupanim/SPEC.md; current [2019] addresses ther
   last three 30 fps frames of an open). FUN_1011a150 (frameless): the window sprite likewise, echo alpha 128 - 128 f.
 - Keys still act during the open (FUN_10118260 tests only the closing state). No sound from the window system.
 - Ours: game_ui.rs menu_registry, win_gate / zoom_frame / end_frame; the named-window helpers (window, window_alpha,
-  window_off, menu_sel, lobby_window and so yes / no and OK prompts) return None while opening. Not done: frameless
-  windows (bare_window, the select list), the 9-tick press pulse on confirm (FUN_10119fb0), the in-game prompt as
-  the real "menu    yesno".
+  window_off, menu_sel, lobby_window and so yes / no and OK prompts) return None while opening. Since done: frameless windows
+  (bare_window through zoom_sprite; dbnamese has flag 8, no animation), the press pulse ("The generic press on every
+  window"), in-game prompts as their real windows (comyn / merityn).
 
 ## Tab candidates: the per-frame visibility cull (2026-10-23)
 
