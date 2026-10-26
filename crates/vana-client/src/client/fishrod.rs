@@ -15,11 +15,17 @@ const ROD_FILES: [u32; 9] = [39307, 39307, 39339, 39371, 39403, 39435, 39435, 39
 /// FUN_1008c6c0's schedulers for 0x38..0x3e.
 const STATUS_SCHED: [&[u8; 4]; 7] = [b"fsh0", b"fsh7", b"fsh2", b"fsh3", b"fsh4", b"fsh5", b"fsh6"];
 
-/// The status whose scheduler the model and the rod have had.
+/// FUN_100cae60's table 0x10330ef8 for 0x38..0x3e: the rod's line scheduler (1 `!f01`, 2 `!f02`) and its delay.
+const LINE: [Option<(u8, f32)>; 7] = [Some((1, 136.0)), None, Some((2, 102.0)), Some((2, 40.0)), Some((2, 44.0)), Some((2, 68.0)), Some((2, 0.0))];
+
+/// The status whose scheduler the model and the rod have had; the line's pending scheduler and ticks left (+0x81c /
+/// +0x820) for the status it was set by.
 #[derive(Default)]
 pub struct Angler {
     model: u8,
     rod: u8,
+    line: Option<(u8, f32)>,
+    line_for: u8,
 }
 
 /// The angler's rod actor, once loaded.
@@ -48,9 +54,20 @@ pub fn files(w: &World, id: u32, pc: &PcMotion) -> Vec<u32> {
     super::ride::motion_files(pc, v)
 }
 
-/// Per frame, before the motion files: each angler's rod made, its status scheduler once its files are in; the
-/// schedulers stopped and the rod gone when it stops fishing.
-pub fn update(w: &mut World) {
+/// FUN_1008c6c0: a status 6 / 0x32 / 0x38 waits while the model still walks (FUN_100d65b0(1)) and is retried
+/// *(inf: walking = its walk or run motion)*.
+pub fn walking_hold(w: &World, id: u32, status: u8) -> bool {
+    if !matches!(status, 6 | 0x32 | 0x38) {
+        return false;
+    }
+    let Some((a, ch)) = w.actors.get(&id).and_then(|a| Some((a, a.character.as_ref()?))) else { return false };
+    let names = a.motion_names.unwrap_or(ch.motions);
+    a.motion == names.walk || a.motion == names.run
+}
+
+/// Per frame, before the motion files: each angler's rod made, its status scheduler once its files are in, the rod's
+/// line; the schedulers stopped and the rod gone when it stops fishing.
+pub fn update(w: &mut World, dt: f32) {
     let mut anglers: Vec<u32> = w.entities.iter().filter(|(id, e)| **id != w.my_id && e.kind == EntityKind::Player && fishing_status(e.motion.status)).map(|(id, _)| *id).collect();
     if fishing_status(w.my_motion.status) {
         anglers.push(w.my_id);
@@ -79,6 +96,18 @@ pub fn update(w: &mut World) {
         let name = u32::from_le_bytes(*STATUS_SCHED[k]);
         let rod_in = rod_of(w, id).is_some();
         let a = w.anglers.entry(id).or_default();
+        if a.line_for != status {
+            (a.line_for, a.line) = (status, LINE[k]);
+        }
+        // Only the rods of looks 14 / 15 have `!f01` / `!f02` *(inf: the others draw no line effect)*.
+        let mut line = None;
+        if let Some((mode, left)) = a.line.as_mut() {
+            *left -= dt * 60.0;
+            if *left <= 0.0 && rod_in {
+                line = matches!(look, 14 | 15).then_some(*mode);
+                a.line = None;
+            }
+        }
         let (model, rod_due) = (files_in && a.model != status, rod_in && a.rod != status);
         if model {
             a.model = status;
@@ -91,6 +120,9 @@ pub fn update(w: &mut World) {
         }
         if rod_due {
             w.effects.on_scheduler(rod, rod, name);
+        }
+        if let Some(mode) = line {
+            w.effects.on_scheduler(rod, rod, u32::from_le_bytes(if mode == 1 { *b"!f01" } else { *b"!f02" }));
         }
     }
     let gone: Vec<u32> = w.anglers.keys().filter(|id| !anglers.contains(id)).copied().collect();

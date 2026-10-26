@@ -9742,8 +9742,12 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   crayfish!" at skill 60, an early Enter ("You give up."), Escape in the fight ("You give up and reel in your
   line."), dry ground ("You cannot fish here.", nothing sent). Shots: the arrow effects left / right with the hit glow,
   the gauge, the rod in hand through the cast and the hold.
-- Left: the line on plain rods (only looks 14 / 15 have `!f01` / `!f02`, FUN_100cae60, not done); the 0x38 status held
-  while still walking (FUN_100d65b0); FUN_10127ea0 (drops queued text after a mode-3 send *(inf)*); other anglers not
-  seen live.
+- The rod's line (FUN_100cae60, table 0x10330ef8): 0x38 `!f01` after 136 ticks, 0x3a..0x3e `!f02` after 102 / 40 /
+  44 / 68 / 0, on the rod; only the rods of looks 14 / 15 (the +1 rods, MId 0x800e / 0x800f) have them *(inf: the
+  others draw nothing)*. Live: Lu Sh. F. Rod +1 (19320, Mithra file 39481): `!f01` 2.3 s into the cast, a purple glow
+  along the rod (fgl generators).
+- A status 6 / 0x32 / 0x38 waits in held_status while the model still plays its walk or run motion (FUN_100d65b0(1)
+  *(inf: walking = those motions)*), ours and others'.
+- Left: FUN_10127ea0 (drops queued text after a mode-3 send *(inf)*); other anglers not seen live.
 - Test tooling: `~/ffxi/lab/scratch/fishing/responder.py` answers arrows from the client log (RUST_LOG
   `vana_client::client::fishing=debug`), `cast_loop.py` casts until a bite.

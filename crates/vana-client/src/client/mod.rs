@@ -6603,7 +6603,7 @@ impl App {
                         looks.push((e.id, Source::Npc(npc)));
                     }
                     let fresh = !world.entities.contains_key(&e.id);
-                    let held = combat::held(world, e.id);
+                    let held = combat::held(world, e.id) || fishrod::walking_hold(world, e.id, e.motion.status);
                     let entry = world.entities.entry(e.id).or_insert(Entity {
                         name: String::new(),
                         pos: Vec3::ZERO,
@@ -7088,7 +7088,7 @@ impl App {
                     }
                     world.my_pet = pet;
                     // Held mid-swing: applied when the hold ends (the disengage waits for the swing).
-                    if combat::held(world, world.my_id) {
+                    if combat::held(world, world.my_id) || fishrod::walking_hold(world, world.my_id, status) {
                         world.held_status.insert(world.my_id, status);
                     } else {
                         world.held_status.remove(&world.my_id);
@@ -7586,7 +7586,7 @@ impl App {
             actmotion::play_op(world, id, m);
         }
         ride::update(world, dt);
-        fishrod::update(world);
+        fishrod::update(world, dt);
         indi::update(world, dt);
         actmotion::update(world, dt);
         // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
