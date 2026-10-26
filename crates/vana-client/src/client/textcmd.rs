@@ -2050,12 +2050,16 @@ fn equip(w: &mut World, args: &[String]) -> Done {
     let want = args.get(1).ok_or(())?;
     let k = (0..16).find(|&k| bt.slot_name(k).is_some_and(|n| n.eq_ignore_ascii_case(want))).ok_or(())?;
     let slot = SLOT_OF[k];
+    // FUN_100e48d0: SAVE_CONF byte 1 bits 3..4 (s2c 0x0B4, session +0x2cfd9) silence the success lines.
+    let quiet = w.conf_sys[1] >> 3 & 3 != 0;
     let Some(name) = args.get(2) else {
         if let Some((c, i)) = w.inv.equip[slot as usize] {
             let id = w.inv.slots.get(&(c, i)).map_or(0, |s| s.0);
             log::info!("/equip: removing {id:#x} from slot {slot}");
             if super::equipwin::try_equip(w, slot as usize, c, i, id) {
-                log9(w, 0x44);
+                if !quiet {
+                    log9(w, 0x44);
+                }
             } else {
                 refuse(w, 0x8e);
             }
@@ -2076,7 +2080,9 @@ fn equip(w: &mut World, args: &[String]) -> Done {
     }
     let locked = w.inv.locks.get(&(bag, index)).is_some_and(|&l| l != 0);
     if !locked && super::equipwin::try_equip(w, slot as usize, bag, index, id) {
-        log9(w, 0x43);
+        if !quiet {
+            log9(w, 0x43);
+        }
     } else {
         refuse(w, 0x8e);
     }

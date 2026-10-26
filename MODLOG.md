@@ -7467,7 +7467,8 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
   screen): its own refusals print (7 0x8b no Dual Wield, 0x98 no main weapon, 0x99 a two-handed main), and any failure
   then prints 7 0x8e "You were unable to change your equipped items."; so does an item with its lock byte (+8) set.
   Already worn or not found: nothing. Live: `/equip sub "Bronze Dagger"` on WAR prints 0x8b then 0x8e;
-  `/equip head "Hume Tunic"` 0x8e. Not done: the equipment-message setting FUN_100e48d0 that drops 9 0x43 / 0x44.
+  `/equip head "Hume Tunic"` 0x8e. Since done: FUN_100e48d0 (SAVE_CONF byte 1 bits 3..4 from s2c 0x0B4, session
+  +0x2cfd8 + 1) set drops the success lines 9 0x43 / 0x44.
 
 ## Party requests (2026-10-25)
 
