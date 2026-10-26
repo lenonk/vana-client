@@ -9134,3 +9134,17 @@ before). Not seen live yet (each needs its cutscene).
 - 0xae 5 / 6 (model +0x798, FUN_100cb400): Actor.motion_link; after the clock advances, a leader frame in (0, ours]
   becomes ours. Ours compares the current motions only (retail: each of the 7 regions) and reads the leader's frame
   from the frame before (one frame behind at most). A new model drops the link, as FUN_100c5d60 does.
+
+## The control lock: event ops 0x20 / 0x30 (R9, 2026-10-25)
+
+- DAT_10482f18 (current build) is the 2019 DAT_10470520 our talk lock modelled: one "user control locked" flag. Set
+  by a talk request (FUN_1007bf30), the event start (FUN_10094190), op 0x20 (FUN_100b34c0: = u8@1). The event end
+  (FUN_100ae3f0) clears it only while DAT_10488100 != 0 (set 1 at event init, FUN_100aed00); op 0x30 (FUN_100b5620)
+  sets DAT_10488100 = 0, so the lock outlasts the event (chained events). Per frame (FUN_10096640, all.c ~115839):
+  freed when the talk target (FUN_100fc300) is gone, or has +0x12c bit 30 and +0x124 bit 12 (not traced). Zone
+  init clears it (FUN_10093720 area). While set: no talk, no c2s 0x015, the menu keys but 0x11 ignored.
+- Ours: World.control_lock (time, target) replaces talk_lock. It also stops our own movement and turning (as an event
+  does), so after a talk the player stands until the server answers (LSB: an event start or s2c 0x052 within ~0.35 s
+  in the user's log). Freed by: the event end unless carried, s2c 0x052 mode 0, any 0x052 with no event running
+  *(inf: the release after a carried end)*, its target gone, a zone change, or 10 s *(inf)*.
+- Live (Lnxcsfix, the Southern San d'Oria home point): talk, the event, Escape: walked off at once after.

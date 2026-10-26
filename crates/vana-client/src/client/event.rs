@@ -884,6 +884,13 @@ impl Host for LiveHost<'_> {
                     a.motion_link = leader;
                 }
             }
+            // FUN_100b34c0 (op 0x20): DAT_10482f18 = u8@1, control locked or free; FUN_100b5620 (op 0x30):
+            // DAT_10488100 = 0, the lock outlasts the event (chained events).
+            Effect::Op { op: 0x20, args, .. } => {
+                let target = self.st.start.target;
+                self.w.control_lock = (Self::arg_int(&args, 0).unwrap_or(0) != 0).then(|| (Instant::now(), target));
+            }
+            Effect::Op { op: 0x30, .. } => self.w.lock_carry = true,
             // FUN_100b74e0 (op 0x61): the event actor's footsteps on / off (+0x128 bit 0 = u8@1 & 1).
             Effect::Op { op: 0x61, args, actor, .. } => {
                 let id = self.wid(actor);
@@ -1539,6 +1546,8 @@ fn begin(w: &mut World, mut wt: Box<Waiting>, index: &DatIndex) {
     // FUN_100ad000 (load finished): DAT_104760f8 = 1, DAT_10473068 = DAT_10475cb0.
     st.loaded = true;
     st.cancellable = st.cb0;
+    // FUN_10094190 / FUN_100aed00: control locked, DAT_10488100 = 1 (released at the end).
+    (w.control_lock, w.lock_carry) = (Some((Instant::now(), st.start.target)), false);
     w.event = Some(Box::new(Live { rt, st }));
 }
 
@@ -1564,7 +1573,7 @@ pub fn update(w: &mut World, dt: f32) {
                     let s = &wt.start;
                     log::warn!("event {:#x}: no script in zone {fz}; ending it", s.event);
                     let _ = w.net.commands.send(NetCommand::EventEnd { target: s.target, index: s.index, option: 0, zone: s.zone, event: s.event, mode: 0 });
-                    w.talk_lock = None;
+                    w.control_lock = None;
                     return;
                 }
                 wt.blocks = Some(blocks);
@@ -1750,7 +1759,10 @@ fn finish(w: &mut World, live: Box<Live>) {
     // Masks 1 (effects) and 4 (music) back to 1.0 over 30 ticks (taken with DAT_1046dacb == 0).
     w.audio_cmds.push((1, 1.0, 30.0));
     w.audio_cmds.push((4, 1.0, 30.0));
-    w.talk_lock = None;
+    // FUN_100ae3f0: the lock goes unless op 0x30 carried it.
+    if !w.lock_carry {
+        w.control_lock = None;
+    }
     w.event_end_at = Some(Instant::now());
     w.screen.shot = None;
     w.map_open = None;
@@ -1794,7 +1806,7 @@ pub fn release(w: &mut World, mode: u8, event: u16) {
     match mode {
         // 100a070a: release, and cancel allowed unless (DAT_1046df04 | event Mode) & 0x2000.
         0 => {
-            w.talk_lock = None;
+            w.control_lock = None;
             if let Some(l) = &mut w.event {
                 l.st.released = true;
                 if l.st.flags() & 0x2000 == 0 {
@@ -1802,11 +1814,11 @@ pub fn release(w: &mut World, mode: u8, event: u16) {
                 }
             }
         }
-        _ => {
-            if let Some(l) = &mut w.event {
-                l.rt.release(mode, event);
-            }
-        }
+        _ => match &mut w.event {
+            Some(l) => l.rt.release(mode, event),
+            // The release after an event's end frees a lock op 0x30 carried *(inf)*.
+            None => w.control_lock = None,
+        },
     }
 }
 
@@ -2207,7 +2219,7 @@ pub fn click(w: &mut World, row: Option<usize>) {
 
 /// FUN_1007aac0: Talk (c2s 0x01A action 0) after the client's checks. Returns whether it was sent.
 pub fn talk(w: &mut World, target: u32) -> bool {
-    if active(w) || w.talk_lock.is_some() || w.zone.is_none() {
+    if active(w) || w.control_lock.is_some() || w.zone.is_none() {
         return false;
     }
     // FUN_1007bf30: not while mounted (FUN_101cbe50 / FUN_101cbe60: group 7 0x4b).
@@ -2236,7 +2248,7 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     }
     let index = e.index;
     let _ = w.net.commands.send(NetCommand::Act { target, index, action: 0 });
-    w.talk_lock = Some(Instant::now());
+    w.control_lock = Some((Instant::now(), target));
     log::info!("talk to {target:#x} ({index})");
     true
 }

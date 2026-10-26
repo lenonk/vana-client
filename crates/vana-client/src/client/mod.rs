@@ -4416,8 +4416,11 @@ struct World {
     event_ext: [u8; 24],
     event_mem: crate::event_vm::Memory,
     event_end_at: Option<Instant>,
-    /// Talk sent, waiting for the server (DAT_10470520).
-    talk_lock: Option<Instant>,
+    /// DAT_10482f18 (2019: DAT_10470520), user control locked, and the target it is for: a talk sent (FUN_1007bf30),
+    /// an event's start, op 0x20. The event's end frees it unless op 0x30 carried it (DAT_10488100 = 0); then its
+    /// target going, s2c 0x052, a zone change or 10 s (inf) do.
+    control_lock: Option<(Instant, u32)>,
+    lock_carry: bool,
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
     names: Option<Arc<crate::dat::names::Names>>,
@@ -5808,7 +5811,8 @@ impl App {
                             event_ext: [0; 24],
                             event_mem: Default::default(),
                             event_end_at: None,
-                            talk_lock: None,
+                            control_lock: None,
+                            lock_carry: false,
                             audio_cmds: Vec::new(),
                             names: None,
                             actions: None,
@@ -6325,7 +6329,7 @@ impl App {
                     world.self_lock = None;
                     world.rebuild_models = false;
                     world.map_open = None;
-                    world.talk_lock = None;
+                    world.control_lock = None;
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.
@@ -7411,11 +7415,12 @@ impl App {
         ride::update(world, dt);
         indi::update(world, dt);
         actmotion::update(world, dt);
-        // Inferred safety: a talk the server never answers stops blocking after 10 s.
-        if world.talk_lock.is_some_and(|t| t.elapsed().as_secs_f32() > 10.0) {
-            world.talk_lock = None;
+        // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
+        if !event::active(world) && world.control_lock.is_some_and(|(t, id)| t.elapsed().as_secs_f32() > 10.0 || !world.entities.contains_key(&id)) {
+            world.control_lock = None;
         }
-        let in_event = event::active(world);
+        // The script, or a lock carried past its end, moves us.
+        let in_event = event::active(world) || world.control_lock.is_some();
         target::update(world);
         // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red; so does the party cursor's.
         if let Some(t) = world.target.filter(|_| world.prompt.is_some())
