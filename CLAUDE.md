@@ -129,7 +129,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state", "Engaged menu", "Action menu: the
     mouse hold", "Chat mode window"); Sprint / Scout / Quarry show only in Conflict;
   - the auction house (client/auction.rs, MODLOG "Auction house"): bid, sell, Sales Status, Stop Sale, price
-    history, sorting and AUCSORT.DAT done and live-tested; left the retail-only paths (no LSB trigger);
+    history, sorting and AUCSORT.DAT, the mouse done and live-tested; left the retail-only paths (no LSB trigger);
   - the treasure pool (client/treasure.rs, MODLOG "Treasure pool window"): loot / lootope / lnowin, lot, pass, Done,
     the party-window chest done and live-tested with a bot; the mouse built (not tried live); left the zone-pool columns;
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
@@ -147,7 +147,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
-    the key item / quest / mission / currency lists; the mouse and the wheel on them;
+    the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and
+    the wheel on them;
+  - the mouse on windows (client/winhits.rs: windows recorded as drawn, the generic handler): done for every menu
+    window (shops, moogle, Delivery Box, layout, MacroPalette, synthesis, auction, the status sub-windows, search
+    results, Region Info, chatctrl, Help Desk, /check); left faqmain's fields (right click only), seacom's editor;
   - collision and lifts (MODLOG "Actor collision and lifts"): NPCs hold you 0.5 s then let you through, idle players never (MODLOG "Character bump"); lifts ride and move, the zone-in waits for them; Mog
     House furniture boxes done;
   - Mog House furniture (client/furniture.rs, dat/furniture.rs, MODLOG "Mog House furniture"; spec
