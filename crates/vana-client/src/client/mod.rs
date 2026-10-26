@@ -9753,8 +9753,10 @@ impl App {
                 }
             }
             let lines = layout::overlay(w);
+            let ceiling = !w.layout.as_ref().is_some_and(|l| l.view == 0);
             if let Some(r) = w.renderer.as_mut() {
                 r.set_lines(&gfx.gpu, lines);
+                r.show_link999(&gfx.gpu, ceiling);
             }
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models

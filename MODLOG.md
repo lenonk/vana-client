@@ -9325,7 +9325,7 @@ Spec `layout_mode_spec.md` 2.5 (bankmenu, the furniture list), 3.5, 5.1 (client/
 - Correction to part 2: the "textures 31 -> 75" figure was a running total (render's upload counter and
   TEXTURE_BYTES never go down); clear_furniture drops the old set's textures. Moving the held piece's instance
   matrix instead of reloading is still the better way, not yet done.
-- Not yet: the mannequin's equipment row, the link-999 ceiling in view 0 (the grid overlay: part 4).
+- Not yet: the mannequin's equipment row, (the grid overlay and the link-999 ceiling: part 4).
 
 ## Mog House layout mode, part 4: the grid overlay (2026-10-26)
 
@@ -9352,5 +9352,7 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
 - Live (Lnxcsfix, San d'Oria house): the held bed red-pink with its inset over blue free cells (the walkway none); in
   the walkway grey, no inset; a held Timepiece green over the Desk's 3 x 3 top and grey on the bed; an Imperial
   Tapestry red-pink at wall slots 0, 1 and 3 with the other slots blue.
-- Not yet: the mannequin's equipment row, the link-999 ceiling in view 0, moving the held piece's instance matrix
-  instead of reloading.
+- The link-999 placements (spec 1.6, FUN_1017a590: the house's ceiling beams, m_san01_b and kin) are hidden while
+  layout mode is in view 0 and shown again in views 1 / 2 and after it (render show_link999, the zone instance zeroed
+  as the sub-area stand-ins are). Live: the beams over the San d'Oria room's east side gone top-down, back after.
+- Not yet: the mannequin's equipment row, moving the held piece's instance matrix instead of reloading.

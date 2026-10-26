@@ -370,6 +370,8 @@ pub struct ZoneRenderer {
     /// `light_keys` are the zone's own.
     links: Vec<(u32, u32, Instance)>,
     hidden: u32,
+    /// Layout mode's top-down view hides the link-999 placements (show_link999).
+    link999_off: bool,
     zone_keys: usize,
     /// Area 4ccs by slot - 1, how many are the zone's, and each slot's lighting for this frame (set_area_lights).
     area_keys: Vec<u32>,
@@ -1263,6 +1265,7 @@ impl ZoneRenderer {
             furn_base: None,
             links: geo.links.clone(),
             hidden: 0,
+            link999_off: false,
             zone_keys: geo.light_keys.len(),
             area_keys: geo.area_keys.clone(),
             zone_areas: geo.area_keys.len(),
@@ -1448,6 +1451,18 @@ impl ZoneRenderer {
             self.light_keys.truncate(self.zone_keys);
             self.area_keys.truncate(self.zone_areas);
         }
+    }
+
+    /// FUN_1017a590: the link-999 placements (a nation house's ceiling) shown or not.
+    pub fn show_link999(&mut self, gpu: &Gpu, shown: bool) {
+        if shown != self.link999_off {
+            return;
+        }
+        for (i, _, inst) in self.links.iter().filter(|x| x.1 == 999) {
+            let v = if shown { *inst } else { Instance::zeroed() };
+            gpu.queue.write_buffer(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
+        }
+        self.link999_off = !shown;
     }
 
     /// FUN_1017a630: zone instances whose link is `link` draw nothing, the others as built.
