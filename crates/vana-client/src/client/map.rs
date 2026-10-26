@@ -2049,8 +2049,10 @@ impl Overlay {
     }
 
     /// Extra, the minimap (client/minimap.rs): the style frame at `rect`, inside it `span` map pixels across centred on
-    /// `pos`, the dots (world x, z, colour, the target drawn larger) and our marker.
-    pub fn draw_mini(&mut self, gu: &mut GameUi, rect: [f32; 4], pos: (f32, f32), facing: f32, span: f32, dots: &[(f32, f32, u32, bool)]) {
+    /// `pos`, the dots (world x, z, colour, the target drawn larger) and our marker, coloured as the overlay's at
+    /// opacity `mix` (user, 2026-10-25: the two markers alike).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_mini(&mut self, gu: &mut GameUi, rect: [f32; 4], pos: (f32, f32), facing: f32, span: f32, dots: &[(f32, f32, u32, bool)], mix: f32) {
         self.poll(gu);
         let (Some(region), Some(t)) = (self.region, self.texture.clone()) else { return };
         const INSET: f32 = 5.0;
@@ -2074,7 +2076,7 @@ impl Overlay {
             gu.rect(cx + dx - d / 2.0 - 1.0, cy + dy - d / 2.0 - 1.0, d + 2.0, d + 2.0, border);
             gu.rect(cx + dx - d / 2.0, cy + dy - d / 2.0, d, d, [r, g, b, 1.0]);
         }
-        let shade = self.shade_at(&region, px, py);
+        let shade = self.shade_at(&region, px, py) * mix;
         marker(gu, cx, cy, facing, shade);
         gu.clip(None);
     }

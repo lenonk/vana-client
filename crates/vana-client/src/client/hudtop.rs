@@ -479,7 +479,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
         let mut o = super::map::Overlay::new(zone, region, Some(std::sync::Arc::new(index)));
         o.wait_image(&mut gu);
         let dots = [(x + 5.0, z + 3.0, 0x8000_b040, false), (x - 8.0, z + 6.0, 0x8000_40f0, false), (x - 4.0, z - 12.0, 0x8030_60e0, false), (x + 10.0, z - 10.0, 0x8080_8080, true)];
-        o.draw_mini(&mut gu, rect, (x, z), std::f32::consts::FRAC_PI_2, num(6, 160.0), &dots);
+        o.draw_mini(&mut gu, rect, (x, z), std::f32::consts::FRAC_PI_2, num(6, 160.0), &dots, cfg.map_overlay_opacity);
         mini = Some(rect);
     }
     // --map ZONE,X,Z[,owned]: the map window as the main menu's Map opens it, the player facing north.

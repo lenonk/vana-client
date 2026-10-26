@@ -33,6 +33,8 @@ pub struct Frame {
     facing: f32,
     span: f32,
     dots: Vec<(f32, f32, u32, bool)>,
+    /// The map overlay's opacity: the marker is coloured as the overlay's.
+    mix: f32,
 }
 
 /// Each frame before the Timers: the map for where we stand (another zone opens it again, another page follows), and
@@ -65,13 +67,13 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32) {
         .filter_map(|(&id, e)| Some((e.pos.x, e.pos.z, radar::colour(radar::kind_bits(w, id, e), e.monstrosity, e.motion.status, true)? | 0x8000_0000, w.target == Some(id))))
         .collect();
     w.minimap_rect = Some(rect);
-    w.minimap_frame = Some(Frame { rect, pos: (w.pos.x, w.pos.z), facing, span: w.minimap_span.clamp(SPAN.0, SPAN.1), dots });
+    w.minimap_frame = Some(Frame { rect, pos: (w.pos.x, w.pos.z), facing, span: w.minimap_span.clamp(SPAN.0, SPAN.1), dots, mix: w.map_opacity });
 }
 
 /// Draws what `prepare` set up (after the HUD's clear, under the party / target windows and the menus).
 pub fn draw(gu: &mut GameUi, map: &mut Option<Overlay>, f: Option<Frame>) {
     if let (Some(m), Some(f)) = (map.as_mut(), f) {
-        m.draw_mini(gu, f.rect, f.pos, f.facing, f.span, &f.dots);
+        m.draw_mini(gu, f.rect, f.pos, f.facing, f.span, &f.dots, f.mix);
     }
 }
 
