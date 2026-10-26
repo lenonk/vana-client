@@ -30,6 +30,7 @@ The plan for vana-client's modern interface, from the user's planning document (
   free slot in any of them. The same for every entry with numbered versions (Mog Safe / Safe 2, Config's Misc 1..4
   and the like). User, 2026-10-26.
 - **Nameplates.** Replaced in Modern with plates like the mock-up's; no HP bars over heads. User, 2026-10-26.
+- **Jobs are written WAR22/WHM11**, exactly so (main and level, slash, sub and level). User, 2026-10-26.
 - **Breathing room.** Rows and frames keep a few pixels between their lines and their contents.
 - **Icons.** The pack's icons are placeholders. A full icon set (every job, spell, buff and debuff) may come later;
   game art is mapped by stable game ids, never by atlas sprite ids.
@@ -233,8 +234,8 @@ Milestone 1:
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
 - Party rows show the sub job small on the main job's corner.
-- Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals as tall
-  as retail's letters), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
+- Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals a little
+  taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
   badges stay at its size left of the name until the SVG badge set is approved; the master stars above. No bars.
 - To do (user, 2026-10-26): the Timers window, the minimap, the map overlay; the SVG plate badges; the storage views

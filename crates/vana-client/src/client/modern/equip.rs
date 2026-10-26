@@ -6,7 +6,7 @@
 
 use super::super::World;
 use super::super::equipwin::{self, Candidate, Focus, MODERN_ROWS, Reach};
-use super::super::items::{self as gitems, JOBS};
+use super::super::items as gitems;
 use super::super::scrollbar::Msg;
 use super::{Panels, Title, chat, paint};
 use crate::inventory::{SLOT_CHILD, gil_text};
@@ -57,9 +57,9 @@ fn bag(c: u8) -> &'static str {
     }
 }
 
-/// A job and its level as the persona shows it (windowps "Lv%2d " and the job's name): "Lv22 WAR".
-fn job(j: &Option<(String, u8)>) -> Option<String> {
-    j.as_ref().map(|(lv, job)| format!("{} {}", lv.trim_end(), JOBS.get(*job as usize).copied().unwrap_or("")))
+/// A job and its level as players write it: "WAR22" (none without a job).
+fn job((j, lv): (u8, u8)) -> Option<String> {
+    (j != 0).then(|| format!("{}{lv}", super::hud::job(j)))
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -90,11 +90,15 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         // The persona: name and jobs, HP / MP / TP at the right.
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&persona.name).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
-            if let Some(main) = job(&persona.main) {
-                ui.label(egui::RichText::new(main).size(m.theme.ui).color(if persona.main_blue { m.theme.color("focus") } else { m.theme.color("gold") }));
-            }
-            if let Some(sub) = job(&persona.sub) {
-                ui.label(egui::RichText::new(format!("/ {sub}")).size(m.theme.ui).color(m.theme.color("focus")));
+            // WAR22/WHM11: the main in gold (blue while capped or in merit mode), the sub in blue.
+            if let Some(main) = job(stats.main) {
+                let mut jobs = egui::text::LayoutJob::default();
+                let font = FontId::proportional(m.theme.ui);
+                jobs.append(&main, 0.0, egui::TextFormat::simple(font.clone(), if persona.main_blue { m.theme.color("focus") } else { m.theme.color("gold") }));
+                if let Some(sub) = job(stats.sub) {
+                    jobs.append(&format!("/{sub}"), 0.0, egui::TextFormat::simple(font, m.theme.color("focus")));
+                }
+                ui.label(jobs);
             }
             if persona.ready {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

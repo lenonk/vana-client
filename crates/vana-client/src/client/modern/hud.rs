@@ -9,7 +9,7 @@ use super::{Look, Modern, Panels, Title, chat, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use std::f32::consts::PI;
 
-fn job(j: u8) -> &'static str {
+pub(super) fn job(j: u8) -> &'static str {
     if j == 23 { "MON" } else { JOBS.get(j as usize).copied().unwrap_or("") }
 }
 

@@ -12,8 +12,10 @@ use std::sync::{Mutex, OnceLock};
 const BUCKETS: [f32; 4] = [16.0, 28.0, 48.0, 80.0];
 /// The drawn em in retail plate units (times the plate's y scale): capitals as tall as retail's letters (about 10.6
 /// units); the baseline below the anchor so the text's middle sits where retail's does.
-const EM: f32 = 14.5;
-const BASELINE: f32 = 8.3;
+const EM: f32 = 15.5;
+const BASELINE: f32 = 8.8;
+/// Extra space between letters, in em: retail's plates are widely set.
+const TRACKING: f32 = 0.08;
 
 /// A rasterized name: its image size, the text's left, right and baseline in it.
 #[derive(Clone, Copy)]
@@ -46,7 +48,7 @@ fn rasterize(text: &str, px: f32) -> Option<(Raster, Vec<u8>)> {
             caret += sf.kern(p, id);
         }
         glyphs.push(id.with_scale_and_position(scale, point(pad + caret, pad + sf.ascent())));
-        caret += sf.h_advance(id);
+        caret += sf.h_advance(id) + TRACKING * px;
         prev = Some(id);
     }
     let (w, h) = ((caret + 2.0 * pad).ceil() as usize, (sf.ascent() - sf.descent() + 2.0 * pad).ceil() as usize);
@@ -90,7 +92,7 @@ fn rasterize(text: &str, px: f32) -> Option<(Raster, Vec<u8>)> {
             }
         }
     }
-    Some((Raster { w: w as u32, h: h as u32, left: pad, right: pad + caret, baseline: pad + sf.ascent() }, out))
+    Some((Raster { w: w as u32, h: h as u32, left: pad, right: pad + caret - TRACKING * px, baseline: pad + sf.ascent() }, out))
 }
 
 /// A plate: the name centred on x with its baseline BASELINE units below y, tinted (ARGB, 0x80 = 1.0) and pulsed;
