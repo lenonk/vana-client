@@ -3933,8 +3933,6 @@ impl crate::fx::Actors for FxActors<'_> {
         self.contacts.get(&id).map(|c| c.1)
     }
 
-    // FUN_100ac560: you or your pet, a monster (+0x120 bit 13 = u8 @0x20 bit 0), else not in the party roster
-    // *(the roster is not tracked (s2c 0x0DD), so it holds only you; party members count as others)*.
     // FUN_101819a0(actor+0x5e4): the area of the floor under it, or the event's (actor_area) *(looked up when asked,
     // not every 120 frames)*.
     fn area_light(&self, id: u32) -> Option<Vec3> {
@@ -3943,6 +3941,7 @@ impl crate::fx::Actors for FxActors<'_> {
         self.areas.get(&area).copied()
     }
 
+    // FUN_100ac560's class: you or your pet, a monster (+0x120 bit 13 = u8 @0x20 bit 0), a party member, others.
     fn fx_class(&self, id: u32) -> u8 {
         let e = self.entities.get(&id);
         let mine = id == self.me || (self.pet != 0 && e.is_some_and(|e| e.index == self.pet));
