@@ -248,11 +248,22 @@ pub fn toggle_first(w: &mut World) {
 
 /// The focal length in use.
 pub fn focal(w: &World) -> f32 {
-    if w.camst.first { FIRST_FOCAL } else { super::cfgapply::focal(&w.game) }
+    if w.layout.is_some() {
+        // DAT_1037eb94[1]: layout mode's focal.
+        250.0
+    } else if w.camst.first {
+        FIRST_FOCAL
+    } else {
+        super::cfgapply::focal(&w.game)
+    }
 }
 
 /// One frame of the camera, after the player has moved.
 pub fn step(w: &mut World, dt: f32, inp: &Inputs) {
+    if super::layout::camera(w) {
+        w.camst.prev = w.cam;
+        return;
+    }
     let ticks = dt * 60.0;
     if !w.camst.started {
         let yaw = w.yaw;

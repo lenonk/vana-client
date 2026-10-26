@@ -1930,7 +1930,8 @@ pub fn hidden(w: &World) -> HashSet<u32> {
         Some(h) if takes_part(&me) => h.contains(&me),
         _ => !takes_part(&me) && filtered(me),
     };
-    if hide_me {
+    // FUN_101d4d90: laying out the Mog House the player is not drawn (+0xb2 bit 4).
+    if hide_me || w.layout.is_some() {
         out.insert(me);
     }
     out

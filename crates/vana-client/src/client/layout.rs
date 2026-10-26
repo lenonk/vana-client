@@ -1,8 +1,196 @@
 //! Mog House layout mode (spec ~/ffxi/lab/research/layout_mode_spec.md): the cell grid (FUN_101cecf0 and kin), moving,
-//! turning and placing pieces, the selection arrows, the layout camera and the c2s 0x0FA / 0x0FB bodies.
+//! turning and placing pieces, the selection arrows, the layout camera and the c2s 0x0FA / 0x0FB bodies; the mode
+//! itself (FUN_101d3380 mode 1, FUN_101d4d90).
 
-use crate::dat::furniture::Furn;
+use super::World;
+use super::input::{Input, mode};
+use super::net::NetCommand;
+use crate::audio::Ui;
+use crate::dat::furniture::{Furn, FurnTable};
 use glam::Vec3;
+use std::sync::Arc;
+
+/// The mode's state (the myroom object's fields it uses).
+pub struct Layout {
+    pub table: Arc<FurnTable>,
+    pub floor: u8,
+    pub map: u16,
+    /// +0x24: 0 top-down, 1 from the door side, 2 from the far side.
+    pub view: u8,
+    /// +0x7e6: the selected piece (container, slot).
+    pub sel: Option<(u8, u8)>,
+    /// The cursor's ticks (+0x858).
+    pub ticks: f32,
+}
+
+/// A piece installed on this floor, with its item.
+#[derive(Clone, Copy, Debug)]
+pub struct Placed {
+    pub piece: Piece,
+    pub item: u16,
+}
+
+/// The item types layout mode handles: furnishing 10, flowerpot 12, mannequin 14.
+const TYPES: [u16; 3] = [10, 12, 14];
+
+/// FUN_101d4d90: the player stands at the room centre while laying out (DAT_1037eba8[floor]).
+fn park(floor: u8) -> Vec3 {
+    if floor == 0 { Vec3::ZERO } else { Vec3::new(0.0, 0.0, -9.0) }
+}
+
+/// The installed pieces of a floor (exdata[1] bit 6, floor exdata[1] & 3; place exdata[6..9]), containers 1 then 9.
+pub fn placed(w: &World, table: &FurnTable, floor: u8) -> Vec<Placed> {
+    let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
+    let mut out = Vec::new();
+    for c in [1u8, 9] {
+        for slot in 1..0x51u8 {
+            let (Some(&(item, _)), Some(ext)) = (w.inv.slots.get(&(c, slot)), w.inv.ext.get(&(c, slot))) else { continue };
+            if !TYPES.contains(&ty(item)) || ext[1] & 0x40 == 0 || ext[1] & 3 != floor {
+                continue;
+            }
+            let Some(furn) = table.entry(item) else { continue };
+            out.push(Placed { piece: Piece { c, slot, furn, x: ext[6] as i8, level: ext[7] as i8, z: ext[8] as i8, rot: ext[9] & 3 }, item });
+        }
+    }
+    out
+}
+
+/// The grid of a floor's pieces: floor pieces first, then those on them.
+pub fn grid_of(pieces: &[Placed], floor: u8) -> Grid {
+    let mut g = Grid::new(floor);
+    for p in pieces.iter().filter(|p| p.piece.level == 0) {
+        g.occupy(&p.piece);
+    }
+    for p in pieces.iter().filter(|p| p.piece.level > 0) {
+        g.occupy(&p.piece);
+    }
+    g
+}
+
+impl Layout {
+    /// A piece's origin in the room (FUN_101cdd90: its footprint centre at its level, or its wall slot).
+    pub fn pos(&self, p: &Piece) -> Option<Vec3> {
+        super::furniture::place(&p.furn, self.map, self.floor, p.x, p.level, p.z, p.rot).map(|v| v.0)
+    }
+
+    fn selected<'a>(&self, pieces: &'a [Placed]) -> Option<&'a Placed> {
+        let s = self.sel?;
+        pieces.iter().find(|p| (p.piece.c, p.piece.slot) == s)
+    }
+
+    /// The selected piece's origin.
+    pub fn sel_pos(&self, w: &World) -> Option<Vec3> {
+        let pieces = placed(w, &self.table, self.floor);
+        self.selected(&pieces).and_then(|p| self.pos(&p.piece))
+    }
+}
+
+/// `/layout` passed its gates: FUN_101d3380(1, -1, 1). The action menu, target, main menu and the moogle's menus
+/// close; the first piece is selected; the player is hidden (event::hidden) and parked at the room centre.
+pub fn enter(w: &mut World) {
+    let Some(r) = w.myroom else { return };
+    let Some(index) = w.index.clone() else { return };
+    let table = match FurnTable::load(&index) {
+        Ok(t) => Arc::new(t),
+        Err(e) => {
+            log::warn!("layout: furniture table: {e:#}");
+            return;
+        }
+    };
+    (w.menu, w.action_menu, w.moogle, w.target, w.locked) = (None, None, None, None, false);
+    let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
+    log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0 });
+    w.pos = park(r.floor);
+}
+
+/// FUN_101d3380(0, -1, 1): the player back at the room centre, the normal camera behind them, c2s 0x0FA all zero
+/// (FUN_100f0c80) and the moogle's menu again.
+pub fn leave(w: &mut World) {
+    let Some(l) = w.layout.take() else { return };
+    w.layout_view = l.view;
+    w.pos = park(l.floor);
+    let yaw = w.yaw;
+    super::camera::face(w, yaw);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0FA, body: vec![0; 12] });
+    if w.moogle.is_none() && !super::event::active(w) {
+        super::moogle::open(w, false);
+    }
+    log::info!("layout: left");
+}
+
+/// FUN_101d4d90 in select mode, once a frame (context 0x42): the arrows pick, Num5 turns the view, Escape leaves;
+/// an event starting leaves at once.
+pub fn update(w: &mut World, input: &mut Input, dt: f32) {
+    if w.layout.is_none() {
+        return;
+    }
+    if super::event::active(w) || w.myroom.is_none() {
+        leave(w);
+        return;
+    }
+    let Some(mut l) = w.layout.take() else { return };
+    l.ticks += dt * 60.0;
+    let pieces = placed(w, &l.table, l.floor);
+    if l.selected(&pieces).is_none() {
+        l.sel = pieces.first().map(|p| (p.piece.c, p.piece.slot));
+    }
+    if l.sel.is_some() && input.test(0xa7, mode::PRESS) {
+        l.view = (l.view + 1) % 3;
+    }
+    let dx = if input.test(0x33, mode::REPEAT) { 1 } else if input.test(0x34, mode::REPEAT) { -1 } else { 0 };
+    let dz = if input.test(0x31, mode::REPEAT) { 1 } else if input.test(0x32, mode::REPEAT) { -1 } else { 0 };
+    if dx != 0 || dz != 0 {
+        w.sounds.push(Ui::Cursor as u32);
+        let grid = grid_of(&pieces, l.floor);
+        let cand = |p: &Placed| {
+            let pos = l.pos(&p.piece)?;
+            Some(Cand { id: (p.piece.c as u32) << 8 | p.piece.slot as u32, pos, level: p.piece.level, wall: p.piece.furn.wall(), rot: p.piece.rot, size: p.piece.furn.footprint(p.piece.rot), has_tops: !grid.on(p.piece.slot, p.piece.c).is_empty() })
+        };
+        let all: Vec<Cand> = pieces.iter().filter_map(cand).collect();
+        if let Some(cur) = l.selected(&pieces).and_then(cand)
+            && let Some(id) = pick(&cur, &all, dx, dz, l.view)
+        {
+            l.sel = Some(((id >> 8) as u8, id as u8));
+        }
+    }
+    if input.test(0x0f, mode::PRESS) {
+        w.sounds.push(Ui::Cancel as u32);
+        w.layout = Some(l);
+        leave(w);
+        return;
+    }
+    w.layout = Some(l);
+}
+
+/// The layout camera each frame (FUN_101d4080) into the world camera; true while laying out.
+pub fn camera(w: &mut World) -> bool {
+    let Some(l) = &w.layout else { return false };
+    let (view, floor, sel) = (l.view, l.floor, l.sel_pos(w));
+    let (mut eye, mut look) = (w.cam.eye, w.cam.look);
+    camera_step(&mut eye, &mut look, view, floor, sel);
+    w.cam = super::target::LockCam { eye, look };
+    true
+}
+
+/// The cursor (FUN_101d3fc0): anc_l at the selected piece's origin, a frame every 3 ticks.
+pub fn draw_cursor(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32, view_proj: glam::Mat4) {
+    let Some(l) = &w.layout else { return };
+    let Some(p) = l.sel_pos(w) else { return };
+    let clip = view_proj * p.extend(1.0);
+    let (x, y) = if clip.w > 0.0 { ((clip.x / clip.w + 1.0) / 2.0 * sw, (1.0 - clip.y / clip.w) / 2.0 * sh) } else { (100.0, 100.0) };
+    let frame = (l.ticks / 3.0) as usize % gu.lib_len("anc     anc_l").max(1);
+    gu.sprite("anc     anc_l", frame, x.trunc().max(0.0), y.trunc().max(0.0), 0x8080_8080);
+}
+
+/// Title slot 0 "Layout" (0xd 4), help slot 0 "Select furniture to place in your room." (0xe 0xe).
+pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
+    if w.layout.is_none() {
+        return;
+    }
+    bars.title[0] = gu.title_msg(4).unwrap_or_default();
+    bars.help[0] = gu.menu_msg(0xe, "");
+}
 
 /// Grid size in cells: 20 columns (x) by 26 rows (z).
 pub const COLS: usize = 20;

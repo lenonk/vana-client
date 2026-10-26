@@ -9159,3 +9159,23 @@ before). Not seen live yet (each needs its cutscene).
   `46 00; 46 03 #4000 #-1200 #0`, the eye 4 in front of the player and 1.2 up, looking back at them.
 - Ours: Effect::Camera's offset, camera::face_at (face() is face_at with (-4, -2, 0), or (-3, -1.5, 0) in the Mog
   House); the side axis's sense is inferred (no site uses z). Not seen live.
+
+## Mog House layout mode, part 1: entering, selecting, the camera (2026-10-25)
+
+Spec `~/ffxi/lab/research/layout_mode_spec.md` 1.2..1.5, 2.2..2.4 (client/layout.rs).
+- `/layout` (id 0x7f, FUN_1007e630; myroom row 5 runs it): own house (7 0xbc visiting), status gate 0x44, the
+  job-change cooldown, a furnished room (7 0x47), not open to visitors or asked to be (SE 0004), the moogle home
+  (7 0x48), then the moogle's line 0x36 and FUN_101d3380(1): the action menu, target, main menu and the moogle's
+  menus close, the first installed piece of this floor (containers 1 then 9) is selected, the player is hidden
+  (event::hidden) and parked at (0, 0, 0) / 2F (0, 0, -9); input context 0x42 (movement off as in an event); title
+  slot 0 "Layout" (0xd 4), help slot 0 (0xe 0xe).
+- Select mode keys (FUN_101d4d90): 0x31..0x34 (press or repeat) pick with FUN_101d5710 (layout::pick, SE 0001),
+  0xa7 (Num5) turns the view 0 / 1 / 2, 0x0f (Escape) leaves (SE 0003). Leaving: the player back at the centre, the
+  normal camera behind them, c2s 0x0FA all zero, the moogle's menu again. An event starting leaves too; a zone change
+  drops the mode and the view.
+- The camera FUN_101d4080 every frame (layout::camera_step), focal 250; the cursor anc_l at the selected piece's origin,
+  a frame every 3 ticks, tint 0x80808080.
+- Live (Lnxcsfix in its San d'Oria house via chars.moghouse = 5, five installed test pieces): /layout selected the bed,
+  Right the desk with its pot, Num5 the three views, Escape back with the moogle's menu. Rows removed after.
+- Not yet: Enter's windows (rmlo1 / rmlo2 / rmlo4, bankmenu, the furniture list), holding and moving (3.x), the grid
+  overlay, c2s 0x0FA / 0x0FB for moves and removals, the link-999 ceiling hidden in view 0, the 7 0x50 refusal.

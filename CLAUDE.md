@@ -69,7 +69,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - The retail key set (`~/ffxi/lab/research/keys_spec.md`; its status column is out of date): done, including
   F1-F12 targeting, UI hide, screenshots, the Pause log-out prompt, macros and palettes, the Ctrl / Alt page
   modifier (0xa8) in every list (MODLOG "The page modifier (0xa8) in the other lists"). Left: Mog House layout mode
-  keys, the Adventuring Primer's keys (with the Primer). The chat line's
+  keys (layout mode in progress: client/layout.rs, MODLOG "Mog House layout mode"), the Adventuring Primer's keys
+  (with the Primer). The chat line's
   selection, copy, cut and paste are done (ours, not retail; MODLOG "Chat line: selection").
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),

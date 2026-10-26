@@ -2173,6 +2173,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
     }
+    layout::draw_cursor(gu, world, sw, sh, view_proj);
     if let (Some(t), true, None) = (world.target, st.target.is_some(), world.prompt.as_ref()) {
         if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
             gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
@@ -2909,6 +2910,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     magic::bars(gu, world, &mut bars);
     bluset::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
+    layout::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
     chatctrl::bars(gu, world, &mut bars);
@@ -4422,6 +4424,9 @@ struct World {
     /// target going, s2c 0x052, a zone change or 10 s (inf) do.
     control_lock: Option<(Instant, u32)>,
     lock_carry: bool,
+    /// Mog House layout mode (client/layout.rs), and its view kept for the house visit (myroom +0x24).
+    layout: Option<layout::Layout>,
+    layout_view: u8,
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
     names: Option<Arc<crate::dat::names::Names>>,
@@ -5814,6 +5819,8 @@ impl App {
                             event_end_at: None,
                             control_lock: None,
                             lock_carry: false,
+                            layout: None,
+                            layout_view: 0,
                             audio_cmds: Vec::new(),
                             names: None,
                             actions: None,
@@ -6331,6 +6338,7 @@ impl App {
                     world.rebuild_models = false;
                     world.map_open = None;
                     world.control_lock = None;
+                    (world.layout, world.layout_view) = (None, 0);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.
@@ -7421,7 +7429,7 @@ impl App {
             world.control_lock = None;
         }
         // The script, or a lock carried past its end, moves us.
-        let in_event = event::active(world) || world.control_lock.is_some();
+        let in_event = event::active(world) || world.control_lock.is_some() || world.layout.is_some();
         target::update(world);
         // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red; so does the party cursor's.
         if let Some(t) = world.target.filter(|_| world.prompt.is_some())
@@ -7876,7 +7884,13 @@ impl App {
         let mut f = input::Frame { ticks: dt * 60.0, ..Default::default() };
         if let Phase::World(w) = &self.phase {
             self.input.assign(&w.game);
-            self.input.context = if w.map.is_some() || w.cnq.is_some() { 0x26 } else { 0xffff };
+            self.input.context = if w.map.is_some() || w.cnq.is_some() {
+                0x26
+            } else if w.layout.is_some() {
+                0x42
+            } else {
+                0xffff
+            };
             f.typing = text_field_open(w);
             f.keyboard = w.game.get(0x42);
             // A window has the keys: arrows go to it, not to the camera (keys_spec "window" state). The log counts only
@@ -7886,6 +7900,9 @@ impl App {
         }
         self.input.begin_frame(f);
         let Phase::World(world) = &mut self.phase else { return };
+        if world.layout.is_some() && !world_window_open(world) {
+            layout::update(world, &mut self.input, dt);
+        }
         // The map window's keys and animations (FUN_101ef0a0); it goes once its fade-out ends, reopening the main menu
         // it came from (LAB_101faff0).
         let k = self.ui_k;

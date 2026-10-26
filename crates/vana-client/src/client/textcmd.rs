@@ -44,6 +44,7 @@ mod id {
     pub const SATCHEL: u16 = 0x6f;
     pub const BANK2: u16 = 0x7b;
     pub const MAILBOX: u16 = 0x7c;
+    pub const LAYOUT: u16 = 0x7f;
     pub const LASTSYNTH: u16 = 0x9d;
     pub const SENDPOST: u16 = 0x7e;
     pub const SHOUT: u16 = 0x02;
@@ -817,6 +818,38 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
                 return Ok(());
             }
             super::post::open_cmd(w, if cid == id::MAILBOX { 0xe } else { 0xd });
+            Ok(())
+        }
+        // FUN_1007e630 (/layout): a Mog House of one's own, the status gate, the job-change cooldown, a furnished room
+        // (7 0x47), not open to visitors or asked to be (SE 0004), the moogle home (7 0x48); the moogle's line 0x36.
+        id::LAYOUT => {
+            if !w.room_flag || w.myroom.is_none() {
+                return Err(());
+            }
+            if w.mh_owner != 0 {
+                refuse(w, 0xbc);
+                return Err(());
+            }
+            if !status_gate(w, 0x44) {
+                return Ok(());
+            }
+            if super::moogle::job_cooling(w) || w.layout.is_some() {
+                return Err(());
+            }
+            if !w.myroom.is_some_and(|r| super::myroom::has_floors(&r)) {
+                refuse(w, 0x47);
+                return Ok(());
+            }
+            if w.mh_open || w.moogle.as_ref().is_some_and(|m| m.open_pending) {
+                w.sounds.push(crate::audio::Ui::Error as u32);
+                return Err(());
+            }
+            if !super::myroom::in_city(w.zone) {
+                refuse(w, 0x48);
+                return Ok(());
+            }
+            super::moogle::line(w, 0x36);
+            super::layout::enter(w);
             Ok(())
         }
         id::BANK2 if !w.mh_floors => {
