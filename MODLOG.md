@@ -9777,3 +9777,12 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   list (FUN_101f6c70 rows: a notch moves the top, the hand keeps its screen row).
 - Live (Lnxcsfix, !ah): auc1 Bid, auc2 Crystals, auclist hover / wheel / click (auc3), right clicks back to auc2 and
   auc1, Sell (the sell list hover / wheel), right clicks out. Nothing bid or sold.
+
+## Search results and the Link List: the mouse (2026-10-26)
+
+- search.rs `pointer` (winhits.rs): scresult's code-drawn rows (16 apart from (0, 4), the header first) as its
+  children, scoption as the generic window; the results already had their bar (Owner::Search).
+- linklist.rs `pointer`: link12's rows (18 apart from (3, 3)) and the member windows link7..10; link12's bar and the
+  wheel under Owner::Linkshell (FUN_101f6c70 rows).
+- Live (Lnxcsfix, /sea all, 37 people): hover a row, the wheel (3 notches, the hand kept on its screen row), a click
+  (scoption), an option hovered, right clicks out. The Link List not tried live (Lnxcsfix has no linkshell now).

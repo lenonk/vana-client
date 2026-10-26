@@ -619,6 +619,29 @@ pub fn key(w: &mut World, key: egui::Key) {
     w.search = Some(res);
 }
 
+/// The mouse (winhits.rs): scoption as the generic window, else the results' rows (hover moves the cursor, a click on
+/// it is Enter, a right click Escape).
+#[allow(clippy::too_many_arguments)]
+pub fn pointer(w: &mut World, gu: &super::game_ui::GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::generic;
+    let Some(res) = w.search.as_ref() else { return };
+    let keys = |w: &mut World, _: &super::game_ui::GameUi, k: egui::Key| key(w, k);
+    if let Some(c) = res.option {
+        generic(w, gu, SCOPTION, c, 1..=5, p, moved, clicked, right, |w, id| {
+            if let Some(r) = w.search.as_mut() {
+                r.option = Some(id);
+            }
+        }, keys);
+        return;
+    }
+    let (scroll, cursor) = (res.scroll, res.cursor);
+    generic(w, gu, SCRESULT, (cursor - scroll + 1) as u16, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+        if let Some(r) = w.search.as_mut() {
+            r.cursor = scroll + id as usize - 1;
+        }
+    }, keys);
+}
+
 /// Num+ in the list (list message 8).
 pub fn toggle_view(w: &mut World) {
     if let Some(res) = w.search.as_mut() {
@@ -780,6 +803,11 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
         return rects;
     }
     let count = res.rows.len() + 1;
+    // The rows are drawn by code: 16 apart from (0, 4), the header first.
+    if let Some(frame) = gu.window_rect(SCRESULT, sw, sh) {
+        let rows = (0..count.saturating_sub(res.scroll).min(ROWS)).map(|k| (k as u16 + 1, [wx, wy + 4.0 + 16.0 * k as f32, 356.0, 16.0])).collect();
+        super::winhits::record_rects(w, SCRESULT, frame, rows);
+    }
     for i in res.scroll..count.min(res.scroll + ROWS) {
         let ry = wy + 4.0 + 16.0 * (i - res.scroll) as f32;
         if i == 0 {
@@ -862,6 +890,7 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
         // FUN_1020c7a0: Clear History / Delete Request in the request list.
         let swaps: &[(u16, usize)] = if request_mode(w, res) { &[(4, 785), (5, 786)] } else { &[] };
         if let Some(win) = gu.lobby_window_swaps(SCOPTION, sw, sh, (0.0, 0.0), Some(c), !off.contains(&c), &off, swaps) {
+            super::winhits::record(w, SCOPTION, &win);
             gu.disabled_children(SCOPTION, win.frame[0], win.frame[1], &off, Some(c));
             rects.push(win.frame);
         }

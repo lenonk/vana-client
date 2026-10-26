@@ -178,6 +178,34 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     }
 }
 
+/// The list's bar (FUN_101f6c70) while it has the focus.
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(l) = w.linklist.as_mut().filter(|l| l.acts.is_none()) else { return false };
+    super::scrollbar::rows_abs(m, &mut l.top, &mut l.cursor, l.rows.len(), ROWS)
+}
+
+/// The mouse (winhits.rs): a member window as the generic window, else link12's rows (hover moves the cursor, a click
+/// on it is Enter, a right click Escape).
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::generic;
+    let Some(l) = w.linklist.as_ref() else { return };
+    let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
+    if let Some((name, sel)) = l.acts {
+        generic(w, gu, name, sel, 1..=4, p, moved, clicked, right, |w, id| {
+            if let Some(l) = w.linklist.as_mut() {
+                l.acts = Some((name, id));
+            }
+        }, keys);
+        return;
+    }
+    let (top, cursor) = (l.top, l.cursor);
+    generic(w, gu, LIST, (cursor.saturating_sub(top) + 1) as u16, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+        if let Some(l) = w.linklist.as_mut() {
+            l.cursor = top + id as usize - 1;
+        }
+    }, keys);
+}
+
 /// Num+ (list message 8, FUN_1020a580): the job cells' other view.
 pub fn toggle_view(w: &mut World) {
     if let Some(l) = w.linklist.as_mut() {
@@ -248,6 +276,11 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some(info) = &w.item_info {
         super::items::upload_icons(gu, info, [0x201u16, 0x202, 0x203].into_iter());
     }
+    // The rows are drawn by code: 18 apart from (3, 3).
+    if let Some(frame) = gu.window_rect(LIST, sw, sh) {
+        let rows = (0..n.saturating_sub(l.top).min(ROWS)).map(|k| (k as u16 + 1, [wx + 3.0, wy + 3.0 + PITCH * k as f32, frame[2] - 14.0, PITCH])).collect();
+        super::winhits::record_rects(w, LIST, frame, rows);
+    }
     for (i, (r, rank)) in l.rows.iter().enumerate().skip(l.top).take(ROWS) {
         let (rx, ry) = (wx + 3.0, wy + 3.0 + PITCH * (i - l.top) as f32);
         // The rank's item icon at half scale: linkshell 0x201, pearlsack 0x202, linkpearl 0x203.
@@ -285,12 +318,16 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     }
     if let Some([fx, fy, fw, fh]) = gu.window_rect(LIST, sw, sh) {
         gu.scroll_bar(fx + fw - 8.0, fy, fh, n, ROWS, l.top);
+        if focused {
+            gu.bar_site(super::scrollbar::Owner::Linkshell, fx + fw - 8.0, fy, fh, n, ROWS, l.top);
+        }
     }
     if let Some((name, sel)) = l.acts
         && let Some((r, theirs)) = l.rows.get(l.cursor)
     {
         let off = off(w, l, name, r, *theirs);
         if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), w.confirm.is_none() && !off.contains(&sel), &off) {
+            super::winhits::record(w, name, &win);
             gu.disabled_children(name, win.frame[0], win.frame[1], &off, Some(sel));
             rects.push(win.frame);
         }

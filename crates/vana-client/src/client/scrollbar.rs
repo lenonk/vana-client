@@ -173,7 +173,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Search => super::search::bar(w, m),
         Owner::Picker => super::post::picker_bar(w, m),
         Owner::Journal => super::missions::bar(w, m) || super::quests::bar(w, m) || super::roe::bar(w, m) || super::keyitems::bar(w, m) || super::currencies::bar(w, m),
-        Owner::Linkshell => super::linkshell::bar(w, m),
+        Owner::Linkshell => super::linkshell::bar(w, m) || super::linklist::bar(w, m),
         Owner::BlueSet => super::bluset::bar(w, m),
         Owner::Auction => super::auction::bar(w, m),
         Owner::Points => super::merits::bar(w, m) || super::jobpoints::bar(w, m) || super::aepoints::bar(w, m) || super::unity::bar(w, m),
