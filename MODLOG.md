@@ -10045,3 +10045,15 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   prompt when gate 0x80 fails (in the Mog Garden) and gate 0x77 (no Mog House bit) passes, quietly; anything else needs
   gate 0x7f (which refuses in the Mog House and the Garden).
 - Ours: textcmd::gate_line (quiet) / status_gate with bit 0x80; items.rs use_entry. The costume bit is not tracked.
+
+## The help bar's busy strip: the other bits (2026-10-26)
+
+- Setters of FUN_10221270 (and clears FUN_10221300) by bit, from every call site: 0x80 Wide Scan (FUN_101fb7d0), 4
+  party positions (FUN_101f9070), 0x40 the stats request (FUN_10144ca0 / FUN_10147030, "menu    mp_stat"), 1 the
+  journal lists (FUN_10229770, FUN_1022dcf0, FUN_1022f670), 2 conquest (FUN_101e8030), **8** a search query
+  (FUN_1020a9d0; cleared with its answer, FUN_1020a550, and the results window's close FUN_1020b3a0) and the Help
+  Desk's Q&A loader / GM call (FUN_10212760, FUN_10217d20), **0x10** the mail windows (mes1rcv / mes2frnd / msgline /
+  msglist, FUN_101ff3e0..FUN_10200d70; not on LSB), **0x20** only cleared (FUN_101e3430, link5), **0x80000000** an
+  auction bid in flight (LAB_101d95b0 with DAT_1066344e; cleared FUN_101d7ac0 / FUN_101da370).
+- Ours now adds the search (search::busy) and the bid (bid.pending) to the strip; the Help Desk's (its Q&A never
+  loads in ours) and the mail windows' are not modelled.

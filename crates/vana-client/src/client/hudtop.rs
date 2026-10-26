@@ -182,7 +182,17 @@ impl HudTop {
         let (title, help) = (shown(&bars.title), shown(&bars.help));
         // titlewin HN mode (+0x448) and titlehan are not modelled. A busy bar counts as active (FUN_10221740).
         // The rule runs in game state 0x60 only; zoning and the zone load are taken as 0x70 (inferred).
-        let busy = w.scan.busy || w.scan.party_busy || w.status.as_ref().is_some_and(|s| s.busy) || super::missions::busy(w) || super::quests::busy(w) || super::keyitems::busy(w) || w.conquest.busy;
+        // Bits: 0x80 the scan, 4 party positions, 0x40 the stats, 1 the journal lists, 2 conquest, 8 a search query
+        // (FUN_1020a9d0), 0x80000000 an auction bid (LAB_101d95b0).
+        let busy = w.scan.busy
+            || w.scan.party_busy
+            || w.status.as_ref().is_some_and(|s| s.busy)
+            || super::missions::busy(w)
+            || super::quests::busy(w)
+            || super::keyitems::busy(w)
+            || w.conquest.busy
+            || super::search::busy(w)
+            || w.bid.pending;
         self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
         self.draw_bars(gu, sw, sh, title, help, ticks, busy);
         // The compass alone is hidden in events.
