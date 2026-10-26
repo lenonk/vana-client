@@ -238,16 +238,15 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                     ui.ctx().layer_painter(painter.layer_id()).add(paint::turned(&s, a, 1, colour));
                 }
             }
-            let mut x = r.min.x + 10.0;
+            // Past the row frame's left ornament.
+            let mut x = r.min.x + 22.0;
             if let Some(s) = row.icon.as_deref().and_then(|j| m.art.sprite(j)) {
                 painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, if row.here.is_some() { Color32::WHITE } else { Color32::from_gray(120) }));
             }
             // Leader marks on the job's corner: gold the party's, blue the alliance's.
             for (k, (bit, col)) in [(1u8, m.theme.color("gold")), (2u8, m.theme.color("focus"))].into_iter().enumerate() {
-                if row.marks & bit != 0
-                    && let Some(s) = m.art.sprite("icons/favorites")
-                {
-                    painter.add(paint::image(&s, pos2(x - 6.0 + 9.0 * k as f32, r.max.y - 15.0), 13.0, col));
+                if row.marks & bit != 0 {
+                    painter.add(paint::star(pos2(x + 1.0 + 11.0 * k as f32, r.max.y - 9.0), 6.5, col));
                 }
             }
             x += 32.0;

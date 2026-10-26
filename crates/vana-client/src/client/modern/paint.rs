@@ -109,6 +109,27 @@ pub fn nine_slice(s: &Sprite, dst: Rect, k: f32, tint: Color32) -> Shape {
 }
 
 /// A sprite whole, `size` points wide at `at`.
+/// A five-pointed star at `c` (outer radius `r`) with a dark edge: a fan from its centre, as it is not convex.
+pub fn star(c: Pos2, r: f32, fill: Color32) -> Shape {
+    let pts: Vec<Pos2> = (0..10)
+        .map(|i| {
+            let a = -std::f32::consts::FRAC_PI_2 + i as f32 * std::f32::consts::PI / 5.0;
+            let k = if i % 2 == 0 { r } else { r * 0.45 };
+            c + vec2(a.cos(), a.sin()) * k
+        })
+        .collect();
+    let mut m = Mesh::default();
+    m.colored_vertex(c, fill);
+    for p in &pts {
+        m.colored_vertex(*p, fill);
+    }
+    for i in 0..10u32 {
+        m.add_triangle(0, 1 + i, 1 + (i + 1) % 10);
+    }
+    let edge = Shape::closed_line(pts, egui::Stroke::new(1.0, Color32::from_black_alpha(200)));
+    Shape::Vec(vec![Shape::mesh(m), edge])
+}
+
 /// A sprite over `r`, turned clockwise by `quarters` quarter turns (an arrow pointing up made to point right or down).
 pub fn turned(s: &Sprite, r: Rect, quarters: u8, tint: Color32) -> Shape {
     let uv = s.uv;

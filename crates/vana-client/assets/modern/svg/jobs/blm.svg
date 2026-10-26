@@ -1,1 +1,48 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#fff0b5"/><stop offset=".35" stop-color="#a8793a"/><stop offset=".68" stop-color="#58381e"/><stop offset="1" stop-color="#dbb875"/></linearGradient><linearGradient id="bg" x2="0" y2="1"><stop stop-color="#283641"/><stop offset=".5" stop-color="#14212a"/><stop offset="1" stop-color="#0a1018"/></linearGradient><radialGradient id="gem"><stop stop-color="#effaff"/><stop offset=".22" stop-color="#80c4ea"/><stop offset=".62" stop-color="#27638b"/><stop offset="1" stop-color="#102739"/></radialGradient></defs><rect x="2" y="2" width="60" height="60" rx="6" fill="url(#bg)" stroke="url(#g)" stroke-width="2"/><path d="M8 10 H56 M8 54 H56" stroke="#e4c077" opacity=".28"/><circle cx="32" cy="32" r="24" fill="#b18de3" fill-opacity=".10" stroke="#b18de3" stroke-opacity=".3"/><g transform="translate(14 14)" stroke="#b18de3" stroke-width="2.4" fill="none" stroke-linejoin="round" stroke-linecap="round"><path d="M7 21 L19 3 L31 21 Z M9 22 H29 L33 29 H5 Z M14 15 L21 11 L19 18"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="49.831" x2="32" y2="58.816" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#505fd3"/>
+      <stop offset="1" stop-color="#23295b"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32.652" y1="5.184" x2="32.652" y2="36.981" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a5aef7"/>
+      <stop offset="0.42" stop-color="#5b6cf0"/>
+      <stop offset="1" stop-color="#2e3678"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="30.983" y1="27.498" x2="32.818" y2="37.903" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="31.224" x2="32" y2="44.723" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a5aef7"/>
+      <stop offset="0.42" stop-color="#5b6cf0"/>
+      <stop offset="1" stop-color="#2e3678"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="26.541" cy="47.899" r="3.275" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient-2" cx="37.459" cy="47.899" r="3.275" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+  </defs>
+  <title>blm</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M41.328 18.227 C41.229 21.991 42.347 25.427 44.213 28.748 C44.453 28.792 44.692 28.837 44.929 28.883 C45.621 29.02 46.205 29.483 46.495 30.126 C50.14 30.723 53.225 31.544 55.491 32.523 C57.751 33.498 60.485 35.187 60.485 37.973 C60.485 40.888 57.497 42.605 55.139 43.572 C52.922 44.481 49.981 45.247 46.536 45.814 C46.627 46.735 46.603 47.664 46.462 48.58 C50.417 50.356 52.541 54.25 53.482 58.325 C53.797 59.692 52.757 61 51.354 61 L12.646 61 C11.243 61 10.203 59.692 10.518 58.325 C11.459 54.25 13.583 50.356 17.538 48.58 C17.397 47.664 17.373 46.735 17.464 45.814 L17.464 45.814 C14.019 45.247 11.078 44.481 8.861 43.572 C6.503 42.605 3.515 40.888 3.515 37.973 C3.515 35.233 6.163 33.554 8.386 32.576 C10.577 31.612 13.555 30.799 17.077 30.197 C17.199 29.898 17.385 29.635 17.615 29.422 C20.705 22.67 23.924 16.243 27.742 10.899 C27.759 10.874 27.777 10.851 27.795 10.827 C31.71 5.794 37.859 2.602 45.524 3.04 C46.986 3.124 48.652 3.659 49.717 4.701 C51.058 6.012 51.267 7.908 50.154 9.467 C49.792 9.973 49.232 10.301 48.613 10.368 C43.963 10.876 41.647 13.633 41.328 18.227 Z" fill="#0a1118"/>
+      <path id="face" d="M44.407 46.906 C44.407 52.663 38.848 57.328 32 57.328 C25.152 57.328 19.593 52.663 19.593 46.906 C19.593 41.149 25.152 36.485 32 36.485 C38.848 36.485 44.407 41.149 44.407 46.906 Z" fill="#0a1118"/>
+      <path id="collar" d="M12.646 58.816 C14.135 52.365 18.105 49.387 23.067 49.884 L32 56.831 L40.933 49.884 C45.895 49.387 49.865 52.365 51.354 58.816 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="cone" d="M16.616 36.981 C20.586 28.048 24.556 19.115 29.519 12.168 C32.993 7.701 38.451 4.823 45.399 5.22 C47.88 5.419 49.369 6.808 48.377 8.198 C42.918 8.793 39.543 12.168 39.146 18.123 C38.948 25.071 42.422 31.026 47.384 36.981 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="band" d="M19.097 31.026 C27.037 29.537 36.963 29.537 44.506 31.026 L46.491 35.492 C36.963 33.805 27.037 33.805 17.311 35.492 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+      <path id="brim" d="M58.302 37.973 C58.302 41.705 46.531 44.723 32 44.723 C17.469 44.723 5.698 41.705 5.698 37.973 C5.698 34.241 17.469 31.224 32 31.224 C46.531 31.224 58.302 34.241 58.302 37.973 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="eye_l" data-name="eye l" d="M29.122 47.899 C29.122 49.705 27.97 51.174 26.541 51.174 C25.112 51.174 23.961 49.705 23.961 47.899 C23.961 46.092 25.112 44.623 26.541 44.623 C27.97 44.623 29.122 46.092 29.122 47.899 Z" fill="url(#radial-gradient-1)"/>
+      <path id="eye_r" data-name="eye r" d="M40.039 47.899 C40.039 49.705 38.888 51.174 37.459 51.174 C36.03 51.174 34.878 49.705 34.878 47.899 C34.878 46.092 36.03 44.623 37.459 44.623 C38.888 44.623 40.039 46.092 40.039 47.899 Z" fill="url(#radial-gradient-2)"/>
+    </g>
+  </g>
+</svg>
