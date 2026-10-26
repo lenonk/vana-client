@@ -109,6 +109,20 @@ pub fn nine_slice(s: &Sprite, dst: Rect, k: f32, tint: Color32) -> Shape {
 }
 
 /// A sprite whole, `size` points wide at `at`.
+/// A sprite over `r`, turned clockwise by `quarters` quarter turns (an arrow pointing up made to point right or down).
+pub fn turned(s: &Sprite, r: Rect, quarters: u8, tint: Color32) -> Shape {
+    let uv = s.uv;
+    // The sprite's corners clockwise from its top left, rotated onto the rect's.
+    let corners = [uv.left_top(), uv.right_top(), uv.right_bottom(), uv.left_bottom()];
+    let at = |k: usize| corners[(k + 4 - (quarters % 4) as usize) % 4];
+    let mut m = Mesh::with_texture(s.tex);
+    for (k, p) in [r.left_top(), r.right_top(), r.right_bottom(), r.left_bottom()].into_iter().enumerate() {
+        m.vertices.push(egui::epaint::Vertex { pos: p, uv: at(k), color: tint });
+    }
+    m.indices.extend([0, 1, 2, 0, 2, 3]);
+    Shape::mesh(m)
+}
+
 pub fn image(s: &Sprite, at: Pos2, size: f32, tint: Color32) -> Shape {
     let mut m = Mesh::with_texture(s.tex);
     m.add_rect_with_uv(Rect::from_min_size(at, vec2(size, size * s.size.y / s.size.x)), s.uv, tint);

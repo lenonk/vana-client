@@ -110,21 +110,22 @@ fn pointers(m: &Modern, ctx: &Context, w: &World) {
     let s = ctx.content_rect();
     let bob = (ctx.input(|i| i.time) as f32 * 5.0).sin() * 3.0;
     for &(fx, fy, kind, tint) in &w.modern_pointers {
-        let (name, colour) = match (kind, tint & 0x00ff_ffff) {
-            (2, 0x40_40d0) => ("indicators/subtarget", Color32::WHITE),
-            (2, 0xd0_d040) => ("indicators/target_arrow", Color32::WHITE),
-            (2, _) => ("indicators/target_arrow", Color32::from_rgb(255, 110, 90)),
-            (1, _) => ("indicators/target_arrow", Color32::from_gray(170)),
-            _ => ("indicators/target_arrow", Color32::WHITE),
-        };
+        let (name, colour) = if kind == 1 { ("indicators/target_arrow", Color32::from_gray(170)) } else { pointer_look(tint) };
         let Some(sp) = m.art.sprite(name) else { continue };
         let tip = pos2(s.min.x + fx * s.width(), s.min.y + fy * s.height() + bob);
         let size = 40.0;
         let r = Rect::from_min_max(pos2(tip.x - size / 2.0, tip.y - size), pos2(tip.x + size / 2.0, tip.y));
-        let uv = Rect::from_min_max(pos2(sp.uv.min.x, sp.uv.max.y), pos2(sp.uv.max.x, sp.uv.min.y));
-        let mut mesh = egui::Mesh::with_texture(sp.tex);
-        mesh.add_rect_with_uv(r, uv, colour);
-        painter.add(Shape::mesh(mesh));
+        painter.add(paint::turned(&sp, r, 2, colour));
+    }
+}
+
+/// The pack's arrow for a retail cursor tint: the plain one gold, blue (in range) the subtarget arrow, yellow (its
+/// edge) gold, red (out of range) gold turned red.
+fn pointer_look(tint: u32) -> (&'static str, Color32) {
+    match tint & 0x00ff_ffff {
+        0x40_40d0 => ("indicators/subtarget", Color32::WHITE),
+        0xd0_4040 => ("indicators/target_arrow", Color32::from_rgb(255, 110, 90)),
+        _ => ("indicators/target_arrow", Color32::WHITE),
     }
 }
 

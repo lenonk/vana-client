@@ -50,8 +50,10 @@ pub struct PartyRow {
     /// In our zone: the numbers and bars; else the zone the member is in, shown instead.
     pub here: Option<RowVitals>,
     pub zone: String,
-    /// The party cursor's hand or our target on this member.
+    /// The party cursor or our target on this member, and the hand's tint (retail's party_hand: plain on our target,
+    /// by range on the party cursor).
     pub marked: bool,
+    pub hand: Option<u32>,
     /// 1 the party's leader, 2 the alliance's.
     pub marks: u8,
     pub effects: Vec<Effect>,
@@ -226,11 +228,14 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             if let Some(s) = m.art.sprite(sprite) {
                 painter.add(paint::nine_slice(&s, r, (row_h / s.size.y).min(1.0), Color32::WHITE));
             }
-            // The hand at the row's left, reaching over the frame (retail's anc2s over the log's edge).
-            if row.marked
-                && let Some(s) = m.art.sprite("icons/cursor")
-            {
-                ui.ctx().layer_painter(painter.layer_id()).add(paint::image(&s, pos2(r.min.x - 30.0, r.center().y - 11.0), 22.0, Color32::WHITE));
+            // The hand at the row's left, reaching over the frame (retail's anc2s over the log's edge): the pack's arrow
+            // turned to point at the row.
+            if let Some(tint) = row.hand {
+                let (name, colour) = super::pointer_look(tint);
+                if let Some(s) = m.art.sprite(name) {
+                    let a = Rect::from_min_size(pos2(r.min.x - 40.0, r.center().y - 14.0), vec2(28.0, 28.0));
+                    ui.ctx().layer_painter(painter.layer_id()).add(paint::turned(&s, a, 1, colour));
+                }
             }
             let mut x = r.min.x + 10.0;
             if let Some(s) = row.icon.as_deref().and_then(|j| m.art.sprite(j)) {
@@ -279,7 +284,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                 let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
                 let name_end = x + 6.0 + painter.layout_no_wrap(row.name.clone(), font.clone(), Color32::WHITE).size().x;
                 let hp_w = painter.layout_no_wrap(v.hp_max.map_or(v.hp.to_string(), |max| format!("{} / {max}", v.hp)), font, Color32::WHITE).size().x;
-                let mut ex = right - hp_w - 24.0;
+                let mut ex = right - 6.0 - hp_w - 12.0 - 14.0;
                 for e in &row.effects {
                     if ex < name_end + 8.0 {
                         break;
@@ -529,7 +534,9 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
 /// alliances' (slots 6..17), the latter hidden while a window retail hides them under is up.
 fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2]) {
     let slots = w.party.slots();
-    let hand = target::party_hand(w).map(|h| h.0);
+    let hand_at = target::party_hand(w);
+    let hand = hand_at.map(|h| h.0);
+    let hand_of = |slot: usize| hand_at.filter(|h| h.0 == slot).map(|h| h.1);
     let hp_colour = |hpp: u8| p.gu.map_or(p.m.theme.color("text"), |gu| super::chat::colour(gu.hp_tint(hpp).to_le_bytes()));
     let marked = |slot: usize, id: u32, index: u16| hand == Some(slot) || w.target.is_some_and(|t| t == id || (id != w.my_id && w.entities.get(&t).is_some_and(|e| e.index == index)));
     let marks = |id: u32, party: usize| (id != 0 && id == slots.leaders[party]) as u8 | ((id != 0 && id == slots.alliance_leader) as u8) << 1;
@@ -553,6 +560,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             here: Some(RowVitals { hp, hp_max: w.stats.as_ref().map(|s| s.hp_max), mp, tp: w.party_tp.then_some(tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(hpp) }),
             zone: String::new(),
             marked: marked(0, w.my_id, 0),
+            hand: hand_of(0),
             marks: marks(w.my_id, 0),
             effects: Vec::new(),
         });
@@ -567,6 +575,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && !trust).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(m.hpp) }),
             zone: zone(m.zone),
             marked: marked(k, m.id, m.index),
+            hand: hand_of(k),
             marks: marks(m.id, 0),
             effects: effects(m.id),
         });
@@ -586,6 +595,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
                         here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && m.index < 0x700).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: None, hp_colour: hp_colour(m.hpp) }),
                         zone: zone(m.zone),
                         marked: marked(s, m.id, m.index),
+                        hand: hand_of(s),
                         marks: marks(m.id, a + 1),
                         effects: Vec::new(),
                     })
