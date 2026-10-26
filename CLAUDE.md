@@ -157,7 +157,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     the wheel on them;
   - the mouse on windows (client/winhits.rs: windows recorded as drawn, the generic handler): done for every menu
     window (shops, moogle, Delivery Box, layout, MacroPalette, synthesis, auction, the status sub-windows, search
-    results, Region Info, chatctrl, Help Desk, /check); left faqmain's fields (right click only), seacom's editor;
+    results, Region Info, chatctrl, Help Desk, /check, faqmain's bar and wheel, the comment editor's right click: retail has no
+    more there);
   - collision and lifts (MODLOG "Actor collision and lifts"): NPCs hold you 0.5 s then let you through, idle players never (MODLOG "Character bump"); lifts ride and move, the zone-in waits for them; Mog
     House furniture boxes done;
   - Mog House furniture (client/furniture.rs, dat/furniture.rs, MODLOG "Mog House furniture"; spec

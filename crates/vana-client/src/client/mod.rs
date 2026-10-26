@@ -1933,7 +1933,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| trade::active(world) && world.confirm.is_none()) {
         trade::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.search.is_some() && !searchmenu::refining(world) && world.arealist.is_none() && world.confirm.is_none()) {
+    if input.right_clicked && world.seacom_edit.is_some() && world.confirm.is_none() {
+        seacom::right_click(world);
+    } else if let Some(p) = input.pointer.filter(|_| world.search.is_some() && !searchmenu::refining(world) && world.arealist.is_none() && world.seacom_edit.is_none() && world.confirm.is_none()) {
         search::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.linklist.is_some() && world.confirm.is_none()) {

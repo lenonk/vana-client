@@ -64,6 +64,14 @@ pub fn own_message(w: &mut World, raw: &[u8]) {
 }
 
 /// The box is open the whole time the editor is.
+/// The editor has no children: the mouse's only message is the right click, message 6 (FUN_1015def0): Escape.
+pub fn right_click(w: &mut World) {
+    if w.seacom_edit.is_some() {
+        w.sounds.push(Ui::Cancel as u32);
+        close(w);
+    }
+}
+
 pub fn typing(w: &World) -> bool {
     w.seacom_edit.is_some()
 }

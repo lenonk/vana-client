@@ -44,6 +44,8 @@ pub enum Owner {
     Auction,
     /// The Adventuring Primer's topics (guide01).
     Primer,
+    /// The GM call form (faqmain), scrolled in pixels.
+    Faq,
 }
 
 /// A focused list's bar as drawn this frame: x, y, height (8 wide), and its (total, visible, top).
@@ -179,6 +181,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::BlueSet => super::bluset::bar(w, m),
         Owner::Auction => super::auction::bar(w, m),
         Owner::Primer => super::primer::bar(w, m),
+        Owner::Faq => super::faqmain::bar(w, m, bar),
         Owner::Points => super::merits::bar(w, m) || super::jobpoints::bar(w, m) || super::aepoints::bar(w, m) || super::unity::bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),

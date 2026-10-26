@@ -657,7 +657,29 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     }
     gu.clip(None);
     gu.scroll_bar(fx + fw - 8.0, fy, fh, total as usize, view as usize, f.scroll as usize);
+    if focused && f.field.is_none() {
+        gu.bar_site(super::scrollbar::Owner::Faq, fx + fw - 8.0, fy, fh, total as usize, view as usize, f.scroll as usize);
+    }
     Some(win.frame)
+}
+
+/// FUN_1021a240 messages 0x16 / 0x17 (the caps, the wheel) 15 px, 0x18 / 0x19 (the track) 150 px, 0x1b (the thumb)
+/// the offset; `bar` is (total, view, top) in pixels as drawn.
+pub fn bar(w: &mut World, m: super::scrollbar::Msg, bar: (usize, usize, usize)) -> bool {
+    use super::scrollbar::Msg;
+    let Some(f) = main_mut(w) else { return false };
+    let max = bar.0.saturating_sub(bar.1) as f32;
+    let before = f.scroll;
+    f.scroll = match m {
+        Msg::Up => f.scroll - 15.0,
+        Msg::Down => f.scroll + 15.0,
+        Msg::PageUp => f.scroll - 150.0,
+        Msg::PageDown => f.scroll + 150.0,
+        Msg::Set(t) => t as f32,
+    }
+    .clamp(0.0, max.max(0.0));
+    f.follow = false;
+    f.scroll != before
 }
 
 #[cfg(test)]

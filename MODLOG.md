@@ -9995,3 +9995,13 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   Lnxcsfix's DB rows were restored afterwards (LSB makes her MON there).
 - Seen there, not ours yet: the Feretory turns the player into a monster (MON job, the Monstrosity look); we still
   draw the character's own body.
+
+## faqmain and the comment editor: the mouse (2026-10-26)
+
+- faqmain's handler (FUN_1021a240) takes no row clicks: its rows are drawn by code, not children. Its mouse messages
+  are the bar's and the wheel's: 0x16 / 0x17 (the caps, the wheel) scroll 15 px, 0x18 / 0x19 (the track) 150 px,
+  0x1b (the thumb) sets the offset (FUN_102180b0 / FUN_10218110); message 9 sets a hover flag (+0x4a); a right click is
+  message 6. Ours: scrollbar Owner::Faq (faqmain::bar), the bar site while no field is open.
+- The comment editor ("menu    comment", FUN_101dde60: messages 1..6, 8, 0xc, 0x11, 0x12) has no children and no bar:
+  the mouse reaches it only as the right click, message 6 = Escape (commit, close, send when changed). Ours:
+  seacom::right_click; the results window's pointer waits while the editor is open.
