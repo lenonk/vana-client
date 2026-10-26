@@ -1754,7 +1754,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 11) => region::open_menu(world),
             // Child 7 Trade (FUN_10140400 case 7 -> FUN_1013fe70).
             (0, 7) => {
-                if trade::start(world) {
+                if trade::open(world, gu.title_msg(10).unwrap_or_default()) {
                     world.sounds.push(crate::audio::Ui::Select as u32);
                 }
             }

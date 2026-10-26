@@ -9418,3 +9418,14 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   Water (No. of Items), Enter (in slot 2), right click (cursor to Cancel), click Cancel (closed). Player trade not
   tried live (one account).
 - Script note: a test's first `move` has no egui pointer delta, so it does not count as moved; move twice.
+
+## Trade with no target: the target prompt (2026-10-26)
+
+- The main menu's Trade (FUN_10140400 case 7 -> FUN_1013fe70; trade_spec.md): a waiting request or a current target
+  that is not us goes straight to FUN_1013fd30 (as before); otherwise the target prompt FUN_10159440 with filter 0x5c
+  (PCs, party, alliance, NPCs), title group 0xd 10 "Trade", help group 0xe 0x2d "Select target to trade with."; no
+  candidate prints group 7 0x7f "No trade targets in range.". The pick runs FUN_1013fd30 on it after the saved
+  target comes back (`SubThen::Trade`, trade::start_on). The action menu's Trade keeps its own path (it needs a
+  target).
+- Live (Lnxcsfix in its house, nothing targeted): main menu Trade -> the prompt on the Moogle, title and help as
+  above; Enter -> the hand-over.

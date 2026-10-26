@@ -54,6 +54,8 @@ pub enum SubThen {
     Check,
     /// A party menu pick (client/partymenu.rs).
     Party(super::partymenu::Pick),
+    /// The main menu's Trade (FUN_1013fe70): FUN_1013fd30 on the pick.
+    Trade,
 }
 
 /// The party-list cursor of `<stpt>` / `<stal>` (FUN_10202d80, DAT_106643e0): a window slot below `count` (6 / 18)
@@ -366,13 +368,18 @@ pub fn confirm_sub(w: &mut World) {
         super::combat::check(w, Some(t), 0, false);
         return;
     }
+    if matches!(s.then, SubThen::Trade) {
+        restore(w, &s);
+        super::trade::start_on(w, Some(t));
+        return;
+    }
     if let SubThen::Command(line) = &s.then {
         super::textcmd::run(w, line, super::textcmd::Mode::Internal);
         restore(w, &s);
         return;
     }
     let line = match &s.then {
-        SubThen::Item { .. } | SubThen::Command(_) | SubThen::Check | SubThen::Party(_) => String::new(),
+        SubThen::Item { .. } | SubThen::Command(_) | SubThen::Check | SubThen::Party(_) | SubThen::Trade => String::new(),
         SubThen::Magic(name) => format!("/magic \"{name}\" {t}"),
         SubThen::Ability(cmd, name) => format!("{cmd} \"{name}\" {t}"),
         SubThen::Line { stash, quoted: true, .. } => format!("{stash}\"{}\"", super::textcmd::display_name(w, t)),

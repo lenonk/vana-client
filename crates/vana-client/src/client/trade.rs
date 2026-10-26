@@ -45,15 +45,35 @@ pub fn active(w: &World) -> bool {
     w.handover.is_some() || w.p2p.ui.is_some()
 }
 
-/// FUN_1013fd30 for the current target: a monster refuses (7031 0x1c), an NPC opens the hand-over after the status
-/// gate (0x43) and the range check (7031 9). False when nothing opened.
+/// FUN_1013fe70 (the main menu's Trade): a waiting request or a target that is not us goes to FUN_1013fd30; else the
+/// target prompt (filter 0x5c: PCs, party, alliance, NPCs; title 0xd 10, help 0xe 0x2d), with no candidate group 7
+/// 0x7f "No trade targets in range.".
+pub(super) fn open(w: &mut World, title: String) -> bool {
+    if w.p2p.incoming.is_some() || w.target.is_some_and(|t| t != w.my_id) {
+        return start(w);
+    }
+    if super::target::open_sub(w, 0x5c, super::target::SubThen::Trade, None, title, 0x2d) {
+        return true;
+    }
+    super::textcmd::refuse(w, 0x7f);
+    false
+}
+
+/// FUN_1013fd30 for the current target.
 pub(super) fn start(w: &mut World) -> bool {
+    let t = w.target;
+    start_on(w, t)
+}
+
+/// FUN_1013fd30: a monster refuses (7031 0x1c), an NPC opens the hand-over after the status gate (0x43) and the range
+/// check (7031 9). False when nothing opened.
+pub(super) fn start_on(w: &mut World, target: Option<u32>) -> bool {
     // A pending request from someone wins: Trade accepts it.
     if w.p2p.incoming.is_some() {
         accept(w);
         return true;
     }
-    let Some((t, index, mob, pos)) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.index, e.mob, e.pos))) else {
+    let Some((t, index, mob, pos)) = target.and_then(|t| w.entities.get(&t).map(|e| (t, e.index, e.mob, e.pos))) else {
         super::post::system_line(w, 0x1d, [0; 5], String::new());
         return false;
     };
