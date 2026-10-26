@@ -1139,9 +1139,10 @@ impl Effects {
         // Actors are rebuilt at zone-in: no cast carries over (inf).
         self.casting.clear();
         // FUN_1017b1e0 -> FUN_100446a0: every clone of the old zone's and sub-area's generators goes, whatever started it.
-        let old = [self.zone_lib, self.sub_lib];
+        // The actors are rebuilt and the tasks cleared too, so their instances go with them (trusts gone with the zone
+        // left theirs at the identity: the new zone's origin).
         for i in 0..self.insts.len() {
-            if self.insts[i].as_ref().is_some_and(|x| matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_)) || old.contains(&Some(x.src.0))) {
+            if self.insts[i].is_some() {
                 self.kill(i);
             }
         }
@@ -2353,6 +2354,32 @@ impl Effects {
             .collect();
         v.sort_by(|a, b| b.0.total_cmp(&a.0));
         v.into_iter().map(|(_, i)| i).collect()
+    }
+
+    /// One line per instance not owned by the zone, sub-area or weather: name, owner, actors, attach, elements.
+    pub fn describe_insts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for (i, x) in self.insts.iter().enumerate() {
+            let Some(x) = x else { continue };
+            if matches!(x.owner, Owner::Zone | Owner::SubArea | Owner::Weather(_)) {
+                continue;
+            }
+            let at = x.matrix.map(|m| m.w_axis.truncate());
+            out.push(format!(
+                "{i:4} {} file {} owner {:?} actors {:?} mode {:#x} attach {:08x} at {at:?} live {} held {} stopping {} finished {}",
+                String::from_utf8_lossy(&x.name),
+                self.reg.libs[x.src.0].file_id,
+                x.owner,
+                x.actors,
+                x.mode,
+                x.attach,
+                x.live.len(),
+                x.held,
+                x.stopping,
+                x.finished
+            ));
+        }
+        out
     }
 
     /// One line per live element: generator path, what it draws, blend, flags, key, life.

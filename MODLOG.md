@@ -9251,3 +9251,19 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
   `gu1` held until the next status change).
 - char-shot takes `--range`. Live (Lnxcsfix, Crossbow +1 / Acid Bolt, Giddeus): gu0 / gu1 with the crossbow raised,
   gu2 fires, idle after with the crossbow gone.
+
+## Effects carried over a zone change (2026-10-26)
+
+- The user: a glowing square floating in the air after zoning (East Sarutabaruta), and a big swirl in the Mog House
+  after zoning into the Maze of Shakhrami with three trusts out (a zone change despawns trusts without their `sdep`),
+  dying and going home. Only the user's client drew them; mine at the same spot had none.
+- Ours: Effects::switch_zone killed only the old zone's, sub-area's and weather instances, but cleared the tasks,
+  dolls and model table (`models`), so instances owned by actors (model generators) or tasks survived with nothing
+  left to end them. With their actors gone the attach falls back to the identity (0x1003c5f0): the next zone's
+  origin, where the Mog House puts the player.
+- Now switch_zone kills every instance: the actors are rebuilt and the tasks cleared with the zone anyway; the model
+  generators of the actors still there start again (`models` is empty).
+- Diagnostics (ours): turning the F12 lines on logs every live element and every non-zone instance (owner, actors,
+  attach word, position, element count: Effects::describe_insts); scripts have `act:fxdump`.
+- Still open: the user's first report, a glowing square at Nine's left hip while Shantotto II was out (not reproduced:
+  in ours her model generators are killed by `efon`'s `efkl` right after the summon). The F12 dump is for that.
