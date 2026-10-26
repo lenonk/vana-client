@@ -377,6 +377,9 @@ enum Cmd {
         main: u16,
         #[arg(long, default_value_t = 0)]
         sub: u16,
+        /// The range slot's model (drawn: no wep2 hide here).
+        #[arg(long, default_value_t = 0)]
+        range: u16,
         /// Motion: 3 letters for all body regions (idl = idl0+idl1+idl2), a chunk name, or an index.
         #[arg(long)]
         anim: Option<String>,
@@ -963,10 +966,10 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::DumpMsi { msi, out } => dump_msi(&msi, &out),
-        Cmd::CharShot { race, face, head, body, hands, legs, feet, main, sub, anim, frame, yaw, motions, out } => {
+        Cmd::CharShot { race, face, head, body, hands, legs, feet, main, sub, range, anim, frame, yaw, motions, out } => {
             use dat::character::{Look, load_character};
             let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
-            let mut ch = load_character(&index, &Look { race, face, head, body, hands, legs, feet, main, sub, range: 0 })?;
+            let mut ch = load_character(&index, &Look { race, face, head, body, hands, legs, feet, main, sub, range })?;
             println!("pc motion info: {:?}", ch.pc);
             for id in motions {
                 let f = dat::motionfile::MotionFile::load(&index, id)?;

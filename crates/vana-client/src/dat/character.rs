@@ -873,11 +873,12 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
             _ => {}
         }
         ch.merge_size_info(f.info);
-        // The range mesh (wep2) is hidden by `init` (hwpc) and shown only while playing or shooting: not drawn yet.
-        if slot != "range" {
-            ch.parts.extend(f.parts);
-            ch.textures.extend(f.textures);
+        // The range mesh (wep2) starts hidden, as `init`'s hwpc leaves it; ops 0x75 show it to shoot or play.
+        if slot == "range" && !f.parts.is_empty() {
+            ch.init_hidden[2][0] = true;
         }
+        ch.parts.extend(f.parts);
+        ch.textures.extend(f.textures);
         ch.schedulers.extend(f.schedulers);
         ch.files.push(id);
         ch.part_files.push(id);

@@ -149,11 +149,11 @@ pub struct Task {
 
 impl Task {
     pub fn new(res: Ref, ops: Rc<Vec<SOp>>, a1: Who, a2: Who, action: Option<Rc<RefCell<ActionCtx>>>, speed: f32) -> Self {
-        // Melee / ranged: the attacker's swing is client/combat.rs's plan; the target's side (gurd / pary, a counter's
-        // swing) plays its own motions and holds.
+        // Melee: the attacker's swing is client/combat.rs's plan; the target's side (gurd / pary, a counter's swing)
+        // plays its own motions and holds. A ranged finish plays from its files (shlg -> op 0x77 -> ls?? -> gu2).
         let motions = action.as_ref().is_none_or(|a| {
             let a = a.borrow();
-            !matches!(a.action.category, 1 | 2) || a1.id().is_some_and(|id| id != a.action.actor) || (a.action.category == 1 && !a.client_swing)
+            a.action.category != 1 || a1.id().is_some_and(|id| id != a.action.actor) || !a.client_swing
         });
         static UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let uid = UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

@@ -394,6 +394,7 @@ pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
     match m {
         Some(m) if !find(&a.extra, &ch, &m.name).is_empty() => {
             let len = if m.ticks > 0 { m.ticks as f32 } else { find(&a.extra, &ch, &m.name).iter().map(|x| x.frames as f32 / (x.speed * m.speed * 0.5).max(1e-3)).fold(0.0, f32::max) };
+            log::debug!("actor {id:#x}: scheduler motion {} for {len} ticks (count {}, base {base})", m.name, m.count);
             if !a.motion.is_empty() {
                 a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                 a.blend = 0.0;
@@ -545,6 +546,11 @@ pub(super) fn update(w: &mut World, dt: f32) {
         // +0x80 up: the status motion is not re-picked, so a base change does not end the play.
         let held = w.noreact.get(&id).is_some_and(|t| *t > std::time::Instant::now());
         if a.play.as_ref().is_some_and(|p| p.over(if held { &p.base } else { &base })) {
+            // A counted motion's end restarts the status motion (FUN_100c83c0 via vtable +0x200): a status start,
+            // so the shot's crossbow (wep2) goes again.
+            if a.play.as_ref().and_then(|p| p.current()).is_some_and(|m| m.count != 0) {
+                a.status_motion.clear();
+            }
             a.play = None;
         }
         // State 0xb: the emote's scheduler is over; FUN_100d2340(3) drops its files.
