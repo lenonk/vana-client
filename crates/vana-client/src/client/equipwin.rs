@@ -27,7 +27,7 @@ pub(super) const SE_FOCUS: u32 = 13;
 /// The grid children in a picked item's walk order (0x1036f744).
 pub(super) const ORDER: [u16; 16] = [1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16];
 /// mnstorag's rows: Inventory, Wardrobe, Wardrobe 2..8.
-const STORE_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
+pub(super) const STORE_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Focus {
@@ -225,7 +225,7 @@ fn row_at(w: &World, e: &EquipWin) -> Option<Slot> {
     (e.scroll + e.cursor).checked_sub(1).and_then(|k| rows(w, e).get(k).cloned())
 }
 
-fn encumbered(w: &World, slot: usize) -> bool {
+pub(super) fn encumbered(w: &World, slot: usize) -> bool {
     w.job_info.as_ref().is_some_and(|j| j.encumbrance & (1 << slot) != 0)
 }
 
@@ -607,6 +607,73 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
+/// What the modern layer shows of the screen: the grid cursor, mode, focus, picked item and the slots it may go to,
+/// the list's container, scroll, cursor and rows after the strip in their colours, mnstorag's grey rows.
+pub(super) struct View {
+    pub grid: u16,
+    pub mode: u8,
+    pub focus: Focus,
+    pub container: u8,
+    pub picked: Option<u8>,
+    pub allowed: u16,
+    pub scroll: usize,
+    pub cursor: usize,
+    pub rows: Vec<(Slot, u32)>,
+    pub store_off: Vec<u16>,
+}
+
+pub(super) fn view(w: &World) -> Option<View> {
+    let e = win(w)?;
+    let rows = rows(w, e).into_iter().map(|s| (s.clone(), tint(w, e, &s))).collect();
+    Some(View { grid: e.grid, mode: e.mode, focus: e.focus, container: e.container, picked: e.picked, allowed: e.allowed, scroll: e.scroll, cursor: e.cursor, rows, store_off: store_off(w) })
+}
+
+/// A wardrobe's number (1 Wardrobe, 2..8), 0 for any other container.
+pub(super) fn wardrobe(c: u8) -> u8 {
+    match c {
+        8 => 1,
+        10..=16 => c - 8,
+        _ => 0,
+    }
+}
+
+/// The modern layer's mouse on the grid: the cursor onto a child it may go to (mode 1: an allowed slot). True when it
+/// moved.
+pub(super) fn point_grid(w: &mut World, child: u16) -> bool {
+    let Some(e) = win_mut(w) else { return false };
+    let free = e.mode == 2 || e.allowed == 0;
+    if e.focus != Focus::Grid || e.grid == child || !(free || e.allowed & 1 << slot_of(child) != 0) {
+        return false;
+    }
+    e.grid = child;
+    w.sounds.push(Ui::Cursor as u32);
+    true
+}
+
+/// The modern layer's mouse on the list: the cursor onto a shown row (0 the strip). True when it moved.
+pub(super) fn point_row(w: &mut World, row: usize) -> bool {
+    let Some(e) = win(w) else { return false };
+    let n = n_rows(w, e);
+    let Some(e) = win_mut(w) else { return false };
+    let row = row.min(n.saturating_sub(e.scroll + 1));
+    if e.focus != Focus::List || e.cursor == row {
+        return false;
+    }
+    e.cursor = row;
+    w.sounds.push(Ui::Cursor as u32);
+    true
+}
+
+/// The modern layer's mouse on mnstorag: its cursor onto a row.
+pub(super) fn point_store(w: &mut World, o: u16) {
+    if let Some(e) = win_mut(w)
+        && matches!(e.focus, Focus::Storage(c) if c != o)
+    {
+        e.focus = Focus::Storage(o);
+        w.sounds.push(Ui::Cursor as u32);
+    }
+}
+
 /// The four windows: persona and money, the list at (314, 48) with the strip row and the wardrobe number, the grid with
 /// the encumbrance crosses and the wardrobe numbers on wardrobe pieces; mnstorag over the list's place.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
@@ -638,11 +705,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let list = ItemList { rows: list_rows, scroll: e.scroll, cursor: e.cursor };
     super::items::upload_icons(gu, &info, list.visible().iter().map(|r| r.id).filter(|&id| id != 0));
     let open = [("menu    persona", None), ("menu    money", None), (LIST, Some(LIST_X)), (GRID, None)].map(|(n, x)| gu.gate_layout(n, sw, sh, x));
-    let wardrobe = |c: u8| match c {
-        8 => 1,
-        10..=16 => c - 8,
-        _ => 0,
-    };
     let mut list_bar = None;
     {
         let (b, ui, style, font) = gu.parts();

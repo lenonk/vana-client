@@ -288,9 +288,9 @@ pub fn open_direct(w: &mut World) {
     w.action_menu = None;
 }
 
-/// The modern layer draws this window itself: the item list (not the storage view or the Equipment screen).
+/// The modern layer draws this window itself: the item list or the Equipment screen (not the storage view).
 pub fn modern_list(w: &World) -> bool {
-    matches!(w.win, Some(Win::Items { store: None, .. }))
+    matches!(w.win, Some(Win::Items { store: None, .. } | Win::Equip(_)))
 }
 
 /// The list's rows: the occupied inventory slots but gil; for the direct list only those FUN_101f0810 colours

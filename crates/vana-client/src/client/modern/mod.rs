@@ -8,6 +8,7 @@
 mod chat;
 mod combat;
 mod command;
+mod equip;
 mod hud;
 mod items;
 mod lists;
@@ -88,6 +89,7 @@ impl Modern {
         combat::draw(&mut p, w);
         lists::draw(&mut p, w);
         items::draw(&mut p, w);
+        equip::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -198,6 +200,9 @@ fn default_place(id: &str) -> Place {
         // The item list left of the main menu; the item info rides the log as retail's (mode 0, flag 0x1000).
         "items" => at(0.56, 0.07),
         "iteminfo" => on("combat"),
+        // The Equipment screen: the slots and stats, the gear list where the item list sits.
+        "equip" => at(0.26, 0.07),
+        "equiplist" => at(0.56, 0.07),
         _ => at(0.3, 0.3),
     }
 }

@@ -182,7 +182,13 @@ Milestone 1:
   game's icons, quantities and row colours, the count, a bar; itmsort2 as a strip (Auto-sort and its question, Manual
   Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
   retail's, the wheel. Search there gives one hit per item with its total; a pick puts the cursor on its first slot
-  and presses Enter. The storage views and the Equipment screen are still drawn retail-style.
+  and presses Enter. The storage views are still drawn retail-style.
+- The Equipment screen (modern/equip.rs) over equipwin.rs's state: the persona (name, jobs, item level, HP / MP / TP),
+  the sixteen slots in the grid's order (cursor ring, encumbered cross, wardrobe numbers, mode 1's allowed slots),
+  Attack, Defense, the eight resistances, STR..CHR with bonuses, gil; the gear list titled by its container with the
+  Storage Options row, the screen's colours (white, green worn, orange picked, grey), mnstorag's nine bags in its
+  place. The mouse as retail's C.7: over the other window is Num+; hover moves, a click on the cursor is Enter; the
+  wheel. Seen live (2026-10-26): equip by keys, equip and unequip by mouse.
 - The item info panel for every item the game describes (the lists, shops, the auction, trades, events ...):
   iteminfo::build wrapped by egui instead of paged, the marks as tags, the compared equipped item above it; it rides
   the combat window (retail's on the log). Seen live (2026-10-26): list, info, Use / Drop, drop, Auto-sort's
