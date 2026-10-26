@@ -7233,8 +7233,9 @@ ours client/equipwin.rs (moved out of items.rs; Win::Equip holds an EquipWin).
   Hume Tunic, M Gloves, Slacks, M Boots; Enter on Main -> the three weapons; Dagger into Main (0x050); a dagger to Sub
   -> "You need the Dual Wield ability to equip that as a sub-weapon."; Num+, Hume Slacks picked (orange), the grid to
   Legs, Enter equipped them; Storage Options focused; Escape back to the main menu.
-- Not done: the open refusals (synthesis 7 0x4e, fishing 0x4d, not loaded 0xa8), "menu    pupequip" for PUP, the
-  mouse model of C.7, the unequip toggle not seen live yet.
+- Not done: the unequip toggle not seen live yet. Since done: the open refusals (synthesis 7 0x4e, fishing 0x4d),
+  the not-loaded refusal 0xa8, "menu    pupequip", C.7's pointer swap ("Equipment: pupequip, the not-loaded
+  refusal, the pointer focus swap").
 
 ## Text fields block the game keys (2026-10-25)
 
@@ -9415,7 +9416,8 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   already). The flag-0x10 commands: /keyitem /quest /mission /search /blacklist /mutelist /friendlist /supportdesk
   /recruitlist /displayhead /layout /remodel /garden /furcc /mentor /equipset /befriend.
 - Ours: textcmd::state_gate; the window test is `World.main_open`, the registry flag 0x20000 of the windows drawn
-  this frame or the last (GameUi::open_with_flag). Not done: the charmed event line 7 0x97 (actor +0x12c bit 13).
+  this frame or the last (GameUi::open_with_flag). Since done: the charmed line 7 0x97 ("Command gate: busy states
+  and the charmed line").
 - Layout mode's keys no longer swallow Space and '/' while no layout window is up: the chat line opens there as in
   retail (WM_CHAR FUN_101ab630, apart from the key functions context 0x42 masks).
 - Live (Lnxcsfix, its Mog House): `/layout`, Space, `/keyitem` -> the 0x50 line. With the main menu up `/keyitem`
