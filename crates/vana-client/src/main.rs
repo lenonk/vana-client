@@ -1737,6 +1737,9 @@ fn zone_path(zone: u32, from: &str, to: &str) -> Result<()> {
     }
     let pts: Vec<String> = keep.iter().skip(1).map(|&k| format!("{},{}", cells[k].0, cells[k].1)).collect();
     println!("{}", pts.join(";"));
+    // The end on the ground (feet), for a `!pos`.
+    let end = pos[&cells[cells.len() - 1]];
+    println!("end {:.2} {:.2} {:.2}", end.x, end.y, end.z);
     Ok(())
 }
 
