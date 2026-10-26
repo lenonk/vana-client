@@ -9813,3 +9813,14 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   (nothing while a query is out).
 - Live (Lnxcsfix in its San d'Oria house): /garden showed bankmenu over layout mode, Escape left (the moogle menu
   back); /mutelist: "Search result: 0 people found in all known areas." with the empty results window.
+
+## SysMesFilterLevel and the PvP word (s2c 0x0B4) (2026-10-26)
+
+- FUN_100a19b0(id), called by FUN_100a1ab0 (every 7031 standard line: s2c 0x009, the client's own system lines) and
+  FUN_100a1860 (the moogle's lines): with a session, a line with id < 0x146 whose level in table 0x1035b950 is below
+  SysMesFilterLevel (0x0B4 ConfData byte 1 bits 3..4, 0..3) is dropped (return 1); no session drops it too. The table
+  (0x146 bytes) is 3 except 7 / 8 / 0x23 / 0x76..0x79 = 2, 0x5a / 0x5b = 1, 0x59 / 0x108 = 0. Ours:
+  textcmd::sys_filtered on system_line, combat::on_message_std and moogle::line, with a unit test.
+- LSB keeps those bits as `unused11` ("PS2: SysMesFilterLevel") and never sets them: level 0, nothing dropped there.
+- The PvP word (0x0B4 u16 @0x10, G+0x40e2c, FUN_100e3730; LSB `unknown00` "PS2: GmLevel", sent 0): Ballista-era
+  team lines in chatctrl and no prefix on some chat kinds. Dead on LSB: not built.

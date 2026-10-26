@@ -305,10 +305,10 @@ pub(super) fn on_system_message(w: &mut World, id: u16, work: [i32; 2]) {
 
 /// s2c 0x009 (LAB_100fbd40 -> FUN_100a1ab0): a 7031 line; the actor from CasUniqueNo (none for 0), no target, work
 /// = Para0..3, string slots 2 / 3 = string2 / string3 (e.g. 88 "Dice roll! X rolls N!", 89 "X examines you.").
-/// A PC's messages 0x59 / 0x5a / 0x64..0x67 go by the block list. Not done: SysMesFilterLevel (s2c 0x0B4), the Mode
-/// key's event window.
+/// A PC's messages 0x59 / 0x5a / 0x64..0x67 go by the block list; SysMesFilterLevel drops some (textcmd::sys_filtered).
+/// Not done: the Mode key's event window.
 pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], strings: [String; 2]) {
-    if cas != 0 && cas >> 24 == 0 && super::partyreq::sender_blocked(w, cas, id, 0) {
+    if cas != 0 && cas >> 24 == 0 && super::partyreq::sender_blocked(w, cas, id, 0) || super::textcmd::sys_filtered(w, id) {
         return;
     }
     let Some(bt) = w.battle.clone() else { return };

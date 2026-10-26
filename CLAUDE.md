@@ -209,7 +209,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
   check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
-  (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: s2c 0x0B4 (PvP, the system message filter); the spec's part C
+  (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). s2c 0x0B4's system message filter done (its PvP word is dead on LSB). Left: the spec's part C
   (window, list and server-flag commands) left: /guide /primer (the toggles' consumers, /furcc
   included, are done; the map on an elevator, /layout, /remodel, /garden and /mutelist done).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows

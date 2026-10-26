@@ -575,6 +575,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 
 /// FUN_100a1860(n): system message n (file 7031) spoken by the moogle (moogle_actor), "<name> : text".
 pub fn line(w: &mut World, n: u16) {
+    if super::textcmd::sys_filtered(w, n) {
+        return;
+    }
     let Some(bt) = w.battle.clone() else { return };
     // Nothing without a moogle actor (all.c 120034).
     let Some(name) = moogle_actor(w).and_then(|id| w.entities.get(&id)).map(|e| e.name.clone()) else { return };

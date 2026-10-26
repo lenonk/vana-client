@@ -2343,8 +2343,28 @@ fn local_settings(w: &mut World, args: &[String]) -> Done {
     Ok(())
 }
 
+/// FUN_100a19b0: a 7031 line below 0x146 whose level in table 0x1035b950 is under SysMesFilterLevel (s2c 0x0B4
+/// ConfData byte 1 bits 3..4) is dropped. The table is 3 but for these ids.
+pub(super) fn sys_filtered(w: &World, id: u16) -> bool {
+    sys_filtered_at((w.conf_sys[1] & 0x18) >> 3, id)
+}
+
+fn sys_filtered_at(filter: u8, id: u16) -> bool {
+    let level = match id {
+        0x59 | 0x108 => 0,
+        0x5a | 0x5b => 1,
+        7 | 8 | 0x23 | 0x76..=0x79 => 2,
+        0..0x146 => 3,
+        _ => return false,
+    };
+    level < filter
+}
+
 /// A message-std line printed locally (FUN_100a1ab0, kind 6).
 pub(super) fn system_line(w: &mut World, id: u16) {
+    if sys_filtered(w, id) {
+        return;
+    }
     let Some(bt) = w.battle.clone() else { return };
     let ctx = crate::dat::battle::Ctx { me: w.name.clone(), ..Default::default() };
     if let Some(line) = bt.system(id, &ctx) {
@@ -2743,6 +2763,14 @@ mod tests {
         let mut s = format!("a{}", "é".repeat(100));
         cut(&mut s);
         assert_eq!(s.len(), 149);
+    }
+
+    /// SysMesFilterLevel against table 0x1035b950: level 0 keeps everything.
+    #[test]
+    fn sys_message_filter() {
+        assert!((0..0x200).all(|id| !sys_filtered_at(0, id)));
+        assert!(sys_filtered_at(1, 0x59) && !sys_filtered_at(1, 0x5a));
+        assert!(sys_filtered_at(3, 7) && !sys_filtered_at(3, 9) && !sys_filtered_at(3, 0x146));
     }
 
     /// The installed FFXiMain's table: /ma is magic, a target command; /y is no command; /h is /help.
