@@ -5470,12 +5470,14 @@ Spec `~/ffxi/lab/research/combat_mode_spec.md` (30261006 addresses).
 - The main menu opened while engaged (- ; engaging closes it) is newer than playermo and has the focus: menuwind's
   group 0x81 and playermo's 0x04 share no bit, so both stay drawn; the action menu takes no keys and draws no hand
   until the main menu closes (Escape). It took every arrow key before (user, 2026-10-25).
-- Battle music after a kill: FUN_1008db40 sets DAT_10480aec for a claimed monster with a model (+0x120 bit 9) whatever
-  its status; +0x130 bit 22 is s2c 0x067 @0x10 bit 2 (Level Sync, 0x1009cf90), +0xee 3..5 the lift / ship model
-  kinds. LSB clears the claim (m_OwnerID) only in the death's drop-item callback and sends no update for it, so the
-  corpse keeps our claim until it despawns and the music goes on *(inf: the retail server clears it at death)*.
-  Ours skips a dead monster (status 2 / 3) in the flag, so the field music comes back at the kill (live 2026-10-25:
-  at the disengage, not 11 s later with the corpse).
+- Battle music after a kill: DAT_10480aec is set inside FUN_1008db40, the name colour pick, which runs for every actor
+  with a model (+0x120 bit 9) but returns early for a dead one: FUN_10097a60 (applied status +0x170 is 2 or 3) gives
+  the grey (table entry 9) before the claim test is reached. So a corpse never holds the battle music, although LSB
+  keeps its claim (m_OwnerID, cleared only in the drop-item callback, no update sent) until it despawns. +0x130 bit
+  22 is s2c 0x067 @0x10 bit 2 (Level Sync, 0x1009cf90), +0xee 3..5 the lift / ship model kinds. An earlier note here
+  read the flag as status-blind and blamed LSB; the retail client on our LSB server ends the music at the kill (user,
+  2026-10-25). Ours (party_battle) skips status 2 / 3 by the server status; live: the field music came back at the
+  disengage, not 11 s later with the corpse.
 - Title slot 0 while engaged: retail shows group 0xd 5 "Commands" (seen live twice by the user), although FUN_1012b4b0
   reads as 7 "Battle Mode" when +0x170 == 1: that field is not the engaged status (inferred). Ours: 5.
 - Choosing Magic / Abilities / Trust / Items closes the battle menu (its close animation plays) and the list opens

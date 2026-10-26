@@ -3356,8 +3356,8 @@ impl Actor {
 /// DAT_10480aec (FUN_1008db40 asm:151886), with /battlebgm off (config 0x99 bit 0 clear): a monster with a model,
 /// not a door / lift / ship, GM level under 3, no team colour, claimed by anyone on our alliance list (us included),
 /// not owned (a charmed monster counts as owned *(inf: no pet index for others)*), within 45 of us; not while we are
-/// KO'd or in an event *(inf: retail tests the field state 0x60)*. Ours skips a dead monster: LSB leaves the claim on
-/// the corpse until it despawns.
+/// KO'd or in an event *(inf: retail tests the field state 0x60)*. A dead monster never sets it: FUN_10097a60 (status
+/// 2 / 3) gives its name grey and returns first.
 fn party_battle(w: &World) -> bool {
     if w.game.get(0x99) & 1 != 0 || matches!(w.my_motion.status, 2 | 3) || event::active(w) {
         return false;
