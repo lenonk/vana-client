@@ -1316,6 +1316,12 @@ fn plate_point(world: &World, id: u32) -> Option<Vec3> {
 
 /// The in-game HUD in the game's own windows: chat log and input line, party, target, main menu
 /// ('-' opens it) and the KO prompt. Returns the rects that take clicks away from the world.
+/// The alliance windows are down while a window set is up (main and social menus, item / equipment windows, magic /
+/// ability lists, map, config, palettes) or an event holds us (the mapping to our state: inferred).
+fn alliance_hidden(world: &World) -> bool {
+    world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world)
+}
+
 fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2], keys: &mut HashSet<KeyCode>, view_proj: glam::Mat4, numpad_slash: bool) -> Vec<[f32; 4]> {
     let (sw, sh) = (size[0] as f32, size[1] as f32);
     // The focused list's scroll bar and the wheel, before the windows see the press.
@@ -2254,7 +2260,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // raid1 / raid2 (FUN_10203c80): shown while their party exists and no window of the registry +0x2a 0x01 / 0x80
     // set is up (main and social menus, item / equipment windows, magic / ability lists, map, config, palettes) nor an
     // event holds us (the mapping to our state: inferred). Closing them drops a party-list cursor silently.
-    let hide = world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world);
+    let hide = alliance_hidden(world);
     world.ally_gauges.resize(12, (0, 0));
     let alliance: [Option<[Option<crate::render::screens::AllyRow>; 6]>; 2] = std::array::from_fn(|k| {
         (party_slots.counts[k + 1] > 0 && !hide).then(|| {

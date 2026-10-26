@@ -165,6 +165,11 @@ Milestone 1:
   location panel, the target on the party window (targetwi on the party window). The game's windows still drawn
   retail-style that stack on the log (flag 0x1000) stack on the modern chat window, the Timers window too.
 - The game's windows and the world take no click, press or wheel over a modern panel.
+- The party window as retail's ptwN ("Solo" outside a party): us first, then the members; per row the job, the
+  leader marks, the name over the HP bar with the HP number in its hpcol colour, the MP bar and number, TP with
+  config 0xae bit 0 (never on trusts), a member elsewhere greyed with the zone; the hand on the party cursor's or
+  our target's row; a click targets. Bottom-placed with its exact height, growing upward. Two alliance panels at
+  raid1 / raid2's places, down while retail hides them. Seen live with LSB bots (2026-10-26).
 - Bars carry their label and value over their top edge (Inter Bold Italic, 18 pt, a black border, the label a
   little in from the bar's start). The locked target as retail's windowps 212: the alert frame, red arrowheads out
   of the side borders, "Locked" between red pointers on the bottom border. The cursor over the target stays.
@@ -172,5 +177,5 @@ Milestone 1:
   SVG change is rendered at 2x into its atlas cell.
 - The retail party, alliance, target, log, chat line, effects, cast bar, compass and action menu are not drawn while
   Modern is on.
-- Seen live (Lnxcsfix, 2026-10-26): every panel above but Party (offscreen only: the bots did not accept invites).
-- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, a way to reset places.
+- Seen live (Lnxcsfix, 2026-10-26): every panel above.
+- Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

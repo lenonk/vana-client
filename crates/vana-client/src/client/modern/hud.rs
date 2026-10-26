@@ -47,15 +47,32 @@ pub struct StatusView {
     pub effects: Vec<Effect>,
 }
 
+/// A party or alliance row as retail's (FUN_10202530 / FUN_10202720): ours first, from our own vitals.
+#[derive(Clone)]
 pub struct PartyRow {
     pub slot: usize,
     pub name: String,
     pub icon: Option<String>,
-    pub here: bool,
-    pub hp: f32,
-    /// The party cursor or our target on this member.
+    /// In our zone: the numbers and bars; else the zone the member is in, shown instead.
+    pub here: Option<RowVitals>,
+    pub zone: String,
+    /// The party cursor's hand or our target on this member.
     pub marked: bool,
+    /// 1 the party's leader, 2 the alliance's.
+    pub marks: u8,
     pub effects: Vec<Effect>,
+}
+
+/// A row's numbers and eased bars: HP in its colour by HP percent (menu hpcol), MP (no MP bar on alliance rows), TP
+/// only with config 0xae bit 0 and never on trusts.
+#[derive(Clone)]
+pub struct RowVitals {
+    pub hp: u32,
+    pub mp: u32,
+    pub tp: Option<u32>,
+    pub hpf: f32,
+    pub mpf: Option<f32>,
+    pub hp_colour: Color32,
 }
 
 pub struct TargetView {
@@ -103,22 +120,22 @@ const BAR: f32 = 14.0;
 const LABEL_SIZE: f32 = 18.0;
 
 /// A bar with its label and value over its top edge, the label a little in from the bar's start.
-fn labelled_bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32, label: (&str, Color32), value: &str) {
+fn labelled_bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32, label: (&str, Color32), value: (&str, Color32)) {
     bar(ui, m, kind, r, f);
     let p = ui.painter();
     let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
     // The text's bottom (its descender room) half way down the bar.
     let y = r.min.y + BAR * 0.5;
     paint::outlined(p, pos2(r.min.x + 6.0, y), Align2::LEFT_BOTTOM, label.0, font.clone(), label.1);
-    if !value.is_empty() {
-        paint::outlined(p, pos2(r.max.x - 6.0, y), Align2::RIGHT_BOTTOM, value, font, m.theme.color("text"));
+    if !value.0.is_empty() {
+        paint::outlined(p, pos2(r.max.x - 6.0, y), Align2::RIGHT_BOTTOM, value.0, font, value.1);
     }
 }
 
 /// A gauge row: the bar across the row, its label and value over it.
 fn gauge_row(ui: &mut Ui, m: &Modern, label: &str, kind: &str, f: f32, value: &str) {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 33.0), Sense::hover());
-    labelled_bar(ui, m, kind, Rect::from_min_max(pos2(r.min.x, r.max.y - BAR), r.max), f, (label, m.theme.color("text")), value);
+    labelled_bar(ui, m, kind, Rect::from_min_max(pos2(r.min.x, r.max.y - BAR), r.max), f, (label, m.theme.color("text")), (value, m.theme.color("text")));
 }
 
 /// An effect's icon at `r`, dimmed while it blinks.
@@ -171,55 +188,108 @@ pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     });
 }
 
-/// The party's other members; the slot clicked, if any.
-pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usize> {
+/// Row heights: party rows carry an MP bar under the HP bar, alliance rows not.
+const PARTY_ROW: f32 = 48.0;
+const ALLY_ROW: f32 = 38.0;
+
+/// The party window (ours first; "Solo" outside a party) or an alliance's, as retail's ptwN / raid1 / raid2: per row
+/// the job, leader marks, the name over the HP bar with the HP number in its colour, the MP bar and number and TP
+/// (party rows), a member elsewhere greyed with the zone's name, the hand on the party cursor's or our target's row.
+/// Its height is exact, so the party window grows upward with no frame's lag. The slot clicked, if any.
+pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], small: bool) -> Option<usize> {
     if rows.is_empty() {
         return None;
     }
     let (m, look) = (p.m, p.look());
-    let note = format!("{} / 6", rows.len() + 1);
-    let row_h = 40.0;
+    let full = id == "party";
+    let row_h = if full { PARTY_ROW } else { ALLY_ROW };
+    let note = (title != "Solo").then(|| format!("{} / 6", rows.len()));
+    // Margins, the title row (28, egui's 3 under it, our 6), the rows 4 apart.
+    let n = rows.len() as f32;
+    let height = super::MARGIN.sum().y + 37.0 + n * row_h + (n - 1.0) * 4.0;
     let mut clicked = None;
-    p.panel("party", Some(Title { icon: None, text: "Party", note: Some(&note) }), 340.0, |ui| {
-        for row in rows {
+    let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref() }), size: vec2(340.0, 0.0), height: Some(height), ..Default::default() };
+    p.show(id, show, |ui, _| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        for (i, row) in rows.iter().enumerate() {
+            if i > 0 {
+                ui.add_space(4.0);
+            }
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), row_h), Sense::click());
             let sprite = if row.marked {
                 "controls/list_row_selected"
             } else if resp.hovered() {
                 "controls/list_row_hover"
-            } else if row.here {
+            } else if row.here.is_some() {
                 "controls/list_row_normal"
             } else {
                 "controls/list_row_disabled"
             };
             let painter = ui.painter();
             if let Some(s) = m.art.sprite(sprite) {
-                painter.add(paint::nine_slice(&s, r, row_h / s.size.y, Color32::WHITE));
+                painter.add(paint::nine_slice(&s, r, (row_h / s.size.y).min(1.0), Color32::WHITE));
             }
-            let mut x = r.min.x + 22.0;
+            // The hand at the row's left, reaching over the frame (retail's anc2s over the log's edge).
+            if row.marked
+                && let Some(s) = m.art.sprite("icons/cursor")
+            {
+                ui.ctx().layer_painter(painter.layer_id()).add(paint::image(&s, pos2(r.min.x - 30.0, r.center().y - 11.0), 22.0, Color32::WHITE));
+            }
+            let mut x = r.min.x + 10.0;
             if let Some(s) = row.icon.as_deref().and_then(|j| m.art.sprite(j)) {
-                painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, Color32::WHITE));
-                x += 30.0;
+                painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, if row.here.is_some() { Color32::WHITE } else { Color32::from_gray(120) }));
             }
-            // The name over the HP bar (away members: the name alone), their effects (s2c 0x076) at the bar's right end
-            // above it, as many as fit.
-            let bar_r = Rect::from_min_max(pos2(x, r.max.y - 8.0 - BAR), pos2(r.max.x - 14.0, r.max.y - 8.0));
-            let name = if row.here {
-                labelled_bar(ui, m, "hp", bar_r, row.hp, (&row.name, m.theme.color("text")), "");
-                let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
-                painter.layout_no_wrap(row.name.clone(), font, Color32::WHITE).size().x + bar_r.min.x + 6.0
-            } else {
-                painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, &row.name, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("muted")).max.x
-            };
-            let mut ex = bar_r.max.x - 15.0;
-            for e in row.effects.iter().filter(|_| row.here) {
-                if ex < name + 8.0 {
-                    break;
+            // Leader marks on the job's corner: gold the party's, blue the alliance's.
+            for (k, (bit, col)) in [(1u8, m.theme.color("gold")), (2u8, m.theme.color("focus"))].into_iter().enumerate() {
+                if row.marks & bit != 0
+                    && let Some(s) = m.art.sprite("icons/favorites")
+                {
+                    painter.add(paint::image(&s, pos2(x - 6.0 + 9.0 * k as f32, r.max.y - 15.0), 13.0, col));
                 }
-                effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, bar_r.min.y - 16.0), vec2(14.0, 14.0)), small);
-                ex -= 15.0;
             }
-            ui.add_space(4.0);
+            x += 32.0;
+            let right = r.max.x - 10.0;
+            let Some(v) = &row.here else {
+                let font = FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into()));
+                painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, &row.name, font, m.theme.color("muted"));
+                painter.text(pos2(right, r.center().y), Align2::RIGHT_CENTER, format!("({})", row.zone), FontId::proportional(m.theme.small), m.theme.color("muted"));
+                if resp.clicked() {
+                    clicked = Some(row.slot);
+                }
+                continue;
+            };
+            let hp_r = Rect::from_min_max(pos2(x, r.min.y + 18.0), pos2(right, r.min.y + 30.0));
+            labelled_bar(ui, m, "hp", hp_r, v.hpf, (&row.name, m.theme.color("text")), (&v.hp.to_string(), v.hp_colour));
+            let small_font = FontId::new(14.0, FontFamily::Name(super::LABEL.into()));
+            if let Some(mpf) = v.mpf {
+                // The MP bar under it, its number at its right; TP (config 0xae bit 0) before it, blue from 1000.
+                let my = hp_r.max.y + 9.0;
+                let mut mx = x;
+                if let Some(tp) = v.tp {
+                    let col = if tp > 999 { m.theme.color("focus") } else { m.theme.color("muted") };
+                    mx = paint::outlined(painter, pos2(x + 2.0, my), Align2::LEFT_CENTER, &tp.to_string(), small_font.clone(), col).max.x + 8.0;
+                }
+                let mp_w = painter.layout_no_wrap("88888".into(), small_font.clone(), Color32::WHITE).size().x;
+                bar(ui, m, "mp", Rect::from_min_max(pos2(mx, my - 3.5), pos2(right - mp_w - 6.0, my + 3.5)), mpf);
+                paint::outlined(painter, pos2(right, my), Align2::RIGHT_CENTER, &v.mp.to_string(), small_font, m.theme.color("text"));
+            } else if let Some(tp) = v.tp {
+                let col = if tp > 999 { m.theme.color("focus") } else { m.theme.color("muted") };
+                paint::outlined(painter, pos2(x + 2.0, hp_r.max.y + 6.0), Align2::LEFT_CENTER, &tp.to_string(), small_font, col);
+            }
+            // Their effects (s2c 0x076) above the bar at its right, as many as fit beside the name.
+            if full {
+                let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
+                let name_end = x + 6.0 + painter.layout_no_wrap(row.name.clone(), font.clone(), Color32::WHITE).size().x;
+                let hp_w = painter.layout_no_wrap(v.hp.to_string(), font, Color32::WHITE).size().x;
+                let mut ex = right - hp_w - 24.0;
+                for e in &row.effects {
+                    if ex < name_end + 8.0 {
+                        break;
+                    }
+                    effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, r.min.y + 2.0), vec2(14.0, 14.0)), small);
+                    ex -= 15.0;
+                }
+            }
             if resp.clicked() {
                 clicked = Some(row.slot);
             }
@@ -390,7 +460,16 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(v) = where_view(p.look(), w) {
         where_panel(p, &v);
     }
-    if let Some(k) = party_panel(p, &party_rows(w), small) {
+    let (party, allies) = party_rows(p.look(), w);
+    // ptw0 ("Solo") while our party has no leader.
+    let title = if party.len() <= 1 && w.party.slots().leaders[0] == 0 { "Solo" } else { "Party" };
+    let mut picked = party_panel(p, "party", title, &party, small);
+    for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
+        if let Some(rows) = rows {
+            picked = picked.or(party_panel(p, id, "Alliance", rows, small));
+        }
+    }
+    if let Some(k) = picked {
         let t = target::slot_target(w, k);
         target::pick(w, t);
     }
@@ -463,25 +542,70 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
     })
 }
 
-fn party_rows(w: &World) -> Vec<PartyRow> {
+/// The party window's rows (ours first, from our own vitals; the others from the roster, slots 1..5) and the
+/// alliances' (slots 6..17), the latter hidden while a window retail hides them under is up.
+fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2]) {
     let slots = w.party.slots();
     let hand = target::party_hand(w).map(|h| h.0);
-    (1..6)
-        .map_while(|k| slots.slots[k].as_ref().map(|m| (k, m)))
-        .map(|(k, m)| {
-            let targeted = w.target.is_some_and(|t| t == m.id || w.entities.get(&t).is_some_and(|e| e.index == m.index));
-            let effects = w.party_buffs.get(&m.id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false }).collect());
-            PartyRow {
-                slot: k,
-                name: monstrosity::row_name(m).to_string(),
-                icon: job_icon(m.jobs[0]),
-                here: m.away == 0 && m.zone == w.pos_zone,
-                hp: w.party_gauges.get(k).map_or(m.hpp as f32, |g| g.1 as f32) / 100.0,
-                marked: hand == Some(k) || targeted,
-                effects,
-            }
+    let hp_colour = |hpp: u8| p.gu.map_or(p.m.theme.color("text"), |gu| super::chat::colour(gu.hp_tint(hpp).to_le_bytes()));
+    let marked = |slot: usize, id: u32, index: u16| hand == Some(slot) || w.target.is_some_and(|t| t == id || (id != w.my_id && w.entities.get(&t).is_some_and(|e| e.index == index)));
+    let marks = |id: u32, party: usize| (id != 0 && id == slots.leaders[party]) as u8 | ((id != 0 && id == slots.alliance_leader) as u8) << 1;
+    let zone = |z: u16| p.gu.map(|gu| crate::dat::font::decode_sjis(&gu.area_name(z))).unwrap_or_default();
+    let effects = |id: u32| w.party_buffs.get(&id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false }).collect());
+    let gauge = |k: usize, hpp: u8, mpp: u8| w.party_gauges.get(k).map_or((hpp, mpp), |g| (g.1, g.2));
+    let mut party = Vec::new();
+    if let Some((hp, mp, tp, hpp, mpp)) = w.vitals {
+        let own = w.party.own();
+        let name = if own.id == w.my_id { monstrosity::row_name(own).to_string() } else { w.name.clone() };
+        let (gh, gm) = gauge(0, hpp, mpp);
+        party.push(PartyRow {
+            slot: 0,
+            name,
+            icon: w.stats.as_ref().and_then(|s| job_icon(s.main.0)),
+            here: Some(RowVitals { hp, mp, tp: w.party_tp.then_some(tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(hpp) }),
+            zone: String::new(),
+            marked: marked(0, w.my_id, 0),
+            marks: marks(w.my_id, 0),
+            effects: Vec::new(),
+        });
+    }
+    for (k, m) in (1..6).map_while(|k| slots.slots[k].as_ref().map(|m| (k, m))) {
+        let (gh, gm) = gauge(k, m.hpp, m.mpp);
+        let trust = m.index >= 0x700;
+        party.push(PartyRow {
+            slot: k,
+            name: if m.away == 0 { monstrosity::row_name(m) } else { &m.name }.to_string(),
+            icon: job_icon(m.jobs[0]),
+            here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, mp: m.mp, tp: (w.party_tp && !trust).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(m.hpp) }),
+            zone: zone(m.zone),
+            marked: marked(k, m.id, m.index),
+            marks: marks(m.id, 0),
+            effects: effects(m.id),
+        });
+    }
+    let hidden = super::super::alliance_hidden(w);
+    let allies = std::array::from_fn(|a| {
+        (slots.counts[a + 1] > 0 && !hidden).then(|| {
+            (0..6)
+                .filter_map(|i| {
+                    let s = 6 * (a + 1) + i;
+                    let m = slots.slots[s].as_ref()?;
+                    let gh = w.ally_gauges.get(s - 6).map_or(m.hpp, |g| g.1);
+                    Some(PartyRow {
+                        slot: s,
+                        name: m.name.clone(),
+                        icon: job_icon(m.jobs[0]),
+                        here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, mp: m.mp, tp: (w.party_tp && m.index < 0x700).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: None, hp_colour: hp_colour(m.hpp) }),
+                        zone: zone(m.zone),
+                        marked: marked(s, m.id, m.index),
+                        marks: marks(m.id, a + 1),
+                        effects: Vec::new(),
+                    })
+                })
+                .collect()
         })
-        .collect()
+    });
+    (party, allies)
 }
 
 fn target_view(w: &World) -> Option<TargetView> {

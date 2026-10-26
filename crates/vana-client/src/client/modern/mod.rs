@@ -156,6 +156,9 @@ fn default_place(id: &str) -> Place {
         "target" => on("party"),
         "status" => at(0.012, 0.07),
         "command" => at(0.83, 0.07),
+        // raid1 / raid2's places (y 48 and 150 of the 448 layout).
+        "alliance1" => at(0.87, 0.107),
+        "alliance2" => at(0.87, 0.335),
         "cast" => at(0.41, 0.58),
         _ => at(0.3, 0.3),
     }
