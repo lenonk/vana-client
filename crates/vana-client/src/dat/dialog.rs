@@ -210,6 +210,15 @@ pub struct Ctx {
     pub work: [i32; 5],
     /// Item, key item and other names for 0x01 grammar blocks.
     pub names: Option<std::sync::Arc<dyn super::names::NameSource>>,
+    /// The date builders' group 10 strings and settings (`7f ab` / `7f ac`).
+    pub dates: Option<std::sync::Arc<Dates>>,
+}
+
+/// Group 10 by id (raw) and config 0x95 (the date order) / 0x96 (12-hour).
+pub struct Dates {
+    pub group10: Box<dyn Fn(u16) -> Option<Vec<u8>> + Send + Sync>,
+    pub date_key: usize,
+    pub h12: bool,
 }
 
 impl Ctx {
@@ -480,7 +489,26 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     }
                     3
                 }
-                0x36 | 0x81..=0x84 | 0x8f | 0x94..=0x97 | 0xa0..=0xb5 => 3,
+                // FUN_100c1650 (asm 0x100c1e36..0x100c202f): num[n] + 0x3c307d70 as Earth local time (FUN_101c8d10): a0 the
+                // year, a1..a5 month / day / hour / minute / second "%d", a6..aa the same "%02d"; ab the long Earth date
+                // (FUN_101c8fd0 flags 1); ac the Vana'diel date and time of num[n] (FUN_101c92b0(t, 1, 1)).
+                0xa0..=0xac => {
+                    let v = ctx.num_at(s.get(i + 2).copied().unwrap_or(0) as usize).unwrap_or(0);
+                    let unix = v as i64 + 0x3c30_7d70;
+                    let sub = a as u8;
+                    let text = match (sub, &ctx.dates) {
+                        (0xab, Some(d)) => super::msgfmt::earth_datetime(&*d.group10, unix, 1, d.date_key, d.h12),
+                        (0xac, Some(d)) => super::msgfmt::vana_datetime(&*d.group10, v as u32 as u64, 1, d.date_key),
+                        (0xab | 0xac, None) => Vec::new(),
+                        _ => super::msgfmt::earth_parts(unix).map_or_else(Vec::new, |p| {
+                            let k = if sub == 0xa0 { 0 } else { (sub - 0xa1) as usize % 5 + 1 };
+                            if sub >= 0xa6 { format!("{:02}", p[k]) } else { p[k].to_string() }.into_bytes()
+                        }),
+                    };
+                    push(&mut lines, &text);
+                    3
+                }
+                0x36 | 0x81..=0x84 | 0x8f | 0x94..=0x97 | 0xad..=0xb5 => 3,
                 _ => 2,
             },
             0x20..0x7f => {
@@ -500,6 +528,39 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Zone 5 7410: `7f ac 0` the Vana'diel date and time of num[0], `7f ab 0` the long Earth date (group 10 rows).
+    #[test]
+    fn date_builder_codes() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(dll) = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")) else { return };
+        let Some(file) = super::super::msg::group_file(&dll, 1, 10) else { return };
+        let m = std::sync::Arc::new(super::super::msg::Messages::load(&index, file).unwrap());
+        let g = m.clone();
+        let dates = std::sync::Arc::new(Dates { group10: Box::new(move |id: u16| g.raw(id as usize)), date_key: 0, h12: false });
+        let t = 800_000_000;
+        let d = Dialog::load(&index, 5).unwrap();
+        let e = expand(&d.raw(7410).unwrap(), &Ctx { num: [t, 0, 0, 0, 0, 0, 0, 0], dates: Some(dates.clone()), ..Default::default() });
+        let vana = decode_sjis(&crate::dat::msgfmt::vana_datetime(&*dates.group10, t as u64, 1, 0));
+        let earth = decode_sjis(&crate::dat::msgfmt::earth_datetime(&*dates.group10, t as i64 + 0x3c30_7d70, 1, 0, false));
+        let line = e.lines.iter().map(|l| decode_sjis(l)).collect::<Vec<_>>().join(" ");
+        assert!(line.contains(&format!("until {vana} ({earth} Earth time)")), "{line}");
+    }
+
+    /// Zone 1 6380, the Assist Channel's end: `7f a1` / `a2` / `a0` / `a3` "%d" and `7f a9` "%02d" of num[0] +
+    /// 0x3c307d70 in local time.
+    #[test]
+    fn earth_date_codes() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let d = Dialog::load(&index, 1).unwrap();
+        let t = 800_000_000;
+        let e = expand(&d.raw(6380).unwrap(), &Ctx { num: [t, 0, 0, 0, 0, 0, 0, 0], ..Default::default() });
+        let p = crate::dat::msgfmt::earth_parts(t as i64 + 0x3c30_7d70).unwrap();
+        let want = format!("You will be able to use the Assist Channel until {}/{}/{} at {}:{:02} (JST).", p[1], p[2], p[0], p[3], p[4]);
+        assert_eq!(decode_sjis(&e.lines[0]), want);
+    }
 
     /// s2c 0x027 lines: Port Bastok 7164 (fishing, String1 = the player, Num1 = item, count) and Valkurm Dunes 8099
     /// (a 1f mode code).

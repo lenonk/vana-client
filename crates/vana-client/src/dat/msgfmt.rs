@@ -153,6 +153,12 @@ pub fn vana_datetime(g: &Group<'_>, t: u64, flags: u32, date_key: usize) -> Vec<
     [date, b" ".to_vec(), time].concat()
 }
 
+/// FUN_101c8d10: the Earth date in local time as (year, month 1..12, day, hour, minute, second).
+pub fn earth_parts(unix: i64) -> Option<[i32; 6]> {
+    let z = jiff::Timestamp::from_second(unix).ok()?.to_zoned(jiff::tz::TimeZone::system());
+    Some([z.year() as i32, z.month() as i32, z.day() as i32, z.hour() as i32, z.minute() as i32, z.second() as i32])
+}
+
 /// FUN_101c8fd0(unix, flags): the Earth date in local time (flags & 1 the long form with the month's name, & 4 its
 /// other name list), the time (flags & 8 without seconds), joined unless flags & 2 (date only) / & 0x18 (time only).
 pub fn earth_datetime(g: &Group<'_>, unix: i64, flags: u32, date_key: usize, h12: bool) -> Vec<u8> {

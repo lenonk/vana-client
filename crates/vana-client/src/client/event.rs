@@ -2322,7 +2322,11 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         _ => String::new(),
     };
     let g = w.event.as_ref().map_or(w.event_mem.g, |l| l.rt.mem.g).map(|v| v as i32);
-    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, g, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), ..Default::default() };
+    let dates = w.battle.clone().map(|bt| {
+        let group10 = Box::new(move |id: u16| bt.group10_raw(id as usize));
+        Arc::new(dialog::Dates { group10, date_key: (w.game.get(0x95) & 3) as usize, h12: w.game.get(0x96) & 1 != 0 })
+    });
+    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, g, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), dates, ..Default::default() };
     let e = dialog::expand(&raw, &ctx);
     // The log mode: Type below 8 by table 0x1035b944, else 0; a 1f code in the text overrides it.
     const MODES: [u8; 8] = [0x8e, 0xa1, 0x90, 0x91, 0x92, 0xa1, 0x94, 0x95];
