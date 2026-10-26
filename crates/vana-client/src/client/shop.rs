@@ -431,8 +431,9 @@ fn scroll_spell(w: &World, arg: u16) -> Option<u16> {
 
 /// The buy name colour (FUN_1020f740 / FUN_101ec800): gear green when worn, else yellow when the job can wear it now;
 /// a scroll (type 7, teach kind 1 at record +0x1554, spell at +0x1558) green when learned (s2c 0x0AA), else yellow when
-/// the main or sub job can learn it (FUN_1022b7d0; job points not parsed); white else. Not done: dice (kind 2, green
-/// only with Monstrosity data, which LSB never sends) and automaton attachments (kind 3, s2c 0x044).
+/// the main or sub job can learn it (FUN_1022b7d0; job points not parsed); an automaton attachment (kind 3, any type
+/// but 7) green when unlocked (FUN_102092b0); white else. Not done: dice (kind 2, green only with Monstrosity data,
+/// which LSB never sends).
 pub(super) fn name_tint(w: &World, id: u16) -> u32 {
     let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return WHITE };
     let extra = |at: u16| it.extra.iter().find(|e| e.0 == at).map(|e| e.1);
@@ -443,8 +444,12 @@ pub(super) fn name_tint(w: &World, id: u16) -> u32 {
         if can_wear(w, &it, id) {
             return YELLOW;
         }
-    } else if it.item_type == 7
-        && extra(0xd54) == Some(1)
+    }
+    if it.item_type != 7 {
+        if extra(0xd54) == Some(3) && extra(0xd58).is_some_and(|a| attachment_unlocked(w, a)) {
+            return crate::inventory::TINT_EQUIPPED;
+        }
+    } else if extra(0xd54) == Some(1)
         && let Some(spell) = extra(0xd58).and_then(|a| scroll_spell(w, a as u16))
     {
         if w.spells_known.get(spell as usize / 8).is_some_and(|b| b & (1 << (spell % 8)) != 0) {
@@ -457,6 +462,15 @@ pub(super) fn name_tint(w: &World, id: u16) -> u32 {
         }
     }
     WHITE
+}
+
+/// FUN_102092b0 -> FUN_100fcc50(side, 0x1202, n): once s2c 0x119 came, PUP as main (side 0) or sub (1) and that
+/// side's s2c 0x044 block a PUP one, bit n (< 0x100) of its UnlockedAttachments (block +0x34).
+fn attachment_unlocked(w: &World, n: u32) -> bool {
+    let Some(st) = w.stats.as_ref().filter(|_| w.recasts_seen && n < 0x100) else { return false };
+    let side = if st.main.0 == 0x12 { 0 } else if st.sub.0 == 0x12 { 1 } else { return false };
+    let b = &w.ext_job[side];
+    b[0] == 0x12 && b[0x34 + n as usize / 8] & (1 << (n % 8)) != 0
 }
 
 fn requirement(e: &Entry) -> Option<Req> {

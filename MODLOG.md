@@ -9844,3 +9844,13 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   ({ab} Earth time)", zone 11 7940. Tests: dialog::earth_date_codes, dialog::date_builder_codes.
 - Not done: b0 / b1 (work[n] u16 through FUN_100bd9f0 / FUN_100bda10, objects DAT_106218fc / DAT_10578428), b4 (group
   10 0x5f "<grouped> gil" of work[n]; our zone text has no work array), b5 (FUN_101c8450 of num[n], a list string).
+
+## Shops: automaton attachment colours (2026-10-26)
+
+- FUN_1020f740 (the buy name colour) for an item of any type but 7 with teach kind 3 (record +0x1554; e.g. 2238
+  "Strobe": 0xd54 = 3, 0xd58 = 1): green when FUN_102092b0(argument): argument < 0x100, s2c 0x119 seen (DAT_10485824
+  bit 0), PUP (0x12) as main job (side 0) or else sub (side 1), then FUN_100fcc50(side, 0x1202, n): the side's s2c
+  0x044 block (G+0x40c44 + side x 0x9c, ours World::ext_job) has job 0x12 and bit n set at +0x34 (LSB
+  UnlockedAttachments[8]). Ours: shop::attachment_unlocked. The gear checks come first as before.
+- Not seen live: no LSB shop sells attachments (Whitegate's Ghatsad / Tateeya run quests; Al Zahbi's Chayaya sells
+  dice, kind 2, which needs Monstrosity data).

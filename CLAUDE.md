@@ -99,8 +99,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); the Delivery Box (send,
     receive, cancel mode) and Remodel (client/remodel.rs, MODLOG "Mog House Remodel") done; left the Mog Garden use rule;
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
-    yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D), the mouse done; left the dice / attachment
-    colours (need s2c 0x063 sub 4 and 0x044);
+    yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D), the mouse, the attachment colours done (not seen live: no LSB
+    attachment shop); left the dice colours (need s2c 0x063 sub 4 Monstrosity data);
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
     done but untested live (needs a second account); the mouse in both done (MODLOG "Trade windows: the mouse"; player
     trade's not tried live) and the main menu's target prompt with no target done;
