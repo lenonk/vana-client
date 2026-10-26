@@ -867,16 +867,16 @@ fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
     if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode)) {
         world.sounds.push(n);
     }
-    let (colour, line) = match world.battle.clone() {
+    let (colour, line, indent) = match world.battle.clone() {
         Some(bt) => {
             let names = world.names.clone();
             let line = bt.phrases.as_ref().map_or(line.clone(), |d| d.expand(&line, names.as_deref().map(|n| n as &dyn crate::dat::names::NameSource)));
-            (bt.colour_in(mode, &world.game), line)
+            (bt.colour_in(mode, &world.game), line, bt.indents(mode))
         }
-        None => (cfgapply::chat_colour(&world.game, kind), line),
+        None => (cfgapply::chat_colour(&world.game, kind), line, false),
     };
     for l in line.split('\n') {
-        world.chat.push_chat(l.to_string(), colour);
+        world.chat.push_chat(l.to_string(), colour, indent);
     }
 }
 
@@ -2080,20 +2080,22 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
 
     paginate(gu, world, logwin::text_width(sw, world.log.cfg.pct));
     // FUN_10123060 / FUN_10131e30: each page of the open message goes into the log as it opens.
-    let page_lines: Vec<String> = match event::message(world) {
+    let (page_lines, mode): (Vec<String>, Option<u8>) = match event::message(world) {
         Some(m) => match &m.pages {
             Some((_, pages)) if m.logged <= m.page.min(pages.len() - 1) => {
                 let upto = m.page.min(pages.len() - 1);
                 let lines = pages[m.logged..=upto].concat();
                 m.logged = upto + 1;
-                lines
+                (lines, m.mode)
             }
-            _ => Vec::new(),
+            _ => (Vec::new(), None),
         },
-        None => Vec::new(),
+        None => (Vec::new(), None),
     };
+    // The log line's colour is its mode's (FUN_10129c70); mode 0 has none of its own.
+    let colour = mode.and_then(|m| world.battle.as_ref().map(|bt| bt.colour_in(m, &world.game))).unwrap_or(WHITE);
     for l in page_lines {
-        world.chat.push(l);
+        world.chat.push_colour(l, colour);
     }
     minimap::prepare(gu, world, sw);
     let foot = timers_foot(gu, world, sw, sh);
@@ -3260,18 +3262,33 @@ fn event_window(gu: &mut GameUi, world: &World, sw: f32, sh: f32, tw: f32) -> Op
 }
 
 /// Wraps the open event message to the window width once, in pages of 4 lines (a 5th line makes a keyed page).
+/// FUN_10126c60: pages of at most 4 wrapped lines. A page after the first starts at its line with two spaces (not for
+/// mode 0x97) and the colour code that line had; the message's mode decides the indent.
 fn paginate(gu: &GameUi, world: &mut World, tw: f32) {
+    let indent = event::message_ref(world).and_then(|m| m.mode).is_some_and(|m| world.battle.as_ref().is_some_and(|bt| bt.indents(m)));
     let Some(m) = event::message(world) else { return };
     if m.pages.as_ref().is_some_and(|(w, _)| *w == tw) {
         return;
     }
-    let wrapped: Vec<String> = m.lines.iter().flat_map(|l| gu.wrap(l, tw)).collect();
-    let mut pages: Vec<Vec<String>> = wrapped.chunks(4).map(<[String]>::to_vec).collect();
-    if pages.is_empty() {
-        pages.push(Vec::new());
-    }
+    let pages = cut_pages(&m.lines.join("\n"), m.mode == Some(0x97), |t| gu.wrap_spans(t, tw, indent), |t| gu.wrap_indent(t, tw, indent));
     m.page = m.page.min(pages.len() - 1);
     m.pages = Some((tw, pages));
+}
+
+/// FUN_10126c60's cut: `spans` gives the wrapped lines' byte offsets, `wrap` the lines as drawn.
+fn cut_pages(text: &str, mode97: bool, spans: impl Fn(&str) -> Vec<(usize, String)>, wrap: impl Fn(&str) -> Vec<String>) -> Vec<Vec<String>> {
+    let code = |c: &char| (crate::dat::font::CODE_BASE..crate::dat::font::CODE_BASE + 0x100).contains(&(*c as u32));
+    let mut rest = text.to_string();
+    let mut pages = Vec::new();
+    loop {
+        let Some(&(at, _)) = spans(&rest).get(4) else {
+            pages.push(wrap(&rest));
+            return pages;
+        };
+        pages.push(wrap(&rest[..at]).into_iter().take(4).collect());
+        let colour = rest[..at].chars().filter(code).last().map(String::from).unwrap_or_default();
+        rest = format!("{}{colour}{}", if mode97 { "" } else { "  " }, &rest[at..]);
+    }
 }
 
 /// A yes/no box (FUN_102075f0 / FUN_10233b50); `yes` is the highlighted answer. Some(answer) once clicked.
@@ -4475,8 +4492,6 @@ struct World {
     ae_tables: Option<Arc<crate::dat::merits::AeTables>>,
     /// The d_msg files of language slots 0x1d..0x21: merit, job point, gift, alter ego point and Monstrosity names.
     point_files: [Option<u32>; 5],
-    /// Slot 0x21's names (7f b5), loaded on first use.
-    mon_names: Option<Arc<crate::dat::names::DMsg>>,
     ae_data: Option<aepoints::AeData>,
     jp_list: HashMap<u16, (u8, u16)>,
     jp_seen: bool,
@@ -5924,7 +5939,6 @@ impl App {
                             ae_ui: None,
                             ae_tables: None,
                             point_files: self.point_files,
-                            mon_names: None,
                             ae_data: None,
                             jp_list: HashMap::new(),
                             jp_seen: false,
@@ -11159,5 +11173,41 @@ mod tests {
         for (d, s) in [(6.0, 0.9125), (10.0, 0.5625), (20.0, 0.3125), (50.0, 0.1625)] {
             assert!((plate_scale(d).unwrap() - s).abs() < 1e-4, "{d}");
         }
+    }
+}
+
+#[cfg(test)]
+mod page_tests {
+    /// FUN_10126c60: 4 lines a page; the next page starts with two spaces (none for mode 0x97) and the colour the cut
+    /// line had. A fake wrapper: 10 bytes a line, breaking at newlines.
+    #[test]
+    fn cut_pages_like_retail() {
+        let spans = |t: &str| {
+            let mut out = Vec::new();
+            let mut base = 0;
+            for part in t.split('\n') {
+                let mut i = 0;
+                loop {
+                    let end = (i + 10).min(part.len());
+                    out.push((base + i, part[i..end].to_string()));
+                    i = end;
+                    if i >= part.len() {
+                        break;
+                    }
+                }
+                base += part.len() + 1;
+            }
+            out
+        };
+        let wrap = |t: &str| spans(t).into_iter().map(|s| s.1).collect::<Vec<_>>();
+        let green = crate::dat::font::colour_code(2);
+        let text = format!("aaaa\nbbbb\ncccc\ndd{green}dd\neeee\nffff");
+        let pages = super::cut_pages(&text, false, spans, wrap);
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0], ["aaaa", "bbbb", "cccc", &format!("dd{green}dd")]);
+        assert_eq!(pages[1], [format!("  {green}eeee"), "ffff".to_string()]);
+        let pages = super::cut_pages(&text, true, spans, wrap);
+        assert_eq!(pages[1][0], format!("{green}eeee"));
+        assert_eq!(super::cut_pages("one", false, spans, wrap), [["one"]]);
     }
 }

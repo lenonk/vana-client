@@ -262,8 +262,8 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
 - Draw FUN_10118d60 / FUN_10118aa0, UI state FUN_10159ae0: stage 0 MODULATE2X (vertex 0x80808080 neutral),
   alpha test GREATER 0, glyphs additive SRCBLEND = DESTBLEND = ONE. The atlases hold coverage in RGB with a
   binary alpha mask: there is no outline or shadow. Gaiji use their own PS2 blend.
-- Unknown: chat colour codes 0x1E/0x1F and 0x7F xx (palette via FUN_101bcf00 -> FUN_10125fb0), auto-translate
-  0xFD blocks. fontshp is the sprite font for numbers, party / target names and name plates.
+- Chat colour codes 0x1E / 0x1F: MODLOG "Log lines: in-line colours and indents" (2019 FUN_10125fb0 is the mode
+  colour, current FUN_10129c70); auto-translate 0xFD blocks. fontshp is the sprite font for numbers, party / target names and name plates.
 
 ## HUD details (FFXiMain; checked live as Tuxedo)
 - Party window (FUN_101facc0) swaps layouts by member count instead of resizing: "menu    ptw0" outside a
@@ -679,7 +679,7 @@ Zone 230 is file 6650, with 16553 entries.
 | 18 / 19 n | 2 | Roster name (G+0x57d8 +2): 18 the record whose MemberNumber (+1) is n, n = 0 ours (FUN_100e8df0); 19 record n (FUN_100e8db0); none -> nothing |
 | 1c n | 2 | Event string n (msg+0xd04+n*0x100) |
 | 1d | 1 | Compass direction of the speaker (group 0xf) |
-| 1e xx | 2 | Colour |
+| 1e xx | 2 | Colour, copied into the line (MODLOG "Log lines: in-line colours and indents") |
 | 1f xx | 2 | Message mode, sets msg+4 |
 
 **Grammar block arguments** (`FUN_100bbd20`): a byte with 0x40 set is slot b & 0x3f. A low-6-bit value of 2 is an index packed 7 bits per byte over the next 3 bytes.
@@ -9951,3 +9951,29 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   spec 8.2).
 - Open (spec 8): the scenery ambient may be twice retail's (D3DRS_AMBIENT = ftol(ambient x 128)); the 3 blended pieces
   keep z writes in retail *(inf)*. Neither changed.
+
+## Log lines: in-line colours and indents (2026-10-26; spec ~/ffxi/lab/research/log_colour_codes_spec.md)
+
+- `1e xx` stays in the line through the expander (FUN_100c1650) and is drawn by FUN_10162140 (both logs, rem4line,
+  spoolmsg, the op 0x24 options): the running colour becomes FUN_10161fd0(xx), xx < 0x11 from the 17-entry table
+  0x103353c8 (0 = the line's own colour: 1e 00 / 01 / 09..10), else the colour-id table; the code colour replaces, only
+  the alpha comes from the draw. Codes have no width (FUN_10128950 / FUN_10128ae0 hide them while wrapping), and each
+  wrapped line starts with `1e <the last code>` (FUN_1012a4f0), so a colour carries over a wrap and a page break.
+- The English grammar wraps names (FUN_100be680 / FUN_100be690), after their article: items (0x20..0x2a) `1e 02`,
+  key items (0x30..0x36, 0x42..0x45) `1e 03`, Records of Eminence objectives (0x39 / 0x40 / 0x41) `1e 08`, each closed
+  by `1e 01`. "Obtained: Potion." shows the name green.
+- Continuation indent: FUN_10128ce0 wraps a log entry with wrapper mode 1 when the mode table row's flag byte (+3) is 1
+  (FUN_10127870): chat 0x01..0x12, NPC talk 0x8e..0x91, 0x96, 0x98, 0xd2..0xd8, 0xdb..0xde. In mode 1 every line after
+  the first, whether wrapped or after a 07 / 0d / 0a break (FUN_1025be40), starts with 81 40 (DAT_1036f120) and is
+  narrower by its width. Battle and system modes (flag 2) do not indent.
+- Event message pages (FUN_10126c60) only measure lines; a page after the first starts at its line with `20 20` (none
+  for mode 0x97) and `1e <colour>`. The message's own mode is 0 (msg+4 from FUN_100c2e20) unless a 1f code sets it:
+  mode 0 has no colour of its own (white) and no indent.
+- Ours: dat/font.rs keeps `1e xx` / `1f xx` as one char (CODE_BASE U+100400) through decode / encode, glyphs() maps them
+  to -0x100 - xx / -0x200 - xx, layout_line switches the colour (Font.codes from tables::code_colours); GameUi
+  wrap_indent / wrap_spans carry the colour and indent; ChatLog keeps an indent bit per line (BattleText::indents); the
+  event VM's messages take the Ctx of event::text_ctx (dates, roster, point names: they were missing there) and their
+  mode, sounds and pages (cut_pages).
+- Not modelled: `1e` from 0x11 (the colour-id table: retail timestamps use 1e 6a) and `1f xx` inside a line (mode xx's
+  colour from there on); the log add's mode-2 flag (every line indented).
+- Live (Lnxcsfix): "Obtained: Potion." with Potion in the code-2 green; the Home Point's line white as before.

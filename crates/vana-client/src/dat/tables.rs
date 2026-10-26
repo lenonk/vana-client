@@ -75,6 +75,13 @@ const TEXT_HELP: Sig = Sig {
     len: 0x40,
     md5: "17b93b0dfd37ab284614ea90cacc01c1",
 };
+/// FUN_10161fd0's table 0x103353c8: the colours of in-line codes `1e 00..10` (0 = the line's own colour).
+const CODE_COLOURS: Sig = Sig {
+    name: "colour codes",
+    hint: &[0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0xc0, 0x40, 0x40, 0xa0, 0x40, 0x40, 0x60],
+    len: 0x44,
+    md5: "23e1f4ec52b1b2f0d5ddc68efbf06f89",
+};
 const ERRORS: Sig = Sig { name: "error codes", hint: &[0x34, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00], len: 0x40, md5: "3e6e09a7959e57630975fc953b865925" };
 /// "No. of content IDs purchased: %2d"; the other three formats follow at -0x24 each.
 const COUNT_FMT: Sig = Sig { name: "count formats", hint: b"No. of conte", len: 0x18, md5: "2e622d8e177bbaaf8d9aee67475441ae" };
@@ -197,6 +204,12 @@ pub fn knockback(dll: &[u8]) -> Result<[[f32; 3]; 8]> {
         }
     }
     Ok(t)
+}
+
+/// The 17 colours (D3DCOLOR) of the in-line codes `1e 00..10`.
+pub fn code_colours(dll: &[u8]) -> Result<[u32; 17]> {
+    let at = find(dll, &CODE_COLOURS)?;
+    Ok(std::array::from_fn(|k| u32::from_le_bytes(dll[at + 4 * k..at + 4 * k + 4].try_into().unwrap())))
 }
 
 /// The file offset of a VA (data sections).

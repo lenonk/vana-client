@@ -283,6 +283,8 @@ pub struct Msg {
     pub page: usize,
     /// Pages already written to the log (FUN_10131e30 writes each as it opens).
     pub logged: usize,
+    /// msg+4 from a 1f code; 0 (no colour of its own, no indent) without one.
+    pub mode: Option<u8>,
 }
 
 impl Msg {
@@ -650,7 +652,8 @@ impl Host for LiveHost<'_> {
         log::debug!("event: {}", crate::event_vm::describe(&e));
         let index = self.st.start.index;
         match e {
-            Effect::Message { id, text, prompt, wait, speaker, op, place } => {
+            Effect::Message { id, text, prompt, wait, speaker, op, place, mode, sounds } => {
+                self.w.sounds.extend(sounds);
                 // FUN_100bf790: 02 / 03 set DAT_10476f98 / 9a and place the window there (FUN_10132030(1, x, y)).
                 if place.iter().any(Option::is_some) {
                     self.st.code_xy = (place[0].unwrap_or(self.st.code_xy.0), place[1].unwrap_or(self.st.code_xy.1));
@@ -666,7 +669,7 @@ impl Host for LiveHost<'_> {
                 }
                 let lines = text.split('\n').map(str::to_string).collect();
                 // Inferred: a 7f 34 / 7f 38 wait closes the line by itself, even before a 7f 31.
-                self.st.msg = Some(Msg { id, prompt: prompt && wait.is_none(), wait: wait.unwrap_or(0) as f32, open: 0.0, lines, pages: None, page: 0, logged: 0 });
+                self.st.msg = Some(Msg { id, prompt: prompt && wait.is_none(), wait: wait.unwrap_or(0) as f32, open: 0.0, lines, pages: None, page: 0, logged: 0, mode });
             }
             Effect::Choice { question, options, cursor, .. } => {
                 self.st.choice = Some(Choice { question, options, cursor, scroll: cursor.saturating_sub(2) });
@@ -1371,6 +1374,10 @@ impl Host for LiveHost<'_> {
     /// Hume F, Elvaan F, Tarutaru F, Mithra.
     fn female(&self) -> bool {
         matches!(self.w.my_race, 2 | 4 | 6 | 7)
+    }
+
+    fn text_ctx(&self) -> dialog::Ctx {
+        text_ctx(self.w)
     }
 
     fn game_config(&self, id: u16) -> u32 {
@@ -2285,30 +2292,15 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     true
 }
 
-/// The tables an event line's codes read (dialog::Texts); the point and Monstrosity names are loaded only for lines
-/// that use them.
+/// The tables a line's codes read (dialog::Texts); the point and Monstrosity names load on first use.
 struct EventTexts {
     bt: Option<Arc<crate::dat::battle::BattleText>>,
-    merits: Option<Arc<crate::dat::merits::MeritTables>>,
-    jp: Option<Arc<crate::dat::merits::JobPointTables>>,
-    ae: Option<Arc<crate::dat::merits::AeTables>>,
-    mon: Option<Arc<crate::dat::names::DMsg>>,
-}
-
-fn event_texts(w: &mut World, raw: &[u8]) -> EventTexts {
-    let has = |sub: u8| raw.windows(2).any(|p| p == [0x7f, sub]);
-    if has(0xb5) && w.mon_names.is_none()
-        && let (Some(index), Some(f)) = (w.index.clone(), w.point_files[4])
-    {
-        w.mon_names = crate::dat::names::DMsg::load(&index, f).map_err(|e| log::warn!("Monstrosity names {f}: {e:#}")).ok().map(Arc::new);
-    }
-    EventTexts {
-        bt: w.battle.clone(),
-        merits: if has(0xb0) { super::merits::tables(w) } else { None },
-        jp: if has(0xb1) { super::jobpoints::tables(w) } else { None },
-        ae: if has(0xb7) { super::aepoints::tables(w) } else { None },
-        mon: w.mon_names.clone(),
-    }
+    index: Option<Arc<crate::dat::DatIndex>>,
+    files: [Option<u32>; 5],
+    merits: std::sync::OnceLock<Option<Arc<crate::dat::merits::MeritTables>>>,
+    jp: std::sync::OnceLock<Option<Arc<crate::dat::merits::JobPointTables>>>,
+    ae: std::sync::OnceLock<Option<Arc<crate::dat::merits::AeTables>>>,
+    mon: std::sync::OnceLock<Option<crate::dat::names::DMsg>>,
 }
 
 impl dialog::Texts for EventTexts {
@@ -2317,17 +2309,46 @@ impl dialog::Texts for EventTexts {
     }
 
     fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>> {
+        use crate::dat::merits::{AeTables, JobPointTables, MeritTables};
+        let index = self.index.as_ref()?;
         let t = match sub {
-            0xb0 => self.merits.as_ref()?.name_of_id(id)?,
-            0xb1 => self.jp.as_ref()?.name(id),
-            _ => self.ae.as_ref()?.name(id),
+            0xb0 => self.merits.get_or_init(|| Some(Arc::new(MeritTables::load(index, self.files[0])))).as_ref()?.name_of_id(id)?,
+            0xb1 => self.jp.get_or_init(|| Some(Arc::new(JobPointTables::load(index, self.files[1])))).as_ref()?.name(id),
+            _ => self.ae.get_or_init(|| Some(Arc::new(AeTables::load(index, self.files[3])))).as_ref()?.name(id),
         };
         Some(crate::dat::font::encode_sjis(&t)).filter(|t| !t.is_empty())
     }
 
     fn monstrosity(&self, row: i16) -> Option<Vec<u8>> {
-        let t = self.mon.as_ref()?.text(usize::try_from(row).ok()?)?;
-        Some(crate::dat::font::encode_sjis(&t))
+        let mon = self.mon.get_or_init(|| {
+            let (index, f) = (self.index.as_ref()?, self.files[4]?);
+            crate::dat::names::DMsg::load(index, f).map_err(|e| log::warn!("Monstrosity names {f}: {e:#}")).ok()
+        });
+        Some(crate::dat::font::encode_sjis(&mon.as_ref()?.text(usize::try_from(row).ok()?)?))
+    }
+}
+
+/// What message codes take from the client (FUN_100c1650): the date strings, the roster, the other name tables.
+pub fn text_ctx(w: &World) -> dialog::Ctx {
+    let dates = w.battle.clone().map(|bt| {
+        let group10 = Box::new(move |id: u16| bt.group10_raw(id as usize));
+        Arc::new(dialog::Dates { group10, date_key: (w.game.get(0x95) & 3) as usize, h12: w.game.get(0x96) & 1 != 0 })
+    });
+    let texts = EventTexts {
+        bt: w.battle.clone(),
+        index: w.index.clone(),
+        files: w.point_files,
+        merits: w.merit_tables.clone().map(Some).map(std::sync::OnceLock::from).unwrap_or_default(),
+        jp: w.jp_tables.clone().map(Some).map(std::sync::OnceLock::from).unwrap_or_default(),
+        ae: w.ae_tables.clone().map(Some).map(std::sync::OnceLock::from).unwrap_or_default(),
+        mon: Default::default(),
+    };
+    dialog::Ctx {
+        dates,
+        party: w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect(),
+        me: w.my_id,
+        texts: Some(Arc::new(texts)),
+        ..Default::default()
     }
 }
 
@@ -2370,12 +2391,6 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         _ => String::new(),
     };
     let g = w.event.as_ref().map_or(w.event_mem.g, |l| l.rt.mem.g).map(|v| v as i32);
-    let dates = w.battle.clone().map(|bt| {
-        let group10 = Box::new(move |id: u16| bt.group10_raw(id as usize));
-        Arc::new(dialog::Dates { group10, date_key: (w.game.get(0x95) & 3) as usize, h12: w.game.get(0x96) & 1 != 0 })
-    });
-    let party = w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect();
-    let texts = Some(Arc::new(event_texts(w, &raw)) as Arc<dyn dialog::Texts>);
     let ctx = dialog::Ctx {
         player: w.name.clone(),
         speaker,
@@ -2384,12 +2399,8 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         strings: t.strings.clone(),
         female: matches!(w.my_race, 2 | 4 | 6 | 7),
         names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>),
-        dates,
         msg_name,
-        party,
-        me: w.my_id,
-        texts,
-        ..Default::default()
+        ..text_ctx(w)
     };
     let e = dialog::expand(&raw, &ctx);
     w.sounds.extend(&e.sounds);
@@ -2397,10 +2408,18 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
     const MODES: [u8; 8] = [0x8e, 0xa1, 0x90, 0x91, 0x92, 0xa1, 0x94, 0x95];
     let mode = e.mode.unwrap_or(MODES.get(t.kind as usize).copied().unwrap_or(0));
     let colour = w.battle.as_ref().map_or(super::WHITE, |bt| bt.colour_in(mode, &w.game));
+    // The log's wrapper (FUN_10128ce0) indents a flagged mode's continuation lines, and 07 starts one too.
+    let indent = w.battle.as_ref().is_some_and(|bt| bt.indents(mode));
     for (k, l) in e.lines.iter().enumerate() {
         let text = decode_sjis(l);
-        if k == 0 && !prefix.is_empty() {
-            w.chat.push_colour(format!("{prefix} : {text}"), colour);
+        let text = match k {
+            0 if !prefix.is_empty() => format!("{prefix} : {text}"),
+            0 => text,
+            _ if indent => format!("\u{3000}{text}"),
+            _ => text,
+        };
+        if indent {
+            w.chat.push_indented(text, colour);
         } else {
             w.chat.push_colour(text, colour);
         }

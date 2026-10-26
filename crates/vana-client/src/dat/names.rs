@@ -358,7 +358,9 @@ mod tests {
     fn grammar_blocks() {
         use crate::dat::dialog::{Ctx, expand};
         let ctx = Ctx { num: [536, 513, 0, 0, 0, 0, 0, 0], names: Some(std::sync::Arc::new(Stub)), ..Default::default() };
-        let line = |s: &[u8]| String::from_utf8(expand(s, &ctx).lines.concat()).unwrap();
+        let line = |s: &[u8]| crate::dat::font::strip_codes(&crate::dat::font::decode_sjis(&expand(s, &ctx).lines.concat()));
+        // FUN_100be760: the item's name in `1e 02` .. `1e 01`, after its article.
+        assert_eq!(expand(b"take \x01\x01\x01 \x01\x05\x24\x82\x80\x80\x80.", &ctx).lines.concat(), b"take an \x1e\x02adventurer coupon\x1e\x01.");
         // zone 230 #8311: article block, space, item-with-article block (num1)
         assert_eq!(line(b"called \x01\x01\x01 \x01\x05\x24\x82\x81\x80\x80."), "called a linkshell.");
         // #7704: bare item name (num0); an article before a vowel

@@ -250,9 +250,9 @@ impl LogWin {
             (self.slide, self.pending) = (0, 0);
         }
         let mut new = 0;
-        for ((line, colour), (time, is_chat)) in chat.iter_timed().skip(self.seen) {
+        for ((line, colour), (time, is_chat, indent)) in chat.iter_timed().skip(self.seen) {
             let st = stamps.text(time, is_chat);
-            for (k, piece) in gu.wrap(&format!("{st}{line}"), tw).into_iter().enumerate() {
+            for (k, piece) in gu.wrap_indent(&format!("{st}{line}"), tw, indent).into_iter().enumerate() {
                 let n = if k == 0 { st.trim_end().len().min(piece.len()) } else { 0 };
                 self.wrapped.push((piece, *colour, n));
                 new += 1;

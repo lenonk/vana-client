@@ -268,7 +268,9 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
     let line = lines.len() - 1;
     let push = |lines: &mut [Vec<u8>], t: &str| lines[line].extend_from_slice(&encode_sjis(t));
     let names = ctx.names.as_deref();
-    let noun = |lines: &mut [Vec<u8>], pending: &mut Pending, n: super::names::Noun, form: u8| {
+    // FUN_100be760 wraps each name in `1e c` .. `1e 01` (FUN_100be680 / FUN_100be690), after its article: items 2, key
+    // items 3, Records of Eminence objectives 8.
+    let noun = |lines: &mut [Vec<u8>], pending: &mut Pending, n: super::names::Noun, form: u8, colour: u8| {
         let (text, mode, an) = match form {
             0 => (n.bare, n.mode, n.an),
             1 => (n.singular, 3, n.singular_an),
@@ -285,7 +287,9 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
                 lines[l].splice(pos..pos, a);
             }
         }
+        lines[line].extend_from_slice(&[0x1e, colour]);
         push(lines, &text);
+        lines[line].extend_from_slice(&[0x1e, 1]);
     };
     match kind {
         0x01 | 0x02 => *pending = Some((line, lines[line].len(), kind == 0x02)),
@@ -296,7 +300,7 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
         0x20..=0x28 => {
             let k = kind - 0x20;
             if let Some(n) = at(k / 3).and_then(|id| names?.item(id)) {
-                noun(lines, pending, n, k % 3);
+                noun(lines, pending, n, k % 3, 2);
             }
         }
         // 0x29 / 0x2a (FUN_100be760): a count index then an item index, both from num (0x29) or work (0x2a); one is
@@ -313,13 +317,13 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
             let count = val(idx(args));
             let item = val(args.get(4..).and_then(idx));
             if let Some(n) = item.and_then(|id| names?.item(id)) {
-                noun(lines, pending, n, if count == Some(1) { 1 } else { 2 });
+                noun(lines, pending, n, if count == Some(1) { 1 } else { 2 }, 2);
             }
         }
         0x30..=0x35 | 0x42..=0x44 => {
             let k = if kind >= 0x42 { kind - 0x42 + 6 } else { kind - 0x30 };
             if let Some(n) = at(k / 3).and_then(|id| names?.key_item(id)) {
-                noun(lines, pending, n, k % 3);
+                noun(lines, pending, n, k % 3, 3);
             }
         }
         // 0x36 / 0x45 (current FUN_100be760): a key item from num[] / work[] with its own article, "the" for key item
@@ -334,7 +338,10 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
                     (false, 3) => "a",
                     _ => "some",
                 };
-                push(lines, &format!("{art} {}", n.bare));
+                push(lines, &format!("{art} "));
+                lines[line].extend_from_slice(&[0x1e, 3]);
+                push(lines, &n.bare);
+                lines[line].extend_from_slice(&[0x1e, 1]);
             }
         }
         // Records of Eminence objectives: item id + 0xe000 (FUN_100bc8a0 0x39 / 0x40 / 0x41).
@@ -345,7 +352,7 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
                 _ => 2,
             };
             if let Some(n) = at(src).and_then(|id| names?.item(id + 0xe000)) {
-                noun(lines, pending, n, 0);
+                noun(lines, pending, n, 0, 8);
             }
         }
         // Message group 0x14: place names.
@@ -396,12 +403,20 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     // (FUN_100c0c40); the next grammar block or name clears it.
     let mut cap: Option<(usize, usize)> = None;
     let capital = |lines: &mut Vec<Vec<u8>>, cap: &mut Option<(usize, usize)>| {
-        if let Some((l, pos)) = cap.take()
-            && let Some(b) = lines.get_mut(l).and_then(|line| line.get_mut(pos))
+        if let Some((l, mut pos)) = cap.take()
+            && let Some(line) = lines.get_mut(l)
         {
-            b.make_ascii_uppercase();
+            // FUN_100c2bf0 passes colour codes by.
+            while line.get(pos) == Some(&0x1e) {
+                pos += 2;
+            }
+            if let Some(b) = line.get_mut(pos) {
+                b.make_ascii_uppercase();
+            }
         }
     };
+    // The last `1e xx`: a new line starts with it again (the wrapper FUN_1012a4f0 carries it, 1 = the line colour).
+    let mut colour = 1u8;
     let mut i = 0;
     let push = |lines: &mut Vec<Vec<u8>>, b: &[u8]| lines.last_mut().unwrap().extend_from_slice(b);
     let alt = |from: usize, k: usize| -> (Vec<u8>, usize) {
@@ -420,7 +435,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
             }
             0x00 => break,
             0x07 => {
-                lines.push(Vec::new());
+                lines.push(if colour == 1 { Vec::new() } else { vec![0x1e, colour] });
                 1
             }
             0x08 => {
@@ -513,7 +528,12 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 }
                 2
             }
-            0x1e | 0x10..=0x19 | 0x1b => 2,
+            0x1e => {
+                push(&mut lines, &[0x1e, a as u8]);
+                colour = a as u8;
+                2
+            }
+            0x10..=0x19 | 0x1b => 2,
             0x7f => match a as u8 {
                 0x31 => {
                     prompt = true;
@@ -633,7 +653,8 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
         };
         i += step;
     }
-    while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
+    // A line of colour codes alone is blank.
+    while lines.len() > 1 && lines.last().is_some_and(|l| l.chunks(2).all(|c| c.len() == 2 && c[0] == 0x1e)) {
         lines.pop();
     }
     Expanded { lines, prompt, choice, wait, place, mode, sounds }
@@ -686,10 +707,10 @@ mod tests {
         let ctx = |num0| Ctx { strings: vec!["Lnxtest".into()], num: [num0, 1, 0, 0, 0, 0, 0, 0], names: names.clone(), ..Default::default() };
         let d = Dialog::load(&index, 236).unwrap();
         let e = expand(&d.raw(7164).unwrap(), &ctx(4401));
-        assert_eq!(crate::dat::font::decode_sjis(&e.lines[0]), "Lnxtest caught a moat carp!");
+        assert_eq!(crate::dat::font::strip_codes(&crate::dat::font::decode_sjis(&e.lines[0])), "Lnxtest caught a moat carp!");
         let d = Dialog::load(&index, 103).unwrap();
         let e = expand(&d.raw(8099).unwrap(), &ctx(4112));
-        assert_eq!((crate::dat::font::decode_sjis(&e.lines[0]).as_str(), e.mode), ("Lnxtest obtains a potion!", Some(0x79)));
+        assert_eq!((crate::dat::font::strip_codes(&crate::dat::font::decode_sjis(&e.lines[0])).as_str(), e.mode), ("Lnxtest obtains a potion!", Some(0x79)));
     }
 
     /// Selbina 6865 (Isacio, Elder Memories): `7f 80 01` then kind 0x36 on num[0] = key item 2825 (the script's
@@ -701,7 +722,7 @@ mod tests {
         let names = crate::dat::names::Names::load(&index, crate::dat::items::Lang::En).ok().map(|n| std::sync::Arc::new(n) as std::sync::Arc<dyn crate::dat::names::NameSource>);
         let d = Dialog::load(&index, 248).unwrap();
         let e = expand(&d.raw(6865).unwrap(), &Ctx { num: [2825, 0, 0, 0, 0, 0, 0, 0], names, ..Default::default() });
-        assert_eq!(crate::dat::font::decode_sjis(&e.lines[0]), "A Gilgamesh's introductory letter would be fine, too...if you can find one.");
+        assert_eq!(crate::dat::font::strip_codes(&crate::dat::font::decode_sjis(&e.lines[0])), "A Gilgamesh's introductory letter would be fine, too...if you can find one.");
     }
 
     /// East Ronfaure 7906 (a field manual page): `7f 92 00 [/s]` by num[0].
@@ -769,7 +790,7 @@ mod tests {
         let cfg = crate::config::Config::load();
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok()?;
         let e = expand(&Dialog::load(&index, zone).ok()?.raw(id)?, ctx);
-        Some(e.lines.iter().map(|l| decode_sjis(l)).collect::<Vec<_>>().join("|"))
+        Some(e.lines.iter().map(|l| crate::dat::font::strip_codes(&decode_sjis(l))).collect::<Vec<_>>().join("|"))
     }
 
     /// FUN_100c1650's other codes on real lines: 7f b5 (zone 71), 7f b4 (280), 7f 94 (1), 18 (1), 7f 93 (43), 7f 95 /

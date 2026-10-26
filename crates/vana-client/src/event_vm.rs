@@ -48,7 +48,8 @@ pub enum Packet {
 pub enum Effect {
     /// Dialogue line; the window stays open until [`Runtime::close_message`].
     /// `place`: the text's 02 / 03 window position codes.
-    Message { op: u8, speaker: Option<u32>, id: u32, text: String, prompt: bool, wait: Option<u32>, place: [Option<i16>; 2] },
+    /// `mode`: a 1f code's (msg+4); `sounds`: the 0d / 0e SeSep ids played as the text was built.
+    Message { op: u8, speaker: Option<u32>, id: u32, text: String, prompt: bool, wait: Option<u32>, place: [Option<i16>; 2], mode: Option<u8>, sounds: Vec<u32> },
     /// Choice menu (op 0x24); answer with [`Runtime::choose`].
     Choice { id: u32, question: String, options: Vec<(u32, String)>, cursor: usize },
     /// Scheduler start (0x45 and family): file id (base + n), tag, actor, target, param.
@@ -117,6 +118,10 @@ pub trait Host {
     }
     fn female(&self) -> bool {
         false
+    }
+    /// The client's side of the text codes (date strings, the roster, other name tables).
+    fn text_ctx(&self) -> Ctx {
+        Ctx::default()
     }
     /// Start position (x, height, z) and direction of a bound actor.
     fn place(&self, _actor: u32) -> ([f32; 3], f32) {
@@ -929,7 +934,7 @@ impl Runtime {
             strings: self.start.strings.clone(),
             female: host.female(),
             names: self.names.clone(),
-            ..Default::default()
+            ..host.text_ctx()
         }
     }
 
@@ -950,7 +955,7 @@ impl Runtime {
             self.last_speaker = about;
         }
         let (text, prompt, e) = self.text(id, self.last_speaker, host);
-        let (wait, place) = e.map_or((None, [None; 2]), |e| (e.wait, e.place));
+        let (wait, place, mode, sounds) = e.map_or((None, [None; 2], None, Vec::new()), |e| (e.wait, e.place, e.mode, e.sounds));
         let name = speaker.map(|s| host.name(s));
         let text = match name {
             Some(n) => format!("{n} : {text}"),
@@ -958,7 +963,7 @@ impl Runtime {
         };
         let body = self.vms[v].body;
         self.bodies[body].msg_actor = speaker;
-        host.effect(Effect::Message { op, speaker, id, text, prompt, wait, place });
+        host.effect(Effect::Message { op, speaker, id, text, prompt, wait, place, mode, sounds });
     }
 
     /// Operands of a generic op from the opcode table.

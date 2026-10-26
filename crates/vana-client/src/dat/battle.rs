@@ -70,6 +70,14 @@ pub struct Line {
     pub mode: Option<u8>,
 }
 
+#[cfg(test)]
+impl Line {
+    /// The lines without their colour codes.
+    fn plain(&self) -> Vec<String> {
+        self.lines.iter().map(|l| super::font::strip_codes(l)).collect()
+    }
+}
+
 pub struct BattleText {
     basic: Dialog,
     skills: Option<Dialog>,
@@ -101,6 +109,8 @@ pub struct BattleText {
     tables: [Option<Messages>; 3],
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
+    /// The table's flag byte 1 (FUN_10127870): the log indents the mode's continuation lines.
+    indent_modes: Vec<u16>,
     palette: Vec<(u8, [u8; 4])>,
     /// Chat filter (FUN_100abf20 / FUN_100ac450): kind per message (0x10350a60) and 11 relation tables of 49
     /// words (pointers at 0x10351bbc): top 2 bits pick config 0x32 / 0x33, the low 30 the bits.
@@ -154,10 +164,16 @@ impl BattleText {
         let basic = dialog(SLOT_BASIC).context("battle messages")?;
         let t = super::tables::of(ffximain)?;
         let modes = t.mode_tables.iter().map(|&va| va_bytes(ffximain, va, 1024).and_then(|b| b.try_into().ok()).context("mode table")).collect::<Result<Vec<[u8; 1024]>>>()?;
-        let mut mode_colours = Vec::new();
+        let mut mode_colours: Vec<(u16, u8)> = Vec::new();
+        let mut indent_modes = Vec::new();
         let mut at = t.mode_colours;
         while let Some(e) = va_bytes(ffximain, at, 4).filter(|e| e[0] | e[1] != 0) {
-            mode_colours.push((u16::from_le_bytes([e[0], e[1]]), e[2]));
+            let m = u16::from_le_bytes([e[0], e[1]]);
+            // The first row of a mode decides.
+            if e[3] == 1 && !mode_colours.iter().any(|r| r.0 == m) {
+                indent_modes.push(m);
+            }
+            mode_colours.push((m, e[2]));
             at += 4;
         }
         let mut palette = Vec::new();
@@ -200,6 +216,7 @@ impl BattleText {
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
             mode_colours,
+            indent_modes,
             palette,
         })
     }
@@ -216,6 +233,12 @@ impl BattleText {
             Relation::Other => 6,
         };
         self.modes[t].get(id as usize).copied().unwrap_or(HIDDEN)
+    }
+
+    /// FUN_10127870: the log's wrapper starts the mode's continuation lines with a full-width space (chat 0x01..0x12,
+    /// NPC talk 0x8e..0x91, ...).
+    pub fn indents(&self, mode: u8) -> bool {
+        self.indent_modes.contains(&(mode as u16))
     }
 
     /// Line colour of a chat mode, BGRA with 0x80 = 1.0; 0x80808080 when unlisted (FUN_10126040).
@@ -415,7 +438,10 @@ impl BattleText {
                             out.splice(pos..pos, art.bytes());
                             *start = (*start).min(pos);
                         }
+                        // FUN_100be760: an item's name in `1e 02` .. `1e 01`, after its article.
+                        out.extend([0x1e, 2]);
                         out.extend(encode_sjis(&text));
+                        out.extend([0x1e, 1]);
                     };
                     match body.first() {
                         // Kinds 1 / 2 (FUN_1025a400(0 / 1)): an article for the next noun.
@@ -439,7 +465,9 @@ impl BattleText {
                         Some(&k @ (0x39 | 0x40 | 0x41)) => {
                             let n = if k == 0x39 { idx as i32 } else { work(slot) };
                             if let Some(o) = self.items.as_ref().and_then(|it| super::roe::objective(it, (n + 0xe000) as u16)) {
+                                out.extend([0x1e, 8]);
                                 out.extend(encode_sjis(&o.name));
+                                out.extend([0x1e, 1]);
                             }
                         }
                         // FUN_100bdc50 cases 6 / 7 / 9: a line of table 0 / 1 / 2 by num / work / work (num read as work).
@@ -510,7 +538,12 @@ impl BattleText {
                     out.extend(work(a).to_string().bytes());
                     2
                 }
-                0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a | 0x1e => 2,
+                // 1e xx: kept for the log's draw (FUN_10162140).
+                0x1e => {
+                    out.extend([0x1e, a]);
+                    2
+                }
+                0x0d | 0x0e | 0x11 | 0x13 | 0x17..=0x19 | 0x1a => 2,
                 0x7f => match a {
                     0x80 => {
                         case_mode = s.get(i + 2).copied().unwrap_or(0);
@@ -608,6 +641,10 @@ fn apply_case(t: &mut [u8], mode: u8) {
         if c >= 0x80 {
             i += 2;
             (first, word_start) = (false, false);
+            continue;
+        }
+        if c == 0x1e {
+            i += 2;
             continue;
         }
         match mode {
@@ -728,8 +765,8 @@ mod tests {
     fn status_noun_and_adjective() {
         let Some(b) = load() else { return };
         let ctx = Ctx { target: pc("Lnxtest"), work: [10, 0, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.expand(204, &ctx).unwrap().lines, ["Lnxtest is no longer stunned."]);
-        assert_eq!(b.expand(206, &ctx).unwrap().lines, ["Lnxtest's stun effect wears off."]);
+        assert_eq!(b.expand(204, &ctx).unwrap().plain(), ["Lnxtest is no longer stunned."]);
+        assert_eq!(b.expand(206, &ctx).unwrap().plain(), ["Lnxtest's stun effect wears off."]);
     }
 
     /// Message 180 (s2c 0x009): "You throw away a potion." for one, "... 3 potions." for more.
@@ -737,8 +774,8 @@ mod tests {
     fn throw_away_counts() {
         let Some(bt) = load() else { return };
         let ctx = |n: i32| Ctx { work: [4112, n, 0, 0, 0], ..Default::default() };
-        assert_eq!(bt.system(180, &ctx(1)).unwrap().lines, vec!["You throw away a potion.".to_string()]);
-        assert_eq!(bt.system(180, &ctx(3)).unwrap().lines, vec!["You throw away 3 potions.".to_string()]);
+        assert_eq!(bt.system(180, &ctx(1)).unwrap().plain(), vec!["You throw away a potion.".to_string()]);
+        assert_eq!(bt.system(180, &ctx(3)).unwrap().plain(), vec!["You throw away 3 potions.".to_string()]);
     }
 
     /// Delivery lines (7031 0xbe / 0xaa): 7f b4 n is "N gil" with separators, 1c n a string slot.
@@ -746,9 +783,9 @@ mod tests {
     fn delivery_gil_and_string() {
         let Some(bt) = load() else { return };
         let ctx = Ctx { work: [2, 0, 12345, 0, 0], strings: ["delivery".into(), String::new()], ..Default::default() };
-        assert_eq!(bt.system(0xbe, &ctx).unwrap().lines, vec!["You take the 12,345 gil out of delivery slot 2.".to_string()]);
+        assert_eq!(bt.system(0xbe, &ctx).unwrap().plain(), vec!["You take the 12,345 gil out of delivery slot 2.".to_string()]);
         let ctx = Ctx { work: [3, 1, 0, 0, 0], strings: ["Lnxcsfix".into(), String::new()], ..Default::default() };
-        assert_eq!(bt.system(0xaa, &ctx).unwrap().lines, vec!["Slot 3:".to_string(), "1 gil, sent to you by Lnxcsfix.".to_string()]);
+        assert_eq!(bt.system(0xaa, &ctx).unwrap().plain(), vec!["Slot 3:".to_string(), "1 gil, sent to you by Lnxcsfix.".to_string()]);
     }
 
     /// A skill up (message 38): 7f 9b prints work[1] x 0.1 as "%.1f"; /lastsynth check's material: 0a, then the
@@ -757,13 +794,13 @@ mod tests {
     fn skill_up_and_counts() {
         let Some(b) = load() else { return };
         let ctx = Ctx { target: pc("Lnxcsfix"), work: [49, 1, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.expand(38, &ctx).unwrap().lines, ["Lnxcsfix's woodworking skill rises 0.1 points."]);
+        assert_eq!(b.expand(38, &ctx).unwrap().plain(), ["Lnxcsfix's woodworking skill rises 0.1 points."]);
         let ctx = Ctx { work: [698, 1, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.system(0x111, &ctx).unwrap().lines, ["1 ash log."]);
+        assert_eq!(b.system(0x111, &ctx).unwrap().plain(), ["1 ash log."]);
         let ctx = Ctx { work: [698, 2, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.system(0x111, &ctx).unwrap().lines, ["2 ash logs."]);
+        assert_eq!(b.system(0x111, &ctx).unwrap().plain(), ["2 ash logs."]);
         let ctx = Ctx { work: [715, 1, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.system(0xa0, &ctx).unwrap().lines, ["You synthesized a piece of ash lumber."]);
+        assert_eq!(b.system(0xa0, &ctx).unwrap().plain(), ["You synthesized a piece of ash lumber."]);
     }
 
     /// Synthesis lines (7031 0xa4 / 0xcc): 7f 80 1 capitalises the article; grammar kind 1 is the article token.
@@ -771,9 +808,9 @@ mod tests {
     fn synthesis_lost_lines() {
         let Some(bt) = load() else { return };
         let ctx = Ctx { work: [698, 0, 0, 0, 0], ..Default::default() };
-        assert_eq!(bt.system(0xa4, &ctx).unwrap().lines, vec!["An ash log was lost.".to_string()]);
+        assert_eq!(bt.system(0xa4, &ctx).unwrap().plain(), vec!["An ash log was lost.".to_string()]);
         let ctx = Ctx { work: [698, 0, 0, 0, 0], strings: ["Lnxcsfix".into(), String::new()], ..Default::default() };
-        assert_eq!(bt.system(0xcc, &ctx).unwrap().lines, vec!["Lnxcsfix lost an ash log.".to_string()]);
+        assert_eq!(bt.system(0xcc, &ctx).unwrap().plain(), vec!["Lnxcsfix lost an ash log.".to_string()]);
     }
 
     fn mob(name: &str) -> Option<Who> {
@@ -785,7 +822,7 @@ mod tests {
     fn random_roll() {
         let Some(bt) = load() else { return };
         let ctx = Ctx { strings: ["Lnxtest".into(), "523".into()], ..Default::default() };
-        assert_eq!(bt.system(88, &ctx).unwrap().lines, ["Dice roll! Lnxtest rolls 523!"]);
+        assert_eq!(bt.system(88, &ctx).unwrap().plain(), ["Dice roll! Lnxtest rolls 523!"]);
     }
 
     /// Treasure pool lines (s2c 0x0D2 / 0x0D3): the find (0x10, target the dropper), a lot (0x11: slot 2 the points,
@@ -794,11 +831,11 @@ mod tests {
     fn treasure_lines() {
         let Some(bt) = load() else { return };
         let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], ..Default::default() };
-        assert_eq!(bt.system(0x10, &ctx).unwrap().lines, ["You find an ash log on the Wild Rabbit."]);
+        assert_eq!(bt.system(0x10, &ctx).unwrap().plain(), ["You find an ash log on the Wild Rabbit."]);
         let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], strings: ["523".into(), "Lnxtest".into()], ..Default::default() };
-        assert_eq!(bt.system(0x11, &ctx).unwrap().lines, ["Lnxtest's lot for the ash log: 523 points."]);
+        assert_eq!(bt.system(0x11, &ctx).unwrap().plain(), ["Lnxtest's lot for the ash log: 523 points."]);
         let ctx = Ctx { target: mob("Wild Rabbit"), work: [698, 0, 0, 0, 0], strings: ["Lnxtest".into(), String::new()], ..Default::default() };
-        assert_eq!(bt.system(0x12, &ctx).unwrap().lines, ["Lnxtest obtains an ash log."]);
+        assert_eq!(bt.system(0x12, &ctx).unwrap().plain(), ["Lnxtest obtains an ash log."]);
     }
 
     /// File 7025: /wave is entries 16 (a target) and 17; /no takes the caster's [his/her].
@@ -807,9 +844,9 @@ mod tests {
         let Some(bt) = load() else { return };
         let me = |female| Some(Who { name: "Lnxtest".into(), pc: true, female, ..Default::default() });
         let ctx = Ctx { actor: me(false), target: Some(Who { name: "Rahal".into(), named: true, ..Default::default() }), ..Default::default() };
-        assert_eq!(bt.emote(17, &ctx).unwrap().lines, ["Lnxtest waves."]);
-        assert_eq!(bt.emote(16, &ctx).unwrap().lines, ["Lnxtest waves to Rahal."]);
-        let line = |female| bt.emote(13, &Ctx { actor: me(female), ..Default::default() }).unwrap().lines.join(" ");
+        assert_eq!(bt.emote(17, &ctx).unwrap().plain(), ["Lnxtest waves."]);
+        assert_eq!(bt.emote(16, &ctx).unwrap().plain(), ["Lnxtest waves to Rahal."]);
+        let line = |female| bt.emote(13, &Ctx { actor: me(female), ..Default::default() }).unwrap().plain().join(" ");
         assert!(line(false).contains("his") && line(true).contains("her"));
     }
 
@@ -821,25 +858,25 @@ mod tests {
     fn basic_messages() {
         let Some(b) = load() else { return };
         let ctx = Ctx { actor: pc("Tuxedo"), target: mob("Wild Rabbit"), work: [0, 5, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.expand(1, &ctx).unwrap().lines, ["Tuxedo hits the Wild Rabbit for 5 points of damage."]);
+        assert_eq!(b.expand(1, &ctx).unwrap().plain(), ["Tuxedo hits the Wild Rabbit for 5 points of damage."]);
         let one = Ctx { work: [0, 1, 0, 0, 0], ..ctx.clone() };
-        assert_eq!(b.expand(1, &one).unwrap().lines, ["Tuxedo hits the Wild Rabbit for 1 point of damage."]);
+        assert_eq!(b.expand(1, &one).unwrap().plain(), ["Tuxedo hits the Wild Rabbit for 1 point of damage."]);
         let back = Ctx { actor: mob("Wild Rabbit"), target: pc("Tuxedo"), ..ctx.clone() };
-        assert_eq!(b.expand(1, &back).unwrap().lines, ["The Wild Rabbit hits Tuxedo for 5 points of damage."]);
-        assert_eq!(b.expand(15, &back).unwrap().lines, ["The Wild Rabbit misses Tuxedo."]);
-        assert_eq!(b.expand(6, &ctx).unwrap().lines, ["Tuxedo defeats the Wild Rabbit."]);
+        assert_eq!(b.expand(1, &back).unwrap().plain(), ["The Wild Rabbit hits Tuxedo for 5 points of damage."]);
+        assert_eq!(b.expand(15, &back).unwrap().plain(), ["The Wild Rabbit misses Tuxedo."]);
+        assert_eq!(b.expand(6, &ctx).unwrap().plain(), ["Tuxedo defeats the Wild Rabbit."]);
         // Named (proper noun) and plural monsters: "Ding Bats hit".
         let bats = Ctx { actor: Some(Who { name: "Ding Bats".into(), named: true, plural: true, pc: false, female: false }), target: pc("Tuxedo"), ..ctx.clone() };
-        assert_eq!(b.expand(1, &bats).unwrap().lines, ["Ding Bats hit Tuxedo for 5 points of damage."]);
+        assert_eq!(b.expand(1, &bats).unwrap().plain(), ["Ding Bats hit Tuxedo for 5 points of damage."]);
         // Experience (0x02D work[0]) and level up, which sets mode 0x79 with 1f 'y'.
         let exp = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [50, 0, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.expand(8, &exp).unwrap().lines, ["Tuxedo gains 50 experience points."]);
+        assert_eq!(b.expand(8, &exp).unwrap().plain(), ["Tuxedo gains 50 experience points."]);
         let lv = Ctx { work: [2, 0, 0, 0, 0], ..exp };
         let l = b.expand(9, &lv).unwrap();
         assert_eq!((l.lines.as_slice(), l.mode), (["Tuxedo attains level 2!".to_string()].as_slice(), Some(0x79)));
         // Spell names (55702) and two-line messages.
         let cure = Ctx { actor: pc("Tuxedo"), target: pc("Tuxedo"), work: [1, 12, 0, 0, 0], ..Default::default() };
-        assert_eq!(b.expand(7, &cure).unwrap().lines, ["Tuxedo casts Cure.", "Tuxedo recovers 12 HP."]);
+        assert_eq!(b.expand(7, &cure).unwrap().plain(), ["Tuxedo casts Cure.", "Tuxedo recovers 12 HP."]);
     }
 
     #[test]

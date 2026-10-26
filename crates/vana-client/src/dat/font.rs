@@ -93,6 +93,8 @@ pub struct Font {
     /// Shape textures by IMG name (e.g. "font    elfire").
     pub textures: HashMap<String, Texture>,
     pub lang: u8,
+    /// The colours of in-line codes `1e 00..10` (FUN_10161fd0's table; 0 = the line's own colour).
+    pub codes: [u32; 17],
 }
 
 /// Shift-JIS lead byte as the client tests it (FUN_1011a3e0).
@@ -151,7 +153,11 @@ pub fn glyphs(sjis: &[u8]) -> Vec<i32> {
     let mut out = Vec::with_capacity(sjis.len());
     let mut i = 0;
     while i < sjis.len() && sjis[i] != 0 {
-        if is_lead(sjis[i]) && i + 1 < sjis.len() {
+        // FUN_101284f0: `1e xx` -> -0x100 - xx, `1f xx` -> -0x200 - xx (no width).
+        if matches!(sjis[i], 0x1e | 0x1f) && i + 1 < sjis.len() {
+            out.push(-0x100 * (sjis[i] as i32 - 0x1d) - sjis[i + 1] as i32);
+            i += 2;
+        } else if is_lead(sjis[i]) && i + 1 < sjis.len() {
             out.push(sjis_index(sjis[i], sjis[i + 1]));
             i += 2;
         } else {
@@ -240,7 +246,8 @@ impl Font {
         if cell_px == 0 || atlas.height != cell_px * ROWS as u32 {
             bail!("font atlas is {}x{}, expected 64x128 cells", atlas.width, atlas.height);
         }
-        Ok(Self { atlas, cell_px, widths: widths.iter().map(|&b| b as i8).collect(), gaiji, textures, lang })
+        let codes = super::tables::code_colours(ffximain).map_err(|e| log::warn!("{e:#}")).unwrap_or_default();
+        Ok(Self { atlas, cell_px, widths: widths.iter().map(|&b| b as i8).collect(), gaiji, textures, lang, codes })
     }
 
     /// Pen advance of a glyph index (FUN_1011a1f0).
@@ -261,7 +268,16 @@ impl Font {
     /// `color` is BGRA with 0x80 = 1.0; gaiji shapes ignore it (drawn with 0x80808080).
     pub fn layout_line(&self, sjis: &[u8], x: i32, y: i32, color: [u8; 4], scale: [f32; 2], out: &mut Vec<Quad>) -> i32 {
         let mut pen = x;
+        let mut color = color;
+        let base = color;
         for g in glyphs(sjis) {
+            // FUN_10162140: `1e xx` replaces the colour (0 = the line's own), keeping the draw's alpha. `1e` from 0x11
+            // (the colour-id table) and `1f` (a mode's colour) are not modelled.
+            if (-0x110..=-0x100).contains(&g) {
+                let c = self.codes[(-0x100 - g) as usize].to_le_bytes();
+                color = if c == [0; 4] { base } else { [c[0], c[1], c[2], base[3]] };
+                continue;
+            }
             // French layout pulls the full-width opening quote 8 px left.
             if g == 0x87 && self.lang == 2 && pen >= 8 {
                 pen -= 8;
@@ -382,6 +398,20 @@ impl Font {
 /// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
 const PAIR_BASE: u32 = 0xF0000;
 
+/// An in-line code `1e xx` / `1f xx` kept in a String as one character, U+100400 + 0x100 x (code - 0x1e) + xx, so a
+/// wrap never splits it and encode_sjis gives the bytes back.
+pub const CODE_BASE: u32 = 0x10_0400;
+
+/// The character of the colour code `1e xx`.
+pub fn colour_code(xx: u8) -> char {
+    char::from_u32(CODE_BASE + xx as u32).unwrap()
+}
+
+/// The text without its in-line codes.
+pub fn strip_codes(s: &str) -> String {
+    s.chars().filter(|c| !(CODE_BASE..CODE_BASE + 0x200).contains(&(*c as u32))).collect()
+}
+
 /// An auto-translate phrase (`FD kind lang hi lo FD`) kept in a String: its four inner bytes as U+100000 + 0x100 x
 /// position + byte, so encode_sjis gives the block back.
 pub const PHRASE_BASE: u32 = 0x10_0000;
@@ -396,6 +426,11 @@ pub fn decode_sjis(sjis: &[u8]) -> String {
                 out.push(char::from_u32(PHRASE_BASE + 0x100 * k as u32 + x as u32).unwrap());
             }
             i += 6;
+            continue;
+        }
+        if matches!(b, 0x1e | 0x1f) && i + 1 < sjis.len() {
+            out.push(char::from_u32(CODE_BASE + 0x100 * (b - 0x1e) as u32 + sjis[i + 1] as u32).unwrap());
+            i += 2;
             continue;
         }
         if is_lead(b) && i + 1 < sjis.len() {
@@ -443,6 +478,8 @@ pub fn encode_sjis(text: &str) -> Vec<u8> {
             if k == 3 {
                 out.push(0xFD);
             }
+        } else if (CODE_BASE..CODE_BASE + 0x200).contains(&cp) {
+            out.extend_from_slice(&[0x1e + ((cp - CODE_BASE) >> 8) as u8, cp as u8]);
         } else if (0xE000..0xE000 + (GAIJI_END - GAIJI_FIRST) as u32).contains(&cp) {
             out.extend_from_slice(&[0xEF, 0x1F + (cp - 0xE000) as u8]);
         } else if (PAIR_BASE..PAIR_BASE + 0x10000).contains(&cp) {

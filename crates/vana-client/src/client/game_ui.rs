@@ -1391,22 +1391,61 @@ impl GameUi {
 
     /// Splits a line into pieces no wider than `max`, at each '\n' and at spaces where possible.
     pub fn wrap(&self, line: &str, max: f32) -> Vec<String> {
-        line.split('\n').flat_map(|part| self.wrap_part(part, max)).collect()
+        self.wrap_indent(line, max, false)
     }
 
-    fn wrap_part(&self, line: &str, max: f32) -> Vec<String> {
+    /// FUN_1012a4f0: each wrapped line starts with the last `1e xx` before it, so a colour carries over; with `indent`
+    /// (wrapper mode 1) a continuation line starts with a full-width space and is narrower by its width.
+    pub fn wrap_indent(&self, line: &str, max: f32, indent: bool) -> Vec<String> {
+        let code = |c: &char| (crate::dat::font::CODE_BASE..crate::dat::font::CODE_BASE + 0x100).contains(&(*c as u32));
+        let line_colour = crate::dat::font::colour_code(1);
+        let mut cur = line_colour;
+        let mut out = Vec::new();
+        for (_, piece) in self.wrap_spans(line, max, indent) {
+            let mut s = if out.is_empty() || !indent { String::new() } else { "\u{3000}".to_string() };
+            if cur != line_colour {
+                s.push(cur);
+            }
+            s.push_str(&piece);
+            cur = piece.chars().filter(code).last().unwrap_or(cur);
+            out.push(s);
+        }
+        out
+    }
+
+    /// The wrapped lines of `line` as `wrap_indent` cuts them, without its prefixes, with the byte offset each starts
+    /// at.
+    pub fn wrap_spans(&self, line: &str, max: f32, indent: bool) -> Vec<(usize, String)> {
+        let rest = if indent { max - self.text_width("\u{3000}") } else { max };
+        let mut out = Vec::new();
+        let mut base = 0;
+        for (k, part) in line.split('\n').enumerate() {
+            let mut off = 0;
+            for piece in self.wrap_part(part, if k == 0 { max } else { rest }, rest) {
+                let at = part[off..].find(piece.as_str()).map_or(off, |i| off + i);
+                off = at + piece.len();
+                out.push((base + at, piece));
+            }
+            base += part.len() + 1;
+        }
+        out
+    }
+
+    /// Words to lines: the first at most `first` wide, the others `rest`.
+    fn wrap_part(&self, line: &str, first: f32, rest: f32) -> Vec<String> {
         let mut out = Vec::new();
         let mut cur = String::new();
+        let max = |out: &Vec<String>| if out.is_empty() { first } else { rest };
         for word in line.split_inclusive(' ') {
-            if !cur.is_empty() && self.text_width(&(cur.clone() + word.trim_end())) > max {
+            if !cur.is_empty() && self.text_width(&(cur.clone() + word.trim_end())) > max(&out) {
                 out.push(std::mem::take(&mut cur).trim_end().to_string());
             }
             cur.push_str(word);
             // A single word wider than the line breaks anywhere.
-            while self.text_width(cur.trim_end()) > max && cur.chars().count() > 1 {
+            while self.text_width(cur.trim_end()) > max(&out) && cur.chars().count() > 1 {
                 let mut head = String::new();
                 for ch in cur.chars() {
-                    if self.text_width(&format!("{head}{ch}")) > max {
+                    if self.text_width(&format!("{head}{ch}")) > max(&out) {
                         break;
                     }
                     head.push(ch);

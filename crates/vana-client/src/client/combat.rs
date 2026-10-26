@@ -15,8 +15,9 @@ use std::time::{Duration, Instant};
 #[derive(Default)]
 pub struct ChatLog {
     lines: Vec<(String, [u8; 4])>,
-    /// Local time each line came in (hour, minute, second) and whether it is a chat line (retail stamps only those).
-    times: Vec<([u8; 3], bool)>,
+    /// Local time each line came in (hour, minute, second), whether it is a chat line (retail stamps only those) and
+    /// whether its continuation lines are indented (the mode's flag, FUN_10127870).
+    times: Vec<([u8; 3], bool, bool)>,
 }
 
 impl ChatLog {
@@ -25,22 +26,27 @@ impl ChatLog {
     }
 
     pub fn push_colour(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false);
+        self.push_line(s, colour, false, false);
+    }
+
+    /// A line whose continuation lines are indented.
+    pub fn push_indented(&mut self, s: String, colour: [u8; 4]) {
+        self.push_line(s, colour, false, true);
     }
 
     /// A chat line (s2c 0x017 or our sends' echoes), which config 0xb5 stamps.
-    pub fn push_chat(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, true);
+    pub fn push_chat(&mut self, s: String, colour: [u8; 4], indent: bool) {
+        self.push_line(s, colour, true, indent);
     }
 
-    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool) {
-        log::debug!(target: "chat", "{s}");
-        self.times.push((super::cfgapply::local_hms(), chat));
+    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool) {
+        log::debug!(target: "chat", "{}", crate::dat::font::strip_codes(&s));
+        self.times.push((super::cfgapply::local_hms(), chat, indent));
         self.lines.push((s, colour));
     }
 
-    /// Lines with the time they came in and whether they are chat lines.
-    pub fn iter_timed(&self) -> impl Iterator<Item = (&(String, [u8; 4]), ([u8; 3], bool))> {
+    /// Lines with the time they came in, whether they are chat lines and whether they indent.
+    pub fn iter_timed(&self) -> impl Iterator<Item = (&(String, [u8; 4]), ([u8; 3], bool, bool))> {
         self.lines.iter().zip(self.times.iter().copied())
     }
 
