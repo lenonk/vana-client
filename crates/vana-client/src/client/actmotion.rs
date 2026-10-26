@@ -457,6 +457,7 @@ pub(super) fn update(w: &mut World, dt: f32) {
         };
         let ride = ch.pc.map(|pc| super::ride::files(w, id, &pc)).unwrap_or_default();
         let held = super::ride::fade_held(w, id);
+        let mouth_off = w.entities.get(&id).is_some_and(|e| e.mouth_off);
         let a = w.actors.get_mut(&id).unwrap();
         // FUN_100c63d0: the load fade, 32 ticks once the model is in (a rider's once its animal is).
         if !held {
@@ -548,6 +549,11 @@ pub(super) fn update(w: &mut World, dt: f32) {
         if a.emote.is_some() && a.pending.is_none() && a.play.as_ref().is_none_or(|p| Some(&p.name) != a.emote.as_ref() || !p.busy()) {
             a.emote = None;
             drop_kind(&mut a.extra, Kind::Emote);
+        }
+        // FUN_10087e80: with the mouth off (event op 0x7c) a line's mouth is cancelled every frame *(the 8-tick blend
+        // out of FUN_100ce160 is not done)*.
+        if mouth_off {
+            a.mouth = None;
         }
         if let Some(m) = &mut a.mouth {
             match &mut m.ticks {

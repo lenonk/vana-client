@@ -9020,3 +9020,20 @@ lists and the storage view:
   it to the archive's slug and puts it first, on.
 - Checked against the user's eight packs (install_mods.py's folders): the same file counts, the 7z tree byte for
   byte, and none offered again.
+
+## Event actor toggles, first batch: mouth, blinks, targeting, generators (2026-10-25)
+
+Spec `~/ffxi/lab/research/event_toggles_spec.md` (items 1, 2, 7, 11).
+- Op 0x7c (FUN_100b8a80, 4,908 sites): actor@2's entity +0x128 bit 17 = u8@1. FUN_10087e80 runs every frame: with the
+  bit clear it cancels the mouth (FUN_10087e40: region 4 stopped with an 8-tick blend), so a line spoken meanwhile
+  never moves the lips; scripts wrap silent "..." lines in 0x7c 0 / 0x7c 1. Ours: Entity.mouth_off drops Actor.mouth
+  every frame *(the blend out is not done)*.
+- Op 0x81 (FUN_100b8fb0, 4,905 sites): actor@2's model +0x8b4 = u8@1, the gate of the blink timer FUN_100cdf90 (a
+  blink already playing finishes). Set before eyes-closed motions ('thk1'). Ours: Actor.blink_off.
+- Both come back on at the event's end for the bound entities (FUN_100ae3f0: +0x128 |= bit 17, model +0x8b4 = 1); a
+  new model starts with blinks on.
+- Op 0xb6 0x14 / 0x15 (actor@2) and 0x12 / 0x13 (the event actor): TargetOffFlag (+0x128 bit 4) clear / set, our
+  Entity.target_off; a later 0x00E with mask 0x04 overwrites it. Zone 280 only.
+- Op 0xab 0xd / 0xe: the event actor's +0x130 bit 1 (as scheduler op 0x9a), our Entity.gens_off, read at the next
+  model load / un-hide.
+- Checked headless (event-run 230 0x17): "op 7c [Int(0), Actor(npc0ed)]" around its silent line.

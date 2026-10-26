@@ -319,8 +319,10 @@ struct Entity {
     /// (FUN_10082ec0). 0x00D clears bit 3, so players have both.
     no_gauge: bool,
     no_plate: bool,
-    /// Entity +0x130 bit 1 (scheduler op 0x9a): the model file's 0x1000 generators don't start.
+    /// Entity +0x130 bit 1 (scheduler op 0x9a, event op 0xab 0xd): the model file's 0x1000 generators don't start.
     gens_off: bool,
+    /// Entity +0x128 bit 17 clear (event op 0x7c): no mouth motion (FUN_10087e80 cancels it every frame).
+    mouth_off: bool,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
     /// +0x128 bit 4 (TargetOffFlag): never a target candidate.
@@ -1008,6 +1010,7 @@ fn self_entity(w: &World) -> Entity {
         no_gauge: false,
         no_plate: false,
         gens_off: false,
+        mouth_off: false,
         untargetable: false,
         target_off: false,
         listed_only: false,
@@ -3046,6 +3049,7 @@ fn place_mogdoor(w: &mut World) {
             // Kind 3 makes an XiDoorActor (FUN_1008f740), whose plate draw (vtable +0x284, FUN_100ac380) is empty.
             no_plate: true,
             gens_off: false,
+            mouth_off: false,
             untargetable: false,
             target_off: false,
             listed_only: false,
@@ -3253,6 +3257,8 @@ struct Actor {
     /// FUN_100cdf90: ticks to the next blink (actor +0x8b8), and ticks into the playing `eye3`.
     blink_wait: f32,
     blink: Option<f32>,
+    /// Model +0x8b4 clear (event op 0x81): no new blink.
+    blink_off: bool,
     look: actmotion::Look,
     emote: Option<String>,
     /// Rest-pose bones (model space), for attach points of a look target.
@@ -3335,6 +3341,7 @@ impl Actor {
             mouth: None,
             blink_wait: (actmotion::crand() % 480) as f32,
             blink: None,
+            blink_off: false,
             look: Default::default(),
             emote: None,
             rest: Vec::new(),
@@ -6401,6 +6408,7 @@ impl App {
                         no_gauge: false,
                         no_plate: false,
                         gens_off: false,
+                        mouth_off: false,
                         untargetable: false,
                         target_off: false,
                         listed_only: false,
@@ -9834,7 +9842,7 @@ impl App {
                     a.blink_wait -= dt * 60.0;
                     if a.blink_wait < 0.0 {
                         a.blink_wait = (actmotion::crand() % 480) as f32;
-                        if !w.effects.no_blink.contains(id) {
+                        if !w.effects.no_blink.contains(id) && !a.blink_off {
                             a.blink = Some(0.0);
                         }
                     }

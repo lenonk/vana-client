@@ -817,8 +817,45 @@ impl Host for LiveHost<'_> {
                     self.st.status_lock.remove(&id);
                 }
             }
+            // FUN_100b8a80 (op 0x7c): actor@2's mouth on / off (+0x128 bit 17); silent "..." lines are wrapped in it.
+            Effect::Op { op: 0x7c, args, .. } => {
+                if let (Some(on), Some(id)) = (Self::arg_int(&args, 0), self.arg_actor(&args, 1)) {
+                    if let Some(e) = self.w.entities.get_mut(&id) {
+                        e.mouth_off = on == 0;
+                    }
+                    if on == 0
+                        && let Some(a) = self.w.actors.get_mut(&id)
+                    {
+                        a.mouth = None;
+                    }
+                }
+            }
+            // FUN_100b8fb0 (op 0x81): actor@2's blinks on / off (model +0x8b4), set before eyes-closed motions.
+            Effect::Op { op: 0x81, args, .. } => {
+                if let (Some(on), Some(id)) = (Self::arg_int(&args, 0), self.arg_actor(&args, 1))
+                    && let Some(a) = self.w.actors.get_mut(&id)
+                {
+                    a.blink_off = on == 0;
+                }
+            }
+            // FUN_100bac90 subs 0xd / 0xe: the event actor's generators off / on (+0x130 bit 1, as scheduler op 0x9a),
+            // acting at its next model load.
+            Effect::Op { op: 0xab, sub: Some(s @ (0x0d | 0x0e)), actor, .. } => {
+                let id = self.wid(actor);
+                if let Some(e) = self.w.entities.get_mut(&id) {
+                    e.gens_off = s == 0x0d;
+                }
+            }
+            // FUN_100b1150 subs 0x12..0x15: TargetOffFlag (+0x128 bit 4), on the event actor (0x13 / 0x12) or actor@2
+            // (0x15 / 0x14).
+            Effect::Op { op: 0xb6, sub: Some(s @ (0x12..=0x15)), actor, args } => {
+                let id = if s >= 0x14 { self.arg_actor(&args, 0) } else { Some(self.wid(actor)) };
+                if let Some(e) = id.and_then(|id| self.w.entities.get_mut(&id)) {
+                    e.target_off = s & 1 != 0;
+                }
+            }
             // FUN_100bac90 subs 0x0b / 0x0c: the event actor passable / solid to the player's bump (entity +0x120 bit 6,
-            // client/bump.rs). The other subs' bits have no known reader yet.
+            // client/bump.rs).
             Effect::Op { op: 0xab, sub: Some(s @ (0x0b | 0x0c)), actor, .. } => {
                 let id = self.wid(actor);
                 if let Some(e) = self.w.entities.get_mut(&id) {
@@ -1640,6 +1677,15 @@ fn finish(w: &mut World, live: Box<Live>) {
         if let Some(a) = w.actors.get_mut(id) {
             a.fade = None;
             a.alpha = super::actmotion::OPAQUE;
+        }
+    }
+    // FUN_100ae3f0 on the bound entities: the mouth (+0x128 bit 17) and the blinks (model +0x8b4) back on.
+    for id in &live.st.bound {
+        if let Some(e) = w.entities.get_mut(id) {
+            e.mouth_off = false;
+        }
+        if let Some(a) = w.actors.get_mut(id) {
+            a.blink_off = false;
         }
     }
     for id in &live.st.despawned {
