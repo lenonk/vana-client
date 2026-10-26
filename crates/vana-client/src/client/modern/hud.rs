@@ -313,7 +313,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
     let day = ((secs % 27648) / 3456) as usize;
     let name = w.battle.as_ref().and_then(|b| b.day_name(day)).unwrap_or_default();
     Some(WhereView {
-        zone: crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone)),
+        zone: w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, w.pos_zone as u32)).unwrap_or_else(|| crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone))),
         grid: p.m.grid(w, gu),
         time: (m / 60, m % 60),
         day: (day, name),

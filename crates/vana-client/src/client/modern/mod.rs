@@ -3,6 +3,7 @@
 //! are not drawn while it is on; the rest of the retail UI stays.
 
 mod chat;
+mod command;
 mod hud;
 mod paint;
 pub mod shot;
@@ -12,6 +13,7 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Context, FontFamily, FontId, Rect, Shape, Ui, pos2, vec2};
 use std::collections::BTreeMap;
+pub use command::{CmdMenu, key as command_key};
 pub use theme::Theme;
 use theme::{Art, STRONG};
 
@@ -55,6 +57,7 @@ impl Modern {
         let mut p = Panels { m: self, ctx, gu: Some(gu), layout, moved: &mut moved, reseed };
         hud::draw(&mut p, w);
         chat::panel(&mut p, &chat::view(w));
+        command::draw(&mut p, w);
         moved
     }
 }

@@ -213,19 +213,24 @@ fn pick_key(id: u32, k: u16) -> u64 {
 /// is us and trusts only (FUN_10201f00), Synthesis for 23 s after a request; in Monstrosity Party and Synthesis, and
 /// socialme's Set Bazaar (FUN_1014e720).
 fn menu_disabled(w: &World) -> Vec<u16> {
+    menu_disabled_on(w, w.menu_page)
+}
+
+/// `menu_disabled` for either page (the modern Command Menu shows both at once).
+fn menu_disabled_on(w: &World, page: u8) -> Vec<u16> {
     let mut off = Vec::new();
     if monstrosity::active(w) {
-        return if w.menu_page == 0 { vec![6, 10] } else { vec![5] };
+        return if page == 0 { vec![6, 10] } else { vec![5] };
     }
-    if w.menu_page == 0 && w.party.slots().trusts_only() {
+    if page == 0 && w.party.slots().trusts_only() {
         off.push(6);
     }
     // FUN_10140270: Synthesis within 23 s of the last synthesis request.
-    if w.menu_page == 0 && synth::menu_off(w) {
+    if page == 0 && synth::menu_off(w) {
         off.push(10);
     }
     // FUN_10140270: row 12 (Mog House) is disabled while visiting another's house.
-    if w.menu_page == 0 && w.myroom.is_some() && w.mh_owner != 0 {
+    if page == 0 && w.myroom.is_some() && w.mh_owner != 0 {
         off.push(12);
     }
     off
@@ -1706,6 +1711,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The menu opens on the page it was closed on.
                 // While dead the K.O. window or the raise prompt has the focus and takes it (message 7, FUN_1015dd00).
                 egui::Key::Minus if !world.ko_open && world.ko_offer != 2 => world.menu = if world.menu.is_some() { None } else { Some(world.menu_mem[world.menu_page as usize & 1]) },
+                // The modern Command Menu takes the menu keys (client/modern/command.rs).
+                egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.modern && world.menu.is_some() && !world.log_active => {
+                    modern::command_key(world, *key)
+                }
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // FUN_102110c0: the raise prompt refuses Escape (+0x39 = 0: SE 0004) and keeps the key.
@@ -1801,7 +1810,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Social page: child 11 Shut Down (FUN_10159f90), 12 Log Out (FUN_1015a020) ask first.
     world.menu_picked = false;
-    if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1).filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
+    // A modern Command Menu pick names its page and child.
+    let clicked = world.menu_click.take();
+    if let Some((page, _)) = clicked {
+        world.menu_page = page;
+    }
+    let picked = clicked.map(|c| c.1 as usize).or_else(|| pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1));
+    if let Some(id) = picked.filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
         world.menu_picked = true;
         // FUN_10140400: a row that opens its window plays 0002 (the rows below that can refuse push their own).
         if matches!((world.menu_page, id), (0, 1 | 2 | 3 | 4 | 5 | 6 | 8 | 10)) {
@@ -2272,7 +2287,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
         }).collect(),
         target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
-        menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
+        menu_selected: world.menu.filter(|_| !main_off && !world.modern).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
         menu_swap: menu_swap(world),
@@ -4696,6 +4711,9 @@ struct World {
     /// Main menu open, with the highlighted row (top to bottom) and page (0 commands, 1 social).
     menu: Option<usize>,
     menu_page: u8,
+    /// The modern Command Menu's cursor, and a row it picked (page, child) for the menu dispatch.
+    cmd: modern::CmdMenu,
+    menu_click: Option<(u8, u16)>,
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -6213,6 +6231,8 @@ impl App {
                             downloading: Some(Instant::now()),
                             menu: None,
                             menu_page: 0,
+                            cmd: Default::default(),
+                            menu_click: None,
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),
