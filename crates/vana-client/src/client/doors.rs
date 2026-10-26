@@ -26,9 +26,9 @@ pub fn update(w: &mut World) {
     if !in_event {
         w.doors.event.clear();
     }
-    let doors: Vec<(u32, u32, u8)> = w.entities.iter().filter(|(_, e)| e.door != 0).map(|(id, e)| (*id, e.door, w.doors.event.get(id).copied().filter(|_| in_event).unwrap_or(e.motion.status))).collect();
+    let doors: Vec<(u32, u32, u8, bool)> = w.entities.iter().filter(|(_, e)| e.door != 0).map(|(id, e)| (*id, e.door, w.doors.event.get(id).copied().filter(|_| in_event).unwrap_or(e.motion.status), e.quiet_status)).collect();
     w.doors.state.retain(|id, _| w.entities.contains_key(id));
-    for (id, door, want) in doors {
+    for (id, door, want, quiet) in doors {
         // FUN_100acba0: doors with a group play open / clos, the others (effects only) evst / eved.
         let grouped = w.renderer.as_ref().is_some_and(|r| r.door_parts.contains_key(&door));
         let name = |grouped_name: &str, plain: &str| four(if grouped { grouped_name } else { plain });
@@ -48,6 +48,8 @@ pub fn update(w: &mut World) {
                     set_solid(w, door, true);
                 }
             }
+            // Event op 0xab 5 (+0x120 bit 3): FUN_1008c6c0 returns at once, the door stays as it is *(inf: its box too)*.
+            Some(s) if s != want && quiet => _ = w.doors.state.insert(id, want),
             Some(s) if s != want => {
                 w.doors.state.insert(id, want);
                 // FUN_1008c6c0: 8 / 0x1a / 0x1d open and let through, 0x2d opens but stays solid, 9 / 0x1b / 0x1e /

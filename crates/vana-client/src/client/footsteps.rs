@@ -77,8 +77,10 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
     for (id, hit) in contact {
         let (Some(pl), Some(ch)) = (places.get(&id), w.actors.get(&id).and_then(|a| a.character.clone())) else { continue };
         let Some(foot) = hit else { continue };
-        // The motion gate (+0x7d8 != the idle 'idl?', or leg mode 3): moving *(inf: from the movement ratio)*.
-        if pl.ratio <= 1e-4 && ch.cib[0] != 3 {
+        // +0x128 bit 0 clear (event op 0x61): none; the motion gate (+0x7d8 != the idle 'idl?', leg mode 3, or +0x128
+        // bit 1 from event op 0xab 8): moving *(inf: from the movement ratio)*.
+        let (off, always) = w.entities.get(&id).map_or((false, false), |e| (e.steps_off, e.steps_always));
+        if off || (pl.ratio <= 1e-4 && ch.cib[0] != 3 && !always) {
             continue;
         }
         let Some(g) = &w.ground else { continue };

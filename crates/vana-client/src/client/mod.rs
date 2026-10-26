@@ -325,6 +325,18 @@ struct Entity {
     mouth_off: bool,
     /// Entity +0xef from scheduler op 0xb7 (FUN_10084740), kept over 0x00E's while nonzero.
     race: Option<u8>,
+    /// Event ops 0xab 8 / 7 (+0x128 bit 1): footsteps also while the motion is the idle one; op 0x61 (+0x128 bit 0
+    /// clear): no footsteps at all.
+    steps_always: bool,
+    steps_off: bool,
+    /// Event ops 0xab 5 / 6 (+0x120 bit 3, FUN_1008c6c0 returns at once): status changes play no transition.
+    quiet_status: bool,
+    /// Event ops 0xab 1 / 2 (+0x120 bit 1): 0x00D / 0x00E statuses are not written (+0x16c).
+    status_held: bool,
+    /// Event ops 0xab 0x19..0x1c (+0x13c bit 19): the area id (+0x5e4) kept at this; op 0xae 7 / 8 (+0x20c): an area
+    /// 4cc used instead of the floor's.
+    area_frozen: Option<u32>,
+    area_override: u32,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
     /// +0x128 bit 4 (TargetOffFlag): never a target candidate.
@@ -1014,6 +1026,12 @@ fn self_entity(w: &World) -> Entity {
         gens_off: false,
         mouth_off: false,
         race: None,
+        steps_always: false,
+        steps_off: false,
+        quiet_status: false,
+        status_held: false,
+        area_frozen: None,
+        area_override: 0,
         untargetable: false,
         target_off: false,
         listed_only: false,
@@ -3054,6 +3072,12 @@ fn place_mogdoor(w: &mut World) {
             gens_off: false,
             mouth_off: false,
             race: None,
+            steps_always: false,
+            steps_off: false,
+            quiet_status: false,
+            status_held: false,
+            area_frozen: None,
+            area_override: 0,
             untargetable: false,
             target_off: false,
             listed_only: false,
@@ -3191,6 +3215,8 @@ struct Actor {
     /// Regions 0..2 the current motion has no chunk for: the motion still playing there, its ticks, played once
     /// (FUN_100cb500 leaves those region queues alone).
     keep: [Option<(String, f32, bool)>; 3],
+    /// Event op 0xae 5 (model +0x798): the leader whose motion frame this one's never runs ahead of (FUN_100cb400).
+    motion_link: Option<u32>,
     /// The current motion plays once (a one-shot or a single-count scheduler motion): it holds its last frame,
     /// also as the pose a switch blends from (FUN_1001a8e0: regions < 3 hold the last frame when the count ends).
     once: bool,
@@ -3349,6 +3375,7 @@ impl Actor {
             look: Default::default(),
             emote: None,
             rest: Vec::new(),
+            motion_link: None,
             jump: -1.0,
             pick_bones: None,
         }
@@ -3840,11 +3867,11 @@ impl crate::fx::Actors for FxActors<'_> {
 
     // FUN_100ac560: you or your pet, a monster (+0x120 bit 13 = u8 @0x20 bit 0), else not in the party roster
     // *(the roster is not tracked (s2c 0x0DD), so it holds only you; party members count as others)*.
-    // FUN_101819a0(actor+0x5e4): the area of the floor under it *(looked up when asked, not every 120 frames; the
-    // event op 0xae sub 7 override is not kept)*.
+    // FUN_101819a0(actor+0x5e4): the area of the floor under it, or the event's (actor_area) *(looked up when asked,
+    // not every 120 frames)*.
     fn area_light(&self, id: u32) -> Option<Vec3> {
         let p = self.places.get(&id)?;
-        let area = self.ground?.area(p.pos)?;
+        let area = actor_area(self.entities.get(&id), self.ground.and_then(|g| g.area(p.pos)))?;
         self.areas.get(&area).copied()
     }
 
@@ -3922,6 +3949,16 @@ fn plain_frame(pos: Vec3, forward: Vec3, t: [f32; 2]) -> glam::Mat4 {
 }
 
 /// World y `dy` as a model-space vector for frame `m` (rotation only).
+/// FUN_100a4ed0's area id (+0x5e4): kept while frozen (event op 0xab 0x1b, +0x13c bit 19), else the override (op
+/// 0xae 7, +0x20c), else the floor's.
+fn actor_area(e: Option<&Entity>, floor: Option<u32>) -> Option<u32> {
+    match e {
+        Some(Entity { area_frozen: Some(a), .. }) => Some(*a),
+        Some(e) if e.area_override != 0 => Some(e.area_override),
+        _ => floor,
+    }
+}
+
 fn point_drop(m: glam::Mat4, dy: f32) -> Vec3 {
     glam::Mat3::from_mat4(m).transpose() * Vec3::new(0.0, dy, 0.0)
 }
@@ -5923,7 +5960,7 @@ impl App {
                             a.gpu = None;
                             (a.motion_names, a.rebase, a.fresh) = (None, true, true);
                             // Attach points from the rest pose while the GPU model builds ('spop' dolls it at once).
-                            (a.rest, a.bones) = (crate::dat::character::pose(&ch.skeleton, &[]), Vec::new());
+                            (a.rest, a.bones, a.motion_link) = (crate::dat::character::pose(&ch.skeleton, &[]), Vec::new(), None);
                         }
                         world.models.insert(key, ch);
                         // Looks no actor wears any more go once there are more than MODEL_CACHE.
@@ -6433,6 +6470,12 @@ impl App {
                         gens_off: false,
                         mouth_off: false,
                         race: None,
+                        steps_always: false,
+                        steps_off: false,
+                        quiet_status: false,
+                        status_held: false,
+                        area_frozen: None,
+                        area_override: 0,
                         untargetable: false,
                         target_off: false,
                         listed_only: false,
@@ -6472,7 +6515,7 @@ impl App {
                     if e.pos.is_some() {
                         (motion.speed, motion.speed_base) = (e.motion.speed, e.motion.speed_base);
                     }
-                    if e.hpp.is_some() {
+                    if e.hpp.is_some() && !entry.status_held {
                         // A held actor (mid-swing) applies the change when its hold ends (combat::tick).
                         if !fresh && held {
                             world.held_status.insert(e.id, e.motion.status);
@@ -6516,14 +6559,15 @@ impl App {
                         (entry.named, entry.plural) = (named, plural);
                     }
                     let sd = entry.marks.trust || entry.marks.death_flag;
-                    if died && let Some(a) = world.actors.get_mut(&e.id) {
+                    let quiet = entry.quiet_status;
+                    if died && !quiet && let Some(a) = world.actors.get_mut(&e.id) {
                         combat::die(a, sd);
                     }
                     // Effects end with a death.
                     if died {
                         world.timers.died(e.id);
                     }
-                    if let Some((old, new)) = status_change {
+                    if let Some((old, new)) = status_change.filter(|_| !quiet) {
                         combat::status_schedulers(&mut world.effects, &world.actors, e.id, old, new, sd);
                     }
                     if let Some(p) = e.pos {
@@ -7028,7 +7072,7 @@ impl App {
                 actor.character = Some(m.clone());
                 actor.gpu = None;
                 (actor.motion_names, actor.rebase, actor.fresh) = (None, true, true);
-                (actor.rest, actor.bones) = (crate::dat::character::pose(&m.skeleton, &[]), Vec::new());
+                (actor.rest, actor.bones, actor.motion_link) = (crate::dat::character::pose(&m.skeleton, &[]), Vec::new(), None);
             } else if world.models_loading.insert(key.clone()) {
                 wanted.push((key, source));
             }
@@ -9746,6 +9790,9 @@ impl App {
                 // Ops 0x48 / 0x49: the refraction level per actor.
                 let refracts: HashMap<u32, f32> = w.effects.refractions().into_iter().collect();
                 let hold_now = Instant::now();
+                // FUN_100cb400: each linked follower's leader frame (last frame's: one frame behind at most).
+                let frame_of = |a: &Actor| Some(a.ticks * actmotion::find(&a.extra, a.character.as_ref()?, &a.motion).first()?.speed * 0.5);
+                let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -9824,6 +9871,13 @@ impl App {
                     }
                     a.once = once;
                     a.ticks += dt * 60.0 * rate;
+                    // A leader frame in (0, ours] becomes ours.
+                    if let (Some(&lf), Some(speed)) = (leads.get(id), actmotion::find(&extra, &ch, &a.motion).first().map(|x| x.speed * 0.5).filter(|s| *s > 0.0))
+                        && lf > 0.0
+                        && lf <= a.ticks * speed
+                    {
+                        a.ticks = lf / speed;
+                    }
                     if a.jump >= 0.0 {
                         a.jump -= dt * 60.0;
                     }
@@ -10058,7 +10112,7 @@ impl App {
                     g.flash = if drawn { a.flash.step(w.target == Some(*id), dt * 60.0) } else { flash::NONE };
                     // The floor's lights (retail copies them at the ground probe, every 121 updates).
                     g.lights = w.ground.as_ref().map_or([0; 4], |gr| gr.lights(pos));
-                    g.area = w.ground.as_ref().and_then(|gr| gr.area(pos)).unwrap_or(0);
+                    g.area = actor_area(w.entities.get(id), w.ground.as_ref().and_then(|gr| gr.area(pos))).unwrap_or(0);
                     if drawn {
                         let files: Vec<_> = extra.iter().map(|(_, f)| f.clone()).collect();
                         r.pose_actor_gpu(g, &ch, &files, &anims, if a.prev.is_some() { &from } else { &[] }, t, model, look, overlay);

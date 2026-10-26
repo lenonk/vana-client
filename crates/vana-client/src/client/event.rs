@@ -844,6 +844,53 @@ impl Host for LiveHost<'_> {
                     self.w.rebuild_models = true;
                 }
             }
+            // FUN_100bac90 subs 1 / 2: the event actor's server status kept (+0x120 bit 1); 5 / 6 its status changes play
+            // no transition (+0x120 bit 3); 8 / 7 its footsteps also while idle (+0x128 bit 1).
+            Effect::Op { op: 0xab, sub: Some(s @ (1 | 2 | 5 | 6 | 7 | 8)), actor, .. } => {
+                let id = self.wid(actor);
+                if let Some(e) = self.w.entities.get_mut(&id) {
+                    match s {
+                        1 | 2 => e.status_held = s == 1,
+                        5 | 6 => e.quiet_status = s == 5,
+                        _ => e.steps_always = s == 8,
+                    }
+                }
+            }
+            // Subs 0x19..0x1c: the area id stops following the floor (+0x13c bit 19), odd sets: 0x1b / 0x1c actor@2,
+            // 0x19 / 0x1a the event actor.
+            Effect::Op { op: 0xab, sub: Some(s @ (0x19..=0x1c)), actor, args } => {
+                let id = if s >= 0x1b { self.arg_actor(&args, 0) } else { Some(self.wid(actor)) };
+                if let Some(id) = id {
+                    let floor = self.w.entities.get(&id).and_then(|e| self.w.ground.as_ref()?.area(e.pos));
+                    let area = (s & 1 != 0).then(|| super::actor_area(self.w.entities.get(&id), floor)).flatten();
+                    if let Some(e) = self.w.entities.get_mut(&id) {
+                        e.area_frozen = area;
+                    }
+                }
+            }
+            // FUN_100bb620 subs 7 / 8: actor@2's area override (+0x20c) = the 4cc u32@6 ('evc1'), 8 none.
+            Effect::Op { op: 0xae, sub: Some(s @ (7 | 8)), args, .. } => {
+                if let Some(id) = self.arg_actor(&args, 0)
+                    && let Some(e) = self.w.entities.get_mut(&id)
+                {
+                    e.area_override = if s == 7 { Self::arg_int(&args, 1).unwrap_or(0) as u32 } else { 0 };
+                }
+            }
+            // Subs 5 / 6: actor@6's motion clock never runs ahead of actor@2's (model +0x798, FUN_100cb400); 6 ends
+            // actor@2's.
+            Effect::Op { op: 0xae, sub: Some(s @ (5 | 6)), args, .. } => {
+                let (leader, follower) = if s == 5 { (self.arg_actor(&args, 0), self.arg_actor(&args, 1)) } else { (None, self.arg_actor(&args, 0)) };
+                if let Some(a) = follower.and_then(|f| self.w.actors.get_mut(&f)) {
+                    a.motion_link = leader;
+                }
+            }
+            // FUN_100b74e0 (op 0x61): the event actor's footsteps on / off (+0x128 bit 0 = u8@1 & 1).
+            Effect::Op { op: 0x61, args, actor, .. } => {
+                let id = self.wid(actor);
+                if let (Some(v), Some(e)) = (Self::arg_int(&args, 0), self.w.entities.get_mut(&id)) {
+                    e.steps_off = v & 1 == 0;
+                }
+            }
             // FUN_100bac90 subs 0xd / 0xe: the event actor's generators off / on (+0x130 bit 1, as scheduler op 0x9a),
             // acting at its next model load.
             Effect::Op { op: 0xab, sub: Some(s @ (0x0d | 0x0e)), actor, .. } => {
@@ -1685,10 +1732,11 @@ fn finish(w: &mut World, live: Box<Live>) {
             a.alpha = super::actmotion::OPAQUE;
         }
     }
-    // FUN_100ae3f0 on the bound entities: the mouth (+0x128 bit 17) and the blinks (model +0x8b4) back on.
+    // FUN_100ae3f0 on the bound entities: the mouth (+0x128 bit 17), footsteps (bit 0) and the blinks (model +0x8b4)
+    // back on, the area free again (+0x13c bit 19, +0x20c).
     for id in &live.st.bound {
         if let Some(e) = w.entities.get_mut(id) {
-            e.mouth_off = false;
+            (e.mouth_off, e.steps_off, e.area_frozen, e.area_override) = (false, false, None, 0);
         }
         if let Some(a) = w.actors.get_mut(id) {
             a.blink_off = false;

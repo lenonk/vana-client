@@ -9118,3 +9118,19 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
   0x03A). Manual (either window) clears the bit.
 - Live (Lnxcsfix, Southern San d'Oria): Auto, Yes, then !additem 4112: the new Potion went in beside the other
   Potions, one 0x03A sent.
+
+## Event toggles, part 2 (2026-10-25)
+
+Spec `~/ffxi/lab/research/event_toggles_spec.md` items 4, 5, 6, 9, 10, 12 and op 0x61 (1, 2, 3, 7, 11 were done
+before). Not seen live yet (each needs its cutscene).
+- 0xab 1 / 2 (event actor, +0x120 bit 1): Entity.status_held; 0x00D / 0x00E statuses are not written while set.
+- 0xab 5 / 6 (+0x120 bit 3): Entity.quiet_status; a status change plays no death motion, no status schedulers, and a
+  door takes its new state without its open / close scheduler or box change *(inf: FUN_100ad1e0 / 270 own both)*.
+- 0xab 8 / 7 (+0x128 bit 1): Entity.steps_always, footsteps while the motion is the idle one. Op 0x61 (FUN_100b74e0:
+  the event actor's +0x128 bit 0 = u8@1 & 1): Entity.steps_off, no footsteps; the event end turns them on again.
+- 0xab 0x1b / 0x1c (actor@2) and 0x19 / 0x1a (event actor), +0x13c bit 19: Entity.area_frozen keeps the area the
+  actor has when it is set; 0xae 7 / 8 (actor@2, +0x20c = the 4cc u32@6, 'evc1'): Entity.area_override. Both feed
+  actor_area (the actor's lighting area and FxActors::area_light); the event end clears them (FUN_100ae3f0).
+- 0xae 5 / 6 (model +0x798, FUN_100cb400): Actor.motion_link; after the clock advances, a leader frame in (0, ours]
+  becomes ours. Ours compares the current motions only (retail: each of the 7 regions) and reads the leader's frame
+  from the frame before (one frame behind at most). A new model drops the link, as FUN_100c5d60 does.
