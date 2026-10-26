@@ -2,7 +2,7 @@
 //! the book list "menu    mcrselec" with its options "menu    mcrselop", the edit palettes "menu    mcr1edit" /
 //! "menu    mcr2edit" (mcr?edlo long) with "menu    mcrbedit", and the macro editor "menu    macro" with
 //! "menu    mcrledit". No packets: everything is the USER files (client/macros.rs). Edit Equip. Set: client/esmenu.rs.
-//! Not done: auto-translate in the fields, the mouse, the palettes' flip zoom.
+//! Not done: auto-translate in the fields, the palettes' flip zoom.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -636,7 +636,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return rects };
     let free = w.confirm.is_none();
+    w.mcr_hits.borrow_mut().clear();
     if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none() && me.sets.is_none(), &[]) {
+        hit(w, MENU, &win);
         rects.push(win.frame);
     }
     if let Some(s) = &me.sets {
@@ -648,6 +650,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     // rename field.
     let list_focus = free && b.opt.is_none() && b.edit.is_none() && b.rename.is_none();
     if let Some(win) = gu.lobby_window_off(SELEC, sw, sh, (0.0, 0.0), Some(b.sel), list_focus, &[]) {
+        hit(w, SELEC, &win);
         for &(id, r) in win.children.iter().filter(|(id, _)| (1..=20).contains(id)) {
             let book = book_of(w, id);
             if book == m.book {
@@ -666,6 +669,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             let (x, y) = (r[0] - lw, r[1].min(fy + fh - lh));
             let off: Vec<u16> = if m.book_copied() { Vec::new() } else { vec![4] };
             if let Some(win) = gu.lobby_window_off(SELOP, sw, sh, (x - lx, y - ly), Some(o), free, &off) {
+                hit(w, SELOP, &win);
                 gu.disabled_children(SELOP, win.frame[0], win.frame[1], &off, free.then_some(o));
                 rects.push(win.frame);
             }
@@ -686,6 +690,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let sel = e.cols[p as usize - 1] + 1;
         let dy = if p == 2 { 42.0 } else { 0.0 };
         if let Some(win) = gu.lobby_window_off(&name, sw, sh, (dx, dy), Some(sel), focused, &[]) {
+            hit(w, &format!("palette{p}"), &win);
             let pad = if win.frame[2] >= 800.0 { 4.0 } else { 2.0 };
             for (k, (_, r)) in win.children.iter().take(10).enumerate() {
                 let title = m.recs[k + 10 * (p as usize - 1)].title();
@@ -697,6 +702,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let can_paste = if set_mode(e) { m.set_copied } else { m.macro_copied() };
     let off: Vec<u16> = if can_paste { Vec::new() } else { vec![2] };
     if let Some(win) = gu.lobby_window_off(BEDIT, sw, sh, (0.0, 0.0), Some(e.bopt.unwrap_or(1)), free && e.bopt.is_some(), &off) {
+        hit(w, BEDIT, &win);
         gu.disabled_children(BEDIT, win.frame[0], win.frame[1], &off, e.bopt.filter(|_| free));
         rects.push(win.frame);
     }
@@ -709,6 +715,7 @@ fn draw_editor(gu: &mut GameUi, w: &World, d: &Editor, sw: f32, sh: f32, free: b
     let mut rects = Vec::new();
     let focused = free && d.lopt.is_none() && d.editing.is_none();
     let Some(win) = gu.lobby_window_off(MACRO, sw, sh, (0.0, 0.0), Some(d.sel), focused, &[]) else { return rects };
+    hit(w, MACRO, &win);
     let [x0, y0, ..] = win.frame;
     let (alt, n) = (d.i >= 10, (d.i % 10 + 1) % 10);
     let label = gu.lobby_msg(0x0a, if alt { 0x5c } else { 0x5b }, "Ctrl %d").replacen("%d", &n.to_string(), 1);
@@ -729,10 +736,127 @@ fn draw_editor(gu: &mut GameUi, w: &World, d: &Editor, sw: f32, sh: f32, free: b
     rects.push(win.frame);
     let off: Vec<u16> = if w.mcr_line.is_some() { Vec::new() } else { vec![2] };
     if let Some(win) = gu.lobby_window_off(LEDIT, sw, sh, (0.0, 0.0), Some(d.lopt.unwrap_or(1)), free && d.lopt.is_some(), &off) {
+        hit(w, LEDIT, &win);
         gu.disabled_children(LEDIT, win.frame[0], win.frame[1], &off, d.lopt.filter(|_| free));
         rects.push(win.frame);
     }
     rects
+}
+
+/// A window as drawn this frame, for the mouse.
+pub(super) fn hit(w: &World, name: &str, win: &super::game_ui::LobbyWin) {
+    w.mcr_hits.borrow_mut().push((name.to_string(), win.frame, win.children.clone()));
+}
+
+fn inside(r: [f32; 4], p: (f32, f32)) -> bool {
+    p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3]
+}
+
+/// The child of a window drawn this frame under the pointer (`ids` only), and whether the pointer is on the window.
+pub(super) fn child_under(w: &World, name: &str, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> (Option<u16>, bool) {
+    let hits = w.mcr_hits.borrow();
+    let Some((_, frame, children)) = hits.iter().find(|h| h.0 == name) else { return (None, false) };
+    (children.iter().find(|(id, r)| ids.contains(id) && inside(*r, p)).map(|c| c.0), inside(*frame, p))
+}
+
+/// The generic window handler's mouse on the focused window: a child under the pointer takes the cursor (SE 0001), a
+/// click on the cursor's child is Enter, a right click on the window Escape. Returns the child under the pointer.
+pub(super) fn generic(w: &mut World, gu: &GameUi, name: &str, cursor: u16, ids: std::ops::RangeInclusive<u16>, p: (f32, f32), moved: bool, clicked: bool, right: bool, set: impl FnOnce(&mut World, u16)) {
+    let (child, on) = child_under(w, name, p, ids);
+    if right && on {
+        key(w, gu, egui::Key::Escape);
+        return;
+    }
+    let Some(id) = child else { return };
+    gu.hover.set(true);
+    if id != cursor && (moved || clicked) {
+        set(w, id);
+        w.sounds.push(Ui::Cursor as u32);
+    } else if clicked {
+        key(w, gu, egui::Key::Enter);
+    }
+}
+
+/// The mouse on the chain (no typing field open). Over the other palette the focus moves there at that column
+/// *(inf: retail's window focus on a click)*.
+pub fn pointer(w: &mut World, gu: &GameUi, _sw: f32, _sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(me) = w.macroedit.as_ref() else { return };
+    if me.sets.is_some() {
+        super::esmenu::pointer(w, gu, _sw, _sh, p, moved, clicked, right);
+        return;
+    }
+    let Some(b) = me.book.as_ref() else {
+        let sel = me.menu_sel;
+        generic(w, gu, MENU, sel, 1..=2, p, moved, clicked, right, |w, id| {
+            if let Some(m) = w.macroedit.as_mut() {
+                m.menu_sel = id;
+            }
+        });
+        return;
+    };
+    if b.rename.is_some() {
+        return;
+    }
+    let (sel, opt) = (b.sel, b.opt);
+    let Some(e) = b.edit.as_ref() else {
+        match opt {
+            Some(o) => generic(w, gu, SELOP, o, 1..=5, p, moved, clicked, right, |w, id| {
+                if let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()) {
+                    b.opt = Some(id);
+                }
+            }),
+            None => generic(w, gu, SELEC, sel, 1..=20, p, moved, clicked, right, |w, id| {
+                if let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()) {
+                    b.sel = id;
+                }
+            }),
+        }
+        return;
+    };
+    match (&e.editor, e.bopt) {
+        (Some(d), _) if d.editing.is_some() => {}
+        (Some(d), _) => match d.lopt {
+            Some(o) => generic(w, gu, LEDIT, o, 1..=3, p, moved, clicked, right, |w, id| {
+                if let Some(d) = edit_mut(w).and_then(|e| e.editor.as_mut()) {
+                    d.lopt = Some(id);
+                }
+            }),
+            None => {
+                let sel = d.sel;
+                generic(w, gu, MACRO, sel, 1..=9, p, moved, clicked, right, |w, id| {
+                    if let Some(d) = edit_mut(w).and_then(|e| e.editor.as_mut()) {
+                        d.sel = id;
+                    }
+                });
+            }
+        },
+        (None, Some(o)) => generic(w, gu, BEDIT, o, 1..=3, p, moved, clicked, right, |w, id| {
+            if let Some(e) = edit_mut(w) {
+                e.bopt = Some(id);
+            }
+        }),
+        (None, None) => {
+            let (focus, cols) = (e.focus, e.cols);
+            let other = 3 - focus;
+            if let (Some(id), _) = child_under(w, &format!("palette{other}"), p, 1..=10)
+                && (moved || clicked)
+            {
+                gu.hover.set(true);
+                if let Some(e) = edit_mut(w) {
+                    e.focus = other;
+                    e.cols[other as usize - 1] = id - 1;
+                }
+                w.sounds.push(Ui::Cursor as u32);
+                return;
+            }
+            let p_name = format!("palette{focus}");
+            generic(w, gu, &p_name, cols[focus as usize - 1] + 1, 1..=10, p, moved, clicked, right, |w, id| {
+                if let Some(e) = edit_mut(w) {
+                    e.cols[focus as usize - 1] = id - 1;
+                }
+            });
+        }
+    }
 }
 
 #[cfg(test)]

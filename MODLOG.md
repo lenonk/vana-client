@@ -9629,3 +9629,21 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   bits and knew only events.
 - Not seen live: LSB marks a player charmed only through a monster's charm (battleutils::applyCharm); `!addeffect`
   does not set the flag.
+
+## MacroPalette: the mouse (2026-10-26)
+
+client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, esedit.rs.
+- Every window of the chain records its drawn frame and children each frame (`World.mcr_hits`: mcrselop and mcresmn
+  are drawn at offsets beside their rows, the palettes at (dx, dy)). On the focused window (the generic handler, as
+  elsewhere): the child under the pointer takes the cursor (SE 0001), a click on the cursor's child is Enter, a right
+  click on the window Escape *(ours only over it; retail's message 6 takes any right click, FUN_1015def0)*. Typing
+  fields take no mouse.
+- The palettes: the pointer over the other one moves the focus there at that column *(inf)*. The slot editor: the
+  grid and mcrmogc as above (a picked item limits the grid to its slots), the list's rows as the item list (hover
+  moves the row, a click on it is Enter), and the pointer over the other of grid and list sends message 8 (as the
+  Equipment screen, FUN_10132c30).
+- The main menu's own mouse ran under the chain (the walk only hides it): a click on mcrmenu's Edit Macro also picked
+  the main menu row beneath (Missions). It now waits for `gu.want` of the menu window, as its drawing does.
+- Live (Lnxcsfix): mcrmenu hover and click, the book list, Options and its right-click close, Edit Equip. Set, a row's
+  menu, Edit, the grid (Head), the filtered list, Keep same piece. by click, the swap to the list, the right-click
+  close back to the set list.

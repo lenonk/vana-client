@@ -135,6 +135,34 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     }
 }
 
+/// The mouse on mcres20 (rows and page arrows) or mcresmn; the slot editor's own.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::macroedit::generic;
+    let Some(s) = w.macroedit.as_ref().and_then(|m| m.sets.as_ref()) else { return };
+    if s.ed.is_some() {
+        super::esedit::pointer(w, gu, sw, sh, p, moved, clicked, right);
+        return;
+    }
+    if s.rename.is_some() {
+        return;
+    }
+    match s.opt {
+        Some(o) => generic(w, gu, MENU, o, 1..=8, p, moved, clicked, right, |w, id| {
+            if let Some(s) = list_mut(w) {
+                s.opt = Some(id);
+            }
+        }),
+        None => {
+            let sel = s.sel;
+            generic(w, gu, LIST, sel, 1..=22, p, moved, clicked, right, |w, id| {
+                if let Some(s) = list_mut(w) {
+                    s.sel = id;
+                }
+            });
+        }
+    }
+}
+
 /// FUN_101a6d00 after the page is written: the clipboard freed, an open name field dropped.
 fn close(w: &mut World) {
     if let Some(es) = w.equipsets.as_mut() {
@@ -267,6 +295,7 @@ pub fn draw(gu: &mut GameUi, w: &World, s: &SetList, sw: f32, sh: f32, free: boo
     let mut rects = Vec::new();
     let Some(es) = w.equipsets.as_ref() else { return rects };
     if let Some(win) = gu.lobby_window_off(LIST, sw, sh, (0.0, 0.0), Some(s.sel), free && s.opt.is_none() && s.rename.is_none() && s.ed.is_none(), &[]) {
+        super::macroedit::hit(w, LIST, &win);
         for &(id, r) in win.children.iter().filter(|(id, _)| (1..=20).contains(id)) {
             let row = id as usize - 1;
             match &s.rename {
@@ -280,6 +309,7 @@ pub fn draw(gu: &mut GameUi, w: &World, s: &SetList, sw: f32, sh: f32, free: boo
             let (x, y) = (r[0] - lw, r[1].min(fy + fh - lh));
             let off = menu_off(w);
             if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (x - lx, y - ly), Some(o), free, &off) {
+                super::macroedit::hit(w, MENU, &win);
                 gu.disabled_children(MENU, win.frame[0], win.frame[1], &off, free.then_some(o));
                 rects.push(win.frame);
             }

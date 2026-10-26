@@ -353,6 +353,54 @@ fn mogc_key(w: &mut World, gu: &GameUi, key: egui::Key, o: u16) {
     }
 }
 
+/// The mouse: mcrmogc's or the grid's children as the generic window; the list's rows as the item list (hover moves
+/// the cursor, a click on the cursor row is Enter); the pointer over the other of grid and list moves the focus
+/// (message 8), as the Equipment screen.
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::macroedit::{child_under, generic};
+    let Some(e) = ed(w) else { return };
+    if let Some(o) = e.mogc {
+        generic(w, gu, MOGC, o, 1..=16, p, moved, clicked, right, |w, id| {
+            if let Some(e) = ed_mut(w) {
+                e.mogc = Some(id);
+            }
+        });
+        return;
+    }
+    let (on_list, grid, mode, picked, scroll, cursor) = (e.on_list, e.grid, e.mode, e.picked, e.scroll, e.cursor);
+    let n = EXTRA + items(w, e).len();
+    let row = super::post::picker_row(gu, sw, sh, p);
+    let (_, in_grid) = child_under(w, GRID, p, 1..=16);
+    if (moved || clicked) && ((!on_list && row.is_some() && mode == 2) || (on_list && in_grid && mode == 1 && picked.is_none())) {
+        num_plus(w);
+        return;
+    }
+    if !on_list {
+        let free = mode == 2 || ed(w).is_some_and(|e| e.mask == 0);
+        generic(w, gu, GRID, grid, 1..=16, p, moved, clicked, right, |w, id| {
+            if let Some(e) = ed_mut(w)
+                && (free || e.mask & 1 << slot_of(id) != 0)
+            {
+                e.grid = id;
+            }
+        });
+        return;
+    }
+    if right && row.is_some() {
+        key(w, gu, egui::Key::Escape);
+        return;
+    }
+    let Some(r) = row.filter(|r| scroll + r < n) else { return };
+    gu.hover.set(true);
+    if r != cursor && (moved || clicked) {
+        if let Some(e) = ed_mut(w) {
+            e.cursor = r;
+        }
+    } else if clicked {
+        key(w, gu, egui::Key::Enter);
+    }
+}
+
 /// The item info window's item (FUN_101360e0 on the grid: the slot's id whatever its state; the list's cursor item),
 /// mode 0.
 pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
@@ -400,6 +448,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, free: bool) -> Vec<[f3
     // The grid (FUN_101359c0): "remove" keytops3 429 at (+1, 0), an item its icon, "keep" the slot's label.
     super::items::upload_icons(gu, &info, e.work.iter().filter(|s| s[0] & 3 == 1).map(|s| u16::from_le_bytes([s[2], s[3]])));
     if let Some(win) = gu.lobby_window_off(GRID, sw, sh, (0.0, 0.0), Some(e.grid), free && !e.on_list && e.mogc.is_none(), &[]) {
+        super::macroedit::hit(w, GRID, &win);
         for &(child, r) in win.children.iter().filter(|(c, _)| (1..=16).contains(c)) {
             let s = e.work[slot_of(child)];
             match s[0] & 3 {
@@ -467,6 +516,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, free: bool) -> Vec<[f3
     if let Some(o) = e.mogc
         && let Some(win) = gu.lobby_window_off(MOGC, sw, sh, (0.0, 0.0), Some(o), free, &[])
     {
+        super::macroedit::hit(w, MOGC, &win);
         rects.push(win.frame);
     }
     rects

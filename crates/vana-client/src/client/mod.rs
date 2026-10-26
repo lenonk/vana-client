@@ -1715,9 +1715,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
 
-    // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages.
+    // Mouse on the main menu: hover moves the cursor, a click picks; the arrows swap pages. Not while the group walk
+    // suspends it (a window over it, e.g. MacroPalette's).
     if let (Some(sel), Some(p), None, None, None, None) = (world.menu, input.pointer, world.confirm, world.missions.as_ref(), world.quests.as_ref(), world.keyitems.as_ref())
         && world.linkshell.is_none()
+        && gu.want(crate::render::screens::menu_window(world.menu_page))
     {
         if let Some(k) = items.iter().position(|(_, r)| inside(r, p)) {
             gu.hover.set(true);
@@ -1870,6 +1872,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.loot.is_some() && world.confirm.is_none()) {
         treasure::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.macroedit.is_some() && world.confirm.is_none()) {
+        macroedit::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.remodel.is_some() && world.confirm.is_none()) {
         remodel::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -4485,6 +4490,8 @@ struct World {
     info_win: Option<(u16, Option<[u8; 24]>, u32)>,
     /// Its page (+0x380), the item the page is for, and the page count last built.
     info_page: std::cell::Cell<(usize, u16, usize)>,
+    /// The MacroPalette chain's windows as drawn this frame (name, frame, children), for the mouse (macroedit.rs).
+    mcr_hits: std::cell::RefCell<Vec<(String, [f32; 4], Vec<(u16, [f32; 4])>)>>,
     /// The ops' shared extdata buffer (DAT_104886bc).
     event_ext: [u8; 24],
     event_mem: crate::event_vm::Memory,
@@ -5897,6 +5904,7 @@ impl App {
                             scan: Default::default(),
                             info_win: None,
                             info_page: std::cell::Cell::new((0, 0, 1)),
+                            mcr_hits: Default::default(),
                             event_ext: [0; 24],
                             event_mem: Default::default(),
                             event_end_at: None,
