@@ -9072,3 +9072,18 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
   arrows and page name (a cursor stop the page opens on), pages Maps (Map Overlay, Opacity, Minimap, its Position and
   Size), Timers (Timers, Timers Position), Misc. (Synthesis Amount, Timestamps on All Lines). The header strip and
   title of the one-page form are gone; the help bar's title still says Extras.
+
+## Scheduler op 0xb7: a model NPC's race, and a trust's per-race weapon skill (2026-10-25)
+
+- The per-race skill files (FUN_100d25e0: categories 3 / 14 / 15) index their tables by FUN_10084420: actor vtable
+  +0x3b4 (1 only for the PC-look actor, vtable 0x1032d710 / 0x103313e8) ? actor +0xa0c (the look's race) : entity
+  +0xef. Race 0 is in every table as Hume male's (DAT_1035f4bc[0] = [1] = 33227).
+- Entity +0xef for a model NPC: 0x00E SubKind 0 (asm 0x1009c9d9) sets 3 for models 0x213..0x228, else 0, unless
+  +0x12c bit 6 is set. Scheduler op 0xb7 (FUN_10057fb0 case 0xb7 -> actor vtable +0xd4 = FUN_10084740) sets +0xef =
+  u32 @8 and that bit (cleared again for 0), so the race sticks over later 0x00E's.
+- Valaineral (LSB look 0x0000C60B: model 3014, file 99921, skeleton elv_, 99 bones) has `init` = `01; b7 3`: race 3,
+  Elvaan male. We ignored the op, so his Uriel Blade (category 3, animation 243) took Hume male's 33470 instead of
+  Elvaan male's 35006, and Hume tracks on the Elvaan skeleton twisted the body apart (npc-shot --model 3014 --motions
+  33470 --anim ws1). Now op 0xb7 sets the entity's race (Entity::race) and FxActors::pc reads it, then the model
+  range, then 0.
+- npc-shot takes --motions (as char-shot) to pose a model with an effect file's motions.

@@ -947,6 +947,8 @@ pub struct Effects {
     pub base_resets: Vec<(u32, bool)>,
     /// Op 0xac: actor1's death scheduler pick (dead / 1ead / 2ead / 3ead).
     pub death_picks: Vec<(u32, u8)>,
+    /// Op 0xb7: actor1's race code (entity +0xef), the per-race skill files' pick.
+    pub races: Vec<(u32, u8)>,
     /// The voyage matrix (DAT_10631ed0, FUN_10178b30) attach modes 0x14 / 0x15 take: identity off a ship's voyage.
     pub voyage: Mat4,
     pub lift_moves: Vec<LiftMove>,
@@ -1077,6 +1079,7 @@ impl Effects {
             motion_sets: Vec::new(),
             base_resets: Vec::new(),
             death_picks: Vec::new(),
+            races: Vec::new(),
             voyage: Mat4::IDENTITY,
             lift_moves: Vec::new(),
             sub_lib: None,

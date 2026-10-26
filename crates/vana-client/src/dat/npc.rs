@@ -222,6 +222,10 @@ mod tests {
         for id in [99_921u32] {
             let file = index.read(id).unwrap();
             println!("{id}: {:?}", init_scheduler(&file));
+            for c in chunks(&file).unwrap().iter().filter(|c| c.kind == 0x07) {
+                let ops: Vec<String> = crate::dat::sched::ops(c.data).iter().map(|o| format!("{:02x}:{}", o.code, o.raw.get(8..12).map_or(String::new(), |b| u32::from_le_bytes(b.try_into().unwrap()).to_string()))).collect();
+                println!("  {} {}", c.name(), ops.join(" "));
+            }
         }
     }
 

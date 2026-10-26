@@ -566,6 +566,9 @@ enum Cmd {
         /// Camera heading around the model in degrees (90 = facing the camera).
         #[arg(long, default_value_t = 60.0, allow_hyphen_values = true)]
         yaw: f32,
+        /// Extra motion files (event banks, effect files) searched before the model's, last first.
+        #[arg(long, num_args = 1..)]
+        motions: Vec<u32>,
         #[arg(long)]
         out: PathBuf,
     },
@@ -1046,7 +1049,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
-        Cmd::NpcShot { model, look, anim, frame, yaw, out } => npc_shot(model, look, &anim, frame, yaw, &out),
+        Cmd::NpcShot { model, look, anim, frame, yaw, motions, out } => npc_shot(model, look, &anim, frame, yaw, &motions, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
         Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour),
         Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
@@ -1452,7 +1455,7 @@ fn main() -> Result<()> {
     }
 }
 
-fn npc_shot(model: Option<u16>, look: Option<String>, anim: &str, frame: f32, yaw: f32, out: &std::path::Path) -> Result<()> {
+fn npc_shot(model: Option<u16>, look: Option<String>, anim: &str, frame: f32, yaw: f32, motions: &[u32], out: &std::path::Path) -> Result<()> {
     use dat::npc::{NpcLook, load_npc, parse_look};
     let look = match (model, look) {
         (Some(m), None) => NpcLook::Model(m),
@@ -1465,7 +1468,12 @@ fn npc_shot(model: Option<u16>, look: Option<String>, anim: &str, frame: f32, ya
     };
     println!("{look:?}");
     let index = dat::DatIndex::open(&config::Config::load().ffxi_dir())?;
-    let ch = load_npc(&index, &look)?;
+    let mut ch = load_npc(&index, &look)?;
+    for &id in motions {
+        let f = dat::motionfile::MotionFile::load(&index, id)?;
+        println!("motion file {id}: {} animations, schedulers {}", f.animations.len(), f.schedulers.iter().map(|(n, _)| n.as_str()).collect::<Vec<_>>().join(" "));
+        ch.animations.splice(0..0, f.animations);
+    }
     for l in &ch.log {
         println!("{l}");
     }

@@ -323,6 +323,8 @@ struct Entity {
     gens_off: bool,
     /// Entity +0x128 bit 17 clear (event op 0x7c): no mouth motion (FUN_10087e80 cancels it every frame).
     mouth_off: bool,
+    /// Entity +0xef from scheduler op 0xb7 (FUN_10084740), kept over 0x00E's while nonzero.
+    race: Option<u8>,
     /// Actor +0x130 bit 7 (0x00E u8 @0x2B bit 0x08).
     untargetable: bool,
     /// +0x128 bit 4 (TargetOffFlag): never a target candidate.
@@ -1011,6 +1013,7 @@ fn self_entity(w: &World) -> Entity {
         no_plate: false,
         gens_off: false,
         mouth_off: false,
+        race: None,
         untargetable: false,
         target_off: false,
         listed_only: false,
@@ -3050,6 +3053,7 @@ fn place_mogdoor(w: &mut World) {
             no_plate: true,
             gens_off: false,
             mouth_off: false,
+            race: None,
             untargetable: false,
             target_off: false,
             listed_only: false,
@@ -3812,9 +3816,14 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn pc(&self, id: u32) -> Option<(u8, i8)> {
         let ch = self.actors.get(&id)?.character.as_ref()?;
-        // A model NPC's race byte (+0xef) is never set by its look, so 0: Hume male's files (a trust's weapon skill).
-        // Its body info byte 9 is taken as unset *(inf)*.
-        Some(ch.pc.map_or((0, -1), |pc| (pc.race, pc.skirt)))
+        if let Some(pc) = ch.pc {
+            return Some((pc.race, pc.skirt));
+        }
+        // A model NPC's race (entity +0xef, FUN_10084420): op 0xb7's, else 0x00E SubKind 0's 3 for models
+        // 0x213..0x228, else 0 (Hume male's files). Its body info byte 9 is taken as unset *(inf)*.
+        let e = self.entities.get(&id);
+        let model = e.map_or(0, |e| e.model);
+        Some((e.and_then(|e| e.race).unwrap_or(if (0x213..=0x228).contains(&model) { 3 } else { 0 }), -1))
     }
 
     fn foot(&self, id: u32) -> Option<Vec3> {
@@ -6413,6 +6422,7 @@ impl App {
                         no_plate: false,
                         gens_off: false,
                         mouth_off: false,
+                        race: None,
                         untargetable: false,
                         target_off: false,
                         listed_only: false,
@@ -7239,6 +7249,11 @@ impl App {
         for (id, pick) in std::mem::take(&mut world.effects.death_picks) {
             if let Some(a) = world.actors.get_mut(&id) {
                 a.death_pick = pick;
+            }
+        }
+        for (id, race) in std::mem::take(&mut world.effects.races) {
+            if let Some(e) = world.entities.get_mut(&id) {
+                e.race = (race != 0).then_some(race);
             }
         }
         // Scheduler op 0x99: the entity scale +0x204 (event op 0xb6 0xf / 0x17's field), over the model's size.

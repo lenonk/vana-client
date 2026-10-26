@@ -1275,6 +1275,14 @@ impl Effects {
                 }
                 Flow::Next
             }
+            // Case 0xb7 -> vtable +0xd4 (FUN_10084740): actor1's entity race +0xef = u32 @8, kept over 0x00E's while
+            // nonzero (+0x12c bit 6). A trust's model init names its skeleton's race (Valaineral, model 3014: 3).
+            0xb7 => {
+                if let Some(id) = self.doll_of(t.a1).id() {
+                    self.races.push((id, op.u32_at(8) as u8));
+                }
+                Flow::Next
+            }
             // Case 0x99 (FUN_10084980): actor1's entity scale +0x204 = f32 @8.
             0x99 => {
                 if let Some(id) = self.doll_of(t.a1).id() {
@@ -2660,6 +2668,11 @@ mod tests {
             fx.tick(&f, &Two);
             assert_eq!(std::mem::take(&mut fx.death_picks), vec![(ORC, want)]);
         }
+        // Op 0xb7 (Valaineral's init): the race code, at once.
+        let ops = vec![SOp { code: 0xb7, wait: 0, dur: 0, raw: vec![0xb7, 3, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0] }];
+        fx.tasks.push(Some(Task::new((fx.reg.global.unwrap(), 0), Rc::new(ops), Who::Actor(ORC), Who::Actor(HUME), None, 1.0)));
+        fx.tick(&f, &Two);
+        assert_eq!(std::mem::take(&mut fx.races), vec![(ORC, 3)]);
     }
 
     /// DAT 50713 (Core Meltdown) main picks 1 at tick 0; the Ghrah model 2461's `1ead` puts it back to 0 at tick 262.
