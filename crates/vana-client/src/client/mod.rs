@@ -56,6 +56,7 @@ mod blklist;
 mod furniture;
 mod layout;
 mod fishing;
+mod primer;
 mod fishrod;
 mod mannequin;
 mod winhits;
@@ -241,7 +242,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -937,7 +938,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1579,6 +1580,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.primer.is_some() => primer::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if helpdesk::focused(world) => helpdesk::key(world, *key),
                 _ if world.macroedit.is_some() => macroedit::key(world, gu, *key),
                 _ if world.blklist.is_some() => blklist::key(world, *key),
@@ -1888,6 +1890,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.chatctrl.is_some() && world.confirm.is_none()) {
         chatctrl::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.primer.is_some() && world.confirm.is_none()) {
+        primer::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| helpdesk::focused(world)) {
         helpdesk::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
@@ -2488,7 +2493,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(levelsync::draw(gu, world, sw, sh));
     blockers.extend(viewhouse::draw(gu, world, sw, sh));
     blockers.extend(bazaar::draw(gu, world, sw, sh));
-    blockers.extend(helpdesk::draw(gu, world, sw, sh));
+    // guide00 suspends faqsub (window group 0x1c).
+    if world.primer.is_none() {
+        blockers.extend(helpdesk::draw(gu, world, sw, sh));
+    }
+    blockers.extend(primer::draw(gu, world, sw, sh));
     blockers.extend(macroedit::draw(gu, world, sw, sh));
     blockers.extend(searchmenu::draw(gu, world, sw, sh));
     blockers.extend(status::draw(gu, world, sw, sh));
@@ -3023,6 +3032,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     viewhouse::bars(gu, world, &mut bars);
     bazaar::bars(gu, world, &mut bars);
     helpdesk::bars(gu, world, &mut bars);
+    primer::bars(gu, world, &mut bars);
     macroedit::bars(gu, world, &mut bars);
     status::bars(gu, world, &mut bars);
     currencies::bars(gu, world, &mut bars);
@@ -4568,6 +4578,8 @@ struct World {
     /// Fishing (client/fishing.rs) while the fishing model is set up; the /fish latch (DAT_10487e49); the bite wait
     /// (+0x1e4, ticks); the "Fish" gauge's percent (party window +0x3a); our last 0x037 status (+0x16c).
     fishing: Option<fishing::Fishing>,
+    /// The Adventuring Primer (client/primer.rs).
+    primer: Option<primer::Primer>,
     fish_pending: bool,
     hook_wait: i32,
     fish_gauge: Option<u8>,
@@ -5983,6 +5995,7 @@ impl App {
                             layout_view: 0,
                             layout_leave: false,
                             fishing: None,
+                            primer: None,
                             fish_pending: false,
                             hook_wait: 0,
                             fish_gauge: None,
@@ -6513,7 +6526,7 @@ impl App {
                     // FUN_10011a00 state 5 (each zone-in): first person (DAT_10487f80) and autorun (DAT_10487f81) off,
                     // set directly: no "Follow canceled." line.
                     (world.autorun, world.autorun_dir, world.follow, world.camst.first) = (false, Vec3::ZERO, None, false);
-                    (world.fishing, world.fish_pending, world.fish_gauge) = (None, false, None);
+                    (world.fishing, world.fish_pending, world.fish_gauge, world.primer) = (None, false, None, None);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.
@@ -8095,6 +8108,7 @@ impl App {
         self.input.begin_frame(f);
         let Phase::World(world) = &mut self.phase else { return };
         fishing::update(world, &mut self.input, dt, window);
+        primer::update(world, dt * 60.0);
         if world.layout.is_some() && !world_window_open(world) {
             layout::update(world, &mut self.input, dt);
         }
@@ -8109,7 +8123,14 @@ impl App {
             && !m.update(&mut self.input, dt * 60.0, drag)
         {
             let (back, reopen, mode) = (m.return_menu, m.reopen, m.mode);
+            let primer = m.primer_page().zip(m.primer_next);
             world.map = None;
+            // LAB_101f7b90 (the next image) / LAB_101f7b40 (back to guide01).
+            match primer {
+                Some(((first, count, at), true)) => world.map_cmds.push(map::Cmd::Primer { first, count, at: (at + 1) % count }),
+                Some((_, false)) => primer::map_back(world),
+                None => {}
+            }
             world.scan.party_busy = false;
             match reopen {
                 // LAB_101faff0 -> FUN_101f79e0(6, zone, map): the preview reopens there, without the arrow.

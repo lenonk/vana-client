@@ -1126,8 +1126,8 @@ decompiled; the parts that are not confirmed are listed under "Inferred".
 | f000-f1ff | 101564c0 | monstrosity species | 55549 / 55669 / 55789 / 56209 |
 | f200-f5ff | 10156630 | RoE categories (dat/roe.rs) | 55553 / 55673 / 55793 / 56213 |
 | f600-f613 | 10156790 | no strings | 55504 (all) |
-| f620-f62f | 10156a20 | guide pages (guide01, id - 0xf620) | 55558 / 55678 / 55798 / 56218 |
-| f630-f71f | 101568d0 | ? | 55557 / 55677 / 55797 / 56217 |
+| f620-f62f | 10156a20 (current 1015d310) | the Adventuring Primer's categories (guide00, id - 0xf620) | 55558 / 55678 / 55798 / 56218 |
+| f630-f71f | 101568d0 (current 1015d1c0) | the Primer's topics (guide01; +4 image number, +5 image count) | 55557 / 55677 / 55797 / 56217 |
 | ffff-1000e | 10156b70 | currency (gil) | 9 / 91 / 55820 / 56240 |
 
 - Common header: +0 id, +4 flags, +6 stack, +8 type, +0xa resource, +0xc targets.
@@ -9854,3 +9854,34 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   UnlockedAttachments[8]). Ours: shop::attachment_unlocked. The gear checks come first as before.
 - Not seen live: no LSB shop sells attachments (Whitegate's Ghatsad / Tateeya run quests; Al Zahbi's Chayaya sells
   dice, kind 2, which needs Monstrosity data).
+
+## The Adventuring Primer (2026-10-26; spec ~/ffxi/lab/research/primer_spec.md)
+
+- /guide and /primer (0xa0 / 0xa1, FUN_1007fcb0, flags 0x51 through the state gate) and the Help Desk's row 1
+  (FUN_10212aa0: SE 0002) open "menu    guide00" (FUN_10233b80; nothing while open). Its open hook closes the main menu
+  / social page beside it and reopens it at close (+0x64 / +0x65).
+- guide00: the categories are the contiguous run of records 0xf620.. with topics, at most 8 (FUN_10234010); this
+  install has six (Basics 56 topics, Growing Your Character 7, Story Content 14, Early 4, Intermediate 11, Advanced
+  11). Rows (LAB_10233dc0): framesus 35 at (4, 5), the name at (16, 0), 0x80803040 on the cursor; built at the 10th
+  retail frame (ours hides the rows until then). Up / Down wrap, Right / Left the last / first row, Enter guide01,
+  Escape closes. No scrolling, no greying. Title slot 1 group 9 0xc5 "Help Desk", no help.
+- guide01 (FUN_10234540): the category's topic ids (record u16 count @6, u32 ids @8; Items::guide_pages), 8 rows at
+  pitch 25, the category's name at (60, 10), the bar; plain Left / Right the previous / next category with SE 0001
+  always (cursor / top 0), with Ctrl / Alt a page of 8; Escape back to guide00 (its cursor kept); the arrows (children 9
+  / 10) as Left / Right.
+- A topic's pages (FUN_102342c0 -> FUN_101f7ad0): file (number + 0x83b1) x 3 + page (Japanese 0x82e9), 1..3 pages,
+  each a finished 1024 x 1024 illustration (text and the "n / 3" counter baked in), shown by the map window in mode 7
+  (map.rs Mode::Primer; FUN_101fb1b0: base (-256, -256), zoom W / 512 x config 0x8a / 1000, so 2x by default, the
+  scroll and zoom keys live; FUN_101ef990(0, -70)). Enter / a click: SE 0002, then with more pages the next one after
+  the fade-out (LAB_101f7b90, wrapping); Escape / a right click: back to guide01 (LAB_101f7b40: its hand and bar back,
+  title slot 2 group 9 0xdd). The map's texture key now carries the file id (all pages name their texture
+  "cntguidecg_ew_00").
+- Busy (FUN_10087070(0): an event, frozen, charmed, fishing) closes guide00 / guide01 and the page with no callback
+  (textcmd::busy, shared with the state gate). A zone change drops them.
+- Live (Lnxcsfix): /primer (six categories, "Help Desk" in the title bar), Basics, Ctrl+Right (Logging Out ..
+  Healing), Right (Growing Your Character), Enter on Movement (page 1 of 3 at 2x), Enter twice (2 / 3, back to 1 / 3
+  after 3), Escape (guide01 with the hand on Movement); the mouse: a row click (PCs and NPCs, one page: a click only
+  plays SE 0002), a right click back; /helpdesk row 1 (guide00 over the suspended faqsub; Escape back to faqsub).
+- *(inf / to compare with retail footage)*: guide00's rows show through guide01's translucent frame (the base draw
+  FUN_10221f50 has no "covered" test, unlike quest00); guide01 drawn above the page image (registry layers); the page's
+  first view (ours eases from the image's top-left corner).

@@ -117,6 +117,8 @@ mod id {
     pub const PARTYINFO: u16 = 0x1ad;
     pub const BLACKLIST: u16 = 0x3b;
     pub const MUTELIST: u16 = 0x3c;
+    pub const GUIDE: u16 = 0xa0;
+    pub const PRIMER: u16 = 0xa1;
     pub const PRCMD: u16 = 0x61;
     pub const ACMD: u16 = 0x57;
     pub const JOIN: u16 = 0x58;
@@ -530,14 +532,18 @@ pub(super) fn status_gate(w: &mut World, mask: u8) -> bool {
     false
 }
 
+/// FUN_10087070(0): an event, frozen, charmed, or fishing / digging (FUN_100956f0 / FUN_10095750).
+pub(super) fn busy(w: &World) -> bool {
+    event::active(w) || w.my_plate.frozen || w.my_plate.charmed || matches!(w.my_motion.status, 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e)
+}
+
 /// FUN_10081230: dead (0x20), mounted (0x40) and event (0x80) states a command's flags don't allow; then UI-free.
 fn state_gate(w: &mut World, flags: u16) -> bool {
     if flags & flag::NO_GATE != 0 {
         return true;
     }
     let s = w.my_motion.status;
-    // FUN_10087070(0): an event, frozen, charmed, or fishing / digging (FUN_100956f0 / FUN_10095750).
-    let busy = event::active(w) || w.my_plate.frozen || w.my_plate.charmed || matches!(s, 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e);
+    let busy = busy(w);
     let state = if w.dead() { 0x20 } else { 0 } | if matches!(s, 5 | 0x55) { 0x40 } else { 0 } | if busy { 0x80 } else { 0 };
     // Any disallowed state refuses; the line goes by the states held, first match.
     if state & !flags != 0 {
@@ -1635,6 +1641,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::BLACKLIST => blacklist(w, args),
+        // FUN_1007fcb0: guide00 (FUN_10233b80), no arguments, no sound.
+        id::GUIDE | id::PRIMER => {
+            super::primer::open(w, false);
+            Ok(())
+        }
         // FUN_1007ca40: a fresh condition (no area), status 0x20000000 (flag 0x40), searched in every area; nothing while
         // a query is out (FUN_1020a9d0).
         id::MUTELIST => {

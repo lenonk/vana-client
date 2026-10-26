@@ -57,10 +57,10 @@ pub enum Kind {
     RoeCategory,
     /// FUN_10156790 (no strings)
     Kf600,
-    /// FUN_10156a20: the guide pages ("menu    guide01", id - 0xf620)
+    /// FUN_1015d310 (2019 FUN_10156a20): the Adventuring Primer's categories (guide00 rows, id - 0xf620)
     Guide,
-    /// FUN_101568d0
-    Kf630,
+    /// FUN_1015d1c0 (2019 FUN_101568d0): the Primer's topics (guide01 rows; +4 the image number, +5 the image count)
+    GuidePage,
     /// FUN_10156b70: gil and other currencies
     Currency,
 }
@@ -83,7 +83,7 @@ pub const RANGES: [(u32, u32, Kind, [u32; 4]); 18] = [
     (0xf200, 0xf600, Kind::RoeCategory, [55553, 55673, 55793, 56213]),
     (0xf600, 0xf614, Kind::Kf600, [55504, 55504, 55504, 55504]),
     (0xf620, 0xf630, Kind::Guide, [55558, 55678, 55798, 56218]),
-    (0xf630, 0xf720, Kind::Kf630, [55557, 55677, 55797, 56217]),
+    (0xf630, 0xf720, Kind::GuidePage, [55557, 55677, 55797, 56217]),
     (0xffff, 0x1000f, Kind::Currency, [9, 91, 55820, 56240]),
 ];
 
@@ -302,7 +302,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             it.extra = vec![x16(0xd90, 4), x16(0xd94, 6), x32(0xd98, 8)];
             (Some(0x108), 1, false)
         }
-        Kind::Kf630 => {
+        Kind::GuidePage => {
             it.extra = vec![x8(0xd88, 4), x8(0xd8c, 5)];
             (Some(8), 1, false)
         }
@@ -392,6 +392,13 @@ impl Items {
         self.lang
     }
 
+    /// A Primer category's topic ids (FUN_1015d310: u16 count @6, u32 ids from @8).
+    pub fn guide_pages(&self, id: u32) -> Vec<u32> {
+        let Some((Kind::Guide, r)) = self.record(id) else { return Vec::new() };
+        let n = u16::from_le_bytes([r[6], r[7]]) as usize;
+        r[8..].chunks_exact(4).take(n.min(64)).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+    }
+
     /// Decrypted record bytes of `id`.
     pub fn record(&self, id: u32) -> Option<(Kind, Vec<u8>)> {
         let i = RANGES.iter().position(|r| (r.0..r.1).contains(&id))?;
@@ -418,6 +425,20 @@ impl Items {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Primer: "Basics" (0xf620) lists 56 topics from "Movement" (0xf631: image number 1, three images).
+    #[test]
+    fn primer_records() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(items) = Items::load(&index, Lang::En) else { return };
+        let pages = items.guide_pages(0xf620);
+        assert_eq!((pages.len(), pages.first()), (56, Some(&0xf631)));
+        assert_eq!(items.item(0xf620).map(|i| i.name), Some("Basics".to_string()));
+        let m = items.item(0xf631).unwrap();
+        let extra = |at: u16| m.extra.iter().find(|e| e.0 == at).map(|e| e.1);
+        assert_eq!((m.name.as_str(), extra(0xd88), extra(0xd8c)), ("Movement", Some(1), Some(3)));
+    }
 
     #[test]
     fn table_fields() {

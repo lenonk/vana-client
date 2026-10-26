@@ -187,7 +187,7 @@ impl Shade {
 }
 
 /// FUN_101f9a50's modes: 0 the main menu or /map, 1 an event map, 2 an event illustration (zone <= -100), 3 a region
-/// map (zone -1..-99), 5 Change Map's other zone, 6 an op 0xd4 sub 0 menu's preview.
+/// map (zone -1..-99), 5 Change Map's other zone, 6 an op 0xd4 sub 0 menu's preview, 7 an Adventuring Primer page.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Mode {
     Menu,
@@ -196,6 +196,7 @@ pub enum Mode {
     RegionMap,
     Other,
     Preview,
+    Primer,
 }
 
 impl Mode {
@@ -367,6 +368,10 @@ pub struct MapWin {
     rising: bool,
     /// Real ticks not yet run as 2-tick retail frames (fade, zoom-to, scroll-to).
     acc: f32,
+    /// Mode 7 (+0xa4c / +0xa50 / +0xa51): the page's first image file, the image count, the one shown; and what the
+    /// close asks next (LAB_101f7b90 the next image, LAB_101f7b40 back to guide01).
+    primer: Option<(u32, u8, u8)>,
+    pub primer_next: Option<bool>,
 }
 
 impl MapWin {
@@ -585,7 +590,7 @@ impl MapWin {
         let fit = sw / 512.0;
         let zoom = match mode {
             _ if need == Need::Nothing => fit,
-            Mode::Menu => fit * zoom_cfg.clamp(1000, 4000) as f32 * 0.001,
+            Mode::Menu | Mode::Primer => fit * zoom_cfg.clamp(1000, 4000) as f32 * 0.001,
             Mode::Event => fit * 1.75,
             _ => fit,
         };
@@ -597,7 +602,7 @@ impl MapWin {
         let points = match mode {
             Mode::Event | Mode::RegionMap | Mode::Preview => true,
             Mode::Menu | Mode::Other => owned && need != Need::Nothing,
-            Mode::Illustration => false,
+            Mode::Illustration | Mode::Primer => false,
         };
         let mut m = Self {
             region,
@@ -606,7 +611,7 @@ impl MapWin {
             need,
             owned,
             points: points.then(Points::default),
-            help: !preview,
+            help: !preview && mode != Mode::Primer,
             told: None,
             margin: if preview { PREVIEW_MARGIN } else { 0.0 },
             pad: if preview { PREVIEW_PAD } else { 0.0 },
@@ -656,6 +661,8 @@ impl MapWin {
             alpha: 0.0,
             rising: true,
             acc: 0.0,
+            primer: None,
+            primer_next: None,
         };
         if m.show_player {
             // As decompiled: screen pixels taken from map pixels, then clamped and eased.
@@ -664,6 +671,23 @@ impl MapWin {
         }
         m.clamp();
         m
+    }
+
+    /// FUN_101f7ad0 -> FUN_101fb140 -> FUN_101f9a50 mode 7: image `at` of a Primer page's `count` from file `first`;
+    /// the base (-256, -256), no points, markers, arrow or place name, the scroll and zoom keys live, the zoom as mode 0's
+    /// (config 0x8a), then map pixel (0, -70) eased under the cursor point (FUN_101ef990(0, -70)).
+    pub fn primer(index: Option<Arc<DatIndex>>, first: u32, count: u8, at: u8, sw: f32, sh: f32, zoom_cfg: u32) -> Self {
+        let region = Region { zone: -100, key: 0, num: 0, flags: 0, scale: 0, ki: -1, file: 0, ox: -256, oy: -256 };
+        let mut m = Self::new(region, true, None, (0.0, 0.0), 0.0, sw, sh, Mode::Primer, zoom_cfg, false);
+        m.rx = index.map(|i| load(i, first + at as u32));
+        m.primer = Some((first, count, at));
+        m.scroll_to_px((0.0, -70.0));
+        m
+    }
+
+    /// The Primer page shown: (first file, count, index).
+    pub fn primer_page(&self) -> Option<(u32, u8, u8)> {
+        self.primer
     }
 
     /// Waits for the image, skips the opening animations and shows the marker at full alpha (offscreen shots).
@@ -782,6 +806,26 @@ impl MapWin {
     pub fn key(&mut self, key: egui::Key) -> bool {
         use crate::audio::Ui;
         if self.closing.is_some() {
+            return true;
+        }
+        // FUN_101fae40 mode 7: Enter (FUN_101fb2c0) SE 0002, then with more than one image the next one after the
+        // fade-out; Escape (FUN_101fb310) back to guide01. The arrows do nothing.
+        if let Some((_, count, _)) = self.primer {
+            match key {
+                egui::Key::Enter => {
+                    self.sounds.push(Ui::Select as u32);
+                    if count > 1 {
+                        self.primer_next = Some(true);
+                        return false;
+                    }
+                }
+                egui::Key::Escape => {
+                    self.sounds.push(Ui::Cancel as u32);
+                    self.primer_next = Some(false);
+                    return false;
+                }
+                _ => {}
+            }
             return true;
         }
         if self.list.is_some() {
@@ -1810,6 +1854,8 @@ pub enum Cmd {
     Preview { zone: i16, key: i16, arrow: bool, point_y: f32 },
     /// FUN_100b2a60 -> FUN_101fa420(1): an answer closes the event map (any event mode), no reopen.
     CloseEvent,
+    /// FUN_101fb140: a Primer page's image (mode 7); nothing while another map is up (FUN_101f9a20).
+    Primer { first: u32, count: u8, at: u8 },
 }
 
 /// FUN_101f8650: group 10 #7 "You do not possess a map of %s." with the place name (FUN_10129e80, mode 0x79).
@@ -1911,6 +1957,11 @@ pub(super) fn apply(w: &mut World, regions: &[Region], c: Cmd, sw: f32, sh: f32)
                 w.game.set(0x8a, m.zoom_cfg());
                 m.reopen = None;
                 m.begin_close();
+            }
+        }
+        Cmd::Primer { first, count, at } => {
+            if w.map.as_ref().is_none_or(|m| m.closing()) {
+                w.map = Some(MapWin::primer(w.index.clone(), first, count, at, sw, sh, w.game.get(0x8a)));
             }
         }
         // Opening a map resets the scripted view, so one sent with no map open is dropped.
@@ -2127,7 +2178,7 @@ fn marker(gu: &mut GameUi, x: f32, y: f32, facing: f32, shade: f32) {
 fn decode(index: &DatIndex, file: u32) -> Loaded {
     index.read(file).ok().and_then(|b| crate::dat::ui::UiFile::parse(&b).map_err(|e| log::warn!("map {file}: {e:#}")).ok()).and_then(|ui| {
         let (name, img) = ui.images.into_iter().next()?;
-        Some((format!("map:{name}"), img.width, img.height, img.rgba))
+        Some((format!("map:{file}:{name}"), img.width, img.height, img.rgba))
     })
 }
 

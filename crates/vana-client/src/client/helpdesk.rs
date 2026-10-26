@@ -140,9 +140,10 @@ pub fn key(w: &mut World, key: egui::Key) {
                     h.main = main;
                 }
             }
-            c => {
+            // Row 1 (0x10212bea..0x10212c08): SE 0002, the social page hidden, guide00.
+            _ => {
                 w.sounds.push(Ui::Select as u32);
-                log::info!("help desk: row {c} (Adventuring Primer) is not implemented yet");
+                super::primer::open(w, true);
             }
         },
         _ => {}
@@ -181,7 +182,7 @@ pub fn new_adventurer_off(w: &mut World) {
 
 /// faqsub keeps the keys unless a prompt or the search results are up over it.
 pub fn focused(w: &World) -> bool {
-    w.helpdesk.is_some() && w.confirm.is_none() && w.search.is_none()
+    w.helpdesk.is_some() && w.confirm.is_none() && w.search.is_none() && w.primer.is_none()
 }
 
 /// Title slot 2 group 9 0xdd "Help Desk"; help slot 2 the cursor row's (none on Back and on the Config page's terms).

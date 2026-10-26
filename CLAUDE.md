@@ -70,7 +70,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   F1-F12 targeting, UI hide, screenshots, the Pause log-out prompt, macros and palettes, the Ctrl / Alt page
   modifier (0xa8) in every list (MODLOG "The page modifier (0xa8) in the other lists"). Mog House layout mode done
   (client/layout.rs, mannequin.rs; MODLOG "Mog House layout mode" parts 1..4, "Mog House mannequins" parts 1 / 2).
-  Left: the Adventuring Primer's keys (with the Primer). The chat line's
+  The Adventuring Primer done (client/primer.rs, map.rs Mode::Primer; MODLOG "The Adventuring Primer"). The chat line's
   selection, copy, cut and paste are done (ours, not retail; MODLOG "Chat line: selection").
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),
@@ -120,7 +120,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     live with a real shell; left seeing To Sack / To Pearl / Kick, which need a second member); Region Info done (region.rs; left the Campaign windows, which LSB never
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done
     (bazaar.rs, shop.rs, seacom.rs, the plate's bag glyph 0x9c in plate.rs; left View Wares), Help Desk's faqsub and the GM call done
-    (helpdesk.rs, faqmain.rs; the GM reply page done; left the Adventuring Primer, Execute and the reply not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
+    (helpdesk.rs, faqmain.rs; the GM reply page, the Adventuring Primer done; left Execute and the reply not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
     done (equipsets.rs, esmenu.rs, esedit.rs, /equipset, /lockstyle, /lockstyleset), the mouse in both;
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
     over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
@@ -211,9 +211,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   tables load, the server message and /servmes, zone text colours) and /emote, /recast, talk range / mounted, /party
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
   check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
-  (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). s2c 0x0B4's system message filter done (its PvP word is dead on LSB). Left: the spec's part C
-  (window, list and server-flag commands) left: /guide /primer (the toggles' consumers, /furcc
-  included, are done; the map on an elevator, /layout, /remodel, /garden and /mutelist done).
+  (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). s2c 0x0B4's system message filter done (its PvP word is dead on LSB). The spec's part C
+  (window, list and server-flag commands) done: the toggles' consumers, /furcc, the map on an elevator, /layout,
+  /remodel, /garden, /mutelist, /guide /primer.
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the

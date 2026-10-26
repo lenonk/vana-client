@@ -162,6 +162,12 @@ impl ItemCache {
         self.categories.borrow_mut().entry(id).or_insert_with(|| crate::dat::roe::category(items, id).map(Arc::new)).clone()
     }
 
+    /// A Primer category (0xf620 + k): its name and topic ids.
+    pub fn guide(&self, id: u16) -> Option<(String, Vec<u16>)> {
+        let name = self.item(id)?.name.clone();
+        Some((name, self.names.items.guide_pages(id as u32).into_iter().map(|p| p as u16).collect()))
+    }
+
     /// The teleport point table (records 0xf600..0xf613), read once.
     pub fn points(&self) -> Arc<Vec<crate::dat::tpoints::Point>> {
         self.points.get_or_init(|| Arc::new(crate::dat::tpoints::load(&self.names.items))).clone()

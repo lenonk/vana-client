@@ -42,6 +42,8 @@ pub enum Owner {
     Points,
     /// The auction list and its sell list.
     Auction,
+    /// The Adventuring Primer's topics (guide01).
+    Primer,
 }
 
 /// A focused list's bar as drawn this frame: x, y, height (8 wide), and its (total, visible, top).
@@ -176,6 +178,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Linkshell => super::linkshell::bar(w, m) || super::linklist::bar(w, m),
         Owner::BlueSet => super::bluset::bar(w, m),
         Owner::Auction => super::auction::bar(w, m),
+        Owner::Primer => super::primer::bar(w, m),
         Owner::Points => super::merits::bar(w, m) || super::jobpoints::bar(w, m) || super::aepoints::bar(w, m) || super::unity::bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),
