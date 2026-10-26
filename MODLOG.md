@@ -69,8 +69,8 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   blending has bit 0x8000 (then alpha-test). Verified: N. San d'Oria lawn `san_siba` (mean alpha 14) is
   the floor, and disappeared under a blanket alpha test.
 - Collision mesh (decoded MZB): table at u32 @8 (skip zeros); grid offset @table+0x10; grid is
-  (byte@0xc * 10) x (byte@0xd * 10) u32 cell offsets. Cell list: u32 head with own x @bits14..22 and
-  y @bits23..31 (checked for every cell in zones 100/104/230/231/243), then (matrix, geometry) offset pairs
+  (byte@0xc * byte@0xe / 4) x (byte@0xd * byte@0xf / 4) u32 cell offsets (see "Collision grids past 512 cells").
+  Cell list: u32 head with own x @bits14..22 and y @bits23..31 (mod 512), then (matrix, geometry) offset pairs
   until 0. Matrix: 16 floats, translation at 12..14. Geometry: u32 verts, u32 normals, u32 tris,
   u16 tri count, u16 flags (bit0: no line-of-sight block); triangle = 4 u16 (v0 v1 v2 normal, & 0x3FFF).
   Same (matrix, geometry) pair repeats across cells: dedupe. Zone 231: 58970 triangles.
@@ -9049,3 +9049,16 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
   ANIMAL actor; ride.rs asks for the animal again) and queues its look; the cached model returns at once with appear
   0. Furniture and auras are not entities and stay *(inf: retail keeps XiModelActors with +0x778 set)*.
 - Checked headless: event-run 230 0x3d1 (npc 0x153) emits "op ab.17 [Int(0)]" before its end. Not seen live yet.
+
+## Collision grids past 512 cells, and the grid scale (2026-10-25)
+
+- Outer Horutoto Ruins (194) had no collision at all: the user walked straight off its walls into the air. Its grid is
+  600 x 600 cells, and a cell list's head holds x and y in 9 bits each, so row 512 read back as 0 and our check that
+  every list names its own cell threw the whole grid away. Retail never checks the heads.
+- The grid's size is byte 0x0c x byte 0x0e / 4 by byte 0x0d x byte 0x0f / 4: the zone spans byte 0x0c x byte 0x0e
+  units in 4-unit cells. Bytes 0x0e / 0x0f are 40 in most zones (so byte x 10, as we had) and 20 in Horlais Peak (139)
+  and Yughott Grotto (142): there the 325 / 500-wide grids end exactly at the MZB's end and every head agrees, while the
+  old width made every head disagree (both zones loaded no collision).
+- Zones 61, 184 and 246 have lists past x 511 whose head names the next row's cell; a grid is now refused only when
+  most heads disagree (a wrong width). Every zone with a collision table loads (the test all_zones_collide); the ships
+  and sea routes (1, 3, 46, 47, 58..60, 220..228) have none, as before.

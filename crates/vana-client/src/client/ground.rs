@@ -1038,6 +1038,50 @@ mod tests {
         pos
     }
 
+    /// A zone's collision as loaded (by hand: `cargo test --release collision_of -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn collision_of() {
+        let cfg = crate::config::Config::load();
+        let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).unwrap();
+        let keys = crate::dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).unwrap()).unwrap();
+        for id in [194u32, 116] {
+            let s = crate::dat::zone::load_scene(&keys, &index.read(crate::dat::zone::file_id(id)).unwrap()).unwrap();
+            let c = s.collision.as_ref();
+            println!("zone {id}: file {}, warnings {:?}, collision tris {:?}", crate::dat::zone::file_id(id), s.warnings, c.map(|c| c.tris.len()));
+            if let Some(c) = c {
+                let (mut lo, mut hi) = (Vec3::splat(f32::MAX), Vec3::splat(f32::MIN));
+                for t in &c.tris {
+                    for v in t {
+                        lo = lo.min(*v);
+                        hi = hi.max(*v);
+                    }
+                }
+                println!("  bounds {lo} .. {hi}");
+            }
+            let g = Ground::build(&s);
+            println!("  snap at the zone-in: {:?}", g.snap(578.9, -637.0, -25.6));
+        }
+    }
+
+    /// Every zone's collision parses (by hand: `cargo test --release all_zones_collide -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn all_zones_collide() {
+        let cfg = crate::config::Config::load();
+        let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).unwrap();
+        let keys = crate::dat::zone::Keys::from_ffximain(&std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll")).unwrap()).unwrap();
+        let mut bad = Vec::new();
+        for id in 0..300u32 {
+            let Ok(file) = index.read(crate::dat::zone::file_id(id)) else { continue };
+            let Ok(s) = crate::dat::zone::load_scene(&keys, &file) else { continue };
+            if let Some(w) = s.warnings.iter().find(|w| w.starts_with("collision")) {
+                bad.push((id, w.clone()));
+            }
+        }
+        println!("collision failures: {bad:?}");
+    }
+
     #[test]
     fn east_ronfaure_hillsides_block() {
         let Some(g) = zone(101) else { return };

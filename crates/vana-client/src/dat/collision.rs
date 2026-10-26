@@ -82,8 +82,10 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
     if grid_at == 0 || grid_at >= p.len() {
         bail!("MZB collision has no grid");
     }
-    // Each cell's entry list starts with its own coordinates, which pins down the grid width.
-    let (w, h) = (p[0x0c] as usize * 10, p[0x0d] as usize * 10);
+    // The zone spans byte 0x0c x byte 0x0e by byte 0x0d x byte 0x0f units in 4-unit cells (0x0e / 0x0f are 40 in most
+    // zones, 20 in Horlais Peak or Yughott Grotto); each cell's list names its own cell, which confirms the width.
+    let scale = |n: usize, s: u8| n * if s == 0 { 40 } else { s as usize } / 4;
+    let (w, h) = (scale(p[0x0c] as usize, p[0x0e]), scale(p[0x0d] as usize, p[0x0f]));
     let list = super::zone::light_list(p);
     let light_keys = |xf: usize| -> [u32; 4] {
         std::array::from_fn(|k| match p.get(xf + 0xac + k) {
@@ -94,6 +96,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
     let mut objects: HashMap<usize, u32> = HashMap::new();
     let mut seen: HashMap<(usize, usize), u32> = HashMap::new();
     let mut out = Collision { tris: Vec::new(), flags: Vec::new(), cam_pass: Vec::new(), decal: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: (w, h) };
+    let (mut lists, mut elsewhere) = (0usize, 0usize);
     for y in 0..h {
         for x in 0..w {
             let Some(entry) = u32_at(p, grid_at + (y * w + x) * 4).map(|e| e as usize) else { continue };
@@ -101,8 +104,11 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                 continue;
             }
             let head = u32_at(p, entry).unwrap_or(0);
-            if ((head >> 14) & 0x1FF) as usize != x || ((head >> 23) & 0x1FF) as usize != y {
-                bail!("collision cell ({x},{y}) claims to be ({},{})", (head >> 14) & 0x1FF, (head >> 23) & 0x1FF);
+            // 9 bits each, so past 511 they wrap; a few lists name a neighbour (zones 61, 184, 246 beyond x 511), which
+            // retail never checks. Most naming another cell means a wrong width.
+            lists += 1;
+            if ((head >> 14) & 0x1FF) as usize != x & 0x1FF || ((head >> 23) & 0x1FF) as usize != y & 0x1FF {
+                elsewhere += 1;
             }
             // Low 11 bits: pair count; 0x2000: list switched off (FUN_10162590 skips it).
             if head & 0x2000 != 0 {
@@ -134,6 +140,9 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                 out.cells[y * w + x].push(id);
             }
         }
+    }
+    if elsewhere * 2 > lists {
+        bail!("{elsewhere} of {lists} collision cells name another cell: the grid is not {w} x {h}");
     }
     Ok(out)
 }
