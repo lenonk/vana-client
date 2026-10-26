@@ -209,6 +209,11 @@ impl Effects {
         }
     }
 
+    /// Whether every file is in (or failed); the others start loading.
+    pub fn libs_ready(&mut self, files: &[u32]) -> bool {
+        files.iter().fold(true, |ok, &f| (self.lib_for(f).is_some() || self.failed.contains(&f)) && ok)
+    }
+
     pub fn poll_loads(&mut self) {
         while let Ok((file, lib)) = self.load_rx.try_recv() {
             match lib {
@@ -1148,8 +1153,9 @@ impl Effects {
                 Flow::Jump
             }
             // FUN_100a4140 for op dur x speed: 0x20 holds actor2, 0x1f actor1 (their status changes wait); 0x59
-            // actor1 with no reactions; 0x07 / 0x08 actor1 / actor2 no reactions only (+0x80, FUN_100607e0).
-            0x20 | 0x1f | 0x59 | 0x07 | 0x08 if t.motions => {
+            // actor1 with no reactions; 0x07 / 0x08 actor1 / actor2 no reactions only (+0x80, FUN_100607e0). Quiet
+            // tasks too: the draw's 0x07 keeps the run's end from cutting its `ina` short.
+            0x20 | 0x1f | 0x59 | 0x07 | 0x08 => {
                 let (who, kind) = match op.code {
                     0x20 => (t.a2, HOLD_STATUS),
                     0x1f => (t.a1, HOLD_STATUS),

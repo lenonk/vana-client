@@ -503,7 +503,9 @@ pub(super) fn update(w: &mut World, dt: f32) {
             }
         }
         if !want.is_empty() && want != a.battle.on {
-            if let Some(files) = w.motion_files.all(&index, &want) {
+            // FUN_100d12d0: "in N" starts once the files are in, for its motions and its holds alike.
+            let fx_ready = w.effects.libs_ready(&want);
+            if let Some(files) = w.motion_files.all(&index, &want).filter(|_| fx_ready) {
                 drop_kind(&mut a.extra, Kind::Battle);
                 add(&mut a.extra, Kind::Battle, files);
                 log::info!("actor {id:#x}: engaged, battle files {want:?}");

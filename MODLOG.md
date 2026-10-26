@@ -9216,3 +9216,20 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
   moogle (0x939). It was missing (the user) or the small model 52 (our replay). Now sub 0 on a model NPC sets its
   model and sub 1 its race code (Entity::race). Replayed live with Lnxcsfix (!addmission 11 1, !zone 238, !zone 115):
   the moogle at full size with its letter.
+
+## The weapon draw while running (2026-10-26)
+
+- The user: engaging while running, no draw motion played, the weapon was in the hand at once and the player stopped
+  for about a second.
+- Retail (actor state machine, all.c 108770): state 1 waits for the battle files (FUN_100d12d0), then starts "in N"
+  and clears +0x7d8; state 2, the next frame, vtable +0x31c(1, 0): the weapon goes to the hand at once (the draw
+  motion covers it). Mithra dagger "in 0" (25784): ops 0x2f / 0x2e (facing and move locks, 72 ticks: the stop is
+  retail), 0x07 (no reactions, +0x80, 72), 0x1f (status hold, 72), 0x05 `ina?` 72 ticks, `sinr` (the weapon file's
+  sound) at 36.
+- Ours cut `ina` short: the play kept the run as its base, op 0x2e's stop changed the status motion to `btl`, and
+  Play::over ended the draw after a few frames. Op 0x07's +0x80 hold (FUN_100c83c0 skips the status motion re-pick)
+  should have kept it, but the scheduler's other ops run in a quiet task (actmotion plays the motions) and holds were
+  skipped there. Now ops 0x20 / 0x1f / 0x59 / 0x07 / 0x08 apply in quiet tasks too.
+- The quiet task also started up to 0.4 s after the motion (the effects side loaded the battle file on its own);
+  the draw now waits for both loads (Effects::libs_ready), as state 1 does.
+- Live (Lnxcsfix, Mithra with a dagger, engaging while running): `ina` plays to its end and the holds start with it.
