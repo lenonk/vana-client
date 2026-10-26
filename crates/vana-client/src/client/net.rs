@@ -429,6 +429,8 @@ pub enum NetEvent {
     MeritList(Vec<(u16, u8, u8)>),
     /// s2c 0x0B6 SET_GMMSG (LAB_101132b0): msgId u32 @4, seqId u16 @8, pktNum u16 @0xa (0 = the last), text @0xc (244).
     GmMessage { id: u32, seq: u16, last: bool, text: Vec<u8> },
+    /// s2c 0x04C: the auction house.
+    Auc(super::auction::AucPacket),
     /// s2c 0x08D (LAB_100e4fd0): 64 job point records @4 {u16 entry id, u16 next cost | level << 10}.
     JobPointList(Vec<(u16, u8, u16)>),
     /// s2c 0x08E: u16 points @4, u8 upgrades[32] @8, u16 costs[32] @0x28.
@@ -1206,6 +1208,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         };
                         tx.send(if p.id == 0x06F { NetEvent::SynthResult(a) } else { NetEvent::SynthOthers(a) })?
                     }
+                    0x04C => tx.send(NetEvent::Auc(super::auction::AucPacket::parse(&p.data)))?,
                     0x04B => tx.send(NetEvent::Pbx(super::post::Pbx {
                         cmd: p.u8(4),
                         box_no: p.u8(5) as i8,

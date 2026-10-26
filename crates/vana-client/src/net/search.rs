@@ -303,6 +303,11 @@ pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
 
 /// The request packet (1.2 of the spec): header, payload, session word, MD5, salt; Blowfish over [8, P + 8).
 pub fn request(wire: u8, payload: &[u8], session: u32, salt: u32) -> Vec<u8> {
+    request_x(wire, payload, session, salt, 0)
+}
+
+/// [`request`] with the slot's extra word @0x0e (the auction list passes the client language, 1 English).
+pub fn request_x(wire: u8, payload: &[u8], session: u32, salt: u32, extra: u16) -> Vec<u8> {
     let dlen = 0x10 + payload.len();
     let p = ((dlen + 0xb) / 0x40 + 1) * 0x40;
     let mut buf = vec![0u8; p + 0xc];
@@ -311,6 +316,7 @@ pub fn request(wire: u8, payload: &[u8], session: u32, salt: u32) -> Vec<u8> {
     buf[4..8].copy_from_slice(b"IXFF");
     buf[8..10].copy_from_slice(&(dlen as u16).to_le_bytes());
     (buf[10], buf[11]) = (0x80, wire);
+    buf[0x0e..0x10].copy_from_slice(&extra.to_le_bytes());
     buf[0x10..dlen].copy_from_slice(payload);
     buf[p - 0xc..p - 8].copy_from_slice(&session.to_le_bytes());
     let md5: [u8; 16] = Md5::digest(&buf[8..p - 8]).into();
@@ -447,6 +453,117 @@ pub fn query(addr: (Ipv4Addr, u16), cond: &Cond) -> Result<Reply> {
     }
 }
 
+/// An auction house reply (auction_spec 2.2): the item list (0x95) or a price history (0x85).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AhReply {
+    /// 0x95 @0x0e: every item of the category.
+    pub total: u16,
+    /// {ItemNo, single count, stack count (-1: no stack form)}.
+    pub items: Vec<(u16, i32, i32)>,
+    /// 0x85's head {ItemNo, count on auction, category} and its sales, oldest first.
+    pub head: Option<(u16, u32, u16)>,
+    pub sales: Vec<AhSale>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AhSale {
+    pub price: u32,
+    /// Unix time.
+    pub date: u32,
+    pub seller: String,
+    pub buyer: String,
+}
+
+/// FUN_100d9150's 0xa8-byte payload for the item list (type 0x15): param count, market, category, {type, bits} x 20.
+pub fn ah_list_payload(category: u16, market: u8, params: &[(u32, u32)]) -> Vec<u8> {
+    let mut p = vec![0u8; 0xa8];
+    let n = params.len().min(20);
+    p[2..4].copy_from_slice(&(n as u16).to_le_bytes());
+    p[4] = market;
+    p[6..8].copy_from_slice(&category.to_le_bytes());
+    for (i, (t, b)) in params.iter().take(n).enumerate() {
+        p[8 + 8 * i..12 + 8 * i].copy_from_slice(&t.to_le_bytes());
+        p[12 + 8 * i..16 + 8 * i].copy_from_slice(&b.to_le_bytes());
+    }
+    p
+}
+
+/// The price history payload (types 5 single / 6 stack): ItemNo, market, the form.
+pub fn ah_history_payload(item: u16, market: u8, stack: bool) -> Vec<u8> {
+    let mut p = vec![0u8; 0xa8];
+    p[2..4].copy_from_slice(&item.to_le_bytes());
+    (p[4], p[5]) = (market, stack as u8);
+    p
+}
+
+fn cstr(b: &[u8]) -> String {
+    b.iter().take_while(|&&c| c != 0).map(|&c| c as char).collect()
+}
+
+/// FUN_10106cd0 / FUN_10106de0: one decrypted reply packet's rows into `out`.
+fn ah_decode(r: &[u8], d: usize, kind: u8, total: u16, out: &mut AhReply) {
+    let u16_at = |o: usize| u16::from_le_bytes([r[o], r[o + 1]]);
+    let u32_at = |o: usize| u32::from_le_bytes(r[o..o + 4].try_into().unwrap());
+    match kind & 0x1f {
+        0x15 => {
+            out.total = total;
+            let mut o = 0x18;
+            while o + 10 <= d {
+                out.items.push((u16_at(o), u32_at(o + 2) as i32, u32_at(o + 6) as i32));
+                o += 10;
+            }
+        }
+        5 if d >= 0x20 => {
+            out.head = Some((u16_at(0x18), u32_at(0x1a), u16_at(0x1e)));
+            let mut o = 0x20;
+            while o + 40 <= d {
+                out.sales.push(AhSale { price: u32_at(o), date: u32_at(o + 4), seller: cstr(&r[o + 8..o + 24]), buyer: cstr(&r[o + 24..o + 40]) });
+                o += 40;
+            }
+        }
+        _ => {}
+    }
+}
+
+/// One auction house query, blocking: the list (wire 0x15, `extra` the language) or a history (5 / 6).
+pub fn ah_query(addr: (Ipv4Addr, u16), wire: u8, payload: &[u8], extra: u16) -> Result<AhReply> {
+    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let (session, salt) = (seed as u32 | 1, (seed >> 32) as u32 ^ 0x5a5a_5a5a);
+    let mut s = TcpStream::connect_timeout(&SocketAddr::from(addr), Duration::from_secs(10))?;
+    s.set_read_timeout(Some(TIMEOUT))?;
+    s.write_all(&request_x(wire, payload, session, salt, extra))?;
+    let mut out = AhReply::default();
+    loop {
+        let mut head = [0u8; 8];
+        s.read_exact(&mut head)?;
+        let l = u32::from_le_bytes(head[..4].try_into().unwrap()) as usize;
+        if !(0x18..0x1000).contains(&l) {
+            bail!("auction reply length {l}");
+        }
+        let mut r = head.to_vec();
+        r.resize(l, 0);
+        s.read_exact(&mut r[8..])?;
+        let (d, flags, kind, total) = open(&mut r, session)?;
+        ah_decode(&r, d, kind, total, &mut out);
+        if flags & 0x80 != 0 {
+            return Ok(out);
+        }
+    }
+}
+
+/// [`ah_query`] on its own thread.
+pub fn ah_spawn(addr: (Ipv4Addr, u16), wire: u8, payload: Vec<u8>, extra: u16) -> mpsc::Receiver<Result<AhReply>> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let r = ah_query(addr, wire, &payload, extra);
+        if let Err(e) = &r {
+            log::warn!("auction search {wire:#x}: {e}");
+        }
+        let _ = tx.send(r);
+    });
+    rx
+}
+
 /// [`query`] on its own thread; the result comes through the channel.
 pub fn spawn(addr: (Ipv4Addr, u16), cond: Cond) -> mpsc::Receiver<Result<Reply>> {
     let (tx, rx) = mpsc::channel();
@@ -463,6 +580,52 @@ pub fn spawn(addr: (Ipv4Addr, u16), cond: Cond) -> mpsc::Receiver<Result<Reply>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The local xi_search: crystals (category 0x23) and a Fire Crystal stack's history (by hand: `cargo test --release
+    /// auction_live -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn auction_live() {
+        let addr = (Ipv4Addr::new(127, 0, 0, 1), 54002);
+        let l = ah_query(addr, 0x15, &ah_list_payload(0x23, 4, &[]), 1).unwrap();
+        println!("crystals: total {} {:?}", l.total, &l.items[..l.items.len().min(4)]);
+        let h = ah_query(addr, 6, &ah_history_payload(4096, 4, true), 0).unwrap();
+        println!("history: {:?} {:?}", h.head, h.sales);
+        assert!(l.total > 0 && h.head.is_some());
+    }
+
+    /// auction_spec 2.1 / 2.2: the payloads, and a canned list and history packet decoded.
+    #[test]
+    fn auction_payloads() {
+        let p = ah_list_payload(2, 4, &[(2, 0x7), (4, 0x15)]);
+        assert_eq!((p.len(), &p[..8]), (0xa8, &[0u8, 0, 2, 0, 4, 0, 2, 0][..]));
+        assert_eq!(&p[8..24], &[2, 0, 0, 0, 7, 0, 0, 0, 4, 0, 0, 0, 0x15, 0, 0, 0]);
+        assert_eq!(&ah_history_payload(4096, 4, true)[..6], &[0, 0, 0, 0x10, 4, 1]);
+        let req = request_x(0x15, &p, 1, 2, 1);
+        assert_eq!(req.len() % 0x40, 0x0c);
+        let mut r = vec![0u8; 0x18 + 20];
+        r[0x18..0x1a].copy_from_slice(&4096u16.to_le_bytes());
+        r[0x1a..0x1e].copy_from_slice(&10u32.to_le_bytes());
+        r[0x1e..0x22].copy_from_slice(&20u32.to_le_bytes());
+        r[0x22..0x24].copy_from_slice(&4097u16.to_le_bytes());
+        r[0x24..0x28].copy_from_slice(&3u32.to_le_bytes());
+        r[0x28..0x2c].copy_from_slice(&u32::MAX.to_le_bytes());
+        let mut out = AhReply::default();
+        ah_decode(&r, r.len(), 0x95, 16, &mut out);
+        assert_eq!((out.total, out.items.clone()), (16, vec![(4096, 10, 20), (4097, 3, -1)]));
+        let mut h = vec![0u8; 0x20 + 40];
+        h[0x18..0x1a].copy_from_slice(&4096u16.to_le_bytes());
+        h[0x1a..0x1e].copy_from_slice(&10u32.to_le_bytes());
+        h[0x1e..0x20].copy_from_slice(&35u16.to_le_bytes());
+        h[0x20..0x24].copy_from_slice(&15u32.to_le_bytes());
+        h[0x24..0x28].copy_from_slice(&4_070_908_800u32.to_le_bytes());
+        h[0x28..0x30].copy_from_slice(b"M.H.M.U.");
+        h[0x38..0x3d].copy_from_slice(b"Nine\0");
+        let mut out = AhReply::default();
+        ah_decode(&h, h.len(), 0x85, 0, &mut out);
+        assert_eq!(out.head, Some((4096, 10, 35)));
+        assert_eq!(out.sales, vec![AhSale { price: 15, date: 4_070_908_800, seller: "M.H.M.U.".into(), buyer: "Nine".into() }]);
+    }
 
     fn hex(s: &str) -> Vec<u8> {
         (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()

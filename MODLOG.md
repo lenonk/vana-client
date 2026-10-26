@@ -9267,3 +9267,34 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
   attach word, position, element count: Effects::describe_insts); scripts have `act:fxdump`.
 - Still open: the user's first report, a glowing square at Nine's left hip while Shantotto II was out (not reproduced:
   in ours her model generators are killed by `efon`'s `efkl` right after the summon). The F12 dump is for that.
+
+## Auction house (2026-10-26; spec ~/ffxi/lab/research/auction_spec.md)
+
+- Packets: s2c 0x04C / c2s 0x04E share a 0x3c-byte layout (cmd @4, slot @5, result @6, stat @7, price @8, item /
+  inventory slot @0xc, @0xe, @0x10, parcel @0x14..: stat, name @0x18, item @0x28, qty, category, price, market, lot,
+  time). Commands used: 2 Open, 3 Close, 4 AskCommit (the fee), 5 Info (Sales Status), 0xa WorkCheck(-1) at open,
+  0xb LotIn, 0xc LotCancel, 0xd LotCheck, 0xe Bid, 0x10 (the sold / returned line's clear). Every parcel reply other
+  than 2..5 goes into its slot (FUN_100dfe10), 8 slots kept across the windows.
+- Search server: list type 0x15 (payload: param count, market, category, 20 {type, bits} params; @0x0e the client
+  language), history 5 (single) / 6 (stack). Replies 0x95 {u16 item, i32 single, i32 stack} per item; 0x85 a
+  history head and 40-byte sales. Market 4 in the AH city zones (table 0x1037ed68), else 0.
+- Windows: auc1 (Bid / Sell / Sales Status) .. auc2, the category menus (aucweapo, aucammo, aucarmor, aucmagic,
+  aucmater, aucfood, aucmeals, aucitem), auc3 (Price History / Bid / Sort), auc4 (Price History / Stop Sale),
+  wepsort / armsort, at the right; auclist (bid: a single and a stack row per item, "[n]"; sales: the slots) and
+  auchisto (10 sales, columns {0, 65, 145, 165, 250, 350}, the small sprite font, the arrow in the game font) at
+  (16, 48); moneyctr for the bid and sell prices, shopsell, the comyn prompts (10 0x1e bid, 0x1c / 0x1d fee, 0x1f
+  place, 9 0x3a Stop Sale). auc1 closes past 6.0 from where it opened. A bid result prints 180..299 ticks later
+  (7031 0xb1 / 0xbc bought, 0xb2 / 0xbd not), at once when the windows close.
+- Sorting (3.3): auc3's Sort is wepsort for categories 1..0xf and 0x30, armsort for 0x10..0x1a, else a name toggle
+  whose label is windowps 151 "Reset List" with a saved sort, 537 "Sort" without (FUN_101d9200 -> FUN_1011ae50,
+  another library's sprite: GameUi::lobby_window_lib_swaps). Sorts: Damage 5, Delay 6, Defense 7, Resistance 8,
+  Level 2, Name 9 (2 / 5 / 7 / 8 descending, 6 / 9 ascending; param bit 1); Job 4 (needs s2c 0x119; our main job)
+  and Race 3 (our race) are filters (bit 0 + value << 2), never saved. Saved sorts in USER/<content id>/AUCSORT.DAT
+  (0x574 bytes: CRC-32 @0 of +8..+0x530, @4 of +0x530..+0x572; 20 bytes per category at +8, counts at +0x530),
+  read at auc1's open and written at its close (Escape out of auc1 and the zone change now go through close).
+- Ours: client/auction.rs, net/search.rs ah_*; tests packets_and_rows, saved_sorts, auction_payloads.
+- Live (Lnxcsfix, Southern San d'Oria, `!ah`): bid 15 gil on a Fire Crystal (bought); listed a Fire Crystal at 20
+  (fee 1, LotIn); Sales Status with its LotCheck, Price History, Stop Sale (LotCancel, "You have no items up for
+  auction."); Daggers By Level then Job (WAR), the Crystals name toggle saved, reloaded on the next open and cleared.
+- Inferred / not compared with retail: the date column's width (the sprite font's "26/10/25" fills its 65 px), the
+  stack rows' name colour, the old 0x550-byte AUCSORT.DAT (cleared instead of converted).

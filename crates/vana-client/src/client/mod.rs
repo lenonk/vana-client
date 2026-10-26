@@ -55,6 +55,7 @@ mod linklist;
 mod blklist;
 mod furniture;
 mod layout;
+mod auction;
 mod tilt;
 mod aepoints;
 mod jobpoints;
@@ -235,7 +236,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -1578,6 +1579,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.layout.is_some() => {
                     layout::key(world, *key);
                 }
+                _ if world.auction.is_some() => {
+                    auction::key(world, *key);
+                }
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -2365,6 +2369,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(layout::draw(gu, world, sw, sh));
+    blockers.extend(auction::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
     treasure::draw_chest(gu, world, sw, sh);
@@ -2672,6 +2677,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.raise_hover = None;
     }
     match (answer, world.confirm) {
+        (Some(yes), Some((Confirm::Auction(a), _))) => {
+            world.confirm = None;
+            auction::answered(world, a, yes);
+        }
         // LAB_1012e0a0: Yes sets +0x24; the state machine sends 0x01A 0x0B.
         (Some(true), Some((Confirm::HomePoint, _))) => {
             world.confirm = None;
@@ -2919,6 +2928,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     bluset::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     layout::bars(gu, world, &mut bars);
+    auction::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
     chatctrl::bars(gu, world, &mut bars);
@@ -2987,6 +2997,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
         (Confirm::Layout(a), _) => layout::ask_text(gu, a),
+        (Confirm::Auction(a), _) => auction::ask_text(world, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::AlterEgo(a), _) => aepoints::ask_text(world, a),
@@ -3542,6 +3553,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
+        (None, _) if let Some((id, ext, mode)) = auction::info_source(world) => (id, ext, None, false, mode, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),
@@ -3577,6 +3589,8 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         // FUN_1013e590 case 1: (130, 240) from the top left, whatever the layout's anchor (item4inf..item6inf sit at
         // the bottom).
         1 => (130.0 - fx, 240.0 - fy),
+        // Mode 2 (the auction's bid price): at (16, 48).
+        2 => (16.0 - fx, 48.0 - fy),
         4 => (0.0, (query_top - fh - 2.0).max(16.0) - fy),
         _ => (0.0, (log_top - fh - 2.0).max(16.0) - fy),
     };
@@ -3674,6 +3688,17 @@ fn attach_point(w: &World, places: &HashMap<u32, Place>, id: u32, k: u16) -> Opt
     match ch.skeleton.points.get(k as usize).and_then(|(bone, off)| a.rest.get(*bone as usize).map(|(q, t)| (*bone, *t + *q * *off))) {
         Some((bone, local)) => Some(model.transform_point3(local) + Vec3::new(0.0, drop(bone), 0.0)),
         None => Some(p.pos + Vec3::new(0.0, a.top * 1.2, 0.0)),
+    }
+}
+
+/// Logs every live effect element and every instance not owned by the zone or the weather (act:fxdump, F12).
+fn fx_dump(world: &World) {
+    log::info!("fxdump: player at {:?}, {} live", world.pos, world.effects.live_count());
+    for l in world.effects.describe() {
+        log::info!("fxdump: {l}");
+    }
+    for l in world.effects.describe_insts() {
+        log::info!("fxdump inst: {l}");
     }
 }
 
@@ -4436,6 +4461,10 @@ struct World {
     /// Mog House layout mode (client/layout.rs), and its view kept for the house visit (myroom +0x24).
     layout: Option<layout::Layout>,
     layout_view: u8,
+    /// The auction house's windows (client/auction.rs), its parcel slots and the bid in flight (kept across them).
+    auction: Option<Box<auction::Auction>>,
+    ah_slots: [auction::Parcel; 8],
+    bid: auction::BidState,
     /// Event volume changes for the mixer: (mask, level, ticks).
     audio_cmds: Vec<(i32, f32, f32)>,
     names: Option<Arc<crate::dat::names::Names>>,
@@ -4637,6 +4666,8 @@ enum Confirm {
     LinkKick(linklist::Kick),
     /// Layout mode's removal and Clear All prompts.
     Layout(layout::Ask),
+    /// The auction house's bid, fee, listing and Stop Sale prompts.
+    Auction(auction::Ask),
     JobPoint(jobpoints::Ask),
     AlterEgo(aepoints::Ask),
     /// group 9 0x140 "Really reset request history?" (the Request toggle, scoption's Clear History).
@@ -5832,6 +5863,9 @@ impl App {
                             lock_carry: false,
                             layout: None,
                             layout_view: 0,
+                            auction: None,
+                            ah_slots: Default::default(),
+                            bid: Default::default(),
                             audio_cmds: Vec::new(),
                             names: None,
                             actions: None,
@@ -6349,6 +6383,7 @@ impl App {
                     world.rebuild_models = false;
                     world.map_open = None;
                     world.control_lock = None;
+                    auction::close(world);
                     (world.layout, world.layout_view) = (None, 0);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
@@ -6794,6 +6829,7 @@ impl App {
                 NetEvent::JobInfo(j) => world.job_info = Some(j),
                 NetEvent::ExtJob(b) => bluset::ext_job(world, &b),
                 NetEvent::Pbx(p) => post::on_pbx(world, p),
+                NetEvent::Auc(p) => auction::on_packet(world, p),
                 // LAB_100a2760: the actor's jump flag (FUN_1008b410 -> FUN_100c63d0: 32 ticks of "jmp"). LSB also echoes it
                 // to the jumper; retail's toggle would answer that with another 0x11D, so ours ignores our own (inferred).
                 NetEvent::Jump(index) if index != world.my_index => {
@@ -7452,6 +7488,7 @@ impl App {
         partymenu::update(world);
         status::update(world);
         items::auto_sort_tick(world, dt);
+        auction::update(world, dt);
         currencies::update(world, dt * 60.0);
         merits::update(world);
         jobpoints::update(world, dt * 60.0);
@@ -9505,6 +9542,10 @@ impl App {
                 let mob = world.entities.iter().filter(|(id, e)| e.mob && !matches!(e.motion.status, 2 | 3) && world.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
                 target::set(world, mob);
             }
+            // act:fxdump logs every live effect element and the player's position.
+            if let (Some("fxdump"), Phase::World(world)) = (action.as_deref(), &self.phase) {
+                fx_dump(world);
+            }
             // act:wheel:N turns the wheel N notches (up positive): the focused list's, else the camera's.
             if let Some(n) = action.as_deref().and_then(|a| a.strip_prefix("wheel:")).and_then(|n| n.parse::<f32>().ok()) {
                 if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
@@ -10612,6 +10653,10 @@ impl ApplicationHandler for App {
                     }
                     if code == KeyCode::F12 && event.state == ElementState::Pressed && !event.repeat {
                         self.debug_overlay = !self.debug_overlay;
+                        // Turning the lines on also logs the live effects (diagnostics).
+                        if let (true, Phase::World(world)) = (self.debug_overlay, &self.phase) {
+                            fx_dump(world);
+                        }
                     }
                     if event.state == ElementState::Pressed && matches!(code, KeyCode::Slash | KeyCode::NumpadDivide) {
                         self.numpad_slash = code == KeyCode::NumpadDivide;

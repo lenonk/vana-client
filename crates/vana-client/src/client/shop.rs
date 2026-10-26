@@ -433,7 +433,7 @@ fn scroll_spell(w: &World, arg: u16) -> Option<u16> {
 /// a scroll (type 7, teach kind 1 at record +0x1554, spell at +0x1558) green when learned (s2c 0x0AA), else yellow when
 /// the main or sub job can learn it (FUN_1022b7d0; job points not parsed); white else. Not done: dice (kind 2, green
 /// only with Monstrosity data, which LSB never sends) and automaton attachments (kind 3, s2c 0x044).
-fn name_tint(w: &World, id: u16) -> u32 {
+pub(super) fn name_tint(w: &World, id: u16) -> u32 {
     let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return WHITE };
     let extra = |at: u16| it.extra.iter().find(|e| e.0 == at).map(|e| e.1);
     if it.level != 0 {

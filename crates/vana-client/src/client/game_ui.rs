@@ -600,6 +600,13 @@ impl GameUi {
     /// `lobby_window_off` with children's own sprites replaced (FUN_1011ae50: (child, sprite in the same library)).
     #[allow(clippy::too_many_arguments)]
     pub fn lobby_window_swaps(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16], swaps: &[(u16, usize)]) -> Option<LobbyWin> {
+        let swaps: Vec<(u16, Option<&str>, usize)> = swaps.iter().map(|&(c, k)| (c, None, k)).collect();
+        self.lobby_window_lib_swaps(name, w, h, off, sel, hand, hide, &swaps)
+    }
+
+    /// `lobby_window_swaps` where a swap may take its sprite from another library (FUN_1011ae50 with another table).
+    #[allow(clippy::too_many_arguments)]
+    pub fn lobby_window_lib_swaps(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16], swaps: &[(u16, Option<&str>, usize)]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
         let (dx, dy) = (off.0, off.1 + self.stack_dy(name, w, h));
         let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
@@ -621,11 +628,15 @@ impl GameUi {
         for c in m.elements.iter().skip(1).filter(|c| !hide.contains(&c.id)) {
             let (cx, cy) = (x + c.x as f32, y + c.y as f32);
             if let Some(r) = c.refs.iter().find(|r| r.kind == 0)
-                && let Some(lib) = ui.lib(&r.lib)
+                && let Some(own) = ui.lib(&r.lib)
             {
                 let on = sel == Some(c.id);
                 let d = if on { -1.0 } else { 0.0 };
-                let k = swaps.iter().find(|s| s.0 == c.id).map_or(r.index as usize, |s| s.1);
+                let (lib, k) = match swaps.iter().find(|s| s.0 == c.id) {
+                    Some(&(_, Some(l), k)) => (ui.lib(l).unwrap_or(own), k),
+                    Some(&(_, None, k)) => (own, k),
+                    None => (own, r.index as usize),
+                };
                 self.batch.push_sprite(ui, lib, k, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
                 if on
                     && hand
