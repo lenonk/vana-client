@@ -384,16 +384,20 @@ fn list_key(w: &mut World, key: egui::Key) {
     let (n, cat, cursor) = (l.rows.len(), l.cat, l.cursor);
     let row = l.rows.get(cursor).copied();
     match key {
-        K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight => {
-            let step = if matches!(key, K::ArrowUp | K::ArrowDown) { 1 } else { ROWS };
-            let to = if matches!(key, K::ArrowDown | K::ArrowRight) { (cursor + step).min(n.saturating_sub(1)) } else { cursor.saturating_sub(step) };
+        // The base's page (+0x47 set): the top by a page, the screen row kept.
+        K::ArrowLeft | K::ArrowRight => {
+            let m = if key == K::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+            if let Some(l) = w.merits_ui.as_mut().and_then(|m| m.list.as_mut())
+                && super::scrollbar::rows_abs(m, &mut l.top, &mut l.cursor, n, ROWS)
+            {
+                w.sounds.push(Ui::Cursor as u32);
+            }
+        }
+        K::ArrowUp | K::ArrowDown => {
+            let to = if key == K::ArrowDown { (cursor + 1).min(n.saturating_sub(1)) } else { cursor.saturating_sub(1) };
             if to != cursor && let Some(l) = w.merits_ui.as_mut().and_then(|m| m.list.as_mut()) {
                 l.cursor = to;
                 l.top = l.top.min(to).max((to + 1).saturating_sub(ROWS));
-                if step == ROWS {
-                    l.top = (to / ROWS * ROWS).min(n.saturating_sub(ROWS));
-                    l.top = l.top.min(to).max((to + 1).saturating_sub(ROWS));
-                }
                 w.sounds.push(Ui::Cursor as u32);
             }
         }

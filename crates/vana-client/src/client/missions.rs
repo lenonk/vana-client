@@ -200,14 +200,16 @@ fn list_key(w: &mut World, l: &mut List, key: egui::Key, page: bool) {
         // With 0xa8 (Ctrl / Alt) a page; else the next / previous log.
         (1, egui::Key::ArrowLeft | egui::Key::ArrowRight) if page => {
             let m = if key == egui::Key::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
-            let mut row = l.cursor.saturating_sub(l.top);
+            let (was, mut row) = (l.cursor, l.cursor.saturating_sub(l.top));
             if super::scrollbar::paged(m, &mut l.top, &mut row, l.rows.len(), VISIBLE) {
                 l.cursor = l.top + row;
-                // FUN_1022e710: a header landed on moves to the next row.
+                // FUN_1022e710: a header landed on moves to the next row; SE 0001 only when the cursor ends elsewhere.
                 if matches!(l.rows.get(l.cursor), Some(Row::CurHead | Row::DoneHead)) {
                     step(l, true);
                 }
-                w.sounds.push(Ui::Cursor as u32);
+                if l.cursor != was {
+                    w.sounds.push(Ui::Cursor as u32);
+                }
             }
         }
         (1, egui::Key::ArrowLeft | egui::Key::ArrowRight) => {

@@ -144,15 +144,26 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
         let (job, pg, n) = (p.job, p.page, page_len(p, &t));
         let cursor = p.cursor[pg];
         match key {
+            // FUN_1014acc0: the other page, back on its row (FUN_101f7080: top = min(row, the last top)).
             K::ArrowLeft | K::ArrowRight if !page_mod => {
                 if let Some(p) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut()) {
                     p.page = 1 - p.page;
+                    let (q, n) = (p.page, page_len(p, &t));
+                    p.top[q] = p.cursor[q].min(n.saturating_sub(PAGE_ROWS));
                 }
                 w.sounds.push(Ui::Cursor as u32);
             }
-            K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight => {
-                let step = if matches!(key, K::ArrowUp | K::ArrowDown) { 1 } else { PAGE_ROWS };
-                let to = if matches!(key, K::ArrowDown | K::ArrowRight) { (cursor + step).min(n.saturating_sub(1)) } else { cursor.saturating_sub(step) };
+            // With Ctrl / Alt, the row list's page (FUN_101f6c70 0x19 / 0x18): the top by 10, the screen row kept.
+            K::ArrowLeft | K::ArrowRight => {
+                let m = if key == K::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+                if let Some(p) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut())
+                    && super::scrollbar::rows_abs(m, &mut p.top[pg], &mut p.cursor[pg], n, PAGE_ROWS)
+                {
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+            }
+            K::ArrowUp | K::ArrowDown => {
+                let to = if key == K::ArrowDown { (cursor + 1).min(n.saturating_sub(1)) } else { cursor.saturating_sub(1) };
                 if to != cursor && let Some(p) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut()) {
                     let (c, tp) = (&mut p.cursor[pg], &mut p.top[pg]);
                     scroll(c, tp, to, PAGE_ROWS);
@@ -190,9 +201,17 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
     // merit2ca.
     let cursor = u.cursor;
     match key {
-        K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight => {
-            let step = if matches!(key, K::ArrowUp | K::ArrowDown) { 1 } else { JOB_ROWS };
-            let to = if matches!(key, K::ArrowDown | K::ArrowRight) { (cursor + step).min(jobs.saturating_sub(1)) } else { cursor.saturating_sub(step) };
+        // The row list's page (FUN_101f6c70 3 / 4 with +0x47 set): the top by a page, the screen row kept.
+        K::ArrowLeft | K::ArrowRight => {
+            let m = if key == K::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+            if let Some(u) = w.jp_ui.as_mut()
+                && super::scrollbar::rows_abs(m, &mut u.top, &mut u.cursor, jobs, JOB_ROWS)
+            {
+                w.sounds.push(Ui::Cursor as u32);
+            }
+        }
+        K::ArrowUp | K::ArrowDown => {
+            let to = if key == K::ArrowDown { (cursor + 1).min(jobs.saturating_sub(1)) } else { cursor.saturating_sub(1) };
             if to != cursor && let Some(u) = w.jp_ui.as_mut() {
                 scroll(&mut u.cursor, &mut u.top, to, JOB_ROWS);
                 w.sounds.push(Ui::Cursor as u32);

@@ -152,11 +152,12 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) {
     use egui::Key as K;
     let Some(u) = w.unity.as_ref() else { return };
     let (sel, mode) = (u.sel, u.info.as_ref().map(|i| i.mode));
-    let week_ok = w.unity_tables.complete;
-    // quest01's rows: unities 1..11 once the data is ready.
-    let n = if ready(w) { 11 } else { 0 };
+    // quest01's rows: unities 1..11 once the data is ready (FUN_102319c0: 0x119 seen, both weeks complete).
+    let ok = ready(w);
+    let n = if ok { 11 } else { 0 };
     let Some(u) = w.unity.as_mut() else { return };
-    // quest01: Up / Down (wrap), Left / Right the other week when complete (with Ctrl / Alt a page), Escape back.
+    // quest01 (FUN_10231ac0): Up / Down (wrap), Left / Right the other week once both are in, with Ctrl / Alt a page
+    // (nothing on an empty list), Escape back.
     if let Some(r) = u.info.as_mut().and_then(|i| i.ranks.as_mut()) {
         match key {
             K::Escape => {
@@ -168,15 +169,15 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) {
                 r.top = r.top.min(r.cursor).max((r.cursor + 1).saturating_sub(VISIBLE));
                 w.sounds.push(Ui::Cursor as u32);
             }
-            K::ArrowLeft | K::ArrowRight if page && n > 0 => {
+            K::ArrowLeft | K::ArrowRight if page => {
                 let mut row = r.cursor - r.top;
                 let m = if key == K::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
-                if super::scrollbar::paged(m, &mut r.top, &mut row, n, VISIBLE) {
+                if n > 0 && super::scrollbar::paged(m, &mut r.top, &mut row, n, VISIBLE) {
                     r.cursor = r.top + row;
                     w.sounds.push(Ui::Cursor as u32);
                 }
             }
-            K::ArrowLeft | K::ArrowRight if week_ok[1 - r.week] => {
+            K::ArrowLeft | K::ArrowRight if ok => {
                 (r.week, r.top, r.cursor) = (1 - r.week, 0, 0);
                 w.sounds.push(Ui::Cursor as u32);
             }

@@ -8960,3 +8960,26 @@ interpolates between the hour keys in both clients.
   window (0x0c). Now set per mode (GameUi::set_group).
 - Live (Lnxcsfix, Fhelm, the Items list): the preview shows above the list and follows the cursor; Down held stops
   on "None."; Left / Right page by 3.
+
+## The page modifier (0xa8) in the other lists (2026-10-25)
+
+Spec `~/ffxi/lab/research/page_modifier_spec.md`. The 0xa8 tests (FUN_10123a70(0x3e, 0xa8, 4, -1)) outside the item
+lists and the storage view:
+- FUN_1022e760 is miss00 (Missions), not magic: plain Right / Left cycle the 15 mission logs (expansion bits
+  DAT_10386984 tested against the lobby and the installed content by FUN_1022dad0; log 11, The Voracious Resurgence,
+  skipped while the RoV value DAT_1047fea0 < 340), with 0xa8 a page (FUN_1022e710: a header landed on steps to the next
+  row; SE 0001 only when the cursor ends on another row: ours played it on the header bounce at the top).
+- quest01: FUN_102330b0 modes 0 / 1 (quest areas) and FUN_10232b80 modes 2..4 (Records of Eminence) as ours.
+  FUN_10231ac0 modes 5 / 6 (Unity ranking weeks): 0xa8 pages an empty list to nothing (ours switched the week), the
+  plain switch needs FUN_102319c0 (0x119 seen and both week tables complete; ours tested the other week only).
+- FUN_1014aae0 is jbpcat (Job Points categories / gifts): 0xa8 pages the row list by 10 keeping the screen row
+  (FUN_101f6c70 0x19 / 0x18; ours moved the cursor by 10); a page switch restores the other page's row with top =
+  min(row, the last top) (FUN_101f7080). fp_cat / fp_cat2 (Alter Ego Points) the same paging through the base.
+- FUN_10234370 is guide01, the Adventuring Primer (not built): plain Right / Left cycle its categories, 0xa8 pages.
+- FUN_101a5f40 is Edit Macro's per-frame Ctrl / Alt hold counter (macroedit.rs).
+- Not 0xa8: the magic / ability / emote / mount lists pass plain Right / Left to FUN_10222150 as 0x19 / 0x18, a page
+  of the view with the screen row kept (ours moved the cursor 12 with the view trailing); meritcat and merit2ca page
+  the same way through the row-list base (ours moved the cursor by a page). All now go through scrollbar::paged /
+  rows_abs.
+- Not done: the arrows' hover state (message 9 disables the paged list until a row is hovered, so a Ctrl-click on an
+  arrow does nothing in retail; ours switches).

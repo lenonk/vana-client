@@ -546,7 +546,8 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     super::scrollbar::paged(m, &mut win.scroll, &mut win.cursor, n, VISIBLE)
 }
 
-/// FUN_10222150: Down / Up step and wrap, Right / Left page by 12.
+/// FUN_10222150: Down / Up step and wrap; Right / Left are re-sent as 0x19 / 0x18, a page of the view with the screen
+/// row kept.
 fn step(win: &mut ListWin, key: egui::Key) -> bool {
     let n = win.rows.len();
     if n == 0 {
@@ -556,8 +557,10 @@ fn step(win: &mut ListWin, key: egui::Key) -> bool {
     match key {
         egui::Key::ArrowDown => at = (at + 1) % n,
         egui::Key::ArrowUp => at = (at + n - 1) % n,
-        egui::Key::ArrowRight => at = (at + VISIBLE).min(n - 1),
-        egui::Key::ArrowLeft => at = at.saturating_sub(VISIBLE),
+        egui::Key::ArrowRight | egui::Key::ArrowLeft => {
+            let m = if key == egui::Key::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+            return super::scrollbar::paged(m, &mut win.scroll, &mut win.cursor, n, VISIBLE);
+        }
         _ => return false,
     }
     if at < win.scroll {

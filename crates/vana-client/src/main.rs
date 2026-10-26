@@ -35,6 +35,7 @@ mod unrar_isnt {
     }
 }
 mod motion;
+mod modpack;
 mod msi_db;
 mod net;
 mod render;
@@ -2000,10 +2001,12 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let scene = dat::zone::load_scene(&keys, &file)?;
     let lighting = dat::weather::ZoneWeather::parse(&file).ok().and_then(|w| w.at("suny", hour * 60.0)).map(|e| dat::weather::Lighting::from_env(&e, hour * 60.0));
     let v3 = |v: &[f32]| Vec3::new(v[0], v[1], v[2]);
-    let (mut c, t) = (v3(caster), v3(victim));
+    let (mut c, mut t) = (v3(caster), v3(victim));
     let g = client::ground::Ground::build(&scene);
+    // Both on the floor under (or near) the given height.
+    c.y = g.snap(c.x, c.z, c.y).unwrap_or(c.y);
+    t.y = g.snap(t.x, t.z, t.y).unwrap_or(t.y);
     if dust.is_some() {
-        c.y = g.snap(c.x, c.z, c.y).unwrap_or(c.y);
         println!("caster on {c} surface {:?}", g.surface(c));
     }
     let walk = if walk.len() == 3 { v3(walk) } else { Vec3::ZERO };

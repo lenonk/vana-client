@@ -147,8 +147,19 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
         }
         _ => return,
     }
-    let step = if matches!(key, K::ArrowUp | K::ArrowDown) { 1 } else { ROWS };
-    let to = if matches!(key, K::ArrowDown | K::ArrowRight) { (cursor + step).min(n.saturating_sub(1)) } else { cursor.saturating_sub(step) };
+    // The row list's page (FUN_101f6c70 0x19 / 0x18): the top by a page, the screen row kept.
+    if matches!(key, K::ArrowLeft | K::ArrowRight) {
+        let m = if key == K::ArrowRight { super::scrollbar::Msg::PageDown } else { super::scrollbar::Msg::PageUp };
+        let moved = w.ae_ui.as_mut().is_some_and(|u| match u.attrs.as_mut() {
+            Some((_, c, top)) => super::scrollbar::rows_abs(m, top, c, n, ROWS),
+            None => super::scrollbar::rows_abs(m, &mut u.top, &mut u.cursor, n, ROWS),
+        });
+        if moved {
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        return;
+    }
+    let to = if key == K::ArrowDown { (cursor + 1).min(n.saturating_sub(1)) } else { cursor.saturating_sub(1) };
     if to == cursor {
         return;
     }
