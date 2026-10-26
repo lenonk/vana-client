@@ -828,6 +828,7 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
         let off = dim_rows(w, l, kind);
         let focus = w.confirm.is_none() && l.bank.is_none();
         if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), focus, &off) {
+            super::winhits::record(w, name, &win);
             let [x, y, ..] = win.frame;
             gu.disabled_children(name, x, y, &off, focus.then_some(sel));
             out.push(win.frame);
@@ -836,6 +837,7 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     if let Some(row) = l.bank {
         let off = bank_dim(w);
         if let Some(win) = gu.lobby_window_off(BANKMENU, sw, sh, (0.0, 0.0), Some(row), true, &off) {
+            super::winhits::record(w, BANKMENU, &win);
             let [x, y, ..] = win.frame;
             gu.disabled_children(BANKMENU, x, y, &off, Some(row));
             out.push(win.frame);
@@ -860,6 +862,54 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
         }
     }
     out
+}
+
+/// The mouse (winhits.rs): an rmlo window or bankmenu as the generic window; the furniture list's rows as the item
+/// list (hover moves the row, a click on it is Enter, a right click Escape). The dressing windows have their own.
+pub fn pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::generic;
+    let Some(l) = &w.layout else { return };
+    if l.dress.is_some() {
+        return;
+    }
+    let keys = |w: &mut World, _: &super::game_ui::GameUi, k: egui::Key| {
+        key(w, k);
+    };
+    if let Some((c, scroll, cursor)) = l.list {
+        let n = list_rows(w, l, c).len();
+        let Some(r) = gu.window_rect(INVENTOR, sw, sh) else { return };
+        let row = ((p.1 - r[1] - 4.0) / crate::inventory::ROW_PITCH).floor();
+        let on = p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3];
+        if right && on {
+            key(w, egui::Key::Escape);
+            return;
+        }
+        if !on || row < 0.0 || row as usize >= crate::inventory::VISIBLE_ROWS || scroll + row as usize >= n {
+            return;
+        }
+        gu.hover.set(true);
+        let row = row as usize;
+        if row != cursor && (moved || clicked) {
+            if let Some(l) = w.layout.as_mut() {
+                l.list = Some((c, scroll, row));
+            }
+        } else if clicked {
+            key(w, egui::Key::Enter);
+        }
+    } else if let Some(row) = l.bank {
+        generic(w, gu, BANKMENU, row, 1..=2, p, moved, clicked, right, |w, id| {
+            if let Some(l) = w.layout.as_mut() {
+                l.bank = Some(id);
+            }
+        }, keys);
+    } else if let Some((kind, sel)) = l.win {
+        let n = rows(kind).len() as u16;
+        generic(w, gu, win_name(kind), sel, 1..=n, p, moved, clicked, right, |w, id| {
+            if let Some(l) = w.layout.as_mut() {
+                l.win = Some((kind, id));
+            }
+        }, keys);
+    }
 }
 
 /// The list's cursor item, for the item info window.

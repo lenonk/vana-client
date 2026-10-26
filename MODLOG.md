@@ -9675,3 +9675,12 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - Live (Lnxcsfix, its Mog House): moogle menu Delivery Box, mogpost Send, hover Exit ("Cancel.") and OK ("Is
   recipient's name correct?"), click Exit closes the send UI. The moogle menu and mogpost sit on the log and move with
   it (a click must use where they are that frame).
+
+## Mog House layout mode: the mouse (2026-10-26)
+
+- layout.rs `pointer` (winhits.rs): the rmlo windows and bankmenu as the generic window (hover moves the cursor, a
+  click on the cursor's row is Enter, a right click over the window Escape); the furniture list's rows (inventor's
+  rect, ROW_PITCH) as the item list. The dressing windows (mannequin.rs) have their own. Nothing while a confirm is up.
+- Live (Lnxcsfix, its Mog House): hover rmlo1 Back / Remove All moved the cursor; a click on Layout opened bankmenu; a
+  click on Mog Safe opened the (empty) list; a right click on the list went back to select mode (as Escape,
+  FUN_101f42e0); Enter reopened rmlo1 and a right click closed it.
