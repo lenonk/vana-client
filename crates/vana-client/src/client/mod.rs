@@ -6428,6 +6428,9 @@ impl App {
                     auction::close(world);
                     world.remodel = None;
                     (world.layout, world.layout_view) = (None, 0);
+                    // FUN_10011a00 state 5 (each zone-in): first person (DAT_10487f80) and autorun (DAT_10487f81) off,
+                    // set directly: no "Follow canceled." line.
+                    (world.autorun, world.autorun_dir, world.follow, world.camst.first) = (false, Vec3::ZERO, None, false);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.

@@ -9529,3 +9529,12 @@ Spec `~/ffxi/lab/research/mannequin_spec.md` 5, 6; client/mannequin.rs, layout.r
   function 0x78) until the dressing windows joined log_cycle's blockers (/check's inspect too: main-class).
 - Not done: the see-through tint of pieces between the camera and the mannequin (FUN_101d4310), the 4 blinks on
   entering (FUN_101ce9e0); retail's saved-focal quirk (8.3) not copied.
+
+## Zone-in ends autorun and first person (2026-10-26)
+
+- FUN_10011a00 state 5 (each zone-in, +0x48 == 0) zeroes DAT_10487f80 (first person: FUN_100a8cc0, toggled by key
+  function 0x10) and DAT_10487f81 (autorun: FUN_100a6070), and DAT_1047d694 (a toggle of FUN_100790e0, not
+  identified). Written directly, so no "Follow canceled." line (FUN_100a6070(0) prints group 9 0x41). Ours: the
+  0x00A zone reset clears autorun, its vector, /follow and first person. User report: autorun kept running after a
+  zone line.
+- Live (Lnxcsfix): Num7 and Num5 in Southern San d'Oria, a GM zone change: standing, third person after zone-in.
