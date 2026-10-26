@@ -207,7 +207,8 @@ fn pick_key(id: u32, k: u16) -> u64 {
 }
 
 /// The main menu's disabled children on the current page (state 5; FUN_10140090 / FUN_10140270): Party while the party
-/// is us and trusts only (FUN_10201f00); in Monstrosity Party and Synthesis, and socialme's Set Bazaar (FUN_1014e720).
+/// is us and trusts only (FUN_10201f00), Synthesis for 23 s after a request; in Monstrosity Party and Synthesis, and
+/// socialme's Set Bazaar (FUN_1014e720).
 fn menu_disabled(w: &World) -> Vec<u16> {
     let mut off = Vec::new();
     if monstrosity::active(w) {
@@ -215,6 +216,10 @@ fn menu_disabled(w: &World) -> Vec<u16> {
     }
     if w.menu_page == 0 && w.party.slots().trusts_only() {
         off.push(6);
+    }
+    // FUN_10140270: Synthesis within 23 s of the last synthesis request.
+    if w.menu_page == 0 && synth::menu_off(w) {
+        off.push(10);
     }
     // FUN_10140270: row 12 (Mog House) is disabled while visiting another's house.
     if w.menu_page == 0 && w.myroom.is_some() && w.mh_owner != 0 {

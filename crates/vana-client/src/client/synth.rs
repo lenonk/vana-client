@@ -100,6 +100,8 @@ pub struct State {
     pub history: Vec<Record>,
     pub loaded: bool,
     request: Option<(u8, Instant)>,
+    /// tskill1 +0x74 (FUN_101e15e0): when the last request went out; kept over zones.
+    sent: Option<Instant>,
     shown: Option<Shown>,
     anims: std::collections::HashMap<u32, Anim>,
     last: Option<Instant>,
@@ -147,8 +149,8 @@ pub fn open(w: &mut World, index: u8, id: u16) -> bool {
 
 /// A zone change drops the windows, the request and the animations; the history stays for the login.
 pub fn zone_reset(w: &mut World) {
-    let (history, loaded) = (std::mem::take(&mut w.synth.history), w.synth.loaded);
-    w.synth = State { history, loaded, ..Default::default() };
+    let (history, loaded, sent) = (std::mem::take(&mut w.synth.history), w.synth.loaded, w.synth.sent);
+    w.synth = State { history, loaded, sent, ..Default::default() };
 }
 
 /// Main menu row 10 (FUN_10140400 case 10): "menu    cmbmenu", SE 0002.
@@ -158,9 +160,10 @@ pub fn open_menu(w: &mut World) {
     w.sounds.push(Ui::Select as u32);
 }
 
-/// FUN_101e2950: both rows are disabled while a request from tskill1 is younger than 23 s (+0x74).
-fn menu_off(w: &World) -> bool {
-    w.synth.request.is_some_and(|(s, t)| s == 2 && t.elapsed() < Duration::from_secs(23))
+/// FUN_101e15c0: a request went out less than 23 s ago (+0x74, FUN_101e15e0); cmbmenu's rows (FUN_101e28d0) and the
+/// main menu's Synthesis (FUN_10140270) are off till then, whether or not it was answered.
+pub(super) fn menu_off(w: &World) -> bool {
+    w.synth.sent.is_some_and(|t| t.elapsed() < Duration::from_secs(23))
 }
 
 /// The crystal source's rows: crystals only (FUN_101e2a40 colours type 8 yellow; the others are not listed, inferred).
@@ -594,6 +597,7 @@ fn send(w: &mut World, crystal: (u8, u16), slots: &[(u8, u16, u32); 10]) -> bool
     let b = body(crystal, &mut units);
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x096, body: b });
     w.synth.request = Some((2, Instant::now()));
+    w.synth.sent = Some(Instant::now());
     true
 }
 

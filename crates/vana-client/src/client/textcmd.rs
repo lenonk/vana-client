@@ -74,6 +74,7 @@ mod id {
     pub const EQUIPSET: u16 = 0x9e;
     pub const MAGIC: u16 = 0x25;
     pub const WS: u16 = 0x26;
+    pub const MONSTERSKILL: u16 = 0x27;
     pub const NINJUTSU: u16 = 0x29;
     pub const SONG: u16 = 0x2a;
     pub const JA: u16 = 0x2b;
@@ -1730,6 +1731,7 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         id::ITEM => item(w, args, mode),
         id::WS => weapon_skill(w, args, mode),
         id::JA | id::PET => ability(w, cid == id::PET, args, mode),
+        id::MONSTERSKILL => monster_skill(w, args, mode),
         id::BSTPET => bstpet(w, args, mode),
         id::QUESTION => question(w, args),
         c if is_emote(c) => emote(w, c, args, mode),
@@ -2680,6 +2682,20 @@ fn ability(w: &mut World, _pet: bool, args: &[String], mode: Mode) -> Done {
     }
     let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
     act(w, t, cat::JA, (id - 0x200) as u32);
+    Ok(())
+}
+
+/// FUN_1007bad0 (/monsterskill, /ms): gate 0x7f; the name among our 16 moves (FUN_10223240 over DAT_10483118); the
+/// target; an id in 0x700..0xaff goes out as c2s 0x01A 0x19 with id - 0x600. Neither the level nor the TP is checked.
+fn monster_skill(w: &mut World, args: &[String], mode: Mode) -> Done {
+    if !status_gate(w, 0x7f) {
+        return Ok(());
+    }
+    let name = args.get(1).ok_or(())?;
+    let moves: Vec<u16> = w.mon_moves.iter().map(|m| m.0).filter(|&m| m != 0).collect();
+    let id = ability_named(w, name, moves.into_iter()).filter(|id| (0x700..0xb00).contains(id)).ok_or(())?;
+    let t = resolve(w, args.get(2).map(String::as_str), false, true, mode).ok_or(())?;
+    act(w, t, 0x19, (id - 0x600) as u32);
     Ok(())
 }
 

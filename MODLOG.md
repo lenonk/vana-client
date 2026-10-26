@@ -7067,7 +7067,7 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` M2; ours client/equipsets.rs (sto
   Copy / Paste to set 2 (confirm), Delete; /equipset 1 echo re-equipped from bare (0x051, 16 entries, "Set #1
   equipped."), /lockstyleset 1 echo kept the tunic's look after /equip body took it off, the 9 s refusal, /lockstyle
   query ("Style lock mode is enabled."), /lockstyle off dropped the look.
-- Not done: the slot editor mcresed with its item list and mcrmogc (c2s 0x052 / s2c 0x116), the Monstrosity refusals.
+- Since done: the slot editor (esedit.rs, mcrmogc) and the Monstrosity refusals ("Monstrosity, part 6").
 
 ## The chat line's caret (2026-10-25)
 
@@ -7183,7 +7183,8 @@ Spec `~/ffxi/lab/research/mainmenu_panels_spec.md`.
 - Row 12 in the Mog House (FUN_10140090 / FUN_10140270 / FUN_1013ff90): the label drawn by code, windowps 44
   "MogHouse" (443, dim, while visiting another's house, the row disabled), title 0xd 9, help 0xe 0x29 (own) / 0x2a
   (visiting); out of the Mog House the layout's "Map". HudState.menu_swap; topbar-shot --menu-swap 12:44.
-- Not done: the Monstrosity overrides of rows 2 / 5 / 6 / 10, the Synthesis row's rule (DAT_106634ac / FUN_101e15c0).
+- Since done: the Monstrosity overrides ("Monstrosity, part 4") and the Synthesis row's rule ("Synthesis: the 23 s
+  rule").
 - Live: the Mog House door was not reached by !pos this time (the earlier run entered by the zmr0zmr1 rect from the
   sub-area); checked offscreen.
 
@@ -7332,8 +7333,8 @@ Spec `~/ffxi/lab/research/chat_mode_tab_spec.md`.
   does not. The full log while typing moves its lines up 16 more (FUN_10138020 offset -16), the hand with them.
 - Live (Lnxcsfix): Say on open, none on "/", Party on "/p hi", Linkshell 2 + "No Linkshell" on "/l2 x". The user's
   retail shot showed the Say tab.
-- Not done (side findings, spec section 6): the line's text origin (x0 + 2, y0 + 3; ours + 4, + 2), its width (log
-  width - 86), the blinking '|' caret.
+- Since done (side findings, spec section 6): the line's text origin (x0 + 2, y0 + 3), its width (log width - 86),
+  the blinking '|' caret.
 
 ## Name plate icons, job master stars, invisible players (2026-10-25)
 
@@ -8160,7 +8161,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - Live (Lnxcsfix): every command's line came back ("Bell sounds have been enabled.", "Auto-target: ON.", "Your
   headgear is now hidden.", "Job mastery display is disabled.", ...). Not seen live: a bell note (the /bell emote
   did not run for Lnxcsfix), /ignorepet / /hidetrust (no other players' pets or trusts near).
-- Not done: /furcc (no Mog House furniture actors yet).
+- Since done: /furcc ("Mog House furniture").
 
 ## /autogroup, /recruit, /mentor, /itemsearch (2026-10-25; spec textcmds2_spec.md part C 1 / 2)
 
@@ -8221,7 +8222,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   the argument). LSB fills the bits for a jug pet with BST main 25+ (BuildingCharPetAbilityTable). Live (Lnxcsfix
   as BST 75, !exec player:spawnPet(21)): [1]Lamb Chop Charges required: 1. .. [4]Sheep Song; /bstpet 1 <me> sent
   param 689, LSB "Unable to use job ability." in town; an unquoted two-word name fails as /ja does.
-- Not done from part D: /monsterskill (no Monstrosity).
+- Since done from part D: /monsterskill ("Monstrosity, part 9").
 
 ## Text command /? (2026-10-25; spec textcmds2_spec.md part C)
 
@@ -8367,7 +8368,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   CXiSklFurnitureActor): an actor (id after the MMB pieces') loading the same file formula through Source::File,
   standing at the piece's place and idling. Live: the Prishe Statue (277) on its pedestal. Its 'pop0' / 'init' are
   not started *(inf: retail plays them as a server NPC's)*.
-- Not done: mannequins (type 14, the 0x026 look), the item-gated zone NPC (FUN_101d4c80), layout mode.
+- Since done: mannequins (client/mannequin.rs) and layout mode; the item-gated zone NPC is never spawned by LSB ("Mog
+  House: the item-gated NPC").
 
 ## Ground tilt (2026-10-25; spec ~/ffxi/lab/research/ground_tilt_spec.md)
 
@@ -9854,7 +9856,7 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Seen in: every zone's 6380-ish "You will be able to use the Assist Channel until {a1}/{a2}/{a0} at {a3}:{a9}
   (JST)." (local time all the same, the "(JST)" is the text's), zone 5 7410 "...won't come out of its cave until {ac}
   ({ab} Earth time)", zone 11 7940. Tests: dialog::earth_date_codes, dialog::date_builder_codes.
-- Not done: b0 / b1 (work[n] u16 through FUN_100bd9f0 / FUN_100bda10, objects DAT_106218fc / DAT_10578428), b4 (group
+- Since done ("Event text: the other codes of FUN_100c1650"): b0 / b1 (work[n] u16 through FUN_100bd9f0 / FUN_100bda10, objects DAT_106218fc / DAT_10578428), b4 (group
   10 0x5f "<grouped> gil" of work[n]; our zone text has no work array), b5 (FUN_101c8450 of num[n], a list string).
 
 ## Shops: automaton attachment colours (2026-10-26)
@@ -10250,3 +10252,17 @@ Spec section 3.8 (each read in the decompile).
   64, 128 and 256 px. Linux builds skip it.
 - Checked: release/build-windows.sh builds; the exe's .rsrc holds 7 RT_ICON images and one RT_GROUP_ICON
   (~/ffxi/lab/scratch/mq2/pe_res.py). Not seen in Explorer / WinBoat yet.
+
+## Monstrosity, part 9: /monsterskill (2026-10-26)
+
+- Command id 0x27 (/monsterskill, /ms; flags 0x101) -> FUN_1007bad0: gate 0x7f (FUN_101cc0d0), the name among our 16
+  moves (FUN_10223240 over DAT_10483118), the target (FUN_1007a1c0), an id in 0x700..0xaff: c2s 0x01A action 0x19 with
+  u32 @0xc = id - 0x600 (0 stays 0); the level and TP are not checked here (the list checks them). The dry run
+  (DAT_1047d498, the target arrow) is not modelled. textcmd.rs `monster_skill`; the Monster Skills list runs it.
+
+## Synthesis: the 23 s rule (2026-10-26)
+
+- FUN_101e15e0 stamps tskill1 +0x74 (FUN_100dc130, seconds) when FUN_101e0770 sends a request; FUN_101e15c0 is "less than
+  0x17 s since". While it holds, cmbmenu's rows 1 / 2 (FUN_101e28d0) and the main menu's Synthesis (FUN_10140090 /
+  FUN_10140270: state 5, else 0xb) are off, answered or not. Ours tested the request state, which ends with the answer;
+  now synth::menu_off reads the send time (kept over zones), and menu_disabled adds row 10.
