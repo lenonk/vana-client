@@ -135,8 +135,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
     skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
     "Per-record reactions"); guards, parries and counters not seen live yet;
-  - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done; left checking the glow copies'
-    size against retail footage (the code ignores element scale), party / alliance relations for the colours;
+  - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done, the party / alliance colours too
+    (combat::relation, FUN_1009e700); left checking the glow copies' size against retail footage (the code ignores
+    element scale);
   - status icons (spec `~/ffxi/lab/research/status_icons_spec.md`; MODLOG "Status icons"): own icons, timers, pulse,
     Num+ focus and cancel, party member icons (seen live with a bot) done;
   - actor sounds (spec `~/ffxi/lab/research/actor_sounds_spec.md`; MODLOG "Actor sounds 1..3"): voices steal, init /
