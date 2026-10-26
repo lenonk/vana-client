@@ -2162,6 +2162,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
     monstrosity::refresh(world);
     monstrosity::moves(world);
+    // The in-line code colours follow the text colour settings.
+    if let Some(bt) = world.battle.clone() {
+        let key: Vec<u32> = (0x1b..=0x31).chain([0x9b, 0xb0, 0xb3, 0xcb, 0xcc]).map(|c| world.game.get(c)).collect();
+        if world.code_key.as_ref() != Some(&key) {
+            let (ids, modes) = bt.code_tables(&world.game);
+            crate::dat::font::set_code_tables(ids, modes);
+            world.code_key = Some(key);
+        }
+    }
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
     let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
@@ -4770,6 +4779,8 @@ struct World {
     /// The K.O. answer's StatusId (0 home point; mp_dead 1 Cancel / 2 Retry) and mp_dead's cursor child.
     home_status: u32,
     mon_dead_sel: u16,
+    /// The text colour settings the font's code tables were built from.
+    code_key: Option<Vec<u32>>,
     mh_owner: u32,
     mh_floors: bool,
     /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
@@ -6205,6 +6216,7 @@ impl App {
                             my_form: 0,
                             home_status: 0,
                             mon_dead_sel: 1,
+                            code_key: None,
                             mh_owner: 0,
                             mh_floors: false,
                             mh_seen: false,

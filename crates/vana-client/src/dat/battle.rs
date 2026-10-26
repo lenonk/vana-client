@@ -247,6 +247,19 @@ impl BattleText {
         self.palette.iter().find(|(i, _)| *i == id).map_or([0x80; 4], |e| e.1)
     }
 
+    /// Every colour id (FUN_10129d00: 0x80808080 when absent) and every mode's line colour, with the config's text
+    /// colours, for the font's in-line codes.
+    pub fn code_tables(&self, cfg: &crate::gamecfg::Values) -> ([[u8; 4]; 256], [[u8; 4]; 256]) {
+        let id_colour = |id: u8| {
+            let config = (0x1b..=0x31).chain([0x9b, 0xb0, 0xb3, 0xcb, 0xcc]).find(|&c| colour_id_of(c) == Some(id));
+            match config {
+                Some(c) => argb_bytes(cfg.get(c)),
+                None => self.palette.iter().find(|(i, _)| *i == id).map_or([0x80; 4], |e| e.1),
+            }
+        };
+        (std::array::from_fn(|i| id_colour(i as u8)), std::array::from_fn(|m| self.colour_in(m as u8, cfg)))
+    }
+
     /// The line colour with the config's text colours (callback LAB_10126560 replaces the palette entries).
     pub fn colour_in(&self, mode: u8, cfg: &crate::gamecfg::Values) -> [u8; 4] {
         let id = self.mode_colours.iter().find(|(m, _)| *m == mode as u16).map_or(0, |e| e.1);

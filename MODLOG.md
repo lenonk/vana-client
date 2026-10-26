@@ -9981,8 +9981,10 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   wrap_indent / wrap_spans carry the colour and indent; ChatLog keeps an indent bit per line (BattleText::indents); the
   event VM's messages take the Ctx of event::text_ctx (dates, roster, point names: they were missing there) and their
   mode, sounds and pages (cut_pages).
-- Not modelled: `1e` from 0x11 (the colour-id table: retail timestamps use 1e 6a) and `1f xx` inside a line (mode xx's
-  colour from there on); the log add's mode-2 flag (every line indented).
+- Since done: `1e` from 0x11 (the colour-id table FUN_10129d00 with the config text colours, 0x80808080 when absent)
+  and `1f xx` inside a line (mode xx's colour from there on, FUN_10129c70; not carried over a wrap): dat/font.rs
+  `set_code_tables`, BattleText::code_tables, rebuilt when the text colour settings change. Not modelled: the log
+  add's mode-2 flag (every line indented).
 - Live (Lnxcsfix): "Obtained: Potion." with Potion in the code-2 green; the Home Point's line white as before.
 
 ## arealist modes 1 / 2: the event's area pick (op 0xcc 0x10 / 0x11) (2026-10-26; arealist_spec 1.9)

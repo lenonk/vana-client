@@ -8,6 +8,15 @@ use super::zone::{Texture, parse_img};
 use anyhow::{Context, Result, bail};
 use md5::{Digest, Md5};
 use std::collections::HashMap;
+use std::sync::RwLock;
+
+/// The colour-id table and the mode colours with the config's text colours (FUN_10129d00 / FUN_10129c70; BGRA), for
+/// `1e` from 0x11 and `1f xx`; the world sets them when they change.
+static CODE_TABLES: RwLock<Option<Box<([[u8; 4]; 256], [[u8; 4]; 256])>>> = RwLock::new(None);
+
+pub fn set_code_tables(ids: [[u8; 4]; 256], modes: [[u8; 4]; 256]) {
+    *CODE_TABLES.write().unwrap() = Some(Box::new((ids, modes)));
+}
 
 /// Glyph cell size in screen pixels (and in atlas texels for the 1024x2048 atlases).
 pub const CELL: i32 = 16;
@@ -270,12 +279,21 @@ impl Font {
         let mut pen = x;
         let mut color = color;
         let base = color;
+        let tables = CODE_TABLES.read().ok();
+        let table = |k: usize, xx: usize| tables.as_ref().and_then(|t| t.as_ref()).map_or([0x80; 4], |t| if k == 0 { t.0[xx] } else { t.1[xx] });
         for g in glyphs(sjis) {
-            // FUN_10162140: `1e xx` replaces the colour (0 = the line's own), keeping the draw's alpha. `1e` from 0x11
-            // (the colour-id table) and `1f` (a mode's colour) are not modelled.
-            if (-0x110..=-0x100).contains(&g) {
-                let c = self.codes[(-0x100 - g) as usize].to_le_bytes();
+            // FUN_10162140: `1e xx` replaces the colour, keeping the draw's alpha: below 0x11 the 17-entry table (0 = the
+            // line's own), from 0x11 the colour-id table (FUN_10129d00, 0x80808080 when absent); `1f xx` mode xx's
+            // colour (FUN_10129c70).
+            if (-0x1ff..=-0x100).contains(&g) {
+                let xx = (-0x100 - g) as usize;
+                let c = if xx < 0x11 { self.codes[xx].to_le_bytes() } else { table(0, xx) };
                 color = if c == [0; 4] { base } else { [c[0], c[1], c[2], base[3]] };
+                continue;
+            }
+            if (-0x2ff..=-0x200).contains(&g) {
+                let c = table(1, (-0x200 - g) as usize);
+                color = [c[0], c[1], c[2], base[3]];
                 continue;
             }
             // French layout pulls the full-width opening quote 8 px left.

@@ -153,8 +153,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     resident file);
   - the message formatter (dat/msgfmt.rs), /clock, the event date codes 7f a0..ac and the other event codes (MODLOG
     "Event text: the other codes of FUN_100c1650") and the Linkshell Concierge (client/concierge.rs, 7f 81) done; every
-    group 8 / 10 formatter caller wired but group 8 0x4e (linking a PlayOnline handle: none on LSB); in-line colours and the continuation indent done (MODLOG "Log lines: in-line colours and
-    indents"; left 1e from 0x11 and 1f inside a line);
+    group 8 / 10 formatter caller wired but group 8 0x4e (linking a PlayOnline handle: none on LSB); in-line colours (every 1e / 1f code) and the continuation indent done (MODLOG "Log lines:
+    in-line colours and indents");
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and
     the wheel on them;
