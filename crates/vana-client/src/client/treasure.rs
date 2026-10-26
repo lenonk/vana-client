@@ -307,7 +307,23 @@ pub fn key(w: &mut World, key: egui::Key) {
 /// the hand there, a click on the hand's child is Enter, a right click on the window is Escape.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     let Some(l) = w.loot.clone() else { return };
+    // lnowin (shown while lootope is not): the pointer over it hands it the focus (loot's update sends itself message 8,
+    // SE 0013); there a click is Enter (Done), a right click Escape.
+    let off = lnowin_off(gu, w, sw, sh);
+    let in_lno = l.ope.is_none() && gu.window_rect(LNOWIN, sw, sh).is_some_and(|[x, y, ww, h]| p.0 >= x + off.0 && p.0 < x + off.0 + ww && p.1 >= y && p.1 < y + h);
     if l.done {
+        if in_lno {
+            gu.hover.set(true);
+            if right {
+                key(w, egui::Key::Escape);
+            } else if clicked {
+                key(w, egui::Key::Enter);
+            }
+        }
+        return;
+    }
+    if in_lno && (moved || clicked) {
+        num_plus(w);
         return;
     }
     let (Some((lx, ly)), Some(lay)) = (gu.window_xy(LOOT, sw, sh), gu.layout(LOOT)) else { return };
@@ -347,6 +363,13 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     } else if clicked {
         key(w, egui::Key::Enter);
     }
+}
+
+/// FUN_1013f1c0: while raid1 (the alliance list) is up and lnowin's bottom reaches its top and its right edge raid1's
+/// left - 32, lnowin moves to raid1's left - 32 - its width - 1.
+fn lnowin_off(gu: &GameUi, w: &World, sw: f32, sh: f32) -> (f32, f32) {
+    let (Some([x, y, ww, h]), Some([rx, ry, ..])) = (gu.window_rect(LNOWIN, sw, sh), gu.window_rect("menu    raid1", sw, sh)) else { return (0.0, 0.0) };
+    if w.party.slots().counts[1] > 0 && y + h >= ry && x + ww >= rx - 32.0 { (rx - 32.0 - ww - 1.0 - x, 0.0) } else { (0.0, 0.0) }
 }
 
 /// Num+ (list message 8): the focus to lnowin, SE 0013; Num+ on lnowin gives it back.
@@ -442,7 +465,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             rects.push(win.frame);
         }
     } else if l.ope.is_none()
-        && let Some(win) = gu.lobby_window_off(LNOWIN, sw, sh, (0.0, 0.0), l.done.then_some(1), l.done, &[]) {
+        && let Some(win) = gu.lobby_window_off(LNOWIN, sw, sh, lnowin_off(gu, w, sw, sh), l.done.then_some(1), l.done, &[]) {
         rects.push(win.frame);
     }
     rects

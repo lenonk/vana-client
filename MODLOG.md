@@ -6199,7 +6199,8 @@ Spec `~/ffxi/lab/research/loot_spec.md`.
   retail actor +0x18c, FUN_101cc330) widens loot to 0x11d (FUN_1011a5a0) and each row shows the highest lot "%d :" at
   +0xb4 and its lotter at +0xd7 in fontshp (past 8 characters cut to 7 and the ellipsis, sprite 0x6c). Ours:
   SelfPlate.zone_pool, treasure::draw. Not seen live (no Treasure-flag zone tried).
-- Not done: lnowin's raid1 dodge, lnowin by mouse.
+- lnowin's raid1 dodge (FUN_1013f1c0) and its mouse (the pointer over it hands it the focus as message 8, SE 0013; a
+  click is Done, a right click gives the focus back) built 2026-10-26, not tried live (needs a party and a pool).
 
 ## List scroll bars (2026-10-24)
 
