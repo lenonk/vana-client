@@ -9037,3 +9037,15 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` (items 1, 2, 7, 11).
 - Op 0xab 0xd / 0xe: the event actor's +0x130 bit 1 (as scheduler op 0x9a), our Entity.gens_off, read at the next
   model load / un-hide.
 - Checked headless (event-run 230 0x17): "op 7c [Int(0), Actor(npc0ed)]" around its silent line.
+
+## Event op 0xab 0x11: every model built again after the event (2026-10-25)
+
+Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
+- FUN_100bac90 0x11 sets DAT_1035af3c = val@2 (1,079 sites, at the end of cutscenes before the fade-in); zone load
+  resets it to -1. FUN_10095900 (the per-frame model loader), once no event runs: every entity's model but ours goes
+  (FUN_10092900: its riding animal, attached actors and sub-objects with it) and loads again, the load fade from 0, so
+  everyone around fades back in. `init` is not run again.
+- Ours: World.rebuild_models (cleared at zone-in); event::rebuild_models drops each entity actor but ours (and its
+  ANIMAL actor; ride.rs asks for the animal again) and queues its look; the cached model returns at once with appear
+  0. Furniture and auras are not entities and stay *(inf: retail keeps XiModelActors with +0x778 set)*.
+- Checked headless: event-run 230 0x3d1 (npc 0x153) emits "op ab.17 [Int(0)]" before its end. Not seen live yet.

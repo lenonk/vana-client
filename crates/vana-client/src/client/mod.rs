@@ -3985,6 +3985,8 @@ struct World {
     event_voices: bool,
     /// Looks set by event op 0xb6 (and the riding animals, ride.rs), for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// Event op 0xab 0x11 (DAT_1035af3c != -1): once no event runs, every model but ours is built again.
+    rebuild_models: bool,
     /// Our riding fields (0x037, 0x067), and every rider's state (ride.rs).
     my_ride: net::Ride,
     /// Our Geomancer Indi aura (s2c 0x037 @0x58, client/indi.rs).
@@ -5718,6 +5720,7 @@ impl App {
                             doors: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            rebuild_models: false,
                             my_ride: Default::default(),
                             my_aura: Default::default(),
                             my_init_done: false,
@@ -6264,6 +6267,7 @@ impl App {
                     world.event_pending = None;
                     world.screen = Default::default();
                     world.self_lock = None;
+                    world.rebuild_models = false;
                     world.map_open = None;
                     world.talk_lock = None;
                     world.hud_top.enter();
@@ -7071,6 +7075,7 @@ impl App {
         roe::new_challenge(world);
         ko_step(world);
         event::update(world, dt);
+        event::rebuild_models(world);
         if world.in_scene() {
             doors::update(world);
             lifts::update(world);

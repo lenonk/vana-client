@@ -838,6 +838,12 @@ impl Host for LiveHost<'_> {
                     a.blink_off = on == 0;
                 }
             }
+            // FUN_100bac90 sub 0x11: DAT_1035af3c = val@2; anything but -1 rebuilds the models after the event.
+            Effect::Op { op: 0xab, sub: Some(0x11), args, .. } => {
+                if Self::arg_int(&args, 0).is_some_and(|v| v != -1) {
+                    self.w.rebuild_models = true;
+                }
+            }
             // FUN_100bac90 subs 0xd / 0xe: the event actor's generators off / on (+0x130 bit 1, as scheduler op 0x9a),
             // acting at its next model load.
             Effect::Op { op: 0xab, sub: Some(s @ (0x0d | 0x0e)), actor, .. } => {
@@ -1709,6 +1715,28 @@ fn finish(w: &mut World, live: Box<Live>) {
         let dir = w.net.me.lock().map(|m| m.dir).unwrap_or(0);
         let f = super::forward_from_dir(dir);
         super::camera::face(w, f.x.atan2(f.z));
+    }
+}
+
+/// FUN_10095900 with DAT_1035af3c set and no event running: every entity's model but ours goes (FUN_10092900: its
+/// riding animal with it) and loads again, its load fade from 0. Furniture and auras are not entities and stay.
+pub fn rebuild_models(w: &mut World) {
+    if !w.rebuild_models || active(w) || w.event_pending.is_some() {
+        return;
+    }
+    w.rebuild_models = false;
+    let ids: Vec<u32> = w.actors.keys().copied().filter(|&id| id != w.my_id && w.entities.contains_key(&id)).collect();
+    log::info!("event: rebuilding {} models (op 0xab 0x11)", ids.len());
+    for id in ids {
+        let src = w.actors.get(&id).and_then(|a| a.source);
+        for gone in [id, super::ride::ANIMAL | id] {
+            if w.actors.remove(&gone).is_some() {
+                w.effects.forget_actor(gone);
+            }
+        }
+        if let Some(src) = src {
+            w.event_looks.push((id, src));
+        }
     }
 }
 
