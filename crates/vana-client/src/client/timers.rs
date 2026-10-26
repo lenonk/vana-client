@@ -1247,9 +1247,9 @@ mod tests {
         let p = place(Dock::Right, 1280.0, 800.0, 0, 650.0, 600.0, None);
         assert_eq!((p.x, p.y, p.max_h), (1280.0 - 16.0 - WIDTH, 596.0, 596.0 - 252.0));
         // A minimap at the top left: the left dock starts under it; at the top right the top dock keeps left of it.
-        let mini = crate::client::minimap::place(1, 1, 1280.0, 0);
+        let mini = crate::client::minimap::place(1, 1, 1280.0, 0, false);
         assert_eq!(place(Dock::Left, 1280.0, 800.0, 0, 650.0, 600.0, Some(mini)).y, mini[1] + mini[3] + 6.0);
-        let mini = crate::client::minimap::place(0, 2, 1280.0, 0);
+        let mini = crate::client::minimap::place(0, 2, 1280.0, 0, false);
         let p = place(Dock::Top, 1280.0, 800.0, 0, 650.0, 600.0, Some(mini));
         assert!(p.x + WIDTH <= mini[0] - 4.0, "{}", p.x);
         // A large one reaches below the main menu: the right dock stops above its foot.

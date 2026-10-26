@@ -213,7 +213,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now),
         row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
         row("Minimap", "The zone map in a corner, centred on you, with what is near; the mouse wheel over it zooms.", Minimap, OFF_ON, Now),
-        row("Minimap Position", "Where the minimap stands: the top right beside the main menu, or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
+        row("Minimap Position", "Where the minimap stands: the top right (beside the main menu while it is open), or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
         row("Minimap Size", "How big the minimap is.", MinimapSize, &[(0, "Small"), (1, "Medium"), (2, "Large")], Now),
     ];
     match kind {

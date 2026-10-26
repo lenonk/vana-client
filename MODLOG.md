@@ -8932,8 +8932,9 @@ interpolates between the hour keys in both clients.
   parchment; the mod's marker texture is red), the target 6 px on a red border. World to map: x / 5 x |scale|.
 - The map is an Overlay of its own: another zone opens it again, another page (the sub-map key under us) follows.
   Nothing without a map, a key item or a record (as the map window), in events, under the map window or Conquest.
-- Places (layout pixels): top right (W - 132 - side, 50), left of the main menu column; top left (16, 122, past the
-  status icons as the Timers' left dock). Sizes 128 / 176 / 224. The Timers keep clear: the left dock starts 6 under
+- Places (layout pixels): top right (W - side, 50) at the screen's edge, moving to (W - 132 - side, 50), left of the
+  main menu column, while the main menu is open (user, 2026-10-25); top left (16, 122, past the status icons as the
+  Timers' left dock). Sizes 154 / 211 / 269 (20 % over the first 128 / 176 / 224, user, 2026-10-25). The Timers keep clear: the left dock starts 6 under
   it, the top dock ends 4 left of it, the right dock's top stays 6 under a large one. Extras rows Minimap, Minimap
   Position, Minimap Size. Offscreen: topbar-shot --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] with sample dots.
 - Live (Lnxcsfix, 230, map key item 385): top right with the NPCs around the Westgate.

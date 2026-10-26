@@ -473,7 +473,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
         let f: Vec<&str> = spec.split(',').collect();
         let num = |i: usize, d: f32| f.get(i).and_then(|v| v.parse::<f32>().ok()).unwrap_or(d);
         let (zone, x, z) = (num(0, 0.0) as u16, num(1, 0.0), num(2, 0.0));
-        let rect = super::minimap::place(num(4, 0.0) as u32, num(5, 1.0) as u32, sw, 0);
+        let rect = super::minimap::place(num(4, 0.0) as u32, num(5, 1.0) as u32, sw, 0, menu.is_some());
         let region = super::map::Region::find(gu.map_regions(), zone);
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir())?;
         let mut o = super::map::Overlay::new(zone, region, Some(std::sync::Arc::new(index)));
