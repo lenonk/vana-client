@@ -91,6 +91,9 @@ fn grammar(kind: u8, args: &[u8]) -> String {
         // Names through FUN_1014e180 (key items, inferred).
         0x30..=0x35 => format!("{{keyitem{} {}{arg}}}", form(kind - 0x30), src(kind - 0x30)),
         0x42..=0x44 => format!("{{keyitem{} work{arg}}}", form(kind - 0x42)),
+        // With its own article (current FUN_100be760).
+        0x36 => format!("{{keyitem art num{arg}}}"),
+        0x45 => format!("{{keyitem art work{arg}}}"),
         0x03 => format!("{{count num{arg}}}"),
         0x04 => format!("{{count work{arg}}}"),
         _ => format!("{{grammar {kind:02x} {arg}}}"),
@@ -172,7 +175,7 @@ fn sub_code(s: &[u8], i: usize) -> (String, usize) {
         0x34 => (format!("{{wait {}}}", b(2)), 3),
         0x35 | 0x36 => (format!("{{7f{sub:02x} {}}}", b(2)), 3),
         0x38 => (format!("{{wait {}}}", u16::from_le_bytes([b(2), b(3)])), 4),
-        0x80 => (format!("{{article {}}}", b(2)), 3),
+        0x80 => (format!("{{capital {}}}", b(2)), 3),
         0x81 => (format!("{{7f81 num{}}}", b(2)), 3),
         0x84 => (format!("{{list {}}}", b(2)), 3),
         0x85 => pick("player m/f".into()),
@@ -292,6 +295,21 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
                 noun(lines, pending, n, k % 3);
             }
         }
+        // 0x36 / 0x45 (current FUN_100be760): a key item from num[] / work[] with its own article, "the" for key item
+        // types 0 / 1 (FUN_101552e0), else "a" / "an" / none by the entry's mode (FUN_101540a0).
+        0x36 | 0x45 => {
+            if let Some(id) = at(if kind == 0x36 { 1 } else { 2 }).filter(|&id| id != 0)
+                && let Some(n) = names.and_then(|s| s.key_item(id))
+            {
+                let art = match (names.is_some_and(|s| s.key_item_definite(id)), n.mode) {
+                    (true, _) => "the",
+                    (false, 3) if n.an => "an",
+                    (false, 3) => "a",
+                    _ => "some",
+                };
+                push(lines, &format!("{art} {}", n.bare));
+            }
+        }
         // Records of Eminence objectives: item id + 0xe000 (FUN_100bc8a0 0x39 / 0x40 / 0x41).
         0x39 | 0x40 | 0x41 => {
             let src = match kind {
@@ -341,6 +359,16 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     let mut place = [None; 2];
     let mut mode = None;
     let mut pending: Pending = None;
+    // `7f 80 n` (FUN_100bf790 case 0x80 -> expander +0xc): the next name's first letter in upper case for n = 1
+    // (FUN_100c0c40); the next grammar block or name clears it.
+    let mut cap: Option<(usize, usize)> = None;
+    let capital = |lines: &mut Vec<Vec<u8>>, cap: &mut Option<(usize, usize)>| {
+        if let Some((l, pos)) = cap.take()
+            && let Some(b) = lines.get_mut(l).and_then(|line| line.get_mut(pos))
+        {
+            b.make_ascii_uppercase();
+        }
+    };
     let mut i = 0;
     let push = |lines: &mut Vec<Vec<u8>>, b: &[u8]| lines.last_mut().unwrap().extend_from_slice(b);
     let alt = |from: usize, k: usize| -> (Vec<u8>, usize) {
@@ -392,6 +420,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 if let Some(&k) = body.first() {
                     grammar_expand(k, &body[1..], ctx, &mut lines, &mut pending);
                 }
+                capital(&mut lines, &mut cap);
                 a + 2
             }
             0x02 | 0x03 => {
@@ -409,6 +438,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 if let Some(t) = t {
                     push(&mut lines, &encode_sjis(&t));
                 }
+                capital(&mut lines, &mut cap);
                 2
             }
             0x1f => {
@@ -444,7 +474,13 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     wait = Some(u16::from_le_bytes([s.get(i + 2).copied().unwrap_or(0), s.get(i + 3).copied().unwrap_or(0)]) as u32);
                     4
                 }
-                0x36 | 0x80..=0x84 | 0x8f | 0x94..=0x97 | 0xa0..=0xb5 => 3,
+                0x80 => {
+                    if s.get(i + 2) == Some(&1) {
+                        cap = Some((lines.len() - 1, lines.last().map_or(0, Vec::len)));
+                    }
+                    3
+                }
+                0x36 | 0x81..=0x84 | 0x8f | 0x94..=0x97 | 0xa0..=0xb5 => 3,
                 _ => 2,
             },
             0x20..0x7f => {
@@ -479,6 +515,18 @@ mod tests {
         let d = Dialog::load(&index, 103).unwrap();
         let e = expand(&d.raw(8099).unwrap(), &ctx(4112));
         assert_eq!((crate::dat::font::decode_sjis(&e.lines[0]).as_str(), e.mode), ("Lnxtest obtains a potion!", Some(0x79)));
+    }
+
+    /// Selbina 6865 (Isacio, Elder Memories): `7f 80 01` then kind 0x36 on num[0] = key item 2825 (the script's
+    /// `mov Z2, #2825`; num[] are Z2..Z9): type 2, so "a", capitalized.
+    #[test]
+    fn key_item_by_num() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let names = crate::dat::names::Names::load(&index, crate::dat::items::Lang::En).ok().map(|n| std::sync::Arc::new(n) as std::sync::Arc<dyn crate::dat::names::NameSource>);
+        let d = Dialog::load(&index, 248).unwrap();
+        let e = expand(&d.raw(6865).unwrap(), &Ctx { num: [2825, 0, 0, 0, 0, 0, 0, 0], names, ..Default::default() });
+        assert_eq!(crate::dat::font::decode_sjis(&e.lines[0]), "A Gilgamesh's introductory letter would be fine, too...if you can find one.");
     }
 
     /// East Ronfaure 7906 (a field manual page): `7f 92 00 [/s]` by num[0].

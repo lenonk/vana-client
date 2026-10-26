@@ -9452,3 +9452,21 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
 - Live (Lnxcsfix, its San d'Oria house, mhflag set to 0x20 for the test and restored to 0 after): /remodel -> the list
   (title "Remodel", help "Select house style.", Mog Patio grey), Bastokan -> "Make changes?", Left, Enter -> c2s
   0x0CB {5, 0, 0x268}; LSB wrote mhflag 0xa0 (style 1).
+
+## Dialogue: key items with their own article (grammar 0x36 / 0x45) and `7f 80` (2026-10-26)
+
+- User report: Isacio's (Selbina, Elder Memories) second line read " would be fine, too...if you can find one." with
+  no name. Message 6865 is `7f 80 01 | 01 05 36 82 80 80 80 | " would be fine..."`; the script runs `mov Z2, #2825`
+  first, and the message's num[] are Z2..Z9 (event_vm.rs ctx), so num[0] = key item 2825 "Gilgamesh's introductory
+  letter" (language slot 0x3f = file 55705, the key item d_msg).
+- Grammar kinds 0x36 / 0x45 (current FFXiMain FUN_100be760; absent from the 2019 FUN_100bc8a0, where 0x36 fell to
+  the tail): the id from num[] (0x36, +0xc64) or work[] (0x45, +0xc50); 0 prints nothing; else the key item entry
+  (FUN_10153ff0 table, FUN_10154a40 -> FUN_101540a0) sets its own article: FUN_101552e0 = entry mode 0 / 1 -> "the",
+  else indefinite, then the name in the entry's mode (FUN_101540a0 English: type 4 -> mode 2, types 2 / 3 -> mode 3
+  with "an" for 3, types 0 / 1 -> mode 0 / 1). The article is part of the phrase (a space after it).
+- `7f 80 n` (FUN_100bf790 case 0x80): expander +0xc = n, handed to FUN_100c0c40 with the next name (spell / ability
+  codes 0x10 / 0x11 / 0x16 / 0x1a, and the grammar block's phrase) and cleared; n = 1 converts the first character
+  (FUN_102518a0 mode 2 *(inf: upper case)*). Ours: n = 1 capitalizes the first byte the next block or name wrote;
+  2 / 3 (whole-text conversions) not done. The dump labels it {capital n} (was {article n}).
+- Result (test dialog::key_item_by_num): "A Gilgamesh's introductory letter would be fine, too...if you can find
+  one." *(as the decompile builds it; the "A" not compared with retail footage)*.

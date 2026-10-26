@@ -122,6 +122,10 @@ pub trait NameSource: Send + Sync {
     fn ability(&self, id: u32) -> Option<String>;
     fn place(&self, id: u32) -> Option<String>;
     fn title(&self, id: u32) -> Option<String>;
+    /// FUN_101552e0 on the English key item entry: types 0 / 1 take "the" (FUN_101540a0's mode 0 / 1).
+    fn key_item_definite(&self, _id: u32) -> bool {
+        false
+    }
 }
 
 /// All tables of one language.
@@ -290,6 +294,10 @@ impl NameSource for Names {
             2 | 3 => Noun { bare: sing.clone(), singular: sing, plural: plur, an: ty == 3, singular_an: ty == 3, mode: 3 },
             _ => Noun { an: vowel(&sing), singular_an: vowel(&sing), bare: sing.clone(), singular: sing, plural: plur, mode: 3 },
         })
+    }
+
+    fn key_item_definite(&self, id: u32) -> bool {
+        self.lang == Lang::En && matches!(self.key_item_fields(id).and_then(|f| f.get(1)), Some(Field::Num(0 | 1)))
     }
 
     fn spell(&self, id: u32) -> Option<String> {
