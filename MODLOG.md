@@ -9885,3 +9885,14 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - *(inf / to compare with retail footage)*: guide00's rows show through guide01's translucent frame (the base draw
   FUN_10221f50 has no "covered" test, unlike quest00); guide01 drawn above the page image (registry layers); the page's
   first view (ours eases from the image's top-left corner).
+
+## Mog House: the item-gated NPC (FUN_101d4c80) (2026-10-26)
+
+- Table 0x103383d8 (rows of 0x84 bytes: up to 32 item ids, then a u16 model at +0x80); this build has one row: items
+  0x1aa Orchestrion, 0x11e Nanaa Mihgo Statue, 0x11f Nanaa Mihgo S. II, model 0x737. The scan of the installed pieces
+  (FUN_101d...: type 10 / 12 / 14 with the installed bit on the other floor) sets myroom +0x44 bit k (FUN_101d4ba0 via
+  FUN_101d4c20's row / index) and clears it when taken away (FUN_101d4be0). Each frame FUN_101d4c80 shows (FUN_10085990)
+  the zone NPCs (+0x78 0x01xxxxxx, model ready) whose +0xfc model is the row's while the row's word is set and the
+  house allows it (FUN_101d5fe0), else hides them (FUN_100859d0(0)), and sets their +0xa0 object's +0xc0 to 1 / 2 by
+  the layout view.
+- LSB spawns no NPC with model 0x737 (npc_list looks): nothing to show or hide there, not built.

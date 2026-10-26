@@ -160,7 +160,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Mog House furniture (client/furniture.rs, dat/furniture.rs, MODLOG "Mog House furniture"; spec
     `~/ffxi/lab/research/furniture_spec.md`): the installed pieces drawn at their grid / wall places, plants, the
     files' generators and 'init', skinned pieces, collision boxes, the camera ray (/furcc), mannequins (look, poses,
-    dressing: client/mannequin.rs) done; left actor lighting (+ the house's 'l_01'), the item-gated zone NPC;
+    dressing: client/mannequin.rs) done; left actor lighting (+ the house's 'l_01'); the item-gated zone NPC (model 0x737)
+    is never spawned by LSB (MODLOG "Mog House: the item-gated NPC");
   - effects (fx/, render/effects.rs; MODLOG "Effect generators" and "Effect schedulers"): zone, weather, sprites,
     melee sparks, casting, spells, weapon skills, model generators, effect sounds, lens flares, D3b morphs, the
     moon, footsteps (sounds, dust, prints), heat haze, spline paths, the zone light tint and the Effects filter
