@@ -211,6 +211,11 @@ impl Art {
 }
 
 /// The bundled fonts: Inter for the interface (egui's Proportional), Inter SemiBold for titles and names (STRONG),
+/// A bundled font's bytes by name ("Inter-BoldItalic" ...).
+pub fn font(name: &str) -> Option<&'static [u8]> {
+    FONTS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
+}
+
 /// Inter Bold Italic for the bars' labels (LABEL), JetBrains Mono for logs (Monospace); egui's own fonts stay behind
 /// them for missing glyphs.
 pub fn install_fonts(ctx: &Context) {

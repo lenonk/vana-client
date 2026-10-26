@@ -1262,7 +1262,11 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             let tint = name_colour(*id, e, world, |i| gu.ncol(i));
             let p = entity_plate(*id, e);
             let (prefix, icon) = plate::prefix(&p);
-            gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            if world.modern {
+                modern::plates::draw(gu, &prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            } else {
+                gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            }
         }
     }
     if !hidden.contains(&world.my_id)
@@ -1276,7 +1280,11 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let tint = faded(gu.ncol(if gm >= 3 { 0x0c + gm - 3 } else { 0 }));
         let p = self_plate(world);
         let (prefix, icon) = plate::prefix(&p);
-        gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        if world.modern {
+            modern::plates::draw(gu, &prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        } else {
+            gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        }
     }
     gu.depth(None);
 }

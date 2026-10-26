@@ -233,6 +233,10 @@ Milestone 1:
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
 - Party rows show the sub job small on the main job's corner.
-- To do (user, 2026-10-26): the Timers window, the minimap, the map overlay; nameplates; the storage views with the
-  merged bags.
+- Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals as tall
+  as retail's letters), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
+  quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
+  badges stay at its size left of the name until the SVG badge set is approved; the master stars above. No bars.
+- To do (user, 2026-10-26): the Timers window, the minimap, the map overlay; the SVG plate badges; the storage views
+  with the merged bags.
 - Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

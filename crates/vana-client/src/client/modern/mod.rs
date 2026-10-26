@@ -13,6 +13,7 @@ mod hud;
 mod items;
 mod lists;
 mod paint;
+pub mod plates;
 pub mod shot;
 mod theme;
 mod topbar;
