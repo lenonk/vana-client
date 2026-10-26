@@ -728,13 +728,23 @@ pub fn nearest_kind(w: &mut World, prefer: u32, enemies: bool, pcs: bool) {
     let t = if pcs {
         nearest(w, |id, _| id >> 24 == 0)
     } else if enemies {
-        nearest(w, |id, e| id >> 24 != 0 && e.mob)
+        nearest(w, |id, e| nearest_hostile(w, id, e))
     } else {
         nearest(w, |id, e| id >> 24 != 0 && kind_bits(id, e) & prefer != 0).or_else(|| nearest(w, |id, _| id >> 24 != 0))
     };
     if t.is_some() {
         set(w, t);
     }
+}
+
+/// FUN_10083f20's kind 2 (Ctrl+F8, FUN_10083f00): both on Belligerency sides (8 / 9) another side (FUN_1008e8d0); else a
+/// Monipulator never, the rest by FUN_101cc220. Not modelled: two disguised actors (+0x1d0 bit 10) of one team.
+fn nearest_hostile(w: &World, id: u32, e: &super::Entity) -> bool {
+    let (a, b) = (w.my_team, e.marks.alleg);
+    if (8..=9).contains(&a) && (8..=9).contains(&b) {
+        return a != b;
+    }
+    e.monstrosity == 0 && hostile(w, id, e)
 }
 
 /// /targetnpc (FUN_1007a640 -> FUN_10083ee0(-1)): the nearest non-PC in front, any kind.
@@ -868,6 +878,14 @@ fn lock_height(w: &World, id: u32) -> f32 {
 /// FUN_1001e030, locked branch, run in 1/60 s ticks: look at the player / target midpoint, keep the eye
 /// within atan(4 / (near + d)) of the target-to-player line (x3 only in Monstrosity, all.c 23071..23080) and ease its distance into
 /// [near + d/2, far + d/2], 25 % of the gap a tick. `turn` is manual orbit input in radians.
+/// The camera actor's box (vtable +0x3c8 (1): skeleton box 1) when its model kind is 2 or 7 (FUN_10084400): the wider
+/// of x and z, x 1.5 (_DAT_1032a3ac); ours a model-id look.
+fn mon_extent(w: &World) -> f32 {
+    let Some(a) = w.actors.get(&w.my_id).filter(|a| matches!(a.source, Some(super::Source::Npc(crate::dat::npc::NpcLook::Model(_))))) else { return 0.0 };
+    let Some(b) = a.character.as_ref().and_then(|c| c.skeleton.boxes.get(1).copied()) else { return 0.0 };
+    (b[4] - b[5]).max(b[2] - b[3]) * 1.5
+}
+
 pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
     let Some(t) = w.target.and_then(|t| w.entities.get(&t).map(|e| (t, e.pos))) else { return };
     let mut c = w.cam;
@@ -888,11 +906,14 @@ pub fn step_camera(w: &mut World, ticks: f32, turn: f32, rise: f32) {
         dv = glam::Quat::from_rotation_y(turn * 6.0 / len) * dv;
     }
     dv.y += rise;
-    // near / far by the current focal length (FUN_100145d0, config 0x49).
+    // near / far by the current focal length (FUN_100145d0, config 0x49). In Monstrosity (FUN_1001ee60, all.c 23040)
+    // a single-model body adds its engaged box's wider side x 1.5, and the cone is three times as wide.
     let f = super::camera::focal(w);
-    let near = (7.2 + 0.125 * d) * f * 0.001;
-    let far = (8.6 + 0.125 * d) * f * 0.001;
-    let allowed = (4.0 / (near + d)).atan();
+    let mon = super::monstrosity::active(w);
+    let ext = if mon { mon_extent(w) } else { 0.0 };
+    let near = (7.2 + 0.125 * d + ext) * f * 0.001;
+    let far = (8.6 + 0.125 * d + ext) * f * 0.001;
+    let allowed = (4.0 / (near + d)).atan() * if mon { 3.0 } else { 1.0 };
     let len = dv.length().max(1e-3);
     let dir = dv / len;
     let angle = dir.dot(e).clamp(-1.0, 1.0).acos();

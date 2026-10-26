@@ -10227,3 +10227,15 @@ Spec section 3.8 (each read in the decompile).
 - FUN_1020f740 / FUN_101ec800 for a type-7 item with teach kind 2 (record +0x1554 = 2, the Corsair dice): green
   0x80509050 when FUN_10223360(+0x1558) holds, bit n + 0x200 of FUN_100e6020 (0x0AC plus the Monstrosity moves, so
   only after a 0x063 type 4); never yellow. shop.rs `ability_known`. Not seen live (no LSB dice shop).
+
+## Monstrosity, part 8: the engaged camera and Ctrl+F8 (2026-10-26)
+
+- FUN_1001ee60 (all.c 23040..23077), the locked branch: in Monstrosity the camera actor of model kind 2 / 7 adds its
+  box (vtable +0x3c8 (1), skeleton box 1) wider side x 1.5 (_DAT_1032a3ac) to the 0.125 x distance term of near /
+  far, and the cone angle is x 3.0 (_DAT_10329d38). target.rs `mon_extent`, step_camera. Outside it the lock mode 2
+  terms (_DAT_10456dac) stay unmodelled.
+- FUN_10083f20 kind 2 (Ctrl+F8, FUN_10083f00): both on Belligerency sides 8 / 9: another side (FUN_1008e8d0); else a
+  Monipulator never, the rest by FUN_101cc220 (ours used the monster flag). Kinds 0 / 1 (F9 / F10) were already PCs /
+  non-PCs. Not modelled: two disguised actors (+0x1d0 bit 10) on one team.
+- The 0x00D hitbox (@0x43 x 0.1 -> +0x208): nothing of ours reads a hitbox yet, so not parsed.
+- Not seen live (no Monipulator fight).
