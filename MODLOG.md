@@ -8932,8 +8932,10 @@ interpolates between the hour keys in both clients.
   parchment; the mod's marker texture is red), the target 6 px on a red border. World to map: x / 5 x |scale|.
 - The map is an Overlay of its own: another zone opens it again, another page (the sub-map key under us) follows.
   Nothing without a map, a key item or a record (as the map window), in events, under the map window or Conquest.
-- Places (layout pixels): top right (W - side, 50) at the screen's edge, moving to (W - 132 - side, 50), left of the
-  main menu column, while the main menu is open (user, 2026-10-25); top left (16, 122, past the status icons as the
+- Places (layout pixels): top right (W - side, 50) at the screen's edge, moving 4 left of the windows that reach the
+  screen's right edge over its rows (GameUi::edge_column over last frame's window frames: the main menu column at
+  W - 128, the Config list, the menu's sub-menus) while one is open (user, 2026-10-25: the Config list covered it);
+  top left (16, 122, past the status icons as the
   Timers' left dock). Sizes 154 / 211 / 269 (20 % over the first 128 / 176 / 224, user, 2026-10-25). The Timers keep clear: the left dock starts 6 under
   it, the top dock ends 4 left of it, the right dock's top stays 6 under a large one. Extras rows Minimap, Minimap
   Position, Minimap Size. Offscreen: topbar-shot --map ZONE,X,Z,minimap[,DOCK,SIZE,SPAN] with sample dots.
@@ -9063,3 +9065,10 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
 - Zones 61, 184 and 246 have lists past x 511 whose head names the next row's cell; a grid is now refused only when
   most heads disagree (a wrong width). Every zone with a collision table loads (the test all_zones_collide); the ships
   and sea routes (1, 3, 46, 47, 58..60, 220..228) have none, as before.
+
+## Extras in pages (2026-10-25)
+
+- Nine rows ran past the page's foot (366 x 296 holds seven at the 34-px pitch). Extras is now paged as Settings: the
+  arrows and page name (a cursor stop the page opens on), pages Maps (Map Overlay, Opacity, Minimap, its Position and
+  Size), Timers (Timers, Timers Position), Misc. (Synthesis Amount, Timestamps on All Lines). The header strip and
+  title of the one-page form are gone; the help bar's title still says Extras.

@@ -1,10 +1,10 @@
 //! Our Settings and Extras pages (not retail). Settings holds what retail set in the Windows "FINAL FANTASY XI
 //! Config" tool before starting (registry names 0000..0043, read by FUN_10016c30) plus our own display options;
 //! Extras holds the gameplay additions (the add-ons' features), each off until turned on. Both are drawn as the
-//! Config pages are (FUN_101144b0 over windowps 465: header strip, bullets, fontshp text, the buttons, markers and
-//! sliders of conf2win / conf3win), at the pages' place in game and centred in the lobby. Settings has several
-//! pages, turned as miss00 turns its nations: red arrows (menu frames 25 / 26) at the top corners and the page's
-//! name beside the left one (FUN_1022de70).
+//! Config pages are (FUN_101144b0 over windowps 465: bullets, fontshp text, the buttons, markers and
+//! sliders of conf2win / conf3win), at the pages' place in game and centred in the lobby. Both have several pages,
+//! turned as miss00 turns its nations: red arrows (menu frames 25 / 26) at the top corners and the page's name beside
+//! the left one (FUN_1022de70).
 
 use super::game_ui::GameUi;
 use crate::audio::Ui as Se;
@@ -156,6 +156,7 @@ const fn row(label: &'static str, help: &'static str, val: Val, choices: &'stati
 const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Linux", "Mods"];
 /// The Mods page (client/modsui.rs): its rows come from the mods folder, not a table.
 const MODS: usize = 7;
+const EXTRA_TABS: [&str; 3] = ["Maps", "Timers", "Misc."];
 
 /// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out.
 fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
@@ -205,19 +206,23 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
     ];
-    const EXTRAS: &[Row] = &[
+    const MAPS: &[Row] = &[
         row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
         row("Map Overlay Opacity", "How opaque the map overlay is.", MapOpacity, &[], Now),
-        row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
-        row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
-        row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now),
-        row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
         row("Minimap", "The zone map in a corner, centred on you, with what is near; the mouse wheel over it zooms.", Minimap, OFF_ON, Now),
-        row("Minimap Position", "Where the minimap stands: the top right (beside the main menu while it is open), or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
+        row("Minimap Position", "Where the minimap stands: the top right (beside the menus while one is open), or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
         row("Minimap Size", "How big the minimap is.", MinimapSize, &[(0, "Small"), (1, "Medium"), (2, "Large")], Now),
     ];
+    const TIMERS: &[Row] = &[
+        row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now),
+        row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
+    ];
+    const EXTRA_MISC: &[Row] = &[
+        row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
+        row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
+    ];
     match kind {
-        Kind::Extras => EXTRAS,
+        Kind::Extras => [MAPS, TIMERS, EXTRA_MISC][tab.min(2)],
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
         Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
@@ -284,14 +289,13 @@ impl SettingsUi {
     }
 
     pub fn open_kind(c: &Config, window: [u32; 2], kind: Kind) -> Self {
-        let row = if kind == Kind::Settings { 0 } else { 1 };
-        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false, mods_ui: None };
+        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row: 0, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false, mods_ui: None };
         s.col = s.marked_col();
         s
     }
 
-    fn paged(&self) -> bool {
-        self.kind == Kind::Settings
+    fn tabs(&self) -> &'static [&'static str] {
+        if self.kind == Kind::Extras { &EXTRA_TABS } else { &TABS }
     }
 
     fn rows(&self) -> &'static [Row] {
@@ -493,10 +497,7 @@ impl SettingsUi {
 
     /// Turns the page by `d`, the cursor kept on its row where the page has it.
     fn turn(&mut self, d: i32) {
-        if !self.paged() {
-            return;
-        }
-        self.tab = (self.tab as i32 + d).rem_euclid(TABS.len() as i32) as usize;
+        self.tab = (self.tab as i32 + d).rem_euclid(self.tabs().len() as i32) as usize;
         if self.on_mods() {
             self.mods_ui.get_or_insert_with(super::modsui::Mods::open);
         }
@@ -553,12 +554,11 @@ impl SettingsUi {
             }
             return false;
         }
-        let first = if self.paged() { 0 } else { 1 };
-        let span = self.rows().len() + 1 - first;
+        let span = self.rows().len() + 1;
         match key {
             egui::Key::ArrowDown | egui::Key::ArrowUp => {
                 let d = if key == egui::Key::ArrowDown { 1 } else { span - 1 };
-                self.row = first + (self.row - first + d) % span;
+                self.row = (self.row + d) % span;
                 self.col = self.marked_col().min(self.cols(self.row) - 1);
                 self.sounds.push(Se::Cursor);
             }
@@ -590,10 +590,8 @@ impl SettingsUi {
         (((sw - W) / 2.0).round(), ((sh - H) / 2.0).round())
     }
 
-    /// The first heading: under the header strip, or under the arrows (miss00 starts its rows at y 40).
-    fn top(&self) -> f32 {
-        if self.paged() { 36.0 } else { 28.0 }
-    }
+    /// The first heading, under the arrows (miss00 starts its rows at y 40).
+    const TOP: f32 = 36.0;
 
     /// The page arrows' rects relative to the page (a little larger than the sprites, for the pointer).
     fn arrow_rects(&self) -> [[f32; 4]; 2] {
@@ -607,7 +605,7 @@ impl SettingsUi {
         }
         let mut out = Vec::new();
         for (i, r) in self.rows().iter().enumerate() {
-            let y = self.top() + PITCH * i as f32 + 14.0;
+            let y = Self::TOP + PITCH * i as f32 + 14.0;
             // conf2win's two 88-px and conf3win's three 64-px columns; a caption that does not fit (12 px of the
             // button are its ends) widens every button of the row, from the bullets' column.
             let need = r.choices.iter().map(|c| super::super::render::screens::label_width(c.1) + 12.0).fold(0.0, f32::max);
@@ -639,8 +637,7 @@ impl SettingsUi {
         self.sounds.clear();
         self.hover = false;
         let (x, y) = self.origin(gu, sw, sh);
-        if self.paged()
-            && let Some(k) = self.arrow_rects().iter().position(|r| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3])
+        if let Some(k) = self.arrow_rects().iter().position(|r| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3])
         {
             self.hover = true;
             if clicked {
@@ -682,18 +679,12 @@ impl SettingsUi {
         const ON: u32 = 0x8080_5020;
         let (x, y) = self.origin(gu, sw, sh);
         gu.frame(x, y, W, H);
-        if self.paged() {
-            // miss00: the arrows and the page's name.
-            gu.sprite("menu    frames", 25, x + ARROWS[0], y + ARROW_Y, N);
-            gu.sprite("menu    frames", 26, x + ARROWS[1], y + ARROW_Y, N);
-            gu.text(TABS[self.tab], x + NAME_XY.0, y + NAME_XY.1, 0, [0x80; 4]);
-            if self.row == 0 {
-                gu.cursor(x + NAME_XY.0 - 4.0, y + NAME_XY.1);
-            }
-        } else {
-            // A Config page: windowps 465's header strip (FUN_101144b0 skips its first cell, the backing), the title.
-            gu.sprite_cells("menu    windowps", 465, 1..2, x, y, N);
-            gu.label(self.title(), x + 8.0, y + 6.0, N, false);
+        // miss00: the arrows and the page's name.
+        gu.sprite("menu    frames", 25, x + ARROWS[0], y + ARROW_Y, N);
+        gu.sprite("menu    frames", 26, x + ARROWS[1], y + ARROW_Y, N);
+        gu.text(self.tabs()[self.tab], x + NAME_XY.0, y + NAME_XY.1, 0, [0x80; 4]);
+        if self.row == 0 {
+            gu.cursor(x + NAME_XY.0 - 4.0, y + NAME_XY.1);
         }
         if self.on_mods() {
             self.mods_draw(gu, x, y);
@@ -703,7 +694,7 @@ impl SettingsUi {
         let focus = |row: usize, col: usize| self.row == row && self.col == col;
         let mut hand = None;
         for (i, r) in self.rows().iter().enumerate() {
-            let hy = y + self.top() + PITCH * i as f32;
+            let hy = y + Self::TOP + PITCH * i as f32;
             // The bullet (465 cell 2, drawn at its own place (20, 27) on the page) moved to the heading.
             if let Some(b) = gu.cell_bounds("menu    windowps", 465, 2) {
                 gu.sprite_cells("menu    windowps", 465, 2..3, x + 20.0 - b[0], hy + 2.0 - b[1], N);
@@ -753,17 +744,15 @@ impl SettingsUi {
 
     /// Puts the cursor on a page and row (offscreen shots; 0 the page name).
     pub fn goto(&mut self, tab: usize, row: usize) {
-        if self.paged() {
-            self.tab = tab.min(TABS.len() - 1);
-        }
+        self.tab = tab.min(self.tabs().len() - 1);
         if self.on_mods() {
             let m = self.mods_ui.get_or_insert_with(super::modsui::Mods::open);
             m.wait_scan();
             let _ = m.tick(&mut self.s.mods);
         }
-        self.row = row.clamp(if self.paged() { 0 } else { 1 }, self.row_count());
+        self.row = row.min(self.row_count());
         self.col = self.marked_col();
-        if let Some(m) = self.mods_ui.as_mut().filter(|_| self.tab == MODS) {
+        if let Some(m) = self.mods_ui.as_mut().filter(|_| self.kind == Kind::Settings && self.tab == MODS) {
             m.follow(self.row);
         }
     }
@@ -774,7 +763,7 @@ impl SettingsUi {
             return self.mods_help();
         }
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else {
-            return "Left / Right: another page of settings.".into();
+            return format!("Left / Right: another page of {}.", self.title().to_lowercase());
         };
         let when = match r.when {
             When::Now => "",
@@ -793,7 +782,7 @@ impl SettingsUi {
 /// The Mods page (client/modsui.rs): the installed packs (ON / OFF / Move), then the archives (Install).
 impl SettingsUi {
     fn on_mods(&self) -> bool {
-        self.paged() && self.tab == MODS
+        self.kind == Kind::Settings && self.tab == MODS
     }
 
     /// Rows below the page name.
@@ -920,7 +909,7 @@ impl SettingsUi {
         let n = self.s.mods.len();
         let mut out = Vec::new();
         for (vis, i) in (top..self.mods_total()).take(super::modsui::VISIBLE).enumerate() {
-            let y = self.top() + PITCH * vis as f32 + 14.0;
+            let y = Self::TOP + PITCH * vis as f32 + 14.0;
             if i < n {
                 for (c, bx) in NARROW.iter().enumerate() {
                     out.push((i + 1, c, [*bx, y, 64.0, 16.0]));
@@ -940,7 +929,7 @@ impl SettingsUi {
         let n = self.s.mods.len();
         let total = self.mods_total();
         for (vis, i) in (top..total).take(super::modsui::VISIBLE).enumerate() {
-            let hy = y + self.top() + PITCH * vis as f32;
+            let hy = y + Self::TOP + PITCH * vis as f32;
             if let Some(b) = gu.cell_bounds("menu    windowps", 465, 2) {
                 gu.sprite_cells("menu    windowps", 465, 2..3, x + 20.0 - b[0], hy + 2.0 - b[1], N);
             }
@@ -979,7 +968,7 @@ impl SettingsUi {
             gu.cursor(hx, hy);
         }
         if total > super::modsui::VISIBLE {
-            gu.scroll_bar(x + W - 12.0, y + self.top(), PITCH * super::modsui::VISIBLE as f32, total, super::modsui::VISIBLE, top);
+            gu.scroll_bar(x + W - 12.0, y + Self::TOP, PITCH * super::modsui::VISIBLE as f32, total, super::modsui::VISIBLE, top);
         }
     }
 
@@ -1080,20 +1069,25 @@ mod tests {
         assert_eq!(Settings::of(&back), ui.s);
     }
 
-    /// Extras: one page; buttons pick with Left / Right and Enter; Up from the first row wraps to the last.
+    /// Extras: pages as Settings (Maps, Timers, Misc.), opened on the page name; buttons pick with Left / Right and
+    /// Enter; Up from the page name wraps to the last row.
     #[test]
     fn extras_buttons() {
         let c = Config::default();
         let mut ui = SettingsUi::open_kind(&c, [1280, 800], Kind::Extras);
+        assert_eq!((ui.tab, ui.row), (0, 0));
+        ui.key(egui::Key::ArrowLeft);
+        assert_eq!(ui.tab, 2);
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::ArrowDown);
         assert_eq!((ui.row, ui.col), (1, 1));
-        ui.key_mod(egui::Key::ArrowRight, true);
-        assert_eq!(ui.tab, 0);
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.map_overlay && ui.dirty);
         // The last row, Minimap Size (Small / Medium / Large): Large; then its place, top left; then the minimap on.
         ui.key(egui::Key::ArrowUp);
-        assert_eq!(ui.row, 9);
+        ui.key(egui::Key::ArrowUp);
+        assert_eq!(ui.row, 5);
         ui.key(egui::Key::ArrowRight);
         ui.key(egui::Key::Enter);
         assert_eq!(ui.s.minimap_size, 2);
@@ -1105,9 +1099,8 @@ mod tests {
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.minimap);
-        // Timers Position (Left / Right / Top): the right dock.
-        ui.key(egui::Key::ArrowUp);
-        assert_eq!(ui.row, 6);
+        // Timers: Timers Position (Left / Right / Top): the right dock; then the timers on.
+        ui.goto(1, 2);
         ui.key(egui::Key::ArrowRight);
         ui.key(egui::Key::Enter);
         assert_eq!(ui.s.timers_dock, 1);
@@ -1115,8 +1108,8 @@ mod tests {
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.timers);
-        ui.key(egui::Key::ArrowUp);
-        assert_eq!(ui.row, 4);
+        // Misc.: Timestamps on All Lines.
+        ui.goto(2, 2);
         ui.key(egui::Key::ArrowLeft);
         ui.key(egui::Key::Enter);
         assert!(ui.s.stamp_all_lines);

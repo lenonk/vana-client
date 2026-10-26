@@ -11,10 +11,10 @@ pub const SIZES: [f32; 3] = [154.0, 211.0, 269.0];
 /// Map pixels across: the wheel's range (the whole map is 512).
 pub const SPAN: (f32, f32) = (48.0, 512.0);
 
-/// Where it goes (layout pixels): 0 top right, at the screen's edge, or left of the main menu column (W - 128) while
-/// the main menu is open; 1 top left, under the cast bar and past the status icons when they reach over (as the Timers'
-/// left dock).
-pub fn place(dock: u32, size: u32, sw: f32, icons: usize, menu_open: bool) -> [f32; 4] {
+/// Where it goes (layout pixels): 0 top right, at the screen's edge, or left of `column` (the left edge of the windows
+/// at the right edge: the main menu, the Config list, sub-menus) while one is open; 1 top left, under the cast bar and
+/// past the status icons when they reach over (as the Timers' left dock).
+pub fn place(dock: u32, size: u32, sw: f32, icons: usize, column: Option<f32>) -> [f32; 4] {
     let side = SIZES[size.min(2) as usize];
     match dock {
         1 => {
@@ -22,8 +22,7 @@ pub fn place(dock: u32, size: u32, sw: f32, icons: usize, menu_open: bool) -> [f
             let top = 122f32.max(if 16.0 + side > 142.0 { icons_foot } else { 0.0 });
             [16.0, top, side, side]
         }
-        _ if menu_open => [sw - 132.0 - side, 50.0, side, side],
-        _ => [sw - side, 50.0, side, side],
+        _ => [column.map_or(sw, |x| x - 4.0).min(sw).max(side) - side, 50.0, side, side],
     }
 }
 
@@ -60,7 +59,11 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32) {
         return;
     }
     let icons = w.buffs.iter().filter(|&&b| b != 0xffff && b != 0).count();
-    let rect = place(w.minimap_dock, w.minimap_size, sw, icons, w.menu.is_some());
+    // The main menu column is at W - 128; other windows at the edge as last drawn.
+    let side = SIZES[w.minimap_size.min(2) as usize];
+    let menu = w.menu.map(|_| sw - 128.0);
+    let column = [menu, gu.edge_column(sw, 50.0, 50.0 + side)].into_iter().flatten().reduce(f32::min);
+    let rect = place(w.minimap_dock, w.minimap_size, sw, icons, column);
     let facing = w.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
     let dots = w
         .entities
@@ -102,11 +105,11 @@ mod tests {
     #[test]
     fn places() {
         // Top right: at the edge, left of the main menu column while the menu is open.
-        assert_eq!(place(0, 1, 1280.0, 0, false), [1280.0 - 211.0, 50.0, 211.0, 211.0]);
-        assert_eq!(place(0, 1, 1280.0, 0, true), [1280.0 - 132.0 - 211.0, 50.0, 211.0, 211.0]);
-        assert_eq!(place(1, 0, 1280.0, 3, false), [16.0, 122.0, 154.0, 154.0]);
+        assert_eq!(place(0, 1, 1280.0, 0, None), [1280.0 - 211.0, 50.0, 211.0, 211.0]);
+        assert_eq!(place(0, 1, 1280.0, 0, Some(1280.0 - 128.0)), [1280.0 - 132.0 - 211.0, 50.0, 211.0, 211.0]);
+        assert_eq!(place(1, 0, 1280.0, 3, None), [16.0, 122.0, 154.0, 154.0]);
         // The status icons reach past the cast bar when a large map stands under them.
-        assert_eq!(place(1, 2, 1280.0, 20, false), [16.0, 48.0 + 2.0 + 78.0 + 4.0, 269.0, 269.0]);
+        assert_eq!(place(1, 2, 1280.0, 20, None), [16.0, 48.0 + 2.0 + 78.0 + 4.0, 269.0, 269.0]);
     }
 
     /// px_per_unit matches Region::px (Jugner: scale 1, x / 5).

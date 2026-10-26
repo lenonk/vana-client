@@ -1083,6 +1083,12 @@ impl GameUi {
         self.anims.iter().filter(|(n, a)| a.seen + 1 >= self.anim_frame && self.reg_flags(n) & mask != 0).filter_map(|(_, a)| if let Shape::Frame(r) = &a.shape { Some(*r) } else { None }).collect()
     }
 
+    /// The left edge of the windows drawn last frame that reach the screen's right edge (within 32) over rows [y0, y1).
+    pub fn edge_column(&self, sw: f32, y0: f32, y1: f32) -> Option<f32> {
+        let frames = self.anims.values().filter(|a| a.seen + 1 >= self.anim_frame).filter_map(|a| if let Shape::Frame(r) = &a.shape { Some(*r) } else { None });
+        frames.filter(|r| r[0] + r[2] >= sw - 32.0 && r[1] < y1 && r[1] + r[3] > y0).map(|r| r[0]).reduce(f32::min)
+    }
+
     /// A window's registry group mask (FUN_1015ed10's +0x38), or the one its open hook set.
     pub fn win_group(&self, name: &str) -> u16 {
         let key = name.trim_end().to_ascii_lowercase();
