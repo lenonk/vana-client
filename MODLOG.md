@@ -9829,3 +9829,18 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - LSB keeps those bits as `unused11` ("PS2: SysMesFilterLevel") and never sets them: level 0, nothing dropped there.
 - The PvP word (0x0B4 u16 @0x10, G+0x40e2c, FUN_100e3730; LSB `unknown00` "PS2: GmLevel", sent 0): Ballista-era
   team lines in chatctrl and no prefix on some chat kinds. Dead on LSB: not built.
+
+## Event text date codes 7f a0..ac (2026-10-26)
+
+- The expander FUN_100c1650 (2019 FUN_100bf790; asm 0x100c1e36..0x100c202f), on num[n] (msg +0xc64):
+  - a0..aa: FUN_101c8d10(num + 0x3c307d70) = the CRT localtime (FUN_10314dd1: tzset, _timezone, the DST bias; past
+    0x7fe8177f it folds by 28-year cycles): a0 the year (+1900) "%d"; a1 month (+1), a2 day, a3 hour, a4 minute, a5
+    second with "%d" (0x10352ff0); a6..aa the same five with "%02d" (0x1035d62c). Nothing when it fails.
+  - ab: FUN_101c8fd0(num + 0x3c307d70, 1), the long Earth date and time (msgfmt::earth_datetime).
+  - ac: FUN_101c92b0(num, 1, 1), the Vana'diel date and time (msgfmt::vana_datetime).
+  - Ours: dat/dialog.rs expand with Ctx::dates (group 10, config 0x95 / 0x96) from event.rs's zone text.
+- Seen in: every zone's 6380-ish "You will be able to use the Assist Channel until {a1}/{a2}/{a0} at {a3}:{a9}
+  (JST)." (local time all the same, the "(JST)" is the text's), zone 5 7410 "...won't come out of its cave until {ac}
+  ({ab} Earth time)", zone 11 7940. Tests: dialog::earth_date_codes, dialog::date_builder_codes.
+- Not done: b0 / b1 (work[n] u16 through FUN_100bd9f0 / FUN_100bda10, objects DAT_106218fc / DAT_10578428), b4 (group
+  10 0x5f "<grouped> gil" of work[n]; our zone text has no work array), b5 (FUN_101c8450 of num[n], a list string).

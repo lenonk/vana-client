@@ -146,7 +146,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done, <ncall> / <scall> too (the tell sound "0p40" is in no
     resident file);
-  - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
+  - the message formatter (dat/msgfmt.rs), /clock and the event date codes 7f a0..ac done; left 7f b0 / b1 / b4 / b5,
+    the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and
     the wheel on them;
