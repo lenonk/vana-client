@@ -9868,6 +9868,7 @@ impl App {
                 // FUN_100cb400: each linked follower's leader frame (last frame's: one frame behind at most).
                 let frame_of = |a: &Actor| Some(a.ticks * actmotion::find(&a.extra, a.character.as_ref()?, &a.motion).first()?.speed * 0.5);
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
+                let me = w.my_id;
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -9923,7 +9924,13 @@ impl App {
                     };
                     let mask = |v: &[(&crate::dat::character::Animation, f32)]| v.iter().fold(0u8, |m, (x, _)| m | 1u8.checked_shl(actmotion::region(x) as u32).unwrap_or(0));
                     if name != a.motion || std::mem::take(&mut a.restart) || (once && a.oneshot.as_ref().is_some_and(|o| o.ticks == 0.0)) {
-                        log::debug!(target: "motion", "actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
+                        let line = format!("actor {id:#x}: {} -> {name} at {:.1} (oneshot {}, play {}, status {status}, ratio {ratio:.2})", a.motion, a.ticks, a.oneshot.is_some(), a.play.is_some());
+                        // Our own actor's at info (the user's runs log it), the others' at debug.
+                        if *id == me {
+                            log::info!(target: "motion_me", "{line}");
+                        } else {
+                            log::debug!(target: "motion", "{line}");
+                        }
                         // FUN_100cb500: a new motion takes only the regions it has chunks for; the others go on with what
                         // they play, but a finished counted one goes once region 0 is taken (FUN_100cb8e0's tail).
                         let new = mask(&frames_of(&name, 0.0, false));
@@ -9934,7 +9941,12 @@ impl App {
                             a.keep[r as usize] = if new >> r & 1 != 0 || (new & 1 != 0 && cur.as_ref().is_some_and(done)) { None } else { cur };
                         }
                         if a.keep.iter().any(|k| k.is_some()) {
-                            log::debug!(target: "motion", "actor {id:#x}: {name} keeps {:?}", a.keep.iter().map(|k| k.as_ref().map(|k| k.0.as_str())).collect::<Vec<_>>());
+                            let keeps: Vec<_> = a.keep.iter().map(|k| k.as_ref().map(|k| k.0.as_str())).collect();
+                            if *id == me {
+                                log::info!(target: "motion_me", "actor {id:#x}: {name} keeps {keeps:?}");
+                            } else {
+                                log::debug!(target: "motion", "actor {id:#x}: {name} keeps {keeps:?}");
+                            }
                         }
                         if !a.motion.is_empty() {
                             a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));

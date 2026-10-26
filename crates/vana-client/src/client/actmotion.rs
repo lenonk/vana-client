@@ -390,11 +390,16 @@ pub(super) fn motion_len(a: &Actor, ch: &Character, name: &str, speed: f32) -> f
 pub(super) fn play_op(w: &mut World, id: u32, m: Option<sched::Motion>) {
     let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { return };
     let base = status_motion(w, id, &ch);
+    let me = id == w.my_id;
     let Some(a) = w.actors.get_mut(&id) else { return };
     match m {
         Some(m) if !find(&a.extra, &ch, &m.name).is_empty() => {
             let len = if m.ticks > 0 { m.ticks as f32 } else { find(&a.extra, &ch, &m.name).iter().map(|x| x.frames as f32 / (x.speed * m.speed * 0.5).max(1e-3)).fold(0.0, f32::max) };
-            log::debug!("actor {id:#x}: scheduler motion {} for {len} ticks (count {}, base {base})", m.name, m.count);
+            if me {
+                log::info!(target: "motion_me", "actor {id:#x}: scheduler motion {} for {len} ticks (count {}, base {base})", m.name, m.count);
+            } else {
+                log::debug!("actor {id:#x}: scheduler motion {} for {len} ticks (count {}, base {base})", m.name, m.count);
+            }
             if !a.motion.is_empty() {
                 a.prev = Some((std::mem::take(&mut a.motion), a.ticks, a.once));
                 a.blend = 0.0;
