@@ -176,6 +176,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live, the +1 rods' glow too; left
     other anglers not seen live;
+  - Monstrosity (LSB has it on: the Feretory, zone 285, makes the player MON): ours still draws the character's own
+    body there; the look, MON job data (s2c 0x044 / 0x063 sub 4 / 0x051), its menus and the shop dice colours are
+    left (spec being written: `~/ffxi/lab/research/monstrosity_spec.md`);
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
