@@ -735,7 +735,7 @@ fn ko_step(w: &mut World) {
         if w.ko_offer == 2 {
             send_menu_answer(w, 0x0D, 1);
         }
-        (w.ko_open, w.homing, w.home_sent, w.ko_offer, w.ko_wait) = (false, false, None, 0, None);
+        (w.ko_open, w.homing, w.home_sent, w.ko_offer, w.ko_wait, w.home_status, w.mon_dead_sel) = (false, false, None, 0, None, 0, 1);
         if matches!(w.confirm, Some((Confirm::HomePoint | Confirm::Tractor, _))) {
             w.confirm = None;
         }
@@ -760,6 +760,8 @@ fn ko_step(w: &mut World) {
     let expired = w.ko_deadline != 0 && vana_now(w) >= w.ko_deadline;
     if expired && !w.homing {
         w.homing = true;
+        // mp_dead's expiry is Cancel (FUN_10141a20: +0x24 = 2, StatusId 1).
+        w.home_status = if monstrosity::active(w) { 1 } else { 0 };
         w.ko_open = false;
         if matches!(w.confirm, Some((Confirm::HomePoint, _))) {
             w.confirm = None;
@@ -774,8 +776,14 @@ fn ko_step(w: &mut World) {
     }
     if w.homing && w.home_sent.is_none_or(|t| t.elapsed().as_secs_f32() >= 10.0) {
         w.home_sent = Some(Instant::now());
-        let _ = w.net.commands.send(NetCommand::HomePoint);
+        let _ = w.net.commands.send(NetCommand::HomePoint(w.home_status));
     }
+}
+
+/// mp_dead's pick (+0x24 = the child): the K.O. state machine sends it at once and closes the window.
+fn mon_dead_pick(w: &mut World) {
+    w.sounds.push(crate::audio::Ui::Select as u32);
+    (w.homing, w.home_status, w.ko_open) = (true, if w.mon_dead_sel == 1 { 2 } else { 1 }, false);
 }
 
 /// FUN_1012e0c0's FUN_1015f3e0(0x800): every window but the logs, bars, party and map closes as the K.O. window opens.
@@ -1722,6 +1730,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                     _ => {}
                 },
+                // mp_dead in Monstrosity: Up / Down between Retry and Cancel (SE 0001); Enter picks (SE 0002), no prompt:
+                // child 1 sends StatusId 2 (Retry), child 2 1 (Cancel) (FUN_10096c90 case 2).
+                egui::Key::ArrowUp | egui::Key::ArrowDown if dead && world.ko_open && monstrosity::active(world) && world.confirm.is_none() => {
+                    world.mon_dead_sel = 3 - world.mon_dead_sel;
+                    world.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+                egui::Key::Enter if dead && world.ko_open && monstrosity::active(world) => {
+                    mon_dead_pick(world);
+                }
                 // The K.O. window (FUN_1012e030 message 5): Enter asks "Return to Home Point?" (comyn, default No).
                 egui::Key::Enter if dead && world.ko_open => {
                     world.confirm = Some((Confirm::HomePoint, false));
@@ -1784,12 +1801,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         match (world.menu_page, id) {
             // Child 1 Status (FUN_10140400 case 5): persona, level and statcom2.
             (0, 1) => status::open(world),
+            // In Monstrosity row 2 is Customization (FUN_10141ba0).
+            (0, 2) if monstrosity::active(world) => log::info!("Monstrosity: Customization (main menu row 2) is not implemented yet"),
             (0, 2) => items::menu_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
-            // In Monstrosity: monster skills and abilities (mp_mnabi); rows 1 and 2 are mp_stat and Customization.
+            // In Monstrosity: monster skills and abilities (mp_mnabi); row 1 is mp_stat (status.rs), row 2 Customization.
             (0, 5) if monstrosity::active(world) => magic::open_cats(world, "menu    mp_mnabi"),
-            (0, 1 | 2) if monstrosity::active(world) => log::info!("Monstrosity: main menu row {id} (mp_stat / Customization) is not implemented yet"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
             // Child 6 Party (FUN_10140400 case 6 -> FUN_102016e0).
@@ -2780,7 +2798,29 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
 
     // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
     // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.
+    // mp_dead (FUN_10141920): Retry / Cancel, the same "%d:%02d" at (+0x4b, +6).
     if world.ko_open
+        && monstrosity::active(world)
+        && let Some(win) = gu.lobby_window_off("menu    mp_dead", sw, sh, (0.0, 0.0), Some(world.mon_dead_sel), world.confirm.is_none(), &[])
+    {
+        let s = world.ko_deadline.saturating_sub(vana_now(world));
+        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + 75.0, win.frame[1] + 6.0, 0x8080_8080, false);
+        let mut pick = false;
+        for (id, r) in &win.children {
+            if world.confirm.is_none() && input.pointer.is_some_and(|p| inside(r, p)) {
+                gu.hover.set(true);
+                if (input.moved || input.clicked) && world.mon_dead_sel != *id {
+                    world.mon_dead_sel = *id;
+                    world.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
+                pick |= input.clicked;
+            }
+        }
+        if pick {
+            mon_dead_pick(world);
+        }
+        blockers.push(win.frame);
+    } else if world.ko_open
         && let Some(win) = gu.lobby_window_off("menu    dead", sw, sh, (0.0, 0.0), Some(1), world.confirm.is_none() && world.ko_offer != 2, &[])
     {
         let s = world.ko_deadline.saturating_sub(vana_now(world));
@@ -2830,7 +2870,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         // LAB_1012e0a0: Yes sets +0x24; the state machine sends 0x01A 0x0B.
         (Some(true), Some((Confirm::HomePoint, _))) => {
             world.confirm = None;
-            world.homing = true;
+            (world.homing, world.home_status) = (true, 0);
         }
         // LAB_10097390: the tractor answer, 0x01A 0x13 (0 accept, 1 reject).
         (Some(yes), Some((Confirm::Tractor, _))) => {
@@ -3082,8 +3122,9 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         let [help, title] = gu.focus_text("menu    resynus", if world.raise_yes { 1 } else { 2 });
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     } else if world.ko_open && world.confirm.is_none() {
-        // The K.O. window's button: help group 0xe 0xf1, title 0xd 0x39 "K.O." from child 1's strings.
-        let [help, title] = gu.focus_text("menu    dead", 1);
+        // The K.O. window's button: help group 0xe 0xf1, title 0xd 0x39 "K.O." from child 1's strings; mp_dead's rows
+        // 0xe 0x2b7 "Retry in the same area?" / 0x2b6 "End this bout of Monstrosity?".
+        let [help, title] = if monstrosity::active(world) { gu.focus_text("menu    mp_dead", world.mon_dead_sel) } else { gu.focus_text("menu    dead", 1) };
         (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
     }
     magic::bars(gu, world, &mut bars);
@@ -4724,6 +4765,9 @@ struct World {
     mon_moves: [(u16, u8, u8); 16],
     move_bits: Option<Vec<u8>>,
     my_form: u8,
+    /// The K.O. answer's StatusId (0 home point; mp_dead 1 Cancel / 2 Retry) and mp_dead's cursor child.
+    home_status: u32,
+    mon_dead_sel: u16,
     mh_owner: u32,
     mh_floors: bool,
     /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
@@ -6157,6 +6201,8 @@ impl App {
                             mon_moves: [(0, 0, 0); 16],
                             move_bits: None,
                             my_form: 0,
+                            home_status: 0,
+                            mon_dead_sel: 1,
                             mh_owner: 0,
                             mh_floors: false,
                             mh_seen: false,

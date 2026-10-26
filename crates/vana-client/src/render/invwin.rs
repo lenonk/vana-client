@@ -162,6 +162,51 @@ pub fn push_persona(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, p
     }
 }
 
+/// mp_stat (FUN_10144830), what persona shows in Monstrosity: the short name clipped at (4, 7); "Lv%2d " at (4, 0x18)
+/// (no job sprite); the rank {Mon, NM, HNM} and infamy right-aligned at (0x67, 0x2a) / (0x67, 0x3a); HP / MP at 0x4b /
+/// 0x57 with persona's columns; TP right-aligned at (0x4b, 99); STR..CHR from 0x74, 13 apart. Contents only with
+/// party record 0, the 0x119 and the Monstrosity data in.
+pub fn push_mon_stat(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, p: &Persona, rank: Option<&str>, infamy: &str, w: f32, h: f32) {
+    let (x, y) = push_window(b, ui, style, m, w, h);
+    let (white, red) = (0x8080_8080, 0x8080_4040);
+    if !p.ready {
+        return;
+    }
+    shape_clipped(b, ui, &p.name, x + 4.0, y + 7.0, m.elements[0].w as f32 - 6.0, white);
+    let sprite = |b: &mut UiBatch, k: usize, sx: f32, sy: f32| {
+        if let Some(l) = ui.lib("menu    keytops3").filter(|l| k < l.sprites.len()) {
+            b.push_sprite(ui, l, k, sx, sy, 1.0, 1.0, white, 0);
+        }
+    };
+    if let Some((lv, _)) = &p.main {
+        push_shape_text(b, ui, lv.as_bytes(), x + 4.0, y + 0x18 as f32, if p.main_blue { 0x8020_60a0 } else { white });
+    }
+    if let Some(r) = rank {
+        push_shape_text_right(b, ui, r.as_bytes(), x + 0x67 as f32, y + 0x2a as f32, white);
+    }
+    push_shape_text_right(b, ui, infamy.as_bytes(), x + 0x67 as f32, y + 0x3a as f32, white);
+    let enc = |bit: u32| p.enc >> bit & 1 != 0;
+    for ((cur, max), dy, bit) in [(&p.hp, 0x4b, 0x17), (&p.mp, 0x57, 0x18)] {
+        if enc(bit) {
+            sprite(b, 430, x + 0x17 as f32, y + dy as f32 + 1.0);
+        }
+        push_shape_text_right(b, ui, cur.as_bytes(), x + 0x46 as f32, y + dy as f32, white);
+        push_shape_text(b, ui, max.as_bytes(), x + 0x48 as f32, y + dy as f32, if enc(bit) { red } else { white });
+    }
+    push_shape_text_right(b, ui, p.tp.as_bytes(), x + 0x4b as f32, y + 99.0, white);
+    for (i, (base, bonus)) in p.stats.iter().enumerate() {
+        let sy = y + 0x74 as f32 + i as f32 * 13.0;
+        let on = enc(0x10 + i as u32);
+        if on {
+            sprite(b, 430, x + 0x1f as f32, sy + 1.0);
+        }
+        let end = push_shape_text(b, ui, base.as_bytes(), x + 0x32 as f32, sy, if on { red } else { white });
+        if let Some((s, tint)) = bonus {
+            push_shape_text(b, ui, s.as_bytes(), end, sy, *tint);
+        }
+    }
+}
+
 /// The gil window (FUN_1013b8b0): the amount right-aligned at (+0x67, +0x1f).
 pub fn push_money(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, gil: &str, w: f32, h: f32) {
     let (x, y) = push_window(b, ui, style, m, w, h);

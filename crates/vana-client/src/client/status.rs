@@ -9,6 +9,8 @@ use crate::audio::Ui;
 
 pub const STATCOM: &str = "menu    statcom2";
 const PERSONA: &str = "menu    persona";
+/// Monstrosity's persona (FUN_10144d10(0): mode 0 at (16, 16)).
+const MP_STAT: &str = "menu    mp_stat";
 const LEVEL: &str = "menu    level";
 const WHITE: u32 = 0x8080_8080;
 const BLUE: u32 = 0x8020_60a0;
@@ -77,13 +79,15 @@ pub fn update(w: &mut World) {
     let ml = w.stats.as_ref().is_some_and(|s| s.ml.1 & 1 != 0);
     let ae = w.has_key_item(0xd21);
     let skills = w.skill_base;
+    let mon = super::monstrosity::active(w);
     let Some(s) = w.status.as_mut() else { return };
     if !ready {
         return;
     }
     if !s.once {
         s.once = true;
-        if let Some(b) = skills {
+        // FUN_10148be0: in Monstrosity Combat / Magic Skills are never enabled.
+        if let Some(b) = skills.filter(|_| !mon) {
             let on = [b[1..32].iter().any(|&v| exists(v)), b[32..48].iter().any(|&v| exists(v)), b[48..63].iter().any(|&v| v != 0xffff)];
             for (c, on) in [3u16, 4, 5].into_iter().zip(on) {
                 if on {
@@ -348,7 +352,27 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     gu.set_group(PERSONA, w.status.is_some().then_some(0x30));
     let Some(s) = &w.status else { return rects };
-    if gu.gate_layout_at(PERSONA, sw, sh, None, Some(16))
+    // In Monstrosity mp_stat stands where persona would (its frame +0x38 |= 0x20 hides titlewin as persona's group does).
+    let mon = super::monstrosity::active(w);
+    if mon
+        && gu.gate_layout_at(MP_STAT, sw, sh, None, Some(16))
+        && let Some(mut m) = gu.layout(MP_STAT).cloned()
+    {
+        m.elements[0].y = 16;
+        let mut p = super::items::persona(w);
+        p.name = w.my_mon_name.as_ref().map_or(String::new(), |n| n.1.clone());
+        p.ready = p.ready && w.mon_in && w.party.own().id == w.my_id;
+        let g1 = |o: usize| w.mon_g1.get(o).copied().unwrap_or(0);
+        let rank = ["Mon", "NM", "HNM"].get((g1(4) & 3) as usize).copied();
+        let infamy = (g1(0xa) as u16 | (g1(0xb) as u16) << 8).to_string();
+        let (b, ui, style, _) = gu.parts();
+        crate::render::invwin::push_mon_stat(b, ui, style, &m, &p, rank, &infamy, sw, sh);
+        rects.extend(gu.window_rect(MP_STAT, sw, sh).map(|mut r| {
+            r[1] -= 32.0;
+            r
+        }));
+    }
+    if !mon && gu.gate_layout_at(PERSONA, sw, sh, None, Some(16))
         && let Some(mut m) = gu.layout(PERSONA).cloned()
     {
         m.elements[0].y = 16;
@@ -356,14 +380,21 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let (b, ui, style, _) = gu.parts();
         crate::render::invwin::push_persona(b, ui, style, &m, &p, sw, sh);
     }
-    rects.extend(gu.window_rect(PERSONA, sw, sh).map(|mut r| {
-        r[1] -= 32.0;
-        r
-    }));
-    if let Some((x, y)) = gu.window(LEVEL, sw, sh) {
+    if !mon {
+        rects.extend(gu.window_rect(PERSONA, sw, sh).map(|mut r| {
+            r[1] -= 32.0;
+            r
+        }));
+    }
+    // FUN_10147620: mp_stat's mode 0 sets level's +0x1c = 1, 0x14 px lower (DAT_103716a4).
+    let level_dy = if mon { 20.0 } else { 0.0 };
+    if let Some((x, y)) = gu.window_off(LEVEL, sw, sh, 0.0, level_dy) {
         draw_level(gu, w, x, y);
     }
-    rects.extend(gu.window_rect(LEVEL, sw, sh));
+    rects.extend(gu.window_rect(LEVEL, sw, sh).map(|mut r| {
+        r[1] += level_dy;
+        r
+    }));
     if let Some(name) = s.shown.and_then(page) {
         let layout_h = gu.layout(name).map_or(0.0, |m| m.elements[0].h as f32);
         let two = |n: usize| ((n + 1) / 2) as f32 * 14.0 + 22.0;

@@ -10186,3 +10186,24 @@ render/invwin.rs `push_tp_cost_box`, game_ui.rs `child_sprite`.
   mp_abisc; Monster Skills listing Foot Kick ("Deals critical damage.", TP box "0 / 1000"); Enter: "You cannot use
   that command here." (the Feretory); the main menu with Customization and Party / Synthesis greyed; Ctrl+W. Rows
   restored afterwards.
+
+## Monstrosity, part 5: mp_stat and mp_dead (2026-10-26)
+
+Spec sections 3.5 / 3.7. client/status.rs (MP_STAT), render/invwin.rs `push_mon_stat`, client/mod.rs (`mon_dead_pick`,
+ko_step), net.rs `NetCommand::HomePoint(status)`.
+- Main menu Status in Monstrosity (FUN_10144d10(0)): "menu    mp_stat" (windowps 641, labels baked) at (16, 16) where
+  persona would be, with level and statcom2. Contents (FUN_10144830) only with party record 0, the 0x119 and the
+  Monstrosity data in: the short name clipped at (4, 7); "Lv%2d " (10 0x59, no job sprite; blue on 0x063 t2 bit 14)
+  at (4, 0x18); {Mon, NM, HNM}[G1 +4 & 3] right-aligned at (0x67, 0x2a); infamy (G1 +0xa) at (0x67, 0x3a); HP / MP
+  "%4d/" right-aligned at (0x46, 0x4b / 0x57) and the max at (0x48, ..) (red, keytops3 430 at (0x17, ..) when
+  encumbered); TP at (0x4b, 99); STR..CHR "%4d" at (0x32, 0x74 + 13 i) with the bonus after. The level window sits
+  0x14 lower (its +0x1c = 1: FUN_10147620 adds DAT_103716a4; 0x34 in Customization's mode 2). statcom2's Combat /
+  Magic Skills are never enabled (FUN_10148be0).
+- K.O. in Monstrosity (FUN_10096c90 -> FUN_10141a60): "menu    mp_dead" instead of the dead window: Retry (help 0xe
+  0x2b7) / Cancel (0x2b6), title 0xd 0x39, "%d:%02d" to the deadline at (+0x4b, +6) (FUN_10141920). Enter (or a
+  click) picks at once, no prompt: child 1 sends c2s 0x01A 0x0B StatusId 2 (Retry), child 2 StatusId 1 (Cancel)
+  (ActionBuf @0xC, LSB HOMEPOINTMENU); the deadline passing is Cancel (FUN_10141a20). Outside Monstrosity StatusId 0.
+- Live (Lnxcsfix, Rabbit, Feretory): mp_stat "Rabbit / Lv 1 / Mon.Rank Mon / Infamy 0 / HP 72/72 ..."; `!hp 0`:
+  "Rabbit falls to the ground.", mp_dead with "Time Limit: 59:51", Down to Cancel ("End this bout of
+  Monstrosity?"), Up, Enter on Retry: LSB zoned her back into the Feretory alive. The level window overlapped mp_stat's
+  last row in that run; the 0x14 offset was traced and added after it (not seen live). Rows restored afterwards.

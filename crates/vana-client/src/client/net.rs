@@ -608,7 +608,8 @@ pub enum NetCommand {
     /// c2s 0x0E7 {u16 Mode, u16 Kind}: Mode 0 toggle, 1 on, 2 off, 3 shutdown on; Kind 1 logout, 3 shutdown.
     Logout { mode: u16, kind: u16 },
     /// Accept "Return to home point" while dead (0x01A action 0x0B).
-    HomePoint,
+    /// c2s 0x01A 0x0B, StatusId @0xC (LSB HOMEPOINTMENU): 0 home point, in Monstrosity 1 Cancel / 2 Retry.
+    HomePoint(u32),
     /// 0x01A on a target: 2 attack, 4 disengage, 0x0f change target (GP_CLI_COMMAND_ACTION).
     Act { target: u32, index: u16, action: u16 },
     /// 0x0DD equip inspect: kind 0 /check, 1 /checkname, 2 /checkparam.
@@ -1329,11 +1330,12 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     b.extend_from_slice(&kind.to_le_bytes());
                     queue.push(build(0x0E7, &b));
                 }
-                NetCommand::HomePoint => {
+                NetCommand::HomePoint(status) => {
                     let mut body = vec![0u8; 24];
                     body[0..4].copy_from_slice(&login.char_id.to_le_bytes());
                     body[4..6].copy_from_slice(&my_index.to_le_bytes());
                     body[6] = 0x0B;
+                    body[8..12].copy_from_slice(&status.to_le_bytes());
                     queue.push(build(0x01A, &body));
                 }
                 NetCommand::Act { target, index, action } => queue.push(build(0x01A, &action_body(target, index, action))),
