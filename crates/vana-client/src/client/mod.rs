@@ -9752,6 +9752,12 @@ impl App {
                     r.set_furniture(&gfx.gpu, files);
                 }
             }
+            // Pieces moved in place (layout mode).
+            if let Some(r) = w.renderer.as_mut() {
+                for (file, old, new) in std::mem::take(&mut w.furniture.moves) {
+                    r.move_furniture(&gfx.gpu, file, old, new);
+                }
+            }
             let lines = layout::overlay(w);
             let ceiling = !w.layout.as_ref().is_some_and(|l| l.view == 0);
             if let Some(r) = w.renderer.as_mut() {

@@ -363,9 +363,11 @@ pub struct ZoneRenderer {
     pub occl: occlusion::Occlusion,
     /// The loaded sub-area (an interior), drawn after the zone's scenery.
     sub: Option<SubGeometry>,
-    /// Mog House furniture (client/furniture.rs): a geometry per model file, its textures after `furn_base`.
+    /// Mog House furniture (client/furniture.rs): a geometry per model file, its textures after `furn_base`, and each
+    /// file's instances as written (move_furniture).
     furniture: Vec<SubGeometry>,
     furn_base: Option<usize>,
+    furn_inst: Vec<Vec<Instance>>,
     /// Zone instances standing in for a sub-area (instance, link, as built), the link hidden now, and how many of
     /// `light_keys` are the zone's own.
     links: Vec<(u32, u32, Instance)>,
@@ -1263,6 +1265,7 @@ impl ZoneRenderer {
             sub: None,
             furniture: Vec::new(),
             furn_base: None,
+            furn_inst: Vec::new(),
             links: geo.links.clone(),
             hidden: 0,
             link999_off: false,
@@ -1374,6 +1377,7 @@ impl ZoneRenderer {
                 link: 0,
                 shown: false,
             });
+            self.furn_inst.push(geo.matrices.clone());
         }
         if !self.budgeted {
             let base = self.furn_base.unwrap_or(0);
@@ -1440,7 +1444,17 @@ impl ZoneRenderer {
             self.textures.truncate(base);
             self.pending.retain(|p| p.0 < base);
             self.furniture.clear();
+            self.furn_inst.clear();
         }
+    }
+
+    /// A piece moved in place (layout mode): the instance of furniture file `file` drawn with `old` takes `new`.
+    pub fn move_furniture(&mut self, gpu: &Gpu, file: usize, old: Mat4, new: Mat4) {
+        let (Some(f), Some(list)) = (self.furniture.get(file), self.furn_inst.get_mut(file)) else { return };
+        let old = old.to_cols_array_2d();
+        let Some(i) = list.iter().position(|x| x.model == old) else { return };
+        list[i].model = new.to_cols_array_2d();
+        gpu.queue.write_buffer(&f.instances, i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&list[i]));
     }
 
     /// The sub-area goes (FUN_10178ac0). Its stand-ins stay hidden: unloading does not run FUN_1017a630 again.

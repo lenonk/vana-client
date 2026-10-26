@@ -191,7 +191,7 @@ pub fn enter(w: &mut World) {
             return;
         }
     };
-    (w.menu, w.action_menu, w.moogle, w.target, w.locked) = (None, None, None, None, false);
+    (w.menu, w.action_menu, w.held_menu, w.moogle, w.target, w.locked) = (None, None, None, None, None, false);
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
     let win = sel.is_none().then_some((1, 1));

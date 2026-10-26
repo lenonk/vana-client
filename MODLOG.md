@@ -9324,8 +9324,8 @@ Spec `layout_mode_spec.md` 2.5 (bankmenu, the furniture list), 3.5, 5.1 (client/
   row 8, Enter sent 0x0FA 02 00 01 01 00 01 00 08 00 00 00 00 and the server wrote it installed there.
 - Correction to part 2: the "textures 31 -> 75" figure was a running total (render's upload counter and
   TEXTURE_BYTES never go down); clear_furniture drops the old set's textures. Moving the held piece's instance
-  matrix instead of reloading is still the better way, not yet done.
-- Not yet: the mannequin's equipment row, (the grid overlay and the link-999 ceiling: part 4).
+  matrix instead of reloading: part 4.
+- Not yet: the mannequin's equipment row (the grid overlay and the link-999 ceiling: part 4).
 
 ## Mog House layout mode, part 4: the grid overlay (2026-10-26)
 
@@ -9355,4 +9355,11 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
 - The link-999 placements (spec 1.6, FUN_1017a590: the house's ceiling beams, m_san01_b and kin) are hidden while
   layout mode is in view 0 and shown again in views 1 / 2 and after it (render show_link999, the zone instance zeroed
   as the sub-area stand-ins are). Live: the beams over the San d'Oria room's east side gone top-down, back after.
-- Not yet: the mannequin's equipment row, moving the held piece's instance matrix instead of reloading.
+- Moves in place (spec 7.5, as retail moves the actor): when only exdata 6..9 of the same pieces changed and the set
+  on screen is the last one asked for, furniture::changed re-places each drawn piece (and a pot's plant, 0.3 up) with
+  FUN_101cdd90's matrix instead of loading again; the renderer finds the instance drawn with the old matrix in that
+  file's CPU copy and rewrites it (move_furniture); the effects' matrices, skinned pieces' places and the ground's
+  boxes and camera triangles follow. Placing then changes nothing more (the record matches the held place). Live:
+  the bed moved two cells, cancelled, placed one cell over and back, with one load (at login) in the whole run.
+- Layout entry also drops the action menu suspended under a list (ours, `held_menu`): it came back mid-layout.
+- Not yet: the mannequin's equipment row.

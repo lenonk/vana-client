@@ -20,12 +20,35 @@ pub struct State {
     /// The pieces the last load was asked for, and its number (a result for an older one is dropped).
     want: Vec<Key>,
     seq: u64,
+    /// The number of the set on screen.
+    applied: u64,
     /// A loaded set waiting for the renderer.
     pub ready: Option<Loaded>,
     /// The drawn pieces for the effects (FUN_10085060's model generators, 'init'): id, model file, matrix.
     pub pieces: Vec<(u32, u32, glam::Mat4)>,
     /// Skinned pieces (CXiSklFurnitureActor): actor id, position, yaw.
     pub skinned: Vec<(u32, Vec3, f32)>,
+    /// The set on screen by record (as `pieces` and `skinned`), and its room.
+    drawn: Vec<Drawn>,
+    drawn_skinned: Vec<((u8, u8), Furn)>,
+    room: (u16, u8),
+    /// Pieces moved in place for the renderer: file index, the matrix drawn, the new one.
+    pub moves: Vec<(usize, glam::Mat4, glam::Mat4)>,
+}
+
+/// A drawn piece (or a pot's plant): its record, its file (DAT id, index in the loaded set), how it is drawn.
+#[derive(Clone, Debug)]
+pub struct Drawn {
+    pub key: (u8, u8),
+    pub furn: Furn,
+    pub plant: bool,
+    pub file_id: u32,
+    pub file: usize,
+    pub matrix: glam::Mat4,
+    pub init: bool,
+    /// The box size (none for a plant) and the mesh triangles in model space.
+    pub size: Option<Vec3>,
+    pub local: Arc<Vec<[Vec3; 3]>>,
 }
 
 impl State {
@@ -35,6 +58,9 @@ impl State {
         self.ready = None;
         self.pieces.clear();
         self.skinned.clear();
+        self.drawn.clear();
+        self.drawn_skinned.clear();
+        self.moves.clear();
         self.seq += 1;
     }
 
@@ -49,13 +75,10 @@ impl State {
         for (id, _, _) in std::mem::take(&mut w.furniture.pieces) {
             w.effects.stop_actor_scheduler(id, u32::from_le_bytes(*b"init"));
         }
-        if let Some(g) = w.ground.as_mut() {
-            g.set_furniture(l.boxes, l.meshes);
-        }
-        for (k, &(file, m, init)) in l.pieces.iter().enumerate() {
+        for (k, d) in l.pieces.iter().enumerate() {
             let id = 0x0400_0000 | (0x3ff - k as u32);
-            w.furniture.pieces.push((id, file, m));
-            if init {
+            w.furniture.pieces.push((id, d.file_id, d.matrix));
+            if d.init {
                 w.effects.on_scheduler_quiet(id, u32::from_le_bytes(*b"init"));
             }
         }
@@ -63,11 +86,16 @@ impl State {
         for (id, _, _) in std::mem::take(&mut w.furniture.skinned) {
             w.actors.remove(&id);
         }
-        for (k, &(file, pos, yaw)) in l.skinned.iter().enumerate() {
+        w.furniture.drawn_skinned.clear();
+        for (k, &(key, furn, file, pos, yaw)) in l.skinned.iter().enumerate() {
             let id = 0x0400_0000 | (0x3ff - (l.pieces.len() + k) as u32);
             w.furniture.skinned.push((id, pos, yaw));
+            w.furniture.drawn_skinned.push((key, furn));
             w.event_looks.push((id, super::Source::File(file)));
         }
+        (w.furniture.drawn, w.furniture.room, w.furniture.applied) = (l.pieces, l.room, l.seq);
+        w.furniture.moves.clear();
+        set_ground(w);
         l.files
     }
 
@@ -79,14 +107,65 @@ impl State {
 pub struct Loaded {
     pub seq: u64,
     pub files: Vec<(Arc<ZoneGeometry>, Vec<Texture>)>,
-    /// Every piece (plants too): its model file, matrix, and whether the file has an 'init' scheduler.
-    pub pieces: Vec<(u32, glam::Mat4, bool)>,
-    /// The furniture pieces' boxes: matrix and size (x, height, z) = (size x x 0.6, height x 0.01, size z x 0.6).
-    pub boxes: Vec<(glam::Mat4, Vec3)>,
-    /// Every piece's mesh triangles in world space (the camera ray).
-    pub meshes: Vec<Vec<[Vec3; 3]>>,
-    /// Skinned pieces: model file, position, yaw.
-    pub skinned: Vec<(u32, Vec3, f32)>,
+    /// Every piece (plants too), in file order.
+    pub pieces: Vec<Drawn>,
+    /// Skinned pieces: record, entry, model file, position, yaw.
+    pub skinned: Vec<((u8, u8), Furn, u32, Vec3, f32)>,
+    /// Map and floor.
+    pub room: (u16, u8),
+}
+
+/// The pieces' boxes (matrix and size (x, height, z) = (size x x 0.6, height x 0.01, size z x 0.6)) and mesh
+/// triangles in world space (the camera ray) to the ground.
+fn set_ground(w: &mut World) {
+    let d = &w.furniture.drawn;
+    let boxes = d.iter().filter_map(|p| Some((p.matrix, p.size?))).collect();
+    let meshes = d.iter().map(|p| p.local.iter().map(|t| t.map(|v| p.matrix.transform_point3(v))).collect()).collect();
+    if let Some(g) = w.ground.as_mut() {
+        g.set_furniture(boxes, meshes);
+    }
+}
+
+/// The matrix of a piece placed at `pos` turned `yaw` (as an MZB placement).
+fn matrix(pos: Vec3, yaw: f32) -> glam::Mat4 {
+    let p = Placement { name: String::new(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false };
+    glam::Mat4::from_cols_array_2d(&p.matrix())
+}
+
+/// Only places changed (exdata 6..9 of the same pieces) and the set on screen is the last asked for: the pieces move
+/// in place (FUN_101cdd90 per piece) instead of loading again.
+fn move_in_place(w: &mut World, want: &[Key]) -> bool {
+    let f = &w.furniture;
+    let same = |a: &Key, b: &Key| (a.0, a.1, a.2) == (b.0, b.1, b.2) && a.3[..6] == b.3[..6];
+    if f.applied != f.seq || f.ready.is_some() || want.len() != f.want.len() || !want.iter().zip(&f.want).all(|(a, b)| same(a, b)) {
+        return false;
+    }
+    let (map, floor) = f.room;
+    let place_of = |key: (u8, u8), furn: &Furn| {
+        let e = want.iter().find(|k| (k.0, k.1) == key)?.3;
+        place(furn, map, floor, e[6] as i8, e[7] as i8, e[8] as i8, e[9])
+    };
+    let mut moves = Vec::new();
+    for (k, d) in w.furniture.drawn.iter_mut().enumerate() {
+        let Some((pos, yaw)) = place_of(d.key, &d.furn) else { continue };
+        let m = matrix(if d.plant { pos - Vec3::new(0.0, 0.3, 0.0) } else { pos }, yaw);
+        if m != d.matrix {
+            moves.push((d.file, d.matrix, m));
+            d.matrix = m;
+            w.furniture.pieces[k].2 = m;
+        }
+    }
+    for (k, (key, furn)) in w.furniture.drawn_skinned.iter().enumerate() {
+        if let Some((pos, yaw)) = place_of(*key, furn) {
+            (w.furniture.skinned[k].1, w.furniture.skinned[k].2) = (pos, yaw);
+        }
+    }
+    if !moves.is_empty() {
+        w.furniture.moves.extend(moves);
+        set_ground(w);
+    }
+    w.furniture.want = want.to_vec();
+    true
 }
 
 /// FUN_101d2b10's item types: furnishing 10, flowerpot 12 (mannequins, 14, are a race body: not drawn yet).
@@ -169,7 +248,7 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
     };
     let mut want = want;
     super::layout::overrides(w, &mut want);
-    if want == w.furniture.want {
+    if want == w.furniture.want || move_in_place(w, &want) {
         return None;
     }
     w.furniture.want = want.clone();
@@ -189,29 +268,27 @@ fn model_tris(m: &crate::dat::zone::Model) -> Vec<[Vec3; 3]> {
 /// Skinned pieces (models 0x108..0x12b: statues, campfires) become actors.
 pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, floor: u8) -> Result<Loaded> {
     let table = FurnTable::load(index)?;
-    // Per file: each piece's place and its box size (none for a plant).
-    let mut by_file: BTreeMap<u32, Vec<(Vec3, f32, Option<Vec3>)>> = BTreeMap::new();
+    // Per file: each piece's record, entry, place, and whether it is a plant.
+    let mut by_file: BTreeMap<u32, Vec<((u8, u8), Furn, Vec3, f32, bool)>> = BTreeMap::new();
     let mut skinned = Vec::new();
-    for &(_, _, item, ext) in want {
+    for &(c, slot, item, ext) in want {
         let Some(f) = table.entry(item) else { continue };
         let Some(file) = model_file(f.model) else { continue };
         let Some((pos, yaw)) = place(&f, map, floor, ext[6] as i8, ext[7] as i8, ext[8] as i8, ext[9]) else { continue };
         if (0x108..=0x12b).contains(&f.model) {
-            skinned.push((file, pos, yaw));
+            skinned.push(((c, slot), f, file, pos, yaw));
             continue;
         }
         log::debug!("furniture {item:#x}: file {file}, {pos:?} yaw {yaw:.2}");
-        by_file.entry(file).or_default().push((pos, yaw, Some(Vec3::new(f.size[0] as f32 * 0.6, f.height as f32 * 0.01, f.size[1] as f32 * 0.6))));
+        by_file.entry(file).or_default().push(((c, slot), f, pos, yaw, false));
         if f.pot()
             && let Some(pf) = table.plant_model(ext[4], ext[0]).and_then(model_file)
         {
-            by_file.entry(pf).or_default().push((pos - Vec3::new(0.0, 0.3, 0.0), yaw, None));
+            by_file.entry(pf).or_default().push(((c, slot), f, pos - Vec3::new(0.0, 0.3, 0.0), yaw, true));
         }
     }
     let mut files = Vec::new();
     let mut pieces = Vec::new();
-    let mut meshes = Vec::new();
-    let mut boxes = Vec::new();
     for (file, places) in by_file {
         let bytes = index.read(file);
         let init = bytes.as_ref().is_ok_and(|b| crate::dat::chunks(b).is_ok_and(|c| c.iter().any(|c| c.kind == 0x07 && c.name() == "init")));
@@ -227,22 +304,19 @@ pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, flo
         let Some(name) = scene.meshes.first().map(|m| m.name.clone()) else { continue };
         scene.placements = places
             .iter()
-            .map(|&(pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false })
+            .map(|&(_, _, pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false })
             .collect();
-        let local: Vec<[Vec3; 3]> = scene.meshes[0].models.iter().flat_map(model_tris).collect();
-        for (p, &(_, _, size)) in scene.placements.iter().zip(&places) {
-            let m = glam::Mat4::from_cols_array_2d(&p.matrix());
-            pieces.push((file, m, init));
-            meshes.push(local.iter().map(|t| t.map(|v| m.transform_point3(v))).collect());
-            if let Some(size) = size {
-                boxes.push((m, size));
-            }
+        let local = Arc::new(scene.meshes[0].models.iter().flat_map(model_tris).collect::<Vec<_>>());
+        for (p, &(key, furn, _, _, plant)) in scene.placements.iter().zip(&places) {
+            let size = (!plant).then(|| Vec3::new(furn.size[0] as f32 * 0.6, furn.height as f32 * 0.01, furn.size[1] as f32 * 0.6));
+            let matrix = glam::Mat4::from_cols_array_2d(&p.matrix());
+            pieces.push(Drawn { key, furn, plant, file_id: file, file: files.len(), matrix, init, size, local: local.clone() });
         }
         let geo = ZoneGeometry::build(&scene);
         files.push((Arc::new(geo), std::mem::take(&mut scene.textures)));
     }
     log::info!("furniture: {} pieces in {} files", want.len(), files.len());
-    Ok(Loaded { seq, files, pieces, boxes, meshes, skinned })
+    Ok(Loaded { seq, files, pieces, skinned, room: (map, floor) })
 }
 
 #[cfg(test)]
