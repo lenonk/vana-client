@@ -93,7 +93,7 @@ pub struct Loaded {
 const TYPES: [u16; 2] = [10, 12];
 
 /// DAT_1037d7b4[floor]: the grid origin (column, level, row).
-const ORIGIN: [[f32; 3]; 2] = [[10.0, 0.0, 12.0], [10.0, 0.0, 13.0]];
+pub const ORIGIN: [[f32; 3]; 2] = [[10.0, 0.0, 12.0], [10.0, 0.0, 13.0]];
 
 /// FUN_101cce90(floor): the wall slots (0x1037d9c8; San d'Oria's house 0x1037da18; 2F 0x1037da68).
 const WALL_1F: [[f32; 3]; 5] = [[6.5, -3.0, 4.55], [6.5, -3.0, -4.8], [-6.5, -3.0, -4.8], [-6.5, -3.0, 0.0], [-6.5, -3.0, 4.55]];
@@ -124,18 +124,23 @@ const WALL_2F: [[f32; 3]; 92] = [
 pub fn place(f: &Furn, map: u16, floor: u8, col: i8, level: i8, row: i8, rot: u8) -> Option<(Vec3, f32)> {
     let yaw = rot as f32 * 1.570_796;
     if f.wall() {
-        let t: &[[f32; 3]] = if floor != 0 {
-            &WALL_2F
-        } else if map == 0x121 {
-            &WALL_1F_SANDORIA
-        } else {
-            &WALL_1F
-        };
-        return t.get(col as u8 as usize).map(|&p| (Vec3::from(p), yaw));
+        return wall_pos(map, floor, col as u8).map(|p| (p, yaw));
     }
     let o = ORIGIN[(floor != 0) as usize];
     let (w, d) = f.footprint(rot);
     Some((Vec3::new((col as f32 - o[0]) * 0.6 + w as f32 * 0.3, -(level as f32 - o[1]) * 0.1, (row as f32 - o[2]) * 0.6 + d as f32 * 0.3), yaw))
+}
+
+/// A wall slot's place (FUN_101cce90).
+pub fn wall_pos(map: u16, floor: u8, slot: u8) -> Option<Vec3> {
+    let t: &[[f32; 3]] = if floor != 0 {
+        &WALL_2F
+    } else if map == 0x121 {
+        &WALL_1F_SANDORIA
+    } else {
+        &WALL_1F
+    };
+    t.get(slot as usize).map(|&p| Vec3::from(p))
 }
 
 /// FUN_101d2af0 / FUN_101d2b10 (every frame): the installed pieces (exdata[1] bit 6) of this floor (exdata[1] & 3) in

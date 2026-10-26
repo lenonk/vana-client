@@ -180,6 +180,14 @@ struct GpuVertex {
     flags: u32,
 }
 
+/// An overlay line end: world position and colour (gamma-space RGBA).
+#[repr(C)]
+#[derive(Clone, Copy, Pod, Zeroable, PartialEq, Debug)]
+pub struct LineVertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 4],
+}
+
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 pub struct Uniforms {
@@ -298,6 +306,10 @@ pub struct ZoneRenderer {
     scenery: [[wgpu::RenderPipeline; 3]; 4],
     actor_pipeline: wgpu::RenderPipeline,
     sky_pipeline: wgpu::RenderPipeline,
+    line_pipeline: wgpu::RenderPipeline,
+    /// Layout mode's overlay lines (set_lines): the buffer and its capacity in vertices, and what it holds.
+    line_buf: Option<(wgpu::Buffer, usize)>,
+    lines: Vec<LineVertex>,
     texture_layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
     uniforms: wgpu::Buffer,
@@ -653,6 +665,7 @@ pub struct ZonePipes {
     shine_layout: wgpu::BindGroupLayout,
     shine_pipeline: wgpu::RenderPipeline,
     refract_pipeline: wgpu::RenderPipeline,
+    line_pipeline: wgpu::RenderPipeline,
 }
 
 impl ZonePipes {
@@ -920,7 +933,34 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline }
+        // Layout mode's overlay: line lists over everything (ZENABLE off), alpha blended.
+        let lines = device.create_shader_module(wgpu::ShaderModuleDescriptor { label: Some("lines"), source: wgpu::ShaderSource::Wgsl(include_str!("lines.wgsl").into()) });
+        let line_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("lines"),
+            layout: Some(&device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("lines"), bind_group_layouts: &[Some(&globals_layout)], immediate_size: 0 })),
+            vertex: wgpu::VertexState {
+                module: &lines,
+                entry_point: Some("vs_line"),
+                compilation_options: Default::default(),
+                buffers: &[Some(wgpu::VertexBufferLayout {
+                    array_stride: std::mem::size_of::<LineVertex>() as u64,
+                    step_mode: wgpu::VertexStepMode::Vertex,
+                    attributes: &wgpu::vertex_attr_array![0 => Float32x3, 1 => Float32x4],
+                })],
+            },
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::LineList, ..Default::default() },
+            depth_stencil: None,
+            multisample: Default::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &lines,
+                entry_point: Some("fs_line"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: color_format, blend: Some(wgpu::BlendState::ALPHA_BLENDING), write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline }
     }
 }
 
@@ -1176,6 +1216,9 @@ impl ZoneRenderer {
             scenery: p.scenery,
             actor_pipeline: p.actor_pipeline,
             sky_pipeline: p.sky_pipeline,
+            line_pipeline: p.line_pipeline,
+            line_buf: None,
+            lines: Vec::new(),
             texture_layout: p.texture_layout,
             sampler,
             uniforms,
@@ -1340,6 +1383,53 @@ impl ZoneRenderer {
                 f.shown = true;
             }
         }
+    }
+
+    /// The overlay lines (pairs of ends); written only when they change.
+    pub fn set_lines(&mut self, gpu: &Gpu, mut lines: Vec<LineVertex>) {
+        if !self.encode_gamma {
+            for v in &mut lines {
+                for c in &mut v.color[..3] {
+                    *c = c.powf(2.2);
+                }
+            }
+        }
+        if lines == self.lines {
+            return;
+        }
+        if !lines.is_empty() {
+            if self.line_buf.as_ref().is_none_or(|b| b.1 < lines.len()) {
+                let cap = lines.len().next_power_of_two().max(256);
+                let buf = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("lines"),
+                    size: (cap * std::mem::size_of::<LineVertex>()) as u64,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                self.line_buf = Some((buf, cap));
+            }
+            if let Some((buf, _)) = &self.line_buf {
+                gpu.queue.write_buffer(buf, 0, bytemuck::cast_slice(&lines));
+            }
+        }
+        self.lines = lines;
+    }
+
+    /// The overlay over the finished scene (after effects); uses this frame's globals from render().
+    pub fn render_lines(&self, encoder: &mut wgpu::CommandEncoder, color: &wgpu::TextureView) {
+        let Some((buf, _)) = self.line_buf.as_ref().filter(|_| !self.lines.is_empty()) else { return };
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("lines"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: color, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&self.line_pipeline);
+        pass.set_bind_group(0, &self.globals, &[]);
+        pass.set_vertex_buffer(0, buf.slice(..));
+        pass.draw(0..self.lines.len() as u32, 0..1);
     }
 
     pub fn clear_furniture(&mut self) {

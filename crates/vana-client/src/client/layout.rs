@@ -715,6 +715,85 @@ pub fn draw_cursor(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32,
     gu.sprite("anc     anc_l", frame, x.trunc().max(0.0), y.trunc().max(0.0), 0x8080_8080);
 }
 
+/// The overlay's colours (0xAABBGGRR as FUN_10177b40 takes them).
+const BLUE: u32 = 0x80ff_6060;
+const GREEN: u32 = 0x8060_ff60;
+const RED: u32 = 0x8080_80ff;
+const GREY: u32 = 0x8060_6060;
+
+/// PTR_DAT_1037e248[floor * 4 + turn]: a wall slot's outline corners.
+#[rustfmt::skip]
+const WALL_OUTLINE: [[[f32; 3]; 4]; 8] = [
+    [[-1.65, -2.0, -0.2], [-1.65, 2.0, -0.2], [1.65, 2.0, -0.2], [1.65, -2.0, -0.2]],
+    [[-0.2, -2.0, -1.65], [-0.2, -2.0, 1.65], [-0.2, 2.0, 1.65], [-0.2, 2.0, -1.65]],
+    [[-1.65, -2.0, 0.2], [-1.65, 2.0, 0.2], [1.65, 2.0, 0.2], [1.65, -2.0, 0.2]],
+    [[0.2, -2.0, -1.65], [0.2, -2.0, 1.65], [0.2, 2.0, 1.65], [0.2, 2.0, -1.65]],
+    [[-0.5, -0.3, -0.2], [-0.5, 0.3, -0.2], [0.5, 0.3, -0.2], [0.5, -0.3, -0.2]],
+    [[-0.2, -0.3, -0.5], [-0.2, -0.3, 0.5], [-0.2, 0.3, 0.5], [-0.2, 0.3, -0.5]],
+    [[-0.5, -0.3, 0.2], [-0.5, 0.3, 0.2], [0.5, 0.3, 0.2], [0.5, -0.3, 0.2]],
+    [[0.2, -0.3, -0.5], [0.2, -0.3, 0.5], [0.2, 0.3, 0.5], [0.2, 0.3, -0.5]],
+];
+
+/// A closed outline (D3DPT_LINESTRIP of 5) as line-list pairs.
+fn outline(out: &mut Vec<crate::render::LineVertex>, corners: [Vec3; 4], c: u32) {
+    let color = [c & 0xff, c >> 8 & 0xff, c >> 16 & 0xff, c >> 24].map(|b| b as f32 / 255.0);
+    for k in 0..4 {
+        for v in [corners[k], corners[(k + 1) % 4]] {
+            out.push(crate::render::LineVertex { pos: v.to_array(), color });
+        }
+    }
+}
+
+/// FUN_101cf350 / FUN_101cf410: a cell's outline over its surface (blue 0.04 up, the others 0.06), inset by `i`.
+fn cell_outline(out: &mut Vec<crate::render::LineVertex>, grid: &Grid, floor: u8, x: i32, z: i32, c: u32, i: f32) {
+    let o = super::furniture::ORIGIN[(floor != 0) as usize];
+    let h = grid.cell(x, z).map_or(0, |c| c.height);
+    let y = -(h as f32) * 0.01 - if c == BLUE { 0.04 } else { 0.06 };
+    let (x0, z0) = ((x as f32 - o[0]) * 0.6 + i, (z as f32 - o[2]) * 0.6 + i);
+    let s = 0.6 - 2.0 * i;
+    outline(out, [Vec3::new(x0, y, z0), Vec3::new(x0 + s, y, z0), Vec3::new(x0 + s, y, z0 + s), Vec3::new(x0, y, z0 + s)], c);
+}
+
+/// The overlay while a piece is held (FUN_101cf110, drawn with ZENABLE off): a wall piece shows every wall slot blue
+/// and its own red-pink; a floor piece the free floor cells blue, for a stackable one the free tops green, and its
+/// footprint red-pink where it fits (on the floor, or on a top) or grey.
+pub fn overlay(w: &World) -> Vec<crate::render::LineVertex> {
+    let mut out = Vec::new();
+    let Some((l, h)) = w.layout.as_ref().and_then(|l| Some((l, l.held.as_ref()?))) else { return out };
+    let p = h.piece.piece;
+    if p.furn.wall() {
+        let n = if l.floor == 0 { 5 } else { WALLS as u8 };
+        for s in 0..n {
+            let Some(at) = super::furniture::wall_pos(l.map, l.floor, s) else { continue };
+            let corners = WALL_OUTLINE[(l.floor != 0) as usize * 4 + wall_rot(l.floor, s) as usize];
+            let held = s == p.x as u8;
+            for scale in if held { &[1.0, 0.9][..] } else { &[1.0][..] } {
+                outline(&mut out, corners.map(|c| at + Vec3::from(c) * *scale), if held { RED } else { BLUE });
+            }
+        }
+        return out;
+    }
+    let grid = l.grid(w);
+    let [x0, x1, z0, z1] = BOUNDS[(l.floor != 0) as usize];
+    let cells = || (x0..x1).flat_map(move |x| (z0..z1).map(move |z| (x, z)));
+    for (x, z) in cells().filter(|&(x, z)| grid.cell(x, z).is_some_and(|c| c.flags & 1 != 0)) {
+        cell_outline(&mut out, &grid, l.floor, x, z, BLUE, 0.0);
+    }
+    if p.stackable() {
+        for (x, z) in cells().filter(|&(x, z)| grid.cell(x, z).is_some_and(|c| c.flags & 2 != 0 && c.flags & 1 == 0)) {
+            cell_outline(&mut out, &grid, l.floor, x, z, GREEN, 0.0);
+        }
+    }
+    let fits = grid.fits(&Piece { level: 0, ..p }) || (p.stackable() && grid.fits(&Piece { level: 1, ..p }));
+    for (x, z) in p.cells() {
+        cell_outline(&mut out, &grid, l.floor, x, z, if fits { RED } else { GREY }, 0.0);
+        if fits {
+            cell_outline(&mut out, &grid, l.floor, x, z, RED, 0.05);
+        }
+    }
+    out
+}
+
 /// Title slot 0 "Layout" (0xd 4), help slot 0 "Select furniture to place in your room." (0xe 0xe); an rmlo window's
 /// row help in slot 1.
 pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
@@ -822,7 +901,7 @@ impl Grid {
     }
 
     /// FUN_101cf0a0 / FUN_101cefd0: a wall slot free; on the floor every footprint cell floor-free; on a level every
-    /// cell top-free over one and the same surface piece. Cells past the grid are not checked.
+    /// cell top-free over one and the same surface piece. A cell past the grid does not fit.
     pub fn fits(&self, p: &Piece) -> bool {
         if p.furn.wall() {
             return self.walls.get(p.x as u8 as usize).is_some_and(|w| w.state == 4);
@@ -830,7 +909,7 @@ impl Grid {
         let mask = if p.level > 0 { 2 } else { 1 };
         let mut under = None;
         for (x, z) in p.cells() {
-            let Some(c) = self.cell(x, z) else { continue };
+            let Some(c) = self.cell(x, z) else { return false };
             if c.flags & mask == 0 || (mask == 2 && (c.flags & 1 != 0 || under.is_some_and(|u| u != c.floor))) {
                 return false;
             }

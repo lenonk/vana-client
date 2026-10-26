@@ -9752,6 +9752,10 @@ impl App {
                     r.set_furniture(&gfx.gpu, files);
                 }
             }
+            let lines = layout::overlay(w);
+            if let Some(r) = w.renderer.as_mut() {
+                r.set_lines(&gfx.gpu, lines);
+            }
             if let Some(r) = &mut w.renderer {
                 // This frame's copies: a zone going up (more while its indicator hides the world), then the models
                 // actors are waiting for.
@@ -10323,6 +10327,8 @@ impl App {
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
                 }
+                // Layout mode's overlay over the finished scene.
+                r.render_lines(&mut encoder, &scene_raw);
                 // A zone change's held frame under the fade to black (the camera has moved on).
                 if let (Some(_), Some(fx)) = (w.zone_hold.filter(|h| h.captured), &self.screen_fx_zone) {
                     fx.draw_held(&gfx.gpu, &mut encoder, &scene_raw, 1.0);

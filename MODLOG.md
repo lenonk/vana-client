@@ -9325,4 +9325,32 @@ Spec `layout_mode_spec.md` 2.5 (bankmenu, the furniture list), 3.5, 5.1 (client/
 - Correction to part 2: the "textures 31 -> 75" figure was a running total (render's upload counter and
   TEXTURE_BYTES never go down); clear_furniture drops the old set's textures. Moving the held piece's instance
   matrix instead of reloading is still the better way, not yet done.
-- Not yet: the mannequin's equipment row, the grid overlay (3.7), the link-999 ceiling in view 0.
+- Not yet: the mannequin's equipment row, the link-999 ceiling in view 0 (the grid overlay: part 4).
+
+## Mog House layout mode, part 4: the grid overlay (2026-10-26)
+
+Spec `layout_mode_spec.md` 3.7; FUN_101cf110 (c:359035) and its quads FUN_101cf350 / FUN_101cf410 / FUN_101cf4d0 /
+FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_lines` / `render_lines`).
+- Drawn only while a piece is held. Render state FUN_101779c0: world identity, LIGHTING off, FVF 0x142, colour and
+  alpha SELECTARG1 CURRENT (the vertex diffuse). FUN_10177b40 draws each quad as DrawPrimitiveUP(LINESTRIP, 4, 24-byte
+  vertices, closed back to v0) with ZENABLE (7) off around the call; it repacks 0xAABBGGRR to D3D ARGB (byte 0 red).
+  Blend state is inherited *(inferred: alpha blending, as the world's last state)*.
+- Colours: 0x80ff6060 blue, 0x8060ff60 green, 0x808080ff red-pink, 0x80606060 grey.
+- Wall piece: slots 0..4 (1F) / 0..91 (2F, count 5 + 0x57) blue, its own slot red-pink, plus a second outline at
+  scale 0.9 (0x3f666666). Corners = slot place (FUN_101cce90, San d'Oria's 1F table for map 0x121) + scale x
+  PTR_DAT_1037e248[floor * 4 + turn] (turn from PTR_DAT_10337dec): 1F (+-1.65, +-2.0, -0.2) turn 0, (-0.2, +-2.0,
+  +-1.65) turn 1, z +0.2 turn 2, x +0.2 turn 3; 2F the same with 0.5 / 0.3 / 0.2 (dumped from the DLL).
+- Floor piece: every cell in DAT_1037d7d4[floor]'s bounds that passes FUN_101cefd0(x, z, 1, 1, mask 1) blue; a
+  stackable piece (flag 4) also every cell passing mask 2 green; the footprint red-pink when it fits on the floor
+  (mask 1) or, stackable, on a top (mask 2), else grey. Red-pink cells get a second outline inset 0.05 (0x3d4ccccd).
+- A cell (FUN_101cf350): gx = ftol(col - O.x), gz = ftol(row - O.z) (O = DAT_1037d7b4[floor], 10 / 12 or 13);
+  y = -height x 0.01 - (blue 0.04 : 0.06), height = the cell's u16 (tops draw on the surface); corners (gx 0.6 + i,
+  gz 0.6 + i), (+s, 0), (+s, +s), (0, +s), s = 0.6 - 2i.
+- FUN_101cefd0 returns 0 for a cell past the grid (x 0..0x14, z 0..0x1a); our Grid::fits skipped it, now refuses.
+- Ours: a line-list pass over the finished scene (after the effects), no depth, alpha blended, rebuilt on the CPU
+  while held and uploaded only when it changes.
+- Live (Lnxcsfix, San d'Oria house): the held bed red-pink with its inset over blue free cells (the walkway none); in
+  the walkway grey, no inset; a held Timepiece green over the Desk's 3 x 3 top and grey on the bed; an Imperial
+  Tapestry red-pink at wall slots 0, 1 and 3 with the other slots blue.
+- Not yet: the mannequin's equipment row, the link-999 ceiling in view 0, moving the held piece's instance matrix
+  instead of reloading.
