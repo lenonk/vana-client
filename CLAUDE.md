@@ -112,8 +112,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     levelsync.rs, partyreq.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange", "Party
     requests"; the invite side untested live);
     Status done (client/status.rs, currencies.rs, unity.rs, merits.rs, jobpoints.rs, aepoints.rs, MODLOG "Status window",
-    "Currencies", "Unity", "Merit Points and Job Points", "Alter Ego Points"; Raise /
-    Lower and spending job points not tried live);
+    "Currencies", "Unity", "Merit Points and Job Points", "Alter Ego Points"; a merit
+    Raise and a job point spent tried live, Lower not);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, roe.rs, MODLOG "Missions", "Quests", "Records
     of Eminence lists"; left Vana'Bout's hold prompt, unreachable on LSB); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
     seacom.rs, /seacom, /seacomup; left arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:

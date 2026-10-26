@@ -9589,3 +9589,13 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   icon follows the cursor to the pearl.
 - Removed afterwards (char_equip slot 16, the two items, linkshells row 2). Still not seen: To Sack / To Pearl / Kick
   (need a second member), Unequip and switching shells, a broken shell.
+
+## Merit Raise and a job point spent, live (2026-10-26)
+
+- Lnxcsfix in its Mog House at 99 (`!setmerits 5`, `!setjobpoints 20`, `!setcapacitypoints 1234`, Limit Breaker and
+  Job Breaker key items): Combat Skills -> Hand-to-Hand Skill -> merit3 Raise -> sortyn Yes -> merityn Yes: c2s
+  0x0BE; LSB answers with 0x08C: the row reads 1 / NEXT 2P, Merit Points 4, Combo Total 1 / 152 (char_merit 192 = 1).
+- Job Points -> Warrior -> Mighty Strikes Effect -> merityn Yes: c2s 0x0BF; the row reads 1 / 20 NEXT 2P, Job
+  Points 19 (char_job_points jptype0 1, spent 1).
+- Everything undone afterwards (rows deleted, level 22 and its EXP back, key items removed, the house left). Not
+  tried: Lower (merit3 row 2), the mouse on jbpcat's page areas.
