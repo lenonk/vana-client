@@ -55,8 +55,9 @@ pub enum Effect {
     Scheduler { file: u32, tag: String, actor: u32, target: u32, param: i32 },
     SchedulerStop { file: u32, tag: String, actor: u32, target: u32 },
     /// 0x46 sub 0 / 1: FUN_10082b20 (flag = DAT_10346088 = 1, camera seeded from the player) /
-    /// FUN_10082be0 (flag = 0). Cutscenes run with 0 and set 1 before they end.
-    Camera { flag: bool },
+    /// FUN_10082be0 (flag = 0). Cutscenes run with 0 and set 1 before they end. Sub 3 seeds it at `offset` in the
+    /// player's frame (x forward, y down) instead of FUN_10021680's (-4, -2, 0).
+    Camera { flag: bool, offset: Option<[f32; 3]> },
     /// Op 0x71: open "menu    passinpu" (kind: title and allowed characters; max bytes, at most 16); answer with
     /// [`Runtime::input_done`].
     Input { kind: i32, max: usize },
@@ -291,6 +292,8 @@ pub struct Runtime {
     cancelled: bool,
     done: bool,
     camera: bool,
+    /// Op 0x46 sub 3's offset, taken once a run (DAT_104897ea bit 0).
+    cam_seed: Option<[f32; 3]>,
     /// DAT_10470548: actor of the last message.
     last_speaker: Option<u32>,
     names: Option<std::sync::Arc<dyn crate::dat::names::NameSource>>,
@@ -352,6 +355,7 @@ impl Runtime {
             cancelled: false,
             done: false,
             camera: false,
+            cam_seed: None,
             last_speaker: None,
             names: None,
             player_word: host.player_word(),
@@ -1469,10 +1473,17 @@ impl Runtime {
             }
             0x46 => {
                 match sub {
-                    // Sub 3 also sets the point the camera starts from (not modelled; 4 sites in the data).
-                    Some(0) | Some(1) | Some(3) => {
-                        self.camera = sub != Some(1);
-                        host.effect(Effect::Camera { flag: self.camera });
+                    Some(0) | Some(1) => {
+                        self.camera = sub == Some(0);
+                        host.effect(Effect::Camera { flag: self.camera, offset: None });
+                    }
+                    // FUN_100b6440 sub 3: as sub 0 from (val@2, val@4, val@6) x 0.001, read the first time a run
+                    // gets here (4 sites: "check your character's appearance", (4, -1.2, 0): in front).
+                    Some(3) => {
+                        self.camera = true;
+                        let read = [2, 4, 6].map(|k| self.val(v, k) as f32 * 0.001);
+                        let o = *self.cam_seed.get_or_insert(read);
+                        host.effect(Effect::Camera { flag: true, offset: Some(o) });
                     }
                     Some(2) => self.set_at(v, 2, 0, self.camera as u32),
                     _ => {}

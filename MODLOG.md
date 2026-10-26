@@ -9148,3 +9148,14 @@ before). Not seen live yet (each needs its cutscene).
   in the user's log). Freed by: the event end unless carried, s2c 0x052 mode 0, any 0x052 with no event running
   *(inf: the release after a carried end)*, its target gone, a zone change, or 10 s *(inf)*.
 - Live (Lnxcsfix, the Southern San d'Oria home point): talk, the event, Escape: walked off at once after.
+
+## Event op 0x46 sub 3: the camera seeded at a point (2026-10-25)
+
+- FUN_100b6440: sub 0 kills the camera tasks and calls FUN_10021680(offset, the player's model) with (0, 0, 0, 1),
+  which FUN_10021680 replaces by (-4, -2, 0): the eye at that point in the player's frame (rotations from vtable
+  +0x1c0, position +0x1bc), the look at the player's position 0.5 up. Sub 3 does the same with (val@2, val@4,
+  val@6) x 0.001 (DAT_1032a22c), read the first time a run gets there (DAT_104897ea bit 0) and reused after; 8 bytes.
+- The 4 sites (zones 210, 232, 236, 239) follow "You can move the camera to check your character's appearance.":
+  `46 00; 46 03 #4000 #-1200 #0`, the eye 4 in front of the player and 1.2 up, looking back at them.
+- Ours: Effect::Camera's offset, camera::face_at (face() is face_at with (-4, -2, 0), or (-3, -1.5, 0) in the Mog
+  House); the side axis's sense is inferred (no site uses z). Not seen live.

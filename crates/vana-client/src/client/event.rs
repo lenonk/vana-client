@@ -684,13 +684,16 @@ impl Host for LiveHost<'_> {
                 self.st.input = Some(Input { kind, max, text: Vec::new(), caret: 0 });
                 self.w.typing = false;
             }
-            Effect::Camera { flag } => {
+            Effect::Camera { flag, offset } => {
                 self.st.camera_flag = flag;
                 if flag {
                     self.w.screen.shot = None;
                     let dir = self.w.net.me.lock().map(|m| m.dir).unwrap_or(0);
                     let f = super::forward_from_dir(dir);
-                    super::camera::face(self.w, f.x.atan2(f.z));
+                    match offset {
+                        Some(o) => super::camera::face_at(self.w, f.x.atan2(f.z), Vec3::from(o)),
+                        None => super::camera::face(self.w, f.x.atan2(f.z)),
+                    }
                 }
             }
             Effect::Volume { mask, level, ticks } => self.w.audio_cmds.push((mask, level, ticks)),

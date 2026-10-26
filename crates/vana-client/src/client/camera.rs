@@ -191,11 +191,17 @@ fn view_yaw(c: &LockCam) -> Option<f32> {
 /// Puts the camera behind the player facing `yaw` (zone-in, after events, test drives): FUN_10021680's (-4, -2, 0) in
 /// the player's frame, (-3, -1.5, 0) in the Mog House (FUN_10096640).
 pub fn face(w: &mut World, yaw: f32) {
+    let o = if w.myroom.is_some() { Vec3::new(-3.0, -1.5, 0.0) } else { Vec3::new(-4.0, -2.0, 0.0) };
+    face_at(w, yaw, o);
+}
+
+/// FUN_10021680: the eye at `o` in the player's frame (x forward, y down, z to the side *(inf: its sense)*).
+pub fn face_at(w: &mut World, yaw: f32, o: Vec3) {
     // Without a model yet (a login's zone-in) the look is 1 above the feet, not the old look's height.
     let look = if w.actors.get(&w.my_id).is_some_and(|a| -a.top > 0.1) { look_target(w) } else { super::drawn_pos(w) + Vec3::new(0.0, -1.0, 0.0) };
     let f = Vec3::new(yaw.sin(), 0.0, yaw.cos());
-    let (back, up) = if w.myroom.is_some() { (3.0, 1.5) } else { (4.0, 2.0) };
-    let mut eye = super::drawn_pos(w) - f * back + Vec3::new(0.0, -up, 0.0);
+    let side = Vec3::new(f.z, 0.0, -f.x);
+    let mut eye = super::drawn_pos(w) + f * o.x + side * o.z + Vec3::new(0.0, o.y, 0.0);
     // Not inside the hill behind: in front of what the look -> eye ray hits.
     if let Some(h) = w.ground.as_ref().and_then(|g| g.cam_ray(look, eye)) {
         eye = look + (eye - look).normalize_or(Vec3::Z) * ((h - look).length() - 0.5).max(0.3);
