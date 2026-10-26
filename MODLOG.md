@@ -9562,3 +9562,16 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   D3D's fixed function, so on bright surfaces only the dim end of the pulse shows.
 - Live (Lnxcsfix, a Mithra and a Galka mannequin): the selection pulse logged on the Galka (0x70..0xef levels), the
   hold's 0x60 dim on the Galka while the Mithra was held, all back to 0x80 after the cancel.
+
+## IMG textures: 4-bit and 32-bit pixels (2026-10-26)
+
+- The user's log (Gusgen Mines) warned 16 times "DAT 296 texture: IMG m_dup ji: pixels out of range". The IMG
+  header after the name is a BITMAPINFOHEADER; its bit count (@31) is not always 8. The retail converter
+  (FUN_10039e50, by source bits +0x28) takes 4 (two pixels a byte, the high nibble first, a 16-entry BGRA palette),
+  8 (256 entries), 16, 24 (alpha 0x80) and 32 (BGRA as is), rows bottom-up, for every non-DXT flag.
+- Install scan (`scratch/mq2/img4scan.py`): flags 0x01 / 0x81 / 0x91 / 0xB1 hold 4-bit images in 8 files (the
+  'ji' wall writing of DAT 296 and kin, 128 x 128, 'ev_eff ji') and 32-bit ones in 7 (B1: 'm_lv lvu1' in DAT
+  3816, the "M.Level Up!!" banner; 'moon_wrpglow' 52705, 'altana fans' 52763, 'alex_brigrde' 51114, 'kyu_tamafr01'
+  70862; 0x81: two goblin textures in an unused file). Ours read every one as 8-bit: the 4-bit ones failed, the
+  32-bit ones decoded as garbage. Now 4 / 8 / 24 / 32 (dat/zone.rs parse_img); alpha stays PS2-style (doubled).
+- Flag 0x05 (20 images, 'r_3ba63' / 'r_3ba64') lives only in ROM/0/110 and 111, files no table points to: left out.

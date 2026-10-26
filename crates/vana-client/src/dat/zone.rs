@@ -387,8 +387,8 @@ pub(crate) fn decode_dxt(data: &[u8], w: u32, h: u32, dxt3: bool) -> Vec<u8> {
     out
 }
 
-/// IMG chunk: 57-byte header (flag, 16-char name, ..., width @21, height @25), then
-/// either DXT data or a BGRA palette plus 8-bit indices stored bottom-up.
+/// IMG chunk: 57-byte header (flag, 16-char name, then a BITMAPINFOHEADER: width @21, height @25, bit count @31),
+/// then DXT data, or rows bottom-up of 4- or 8-bit palette indices (a BGRA palette first) or 24- / 32-bit BGR(A).
 pub fn parse_img(p: &[u8]) -> Result<Texture> {
     if p.len() < 57 {
         bail!("IMG too short");
@@ -399,16 +399,32 @@ pub fn parse_img(p: &[u8]) -> Result<Texture> {
     if w == 0 || h == 0 || w > 4096 || h > 4096 {
         bail!("IMG {name}: bad size {w}x{h}");
     }
-    let paletted = |pal_at: usize| -> Result<Vec<u8>> {
-        let px_at = pal_at + 1024;
-        if px_at + (w * h) as usize > p.len() {
+    let bits = u16::from_le_bytes([p[31], p[32]]);
+    // FUN_10039e50's source cases: 4 (two pixels a byte, high nibble first, 16 colours), 8, 24 (alpha 0x80), 32.
+    let uncompressed = |at: usize| -> Result<Vec<u8>> {
+        let (pal, row_bytes) = match bits {
+            4 => (64, w.div_ceil(2) as usize),
+            8 => (1024, w as usize),
+            24 => (0, w as usize * 3),
+            32 => (0, w as usize * 4),
+            other => bail!("IMG {name}: {other}-bit pixels"),
+        };
+        let px_at = at + pal;
+        if (bits == 4 && w % 2 != 0) || px_at + row_bytes * h as usize > p.len() {
             bail!("IMG {name}: pixels out of range");
         }
         let mut out = vec![0u8; (w * h * 4) as usize];
         for y in 0..h {
             for x in 0..w {
-                let idx = p[px_at + ((h - 1 - y) * w + x) as usize] as usize;
-                let bgra = &p[pal_at + idx * 4..pal_at + idx * 4 + 4];
+                let i = ((h - 1 - y) * w + x) as usize;
+                let bgra: [u8; 4] = match bits {
+                    4 | 8 => {
+                        let idx = if bits == 4 { (p[px_at + i / 2] >> if i % 2 == 0 { 4 } else { 0 }) & 0xf } else { p[px_at + i] } as usize;
+                        p[at + idx * 4..at + idx * 4 + 4].try_into().unwrap()
+                    }
+                    24 => [p[px_at + i * 3], p[px_at + i * 3 + 1], p[px_at + i * 3 + 2], 0x80],
+                    _ => p[px_at + i * 4..px_at + i * 4 + 4].try_into().unwrap(),
+                };
                 let o = ((y * w + x) * 4) as usize;
                 out[o..o + 4].copy_from_slice(&[bgra[2], bgra[1], bgra[0], bgra[3]]);
             }
@@ -440,11 +456,11 @@ pub fn parse_img(p: &[u8]) -> Result<Texture> {
                 other => bail!("IMG {name}: unsupported compression {:?}", String::from_utf8_lossy(other)),
             }
         }
-        0x01 | 0x81 | 0x91 => paletted(57)?,
-        0xB1 => paletted(61)?,
+        0x01 | 0x81 | 0x91 => uncompressed(57)?,
+        0xB1 => uncompressed(61)?,
         other => bail!("IMG {name}: unknown format flag {other:#04x}"),
     };
-    // Palette and DXT3 alpha is PS2-style: 0x80 is opaque.
+    // Uncompressed and DXT3 alpha is PS2-style: 0x80 is opaque.
     if half_alpha {
         for px in rgba.chunks_exact_mut(4) {
             px[3] = px[3].saturating_mul(2);
@@ -597,4 +613,38 @@ pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
         c.add_door_boxes(&scene.regions);
     }
     Ok(scene)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn header(flag: u8, w: u32, h: u32, bits: u16, extra: usize) -> Vec<u8> {
+        let mut p = vec![0u8; 57 + extra];
+        p[0] = flag;
+        p[1..17].copy_from_slice(b"test    img     ");
+        p[17] = 0x28;
+        p[21..25].copy_from_slice(&w.to_le_bytes());
+        p[25..29].copy_from_slice(&h.to_le_bytes());
+        p[29] = 1;
+        p[31..33].copy_from_slice(&bits.to_le_bytes());
+        p
+    }
+
+    #[test]
+    fn img_4bit_and_32bit() {
+        // 2 x 2, 16 colours: rows bottom-up, the high nibble first; alpha doubled.
+        let mut p = header(0xB1, 2, 2, 4, 4);
+        let mut pal = vec![0u8; 64];
+        pal[4..8].copy_from_slice(&[10, 20, 30, 0x80]);
+        pal[8..12].copy_from_slice(&[40, 50, 60, 0x40]);
+        p.extend(pal);
+        p.extend([0x12, 0x21]);
+        let t = parse_img(&p).unwrap();
+        assert_eq!(t.rgba, [60, 50, 40, 0x80, 30, 20, 10, 255, 30, 20, 10, 255, 60, 50, 40, 0x80]);
+        // 1 x 2 BGRA.
+        let mut p = header(0x81, 1, 2, 32, 0);
+        p.extend([1, 2, 3, 0x40, 4, 5, 6, 0x80]);
+        assert_eq!(parse_img(&p).unwrap().rgba, [6, 5, 4, 255, 3, 2, 1, 0x80]);
+    }
 }
