@@ -9,6 +9,65 @@ pub fn active(w: &World) -> bool {
     w.mon_login || w.stats.as_ref().is_some_and(|s| s.main.0 == 23)
 }
 
+/// 0x063 types 3 / 4 (FUN_10099270): the blocks into G1 / G2; a type 4 asks for the moves (DAT_104804ce).
+pub fn on_data(w: &mut World, kind: u16, data: Vec<u8>) {
+    let m = w.monstrosity.get_or_insert((0, 0, 0));
+    m.0 |= 1 << kind;
+    if kind == 3 {
+        let u = |o: usize| data.get(o..o + 4).map_or(0, |b| u32::from_le_bytes(b.try_into().unwrap()));
+        // G1 +4 the ranks (Monstrosity bits 0..1, gladiator 2..3), +0xc prestige.
+        (m.1, m.2) = (u(4), u(0xc) as u16);
+        w.mon_g1 = data;
+    } else {
+        w.mon_g2 = data;
+        w.mon_due = true;
+    }
+}
+
+/// FUN_10093b30 in the zone-in reset: the blocks, the moves and the data flag go (they come again after GAMEOK).
+pub fn zone_reset(w: &mut World) {
+    (w.mon_g1, w.mon_g2, w.mon_due, w.mon_in, w.mon_moves) = (Vec::new(), Vec::new(), false, false, [(0, 0, 0); 16]);
+    w.monstrosity = None;
+}
+
+/// FUN_100997b0 each frame: after a type 4, the species record's 16 moves (id + 0x600, 0 kept) and their bits
+/// (FUN_100e6080 clears 0x700..0xaff first); waits for the record.
+pub fn moves(w: &mut World) {
+    if !w.mon_due || !w.actors.contains_key(&w.my_id) {
+        return;
+    }
+    // The cleared moves go in first (G+0x2cf4a set), then the record's when it reads.
+    (w.mon_moves, w.move_bits) = ([(0, 0, 0); 16], Some(vec![0; 0x80]));
+    let species = w.mon_g1.get(0..2).map_or(0, |b| u16::from_le_bytes([b[0], b[1]])) & 0x1ff;
+    let mut moves = [(0u16, 0u8, 0u8); 16];
+    if species != 0 {
+        let Some(it) = w.item_info.as_ref().and_then(|c| c.item(species.wrapping_sub(0x1000))) else { return };
+        for (i, m) in moves.iter_mut().enumerate() {
+            let v = it.extra.iter().find(|e| e.0 == 0xd48 + 4 * i as u16).map_or(0, |e| e.1);
+            let id = v as u16;
+            *m = (if id == 0 { 0 } else { id + 0x600 }, (v >> 16) as u8, (v >> 24) as u8);
+        }
+    }
+    let mut bits = vec![0u8; 0x80];
+    for &(id, ..) in &moves {
+        if id >= 0x700 && ((id >> 3) as usize) < 0x160 {
+            bits[(id >> 3) as usize - 0xe0] |= 1 << (id & 7);
+        }
+    }
+    (w.mon_moves, w.move_bits, w.mon_due, w.mon_in) = (moves, Some(bits), false, true);
+}
+
+/// FUN_100e6020: the ability bitfield (0x0AC's 0xe0 bytes, then the move bits to 0xaff), once both are in.
+pub fn ability_bits(w: &World) -> Option<Vec<u8>> {
+    let moves = w.move_bits.as_ref()?;
+    (w.commands_known.len() >= 0xe0).then(|| [&w.commands_known[..0xe0], moves].concat())
+}
+
+/// FUN_102231f0: one of the 16 moves, its form bits holding our form.
+pub fn is_move(w: &World, id: u16) -> bool {
+    w.mon_in && w.mon_moves.iter().any(|m| m.0 == id && m.2 & (1 << (w.my_form & 7)) != 0)
+}
+
 /// The DLL's prefix table (FUN_10142070: one English table for both prefixes).
 fn prefixes() -> &'static [String] {
     static T: OnceLock<Vec<String>> = OnceLock::new();

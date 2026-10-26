@@ -2127,6 +2127,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
     monstrosity::refresh(world);
+    monstrosity::moves(world);
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
     let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
@@ -4685,6 +4686,16 @@ struct World {
     /// Our Monstrosity names (full, short) and the (word, prefixes) they were built from (client/monstrosity.rs).
     my_mon_name: Option<(String, String)>,
     my_mon_key: (u16, [u8; 2]),
+    /// Monstrosity data (client/monstrosity.rs): 0x063 type 3 / 4 blocks (G1 / G2), the moves wanted (DAT_104804ce)
+    /// and built (DAT_10483158), the 16 moves (id + 0x600, unlock level, form bits), the move bits (G+0x2cec8, None
+    /// until FUN_100e6080 ran: G+0x2cf4a) and our form (+0x124 bits 1..3).
+    mon_g1: Vec<u8>,
+    mon_g2: Vec<u8>,
+    mon_due: bool,
+    mon_in: bool,
+    mon_moves: [(u16, u8, u8); 16],
+    move_bits: Option<Vec<u8>>,
+    my_form: u8,
     mh_owner: u32,
     mh_floors: bool,
     /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
@@ -6111,6 +6122,13 @@ impl App {
                             mon_login: false,
                             my_mon_name: None,
                             my_mon_key: (0, [0; 2]),
+                            mon_g1: Vec::new(),
+                            mon_g2: Vec::new(),
+                            mon_due: false,
+                            mon_in: false,
+                            mon_moves: [(0, 0, 0); 16],
+                            move_bits: None,
+                            my_form: 0,
                             mh_owner: 0,
                             mh_floors: false,
                             mh_seen: false,
@@ -6570,7 +6588,7 @@ impl App {
                     // macro.
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
-                        m.aix.merge(&world.commands_known);
+                        m.aix.merge(&monstrosity::ability_bits(world).unwrap_or_else(|| world.commands_known.clone()));
                         m.save();
                     }
                     self.status = "Zoning...".into();
@@ -6583,6 +6601,7 @@ impl App {
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship, monstrosity } => {
                     world.mog_zone = mog_zone;
                     world.mon_login = monstrosity;
+                    monstrosity::zone_reset(world);
                     // FUN_100550f0: the old zone's path goes; the new one's comes with its scene.
                     world.voyage.path = None;
                     world.play_time = Some((play_time, Instant::now()));
@@ -6751,6 +6770,9 @@ impl App {
                         world.res_rdy.kings.insert(e.id);
                     }
                     if e.id == world.my_id {
+                        if let Some(f) = e.mon_form {
+                            world.my_form = f;
+                        }
                         // 0x100982f6: a full update about us ends the post-event wait (+0x1fa = 0).
                         if e.complete() && world.self_lock.take().is_some() {
                             log::info!("event: our own full update came");
@@ -7034,7 +7056,7 @@ impl App {
                     }
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
-                        m.aix.merge(&world.commands_known);
+                        m.aix.merge(&monstrosity::ability_bits(world).unwrap_or_else(|| world.commands_known.clone()));
                         m.save();
                     }
                     // The server has ended the session (the net thread is done) whatever our toggle thinks: it cancels a
@@ -7177,13 +7199,7 @@ impl App {
                 NetEvent::GmMessage { id, seq, last, text } => faqmain::on_message(world, id, seq, last, &text),
                 NetEvent::JobPointList(recs) => jobpoints::on_list(world, &recs),
                 NetEvent::AlterEgo(d) => aepoints::on_data(world, d),
-                NetEvent::Monstrosity { kind, rank, prestige } => {
-                    let m = world.monstrosity.get_or_insert((0, 0, 0));
-                    m.0 |= 1 << kind;
-                    if kind == 3 {
-                        (m.1, m.2) = (rank, prestige);
-                    }
-                }
+                NetEvent::Monstrosity { kind, data } => monstrosity::on_data(world, kind, data),
                 NetEvent::SkillBase(s) => world.skill_base = Some(s),
                 NetEvent::Action(a) => {
                     timers::on_action(world, &a);

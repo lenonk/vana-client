@@ -286,7 +286,9 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             it.name = decode_sjis(&n[..n.iter().position(|&c| c == 0).unwrap_or(n.len())]);
             it.item_type = r16(0x26);
             it.resource = r16(0x2a);
-            it.extra = vec![x16(0xd3c, 0x28), x16(0xd40, 0x2c), x16(0xd44, 0x2e), (0xd48, u32_at(r, if wide { 0x34 } else { 0x30 }))];
+            // +0x1548: 16 TP moves {u16 move, u8 unlock level, u8 form bits} (FUN_100997b0).
+            it.extra = vec![x16(0xd3c, 0x28), x16(0xd40, 0x2c), x16(0xd44, 0x2e)];
+            it.extra.extend((0..16).map(|i| (0xd48 + 4 * i as u16, u32_at(r, if wide { 0x34 } else { 0x30 } + 4 * i))));
             // FUN_10155760: one string (the name).
             (Some(if wide { 0x74 } else { 0x70 }), 0, true)
         }

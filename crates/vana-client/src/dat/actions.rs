@@ -87,8 +87,9 @@ pub struct Ability {
     pub timer: u16,
     /// +0xa: valid targets (spell bits).
     pub targets: u16,
-    /// +0xc: TP cost (255 none).
+    /// +0xc: TP cost (255 none); the Monstrosity list reads it as a u16 (FUN_1014feb0 kind 9).
     pub tp: u8,
+    pub tp16: u16,
     /// +0xe: a row opening the sub-list of this type (skipped by /ja); +0xf level (Monstrosity).
     pub sub: u8,
     pub level: u8,
@@ -123,7 +124,7 @@ impl Actions {
             .collect();
         let abilities = records(index, ABILITY_CHUNK, ABILITY_SIZE)?
             .iter()
-            .map(|r| Ability { id: u16_at(r, 0), kind: r[2], icon: r[3], icon_hd: u16_at(r, 4), cost: u16_at(r, 6), timer: u16_at(r, 8), targets: u16_at(r, 0xa), tp: r[0xc], sub: r[0xe], level: r[0xf] })
+            .map(|r| Ability { id: u16_at(r, 0), kind: r[2], icon: r[3], icon_hd: u16_at(r, 4), cost: u16_at(r, 6), timer: u16_at(r, 8), targets: u16_at(r, 0xa), tp: r[0xc], tp16: u16_at(r, 0xc), sub: r[0xe], level: r[0xf] })
             .collect();
         Ok(Actions { spells, abilities })
     }

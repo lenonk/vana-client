@@ -10141,3 +10141,22 @@ Spec section 3.1. client/monstrosity.rs (`names`, `refresh`, `name`, `my_name`, 
 - Live (Lnxcsfix in the Feretory, logged in there and by !zone): plate and target window "Rabbit" (LSB ids 0 / 0),
   the solo party row "A.M. Ra..." (LSB packs the name ids into a u16 @0x1e: id1 = species & 0xff, id2 = 0x80 |
   species >> 8; an LSB bug, retail shows the same from that packet). Rows restored afterwards.
+
+## Monstrosity, part 3: the data and the move bits (2026-10-26)
+
+Spec section 2.1. client/monstrosity.rs (`on_data`, `zone_reset`, `moves`, `ability_bits`, `is_move`), magic.rs
+`ability_rows`.
+- 0x063 type 3 -> G1 (212 bytes from @8), type 4 -> G2 (172) and DAT_104804ce; both cleared at every zone-in
+  (FUN_10093b30 from FUN_10093720) with the 16 moves and DAT_10483158; LSB re-sends them after each GAMEOK (to every
+  player). The profile keeps reading G1 +4 (ranks) and +0xc (prestige).
+- FUN_100997b0 each frame, after a type 4 and with our actor: FUN_100e6080 with the cleared moves (bits 0x700..0xaff
+  cleared, G+0x2cf4a set), then item 0xf000 + (G1 u16 @0 & 0x1ff) gives 16 x {u16 move, u8 unlock level, u8 form
+  bits} (record +0x1548; dat/items.rs keeps all 16 now): DAT_10483118 = move + 0x600 (0 kept), their bits set; the
+  record not read yet: tried again next frame.
+- FUN_100e6020: the ability bitfield (0x0AC's 0xe0 bytes, then the move bits to 0xaff) only once both are in; every
+  ability list waits for it (FUN_10223c90), and aix.dat merges the whole field.
+- Type 0x14 (FUN_10223ec0): Monstrosity data in, the id one of the 16 moves with our form's bit (FUN_102231f0; our
+  actor's +0x124 bits 1..3, set only by an 0x00D about a Monipulator, @0x2A & 7 while @0x3E != 0, 0x1009a185), and
+  record +0xf <= main level. dat/actions.rs adds `tp16` (+0xc as u16, FUN_1014feb0 kind 9).
+- Live (Lnxcsfix WAR 21 in 230): the trait list still fills (Defense Bonus, Resist Virus): LSB's login type 4 opens
+  the gate.

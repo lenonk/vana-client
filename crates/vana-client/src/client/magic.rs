@@ -159,7 +159,7 @@ fn order(w: &World, aix: bool, known: &[u8]) -> Vec<u16> {
 
 /// The merged order itself, for a sort: merged in place in Macros first.
 fn order_mut<'a>(w: &'a mut World, aix: bool) -> Option<&'a mut super::macros::Order> {
-    let known = if aix { w.commands_known.clone() } else { w.spells_known.clone() };
+    let known = if aix { super::monstrosity::ability_bits(w).unwrap_or_default() } else { w.spells_known.clone() };
     let m = w.macros.as_mut()?;
     let o = if aix { &mut m.aix } else { &mut m.mix };
     o.merge(&known);
@@ -198,7 +198,17 @@ pub(super) fn ability_rows(w: &World, ty: u16) -> Vec<u16> {
     if ty == 2 && w.my_pet == 0 {
         return Vec::new();
     }
-    order(w, true, &w.commands_known).into_iter().filter(|&i| acts.abilities.get(i as usize).is_some_and(|a| a.id != 0 && (ty == 0 || a.kind as u16 == ty))).collect()
+    // FUN_10223c90: no list until FUN_100e6020 has both 0x0AC and the moves. Type 0x14: a move of our form, at our level.
+    let Some(known) = super::monstrosity::ability_bits(w) else { return Vec::new() };
+    let level = w.stats.as_ref().map_or(0, |s| s.main.1);
+    order(w, true, &known)
+        .into_iter()
+        .filter(|&i| {
+            acts.abilities.get(i as usize).is_some_and(|a| {
+                a.id != 0 && (ty == 0 || a.kind as u16 == ty) && (ty != 0x14 || (w.mon_in && super::monstrosity::is_move(w, i) && a.level <= level))
+            })
+        })
+        .collect()
 }
 
 /// FUN_10221b90: the cursor on the row of the id remembered for this list (scrolled into view, inferred). The mount

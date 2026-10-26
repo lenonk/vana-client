@@ -72,6 +72,9 @@ pub struct EntityUpdate {
     pub radar: Option<(bool, bool, u16)>,
     /// 0x00D mask 0x04 u8 @0x40 / @0x41 (+0x212 / +0x213, 0x1009a979..): the Monstrosity name prefixes.
     pub mon_prefix: Option<[u8; 2]>,
+    /// 0x00D mask 0x04 with @0x3E set: u8 @0x2A & 7 into +0x124 bits 1..3 (0x1009a185), the form a Monipulator's moves
+    /// test (FUN_102231f0).
+    pub mon_form: Option<u8>,
     /// The sub-animation (actor +0x124 bits 1..3): 0x00E mask 0x04, @0x2A & 7 when @0x20 bit 0 (monster) or u32 @0x28
     /// bit 26 (asm 0x1009be45; LSB animationsub).
     pub sub_anim: Option<u8>,
@@ -448,7 +451,8 @@ pub enum NetEvent {
     JobPointList(Vec<(u16, u8, u16)>),
     /// s2c 0x08E: u16 points @4, u8 upgrades[32] @8, u16 costs[32] @0x28.
     AlterEgo(super::aepoints::AeData),
-    Monstrosity { kind: u16, rank: u32, prestige: u16 },
+    /// 0x063 types 3 / 4: the blocks from @8 (212 / 172 bytes).
+    Monstrosity { kind: u16, data: Vec<u8> },
     /// s2c 0x063 sub 9: the icons and their end times (1/60 s since the Vana'diel epoch; 0x7fffffff no timer).
     StatusTimers { ids: [u16; 32], ends: [u32; 32] },
     /// Our own HP, MP and TP (0x0DF).
@@ -852,6 +856,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
             (p.u32(0x20) >> 29 & 1 != 0, npc && p.u8(0x2B) & 0x40 != 0, if !npc && p.data.len() >= 0x40 { p.u16(0x3E) } else { 0 })
         }),
         mon_prefix: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x42).then(|| [p.u8(0x40), p.u8(0x41)]),
+        mon_form: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x40 && p.u16(0x3E) != 0).then(|| p.u8(0x2A) & 7),
         sub_anim: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && (p.u8(0x20) & 1 != 0 || p.u32(0x28) & (1 << 26) != 0)).then(|| p.u8(0x2A) & 7),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
@@ -1018,7 +1023,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x063 if p.u16(4) == 7 && p.data.len() >= 0x8c => {
                         tx.send(NetEvent::UnityTable { week: p.u8(8), d: p.u8(9), data: p.data[0xc..0x8c].try_into().unwrap() })?
                     }
-                    0x063 if matches!(p.u16(4), 3 | 4) => tx.send(NetEvent::Monstrosity { kind: p.u16(4), rank: p.u32(0xc), prestige: p.u16(0x14) })?,
+                    0x063 if matches!(p.u16(4), 3 | 4) => {
+                        let n = if p.u16(4) == 3 { 212 } else { 172 };
+                        tx.send(NetEvent::Monstrosity { kind: p.u16(4), data: (0..n).map(|i| p.u8(8 + i)).collect() })?
+                    }
                     0x063 if p.u16(4) == 9 => {
                         tx.send(NetEvent::StatusTimers { ids: std::array::from_fn(|i| p.u16(8 + 2 * i)), ends: std::array::from_fn(|i| p.u32(0x48 + 4 * i)) })?;
                     }
