@@ -61,6 +61,18 @@ pub struct Ctx {
     pub work: [i32; 5],
     /// String slots 2 / 3 of the queue entry (+0xd04; 0 / 1 are the actor and target names): FUN_100a1ab0's strings.
     pub strings: [String; 2],
+    /// The key item names, for grammar kinds 0x36 / 0x45.
+    pub keys: Option<Keys>,
+}
+
+/// The name tables, for the key items a message names.
+#[derive(Clone)]
+pub struct Keys(pub std::sync::Arc<super::names::Names>);
+
+impl std::fmt::Debug for Keys {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("Keys")
+    }
 }
 
 #[derive(Debug, PartialEq)]
@@ -480,6 +492,28 @@ impl BattleText {
                             if let Some(o) = self.items.as_ref().and_then(|it| super::roe::objective(it, (n + 0xe000) as u16)) {
                                 out.extend([0x1e, 8]);
                                 out.extend(encode_sjis(&o.name));
+                                out.extend([0x1e, 1]);
+                            }
+                        }
+                        // 0x36 / 0x45 (FUN_100be760): a key item (num / work, num read as work here) with its own article,
+                        // "the" for key item types 0 / 1, else a / an / some by the entry's mode; named in `1e 03`.
+                        Some(0x36 | 0x45) => {
+                            use super::names::NameSource;
+                            let id = work(slot);
+                            if let Some(Keys(names)) = ctx.keys.as_ref()
+                                && id > 0
+                                && let Some(n) = names.key_item(id as u32)
+                            {
+                                let art = match (names.key_item_definite(id as u32), n.mode) {
+                                    (true, _) => "the",
+                                    (false, 3) if n.an => "an",
+                                    (false, 3) => "a",
+                                    _ => "some",
+                                };
+                                out.extend(art.bytes());
+                                out.push(b' ');
+                                out.extend([0x1e, 3]);
+                                out.extend(encode_sjis(&n.bare));
                                 out.extend([0x1e, 1]);
                             }
                         }

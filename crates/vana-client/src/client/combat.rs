@@ -89,6 +89,11 @@ pub(super) struct Pending {
     messages: Vec<Msg>,
 }
 
+/// The name tables for a message's key items.
+fn keys(w: &World) -> Option<crate::dat::battle::Keys> {
+    w.names.clone().map(crate::dat::battle::Keys)
+}
+
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
         // Our own gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
@@ -126,7 +131,7 @@ pub(super) fn on_emote(w: &mut World, caster: u32, target: u32, emote: u16, para
     if mode > 1 || w.game.get(0x32) & 8 != 0 {
         return;
     }
-    let ctx = Ctx { actor: who(w, caster), target: (target != 0).then(|| who(w, target)).flatten(), me: w.name.clone(), work: [0; 5], ..Default::default() };
+    let ctx = Ctx { actor: who(w, caster), target: (target != 0).then(|| who(w, target)).flatten(), me: w.name.clone(), work: [0; 5], keys: keys(w), ..Default::default() };
     let entry = emote as u32 * 2 + (target == 0) as u32;
     let Some(line) = bt.emote(entry, &ctx) else { return };
     let colour = bt.colour_in(if target == 0 && caster == w.my_id { 7 } else { 0x0f }, &w.game);
@@ -246,7 +251,7 @@ fn print(w: &mut World, m: Msg) {
     if bt.off_channel(m.id, 0, &w.game) {
         return;
     }
-    let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, ..Default::default() };
+    let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
     for (l, c) in render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game) {
         w.chat.push_colour(l, c);
     }
@@ -298,7 +303,7 @@ pub fn action_messages(a: &Action) -> Vec<(u16, u32, [i32; 5])> {
 pub(super) fn on_system_message(w: &mut World, id: u16, work: [i32; 2]) {
     let Some(bt) = w.battle.clone() else { return };
     let me = w.my_id;
-    let ctx = Ctx { actor: who(w, me), target: who(w, me), me: w.name.clone(), work: [work[0], work[1], 0, 0, 0], ..Default::default() };
+    let ctx = Ctx { actor: who(w, me), target: who(w, me), me: w.name.clone(), work: [work[0], work[1], 0, 0, 0], keys: keys(w), ..Default::default() };
     match bt.system(id, &ctx) {
         Some(line) => {
             let colour = bt.colour_in(line.mode.unwrap_or(0), &w.game);
@@ -319,7 +324,7 @@ pub(super) fn on_message_std(w: &mut World, id: u16, cas: u32, para: [i32; 4], s
         return;
     }
     let Some(bt) = w.battle.clone() else { return };
-    let ctx = Ctx { actor: if cas != 0 { who(w, cas) } else { None }, target: None, me: w.name.clone(), work: [para[0], para[1], para[2], para[3], 0], strings };
+    let ctx = Ctx { actor: if cas != 0 { who(w, cas) } else { None }, target: None, me: w.name.clone(), work: [para[0], para[1], para[2], para[3], 0], strings, keys: keys(w) };
     match bt.system(id, &ctx) {
         Some(line) => {
             let colour = bt.colour_in(line.mode.unwrap_or(0), &w.game);

@@ -7543,8 +7543,8 @@ Spec: `~/ffxi/lab/research/roe_lists_spec.md`. Ours: dat/roe.rs, client/roe.rs, 
   log *(inf)*); else 0x10D. Bodies {u32 n}. Each send restarts a 30-frame cooldown (DAT_10668edc, also on describe and
   every answer; ours 1 s *(inf: 30 fps)*) and a description goes back to the list (not after 0x10C).
 - Battle messages: grammar kinds 0x39 / 0x40 / 0x41 (FUN_100be760) name an objective, id + 0xe000 from the index,
-  num or work (704 "You have undertaken \"%s\"."). Not done: kinds 0x36 / 0x45 (706, an item through FUN_10153ff0 with
-  an article).
+  num or work (704 "You have undertaken \"%s\"."). Since done: kinds 0x36 / 0x45 (706: a key item through FUN_10153ff0, the
+  key item store, with its own article, in `1e 03`), as the event text does (battle.rs, Ctx.keys).
 - Live (Lnxcsfix): the root shows Tutorial and Other; Tutorial -> Basics -> First Step Forward (the bubble, 0/1);
   Set -> 0x10C, LSB's line; Current 1/30 with the green row; Remove (default No) -> Yes -> 0x10D, "No current
   objectives." 0/30.

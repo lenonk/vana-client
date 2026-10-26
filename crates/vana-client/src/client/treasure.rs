@@ -129,6 +129,7 @@ fn line(w: &mut World, id: u16, actor: Option<u32>, target: u32, para0: i32, str
         me: w.name.clone(),
         work: [para0, 0, 0, 0, 0],
         strings,
+        keys: w.names.clone().map(crate::dat::battle::Keys),
     };
     match bt.system(id, &ctx) {
         Some(l) => {
