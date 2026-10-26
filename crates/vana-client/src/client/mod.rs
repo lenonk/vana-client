@@ -1334,6 +1334,7 @@ fn alliance_hidden(world: &World) -> bool {
 
 fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2], keys: &mut HashSet<KeyCode>, view_proj: glam::Mat4, numpad_slash: bool) -> Vec<[f32; 4]> {
     let (sw, sh) = (size[0] as f32, size[1] as f32);
+    world.ui_wh = (sw, sh);
     // The focused list's scroll bar and the wheel, before the windows see the press.
     let taken = scrollbar::frame(gu, world, input);
     let input = taken.as_ref().unwrap_or(input);
@@ -2210,8 +2211,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.chat.push_colour(l, colour);
     }
     minimap::prepare(gu, world, sw);
-    let foot = timers_foot(gu, world, sw, sh);
-    timers::prepare(gu, world, sw, sh, foot);
+    // The modern layer draws the Timers, the minimap and the map overlay itself.
+    if !world.modern {
+        let foot = timers_foot(gu, world, sw, sh);
+        timers::prepare(gu, world, sw, sh, foot);
+    }
     // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
     monstrosity::refresh(world);
@@ -2333,6 +2337,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         (st.party_window, st.target, st.alliance) = (String::new(), None, [None, None]);
     }
     gu.clear();
+    gu.modern_skin(world.modern);
     name_plates(gu, world, sw, sh, view_proj);
     if world.overlay.as_ref().is_some_and(|o| o.zone != world.pos_zone) {
         world.overlay = Some(map::Overlay::open(world, gu.map_regions()));
@@ -2340,7 +2345,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         o.follow(world, gu.map_regions());
         world.overlay = Some(o);
     }
-    if let Some(o) = world.overlay.as_mut() {
+    if let Some(o) = world.overlay.as_mut().filter(|_| !world.modern) {
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
         o.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh, world.map_opacity);
     }
@@ -2381,7 +2386,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
     }
-    minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
+    if !world.modern {
+        minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
+    }
     timers::draw(gu, &mut world.timers, sw);
     let slots = gu.hud(sw, sh, &st);
 
@@ -4811,6 +4818,8 @@ struct World {
     /// Where retail's target cursors (anc_l) go this frame, for the modern layer's own: screen fractions, the kind (0
     /// the target, 1 a prompt's saved target, 2 its pick) and the pick's range tint.
     modern_pointers: Vec<(f32, f32, u8, u32)>,
+    /// The game UI's layout size this frame (the modern layer turns its rects into screen fractions).
+    ui_wh: (f32, f32),
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -5582,6 +5591,9 @@ impl App {
         } else if self.audio.is_none() {
             self.audio_tried = false;
         }
+        if let Some(gu) = self.game_ui.as_mut() {
+            gu.modern_skin(self.cfg.modern_ui);
+        }
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
             w.modern = self.cfg.modern_ui;
@@ -6011,7 +6023,12 @@ impl App {
                 log::warn!("title flyover: {e:#}");
                 self.flyover_state = LoadState::Failed;
             }
-            Task::GameUi(Ok(data)) => self.game_ui = Some(GameUi::new(data)),
+            Task::GameUi(Ok(data)) => {
+                let mut gu = GameUi::new(data);
+                // The lobby's windows wear the modern frames when Modern is chosen (the default stays retail).
+                gu.modern_skin(self.cfg.modern_ui);
+                self.game_ui = Some(gu);
+            }
             Task::GameUi(Err(e)) => {
                 log::warn!("lobby UI: {e:#}");
                 self.game_ui_state = LoadState::Failed;
@@ -6339,6 +6356,7 @@ impl App {
                             suggest_sel: None,
                             party_hp_max: HashMap::new(),
                             modern_pointers: Vec::new(),
+                            ui_wh: (1.0, 1.0),
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),

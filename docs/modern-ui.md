@@ -238,6 +238,16 @@ Milestone 1:
   taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
   badges stay at its size left of the name until the SVG badge set is approved; the master stars above. No bars.
-- To do (user, 2026-10-26): the Timers window, the minimap, the map overlay; the SVG plate badges; the storage views
-  with the merged bags.
+- The Extras (modern/extras.rs): the Timers window (timers.rs's sections; the heading folds it, section headings fold
+  them, bars in the Timers add-on's colours, the last 15 s pulsing), the minimap round, north up, centred on us (the
+  map image as an egui texture on a disc, the radar's dots, our arrow, N, the zone and grid; the wheel zooms) and
+  the map overlay (its box at its opacity under every panel, a bronze edge; the game's mouse still pans and zooms).
+- Default places are retail's (user, 2026-10-26): the status icons (142, 48), the cast bar (16, 94), the Timers' left
+  dock (16, 122), the main menu and the command window at the right edge (W - 128, 48), the minimap where retail
+  works it out (top right, left of the windows at the edge). A place below zero x is from the right edge.
+- The retail windows still drawn retail-style wear the modern frame while Modern is on (render/ui.rs push_frame: the
+  pack's window_normal, its gradient and border in nine slices, in the same UI pass), the lobby's too when Modern is
+  chosen; their contents stay retail's until each has its modern counterpart.
+- To do: modern counterparts in the command window for Status, the journal lists, Social, System and Config (culled);
+  the SVG plate badges; the storage views with the merged bags; the lobby screens.
 - Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

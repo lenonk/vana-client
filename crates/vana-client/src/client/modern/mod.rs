@@ -9,6 +9,7 @@ mod chat;
 mod combat;
 mod command;
 mod equip;
+mod extras;
 mod hud;
 mod items;
 mod lists;
@@ -22,7 +23,7 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{CmdMenu, key as command_key};
-pub use theme::Theme;
+pub use theme::{Theme, frame_image};
 use theme::{Art, LABEL, STRONG};
 
 pub use crate::config::{ModernDock as Dock, ModernLayout as Layout, ModernPlace as Place};
@@ -81,10 +82,11 @@ impl Modern {
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, this: HashMap::new() };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, this: HashMap::new(), retail: HashMap::new() };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
+        extras::draw(&mut p, w);
         hud::draw(&mut p, w);
         command::draw(&mut p, w);
         combat::draw(&mut p, w);
@@ -168,6 +170,8 @@ struct Panels<'a> {
     chat_font: &'a mut f32,
     /// The panels drawn this frame, as others dock on them (the chat window while it fades: its bottom edge).
     this: HashMap<String, Rect>,
+    /// Places retail works out this frame (the minimap left of the windows at the edge): the default until moved.
+    retail: HashMap<String, Place>,
 }
 
 /// The panel margins inside the frame; the resizable one keeps a taller strip below for its glyph.
@@ -176,6 +180,8 @@ const ROOM_MARGIN: egui::Margin = egui::Margin { bottom: 26, ..MARGIN };
 
 /// The panels placed by their bottom, growing upward (the chat window, the party window).
 const BOTTOM: [&str; 2] = ["chat", "party"];
+/// The right edge's column (the main menu and the windows it opens): other panels anchored there keep left of it.
+const COLUMN: [&str; 2] = ["command", "window"];
 
 /// Where each panel starts: the chat and party windows on the screen's bottom, the location panel on the chat window
 /// and the combat window on it (retail's compass and action menu ride the log), the target on the party window
@@ -192,15 +198,20 @@ fn default_place(id: &str) -> Place {
         // The magic and ability windows ride on the combat window (retail's sit on the log), the list on its categories.
         "cats" => on("combat"),
         "list" => on("cats"),
-        "status" => at(0.012, 0.07),
-        "command" => at(0.83, 0.07),
+        // Retail's places in its 448-high layout (x as a share of a 16:9 layout's 796; below zero from the right edge):
+        // the status icons at (142, 48), the main menu at the right edge (W - 128, 48).
+        "status" => at(0.178, 0.107),
+        "command" => at(-0.02, 0.107),
         // raid1 / raid2's places (y 48 and 150 of the 448 layout).
         "alliance1" => at(0.87, 0.107),
         "alliance2" => at(0.87, 0.335),
-        "cast" => at(0.41, 0.58),
-        // The command window: every window the command menu opens shows here, left of it (user's design). The item
-        // info rides the log as retail's (mode 0, flag 0x1000).
-        "window" => at(0.36, 0.07),
+        // The cast bar at (16, 94); the Timers' left dock under it at (16, 122); the minimap at the top right edge, y 50.
+        "cast" => at(0.02, 0.21),
+        "timers" => at(0.02, 0.272),
+        "minimap" => at(-0.001, 0.112),
+        // The command window: every window the command menu opens shows here, where retail's open (the main menu's
+        // column; the menu closes as they open). The item info rides the log as retail's (mode 0, flag 0x1000).
+        "window" => at(-0.02, 0.107),
         "iteminfo" => on("combat"),
         _ => at(0.3, 0.3),
     }
@@ -255,7 +266,7 @@ impl<'a> Panels<'a> {
     /// A panel's place: the saved one, else its default (a bottom-placed panel saved before it had one keeps the
     /// default bottom).
     fn place(&self, id: &str) -> Place {
-        let mut p = self.layout.get(id).cloned().unwrap_or_else(|| default_place(id));
+        let mut p = self.layout.get(id).cloned().or_else(|| self.retail.get(id).cloned()).unwrap_or_else(|| default_place(id));
         if BOTTOM.contains(&id) && p.b <= 0.0 {
             p.b = default_place(id).b;
         }
@@ -276,7 +287,23 @@ impl<'a> Panels<'a> {
             return pos2(t.min.x + d.dx, t.min.y - d.gap - h);
         }
         let s = self.ctx.content_rect();
-        if BOTTOM.contains(&id) { pos2(s.width() * place.x, s.height() * place.b - h) } else { pos2(s.width() * place.x, s.height() * place.y) }
+        let y = if BOTTOM.contains(&id) { s.height() * place.b - h } else { s.height() * place.y };
+        if place.x >= 0.0 {
+            return pos2(s.width() * place.x, y);
+        }
+        // From the right edge (its width as last drawn), and left of the command column there while it is open, as
+        // retail's minimap keeps left of the windows at the edge.
+        let rects = self.m.rects.borrow();
+        let w = rects.get(id).map_or(0.0, |r| r.width());
+        let mut right = s.width() * (1.0 + place.x);
+        if !COLUMN.contains(&id) {
+            for r in COLUMN.iter().filter_map(|c| self.this.get(*c).or(rects.get(*c))) {
+                if r.max.x > right - w && r.min.y < y + h.max(1.0) && r.max.y > y {
+                    right = right.min(r.min.x - 4.0);
+                }
+            }
+        }
+        pos2(right - w, y)
     }
 
     /// The rect a panel docks on: drawn this frame, else last frame, else (not shown) no height where it would sit,

@@ -173,6 +173,9 @@ pub struct GameUi {
     pub scene_depth: Option<wgpu::TextureView>,
     /// What this frame draws, rebuilt by the UI code each frame.
     batch: UiBatch,
+    /// The modern frame for the retail windows (made on first use; None inside when the pack has none).
+    modern_frame: Option<Option<crate::render::ui::ModernFrame>>,
+    skin_on: bool,
     started: Instant,
     /// Images (item icons) waiting for upload, and the names already uploaded.
     pending: Vec<(String, u32, u32, Vec<u8>)>,
@@ -289,7 +292,7 @@ pub struct WorldView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -1117,9 +1120,23 @@ impl GameUi {
         self.batch.set_depth(depth);
     }
 
+    /// While Modern is on the retail windows' frames are the modern UI's (made and uploaded once).
+    pub fn modern_skin(&mut self, on: bool) {
+        if on && self.modern_frame.is_none() {
+            let f = super::modern::frame_image("window_normal").map(|fi| {
+                self.image("modern frame", fi.size[0] as u32, fi.size[1] as u32, fi.rgba);
+                crate::render::ui::ModernFrame { texture: "modern frame".into(), corner_uv: fi.corner_uv, corner: 6.0, top: fi.top, bottom: fi.bottom, inset: fi.inset }
+            });
+            self.modern_frame = Some(f);
+        }
+        self.skin_on = on;
+        self.batch.modern = if on { self.modern_frame.clone().flatten() } else { None };
+    }
+
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
+        self.batch.modern = if self.skin_on { self.modern_frame.clone().flatten() } else { None };
         self.log_top = None;
         self.target_up = false;
     }

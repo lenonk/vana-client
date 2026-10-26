@@ -76,6 +76,20 @@ pub struct UiBatch {
     runs: Vec<Run>,
     clip: Option<[f32; 4]>,
     depth: Option<f32>,
+    /// While Modern is on: the frame the retail windows' frames are drawn with.
+    pub modern: Option<ModernFrame>,
+}
+
+/// The modern UI's window frame for the retail windows: the border texture's name, its corner as a share of its
+/// side, the corner's size in layout pixels, the interior's top and bottom colours and inset (a share of the side).
+#[derive(Clone, Debug)]
+pub struct ModernFrame {
+    pub texture: String,
+    pub corner_uv: f32,
+    pub corner: f32,
+    pub top: [f32; 4],
+    pub bottom: [f32; 4],
+    pub inset: f32,
 }
 
 /// PS2 colour scale: 0x80 is 1.0.
@@ -220,9 +234,41 @@ impl UiBatch {
         }
     }
 
+    /// The modern frame over (x, y, w, h) at alpha `a`: the interior's gradient, then the border in nine slices.
+    #[allow(clippy::too_many_arguments)]
+    fn push_modern_frame(&mut self, f: &ModernFrame, x: f32, y: f32, w: f32, h: f32, a: f32, no_edges: bool) {
+        let c = f.corner.min(w / 2.0).min(h / 2.0);
+        let ins = f.inset / f.corner_uv * c;
+        let [t, b] = [f.top, f.bottom].map(|k| [k[0], k[1], k[2], a]);
+        let (ix, iy, iw, ih) = (x + ins, y + ins, (w - 2.0 * ins).max(0.0), (h - 2.0 * ins).max(0.0));
+        self.push_quad(None, Blend::Alpha, [[ix, iy], [ix + iw, iy], [ix, iy + ih], [ix + iw, iy + ih]], [[0.0; 2]; 4], [t, t, b, b]);
+        if no_edges {
+            return;
+        }
+        let (u0, u1) = (f.corner_uv, 1.0 - f.corner_uv);
+        let white = [[1.0, 1.0, 1.0, a]; 4];
+        let xs = [x, x + c, x + w - c, x + w];
+        let ys = [y, y + c, y + h - c, y + h];
+        let us = [0.0, u0, u1, 1.0];
+        for i in 0..3 {
+            for j in 0..3 {
+                if i == 1 && j == 1 {
+                    continue;
+                }
+                let corners = [[xs[i], ys[j]], [xs[i + 1], ys[j]], [xs[i], ys[j + 1]], [xs[i + 1], ys[j + 1]]];
+                let uvs = [[us[i], us[j]], [us[i + 1], us[j]], [us[i], us[j + 1]], [us[i + 1], us[j + 1]]];
+                self.push_quad(Some(&f.texture), Blend::Alpha, corners, uvs, white);
+            }
+        }
+    }
+
     /// A window frame of w x h from a style library ("win00", files 14..21), as FUN_1022a290:
     /// piece 0 background (9 when `alt_back`), 2/7 top/bottom edges, 4/5 sides, 1/3/6/8 corners.
     pub fn push_frame(&mut self, ui: &UiFile, style: &SpriteLib, x: f32, y: f32, w: f32, h: f32, sx: f32, sy: f32, tint: u32, blend_word: u32, alt_back: bool, no_edges: bool) {
+        if let Some(f) = self.modern.clone() {
+            self.push_modern_frame(&f, x, y, w * sx, h * sy, ((tint >> 24 & 0xff) as f32 / 128.0).min(1.0), no_edges);
+            return;
+        }
         let mut piece = |k: usize, ox: f32, oy: f32, pw: f32, ph: f32| {
             if let Some(c) = style.sprites.get(k).and_then(|s| s.cells.first()) {
                 self.push_cell_rect(ui, c, x + ox * sx, y + oy * sy, pw, ph, sx, sy, tint, blend_word);

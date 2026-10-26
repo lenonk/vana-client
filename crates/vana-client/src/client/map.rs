@@ -2008,6 +2008,16 @@ pub struct Overlay {
     view: Option<(f32, f32)>,
     /// The box as last drawn (x, y, w, h).
     pub rect: [f32; 4],
+    /// The decoded image (size, pixels), kept for the modern layer's own texture.
+    image: Option<([usize; 2], Arc<Vec<u8>>)>,
+}
+
+/// What the modern layer draws a map from: the image's name, size and pixels and the map's region.
+pub struct MapImage {
+    pub name: String,
+    pub size: [usize; 2],
+    pub rgba: Arc<Vec<u8>>,
+    pub region: Region,
 }
 
 /// The box's side as a share of the screen's shorter side, and the zoom range over fitting the whole map.
@@ -2022,7 +2032,7 @@ impl Overlay {
 
     pub fn new(zone: u16, region: Option<Region>, index: Option<Arc<DatIndex>>) -> Self {
         let rx = region.zip(index).map(|(r, index)| load_shaded(index, r.file_id()));
-        Self { zone, region, texture: None, shade: None, rx, zoom: 1.0, view: None, rect: [0.0; 4] }
+        Self { zone, region, texture: None, shade: None, rx, zoom: 1.0, view: None, rect: [0.0; 4], image: None }
     }
 
     /// The player crossed onto another page of the zone (Windurst Waters' north and south): that map, at the same
@@ -2050,9 +2060,49 @@ impl Overlay {
     /// Waits for the image (offscreen shots).
     pub fn wait_image(&mut self, gu: &mut GameUi) {
         if let Some(Some((name, iw, ih, rgba, shade))) = self.rx.take().and_then(|r| r.recv().ok()) {
-            gu.image(&name, iw, ih, rgba);
+            self.image = Some(([iw as usize, ih as usize], Arc::new(rgba)));
             (self.texture, self.shade) = (Some(name), Some(shade));
         }
+        self.upload(gu);
+    }
+
+    /// The image once decoded, kept.
+    fn receive(&mut self) {
+        if let Some(Ok(Some((name, iw, ih, rgba, shade)))) = self.rx.as_ref().map(|r| r.try_recv()) {
+            self.image = Some(([iw as usize, ih as usize], Arc::new(rgba)));
+            (self.texture, self.shade) = (Some(name), Some(shade));
+            self.rx = None;
+        }
+    }
+
+    /// The kept image into the game UI's textures, once.
+    fn upload(&self, gu: &mut GameUi) {
+        if let (Some(name), Some(([w, h], rgba))) = (&self.texture, &self.image)
+            && !gu.has_image(name)
+        {
+            gu.image(name, *w as u32, *h as u32, rgba.to_vec());
+        }
+    }
+
+    /// The modern layer's map: the image once decoded, and the region.
+    pub fn modern_image(&mut self) -> Option<MapImage> {
+        self.receive();
+        let (Some(name), Some((size, rgba)), Some(region)) = (&self.texture, &self.image, self.region) else { return None };
+        Some(MapImage { name: name.clone(), size: *size, rgba: rgba.clone(), region })
+    }
+
+    /// The overlay box for the modern layer: the box (layout pixels), the map pixel at its top-left, layout pixels per
+    /// map pixel. Opened or resized, the whole map (as `draw`).
+    pub fn modern_view(&mut self, sw: f32, sh: f32) -> Option<([f32; 4], (f32, f32), f32)> {
+        let region = self.region?;
+        let side = (sw.min(sh) * OVERLAY_SIZE).round();
+        let rect = [((sw - side) / 2.0).round(), ((sh - side) / 2.0).round(), side, side];
+        if rect != self.rect {
+            self.rect = rect;
+            self.zoom = self.fit();
+            self.view = Some((region.ox as f32, region.oy as f32));
+        }
+        Some((self.rect, self.view?, self.zoom))
     }
 
     fn fit(&self) -> f32 {
@@ -2085,13 +2135,10 @@ impl Overlay {
         self.clamp();
     }
 
-    /// The image once it is decoded.
+    /// The image once it is decoded, in the game UI's textures.
     fn poll(&mut self, gu: &mut GameUi) {
-        if let Some(Ok(Some((name, iw, ih, rgba, shade)))) = self.rx.as_ref().map(|r| r.try_recv()) {
-            gu.image(&name, iw, ih, rgba);
-            (self.texture, self.shade) = (Some(name), Some(shade));
-            self.rx = None;
-        }
+        self.receive();
+        self.upload(gu);
     }
 
     /// The image's luminance under map pixel (px, py), 0..1 (dark until the image is in).

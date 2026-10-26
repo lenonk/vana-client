@@ -29,11 +29,11 @@ pub fn place(dock: u32, size: u32, sw: f32, icons: usize, column: Option<f32>) -
 /// What one frame draws: the rect, where we stand and face, the map pixels across, and the dots (world x, z, colour,
 /// the target).
 pub struct Frame {
-    rect: [f32; 4],
-    pos: (f32, f32),
-    facing: f32,
-    span: f32,
-    dots: Vec<(f32, f32, u32, bool)>,
+    pub rect: [f32; 4],
+    pub pos: (f32, f32),
+    pub facing: f32,
+    pub span: f32,
+    pub dots: Vec<(f32, f32, u32, bool)>,
     /// The map overlay's opacity: the marker is coloured as the overlay's.
     mix: f32,
 }

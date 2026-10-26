@@ -149,6 +149,42 @@ fn crop(img: &([usize; 2], Vec<u8>), r: [u32; 4]) -> Vec<u8> {
     (y..y + h).flat_map(|row| img.1[row * stride + x * 4..row * stride + (x + w) * 4].iter().copied()).collect()
 }
 
+/// A window frame for the game UI's own pass (the retail windows' frames while Modern is on): the border image
+/// (transparent inside), its corner as a share of its side, the interior's top and bottom colours, and the interior's
+/// inset as a share of the side.
+pub struct FrameImage {
+    pub size: [usize; 2],
+    pub rgba: Vec<u8>,
+    pub corner_uv: f32,
+    pub top: [f32; 4],
+    pub bottom: [f32; 4],
+    pub inset: f32,
+}
+
+/// The frame `name` (window_normal ...) as Art::load builds it, without egui.
+pub fn frame_image(name: &str) -> Option<FrameImage> {
+    let m: ManifestFile = serde_json::from_str(MANIFEST).ok()?;
+    let find = |id: &str| m.items.iter().find(|it| it.id == id);
+    let bytes = |file: &str| ATLASES.iter().find(|(n, _)| *n == file).map(|(_, b)| *b);
+    let (mask, it) = (find(FRAME_MASK)?, find(&format!("frames/{name}"))?);
+    let alpha: Vec<u8> = crop(&decode(bytes(&mask.atlas.file)?)?, mask.atlas.rect).chunks(4).map(|p| p[3]).collect();
+    let (w, h) = (it.atlas.rect[2] as usize, it.atlas.rect[3] as usize);
+    let mut rgba = crop(&decode(bytes(&it.atlas.file)?)?, it.atlas.rect);
+    let cx = w / 2;
+    let inside: Vec<usize> = (0..h).filter(|&y| rgba[(y * w + cx) * 4 + 3] > 0 && alpha.get(y * w + cx) == Some(&0)).collect();
+    let (&top, &bottom) = (inside.first()?, inside.last()?);
+    let col = |y: usize| {
+        let k = (y * w + cx) * 4;
+        [rgba[k] as f32 / 255.0, rgba[k + 1] as f32 / 255.0, rgba[k + 2] as f32 / 255.0, 1.0]
+    };
+    let (ct, cb) = (col(top), col(bottom));
+    for (p, a) in rgba.chunks_mut(4).zip(&alpha) {
+        p[3] = *a;
+    }
+    let corner_uv = it.nine_slice.map_or(24.0, |n| n[0]) / it.size[0];
+    Some(FrameImage { size: [w, h], rgba, corner_uv, top: ct, bottom: cb, inset: top as f32 / w as f32 })
+}
+
 impl Art {
     pub fn load(ctx: &Context) -> Self {
         let mut textures = Vec::new();
