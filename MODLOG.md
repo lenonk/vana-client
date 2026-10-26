@@ -10241,3 +10241,12 @@ Spec section 3.8 (each read in the decompile).
   non-PCs. Not modelled: two disguised actors (+0x1d0 bit 10) on one team.
 - The 0x00D hitbox (@0x43 x 0.1 -> +0x208): nothing of ours reads a hitbox yet, so not parsed.
 - Not seen live (no Monipulator fight).
+
+## Windows: the exe icon (2026-10-26)
+
+- crates/vana-client/build.rs: for a Windows target only, windres (WINDRES, else x86_64-w64-mingw32-windres) turns
+  assets/vana-client.rc (`1 ICON "vana-client.ico"`) into a COFF object linked into the binaries
+  (cargo:rustc-link-arg-bins); a failing windres only warns. assets/vana-client.ico is icon-256.png at 16, 24, 32, 48,
+  64, 128 and 256 px. Linux builds skip it.
+- Checked: release/build-windows.sh builds; the exe's .rsrc holds 7 RT_ICON images and one RT_GROUP_ICON
+  (~/ffxi/lab/scratch/mq2/pe_res.py). Not seen in Explorer / WinBoat yet.
