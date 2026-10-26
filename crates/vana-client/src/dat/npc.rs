@@ -229,6 +229,24 @@ mod tests {
         }
     }
 
+    /// Prints a model's skeleton point count and point 0x2b (by hand: `cargo test --release points_of -- --ignored
+    /// --nocapture`).
+    #[test]
+    #[ignore]
+    fn points_of() {
+        let index = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).unwrap();
+        for m in [3014u16, 3002] {
+            let ch = load_npc(&index, &NpcLook::Model(m)).unwrap();
+            let rest = crate::dat::character::pose(&ch.skeleton, &[]);
+            let p = ch.skeleton.points.get(0x2b).map(|(b, off)| (b, rest.get(*b as usize).map(|(q, t)| *t + *q * *off)));
+            println!("model {m}: {} bones, {} points, point 0x2b {p:?}", ch.skeleton.bones.len(), ch.skeleton.points.len());
+        }
+        let hume = load_character(&index, &Look { race: 1, ..Default::default() }).unwrap();
+        let rest = crate::dat::character::pose(&hume.skeleton, &[]);
+        let p = hume.skeleton.points.get(0x2b).map(|(b, off)| (b, rest.get(*b as usize).map(|(q, t)| *t + *q * *off)));
+        println!("hume: {} points, point 0x2b {p:?}", hume.skeleton.points.len());
+    }
+
     /// Mount files (mount_model_spec.md 2.3): the raptor, the tiger's side-saddle for Hume F, the moogle whose `moun`
     /// comes before its `info`.
     #[test]

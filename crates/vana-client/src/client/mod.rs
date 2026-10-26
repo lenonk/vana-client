@@ -5914,6 +5914,8 @@ impl App {
                             a.character = Some(ch.clone());
                             a.gpu = None;
                             (a.motion_names, a.rebase, a.fresh) = (None, true, true);
+                            // Attach points from the rest pose while the GPU model builds ('spop' dolls it at once).
+                            (a.rest, a.bones) = (crate::dat::character::pose(&ch.skeleton, &[]), Vec::new());
                         }
                         world.models.insert(key, ch);
                         // Looks no actor wears any more go once there are more than MODEL_CACHE.
@@ -7013,6 +7015,7 @@ impl App {
                 actor.character = Some(m.clone());
                 actor.gpu = None;
                 (actor.motion_names, actor.rebase, actor.fresh) = (None, true, true);
+                (actor.rest, actor.bones) = (crate::dat::character::pose(&m.skeleton, &[]), Vec::new());
             } else if world.models_loading.insert(key.clone()) {
                 wanted.push((key, source));
             }

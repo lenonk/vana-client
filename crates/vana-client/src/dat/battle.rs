@@ -96,6 +96,9 @@ pub struct BattleText {
     days: Option<Messages>,
     /// Group 0x11: the moon phase names.
     moons: Option<Messages>,
+    /// Grammar kinds 0x87 / 0x88 / 0x8a (FUN_100bdc50 cases 6 / 7 / 9): expander tables +0x788 / +0x858 / +0x8c0, this
+    /// build's language slots 0x1c / 0x22 / 0x1b (0x22: trust party lines, s2c 0x02D message 711).
+    tables: [Option<Messages>; 3],
     modes: Vec<[u8; 1024]>,
     mode_colours: Vec<(u16, u8)>,
     palette: Vec<(u8, [u8; 4])>,
@@ -193,6 +196,7 @@ impl BattleText {
             group12: super::msg::group_file(ffximain, 1, 0xc).and_then(msgs),
             days: super::msg::group_file(ffximain, 1, 0x10).and_then(msgs),
             moons: super::msg::group_file(ffximain, 1, 0x11).and_then(msgs),
+            tables: [0x1c, 0x22, 0x1b].map(|slot| super::msg::current_slot_file(ffximain, 1, slot).and_then(msgs)),
             phrases: super::autotrans::Dictionary::load(index, ffximain).map_err(|e| log::warn!("auto-translate: {e:#}")).ok(),
             modes,
             mode_colours,
@@ -427,6 +431,12 @@ impl BattleText {
                                 out.extend(encode_sjis(&o.name));
                             }
                         }
+                        // FUN_100bdc50 cases 6 / 7 / 9: a line of table 0 / 1 / 2 by num / work / work (num read as work).
+                        Some(&k @ (0x87 | 0x88 | 0x8a)) => out.extend(Self::msg_of(&self.tables[match k {
+                            0x87 => 0,
+                            0x88 => 1,
+                            _ => 2,
+                        }], work(slot))),
                         // 0x29 / 0x2a: a count index, then an item index; the singular for one, else the plural.
                         Some(0x29 | 0x2a) => {
                             let first = body.get(1..).unwrap_or_default();
@@ -668,6 +678,17 @@ mod tests {
         assert!(b.off_channel(1, 0, &cfg) && !b.off_channel(6, 0, &cfg));
         cfg.set(0x13, 0);
         assert!(b.off_channel(1, 1, &cfg) && b.off_channel(6, 1, &cfg));
+    }
+
+    /// 711, a trust's party line (LSB trustPartyMessage): "(name) " then grammar kind 0x88, table 1 (language slot
+    /// 0x22) by work[0]: 11201 is Shantotto II's summon line.
+    #[test]
+    fn trust_party_line() {
+        let Some(b) = load() else { return };
+        let who = Who { name: "Valaineral".into(), named: true, ..Default::default() };
+        let ctx = Ctx { actor: Some(who.clone()), target: Some(who), work: [11201, 0, 0, 0, 0], ..Default::default() };
+        let l = b.expand(711, &ctx).unwrap();
+        assert!(l.lines[0].starts_with("(Valaineral) The time is at hand"), "{:?}", l.lines);
     }
 
     /// 704 "You have undertaken \"%s\"." names the objective in work[0] (grammar kind 0x41, id + 0xe000).

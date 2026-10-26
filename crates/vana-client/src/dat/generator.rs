@@ -427,6 +427,20 @@ mod tests {
         assert!((k.linear(0.275) - (0.703 + (1.172 - 0.703) * 0.5)).abs() < 1e-3);
     }
 
+    /// Prints a file's generators: attach word and mode (by hand: `cargo test --release gen_attach -- --ignored
+    /// --nocapture`).
+    #[test]
+    #[ignore]
+    fn gen_attach() {
+        let Some(file) = read(3721) else { return };
+        let tree = Tree::build(&file).unwrap();
+        for i in tree.of_kind(kind::GENERATOR) {
+            let g = Generator::parse(&tree, i, &file).unwrap();
+            let gen_ops: Vec<String> = g.streams[stream::GENERATOR].iter().map(|o| format!("{:02x}", o.code)).collect();
+            println!("{} attach {:08x} mode {} blend {:?} gen ops {}", String::from_utf8_lossy(&g.name), g.attach, g.attach_mode(), g.blend, gen_ops.join(" "));
+        }
+    }
+
     /// Spell file 2944 (fai0, spec D.6): 8 generators; g003 draws D3m fa04 (format 6, one texture, a quad); g005
     /// names hi17, which is not in the file (it resolves from DAT 0).
     #[test]

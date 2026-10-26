@@ -9087,3 +9087,24 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
   33470 --anim ws1). Now op 0xb7 sets the entity's race (Entity::race) and FxActors::pc reads it, then the model
   range, then 0.
 - npc-shot takes --motions (as char-shot) to pose a model with an effect file's motions.
+
+## Trust party lines: grammar kinds 0x87 / 0x88 / 0x8a (2026-10-25)
+
+- LSB's trustPartyMessage sends s2c 0x02D message 711 with the line id in work[0] (page * 100 + offset, e.g. 11201).
+  711 is `( 01 01 10 ) 20 01 05 88 82 80 80 80 7f 31 00 07`: the name, then a grammar block of kind 0x88. We printed
+  only "(Valaineral) ".
+- The expander's code 0x01 (FUN_100c1650, asm near 0x100c1700) sends kinds with the top bit (char < 0) to
+  FUN_100bdc50 (kind - 0x81) instead of the grammar switch FUN_100be760. Case 6 (0x87): num -> table +0x788; case 7
+  (0x88): work -> +0x858; case 9 (0x8a): work -> +0x8c0; each FUN_101c8450 (a cached message table), the text
+  appended as is. The expander's constructor (asm 0x100bd895) loads +0x7f0 = file 0xd8b2, +0x788 = language slot 0x1c,
+  +0x858 = slot 0x22, +0x8c0 = slot 0x1b (FUN_1025b580: this build's slot numbers; English 55688 / 55693 / 55692).
+  55693 entry 11201 is Shantotto II's summon line. Ours: BattleText::tables, num read as work. Cases 0..5 and 8 are
+  not done (no message seen using them yet).
+
+## Attach points before an actor's GPU model is built (2026-10-25)
+
+- A trust's 'spop' (Valaineral's runs 3721's main: every generator attaches to a doll at point 0x2b, the torso) dolls
+  the actor as soon as its files are in. Our attach points read last frame's bones, else the rest pose, and the rest
+  pose was only made in the draw loop after the GPU model's build, which takes several frames: the doll copied no
+  points and the sparkles stood at the feet. The rest pose is now made when the model is assigned (FxActors::point
+  falls back to it at once). Retail makes the skeleton with the model.
