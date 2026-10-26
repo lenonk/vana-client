@@ -124,8 +124,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     (helpdesk.rs, faqmain.rs; the GM reply page, the Adventuring Primer done; left Execute and the reply not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
     done (equipsets.rs, esmenu.rs, esedit.rs, /equipset, /lockstyle, /lockstyleset), the mouse in both;
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
-    over every open window by open order; left the raise tickets (a window re-raised while open), the main menu's
-    own zoom;
+    over every open window by open order, the main menu zooming as any window; left the raise tickets (a window
+    re-raised while open: no case seen where it shows);
   - combat mode (user, 2026-10-24: retail keeps the battle command menu, the top bar and the HP / MP / TP gauges up
     while engaged, and the camera cannot be spun): done (MODLOG "Engaged state", "Engaged menu", "Action menu: the
     mouse hold", "Chat mode window"); Sprint / Scout / Quarry show only in Conflict;
