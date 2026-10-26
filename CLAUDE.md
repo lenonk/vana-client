@@ -75,8 +75,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
 - Event VM gaps: audit `~/ffxi/lab/research/xievents_check/STATUS.md` (2026-10-23, ranked R1..R21 against
   REPORT.md). Done since: R1..R8 (R8: MODLOG "Op 0xd4 sub 0: the map preview"), R10, R13 (0x7e, MODLOG "Riding"),
   R14, R16..R18, R21, R11 / R12 / R15 toggles (spec `~/ffxi/lab/research/event_toggles_spec.md`; MODLOG "Event
-  toggles, part 2"), R9 (MODLOG "The control lock"). Left: 0xb6 0x11 (needs kind-5 model actors), 0xab 0x12 (NPC
-  fishing), 0xb3 mini-game (its actors in zones 104, 109, 119, 243, 244, 248, 249 are not on LSB; 0xd8 and 0x46/3 done).
+  toggles, part 2"), R9 (MODLOG "The control lock"). Left: 0xb6 0x11 (needs kind-5 model actors), 0xb3 mini-game (its actors in zones 104, 109, 119, 243, 244, 248, 249 are not on LSB; 0xd8 and 0x46/3 done).
 - New-character flow, one nation at a time (create, opening cutscenes, first zone):
   - San d'Oria: under review;
   - Windurst and Bastok: the openings looked right to the user (2026-10-23; Windurst Waters 531, Bastok Markets);

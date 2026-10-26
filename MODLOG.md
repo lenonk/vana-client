@@ -9751,3 +9751,11 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Left: FUN_10127ea0 (drops queued text after a mode-3 send *(inf)*); other anglers not seen live.
 - Test tooling: `~/ffxi/lab/scratch/fishing/responder.py` answers arrows from the client log (RUST_LOG
   `vana_client::client::fishing=debug`), `cast_loop.py` casts until a bite.
+
+## Op 0xab 0x12 / 0x13: the old fishing's forced end (2026-10-26)
+
+- +0x128 bit 24 (+0x12b bit 0) is read only by FUN_100883e0, the PS2-era fishing controller (statuses 6, 0x26..0x2b,
+  0x32), and only for our own player (+0x1d0 bit 9): it forces that machine's end sub-state (| 0x600000) and keeps it
+  running without the fishing model. The 2013 controller FUN_10089100 never reads it (its forced end is +0x13c bit 11,
+  which nothing sets). The event toggles spec's "NPC fishing" was a misreading. LSB never sends the old statuses, so
+  the op has nothing to drive: ours ignores it.
