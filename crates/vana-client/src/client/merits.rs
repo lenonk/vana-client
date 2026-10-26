@@ -104,9 +104,8 @@ fn main_job(w: &World) -> (u8, u8) {
     w.stats.as_ref().map_or((0, 0), |s| s.main)
 }
 
-/// FUN_10097d50: in Monstrosity.
 fn monstrosity(w: &World) -> bool {
-    w.my_plate.monstrosity != 0
+    super::monstrosity::active(w)
 }
 
 /// A category's cap: file 89 @4; Weapon Skills +5 for each of key items 0xc98 / 0xc99, at most 100.

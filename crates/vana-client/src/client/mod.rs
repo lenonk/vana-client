@@ -5,6 +5,7 @@ pub mod combat;
 mod actmotion;
 mod flyover;
 mod creator;
+mod monstrosity;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use hudtop::topbar_shot;
 mod event;
@@ -3594,6 +3595,12 @@ fn look_from(tbl: [u16; 9]) -> Look {
     Look { race: (tbl[0] >> 8) as u8, face: tbl[0] & 0xFF, head: id(1), body: id(2), hands: id(3), legs: id(4), feet: id(5), main: id(6), sub: id(7), range: id(8) }
 }
 
+/// A player look (0x00A, 0x00D mask 0x10, 0x051; FUN_1009afe0): range 0xFFFF makes slot 0 one model id, as an 0x00E
+/// monster's (Monstrosity, costumes), every other slot dropped.
+fn look_source(tbl: [u16; 9]) -> Source {
+    if tbl[8] == 0xFFFF { Source::Npc(crate::dat::npc::NpcLook::Model(tbl[0])) } else { Source::Pc(look_from(tbl)) }
+}
+
 const TAU_4096: f32 = std::f32::consts::TAU / 4096.0;
 
 /// Where and how an actor is drawn this frame: position, facing, status, motion ratio, size.
@@ -4656,6 +4663,8 @@ struct World {
     /// (FUN_100f97a0).
     /// 0x00A MogZoneFlag (@0xaf bit 0): a zone with a nomad moogle (FUN_101cc070(1), session +0x40dac bit 0x40).
     mog_zone: bool,
+    /// 0x00A @0x7E: in Monstrosity (FUN_10097d50, with main job 23).
+    mon_login: bool,
     mh_owner: u32,
     mh_floors: bool,
     /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
@@ -6079,6 +6088,7 @@ impl App {
                             emote_chairs: 0,
                             ally_gauges: Vec::new(),
                             mog_zone: false,
+                            mon_login: false,
                             mh_owner: 0,
                             mh_floors: false,
                             mh_seen: false,
@@ -6547,9 +6557,10 @@ impl App {
                     world.zoning_since = Some(Instant::now());
                     world.downloading = Some(Instant::now());
                 }
-                NetEvent::SelfLook(tbl) => looks.push((world.my_id, Source::Pc(look_from(tbl)))),
-                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship } => {
+                NetEvent::SelfLook(tbl) => looks.push((world.my_id, look_source(tbl))),
+                NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship, monstrosity } => {
                     world.mog_zone = mog_zone;
+                    world.mon_login = monstrosity;
                     // FUN_100550f0: the old zone's path goes; the new one's comes with its scene.
                     world.voyage.path = None;
                     world.play_time = Some((play_time, Instant::now()));
@@ -6608,7 +6619,10 @@ impl App {
                     // 0x00A SubMapNumber (FUN_1018bac0): the interior we logged out or zoned in, once the zone is in.
                     world.sub.asked = (sub_map != 0).then_some((sub_map as u32, false));
                     world.area_line = area;
-                    world.my_race = look_from(look).race;
+                    // A model-id look leaves the race byte alone (FUN_1009afe0).
+                    if look[8] != 0xFFFF {
+                        world.my_race = look_from(look).race;
+                    }
                     world.my_index = index;
                     world.event = None;
                     world.event_pending = None;
@@ -6639,6 +6653,10 @@ impl App {
                     }
                     let _ = world.net.commands.send(NetCommand::StatusRequest(0));
                     world.music.zone_in(music);
+                    // FUN_10094190: solo and party battle music 0x46 in Monstrosity.
+                    if monstrosity::active(world) {
+                        world.music.monstrosity();
+                    }
                     if myroom.is_some() {
                         world.music.myroom();
                     }
@@ -6657,7 +6675,7 @@ impl App {
                     let m = crate::dat::weather::vana_minute(game_time, 0.0);
                     log::info!("vana'diel {:02}:{:02}, weather {} ({weather})", (m / 60.0) as u32, m as u32 % 60, crate::dat::weather::weather_tag(weather));
                     world.my_motion = motion;
-                    looks.push((char_id, Source::Pc(look_from(look))));
+                    looks.push((char_id, look_source(look)));
                     world.actors.retain(|id, _| *id == char_id);
                     // Retail makes every actor anew at a zone load (FUN_10093720 clears the table); ours keeps its model,
                     // but its colour (a warp's op 0x29 left it at alpha 0) and the +0x204 scale start over.
@@ -6734,7 +6752,7 @@ impl App {
                         continue;
                     }
                     if let Some(tbl) = e.look {
-                        looks.push((e.id, Source::Pc(look_from(tbl))));
+                        looks.push((e.id, look_source(tbl)));
                     }
                     if let Some(npc) = e.npc {
                         looks.push((e.id, Source::Npc(npc)));

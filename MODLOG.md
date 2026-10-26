@@ -10000,8 +10000,8 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   Live (Lnxcsfix by !zone 285): the picker by region (Ronfaure [2], Zulkheim [2], Gustaberg, Sarutabaruta), Ronfaure
   folded out to West / East Ronfaure "Lv 1~"; Escape twice gave -1 and the event went back to its menu, Quit ended it.
   Lnxcsfix's DB rows were restored afterwards (LSB makes her MON there).
-- Seen there, not ours yet: the Feretory turns the player into a monster (MON job, the Monstrosity look); we still
-  draw the character's own body.
+- Seen there: the Feretory turns the player into a monster (MON job, the Monstrosity look); since 2026-10-26 drawn
+  ("Monstrosity, part 1").
 
 ## faqmain and the comment editor: the mouse (2026-10-26)
 
@@ -10104,3 +10104,17 @@ FUN_1023b550). client/mod.rs (the creator block, `CreatorNext`, Task::NameChecke
   out. The test character was deleted afterwards (delchar.py).
 - Not done: chmkserv / chmkpass (no world step), "menu    netwait" / "menu    netbar" during lobby operations (ours
   shows nothing while they run), child 3's element state 0x10.
+
+## Monstrosity, part 1: the look, the predicate, the music (2026-10-26)
+
+Spec `~/ffxi/lab/research/monstrosity_spec.md` (sections 1, 4.1, 4.2). client/mod.rs `look_source`, client/monstrosity.rs.
+- FUN_1009afe0 (every player look: 0x00A @0x44, 0x00D mask 0x10 @0x48, 0x051 @4): GrapIDTbl[8] == 0xFFFF makes the
+  actor a single-model one (+0xee = 2), its model the whole u16 slot 0 (an 0x00E kind-0 model id), every other slot
+  0, the race byte untouched. Ours: `look_source` -> Source::Npc(NpcLook::Model(t[0])); `my_race` kept on such a
+  look. LSB sends it for Monipulators (and its costumes).
+- FUN_10097d50 (in Monstrosity) = 0x00A u16 @0x7E != 0 or main job 23: `monstrosity::active` (World.mon_login); the
+  merit / job point / alter ego spend gates use it (they read our 0x037 species word before).
+- FUN_10094190: in Monstrosity the zone-in sets music slots 2 / 3 (solo / party battle) to 0x46 (`ZoneMusic::monstrosity`).
+- Live (Lnxcsfix by !zone 285): a Rabbit (LSB look 0x010C, file 1568) walks and turns with its own motions; the name
+  plate still shows "Lnxcsfix" with the 0xab glyph (the species name is part 2). Her rows were restored from a
+  snapshot afterwards (chars by UPDATE only; ~/ffxi/lab/scratch/monstrosity/restore.py).

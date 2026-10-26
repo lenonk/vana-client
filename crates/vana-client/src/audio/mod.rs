@@ -612,6 +612,12 @@ impl ZoneMusic {
         self.ready = true;
     }
 
+    /// FUN_10094190 in Monstrosity: slots 2 / 3 (solo / party battle) = 0x46.
+    pub fn monstrosity(&mut self) {
+        self.slots[2] = 0x46;
+        self.slots[3] = 0x46;
+    }
+
     /// FUN_10094190 in the Mog House: slot 6 = 0x7e (music126).
     pub fn myroom(&mut self) {
         self.slots[6] = 0x7e;

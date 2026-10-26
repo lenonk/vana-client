@@ -63,7 +63,7 @@ pub fn open(w: &mut World) {
 
 /// fp_cat2 +0x5b: in the Mog House and not in Monstrosity.
 fn can_spend(w: &World) -> bool {
-    w.myroom.is_some() && w.my_plate.monstrosity == 0
+    w.myroom.is_some() && !super::monstrosity::active(w)
 }
 
 /// An attribute row's colours (FUN_1014bdb0): name, level (blue when maxed), cost (None = no cost cell).

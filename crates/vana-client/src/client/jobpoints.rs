@@ -81,7 +81,7 @@ fn points(w: &World, job: u8) -> Option<[u16; 3]> {
 
 /// jbpcat +0x5e: in the Mog House and not in Monstrosity.
 fn can_spend(w: &World) -> bool {
-    w.myroom.is_some() && w.my_plate.monstrosity == 0
+    w.myroom.is_some() && !super::monstrosity::active(w)
 }
 
 /// A page-0 row's colours (FUN_1014b0d0): name, level (blue when maxed), cost (None = no cost cell).
