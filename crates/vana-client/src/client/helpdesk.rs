@@ -149,6 +149,22 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// The mouse: faqsub's rows as the generic window's children (winhits.rs); faqmain only the right click.
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(h) = w.helpdesk.as_ref() else { return };
+    if h.main.is_some() {
+        if right && super::winhits::over(w, "menu    faqmain", p) {
+            key(w, egui::Key::Escape);
+        }
+        return;
+    }
+    super::winhits::generic(w, gu, WIN, h.cursor as u16 + 1, 1..=6, p, moved, clicked, right, |w, id| {
+        if let Some(h) = w.helpdesk.as_mut() {
+            h.cursor = id as usize - 1;
+        }
+    }, |w, _, k| key(w, k));
+}
+
 /// Escape: the Config page goes back to the menu page (state 1), the menu page closes faqsub.
 fn back(w: &mut World, config: bool) {
     match w.helpdesk.as_mut() {
@@ -233,7 +249,11 @@ fn layout(gu: &GameUi, w: &World, h: &HelpDesk, width: f32) -> Vec<Entry> {
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let h = w.helpdesk.as_ref()?;
     if h.main.is_some() {
-        return super::faqmain::draw(gu, w, sw, sh);
+        let r = super::faqmain::draw(gu, w, sw, sh);
+        if let Some(frame) = r {
+            super::winhits::record_rects(w, "menu    faqmain", frame, Vec::new());
+        }
+        return r;
     }
     let win = gu.lobby_window_off(WIN, sw, sh, (0.0, 0.0), None, false, &(1..=15).collect::<Vec<u16>>())?;
     let [fx, fy, fw, fh] = win.frame;
@@ -253,6 +273,17 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     }
     gu.clip(Some([cx - 16.0, cy, cw + 16.0, ch]));
     let focused = focused(w);
+    // The rows are code-drawn entries: each row's lines from its marker, inside the view.
+    let rows = entries
+        .iter()
+        .filter_map(|e| {
+            let (x, y) = (cx + e.x - 16.0, cy + e.y - scroll);
+            let (top, bottom) = (y.max(cy), (y + 16.0 * e.lines.len() as f32).min(cy + ch));
+            let row = e.row.filter(|_| bottom > top)?;
+            Some((row as u16 + 1, [x, top, cx + cw - x, bottom - top]))
+        })
+        .collect();
+    super::winhits::record_rects(w, WIN, win.frame, rows);
     for e in &entries {
         let (x, y) = (cx + e.x, cy + e.y - scroll);
         for (k, l) in e.lines.iter().enumerate() {

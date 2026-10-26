@@ -1886,6 +1886,18 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.moogle.is_some() && world.confirm.is_none()) {
         moogle::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
+    if let Some(p) = input.pointer.filter(|_| world.chatctrl.is_some() && world.confirm.is_none()) {
+        chatctrl::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| helpdesk::focused(world)) {
+        helpdesk::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.inspect.up() && world.confirm.is_none()) {
+        inspect::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| (world.region_menu.is_some() || world.cnq.is_some()) && world.confirm.is_none()) {
+        region::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
     if let Some(p) = input.pointer.filter(|_| world.auction.is_some() && world.confirm.is_none()) {
         auction::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }

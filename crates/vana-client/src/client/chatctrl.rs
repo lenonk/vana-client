@@ -140,6 +140,16 @@ pub fn key(w: &mut World, key: egui::Key) {
     w.chatctrl = Some(c);
 }
 
+/// The mouse: the generic window (winhits.rs).
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(sel) = w.chatctrl.as_ref().map(|c| c.sel) else { return };
+    super::winhits::generic(w, gu, WINDOW, sel, 1..=7, p, moved, clicked, right, |w, id| {
+        if let Some(c) = w.chatctrl.as_mut() {
+            c.sel = id;
+        }
+    }, |w, _, k| key(w, k));
+}
+
 /// The window's own header strings: help 0xe 0x253 "Set your default chat mode.", title 0xd 0x81 "Chat".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(c) = &w.chatctrl else { return };
@@ -225,6 +235,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let off = disabled(w);
     let focused = w.confirm.is_none();
     if let Some(win) = gu.lobby_window_off(WINDOW, sw, sh, (0.0, 0.0), Some(c.sel), focused, &off) {
+        super::winhits::record(w, WINDOW, &win);
         let [x, y, ..] = win.frame;
         gu.disabled_children(WINDOW, x, y, &off, Some(c.sel));
         let tell = match c.tell {

@@ -9786,3 +9786,15 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   wheel under Owner::Linkshell (FUN_101f6c70 rows).
 - Live (Lnxcsfix, /sea all, 37 people): hover a row, the wheel (3 notches, the hand kept on its screen row), a click
   (scoption), an option hovered, right clicks out. The Link List not tried live (Lnxcsfix has no linkshell now).
+
+## Region Info, the chat mode window, the Help Desk, /check: the mouse (2026-10-26)
+
+- region.rs `pointer` (winhits.rs): the region menu as the generic window; on a map a right click is its Escape
+  (FUN_101e8b10's fade out; message 6 takes any right click).
+- chatctrl.rs: the generic window (rows 1..7).
+- helpdesk.rs: faqsub's code-drawn entries as the generic window's children (each row from its marker at x - 16, its
+  lines, clipped to the view); faqmain (the GM call form) only the right click (its Escape).
+- inspect.rs: the generic window over the 16 slots and View Wares (the column kept for the keys' View Wares return).
+- Live (Lnxcsfix): Region Info hover / click Conquest (the map), right click (the map fades out), right click (the
+  main menu back); /helpdesk hover Mentor Search, click Config, right clicks back and out; the action menu's Chat
+  (Right) window hover Party, right click; /check on bot Doran (after !goto), hover the ring slot, right click.

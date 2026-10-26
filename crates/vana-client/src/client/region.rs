@@ -230,6 +230,23 @@ pub fn menu_key(w: &mut World, gu: &GameUi, key: egui::Key, sw: f32, sh: f32) {
     w.region_menu = Some(m);
 }
 
+/// The mouse: the region menu as the generic window; on a map a right click is its Escape (message 6 takes any).
+#[allow(clippy::too_many_arguments)]
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    if w.cnq.is_some() {
+        if right {
+            key(w, egui::Key::Escape);
+        }
+        return;
+    }
+    let Some(sel) = w.region_menu.as_ref().filter(|r| !r.hidden).map(|r| r.sel) else { return };
+    super::winhits::generic(w, gu, MENU, sel, 1..=4, p, moved, clicked, right, |w, id| {
+        if let Some(r) = w.region_menu.as_mut() {
+            r.sel = id;
+        }
+    }, |w, gu, k| menu_key(w, gu, k, sw, sh));
+}
+
 /// /regionmap, /besiegemap, /campaignmap, /colonizationmap (0x50..0x53, FUN_1007d300): the map when none is open.
 pub fn command(w: &mut World, gu: &GameUi, mode: usize, sw: f32, sh: f32) {
     if w.cnq.is_none() {
@@ -889,7 +906,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
 /// "menu    region" (hidden while its map is up).
 pub fn draw_menu(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
     let r = w.region_menu.as_ref().filter(|r| !r.hidden)?;
-    gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(r.sel), w.confirm.is_none(), &[]).map(|win| win.frame)
+    gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(r.sel), w.confirm.is_none(), &[]).map(|win| {
+        super::winhits::record(w, MENU, &win);
+        win.frame
+    })
 }
 
 /// The marker's name (+0x18, FUN_101e6fb0): group 0x13 for regions and fronts, 0x15 for zones; mode 3 regions are

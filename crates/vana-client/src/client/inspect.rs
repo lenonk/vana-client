@@ -270,6 +270,20 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     }
 }
 
+/// The mouse: the generic window over the slots and View Wares (winhits.rs).
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(cursor) = w.inspect.win.as_ref().map(|win| win.cursor) else { return };
+    super::winhits::generic(w, gu, WINDOW, cursor, 1..=VIEW, p, moved, clicked, right, |w, id| {
+        w.inspect.prev = id;
+        if let Some(win) = w.inspect.win.as_mut() {
+            if id != VIEW {
+                win.col = (id - 1) / 4;
+            }
+            win.cursor = id;
+        }
+    }, key);
+}
+
 /// The cursor slot's item for the item info window (mode 0): none on View Wares (the comment window shows there).
 pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     let win = w.inspect.win.as_ref()?;
@@ -309,6 +323,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let off: &[u16] = if enabled { &[] } else { &[VIEW] };
     let on_view = win.cursor == VIEW;
     let Some(lw) = gu.lobby_window_off(WINDOW, sw, sh, (0.0, 0.0), Some(win.cursor), on_view && enabled, off) else { return rects };
+    super::winhits::record(w, WINDOW, &lw);
     let [x0, y0, ..] = lw.frame;
     if !enabled {
         gu.disabled_children(WINDOW, x0, y0, off, Some(win.cursor));
