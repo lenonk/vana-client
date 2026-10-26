@@ -216,6 +216,15 @@ pub fn push_category(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, 
 /// subwindo (FUN_1014f960): label lines at (+5, +8) and (+5, +0x1a), their values right-aligned at +0x69.
 #[allow(clippy::too_many_arguments)]
 /// All in the sprite font (FUN_101c9780 / FUN_101c9b50 draw fontshp).
+/// subwindo kind 9 (FUN_1014feb0): "TP" at (5, 8), "%d / " of our TP right-aligned at (0x47, 0x1a), the cost at
+/// (0x69, 0x1a).
+pub fn push_tp_cost_box(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, tp: u32, cost: u16, w: f32, h: f32) {
+    let (wx, wy) = push_window(b, ui, style, m, w, h);
+    super::screens::push_shape_text(b, ui, b"TP", wx + 5.0, wy + 8.0, 0x8080_8080);
+    push_shape_text_right(b, ui, format!("{tp} / ").as_bytes(), wx + 71.0, wy + 26.0, 0x8080_8080);
+    push_shape_text_right(b, ui, cost.to_string().as_bytes(), wx + 105.0, wy + 26.0, 0x8080_8080);
+}
+
 pub fn push_cost_box(b: &mut UiBatch, ui: &UiFile, style: &SpriteLib, m: &Menu, lines: &[(String, String)], w: f32, h: f32) {
     let (wx, wy) = push_window(b, ui, style, m, w, h);
     for ((label, value), dy) in lines.iter().zip([8.0, 26.0]) {

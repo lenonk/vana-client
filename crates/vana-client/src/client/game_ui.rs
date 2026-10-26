@@ -1301,6 +1301,13 @@ impl GameUi {
 
     /// What a focused window puts in the bars' slot 1 (FUN_10115380): the child's first string (group 0xe) as
     /// help and its second (group 0xd) as title, each falling back to the window header's (FUN_101152c0 / FUN_10115320).
+    /// A layout child's own sprite (FUN_10118ad0: its state-0 reference), as (library, index).
+    pub fn child_sprite(&self, name: &str, child: u16) -> Option<(String, usize)> {
+        let m = self.data.lobby.menu(name)?;
+        let r = m.elements.iter().skip(1).find(|e| e.id == child)?.refs.iter().find(|r| r.kind == 0)?;
+        Some((r.lib.clone(), r.index as usize))
+    }
+
     pub fn focus_text(&self, name: &str, child: u16) -> [Option<String>; 2] {
         let Some(m) = self.data.lobby.menu(name) else { return [None, None] };
         let msg = |e: &crate::dat::ui::MenuElement, k: usize| {

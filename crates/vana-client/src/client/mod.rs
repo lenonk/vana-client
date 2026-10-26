@@ -207,9 +207,12 @@ fn pick_key(id: u32, k: u16) -> u64 {
 }
 
 /// The main menu's disabled children on the current page (state 5; FUN_10140090 / FUN_10140270): Party while the party
-/// is us and trusts only (FUN_10201f00). Not done: Monstrosity.
+/// is us and trusts only (FUN_10201f00); in Monstrosity Party and Synthesis, and socialme's Set Bazaar (FUN_1014e720).
 fn menu_disabled(w: &World) -> Vec<u16> {
     let mut off = Vec::new();
+    if monstrosity::active(w) {
+        return if w.menu_page == 0 { vec![6, 10] } else { vec![5] };
+    }
     if w.menu_page == 0 && w.party.slots().trusts_only() {
         off.push(6);
     }
@@ -223,6 +226,10 @@ fn menu_disabled(w: &World) -> Vec<u16> {
 /// FUN_1013ff90: in the Mog House row 12 reads "MogHouse" (windowps 44; 443 dim while visiting another's house) instead
 /// of the layout's "Map".
 fn menu_swap(w: &World) -> Vec<(u16, usize)> {
+    // FUN_10140070: in Monstrosity row 2 reads "Customization" (windowps 644) and row 12 stays the Map.
+    if monstrosity::active(w) {
+        return if w.menu_page == 0 { vec![(2, 644)] } else { Vec::new() };
+    }
     if w.menu_page == 0 && w.myroom.is_some() { vec![(12, if w.mh_owner == 0 { 44 } else { 443 })] } else { Vec::new() }
 }
 
@@ -1521,7 +1528,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 egui::Key::M | egui::Key::J | egui::Key::W | egui::Key::B if (modifiers.ctrl || modifiers.alt) && !event::active(world) && !world.dead() && !target::sub_up(world) => match key {
                     egui::Key::M => magic::open_magic(world, 0, true, 0x100),
                     egui::Key::J => magic::open_ability(world, 1, false),
+                    // 0x101ae9d0 / 0x101aea00 in Monstrosity: Monster Skills; pet commands nothing.
+                    egui::Key::W if monstrosity::active(world) => magic::open_ability(world, 0x14, false),
                     egui::Key::W => magic::open_ability(world, 3, false),
+                    _ if monstrosity::active(world) => {}
                     _ => magic::open_ability(world, 2, false),
                 },
                 _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
@@ -1777,6 +1787,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 2) => items::menu_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
+            // In Monstrosity: monster skills and abilities (mp_mnabi); rows 1 and 2 are mp_stat and Customization.
+            (0, 5) if monstrosity::active(world) => magic::open_cats(world, "menu    mp_mnabi"),
+            (0, 1 | 2) if monstrosity::active(world) => log::info!("Monstrosity: main menu row {id} (mp_stat / Customization) is not implemented yet"),
             (0, 5) => magic::open_cats(world, "menu    abimenu"),
             (0, 4) => items::open_items(world),
             // Child 6 Party (FUN_10140400 case 6 -> FUN_102016e0).
@@ -1797,7 +1810,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (0, 10) => synth::open_menu(world),
             // Item 12 in the Mog House (FUN_10140400 case 0xc): myroom, SE 0002, unless visiting another's (the row is
             // disabled then: help 0xe 0x2a).
-            (0, 12) if world.myroom.is_some() => {
+            (0, 12) if world.myroom.is_some() && !monstrosity::active(world) => {
                 if world.mh_owner == 0 {
                     world.sounds.push(crate::audio::Ui::Select as u32);
                     moogle::open(world, false);
@@ -2073,7 +2086,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         right_click = focused && input.right_clicked && inside(r, p);
     }
-    if held {
+    // mp_pmode has no hold timer.
+    if held && !monstrosity::active(world) {
         combat::right(world);
     }
     if right_click {
@@ -2090,7 +2104,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         if !combat::keeps_menu(c) {
             // The lists (Abilities, Magic, Items, Trust) only suspend the menu; it comes back with its cursor.
             let menu = world.action_menu.take();
-            if matches!(c, 7 | 8 | 9 | 0x19) {
+            if matches!(c, 7 | 8 | 9 | 0x19 | combat::mon::MAGIC | combat::mon::ABILITIES) {
                 world.held_menu = menu;
             }
         }
@@ -2515,8 +2529,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let open = gu.window(&combat::window_name(m.items.len()), sw, sh).is_some();
         let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.loot.is_none() && world.chatctrl.is_none() && world.menu.is_none() && !world.log_active;
         for (k, (c, row)) in m.items.iter().zip(rows).enumerate().filter(|_| open) {
-            let (lib, sprite) = combat::label(*c);
-            gu.sprite(lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
+            // mp_pmode's rows are its own layout's children (FUN_10118ad0(cmd + 1)).
+            let (lib, sprite) = if *c >= 0x40 { gu.child_sprite("menu    mp_pmode", (*c - 0x40 + 1) as u16).unwrap_or(("menu    keytops3".into(), 0)) } else { (combat::label(*c).0.to_string(), combat::label(*c).1) };
+            gu.sprite(&lib, sprite, row[0], row[1], if k == m.sel { 0x8080_5020 } else { 0x8080_8080 });
             if k == m.sel && focused {
                 gu.cursor(row[0] - 2.0, row[1]);
             }
@@ -3028,8 +3043,20 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
             bars.help[1] = h.into();
         }
     }
+    // FUN_10140090: in Monstrosity row 2 is Customization (help 0xe 0x2bc, title 0xd 0xa5), row 5 monster skills and
+    // abilities (help 0xe 0x2b5).
+    if monstrosity::active(world) && world.confirm.is_none() {
+        match focus {
+            Some((n, 2)) if n == crate::render::screens::menu_window(0) => {
+                (bars.help[1], bars.title[1]) = (gu.menu_msg(0x2bc, ""), gu.title_msg(0xa5).unwrap_or_default());
+            }
+            Some((n, 5)) if n == crate::render::screens::menu_window(0) => bars.help[1] = gu.menu_msg(0x2b5, ""),
+            _ => {}
+        }
+    }
     // FUN_10140090 / FUN_10140270: row 12 in the Mog House: title 0xd 9 "Mog House", help 0xe 0x29 (own house) or 0x2a.
     if world.myroom.is_some()
+        && !monstrosity::active(world)
         && world.confirm.is_none()
         && focus == Some((crate::render::screens::menu_window(0), 12))
     {
@@ -3104,6 +3131,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
         bars.help[0] = match m.items.get(m.sel) {
             // FUN_1012b4b0: Treasure's help is 0x1b "Distribute ..." in a party, else 0x1c "Acquire ...".
             Some(&combat::cmd::TREASURE) if world.party.members().count() <= 1 => gu.menu_msg(0x1c, ""),
+            Some(&c) if c >= 0x40 => combat::mon_help(c).map_or(String::new(), |h| gu.menu_msg(h, "")),
             Some(&c) => gu.cmd_help(c).unwrap_or_default(),
             None => String::new(),
         };

@@ -116,6 +116,10 @@ fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
         "menu    abiselec" => &[(1, Cat::Ability(1)), (2, Cat::Ability(3)), (3, Cat::Ranged), (5, Cat::Mount), (4, Cat::Ability(2))],
         // FUN_101ebdc0: 1 the Friend List (flistmai, not done), 2 the emote list.
         "menu    commenu" => &[(1, Cat::Friends), (2, Cat::Emote)],
+        // Monstrosity: mp_abisc from mp_pmode (Monster Skills, Monster Abilities), mp_mnabi from the main menu (Traits
+        // first); FUN_10222b90(type, 0, 1), no abisortw.
+        "menu    mp_abisc" => &[(1, Cat::Ability(0x14)), (2, Cat::Ability(1))],
+        "menu    mp_mnabi" => &[(1, Cat::Ability(4)), (2, Cat::Ability(0x14)), (3, Cat::Ability(1))],
         _ => &[],
     }
 }
@@ -397,6 +401,9 @@ fn magic_check(w: &World, s: u16) -> Option<usize> {
     }
 }
 
+/// A refusal with no line and no sound.
+const SILENT: usize = usize::MAX;
+
 /// FUN_10224b70: the line refusing an ability, or None (traits: "Job traits are always active.").
 fn ability_check(w: &World, i: u16) -> Option<usize> {
     let a = w.actions.as_ref()?.abilities.get(i as usize)?.clone();
@@ -408,6 +415,11 @@ fn ability_check(w: &World, i: u16) -> Option<usize> {
     }
     let tp = w.vitals.map_or(0, |v| v.2);
     match ability_kind(a.kind) {
+        // Kind 9 (Monstrosity): TP below the u16 cost, no 0x119 yet, then a level too low: code 0xd, past table
+        // 0x10386124, so nothing is said (FUN_10129d90 drops it).
+        9 if tp < a.tp16 as u32 => Some(0x5f),
+        9 if !w.recasts_seen => Some(0x5b),
+        9 if w.stats.as_ref().map_or(0, |s| s.main.1) < a.level => Some(SILENT),
         2 | 3 | 5 if a.timer != 900 && ability_recast(w, a.timer) > 0.0 => Some(0x5c),
         3 if a.tp != 255 && tp < a.tp as u32 => Some(0x5f),
         4 if w.my_motion.status != 1 => Some(0x52),
@@ -532,7 +544,9 @@ fn enter(w: &mut World, kind: Kind) {
                 return;
             }
             if let Some(m) = ability_check(w, id) {
-                refuse(w, m);
+                if m != SILENT {
+                    refuse(w, m);
+                }
                 return;
             }
             let name = ability_name(w, id);
@@ -602,6 +616,8 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                 match rows.get(c.sel).map(|r| r.1) {
                     // FUN_1022c3a0's tail: list mode (mgcmenu) attaches mgcsortw, blusortw for blue magic.
                     Some(Cat::Magic(ty, list)) => {
+                        // FUN_1013f750 in Monstrosity: mgcmenu's rows open cast mode, no mgcsortw.
+                        let list = list && !super::monstrosity::active(w);
                         open_magic(w, ty, list, 0);
                         if let Some(m) = w.magic.as_mut().filter(|_| list) {
                             m.sort = Some(if ty == 6 { "menu    blusortw" } else { "menu    mgcsortw" });
@@ -1040,6 +1056,15 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                     5 | 8 => vec![next],
                     3 => vec![(gu.lobby_msg(0x0b, 0xbd, "TP Cost"), a.tp.to_string()), next],
                     4 => vec![("TP".into(), w.vitals.map_or(0, |v| v.2).to_string())],
+                    9 => {
+                        if gu.gate_layout("menu    subwindo", sw, sh, None)
+                            && let Some(m) = gu.stacked_menu("menu    subwindo", sw, sh)
+                        {
+                            let (b, ui, style, _) = gu.parts();
+                            crate::render::invwin::push_tp_cost_box(b, ui, style, &m, w.vitals.map_or(0, |v| v.2), a.tp16, sw, sh);
+                        }
+                        Vec::new()
+                    }
                     6 => vec![(gu.lobby_msg(9, 0xe6, "MP Cost"), a.cost.to_string())],
                     _ => Vec::new(),
                 }

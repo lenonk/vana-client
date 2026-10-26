@@ -10160,3 +10160,29 @@ Spec section 2.1. client/monstrosity.rs (`on_data`, `zone_reset`, `moves`, `abil
   record +0xf <= main level. dat/actions.rs adds `tp16` (+0xc as u16, FUN_1014feb0 kind 9).
 - Live (Lnxcsfix WAR 21 in 230): the trait list still fills (Defense Bonus, Resist Virus): LSB's login type 4 opens
   the gate.
+
+## Monstrosity, part 4: mp_pmode, the monster skill lists, the main menu (2026-10-26)
+
+Spec sections 3.3 / 3.4. client/combat.rs (`mon`, `mon_items`, `mon_help`), magic.rs (mp_abisc / mp_mnabi rows, kind 9),
+render/invwin.rs `push_tp_cost_box`, game_ui.rs `child_sprite`.
+- mp_pmode replaces playermo in Monstrosity (registry flag 0x4000000; every opener and the engage broadcast). Layouts
+  (FUN_10141070, table 0x103701a8): engaged 3 {Switch Target, Magic, Abilities, Disengage, Treasure, Check}, another
+  target 2 {Attack, Magic, Abilities, Treasure, Check}, us 1 / none 0 {Chat, Magic, Abilities, Treasure}; Treasure only
+  while the pool holds items. Frames "menu    actionm<n>" as playermo; the row labels are mp_pmode's own layout
+  children (FUN_10118ad0(cmd + 1): keytops3 1 / 16 / 6 / 7 / 4 / 498 / 19 / 25). Help 0xe {0x16, 0x1f, 0x25, 0x19,
+  0x2b5, 0x20, 0x1d, 0x1b}. Commands (FUN_101414b0 ..): Chat "/tell <shown name> " on any target and closes; Magic
+  FUN_1022b220(0, 0, 0) (cast mode, every type, no trust exclusion); Abilities mp_abisc; Right on Chat / Magic opens
+  chatctrl / magselec; no mouse-hold timer. Ours: codes 0x40 + n through the playermo path.
+- mp_abisc (Monster Skills 0x14, Monster Abilities 1) and mp_mnabi (main menu row 5: Monster Traits 4, Monster
+  Skills, Monster Abilities); help / titles from their layouts (0xe 0x2c0..0x2c2, 0xd 0x44); no abisortw.
+- Type 0x14 rows use (FUN_10224b70 kind 9): TP below the u16 cost 7 0x5f, no 0x119 7 0x5b, level too low code 0xd
+  (past table 0x10386124: no line, no sound); the status checks first (the Feretory is a Mog House zone: 7 0x44).
+  subwindo kind 9 (FUN_1014feb0): "TP" at (5, 8), "%d / " our TP right-aligned at (0x47, 0x1a), the cost at (0x69,
+  0x1a). Ctrl / Alt + W opens Monster Skills, + B nothing.
+- Main menu in Monstrosity: row 2 "Customization" (windowps 644, help 0xe 0x2bc, title 0xd 0xa5), row 5 help 0xe
+  0x2b5 and mp_mnabi, rows 6 / 10 disabled, row 12 always the Map; mgcmenu's rows open cast mode; socialme row 5 (Set
+  Bazaar) disabled. Not done yet: row 1 (mp_stat) and row 2 (Customization) open nothing.
+- Live (Lnxcsfix, Rabbit, in the Feretory): mp_pmode on ourselves {Chat, Magic, Abilities} with Chat's help;
+  mp_abisc; Monster Skills listing Foot Kick ("Deals critical damage.", TP box "0 / 1000"); Enter: "You cannot use
+  that command here." (the Feretory); the main menu with Customization and Party / Synthesis greyed; Ctrl+W. Rows
+  restored afterwards.

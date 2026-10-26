@@ -934,6 +934,41 @@ const LABELS: [(u16, u8); 0x1c] = [
     (0x26, 0), (0x27, 0), (0x4f, 1), (0x16a, 1), (6, 0), (0x1c, 1), (0x1c, 1), (0x29, 0), (0x164, 0), (0x165, 0), (0x166, 0), (0x1f9, 0), (0x29c, 1), (0x30f, 1),
 ];
 
+/// mp_pmode (Monstrosity): command n of table 0x103701e8 {help, Enter, Right} is 0x40 + n here.
+pub mod mon {
+    pub const CHAT: u8 = 0x40;
+    pub const ATTACK: u8 = 0x41;
+    pub const SWITCH: u8 = 0x42;
+    pub const MAGIC: u8 = 0x43;
+    pub const ABILITIES: u8 = 0x44;
+    pub const DISENGAGE: u8 = 0x45;
+    pub const CHECK: u8 = 0x46;
+    pub const TREASURE: u8 = 0x47;
+}
+
+/// Table 0x103701a8: the commands of layouts 0 (no target), 1 (us), 2 (another), 3 (engaged).
+const MON_LAYOUTS: [&[u8]; 4] = [&[0, 3, 4, 7], &[0, 3, 4, 7], &[1, 3, 4, 7, 6], &[2, 3, 4, 5, 7, 6]];
+/// Table 0x103701e8's help ids (group 0xe).
+const MON_HELP: [usize; 8] = [0x16, 0x1f, 0x25, 0x19, 0x2b5, 0x20, 0x1d, 0x1b];
+
+/// An mp_pmode command's help (FUN_101411a0).
+pub fn mon_help(c: u8) -> Option<usize> {
+    MON_HELP.get(c.checked_sub(0x40)? as usize).copied()
+}
+
+/// FUN_10141070 / FUN_101410d0: engaged 3, a target 2 (1 when it is us), none 0; Treasure only while the pool holds
+/// items (FUN_1013eff0).
+fn mon_items(w: &World) -> Vec<u8> {
+    let layout = match w.target {
+        _ if w.my_motion.status == 1 => 3,
+        Some(t) if t == w.my_id => 1,
+        Some(t) if w.entities.contains_key(&t) => 2,
+        _ => 0,
+    };
+    let pool = super::treasure::count(w) > 0;
+    MON_LAYOUTS[layout].iter().filter(|&&c| c != 7 || pool).map(|c| 0x40 + c).collect()
+}
+
 pub mod cmd {
     pub const ATTACK: u8 = 1;
     pub const TALK: u8 = 6;
@@ -973,8 +1008,12 @@ pub(super) fn right(w: &mut World) -> bool {
             }
             true
         }
-        Some(cmd::MAGIC) => {
+        Some(cmd::MAGIC | mon::MAGIC) => {
             super::magic::open_cats(w, "menu    magselec");
+            true
+        }
+        Some(mon::CHAT) => {
+            super::chatctrl::open(w);
             true
         }
         // FUN_1012aae0: the chat mode window; the action menu stays.
@@ -1035,6 +1074,10 @@ fn menu_rows(layout: usize, target: Option<u32>, treasure: bool) -> Vec<u8> {
 /// The rows now (FUN_1012b2d0 over FUN_1012af30): engaged, Disengage becomes Call for help while toggled and
 /// Treasure shows while the pool holds items (Sprint's area rule is not done).
 fn current_items(w: &World, call_help: bool) -> Vec<u8> {
+    // In Monstrosity the engage broadcast and every opener reach mp_pmode instead (registry flag 0x4000000).
+    if super::monstrosity::active(w) {
+        return mon_items(w);
+    }
     let l = layout(w);
     let treasure = super::treasure::count(w) > 0 && !conflict(w.my_team);
     let mut items = menu_rows(l, w.target.filter(|t| w.entities.contains_key(t)), treasure);
@@ -1156,7 +1199,7 @@ pub(super) fn battle_frame(w: &mut World) {
 /// lists (Magic, Abilities, Trust, Items) close it and, engaged, bring it back when they are done; Chat, Tell, Talk
 /// close it.
 pub(super) fn keeps_menu(c: u8) -> bool {
-    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | cmd::TREASURE | 0x16..=0x18)
+    matches!(c, cmd::ATTACK | cmd::CALL_HELP | cmd::DISENGAGE | 0xa | cmd::CHECK | cmd::SWITCH_TARGET | cmd::TREASURE | 0x16..=0x18 | mon::ATTACK | mon::SWITCH | mon::DISENGAGE | mon::CHECK | mon::TREASURE)
 }
 
 /// Window name per row count (table 0x103636b0: actionm1 .. actiom10).
@@ -1229,6 +1272,24 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         // FUN_1012b880 cases 0xd / 0xe: Dig runs /dig; Dismount asks first (group 0xe 0x4d "Dismount?").
         (0xe, _) => super::textcmd::run(w, "/dig", super::textcmd::Mode::Internal),
         (0xf, _) => w.confirm = Some((super::Confirm::Dismount, false)),
+        // mp_pmode (FUN_101414b0 .. FUN_101416e0): Chat "/tell <shown name> " on any target, then closed; Magic in cast
+        // mode with every type; Abilities mp_abisc; Check as playermo's; Treasure only with items.
+        (mon::CHAT, _) => {
+            w.chat_input = super::monstrosity::name_of(w, w.target.unwrap_or(0)).filter(|_| w.target.is_some()).map_or(String::new(), |n| format!("/tell {n} "));
+            w.chat_caret = None;
+            w.typing = true;
+        }
+        (mon::ATTACK, Some((t, i))) => send(w, NetCommand::Act { target: t, index: i, action: 2 }),
+        (mon::SWITCH, _) => return choose(w, cmd::SWITCH_TARGET),
+        (mon::MAGIC, _) => super::magic::open_magic(w, 0, false, 0),
+        (mon::ABILITIES, _) => super::magic::open_cats(w, "menu    mp_abisc"),
+        (mon::DISENGAGE, _) => return choose(w, cmd::DISENGAGE),
+        (mon::CHECK, _) if w.my_motion.status == 1 => {
+            super::target::open_sub(w, 0x20, super::target::SubThen::Check, None, String::new(), 0);
+        }
+        (mon::CHECK, _) => check(w, None, 0, false),
+        (mon::TREASURE, _) if super::treasure::count(w) > 0 => super::treasure::open(w),
+        (mon::TREASURE | mon::ATTACK, _) => {}
         _ => return false,
     }
     true
