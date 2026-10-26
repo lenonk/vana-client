@@ -9233,3 +9233,21 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
 - The quiet task also started up to 0.4 s after the motion (the effects side loaded the battle file on its own);
   the draw now waits for both loads (Effects::libs_ready), as state 1 does.
 - Live (Lnxcsfix, Mithra with a dagger, engaging while running): `ina` plays to its end and the holds start with it.
+
+## The ranged weapon mesh and the shot motion (2026-10-26)
+
+- The user: on a ranged attack the motion was right but the crossbow invisible. Ours left the range slot's mesh out
+  of the model (only its class byte was read).
+- DAT 0: `hwpc` (every PC's `init`) is op 0x75 hide wep2; `hwso` (shooting, from `calg` / `shlg`) shows wep2 and,
+  while engaged, hides wep0 / wep1; `hwat` (melee) shows wep0 / wep1 and hides wep2. The crossbow file (25573)
+  `lgin` / `kalg` / `lgot` are sounds only.
+- FUN_100c83c0 runs every frame: when the status motion's name changes or vtable +0x200 is set (a counted motion
+  ended), the status motion restarts and, for PCs / monsters / trusts / bound actors, wep0 / wep1 are shown and wep2
+  hidden. So the weapon goes when the shot's `gu2` (count 1) ends.
+- Ours: the range parts are part of the model with wep2 hidden from the start (Character::init_hidden, as hwpc
+  leaves it); the end of a scheduler play whose last motion is counted restarts the status motion (a status start:
+  wepfx::status_start). Category 2 (the ranged finish) no longer turns the attacker's file motions off (only melee
+  swings are client/combat.rs's): `shlg` -> op 0x77 -> `ls03` plays `gu2`, which before never played (the aim
+  `gu1` held until the next status change).
+- char-shot takes `--range`. Live (Lnxcsfix, Crossbow +1 / Acid Bolt, Giddeus): gu0 / gu1 with the crossbow raised,
+  gu2 fires, idle after with the crossbow gone.
