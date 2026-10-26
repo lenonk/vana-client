@@ -21,7 +21,7 @@ fn load_png(path: &Path) -> Result<([usize; 2], Vec<u8>)> {
 
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     let mut moved = false;
-    let mut p = Panels { m, ctx, layout, moved: &mut moved };
+    let mut p = Panels { m, ctx, layout, moved: &mut moved, reseed: false };
     hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630 });
     let row = |slot, name: &str, job, here, hp, marked| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here, hp, marked };
     hud::party_panel(&mut p, &[row(1, "Raven", 1, true, 0.88, false), row(2, "Koru", 3, true, 0.62, true), row(3, "Shantotto", 4, true, 0.95, false), row(4, "Prishe", 2, false, 1.0, false)]);
