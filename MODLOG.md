@@ -6195,7 +6195,11 @@ Spec `~/ffxi/lab/research/loot_spec.md`.
   a right click on the window is Escape. Built 2026-10-25, **not tried live**: the pool needs a party, and LSB drops the
   bot's party when the test character logs out between runs (two solo !addtreasure went straight to the inventory;
   removed).
-- Not done: the zone-pool columns (Treasure-flag zones), lnowin's raid1 dodge, lnowin by mouse.
+- Zone pool (2026-10-26): our 0x037 Flags0 bit 9 (LSB char_status: the zone's Treasure misc flag, e.g. Dynamis;
+  retail actor +0x18c, FUN_101cc330) widens loot to 0x11d (FUN_1011a5a0) and each row shows the highest lot "%d :" at
+  +0xb4 and its lotter at +0xd7 in fontshp (past 8 characters cut to 7 and the ellipsis, sprite 0x6c). Ours:
+  SelfPlate.zone_pool, treasure::draw. Not seen live (no Treasure-flag zone tried).
+- Not done: lnowin's raid1 dodge, lnowin by mouse.
 
 ## List scroll bars (2026-10-24)
 

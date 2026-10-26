@@ -385,7 +385,14 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let rows = rows(w);
     let focused = l.ope.is_none() && !l.done && w.confirm.is_none();
     let mut ope_at = None;
-    if let Some(win) = gu.lobby_window_off(LOOT, sw, sh, (0.0, 0.0), focused.then_some(l.cursor), focused, &[]) {
+    // FUN_1011a5a0 in a zone pool: the window 0x11d wide (the layout's 182), for the lot columns.
+    let zone = w.my_plate.zone_pool;
+    let win = if zone {
+        gu.lobby_window_padded(LOOT, sw, sh, focused.then_some(l.cursor), focused, [0.0, 0.0, 285.0 - 182.0, 0.0])
+    } else {
+        gu.lobby_window_off(LOOT, sw, sh, (0.0, 0.0), focused.then_some(l.cursor), focused, &[])
+    };
+    if let Some(win) = win {
         ope_at = l.ope.as_ref().and_then(|o| win.children.iter().find(|(id, _)| *id == o.row)).map(|(_, r)| (r[0] + r[2], r[1]));
         super::items::upload_icons(gu, &info, rows.iter().map(|&i| w.treasure[i].item));
         let wx = win.frame[0];
@@ -408,6 +415,18 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 gu.text(&it.name, x + 20.0, y, 0, tint.to_le_bytes());
                 if it.stack > 1 {
                     gu.shape_text(&format!("{:2}", s.qty as u8), wx + 18.0, y + 2.0, 0x8080_8080, true);
+                }
+            }
+            // Zone pool: the highest lot "%d :" at +0xb4 and its lotter at +0xd7 (fontshp; past 8 characters cut to 7 and
+            // the ellipsis, sprite 0x6c).
+            if zone && s.high_lot != 0 {
+                gu.shape_text(&format!("{} :", s.high_lot), x + 180.0, y + 2.0, 0x8080_8080, false);
+                let name: Vec<char> = s.high_name.chars().collect();
+                if name.len() > 8 {
+                    let end = gu.shape_text(&name[..7].iter().collect::<String>(), x + 215.0, y + 2.0, 0x8080_8080, false);
+                    gu.sprite("font    fontshp", 0x6c, end, y + 2.0, 0x8080_8080);
+                } else {
+                    gu.shape_text(&s.high_name, x + 215.0, y + 2.0, 0x8080_8080, false);
                 }
             }
         }

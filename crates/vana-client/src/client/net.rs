@@ -139,6 +139,8 @@ pub struct SelfPlate {
     pub frozen: bool,
     pub charmed: bool,
     pub monstrosity: u16,
+    /// Flags0 bit 9 (actor +0x18c, FUN_101cc330): a zone treasure pool (LSB's Treasure-flag zones, e.g. Dynamis).
+    pub zone_pool: bool,
 }
 
 fn self_plate(p: &SubPacket) -> SelfPlate {
@@ -164,7 +166,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
     };
     let r = p.u8(0x5a);
     let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
-    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54) }
+    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), zone_pool: bit(f0, 9) }
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /

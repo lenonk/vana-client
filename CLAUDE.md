@@ -132,7 +132,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - the auction house (client/auction.rs, MODLOG "Auction house"): bid, sell, Sales Status, Stop Sale, price
     history, sorting and AUCSORT.DAT, the mouse done and live-tested; left the retail-only paths (no LSB trigger);
   - the treasure pool (client/treasure.rs, MODLOG "Treasure pool window"): loot / lootope / lnowin, lot, pass, Done,
-    the party-window chest done and live-tested with a bot; the mouse built (not tried live); left the zone-pool columns;
+    the party-window chest done and live-tested with a bot; the mouse built (not tried live); the zone-pool columns
+    built (not seen live);
   - skill actions (MODLOG "Skill actions"): holds, op 0x25 reactions, mdam messages, the death after the hits done;
     skillchains, knockback, guard / parry / block / counters from the files done (MODLOG "Skillchains", "Knockback",
     "Per-record reactions"); guards, parries and counters not seen live yet;
