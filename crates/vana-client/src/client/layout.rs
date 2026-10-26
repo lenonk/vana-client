@@ -21,31 +21,56 @@ pub struct Layout {
     pub sel: Option<(u8, u8)>,
     /// The cursor's ticks (+0x858).
     pub ticks: f32,
+    /// The piece being moved (object state 2).
+    pub held: Option<Held>,
+    /// An rmlo window (1, 2 or 4) and its cursor row.
+    pub win: Option<(u8, u16)>,
 }
 
-/// A piece installed on this floor, with its item.
+/// A piece in the room, with its item.
 #[derive(Clone, Copy, Debug)]
 pub struct Placed {
     pub piece: Piece,
     pub item: u16,
 }
 
+/// A held piece (FUN_101d37e0): its cells are free, the pieces on it move with it; `new` until it is installed.
+#[derive(Clone, Debug)]
+pub struct Held {
+    pub piece: Placed,
+    pub tops: Vec<Placed>,
+    pub new: bool,
+}
+
+/// The prompts (FUN_10210e30): "Dispose of what is currently growing?" (0xc 0x35) before a removal, and "Clear away
+/// all furniture?" (0xe 0x267).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Ask {
+    Dispose { c: u8, slot: u8 },
+    ClearAll,
+    DisposeAll,
+}
+
 /// The item types layout mode handles: furnishing 10, flowerpot 12, mannequin 14.
 const TYPES: [u16; 3] = [10, 12, 14];
+const MANNEQUIN: u16 = 14;
 
 /// FUN_101d4d90: the player stands at the room centre while laying out (DAT_1037eba8[floor]).
 fn park(floor: u8) -> Vec3 {
     if floor == 0 { Vec3::ZERO } else { Vec3::new(0.0, 0.0, -9.0) }
 }
 
+fn item_type(w: &World, id: u16) -> u16 {
+    w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type)
+}
+
 /// The installed pieces of a floor (exdata[1] bit 6, floor exdata[1] & 3; place exdata[6..9]), containers 1 then 9.
 pub fn placed(w: &World, table: &FurnTable, floor: u8) -> Vec<Placed> {
-    let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
     let mut out = Vec::new();
     for c in [1u8, 9] {
         for slot in 1..0x51u8 {
             let (Some(&(item, _)), Some(ext)) = (w.inv.slots.get(&(c, slot)), w.inv.ext.get(&(c, slot))) else { continue };
-            if !TYPES.contains(&ty(item)) || ext[1] & 0x40 == 0 || ext[1] & 3 != floor {
+            if !TYPES.contains(&item_type(w, item)) || ext[1] & 0x40 == 0 || ext[1] & 3 != floor {
                 continue;
             }
             let Some(furn) = table.entry(item) else { continue };
@@ -73,20 +98,85 @@ impl Layout {
         super::furniture::place(&p.furn, self.map, self.floor, p.x, p.level, p.z, p.rot).map(|v| v.0)
     }
 
-    fn selected<'a>(&self, pieces: &'a [Placed]) -> Option<&'a Placed> {
+    /// The pieces as drawn: the installed ones with the held piece and those on it where they are held.
+    fn pieces(&self, w: &World) -> Vec<Placed> {
+        let mut v = placed(w, &self.table, self.floor);
+        if let Some(h) = &self.held {
+            let moved: Vec<Placed> = std::iter::once(h.piece).chain(h.tops.iter().copied()).collect();
+            v.retain(|p| !moved.iter().any(|m| (m.piece.c, m.piece.slot) == (p.piece.c, p.piece.slot)));
+            v.extend(moved);
+        }
+        v
+    }
+
+    fn selected(&self, pieces: &[Placed]) -> Option<Placed> {
         let s = self.sel?;
-        pieces.iter().find(|p| (p.piece.c, p.piece.slot) == s)
+        pieces.iter().copied().find(|p| (p.piece.c, p.piece.slot) == s)
     }
 
     /// The selected piece's origin.
     pub fn sel_pos(&self, w: &World) -> Option<Vec3> {
-        let pieces = placed(w, &self.table, self.floor);
-        self.selected(&pieces).and_then(|p| self.pos(&p.piece))
+        self.selected(&self.pieces(w)).and_then(|p| self.pos(&p.piece))
+    }
+
+    /// The grid without the held piece and those on it (their cells freed while held).
+    fn grid(&self, w: &World) -> Grid {
+        let mut v = placed(w, &self.table, self.floor);
+        if let Some(h) = &self.held {
+            let moved: Vec<(u8, u8)> = std::iter::once(&h.piece).chain(&h.tops).map(|m| (m.piece.c, m.piece.slot)).collect();
+            v.retain(|p| !moved.contains(&(p.piece.c, p.piece.slot)));
+        }
+        grid_of(&v, self.floor)
     }
 }
 
+/// The furniture to draw (furniture::changed): exdata[1] / [6..9] of the held piece and those on it replaced by where
+/// they are held, a new piece added.
+pub fn overrides(w: &World, want: &mut Vec<super::furniture::Key>) {
+    let Some(h) = w.layout.as_ref().and_then(|l| l.held.as_ref().map(|h| (l.floor, h))) else { return };
+    let (floor, h) = h;
+    for p in std::iter::once(&h.piece).chain(&h.tops) {
+        let (c, slot) = (p.piece.c, p.piece.slot);
+        want.retain(|k| (k.0, k.1) != (c, slot));
+        let mut ext = w.inv.ext.get(&(c, slot)).map_or([0u8; 10], |e| e[..10].try_into().unwrap());
+        ext[1] = ext[1] & !0x43 | 0x40 | floor;
+        (ext[6], ext[7], ext[8], ext[9]) = (p.piece.x as u8, p.piece.level as u8, p.piece.z as u8, p.piece.rot);
+        want.push((c, slot, p.item, ext));
+    }
+    want.sort();
+}
+
+/// The record as the server will write it (s2c 0x020): the client moved the piece itself (FUN_101ccf50(5)).
+fn record(w: &mut World, p: &Placed, floor: u8, installed: bool) {
+    let e = w.inv.ext.entry((p.piece.c, p.piece.slot)).or_insert([0; 24]);
+    if installed {
+        e[1] = e[1] & !0x43 | 0x40 | floor;
+        (e[6], e[7], e[8], e[9]) = (p.piece.x as u8, p.piece.level as u8, p.piece.z as u8, p.piece.rot);
+    } else {
+        e[1] &= !0x43;
+        (e[6], e[7], e[8], e[9]) = (0, 0, 0, 0);
+    }
+}
+
+/// c2s 0x0FA for a piece where it now stands (FUN_100f0cc0).
+fn send_layout(w: &mut World, p: &Placed, floor: u8) {
+    let b = layout_body(p.item, p.piece.slot, p.piece.c, floor, p.piece.x, p.piece.level, p.piece.z, p.piece.rot);
+    log::info!("layout: 0x0FA {:02x?}", b);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0FA, body: b.to_vec() });
+    record(w, p, floor, true);
+}
+
+/// c2s 0x0FB: back to the Mog Safe (FUN_100f0d40).
+fn send_bankin(w: &mut World, p: &Placed, floor: u8) {
+    let b = bankin_body(p.item, p.piece.slot, p.piece.c);
+    log::info!("layout: 0x0FB {:02x?}", b);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x0FB, body: b.to_vec() });
+    record(w, p, floor, false);
+}
+
 /// `/layout` passed its gates: FUN_101d3380(1, -1, 1). The action menu, target, main menu and the moogle's menus
-/// close; the first piece is selected; the player is hidden (event::hidden) and parked at the room centre.
+/// close; the first piece is selected (none: rmlo1 opens); the player is hidden (event::hidden) and parked at the
+/// room centre.
 pub fn enter(w: &mut World) {
     let Some(r) = w.myroom else { return };
     let Some(index) = w.index.clone() else { return };
@@ -100,12 +190,13 @@ pub fn enter(w: &mut World) {
     (w.menu, w.action_menu, w.moogle, w.target, w.locked) = (None, None, None, None, false);
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
-    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0 });
+    let win = sel.is_none().then_some((1, 1));
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win });
     w.pos = park(r.floor);
 }
 
-/// FUN_101d3380(0, -1, 1): the player back at the room centre, the normal camera behind them, c2s 0x0FA all zero
-/// (FUN_100f0c80) and the moogle's menu again.
+/// FUN_101d3380(0, -1, 1): a held piece goes back, the player returns to the room centre, the normal camera behind
+/// them, c2s 0x0FA all zero (FUN_100f0c80) and the moogle's menu again.
 pub fn leave(w: &mut World) {
     let Some(l) = w.layout.take() else { return };
     w.layout_view = l.view;
@@ -119,7 +210,129 @@ pub fn leave(w: &mut World) {
     log::info!("layout: left");
 }
 
-/// FUN_101d4d90 in select mode, once a frame (context 0x42): the arrows pick, Num5 turns the view, Escape leaves;
+/// FUN_101d37e0: picks a piece up (state 2, blinking); the pieces on it come along.
+fn hold(w: &World, l: &mut Layout, p: Placed, new: bool) {
+    let grid = l.grid(w);
+    let pieces = l.pieces(w);
+    let tops = if p.piece.surface() { grid.on(p.piece.slot, p.piece.c).iter().filter_map(|&(s, c)| pieces.iter().copied().find(|q| (q.piece.slot, q.piece.c) == (s, c))).collect() } else { Vec::new() };
+    l.sel = Some((p.piece.c, p.piece.slot));
+    l.held = Some(Held { piece: p, tops, new });
+}
+
+/// FUN_101ccf50(5): placed when it fits (0x0FA for it and every piece on it, SE 8060), else SE 0004 and still held.
+fn place_held(w: &mut World, l: &mut Layout) {
+    let grid = l.grid(w);
+    let Some(h) = l.held.take() else { return };
+    if grid.fits(&h.piece.piece) {
+        send_layout(w, &h.piece, l.floor);
+        for t in &h.tops {
+            send_layout(w, t, l.floor);
+        }
+        w.sounds.push(8060);
+    } else {
+        w.sounds.push(Ui::Error as u32);
+        l.held = Some(h);
+    }
+}
+
+/// FUN_101ccf50(6): back to its record's place, or a new piece dropped (SE 0003).
+fn cancel_held(w: &mut World, l: &mut Layout) {
+    if l.held.take().is_some_and(|h| h.new) {
+        l.sel = None;
+    }
+    w.sounds.push(Ui::Cancel as u32);
+}
+
+/// FUN_101ce360: the held piece's arrows and turns (context 0x42); Enter / Escape come through `key`.
+fn held_keys(w: &mut World, l: &mut Layout, input: &mut Input) {
+    let grid = l.grid(w);
+    let Some(mut h) = l.held.take() else { return };
+    let (eye, look) = (w.cam.eye, w.cam.look);
+    let ctrl = w.game.get(0xc1);
+    let mut moved = None;
+    for (id, dir) in [(0x34, 3), (0x33, 1), (0x31, 0), (0x32, 2)] {
+        if input.test(id, mode::REPEAT) {
+            moved = Some(step(&grid, &mut h.piece.piece, l.floor, remap(dir, ctrl, eye, look)));
+        }
+    }
+    if let Some(m) = moved {
+        if let Some((dx, dz)) = m {
+            for t in h.tops.iter_mut() {
+                (t.piece.x, t.piece.z) = (t.piece.x + dx as i8, t.piece.z + dz as i8);
+            }
+            w.sounds.push(8058);
+        }
+        l.held = Some(h);
+        return;
+    }
+    let by = if input.test(0x8d, mode::PRESS) {
+        -1
+    } else if input.test(0x8e, mode::PRESS) {
+        1
+    } else {
+        0
+    };
+    if by != 0 {
+        let (dx, dz) = rotate(&grid, &mut h.piece.piece, l.floor, by);
+        if !h.piece.piece.furn.wall() {
+            for t in h.tops.iter_mut() {
+                (t.piece.x, t.piece.z) = (t.piece.x + dx as i8, t.piece.z + dz as i8);
+            }
+            w.sounds.push(8059);
+        }
+    }
+    l.held = Some(h);
+}
+
+/// FUN_101d3c40: a piece and those on it back to the Mog Safe (c2s 0x0FB each); a pot growing something asks first.
+fn remove(w: &mut World, l: &mut Layout, c: u8, slot: u8, ask: bool) {
+    let pieces = l.pieces(w);
+    let grid = l.grid(w);
+    let Some(p) = pieces.iter().copied().find(|p| (p.piece.c, p.piece.slot) == (c, slot)) else { return };
+    let mut all = vec![p];
+    all.extend(grid.on(slot, c).iter().filter_map(|&(s, k)| pieces.iter().copied().find(|q| (q.piece.slot, q.piece.c) == (s, k))));
+    if ask && all.iter().any(|q| w.inv.ext.get(&(q.piece.c, q.piece.slot)).is_some_and(|e| e[0] != 0)) {
+        w.confirm = Some((super::Confirm::Layout(Ask::Dispose { c, slot }), false));
+        return;
+    }
+    for q in all.iter().rev() {
+        send_bankin(w, q, l.floor);
+    }
+    l.sel = None;
+}
+
+/// FUN_101d3cc0: every piece of this floor back to the Mog Safe; a pot growing something asks first.
+fn clear_all(w: &mut World, l: &mut Layout, ask_plants: bool) {
+    let pieces = l.pieces(w);
+    if ask_plants && pieces.iter().any(|q| w.inv.ext.get(&(q.piece.c, q.piece.slot)).is_some_and(|e| e[0] != 0)) {
+        w.confirm = Some((super::Confirm::Layout(Ask::DisposeAll), false));
+        return;
+    }
+    for q in &pieces {
+        send_bankin(w, q, l.floor);
+    }
+    l.sel = None;
+}
+
+/// A prompt's Yes.
+pub fn confirmed(w: &mut World, a: Ask) {
+    let Some(mut l) = w.layout.take() else { return };
+    match a {
+        Ask::Dispose { c, slot } => remove(w, &mut l, c, slot, false),
+        Ask::ClearAll => clear_all(w, &mut l, true),
+        Ask::DisposeAll => clear_all(w, &mut l, false),
+    }
+    w.layout = Some(l);
+}
+
+pub fn ask_text(gu: &super::game_ui::GameUi, a: Ask) -> String {
+    match a {
+        Ask::ClearAll => gu.menu_msg(0x267, "Clear away all furniture?"),
+        _ => gu.lobby_msg(0x0c, 0x35, "Dispose of what is currently growing?"),
+    }
+}
+
+/// FUN_101d4d90 once a frame (context 0x42): select mode's arrows, Num5, Enter and Escape, or the held piece's keys;
 /// an event starting leaves at once.
 pub fn update(w: &mut World, input: &mut Input, dt: f32) {
     if w.layout.is_none() {
@@ -131,36 +344,191 @@ pub fn update(w: &mut World, input: &mut Input, dt: f32) {
     }
     let Some(mut l) = w.layout.take() else { return };
     l.ticks += dt * 60.0;
-    let pieces = placed(w, &l.table, l.floor);
-    if l.selected(&pieces).is_none() {
+    if l.win.is_some() || w.confirm.is_some() {
+        w.layout = Some(l);
+        return;
+    }
+    let pieces = l.pieces(w);
+    if l.held.is_none() && l.selected(&pieces).is_none() {
         l.sel = pieces.first().map(|p| (p.piece.c, p.piece.slot));
     }
     if l.sel.is_some() && input.test(0xa7, mode::PRESS) {
         l.view = (l.view + 1) % 3;
     }
+    if l.held.is_some() {
+        held_keys(w, &mut l, input);
+        w.layout = Some(l);
+        return;
+    }
     let dx = if input.test(0x33, mode::REPEAT) { 1 } else if input.test(0x34, mode::REPEAT) { -1 } else { 0 };
     let dz = if input.test(0x31, mode::REPEAT) { 1 } else if input.test(0x32, mode::REPEAT) { -1 } else { 0 };
     if dx != 0 || dz != 0 {
         w.sounds.push(Ui::Cursor as u32);
-        let grid = grid_of(&pieces, l.floor);
+        let grid = l.grid(w);
         let cand = |p: &Placed| {
             let pos = l.pos(&p.piece)?;
             Some(Cand { id: (p.piece.c as u32) << 8 | p.piece.slot as u32, pos, level: p.piece.level, wall: p.piece.furn.wall(), rot: p.piece.rot, size: p.piece.furn.footprint(p.piece.rot), has_tops: !grid.on(p.piece.slot, p.piece.c).is_empty() })
         };
         let all: Vec<Cand> = pieces.iter().filter_map(cand).collect();
-        if let Some(cur) = l.selected(&pieces).and_then(cand)
+        if let Some(cur) = l.selected(&pieces).as_ref().and_then(cand)
             && let Some(id) = pick(&cur, &all, dx, dz, l.view)
         {
             l.sel = Some(((id >> 8) as u8, id as u8));
         }
     }
-    if input.test(0x0f, mode::PRESS) {
-        w.sounds.push(Ui::Cancel as u32);
-        w.layout = Some(l);
-        leave(w);
-        return;
+    if input.test(0x8b, mode::PRESS) {
+        open_win(w, &mut l);
     }
     w.layout = Some(l);
+}
+
+/// FUN_101d5ef0: Enter or a click opens rmlo2 on the selection (rmlo4 for a mannequin), rmlo1 with none (SE 0002).
+fn open_win(w: &mut World, l: &mut Layout) {
+    w.sounds.push(Ui::Select as u32);
+    let pieces = l.pieces(w);
+    let kind = match l.selected(&pieces) {
+        Some(p) if item_type(w, p.item) == MANNEQUIN => 4,
+        Some(_) => 2,
+        None => 1,
+    };
+    l.win = Some((kind, 1));
+}
+
+/// An rmlo window's rows: (label, what it does).
+#[derive(Clone, Copy, PartialEq)]
+enum Row {
+    Equip,
+    Move,
+    Remove,
+    Place,
+    ClearAll,
+    Quit,
+}
+
+fn rows(kind: u8) -> &'static [Row] {
+    match kind {
+        1 => &[Row::Place, Row::ClearAll, Row::Quit],
+        2 => &[Row::Move, Row::Remove, Row::Place, Row::ClearAll],
+        _ => &[Row::Equip, Row::Move, Row::Remove, Row::Place, Row::ClearAll],
+    }
+}
+
+fn win_name(kind: u8) -> &'static str {
+    match kind {
+        1 => "menu    rmlo1",
+        2 => "menu    rmlo2",
+        _ => "menu    rmlo4",
+    }
+}
+
+/// FUN_101f44f0 / FUN_101f4540 / FUN_101f45d0: the dim rows. Clear All while Storage holds anything; Clear away when
+/// Storage would lose more room (the pieces' storage slots, item DAT +0x10 *(inf)*) than it has free.
+fn dim_rows(w: &World, l: &Layout, kind: u8) -> Vec<u16> {
+    let stored = w.inv.slots.keys().filter(|(c, s)| *c == 2 && *s != 0).count() as i32;
+    let size = w.inv.sizes[2] as i32 - 1;
+    let slots = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).and_then(|it| it.extra.iter().find(|e| e.0 == 0xd14).map(|e| e.1 as i32)).unwrap_or(0);
+    let pieces = l.pieces(w);
+    let need = match l.selected(&pieces) {
+        Some(p) => {
+            let grid = l.grid(w);
+            slots(p.item) + grid.on(p.piece.slot, p.piece.c).iter().filter_map(|&(s, c)| pieces.iter().find(|q| (q.piece.slot, q.piece.c) == (s, c))).map(|q| slots(q.item)).sum::<i32>()
+        }
+        None => 1,
+    };
+    let mut off = Vec::new();
+    for (i, r) in rows(kind).iter().enumerate() {
+        let n = i as u16 + 1;
+        if (*r == Row::ClearAll && stored > 0) || (*r == Row::Remove && size - stored < need) {
+            off.push(n);
+        }
+    }
+    off
+}
+
+/// Every key while laying out: the rmlo windows' (Up / Down, Enter 5, Escape 6); else Enter (0x8f) and Escape (0x0f /
+/// 0x90) of select mode or of the held piece. The arrows and turns are key functions (`update`).
+pub fn key(w: &mut World, key: egui::Key) -> bool {
+    let Some(mut l) = w.layout.take() else { return false };
+    let Some((kind, sel)) = l.win else {
+        match key {
+            egui::Key::Enter if l.held.is_some() => place_held(w, &mut l),
+            egui::Key::Escape if l.held.is_some() => cancel_held(w, &mut l),
+            egui::Key::Enter => open_win(w, &mut l),
+            egui::Key::Escape => {
+                w.sounds.push(Ui::Cancel as u32);
+                w.layout = Some(l);
+                leave(w);
+                return true;
+            }
+            _ => {}
+        }
+        w.layout = Some(l);
+        return true;
+    };
+    let n = rows(kind).len() as u16;
+    match key {
+        egui::Key::ArrowUp | egui::Key::ArrowDown => {
+            let s = if key == egui::Key::ArrowUp { if sel <= 1 { n } else { sel - 1 } } else if sel >= n { 1 } else { sel + 1 };
+            l.win = Some((kind, s));
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        egui::Key::Escape => {
+            l.win = None;
+            w.sounds.push(Ui::Cancel as u32);
+        }
+        egui::Key::Enter => {
+            if dim_rows(w, &l, kind).contains(&sel) {
+                w.sounds.push(Ui::Error as u32);
+            } else {
+                w.sounds.push(Ui::Select as u32);
+                l.win = None;
+                let pieces = l.pieces(w);
+                let cur = l.selected(&pieces);
+                match rows(kind)[sel as usize - 1] {
+                    Row::Move => {
+                        if let Some(p) = cur {
+                            hold(w, &mut l, p, false);
+                        }
+                    }
+                    Row::Remove => {
+                        if let Some(p) = cur {
+                            remove(w, &mut l, p.piece.c, p.piece.slot, true);
+                        }
+                    }
+                    Row::ClearAll => w.confirm = Some((super::Confirm::Layout(Ask::ClearAll), false)),
+                    Row::Quit => {
+                        w.layout = Some(l);
+                        leave(w);
+                        return true;
+                    }
+                    Row::Place | Row::Equip => {
+                        log::info!("layout: {} row {sel} not done", win_name(kind));
+                        l.win = Some((kind, sel));
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+    w.layout = Some(l);
+    true
+}
+
+/// The rmlo window at its layout with its dim rows; its row's help in the bars.
+pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    let Some(l) = &w.layout else { return Vec::new() };
+    let Some((kind, sel)) = l.win else { return Vec::new() };
+    let name = win_name(kind);
+    let off = dim_rows(w, l, kind);
+    let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), w.confirm.is_none(), &off) else { return Vec::new() };
+    let [x, y, ..] = win.frame;
+    gu.disabled_children(name, x, y, &off, Some(sel));
+    vec![win.frame]
+}
+
+/// The context: 0x3e while an rmlo window or a prompt is up, else 0x42.
+pub fn context(w: &World) -> u16 {
+    if w.layout.as_ref().is_some_and(|l| l.win.is_some()) || w.confirm.is_some() { 0x3e } else { 0x42 }
 }
 
 /// The layout camera each frame (FUN_101d4080) into the world camera; true while laying out.
@@ -183,13 +551,16 @@ pub fn draw_cursor(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32,
     gu.sprite("anc     anc_l", frame, x.trunc().max(0.0), y.trunc().max(0.0), 0x8080_8080);
 }
 
-/// Title slot 0 "Layout" (0xd 4), help slot 0 "Select furniture to place in your room." (0xe 0xe).
+/// Title slot 0 "Layout" (0xd 4), help slot 0 "Select furniture to place in your room." (0xe 0xe); an rmlo window's
+/// row help in slot 1.
 pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    if w.layout.is_none() {
-        return;
-    }
+    let Some(l) = &w.layout else { return };
     bars.title[0] = gu.title_msg(4).unwrap_or_default();
     bars.help[0] = gu.menu_msg(0xe, "");
+    if let Some((kind, sel)) = l.win {
+        let [help, _] = gu.focus_text(win_name(kind), sel);
+        bars.help[1] = help.unwrap_or_default();
+    }
 }
 
 /// Grid size in cells: 20 columns (x) by 26 rows (z).
@@ -668,6 +1039,29 @@ mod tests {
         flag.x = 39;
         step(&g, &mut flag, 1, 2);
         assert_eq!((flag.x, flag.rot), (87, 2));
+    }
+
+    /// The live test room: the bed held, moved right and up and turned, must fit beside the desk, pot, lamp and flag.
+    #[test]
+    fn live_room() {
+        let Ok(index) = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()) else { return };
+        let t = FurnTable::load(&index).unwrap();
+        let mk = |slot, item: u16, x, level, z, rot| Piece { c: 1, slot, furn: t.entry(item).unwrap(), x, level, z, rot };
+        let others = [mk(2, 21, 16, 0, 4, 0), mk(3, 216, 17, 5, 5, 0), mk(4, 207, 0, 0, 20, 0), mk(6, 129, 3, 0, 0, 3)];
+        let mut g = Grid::new(0);
+        for p in others.iter().filter(|p| p.level == 0) {
+            assert!(g.occupy(p), "{p:?}");
+        }
+        for p in others.iter().filter(|p| p.level > 0) {
+            assert!(g.occupy(p), "{p:?}");
+        }
+        let mut bed = mk(1, 2, 0, 0, 0, 0);
+        assert!(g.fits(&bed));
+        step(&g, &mut bed, 0, 1);
+        step(&g, &mut bed, 0, 0);
+        rotate(&g, &mut bed, 0, -1);
+        assert_eq!((bed.x, bed.z, bed.rot), (0, 2, 3));
+        assert!(g.fits(&bed), "{bed:?}");
     }
 
     #[test]

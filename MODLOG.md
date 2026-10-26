@@ -9179,3 +9179,29 @@ Spec `~/ffxi/lab/research/layout_mode_spec.md` 1.2..1.5, 2.2..2.4 (client/layout
   Right the desk with its pot, Num5 the three views, Escape back with the moogle's menu. Rows removed after.
 - Not yet: Enter's windows (rmlo1 / rmlo2 / rmlo4, bankmenu, the furniture list), holding and moving (3.x), the grid
   overlay, c2s 0x0FA / 0x0FB for moves and removals, the link-999 ceiling hidden in view 0, the 7 0x50 refusal.
+
+## Mog House layout mode, part 2: the rmlo windows, moving, turning, removing (2026-10-25)
+
+Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout.rs).
+- Enter / a click (0x8f / 0x8b) in select mode opens rmlo2 on the selection (rmlo4 for a mannequin, rmlo1 with no
+  piece; rmlo1 also at entry with none), SE 0002; the windows take Up / Down / Enter / Escape (context 0x3e while
+  one or a prompt is up). Dim rows (FUN_101f44f0 / 4540 / 45d0): Clear All while Storage (container 2) holds anything;
+  Clear away when Storage's free slots are fewer than the storage slots the piece and those on it give (item DAT
+  +0x10, extra 0xd14 *(inf: the spec's item info +0x2a)*); Enter on a dim row buzzes.
+- Move holds the piece (FUN_101d37e0) with the pieces on a surface; its keys (FUN_101ce360): Enter places it when it
+  fits (Grid::fits) and sends c2s 0x0FA for it and every piece on it (SE 8060), else SE 0004; Escape (0x90) puts it
+  back or drops a new one (SE 0003); the arrows in the order Left, Right, Up, Down through /layoutctrl's flip
+  (config 0xc1, layout::remap) move it a cell or to the next wall slot (SE 8058), carrying the pieces on it; Num- (0x8d)
+  / 0x8e turn it (SE 8059; a wall piece's turn changes only its rotation).
+- The held piece is drawn where it is held: furniture::changed applies layout::overrides (exdata[1] / [6..9]), so the
+  furniture set reloads on each move *(ours; retail moves the object's matrix)*. A confirmed move writes the item
+  record at once as the server will (retail never re-reads it; s2c 0x0FA's handler is a no-op).
+- Clear away (FUN_101d3c40): c2s 0x0FB for the piece and those on it; a pot with a plant (exdata[0] != 0) asks first,
+  "Dispose of what is currently growing?" (0xc 0x35). Clear All: "Clear away all furniture?" (0xe 0x267), then the
+  plant prompt when any pot grows something, then 0x0FB for every piece of this floor. Quit (rmlo1 row 3) leaves.
+- Live (Lnxcsfix, its house, five test pieces): rmlo2, Move, Right, Up, Num-, Enter sent 0x0FA 02 00 01 01 00 00 00
+  02 03 (the bed at column 0 row 2 turned 3; the server wrote it); rmlo2 row 2 sent 0x0FB 02 00 01 01 (the bed back in
+  the Safe). Rows removed after.
+- Not yet: Place (bankmenu and the furniture list), the mannequin's equipment row, the grid overlay, the link-999
+  ceiling in view 0. Known: each furniture reload adds its textures to the GPU again (31 -> 75 over five moves): the
+  held piece should move its instance matrix instead.

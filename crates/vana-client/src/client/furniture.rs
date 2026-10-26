@@ -162,6 +162,8 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
         }
         _ => Vec::new(),
     };
+    let mut want = want;
+    super::layout::overrides(w, &mut want);
     if want == w.furniture.want {
         return None;
     }

@@ -1575,6 +1575,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.linklist.is_some() => linklist::key(world, gu, *key),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
+                _ if world.layout.is_some() => {
+                    layout::key(world, *key);
+                }
                 _ if world.moogle.is_some() => {
                     moogle::key(world, gu, *key);
                 }
@@ -2361,6 +2364,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     blockers.extend(moogle::draw(gu, world, sw, sh));
+    blockers.extend(layout::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
     treasure::draw_chest(gu, world, sw, sh);
@@ -2758,6 +2762,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             leave_room(world, 0);
         }
+        (Some(true), Some((Confirm::Layout(a), _))) => {
+            world.confirm = None;
+            layout::confirmed(world, a);
+        }
         (Some(true), Some((kind, _))) => {
             world.confirm = None;
             // LAB_10159f00 / LAB_10159ee0: Yes runs "/logout" or "/shutdown" again (a toggle, which also cancels).
@@ -2978,6 +2986,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::NewAdventurer, _) => world.battle.as_ref().and_then(|b| b.group9(0xd4)).unwrap_or_default(),
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
+        (Confirm::Layout(a), _) => layout::ask_text(gu, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
         (Confirm::JobPoint(a), _) => jobpoints::ask_text(world, a),
         (Confirm::AlterEgo(a), _) => aepoints::ask_text(world, a),
@@ -4626,6 +4635,8 @@ enum Confirm {
     Merit(merits::Ask),
     /// link7 / link8 / link9's Kick (FUN_101e6620): group 10 0x36.
     LinkKick(linklist::Kick),
+    /// Layout mode's removal and Clear All prompts.
+    Layout(layout::Ask),
     JobPoint(jobpoints::Ask),
     AlterEgo(aepoints::Ask),
     /// group 9 0x140 "Really reset request history?" (the Request toggle, scoption's Clear History).
@@ -7887,7 +7898,7 @@ impl App {
             self.input.context = if w.map.is_some() || w.cnq.is_some() {
                 0x26
             } else if w.layout.is_some() {
-                0x42
+                layout::context(w)
             } else {
                 0xffff
             };
