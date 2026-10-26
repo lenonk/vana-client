@@ -40,6 +40,8 @@ pub enum Owner {
     BlueSet,
     /// The merit, job point and alter ego point lists, Unity's ranking.
     Points,
+    /// The auction list and its sell list.
+    Auction,
 }
 
 /// A focused list's bar as drawn this frame: x, y, height (8 wide), and its (total, visible, top).
@@ -173,6 +175,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Journal => super::missions::bar(w, m) || super::quests::bar(w, m) || super::roe::bar(w, m) || super::keyitems::bar(w, m) || super::currencies::bar(w, m),
         Owner::Linkshell => super::linkshell::bar(w, m),
         Owner::BlueSet => super::bluset::bar(w, m),
+        Owner::Auction => super::auction::bar(w, m),
         Owner::Points => super::merits::bar(w, m) || super::jobpoints::bar(w, m) || super::aepoints::bar(w, m) || super::unity::bar(w, m),
         Owner::Config => match &mut w.config {
             Some(c) => super::configui2::bar(c, &w.game, m),

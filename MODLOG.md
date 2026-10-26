@@ -9768,3 +9768,12 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Live (Lnxcsfix): main menu Synthesis, cmbmenu hover / click Crystal Synthesis, the crystal list hover / click Wind
   Crystal, tskill1 hover / click a slot (the picker), a picker row hovered, right clicks back, Cancel, the crystal list
   and cmbmenu closed by right clicks. Nothing synthesized.
+
+## Auction house: the mouse (2026-10-26)
+
+- auction.rs `pointer` (winhits.rs): the command menus (auc1..aucitem, auc3, auc4, the sort menus) and shopsell as the
+  generic window; auclist's and auchisto's code-drawn rows (18 apart from (4, 4)) as their children; the sell list (the
+  inventory list) by its row pitch; moneyctr only the right click. Scroll bars: Owner::Auction for auclist and the sell
+  list (FUN_101f6c70 rows: a notch moves the top, the hand keeps its screen row).
+- Live (Lnxcsfix, !ah): auc1 Bid, auc2 Crystals, auclist hover / wheel / click (auc3), right clicks back to auc2 and
+  auc1, Sell (the sell list hover / wheel), right clicks out. Nothing bid or sold.

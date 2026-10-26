@@ -1066,6 +1066,97 @@ fn sell_key(w: &mut World, a: &mut Auction, mut scroll: usize, mut cursor: usize
     }
 }
 
+/// The focused list's bar (auclist, the sell list; FUN_101f6c70).
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let n = sell_rows(w).len();
+    let Some(a) = w.auction.as_mut().filter(|a| a.money.is_none() && a.shopsell.is_none()) else { return false };
+    match a.top() {
+        Some(Layer::List) => a.list.as_mut().is_some_and(|l| super::scrollbar::rows(m, &mut l.scroll, &mut l.cursor, l.rows.len(), ROWS)),
+        Some(Layer::Sell(mut scroll, mut cursor)) => {
+            let moved = super::scrollbar::rows(m, &mut scroll, &mut cursor, n, crate::inventory::VISIBLE_ROWS);
+            set_top(a, Layer::Sell(scroll, cursor));
+            moved
+        }
+        _ => false,
+    }
+}
+
+/// The mouse on the focused window (winhits.rs): the menus and shopsell as the generic window, auclist / auchisto's
+/// rows and the sell list's as lists (hover moves the cursor, a click on it is Enter, a right click Escape); moneyctr
+/// only the right click.
+#[allow(clippy::too_many_arguments)]
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::{generic, over};
+    let Some(a) = w.auction.as_ref() else { return };
+    let keys = |w: &mut World, _: &GameUi, k: egui::Key| {
+        key(w, k);
+    };
+    if a.money.is_some() {
+        if right && over(w, MONEYCTR, p) {
+            key(w, egui::Key::Escape);
+        }
+        return;
+    }
+    if let Some((sel, ..)) = a.shopsell {
+        generic(w, gu, SHOPSELL, sel, 1..=2, p, moved, clicked, right, |w, id| {
+            if let Some(s) = w.auction.as_mut().and_then(|a| a.shopsell.as_mut()) {
+                s.0 = id;
+            }
+        }, keys);
+        return;
+    }
+    match a.top() {
+        Some(Layer::Menu(name, sel)) => {
+            let last = menu_rows(name).iter().map(|r| r.0).max().unwrap_or(plain_rows(name));
+            generic(w, gu, name, sel, 1..=last, p, moved, clicked, right, |w, id| {
+                if let Some(a) = w.auction.as_mut() {
+                    set_top(a, Layer::Menu(name, id));
+                }
+            }, keys);
+        }
+        Some(Layer::List) => {
+            let cursor = a.list.as_ref().map_or(0, |l| l.cursor) as u16 + 1;
+            generic(w, gu, LIST, cursor, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(l) = w.auction.as_mut().and_then(|a| a.list.as_mut()) {
+                    l.cursor = id as usize - 1;
+                }
+            }, keys);
+        }
+        Some(Layer::History) => {
+            let cursor = a.history.as_ref().map_or(0, |h| h.cursor) as u16 + 1;
+            generic(w, gu, HISTORY, cursor, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(h) = w.auction.as_mut().and_then(|a| a.history.as_mut()) {
+                    h.cursor = id as usize - 1;
+                }
+            }, keys);
+        }
+        Some(Layer::Sell(scroll, cursor)) => {
+            let n = sell_rows(w).len();
+            let Some(r) = gu.window_rect("menu    inventor", sw, sh) else { return };
+            let on = p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3];
+            if right && on {
+                key(w, egui::Key::Escape);
+                return;
+            }
+            let row = ((p.1 - r[1] - 4.0) / crate::inventory::ROW_PITCH).floor();
+            if !on || row < 0.0 || row as usize >= crate::inventory::VISIBLE_ROWS || scroll + row as usize >= n {
+                return;
+            }
+            gu.hover.set(true);
+            let row = row as usize;
+            if row != cursor && (moved || clicked) {
+                if let Some(a) = w.auction.as_mut() {
+                    set_top(a, Layer::Sell(scroll, row));
+                }
+                w.sounds.push(Ui::Cursor as u32);
+            } else if clicked {
+                key(w, egui::Key::Enter);
+            }
+        }
+        None => {}
+    }
+}
+
 /// The bars: the focused window's title and help.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(a) = &w.auction else { return };
@@ -1110,6 +1201,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
                 // FUN_101d9200: the name toggle's label, windowps 151 "Reset List" with a saved sort, else 537 "Sort".
                 let swaps: Vec<(u16, Option<&str>, usize)> = if name == AUC3 && sort_kind(a.cat) == 2 { vec![(3, Some(WINDOWPS), if a.sorts.any(a.cat) { 151 } else { 537 })] } else { Vec::new() };
                 if let Some(win) = gu.lobby_window_lib_swaps(name, sw, sh, (0.0, 0.0), Some(sel), focused, &off, &swaps) {
+                    super::winhits::record(w, name, &win);
                     let [x, y, ..] = win.frame;
                     gu.disabled_children(name, x, y, &off, focused.then_some(sel));
                     rects.push(win.frame);
@@ -1123,12 +1215,14 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((step, max, v, _)) = a.money
         && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, MONEYCTR, &win);
         super::post::draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }
     if let Some((sel, ..)) = a.shopsell
         && let Some(win) = gu.lobby_window_off(SHOPSELL, sw, sh, (0.0, 0.0), Some(sel), true, &[])
     {
+        super::winhits::record(w, SHOPSELL, &win);
         rects.push(win.frame);
     }
     rects
@@ -1151,6 +1245,7 @@ fn draw_list(gu: &mut GameUi, w: &World, a: &Auction, focused: bool, sw: f32, sh
     let r = list_frame(gu, LIST, sw, sh)?;
     let (ox, oy) = (r[0] + 4.0, r[1] + 4.0);
     let shown: Vec<Row> = l.rows.iter().skip(l.scroll).take(ROWS).copied().collect();
+    super::winhits::record_rects(w, LIST, r, (0..shown.len()).map(|k| (k as u16 + 1, [ox, oy + PITCH * k as f32, r[2] - 12.0, PITCH])).collect());
     super::items::upload_icons(gu, &info, shown.iter().map(|x| x.item(&w.ah_slots)));
     for (k, row) in shown.iter().enumerate() {
         let y = oy + PITCH * k as f32;
@@ -1197,6 +1292,9 @@ fn draw_list(gu: &mut GameUi, w: &World, a: &Auction, focused: bool, sw: f32, sh
         gu.text(&t, r[0] + 32.0, r[1] + 24.0, 0, WHITE.to_le_bytes());
     }
     gu.scroll_bar(r[0] + r[2] - 6.0, r[1], r[3], l.rows.len(), ROWS, l.scroll);
+    if focused {
+        gu.bar_site(super::scrollbar::Owner::Auction, r[0] + r[2] - 6.0, r[1], r[3], l.rows.len(), ROWS, l.scroll);
+    }
     Some(r)
 }
 
@@ -1206,6 +1304,8 @@ fn draw_history(gu: &mut GameUi, w: &World, a: &Auction, focused: bool, sw: f32,
     let r = list_frame(gu, HISTORY, sw, sh)?;
     let (ox, oy) = (r[0] + 4.0, r[1] + 4.0);
     let arrow = w.battle.as_ref().and_then(|b| b.group9(0x3b)).unwrap_or_else(|| ">".into());
+    let n = h.sales.len().saturating_sub(h.scroll).min(ROWS);
+    super::winhits::record_rects(w, HISTORY, r, (0..n).map(|k| (k as u16 + 1, [ox, oy + PITCH * k as f32, r[2] - 12.0, PITCH])).collect());
     for (k, s) in h.sales.iter().skip(h.scroll).take(ROWS).enumerate() {
         // The small sprite font (FUN_101c9780) in columns {0, 65, 145, 165, 250, 350}, the price right-aligned at the
         // last column's end - 2; the arrow in the game font (the sprite font has no glyph for it).
@@ -1252,7 +1352,10 @@ fn draw_sell(gu: &mut GameUi, w: &World, scroll: usize, cursor: usize, focused: 
     let frame = gu.cursor_frame();
     let (b, ui, style, font) = gu.parts();
     let m = ui.menu("menu    inventor").filter(|_| open)?;
-    let _ = crate::render::invwin::push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, if focused { frame } else { usize::MAX });
+    let [bx, by, bh] = crate::render::invwin::push_inventory(b, ui, style, font, GameUi::ATLAS, m, &list, sw, sh, if focused { frame } else { usize::MAX });
+    if focused {
+        gu.bar_site(super::scrollbar::Owner::Auction, bx, by, bh, list.rows.len(), crate::inventory::VISIBLE_ROWS, scroll);
+    }
     gu.window_rect("menu    inventor", sw, sh)
 }
 
