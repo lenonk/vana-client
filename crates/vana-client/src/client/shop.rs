@@ -460,8 +460,17 @@ pub(super) fn name_tint(w: &World, id: u16) -> u32 {
         {
             return YELLOW;
         }
+    } else if extra(0xd54) == Some(2) && extra(0xd58).is_some_and(|a| ability_known(w, a as u16)) {
+        return crate::inventory::TINT_EQUIPPED;
     }
     WHITE
+}
+
+/// FUN_10223360(n): bit n + 0x200 of the ability bitfield (FUN_100e6020: only once 0x0AC and the Monstrosity moves
+/// are in); the Corsair dice (teach kind 2) go green when their roll is known, never yellow.
+fn ability_known(w: &World, n: u16) -> bool {
+    let bit = n as usize + 0x200;
+    super::monstrosity::ability_bits(w).is_some_and(|b| b.get(bit / 8).is_some_and(|x| x & (1 << (bit % 8)) != 0))
 }
 
 /// FUN_102092b0 -> FUN_100fcc50(side, 0x1202, n): once s2c 0x119 came, PUP as main (side 0) or sub (1) and that

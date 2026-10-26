@@ -101,8 +101,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); the Delivery Box (send,
     receive, cancel mode), Remodel (client/remodel.rs, MODLOG "Mog House Remodel") and the Mog Garden use rule done;
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
-    yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D), the mouse, the attachment colours done (not seen live: no LSB
-    attachment shop); left the dice colours (need s2c 0x063 sub 4 Monstrosity data);
+    yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D), the mouse, the attachment colours and the dice colours done (not
+    seen live: no LSB attachment or dice shop);
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
     done but untested live (needs a second account); the mouse in both done (MODLOG "Trade windows: the mouse"; player
     trade's not tried live) and the main menu's target prompt with no target done;
@@ -180,9 +180,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     "Effect fixes from the San d'Oria gate lamps", "Parked");
   - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live, the +1 rods' glow too; left
     other anglers not seen live;
-  - Monstrosity (LSB has it on: the Feretory, zone 285, makes the player MON): ours still draws the character's own
-    body there; the look, MON job data (s2c 0x044 / 0x063 sub 4 / 0x051), its menus and the shop dice colours are
-    left (spec being written: `~/ffxi/lab/research/monstrosity_spec.md`);
+  - Monstrosity (spec `~/ffxi/lab/research/monstrosity_spec.md`; client/monstrosity.rs, MODLOG "Monstrosity, part
+    1..6"; LSB makes the player MON in the Feretory, zone 285): the look, names, 0x063 data and moves, mp_pmode, the
+    Monster Skills lists, the main menu rules, mp_stat, mp_dead, the refusals done and seen live (refusals not);
+    left: Customization (mp_cstm / mp_mncst / mp_invnt / mp_mntp2 / mp_kncst / mp_mnnm, c2s 0x102), the Tab rule
+    (FUN_10083f20), the engaged camera, the 0x00D hitbox;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login

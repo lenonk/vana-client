@@ -10221,3 +10221,9 @@ Spec section 3.8 (each read in the decompile).
   (child 8, FUN_101a72e0) are off. Config Misc. 3's style lock rows 3 / 4 are off (FUN_1019b8c0 / FUN_1019b900;
   ConfigUi.mon). mix.dat is not written on leaving the field (FUN_101ab7d0). Ctrl / Alt + B does nothing (part 4).
 - Not tried live.
+
+## Monstrosity, part 7: the dice colours (2026-10-26)
+
+- FUN_1020f740 / FUN_101ec800 for a type-7 item with teach kind 2 (record +0x1554 = 2, the Corsair dice): green
+  0x80509050 when FUN_10223360(+0x1558) holds, bit n + 0x200 of FUN_100e6020 (0x0AC plus the Monstrosity moves, so
+  only after a 0x063 type 4); never yellow. shop.rs `ability_known`. Not seen live (no LSB dice shop).
