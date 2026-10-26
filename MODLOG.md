@@ -9388,3 +9388,20 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
 - `config::enabled_mod_dirs` (FFXI_NO_MODS respected) is now the one list for the DAT overlays and the sounds. The
   cursor pack already came through `DatIndex::root_file` (client/mousecur.rs).
 - Checked: with the user's 8 mods (none has sounds) the title music still starts.
+
+## The command gate's window lines (2026-10-26)
+
+- FUN_10081230 for a command with flag 0x10, unless DAT_1047d499 bit 0 (set by the full log's own menu commands,
+  FUN_10138b50 cases 3..5: `/target`, `/partyrequestcmd`; ours has none): the full log open (DAT_1057876c +0x68) ->
+  refusal index 0; layout mode (myroom +0x1c == 1) -> 0xd; FUN_1015ecc0(0x20000) (a main-class window open) -> 3.
+  Table 0x103763b0 (4-byte entries, the group 7 id at +3): 0 -> 0x42 "You cannot use that command while viewing the
+  chat log.", 3 -> 0x45 "You must close the currently open window to use that command.", 0xd -> 0x50 "You cannot use
+  that command while changing the layout of your room."; also 1 -> 0x43, 9 -> 0x4b, 0xb -> 0x4d, 0xc -> 0x4f (ours
+  already). The flag-0x10 commands: /keyitem /quest /mission /search /blacklist /mutelist /friendlist /supportdesk
+  /recruitlist /displayhead /layout /remodel /garden /furcc /mentor /equipset /befriend.
+- Ours: textcmd::state_gate; the window test is `World.main_open`, the registry flag 0x20000 of the windows drawn
+  this frame or the last (GameUi::open_with_flag). Not done: the charmed event line 7 0x97 (actor +0x12c bit 13).
+- Layout mode's keys no longer swallow Space and '/' while no layout window is up: the chat line opens there as in
+  retail (WM_CHAR FUN_101ab630, apart from the key functions context 0x42 masks).
+- Live (Lnxcsfix, its Mog House): `/layout`, Space, `/keyitem` -> the 0x50 line. With the main menu up `/keyitem`
+  ran (menuwind has no 0x20000).

@@ -547,8 +547,19 @@ fn state_gate(w: &mut World, flags: u16) -> bool {
         }
         return false;
     }
-    if flags & flag::UI_FREE != 0 && w.full_log.is_some() {
-        refuse(w, 0x42);
+    // Flag 0x10: refusal indices 0 / 0xd / 3 of table 0x103763b0 (skipped for the full log's own commands, which ours
+    // does not have).
+    if flags & flag::UI_FREE != 0 {
+        let line = if w.full_log.is_some() {
+            0x42
+        } else if w.layout.is_some() {
+            0x50
+        } else if w.main_open {
+            0x45
+        } else {
+            return true;
+        };
+        refuse(w, line);
         return false;
     }
     true

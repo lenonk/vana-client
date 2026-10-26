@@ -1580,7 +1580,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.linklist.is_some() => linklist::key(world, gu, *key),
                 _ if world.linkshell.is_some() => linkshell::key(world, gu, *key),
                 _ if world.region_menu.is_some() => region::menu_key(world, gu, *key, sw, sh),
-                _ if world.layout.is_some() => {
+                // Space and '/' still open the chat line with no layout window up (FUN_101ab630: the field).
+                _ if world.layout.is_some() && !(layout::in_field(world) && matches!(key, egui::Key::Space | egui::Key::Slash)) => {
                     layout::key(world, *key);
                 }
                 _ if world.auction.is_some() => {
@@ -2205,6 +2206,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // FUN_101626e0's keep: FUN_1015ecc0(0x1000), any open window stacked on the log (the raise prompt, comyn, query,
     // shops, the lists ...), the chat line at 2 lines or fewer, a message page waiting.
     let stacked = gu.open_with_flag(0x1000) || (dead && world.ko_offer == 2) || event::choice(world).is_some() || world.confirm.is_some();
+    world.main_open = gu.open_with_flag(0x20000);
     let keep = (world.typing && world.log.at_most_two()) || stacked || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
     // A window taking the keys takes the focus as it opens: Num+ may focus the log over one already open (the action menu
     // while engaged) *(inf: the newest window has the focus)*; an event closes the full log (FUN_10133000).
@@ -4195,6 +4197,8 @@ struct World {
     /// The action menu suspended under the list it opened (Magic, Abilities, Items, Trust: their groups share playermo's
     /// 0x04): the walk brings it back with its cursor when the list is gone.
     held_menu: Option<combat::ActionMenu>,
+    /// FUN_1015ecc0(0x20000): a window of the main class (registry flag 0x20000) drawn this frame or the last.
+    main_open: bool,
     /// FUN_10118830 / FUN_10118870: windows' cursor children kept in their layouts across closes, and the main menu's
     /// row per page.
     cursor_mem: HashMap<&'static str, u16>,
@@ -5678,6 +5682,7 @@ impl App {
                             block_help: false,
                             party_buffs: HashMap::new(),
                             held_menu: None,
+                            main_open: false,
                             cursor_mem: HashMap::new(),
                             menu_mem: [0; 2],
                             started: Instant::now(),

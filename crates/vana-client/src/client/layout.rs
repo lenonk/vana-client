@@ -453,6 +453,11 @@ fn dim_rows(w: &World, l: &Layout, kind: u8) -> Vec<u16> {
 
 /// Every key while laying out: the rmlo windows' (Up / Down, Enter 5, Escape 6); else Enter (0x8f) and Escape (0x0f /
 /// 0x90) of select mode or of the held piece. The arrows and turns are key functions (`update`).
+/// No rmlo window, bankmenu or list up: the keys are the field's.
+pub fn in_field(w: &World) -> bool {
+    w.layout.as_ref().is_some_and(|l| l.win.is_none() && l.bank.is_none() && l.list.is_none())
+}
+
 pub fn key(w: &mut World, key: egui::Key) -> bool {
     let Some(mut l) = w.layout.take() else { return false };
     if l.list.is_some() {
