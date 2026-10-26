@@ -37,6 +37,8 @@ pub struct State {
     /// Installed mannequins (item type 14, CXiMannequinActor), and the furniture table their footprints come from.
     pub mannequins: Vec<Mannequin>,
     table: Option<Arc<FurnTable>>,
+    /// Each piece object's pulse (+0x24..+0x28), kept for the room's life (layout.rs).
+    pub pulses: std::collections::HashMap<(u8, u8), super::layout::Pulse>,
 }
 
 /// A mannequin actor (mannequin_spec 2.2 / 4.1): its record, id, look, pose bank and motion, and place.
@@ -77,7 +79,14 @@ impl State {
         self.drawn_skinned.clear();
         self.moves.clear();
         self.mannequins.clear();
+        self.pulses.clear();
         self.seq += 1;
+    }
+
+    /// The pieces drawn as actors (skinned furniture, mannequins): the only ones with a colour method.
+    pub fn actor_pieces(&self) -> Vec<((u8, u8), u32)> {
+        let skinned = self.drawn_skinned.iter().zip(&self.skinned).map(|(d, s)| (d.0, s.0));
+        skinned.chain(self.mannequins.iter().map(|m| (m.key, m.id))).collect()
     }
 
     /// A skinned piece's or a mannequin's place.

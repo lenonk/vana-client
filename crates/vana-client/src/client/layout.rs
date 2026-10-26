@@ -31,6 +31,45 @@ pub struct Layout {
     pub list: Option<(u8, usize, usize)>,
     /// Mode 4: a mannequin being dressed.
     pub dress: Option<super::mannequin::Dress>,
+    /// The pieces' colours (FUN_101d39a0 for all, FUN_101cea80 for one), ARGB with 0x80 = 1.0.
+    color_all: u32,
+    colors: std::collections::HashMap<(u8, u8), u32>,
+}
+
+/// FUN_101ce9e0 / FUN_101ce900: a piece's pulse, its level (0x80 = 1.0) stepping 8 a tick between 0x20 and 0xff and
+/// the pulses left (one counted each time the level rises through 0x80; -1 for ever).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Pulse {
+    level: i32,
+    step: i32,
+    left: i32,
+    acc: f32,
+}
+
+impl Pulse {
+    pub fn new(left: i32) -> Self {
+        Pulse { level: 0x80, step: -8, left, acc: 0.0 }
+    }
+
+    /// `ticks` more (whole ticks, the rest kept); the level while it runs.
+    fn tick(&mut self, ticks: f32) -> Option<i32> {
+        if self.left == 0 {
+            return None;
+        }
+        self.acc += ticks;
+        while self.acc >= 1.0 && self.left != 0 {
+            self.acc -= 1.0;
+            self.level += self.step;
+            if self.level < 0x20 {
+                (self.level, self.step) = (0x40, 8);
+            } else if self.level >= 0x100 {
+                (self.level, self.step) = (0xff, -8);
+            } else if self.level == 0x80 && self.left > 0 {
+                self.left -= 1;
+            }
+        }
+        Some(self.level)
+    }
 }
 
 /// A piece in the room, with its item.
@@ -199,14 +238,16 @@ pub fn enter(w: &mut World) {
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
     let win = sel.is_none().then_some((1, 1));
-    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None, dress: None });
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None, dress: None, color_all: WHITE, colors: Default::default() });
     w.pos = park(r.floor);
 }
 
 /// FUN_101d3380(0, -1, 1): a held piece goes back, the player returns to the room centre, the normal camera behind
 /// them, c2s 0x0FA all zero (FUN_100f0c80) and the moogle's menu again.
 pub fn leave(w: &mut World) {
-    let Some(l) = w.layout.take() else { return };
+    let Some(mut l) = w.layout.take() else { return };
+    set_colors(&mut l, WHITE);
+    apply_colors(w, &l);
     w.layout_view = l.view;
     w.pos = park(l.floor);
     let yaw = w.yaw;
@@ -218,12 +259,17 @@ pub fn leave(w: &mut World) {
     log::info!("layout: left");
 }
 
-/// FUN_101d37e0: picks a piece up (state 2, blinking); the pieces on it come along.
-fn hold(w: &World, l: &mut Layout, p: Placed, new: bool) {
+/// FUN_101d37e0: picks a piece up (state 2); every piece dims to 0x60 and this one (with those on it) pulses for ever;
+/// the pieces on it come along.
+fn hold(w: &mut World, l: &mut Layout, p: Placed, new: bool) {
     let grid = l.grid(w);
     let pieces = l.pieces(w);
     let tops = if p.piece.surface() { grid.on(p.piece.slot, p.piece.c).iter().filter_map(|&(s, c)| pieces.iter().copied().find(|q| (q.piece.slot, q.piece.c) == (s, c))).collect() } else { Vec::new() };
     l.sel = Some((p.piece.c, p.piece.slot));
+    set_colors(l, 0x8060_6060);
+    for t in std::iter::once(&p).chain(&tops) {
+        w.furniture.pulses.insert((t.piece.c, t.piece.slot), Pulse::new(-1));
+    }
     l.held = Some(Held { piece: p, tops, new });
 }
 
@@ -236,6 +282,7 @@ fn place_held(w: &mut World, l: &mut Layout) {
         for t in &h.tops {
             send_layout(w, t, l.floor);
         }
+        set_colors(l, WHITE);
         w.sounds.push(8060);
     } else {
         let p = &h.piece.piece;
@@ -247,8 +294,10 @@ fn place_held(w: &mut World, l: &mut Layout) {
 
 /// FUN_101ccf50(6): back to its record's place, or a new piece dropped (SE 0003).
 fn cancel_held(w: &mut World, l: &mut Layout) {
-    if l.held.take().is_some_and(|h| h.new) {
-        l.sel = None;
+    match l.held.take() {
+        Some(h) if h.new => l.sel = None,
+        Some(_) => set_colors(l, WHITE),
+        None => {}
     }
     w.sounds.push(Ui::Cancel as u32);
 }
@@ -360,6 +409,7 @@ pub fn update(w: &mut World, input: &mut Input, dt: f32) {
     }
     let Some(mut l) = w.layout.take() else { return };
     l.ticks += dt * 60.0;
+    frame_colors(w, &mut l, dt * 60.0);
     if let Some(d) = l.dress.as_mut() {
         super::mannequin::update(w, d, dt * 60.0);
         w.layout = Some(l);
@@ -395,12 +445,117 @@ pub fn update(w: &mut World, input: &mut Input, dt: f32) {
             && let Some(id) = pick(&cur, &all, dx, dz, l.view)
         {
             l.sel = Some(((id >> 8) as u8, id as u8));
+            // A new selection: every piece back to 0x80 and pulsing for ever (only the selected one shows it).
+            set_colors(&mut l, WHITE);
+            for p in &pieces {
+                w.furniture.pulses.insert((p.piece.c, p.piece.slot), Pulse::new(-1));
+            }
         }
     }
     if input.test(0x8b, mode::PRESS) {
         open_win(w, &mut l);
     }
     w.layout = Some(l);
+}
+
+const WHITE: u32 = 0x8080_8080;
+
+/// FUN_101d39a0: every piece's colour.
+pub fn set_colors(l: &mut Layout, c: u32) {
+    l.color_all = c;
+    l.colors.clear();
+}
+
+/// The colour part of a frame: in mode 4 the see-through walk (FUN_101d4310, before the objects update), then the
+/// selected piece's pulse (FUN_101ce900: alpha 0x80 for a mannequin or while dressing, else 0x40; the pieces on it
+/// 0x40), then every actor piece takes its colour (MMB pieces' colour method is empty).
+fn frame_colors(w: &mut World, l: &mut Layout, ticks: f32) {
+    if let Some(d) = &l.dress {
+        let key = (d.c, d.slot);
+        see_through(w, l, key);
+    }
+    let sel = l.dress.as_ref().map(|d| (d.c, d.slot)).or(l.sel);
+    if let Some(k) = sel {
+        let mannequin = l.dress.is_some() || w.inv.slots.get(&k).is_some_and(|&(id, _)| item_type(w, id) == MANNEQUIN);
+        let alpha = if mannequin { 0x80u32 } else { 0x40 };
+        if let Some(level) = w.furniture.pulses.get_mut(&k).and_then(|p| p.tick(ticks)) {
+            l.colors.insert(k, alpha << 24 | level as u32 * 0x1_0101);
+            let grid = l.grid(w);
+            for (s, c) in grid.on(k.1, k.0) {
+                if let Some(level) = w.furniture.pulses.get_mut(&(c, s)).and_then(|p| p.tick(ticks)) {
+                    l.colors.insert((c, s), 0x40 << 24 | level as u32 * 0x1_0101);
+                }
+            }
+        }
+    }
+    apply_colors(w, l);
+}
+
+/// Each actor piece's model colour from the layout's.
+fn apply_colors(w: &mut World, l: &Layout) {
+    for (k, id) in w.furniture.actor_pieces() {
+        let c = l.colors.get(&k).copied().unwrap_or(l.color_all);
+        if let Some(a) = w.actors.get_mut(&id) {
+            a.alpha = (c >> 24) as f32;
+            a.rgb = [16, 8, 0].map(|s| ((c >> s) & 0xff) as f32);
+        }
+    }
+}
+
+/// FUN_101d4310: the cells from the mannequin's to the room's middle (10, 13), their floor and top pieces 0x20202020;
+/// the piece under the mannequin and the mannequin 0x80808080.
+fn see_through(w: &World, l: &mut Layout, key: (u8, u8)) {
+    let Some(ext) = w.inv.ext.get(&key) else { return };
+    let (x0, level, z0) = (ext[6] as i8 as i32, ext[7] as i8 as i32, ext[8] as i8 as i32);
+    let grid = l.grid(w);
+    for (x, z) in walk(x0, z0) {
+        if let Some(c) = grid.cell(x, z) {
+            for (s, cn) in [c.floor, c.top] {
+                if (s, cn) != (0, 0) {
+                    l.colors.insert((cn, s), 0x2020_2020);
+                }
+            }
+        }
+    }
+    if level != 0
+        && let Some(c) = grid.cell(x0, z0)
+        && c.floor != (0, 0)
+    {
+        l.colors.insert((c.floor.1, c.floor.0), WHITE);
+    }
+    l.colors.insert(key, WHITE);
+}
+
+/// FUN_101d4310's cells, Bresenham as read: the error takes the signed run, so a walk towards lower x or z steps the
+/// other axis at every cell once the error first passes the run.
+pub fn walk(x0: i32, z0: i32) -> Vec<(i32, i32)> {
+    let (dx, dz) = (10 - x0, 13 - z0);
+    let (sx, sz) = (if dx >= 0 { 1 } else { -1 }, if dz >= 0 { 1 } else { -1 });
+    let (ax, az) = (dx.abs(), dz.abs());
+    let (mut x, mut z, mut e) = (x0, z0, 0);
+    let mut out = Vec::new();
+    if az < ax {
+        while x != 10 {
+            x += sx;
+            e += az;
+            if ax < e {
+                e -= dx;
+                z += sz;
+            }
+            out.push((x, z));
+        }
+    } else {
+        while z != 13 {
+            z += sz;
+            e += ax;
+            if az < e {
+                e -= dz;
+                x += sx;
+            }
+            out.push((x, z));
+        }
+    }
+    out
 }
 
 /// FUN_101d5ef0: Enter or a click opens rmlo2 on the selection (rmlo4 for a mannequin), rmlo1 with none (SE 0002).
@@ -547,6 +702,8 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                     Row::Equip => {
                         if let Some(p) = cur {
                             super::mannequin::open(&mut l, p.piece.c, p.piece.slot);
+                            // FUN_101d3910: the mannequin pulses 4 times.
+                            w.furniture.pulses.insert((p.piece.c, p.piece.slot), Pulse::new(4));
                         }
                     }
                 }
@@ -1383,5 +1540,28 @@ mod tests {
     fn packets() {
         assert_eq!(layout_body(0x1234, 5, 1, 0, 7, 5, 9, 3), [0x34, 0x12, 5, 1, 0, 7, 5, 9, 3, 0, 0, 0]);
         assert_eq!(bankin_body(0x1234, 5, 9), [0x34, 0x12, 5, 9]);
+    }
+
+    #[test]
+    fn pulses() {
+        let mut p = Pulse::new(2);
+        assert_eq!(p.tick(1.0), Some(0x78));
+        // Down to 0x18 (13 ticks), 0x40, up through 0x80 (one counted), 0xff, down, 0x40, up to 0x80: done.
+        let mut n = 1;
+        while p.tick(1.0).is_some() {
+            n += 1;
+        }
+        assert_eq!((p.level, p.left), (0x80, 0));
+        assert_eq!(n, 13 + 8 + 16 + 28 + 8);
+        let mut forever = Pulse::new(-1);
+        assert!((0..1000).all(|_| forever.tick(1.0).is_some()));
+    }
+
+    #[test]
+    fn see_through_walk() {
+        assert_eq!(walk(1, 18), [(2, 18), (3, 17), (4, 17), (5, 16), (6, 16), (7, 15), (8, 15), (9, 14), (10, 14)]);
+        // Towards lower x the error grows: the row steps at every cell once it passes the run.
+        assert_eq!(walk(15, 10), [(14, 10), (13, 11), (12, 12), (11, 13), (10, 14)]);
+        assert!(walk(10, 13).is_empty());
     }
 }

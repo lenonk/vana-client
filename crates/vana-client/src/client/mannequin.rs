@@ -159,6 +159,7 @@ fn close(w: &mut World) {
     let Some(l) = w.layout.as_mut() else { return };
     if let Some(d) = l.dress.take() {
         l.sel = Some((d.c, d.slot));
+        super::layout::set_colors(l, 0x8080_8080);
     }
 }
 

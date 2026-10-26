@@ -9527,8 +9527,7 @@ Spec `~/ffxi/lab/research/mannequin_spec.md` 5, 6; client/mannequin.rs, layout.r
   first (Num+) the mittens onto Hands; Remove all (prompt, kind 5) leaves her bare and child 17 dim; Escape back to
   mode 1. The Storage view (moogle, Storage) shows the Galka's sword grey. Num+ also cycled the log focus (key
   function 0x78) until the dressing windows joined log_cycle's blockers (/check's inspect too: main-class).
-- Not done: the see-through tint of pieces between the camera and the mannequin (FUN_101d4310), the 4 blinks on
-  entering (FUN_101ce9e0); retail's saved-focal quirk (8.3) not copied.
+- The see-through tint and the 4 pulses: section "Layout mode: piece colours and pulses". Retail's saved-focal quirk (8.3) not copied.
 
 ## Zone-in ends autorun and first person (2026-10-26)
 
@@ -9538,3 +9537,28 @@ Spec `~/ffxi/lab/research/mannequin_spec.md` 5, 6; client/mannequin.rs, layout.r
   0x00A zone reset clears autorun, its vector, /follow and first person. User report: autorun kept running after a
   zone line.
 - Live (Lnxcsfix): Num7 and Num5 in Southern San d'Oria, a GM zone change: standing, third person after zone-in.
+
+## Layout mode: piece colours and pulses (2026-10-26)
+
+client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs `pulses`, `actor_pieces`.
+- Only actor pieces change colour (skinned furniture, mannequins): XiFurnitureActor's colour method (vt +0x30) is the
+  empty FUN_10081d30 (furniture_spec 4.1). FUN_101cea80 sets one piece, FUN_101d39a0 every piece.
+- Pulse (FUN_101ce9e0 sets +0x24 level 0x80, +0x26 step -8, +0x28 count; FUN_101ce900 each object update while the
+  piece is the selected one, states 1..4): level += ticks x step; under 0x20 back to 0x40 rising, at 0x100 to 0xff
+  falling; one pulse counted when the level lands on 0x80 (so rising: whole 8-steps from 0x40); count -1 = for ever.
+  Colour = alpha << 24 | level x 3, alpha 0x40 in states 1 / 2 unless a mannequin (type 14), else 0x80; the pieces on
+  the selected surface pulse with alpha 0x40. Count 0: nothing set. Ours steps whole ticks (the rest kept).
+- When (callers of FUN_101ce9e0 / FUN_101d39a0): a new selection by the arrows (FUN_101d4d90) sets every piece to
+  0x80808080 and every pulse to -1; picking up (FUN_101d37e0) every piece 0x80606060 and the held one (with its tops)
+  pulses -1; placing or cancelling an installed piece (FUN_101ce360) 0x80808080 (a cancelled new piece leaves the
+  dim); mode 1 entry / exit (FUN_101d3380 cases 1 / 0) 0x80808080; mode 4 entry (FUN_101d3910) the mannequin pulses
+  4 times. Pulses live with the piece objects, so a count of -1 carries into the next layout session (ours:
+  `furniture::State::pulses`, cleared with the room).
+- Mode 4 (FUN_101d4760 then FUN_101d4310, before the objects update FUN_101d5120, so the pulse wins): a Bresenham
+  walk from the mannequin's cell to (10, 13), each cell's floor and top pieces 0x20202020; the piece under the
+  mannequin (level != 0) and the mannequin 0x80808080. As read, the error subtracts the signed run, so a walk towards
+  lower x or z steps the other axis at every cell once the error passes the run (kept).
+- Our actors take it as Actor.alpha / rgb (the op 0x29 path): the lit colour clamps at 1 before MODULATE2X as in
+  D3D's fixed function, so on bright surfaces only the dim end of the pulse shows.
+- Live (Lnxcsfix, a Mithra and a Galka mannequin): the selection pulse logged on the Galka (0x70..0xef levels), the
+  hold's 0x60 dim on the Galka while the Mithra was held, all back to 0x80 after the cancel.
