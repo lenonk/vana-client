@@ -41,7 +41,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     }
 }
 
-pub fn shot(width: u32, height: u32, backdrop: Option<&Path>, out: &Path) -> Result<()> {
+pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path) -> Result<()> {
     let gpu = Gpu::headless()?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let target = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -57,7 +57,7 @@ pub fn shot(width: u32, height: u32, backdrop: Option<&Path>, out: &Path) -> Res
     let view = target.create_view(&Default::default());
     let ctx = egui::Context::default();
     let m = Modern::new(&ctx);
-    let zoom = m.theme.zoom(height as f32);
+    let zoom = m.theme.zoom(height as f32, scale);
     ctx.set_zoom_factor(zoom);
     let bg = backdrop.map(load_png).transpose()?.map(|(size, rgba)| ctx.load_texture("backdrop", egui::ColorImage::from_rgba_unmultiplied(size, &rgba), egui::TextureOptions::LINEAR));
     let mut layout = Layout::new();

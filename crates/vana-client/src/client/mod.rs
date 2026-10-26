@@ -9702,7 +9702,7 @@ impl App {
                 if world.modern {
                     let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
                     let layout = self.cfg.modern_layout.entry(world.name.clone()).or_default();
-                    save |= m.ui(ctx, world, window, layout);
+                    save |= m.ui(ctx, world, window, self.cfg.modern_scale, layout);
                 } else {
                     modern::off(ctx, self.modern.as_mut());
                 }

@@ -33,6 +33,7 @@ pub struct Settings {
     pub gpu: String,
     pub cursor_size: u32,
     pub modern_ui: bool,
+    pub modern_scale: u32,
     /// The mod packs in priority order (the Mods page; config `mods`).
     pub mods: Vec<crate::config::ModRef>,
 }
@@ -62,6 +63,7 @@ impl Settings {
             gpu: c.gpu.clone(),
             cursor_size: c.cursor_size,
             modern_ui: c.modern_ui,
+            modern_scale: c.modern_scale,
             mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
         }
     }
@@ -85,6 +87,7 @@ impl Settings {
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
         c.modern_ui = self.modern_ui;
+        c.modern_scale = self.modern_scale;
         c.mods = self.mods.clone();
     }
 }
@@ -133,6 +136,7 @@ enum Val {
     /// The graphics adapter ("Default" then the app's list).
     Gpu,
     ModernUi,
+    ModernScale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -152,6 +156,7 @@ struct Row {
 }
 
 const OFF_ON: &[(u32, &str)] = &[(1, "ON"), (0, "OFF")];
+const MODERN_SCALES: &[(u32, &str)] = &[(50, "50%"), (55, "55%"), (60, "60%"), (65, "65%"), (70, "70%"), (75, "75%"), (80, "80%"), (85, "85%"), (90, "90%"), (95, "95%"), (100, "100%"), (105, "105%"), (110, "110%"), (115, "115%"), (120, "120%"), (125, "125%"), (130, "130%"), (135, "135%"), (140, "140%"), (145, "145%"), (150, "150%")];
 
 const fn row(label: &'static str, help: &'static str, val: Val, choices: &'static [(u32, &'static str)], when: When) -> Row {
     Row { label, help, val, choices, when }
@@ -210,6 +215,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
         row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
+        row("Interface Size", "The modern interface's size (not retail).", ModernScale, MODERN_SCALES, Now),
     ];
     const MAPS: &[Row] = &[
         row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
@@ -347,6 +353,7 @@ impl SettingsUi {
             Val::Aniso => self.s.anisotropy as u32,
             Val::PartyTp => self.s.party_tp as u32,
             Val::ModernUi => self.s.modern_ui as u32,
+            Val::ModernScale => self.s.modern_scale,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
@@ -369,6 +376,7 @@ impl SettingsUi {
             Val::Aniso => self.s.anisotropy = x as u16,
             Val::PartyTp => self.s.party_tp = x != 0,
             Val::ModernUi => self.s.modern_ui = x != 0,
+            Val::ModernScale => self.s.modern_scale = x,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,

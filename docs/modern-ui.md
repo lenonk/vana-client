@@ -142,7 +142,8 @@ Milestone 1:
   any size, nine-slices, gauges), `hud.rs` (the panels from views gathered from the World), `mod.rs` (the layer,
   zoom, panels with saved places), `shot.rs` (`vana-client modern-shot [--backdrop PNG] --out PNG`: the panels with
   sample values and every frame at several sizes, offscreen).
-- egui's zoom follows the window height against 1080 (clamped 0.75 .. 2.5).
+- egui's zoom follows the window height against 1080, times Settings > Linux > Interface Size (config modern_scale,
+  50 .. 150% in 5% steps, default 60%: the 1080 design at full size was far too big).
 - Panels in the normal frame: Status (job pictogram, name, jobs; HP / MP / TP gauges and values; no MP row without
   MP), Party (the others in list rows: pictogram, name, HP; the party cursor or our target selected, hover, away
   members greyed; a click targets the member), Target (the ring for its relation, name, HP). Movable; places saved

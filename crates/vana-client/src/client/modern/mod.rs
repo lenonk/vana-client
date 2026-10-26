@@ -30,9 +30,9 @@ impl Modern {
 
     /// One frame: egui's zoom for the window height, then the panels. True when a panel moved (the layout is to be
     /// saved).
-    pub fn ui(&mut self, ctx: &Context, w: &mut World, window: [u32; 2], layout: &mut Layout) -> bool {
+    pub fn ui(&mut self, ctx: &Context, w: &mut World, window: [u32; 2], scale: u32, layout: &mut Layout) -> bool {
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
-        let zoom = self.theme.zoom(window[1] as f32 / native);
+        let zoom = self.theme.zoom(window[1] as f32 / native, scale);
         if (zoom - self.zoom).abs() > 0.001 {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;
