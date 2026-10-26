@@ -305,9 +305,16 @@ fn decode_block(src: &[u8], hist: &mut [i32; 2], out: &mut [i16], c: usize, ch: 
     }
 }
 
-/// The client's sound roots in search order: `sound`, `sound2` .. `sound9` (FFXiMain 0x10346608).
+/// The client's sound roots in search order: `sound`, `sound2` .. `sound9` (FFXiMain 0x10346608), each enabled mod's
+/// before the game's (not retail).
 pub fn sound_dirs(ffxi_dir: &Path) -> Vec<PathBuf> {
-    (1..=9).map(|n| ffxi_dir.join(if n == 1 { "sound".to_string() } else { format!("sound{n}") }).join("win")).collect()
+    let mut roots = crate::config::enabled_mod_dirs();
+    roots.push(ffxi_dir.to_path_buf());
+    sound_dirs_in(&roots)
+}
+
+fn sound_dirs_in(roots: &[PathBuf]) -> Vec<PathBuf> {
+    roots.iter().flat_map(|r| (1..=9).map(move |n| r.join(if n == 1 { "sound".to_string() } else { format!("sound{n}") }).join("win"))).collect()
 }
 
 /// `music%03u.bgw` from the first root that has it (FUN_1023bed0; id & 0x3ff).
@@ -358,6 +365,16 @@ pub fn write_wav(path: &Path, samples: &[i16], channels: u16, rate: u32, looped:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A mod's sound folders come before the game's, each in sound, sound2 .. sound9 order.
+    #[test]
+    fn mod_sound_first() {
+        let d = sound_dirs_in(&[PathBuf::from("/m"), PathBuf::from("/g")]);
+        assert_eq!(d.len(), 18);
+        assert_eq!(d[0], PathBuf::from("/m/sound/win"));
+        assert_eq!(d[1], PathBuf::from("/m/sound2/win"));
+        assert_eq!(d[9], PathBuf::from("/g/sound/win"));
+    }
 
     fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
         for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {

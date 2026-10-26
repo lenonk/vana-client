@@ -188,7 +188,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   in ~/.cache/vana-client/merged. Installed 2026-10-22 from ~/Downloads/FFXI by ~/ffxi/lab/tools/install_mods.py:
   Amelila upscale 02 / 01 / megapack 2019, xiPrime menus / status icons / cursors, Remapster, AshenbubsHD (lowest).
   Settings' Mods page (enable / disable / order, install packs from zip / 7z / rar archives; MODLOG "Mod manager: the
-  Mods page") done. Left: sound overlays (sound*/win) in the audio loader; root files (DatIndex::root_file) used for the cursors; mod VTABLE / FTABLE (new file ids, e.g.
+  Mods page") done. Sound overlays (a mod's sound*/win before the game's) and root files (the cursor
+  pack) done. Left: mod VTABLE / FTABLE (new file ids, e.g.
   Remapster's 109 extra maps, which need an add-on in retail too).
 - Extras (gameplay additions, the Windower / Ashita add-ons built in): the Config list's Extras row and page, all
   off by default, built from the Config pages' own sprites (MODLOG "Config: Extras and Settings"). Config-type

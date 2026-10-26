@@ -122,6 +122,14 @@ pub fn mods_dir() -> PathBuf {
     data_dir().join("mods")
 }
 
+/// The enabled mods' folders, highest priority first (none with FFXI_NO_MODS set).
+pub fn enabled_mod_dirs() -> Vec<PathBuf> {
+    if std::env::var_os("FFXI_NO_MODS").is_some() {
+        return Vec::new();
+    }
+    Config::load().mods.iter().filter(|m| m.enabled).map(|m| mods_dir().join(&m.name)).filter(|d| d.is_dir()).collect()
+}
+
 /// Merged overlay DATs (rebuilt when a source changes).
 pub fn merged_dir() -> PathBuf {
     app_dir(dirs::cache_dir()).join("merged")

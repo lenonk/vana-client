@@ -9378,3 +9378,13 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   retail does, the tractor prompt opens from the K.O. step (mode 3), and the K.O. step waits out events.
 - Live (Lnxcsfix): `!hp 0` in Valkurm, `!pos` to Bastok Markets dead, `!raise 3` at once: the offer (logged twice),
   "Allow yourself to be revived?", Enter, standing 4 s later.
+
+## Mod manager: sound overlays (2026-10-26)
+
+- Not retail (XIPivot serves sound files too). The audio loader's roots: every enabled mod's `sound`, `sound2` ..
+  `sound9` / `win` in mod priority order, then the game's (audio/format.rs `sound_dirs`): a mod's
+  `sound/win/se/se001/se001234.spw` or `sound/win/music/data/music108.bgw` replaces the game's file of the same
+  name. Effects stay cached per id for the session; a mod change applies to sounds not yet played.
+- `config::enabled_mod_dirs` (FFXI_NO_MODS respected) is now the one list for the DAT overlays and the sounds. The
+  cursor pack already came through `DatIndex::root_file` (client/mousecur.rs).
+- Checked: with the user's 8 mods (none has sounds) the title music still starts.

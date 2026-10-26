@@ -46,11 +46,7 @@ impl DatIndex {
 
     fn overlays(entries: &[(u8, u16)]) -> Option<std::sync::Arc<overlay::Overlays>> {
         use std::sync::{Arc, Mutex, OnceLock};
-        if std::env::var_os("FFXI_NO_MODS").is_some() {
-            return None;
-        }
-        let cfg = crate::config::Config::load();
-        let dirs: Vec<PathBuf> = cfg.mods.iter().filter(|m| m.enabled).map(|m| crate::config::mods_dir().join(&m.name)).filter(|d| d.is_dir()).collect();
+        let dirs = crate::config::enabled_mod_dirs();
         if dirs.is_empty() {
             return None;
         }
