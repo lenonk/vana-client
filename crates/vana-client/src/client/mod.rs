@@ -1864,7 +1864,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
             // Child 7 Config (FUN_10147fc0 case 7): configwi over the menu, SE 0002.
             (1, 7) => {
-                world.config = Some(configui::ConfigUi::open("configwi"));
+                let mut c = configui::ConfigUi::open("configwi");
+                c.mon = monstrosity::active(world);
+                world.config = Some(c);
                 world.menu = None;
                 world.sounds.push(crate::audio::Ui::Select as u32);
             }
@@ -6663,7 +6665,7 @@ impl App {
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
                         m.aix.merge(&monstrosity::ability_bits(world).unwrap_or_else(|| world.commands_known.clone()));
-                        m.save();
+                        m.save(monstrosity::active(world));
                     }
                     self.status = "Zoning...".into();
                     // Its zone-in can come in the same drain, so the hold starts here, not from zoning_since.
@@ -7131,7 +7133,7 @@ impl App {
                     if let Some(mut m) = world.macros.take() {
                         m.mix.merge(&world.spells_known);
                         m.aix.merge(&monstrosity::ability_bits(world).unwrap_or_else(|| world.commands_known.clone()));
-                        m.save();
+                        m.save(monstrosity::active(world));
                     }
                     // The server has ended the session (the net thread is done) whatever our toggle thinks: it cancels a
                     // countdown on its own (moving), so the local flag can be off when its logout comes.

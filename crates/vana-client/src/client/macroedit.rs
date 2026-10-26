@@ -222,6 +222,8 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 w.sounds.push(Ui::Cancel as u32);
                 w.macroedit = None;
             }
+            // FUN_101a6490: Edit Equip. Set is off in Monstrosity.
+            K::Enter if menu_sel == 2 && super::monstrosity::active(w) => w.sounds.push(Ui::Error as u32),
             K::Enter => {
                 w.sounds.push(Ui::Select as u32);
                 if menu_sel == 1 {
@@ -636,7 +638,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return rects };
     let free = w.confirm.is_none();
-    if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none() && me.sets.is_none(), &[]) {
+    let off: &[u16] = if super::monstrosity::active(w) { &[2] } else { &[] };
+    if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none() && me.sets.is_none(), off) {
+        gu.disabled_children(MENU, win.frame[0], win.frame[1], off, Some(me.menu_sel));
         hit(w, MENU, &win);
         rects.push(win.frame);
     }

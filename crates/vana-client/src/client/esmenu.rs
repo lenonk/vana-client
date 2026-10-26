@@ -181,7 +181,8 @@ fn menu_off(w: &World) -> Vec<u16> {
     if es.clip.is_none() {
         off.push(4);
     }
-    if es.lock_waiting() {
+    // FUN_101a72e0: Set appearance only once the lockstyle wait is over, and never in Monstrosity.
+    if es.lock_waiting() || super::monstrosity::active(w) {
         off.push(8);
     }
     off

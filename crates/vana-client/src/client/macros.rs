@@ -301,9 +301,11 @@ impl Macros {
     }
 
     /// FUN_101ab7d0: leaving the field writes mcr.sys, both title files, the current set and the list orders (mix.dat
-    /// is skipped in Monstrosity, which we do not have).
-    pub fn save(&self) {
-        write_file(&self.dir.join("mix.dat"), 2, &self.mix.payload());
+    /// is skipped in Monstrosity, `mon`).
+    pub fn save(&self, mon: bool) {
+        if !mon {
+            write_file(&self.dir.join("mix.dat"), 2, &self.mix.payload());
+        }
         write_file(&self.dir.join("aix.dat"), 4, &self.aix.payload());
         write_file(&self.dir.join("moix.dat"), 1, &self.moix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
         write_file(&self.dir.join("eix.dat"), 1, &self.eix.iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>());
@@ -564,7 +566,7 @@ mod tests {
         assert_eq!(std::fs::metadata(game.join("USER/2a/mcr1.dat")).unwrap().len(), 7624);
         m.switch(0, 0);
         assert_eq!(m.recs[0].line(0), b"/echo hi");
-        m.save();
+        m.save(false);
         let again = Macros::load(&game, 0x2a, Box::new(|_| None));
         assert_eq!((again.book, again.set, again.recs[0].line(0)), (0, 0, &b"/echo hi"[..]));
         assert_eq!(again.book_title(3), "Book04");

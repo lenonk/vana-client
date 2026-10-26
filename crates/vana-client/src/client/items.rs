@@ -670,7 +670,8 @@ fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
     let usable = matches!(it.item_type, 8 | 0x16 | 0x17)
         || (!matches!(it.item_type, 4 | 5) && it.flags & 0x400 != 0)
         || (matches!(it.item_type, 4 | 5) && it.max_charges != 0 && equipped && ext.is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0));
-    let monster = w.stats.as_ref().is_some_and(|s| s.main.0 == 0x17);
+    // FUN_101f2de0 / FUN_101f2ec0: Use is off in Monstrosity.
+    let monster = super::monstrosity::active(w);
     [usable && !monster, w.inv.locks.get(&(INVENTORY, index)).copied().unwrap_or(0) == 0 && id != 0xffff]
 }
 

@@ -204,8 +204,10 @@ pub fn page(name: &str) -> &'static [(u16, Ctl)] {
 }
 
 /// Children that do not take Enter (state 5, drawn with their state-4 sprite).
-fn disabled(name: &str, child: u16, sw: f32) -> bool {
+fn disabled(name: &str, child: u16, sw: f32, mon: bool) -> bool {
     match name {
+        // Misc. 3's style lock (FUN_1019b8c0 / FUN_1019b900): not in Monstrosity.
+        "conf12wi" => mon && matches!(child, 3 | 4),
         // Compact software keyboard: Japanese only (FUN_10194460).
         "conf13wi" => matches!(child, 3..=5),
         // Macro palette size: below 1024 wide the full palette does not fit (FUN_10193e50, simplified).
@@ -321,6 +323,8 @@ pub struct ConfigUi {
     pub owned: u32,
     /// Our Settings / Extras page is open over the windows (none of them has the hand).
     pub covered: bool,
+    /// Opened in Monstrosity: Misc. 3's style lock rows are off.
+    pub mon: bool,
 }
 
 impl ConfigUi {
@@ -476,7 +480,7 @@ impl ConfigUi {
 
     /// Enter on `child` of the top window `name`.
     fn enter(&mut self, v: &mut Values, name: &str, child: u16, sw: f32, out: &mut Out) {
-        if disabled(name, child, sw) || unowned(name, child, self.owned) {
+        if disabled(name, child, sw, self.mon) || unowned(name, child, self.owned) {
             out.sounds.push(Se::Error);
             return;
         }
@@ -666,7 +670,7 @@ pub fn draw_page(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values,
     for (id, cx, cy, _, normal, off) in &kids {
         // The cursor child stays highlighted under the window on top (no registry flag 0x80000); the hand only on top.
         let on = *id == w.cursor && w.edit.is_none();
-        let dis = disabled(&w.name, *id, sw) || unowned(&w.name, *id, ui.owned);
+        let dis = disabled(&w.name, *id, sw, ui.mon) || unowned(&w.name, *id, ui.owned);
         let sprite = if dis { off.clone().or(normal.clone()) } else { normal.clone() };
         if let Some((k, lib)) = sprite {
             let d = if on { -1.0 } else { 0.0 };

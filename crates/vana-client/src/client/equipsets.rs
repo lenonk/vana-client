@@ -194,6 +194,10 @@ fn fix_up(w: &mut World, set: &Set, print: bool) -> Vec<[u8; 3]> {
 /// FUN_101a7af0: set >= 200, no record or within 900 ms of the last: false. Else c2s 0x051 {count, entries {index,
 /// slot, container, 0} from @8} when any; print: group 0xc 0x15d "Set #%d equipped.".
 pub fn equip(w: &mut World, id: usize, print: bool) -> bool {
+    // Equip sets do nothing in Monstrosity (FUN_101a7af0 returns 0).
+    if super::monstrosity::active(w) {
+        return false;
+    }
     let Some(es) = w.equipsets.as_mut() else { return false };
     let Some(set) = es.get(id) else { return false };
     if es.last_equip.is_some_and(|t| t.elapsed() < Duration::from_millis(900)) {
@@ -231,6 +235,9 @@ fn lock_wait(w: &mut World) -> bool {
 /// FUN_101a7df0: set >= 200 or no record: false; within 9 s the refusal. Else c2s 0x053 mode 3 with the visible slots
 /// 0..8 {index, slot, container, 0, u16 id, 0} (when any), config 0xbf = 1, print group 0xc 0x1c8.
 pub fn lock_set(w: &mut World, id: usize, print: bool) -> bool {
+    if super::monstrosity::active(w) {
+        return false;
+    }
     let Some(set) = w.equipsets.as_ref().and_then(|e| e.get(id)) else { return false };
     if lock_wait(w) {
         return true;
@@ -265,6 +272,9 @@ pub fn lock_set(w: &mut World, id: usize, print: bool) -> bool {
 /// FUN_101a8030(mode, no_wait, flags): c2s 0x053 {count 0, mode, flags}; modes other than 2 (Query) wait 9 s unless
 /// `no_wait`; mode 0 clears config 0xbf, 1 / 3 / 4 set it.
 pub fn lock_mode(w: &mut World, mode: u8, no_wait: bool, flags: u8) {
+    if super::monstrosity::active(w) {
+        return;
+    }
     if mode != 2 && !no_wait && lock_wait(w) {
         return;
     }

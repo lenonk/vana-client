@@ -10207,3 +10207,17 @@ ko_step), net.rs `NetCommand::HomePoint(status)`.
   "Rabbit falls to the ground.", mp_dead with "Time Limit: 59:51", Down to Cancel ("End this bout of
   Monstrosity?"), Up, Enter on Retry: LSB zoned her back into the Feretory alive. The level window overlapped mp_stat's
   last row in that run; the 0x14 offset was traced and added after it (not seen live). Rows restored afterwards.
+
+## Monstrosity, part 6: the refusals (2026-10-26)
+
+Spec section 3.8 (each read in the decompile).
+- Text commands (FUN_10081230 -> FUN_10080d20, table 0x10357bb8): in Monstrosity /pcmd /acmd /join /decline /invite
+  /autogroup /help /pet /item /heal /sit /sitchair /jump /fish /lastsynth /prcmd (ids 0x56..0x59, 0x5d, 0x5e, 0x21,
+  0x2c, 0x22, 0x32..0x36, 0x9d, 0x61) are dropped without a line; /heal still runs while healing (status 0x21 / 7).
+  Then FUN_10080d90 (the second list, 0x56..0x59 / 0x5d / 0x5e): with only us and trusts, group 7 0x9e (was only in
+  /pcmd and /acmd).
+- iuse's Use is off by FUN_10097d50 (ours tested main job 23 only). Equip sets, /lockstyle, /lockstyleset do nothing
+  (FUN_101a7af0 / 7df0 / 8030 return 0). mcrmenu's Edit Equip. Set (child 2, FUN_101a6490) and mcresmn's Set appearance
+  (child 8, FUN_101a72e0) are off. Config Misc. 3's style lock rows 3 / 4 are off (FUN_1019b8c0 / FUN_1019b900;
+  ConfigUi.mon). mix.dat is not written on leaving the field (FUN_101ab7d0). Ctrl / Alt + B does nothing (part 4).
+- Not tried live.

@@ -641,6 +641,16 @@ pub fn run(w: &mut World, line: &str, mode: Mode) {
     if !gm && !state_gate(w, flags) {
         return;
     }
+    // FUN_10080d20 (table 0x10357bb8): in Monstrosity these drop silently; /heal still runs while healing (0x21 / 7).
+    // FUN_10080d90: with only us and trusts the party commands get group 7 0x9e.
+    const MON_DENY: [u16; 16] = [0x56, 0x57, 0x58, 0x59, 0x5d, 0x5e, 0x21, 0x2c, 0x22, 0x32, 0x33, 0x34, 0x35, 0x36, 0x9d, 0x61];
+    if super::monstrosity::active(w) && MON_DENY.contains(&cid) && !(cid == id::HEAL && matches!(w.my_motion.status, 0x21 | 7)) {
+        return;
+    }
+    if w.party.slots().trusts_only() && [0x56, 0x57, 0x58, 0x59, 0x5d, 0x5e].contains(&cid) {
+        refuse(w, 0x9e);
+        return;
+    }
     if handle(w, cid, &args, &expanded, mode).is_err() {
         error(w, &expanded, mode);
     }
