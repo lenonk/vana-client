@@ -636,7 +636,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return rects };
     let free = w.confirm.is_none();
-    w.mcr_hits.borrow_mut().clear();
     if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(me.menu_sel), free && me.book.is_none() && me.sets.is_none(), &[]) {
         hit(w, MENU, &win);
         rects.push(win.frame);
@@ -745,36 +744,15 @@ fn draw_editor(gu: &mut GameUi, w: &World, d: &Editor, sw: f32, sh: f32, free: b
 
 /// A window as drawn this frame, for the mouse.
 pub(super) fn hit(w: &World, name: &str, win: &super::game_ui::LobbyWin) {
-    w.mcr_hits.borrow_mut().push((name.to_string(), win.frame, win.children.clone()));
+    super::winhits::record(w, name, win);
 }
 
-fn inside(r: [f32; 4], p: (f32, f32)) -> bool {
-    p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3]
-}
+pub(super) use super::winhits::child_under;
 
-/// The child of a window drawn this frame under the pointer (`ids` only), and whether the pointer is on the window.
-pub(super) fn child_under(w: &World, name: &str, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> (Option<u16>, bool) {
-    let hits = w.mcr_hits.borrow();
-    let Some((_, frame, children)) = hits.iter().find(|h| h.0 == name) else { return (None, false) };
-    (children.iter().find(|(id, r)| ids.contains(id) && inside(*r, p)).map(|c| c.0), inside(*frame, p))
-}
-
-/// The generic window handler's mouse on the focused window: a child under the pointer takes the cursor (SE 0001), a
-/// click on the cursor's child is Enter, a right click on the window Escape. Returns the child under the pointer.
+/// The generic window mouse with this chain's keys.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn generic(w: &mut World, gu: &GameUi, name: &str, cursor: u16, ids: std::ops::RangeInclusive<u16>, p: (f32, f32), moved: bool, clicked: bool, right: bool, set: impl FnOnce(&mut World, u16)) {
-    let (child, on) = child_under(w, name, p, ids);
-    if right && on {
-        key(w, gu, egui::Key::Escape);
-        return;
-    }
-    let Some(id) = child else { return };
-    gu.hover.set(true);
-    if id != cursor && (moved || clicked) {
-        set(w, id);
-        w.sounds.push(Ui::Cursor as u32);
-    } else if clicked {
-        key(w, gu, egui::Key::Enter);
-    }
+    super::winhits::generic(w, gu, name, cursor, ids, p, moved, clicked, right, set, key);
 }
 
 /// The mouse on the chain (no typing field open). Over the other palette the focus moves there at that column

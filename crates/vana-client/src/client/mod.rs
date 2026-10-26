@@ -56,6 +56,7 @@ mod blklist;
 mod furniture;
 mod layout;
 mod mannequin;
+mod winhits;
 mod auction;
 mod tilt;
 mod aepoints;
@@ -1873,6 +1874,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.loot.is_some() && world.confirm.is_none()) {
         treasure::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
+    if let Some(p) = input.pointer.filter(|_| shop::active(world) && world.confirm.is_none()) {
+        shop::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
     if let Some(p) = input.pointer.filter(|_| world.macroedit.is_some() && world.confirm.is_none()) {
         macroedit::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
@@ -2263,6 +2267,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.hud_top = top;
     let party = st.party_window.clone();
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
+    winhits::clear(world);
     for (k, n) in ["menu    raid1", "menu    raid2"].iter().enumerate() {
         if st.alliance[k].is_some() {
             blockers.extend(gu.window_rect(n, sw, sh));
@@ -4490,8 +4495,8 @@ struct World {
     info_win: Option<(u16, Option<[u8; 24]>, u32)>,
     /// Its page (+0x380), the item the page is for, and the page count last built.
     info_page: std::cell::Cell<(usize, u16, usize)>,
-    /// The MacroPalette chain's windows as drawn this frame (name, frame, children), for the mouse (macroedit.rs).
-    mcr_hits: std::cell::RefCell<Vec<(String, [f32; 4], Vec<(u16, [f32; 4])>)>>,
+    /// Windows as drawn this frame (name, frame, children), for the mouse (winhits.rs).
+    win_hits: std::cell::RefCell<Vec<(String, [f32; 4], Vec<(u16, [f32; 4])>)>>,
     /// The ops' shared extdata buffer (DAT_104886bc).
     event_ext: [u8; 24],
     event_mem: crate::event_vm::Memory,
@@ -5904,7 +5909,7 @@ impl App {
                             scan: Default::default(),
                             info_win: None,
                             info_page: std::cell::Cell::new((0, 0, 1)),
-                            mcr_hits: Default::default(),
+                            win_hits: Default::default(),
                             event_ext: [0; 24],
                             event_mem: Default::default(),
                             event_end_at: None,

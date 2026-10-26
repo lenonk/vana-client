@@ -9647,3 +9647,16 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - Live (Lnxcsfix): mcrmenu hover and click, the book list, Options and its right-click close, Edit Equip. Set, a row's
   menu, Edit, the grid (Head), the filtered list, Keep same piece. by click, the swap to the list, the right-click
   close back to the set list.
+
+## Shops: the mouse; windows recorded as drawn (2026-10-26)
+
+- client/winhits.rs: windows drawn at a runtime place (stacked on the log, beside a row, offset) record their frame
+  and children each frame (`World.win_hits`, cleared before the windows draw); `generic` is the generic window
+  handler's mouse on the focused one (hover takes the cursor with SE 0001, a click on the cursor's child is Enter, a
+  right click over it Escape). MacroPalette (macroedit.rs) uses it now.
+- Shops (shop.rs `pointer`): shopmain / guildsho and shopbuy / shopsell as the generic window; the list's rows (18 px
+  from (3, 4), short of the bar) as the item list: hover moves the row, a click on it is Enter, a right click on the
+  list Escape; itemctrl / moneyctr take only the right click *(their arrows by mouse not done)*.
+- Live (Lnxcsfix at Capucine, Southern San d'Oria): hover Sell, click Buy, hover and click Mitts (the purchase
+  confirm, cursor on Cancel), right clicks closing the list and the shop. The windows stacked on the log move as it
+  shrinks or grows, so a click must land where they are that frame (the recorded rects follow them).

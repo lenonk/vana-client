@@ -1016,6 +1016,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         if s.confirm.is_none()
             && let Some(win) = gu.lobby_window_off(main, sw, sh, off, Some(s.main), main_focus, &[])
         {
+            super::winhits::record(w, main, &win);
             rects.push(win.frame);
         }
     }
@@ -1039,6 +1040,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         // column's end - 2 (y + 4) in the sprite font.
         super::items::upload_icons(gu, &info, rows.iter().skip(s.list.0).take(ROWS).filter(|r| r.id != 0).map(|r| r.id));
         let focused = s.qty.is_none() && s.confirm.is_none() && s.money.is_none();
+        // The rows for the mouse (child k + 1), short of the bar.
+        let cells = (0..rows.len().saturating_sub(s.list.0).min(ROWS)).map(|k| (k as u16 + 1, [wx + 3.0, wy + 4.0 + 18.0 * k as f32, ww - 12.0, 18.0])).collect();
+        super::winhits::record_rects(w, SHOP, [wx, wy, ww, wh], cells);
         for (k, r) in rows.iter().skip(s.list.0).take(ROWS).enumerate() {
             let (rx, ry) = (wx + 3.0, wy + 4.0 + 18.0 * k as f32);
             let icon = crate::render::invwin::icon_texture(r.id);
@@ -1073,6 +1077,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
     if let Some((v, max)) = s.qty
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, ITEMCTRL, &win);
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, WHITE, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, WHITE, false);
@@ -1081,6 +1086,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
     if let Some((step, max, v)) = s.money
         && let Some(win) = gu.lobby_window_off(MONEYCTR, sw, sh, (0.0, 0.0), Some(1), true, &[])
     {
+        super::winhits::record(w, MONEYCTR, &win);
         super::post::draw_moneyctr(gu, win.frame, step, max, v);
         rects.push(win.frame);
     }
@@ -1088,8 +1094,53 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
         let name = if s.view == Some(View::Buy) { SHOPBUY } else { SHOPSELL };
         let off = stacked(gu, name);
         if let Some(win) = gu.lobby_window_off(name, sw, sh, off, Some(child), true, &[]) {
+            super::winhits::record(w, name, &win);
             rects.push(win.frame);
         }
     }
     rects
+}
+
+/// The mouse on the shop's focused window: shopmain / guildsho and shopbuy / shopsell as the generic window; the
+/// list's rows as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl and
+/// moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::{child_under, generic, over};
+    let Some(s) = w.shop.as_ref() else { return };
+    let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k);
+    if let Some((_, child)) = s.confirm {
+        let name = if s.view == Some(View::Buy) { SHOPBUY } else { SHOPSELL };
+        generic(w, gu, name, child, 1..=2, p, moved, clicked, right, |w, id| {
+            if let Some(c) = w.shop.as_mut().and_then(|s| s.confirm.as_mut()) {
+                c.1 = id;
+            }
+        }, keys);
+    } else if s.qty.is_some() || s.money.is_some() {
+        if right && (over(w, ITEMCTRL, p) || over(w, MONEYCTR, p)) {
+            key(w, egui::Key::Escape);
+        }
+    } else if s.view.is_some() {
+        let (scroll, cursor) = s.list;
+        let (row, on) = child_under(w, SHOP, p, 1..=ROWS as u16);
+        if right && on {
+            key(w, egui::Key::Escape);
+            return;
+        }
+        let Some(r) = row.map(|r| r as usize - 1) else { return };
+        gu.hover.set(true);
+        if r != cursor && (moved || clicked) {
+            if let Some(s) = w.shop.as_mut() {
+                s.list = (scroll, r);
+            }
+        } else if clicked {
+            key(w, egui::Key::Enter);
+        }
+    } else {
+        let (name, main) = (s.main_window(), s.main);
+        generic(w, gu, name, main, 1..=2, p, moved, clicked, right, |w, id| {
+            if let Some(s) = w.shop.as_mut() {
+                s.main = id;
+            }
+        }, keys);
+    }
 }
