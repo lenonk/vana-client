@@ -165,6 +165,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     mode 0x14 (1 file);
     parked (user's call, 2026-10-22): replace baked lamp shells with real lights plus soft particles (MODLOG
     "Effect fixes from the San d'Oria gate lamps", "Parked");
+  - fishing (client/fishing.rs, fishrod.rs, MODLOG "Fishing"): done and caught live; left the line on plain rods,
+    the walking hold on 0x38, other anglers not seen live;
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login

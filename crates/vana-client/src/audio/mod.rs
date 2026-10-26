@@ -572,6 +572,8 @@ pub struct MusicContext {
     pub party_battle: bool,
     /// In a Mog House other than Mog Garden (DAT_10482f44 && !DAT_1048098d): slot 6 before anything else.
     pub myroom: bool,
+    /// The Goldfish Basket in the range slot (look 0xc): fishing keeps the zone's music.
+    pub basket: bool,
 }
 
 /// The zone's music slots (0x00A MusicNum[5] -> 0..4, death 0x6f -> 5, 0x05F any of 0..7) and the
@@ -641,7 +643,7 @@ impl ZoneMusic {
             2 | 3 => 5,
             5 | 0x55 if self.slots[4] != 0 => 4,
             // Fishing fights use slot 7 when the zone has one (the 0x10c sub-state test is not modelled).
-            0x26 | 0x39 => {
+            0x26 | 0x39 if !cx.basket => {
                 if self.slots[7] == 0 {
                     return None;
                 }
@@ -701,7 +703,7 @@ mod tests {
     fn battle_and_back_resumes_the_field_track() {
         let mut z = ZoneMusic::default();
         z.zone_in([101, 102, 103, 104, 0]);
-        let day = MusicContext { status: 0, hour: 12, party: 1, party_battle: false, myroom: false };
+        let day = MusicContext { status: 0, hour: 12, party: 1, party_battle: false, myroom: false, basket: false };
         assert_eq!(z.select(day), Some(Change { id: 101, vol: 0x7f, fade_in: 0, save: false, clear: true }));
         assert_eq!(z.select(day), None);
         let fight = MusicContext { status: 1, ..day };

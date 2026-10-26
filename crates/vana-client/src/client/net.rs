@@ -420,7 +420,9 @@ pub enum NetEvent {
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
     /// `ride`: ChocoboIndex u32 @0x28 bits 13..15 and the mount id u8 @0x5B.
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8 },
+    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8, fish_timer: u16 },
+    /// s2c 0x115: the hooked fish.
+    Fish(super::fishing::FishParams),
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
     /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
@@ -959,7 +961,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 } })?;
+                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 }, fish_timer: if p.data.len() > 0x4b { p.u16(0x4a) } else { 0 } })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.
@@ -1034,6 +1036,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0E1 => tx.send(NetEvent::GroupId(p.u32(4)))?,
                     0x108 => tx.send(NetEvent::BazaarShopper { state: p.u32(8), hide: p.u16(0xc), name: text(&p, 0x10, 16) })?,
                     0x10A => tx.send(NetEvent::BazaarSale { count: p.u32(4), item: p.u16(8), name: text(&p, 0xa, 16) })?,
+                    0x115 => tx.send(NetEvent::Fish(super::fishing::FishParams { stamina: p.u16(4), delay: p.u16(6), regen: p.u16(8), moves: p.u16(0xa), damage: p.u16(0xc), heal: p.u16(0xe), time: p.u16(0x10), sense: p.u8(0x12), special: p.u32(0x14) }))?,
                     0x116 => tx.send(NetEvent::EquipSetValid(std::array::from_fn(|i| std::array::from_fn(|k| p.u8(4 + 4 * i + k)))))?,
                     0x117 => tx.send(NetEvent::EquipSetRes { count: p.u8(4), changed: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(8 + 4 * i + k))), equipped: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(0x48 + 4 * i + k))) })?,
                     0x11B => tx.send(NetEvent::LockStyleFlag(p.u8(4)))?,

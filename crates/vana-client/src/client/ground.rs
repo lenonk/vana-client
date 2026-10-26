@@ -447,6 +447,17 @@ impl Ground {
         down.or_else(|| hits.iter().map(|h| h.0).filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b)))
     }
 
+    /// FUN_101815d0: no wall within 4 ahead of 1 above the feet (FUN_1016b1d0), and the first face under that point
+    /// (2 above the feet down to 98 below) is water (type 9).
+    pub fn water_ahead(&self, pos: Vec3, forward: Vec3) -> bool {
+        let start = pos - Vec3::Y;
+        let p = start + forward * 4.0;
+        if self.grid.as_ref().is_some_and(|g| self.cam_piece(g, start, p).is_some()) {
+            return false;
+        }
+        self.ray_down(p.x, p.z, p.y - 1.0, p.y + 99.0).is_some_and(|(_, i)| self.kinds.get(i) == Some(&9))
+    }
+
     /// FUN_10162d20 as a vertical ray: the first face below `from_y` down to `to_y` (all faces, both sides).
     fn ray_down(&self, x: f32, z: f32, from_y: f32, to_y: f32) -> Option<(f32, usize)> {
         self.heights(x, z).into_iter().filter(|&(h, _)| h >= from_y && h <= to_y).min_by(|a, b| a.0.total_cmp(&b.0))
@@ -1080,6 +1091,21 @@ mod tests {
             }
         }
         println!("collision failures: {bad:?}");
+    }
+
+    #[test]
+    fn east_ronfaure_river_is_fishable() {
+        let Some(g) = zone(101) else { return };
+        // Standing in the river (fishing_spec.md 6): some facings have water 4 ahead; a dry bank point has none.
+        let at = |x: f32, z: f32, y0: f32| {
+            let y = g.snap(x, z, y0).unwrap_or(y0);
+            let pos = Vec3::new(x, y, z);
+            (0..16).filter(|k| { let a = *k as f32 * std::f32::consts::TAU / 16.0; g.water_ahead(pos, Vec3::new(a.sin(), 0.0, a.cos())) }).collect::<Vec<_>>()
+        };
+        let river = at(458.558, -316.667, -16.5);
+        println!("river facings (k x 22.5 deg from +z): {river:?}");
+        assert!(!river.is_empty());
+        assert_eq!(at(27.69, 53.10, -52.28), Vec::<i32>::new());
     }
 
     #[test]

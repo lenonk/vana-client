@@ -482,7 +482,7 @@ fn send(w: &World, c: NetCommand) {
 }
 
 /// FUN_100780d0: 0x01A {u32 id, u16 ActIndex, u16 category, u32 param, 3 x f32}.
-fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
+pub(super) fn act(w: &World, t: (u32, u16), category: u16, param: u32) {
     let mut body = super::net::action_body(t.0, t.1, category);
     body[8..12].copy_from_slice(&param.to_le_bytes());
     log::info!("0x01A category {category:#x} param {param} on {:#x} / {:#x}", t.0, t.1);
@@ -1314,13 +1314,13 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             }
             Ok(())
         }
-        // FUN_1007abf0: silent in a Mog House, engaged or in Conflict; the status gate 0x75 prints; else c2s 0x01A
-        // category 0x0E on ourselves (the water test is left to the server *(inf)*).
+        // FUN_1007abf0: silent in a Mog House, engaged or in Conflict; the status gate 0x75 prints; then fishing's
+        // water test and latch (fishing.rs).
         id::FISH => {
             if w.room_flag || w.my_motion.status == 1 || !status_gate(w, 0x75) {
                 return Ok(());
             }
-            act(w, (w.my_id, w.my_index), 0x0e, 0);
+            super::fishing::command(w);
             Ok(())
         }
         // FUN_1007e170: autorun on (key 0x1c's flag), forward as we face *(inf: retail's first frame)*.

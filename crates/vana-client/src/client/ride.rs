@@ -94,14 +94,19 @@ const FILES: [u32; 9] = [38603, 38603, 38699, 38795, 38891, 38987, 38987, 39083,
 /// DAT_1035f5c0 by race * 2 + (skirt set 1 ? 0 : 1).
 const SKIRT: [u32; 18] = [38635, 38667, 38635, 38667, 38731, 38763, 38827, 38859, 38923, 38955, 39019, 39051, 39019, 39051, 39115, 39147, 39211, 39243];
 
-/// FUN_100d2800: the rider's riding files (tag 7), `DAT_1035f5ac[race] + v` and, when the body sets a skirt, its file
-/// `DAT_1035f5c0[..] + v`.
+/// FUN_100d2800: the rider's riding files (tag 7).
 pub fn files(w: &World, id: u32, pc: &PcMotion) -> Vec<u32> {
     let Some(r) = w.rides.get(&id) else { return Vec::new() };
+    motion_files(pc, r.v)
+}
+
+/// `DAT_1035f5ac[race] + v` and, when the body sets a skirt, its file `DAT_1035f5c0[..] + v` (riding v 0 / 3 / 5,
+/// fishing 1 / 2).
+pub fn motion_files(pc: &PcMotion, v: u32) -> Vec<u32> {
     let race = (pc.race as usize).min(8);
-    let mut out = vec![FILES[race] + r.v];
+    let mut out = vec![FILES[race] + v];
     if pc.skirt > 0 {
-        out.push(SKIRT[race * 2 + if pc.skirt == 1 { 0 } else { 1 }] + r.v);
+        out.push(SKIRT[race * 2 + if pc.skirt == 1 { 0 } else { 1 }] + v);
     }
     out
 }

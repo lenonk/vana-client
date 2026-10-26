@@ -9698,3 +9698,52 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - Live (Lnxcsfix, raised to 99 for the test and restored): Job Points (hover, wheel, click Warrior -> jbpcat, right
   clicks back), Merit Points (Categories, wheel), Unity (ut_menu, the chooser's plates, the ranking's hover and wheel,
   right clicks back). Alter Ego Points stayed a disabled row (not tried).
+
+## Fishing (2026-10-26)
+
+Spec: `~/ffxi/lab/research/fishing_spec.md` (the 2013 mini-game: statuses 0x38..0x3e, s2c 0x115, c2s 0x110; the old
+PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never sends it).
+
+- client/fishing.rs:
+  - /fish (FUN_1007abf0, after the status gate 0x75): the water test FUN_101815d0 (Ground::water_ahead: no wall within
+    4 ahead of 1 above the feet, the first face under that point from 2 above to 98 below of type 9) and zone 211, else
+    group 7 0x49 "You cannot fish here."; nothing while the request latch DAT_10487e49 is set or already fishing; else
+    c2s 0x01A category 0x0e and the latch. The latch clears on s2c 0x052 mode 4 (event::release; that mode does
+    nothing else) and on status 1..4 / 0x38..0x3e.
+  - s2c 0x037 @0x4a (u16): entering 0x38 sets the bite wait (+0x1e4) to it x 60 ticks; else 900..1500 (FUN_1008f740).
+  - The controller FUN_10089100 (sub-states 0 wait, 1 fight, 2 end sent, 3 ending, 4 released) and the fight's frame
+    FUN_10089850 run in retail's frames: fixed 30 Hz steps with u = 2 ticks (retail at its 30 fps), so the per-frame
+    parts (the gauge's 0.15 easing, the axis edge latch, the water check every 64 frames, the early-press heal of
+    trunc(u x heal x 0.5)) match it. Keys: 0x0e (Enter) and 0x0f (Escape) latched between steps, axis 4 (numpad 4 / 6,
+    the compact stick) sampled per step through the edge latch DAT_10487efc; a world click (0x8b / 0x8c release) is
+    an early press during the wait.
+  - c2s 0x110 (FUN_10088380): mode 2 bite check, 3 end (201 early / Escape in the wait, 200 Escape or no water in the
+    fight, 300 the timer, else the stamina percent left with para2 = special), 5 the warning under 7 s, 4 the release
+    once fsh2..fsh6 no longer run.
+  - Arrows: DAT 3727 `mai0`..`maib` on us (index (gold x 2 - dir + 1) x 3 + show / hit / clear), the clear counter of
+    FUN_10089ff0; pulls fsh9 (right, dir 0) / fsh8 (left) on the model and the rod, fsh7 between; `hits` / `hitl` once
+    an arrow; keen sense DAT 3705 `main`; music slot 7 = 129 / 136 on the first frame (the Goldfish Basket, look 0xc,
+    keeps the zone's music: audio MusicContext::basket).
+  - The "Fish" gauge (FUN_10202af0 after the party window): at (W / 2 - 58, trunc(H / 2 x 0.4)); fill windowps 97 at
+    2 x pct / 100 wide from (4, 1 + 7), frame framesus 98 (0x30505050 at 0), the label "Fish" (a literal, 0x1035baec)
+    in fontshp fitted to 102, ncol 0 / 9.
+  - Movement (FUN_100964f0) is refused while the latch is set or our status (or last 0x037 status) is a fishing one;
+    the field's Enter (target / action menu) is not taken while fishing *(inf: retail's menu is busy-gated)*.
+- client/fishrod.rs: the fishing motion files (FUN_100d2a10: the riding tables DAT_1035f5ac / DAT_1035f5c0 + 1, + 2
+  with the basket) in the riding slot; the status's scheduler (0x38 fsh0, 0x39 fsh7, 0x3a..0x3e fsh2..fsh6) on the
+  model once those files are in, and on the rod once it is (a scheduler asked for before its file loads is dropped);
+  fsh0..fsh9 stopped when the angler stops fishing. The rod is its own actor (id 0x1000_0000 | angler; file
+  DAT_1035f598[race] + look, Mithra willow 39477) at the angler's place with the angler's status (its fh1 -> fh10) and
+  scale *(inf)*; hidden with its angler; other players' rods the same (not seen live).
+- Live (Lnxcsfix, East Ronfaure river 458.6 / -16.5 / -316.7, willow rod and little worms, skill 30 then 60): casts
+  with no bite ("You didn't catch anything.", fsh6, then the release), a timed-out fight (the warning line, "You lost
+  your catch."), a fight answered by keys from the log (7 arrows, one gold at double damage, stamina 4370 -> 0, Enter:
+  mode 3 0 % with the special) that LSB broke ("Your line breaks.", its roll at skill 30), "Lnxcsfix caught a
+  crayfish!" at skill 60, an early Enter ("You give up."), Escape in the fight ("You give up and reel in your
+  line."), dry ground ("You cannot fish here.", nothing sent). Shots: the arrow effects left / right with the hit glow,
+  the gauge, the rod in hand through the cast and the hold.
+- Left: the line on plain rods (only looks 14 / 15 have `!f01` / `!f02`, FUN_100cae60, not done); the 0x38 status held
+  while still walking (FUN_100d65b0); FUN_10127ea0 (drops queued text after a mode-3 send *(inf)*); other anglers not
+  seen live.
+- Test tooling: `~/ffxi/lab/scratch/fishing/responder.py` answers arrows from the client log (RUST_LOG
+  `vana_client::client::fishing=debug`), `cast_loop.py` casts until a bite.

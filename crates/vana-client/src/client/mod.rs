@@ -55,6 +55,8 @@ mod linklist;
 mod blklist;
 mod furniture;
 mod layout;
+mod fishing;
+mod fishrod;
 mod mannequin;
 mod winhits;
 mod auction;
@@ -1694,7 +1696,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // (FUN_10127790). Inferred: monsters (0x00E @0x25 bit 0x08) take the menu path.
                 // With no target it first targets the nearest actor in front (FUN_101587f0 case 0); only with none
                 // does the menu ("menu playermo") open.
-                egui::Key::Enter if !dead => {
+                // Fishing reads Enter itself (key function 0x0e) *(inf: retail's action menu is busy-gated)*.
+                egui::Key::Enter if !dead && !fishing::locked(world) => {
                     if !(world.target.is_none() && !event::active(world) && target::enter_nearest(world)) {
                         target::confirm_target(world);
                     }
@@ -2419,6 +2422,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The status icons are layer 0 (registry +0x29): every window draws over them.
     buffs::draw(gu, world, sw, sh);
     buffs::draw_party(gu, world, sw, sh, log.rect);
+    fishing::draw_gauge(gu, world, sw, sh);
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(remodel::draw(gu, world, sw, sh));
     blockers.extend(layout::draw(gu, world, sw, sh));
@@ -3699,6 +3703,10 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
         let p = base_place(w, id & !indi::AURA, my_dir)?;
         return Some(Place { status: 0, tilt: [0.0; 2], ratio: 0.0, size: indi::size(w, id)?, ..p });
     }
+    // FUN_1008f740: the rod at its angler's place, posing with the angler's status.
+    if id & fishrod::ROD != 0 {
+        return base_place(w, id & !fishrod::ROD, my_dir);
+    }
     if id & ride::ANIMAL != 0 {
         if let Some((pos, forward)) = ride::left_at(w, id) {
             return Some(Place { pos, forward, tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
@@ -4140,6 +4148,8 @@ struct World {
     my_motion_bases: Vec<(u8, u32)>,
     my_reset_bases: bool,
     rides: HashMap<u32, ride::Riding>,
+    /// Anglers' status schedulers (client/fishrod.rs).
+    anglers: HashMap<u32, fishrod::Angler>,
     /// Event music fades (ops 0x5d, 0x5c 0xa0 / 0xa1): volume, ticks.
     music_fades: Vec<(i32, i32)>,
     /// The audio still changing music (event op 0x9a waits), as of the last frame.
@@ -4529,6 +4539,13 @@ struct World {
     /// Mog House layout mode (client/layout.rs), and its view kept for the house visit (myroom +0x24).
     layout: Option<layout::Layout>,
     layout_view: u8,
+    /// Fishing (client/fishing.rs) while the fishing model is set up; the /fish latch (DAT_10487e49); the bite wait
+    /// (+0x1e4, ticks); the "Fish" gauge's percent (party window +0x3a); our last 0x037 status (+0x16c).
+    fishing: Option<fishing::Fishing>,
+    fish_pending: bool,
+    hook_wait: i32,
+    fish_gauge: Option<u8>,
+    server_status: u8,
     /// The auction house's windows (client/auction.rs), its parcel slots and the bid in flight (kept across them).
     auction: Option<Box<auction::Auction>>,
     ah_slots: [auction::Parcel; 8],
@@ -5459,7 +5476,7 @@ impl App {
             }
             let hour = w.clock.map(|(t, at)| crate::dat::weather::vana_minute(t, at.elapsed().as_secs_f32()) as u32 / 60).unwrap_or(12);
             let party = w.party.party().count().max(1) as u32;
-            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party, party_battle: party_battle(w), myroom: w.myroom.is_some_and(|r| r.map != 0x2d4) };
+            let cx = crate::audio::MusicContext { status: w.my_motion.status, hour, party, party_battle: party_battle(w), myroom: w.myroom.is_some_and(|r| r.map != 0x2d4), basket: w.actors.get(&w.my_id).is_some_and(|a| matches!(&a.source, Some(Source::Pc(l)) if l.range == 0xc)) };
             if let Some(c) = w.music.select(cx) {
                 log::info!("music: {c:?}");
                 if c.clear {
@@ -5902,6 +5919,7 @@ impl App {
                             my_motion_bases: Vec::new(),
                             my_reset_bases: false,
                             rides: HashMap::new(),
+                            anglers: HashMap::new(),
                             music_fades: Vec::new(),
                             music_changing: false,
                             typing: false,
@@ -5937,6 +5955,11 @@ impl App {
                             lock_carry: false,
                             layout: None,
                             layout_view: 0,
+                            fishing: None,
+                            fish_pending: false,
+                            hook_wait: 0,
+                            fish_gauge: None,
+                            server_status: 0,
                             auction: None,
                             ah_slots: Default::default(),
                             bid: Default::default(),
@@ -6463,6 +6486,7 @@ impl App {
                     // FUN_10011a00 state 5 (each zone-in): first person (DAT_10487f80) and autorun (DAT_10487f81) off,
                     // set directly: no "Follow canceled." line.
                     (world.autorun, world.autorun_dir, world.follow, world.camst.first) = (false, Vec3::ZERO, None, false);
+                    (world.fishing, world.fish_pending, world.fish_gauge) = (None, false, None);
                     world.hud_top.enter();
                     // FUN_10095650 at the world start: the Unity chat setting (config 0xb2) and the job master display
                     // (config 0x99 bit 8 clear) go to the server again.
@@ -6848,6 +6872,7 @@ impl App {
                 NetEvent::Event(s) => event::queue(world, s),
                 NetEvent::EventParams(n) => event::params(world, n),
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
+                NetEvent::Fish(p) => fishing::on_fish(world, p),
                 NetEvent::Wpos { id, pos, dir, mode } => {
                     // POSMODE (LSB): 0 normal, 1 event, 3 pop, 5 reset, 6 materialize move us; 0x0a turns.
                     // FUN_1009ee60: mode 7 about us unloads the sub-area.
@@ -7039,7 +7064,12 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi } => {
+                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer } => {
+                    // LAB_1009d0f0: entering 0x38 sets the bite wait from @0x4a (seconds).
+                    if world.server_status != 0x38 && status == 0x38 && fish_timer > 0 {
+                        world.hook_wait = fish_timer as i32 * 60;
+                    }
+                    world.server_status = status;
                     (world.my_ride.chocobo, world.my_ride.mount) = ride;
                     let me = world.my_id;
                     indi::apply(world, me, indi);
@@ -7556,6 +7586,7 @@ impl App {
             actmotion::play_op(world, id, m);
         }
         ride::update(world, dt);
+        fishrod::update(world);
         indi::update(world, dt);
         actmotion::update(world, dt);
         // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
@@ -7842,8 +7873,8 @@ impl App {
         if world.walk {
             tier = f32::min(tier, 1.0 / 3.0);
         }
-        // FUN_100964f0: no movement during a synthesis (status 0x2c).
-        if world.my_motion.status == 0x2c {
+        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request.
+        if world.my_motion.status == 0x2c || fishing::locked(world) {
             tier = 0.0;
         }
         if tier == 0.0 {
@@ -8033,8 +8064,10 @@ impl App {
             f.window = world_window_open(w) || w.palette.0 != 0 || w.log_active || w.log_focus == 2 || event::choice(w).is_some() || event::input(w).is_some();
             f.assigning = w.config.as_ref().and_then(|c| c.stack.last()).is_some_and(|t| t.name == "k1assign" || t.name == "k2assign");
         }
+        let window = f.window;
         self.input.begin_frame(f);
         let Phase::World(world) = &mut self.phase else { return };
+        fishing::update(world, &mut self.input, dt, window);
         if world.layout.is_some() && !world_window_open(world) {
             layout::update(world, &mut self.input, dt);
         }
@@ -8291,6 +8324,9 @@ impl App {
                 return false;
             }
             let aspect = cfgapply::aspect(size, retail_aspect, world.game.get(0x43));
+            if !drag {
+                fishing::click(world);
+            }
             let picked = if left { Self::under_pointer(world, b, size, aspect).0 } else { None };
             target::click(world, picked, left, drag)
         };
@@ -9763,7 +9799,7 @@ impl App {
                 hidden.extend(pcs[cap..].iter().map(|p| p.1));
             }
             // A riding animal goes with its rider; a rider waits hidden for its mount.
-            let animals: Vec<u32> = hidden.iter().flat_map(|id| [ride::ANIMAL | id, indi::AURA | id]).collect();
+            let animals: Vec<u32> = hidden.iter().flat_map(|id| [ride::ANIMAL | id, indi::AURA | id, fishrod::ROD | id]).collect();
             hidden.extend(animals);
             hidden.extend(ride::hidden(w));
             let idles = event::idles(w);

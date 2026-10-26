@@ -1828,6 +1828,8 @@ pub fn rebuild_models(w: &mut World) {
 pub fn release(w: &mut World, mode: u8, event: u16) {
     log::info!("event release mode {mode} event {event:#x}");
     match mode {
+        // 0x100a20d5: fishing's release only clears the /fish latch.
+        4 => w.fish_pending = false,
         // 100a070a: release, and cancel allowed unless (DAT_1046df04 | event Mode) & 0x2000.
         0 => {
             w.control_lock = None;
