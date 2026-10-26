@@ -1177,6 +1177,11 @@ impl Host for LiveHost<'_> {
                 let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
                 self.w.info_win = (id != 0).then_some((id, None, 0));
             }
+            // FUN_100b9d90 0x10: arealist in mode 1 (2 with val@4) from tier val@2.
+            Effect::Op { op: 0xcc, sub: Some(0x10), args, .. } => {
+                let int = |i| Self::arg_int(&args, i).unwrap_or(0);
+                self.w.arealist_req = Some((int(0) as u8, int(1) != 0));
+            }
             // FUN_100b9d90 0 / 1 / 3: the same with extdata bytes 0..12 = val@4 / @6 / @8 (the rest kept; sub 3 hides
             // the signature); 2: a linkshell, [6] = r | g << 4, [7] = b, [8] = status, [9..24] the name's 15 bytes.
             Effect::Op { op: 0xcc, sub: Some(s @ 0..=3), args, .. } => {
@@ -1380,6 +1385,10 @@ impl Host for LiveHost<'_> {
         text_ctx(self.w)
     }
 
+    fn area_pick(&mut self) -> Option<i32> {
+        (!super::arealist::picking(self.w)).then_some(self.w.area_pick)
+    }
+
     fn game_config(&self, id: u16) -> u32 {
         self.w.game.get(id)
     }
@@ -1452,8 +1461,11 @@ pub fn queue(w: &mut World, s: EventStart) {
     // Event start (FUN_1015f3e0(0x800)) closes the battle set too; it does not come back at the event's end.
     (w.action_menu, w.gauge, w.held_menu) = (None, None, None);
     w.win = None;
-    // Menu broadcast 0x800 (event start) closes the item info window.
+    // Menu broadcast 0x800 (event start) closes the item info window, and arealist unless it is the event's picker.
     w.info_win = None;
+    if !super::arealist::picking(w) {
+        w.arealist = None;
+    }
     w.confirm = None;
     w.typing = false;
 }

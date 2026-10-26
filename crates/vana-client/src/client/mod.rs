@@ -1417,6 +1417,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     keys.clear();
                 }
                 _ if world.typing => {}
+                // The event's area picker (op 0xcc 0x10) takes the keys before the event.
+                _ if world.arealist.is_some() && arealist::picking(world) => arealist::key(world, gu, *key),
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
@@ -2079,6 +2081,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     paginate(gu, world, logwin::text_width(sw, world.log.cfg.pct));
+    if let Some((tier, flat)) = world.arealist_req.take() {
+        arealist::open_event(world, gu, tier, flat);
+    }
     // FUN_10123060 / FUN_10131e30: each page of the open message goes into the log as it opens.
     let (page_lines, mode): (Vec<String>, Option<u8>) = match event::message(world) {
         Some(m) => match &m.pages {
@@ -4438,6 +4443,10 @@ struct World {
     /// The Mog House 2F Remodel list (client/remodel.rs).
     remodel: Option<remodel::Remodel>,
     arealist_by_region: bool,
+    /// Op 0xcc 0x10's picker, opened with the frame's GameUi: (tier, flat).
+    arealist_req: Option<(u8, bool)>,
+    /// arealist +0x6e: the event's pick (a zone, -1 cancelled).
+    area_pick: i32,
     /// Region Info: the conquest data and marker tables, the region menu, the map (cnqframe), a /regionmap to open.
     conquest: region::Data,
     region_menu: Option<region::Menu>,
@@ -5912,6 +5921,8 @@ impl App {
                             arealist: None,
                             remodel: None,
                             arealist_by_region: true,
+                            arealist_req: None,
+                            area_pick: -1,
                             seacom: Default::default(),
                             seacom_edit: None,
                             conquest: region::Data::new(self.cnq_tables.clone()),

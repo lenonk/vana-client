@@ -22,6 +22,9 @@ pub enum Mode {
     Monstrosity,
     /// 4: the twelve unity rows (FUN_1020f290).
     Unity,
+    /// 1 / 2: the event's pick (op 0xcc 0x10, FUN_1020f1d0): zones in the level table at `tier` or above; 2 (`flat`)
+    /// lists only those with a max level, never by region.
+    Event { tier: u8, flat: bool },
 }
 
 /// Column 1: "(%s)" (type 0x21), "[%d]" (type 9), a level text (type 0x34).
@@ -82,10 +85,22 @@ fn build(w: &World, gu: &GameUi, mode: Mode, expanded: Option<usize>) -> Vec<Row
     }
     let level = |z: u16| words.levels.iter().find(|l| l.0 == z).copied();
     // FUN_1020e890 / FUN_1020ea30's filter: known, a group 0x14 name, zone flags 1 and 2; Monstrosity: a max level.
-    let pass = |z: u16| known(w, z) && place(w, z).is_some() && words.zone_flags(z) & 3 == 3 && (mode != Mode::Monstrosity || level(z).is_some_and(|l| l.3 != 0));
+    // Modes 1 / 2: in the table at the tier or above (FUN_1020e7d0), mode 2 with a max level (FUN_1020e800).
+    let pass = |z: u16| {
+        known(w, z)
+            && place(w, z).is_some()
+            && words.zone_flags(z) & 3 == 3
+            && match mode {
+                Mode::Monstrosity => level(z).is_some_and(|l| l.3 != 0),
+                Mode::Event { tier, flat } => level(z).is_some_and(|l| tier <= l.1 && (!flat || l.3 != 0)),
+                _ => true,
+            }
+    };
     let zone_row = |z: u16| {
+        // Type 0x34 (FUN_1020e820): byte 0 "Lv%2d~" of the min level (mode 1), byte 1 "~Lv%2d" of the max.
         let cell = match mode {
-            Mode::Monstrosity => Cell::Level(level(z).map_or(String::new(), |l| format!("~Lv{:2}", l.3))),
+            Mode::Monstrosity | Mode::Event { flat: true, .. } => Cell::Level(level(z).map_or(String::new(), |l| format!("~Lv{:2}", l.3))),
+            Mode::Event { flat: false, .. } => Cell::Level(level(z).map_or(String::new(), |l| format!("Lv{:2}~", l.2))),
             _ => Cell::Paren(gu.short_area(z).unwrap_or_else(|| gu.item_msg(9, 0x40).unwrap_or_default())),
         };
         Row { value: z as i32, name: place(w, z).unwrap_or_default(), cell, help: 0x14 }
@@ -94,19 +109,21 @@ fn build(w: &World, gu: &GameUi, mode: Mode, expanded: Option<usize>) -> Vec<Row
     if let Some(i) = expanded {
         return zones(i).into_iter().map(zone_row).collect();
     }
-    // FUN_1020e570: Current Area, Current Region (a region with more than one searchable zone), All Areas.
-    let msg = |id: usize| gu.item_msg(9, id).unwrap_or_default();
-    rows.push(Row { value: w.pos_zone as i32, name: msg(0x23), cell: Cell::Paren(msg(0x24)), help: 0x14 });
-    if let Some(r) = region_index(w).and_then(|i| words.regions.get(i))
-        && r.iter().filter(|&&z| words.zone_flags(z) & 2 != 0).count() > 1
-    {
-        rows.push(Row { value: -1, name: msg(0xba), cell: Cell::Paren(msg(0xbb)), help: 0x62 });
+    // FUN_1020e570 (modes 0 / 3): Current Area, Current Region (a region with more than one searchable zone), All Areas.
+    if matches!(mode, Mode::Search | Mode::Monstrosity) {
+        let msg = |id: usize| gu.item_msg(9, id).unwrap_or_default();
+        rows.push(Row { value: w.pos_zone as i32, name: msg(0x23), cell: Cell::Paren(msg(0x24)), help: 0x14 });
+        if let Some(r) = region_index(w).and_then(|i| words.regions.get(i))
+            && r.iter().filter(|&&z| words.zone_flags(z) & 2 != 0).count() > 1
+        {
+            rows.push(Row { value: -1, name: msg(0xba), cell: Cell::Paren(msg(0xbb)), help: 0x62 });
+        }
+        rows.push(Row { value: 0, name: msg(0x25), cell: Cell::Paren(msg(0x26)), help: 0x15 });
     }
-    rows.push(Row { value: 0, name: msg(0x25), cell: Cell::Paren(msg(0x26)), help: 0x15 });
     let groups = gu.region_groups();
     for i in 0..words.regions.len() {
         let z = zones(i);
-        if mode == Mode::Search && w.arealist_by_region {
+        if by_region(mode) && w.arealist_by_region {
             if !z.is_empty() {
                 let name = groups.get(i).and_then(|g| gu.item_msg(0x13, g.0 as usize)).unwrap_or_default();
                 rows.push(Row { value: -2 - i as i32, name, cell: Cell::Count(z.len()), help: 0x14 });
@@ -116,6 +133,27 @@ fn build(w: &World, gu: &GameUi, mode: Mode, expanded: Option<usize>) -> Vec<Row
         }
     }
     rows
+}
+
+/// Modes 0 and 1 follow the by-region view; 2 / 3 / 4 are flat.
+fn by_region(mode: Mode) -> bool {
+    matches!(mode, Mode::Search | Mode::Event { flat: false, .. })
+}
+
+/// The event's picker is up or about to open: op 0xcc 0x11 waits (+0x6d).
+pub fn picking(w: &World) -> bool {
+    w.arealist_req.is_some() || w.arealist.as_ref().is_some_and(|a| matches!(a.mode, Mode::Event { .. }))
+}
+
+/// FUN_1020f1d0 (op 0xcc 0x10): with no rows the window does not open and the pick keeps its last value *(inf)*;
+/// else the pick starts at -1 (what Escape leaves).
+pub fn open_event(w: &mut World, gu: &GameUi, tier: u8, flat: bool) {
+    let mode = Mode::Event { tier, flat };
+    if build(w, gu, mode, None).is_empty() {
+        return;
+    }
+    w.area_pick = -1;
+    open(w, gu, mode, w.search_cond.clone());
 }
 
 /// FUN_1020ee70 / FUN_1020f210 / FUN_1020f3a0: the window on child 1, top 0, picks applied to `cond`.
@@ -161,6 +199,13 @@ fn pick(w: &mut World, gu: &GameUi) -> bool {
                 (l.expanded, l.top, l.cursor) = (Some(((-2 - v) as usize, back)), 0, 0);
             }
             rebuild(w, gu);
+            w.sounds.push(Ui::Select as u32);
+            return true;
+        }
+        // Modes 1 / 2: the zone goes to the event (+0x6e); no search.
+        (Mode::Event { .. }, z) => {
+            w.area_pick = z;
+            close_all(w);
             w.sounds.push(Ui::Select as u32);
             return true;
         }
@@ -254,10 +299,10 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     w.arealist = Some(a);
 }
 
-/// Message 8 (Num+): modes 3 / 4 nothing; else flat / by region (flat folds back), top 0, child 1, SE 0013. Kept for
+/// Message 8 (Num+): modes 2 / 3 / 4 nothing; else flat / by region (flat folds back), top 0, child 1, SE 0013. Kept for
 /// the session only (config 0x45 is never read).
 pub fn num_plus(w: &mut World, gu: &GameUi) {
-    let Some(a) = w.arealist.as_mut().filter(|a| a.mode == Mode::Search) else { return };
+    let Some(a) = w.arealist.as_mut().filter(|a| by_region(a.mode)) else { return };
     w.arealist_by_region = !w.arealist_by_region;
     if !w.arealist_by_region {
         a.expanded = None;

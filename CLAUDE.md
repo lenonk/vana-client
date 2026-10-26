@@ -115,7 +115,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     Raise and a job point spent tried live, Lower not);
     Missions and Quests done (client/missions.rs, quests.rs, journal.rs, roe.rs, MODLOG "Missions", "Quests", "Records
     of Eminence lists"; left Vana'Bout's hold prompt, unreachable on LSB); Key Items done (client/keyitems.rs, MODLOG "Key Items"); Search done (searchmenu.rs, arealist.rs,
-    seacom.rs, /seacom, /seacomup; left arealist's event modes for op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:
+    seacom.rs, /seacom, /seacomup, arealist's event pick op 0xcc 0x10 / 0x11); Linkshell (linkshell.rs:
     the item list, equip / unequip, naming, Drop, the message and /lsmes, the Link List (linklist.rs) done and seen
     live with a real shell; left seeing To Sack / To Pearl / Kick, which need a second member); Region Info done (region.rs; left the Campaign windows, which LSB never
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done

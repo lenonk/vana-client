@@ -123,6 +123,10 @@ pub trait Host {
     fn text_ctx(&self) -> Ctx {
         Ctx::default()
     }
+    /// Op 0xcc 0x11: None while arealist's event pick is up (+0x6d), then its pick (+0x6e: a zone, -1 cancelled).
+    fn area_pick(&mut self) -> Option<i32> {
+        Some(-1)
+    }
     /// Start position (x, height, z) and direction of a bound actor.
     fn place(&self, _actor: u32) -> ([f32; 3], f32) {
         ([0.0; 3], 0.0)
@@ -1981,6 +1985,14 @@ impl Runtime {
                 }
                 self.yield_(v);
             }
+            // FUN_100b9d90 0x11: wait while arealist picks, then set@2 = the pick (FUN_100af310(2, +0x6e)).
+            0xcc if sub == Some(0x11) => match host.area_pick() {
+                Some(z) => {
+                    self.set_at(v, 2, 0, z as u32);
+                    self.adv(v, len);
+                }
+                None => self.yield_(v),
+            },
             // FUN_100b9d90 0..3 (the item info window): item and values; sub 2 adds the string operand's bytes as words.
             0xcc if matches!(sub, Some(0..=3)) => {
                 let offs: &[usize] = if sub == Some(2) { &[2, 4, 6, 8, 10] } else { &[2, 4, 6, 8] };

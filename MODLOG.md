@@ -6757,7 +6757,7 @@ Spec `~/ffxi/lab/research/arealist_spec.md`; ours client/arealist.rs, searchmenu
   right-aligned at y + 4; small texts "(s)"; names at y + 2; Up / Down stop at the ends (SE 0001 on a move, the list
   base's own); its window is stacked on the log (flag 0x1000) like arealist.
 - The results window drops its bar and hand while scsibori or arealist has the focus.
-- Not done: arealist modes 1 / 2 (event op 0xcc subs 0x10 / 0x11), /seacom and /seacomup on the same store, scoption's
+- Not done: /seacom and /seacomup on the same store, scoption's
   Request / Cancel Request (/partyrequestcmd is not supported yet).
 
 ## Linkshell message: s2c 0x0CC, the client's own 0x0E1, /lsmes and /ls2mes (2026-10-24)
@@ -9977,3 +9977,21 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Not modelled: `1e` from 0x11 (the colour-id table: retail timestamps use 1e 6a) and `1f xx` inside a line (mode xx's
   colour from there on); the log add's mode-2 flag (every line indented).
 - Live (Lnxcsfix): "Obtained: Potion." with Potion in the code-2 green; the Home Point's line white as before.
+
+## arealist modes 1 / 2: the event's area pick (op 0xcc 0x10 / 0x11) (2026-10-26; arealist_spec 1.9)
+
+- Op 0xcc 0x10 {val@2 tier, val@4 flat} (FUN_1020f1d0): mode 2 if val@4 else 1, the pick flag +0x6d set, +0x70 = tier;
+  rows: no top rows, zones that pass the usual filter and are in the level table (DAT_1033b430) with tier <= the
+  entry's, mode 2 only those with a max level; mode 1 follows the by-region view (Num+ flips it), mode 2 is flat;
+  column 1 "Lv%2d~" (min) / "~Lv%2d" (max). No rows: nothing opens (the pick keeps its value *(inf)*).
+- Enter on a zone: +0x6e = the zone, arealist and scsibori close, 0002, no search. Escape folds a region, else closes
+  with +0x6e = -1 (set at open). The event start broadcast (0x800) closes arealist unless it is this picker.
+- Op 0xcc 0x11 {set@2}: while +0x6d, wait; then FUN_100af310(2, +0x6e) and pc += 4.
+- Ours: arealist::Mode::Event, open_event (World.arealist_req from the host, opened with the frame's GameUi),
+  World.area_pick, Host::area_pick in the VM; the picker takes the keys ahead of the event.
+- LSB uses it: the Feretory's Odyssean Passage (event 5, LSB monstrosity/passage.lua: "Stalk prey as a monipulator.").
+  Live (Lnxcsfix by !zone 285): the picker by region (Ronfaure [2], Zulkheim [2], Gustaberg, Sarutabaruta), Ronfaure
+  folded out to West / East Ronfaure "Lv 1~"; Escape twice gave -1 and the event went back to its menu, Quit ended it.
+  Lnxcsfix's DB rows were restored afterwards (LSB makes her MON there).
+- Seen there, not ours yet: the Feretory turns the player into a monster (MON job, the Monstrosity look); we still
+  draw the character's own body.
