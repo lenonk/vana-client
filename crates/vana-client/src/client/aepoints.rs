@@ -172,6 +172,41 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
     w.sounds.push(Ui::Cursor as u32);
 }
 
+/// The focused list's bar (FUN_101f6c70).
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(t) = w.ae_tables.clone() else { return false };
+    let Some(u) = w.ae_ui.as_mut() else { return false };
+    match u.attrs.as_mut() {
+        Some((k, c, top)) => super::scrollbar::rows_abs(m, top, c, t.entries(*k).len(), ROWS),
+        None => super::scrollbar::rows_abs(m, &mut u.top, &mut u.cursor, t.cats.len(), ROWS),
+    }
+}
+
+/// The mouse on the focused list (the generic window's rows).
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(t) = w.ae_tables.clone() else { return };
+    let Some(u) = w.ae_ui.as_ref() else { return };
+    let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k, false);
+    match u.attrs {
+        Some((k, cursor, top)) => {
+            super::winhits::generic(w, gu, ATTRS, (cursor - top + 1) as u16, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(u) = w.ae_ui.as_mut() {
+                    u.attrs = Some((k, top + id as usize - 1, top));
+                }
+            }, keys);
+        }
+        None if !t.cats.is_empty() => {
+            let (top, cursor) = (u.top, u.cursor);
+            super::winhits::generic(w, gu, CATS, (cursor - top + 1) as u16, 1..=ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(u) = w.ae_ui.as_mut() {
+                    u.cursor = top + id as usize - 1;
+                }
+            }, keys);
+        }
+        None => {}
+    }
+}
+
 /// Help 0xe 1097 (fp_cat) / 1098 (fp_cat2), title 0xd 130.
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(u) = &w.ae_ui else { return };
@@ -200,6 +235,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let hide: Vec<u16> = (1..=ROWS as u16).filter(|&k| u.top + k as usize > n).collect();
     let sel = (n > 0 && u.attrs.is_none()).then(|| (u.cursor - u.top + 1) as u16);
     if let Some(win) = gu.lobby_window_off(CATS, sw, sh, (0.0, 0.0), sel, free && u.attrs.is_none(), &hide) {
+        super::winhits::record(w, CATS, &win);
         let [x0, y0, fw, fh] = win.frame;
         for (i, &(k, _)) in t.cats.iter().enumerate().skip(u.top).take(ROWS) {
             let y = y0 + 4.0 + 17.0 * (i - u.top) as f32;
@@ -208,6 +244,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
         if n > ROWS {
             gu.scroll_bar(x0 + fw - 8.0, y0, fh, n, ROWS, u.top);
+            if free && u.attrs.is_none() {
+                gu.bar_site(super::scrollbar::Owner::Points, x0 + fw - 8.0, y0, fh, n, ROWS, u.top);
+            }
         }
         rects.push(win.frame);
     }
@@ -218,6 +257,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             let hide: Vec<u16> = (1..=ROWS as u16).filter(|&r| top + r as usize > n).collect();
             let sel = (n > 0).then(|| (cursor - top + 1) as u16);
             let Some(win) = gu.lobby_window_off(ATTRS, sw, sh, (0.0, 0.0), sel, free, &hide) else { return rects };
+            super::winhits::record(w, ATTRS, &win);
             let [x0, y0, fw, fh] = win.frame;
             for (i, &e) in es.iter().enumerate().skip(top).take(ROWS) {
                 let y = y0 + 17.0 + 17.0 * (i - top) as f32;
@@ -234,6 +274,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
             }
             if n > ROWS {
                 gu.scroll_bar(x0 + fw - 8.0, y0, fh, n, ROWS, top);
+                if free {
+                    gu.bar_site(super::scrollbar::Owner::Points, x0 + fw - 8.0, y0, fh, n, ROWS, top);
+                }
             }
             rects.push(win.frame);
             es.get(cursor).map_or((String::new(), String::new()), |&e| (t.name(e), t.desc(e)))

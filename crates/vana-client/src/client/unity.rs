@@ -290,6 +290,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let Some(u) = &w.unity else { return rects };
     let free = w.confirm.is_none() && w.arealist.is_none();
     if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(u.sel), free && u.info.is_none(), &[]) {
+        super::winhits::record(w, MENU, &win);
         rects.push(win.frame);
     }
     if let Some(win) = gu.lobby_window_off(POINT, sw, sh, (0.0, 0.0), None, false, &[]) {
@@ -311,6 +312,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
     };
     let rows_y: [f32; 2] = if i.mode == 1 { [195.0, 218.0] } else { [52.0, 82.0] };
+    // The two rows are drawn by code: their plates (quest 0, 320 x 18) are the hit rects.
+    let plates = if i.ranks.is_none() { rows_y.iter().enumerate().map(|(k, ry)| (k as u16 + 1, [x + 39.0, y + ry, 320.0, 18.0])).collect() } else { Vec::new() };
+    super::winhits::record_rects(w, CHOOSER, win.frame, plates);
     if i.mode == 1 {
         // FUN_1022fb50.
         text(gu, &gu.lobby_msg(0xc, 0x18b, ""), x + 0x50 as f32, y + 0xf as f32, WHITE);
@@ -367,6 +371,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let hide: Vec<u16> = (1..=VISIBLE as u16).filter(|&c| rk.top + c as usize > order.len()).collect();
     let sel = (!order.is_empty()).then(|| (rk.cursor - rk.top + 1) as u16);
     let Some(win) = gu.lobby_window_off(LIST, sw, sh, (0.0, 0.0), sel, free, &hide) else { return rects };
+    super::winhits::record(w, LIST, &win);
     rects.push(win.frame);
     let Some((lx, ly)) = gu.window_xy(LIST, sw, sh) else { return rects };
     if order.is_empty() {
@@ -386,7 +391,52 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     }
     let [fx, fy, fw, fh] = win.frame;
     gu.scroll_bar(fx + fw - 8.0, fy, fh, order.len(), VISIBLE, rk.top);
+    if free {
+        gu.bar_site(super::scrollbar::Owner::Points, fx + fw - 8.0, fy, fh, order.len(), VISIBLE, rk.top);
+    }
     rects
+}
+
+/// The ranking's bar (the paged list, as its Ctrl / Alt keys).
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let n = if ready(w) { 11 } else { 0 };
+    let Some(r) = w.unity.as_mut().and_then(|u| u.info.as_mut()).and_then(|i| i.ranks.as_mut()) else { return false };
+    let mut row = r.cursor - r.top;
+    let moved = super::scrollbar::paged(m, &mut r.top, &mut row, n, VISIBLE);
+    r.cursor = r.top + row;
+    moved
+}
+
+/// The mouse on the focused window: ut_menu as the generic window, quest00's two plates, quest01's rows.
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::generic;
+    let Some(u) = w.unity.as_ref() else { return };
+    if w.arealist.is_some() {
+        return;
+    }
+    let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k, false);
+    match &u.info {
+        None => generic(w, gu, MENU, u.sel, 1..=3, p, moved, clicked, right, |w, id| {
+            if let Some(u) = w.unity.as_mut() {
+                u.sel = id;
+            }
+        }, keys),
+        Some(i) => match &i.ranks {
+            None => generic(w, gu, CHOOSER, i.sel, 1..=2, p, moved, clicked, right, |w, id| {
+                if let Some(i) = w.unity.as_mut().and_then(|u| u.info.as_mut()) {
+                    i.sel = id;
+                }
+            }, keys),
+            Some(r) => {
+                let top = r.top;
+                generic(w, gu, LIST, (r.cursor - top + 1) as u16, 1..=VISIBLE as u16, p, moved, clicked, right, |w, id| {
+                    if let Some(r) = w.unity.as_mut().and_then(|u| u.info.as_mut()).and_then(|i| i.ranks.as_mut()) {
+                        r.cursor = top + id as usize - 1;
+                    }
+                }, keys);
+            }
+        },
+    }
 }
 
 #[cfg(test)]

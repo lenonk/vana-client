@@ -9684,3 +9684,17 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - Live (Lnxcsfix, its Mog House): hover rmlo1 Back / Remove All moved the cursor; a click on Layout opened bankmenu; a
   click on Mog Safe opened the (empty) list; a right click on the list went back to select mode (as Escape,
   FUN_101f42e0); Enter reopened rmlo1 and a right click closed it.
+
+## Status sub-windows: the mouse (2026-10-26)
+
+- jobpoints.rs, aepoints.rs, unity.rs `pointer` (winhits.rs): the focused list as the generic window (merit2ca / jbpcat,
+  fp_cat / fp_cat2, ut_menu, quest01's ranking rows); Unity's quest00 rows are code-drawn, so their plates (quest 0,
+  320 x 18 at (39, row y)) are recorded as its children.
+- Scroll bars: Owner::Points takes the mouse and the wheel for meritcat, merit2ca, jbpcat, fp_cat, fp_cat2 (FUN_101f6c70
+  rows: a notch moves the top and keeps the hand's screen row) and Unity's ranking (the paged list, as its Ctrl / Alt
+  keys: top and cursor move together).
+- statcom2's mouse gate is taken before its sub-windows' handlers run: a right click closing merit1 / ut_menu (both
+  drawn over statcom2) had also reached statcom2 the same frame and closed Status.
+- Live (Lnxcsfix, raised to 99 for the test and restored): Job Points (hover, wheel, click Warrior -> jbpcat, right
+  clicks back), Merit Points (Categories, wheel), Unity (ut_menu, the chooser's plates, the ranking's hover and wheel,
+  right clicks back). Alter Ego Points stayed a disabled row (not tried).

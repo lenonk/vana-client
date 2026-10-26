@@ -238,6 +238,47 @@ pub fn key(w: &mut World, key: egui::Key, page_mod: bool) {
     }
 }
 
+/// The focused list's bar (FUN_101f6c70).
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(t) = w.jp_tables.clone() else { return false };
+    let Some(u) = w.jp_ui.as_mut() else { return false };
+    match u.page.as_mut() {
+        Some(p) => {
+            let (pg, n) = (p.page, page_len(p, &t));
+            super::scrollbar::rows_abs(m, &mut p.top[pg], &mut p.cursor[pg], n, PAGE_ROWS)
+        }
+        None => super::scrollbar::rows_abs(m, &mut u.top, &mut u.cursor, t.jobs.len(), JOB_ROWS),
+    }
+}
+
+/// The mouse on the focused list (the generic window's rows): hover moves the cursor, a click on it is Enter, a right
+/// click over the window Escape.
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let Some(t) = w.jp_tables.clone() else { return };
+    let Some(u) = w.jp_ui.as_ref() else { return };
+    let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k, false);
+    match &u.page {
+        Some(pg) => {
+            let q = pg.page;
+            let (top, cursor) = (pg.top[q], pg.cursor[q]);
+            super::winhits::generic(w, gu, PAGE, (cursor - top + 1) as u16, 1..=PAGE_ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(pg) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut()) {
+                    pg.cursor[q] = top + id as usize - 1;
+                }
+            }, keys);
+        }
+        None if !t.jobs.is_empty() => {
+            let (top, cursor) = (u.top, u.cursor);
+            super::winhits::generic(w, gu, JOBS, (cursor - top + 1) as u16, 1..=JOB_ROWS as u16, p, moved, clicked, right, |w, id| {
+                if let Some(u) = w.jp_ui.as_mut() {
+                    u.cursor = top + id as usize - 1;
+                }
+            }, keys);
+        }
+        None => {}
+    }
+}
+
 /// Help slot 1 0xe 0x320 "Select the job for which you wish to expend job points.", title "Categories".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if w.jp_ui.is_none() {
@@ -273,6 +314,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let hide: Vec<u16> = (1..=PAGE_ROWS as u16).filter(|&k| top + k as usize > n).collect();
         let sel = (n > 0).then(|| (cursor - top + 1) as u16);
         let Some(win) = gu.lobby_window_off(PAGE, sw, sh, (0.0, 0.0), sel, free, &hide) else { return rects };
+        super::winhits::record(w, PAGE, &win);
         let [x0, y0, fw, fh] = win.frame;
         gu.sprite("menu    windowps", 722 + pg, x0, y0, WHITE);
         if pg == 1 {
@@ -305,6 +347,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
         if n > PAGE_ROWS {
             gu.scroll_bar(x0 + fw - 8.0, y0, fh, n, PAGE_ROWS, top);
+            if free {
+                gu.bar_site(super::scrollbar::Owner::Points, x0 + fw - 8.0, y0, fh, n, PAGE_ROWS, top);
+            }
         }
         rects.push(win.frame);
         (name, desc) = if pg == 0 {
@@ -316,6 +361,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let hide: Vec<u16> = (1..=JOB_ROWS as u16).filter(|&k| u.top + k as usize > t.jobs.len()).collect();
         let sel = (!t.jobs.is_empty()).then(|| (u.cursor - u.top + 1) as u16);
         let Some(win) = gu.lobby_window_off(JOBS, sw, sh, (0.0, 0.0), sel, free, &hide) else { return rects };
+        super::winhits::record(w, JOBS, &win);
         let [x0, y0, fw, fh] = win.frame;
         for (i, &(job, _)) in t.jobs.iter().enumerate().skip(u.top).take(JOB_ROWS) {
             let y = y0 + 4.0 + 16.0 * (i - u.top) as f32;
@@ -324,6 +370,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
         if t.jobs.len() > JOB_ROWS {
             gu.scroll_bar(x0 + fw - 8.0, y0, fh, t.jobs.len(), JOB_ROWS, u.top);
+            if free {
+                gu.bar_site(super::scrollbar::Owner::Points, x0 + fw - 8.0, y0, fh, t.jobs.len(), JOB_ROWS, u.top);
+            }
         }
         rects.push(win.frame);
         (name, desc) = (t.name(job as u16), t.desc(job as u16));

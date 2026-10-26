@@ -1919,13 +1919,24 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.missions.is_some() && world.confirm.is_none()) {
         missions::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
+    // Taken before the sub-windows run: a right click closing one must not reach statcom2 the same frame.
+    let status_pointer = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.ae_ui.is_none() && world.confirm.is_none());
     if let Some(p) = input.pointer.filter(|_| world.currencies.is_some() && world.confirm.is_none()) {
         currencies::pointer(world, gu, sw, sh, p, input.moved);
     }
     if let Some(p) = input.pointer.filter(|_| world.merits_ui.is_some() && world.confirm.is_none()) {
         merits::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| world.jp_ui.is_some() && world.confirm.is_none()) {
+        jobpoints::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.ae_ui.is_some() && world.confirm.is_none()) {
+        aepoints::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.unity.is_some() && world.confirm.is_none()) {
+        unity::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = status_pointer.filter(|_| world.status.is_some()) {
         status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.

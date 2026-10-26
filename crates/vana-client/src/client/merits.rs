@@ -484,6 +484,12 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
+/// The list's bar (FUN_101f6c70) while the list has the focus.
+pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
+    let Some(l) = w.merits_ui.as_mut().filter(|m| m.edit.is_none()).and_then(|m| m.list.as_mut()) else { return false };
+    super::scrollbar::rows_abs(m, &mut l.top, &mut l.cursor, l.rows.len(), ROWS)
+}
+
 /// Help and title. merit1 / merit2 / merit3: their rows' strings; meritcat 0xe 0x261 and "Categories" (0xd 0x82);
 /// sortyn: 0xe 0x264 / 0x265 and "Categories".
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
@@ -608,6 +614,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
         if l.rows.len() > ROWS {
             gu.scroll_bar(x0 + fw - 8.0, y0, fh, l.rows.len(), ROWS, l.top);
+            if focused {
+                gu.bar_site(super::scrollbar::Owner::Points, x0 + fw - 8.0, y0, fh, l.rows.len(), ROWS, l.top);
+            }
         }
         rects.push(win.frame);
     }
