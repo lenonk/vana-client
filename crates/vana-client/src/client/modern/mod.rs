@@ -2,12 +2,14 @@
 //! modern asset pack (assets/modern) and the bundled fonts, switched on at run time. The retail windows it replaces
 //! are not drawn while it is on; the rest of the retail UI stays.
 
+mod chat;
 mod hud;
 mod paint;
 pub mod shot;
 mod theme;
 
 use super::World;
+use super::game_ui::GameUi;
 use egui::{Context, FontFamily, FontId, Rect, Shape, Ui, pos2, vec2};
 use std::collections::BTreeMap;
 pub use theme::Theme;
@@ -20,6 +22,11 @@ pub type Layout = BTreeMap<String, [f32; 2]>;
 pub struct Modern {
     pub theme: Theme,
     art: Art,
+    /// The chat window's tab; game textures (status icons) as egui textures, by key.
+    chat_tab: std::cell::Cell<u8>,
+    images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
+    /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
+    grid: std::cell::RefCell<(Option<std::time::Instant>, String)>,
     zoom: f32,
     /// The screen in points last frame: when it changes (a resize, Interface Size) the panels are placed again from the
     /// layout, as egui keeps its own places in points.
@@ -29,12 +36,12 @@ pub struct Modern {
 impl Modern {
     pub fn new(ctx: &Context) -> Self {
         theme::install_fonts(ctx);
-        Self { theme: Theme::load(), art: Art::load(ctx), zoom: 0.0, screen: egui::Vec2::ZERO }
+        Self { theme: Theme::load(), art: Art::load(ctx), chat_tab: Default::default(), images: Default::default(), grid: Default::default(), zoom: 0.0, screen: egui::Vec2::ZERO }
     }
 
     /// One frame: egui's zoom for the window height, then the panels. True when a panel moved (the layout is to be
     /// saved).
-    pub fn ui(&mut self, ctx: &Context, w: &mut World, window: [u32; 2], scale: u32, layout: &mut Layout) -> bool {
+    pub fn ui(&mut self, ctx: &Context, gu: &GameUi, w: &mut World, window: [u32; 2], scale: u32, layout: &mut Layout) -> bool {
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
         let zoom = self.theme.zoom(window[1] as f32 / native, scale);
         if (zoom - self.zoom).abs() > 0.001 {
@@ -45,8 +52,9 @@ impl Modern {
         let reseed = screen != self.screen;
         self.screen = screen;
         let mut moved = false;
-        let mut p = Panels { m: self, ctx, layout, moved: &mut moved, reseed };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, moved: &mut moved, reseed };
         hud::draw(&mut p, w);
+        chat::panel(&mut p, &chat::view(w));
         moved
     }
 }
@@ -66,19 +74,33 @@ struct Title<'a> {
     note: Option<&'a str>,
 }
 
+/// What drawing needs besides the panel itself: the art, egui, the game's data.
+#[derive(Clone, Copy)]
+struct Look<'a> {
+    m: &'a Modern,
+    ctx: &'a Context,
+    gu: Option<&'a GameUi>,
+}
+
 /// What a frame's panels share.
 struct Panels<'a> {
     m: &'a Modern,
     ctx: &'a Context,
+    /// The game's data (status icons and texts); none in the offscreen shot.
+    gu: Option<&'a GameUi>,
     layout: &'a mut Layout,
     moved: &'a mut bool,
     reseed: bool,
 }
 
-impl Panels<'_> {
+impl<'a> Panels<'a> {
+    fn look(&self) -> Look<'a> {
+        Look { m: self.m, ctx: self.ctx, gu: self.gu }
+    }
+
     /// A movable panel `width` points wide in the pack's normal window frame (any size: paint::window), its title row,
     /// then `add`'s contents. Placed from the layout, else at `default`; a new place is kept once the pointer is let go.
-    fn panel(&mut self, id: &str, title: Title, width: f32, default: [f32; 2], add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+    fn panel(&mut self, id: &str, title: Option<Title>, width: f32, default: [f32; 2], add: impl FnOnce(&mut Ui)) -> Option<Rect> {
         let m = self.m;
         let screen = self.ctx.content_rect();
         let at = self.layout.get(id).copied().unwrap_or(default);
@@ -90,8 +112,10 @@ impl Panels<'_> {
                 let inner = egui::Frame::NONE.inner_margin(egui::Margin { left: 22, right: 22, top: 16, bottom: 18 }).show(ui, |ui| {
                     ui.set_width(width - 44.0);
                     ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
-                    title_row(ui, m, &title);
-                    ui.add_space(6.0);
+                    if let Some(t) = &title {
+                        title_row(ui, m, t);
+                        ui.add_space(6.0);
+                    }
                     add(ui);
                 });
                 if let Some(f) = m.art.frame("window_normal") {
@@ -106,6 +130,27 @@ impl Panels<'_> {
             *self.moved = true;
         }
         shown.inner
+    }
+}
+
+impl Modern {
+    fn grid(&self, w: &World, gu: &GameUi) -> String {
+        let mut g = self.grid.borrow_mut();
+        if g.0.is_none_or(|t| t.elapsed().as_secs_f32() >= 0.5) {
+            *g = (Some(std::time::Instant::now()), super::map::grid_text(w, gu.map_regions()));
+        }
+        g.1.clone()
+    }
+
+    /// A status icon from the game's files (config 0x99 bit 2: the small set) as an egui texture, made once.
+    fn status_icon(&self, ctx: &Context, gu: &GameUi, small: bool, id: u16) -> Option<egui::TextureId> {
+        let key = format!("status {}:{id}", small as u8);
+        let mut images = self.images.borrow_mut();
+        let t = images.entry(key.clone()).or_insert_with(|| {
+            let (w, h, rgba) = gu.status_rgba(small, id)?;
+            Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
+        });
+        t.as_ref().map(|t| t.id())
     }
 }
 

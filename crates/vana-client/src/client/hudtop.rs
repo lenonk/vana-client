@@ -195,8 +195,8 @@ impl HudTop {
             || w.bid.pending;
         self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
         self.draw_bars(gu, sw, sh, title, help, ticks, busy);
-        // The compass alone is hidden in events.
-        self.draw_compass(gu, w, log_top, ticks, !super::event::active(w), camera_forward);
+        // The compass alone is hidden in events, and in the modern layer (its location panel).
+        self.draw_compass(gu, w, log_top, ticks, !super::event::active(w) && !w.modern, camera_forward);
     }
 
     /// titlewin, helpwind and netstat at the current fade (also the offscreen topbar-shot).

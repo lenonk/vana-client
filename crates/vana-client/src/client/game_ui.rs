@@ -1363,6 +1363,11 @@ impl GameUi {
         Some(name)
     }
 
+    /// A status icon's pixels (the modern layer's copy).
+    pub fn status_rgba(&self, small: bool, id: u16) -> Option<(u32, u32, Vec<u8>)> {
+        crate::dat::statusinfo::icon(self.data.status[small as usize].as_deref()?, id)
+    }
+
     /// A status info entry (cancellable, never timed, description).
     pub fn status_entry(&self, small: bool, id: u16) -> Option<crate::dat::statusinfo::Entry> {
         crate::dat::statusinfo::entry(self.data.status[small as usize].as_deref()?, id)

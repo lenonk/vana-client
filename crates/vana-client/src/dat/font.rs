@@ -18,6 +18,12 @@ pub fn set_code_tables(ids: [[u8; 4]; 256], modes: [[u8; 4]; 256]) {
     *CODE_TABLES.write().unwrap() = Some(Box::new((ids, modes)));
 }
 
+/// An entry of those tables: `k` 0 the colour ids (`1e` from 0x11), 1 the modes (`1f xx`); 0x80808080 before they
+/// are set.
+pub fn code_table(k: usize, xx: usize) -> [u8; 4] {
+    CODE_TABLES.read().ok().and_then(|t| t.as_ref().map(|t| if k == 0 { t.0[xx & 0xff] } else { t.1[xx & 0xff] })).unwrap_or([0x80; 4])
+}
+
 /// Glyph cell size in screen pixels (and in atlas texels for the 1024x2048 atlases).
 pub const CELL: i32 = 16;
 pub const COLUMNS: i32 = 64;

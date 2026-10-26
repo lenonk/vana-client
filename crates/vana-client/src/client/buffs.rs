@@ -8,7 +8,7 @@ const WINDOW: &str = "menu    buff";
 
 /// FUN_10227bf0 step 2: the 0x037 ids in order, 0xffff and 0 (KO) skipped, each with its 0x063 end time when the
 /// timer copy has the same id at that index, else 0x7fffffff.
-fn icons(w: &World) -> Vec<(u16, u32)> {
+pub(super) fn icons(w: &World) -> Vec<(u16, u32)> {
     (0..32)
         .filter_map(|i| {
             let id = w.buffs[i];
@@ -76,7 +76,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// LAB_10228080's label: "%dh" from an hour (at most 99), "%dm" from a minute, seconds below; none at 5 s or less.
-fn label(rem: i32) -> Option<String> {
+pub(super) fn label(rem: i32) -> Option<String> {
     let rem = rem.min(356_400);
     match rem {
         r if r <= 5 => None,

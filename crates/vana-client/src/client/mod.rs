@@ -2425,7 +2425,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else if let Some(fl) = world.full_log {
         // The small logs are closed while the full log is open (FUN_1015c280).
         blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, world.game.get(0xb4) != 0));
-    } else if log.alpha > 0.0 || log.lines > 0 {
+    } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);
         let newest = world.log.draw(gu, &log, line_open);
@@ -2444,7 +2444,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(log.rect);
     }
     // The chat line ("menu    inline") (16, H - 38), (textw + 14) x 22, windowps 37; FUN_101b7fd0.
-    if world.typing {
+    if world.typing && !world.modern {
         let (x, y, w) = (16.0, sh - 38.0, tw + 14.0);
         gu.frame(x, y, w, 22.0);
         gu.sprite_from("menu    windowps", 37, 1, x, y, 0x8080_8080);
@@ -2541,8 +2541,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     // The status icons are layer 0 (registry +0x29): every window draws over them.
-    buffs::draw(gu, world, sw, sh);
-    buffs::draw_party(gu, world, sw, sh, log.rect);
+    if !world.modern {
+        buffs::draw(gu, world, sw, sh);
+        buffs::draw_party(gu, world, sw, sh, log.rect);
+    }
     fishing::draw_gauge(gu, world, sw, sh);
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(remodel::draw(gu, world, sw, sh));
@@ -2611,7 +2613,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
     blockers.extend(bluset::draw(gu, world, sw, sh));
-    magic::draw_cast_bar(gu, world, sw, sh);
+    if !world.modern {
+        magic::draw_cast_bar(gu, world, sw, sh);
+    }
     if let Some(c) = world.config.as_mut() {
         c.covered = world.settings.is_some();
     }
@@ -9699,10 +9703,12 @@ impl App {
                     gu.set_style(world.game.get(0x12) as usize);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
-                if world.modern {
+                if world.modern
+                    && let Some(gu) = self.game_ui.as_ref()
+                {
                     let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
                     let layout = self.cfg.modern_layout.entry(world.name.clone()).or_default();
-                    save |= m.ui(ctx, world, window, self.cfg.modern_scale, layout);
+                    save |= m.ui(ctx, gu, world, window, self.cfg.modern_scale, layout);
                 } else {
                     modern::off(ctx, self.modern.as_mut());
                 }

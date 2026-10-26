@@ -1,7 +1,8 @@
 //! `modern-shot`: the modern layer offscreen without a login: the HUD panels with sample values and every window frame
 //! at several sizes, over a screenshot when one is given.
 
-use super::hud::{self, PartyRow, StatusView, TargetView};
+use super::chat::{self, ChatView, InputView};
+use super::hud::{self, Effect, Icon, PartyRow, StatusView, TargetView, WhereView};
 use super::{Layout, Modern, Panels, paint};
 use crate::render::Gpu;
 use anyhow::{Context as _, Result};
@@ -21,10 +22,25 @@ fn load_png(path: &Path) -> Result<([usize; 2], Vec<u8>)> {
 
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     let mut moved = false;
-    let mut p = Panels { m, ctx, layout, moved: &mut moved, reseed: false };
-    hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630 });
-    let row = |slot, name: &str, job, here, hp, marked| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here, hp, marked };
-    hud::party_panel(&mut p, &[row(1, "Raven", 1, true, 0.88, false), row(2, "Koru", 3, true, 0.62, true), row(3, "Shantotto", 4, true, 0.95, false), row(4, "Prishe", 2, false, 1.0, false)]);
+    let mut p = Panels { m, ctx, gu: None, layout, moved: &mut moved, reseed: false };
+    let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
+    let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
+    hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630, effects: mine }, false);
+    hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some((2, false)) });
+    let theirs = vec![fx("icons/protect", None, false), fx("icons/sleep", None, false)];
+    let row = |slot, name: &str, job, here, hp, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here, hp, marked, effects };
+    hud::party_panel(&mut p, &[row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false);
+    hud::cast_panel(&mut p, 0.6);
+    let wh = [0x80, 0x80, 0x80, 0x80];
+    let lines = vec![
+        (String::new(), "=== Area: West Ronfaure ===", wh, false),
+        ("[18:42:10] ".to_string(), "Raven : rdy?", [0x80, 0x80, 0x80, 0x80], true),
+        (String::new(), "Lenon starts casting Protect on Koru.", [0x30, 0x78, 0x80, 0x80], false),
+        (String::new(), "Koru gains the effect of Protect.", wh, false),
+        (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], false),
+        ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], true),
+    ];
+    chat::panel(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false });
     hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", hp: Some((72, 0.72)) });
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
     let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::unique("frames")));
