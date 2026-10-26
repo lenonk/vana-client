@@ -288,9 +288,14 @@ pub fn open_direct(w: &mut World) {
     w.action_menu = None;
 }
 
+/// The modern layer draws this window itself: the item list (not the storage view or the Equipment screen).
+pub fn modern_list(w: &World) -> bool {
+    matches!(w.win, Some(Win::Items { store: None, .. }))
+}
+
 /// The list's rows: the occupied inventory slots but gil; for the direct list only those FUN_101f0810 colours
 /// (crystals, maze tabulae, usable non-equipment, equipped charged gear).
-fn listed(w: &World, direct: bool) -> Vec<Slot> {
+pub(super) fn listed(w: &World, direct: bool) -> Vec<Slot> {
     let info = w.item_info.as_ref();
     w.inv
         .viewed(INVENTORY)
@@ -667,14 +672,32 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
 }
 
 /// The item's target prompt is up (SubThen::Item).
-fn item_prompt(w: &World) -> bool {
+pub(super) fn item_prompt(w: &World) -> bool {
     matches!(w.prompt.as_ref().map(|p| &p.then), Some(super::target::SubThen::Item { .. }))
+}
+
+/// The list's rows in their colours; FUN_101f0810: the direct list's, yellow for usable items, equipped charged gear
+/// blue when ready (extdata kind 1, u16 @2 bit 0x4000), else grey.
+pub(super) fn list_rows(w: &World, info: &ItemCache, shown: &[Slot], direct: bool) -> Vec<crate::inventory::Row> {
+    let mut rows = build_rows(shown, info, false);
+    if direct {
+        for (r, s) in rows.iter_mut().zip(shown) {
+            let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
+            let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
+            r.tint = match (gear, ready) {
+                (false, _) => crate::inventory::TINT_FLAGGED,
+                (true, true) => 0x8040_7090,
+                (true, false) => crate::inventory::TINT_DIM,
+            };
+        }
+    }
+    rows
 }
 
 /// FUN_101f2de0 / FUN_101f2ec0: [Use, Drop] enabled. Use: crystals and maze tabulae, non-equipment with record flag
 /// 0x400, equipped charged gear whose extdata (kind 1) has u16 @2 bit 0x4000; never as a monster (main job 0x17).
 /// Drop: the slot's lock byte is 0.
-fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
+pub(super) fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
     let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return [false, false] };
     let ext = w.inv.ext.get(&(INVENTORY, index));
     let equipped = w.inv.equip.contains(&Some((INVENTORY, index)));
@@ -918,20 +941,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         Win::Items { scroll, cursor, store: Some(b), .. } => rects.extend(draw_storage(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
         Win::Items { scroll, cursor, sub, direct, sort, manual, .. } => {
             let shown = listed(w, *direct);
-            let mut rows = build_rows(&shown, info.as_ref(), false);
-            // FUN_101f0810: the direct list's colours, yellow for usable items, equipped charged gear blue when ready
-            // (extdata kind 1, u16 @2 bit 0x4000), else grey.
-            if *direct {
-                for (r, s) in rows.iter_mut().zip(&shown) {
-                    let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
-                    let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
-                    r.tint = match (gear, ready) {
-                        (false, _) => crate::inventory::TINT_FLAGGED,
-                        (true, true) => 0x8040_7090,
-                        (true, false) => crate::inventory::TINT_DIM,
-                    };
-                }
-            }
+            let rows = list_rows(w, info, &shown, *direct);
             let list = ItemList { rows, scroll: *scroll, cursor: *cursor };
             if !*direct && sub.is_none() && sort.is_none() {
                 draw_count(gu, shown.len(), w.inv.sizes[INVENTORY as usize], sw, sh);

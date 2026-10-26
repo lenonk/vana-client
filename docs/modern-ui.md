@@ -178,6 +178,15 @@ Milestone 1:
   letters in order; roman numerals as digits), from a category window every list behind it; Up / Down, Enter
   picks through retail's keys (the category, the row, Enter: checks and the target prompt as ever), Backspace,
   Escape ends it.
+- The Items window (modern/items.rs) over items.rs's state: the list and the action menu's direct-use list with the
+  game's icons, quantities and row colours, the count, a bar; itmsort2 as a strip (Auto-sort and its question, Manual
+  Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
+  retail's, the wheel. Search there gives one hit per item with its total; a pick puts the cursor on its first slot
+  and presses Enter. The storage views and the Equipment screen are still drawn retail-style.
+- The item info panel for every item the game describes (the lists, shops, the auction, trades, events ...):
+  iteminfo::build wrapped by egui instead of paged, the marks as tags, the compared equipped item above it; it rides
+  the combat window (retail's on the log). Seen live (2026-10-26): list, info, Use / Drop, drop, Auto-sort's
+  question, hover, wheel, search.
 - Suggestions (suggest.rs, tested; ids checked against LSB's spell list and effect enum): an ailment on a party
   member or us -> its -na spell; the lowest at 75% HP or under -> the Cure tier fitting the HP missing (three or more:
   Curaga); our Refresh, Haste, Protect, Shell, Regen, Phalanx, Stoneskin, Blink, Aquaveil or Reraise under 30 s ->

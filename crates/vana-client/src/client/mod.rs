@@ -1954,8 +1954,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let out = c.pointer(gu, &mut world.game, p, input.moved, input.clicked, sw, sh);
         config_out(world, out);
     }
-    // Mouse on an open window's item list.
+    // Mouse on an open window's item list (the modern layer's own list takes it there).
     if world.win.is_some()
+        && !(world.modern && items::modern_list(world))
         && let Some(p) = input.pointer
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2638,7 +2639,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(region::draw_menu(gu, world, sw, sh));
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
-    blockers.extend(items::draw(gu, world, sw, sh));
+    if !(world.modern && items::modern_list(world)) {
+        blockers.extend(items::draw(gu, world, sw, sh));
+    }
     // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
@@ -2683,7 +2686,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(linklist::draw(gu, world, sw, sh));
     blockers.extend(blklist::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
-    blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
+    if !world.modern {
+        blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
+    }
     // The modern layer draws the magic and ability windows itself.
     if !world.modern {
         blockers.extend(magic::draw(gu, world, sw, sh));
@@ -3870,12 +3875,11 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
     Some(win.frame)
 }
 
-/// The item info window (FUN_1013cba0 / FUN_1013d760) for the open list's cursor item, else the event's: mode 0 at
-/// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
-fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
-    let cache = world.item_info.clone()?;
+/// The item the info window describes now: the open list's cursor item, else a shop's, the auction's ..., else the
+/// event's; (item, extdata, container, equipped, mode, flags).
+fn item_info_source(world: &World) -> Option<(u16, Option<[u8; 24]>, Option<u8>, bool, u8, u32)> {
     let post_item = post::info_source(world).or_else(|| synth::info_source(world));
-    let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
+    Some(match (items::info_source(world), event::option_item(world)) {
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
@@ -3889,7 +3893,14 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some((id, ext)) = treasure::info_source(world) => (id, ext, None, false, 0, 0),
         (None, Some((id, ext, f))) => (id, ext, None, false, 4, f as u32),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
-    };
+    })
+}
+
+/// The item info window (FUN_1013cba0 / FUN_1013d760) for the open list's cursor item, else the event's: mode 0 at
+/// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
+fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
+    let cache = world.item_info.clone()?;
+    let (id, ext, container, equipped, mode, flags) = item_info_source(world)?;
     let it = cache.item(id)?;
     let mut p = world.info_page.get();
     if p.1 != id {
@@ -10347,7 +10358,11 @@ impl App {
             }
             // act:wheel:N turns the wheel N notches (up positive): the focused list's, else the camera's.
             if let Some(n) = action.as_deref().and_then(|a| a.strip_prefix("wheel:")).and_then(|n| n.parse::<f32>().ok()) {
-                if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
+                // Over a modern panel it is egui's, as egui-winit consumes the window's.
+                if consumed && matches!(&self.phase, Phase::World(w) if w.modern) {
+                    let (unit, delta, phase, source) = (egui::MouseWheelUnit::Line, egui::vec2(0.0, n), egui::TouchPhase::Move, egui::MouseWheelSource::Unknown);
+                    raw.events.push(egui::Event::MouseWheel { unit, delta, phase, source, modifiers: Default::default() });
+                } else if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
                     self.list_wheel += n;
                 } else {
                     self.wheel += n;

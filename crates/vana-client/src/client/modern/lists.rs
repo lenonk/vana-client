@@ -78,7 +78,7 @@ fn cat_icon(cat: Cat) -> &'static str {
 /// Hovering moves the cursor when the pointer moved; a click on the cursor's row is Enter, elsewhere it moves the
 /// cursor first (magic::pointer's rule).
 #[derive(Default)]
-struct Mouse {
+pub(super) struct Mouse {
     hover: Option<usize>,
     click: Option<usize>,
 }
@@ -139,7 +139,7 @@ fn suggested_mouse(w: &mut World, mouse: &Mouse, list: &[Suggestion]) {
 }
 
 /// The search field and its hits in place of the window's rows: what was clicked, what the pointer is over.
-fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Option<egui::TextureId>], text: &str, sel: usize, hits: &[Hit], moved: bool) -> Mouse {
+pub(super) fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Option<egui::TextureId>], text: &str, sel: usize, hits: &[Hit], moved: bool) -> Mouse {
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
     if let Some(s) = m.art.sprite("controls/input_focused") {
         ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
@@ -161,7 +161,7 @@ fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Option<egui::
         // From a category window, the list each hit is in.
         let right = match (h.cat, w.cats) {
             (Some(c), Some(cats)) => magic::cat_rows(cats.menu).get(c).map_or("", |r| magic::cat_label(cats.menu, r.1)),
-            _ => "",
+            _ => &h.note,
         };
         let look = if k == sel { Look::Cursor } else { Look::Normal };
         let resp = row(ui, m, icons.get(k).copied().flatten(), None, &h.name, right, look);
@@ -171,15 +171,19 @@ fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Option<egui::
 }
 
 /// The search's hits for the open window, their icons.
-fn search_hits(p: &Panels, w: &World) -> Option<(String, usize, Vec<Hit>, Vec<Option<egui::TextureId>>)> {
+pub(super) fn search_hits(p: &Panels, w: &World) -> Option<(String, usize, Vec<Hit>, Vec<Option<egui::TextureId>>)> {
     let s = w.list_search.as_ref()?;
     let hits = listsearch::hits(w, &s.text);
-    let icons = hits.iter().take(listsearch::MAX).map(|h| p.gu.and_then(|gu| magic::row_icon(w, h.kind, h.id).and_then(|(lib, k)| p.m.sprite_icon(p.ctx, gu, lib, k)))).collect();
+    let icon = |h: &Hit| match h.slot {
+        Some(_) => w.item_info.as_ref().and_then(|info| p.m.item_icon(p.ctx, info, h.id)),
+        None => p.gu.and_then(|gu| magic::row_icon(w, h.kind, h.id).and_then(|(lib, k)| p.m.sprite_icon(p.ctx, gu, lib, k))),
+    };
+    let icons = hits.iter().take(listsearch::MAX).map(icon).collect();
     Some((s.text.clone(), s.sel, hits, icons))
 }
 
 /// A search's mouse: hovering moves the highlight, a click picks.
-fn search_mouse(w: &mut World, mouse: &Mouse, hits: &[Hit]) {
+pub(super) fn search_mouse(w: &mut World, mouse: &Mouse, hits: &[Hit]) {
     if let Some(k) = mouse.hover {
         listsearch::set_sel(w, k);
     }

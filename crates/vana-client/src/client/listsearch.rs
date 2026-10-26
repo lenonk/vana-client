@@ -2,8 +2,8 @@
 //! a category window or a list is open searches the names; from a category window every list behind it. A pick goes
 //! through retail's own keys (the category, the row, Enter), so every check and the target prompt still apply.
 
-use super::World;
 use super::magic::{self, Cat, Kind};
+use super::{World, items};
 use super::suggest::{self, Action, Suggestion};
 use crate::audio::Ui as Se;
 
@@ -59,7 +59,7 @@ pub fn pick_action(w: &mut World, action: Action) {
         })
     });
     if in_list || cat.is_some() {
-        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0 });
+        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0, slot: None, note: String::new() });
     }
 }
 
@@ -71,7 +71,7 @@ pub struct ListSearch {
 }
 
 /// A row found: its list's kind (and the category row it is under when searching from a category window), id, name and
-/// score.
+/// score; an item's inventory slot (its first, the item list showing one hit per item) and its quantity.
 #[derive(Clone, Debug)]
 pub struct Hit {
     pub kind: Kind,
@@ -79,6 +79,8 @@ pub struct Hit {
     pub id: u16,
     pub name: String,
     pub score: i32,
+    pub slot: Option<u8>,
+    pub note: String,
 }
 
 /// Rows a search shows at most.
@@ -157,11 +159,33 @@ fn name(w: &World, kind: Kind, id: u16) -> String {
 /// The hits for the open window, best first (the list's own order among equals).
 pub fn hits(w: &World, query: &str) -> Vec<Hit> {
     let mut out = Vec::new();
+    if let Some(direct) = item_list(w) {
+        let mut seen: Vec<(u16, u32)> = Vec::new();
+        let info = w.item_info.as_ref();
+        for s in items::listed(w, direct) {
+            match seen.iter_mut().find(|(id, _)| *id == s.id) {
+                Some((_, n)) => *n += s.count.max(1),
+                None => seen.push((s.id, s.count.max(1))),
+            }
+            let n = info.and_then(|c| c.item(s.id)).map(|it| it.name.clone()).unwrap_or_default();
+            if out.iter().all(|h: &Hit| h.id != s.id)
+                && let Some(score) = score(&n, query)
+            {
+                out.push(Hit { kind: Kind::Ability, cat: None, id: s.id, name: n, score, slot: Some(s.index), note: String::new() });
+            }
+        }
+        for h in &mut out {
+            let n = seen.iter().find(|(id, _)| *id == h.id).map_or(1, |x| x.1);
+            h.note = if n > 1 { n.to_string() } else { String::new() };
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        return out;
+    }
     let mut add = |kind: Kind, cat: Option<usize>, rows: Vec<u16>| {
         for id in rows {
             let n = name(w, kind, id);
             if let Some(score) = score(&n, query) {
-                out.push(Hit { kind, cat, id, name: n, score });
+                out.push(Hit { kind, cat, id, name: n, score, slot: None, note: String::new() });
             }
         }
     };
@@ -181,14 +205,22 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
     out
 }
 
-/// A window the search can run in: a category window or an unhidden list, with nothing over it.
+/// The item list (direct: the action menu's) when it has the focus: no iuse, sort window or Manual Sort over it.
+fn item_list(w: &World) -> Option<bool> {
+    match w.win.as_ref()? {
+        items::Win::Items { sub: None, sort: None, manual: None, store: None, direct, .. } => Some(*direct),
+        _ => None,
+    }
+}
+
+/// A window the search can run in: a category window, an unhidden list or the item list, with nothing over it.
 pub fn can_run(w: &World) -> bool {
     let list = w.ability.as_ref().or(w.magic.as_ref());
     w.modern
         && w.prompt.is_none()
         && w.confirm.is_none()
         && !w.typing
-        && (w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0))
+        && (w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0) || (w.win.is_some() && item_list(w).is_some()))
 }
 
 /// The search's keys and typed text this frame, and Tab's suggestions. True when it took them (the game then sees
@@ -289,6 +321,16 @@ pub fn set_sel(w: &mut World, sel: usize) {
 /// Enter acts on it, as the keys would.
 pub fn pick(w: &mut World, h: &Hit) {
     w.list_search = None;
+    if let (Some(slot), Some(direct)) = (h.slot, item_list(w)) {
+        let Some(k) = items::listed(w, direct).iter().position(|s| s.index == slot) else { return };
+        if let Some(items::Win::Items { scroll, cursor, .. }) = w.win.as_mut() {
+            let vis = crate::inventory::VISIBLE_ROWS;
+            *scroll = if k < *scroll { k } else if k >= *scroll + vis { k + 1 - vis } else { *scroll };
+            *cursor = k - *scroll;
+        }
+        items::key(w, egui::Key::Enter, false, false);
+        return;
+    }
     if let (Some(k), Some(c)) = (h.cat, w.cats) {
         w.cats = Some(magic::Cats { sel: k, ..c });
         magic::key(w, egui::Key::Enter);

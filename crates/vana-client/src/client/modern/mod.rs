@@ -9,6 +9,7 @@ mod chat;
 mod combat;
 mod command;
 mod hud;
+mod items;
 mod lists;
 mod paint;
 pub mod shot;
@@ -86,6 +87,7 @@ impl Modern {
         command::draw(&mut p, w);
         combat::draw(&mut p, w);
         lists::draw(&mut p, w);
+        items::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -193,6 +195,9 @@ fn default_place(id: &str) -> Place {
         "alliance1" => at(0.87, 0.107),
         "alliance2" => at(0.87, 0.335),
         "cast" => at(0.41, 0.58),
+        // The item list left of the main menu; the item info rides the log as retail's (mode 0, flag 0x1000).
+        "items" => at(0.56, 0.07),
+        "iteminfo" => on("combat"),
         _ => at(0.3, 0.3),
     }
 }
@@ -431,6 +436,18 @@ impl Modern {
         let t = images.entry(key.clone()).or_insert_with(|| {
             let (w, h, rgba) = gu.sprite_rgba(lib, index)?;
             Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
+        });
+        t.as_ref().map(|t| t.id())
+    }
+
+    /// An item's icon from the game's files (32 x 32) as an egui texture, made once.
+    fn item_icon(&self, ctx: &Context, info: &super::items::ItemCache, id: u16) -> Option<egui::TextureId> {
+        use crate::inventory::ItemInfo;
+        let key = format!("item {id}");
+        let mut images = self.images.borrow_mut();
+        let t = images.entry(key.clone()).or_insert_with(|| {
+            let rgba = info.icon(id)?;
+            Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([32, 32], &rgba), egui::TextureOptions::LINEAR))
         });
         t.as_ref().map(|t| t.id())
     }
