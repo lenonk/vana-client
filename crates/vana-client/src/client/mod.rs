@@ -1347,6 +1347,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         event::input_events(world, &input.events);
         keys.clear();
     }
+    // The generic press on the focused window (window +0x5e): Enter, or a click on its cursor child.
+    if !input_open && !world.typing && input.events.iter().any(|e| matches!(e, egui::Event::Key { key: egui::Key::Enter, pressed: true, repeat: false, .. })) {
+        gu.press();
+    }
+    if let Some(p) = input.pointer.filter(|_| input.clicked) {
+        gu.press_at(p);
+    }
     for ev in input.events.iter().filter(|_| !input_open) {
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
@@ -8764,11 +8771,18 @@ impl App {
                                 if self.lobby_settings.is_none() {
                                     let mut outs = Vec::new();
                                     for ev in &input.events {
-                                        if let egui::Event::Key { key, pressed: true, .. } = ev {
+                                        if let egui::Event::Key { key, pressed: true, repeat, .. } = ev {
+                                            // The generic press (window +0x5e) on the focused page's cursor child.
+                                            if *key == egui::Key::Enter && !repeat {
+                                                lu.press();
+                                            }
                                             outs.push(c.key(lu, &mut self.lobby_values, *key, sw));
                                         }
                                     }
                                     if let Some(p) = input.pointer {
+                                        if input.clicked {
+                                            lu.press_at(p);
+                                        }
                                         outs.push(c.pointer(lu, &mut self.lobby_values, p, input.moved, input.clicked, sw, sh));
                                     }
                                     for out in outs {

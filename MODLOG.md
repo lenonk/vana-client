@@ -9896,3 +9896,17 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   house allows it (FUN_101d5fe0), else hides them (FUN_100859d0(0)), and sets their +0xa0 object's +0xc0 to 1 / 2 by
   the layout view.
 - LSB spawns no NPC with model 0x737 (npc_list looks): nothing to show or hide there, not built.
+
+## The generic press on every window (2026-10-26; spec ~/ffxi/lab/research/select_buttons_spec.md 2d)
+
+- The generic handler FUN_10118260 sets window +0x5e = 9 on Enter (message 5); the generic draw FUN_101177d0 then
+  draws the cursor child at (+1, +1) instead of (-1, -1) and FUN_10119f80 (N = 0x14, scale 1) its two gold rings
+  (screens::press_rings(20, c): from c 9 only the ripple's tail, k0 s 1.264 a 15 / k1 s 1.174 a 53 at c 9) while it
+  counts down a tick at a time.
+- Ours: GameUi keeps the window drawn with the hand and its cursor child's rect (this frame, last frame);
+  GameUi::press (an Enter that is not a repeat, outside text entry, in the world and on the title's Config pages) and
+  press_at (a click on that child) start the count for that window; lobby_window_full sinks the child and draws the
+  rings; end_frame counts down. Every lobby_window window gets it; windows that close on the press show none (only the
+  frame plays its close).
+- Live: Status's Profile row in the Enter frame sinks two pixels with the ring around it, and is back at (-1, -1)
+  after.

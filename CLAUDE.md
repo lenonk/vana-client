@@ -144,7 +144,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     behind motion paths, sub-animation variants, op 0x53, pop0 / pop1, the hide skip (+0x138), ?ead / sdep (MODLOG "Motion name bases, sdep...", "Scheduler op
     0xac") done;
   - lobby (spec `~/ffxi/lab/research/select_buttons_spec.md`): title and list sounds and press animations, the
-    prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
+    prompt as retail, login screen sounds, the fade waits, the generic press rings on every window done;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done, <ncall> / <scall> too (the tell sound "0p40" is in no
     resident file);
   - the message formatter (dat/msgfmt.rs), /clock and the event date codes 7f a0..ac done; left 7f b0 / b1 / b4 / b5,

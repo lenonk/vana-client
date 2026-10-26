@@ -212,6 +212,10 @@ pub struct GameUi {
     anim_acc: f32,
     pub open_ticks: f32,
     walk: Walk,
+    /// The window drawn with the hand and its cursor child's rect, this frame and the last (what Enter presses).
+    focus: (Option<(String, u16, [f32; 4])>, Option<(String, u16, [f32; 4])>),
+    /// Window +0x5e, the generic press (FUN_10118260 on Enter: 9 ticks down): the child pressed and the count.
+    presses: std::cell::RefCell<std::collections::HashMap<String, (u16, f32)>>,
 }
 
 /// FUN_1015fa00's group walk (window_groups_spec.md): the windows wanted this frame and last with their raise
@@ -276,7 +280,7 @@ pub struct CreatorView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -375,6 +379,26 @@ impl GameUi {
         self.anims.retain(|_, a| a.seen == frame || a.close > 0.0);
         self.anim_frame += 1;
         self.run_walk();
+        self.focus = (None, self.focus.0.take());
+        self.presses.borrow_mut().retain(|_, p| {
+            p.1 -= ticks;
+            p.1 > 0.0
+        });
+    }
+
+    /// The generic handler's Enter (FUN_10118260, message 5): the focused window's cursor child sinks to (+1, +1) and
+    /// its two rings play for 9 ticks (FUN_101177d0 -> FUN_10119f80 with N = 20).
+    pub fn press(&self) {
+        if let Some((name, child, _)) = &self.focus.1 {
+            self.presses.borrow_mut().insert(name.clone(), (*child, 9.0));
+        }
+    }
+
+    /// A click on the focused window's cursor child is its Enter.
+    pub fn press_at(&self, p: (f32, f32)) {
+        if self.focus.1.as_ref().is_some_and(|(_, _, r)| p.0 >= r[0] && p.0 < r[0] + r[2] && p.1 >= r[1] && p.1 < r[1] + r[3]) {
+            self.press();
+        }
     }
 
     /// A window that is open this frame (drawn or not); false while the walk has it suspended. Its raise stamp is
@@ -637,19 +661,31 @@ impl GameUi {
             self.batch.push_sprite_from(ui, lib, r.index as usize, 1, x, y, 1.0, 1.0, 0x8080_8080, 0);
         }
         let mut children = Vec::new();
+        let pressed = self.presses.borrow().get(name).copied();
         for c in m.elements.iter().skip(1).filter(|c| !hide.contains(&c.id)) {
             let (cx, cy) = (x + c.x as f32, y + c.y as f32);
+            if hand && sel == Some(c.id) {
+                self.focus.0 = Some((name.to_string(), c.id, [cx, cy, c.w as f32, c.h as f32]));
+            }
             if let Some(r) = c.refs.iter().find(|r| r.kind == 0)
                 && let Some(own) = ui.lib(&r.lib)
             {
                 let on = sel == Some(c.id);
-                let d = if on { -1.0 } else { 0.0 };
+                let press = pressed.filter(|p| on && p.0 == c.id).map(|p| p.1);
+                let d = if press.is_some() { 1.0 } else if on { -1.0 } else { 0.0 };
                 let (lib, k) = match swaps.iter().find(|s| s.0 == c.id) {
                     Some(&(_, Some(l), k)) => (ui.lib(l).unwrap_or(own), k),
                     Some(&(_, None, k)) => (own, k),
                     None => (own, r.index as usize),
                 };
                 self.batch.push_sprite(ui, lib, k, cx + d, cy + d, 1.0, 1.0, if on { 0x8080_5020 } else { 0x8080_8080 }, 0);
+                if let Some(t) = press {
+                    let (bw, bh) = (screens::sprite_width(lib, k), screens::sprite_height(lib, k));
+                    for (s, a, blend) in screens::press_rings(20.0, t) {
+                        let (rx, ry) = (cx + d - ((s - 1.0) * bw / 2.0).trunc(), cy + d - ((s - 1.0) * bh / 2.0).trunc());
+                        self.batch.push_sprite(ui, lib, k, rx, ry, s, s, a << 24 | 0x80_5020, blend);
+                    }
+                }
                 if on
                     && hand
                     && let Some(anc) = ui.lib("anc     anc_s")
