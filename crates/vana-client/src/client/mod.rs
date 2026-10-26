@@ -1874,6 +1874,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(p) = input.pointer.filter(|_| world.loot.is_some() && world.confirm.is_none()) {
         treasure::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
+    if let Some(p) = input.pointer.filter(|_| world.moogle.is_some() && world.confirm.is_none()) {
+        moogle::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
     if let Some(p) = input.pointer.filter(|_| shop::active(world) && world.confirm.is_none()) {
         shop::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }

@@ -467,6 +467,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let focused = free && m.storage.is_none() && m.jobs.is_none() && m.post.is_none();
     let mut draw_one = |gu: &mut GameUi, name: &str, sel: u16, off: &[u16], hide: &[u16], focused: bool, extra: Option<(u16, usize)>| {
         if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), focused, hide) {
+            super::winhits::record(w, name, &win);
             let [x, y, ..] = win.frame;
             gu.disabled_children(name, x, y, off, focused.then_some(sel));
             if let Some(l) = gu.layout(name).cloned() {
@@ -497,6 +498,38 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         }
     }
     rects
+}
+
+/// The mouse on the focused window (the generic window): myroom / mogext, the storage menu, mogpost, jobchang and
+/// jobcselu. Nothing while a storage view is up (the item lists take it).
+pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::generic;
+    let Some(m) = w.moogle.clone() else { return };
+    if w.win.is_some() {
+        return;
+    }
+    let keys = |w: &mut World, gu: &GameUi, k: egui::Key| {
+        key(w, gu, k);
+    };
+    let edit = |w: &mut World, f: &dyn Fn(&mut Menu)| {
+        if let Some(mm) = w.moogle.as_mut() {
+            f(mm);
+        }
+    };
+    if let Some(j) = m.jobs {
+        match j.select {
+            Some((mode, sel)) => generic(w, gu, JOBCSELU, sel, 1..=32, p, moved, clicked, right, |w, id| edit(w, &|mm| mm.jobs = Some(Jobs { select: Some((mode, id)), ..j })), keys),
+            None => generic(w, gu, JOBCHANG, j.sel, 1..=2, p, moved, clicked, right, |w, id| edit(w, &|mm| mm.jobs = Some(Jobs { sel: id, ..j })), keys),
+        }
+    } else if let Some(c) = m.post {
+        generic(w, gu, MOGPOST, c, 1..=2, p, moved, clicked, right, |w, id| edit(w, &|mm| mm.post = Some(id)), keys);
+    } else if let Some((sel, off)) = m.storage.clone() {
+        let name = if m.nomad { STORAGE2 } else { STORAGE };
+        generic(w, gu, name, sel, 1..=15, p, moved, clicked, right, |w, id| edit(w, &|mm| mm.storage = Some((id, off.clone()))), keys);
+    } else {
+        let n = m.rows();
+        generic(w, gu, m.name(), m.sel, 1..=n, p, moved, clicked, right, |w, id| edit(w, &|mm| mm.sel = id), keys);
+    }
 }
 
 /// FUN_101458f0: "L.%d" (group 10 0x5a) right-aligned at each unlocked row's (x1 + 0x1e, y0 + 2); gold for the main

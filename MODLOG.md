@@ -9660,3 +9660,9 @@ client/macroedit.rs (`pointer`, `generic`, `child_under`, `hit`), esmenu.rs, ese
 - Live (Lnxcsfix at Capucine, Southern San d'Oria): hover Sell, click Buy, hover and click Mitts (the purchase
   confirm, cursor on Cancel), right clicks closing the list and the shop. The windows stacked on the log move as it
   shrinks or grows, so a click must land where they are that frame (the recorded rects follow them).
+
+## Moogle menus: the mouse (2026-10-26)
+
+- moogle.rs `pointer` (winhits.rs): myroom / mogext, the storage menu, mogpost, jobchang and jobcselu as the generic
+  window on whichever has the focus; nothing while a storage view is up (the item lists take the mouse).
+- Live (Lnxcsfix in its San d'Oria house): hover Change Jobs, click Storage, hover Mog Sack, right clicks back out.
