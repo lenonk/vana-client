@@ -54,6 +54,7 @@ mod chatctrl;
 mod linklist;
 mod blklist;
 mod furniture;
+mod layout;
 mod tilt;
 mod aepoints;
 mod jobpoints;
