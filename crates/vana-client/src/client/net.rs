@@ -135,6 +135,9 @@ pub struct SelfPlate {
     pub marks: Marks,
     pub extra: PlateExtra,
     pub invisible: bool,
+    /// flags1 bits 13 (frozen: +0x128 bit 15) and 30 (charmed: +0x12c bit 13).
+    pub frozen: bool,
+    pub charmed: bool,
     pub monstrosity: u16,
 }
 
@@ -161,7 +164,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
     };
     let r = p.u8(0x5a);
     let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
-    SelfPlate { marks, extra, invisible: bit(f1, 15), monstrosity: p.u16(0x54) }
+    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54) }
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /

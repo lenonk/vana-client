@@ -534,15 +534,19 @@ fn state_gate(w: &mut World, flags: u16) -> bool {
         return true;
     }
     let s = w.my_motion.status;
-    let state = if w.dead() { 0x20 } else { 0 } | if matches!(s, 5 | 0x55) { 0x40 } else { 0 } | if event::active(w) { 0x80 } else { 0 };
-    let bad = state & !flags;
-    if bad != 0 {
-        if bad & 0x20 != 0 {
+    // FUN_10087070(0): an event, frozen, charmed, or fishing / digging (FUN_100956f0 / FUN_10095750).
+    let busy = event::active(w) || w.my_plate.frozen || w.my_plate.charmed || matches!(s, 6 | 0x26..=0x2b | 0x32..=0x35 | 0x38..=0x3e);
+    let state = if w.dead() { 0x20 } else { 0 } | if matches!(s, 5 | 0x55) { 0x40 } else { 0 } | if busy { 0x80 } else { 0 };
+    // Any disallowed state refuses; the line goes by the states held, first match.
+    if state & !flags != 0 {
+        if state & 0x20 != 0 {
             refuse(w, 0x4f);
-        } else if bad & 0x40 != 0 {
+        } else if state & 0x40 != 0 {
             refuse(w, 0x4b);
         } else if s == 6 {
             refuse(w, 0x4d);
+        } else if w.my_plate.charmed {
+            refuse(w, 0x97);
         } else {
             refuse(w, 0x43);
         }

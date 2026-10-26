@@ -9618,3 +9618,14 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
 - Live (Lnxcsfix, `!addeffect invisible 1 120`, Tab, Enter): "You cannot use that command while invisible."; after
   `!deleffect invisible` the same Enter gives "Target out of range." (the NPC was 8.2 away). The audit's "meaning
   inferred" is settled.
+
+## Command gate: busy states and the charmed line (2026-10-26)
+
+- FUN_10081230's event bit 0x80 is FUN_10087070(0), not only an event: own +0x128 bit 15 (0x037 flags1 bit 13,
+  FreezeFlag), +0x12c bit 13 (flags1 bit 30, CharmFlag; asm 0x1009d5ac..), or a fishing / digging status
+  (FUN_100956f0: 6, 0x26..0x2b, 0x32..0x35; FUN_10095750: 0x38..0x3e). When any state bit is outside the command's
+  flags, the line goes by the states held, first match: dead (0x20) 7 0x4f, mounted (0x40) 0x4b, status 6 0x4d, then
+  bit 0x80: charmed 7 0x97 "You cannot use that command while charmed.", else 0x43. Ours went by the disallowed
+  bits and knew only events.
+- Not seen live: LSB marks a player charmed only through a monster's charm (battleutils::applyCharm); `!addeffect`
+  does not set the flag.
