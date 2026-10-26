@@ -1450,6 +1450,7 @@ fn main() -> Result<()> {
             let mut lobby = login(&cfg, &creds)?;
             let mut chars = lobby.characters()?;
             if let Some(name) = &create_char {
+                lobby.check_name(name)?;
                 lobby.create_character(&net::lobby::NewCharacter { name, race, face, size, job, nation })?;
                 println!("Created {name}");
                 chars = lobby.characters()?;

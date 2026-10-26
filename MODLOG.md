@@ -525,7 +525,7 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   (race/face reload the dancer, hair switches CHG materials). client/creator.rs: creatorshot's traced passes
   through render::dancer::DancerRenderer over zone 133 lit at 11:00; Tab cycles view 0 -> 1 -> 2 (orbit).
   Superseded by "Creator screen" below: the backdrop camera is the dancer camera and the name help is group 0x1b id 4.
-  Still inferred: the confirm text "Create this character?".
+  The confirm is retail's since 2026-10-26 ("Creator: the Register prompt and the name check").
 
 ## NPC talk, event packets, zone dialogue text and the dialogue window
 
@@ -2631,8 +2631,8 @@ Decompile: all.c / all.asm (FFXiMain), constants read from the unpacked DLL. Res
 - FFXI-3117 (five failed user-file operations at login) has no counterpart: our login is one request, and a lobby
   error still returns to the login screen with the status line, as before.
 - The rename flow is implemented but untested live (no character with renamef; the DB was not touched).
-- chswin's file details line; other languages' count lines; DAT_10623ac4 (keep the cursor on reopening); the
-  creator confirm still uses the old generic yes / no box.
+- chswin's file details line; other languages' count lines; DAT_10623ac4 (keep the cursor on reopening). Since done:
+  the creator confirm ("Creator: the Register prompt and the name check").
 
 ## Config: the option store, the in-game Config menu, lobby Config, Config-tool settings, background resolution, target flash (2026-10-21)
 
@@ -10077,3 +10077,30 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Event op 0xb6 0x11 (FUN_100b1150 -> FUN_1008a750): only when the event actor's model is an XiModelActor (furniture
   class), FUN_100c4380(val@2) swaps its model to file FUN_100c51c0(2, val) (the furniture table). Not done (needs the
   SubKind 5 / 6 actors above).
+
+## Creator: the Register prompt and the name check (2026-10-26)
+
+Spec `~/ffxi/lab/research/creator_confirm_spec.md` (FUN_10239720, the prompt FUN_1023e370 / FUN_1023d050, the lobby op
+FUN_1023b550). client/mod.rs (the creator block, `CreatorNext`, Task::NameChecked / Created), net/lobby.rs
+(`check_name`, `Refused`, `refusal`), select.rs `register_text`.
+- The creator has one yes / no: ptc6yesn type 5 after the nation, `Register "Name"` / `and begin play?` (8 0xaf /
+  0xb0, as the select screen's rename), warning icon shown, cursor on No; Left / Right 0001, Enter 0002 for both
+  answers, Escape nothing; the mouse as the select prompts. Behind it the nation emblem stays and chmktown (list and
+  text) is gone; the help stays 8 0x72. No: chmktown again on the chosen nation.
+- Yes: view 0x21 alone (op 3), then menu ok "Player data registered." (8 0x82); OK logs in with the new character.
+  Not in the new list: 0x82, then FFXI-3117, then out to the title. Refused: the error popup, the name cleared, the
+  race step (0x14b leaves).
+- The name check (view 0x22) goes where retail's world step ends: Enter on chmkname (0002) sends it, passed -> the
+  nation step, refused -> FFXI-3000 + code and the name step. Before it: an empty name buzzes (0004), under 3
+  letters FFXI-3110. LSB keeps the checked name in the session for the 0x21 (view_session.cpp case 0x22 / 0x21).
+  The invented "Names are 3 to 15 letters." line and "Create this character?" are gone.
+- The job step stops with menu ok 8 0xc6 (all 16 content IDs used) or 0xd8 when no status-1 slot is free
+  (FUN_1023dbb0 +0x24).
+- Escape on chmktown starts over at the race step, the choices kept (ours went back to the name step).
+- Lobby refusals are typed now (`Refused(code)`; the text as before) so a caller can tell a refusal from a broken link.
+- Live (lnxtest01, 2026-10-26): empty name buzz; "Ab" -> FFXI-3110; "Lnxtest" -> FFXI-3313 "The character name you
+  entered is unavailable."; "Lnxconfirm" -> nation step; the prompt on No with the emblem; No -> chmktown on San
+  d'Oria; Escape -> the race step; Yes -> "Player data registered." -> OK -> logged in, the San d'Oria opening played
+  out. The test character was deleted afterwards (delchar.py).
+- Not done: chmkserv / chmkpass (no world step), "menu    netwait" / "menu    netbar" during lobby operations (ours
+  shows nothing while they run), child 3's element state 0x10.

@@ -343,7 +343,6 @@ pub const STEPS: [(&str, usize); 7] = [
 pub fn draw_ui(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView, sw: f32, sh: f32, status: Option<&str>, dt: Option<f32>) -> Vec<[f32; 4]> {
     let help = match status {
         Some(s) => s.to_string(),
-        None if v.step == 7 => "Create this character?".to_string(),
         None => gu.creator_help(v.step),
     };
     gu.help_line(&help, sw, sh, if status.is_some() { super::game_ui::YELLOW } else { super::game_ui::WHITE }, dt);

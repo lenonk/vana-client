@@ -1677,8 +1677,11 @@ impl GameUi {
             self.bare_window(&format!("menu    race{}", v.race.min(7) + 1), w, h);
             self.creator_stats(v);
         }
-        if v.step == 6 {
+        // The emblem stays up behind the confirm (FUN_10238f50); chmktown's text goes with its window.
+        if v.step >= 6 {
             self.bare_window(&format!("menu    nation{}", v.nation.min(2) + 1), w, h);
+        }
+        if v.step == 6 {
             self.nation_text(v.nation.min(2), w, h);
         }
         if v.step == 5 {

@@ -138,8 +138,6 @@ use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::keyboard::{KeyCode, PhysicalKey};
 use winit::window::{Window, WindowId};
 
-const RACES: [&str; 8] = ["Hume (M)", "Hume (F)", "Elvaan (M)", "Elvaan (F)", "Tarutaru (M)", "Tarutaru (F)", "Mithra", "Galka"];
-const JOBS: [&str; 6] = ["Warrior", "Monk", "White Mage", "Black Mage", "Red Mage", "Thief"];
 
 const RUN_SPEED: f32 = 5.0;
 
@@ -164,6 +162,8 @@ impl Task {
             Task::Names(_) => "names",
             Task::Actions(_) => "actions",
             Task::Furniture(_) => "furniture",
+            Task::NameChecked(_) => "name check",
+            Task::Created(_) => "created",
         }
     }
 }
@@ -173,6 +173,10 @@ enum Task {
     AccountCreated(Result<()>),
     Lobby(Result<(Lobby, Vec<Character>)>),
     Selected(Result<MapLogin>),
+    /// The creator's name check (view 0x22): the lobby back and the refusal code, if any.
+    NameChecked(Result<(Lobby, Option<u16>)>),
+    /// The creator's create (view 0x21): the lobby back, the refusal code, the new list.
+    Created(Result<(Lobby, Option<u16>, Vec<Character>)>),
     /// Zone number, scene (map number) and the scene off the loader thread.
     ZoneLoaded(u16, u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
     AreaLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, Option<crate::fx::lib::Library>)>),
@@ -3305,31 +3309,15 @@ fn cut_pages(text: &str, mode97: bool, spans: impl Fn(&str) -> Vec<(usize, Strin
     }
 }
 
-/// A yes/no box (FUN_102075f0 / FUN_10233b50); `yes` is the highlighted answer. Some(answer) once clicked.
-fn yes_no(gu: &mut GameUi, input: &UiInput, sw: f32, sh: f32, msg: &str, yes: &mut bool) -> Option<bool> {
-    let ww = (gu.text_width(msg) + 48.0).max(200.0);
-    let (wx, wy, wh) = (((sw - ww) / 2.0).round(), (sh / 2.0 - 40.0).round(), 56.0);
-    gu.frame(wx, wy, ww, wh);
-    gu.text(msg, wx + ww / 2.0, wy + 8.0, 1, WHITE);
-    let mut answer = None;
-    for (k, label) in ["Yes", "No"].iter().enumerate() {
-        let x = wx + ww / 2.0 + if k == 0 { -44.0 } else { 20.0 };
-        let hit = [x - 4.0, wy + 28.0, gu.text_width(label) + 8.0, 20.0];
-        if input.pointer.is_some_and(|p| inside(&hit, p)) {
-            gu.hover.set(true);
-            if input.moved || input.clicked {
-                *yes = k == 0;
-            }
-            if input.clicked {
-                answer = Some(k == 0);
-            }
-        }
-        gu.text(label, x, wy + 30.0, 0, WHITE);
-        if (k == 0) == *yes {
-            gu.cursor(x - 2.0, wy + 30.0);
-        }
-    }
-    answer
+/// Where the creator's popup goes on OK (FUN_10239720).
+enum CreatorNext {
+    Step(usize),
+    /// Log in with the new character.
+    Login(Character),
+    /// Another popup first.
+    Then(String, Box<CreatorNext>),
+    /// Leave the creator.
+    Leave,
 }
 
 /// Nation step backdrop state: the flyover shown (nation, movie), the one loading, the scene brightness
@@ -5075,12 +5063,14 @@ pub struct App {
     /// The delete prompt's highlighted answer.
     delete_yes: bool,
     /// Character creator: preview scene, its loading state, the dancer being loaded, the step
-    /// (race, face, hair, size, job, name, nation, confirm) and the confirm answer.
+    /// (race, face, hair, size, job, name, nation, confirm, creating) and the confirm answer.
     creator: Option<creator::Creator>,
     creator_state: LoadState,
     dancer_loading: Option<(usize, usize)>,
     creator_step: usize,
     creator_yes: bool,
+    /// The creator's menu ok popup and what its OK leads to.
+    creator_ok: Option<(String, CreatorNext)>,
     /// HUD window rects this frame; clicks there do not pick in the world.
     hud_blockers: Vec<[f32; 4]>,
     /// Shut Down finished: close the window.
@@ -5144,6 +5134,8 @@ struct UiSnap {
     confirm: bool,
     yes: bool,
     step: usize,
+    /// The creator's popup is up: it plays its own sounds.
+    ok: bool,
     menu_open: bool,
     world: bool,
 }
@@ -5263,7 +5255,8 @@ impl App {
             creator_state: LoadState::Idle,
             dancer_loading: None,
             creator_step: 0,
-            creator_yes: true,
+            creator_yes: false,
+            creator_ok: None,
             exit_requested: false,
             close_asked: false,
             scene_scale: None,
@@ -5450,6 +5443,7 @@ impl App {
                     confirm: confirm.is_some() || (create && self.creator_step == 7),
                     yes: if create { self.creator_yes } else { self.delete_yes },
                     step: if create { self.creator_step } else { 0 },
+                    ok: create && self.creator_ok.is_some(),
                     menu_open: false,
                     world: false,
                 }
@@ -5462,6 +5456,7 @@ impl App {
                 confirm: w.confirm.is_some(),
                 yes: w.confirm.is_some_and(|c| c.1),
                 step: 0,
+                ok: false,
                 menu_open: w.menu.is_some(),
                 world: true,
             },
@@ -5478,6 +5473,9 @@ impl App {
         if a.screen != b.screen {
             return Some(if b.screen == Some(LobbyScreen::Main) { Ui::Cancel } else { Ui::Select });
         }
+        if a.ok || b.ok {
+            return None;
+        }
         if a.menu_open != b.menu_open {
             // A picked row plays its own sound (0002, or 0004 when refused: FUN_10140400).
             if !b.menu_open && b.picked {
@@ -5488,8 +5486,9 @@ impl App {
         if a.page != b.page && b.menu_open {
             return Some(Ui::Open);
         }
+        // The creator's confirm answers 0002 either way (FUN_1023d050).
         if a.step != b.step {
-            return Some(if b.step > a.step { Ui::Select } else { Ui::Cancel });
+            return Some(if b.step > a.step || a.step == 7 { Ui::Select } else { Ui::Cancel });
         }
         if a.confirm != b.confirm {
             return Some(if b.confirm || a.yes { Ui::Select } else { Ui::Cancel });
@@ -6358,9 +6357,48 @@ impl App {
                 self.status = format!("{e:#}");
                 self.to_login(true);
             }
-            Task::Lobby(Err(e)) => {
+            Task::Lobby(Err(e)) | Task::NameChecked(Err(e)) | Task::Created(Err(e)) => {
                 self.status = format!("{e:#}");
                 self.to_login(true);
+            }
+            // After the world step retail sends 0x22: passed, the nation step; refused, the error popup and the name
+            // step again (FUN_10239720).
+            Task::NameChecked(Ok((l, refused))) => {
+                if let Phase::Characters { lobby, .. } = &mut self.phase {
+                    *lobby = Some(l);
+                }
+                if self.creator_step == 5 {
+                    match refused {
+                        None => {
+                            self.creator_step = 6;
+                            self.creator_yes = false;
+                        }
+                        Some(code) => self.creator_ok = self.game_ui.as_ref().map(|g| (g.error_text(3000 + code as u32), CreatorNext::Step(5))),
+                    }
+                }
+            }
+            // Op 3: "Player data registered." (8 0x82), then the login with the new character; not in the list, FFXI-3117
+            // and out. Refused: the error, then the race step with the name cleared (0x14b leaves).
+            Task::Created(Ok((l, refused, list))) => {
+                if let Phase::Characters { lobby, chars, new_name, .. } = &mut self.phase {
+                    *lobby = Some(l);
+                    let Some(gu) = self.game_ui.as_ref() else { return };
+                    self.creator_ok = Some(match refused {
+                        None => {
+                            let made = list.iter().find(|c| c.name.eq_ignore_ascii_case(new_name)).cloned();
+                            *chars = list;
+                            let next = match made {
+                                Some(c) => CreatorNext::Login(c),
+                                None => CreatorNext::Then(gu.error_text(3117), Box::new(CreatorNext::Leave)),
+                            };
+                            (gu.lobby_msg(8, 0x82, ""), next)
+                        }
+                        Some(code) => {
+                            new_name.clear();
+                            (gu.error_text(3000 + code as u32), if code == 0x14b { CreatorNext::Leave } else { CreatorNext::Step(0) })
+                        }
+                    });
+                }
             }
         }
     }
@@ -9063,11 +9101,14 @@ impl App {
                     }
                     LobbyScreen::Create if self.game_ui.is_some() && self.creator.is_some() => {
                         // Steps and their menus (0x30 layouts); help lines from groups 8 / 0x1b (creator::draw_ui).
+                        // Step 7 is the type-5 confirm, 8 the create under way; menu ok popups over any step.
                         use creator::STEPS;
                         let gu = self.game_ui.as_mut().unwrap();
                         self.ui_drawn = true;
                         let (sw, sh) = (screen_size[0] as f32, screen_size[1] as f32);
-                        let step = self.creator_step.min(7);
+                        let step = self.creator_step.min(8);
+                        let popup = self.creator_ok.is_some();
+                        let keys = !busy && !popup;
                         let n = STEPS.get(step).map_or(0, |s| s.1);
                         let mut sel = match step {
                             0 => *race,
@@ -9078,9 +9119,11 @@ impl App {
                             6 => *nation,
                             _ => 0,
                         };
-                        let (mut next, back, mut answer) = (false, escape, None);
+                        // Escape on the confirm does nothing (FUN_1023d050: +0xa5e1 clear).
+                        let (mut next, back, mut answer, mut ok) = (false, escape && keys && step < 7, None, false);
                         // FUN_102384d0: Num+ (DIK 0x4e) on the name step asks for a random name.
                         if step == 5
+                            && keys
                             && self.input.pressed(0x4e)
                             && let Some(index) = self.index.as_ref()
                         {
@@ -9093,8 +9136,10 @@ impl App {
                                 *new_name = n;
                             }
                         }
-                        for ev in &input.events {
+                        for ev in input.events.iter().filter(|_| !busy) {
                             match ev {
+                                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } if popup => ok = true,
+                                _ if popup => {}
                                 egui::Event::Text(t) | egui::Event::Paste(t) if step == 5 => {
                                     new_name.extend(t.chars().filter(|c| c.is_ascii_alphabetic()));
                                     new_name.truncate(15);
@@ -9109,7 +9154,7 @@ impl App {
                                     egui::Key::ArrowUp if n > 0 => sel = (sel + n - 1) % n,
                                     egui::Key::ArrowLeft | egui::Key::ArrowRight if step == 7 => self.creator_yes = !self.creator_yes,
                                     egui::Key::Enter if step == 7 => answer = Some(self.creator_yes),
-                                    egui::Key::Enter => next = true,
+                                    egui::Key::Enter if step < 7 => next = true,
                                     // View modes cycle 0 -> 1 -> 2 (FUN_10243450).
                                     egui::Key::Tab => {
                                         if let Some(cr) = self.creator.as_mut() {
@@ -9127,8 +9172,16 @@ impl App {
                         }
                         let view = game_ui::CreatorView { step, race: *race, face: *face as usize / 2, hair: *face as usize % 2, size: *size as usize, job: *job, nation: *nation, name: new_name };
                         let rects = creator::draw_ui(gu, &view, sw, sh, (!status.is_empty()).then_some(status.as_str()), None);
-                        if step < 7 {
-                            if let Some(p) = input.pointer
+                        let pointer = input.pointer.filter(|_| !busy);
+                        if let Some((text, _)) = &self.creator_ok {
+                            if let Some(r) = gu.ok_window(text, sw, sh)
+                                && pointer.is_some_and(|p| inside(&r, p))
+                            {
+                                gu.hover.set(true);
+                                ok |= input.clicked;
+                            }
+                        } else if step < 7 {
+                            if let Some(p) = pointer
                                 && let Some(i) = rects.iter().position(|r| inside(r, p))
                             {
                                 gu.hover.set(true);
@@ -9139,8 +9192,18 @@ impl App {
                                     next = true;
                                 }
                             }
-                        } else if let Some(a) = yes_no(gu, &input, sw, sh, &format!("Create {new_name} as {} {}?", RACES[*race], JOBS[*job]), &mut self.creator_yes) {
-                            answer = Some(a);
+                        } else if step == 7
+                            && let Some(children) = gu.yes_no_window(&select::register_text(gu, new_name), self.creator_yes, true, sw, sh)
+                            && let Some(p) = pointer
+                            && let Some(&(id, _)) = children.iter().find(|(_, r)| inside(r, p))
+                        {
+                            gu.hover.set(true);
+                            if input.moved || input.clicked {
+                                self.creator_yes = id == 1;
+                            }
+                            if input.clicked {
+                                answer = Some(id == 1);
+                            }
                         }
                         match step {
                             0 => *race = sel,
@@ -9151,55 +9214,91 @@ impl App {
                             6 => *nation = sel,
                             _ => {}
                         }
+                        let ui_se = |app: &mut Option<crate::audio::Audio>, se| {
+                            if let Some(a) = app.as_mut() {
+                                a.ui(se);
+                            }
+                        };
                         if next {
-                            if step == 5 && !(3..=15).contains(&new_name.len()) {
-                                action = Some(Box::new(|app: &mut App| app.status = "Names are 3 to 15 letters.".into()));
-                            } else {
-                                self.creator_step = step + 1;
-                                self.creator_yes = true;
-                                action = Some(Box::new(|app: &mut App| app.status.clear()));
+                            // A free slot is a status-1 one with no name; none stops the job step (FUN_1023dbb0
+                            // +0x24: 2 with all 16 content IDs used, else 0).
+                            let free = chars.iter().any(|c| c.status == 1 && c.is_empty_slot());
+                            match step {
+                                4 if !free => {
+                                    ui_se(&mut self.audio, crate::audio::Ui::Select);
+                                    self.creator_ok = Some((gu.lobby_msg(8, if chars.len() >= 16 { 0xc6 } else { 0xd8 }, ""), CreatorNext::Step(4)));
+                                }
+                                // chmkname (FUN_10238500): an empty name buzzes.
+                                5 if new_name.is_empty() => ui_se(&mut self.audio, crate::audio::Ui::Error),
+                                // Checked after the world step: under 3 letters FFXI-3110, else view 0x22.
+                                5 if new_name.len() < 3 => {
+                                    ui_se(&mut self.audio, crate::audio::Ui::Select);
+                                    self.creator_ok = Some((gu.error_text(3000 + 0x6e), CreatorNext::Step(5)));
+                                }
+                                5 => {
+                                    if let Some(mut l) = lobby.take() {
+                                        ui_se(&mut self.audio, crate::audio::Ui::Select);
+                                        let nm = new_name.clone();
+                                        action = Some(Box::new(move |app: &mut App| {
+                                            app.spawn(move || {
+                                                Task::NameChecked(crate::net::lobby::refusal(l.check_name(&nm)).map(|r| (l, r.err())))
+                                            })
+                                        }));
+                                    }
+                                }
+                                _ => {
+                                    self.creator_step = step + 1;
+                                    self.creator_yes = false;
+                                    action = Some(Box::new(|app: &mut App| app.status.clear()));
+                                }
                             }
                         }
                         if back {
                             if step == 0 {
                                 // FUN_10237730 plays 0003 itself; the fade hides the change from the UiSnap diff.
                                 *screen = LobbyScreen::Main;
-                                if let Some(a) = self.audio.as_mut() {
-                                    a.ui(crate::audio::Ui::Cancel);
-                                }
+                                ui_se(&mut self.audio, crate::audio::Ui::Cancel);
                             } else {
-                                self.creator_step = step - 1;
+                                // Escape on chmktown starts over at the race step, the choices kept.
+                                self.creator_step = if step == 6 { 0 } else { step - 1 };
                             }
                         }
-                        let free = chars.iter().filter(|c| c.is_empty_slot()).count();
+                        if ok && let Some((_, then)) = self.creator_ok.take() {
+                            ui_se(&mut self.audio, crate::audio::Ui::Select);
+                            match then {
+                                CreatorNext::Step(k) => self.creator_step = k,
+                                CreatorNext::Then(text, then) => self.creator_ok = Some((text, *then)),
+                                CreatorNext::Leave => *screen = LobbyScreen::Main,
+                                CreatorNext::Login(c) => {
+                                    if let Some(l) = lobby.take() {
+                                        *selected = chars.iter().position(|x| x.content_id == c.content_id);
+                                        fade_action = true;
+                                        action = Some(Box::new(move |app: &mut App| app.spawn(move || Task::Selected(l.select(&c)))));
+                                    }
+                                }
+                            }
+                        }
+                        // Yes: op 3, view 0x21 (FUN_1023b550; LSB sends the new character in with only its name and
+                        // ids). No: chmktown again on the chosen nation.
                         match answer {
-                            Some(true) if !busy && free > 0 => {
-                                self.music_created = true;
+                            Some(true) => {
                                 if let Some(mut l) = lobby.take() {
+                                    self.creator_step = 8;
+                                    self.music_created = true;
                                     // LSB face byte = face * 2 + hair.
                                     let (nm, r, f, sz, j, na) = (new_name.clone(), *race as u8 + 1, *face, *size, *job as u8 + 1, *nation as u8);
-                                    // Retail goes straight in with the new character (LSB login_helpers: "We never see the
-                                    // character", so its list entry carries only the name and ids) *(inf: from LSB)*.
-                                    fade_action = true;
                                     action = Some(Box::new(move |app: &mut App| {
                                         app.spawn(move || {
-                                            let made = (|| -> Result<_> {
-                                                l.create_character(&NewCharacter { name: &nm, race: r, face: f, size: sz, job: j, nation: na })?;
-                                                let chars = l.characters()?;
-                                                Ok((l, chars))
-                                            })();
-                                            match made {
-                                                Ok((l, chars)) => match chars.iter().find(|c| c.name.eq_ignore_ascii_case(&nm)).cloned() {
-                                                    Some(c) => Task::Selected(l.select(&c)),
-                                                    None => Task::Lobby(Ok((l, chars))),
-                                                },
-                                                Err(e) => Task::Lobby(Err(e)),
-                                            }
+                                            Task::Created((|| {
+                                                let made = crate::net::lobby::refusal(l.create_character(&NewCharacter { name: &nm, race: r, face: f, size: sz, job: j, nation: na }))?;
+                                                let chars = if made.is_ok() { l.characters()? } else { Vec::new() };
+                                                Ok((l, made.err(), chars))
+                                            })())
                                         })
                                     }));
                                 }
                             }
-                            Some(_) => self.creator_step = 6,
+                            Some(false) => self.creator_step = 6,
                             None => {}
                         }
                     }

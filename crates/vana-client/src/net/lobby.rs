@@ -102,6 +102,29 @@ pub fn error_text(code: u16) -> &'static str {
     }
 }
 
+/// A lobby refusal (view 0x04): retail shows it as FFXI-3000 + code.
+#[derive(Debug)]
+pub struct Refused(pub u16);
+
+impl std::fmt::Display for Refused {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{} (FFXI-{})", error_text(self.0), 3000 + self.0 as u32)
+    }
+}
+
+impl std::error::Error for Refused {}
+
+/// A lobby result with the server's refusal split out: Err only when the link itself failed.
+pub fn refusal<T>(r: Result<T>) -> Result<std::result::Result<T, u16>> {
+    match r {
+        Ok(v) => Ok(Ok(v)),
+        Err(e) => match e.downcast_ref::<Refused>() {
+            Some(c) => Ok(Err(c.0)),
+            None => Err(e),
+        },
+    }
+}
+
 pub struct Lobby {
     view: TcpStream,
     data: TcpStream,
@@ -176,8 +199,7 @@ impl Lobby {
             self.key_counter = self.key_counter.wrapping_add(1);
         }
         if command == 0x04 {
-            let code = rd_u16(&pkt, 32);
-            bail!("{} (FFXI-{})", error_text(code), 3000 + code as u32);
+            return Err(Refused(rd_u16(&pkt, 32)).into());
         }
         if command != expect {
             bail!("expected lobby reply 0x{expect:02X}, got 0x{command:02X}");
@@ -233,13 +255,18 @@ impl Lobby {
             .collect())
     }
 
-    pub fn create_character(&mut self, c: &NewCharacter) -> Result<()> {
+    /// View 0x22, the name check retail sends before the nation step (LSB keeps the name for the 0x21 after it).
+    pub fn check_name(&mut self, name: &str) -> Result<()> {
         let mut check = vec![0u8; 0x60 - 28];
-        let name = c.name.as_bytes();
+        let name = name.as_bytes();
         check[32 - 28..32 - 28 + name.len().min(NAME_LEN - 1)].copy_from_slice(&name[..name.len().min(NAME_LEN - 1)]);
         self.send_view(0x22, &check)?;
         self.read_view(0x03)?;
+        Ok(())
+    }
 
+    /// View 0x21, after a passed check_name.
+    pub fn create_character(&mut self, c: &NewCharacter) -> Result<()> {
         self.send_view(0x21, &make_body(c))?;
         self.read_view(0x03)?;
         Ok(())

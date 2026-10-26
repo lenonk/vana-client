@@ -792,8 +792,13 @@ fn prompt_text(gu: &GameUi, p: &Prompt, name: &str) -> String {
             let second = if *slot == 0 { m(8, server) } else { printf(&m(8, hdd), &[&letter]) };
             format!("{}\n{second}", printf(&m(8, first), &[name]))
         }
-        Prompt::Register(n) => format!("{}\n{}", printf(&m(8, 0xaf), &[n]), m(8, 0xb0)),
+        Prompt::Register(n) => register_text(gu, n),
     }
+}
+
+/// Type 5: `Register "Name"` / `and begin play?` (8 0xaf / 0xb0), for the rename and the creator.
+pub(crate) fn register_text(gu: &GameUi, name: &str) -> String {
+    format!("{}\n{}", printf(&gu.lobby_msg(8, 0xaf, ""), &[name]), gu.lobby_msg(8, 0xb0, ""))
 }
 
 /// Name colours (FUN_102374a0): grey when it cannot be used, yellow when it must be renamed.
