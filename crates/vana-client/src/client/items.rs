@@ -1025,7 +1025,7 @@ fn store_rows(w: &World, c: u8) -> Vec<Slot> {
 }
 
 /// FUN_1021cc60: an empty slot in 1..size.
-fn has_free(w: &World, c: u8) -> bool {
+pub(super) fn has_free(w: &World, c: u8) -> bool {
     (w.inv.sizes[c as usize] as usize).saturating_sub(1) > w.inv.slots_of(c).iter().filter(|x| x.index != 0).count()
 }
 
@@ -1180,7 +1180,7 @@ fn manual_tint(w: &World, c: u8, held: Option<u8>, s: &Slot) -> u32 {
 }
 
 /// FUN_100eb710: c2s 0x029 {n, from, to, slot, 0x52} (0x52: the destination's first free slot).
-fn send_move(w: &World, from: u8, to: u8, index: u8, n: u32) {
+pub(super) fn send_move(w: &World, from: u8, to: u8, index: u8, n: u32) {
     let mut b = vec![0u8; 8];
     b[0..4].copy_from_slice(&n.to_le_bytes());
     (b[4], b[5], b[6], b[7]) = (from, to, index, 0x52);

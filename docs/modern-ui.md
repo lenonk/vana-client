@@ -16,6 +16,21 @@ The plan for vana-client's modern interface, from the user's planning document (
   House storage slice.
 - **Config pages.** The modern Config pages leave out the options that mean nothing with the modern UI (window type,
   chat window width and the like; user, 2026-10-26).
+- **Hunt the old limits.** Retail's designers worked under limits we don't have (ten-row lists, numbered bags, pages
+  of item text, modes to switch between, remembering where things are). Seek those out and remove them, keeping
+  everything that makes it FFXI. User, 2026-10-26.
+- **One command window.** Every window the command menu opens is the same panel ("window") with different contents, so
+  it stays where the user put it whatever it shows; a few exceptions (the map first of all). User, 2026-10-26.
+- **Equipment by slot, from everywhere.** Enter or a click on a slot lists every piece the character can wear there,
+  from every bag, with where it is; the player never has to remember the bag. Inventory and wardrobe pieces equip
+  directly; satchel, sack and case pieces (and the Mog Safe, Storage, Locker and Safe 2 at the moogle) are moved to the
+  inventory and then equipped; the others show greyed with their place. Drag and drop equips without closing or
+  resetting anything (retail's pain point). User, 2026-10-26.
+- **Numbered entries merged.** Mog Wardrobe 1..8 is one Mog Wardrobe showing them all; a piece put in takes the next
+  free slot in any of them. The same for every entry with numbered versions (Mog Safe / Safe 2, Config's Misc 1..4
+  and the like). User, 2026-10-26.
+- **Nameplates.** Replaced in Modern with plates like the mock-up's; no HP bars over heads. User, 2026-10-26.
+- **Breathing room.** Rows and frames keep a few pixels between their lines and their contents.
 - **Icons.** The pack's icons are placeholders. A full icon set (every job, spell, buff and debuff) may come later;
   game art is mapped by stable game ids, never by atlas sprite ids.
 
@@ -183,12 +198,16 @@ Milestone 1:
   Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
   retail's, the wheel. Search there gives one hit per item with its total; a pick puts the cursor on its first slot
   and presses Enter. The storage views are still drawn retail-style.
-- The Equipment screen (modern/equip.rs) over equipwin.rs's state: the persona (name, jobs, item level, HP / MP / TP),
-  the sixteen slots in the grid's order (cursor ring, encumbered cross, wardrobe numbers, mode 1's allowed slots),
-  Attack, Defense, the eight resistances, STR..CHR with bonuses, gil; the gear list titled by its container with the
-  Storage Options row, the screen's colours (white, green worn, orange picked, grey), mnstorag's nine bags in its
-  place. The mouse as retail's C.7: over the other window is Num+; hover moves, a click on the cursor is Enter; the
-  wheel. Seen live (2026-10-26): equip by keys, equip and unequip by mouse.
+- The command window ("window"): the Items window and the Equipment screen show in the same panel at the same place
+  (user's rule: every window the command menu opens).
+- The Equipment screen (modern/equip.rs; equipwin.rs's modern path): the persona (name, main / sub job, HP / MP / TP),
+  the sixteen slots, the resistances under them and Attack, Defense, STR..CHR at the bottom in the slots' columns
+  (monospace). Enter or a click on a slot lists every piece the character can wear there now from every bag (the one
+  worn first, then by level), with where it is: inventory and wardrobe pieces equip at once; satchel, sack and case
+  pieces (the moogle's bags in our Mog House) go to the inventory first (c2s 0x029) and on when they land (tick, 5 s);
+  the rest greyed with the reason. Twelve rows (retail's ten were its limit). Drag a listed piece onto a slot to put it
+  on, a worn one onto another slot to move it, onto the list column to take it off; nothing closes or resets. The
+  list compares with the slot's piece in the info panel at once. Seen live (2026-10-26): every path above.
 - The item info panel for every item the game describes (the lists, shops, the auction, trades, events ...):
   iteminfo::build wrapped by egui instead of paged, the marks as tags, the compared equipped item above it; it rides
   the combat window (retail's on the log). Seen live (2026-10-26): list, info, Use / Drop, drop, Auto-sort's
@@ -213,4 +232,7 @@ Milestone 1:
 - The retail party, alliance, target, log, chat line, effects, cast bar, compass and action menu are not drawn while
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
+- Party rows show the sub job small on the main job's corner.
+- To do (user, 2026-10-26): the Timers window, the minimap, the map overlay; nameplates; the storage views with the
+  merged bags.
 - Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

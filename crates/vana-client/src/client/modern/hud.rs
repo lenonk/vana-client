@@ -46,7 +46,9 @@ pub struct StatusView {
 pub struct PartyRow {
     pub slot: usize,
     pub name: String,
+    /// The main and sub jobs' pictograms.
     pub icon: Option<String>,
+    pub sub_icon: Option<String>,
     /// In our zone: the numbers and bars; else the zone the member is in, shown instead.
     pub here: Option<RowVitals>,
     pub zone: String,
@@ -240,8 +242,13 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             }
             // Past the row frame's left ornament.
             let mut x = r.min.x + 22.0;
+            let dim = if row.here.is_some() { Color32::WHITE } else { Color32::from_gray(120) };
             if let Some(s) = row.icon.as_deref().and_then(|j| m.art.sprite(j)) {
-                painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, if row.here.is_some() { Color32::WHITE } else { Color32::from_gray(120) }));
+                painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, dim));
+            }
+            // The sub job small on the main's upper right corner (the leader stars take the lower left).
+            if let Some(s) = row.sub_icon.as_deref().and_then(|j| m.art.sprite(j)) {
+                painter.add(paint::image(&s, pos2(x + 15.0, r.center().y - 17.0), 15.0, dim));
             }
             // Leader marks on the job's corner: gold the party's, blue the alliance's.
             for (k, (bit, col)) in [(1u8, m.theme.color("gold")), (2u8, m.theme.color("focus"))].into_iter().enumerate() {
@@ -559,6 +566,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             slot: 0,
             name,
             icon: w.stats.as_ref().and_then(|s| job_icon(s.main.0)),
+            sub_icon: w.stats.as_ref().and_then(|s| job_icon(s.sub.0)),
             here: Some(RowVitals { hp, hp_max: w.stats.as_ref().map(|s| s.hp_max), mp, tp: w.party_tp.then_some(tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(hpp) }),
             zone: String::new(),
             marked: marked(0, w.my_id, 0),
@@ -574,6 +582,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             slot: k,
             name: if m.away == 0 { monstrosity::row_name(m) } else { &m.name }.to_string(),
             icon: job_icon(m.jobs[0]),
+            sub_icon: job_icon(m.jobs[2]),
             here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && !trust).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(m.hpp) }),
             zone: zone(m.zone),
             marked: marked(k, m.id, m.index),
@@ -594,6 +603,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
                         slot: s,
                         name: m.name.clone(),
                         icon: job_icon(m.jobs[0]),
+                        sub_icon: job_icon(m.jobs[2]),
                         here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && m.index < 0x700).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: None, hp_colour: hp_colour(m.hpp) }),
                         zone: zone(m.zone),
                         marked: marked(s, m.id, m.index),

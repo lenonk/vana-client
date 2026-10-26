@@ -1,1 +1,86 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="none" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M5 29 L29 5 M9 7 L28 26 M4 26 L10 32 M26 4 L32 10"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="24.817" y1="5.938" x2="24.817" y2="57.508" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b0e8f2"/>
+      <stop offset="0.42" stop-color="#6fd6e8"/>
+      <stop offset="1" stop-color="#386b74"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="17.911" y1="5.938" x2="17.911" y2="57.508" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dbf5f9"/>
+      <stop offset="1" stop-color="#9ae2ef"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="31.724" y1="5.938" x2="31.724" y2="57.508" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#62bccc"/>
+      <stop offset="1" stop-color="#2a5158"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="24.817" y1="5.938" x2="24.817" y2="23.435" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cdf1f7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="24.817" y1="5.616" x2="24.817" y2="57.831" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cdf1f7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="37.227" y1="18.969" x2="37.227" y2="56.67" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-7" x1="27.58" y1="53.272" x2="27.58" y2="58.061" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-8" x1="46.436" y1="11.859" x2="46.436" y2="29.706" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3eaf0"/>
+      <stop offset="0.5" stop-color="#9aa8b7"/>
+      <stop offset="1" stop-color="#566374"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-9" x1="54.945" y1="20.046" x2="54.945" y2="30.71" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#c8d2dc"/>
+      <stop offset="1" stop-color="#6b7889"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-10" x1="37.926" y1="10.856" x2="37.926" y2="21.52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#c8d2dc"/>
+      <stop offset="1" stop-color="#6b7889"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-11" x1="43.482" y1="22.148" x2="44.573" y2="28.332" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="10.543" cy="14.226" r="5.525" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient-2" cx="45.538" cy="46.458" r="4.42" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+  </defs>
+  <title>craft</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M23.298 4.598 C24.104 3.684 25.531 3.684 26.337 4.598 L34.681 14.054 L36.932 9.892 C37.464 8.908 38.692 8.542 39.676 9.073 L42.918 10.822 C43.413 11.09 43.775 11.551 43.916 12.096 L55.075 18.13 C55.611 17.946 56.2 17.995 56.698 18.265 L59.94 20.024 C60.922 20.558 61.287 21.786 60.756 22.769 L55.939 31.674 C55.407 32.658 54.179 33.024 53.195 32.493 L49.953 30.743 C49.458 30.476 49.096 30.015 48.955 29.47 L47.745 28.816 L47.743 28.82 C47.423 29.411 46.851 29.779 46.233 29.863 L40.657 40.179 L40.657 41.853 C40.657 42.347 40.477 42.823 40.15 43.194 L37.253 46.477 L31.96 56.27 C31.53 59.434 28.004 61.059 25.324 59.47 C24.588 59.66 23.804 59.422 23.298 58.849 L9.485 43.194 C9.158 42.823 8.978 42.347 8.978 41.853 L8.978 21.593 C8.978 21.428 8.998 21.265 9.037 21.107 C8.829 20.875 8.672 20.593 8.587 20.277 L7.72 17.049 L4.493 16.183 C2.502 15.648 2.502 12.804 4.493 12.269 L7.72 11.403 L8.587 8.175 C9.121 6.185 11.966 6.185 12.5 8.175 L13.367 11.403 L16.541 12.255 Z M43.582 41.509 C44.118 39.522 46.958 39.522 47.494 41.509 L48.13 43.866 L50.486 44.502 C52.473 45.038 52.473 47.877 50.486 48.414 L48.13 49.049 L47.494 51.406 C46.958 53.393 44.118 53.393 43.582 51.406 L42.946 49.049 L40.59 48.414 C38.603 47.877 38.603 45.038 40.59 44.502 L42.946 43.866 Z" fill="#0a1118"/>
+      <path id="crystal" d="M24.817 5.938 L38.631 21.593 L38.631 41.853 L24.817 57.508 L11.004 41.853 L11.004 21.593 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="facets_light" data-name="facets light" d="M11.004 21.593 L24.817 5.938 L19.016 23.435 L19.016 43.695 L24.817 57.508 L11.004 41.853 Z" fill="url(#linear-gradient-2)" opacity="0.9"/>
+      <path id="facets_dark" data-name="facets dark" d="M30.619 23.435 L24.817 5.938 L38.631 21.593 L38.631 21.593 L38.631 41.853 L38.631 41.853 L24.817 57.508 L30.619 43.695 Z" fill="url(#linear-gradient-3)" opacity="0.85"/>
+      <path id="crown_light" data-name="crown light" d="M24.817 5.938 L19.016 23.435 L30.619 23.435 Z" fill="url(#linear-gradient-4)" opacity="0.35"/>
+      <path id="facet_lines" data-name="facet lines" d="M24.817 5.616 L24.817 5.616 C24.958 5.616 25.082 5.707 25.125 5.84 L30.833 23.055 L38.559 21.279 C38.972 21.184 39.117 21.812 38.703 21.907 L30.941 23.692 L30.941 43.29 L38.559 41.539 C38.972 41.444 39.117 42.072 38.703 42.167 L30.852 43.972 L25.115 57.633 C25.064 57.753 24.947 57.831 24.818 57.831 L24.817 57.831 C24.688 57.831 24.57 57.753 24.52 57.633 L18.783 43.972 L10.932 42.167 C10.518 42.072 10.663 41.444 11.076 41.539 L18.693 43.29 L18.693 23.692 L10.932 21.907 C10.518 21.812 10.663 21.184 11.076 21.279 L18.802 23.055 L24.51 5.84 C24.512 5.833 24.515 5.827 24.517 5.82 L24.517 5.82 C24.566 5.697 24.685 5.615 24.818 5.616 C24.817 5.616 24.817 5.616 24.817 5.616 Z M24.817 6.962 L19.462 23.113 L30.173 23.113 Z M19.338 23.757 L19.338 43.373 L30.297 43.373 L30.297 23.757 Z M19.501 44.017 L24.817 56.676 L30.134 44.017 Z" fill="url(#linear-gradient-5)" opacity="0.45"/>
+      <path id="handle" d="M29.44 56.67 L48.733 20.976 L45.013 18.969 L25.72 54.663 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="handle_end" data-name="handle end" d="M29.974 55.667 C29.974 56.993 28.906 58.061 27.58 58.061 C26.254 58.061 25.186 56.993 25.186 55.667 C25.186 54.341 26.254 53.272 27.58 53.272 C28.906 53.272 29.974 54.341 29.974 55.667 Z" fill="url(#linear-gradient-7)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="hammer_head" data-name="hammer head" d="M57.85 21.934 L39.22 11.859 L35.021 19.632 L53.651 29.706 Z" fill="url(#linear-gradient-8)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="face_a" data-name="face a" d="M58.974 21.805 L55.732 20.046 L50.916 28.961 L54.157 30.71 Z" fill="url(#linear-gradient-9)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="face_b" data-name="face b" d="M33.897 19.761 L37.139 21.52 L41.955 12.605 L38.714 10.856 Z" fill="url(#linear-gradient-10)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="collar" d="M45.961 27.855 L47.278 25.424 L42.094 22.625 L40.777 25.056 Z" fill="url(#linear-gradient-11)" stroke="#0a1118" stroke-width="1.289" stroke-linejoin="round"/>
+      <path id="spark_1" data-name="spark 1" d="M10.543 8.701 L11.713 13.057 L16.069 14.226 L11.713 15.396 L10.543 19.752 L9.374 15.396 L5.018 14.226 L9.374 13.057 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="0.921" stroke-linejoin="round"/>
+      <path id="spark_2" data-name="spark 2" d="M45.538 42.037 L46.477 45.518 L49.958 46.458 L46.477 47.397 L45.538 50.878 L44.598 47.397 L41.117 46.458 L44.598 45.518 Z" fill="url(#radial-gradient-2)" stroke="#0a1118" stroke-width="0.921" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

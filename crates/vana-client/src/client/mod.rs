@@ -8100,6 +8100,7 @@ impl App {
         partymenu::update(world);
         status::update(world);
         items::auto_sort_tick(world, dt);
+        equipwin::tick(world);
         auction::update(world, dt);
         currencies::update(world, dt * 60.0);
         merits::update(world);

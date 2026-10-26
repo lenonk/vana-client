@@ -1,1 +1,88 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="#d9b16b" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><circle cx="18" cy="18" r="14"/><circle cx="18" cy="18" r="10"/><path d="M24 11 Q12 6 12 15 Q12 20 20 19 Q28 19 24 26 Q20 30 11 25 M18 7 V29"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="21.007" y1="38.805" x2="21.007" y2="51.368" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="19.459" y1="31.074" x2="22.555" y2="48.63" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="21.007" y1="33.57" x2="21.007" y2="46.134" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="19.459" y1="25.84" x2="22.555" y2="43.395" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="21.007" y1="28.336" x2="21.007" y2="40.899" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="19.459" y1="20.605" x2="22.555" y2="38.16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-7" x1="21.007" y1="23.101" x2="21.007" y2="35.664" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-8" x1="19.459" y1="15.37" x2="22.555" y2="32.926" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-9" x1="21.007" y1="17.866" x2="21.007" y2="30.43" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-10" x1="19.459" y1="10.136" x2="22.555" y2="27.691" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-11" x1="41.946" y1="15.773" x2="41.946" y2="49.274" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c99a52"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-12" x1="39.313" y1="17.593" x2="44.578" y2="47.453" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-13" x1="41.946" y1="24.671" x2="41.946" y2="40.375" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe6"/>
+      <stop offset="1" stop-color="#ecd08e"/>
+    </linearGradient>
+  </defs>
+  <title>currency</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M36.452 14.273 C38.196 13.749 40.041 13.469 41.946 13.469 C52.473 13.469 61 21.997 61 32.523 C61 43.05 52.473 51.578 41.946 51.578 C39.667 51.578 37.473 51.177 35.436 50.437 C33.997 51.33 32.159 52.068 30.012 52.616 C27.389 53.286 24.303 53.671 21.007 53.671 C16.38 53.671 12.163 52.911 9.049 51.665 C6.267 50.552 3 48.461 3 45.087 L3 18.913 C3 15.539 6.267 13.448 9.049 12.335 C12.163 11.089 16.38 10.329 21.007 10.329 C24.68 10.329 28.092 10.807 30.896 11.625 C33.188 12.294 35.076 13.188 36.452 14.273 Z" fill="#0a1118"/>
+      <path id="coin_side" data-name="coin side" d="M12.329 39.852 C14.816 39.191 17.8 38.805 21.007 38.805 C24.215 38.805 27.199 39.191 29.685 39.852 L36.711 39.852 L36.711 45.087 C36.711 48.552 29.676 51.368 21.007 51.368 C12.339 51.368 5.303 48.552 5.303 45.087 L5.303 39.852 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_top" data-name="coin top" d="M36.711 39.852 C36.711 43.317 29.676 46.134 21.007 46.134 C12.339 46.134 5.303 43.317 5.303 39.852 C5.303 36.387 12.339 33.57 21.007 33.57 C29.676 33.57 36.711 36.387 36.711 39.852 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_side-2" data-name="coin side" d="M12.329 34.617 C14.816 33.956 17.8 33.57 21.007 33.57 C24.215 33.57 27.199 33.956 29.685 34.617 L36.711 34.617 L36.711 39.852 C36.711 43.317 29.676 46.134 21.007 46.134 C12.339 46.134 5.303 43.317 5.303 39.852 L5.303 34.617 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_top-2" data-name="coin top" d="M36.711 34.617 C36.711 38.083 29.676 40.899 21.007 40.899 C12.339 40.899 5.303 38.083 5.303 34.617 C5.303 31.152 12.339 28.336 21.007 28.336 C29.676 28.336 36.711 31.152 36.711 34.617 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_side-3" data-name="coin side" d="M12.329 29.383 C14.816 28.721 17.8 28.336 21.007 28.336 C24.215 28.336 27.199 28.721 29.685 29.383 L36.711 29.383 L36.711 34.617 C36.711 38.083 29.676 40.899 21.007 40.899 C12.339 40.899 5.303 38.083 5.303 34.617 L5.303 29.383 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_top-3" data-name="coin top" d="M36.711 29.383 C36.711 32.848 29.676 35.664 21.007 35.664 C12.339 35.664 5.303 32.848 5.303 29.383 C5.303 25.917 12.339 23.101 21.007 23.101 C29.676 23.101 36.711 25.917 36.711 29.383 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_side-4" data-name="coin side" d="M12.329 24.148 C14.816 23.487 17.8 23.101 21.007 23.101 C24.215 23.101 27.199 23.487 29.685 24.148 L36.711 24.148 L36.711 29.383 C36.711 32.848 29.676 35.664 21.007 35.664 C12.339 35.664 5.303 32.848 5.303 29.383 L5.303 24.148 Z" fill="url(#linear-gradient-7)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_top-4" data-name="coin top" d="M36.711 24.148 C36.711 27.613 29.676 30.43 21.007 30.43 C12.339 30.43 5.303 27.613 5.303 24.148 C5.303 20.683 12.339 17.866 21.007 17.866 C29.676 17.866 36.711 20.683 36.711 24.148 Z" fill="url(#linear-gradient-8)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_side-5" data-name="coin side" d="M12.329 18.913 C14.816 18.252 17.8 17.866 21.007 17.866 C24.215 17.866 27.199 18.252 29.685 18.913 L36.711 18.913 L36.711 24.148 C36.711 27.613 29.676 30.43 21.007 30.43 C12.339 30.43 5.303 27.613 5.303 24.148 L5.303 18.913 Z" fill="url(#linear-gradient-9)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_top-5" data-name="coin top" d="M36.711 18.913 C36.711 22.379 29.676 25.195 21.007 25.195 C12.339 25.195 5.303 22.379 5.303 18.913 C5.303 15.448 12.339 12.632 21.007 12.632 C29.676 12.632 36.711 15.448 36.711 18.913 Z" fill="url(#linear-gradient-10)" stroke="#0a1118" stroke-width="1.256" stroke-linejoin="round"/>
+      <path id="coin_rim" data-name="coin rim" d="M58.697 32.523 C58.697 41.778 51.201 49.274 41.946 49.274 C32.691 49.274 25.195 41.778 25.195 32.523 C25.195 23.269 32.691 15.773 41.946 15.773 C51.201 15.773 58.697 23.269 58.697 32.523 Z" fill="url(#linear-gradient-11)" stroke="#0a1118" stroke-width="1.466" stroke-linejoin="round"/>
+      <path id="coin_face" data-name="coin face" d="M55.032 32.523 C55.032 39.747 49.17 45.61 41.946 45.61 C34.722 45.61 28.859 39.747 28.859 32.523 C28.859 25.3 34.722 19.437 41.946 19.437 C49.17 19.437 55.032 25.3 55.032 32.523 Z" fill="url(#linear-gradient-12)" stroke="#0a1118" stroke-width="1.047" stroke-linejoin="round"/>
+      <path id="crystal_mark" data-name="crystal mark" d="M41.946 24.671 L44.312 30.157 L49.798 32.523 L44.312 34.89 L41.946 40.375 L39.58 34.89 L34.094 32.523 L39.58 30.157 Z" fill="url(#linear-gradient-13)" stroke="#0a1118" stroke-width="1.047" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -1,1 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#cf86ed" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#cf86ed" fill="#cf86ed" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M20 2 L7 20 H17 L13 34 L30 14 H19Z"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="4.981" x2="32" y2="59.019" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#cca5fa"/>
+      <stop offset="0.42" stop-color="#a35cf5"/>
+      <stop offset="1" stop-color="#522e7a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="22.994" y1="4.981" x2="22.994" y2="59.019" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8d6fc"/>
+      <stop offset="1" stop-color="#bf8df8"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="41.006" y1="4.981" x2="41.006" y2="59.019" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8f51d8"/>
+      <stop offset="1" stop-color="#3e235d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="4.981" x2="32" y2="22.093" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfc6fc"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="32" y1="4.667" x2="32" y2="59.334" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfc6fc"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="32.513" y1="15.059" x2="32.513" y2="48.941" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfc6fc"/>
+    </linearGradient>
+  </defs>
+  <title>lightning</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.717 3.472 C31.457 2.843 32.543 2.843 33.283 3.472 L51.296 18.782 C51.739 19.159 51.994 19.711 51.994 20.292 L51.994 43.708 C51.994 44.289 51.739 44.841 51.296 45.218 L33.283 60.528 C32.543 61.157 31.457 61.157 30.717 60.528 L12.704 45.218 C12.261 44.841 12.006 44.289 12.006 43.708 L12.006 20.292 C12.006 19.711 12.261 19.159 12.704 18.782 Z" fill="#0a1118"/>
+      <path id="crystal" d="M32 4.981 L50.012 20.292 L50.012 43.708 L32 59.019 L13.988 43.708 L13.988 20.292 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.261" stroke-linejoin="round"/>
+      <path id="facets_light" data-name="facets light" d="M13.988 20.292 L32 4.981 L24.435 22.093 L24.435 45.509 L32 59.019 L13.988 43.708 Z" fill="url(#linear-gradient-2)" opacity="0.9"/>
+      <path id="facets_dark" data-name="facets dark" d="M39.565 22.093 L32 4.981 L50.012 20.292 L50.012 20.292 L50.012 43.708 L50.012 43.708 L32 59.019 L39.565 45.509 Z" fill="url(#linear-gradient-3)" opacity="0.85"/>
+      <path id="crown_light" data-name="crown light" d="M32 4.981 L24.435 22.093 L39.565 22.093 Z" fill="url(#linear-gradient-4)" opacity="0.35"/>
+      <path id="facet_lines" data-name="facet lines" d="M32.289 4.855 L39.754 21.741 L49.959 19.981 C50.368 19.911 50.475 20.532 50.066 20.603 L39.88 22.359 L39.88 45.135 L49.959 43.397 C50.368 43.327 50.475 43.948 50.066 44.019 L39.767 45.794 L32.277 59.168 C32.223 59.27 32.116 59.334 32 59.334 L32 59.334 C31.884 59.334 31.777 59.27 31.723 59.168 L24.233 45.794 L13.934 44.019 C13.525 43.948 13.632 43.327 14.041 43.397 L24.12 45.135 L24.12 22.359 L13.934 20.603 C13.525 20.532 13.632 19.911 14.041 19.981 L24.246 21.741 L31.711 4.855 L31.711 4.855 C31.821 4.604 32.179 4.604 32.289 4.855 Z M32 5.761 L24.919 21.778 L39.081 21.778 Z M24.75 22.408 L24.75 45.194 L39.25 45.194 L39.25 22.408 Z M24.973 45.825 L32 58.373 L39.027 45.825 Z" fill="url(#linear-gradient-5)" opacity="0.45"/>
+      <path id="bolt" d="M36.62 15.059 L22.76 35.593 L30.973 35.593 L27.38 48.941 L42.267 28.407 L34.053 28.407 L38.98 15.059 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.171" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

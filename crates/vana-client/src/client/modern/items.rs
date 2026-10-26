@@ -11,7 +11,7 @@ use crate::audio::Ui as Se;
 use crate::inventory::{TINT_WHITE, VISIBLE_ROWS};
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
-const ROW: f32 = 30.0;
+const ROW: f32 = 34.0;
 const ICON: f32 = 24.0;
 
 pub fn draw(p: &mut Panels, w: &mut World) {
@@ -71,7 +71,7 @@ fn list(p: &mut Panels, w: &mut World) {
     let gu = p.gu;
     let shown = gitems::listed(w, direct);
     let rows = gitems::list_rows(w, &info, &shown, direct);
-    let note = format!("{} / {}", shown.len(), w.inv.sizes[gitems::INVENTORY as usize]);
+    let note = format!("{} / {}", shown.len(), w.inv.sizes[gitems::INVENTORY as usize].saturating_sub(1));
     let icons: Vec<Option<egui::TextureId>> = rows.iter().skip(scroll).take(VISIBLE_ROWS).map(|r| m.item_icon(p.ctx, &info, r.id)).collect();
     let held = manual.flatten();
     let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
@@ -80,7 +80,7 @@ fn list(p: &mut Panels, w: &mut World) {
     let search = lists::search_hits(p, w);
     let mut found = lists::Mouse::default();
     let title = Title { icon: None, text: "Items", note: (!direct).then_some(note.as_str()) };
-    p.panel("items", Some(title), 380.0, |ui| {
+    p.panel("window", Some(title), 380.0, |ui| {
         if let Some((text, sel, hits, icons)) = &search {
             found = lists::search_rows(ui, m, w, icons, text, *sel, hits, moved);
             return;

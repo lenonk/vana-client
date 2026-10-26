@@ -13,7 +13,7 @@ use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontId, Rect, Sense, Ui, pos2, vec2};
 use std::time::Instant;
 
-const ROW: f32 = 30.0;
+const ROW: f32 = 34.0;
 
 /// A row's look: under the cursor, Manual Sort's picked one, greyed (can't be used now).
 #[derive(Clone, Copy, PartialEq)]

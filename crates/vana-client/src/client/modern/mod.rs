@@ -197,12 +197,10 @@ fn default_place(id: &str) -> Place {
         "alliance1" => at(0.87, 0.107),
         "alliance2" => at(0.87, 0.335),
         "cast" => at(0.41, 0.58),
-        // The item list left of the main menu; the item info rides the log as retail's (mode 0, flag 0x1000).
-        "items" => at(0.56, 0.07),
+        // The command window: every window the command menu opens shows here, left of it (user's design). The item
+        // info rides the log as retail's (mode 0, flag 0x1000).
+        "window" => at(0.36, 0.07),
         "iteminfo" => on("combat"),
-        // The Equipment screen: the slots and stats, the gear list where the item list sits.
-        "equip" => at(0.26, 0.07),
-        "equiplist" => at(0.56, 0.07),
         _ => at(0.3, 0.3),
     }
 }
