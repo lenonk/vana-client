@@ -512,6 +512,18 @@ pub(super) fn refuse(w: &mut World, id: usize) {
 
 /// FUN_101cc0d0(mask): the status checks of action commands, the first that applies prints its line.
 pub(super) fn status_gate(w: &mut World, mask: u8) -> bool {
+    match gate_line(w, mask) {
+        Some(line) => {
+            refuse(w, line);
+            false
+        }
+        None => true,
+    }
+}
+
+/// FUN_101cc0d0(mask, 1): the check alone, no line. The costume bit (0x40, entity +0x120 bit 5, line 0xb1) is not
+/// tracked.
+pub(super) fn gate_line(w: &World, mask: u8) -> Option<usize> {
     let s = w.my_motion.status;
     let line = if mask & 0x10 != 0 && matches!(s, 0x21 | 7) {
         0x51
@@ -525,11 +537,13 @@ pub(super) fn status_gate(w: &mut World, mask: u8) -> bool {
         0x4e
     } else if mask & 0x08 != 0 && w.room_flag {
         0x44
+    } else if mask & 0x80 != 0 && w.myroom.is_some_and(|r| r.map == 0x2d4) {
+        // FUN_101cc1b0: DAT_1048098d, set on a zone-in to the Mog Garden (myroom map 0x2d4).
+        0x44
     } else {
-        return true;
+        return None;
     };
-    refuse(w, line);
-    false
+    Some(line)
 }
 
 /// FUN_10087070(0): an event, frozen, charmed, or fishing / digging (FUN_100956f0 / FUN_10095750).

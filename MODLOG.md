@@ -4296,7 +4296,7 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   record flag 0x400 (the client's test; POLUtils names 0x200 "CanUse"), equipped charged gear whose extdata (kind 1)
   has u16 @2 bit 0x4000; never as a monster (main job 0x17). Drop when the slot's lock byte (s2c 0x01F @0xc, 0x020
   @0x10: 5 equipped, 0x0F in use, 0x13 linkshell, 0x19, 0x1B mannequin) is 0. Enter on a disabled child: SE 0004.
-- Use (FUN_101f33a0 case 1): the status gate (0x7f; crystals 0x77; the Mog Garden 0x80 / flag 0x08 rule not done),
+- Use (FUN_101f33a0 case 1): the status gate (0x7f; crystals 0x77; Mog Garden items: below),
   then the target prompt with the record's targets (0x7f without one), title "Items" (0xd 2), help 0xe 4 "Select
   target to use item on."; the list and iteminfo hide meanwhile (FUN_101f2740) and come back after. The sender
   FUN_101f0260 (also /item's end): no charges and a non-monster NPC -> c2s 0x036 trade (inventory only, within 6
@@ -10034,3 +10034,14 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - LSB issues to report (not ours to change): the posted date shows 9 hours early (LSB counts from 2002-01-01 00:00
   UTC, the client adds 0x3c307d70 = 2002-01-01 00:00 JST); shell names are letters only (LSB encodes a space as code 0,
   which shows as a backtick in retail too).
+
+## Item use in the Mog Garden; the status gate's bits 0x40 / 0x80 (2026-10-26)
+
+- FUN_101cc0d0(mask, quiet): after 0x10 / 0x20 / 0x01 / 0x02 / 0x04, bit 0x40 is the costume (FUN_101cc040: the
+  player entity +0x120 bit 5; group 7 0xb1 "That command cannot be performed while wearing a costume."), 0x08 the Mog
+  House (FUN_101cc070(0), 7 0x44 "You cannot use that command here."), 0x80 the Mog Garden (FUN_101cc1b0:
+  DAT_1048098d, set on a zone-in whose myroom map is 0x2d4; 7 0x44). quiet = 1 prints nothing.
+- iuse Use (FUN_101f33a0): an item whose record flags (@4, the object's +0x14bc pointer) have 0x0008 goes to the target
+  prompt when gate 0x80 fails (in the Mog Garden) and gate 0x77 (no Mog House bit) passes, quietly; anything else needs
+  gate 0x7f (which refuses in the Mog House and the Garden).
+- Ours: textcmd::gate_line (quiet) / status_gate with bit 0x80; items.rs use_entry. The costume bit is not tracked.

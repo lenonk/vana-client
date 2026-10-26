@@ -711,8 +711,8 @@ pub fn check_iuse(w: &mut World) {
 }
 
 /// iuse Use (FUN_101f33a0 case 1): tabulae open a window we do not have yet, crystals the synthesis; anything else passes the
-/// status gate (0x7f; the Mog Garden's 0x77 / flag 0x08 rule not done) and opens the target prompt with the item's
-/// targets (0x7f with no record), title "Items", help 0xe 4.
+/// status gate 0x7f, or, for an item with record flag 0x0008 in the Mog Garden, gate 0x77 quietly (the Mog House bit
+/// left out), and opens the target prompt with the item's targets (0x7f with no record), title "Items", help 0xe 4.
 fn use_entry(w: &mut World, index: u8, id: u16) {
     let it = w.item_info.as_ref().and_then(|c| c.item(id));
     match it.as_ref().map(|i| i.item_type) {
@@ -724,7 +724,9 @@ fn use_entry(w: &mut World, index: u8, id: u16) {
             }
         }
         _ => {
-            if super::textcmd::status_gate(w, 0x7f) {
+            use super::textcmd::{gate_line, status_gate};
+            let garden = it.as_ref().is_some_and(|i| i.flags & 0x0008 != 0) && gate_line(w, 0x80).is_some() && gate_line(w, 0x77).is_none();
+            if garden || status_gate(w, 0x7f) {
                 let targets = it.map_or(0x7f, |i| i.targets as u32);
                 super::target::open_sub(w, targets, super::target::SubThen::Item { container: INVENTORY, index }, None, String::new(), 4);
             }

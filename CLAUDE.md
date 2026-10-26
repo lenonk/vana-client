@@ -97,7 +97,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - items: "menu    iuse" Use and Drop, the direct-use list, itmsort2 Auto and Manual, the Recycle Bin (and
     `/recycle`, "menu    itemctrl") done; the storage views (text commands, both sides, itmsortw, itmstora,
     Alt+arrows) and the moogle menus (0x02E, myroom / mogext, storage menus, Change Jobs); the Delivery Box (send,
-    receive, cancel mode) and Remodel (client/remodel.rs, MODLOG "Mog House Remodel") done; left the Mog Garden use rule;
+    receive, cancel mode), Remodel (client/remodel.rs, MODLOG "Mog House Remodel") and the Mog Garden use rule done;
   - NPC and guild shops (client/shop.rs, MODLOG "NPC shops", "Guild shops"): buy, sell, appraisal, the can-wear
     yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D), the mouse, the attachment colours done (not seen live: no LSB
     attachment shop); left the dice colours (need s2c 0x063 sub 4 Monstrosity data);
