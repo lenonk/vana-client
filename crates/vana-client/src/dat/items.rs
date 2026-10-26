@@ -289,7 +289,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             // +0x1548: 16 TP moves {u16 move, u8 unlock level, u8 form bits} (FUN_100997b0).
             it.extra = vec![x16(0xd3c, 0x28), x16(0xd40, 0x2c), x16(0xd44, 0x2e)];
             it.extra.extend((0..16).map(|i| (0xd48 + 4 * i as u16, u32_at(r, if wide { 0x34 } else { 0x30 } + 4 * i))));
-            // FUN_10155760: one string (the name).
+            // FUN_10155760: one string, the help line (FUN_101427a0); the name is +8 (FUN_1015cdb0).
             (Some(if wide { 0x74 } else { 0x70 }), 0, true)
         }
         Kind::RoeCategory => {
@@ -317,7 +317,9 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
     if let Some(at) = strings {
         it.fields = string_table(&r[at..]);
         let f = &it.fields;
-        if !f.is_empty() {
+        if kind == Kind::Monster {
+            it.description = text(f.first());
+        } else if !f.is_empty() {
             it.name = text(f.first());
         }
         if lang == Lang::En && f.len() >= 4 + descs && kind != Kind::Monster {
@@ -401,6 +403,13 @@ impl Items {
         r[8..].chunks_exact(4).take(n.min(64)).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
     }
 
+    /// A Monstrosity instinct catalogue (FUN_1015ccc0, 0xeff8..0xefff): u16 count @4, then {u16 item, u16 cost} from @8.
+    pub fn catalogue(&self, id: u32) -> Vec<(u16, u16)> {
+        let Some((Kind::Keff8, r)) = self.record(id) else { return Vec::new() };
+        let n = u16::from_le_bytes([r[4], r[5]]) as usize;
+        r[8..].chunks_exact(4).take(n).map(|c| (u16::from_le_bytes([c[0], c[1]]), u16::from_le_bytes([c[2], c[3]]))).collect()
+    }
+
     /// Decrypted record bytes of `id`.
     pub fn record(&self, id: u32) -> Option<(Kind, Vec<u8>)> {
         let i = RANGES.iter().position(|r| (r.0..r.1).contains(&id))?;
@@ -440,6 +449,32 @@ mod tests {
         let m = items.item(0xf631).unwrap();
         let extra = |at: u16| m.extra.iter().find(|e| e.0 == at).map(|e| e.1);
         assert_eq!((m.name.as_str(), extra(0xd88), extra(0xd8c)), ("Movement", Some(1), Some(3)));
+    }
+
+    /// The catalogues hold every instinct 0..0x35f once (0xeff8..0xeffd 127 entries, 0xeffe 102).
+    #[test]
+    fn catalogues() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(items) = Items::load(&index, Lang::En) else { return };
+        let all: Vec<(u16, u16)> = (0xeff8..0xefff).flat_map(|id| items.catalogue(id)).collect();
+        let mut ids: Vec<u16> = all.iter().map(|e| e.0).collect();
+        ids.sort();
+        assert_eq!((all.len(), items.catalogue(0xeffe).len(), ids.first(), ids.last()), (864, 102, Some(&0x7400), Some(&0x775f)));
+    }
+
+    /// Species records: the name at +8 (variants keep the base's), the help line from the string table.
+    #[test]
+    fn species_names() {
+        let cfg = crate::config::Config::load();
+        let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
+        let Ok(items) = Items::load(&index, Lang::En) else { return };
+        let get = |id: u32| items.item(id).map(|i| (i.name, i.description));
+        assert_eq!(get(0xf001), Some(("Rabbit".into(), "Rabbit".into())));
+        assert_eq!(get(0xf100), Some(("Rabbit".into(), "Onyx Rabbit".into())));
+        assert_eq!(get(0xf101), Some(("Rabbit".into(), "Alabaster Rabbit".into())));
+        assert_eq!(get(0xf102), Some(("Lapinion".into(), "Lapinion (Rabbit)".into())));
+        assert_eq!(get(0xf0fe).map(|n| n.0), Some("Slime".into()));
     }
 
     #[test]

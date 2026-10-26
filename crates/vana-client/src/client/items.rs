@@ -139,11 +139,12 @@ pub struct ItemCache {
     objectives: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Objective>>>>,
     categories: RefCell<HashMap<u16, Option<Arc<crate::dat::roe::Category>>>>,
     points: std::cell::OnceCell<Arc<Vec<crate::dat::tpoints::Point>>>,
+    catalogues: std::cell::OnceCell<Arc<Vec<(u16, u16)>>>,
 }
 
 impl ItemCache {
     pub fn new(names: Arc<crate::dat::names::Names>) -> Self {
-        ItemCache { names, cache: RefCell::new(HashMap::new()), objectives: RefCell::default(), categories: RefCell::default(), points: Default::default() }
+        ItemCache { names, cache: RefCell::new(HashMap::new()), objectives: RefCell::default(), categories: RefCell::default(), points: Default::default(), catalogues: Default::default() }
     }
 
     pub fn item(&self, id: u16) -> Option<Arc<Item>> {
@@ -166,6 +167,16 @@ impl ItemCache {
     pub fn guide(&self, id: u16) -> Option<(String, Vec<u16>)> {
         let name = self.item(id)?.name.clone();
         Some((name, self.names.items.guide_pages(id as u32).into_iter().map(|p| p as u16).collect()))
+    }
+
+    /// The Monstrosity instinct catalogues 0xeff8..0xeffe in order: {item 0x7400 + n, cost}, read once.
+    pub fn catalogues(&self) -> Arc<Vec<(u16, u16)>> {
+        self.catalogues.get_or_init(|| Arc::new((0xeff8..0xefff).flat_map(|id| self.names.items.catalogue(id)).collect())).clone()
+    }
+
+    /// FUN_10141ed0: an instinct's cost (record +0x1c), 0xff without its record.
+    pub fn instinct_cost(&self, n: u16) -> u16 {
+        self.item(0x7400 + n).and_then(|i| i.extra.iter().find(|e| e.0 == 0xd2c).map(|e| e.1 as u16)).unwrap_or(0xff)
     }
 
     /// The teleport point table (records 0xf600..0xf613), read once.

@@ -219,6 +219,12 @@ pub fn mon_prefixes(dll: &[u8]) -> Result<Vec<String>> {
     Ok((0..256).map(|i| dll.get(at + i * 16..at + i * 16 + 16).filter(|_| i < 0xf9).map_or(String::new(), |s| String::from_utf8_lossy(s.split(|&b| b == 0).next().unwrap_or_default()).into_owned())).collect())
 }
 
+/// 0x10370280, directly before the prefixes: each species code's type 1..19 for Refine by Type (0 none).
+pub fn mon_types(dll: &[u8]) -> Result<Vec<u8>> {
+    let at = find(dll, &MON_PREFIXES)?;
+    Ok(dll.get(at.saturating_sub(0x200)..at).unwrap_or_default().to_vec())
+}
+
 /// The 17 colours (D3DCOLOR) of the in-line codes `1e 00..10`.
 pub fn code_colours(dll: &[u8]) -> Result<[u32; 17]> {
     let at = find(dll, &CODE_COLOURS)?;

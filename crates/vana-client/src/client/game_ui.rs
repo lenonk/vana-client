@@ -39,6 +39,8 @@ pub struct GameUiData {
     servers: Option<Messages>,
     aug_tables: Option<super::augment::AugTables>,
     mnc2: Option<Vec<u8>>,
+    /// File 81's `mon_` chunk: the species list order (codes, the zeros dropped).
+    pub mon_order: Vec<u16>,
     /// Lobby message groups 1 (Face/Hair/Size), 6 (race names), 8 (lobby help), 0x1b (name help).
     lobby_msgs: std::collections::HashMap<u8, Messages>,
     /// Creator base stats, 8 races x 6 jobs x 7 bytes (FFXiMain 0x1037bb10, FUN_102306d0).
@@ -139,7 +141,9 @@ impl GameUiData {
         let aug_text = crate::dat::msg::slot_file(ffximain, 1, 0x1b).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("augment texts: {e:#}")).ok());
         let servers = crate::dat::msg::group_file(ffximain, 1, 0x16).and_then(|f| Messages::load(index, f).ok());
         let aug_tables = super::augment::AugTables::find(ffximain);
-        let mnc2 = index.read(81).ok().and_then(|f| super::augment::mnc2(&f));
+        let f81 = index.read(81).ok();
+        let mnc2 = f81.as_deref().and_then(super::augment::mnc2);
+        let mon_order = f81.as_deref().map(super::monstrosity::order).unwrap_or_default();
         let item_fmt = crate::dat::msg::slot_file(ffximain, 1, 0x1c).and_then(|f| Messages::load(index, f).map_err(|e| log::warn!("item info formats: {e:#}")).ok());
         let area_names = Messages::load(index, 0xd8aa).map_err(|e| log::error!("area names (group 4): {e:#}")).ok();
         let errors = crate::dat::battle::va_bytes(ffximain, t.errors, 16 * 128)
@@ -149,7 +153,7 @@ impl GameUiData {
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let (registry, groups) = menu_registry(ffximain);
         let status = [0x3a, 0x3b].map(|slot| crate::dat::msg::current_slot_file(ffximain, 1, slot).and_then(|f| index.read(f).map_err(|e| log::warn!("status info {f}: {e:#}")).ok()).map(std::sync::Arc::new));
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry, groups })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, mon_order, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry, groups })
     }
 }
 
