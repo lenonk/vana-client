@@ -9759,3 +9759,12 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   running without the fishing model. The 2013 controller FUN_10089100 never reads it (its forced end is +0x13c bit 11,
   which nothing sets). The event toggles spec's "NPC fishing" was a misreading. LSB never sends the old statuses, so
   the op has nothing to drive: ours ignores it.
+
+## Synthesis: the mouse (2026-10-26)
+
+- synth.rs `pointer` (winhits.rs): cmbmenu, cmbhwin and tskill1 as the generic window, cmbhlst's code-drawn rows (18
+  apart from (0, 4)) as its children; the crystal list and the material picker as the item list at x 200
+  (post::picker_row); itemctrl only the right click. A right click on tskill1 is its Escape (the cursor to Cancel).
+- Live (Lnxcsfix): main menu Synthesis, cmbmenu hover / click Crystal Synthesis, the crystal list hover / click Wind
+  Crystal, tskill1 hover / click a slot (the picker), a picker row hovered, right clicks back, Cancel, the crystal list
+  and cmbmenu closed by right clicks. Nothing synthesized.

@@ -776,6 +776,85 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     w.synth.win = Some(s);
 }
 
+/// The mouse (winhits.rs): cmbmenu, cmbhwin, cmbhlst's rows and tskill1 as the generic window; the crystal list and
+/// the picker as the item list (hover moves the row, a click on it is Enter, a right click Escape); itemctrl only the
+/// right click.
+#[allow(clippy::too_many_arguments)]
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    use super::winhits::{generic, over};
+    let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
+    // A picker row: hover moves the cursor, a click on it is Enter.
+    let list = |w: &mut World, (scroll, cursor): (usize, usize), n: usize, set: fn(&mut World, usize)| {
+        let row = super::post::picker_row(gu, sw, sh, p);
+        if right && row.is_some() {
+            key(w, gu, egui::Key::Escape);
+            return;
+        }
+        let Some(r) = row.filter(|r| scroll + r < n) else { return };
+        gu.hover.set(true);
+        if r != cursor && (moved || clicked) {
+            set(w, r);
+            w.sounds.push(Ui::Cursor as u32);
+        } else if clicked {
+            key(w, gu, egui::Key::Enter);
+        }
+    };
+    match w.synth.win.as_ref().map(|s| (s.focus, s.cursor, s.list)) {
+        Some((Focus::Slots, cursor, _)) => generic(w, gu, TSKILL1, cursor, 1..=10, p, moved, clicked, right, |w, id| {
+            if let Some(s) = w.synth.win.as_mut() {
+                s.cursor = id;
+            }
+        }, keys),
+        Some((Focus::List, _, at)) => {
+            let n = picker_rows(w).len();
+            list(w, at, n, |w, r| {
+                if let Some(s) = w.synth.win.as_mut() {
+                    s.list.1 = r;
+                }
+            });
+        }
+        Some((Focus::Qty | Focus::Amount(..), ..)) => {
+            if right && over(w, ITEMCTRL, p) {
+                key(w, gu, egui::Key::Escape);
+            }
+        }
+        Some((Focus::Away, ..)) | None => {
+            let Some(m) = w.synth.menu.as_ref() else { return };
+            let n = w.synth.history.len() as u16;
+            match (m.history, m.crystals) {
+                (Some((cur, Some(f))), _) => generic(w, gu, CMBHWIN, f, 1..=2, p, moved, clicked, right, |w, id| {
+                    if let Some(m) = w.synth.menu.as_mut() {
+                        m.history = Some((cur, Some(id)));
+                    }
+                }, keys),
+                (Some((cur, None)), _) => generic(w, gu, CMBHLST, cur, 1..=n.max(1), p, moved, clicked, right, |w, id| {
+                    if let Some(m) = w.synth.menu.as_mut() {
+                        m.history = Some((id, None));
+                    }
+                    refresh(w);
+                }, keys),
+                (None, Some(at)) => {
+                    let n = crystal_rows(w).len();
+                    list(w, at, n, |w, r| {
+                        if let Some(c) = w.synth.menu.as_mut().and_then(|m| m.crystals.as_mut()) {
+                            c.1 = r;
+                        }
+                    });
+                }
+                (None, None) if w.synth.win.is_none() => {
+                    let sel = m.sel;
+                    generic(w, gu, CMBMENU, sel, 1..=2, p, moved, clicked, right, |w, id| {
+                        if let Some(m) = w.synth.menu.as_mut() {
+                            m.sel = id;
+                        }
+                    }, keys);
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
 /// Ours: how many complete sets (the crystal and every material at its count) the unlocked stacks hold, 1..99.
 fn sets_held(w: &World, s: &Win) -> u32 {
     let held = |id: u16| -> u32 { w.inv.slots.iter().filter(|((c, i), (x, _))| *c == 0 && *i != 0 && *x == id && w.inv.locks.get(&(0, *i)).copied().unwrap_or(0) == 0).map(|(_, (_, n))| *n).sum() };
@@ -1076,6 +1155,9 @@ fn draw_history(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, cur:
     let list_focus = away && fav.is_none();
     if let Some(win) = gu.lobby_window_off(CMBHLST, sw, sh, (184.0, 0.0), list_focus.then_some(cur), list_focus, &[]) {
         let [x, y, fw, fh] = win.frame;
+        // The rows are drawn by code: 18 apart from (0, 4).
+        let rows = (0..w.synth.history.len()).map(|k| (k as u16 + 1, [x, y + 4.0 + 18.0 * k as f32, fw - 8.0, 18.0])).collect();
+        super::winhits::record_rects(w, CMBHLST, win.frame, rows);
         // 11 rows (FUN_101e2b60); placed, so at x1 - 6; ours never scrolls the history.
         gu.scroll_bar(x + fw - 6.0, y, fh, w.synth.history.len(), 11, 0);
         if list_focus {
@@ -1099,6 +1181,7 @@ fn draw_history(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, cur:
     let off: &[u16] = if w.synth.history.is_empty() { &[1, 2] } else { &[] };
     let fav_focus = away && fav.is_some();
     if let Some(win) = gu.lobby_window_off(CMBHWIN, sw, sh, (0.0, 0.0), fav.filter(|_| fav_focus), fav_focus, off) {
+        super::winhits::record(w, CMBHWIN, &win);
         let [x, y, ..] = win.frame;
         gu.disabled_children(CMBHWIN, x, y, off, fav.filter(|_| fav_focus));
         rects.push(win.frame);
@@ -1119,6 +1202,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         let off: &[u16] = if menu_off(w) { &[1, 2] } else { &[] };
         let focused = m.crystals.is_none();
         if let Some(win) = gu.lobby_window_off(CMBMENU, sw, sh, (0.0, 0.0), focused.then_some(m.sel), focused, off) {
+            super::winhits::record(w, CMBMENU, &win);
             let [x, y, ..] = win.frame;
             gu.disabled_children(CMBMENU, x, y, off, focused.then_some(m.sel));
             rects.push(win.frame);
@@ -1138,6 +1222,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         rects.extend(draw_list(gu, w, &info, s.list, focused(Focus::List), Some(&tints), sw, sh));
     }
     if let Some(win) = gu.lobby_window_off(TSKILL1, sw, sh, (0.0, 0.0), focused(Focus::Slots).then_some(s.cursor), focused(Focus::Slots), &[]) {
+        super::winhits::record(w, TSKILL1, &win);
         let [x, y, ..] = win.frame;
         let hist = s.from == From::History;
         let element = match s.crystal.1 {
@@ -1183,6 +1268,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     if let Some((_, _, v, max)) = s.qty.or(amount)
         && let Some(win) = gu.lobby_window_off(ITEMCTRL, sw, sh, off, Some(1), true, &[])
     {
+        super::winhits::record(w, ITEMCTRL, &win);
         let [x, y, ..] = win.frame;
         gu.shape_text(&format!("{v:2}"), x + 52.0, y + 22.0, 0x8080_8080, true);
         gu.shape_text(&format!("/{max:2}"), x + 58.0, y + 22.0, 0x8080_8080, false);
