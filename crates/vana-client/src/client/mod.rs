@@ -6,6 +6,7 @@ mod actmotion;
 mod flyover;
 mod creator;
 mod netwait;
+mod modern;
 mod monstrosity;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use hudtop::topbar_shot;
@@ -2253,7 +2254,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let menu_off = world.action_menu.is_some() && !gu.want("menu    playermo");
     let target_off = target.is_some() && event::keeps_target(world) && !gu.want("menu    targetwi");
     let main_off = world.menu.is_some() && !gu.want(crate::render::screens::menu_window(world.menu_page));
-    let st = crate::render::screens::HudState {
+    let mut st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
         target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
         target_glyph: world.target.and_then(|id| if id == world.my_id { plate::target_glyph(&self_plate(world)) } else { world.entities.get(&id).and_then(|e| plate::target_glyph(&entity_plate(id, e))) }),
@@ -2277,6 +2278,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_focused: !world.log_active && world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
+    if world.modern {
+        (st.party_window, st.target, st.alliance) = (String::new(), None, [None, None]);
+    }
     gu.clear();
     name_plates(gu, world, sw, sh, view_proj);
     if world.overlay.as_ref().is_some_and(|o| o.zone != world.pos_zone) {
@@ -4467,6 +4471,8 @@ struct World {
     zone_uploading: Option<Instant>,
     /// Config `party_tp` (retail config 0xae bit 0); /partyinfo asks the App to save it.
     party_tp: bool,
+    /// Config `modern_ui`: the modern layer draws the windows it has, the retail ones are left out.
+    modern: bool,
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
     item_search: bool,
@@ -5178,6 +5184,8 @@ pub struct App {
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
+    /// The modern UI layer (client/modern), made the first time it is switched on.
+    modern: Option<modern::Modern>,
     /// Whether this frame's UI pass drew game UI (lobby art or the HUD).
     ui_drawn: bool,
     /// Event crossfade and fade passes over the scene.
@@ -5383,6 +5391,7 @@ impl App {
             cnq_tables: None,
             point_files: [None; 5],
             game_ui: None,
+            modern: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
             screen_fx: None,
@@ -5455,6 +5464,7 @@ impl App {
         }
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
+            w.modern = self.cfg.modern_ui;
             w.map_opacity = self.cfg.map_overlay_opacity;
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;
@@ -6035,6 +6045,7 @@ impl App {
                             models_loading: HashSet::new(),
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
+                            modern: self.cfg.modern_ui,
                             party_tp_save: false,
                             item_search: false,
                             follow: None,
@@ -9686,6 +9697,13 @@ impl App {
                     self.ui_drawn = true;
                     gu.set_style(world.game.get(0x12) as usize);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
+                }
+                if world.modern {
+                    let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                    let layout = self.cfg.modern_layout.entry(world.name.clone()).or_default();
+                    save |= m.ui(ctx, world, window, layout);
+                } else {
+                    modern::off(ctx, self.modern.as_mut());
                 }
                 // What the Config windows and the settings screen hand to the app.
                 if let Some(kind) = world.want_settings.take() {

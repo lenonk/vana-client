@@ -1,0 +1,3906 @@
+{
+  "schema_version": 1,
+  "coordinate_system": "top-left",
+  "pixel_format": "RGBA8",
+  "atlas_rect_format": "x,y,width,height",
+  "assets": [
+    {
+      "name": "panel_window",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_window.svg",
+      "png": "sprites/png/panel_window.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          2,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_window_dark",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_window_dark.svg",
+      "png": "sprites/png/panel_window_dark.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          2,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_window_light",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_window_light.svg",
+      "png": "sprites/png/panel_window_light.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          266,
+          2,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_window_alert",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_window_alert.svg",
+      "png": "sprites/png/panel_window_alert.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          398,
+          2,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_tooltip",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_tooltip.svg",
+      "png": "sprites/png/panel_tooltip.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          102,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_popover",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_popover.svg",
+      "png": "sprites/png/panel_popover.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          102,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_selection",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_selection.svg",
+      "png": "sprites/png/panel_selection.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          266,
+          102,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_drop_target",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_drop_target.svg",
+      "png": "sprites/png/panel_drop_target.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          398,
+          102,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_drop_invalid",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_drop_invalid.svg",
+      "png": "sprites/png/panel_drop_invalid.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          202,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_input",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_input.svg",
+      "png": "sprites/png/panel_input.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          202,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_input_focus",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_input_focus.svg",
+      "png": "sprites/png/panel_input_focus.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          266,
+          202,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "panel_card",
+      "type": "nine_slice",
+      "size": [
+        96,
+        96
+      ],
+      "svg": "sprites/svg/panel_card.svg",
+      "png": "sprites/png/panel_card.png",
+      "nine_slice": [
+        16,
+        16,
+        16,
+        16
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          398,
+          202,
+          96,
+          96
+        ]
+      }
+    },
+    {
+      "name": "button_normal",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_normal.svg",
+      "png": "sprites/png/button_normal.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          302,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "button_hover",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_hover.svg",
+      "png": "sprites/png/button_hover.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          302,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "button_pressed",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_pressed.svg",
+      "png": "sprites/png/button_pressed.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          266,
+          302,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "button_disabled",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_disabled.svg",
+      "png": "sprites/png/button_disabled.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          398,
+          302,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "button_danger",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_danger.svg",
+      "png": "sprites/png/button_danger.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          402,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "button_confirm",
+      "type": "nine_slice",
+      "size": [
+        128,
+        40
+      ],
+      "svg": "sprites/svg/button_confirm.svg",
+      "png": "sprites/png/button_confirm.png",
+      "nine_slice": [
+        12,
+        12,
+        12,
+        12
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          402,
+          128,
+          40
+        ]
+      }
+    },
+    {
+      "name": "row_normal",
+      "type": "nine_slice",
+      "size": [
+        128,
+        32
+      ],
+      "svg": "sprites/svg/row_normal.svg",
+      "png": "sprites/png/row_normal.png",
+      "nine_slice": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          266,
+          402,
+          128,
+          32
+        ]
+      }
+    },
+    {
+      "name": "row_focus",
+      "type": "nine_slice",
+      "size": [
+        128,
+        32
+      ],
+      "svg": "sprites/svg/row_focus.svg",
+      "png": "sprites/png/row_focus.png",
+      "nine_slice": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          398,
+          402,
+          128,
+          32
+        ]
+      }
+    },
+    {
+      "name": "row_active",
+      "type": "nine_slice",
+      "size": [
+        128,
+        32
+      ],
+      "svg": "sprites/svg/row_active.svg",
+      "png": "sprites/png/row_active.png",
+      "nine_slice": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          2,
+          502,
+          128,
+          32
+        ]
+      }
+    },
+    {
+      "name": "row_disabled",
+      "type": "nine_slice",
+      "size": [
+        128,
+        32
+      ],
+      "svg": "sprites/svg/row_disabled.svg",
+      "png": "sprites/png/row_disabled.png",
+      "nine_slice": [
+        5,
+        5,
+        5,
+        5
+      ],
+      "atlas": {
+        "image": "atlases/nine_slice.png",
+        "rect": [
+          134,
+          502,
+          128,
+          32
+        ]
+      }
+    },
+    {
+      "name": "gauge_hp",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_hp.svg",
+      "png": "sprites/png/gauge_hp.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          2,
+          2,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_mp",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_mp.svg",
+      "png": "sprites/png/gauge_mp.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          166,
+          2,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_tp",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_tp.svg",
+      "png": "sprites/png/gauge_tp.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          330,
+          2,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_cast",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_cast.svg",
+      "png": "sprites/png/gauge_cast.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          494,
+          2,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_xp",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_xp.svg",
+      "png": "sprites/png/gauge_xp.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          2,
+          24,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_cooldown",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_cooldown.svg",
+      "png": "sprites/png/gauge_cooldown.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          166,
+          24,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "gauge_enmity",
+      "type": "gauge",
+      "size": [
+        160,
+        18
+      ],
+      "svg": "sprites/svg/gauge_enmity.svg",
+      "png": "sprites/png/gauge_enmity.png",
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "atlas": {
+        "image": "atlases/gauge.png",
+        "rect": [
+          330,
+          24,
+          160,
+          18
+        ]
+      }
+    },
+    {
+      "name": "status_ready",
+      "type": "sprite",
+      "size": [
+        24,
+        24
+      ],
+      "svg": "sprites/svg/status_ready.svg",
+      "png": "sprites/png/status_ready.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          2,
+          2,
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "name": "status_cooldown",
+      "type": "sprite",
+      "size": [
+        24,
+        24
+      ],
+      "svg": "sprites/svg/status_cooldown.svg",
+      "png": "sprites/png/status_cooldown.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          46,
+          2,
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "name": "status_blocked",
+      "type": "sprite",
+      "size": [
+        24,
+        24
+      ],
+      "svg": "sprites/svg/status_blocked.svg",
+      "png": "sprites/png/status_blocked.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          90,
+          2,
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "name": "status_casting",
+      "type": "sprite",
+      "size": [
+        24,
+        24
+      ],
+      "svg": "sprites/svg/status_casting.svg",
+      "png": "sprites/png/status_casting.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          134,
+          2,
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "name": "status_warning",
+      "type": "sprite",
+      "size": [
+        24,
+        24
+      ],
+      "svg": "sprites/svg/status_warning.svg",
+      "png": "sprites/png/status_warning.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          2,
+          46,
+          24,
+          24
+        ]
+      }
+    },
+    {
+      "name": "target_normal",
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "svg": "sprites/svg/target_normal.svg",
+      "png": "sprites/png/target_normal.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          46,
+          46,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "name": "target_friendly",
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "svg": "sprites/svg/target_friendly.svg",
+      "png": "sprites/png/target_friendly.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          90,
+          46,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "name": "target_enemy",
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "svg": "sprites/svg/target_enemy.svg",
+      "png": "sprites/png/target_enemy.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          134,
+          46,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "name": "target_focus",
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "svg": "sprites/svg/target_focus.svg",
+      "png": "sprites/png/target_focus.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          2,
+          90,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "name": "target_subtarget",
+      "type": "sprite",
+      "size": [
+        40,
+        40
+      ],
+      "svg": "sprites/svg/target_subtarget.svg",
+      "png": "sprites/png/target_subtarget.png",
+      "atlas": {
+        "image": "atlases/sprite.png",
+        "rect": [
+          46,
+          90,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "name": "icon_attack",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_attack.svg",
+      "png": "sprites/png/icon_attack.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_magic",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_magic.svg",
+      "png": "sprites/png/icon_magic.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_abilities",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_abilities.svg",
+      "png": "sprites/png/icon_abilities.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_weaponskill",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_weaponskill.svg",
+      "png": "sprites/png/icon_weaponskill.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_items",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_items.svg",
+      "png": "sprites/png/icon_items.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_inventory",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_inventory.svg",
+      "png": "sprites/png/icon_inventory.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_equipment",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_equipment.svg",
+      "png": "sprites/png/icon_equipment.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_party",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_party.svg",
+      "png": "sprites/png/icon_party.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_map",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_map.svg",
+      "png": "sprites/png/icon_map.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_chat",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_chat.svg",
+      "png": "sprites/png/icon_chat.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_linkshell",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_linkshell.svg",
+      "png": "sprites/png/icon_linkshell.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_system",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_system.svg",
+      "png": "sprites/png/icon_system.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_search",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_search.svg",
+      "png": "sprites/png/icon_search.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_target",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_target.svg",
+      "png": "sprites/png/icon_target.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_focus",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_focus.svg",
+      "png": "sprites/png/icon_focus.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_trade",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_trade.svg",
+      "png": "sprites/png/icon_trade.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_interact",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_interact.svg",
+      "png": "sprites/png/icon_interact.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_storage",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_storage.svg",
+      "png": "sprites/png/icon_storage.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_mog_house",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_mog_house.svg",
+      "png": "sprites/png/icon_mog_house.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_sort",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_sort.svg",
+      "png": "sprites/png/icon_sort.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_filter",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_filter.svg",
+      "png": "sprites/png/icon_filter.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_pin",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_pin.svg",
+      "png": "sprites/png/icon_pin.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_lock",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_lock.svg",
+      "png": "sprites/png/icon_lock.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_unlock",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_unlock.svg",
+      "png": "sprites/png/icon_unlock.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          82,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_close",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_close.svg",
+      "png": "sprites/png/icon_close.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_back",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_back.svg",
+      "png": "sprites/png/icon_back.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_forward",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_forward.svg",
+      "png": "sprites/png/icon_forward.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_up",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_up.svg",
+      "png": "sprites/png/icon_up.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_down",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_down.svg",
+      "png": "sprites/png/icon_down.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_check",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_check.svg",
+      "png": "sprites/png/icon_check.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_cancel",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_cancel.svg",
+      "png": "sprites/png/icon_cancel.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_warning",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_warning.svg",
+      "png": "sprites/png/icon_warning.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          122,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_info",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_info.svg",
+      "png": "sprites/png/icon_info.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_help",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_help.svg",
+      "png": "sprites/png/icon_help.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_favorite",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_favorite.svg",
+      "png": "sprites/png/icon_favorite.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_recent",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_recent.svg",
+      "png": "sprites/png/icon_recent.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_macro",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_macro.svg",
+      "png": "sprites/png/icon_macro.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_command",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_command.svg",
+      "png": "sprites/png/icon_command.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_drag",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_drag.svg",
+      "png": "sprites/png/icon_drag.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_split_stack",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_split_stack.svg",
+      "png": "sprites/png/icon_split_stack.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          162,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_transfer",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_transfer.svg",
+      "png": "sprites/png/icon_transfer.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_transfer_all",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_transfer_all.svg",
+      "png": "sprites/png/icon_transfer_all.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_repair",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_repair.svg",
+      "png": "sprites/png/icon_repair.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_sell",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_sell.svg",
+      "png": "sprites/png/icon_sell.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_buy",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_buy.svg",
+      "png": "sprites/png/icon_buy.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_discard",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_discard.svg",
+      "png": "sprites/png/icon_discard.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_inspect",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_inspect.svg",
+      "png": "sprites/png/icon_inspect.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_compare",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_compare.svg",
+      "png": "sprites/png/icon_compare.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          202,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_refresh",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_refresh.svg",
+      "png": "sprites/png/icon_refresh.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_pause",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_pause.svg",
+      "png": "sprites/png/icon_pause.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_resume",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_resume.svg",
+      "png": "sprites/png/icon_resume.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_disengage",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_disengage.svg",
+      "png": "sprites/png/icon_disengage.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_rest",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_rest.svg",
+      "png": "sprites/png/icon_rest.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_heal",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_heal.svg",
+      "png": "sprites/png/icon_heal.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_buff",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_buff.svg",
+      "png": "sprites/png/icon_buff.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_debuff",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_debuff.svg",
+      "png": "sprites/png/icon_debuff.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          242,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_cure",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_cure.svg",
+      "png": "sprites/png/icon_cure.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_raise",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_raise.svg",
+      "png": "sprites/png/icon_raise.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_protect",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_protect.svg",
+      "png": "sprites/png/icon_protect.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_shell",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_shell.svg",
+      "png": "sprites/png/icon_shell.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_haste",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_haste.svg",
+      "png": "sprites/png/icon_haste.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_slow",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_slow.svg",
+      "png": "sprites/png/icon_slow.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_poison",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_poison.svg",
+      "png": "sprites/png/icon_poison.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_poisona",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_poisona.svg",
+      "png": "sprites/png/icon_poisona.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          282,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_silence",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_silence.svg",
+      "png": "sprites/png/icon_silence.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_stun",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_stun.svg",
+      "png": "sprites/png/icon_stun.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_sleep",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_sleep.svg",
+      "png": "sprites/png/icon_sleep.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_fire",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_fire.svg",
+      "png": "sprites/png/icon_fire.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_ice",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_ice.svg",
+      "png": "sprites/png/icon_ice.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_wind",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_wind.svg",
+      "png": "sprites/png/icon_wind.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_earth",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_earth.svg",
+      "png": "sprites/png/icon_earth.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_thunder",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_thunder.svg",
+      "png": "sprites/png/icon_thunder.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          322,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_water",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_water.svg",
+      "png": "sprites/png/icon_water.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_light",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_light.svg",
+      "png": "sprites/png/icon_light.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_dark",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_dark.svg",
+      "png": "sprites/png/icon_dark.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_enfeebling",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_enfeebling.svg",
+      "png": "sprites/png/icon_enfeebling.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_enhancing",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_enhancing.svg",
+      "png": "sprites/png/icon_enhancing.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_elemental",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_elemental.svg",
+      "png": "sprites/png/icon_elemental.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_healing",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_healing.svg",
+      "png": "sprites/png/icon_healing.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_summoning",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_summoning.svg",
+      "png": "sprites/png/icon_summoning.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          362,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_ninjutsu",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_ninjutsu.svg",
+      "png": "sprites/png/icon_ninjutsu.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_songs",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_songs.svg",
+      "png": "sprites/png/icon_songs.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_geomancy",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_geomancy.svg",
+      "png": "sprites/png/icon_geomancy.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_blue_magic",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_blue_magic.svg",
+      "png": "sprites/png/icon_blue_magic.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_white_magic",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_white_magic.svg",
+      "png": "sprites/png/icon_white_magic.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_black_magic",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_black_magic.svg",
+      "png": "sprites/png/icon_black_magic.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_tp",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_tp.svg",
+      "png": "sprites/png/icon_tp.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_mp",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_mp.svg",
+      "png": "sprites/png/icon_mp.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          402,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_hp",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_hp.svg",
+      "png": "sprites/png/icon_hp.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_cast",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_cast.svg",
+      "png": "sprites/png/icon_cast.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_skillchain",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_skillchain.svg",
+      "png": "sprites/png/icon_skillchain.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_magic_burst",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_magic_burst.svg",
+      "png": "sprites/png/icon_magic_burst.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_range",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_range.svg",
+      "png": "sprites/png/icon_range.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_line_of_sight",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_line_of_sight.svg",
+      "png": "sprites/png/icon_line_of_sight.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_out_of_range",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_out_of_range.svg",
+      "png": "sprites/png/icon_out_of_range.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_cooldown",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_cooldown.svg",
+      "png": "sprites/png/icon_cooldown.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          442,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_available",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_available.svg",
+      "png": "sprites/png/icon_available.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_unavailable",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_unavailable.svg",
+      "png": "sprites/png/icon_unavailable.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_keyboard",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_keyboard.svg",
+      "png": "sprites/png/icon_keyboard.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_mouse",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_mouse.svg",
+      "png": "sprites/png/icon_mouse.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_controller",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_controller.svg",
+      "png": "sprites/png/icon_controller.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_window_move",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_window_move.svg",
+      "png": "sprites/png/icon_window_move.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_resize",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_resize.svg",
+      "png": "sprites/png/icon_resize.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_minimize",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_minimize.svg",
+      "png": "sprites/png/icon_minimize.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          482,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_maximize",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_maximize.svg",
+      "png": "sprites/png/icon_maximize.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_dock",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_dock.svg",
+      "png": "sprites/png/icon_dock.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_undock",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_undock.svg",
+      "png": "sprites/png/icon_undock.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_tabs",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_tabs.svg",
+      "png": "sprites/png/icon_tabs.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_scroll",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_scroll.svg",
+      "png": "sprites/png/icon_scroll.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_settings",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_settings.svg",
+      "png": "sprites/png/icon_settings.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_notifications",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_notifications.svg",
+      "png": "sprites/png/icon_notifications.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_quest",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_quest.svg",
+      "png": "sprites/png/icon_quest.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          522,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_key_item",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_key_item.svg",
+      "png": "sprites/png/icon_key_item.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_currency",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_currency.svg",
+      "png": "sprites/png/icon_currency.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_food",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_food.svg",
+      "png": "sprites/png/icon_food.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_ammo",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_ammo.svg",
+      "png": "sprites/png/icon_ammo.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_weapon",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_weapon.svg",
+      "png": "sprites/png/icon_weapon.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_armor",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_armor.svg",
+      "png": "sprites/png/icon_armor.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_ring",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_ring.svg",
+      "png": "sprites/png/icon_ring.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          242,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_head",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_head.svg",
+      "png": "sprites/png/icon_head.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          282,
+          562,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_body",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_body.svg",
+      "png": "sprites/png/icon_body.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          2,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_hands",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_hands.svg",
+      "png": "sprites/png/icon_hands.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          42,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_feet",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_feet.svg",
+      "png": "sprites/png/icon_feet.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          82,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_waist",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_waist.svg",
+      "png": "sprites/png/icon_waist.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          122,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_neck",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_neck.svg",
+      "png": "sprites/png/icon_neck.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          162,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "icon_ear",
+      "type": "icon",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/icon_ear.svg",
+      "png": "sprites/png/icon_ear.png",
+      "atlas": {
+        "image": "atlases/icon.png",
+        "rect": [
+          202,
+          602,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_move",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_move.svg",
+      "png": "sprites/png/overlay_move.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          2,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_resize",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_resize.svg",
+      "png": "sprites/png/overlay_resize.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          42,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_pointer",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_pointer.svg",
+      "png": "sprites/png/overlay_pointer.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          82,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_valid_drop",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_valid_drop.svg",
+      "png": "sprites/png/overlay_valid_drop.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          122,
+          2,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_invalid_drop",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_invalid_drop.svg",
+      "png": "sprites/png/overlay_invalid_drop.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          2,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_transfer",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_transfer.svg",
+      "png": "sprites/png/overlay_transfer.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          42,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_pin",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_pin.svg",
+      "png": "sprites/png/overlay_pin.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          82,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "overlay_close",
+      "type": "overlay",
+      "size": [
+        36,
+        36
+      ],
+      "svg": "sprites/svg/overlay_close.svg",
+      "png": "sprites/png/overlay_close.png",
+      "atlas": {
+        "image": "atlases/overlay.png",
+        "rect": [
+          122,
+          42,
+          36,
+          36
+        ]
+      }
+    },
+    {
+      "name": "keycap_esc",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_esc.svg",
+      "png": "sprites/png/keycap_esc.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          2,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_tab",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_tab.svg",
+      "png": "sprites/png/keycap_tab.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          2,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_enter",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_enter.svg",
+      "png": "sprites/png/keycap_enter.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          2,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_space",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_space.svg",
+      "png": "sprites/png/keycap_space.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          206,
+          2,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_ctrl",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_ctrl.svg",
+      "png": "sprites/png/keycap_ctrl.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          38,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_alt",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_alt.svg",
+      "png": "sprites/png/keycap_alt.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          38,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_shift",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_shift.svg",
+      "png": "sprites/png/keycap_shift.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          38,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_up",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_up.svg",
+      "png": "sprites/png/keycap_up.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          206,
+          38,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_down",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_down.svg",
+      "png": "sprites/png/keycap_down.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          74,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_left",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_left.svg",
+      "png": "sprites/png/keycap_left.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          74,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_right",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_right.svg",
+      "png": "sprites/png/keycap_right.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          74,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f1",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f1.svg",
+      "png": "sprites/png/keycap_f1.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          206,
+          74,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f2",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f2.svg",
+      "png": "sprites/png/keycap_f2.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          110,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f3",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f3.svg",
+      "png": "sprites/png/keycap_f3.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          110,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f4",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f4.svg",
+      "png": "sprites/png/keycap_f4.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          110,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f5",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f5.svg",
+      "png": "sprites/png/keycap_f5.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          206,
+          110,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f6",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f6.svg",
+      "png": "sprites/png/keycap_f6.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          146,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f7",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f7.svg",
+      "png": "sprites/png/keycap_f7.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          146,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f8",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f8.svg",
+      "png": "sprites/png/keycap_f8.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          146,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f9",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f9.svg",
+      "png": "sprites/png/keycap_f9.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          206,
+          146,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f10",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f10.svg",
+      "png": "sprites/png/keycap_f10.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          2,
+          182,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f11",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f11.svg",
+      "png": "sprites/png/keycap_f11.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          70,
+          182,
+          64,
+          32
+        ]
+      }
+    },
+    {
+      "name": "keycap_f12",
+      "type": "keycap",
+      "size": [
+        64,
+        32
+      ],
+      "svg": "sprites/svg/keycap_f12.svg",
+      "png": "sprites/png/keycap_f12.png",
+      "atlas": {
+        "image": "atlases/keycap.png",
+        "rect": [
+          138,
+          182,
+          64,
+          32
+        ]
+      }
+    }
+  ]
+}

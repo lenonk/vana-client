@@ -109,6 +109,10 @@ pub struct Config {
     pub game: crate::gamecfg::GameConfig,
     /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
     pub mods: Vec<ModRef>,
+    /// Not retail (docs/modern-ui.md): the modern UI layer instead of the retail HUD windows it replaces, and its
+    /// window places by character, then window.
+    pub modern_ui: bool,
+    pub modern_layout: std::collections::BTreeMap<String, std::collections::BTreeMap<String, [f32; 2]>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -199,6 +203,8 @@ impl Default for Config {
             cursor_size: 0,
             auto_sort: 0,
             mods: Vec::new(),
+            modern_ui: false,
+            modern_layout: Default::default(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

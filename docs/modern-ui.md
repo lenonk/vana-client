@@ -1,0 +1,144 @@
+# Modern UI
+
+The plan for vana-client's modern interface, from the user's planning document (Vana_Client_UI_Implementation_Plan,
+26 October 2026), with the decisions taken since and the state of the work. Branch `ui-update`.
+
+## Decisions (2026-10-26)
+
+- **Runtime toggle.** The retail UI stays the default and untouched. Settings > Linux > Interface switches between
+  Classic and Modern (config `modern_ui`). While Modern is on, the modern layer draws the windows it has and the
+  retail windows they replace are left out; everything else stays retail until it has a modern counterpart.
+- **egui.** The modern layer is egui (already in the client, on wgpu): windows, layout, focus, drag-and-drop,
+  tooltips and text come from it; the pack's art is drawn through its painter.
+- **Fonts bundled.** Inter (interface), Cinzel (titles), JetBrains Mono (logs), all SIL OFL 1.1, unmodified, from
+  their official releases, in `crates/vana-client/assets/fonts` with their licence texts, embedded in the binary.
+- **Order.** Milestone 1 (theme and atlas loader, panels, movable windows with saved layout, HUD basics), then the Mog
+  House storage slice.
+- **Icons.** The pack's icons are placeholders. A full icon set (every job, spell, buff and debuff) may come later;
+  game art is mapped by stable game ids, never by atlas sprite ids.
+
+## Goal
+
+A genuinely modern interface without turning FFXI into FFXIV or reskinning the 2002 menus. Keep the deliberate,
+tactical, auto-attack combat and the deep job and spell systems. Make exploration, inventory, storage, navigation and
+everyday interactions friendly to the mouse, which is useful but never required.
+
+Success: a player explores and manages their character with clickable, movable, discoverable windows; plays combat
+entirely from the keyboard; finds any spell or ability quickly without memorising sequences; and still recognises the
+pacing, decisions and atmosphere of Vana'diel.
+
+## Firm design rules
+
+- Keyboard-first combat; directional menus and Enter / Escape stay first-class.
+- Mouse-friendly exploration and management: clickable actions, movable / resizable windows, drag-and-drop between
+  inventory and Mog House storage, context menus, tooltips.
+- Mouse optional everywhere: every action has a keyboard path and a visible focus.
+- No wall of hotbars. A small optional favourites strip at most; the main system is a command browser.
+- Modern feel over fidelity to the old window places, blue palette or menu structure.
+- FFXI mechanics intact: deliberate action selection, auto-attack, skillchains / magic bursts, party play, targeting.
+- Suggestions are allowed but explainable, never automatic, never hiding the full list, and never reorder the
+  highlighted row while a menu is open.
+
+## Interaction
+
+- **Exploration:** NPCs, doors, objects, party members, targets, menu entries and equipment clickable where sensible;
+  tooltips, right-click context actions, hover and focus feedback, configurable bindings. Windows movable, optionally
+  resizable, dockable / pinnable, layouts saved per character. Nothing needs the mouse.
+- **Combat:** a compact HUD (own HP / MP / TP and effects, target / focus / sub-target, party, cast bars, a restrained
+  log) and a keyboard command palette (Attack, Magic, Abilities, Weapon Skills, Items, Check, Disengage ...): arrows
+  move, Enter acts, Escape backs out; a separate fuzzy search ("has" finds Haste); recent picks remembered.
+- **Spells and abilities:** one searchable action registry: categories, favourites, recent, job filters, costs,
+  recasts, range, valid targets and why an action is disabled.
+- **Recommendations:** a deterministic, testable rules engine (Poisona for a poisoned ally, Cure for low HP, an
+  expiring Refresh, burst spells in a skillchain window, weapon skills at TP); never casts, never moves the cursor,
+  updates at safe points, shows its reason; no runtime LLM.
+- **Targeting:** target, sub-target, focus target, last target and party selection shown explicitly; clicks may set
+  a target; cycling and target-by-name stay.
+
+Interaction contract from the pack (docs/INTERACTION.md there):
+
+- Left click selects a target; double click the default safe interaction; right click a context menu. Every visible
+  control is clickable and keyboard-focusable.
+- Storage: drag between inventory and the Mog House containers by the server's rules; teal / red for valid / invalid
+  drops; Shift splits a stack, Ctrl-click sends to the paired pane; a keyboard path for all of it. Never discard
+  optimistically: wait for the server, restore and explain on failure. Item identity is the slot, never a sprite.
+- Combat: the palette never steals focus or auto-targets; auto-attack carries on with menus open.
+- Window manager: layouts per character, display and UI scale; window chrome drags apart from content drags; Reset
+  Layout always there.
+
+## UI states
+
+| Mode | Emphasis |
+|---|---|
+| Exploration | World, interactions, minimap / coordinates if on, quiet chat and status. |
+| Combat | Target, party, HP / MP / TP, casts and skillchain cues, effects; keyboard commands. |
+| Management | Inventory, storage, equipment, jobs, magic, macros; movable multi-pane windows. |
+
+Modes are adaptive presets, not fixed screens; widgets can be pinned and transitions turned off. Never take the
+keyboard in combat.
+
+## Visual system and assets
+
+Charcoal / slate, muted bronze, parchment, restrained jewel tones, readable contrast; Vana'diel-inspired icons and
+type, little ornament. Text is rendered at run time, never baked into sprites.
+
+The pack, as checked on 2026-10-26 (`crates/vana-client/assets/modern`):
+
+- `manifest.json` (schema 1): 196 sprites with atlas rects and nine-slice margins: 22 nine-slice frames, buttons and
+  rows; 7 gauges; 10 status / target sprites; 126 icons (36 px); 8 drag / window overlays; 23 key caps.
+- `atlases/*.png`: six packed RGBA atlases at 1x (panels 96 px with 16 px margins, rows 128 x 32).
+- `svg/`: the editable sources of every sprite. `theme.json`: colours, type roles and sizes, scale, metrics.
+- The icons are simple line symbols on a dark tile, placeholders by the pack's own note.
+- The gauge sprites have their fill baked in at about 70%; track and fill are not separate, so the layer draws gauges
+  itself from the same shapes and colours (client/modern/paint.rs).
+- The concept sheet and the four mockups are illustrations, not assets (baked text, generated art).
+
+## Technical plan
+
+A. Input contracts: canonical actions (navigate, confirm, back, search, target next, open menu, drag, drop ...) from
+   keyboard, mouse and pad adapters; input focus kept apart from world targeting.
+B. Retained UI state: widget ids, focus paths, z-order, window geometry, docking / pinning, layout persistence.
+C. Theme and assets: atlases, nine-slice, DPI scaling, fonts with fallback, clipping; manifest-driven lookups.
+D. Action registry: actions from job, spells, abilities, learned state, recasts, costs, targets, server state; one
+   search / filter API for the palette, favourites and suggestions.
+E. Combat navigation: menu > category > action > sub-target > server command, fuzzy search, recents, favourites.
+F. Storage slice: two-pane Mog House transfers with drag-and-drop, keyboard parity, server-confirmed results.
+G. Recommendation rules, tested against recorded game states.
+H. Polish: 1080p / 1440p / 4K, ultrawide, mouse-only exploration, keyboard-only combat, high UI scale, layouts,
+   combat focus stability, accessibility.
+
+## Milestones
+
+1. **Interaction prototype:** movable windows, focus, keyboard traversal, theme loader, text and nine-slice.
+2. **Storage:** inventory and Mog House transfers by drag-and-drop and by keyboard; errors and limits handled.
+3. **Combat palette:** every command without the mouse; searchable spells and abilities; explicit target states.
+4. **Context and customisation:** suggestions, favourites, saved layouts, per-mode visibility, UI scale.
+5. **Production pass:** asset QA, consistency, performance, tests, real play sessions.
+
+Done means: common exploration is discoverable by click; storage works by both inputs; combat plays by keyboard
+alone; no hotbar chores; menus stay still while navigated; state changes are server-confirmed; layouts persist and
+scale.
+
+## Open questions
+
+- Which keys open the command palette and the search? (Tab is FFXI's target cycling.)
+- Click-to-move, or only mouse targeting and interaction?
+- Which windows hide in combat and which stay pinned?
+- How macros and equipment sets show in search and favourites.
+- How to show skillchain windows without a rotation HUD.
+- Which icons come from the DATs and which are new art.
+- How latency, failed transfers and invalid targets are shown.
+
+## State (branch ui-update)
+
+Milestone 1, first pass:
+
+- client/modern: `theme.rs` (theme, manifest, atlases as egui textures, fonts), `paint.rs` (nine-slice, gauges),
+  `hud.rs` (panels), `mod.rs` (the layer, zoom, panels with saved places).
+- egui's zoom follows the window height against theme.json's 1080 reference (clamped 0.75 .. 2.5).
+- Panels: Status (name, jobs, HP / MP / TP; no MP row without MP), Party (the others, HP; the party cursor, the
+  target and hover marked with the row sprites; a click targets the member), Target (name, HP). Movable; places saved
+  per character in config `modern_layout` when the pointer is let go.
+- The retail party, alliance and target windows are not drawn while Modern is on.
+- Seen live (Lnxcsfix, 2026-10-26): Status and Target. The Party panel not yet (the bots did not accept invites).
+- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, reset layout.

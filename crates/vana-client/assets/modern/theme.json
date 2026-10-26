@@ -1,0 +1,54 @@
+{
+  "name": "Vana Modern / Slate & Bronze",
+  "colors": {
+    "bg": "#171e25",
+    "panel": "#252e36",
+    "edge": "#947c59",
+    "accent": "#dfba77",
+    "focus": "#7ab5c5",
+    "text": "#e9e4d9",
+    "muted": "#8f9da6",
+    "danger": "#db6464",
+    "good": "#70b69a",
+    "blue": "#5b93cf",
+    "gold": "#d3a35d"
+  },
+  "fonts": {
+    "display": {
+      "family": "Cinzel",
+      "fallback": "Noto Serif",
+      "size": 22
+    },
+    "ui": {
+      "family": "Inter",
+      "fallback": "Noto Sans",
+      "size": 15
+    },
+    "log": {
+      "family": "JetBrains Mono",
+      "fallback": "monospace",
+      "size": 13
+    }
+  },
+  "scale": {
+    "reference_height": 1080,
+    "user_scale": 1.0,
+    "min_scale": 0.75,
+    "max_scale": 2.5
+  },
+  "metrics": {
+    "row_height": 34,
+    "icon_size": 36,
+    "menu_width": 300,
+    "drag_threshold_px": 6,
+    "double_click_ms": 350
+  },
+  "interaction": {
+    "combat": "keyboard-first",
+    "exploration": "mouse-friendly and keyboard-usable",
+    "inventory": "drag_drop_and_keyboard_transfer",
+    "movable_windows": true,
+    "rebindable_commands": true,
+    "context_suggestions": "non-reordering"
+  }
+}

@@ -32,6 +32,7 @@ pub struct Settings {
     pub monitor: String,
     pub gpu: String,
     pub cursor_size: u32,
+    pub modern_ui: bool,
     /// The mod packs in priority order (the Mods page; config `mods`).
     pub mods: Vec<crate::config::ModRef>,
 }
@@ -60,6 +61,7 @@ impl Settings {
             monitor: c.monitor.clone(),
             gpu: c.gpu.clone(),
             cursor_size: c.cursor_size,
+            modern_ui: c.modern_ui,
             mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
         }
     }
@@ -82,6 +84,7 @@ impl Settings {
         c.minimap_size = self.minimap_size;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
+        c.modern_ui = self.modern_ui;
         c.mods = self.mods.clone();
     }
 }
@@ -129,6 +132,7 @@ enum Val {
     Monitor,
     /// The graphics adapter ("Default" then the app's list).
     Gpu,
+    ModernUi,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -205,6 +209,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),
         row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
+        row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
     ];
     const MAPS: &[Row] = &[
         row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
@@ -341,6 +346,7 @@ impl SettingsUi {
             Val::FrameLimit => self.s.frame_limit,
             Val::Aniso => self.s.anisotropy as u32,
             Val::PartyTp => self.s.party_tp as u32,
+            Val::ModernUi => self.s.modern_ui as u32,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
@@ -362,6 +368,7 @@ impl SettingsUi {
             Val::Tool(n) => self.tool_set(n, x),
             Val::Aniso => self.s.anisotropy = x as u16,
             Val::PartyTp => self.s.party_tp = x != 0,
+            Val::ModernUi => self.s.modern_ui = x != 0,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,
