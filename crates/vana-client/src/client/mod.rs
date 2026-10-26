@@ -718,6 +718,10 @@ fn ko_step(w: &mut World) {
         }
         return;
     }
+    // Mode 3: the tractor prompt (LAB_10097390).
+    if w.ko_offer == 3 && w.confirm.is_none() {
+        w.confirm = Some((Confirm::Tractor, false));
+    }
     // Mode 2 (the raise offer): comyn closes every frame, and the K.O. window comes back if it is down (FUN_1012e0c0).
     if w.ko_offer == 2 {
         w.confirm = None;
@@ -7015,18 +7019,16 @@ impl App {
                     world.spells_known = bits;
                 }
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
-                NetEvent::ResOffer { id, kind } if id == world.my_id && world.dead() => {
+                // LAB_100a2540 stores the offer whatever our state (it may come before our dead status, e.g. during a
+                // zone-in event); the K.O. step shows it once we are dead.
+                NetEvent::ResOffer { kind } => {
                     log::info!("0x0F9 offer {kind}");
                     match kind {
                         1 => (world.ko_offer, world.raise_yes) = (2, true),
-                        2 => {
-                            world.ko_offer = 3;
-                            world.confirm = Some((Confirm::Tractor, false));
-                        }
+                        2 => world.ko_offer = 3,
                         _ => world.ko_offer = 0,
                     }
                 }
-                NetEvent::ResOffer { .. } => {}
                 NetEvent::ConfSys(c) => world.conf_sys = c,
                 NetEvent::MissionLog { port, data } => world.journal.record(port, data),
                 NetEvent::RoeUnity { sparks, deeds, plaudits, rot } => {
@@ -7206,7 +7208,10 @@ impl App {
         combat::tick(world);
         combat::message_queue(world, dt);
         roe::new_challenge(world);
-        ko_step(world);
+        // FUN_10096640 runs the K.O. machine (FUN_10096c90) only outside events.
+        if !event::active(world) {
+            ko_step(world);
+        }
         event::update(world, dt);
         event::rebuild_models(world);
         if world.in_scene() {

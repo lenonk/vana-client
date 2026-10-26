@@ -9363,3 +9363,18 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   the bed moved two cells, cancelled, placed one cell over and back, with one load (at login) in the whole run.
 - Layout entry also drops the action menu suspended under a list (ours, `held_menu`): it came back mid-layout.
 - Not yet: the mannequin's equipment row.
+
+## The raise offer during a zone-in event (2026-10-26)
+
+- s2c 0x0F9's handler LAB_100a2540 reads only the type @0xA and stores DAT_10485ff8 (1 raise -> 2, 2 tractor -> 3,
+  else 0): no UniqueNo or dead check. The K.O. machine FUN_10096c90 (reset to 0 when we are not dead,
+  FUN_10097a60 status 2 / 3) is called by FUN_10096640 (c:115815) only outside events (status not 4 / 0x1a..0x1f,
+  +0x1fe clear, and some globals not traced). The 0x00A handler (c:114400) sets mode 1 when the zone-in death timer
+  (+0x40ddc) is set.
+- Ours dropped an offer that came while our status was not yet dead and ran the K.O. step during events (which
+  declined and cleared a pending offer). Live, 2026-10-26: Nine's body moved to Bastok Markets ran a zone-in event;
+  `!raise` came 11 s in, before the event ended and our status turned 3 (43 s in): no prompt, and LSB sends no
+  second 0x0F9 while `m_hasRaise` is set (sendRaise), so the next `!raise` did nothing. Now the offer is stored as
+  retail does, the tractor prompt opens from the K.O. step (mode 3), and the K.O. step waits out events.
+- Live (Lnxcsfix): `!hp 0` in Valkurm, `!pos` to Bastok Markets dead, `!raise 3` at once: the offer (logged twice),
+  "Allow yourself to be revived?", Enter, standing 4 s later.
