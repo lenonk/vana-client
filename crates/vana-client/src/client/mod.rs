@@ -4509,6 +4509,11 @@ struct World {
     minimap_size: u32,
     minimap_span: f32,
     minimap_dirty: bool,
+    /// Config auto_sort (items::auto_sort_tick): the containers kept sorted, changed since saved; those with a new item
+    /// and the seconds until they sort.
+    auto_sort: u32,
+    auto_sort_dirty: bool,
+    sort_due: (u32, f32),
     timers_dock: u32,
     timers: timers::Timers,
     /// The ship voyage (kept across zone changes, as retail's globals).
@@ -5846,6 +5851,9 @@ impl App {
                             minimap_size: self.cfg.minimap_size,
                             minimap_span: self.cfg.minimap_span,
                             minimap_dirty: false,
+                            auto_sort: self.cfg.auto_sort,
+                            auto_sort_dirty: false,
+                            sort_due: (0, 0.0),
                             timers_dock: self.cfg.timers_dock,
                             timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
                             voyage: Default::default(),
@@ -6746,7 +6754,12 @@ impl App {
                     if matches!(container, 1..=7 | 9) {
                         world.inv_flags |= 0x0020_0000;
                     }
+                    // A slot newly filled in a container kept sorted sorts it once the burst is over.
+                    let fresh = id != 0 && !world.inv.order.get(&container).is_some_and(|o| o.contains(&index));
                     world.inv.set(container, index, id, count);
+                    if fresh && container < 32 && world.auto_sort >> container & 1 != 0 {
+                        world.sort_due = (world.sort_due.0 | 1 << container, items::SORT_DELAY);
+                    }
                     if id != 0 {
                         world.inv.locks.insert((container, index), lock);
                     }
@@ -7369,6 +7382,7 @@ impl App {
         target::party_cursor_update(world);
         partymenu::update(world);
         status::update(world);
+        items::auto_sort_tick(world, dt);
         currencies::update(world, dt * 60.0);
         merits::update(world);
         jobpoints::update(world, dt * 60.0);
@@ -8921,6 +8935,12 @@ impl App {
                 }
                 if std::mem::take(&mut world.party_tp_save) {
                     self.cfg.party_tp = world.party_tp;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
+                if std::mem::take(&mut world.auto_sort_dirty) {
+                    self.cfg.auto_sort = world.auto_sort;
                     if let Err(e) = self.cfg.save() {
                         log::warn!("config: {e:#}");
                     }

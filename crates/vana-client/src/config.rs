@@ -89,6 +89,9 @@ pub struct Config {
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
+    /// Ours (user, 2026-10-25): containers whose sort window's Auto stays on, bit = container: a new item there sorts
+    /// it again. Retail's Auto sorts once; Manual turns ours off.
+    pub auto_sort: u32,
     /// The "FINAL FANTASY XI Config" tool's values by registry name (HKLM\...\FinalFantasyXI\0000..0043,
     /// read at start-up by FUN_10016c30); missing ones take TOOL_DEFAULTS.
     pub tool: std::collections::BTreeMap<String, u32>,
@@ -186,6 +189,7 @@ impl Default for Config {
             minimap_size: 1,
             minimap_span: 160.0,
             cursor_size: 0,
+            auto_sort: 0,
             mods: Vec::new(),
             tool: Default::default(),
             retail_aspect: false,

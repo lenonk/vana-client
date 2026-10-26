@@ -467,6 +467,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                     if yes {
                         *sort = None;
                         auto_sort(w);
+                        keep_sorted(w, INVENTORY, true);
                         return true;
                     }
                 }
@@ -483,6 +484,10 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                     w.sounds.push(Ui::Select as u32);
                 }
                 (None, egui::Key::Enter) if s.cursor == 2 => {
+                    // keep_sorted off, by field (w.win is borrowed).
+                    if w.auto_sort & 1 << INVENTORY != 0 {
+                        (w.auto_sort, w.auto_sort_dirty) = (w.auto_sort & !(1 << INVENTORY), true);
+                    }
                     *manual = Some(None);
                     *sort = None;
                     w.sounds.push(Ui::Select as u32);
@@ -718,6 +723,33 @@ fn use_entry(w: &mut World, index: u8, id: u16) {
                 super::target::open_sub(w, targets, super::target::SubThen::Item { container: INVENTORY, index }, None, String::new(), 4);
             }
         }
+    }
+}
+
+/// Seconds after the last new item before a container kept sorted sorts (a pickup's updates come in a burst).
+pub(super) const SORT_DELAY: f32 = 0.5;
+
+/// Ours: the containers kept sorted (config auto_sort) sort again once their new items are in.
+pub(super) fn auto_sort_tick(w: &mut World, dt: f32) {
+    if w.sort_due.0 == 0 {
+        return;
+    }
+    w.sort_due.1 -= dt;
+    if w.sort_due.1 > 0.0 {
+        return;
+    }
+    let due = std::mem::take(&mut w.sort_due.0);
+    for c in (0..32u8).filter(|c| due >> c & 1 != 0) {
+        log::info!("items: container {c} kept sorted, sorting");
+        auto_sort_c(w, c);
+    }
+}
+
+/// Auto keeps the container sorted (ours), Manual stops it.
+fn keep_sorted(w: &mut World, c: u8, on: bool) {
+    let v = if on { w.auto_sort | 1 << c } else { w.auto_sort & !(1 << c) };
+    if v != w.auto_sort {
+        (w.auto_sort, w.auto_sort_dirty) = (v, true);
     }
 }
 
@@ -1219,6 +1251,7 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: b
                             let _ = w.net.commands.send(NetCommand::Packet { id: 0x03A, body: (c as u32).to_le_bytes().to_vec() });
                         }
                         auto_sort_c(w, c);
+                        keep_sorted(w, c, true);
                         b.sortw = None;
                         b.on_bank = sw.bank_side;
                         write_store(w, b, scroll, cursor);
@@ -1237,6 +1270,7 @@ fn store_key(w: &mut World, info: &ItemCache, key: egui::Key, page: bool, alt: b
                     w.sounds.push(Ui::Select as u32);
                 }
                 K::Enter if sw.cursor == 2 => {
+                    keep_sorted(w, c, false);
                     b.manual = Some((sw.bank_side, None));
                     b.on_bank = sw.bank_side;
                     w.sounds.push(Ui::Select as u32);

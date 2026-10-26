@@ -9108,3 +9108,13 @@ Spec `~/ffxi/lab/research/event_toggles_spec.md` item 3.
   pose was only made in the draw loop after the GPU model's build, which takes several frames: the doll copied no
   points and the sparkles stood at the feet. The rest pose is now made when the model is assigned (FxActors::point
   falls back to it at once). Retail makes the skeleton with the model.
+
+## Auto sort that stays on (ours, 2026-10-25)
+
+- Retail's Auto (itmsort2 / itmsortw, FUN_1021c7e0) sorts once: the view reorder and c2s 0x03A; nothing sorts again.
+  The user asked for Auto to keep the container sorted. Ours: Yes on Auto sets the container's bit in config
+  `auto_sort`; a slot newly filled there (s2c 0x020 with an index not in the view yet: a pickup, a purchase; not a
+  stack merge or a count change) sorts it again 0.5 s after the last one (items::auto_sort_tick, the same sort and
+  0x03A). Manual (either window) clears the bit.
+- Live (Lnxcsfix, Southern San d'Oria): Auto, Yes, then !additem 4112: the new Potion went in beside the other
+  Potions, one 0x03A sent.
