@@ -165,6 +165,17 @@ Milestone 1:
   location panel, the target on the party window (targetwi on the party window). The game's windows still drawn
   retail-style that stack on the log (flag 0x1000) stack on the modern chat window, the Timers window too.
 - The game's windows and the world take no click, press or wheel over a modern panel.
+- The effects panel: our status icons and times alone (user's call: the name, jobs and bars are the party
+  window's), shown while any. Party rows show HP over max: ours known, a member's from when it was last at 100 %
+  (party_hp_max), else HP / HP %.
+- The magic and ability windows (lists.rs) over magic.rs's state: the category window (mgcmenu, magselec, abimenu,
+  abiselec, commenu, Monstrosity's) by name, the magic / ability / mount / emote lists with the game's icons, MP
+  cost and recasts, greyed rows, the sort strip (Auto-sort, Manual Sort, Set Spells; the Yes / No), the cost box,
+  a bar; the mouse as retail's (hover moves the cursor, a click on it is Enter), the wheel.
+- Search (listsearch.rs): typing in a category window or a list searches its names (start, word start, anywhere,
+  letters in order; roman numerals as digits), from a category window every list behind it; Up / Down, Enter
+  picks through retail's keys (the category, the row, Enter: checks and the target prompt as ever), Backspace,
+  Escape ends it.
 - The party window as retail's ptwN ("Solo" outside a party): us first, then the members; per row the job, the
   leader marks, the name over the HP bar with the HP number in its hpcol colour, the MP bar and number, TP with
   config 0xae bit 0 (never on trusts), a member elsewhere greyed with the zone; the hand on the party cursor's or

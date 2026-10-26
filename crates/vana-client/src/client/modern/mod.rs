@@ -9,6 +9,7 @@ mod chat;
 mod combat;
 mod command;
 mod hud;
+mod lists;
 mod paint;
 pub mod shot;
 mod theme;
@@ -83,6 +84,7 @@ impl Modern {
         hud::draw(&mut p, w);
         command::draw(&mut p, w);
         combat::draw(&mut p, w);
+        lists::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -154,6 +156,9 @@ fn default_place(id: &str) -> Place {
         "where" => on("chat"),
         "combat" => on("where"),
         "target" => on("party"),
+        // The magic and ability windows ride on the combat window (retail's sit on the log), the list on its categories.
+        "cats" => on("combat"),
+        "list" => on("cats"),
         "status" => at(0.012, 0.07),
         "command" => at(0.83, 0.07),
         // raid1 / raid2's places (y 48 and 150 of the 448 layout).
@@ -389,6 +394,17 @@ impl Modern {
             *g = (Some(std::time::Instant::now()), super::map::grid_text(w, gu.map_regions()));
         }
         g.1.clone()
+    }
+
+    /// A menu sprite from the game's files (a list's spell or ability icon) as an egui texture, made once.
+    fn sprite_icon(&self, ctx: &Context, gu: &GameUi, lib: &str, index: usize) -> Option<egui::TextureId> {
+        let key = format!("sprite {lib}:{index}");
+        let mut images = self.images.borrow_mut();
+        let t = images.entry(key.clone()).or_insert_with(|| {
+            let (w, h, rgba) = gu.sprite_rgba(lib, index)?;
+            Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
+        });
+        t.as_ref().map(|t| t.id())
     }
 
     /// A status icon from the game's files (config 0x99 bit 2: the small set) as an egui texture, made once.

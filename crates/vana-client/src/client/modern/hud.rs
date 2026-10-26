@@ -36,14 +36,8 @@ pub struct Effect {
     pub ending: bool,
 }
 
+/// Our effects (the effects panel).
 pub struct StatusView {
-    pub name: String,
-    pub jobs: String,
-    pub icon: Option<String>,
-    /// (now, max, the bar's eased fraction).
-    pub hp: (u32, u32, f32),
-    pub mp: Option<(u32, u32, f32)>,
-    pub tp: u32,
     pub effects: Vec<Effect>,
 }
 
@@ -63,11 +57,13 @@ pub struct PartyRow {
     pub effects: Vec<Effect>,
 }
 
-/// A row's numbers and eased bars: HP in its colour by HP percent (menu hpcol), MP (no MP bar on alliance rows), TP
-/// only with config 0xae bit 0 and never on trusts.
+/// A row's numbers and eased bars: HP in its colour by HP percent (menu hpcol) over its max (ours known, a member's
+/// from when it was last at 100 %, else HP / HP %), MP (no MP bar on alliance rows), TP only with config 0xae bit 0
+/// and never on trusts.
 #[derive(Clone)]
 pub struct RowVitals {
     pub hp: u32,
+    pub hp_max: Option<u32>,
     pub mp: u32,
     pub tp: Option<u32>,
     pub hpf: f32,
@@ -158,34 +154,35 @@ fn effect_icon(p: Look, painter: &egui::Painter, e: &Effect, r: Rect, small: boo
     }
 }
 
-/// Effects in rows of `per` icons `size` points square, their times under them.
-fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, per: usize, small: bool) {
+/// The effects panel's icons: their size, the step between them, how many a row.
+const FX: f32 = 28.0;
+const FX_STEP: f32 = 36.0;
+const FX_ROW: usize = 10;
+
+/// Effects in rows of `per` icons `size` points square, `step` apart, their times under them.
+fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, per: usize, small: bool) {
     let m = p.m;
     for chunk in effects.chunks(per) {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size + 12.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size + 16.0), Sense::hover());
         for (k, e) in chunk.iter().enumerate() {
-            let at = Rect::from_min_size(pos2(r.min.x + k as f32 * (size + 4.0), r.min.y), vec2(size, size));
+            let at = Rect::from_min_size(pos2(r.min.x + k as f32 * step, r.min.y), vec2(size, size));
             effect_icon(p, ui.painter(), e, at, small);
             if let Some(l) = &e.label {
-                ui.painter().text(pos2(at.center().x, at.max.y + 1.0), Align2::CENTER_TOP, l, FontId::proportional(m.theme.small - 3.0), m.theme.color("text"));
+                paint::outlined(ui.painter(), pos2(at.center().x, at.max.y + 1.0), Align2::CENTER_TOP, l, FontId::proportional(m.theme.small), m.theme.color("text"));
             }
         }
     }
 }
 
+/// Our effects alone (the name, jobs and bars are the party window's): their icons and times, shown while any.
 pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
-    let (m, look) = (p.m, p.look());
-    p.panel("status", Some(Title { icon: v.icon.as_deref(), text: &v.name, note: Some(&v.jobs) }), 340.0, |ui| {
-        gauge_row(ui, m, "HP", "hp", v.hp.2, &format!("{} / {}", v.hp.0, v.hp.1));
-        if let Some((now, max, f)) = v.mp {
-            gauge_row(ui, m, "MP", "mp", f, &format!("{now} / {max}"));
-        }
-        gauge_row(ui, m, "TP", "tp", v.tp as f32 / 3000.0, &v.tp.to_string());
-        if !v.effects.is_empty() {
-            ui.add_space(6.0);
-            effects_grid(ui, look, &v.effects, 22.0, 11, small);
-        }
-    });
+    if v.effects.is_empty() {
+        return;
+    }
+    let look = p.look();
+    let per = v.effects.len().min(FX_ROW);
+    let width = super::MARGIN.sum().x + (per - 1) as f32 * FX_STEP + FX;
+    p.panel("status", None, width, |ui| effects_grid(ui, look, &v.effects, FX, FX_STEP, FX_ROW, small));
 }
 
 /// Row heights: party rows carry an MP bar under the HP bar, alliance rows not.
@@ -259,7 +256,8 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                 continue;
             };
             let hp_r = Rect::from_min_max(pos2(x, r.min.y + 18.0), pos2(right, r.min.y + 30.0));
-            labelled_bar(ui, m, "hp", hp_r, v.hpf, (&row.name, m.theme.color("text")), (&v.hp.to_string(), v.hp_colour));
+            let hp = v.hp_max.map_or(v.hp.to_string(), |max| format!("{} / {max}", v.hp));
+            labelled_bar(ui, m, "hp", hp_r, v.hpf, (&row.name, m.theme.color("text")), (&hp, v.hp_colour));
             let small_font = FontId::new(14.0, FontFamily::Name(super::LABEL.into()));
             if let Some(mpf) = v.mpf {
                 // The MP bar under it, its number at its right; TP (config 0xae bit 0) before it, blue from 1000.
@@ -280,7 +278,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             if full {
                 let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
                 let name_end = x + 6.0 + painter.layout_no_wrap(row.name.clone(), font.clone(), Color32::WHITE).size().x;
-                let hp_w = painter.layout_no_wrap(v.hp.to_string(), font, Color32::WHITE).size().x;
+                let hp_w = painter.layout_no_wrap(v.hp_max.map_or(v.hp.to_string(), |max| format!("{} / {max}", v.hp)), font, Color32::WHITE).size().x;
                 let mut ex = right - hp_w - 24.0;
                 for e in &row.effects {
                     if ex < name_end + 8.0 {
@@ -499,23 +497,8 @@ fn effects(p: Look, w: &World) -> Vec<Effect> {
 }
 
 fn status_view(p: Look, w: &World) -> Option<StatusView> {
-    let st = w.stats.as_ref()?;
-    let (hp, mp, tp, ..) = w.vitals.unwrap_or_default();
-    let jobs = match st.sub.0 {
-        0 => format!("{} {}", job(st.main.0), st.main.1),
-        _ => format!("{} {} / {} {}", job(st.main.0), st.main.1, job(st.sub.0), st.sub.1),
-    };
-    // Our bars ease as the retail party window's row 0 does (FUN_101cad00); no MP row without MP.
-    let (hpf, mpf) = w.party_gauges.first().map_or((1.0, 1.0), |g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0));
-    Some(StatusView {
-        name: monstrosity::my_name(w).to_string(),
-        jobs,
-        icon: job_icon(st.main.0),
-        hp: (hp, st.hp_max, hpf),
-        mp: (st.mp_max > 0).then_some((mp, st.mp_max, mpf)),
-        tp,
-        effects: effects(p, w),
-    })
+    w.stats.as_ref()?;
+    Some(StatusView { effects: effects(p, w) })
 }
 
 /// FFXI weather ids 4..19 by pairs: fire, water, earth, wind, ice, lightning, light, dark (the second of a pair the
@@ -553,6 +536,11 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
     let zone = |z: u16| p.gu.map(|gu| crate::dat::font::decode_sjis(&gu.area_name(z))).unwrap_or_default();
     let effects = |id: u32| w.party_buffs.get(&id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false }).collect());
     let gauge = |k: usize, hpp: u8, mpp: u8| w.party_gauges.get(k).map_or((hpp, mpp), |g| (g.1, g.2));
+    // A member's max HP: as last seen at 100 %, else HP / HP %.
+    let hp_max = |id: u32, hp: u32, hpp: u8| match w.party_hp_max.get(&id) {
+        Some(&max) if hp <= max => Some(max),
+        _ => (hpp > 0).then(|| ((hp as f32 * 100.0 / hpp as f32).round() as u32).max(hp)),
+    };
     let mut party = Vec::new();
     if let Some((hp, mp, tp, hpp, mpp)) = w.vitals {
         let own = w.party.own();
@@ -562,7 +550,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             slot: 0,
             name,
             icon: w.stats.as_ref().and_then(|s| job_icon(s.main.0)),
-            here: Some(RowVitals { hp, mp, tp: w.party_tp.then_some(tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(hpp) }),
+            here: Some(RowVitals { hp, hp_max: w.stats.as_ref().map(|s| s.hp_max), mp, tp: w.party_tp.then_some(tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(hpp) }),
             zone: String::new(),
             marked: marked(0, w.my_id, 0),
             marks: marks(w.my_id, 0),
@@ -576,7 +564,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             slot: k,
             name: if m.away == 0 { monstrosity::row_name(m) } else { &m.name }.to_string(),
             icon: job_icon(m.jobs[0]),
-            here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, mp: m.mp, tp: (w.party_tp && !trust).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(m.hpp) }),
+            here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && !trust).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: Some(gm as f32 / 100.0), hp_colour: hp_colour(m.hpp) }),
             zone: zone(m.zone),
             marked: marked(k, m.id, m.index),
             marks: marks(m.id, 0),
@@ -595,7 +583,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
                         slot: s,
                         name: m.name.clone(),
                         icon: job_icon(m.jobs[0]),
-                        here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, mp: m.mp, tp: (w.party_tp && m.index < 0x700).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: None, hp_colour: hp_colour(m.hpp) }),
+                        here: (m.away == 0 && m.zone == w.pos_zone).then(|| RowVitals { hp: m.hp, hp_max: hp_max(m.id, m.hp, m.hpp), mp: m.mp, tp: (w.party_tp && m.index < 0x700).then_some(m.tp), hpf: gh as f32 / 100.0, mpf: None, hp_colour: hp_colour(m.hpp) }),
                         zone: zone(m.zone),
                         marked: marked(s, m.id, m.index),
                         marks: marks(m.id, a + 1),

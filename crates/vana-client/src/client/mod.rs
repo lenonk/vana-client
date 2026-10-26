@@ -15,6 +15,7 @@ mod event;
 mod buffs;
 mod game_ui;
 mod hudtop;
+mod listsearch;
 mod augment;
 mod iteminfo;
 mod map;
@@ -1369,7 +1370,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let comment_typing = seacom::typing(world);
     let macro_typing = macroedit::typing(world);
     let faq_typing = faqmain::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing;
+    // The modern magic and ability windows' search takes the keys and text while it runs.
+    let list_typing = listsearch::events(world, &input.events);
+    if list_typing {
+        keys.clear();
+    }
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || list_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -2065,7 +2071,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.
     if let Some(p) = input.pointer.filter(|_| world.bluset.is_some() && world.confirm.is_none()) {
         bluset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
-    } else if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
+    } else if let Some(p) = input.pointer.filter(|_| !world.modern && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some())) {
         magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // The party cursor (<stpc>, a party menu pick): the mouse over the party windows' rows.
@@ -2214,6 +2220,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
     let party_slots = world.party.slots();
     let rows: Vec<Option<party::Member>> = std::iter::once(None).chain(party_slots.slots[1..6].iter().take_while(|m| m.is_some()).cloned()).collect();
+    for m in party_slots.slots.iter().flatten().filter(|m| m.hpp == 100 && m.hp > 0) {
+        world.party_hp_max.insert(m.id, m.hp);
+    }
     let mine = world.vitals.map(|v| (v.3 as f32 / 100.0, v.4 as f32 / 100.0));
     // FUN_101cad00 per draw at retail's 30 fps: a += trunc((t - a) * 0.15), or a = t once that is 0. A row whose member
     // changed starts from 0 (its bars sweep up); a new target starts at its HP.
@@ -2662,7 +2671,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(blklist::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
-    blockers.extend(magic::draw(gu, world, sw, sh));
+    // The modern layer draws the magic and ability windows itself.
+    if !world.modern {
+        blockers.extend(magic::draw(gu, world, sw, sh));
+    }
     blockers.extend(bluset::draw(gu, world, sw, sh));
     if !world.modern {
         magic::draw_cast_bar(gu, world, sw, sh);
@@ -4757,6 +4769,10 @@ struct World {
     modern_log: logwin::ModernLog,
     log_rule: logwin::LogRule,
     modern_chat_edge: Option<([f32; 4], bool)>,
+    /// The modern magic and ability windows' search (listsearch.rs).
+    list_search: Option<listsearch::ListSearch>,
+    /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
+    party_hp_max: HashMap<u32, u32>,
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
     /// Close the window once the server has logged us out.
@@ -6280,6 +6296,8 @@ impl App {
                             modern_log: Default::default(),
                             log_rule: Default::default(),
                             modern_chat_edge: None,
+                            list_search: None,
+                            party_hp_max: HashMap::new(),
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),

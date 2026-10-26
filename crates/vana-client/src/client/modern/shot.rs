@@ -51,12 +51,12 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
-    hud::status_panel(&mut p, &StatusView { name: "Lenon".into(), jobs: "RDM 75 / WHM 37".into(), icon: hud::job_icon(5), hp: (1324, 1345, 0.98), mp: Some((711, 892, 0.8)), tp: 1630, effects: mine }, false);
+    hud::status_panel(&mut p, &StatusView { effects: mine }, false);
     let dot = |x, y, c: u32| (x, y, super::chat::colour(c.to_le_bytes()));
     let compass = hud::CompassView { heading: 0.6, dots: vec![dot(4.0, -9.0, 0x8030_60e0), dot(-11.0, 3.0, 0x8000_b040), dot(14.0, 13.0, 0x5000_b040)], range: 28.8, arrow: Some((0.6, -0.8, "focus")) };
     hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some((2, false)), compass: Some(compass) });
     let theirs = vec![fx("icons/protect", None, false), fx("icons/sleep", None, false)];
-    let vit = |hp: u32, mp: u32, f: f32| hud::RowVitals { hp, mp, tp: Some(if f > 0.9 { 1250 } else { 300 }), hpf: f, mpf: Some(f * 0.8), hp_colour: if f < 0.75 { egui::Color32::from_rgb(0xff, 0xd0, 0x40) } else { egui::Color32::WHITE } };
+    let vit = |hp: u32, mp: u32, f: f32| hud::RowVitals { hp, hp_max: Some(1000), mp, tp: Some(if f > 0.9 { 1250 } else { 300 }), hpf: f, mpf: Some(f * 0.8), hp_colour: if f < 0.75 { egui::Color32::from_rgb(0xff, 0xd0, 0x40) } else { egui::Color32::WHITE } };
     let row = |slot, name: &str, job, here: bool, hp: f32, marked, effects: Vec<Effect>| PartyRow { slot, name: name.into(), icon: hud::job_icon(job), here: here.then(|| vit((hp * 1000.0) as u32, 420, hp)), zone: "Port Jeuno".into(), marked, marks: (slot == 0) as u8, effects };
     hud::party_panel(&mut p, "party", "Party", &[row(0, "Lenon", 5, true, 0.98, false, vec![]), row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false);
     hud::cast_panel(&mut p, 0.6);
