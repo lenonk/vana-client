@@ -5771,8 +5771,13 @@ Spec `~/ffxi/lab/research/status_icons_spec.md`.
 
 - FUN_10127990 (from the chat line print FUN_10127c00 with the text and the line mode byte): modes 5 / 0x0d (party)
   with a tag "<...>" not wrapped in quotes that matches a row of DAT_1036eba0 (0x14-byte rows: name, u32 byte-swapped
-  SeSep name) play that SeSep through FUN_100380f0 (one at a time): <call> / <call0> 0017 .. <call21> 0038. Rows with
-  0x800000 / 0x400000 (<ncall>...) run FUN_10127ab0 first: not done. Linkshell lines are not checked.
+  SeSep name) play that SeSep through FUN_100380f0 (one at a time): <call> / <call0> 0017 .. <call21> 0038. Linkshell
+  lines are not checked.
+- <ncall> / <ncall0..21> (flag 0x800000) and <scall> / <scall0..21> (0x400000) follow in the table with the same
+  SeSeps; the flag is subtracted from the name (asm 0x10127c9a / 0x10127cb6) and only picks FUN_100380f0's third
+  argument: FUN_10127ab0 for ncall (the "(name)" in the line is us, or stands within 4 units: dx^2 + dz^2 < 16), 0 for
+  scall, 1 for call. That byte (+0x3c) only sets a blink (DAT_10455c20 +0xdbc, +0xdb4 += 0x3c) while DAT_10351710 is on
+  (FUN_100381d0) *(inf: a window flash)*; the sound plays for all three. Ours plays all three (2026-10-26).
 - Tell (mode 0x0c) with config 0x47: SeSep "0p40" (0x30703430 byte-swapped), in no resident DAT (0, 27, 52743),
   so retail finds nothing either *(inf)*; not played.
 

@@ -153,8 +153,9 @@ pub fn of(dll: &[u8]) -> Result<Tables> {
     Ok(t)
 }
 
-/// FUN_10127990's call tags as (tag, UI sound number): "<call>" 17 .. "<call21>" 38. The <ncall> rows (flag 0x800000,
-/// FUN_10127ab0 first) are left out.
+/// FUN_10127990's call tags as (tag, UI sound number): "<call>" 17 .. "<call21>" 38, then "<ncall>" and "<scall>" with
+/// the same sounds. Their flags (0x800000: FUN_10127ab0's sender-near test; 0x400000: off) only set FUN_100380f0's
+/// third argument, a blink while DAT_10351710 is on (FUN_100381d0), and are taken off the SeSep name (asm 0x10127c9a).
 pub fn call_sounds(dll: &[u8]) -> Result<Vec<(String, u32)>> {
     let at = of(dll)?.calls_at;
     let mut out = Vec::new();
@@ -164,9 +165,7 @@ pub fn call_sounds(dll: &[u8]) -> Result<Vec<(String, u32)>> {
             break;
         }
         let name = String::from_utf8_lossy(row[..16].split(|&b| b == 0).next().unwrap_or_default()).into_owned();
-        if snd & 0xc0_0000 == 0
-            && let Ok(n) = std::str::from_utf8(&snd.to_be_bytes()).unwrap_or("").parse::<u32>()
-        {
+        if let Ok(n) = std::str::from_utf8(&(snd & !0xc0_0000).to_be_bytes()).unwrap_or("").parse::<u32>() {
             out.push((name, n));
         }
     }

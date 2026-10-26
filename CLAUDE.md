@@ -144,7 +144,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     behind motion paths, sub-animation variants, op 0x53, pop0 / pop1 done; left the hide skip (+0x138), ?ead / sdep;
   - lobby (spec `~/ffxi/lab/research/select_buttons_spec.md`): title and list sounds and press animations, the
     prompt as retail, login screen sounds, the fade waits done; left the generic press rings on the Config pages;
-  - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done (the tell sound "0p40" is in no resident file; <ncall> not done);
+  - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done, <ncall> / <scall> too (the tell sound "0p40" is in no
+    resident file);
   - the message formatter (dat/msgfmt.rs) and /clock done; left event codes 7f ab / ac, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and

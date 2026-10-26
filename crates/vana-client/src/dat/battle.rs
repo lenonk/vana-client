@@ -700,13 +700,15 @@ mod tests {
         assert!(l.lines[0].contains("First Step Forward"), "{:?}", l.lines);
     }
 
-    /// DAT_1036eba0: <call> and <call0> are 0017, <call21> 0038; the <ncall> rows are left out.
+    /// DAT_1036eba0: <call> and <call0> are 0017, <call21> 0038; <ncall> and <scall> follow with the same sounds.
     #[test]
     fn call_tags() {
         let Some(b) = load() else { return };
         assert_eq!(b.calls.first(), Some(&("<call>".to_string(), 17)));
         assert_eq!(b.calls.get(1), Some(&("<call0>".to_string(), 17)));
-        assert_eq!(b.calls.last(), Some(&("<call21>".to_string(), 38)));
+        assert_eq!(b.calls.get(22), Some(&("<call21>".to_string(), 38)));
+        assert_eq!(b.calls.get(23), Some(&("<ncall>".to_string(), 17)));
+        assert_eq!(b.calls.last(), Some(&("<scall21>".to_string(), 38)));
     }
 
     /// Grammar kinds 0x13 / 0x14: the status noun (206 "... stun effect wears off.") and adjective (204 "is no longer
