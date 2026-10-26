@@ -34,6 +34,21 @@ pub struct State {
     room: (u16, u8),
     /// Pieces moved in place for the renderer: file index, the matrix drawn, the new one.
     pub moves: Vec<(usize, glam::Mat4, glam::Mat4)>,
+    /// Installed mannequins (item type 14, CXiMannequinActor), and the furniture table their footprints come from.
+    pub mannequins: Vec<Mannequin>,
+    table: Option<Arc<FurnTable>>,
+}
+
+/// A mannequin actor (mannequin_spec 2.2 / 4.1): its record, id, look, pose bank and motion, and place.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mannequin {
+    pub key: (u8, u8),
+    pub id: u32,
+    pub look: crate::dat::character::Look,
+    pub bank: u32,
+    pub motion: &'static str,
+    pub pos: Vec3,
+    pub yaw: f32,
 }
 
 /// A drawn piece (or a pot's plant): its record, its file (DAT id, index in the loaded set), how it is drawn.
@@ -61,12 +76,18 @@ impl State {
         self.drawn.clear();
         self.drawn_skinned.clear();
         self.moves.clear();
+        self.mannequins.clear();
         self.seq += 1;
     }
 
-    /// A skinned piece's place.
+    /// A skinned piece's or a mannequin's place.
     pub fn place_of(&self, id: u32) -> Option<(Vec3, f32)> {
-        self.skinned.iter().find(|s| s.0 == id).map(|s| (s.1, s.2))
+        self.skinned.iter().find(|s| s.0 == id).map(|s| (s.1, s.2)).or_else(|| self.mannequins.iter().find(|m| m.id == id).map(|m| (m.pos, m.yaw)))
+    }
+
+    /// A mannequin actor's pose: its bank and motion name.
+    pub fn mannequin_pose(&self, id: u32) -> Option<(u32, &'static str)> {
+        self.mannequins.iter().find(|m| m.id == id).map(|m| (m.bank, m.motion))
     }
 
     /// A loaded set goes up: its pieces get ids (XiFurnitureActor's entity: 0x04000000 | an index down from 0x3ff)
@@ -230,8 +251,11 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
     if let Some(g) = w.ground.as_mut() {
         g.furcc = w.game.get(0x99) & 0x40 == 0;
     }
-    let r = w.myroom.filter(|_| w.in_scene() && w.zone != Some(280))?;
-    let want: Vec<Key> = match r {
+    let Some(r) = w.myroom.filter(|_| w.in_scene() && w.zone != Some(280)) else {
+        mannequins(w, &[], 0, 0);
+        return None;
+    };
+    let all: Vec<Key> = match r {
         r if super::myroom::has_floors(&r) => {
             let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
             w.inv
@@ -240,20 +264,74 @@ pub fn changed(w: &mut World) -> Option<(u64, Vec<Key>, u16, u8)> {
                 .filter(|((c, s), _)| matches!(c, 1 | 9) && (1..0x51).contains(s))
                 .filter_map(|(&(c, s), &(id, _))| {
                     let ext = w.inv.ext.get(&(c, s))?;
-                    (TYPES.contains(&ty(id)) && ext[1] & 0x40 != 0 && ext[1] & 3 == r.floor).then(|| (c, s, id, ext[..10].try_into().unwrap()))
+                    ((TYPES.contains(&ty(id)) || ty(id) == MANNEQUIN) && ext[1] & 0x40 != 0 && ext[1] & 3 == r.floor).then(|| (c, s, id, ext[..10].try_into().unwrap()))
                 })
                 .collect()
         }
         _ => Vec::new(),
     };
-    let mut want = want;
-    super::layout::overrides(w, &mut want);
+    let mut all = all;
+    super::layout::overrides(w, &mut all);
+    // Mannequins are PC-look actors, not models of their own (FUN_101cd3b0 type 14).
+    let (mq, want): (Vec<Key>, Vec<Key>) = {
+        let ty = |id: u16| w.item_info.as_ref().and_then(|i| i.item(id)).map_or(0, |it| it.item_type);
+        all.into_iter().partition(|k| ty(k.2) == MANNEQUIN)
+    };
+    mannequins(w, &mq, r.map, r.floor);
     if want == w.furniture.want || move_in_place(w, &want) {
         return None;
     }
     w.furniture.want = want.clone();
     w.furniture.seq += 1;
     Some((w.furniture.seq, want, r.map, r.floor))
+}
+
+/// Item type 14.
+const MANNEQUIN: u16 = 14;
+
+/// The installed mannequins (mannequin_spec 1.3 / 2.2 / 4.1): race exdata[0x12] (0 as Hume male), face 30, gear from
+/// the slot's s2c 0x026 record (none: bare), pose exdata[0x13]; each an actor 0x04000000 | index (0x1ff down) placed
+/// as its piece. A changed look rebuilds the actor (FUN_101cdd60); race and pose are read again then.
+fn mannequins(w: &mut World, keys: &[Key], map: u16, floor: u8) {
+    if !keys.is_empty() && w.furniture.table.is_none() {
+        w.furniture.table = w.index.as_ref().and_then(|i| FurnTable::load(i).ok()).map(Arc::new);
+    }
+    let mut want = Vec::new();
+    if let Some(table) = w.furniture.table.clone() {
+        for &(c, slot, item, ext) in keys {
+            let (Some(f), Some(full)) = (table.entry(item), w.inv.ext.get(&(c, slot))) else { continue };
+            let Some((pos, yaw)) = place(&f, map, floor, ext[6] as i8, ext[7] as i8, ext[8] as i8, ext[9]) else { continue };
+            let rec = w.mannequin_looks.get(&(c, slot)).copied().unwrap_or([0; 24]);
+            let u = |o: usize| u16::from_le_bytes([rec[o], rec[o + 1]]) & 0x0fff;
+            let look = crate::dat::character::Look { race: full[0x12].max(1), face: 30, head: u(8), body: u(10), hands: u(12), legs: u(14), feet: u(16), main: u(18), sub: u(20), range: u(22) };
+            // Pose 8's weapon class comes from the record's item (LSB sends 0: bare-handed).
+            let (bank, motion) = crate::dat::motionfile::mannequin_pose(full[0x13], None);
+            want.push(Mannequin { key: (c, slot), id: 0, look, bank, motion, pos, yaw });
+        }
+    }
+    let old = std::mem::take(&mut w.furniture.mannequins);
+    for m in &old {
+        if !want.iter().any(|n| n.key == m.key) {
+            w.actors.remove(&m.id);
+        }
+    }
+    for mut m in want {
+        match old.iter().find(|o| o.key == m.key) {
+            Some(o) => {
+                m.id = o.id;
+                if o.look != m.look || o.bank != m.bank {
+                    w.event_looks.push((m.id, super::Source::Pc(m.look)));
+                }
+            }
+            None => {
+                let used: Vec<u32> = old.iter().chain(&w.furniture.mannequins).map(|o| o.id).collect();
+                m.id = (0..0x200).map(|k| 0x0400_0000 | (0x1ff - k)).find(|id| !used.contains(id)).unwrap_or(0x0400_0000);
+                log::info!("mannequin {:?}: actor {:#x}, look {:?}, bank {} {}", m.key, m.id, m.look, m.bank, m.motion);
+                w.event_looks.push((m.id, super::Source::Pc(m.look)));
+            }
+        }
+        w.furniture.mannequins.push(m);
+    }
 }
 
 /// A model's triangles (a strip's in order, degenerate ones dropped).

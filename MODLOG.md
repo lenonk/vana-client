@@ -9470,3 +9470,22 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   2 / 3 (whole-text conversions) not done. The dump labels it {capital n} (was {article n}).
 - Result (test dialog::key_item_by_num): "A Gilgamesh's introductory letter would be fine, too...if you can find
   one." *(as the decompile builds it; the "A" not compared with retail footage)*.
+
+## Mog House mannequins, part 1: the look and the poses (2026-10-26)
+
+Spec `~/ffxi/lab/research/mannequin_spec.md` (1, 2, 4, 7.1..7.4); client/furniture.rs `mannequins`, actmotion.rs,
+dat/motionfile.rs, net.rs (s2c 0x026).
+- s2c 0x026 (LAB_100ec730) keeps packet bytes 4..0x1b per (container @5, slot @6); is_used 1 stores, else drops
+  (`World.mannequin_looks`; retail's 16-record inbox only matters for stale records).
+- The furniture scan takes item type 14 too; after the layout overrides the mannequins split off: each is a PC-look
+  actor 0x04000000 | (0x1ff down) with race exdata[0x12] (0 drawn as 1), **face 30** (a plain head per race, 7110 /
+  10286 / .. / 26390: `part_file` face range + 30), gear from the record's 8 shorts (low 12 bits), placed as its piece
+  (`State::place_of`, so layout moves move it). A changed look or bank rebuilds the actor (FUN_101cdd60).
+- Poses (FUN_101cd3b0, DAT_1037e028): bank = exdata[0x13] >> 3, motion "mq(pose & 7)"; pose 8 = bank 1 by the
+  record's item class (LSB sends 0: class 6). The bank files (FUN_100d1f70 on status 0x31): DAT_1035d83c[race] + bank
+  and DAT_1035d84e[skirt + race * 2] + bank (`mannequin_files`, loaded in the riding files' slot); every status name
+  of the actor is the pose (status 0 picks the idle name).
+- Live (Lnxcsfix, its San d'Oria house; Safe 5 a Mithra mannequin with exdata head = Storage 1, body = Storage 2,
+  pose 0; Safe 6 a Galka, main = Storage 6, pose 1, rot 1; Storage 1..8 the Bronze set): LSB's two 0x026 records at
+  zone-in, the Mithra standing in the Bronze Cap and Harness, the Galka seated with the Bronze Sword.
+- Not yet: dressing (layout mode 4, c2s 0x03B), the worn Storage rows greyed, the cap of 8 (spec 5, 6).

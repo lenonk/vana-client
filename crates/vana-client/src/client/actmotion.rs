@@ -445,6 +445,12 @@ pub(super) fn update(w: &mut World, dt: f32) {
     let mut status_starts: Vec<(u32, u8)> = Vec::new();
     for id in ids {
         let Some(ch) = w.actors.get(&id).and_then(|a| a.character.clone()) else { continue };
+        // A mannequin (status 0x31): every status name is its pose, "mqN".
+        if let Some((_, m)) = w.furniture.mannequin_pose(id)
+            && let Some(a) = w.actors.get_mut(&id)
+        {
+            a.motion_names = Some(crate::motion::MotionNames { idle: m, battle: m, walk: m, run: m });
+        }
         let base = status_motion(w, id, &ch);
         // FUN_100c83c0: a new status motion on an entity's own actor (+0x7d8), once it plays (FUN_100cd920 finds it).
         let a = &w.actors[&id];
@@ -461,7 +467,11 @@ pub(super) fn update(w: &mut World, dt: f32) {
             (Some(pc), true) => crate::dat::motionfile::battle_files(pc),
             _ => Vec::new(),
         };
-        let ride = ch.pc.map(|pc| super::ride::files(w, id, &pc)).unwrap_or_default();
+        // The riding files, or a mannequin's pose bank (FUN_100d1f70; it never rides).
+        let ride = match (w.furniture.mannequin_pose(id), ch.pc) {
+            (Some((bank, _)), Some(pc)) => crate::dat::motionfile::mannequin_files(&pc, bank),
+            _ => ch.pc.map(|pc| super::ride::files(w, id, &pc)).unwrap_or_default(),
+        };
         let held = super::ride::fade_held(w, id);
         let mouth_off = w.entities.get(&id).is_some_and(|e| e.mouth_off);
         let a = w.actors.get_mut(&id).unwrap();

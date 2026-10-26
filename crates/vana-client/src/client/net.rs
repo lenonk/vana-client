@@ -461,6 +461,9 @@ pub enum NetEvent {
     /// s2c 0x0F9 RES {UniqueNo @4, ActIndex @8, u16 type @0xA}: 1 raise offered, 2 tractor (handler 0x100a2540 reads
     /// only the type).
     ResOffer { kind: u16 },
+    /// s2c 0x026: a mannequin look record (mannequin_spec 1.1): +0 is_used, +1 container, +2 slot, +4 u16 the pose-8
+    /// item, +6 race / hair (unused), +8..+0x17 head, body, hands, legs, feet, main, sub, range (slot nibbles).
+    MannequinLook { rec: [u8; 24] },
     /// s2c 0x110 (Sparks u24 @4, Deeds u16 @8, Plaudits u16 @0xa, 8 bytes @0xc: LSB's Unity Shared day and Leader
     /// week), 0x111 (64 objective records @4), 0x112 (Data[128] @4, Offset u16 @0x84): Records of Eminence.
     RoeUnity { sparks: u32, deeds: u16, plaudits: u16, rot: [u8; 8] },
@@ -1237,6 +1240,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         let ext = std::array::from_fn(|k| p.u8(0x11 + k));
                         tx.send(NetEvent::Item { container: p.u8(0xe), index: p.u8(0xf), id: p.u16(0xc), count: p.u32(4), ext: Some(ext), lock: p.u8(0x10), price: Some(p.u32(8)) })?
                     }
+                    // GP_SERV_COMMAND_ITEM_SUBCONTAINER (LAB_100ec730): a mannequin's look, bytes 4..0x1b kept whole.
+                    0x026 => tx.send(NetEvent::MannequinLook { rec: std::array::from_fn(|k| p.u8(4 + k)) })?,
                     0x050 => tx.send(NetEvent::Equip { index: p.u8(4), slot: p.u8(5), container: p.u8(6) })?,
                     // CLISTATUS: hpmax @4, mpmax @8, jobs @0xc..0xf, bp_base @0x14, bp_adj @0x22, atk @0x30,
                     // def @0x32, def_elem @0x34, su_lv @0x52, ilvl @0x55.

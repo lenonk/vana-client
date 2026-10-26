@@ -95,6 +95,33 @@ pub fn battle_files(pc: &PcMotion) -> Vec<u32> {
 const EMOTE_UPPER: [u32; 9] = [10056, 10056, 13232, 16408, 19584, 22760, 22984, 26160, 29336];
 const EMOTE_SKIRT: [u32; 19] = [0, 10120, 10184, 10120, 10184, 13296, 13360, 16472, 16536, 19648, 19712, 22824, 22888, 23048, 23112, 26224, 26288, 29400, 29464];
 
+/// A mannequin's pose bank (FUN_100d1f70 on status 0x31): DAT_1035d83c[race] + bank and the skirt file
+/// DAT_1035d84e[skirt + race * 2] + bank, as the emote tables just before them.
+const MANNEQUIN_UPPER: [u32; 9] = [10088, 10088, 13264, 16440, 19616, 22792, 23016, 26192, 29368];
+const MANNEQUIN_SKIRT: [u32; 19] = [0, 10152, 10216, 10152, 10216, 13328, 13392, 16504, 16568, 19680, 19744, 22856, 22920, 23080, 23144, 26256, 26320, 29432, 29496];
+/// DAT_1037e028: the pose motions "mq0?".."mq7?".
+const MANNEQUIN_MOTION: [&str; 8] = ["mq0", "mq1", "mq2", "mq3", "mq4", "mq5", "mq6", "mq7"];
+
+pub fn mannequin_files(pc: &PcMotion, bank: u32) -> Vec<u32> {
+    let r = if pc.race > 8 { 1 } else { pc.race as usize };
+    let mut files = vec![MANNEQUIN_UPPER[r] + bank];
+    if pc.skirt > 0
+        && let Some(b) = MANNEQUIN_SKIRT.get(pc.skirt as usize + r * 2).filter(|b| **b != 0)
+    {
+        files.push(b + bank);
+    }
+    files
+}
+
+/// FUN_101cd3b0: exdata[0x13] -> (bank, motion): bank pose >> 3, motion "mq(pose & 7)"; pose 8 is bank 1 by the
+/// weapon class of the look record's item (`class`, 6 bare-handed when none).
+pub fn mannequin_pose(pose: u8, class: Option<u8>) -> (u32, &'static str) {
+    if pose == 8 {
+        return (1, MANNEQUIN_MOTION[(class.unwrap_or(6) & 7) as usize]);
+    }
+    ((pose >> 3) as u32, MANNEQUIN_MOTION[(pose & 7) as usize])
+}
+
 /// FUN_1009f420: emote number -> motion index (table 0x103504a8); -2 none, 0x7a.. computed forms (not handled).
 const EMOTE_MOTION: [i16; 97] = [
     1, 0, 127, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, -2, 18, -2, 20, 21, 22, 23, 24, -2, 26, 27, 28, -2, -2, 31, -2, 33, 34, 35, 19, 21, 38,
@@ -153,6 +180,23 @@ pub fn draw_scheduler(pc: &PcMotion, out: bool) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// mannequin_spec 7.8: pose bytes to (bank, motion) and the bank files.
+    #[test]
+    fn mannequin_poses_and_files() {
+        assert_eq!(mannequin_pose(0, None), (0, "mq0"));
+        assert_eq!(mannequin_pose(1, None), (0, "mq1"));
+        assert_eq!(mannequin_pose(4, None), (0, "mq4"));
+        assert_eq!(mannequin_pose(8, None), (1, "mq6"));
+        assert_eq!(mannequin_pose(8, Some(3)), (1, "mq3"));
+        assert_eq!(mannequin_pose(9, None), (1, "mq1"));
+        assert_eq!(mannequin_pose(0x10, None), (2, "mq0"));
+        assert_eq!(mannequin_pose(25, None), (3, "mq1"));
+        let pc = |race, skirt| PcMotion { race, weapon: -1, draw: 0, skirt };
+        assert_eq!(mannequin_files(&pc(7, 1), 1), vec![26193, 26257]);
+        assert_eq!(mannequin_files(&pc(8, 0), 0), vec![29368]);
+        assert_eq!(mannequin_files(&pc(0, 2), 0), mannequin_files(&pc(1, 2), 0));
+    }
 
     /// FUN_100a0b90's forms: /wave 10; salute 2 + nation; /hurray bare-handed 0x4e; /jobemote WAR (Param 0) 0x88; /aim
     /// without a ranged weapon fails; seated emotes from their own tables.

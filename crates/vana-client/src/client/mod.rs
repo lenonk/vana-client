@@ -4212,6 +4212,8 @@ struct World {
     /// The action menu suspended under the list it opened (Magic, Abilities, Items, Trust: their groups share playermo's
     /// 0x04): the walk brings it back with its cursor when the list is gone.
     held_menu: Option<combat::ActionMenu>,
+    /// s2c 0x026 mannequin look records by (container, slot) (LAB_100ec730's store; is_used 0 drops one).
+    mannequin_looks: HashMap<(u8, u8), [u8; 24]>,
     /// FUN_1015ecc0(0x20000): a window of the main class (registry flag 0x20000) drawn this frame or the last.
     main_open: bool,
     /// FUN_10118830 / FUN_10118870: windows' cursor children kept in their layouts across closes, and the main menu's
@@ -5701,6 +5703,7 @@ impl App {
                             block_help: false,
                             party_buffs: HashMap::new(),
                             held_menu: None,
+                            mannequin_looks: HashMap::new(),
                             main_open: false,
                             cursor_mem: HashMap::new(),
                             menu_mem: [0; 2],
@@ -7047,6 +7050,14 @@ impl App {
                 NetEvent::CommandsKnown(bits) => world.commands_known = bits,
                 // LAB_100a2540 stores the offer whatever our state (it may come before our dead status, e.g. during a
                 // zone-in event); the K.O. step shows it once we are dead.
+                NetEvent::MannequinLook { rec } => {
+                    log::info!("0x026 mannequin look {:?}", &rec[..]);
+                    if rec[0] == 1 {
+                        world.mannequin_looks.insert((rec[1], rec[2]), rec);
+                    } else {
+                        world.mannequin_looks.remove(&(rec[1], rec[2]));
+                    }
+                }
                 NetEvent::ResOffer { kind } => {
                     log::info!("0x0F9 offer {kind}");
                     match kind {
