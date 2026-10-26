@@ -1177,6 +1177,11 @@ impl Host for LiveHost<'_> {
                 let id = Self::arg_int(&args, 0).unwrap_or(0) as u16;
                 self.w.info_win = (id != 0).then_some((id, None, 0));
             }
+            // FUN_100b7e10 0x40: the concierge's list (link5 mode 1, link6 title val@2).
+            Effect::Op { op: 0x71, sub: Some(0x40), args, .. } => {
+                let title = Self::arg_int(&args, 0).unwrap_or(0) as u8;
+                super::concierge::open(self.w, title);
+            }
             // FUN_100b9d90 0x10: arealist in mode 1 (2 with val@4) from tier val@2.
             Effect::Op { op: 0xcc, sub: Some(0x10), args, .. } => {
                 let int = |i| Self::arg_int(&args, i).unwrap_or(0);
@@ -1383,6 +1388,10 @@ impl Host for LiveHost<'_> {
 
     fn text_ctx(&self) -> dialog::Ctx {
         text_ctx(self.w)
+    }
+
+    fn concierge_pick(&mut self) -> Option<[u32; 3]> {
+        self.w.concierge_ui.is_none().then_some(self.w.concierge_pick)
     }
 
     fn area_pick(&mut self) -> Option<i32> {
@@ -2358,6 +2367,7 @@ pub fn text_ctx(w: &World) -> dialog::Ctx {
     dialog::Ctx {
         dates,
         party: w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect(),
+        concierge: super::concierge::names(w),
         me: w.my_id,
         texts: Some(Arc::new(texts)),
         ..Default::default()

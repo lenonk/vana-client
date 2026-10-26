@@ -123,6 +123,11 @@ pub trait Host {
     fn text_ctx(&self) -> Ctx {
         Ctx::default()
     }
+    /// Op 0x71 0x41: None while the concierge's list is up (DAT_10489940), then its pick (slot index, GroupId, attrs;
+    /// zeros when cancelled).
+    fn concierge_pick(&mut self) -> Option<[u32; 3]> {
+        Some([0; 3])
+    }
     /// Op 0xcc 0x11: None while arealist's event pick is up (+0x6d), then its pick (+0x6e: a zone, -1 cancelled).
     fn area_pick(&mut self) -> Option<i32> {
         Some(-1)
@@ -1975,7 +1980,21 @@ impl Runtime {
                             self.set4(v, raw, 0, std::array::from_fn(|i| u32::from_le_bytes(b[i * 4..i * 4 + 4].try_into().unwrap())));
                             self.adv(v, 4);
                         }
-                        0x20 | 0x21 | 0x40 | 0x41 | 0x50..=0x55 => {
+                        // FUN_100b7e10 0x40 (FUN_100b8430): the concierge's list with title val@2; 0x41 waits for it,
+                        // then set@2 / @4 / @6 = the slot index, GroupId and attributes.
+                        0x40 => {
+                            host.effect(Effect::Op { op: opc, sub, actor, args: vec![Arg::Int(self.val(v, 2))] });
+                            self.adv(v, len);
+                        }
+                        0x41 => {
+                            if let Some([i, g, a]) = host.concierge_pick() {
+                                self.set_at(v, 2, 0, i);
+                                self.set_at(v, 4, 0, g);
+                                self.set_at(v, 6, 0, a);
+                                self.adv(v, len);
+                            }
+                        }
+                        0x20 | 0x21 | 0x50..=0x55 => {
                             let a = self.args(v, op, sub);
                             host.effect(Effect::Op { op: opc, sub, actor, args: a });
                             self.adv(v, len);

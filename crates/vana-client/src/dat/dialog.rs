@@ -219,6 +219,8 @@ pub struct Ctx {
     pub me: u32,
     /// The client's other name tables.
     pub texts: Option<std::sync::Arc<dyn Texts>>,
+    /// `7f 81 n`: the Linkshell Concierge slots' shell names (DAT_10488b08; None without the extdata Flag).
+    pub concierge: Vec<Option<String>>,
 }
 
 /// Name tables FUN_100c1650 reads besides `names`.
@@ -642,7 +644,15 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     }
                     3
                 }
-                0x36 | 0x81..=0x83 | 0xad..=0xb6 => 3,
+                // 7f 81 n (FUN_100bda90): concierge slot num[n]'s shell name.
+                0x81 => {
+                    let n = num(s.get(i + 2).copied().unwrap_or(0) as usize);
+                    if let Some(Some(t)) = usize::try_from(n).ok().and_then(|n| ctx.concierge.get(n)) {
+                        push(&mut lines, &encode_sjis(t));
+                    }
+                    3
+                }
+                0x36 | 0x82 | 0x83 | 0xad..=0xb6 => 3,
                 _ => 2,
             },
             0x20..0x7f => {
@@ -814,5 +824,17 @@ mod tests {
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).unwrap();
         let e = expand(&Dialog::load(&index, 102).unwrap().raw(12608).unwrap(), &Ctx { num: [0, 41, 0, 0, 0, 0, 0, 0], ..Default::default() });
         assert_eq!(e.sounds, [41]);
+    }
+
+    /// `7f 81 n`: concierge slot num[n]'s name (zone 231 19321 "{7f81 num1}, correct?"); a slot without a name prints
+    /// nothing.
+    #[test]
+    fn concierge_code() {
+        let concierge = vec![None, Some("TuxClub".to_string())];
+        let ctx = Ctx { num: [0, 1, 0, 0, 0, 0, 0, 0], concierge, ..Default::default() };
+        let e = expand(b"\x7f\x81\x01, correct?", &ctx);
+        assert_eq!(decode_sjis(&e.lines[0]), "TuxClub, correct?");
+        let e = expand(b"\x7f\x81\x00, correct?", &ctx);
+        assert_eq!(decode_sjis(&e.lines[0]), ", correct?");
     }
 }

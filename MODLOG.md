@@ -9930,7 +9930,7 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Ours: dat/dialog.rs expand takes `Texts` (kinds 2 / 3 / 7 from BattleText::kind_name, the point names, slot 0x21)
   from client/event.rs EventTexts; the point tables and slot 0x21 load only for lines that use them. The point-name
   file ids (slots 0x1d..0x21) moved from GameUi to World.point_files. Expanded.sounds go to the UI sound queue.
-- Not done: 7f 81 (needs s2c 0x048 and the concierge window); 0x1e inline colours (the log keeps one colour per line;
+- Not done: 0x1e inline colours (since done: "Log lines: in-line colours and indents") (the log keeps one colour per line;
   being researched); 0x17 (a player emote motion), 0x1d (the speaker's compass direction), 0x13 (Japanese).
 - `vana-client dmsg-dump SLOT [IDS]` prints a language slot's d_msg file (this build's slot numbers).
 
@@ -10005,3 +10005,32 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - The comment editor ("menu    comment", FUN_101dde60: messages 1..6, 8, 0xc, 0x11, 0x12) has no children and no bar:
   the mouse reaches it only as the right click, message 6 = Escape (commit, close, send when changed). Ours:
   seacom::right_click; the results window's pointer waits while the editor is open.
+
+## The Linkshell Concierge (event 6100, s2c 0x048, link5 mode 1, lscswin) (2026-10-26; spec ~/ffxi/lab/research/ls_concierge_spec.md)
+
+- s2c 0x048 (0x100a0180), one form: per entry k (0..3) index @4+k: 0xfe clears the 16-slot table (FUN_10093b50, the
+  entries before it in the packet too), a signed 0..15 fills slot b = {u16 @8+2k the row's item (its icon; 0 = no
+  row), the 24 extdata bytes @0x10+0x18k, u32 attrs @0x70+4k}, anything else (LSB's 0xff) is skipped. LSB's "header"
+  (FE FE FE FE) is only the clear. The zone load clears the table (FUN_10093720).
+- Attrs: bits 1 / 2 / 5 language J / E / Other (FUN_101e3650: the lowest of bits 1..5), 6..9 members wanted, 14..15
+  active tier, 16..31 characteristics.
+- Op 0x71 sub 0x40 (FUN_100b8430): busy, the pick cleared, link5 opens in mode 1 (FUN_101e4470) with link6 mode 1
+  (group 9 0x119 + val@2, "Linkshells Seeking Members", the Linkshell's icon) and lscswin; sub 0x41 waits while busy,
+  then set@2 / @4 / @6 = slot index, GroupId, attrs (0 = cancelled).
+- link5 mode 1: the header row (windowps 718 at the row's x - 3), then the slots with an item, by the filter; cells
+  {0, 18, 280, 320, 350}: keytops3 0x219 and the item at half scale in the shell's colour, the name fitted (green for
+  our linkshell 1's group), "J" / "E" / "?", the members wanted. Enter on the header SE 0002 only; on a shell: the pick,
+  the windows close; Escape: cancel. Num+ (and the pointer over lscswin) hands the focus to lscswin (SE 0013): its ring
+  of View All / Japanese / English / Other sets the filter 0 / 1 / 2 / 5 and gives the focus back.
+- `7f 81 n`: slot num[n]'s shell name (its extdata Flag set).
+- Ours: client/concierge.rs (World.concierge slots, concierge_ui, concierge_pick), the VM's op 0x71 0x40 / 0x41 with
+  Host::concierge_pick, Ctx.concierge names; the list takes the keys ahead of the event; a right click is the focused
+  window's Escape.
+- Live (Lnxcsfix at the Bastok Mines concierge, seeded linkshell_concierge rows, removed after): the list with three
+  shells and their tints, J / E / ?, the wanted counts; Num+ to lscswin, English filtered to one row; the pick printed
+  "PenguinPals, correct?" and "Information for PenguinPals:" with LSB's language / wanted / active rows and the date;
+  Back reopened the list (filter reset); hover moved the cursor and handed the focus to lscswin; Escape cancelled to the
+  main menu.
+- LSB issues to report (not ours to change): the posted date shows 9 hours early (LSB counts from 2002-01-01 00:00
+  UTC, the client adds 0x3c307d70 = 2002-01-01 00:00 JST); shell names are letters only (LSB encodes a space as code 0,
+  which shows as a backtick in retail too).

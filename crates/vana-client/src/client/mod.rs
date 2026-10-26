@@ -81,6 +81,7 @@ mod equipsets;
 mod esmenu;
 mod esedit;
 mod faqmain;
+mod concierge;
 mod equipwin;
 mod journal;
 mod missions;
@@ -1417,8 +1418,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     keys.clear();
                 }
                 _ if world.typing => {}
-                // The event's area picker (op 0xcc 0x10) takes the keys before the event.
+                // The event's area picker (op 0xcc 0x10) and the concierge's list take the keys before the event.
                 _ if world.arealist.is_some() && arealist::picking(world) => arealist::key(world, gu, *key),
+                _ if world.concierge_ui.is_some() => concierge::key(world, gu, *key),
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
@@ -1878,6 +1880,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.linklist.is_none() && world.confirm.is_none()) {
         linkshell::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.concierge_ui.is_some() && world.confirm.is_none()) {
+        concierge::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.arealist.is_some() && world.confirm.is_none()) {
         arealist::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
@@ -2527,6 +2532,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(quests::draw(gu, world, sw, sh));
     blockers.extend(keyitems::draw(gu, world, sw, sh));
     blockers.extend(linkshell::draw(gu, world, sw, sh));
+    blockers.extend(concierge::draw(gu, world, sw, sh));
     blockers.extend(linklist::draw(gu, world, sw, sh));
     blockers.extend(blklist::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
@@ -3061,6 +3067,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     quests::bars(gu, world, &mut bars);
     keyitems::bars(gu, world, &mut bars);
     linkshell::bars(gu, world, &mut bars);
+    concierge::bars(gu, world, &mut bars);
     linklist::bars(gu, world, &mut bars);
     blklist::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
@@ -4445,6 +4452,10 @@ struct World {
     /// The Mog House 2F Remodel list (client/remodel.rs).
     remodel: Option<remodel::Remodel>,
     arealist_by_region: bool,
+    /// s2c 0x048's slots (DAT_10488b08), the list op 0x71 0x40 opened and its pick (slot index, GroupId, attrs).
+    concierge: [concierge::Slot; 16],
+    concierge_ui: Option<concierge::Concierge>,
+    concierge_pick: [u32; 3],
     /// Op 0xcc 0x10's picker, opened with the frame's GameUi: (tier, flat).
     arealist_req: Option<(u8, bool)>,
     /// arealist +0x6e: the event's pick (a zone, -1 cancelled).
@@ -5924,6 +5935,9 @@ impl App {
                             remodel: None,
                             arealist_by_region: true,
                             arealist_req: None,
+                            concierge: Default::default(),
+                            concierge_ui: None,
+                            concierge_pick: [0; 3],
                             area_pick: -1,
                             seacom: Default::default(),
                             seacom_edit: None,
@@ -6516,6 +6530,8 @@ impl App {
                     world.arealist = None;
                     world.seacom_edit = None;
                     world.linkshell = None;
+                    // FUN_10093720: the zone load clears the concierge's slots.
+                    (world.concierge, world.concierge_ui) = (Default::default(), None);
                     (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
@@ -7116,6 +7132,7 @@ impl App {
                     linkshell::on_equip(world, num, index, bag);
                 }
                 NetEvent::LinkshellMessage(p) => linkshell::on_message(world, &p),
+                NetEvent::Concierge(p) => concierge::on_packet(world, &p),
                 NetEvent::MessageStd { id, cas, para, strings } => combat::on_message_std(world, id, cas, para, strings),
                 NetEvent::TrophyList(l) => treasure::on_list(world, l),
                 NetEvent::TrophySolution { slot, judge, loot, loot_point, entry, entry_point, entry_flg, loot_name, entry_name } => {
@@ -8221,6 +8238,9 @@ impl App {
         let held = self.input.test(0x76, input::mode::HELD) || self.input.test(0x77, input::mode::HELD);
         macroedit::update(world, dt * 60.0, held);
         // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
+        if self.input.test(0x11, input::mode::PRESS) && world.concierge_ui.is_some() {
+            concierge::num_plus(world);
+        }
         if self.input.test(0x11, input::mode::PRESS) && world.arealist.is_some() {
             if let Some(gu) = self.game_ui.as_ref() {
                 arealist::num_plus(world, gu);

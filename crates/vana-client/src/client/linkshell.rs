@@ -101,6 +101,11 @@ fn equipped(w: &World, n: usize) -> Option<(u8, u8, [u8; 24])> {
     (index != 0 && w.inv.slots.get(&(bag, index)).is_some_and(|s| s.0 != 0)).then(|| (index, bag, ext(w, bag, index)))
 }
 
+/// FUN_100e9730(.., n): the GroupId of the shell worn as linkshell n.
+pub(super) fn group_of(w: &World, n: usize) -> Option<u32> {
+    equipped(w, n).map(|(_, _, e)| group(&e)).filter(|&g| g != 0)
+}
+
 fn ext(w: &World, bag: u8, slot: u8) -> [u8; 24] {
     w.inv.ext.get(&(bag, slot)).copied().unwrap_or([0; 24])
 }
@@ -110,7 +115,7 @@ fn group(e: &[u8; 24]) -> u32 {
 }
 
 /// The shell's colour as a tint: R = [6] low, G = [6] high, B = [7] low nibble, each 0x38 + 13 per step.
-fn tint(r: u8, g: u8, b: u8) -> u32 {
+pub(super) fn tint(r: u8, g: u8, b: u8) -> u32 {
     let c = |v: u8| (v & 0xf) as u32 * 13 + 0x38;
     0x8000_0000 | c(r) << 16 | c(g) << 8 | c(b)
 }
@@ -832,7 +837,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     (bars.help[1], bars.title[1]) = (help.unwrap_or_default(), title.unwrap_or_default());
 }
 
-fn icon(gu: &mut GameUi, item: u16, x: f32, y: f32, size: f32, t: u32) {
+pub(super) fn icon(gu: &mut GameUi, item: u16, x: f32, y: f32, size: f32, t: u32) {
     let name = crate::render::invwin::icon_texture(item);
     if gu.has_image(&name) {
         gu.image_rect(&name, x, y, size, size, rgba(t));

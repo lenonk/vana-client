@@ -149,8 +149,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done, <ncall> / <scall> too (the tell sound "0p40" is in no
     resident file);
   - the message formatter (dat/msgfmt.rs), /clock, the event date codes 7f a0..ac and the other event codes (MODLOG
-    "Event text: the other codes of FUN_100c1650") done; left 7f 81 (with the Linkshell Concierge: s2c 0x048, its
-    window), the other callers; in-line colours and the continuation indent done (MODLOG "Log lines: in-line colours and
+    "Event text: the other codes of FUN_100c1650") and the Linkshell Concierge (client/concierge.rs, 7f 81) done; left
+    the other callers; in-line colours and the continuation indent done (MODLOG "Log lines: in-line colours and
     indents"; left 1e from 0x11 and 1f inside a line);
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and
