@@ -32,6 +32,8 @@ pub struct Settings {
     pub monitor: String,
     pub gpu: String,
     pub cursor_size: u32,
+    /// The mod packs in priority order (the Mods page; config `mods`).
+    pub mods: Vec<crate::config::ModRef>,
 }
 
 impl Settings {
@@ -58,6 +60,7 @@ impl Settings {
             monitor: c.monitor.clone(),
             gpu: c.gpu.clone(),
             cursor_size: c.cursor_size,
+            mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
         }
     }
 
@@ -79,6 +82,7 @@ impl Settings {
         c.minimap_size = self.minimap_size;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
+        c.mods = self.mods.clone();
     }
 }
 
@@ -149,7 +153,9 @@ const fn row(label: &'static str, help: &'static str, val: Val, choices: &'stati
     Row { label, help, val, choices, when }
 }
 
-const TABS: [&str; 7] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Linux"];
+const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Linux", "Mods"];
+/// The Mods page (client/modsui.rs): its rows come from the mods folder, not a table.
+const MODS: usize = 7;
 
 /// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out.
 fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
@@ -213,6 +219,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
     match kind {
         Kind::Extras => EXTRAS,
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
+        Kind::Settings if tab == MODS => &[],
         Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
     }
 }
@@ -261,6 +268,8 @@ pub struct SettingsUi {
     pub dirty: bool,
     /// The pointer is over a control (the hit cursor).
     pub hover: bool,
+    /// The Mods page's archives and moves, opened the first time the page shows.
+    pub mods_ui: Option<super::modsui::Mods>,
 }
 
 /// What a row's controls are.
@@ -276,7 +285,7 @@ impl SettingsUi {
 
     pub fn open_kind(c: &Config, window: [u32; 2], kind: Kind) -> Self {
         let row = if kind == Kind::Settings { 0 } else { 1 };
-        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false };
+        let mut s = Self { kind, s: Settings::of(c), monitors: Vec::new(), gpus: Vec::new(), window, in_game: false, tab: 0, row, col: 0, edit: false, sounds: Vec::new(), dirty: false, hover: false, mods_ui: None };
         s.col = s.marked_col();
         s
     }
@@ -459,6 +468,9 @@ impl SettingsUi {
 
     /// The column of a buttons row whose choice holds (the cursor's start on it).
     fn marked_col(&self) -> usize {
+        if self.on_mods() {
+            return self.mods_marked();
+        }
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return 0 };
         match Self::ctl(r) {
             Ctl::Buttons(_) => r.choices.iter().position(|c| c.0 == self.get(r.val)).unwrap_or(0),
@@ -467,6 +479,9 @@ impl SettingsUi {
     }
 
     fn cols(&self, row: usize) -> usize {
+        if self.on_mods() {
+            return self.mods_cols(row);
+        }
         match row.checked_sub(1).and_then(|i| self.rows().get(i)) {
             None => 1,
             Some(r) => match Self::ctl(r) {
@@ -482,13 +497,19 @@ impl SettingsUi {
             return;
         }
         self.tab = (self.tab as i32 + d).rem_euclid(TABS.len() as i32) as usize;
-        self.row = self.row.min(self.rows().len());
+        if self.on_mods() {
+            self.mods_ui.get_or_insert_with(super::modsui::Mods::open);
+        }
+        self.row = self.row.min(self.row_count());
         self.col = self.marked_col();
         self.sounds.push(Se::Cursor);
     }
 
     /// Enter on the cursor's control.
     fn enter(&mut self) {
+        if self.on_mods() {
+            return self.mods_enter();
+        }
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else { return };
         match Self::ctl(r) {
             Ctl::Buttons(_) => {
@@ -515,6 +536,9 @@ impl SettingsUi {
 
     pub fn key_mod(&mut self, key: egui::Key, page_mod: bool) -> bool {
         self.sounds.clear();
+        if self.on_mods() {
+            return self.mods_key(key, page_mod);
+        }
         if self.edit {
             let r = &self.rows()[self.row - 1];
             let (n, i) = self.stops(r);
@@ -578,6 +602,9 @@ impl SettingsUi {
 
     /// Every control's rect relative to the page: (row, col, rect).
     fn controls(&self) -> Vec<(usize, usize, [f32; 4])> {
+        if self.on_mods() {
+            return self.mods_controls();
+        }
         let mut out = Vec::new();
         for (i, r) in self.rows().iter().enumerate() {
             let y = self.top() + PITCH * i as f32 + 14.0;
@@ -622,6 +649,9 @@ impl SettingsUi {
             }
             return;
         }
+        if self.on_mods() && self.mods_ui.as_ref().is_some_and(|m| m.held.is_some()) {
+            return;
+        }
         let hit = self.controls().into_iter().find(|(_, _, r)| p.0 >= x + r[0] && p.1 >= y + r[1] && p.0 < x + r[0] + r[2] && p.1 < y + r[1] + r[3]);
         let Some((row, col, r)) = hit else { return };
         self.hover = true;
@@ -664,6 +694,10 @@ impl SettingsUi {
             // A Config page: windowps 465's header strip (FUN_101144b0 skips its first cell, the backing), the title.
             gu.sprite_cells("menu    windowps", 465, 1..2, x, y, N);
             gu.label(self.title(), x + 8.0, y + 6.0, N, false);
+        }
+        if self.on_mods() {
+            self.mods_draw(gu, x, y);
+            return [x, y, W, H];
         }
         let ctls = self.controls();
         let focus = |row: usize, col: usize| self.row == row && self.col == col;
@@ -722,12 +756,23 @@ impl SettingsUi {
         if self.paged() {
             self.tab = tab.min(TABS.len() - 1);
         }
-        self.row = row.clamp(if self.paged() { 0 } else { 1 }, self.rows().len());
+        if self.on_mods() {
+            let m = self.mods_ui.get_or_insert_with(super::modsui::Mods::open);
+            m.wait_scan();
+            let _ = m.tick(&mut self.s.mods);
+        }
+        self.row = row.clamp(if self.paged() { 0 } else { 1 }, self.row_count());
         self.col = self.marked_col();
+        if let Some(m) = self.mods_ui.as_mut().filter(|_| self.tab == MODS) {
+            m.follow(self.row);
+        }
     }
 
     /// The help bar's text for the cursor's row, with when a change shows.
     pub fn help(&self) -> String {
+        if self.on_mods() {
+            return self.mods_help();
+        }
         let Some(r) = self.row.checked_sub(1).and_then(|i| self.rows().get(i)) else {
             return "Left / Right: another page of settings.".into();
         };
@@ -742,6 +787,220 @@ impl SettingsUi {
 
     pub fn title(&self) -> &'static str {
         if self.kind == Kind::Extras { "Extras" } else { "Settings" }
+    }
+}
+
+/// The Mods page (client/modsui.rs): the installed packs (ON / OFF / Move), then the archives (Install).
+impl SettingsUi {
+    fn on_mods(&self) -> bool {
+        self.paged() && self.tab == MODS
+    }
+
+    /// Rows below the page name.
+    fn row_count(&self) -> usize {
+        if self.on_mods() { self.mods_total() } else { self.rows().len() }
+    }
+
+    fn mods_total(&self) -> usize {
+        self.s.mods.len() + self.mods_ui.as_ref().map_or(0, |m| m.packs.len())
+    }
+
+    fn mods_cols(&self, row: usize) -> usize {
+        match row.checked_sub(1) {
+            Some(i) if i < self.s.mods.len() => 3,
+            _ => 1,
+        }
+    }
+
+    fn mods_marked(&self) -> usize {
+        match self.row.checked_sub(1).and_then(|i| self.s.mods.get(i)) {
+            Some(m) if !m.enabled => 1,
+            _ => 0,
+        }
+    }
+
+    /// Per frame: the archive scan and an install coming in.
+    pub fn tick(&mut self) {
+        if let Some(m) = self.mods_ui.as_mut()
+            && m.tick(&mut self.s.mods)
+        {
+            self.dirty = true;
+        }
+    }
+
+    fn mods_key(&mut self, key: egui::Key, page_mod: bool) -> bool {
+        use egui::Key as K;
+        let n = self.s.mods.len();
+        if let Some(before) = self.mods_ui.as_mut().and_then(|m| m.held.take()) {
+            // Moving: Up / Down carry the pack, Enter places it, Escape puts the order back.
+            let i = self.row - 1;
+            let mut keep = Some(before);
+            match key {
+                K::ArrowUp if i > 0 => {
+                    self.s.mods.swap(i, i - 1);
+                    self.row -= 1;
+                    self.sounds.push(Se::Cursor);
+                }
+                K::ArrowDown if i + 1 < n => {
+                    self.s.mods.swap(i, i + 1);
+                    self.row += 1;
+                    self.sounds.push(Se::Cursor);
+                }
+                K::Enter => {
+                    self.dirty |= keep.take().is_some_and(|b| b != self.s.mods);
+                    self.sounds.push(Se::Select);
+                }
+                K::Escape => {
+                    if let Some(b) = keep.take() {
+                        let name = self.s.mods[i].name.clone();
+                        self.row = b.iter().position(|m| m.name == name).map_or(self.row, |k| k + 1);
+                        self.s.mods = b;
+                    }
+                    self.sounds.push(Se::Cancel);
+                }
+                _ => {}
+            }
+            if let Some(m) = self.mods_ui.as_mut() {
+                m.held = keep;
+                m.follow(self.row);
+            }
+            return false;
+        }
+        match key {
+            K::ArrowDown | K::ArrowUp => {
+                let span = self.mods_total() + 1;
+                let d = if key == K::ArrowDown { 1 } else { span - 1 };
+                self.row = (self.row + d) % span;
+                self.col = self.mods_marked().min(self.mods_cols(self.row) - 1);
+                self.sounds.push(Se::Cursor);
+            }
+            K::ArrowLeft | K::ArrowRight => {
+                let c = self.mods_cols(self.row);
+                let d = if key == K::ArrowRight { 1 } else { -1 };
+                if self.row > 0 && c > 1 && !page_mod {
+                    self.col = (self.col as i32 + d).rem_euclid(c as i32) as usize;
+                    self.sounds.push(Se::Cursor);
+                } else {
+                    self.turn(d);
+                }
+            }
+            K::Enter => self.mods_enter(),
+            K::Tab => self.turn(1),
+            K::Escape => return true,
+            _ => {}
+        }
+        if let Some(m) = self.mods_ui.as_mut() {
+            m.follow(self.row);
+        }
+        false
+    }
+
+    fn mods_enter(&mut self) {
+        let Some(i) = self.row.checked_sub(1) else { return };
+        let n = self.s.mods.len();
+        if i < n {
+            if self.col < 2 {
+                let on = self.col == 0;
+                self.dirty |= self.s.mods[i].enabled != on;
+                self.s.mods[i].enabled = on;
+            } else if let Some(m) = self.mods_ui.as_mut() {
+                m.held = Some(self.s.mods.clone());
+            }
+            self.sounds.push(Se::Select);
+        } else if self.mods_ui.as_mut().is_some_and(|m| m.install(i - n)) {
+            self.sounds.push(Se::Select);
+        } else {
+            self.sounds.push(Se::Error);
+        }
+    }
+
+    /// The shown rows' buttons, relative to the page: conf3win's three for a pack, conf2win's first for an archive.
+    fn mods_controls(&self) -> Vec<(usize, usize, [f32; 4])> {
+        let top = self.mods_ui.as_ref().map_or(0, |m| m.top);
+        let n = self.s.mods.len();
+        let mut out = Vec::new();
+        for (vis, i) in (top..self.mods_total()).take(super::modsui::VISIBLE).enumerate() {
+            let y = self.top() + PITCH * vis as f32 + 14.0;
+            if i < n {
+                for (c, bx) in NARROW.iter().enumerate() {
+                    out.push((i + 1, c, [*bx, y, 64.0, 16.0]));
+                }
+            } else {
+                out.push((i + 1, 0, [WIDE[0], y, 88.0, 16.0]));
+            }
+        }
+        out
+    }
+
+    fn mods_draw(&self, gu: &mut GameUi, x: f32, y: f32) {
+        const N: u32 = 0x8080_8080;
+        const ON: u32 = 0x8080_5020;
+        let m = self.mods_ui.as_ref();
+        let (top, held) = (m.map_or(0, |m| m.top), m.is_some_and(|m| m.held.is_some()));
+        let n = self.s.mods.len();
+        let total = self.mods_total();
+        for (vis, i) in (top..total).take(super::modsui::VISIBLE).enumerate() {
+            let hy = y + self.top() + PITCH * vis as f32;
+            if let Some(b) = gu.cell_bounds("menu    windowps", 465, 2) {
+                gu.sprite_cells("menu    windowps", 465, 2..3, x + 20.0 - b[0], hy + 2.0 - b[1], N);
+            }
+            let (mut label, tint) = match (i < n, m) {
+                (true, _) => (format!("{}. {}", i + 1, self.s.mods[i].name), if held && self.row == i + 1 { ON } else { N }),
+                (false, Some(m)) => {
+                    let p = &m.packs[i - n];
+                    let name = p.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                    match m.progress(&p.slug) {
+                        Some(pm) => (format!("{}%  {name}", pm / 10), ON),
+                        None => (name, N),
+                    }
+                }
+                _ => continue,
+            };
+            while gu.label_width(&label) > W - 52.0 && label.pop().is_some() {}
+            gu.label(&label, x + 32.0, hy, tint, false);
+        }
+        let captions: [&str; 3] = ["ON", "OFF", "Move"];
+        let mut hand = None;
+        for (row, c, b) in self.mods_controls() {
+            let on = self.row == row && self.col == c;
+            let d = if on && !held { -1.0 } else { 0.0 };
+            let tint = if on { ON } else { N };
+            button(gu, [x + b[0] + d, y + b[1] + d, b[2], b[3]], tint);
+            let cap = if row - 1 < n { captions[c] } else { "Install" };
+            gu.label(cap, x + b[0] + 5.0 + d, y + b[1] + 1.0 + d, tint, true);
+            if row - 1 < n && c < 2 && self.s.mods[row - 1].enabled == (c == 0) {
+                marker(gu, x + b[0], y + b[1], b[2]);
+            }
+            if on {
+                hand = Some((x + b[0], y + b[1]));
+            }
+        }
+        if let Some((hx, hy)) = hand {
+            gu.cursor(hx, hy);
+        }
+        if total > super::modsui::VISIBLE {
+            gu.scroll_bar(x + W - 12.0, y + self.top(), PITCH * super::modsui::VISIBLE as f32, total, super::modsui::VISIBLE, top);
+        }
+    }
+
+    fn mods_help(&self) -> String {
+        let n = self.s.mods.len();
+        let m = self.mods_ui.as_ref();
+        match self.row.checked_sub(1) {
+            None => "Left / Right: another page of settings.".into(),
+            Some(_) if m.is_some_and(|m| m.held.is_some()) => "Up / Down: move the pack. Enter: place it here. Escape: put it back.".into(),
+            Some(i) if i < n => format!("Mod pack {} of {n}: a higher one's textures win. ON / OFF, or Move it. Takes effect on restart.", i + 1),
+            Some(i) => match (m.and_then(|m| m.packs.get(i - n)), m.and_then(|m| m.error.clone())) {
+                (_, Some(e)) => format!("The last install failed: {e}"),
+                (Some(p), None) => format!(
+                    "{} game file{} in {}: Install unpacks them into the mods folder, on and first. Takes effect on restart.",
+                    p.files,
+                    if p.files == 1 { "" } else { "s" },
+                    p.path.display()
+                ),
+                (None, None) => String::new(),
+            },
+        }
     }
 }
 
@@ -871,7 +1130,7 @@ mod tests {
         let mut ui = SettingsUi::open(&c, [1280, 800]);
         ui.goto(0, 1);
         ui.key(egui::Key::ArrowLeft);
-        assert_eq!(ui.tab, 6);
+        assert_eq!(ui.tab, MODS);
         ui.goto(0, 2);
         ui.key(egui::Key::ArrowRight);
         assert_eq!((ui.tab, ui.col), (0, 1));
@@ -886,5 +1145,38 @@ mod tests {
         ui.key(egui::Key::ArrowRight);
         ui.key(egui::Key::ArrowRight);
         assert_eq!(ui.tab, 4);
+    }
+
+    /// Mods: ON / OFF mark a pack; Move carries it with Up / Down, Enter places it, Escape puts the order back.
+    #[test]
+    fn mods_page() {
+        use crate::config::ModRef;
+        let c = Config::default();
+        let mut ui = SettingsUi::open(&c, [1280, 800]);
+        let m = |n: &str, on: bool| ModRef { name: n.into(), enabled: on };
+        ui.s.mods = vec![m("a", true), m("b", false), m("c", true)];
+        ui.mods_ui = Some(super::super::modsui::Mods::empty());
+        (ui.tab, ui.row, ui.col) = (MODS, 1, 0);
+        let names = |ui: &SettingsUi| ui.s.mods.iter().map(|m| m.name.clone()).collect::<Vec<_>>().join("");
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::Enter);
+        assert!(!ui.s.mods[0].enabled && ui.dirty);
+        ui.dirty = false;
+        ui.key(egui::Key::ArrowRight);
+        ui.key(egui::Key::Enter);
+        ui.key(egui::Key::ArrowDown);
+        ui.key(egui::Key::Enter);
+        assert_eq!((names(&ui), ui.row, ui.dirty), ("bac".into(), 2, true));
+        ui.key(egui::Key::Enter);
+        ui.key(egui::Key::ArrowDown);
+        assert_eq!(names(&ui), "bca");
+        ui.key(egui::Key::Escape);
+        assert_eq!((names(&ui), ui.row), ("bac".into(), 2));
+        // Down past the last pack wraps to the page name; Left / Right there turn the page.
+        ui.key(egui::Key::ArrowDown);
+        ui.key(egui::Key::ArrowDown);
+        assert_eq!(ui.row, 0);
+        ui.key(egui::Key::ArrowRight);
+        assert_eq!(ui.tab, 0);
     }
 }

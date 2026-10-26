@@ -24,6 +24,7 @@ mod footsteps;
 mod configui;
 mod configui2;
 mod settings;
+mod modsui;
 mod updater;
 mod firstrun;
 mod desktop;
@@ -8465,6 +8466,7 @@ impl App {
                                 }
                             }
                             if let Some(s) = self.lobby_settings.as_mut() {
+                                s.tick();
                                 let mut closed = false;
                                 // The Enter that opened it is not its first key.
                                 for ev in input.events.iter().filter(|_| !settings_new) {
@@ -8874,6 +8876,9 @@ impl App {
                     s.gpus = self.gpus.clone();
                     s.in_game = true;
                     world.settings = Some(s);
+                }
+                if let Some(s) = world.settings.as_mut() {
+                    s.tick();
                 }
                 if let Some(s) = world.settings.as_mut().filter(|s| s.dirty) {
                     s.dirty = false;

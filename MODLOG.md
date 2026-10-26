@@ -9002,3 +9002,21 @@ lists and the storage view:
 - The fx-sweep could not see it: it ran each animation's generic file and checked op coverage only.
 - Live (Lnxcsfix, West Ronfaure, trust Valaineral on a Wild Rabbit): "skill files [33470]", main / cst1 / mot1 and the
   tbb2 / grw2 / fls2 generators.
+
+## Mod manager: the Mods page and installing packs (2026-10-25)
+
+- Settings has an eighth page, Mods (client/modsui.rs, the page code in settings.rs), drawn as the other pages: the
+  installed packs in priority order ("n. folder"), each with conf3win's ON / OFF / Move (the red marker under the
+  state); Move carries the pack with Up / Down, Enter places it, Escape puts the order back (as the item list's
+  Manual sort); then the archives found, each with Install. Seven rows show, a scroll bar beside them. Changes go to
+  config `mods` and take effect on restart (the overlays are built at start).
+- Packs (crate::modpack): zip (zip crate, deflate / deflate64 / lzma), 7z (sevenz-rust2; a solid block's unwanted
+  entries are read through, as the reader does not skip them) and rar (unrar) in the mods folder, Downloads and the
+  folders right inside it, read off the UI thread. Only game files are taken: DATs from their ROM* folder on
+  (ROMn/dir/file.DAT), root .ani / .cur by lower-case name. Two copies of one DAT: the deeper wins (a sub-pack over
+  the main tree, as the megapack's); of a root file the shallower (the pack's own cursors, not the variants in its
+  folders). An archive counts as installed when a folder carries its name in `.source` (written by the install) or
+  holds 16 sample files at the same sizes (packs installed by hand). Install unpacks into `<slug>.partial`, renames
+  it to the archive's slug and puts it first, on.
+- Checked against the user's eight packs (install_mods.py's folders): the same file counts, the 7z tree byte for
+  byte, and none offered again.
