@@ -61,6 +61,8 @@ pub struct PartyRow {
 pub struct TargetView {
     pub name: String,
     pub ring: &'static str,
+    /// Locked on (retail's windowps 212 over its target window).
+    pub locked: bool,
     /// HP percent and the bar's eased fraction; none for a target without a gauge.
     pub hp: Option<(u8, f32)>,
 }
@@ -96,13 +98,27 @@ fn bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32) {
     }
 }
 
-/// A gauge row: the label, the bar, the value at the right.
-fn gauge_row(ui: &mut Ui, m: &Modern, label: &str, kind: &str, f: f32, value: &str) {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+/// A bar `BAR` high under the row's text; the labels over bars at `LABEL_SIZE`.
+const BAR: f32 = 14.0;
+const LABEL_SIZE: f32 = 18.0;
+
+/// A bar with its label and value over its top edge, the label a little in from the bar's start.
+fn labelled_bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32, label: (&str, Color32), value: &str) {
+    bar(ui, m, kind, r, f);
     let p = ui.painter();
-    p.text(pos2(r.min.x, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(m.theme.small), m.theme.color("muted"));
-    p.text(pos2(r.max.x, r.center().y), Align2::RIGHT_CENTER, value, FontId::proportional(m.theme.ui), m.theme.color("text"));
-    bar(ui, m, kind, Rect::from_min_max(pos2(r.min.x + 30.0, r.center().y - 7.0), pos2(r.max.x - 92.0, r.center().y + 7.0)), f);
+    let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
+    // The text's bottom (its descender room) half way down the bar.
+    let y = r.min.y + BAR * 0.5;
+    paint::outlined(p, pos2(r.min.x + 6.0, y), Align2::LEFT_BOTTOM, label.0, font.clone(), label.1);
+    if !value.is_empty() {
+        paint::outlined(p, pos2(r.max.x - 6.0, y), Align2::RIGHT_BOTTOM, value, font, m.theme.color("text"));
+    }
+}
+
+/// A gauge row: the bar across the row, its label and value over it.
+fn gauge_row(ui: &mut Ui, m: &Modern, label: &str, kind: &str, f: f32, value: &str) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 33.0), Sense::hover());
+    labelled_bar(ui, m, kind, Rect::from_min_max(pos2(r.min.x, r.max.y - BAR), r.max), f, (label, m.theme.color("text")), value);
 }
 
 /// An effect's icon at `r`, dimmed while it blinks.
@@ -162,7 +178,7 @@ pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usi
     }
     let (m, look) = (p.m, p.look());
     let note = format!("{} / 6", rows.len() + 1);
-    let row_h = 36.0;
+    let row_h = 40.0;
     let mut clicked = None;
     p.panel("party", Some(Title { icon: None, text: "Party", note: Some(&note) }), 340.0, [0.76, 0.5], |ui| {
         for row in rows {
@@ -185,20 +201,23 @@ pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usi
                 painter.add(paint::image(&s, pos2(x, r.center().y - 12.0), 24.0, Color32::WHITE));
                 x += 30.0;
             }
-            let colour = if row.here { m.theme.color("text") } else { m.theme.color("muted") };
-            let name = painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, &row.name, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), colour);
-            // Their effects (s2c 0x076) between the name and the bar, as many as fit.
-            let bar_x = r.max.x - 118.0;
-            let mut ex = name.max.x + 8.0;
-            for e in &row.effects {
-                if ex + 14.0 > bar_x - 6.0 {
+            // The name over the HP bar (away members: the name alone), their effects (s2c 0x076) at the bar's right end
+            // above it, as many as fit.
+            let bar_r = Rect::from_min_max(pos2(x, r.max.y - 8.0 - BAR), pos2(r.max.x - 14.0, r.max.y - 8.0));
+            let name = if row.here {
+                labelled_bar(ui, m, "hp", bar_r, row.hp, (&row.name, m.theme.color("text")), "");
+                let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
+                painter.layout_no_wrap(row.name.clone(), font, Color32::WHITE).size().x + bar_r.min.x + 6.0
+            } else {
+                painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, &row.name, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("muted")).max.x
+            };
+            let mut ex = bar_r.max.x - 15.0;
+            for e in row.effects.iter().filter(|_| row.here) {
+                if ex < name + 8.0 {
                     break;
                 }
-                effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, r.center().y - 7.0), vec2(14.0, 14.0)), small);
-                ex += 15.0;
-            }
-            if row.here {
-                bar(ui, m, "hp", Rect::from_min_max(pos2(bar_x, r.center().y - 6.0), pos2(r.max.x - 14.0, r.center().y + 6.0)), row.hp);
+                effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, bar_r.min.y - 16.0), vec2(14.0, 14.0)), small);
+                ex -= 15.0;
             }
             ui.add_space(4.0);
             if resp.clicked() {
@@ -211,11 +230,39 @@ pub fn party_panel(p: &mut Panels, rows: &[PartyRow], small: bool) -> Option<usi
 
 pub fn target_panel(p: &mut Panels, v: &TargetView) {
     let m = p.m;
-    p.panel("target", Some(Title { icon: Some(v.ring), text: &v.name, note: None }), 340.0, [0.52, 0.5], |ui| {
+    let frame = if v.locked { "window_alert" } else { "window_normal" };
+    let r = p.framed("target", Some(Title { icon: Some(v.ring), text: &v.name, note: None }), 340.0, [0.52, 0.5], frame, |ui| {
         if let Some((pct, f)) = v.hp {
             gauge_row(ui, m, "HP", "hp", f, &format!("{pct}%"));
         }
     });
+    if let Some(r) = r.filter(|_| v.locked) {
+        locked(&p.over("target"), m, r);
+    }
+}
+
+/// Retail's lock-on mark (windowps 212) over the target panel: red arrowheads glowing out of its left and right borders,
+/// "Locked" in red between two red pointers on its bottom border.
+fn locked(p: &Painter, m: &Modern, r: Rect) {
+    let red = m.theme.color("hp");
+    let edge = Stroke::new(1.0, Color32::from_black_alpha(200));
+    let tri = |tip: Pos2, base: f32, half: f32, fill: Color32, stroke: Stroke| {
+        p.add(egui::Shape::convex_polygon(vec![tip, pos2(base, tip.y - half), pos2(base, tip.y + half)], fill, stroke));
+    };
+    let cy = r.center().y;
+    for (x, out) in [(r.min.x, -1.0), (r.max.x, 1.0)] {
+        tri(pos2(x + 14.0 * out, cy), x - 4.0 * out, 20.0, red.gamma_multiply(0.3), Stroke::NONE);
+        tri(pos2(x + 9.0 * out, cy), x - 3.0 * out, 13.0, red, edge);
+    }
+    let font = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
+    let w = p.layout_no_wrap("Locked".into(), font.clone(), red).size().x;
+    let c = pos2(r.center().x, r.max.y - 4.0);
+    p.rect_filled(Rect::from_center_size(c, vec2(w + 34.0, 16.0)), 3.0, m.theme.color("charcoal"));
+    paint::outlined(p, c, Align2::CENTER_CENTER, "Locked", font, red);
+    for out in [-1.0, 1.0] {
+        let x = c.x + out * (w / 2.0 + 13.0);
+        tri(pos2(x + 6.0 * -out, c.y), x - 2.0 * -out, 5.0, red, edge);
+    }
 }
 
 /// The compass's radius in points, and its tilt as retail's (cos 1.0996).
@@ -331,11 +378,7 @@ fn compass_view(w: &World) -> Option<CompassView> {
 pub fn cast_panel(p: &mut Panels, f: f32) {
     let m = p.m;
     p.panel("cast", None, 300.0, [0.41, 0.58], |ui| {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::hover());
-        ui.painter().text(r.left_center(), Align2::LEFT_CENTER, "Casting", FontId::proportional(m.theme.small), m.theme.color("muted"));
-        ui.painter().text(r.right_center(), Align2::RIGHT_CENTER, format!("{}%", (f * 100.0) as u32), FontId::proportional(m.theme.small), m.theme.color("text"));
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 14.0), Sense::hover());
-        bar(ui, m, "cast", r, f);
+        gauge_row(ui, m, "Casting", "cast", f, &format!("{}%", (f * 100.0) as u32));
     });
 }
 
@@ -458,5 +501,5 @@ fn target_view(w: &World) -> Option<TargetView> {
     } else {
         "indicators/target_neutral"
     };
-    Some(TargetView { name, ring, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)) })
+    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)) })
 }

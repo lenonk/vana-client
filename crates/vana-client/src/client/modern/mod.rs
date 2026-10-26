@@ -18,7 +18,7 @@ use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{CmdMenu, key as command_key};
 pub use theme::Theme;
-use theme::{Art, STRONG};
+use theme::{Art, LABEL, STRONG};
 
 pub use crate::config::{ModernLayout as Layout, ModernPlace as Place};
 
@@ -120,23 +120,33 @@ impl<'a> Panels<'a> {
 
     /// A panel `width` points wide.
     fn panel(&mut self, id: &str, title: Option<Title>, width: f32, default: [f32; 2], add: impl FnOnce(&mut Ui)) -> Option<Rect> {
-        self.show(id, title, vec2(width, 0.0), false, default, None, |ui, _| add(ui))
+        self.framed(id, title, width, default, "window_normal", add)
+    }
+
+    /// A panel in one of the pack's other frames (window_alert ...).
+    fn framed(&mut self, id: &str, title: Option<Title>, width: f32, default: [f32; 2], frame: &str, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+        self.show(id, title, vec2(width, 0.0), false, default, None, frame, |ui, _| add(ui))
     }
 
     /// The chat window: `room` points (width, list height) by default, which its corner grip changes.
     fn room_panel(&mut self, id: &str, room: Vec2, default: [f32; 2], add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
-        self.show(id, None, room, true, default, None, add)
+        self.show(id, None, room, true, default, None, "window_normal", add)
     }
 
     /// A panel shown beside another (the command submenu): at a screen point, not moved.
     fn panel_at(&mut self, id: &str, title: Option<Title>, width: f32, at: Pos2, add: impl FnOnce(&mut Ui)) -> Option<Rect> {
-        self.show(id, title, vec2(width, 0.0), false, [0.0; 2], Some(at), |ui, _| add(ui))
+        self.show(id, title, vec2(width, 0.0), false, [0.0; 2], Some(at), "window_normal", |ui, _| add(ui))
+    }
+
+    /// A painter over a panel drawn this frame, for marks around its frame.
+    fn over(&self, id: &str) -> egui::Painter {
+        self.ctx.layer_painter(egui::LayerId::new(Order::Middle, Id::unique(("modern panel", id))))
     }
 
     /// The panel itself: the pack's window frame behind its title row and contents, moved by a drag on its background
     /// unless placed beside another; a resizable one has the resize glyph in its corner. Returns its rect.
     #[allow(clippy::too_many_arguments)]
-    fn show(&mut self, id: &str, title: Option<Title>, size: Vec2, resizable: bool, default: [f32; 2], at: Option<Pos2>, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
+    fn show(&mut self, id: &str, title: Option<Title>, size: Vec2, resizable: bool, default: [f32; 2], at: Option<Pos2>, frame: &str, add: impl FnOnce(&mut Ui, Vec2)) -> Option<Rect> {
         let (m, ctx) = (self.m, self.ctx);
         let screen = ctx.content_rect();
         let mut place = self.layout.get(id).copied().unwrap_or(Place { x: default[0], y: default[1], ..Default::default() });
@@ -156,7 +166,7 @@ impl<'a> Panels<'a> {
                 add(ui, room);
             });
             let r = inner.response.rect;
-            if let Some(f) = m.art.frame("window_normal") {
+            if let Some(f) = m.art.frame(frame) {
                 ui.painter().set(bg, paint::window(f, r, 1.0));
             }
             if !resizable {

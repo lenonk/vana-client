@@ -2302,6 +2302,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         menu_focused: !world.log_active && world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
+    // The modern layer draws its own target panel; the cursor over the target stays.
+    let target_up = st.target.is_some();
     if world.modern {
         (st.party_window, st.target, st.alliance) = (String::new(), None, [None, None]);
     }
@@ -2375,11 +2377,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
     }
     layout::draw_cursor(gu, world, sw, sh, view_proj);
-    if let (Some(t), true, None) = (world.target, st.target.is_some(), world.prompt.as_ref()) {
+    if let (Some(t), true, None) = (world.target, target_up, world.prompt.as_ref()) {
         if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
             gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
         }
         if world.locked
+            && !world.modern
             && let Some(r) = gu.window_rect("menu    targetwi", sw, sh)
         {
             gu.sprite("menu    windowps", 212, r[0], r[1], 0x8080_8080);

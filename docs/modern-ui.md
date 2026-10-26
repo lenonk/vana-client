@@ -153,6 +153,11 @@ Milestone 1:
   in its corner: more room for the lines, nothing scales. Its settings button (the tabs' right) sets the font size
   (config `modern_chat_font`, 10 .. 32, default 15). User's call (2026-10-26): no lock button, no other resizing.
 - The game's windows and the world take no click, press or wheel over a modern panel.
+- Bars carry their label and value over their top edge (Inter Bold Italic, 18 pt, a black border, the label a
+  little in from the bar's start). The locked target as retail's windowps 212: the alert frame, red arrowheads out
+  of the side borders, "Locked" between red pointers on the bottom border. The cursor over the target stays.
+- Art edits go through VectorCraft's MCP server (`vectorcraft-cli mcp`); the atlases are what the client loads, so an
+  SVG change is rendered at 2x into its atlas cell.
 - The retail party, alliance, target, log, chat line, effects, cast bar, compass and action menu are not drawn while
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above but Party (offscreen only: the bots did not accept invites).

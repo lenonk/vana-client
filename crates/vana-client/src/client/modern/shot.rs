@@ -43,7 +43,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
         ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], true),
     ];
     chat::panel(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false });
-    hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", hp: Some((72, 0.72)) });
+    hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)) });
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
     let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::unique("frames")));
     let screen = ctx.content_rect();

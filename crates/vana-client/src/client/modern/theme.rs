@@ -17,9 +17,10 @@ const ATLASES: [(&str, &[u8]); 6] = [
     ("atlases/indicators_0@2x.png", include_bytes!("../../../assets/modern/atlases/indicators_0@2x.png")),
     ("atlases/jobs_0@2x.png", include_bytes!("../../../assets/modern/atlases/jobs_0@2x.png")),
 ];
-const FONTS: [(&str, &[u8]); 3] = [
+const FONTS: [(&str, &[u8]); 4] = [
     ("Inter-Regular", include_bytes!("../../../assets/fonts/Inter-Regular.ttf")),
     ("Inter-SemiBold", include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf")),
+    ("Inter-BoldItalic", include_bytes!("../../../assets/fonts/Inter-BoldItalic.ttf")),
     ("JetBrainsMono-Regular", include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf")),
 ];
 /// The window frames (80 x 80 logical, 24 insets, NINE_SLICE.md); their border is cut out with the border-only
@@ -27,8 +28,9 @@ const FONTS: [(&str, &[u8]); 3] = [
 const FRAMES: [&str; 5] = ["window_normal", "window_focused", "window_inactive", "window_alert", "window_tooltip"];
 const FRAME_MASK: &str = "frames/window_normal_border";
 
-/// Emphasis beside egui's Proportional (Inter) and Monospace (JetBrains Mono): titles and names.
+/// Emphasis beside egui's Proportional (Inter) and Monospace (JetBrains Mono): titles and names; the bars' labels.
 pub const STRONG: &str = "strong";
+pub const LABEL: &str = "label";
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -209,7 +211,8 @@ impl Art {
 }
 
 /// The bundled fonts: Inter for the interface (egui's Proportional), Inter SemiBold for titles and names (STRONG),
-/// JetBrains Mono for logs (Monospace); egui's own fonts stay behind them for missing glyphs.
+/// Inter Bold Italic for the bars' labels (LABEL), JetBrains Mono for logs (Monospace); egui's own fonts stay behind
+/// them for missing glyphs.
 pub fn install_fonts(ctx: &Context) {
     let mut defs = FontDefinitions::default();
     for (name, bytes) in FONTS {
@@ -219,6 +222,7 @@ pub fn install_fonts(ctx: &Context) {
     let with = |first: &str| -> Vec<String> { std::iter::once(first.to_string()).chain(fallbacks.iter().cloned()).collect() };
     defs.families.insert(FontFamily::Proportional, with("Inter-Regular"));
     defs.families.insert(FontFamily::Name(STRONG.into()), with("Inter-SemiBold"));
+    defs.families.insert(FontFamily::Name(LABEL.into()), with("Inter-BoldItalic"));
     let mono = defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
     defs.families.insert(FontFamily::Monospace, std::iter::once("JetBrainsMono-Regular".to_string()).chain(mono).collect());
     ctx.set_fonts(defs);

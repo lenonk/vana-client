@@ -1,8 +1,20 @@
 //! Drawing over egui's painter: windows of any size from the pack's frames, stretched nine-slices (rows, buttons,
-//! bars), plain sprites and the gauges.
+//! bars), plain sprites, the gauges and the bars' outlined labels.
 
 use super::theme::{Frame, Sprite};
-use egui::{Color32, Mesh, Painter, Pos2, Rect, Shape, pos2, vec2};
+use egui::{Align2, Color32, FontId, Mesh, Painter, Pos2, Rect, Shape, pos2, vec2};
+
+/// Text with a black border a pixel wide (the bars' labels), placed by `align` at `at`; its rect.
+pub fn outlined(p: &Painter, at: Pos2, align: Align2, text: &str, font: FontId, colour: Color32) -> Rect {
+    let galley = p.layout_no_wrap(text.to_string(), font, colour);
+    let r = align.anchor_size(at, galley.size());
+    let px = 1.0 / p.pixels_per_point();
+    for (dx, dy) in [(-1.0, -1.0), (0.0, -1.0), (1.0, -1.0), (-1.0, 0.0), (1.0, 0.0), (-1.0, 1.0), (0.0, 1.0), (1.0, 1.0)] {
+        p.galley_with_override_text_color(r.min + vec2(dx, dy) * px, galley.clone(), Color32::BLACK);
+    }
+    p.galley(r.min, galley, colour);
+    r
+}
 
 fn quad(m: &mut Mesh, r: Rect, uv: Rect) {
     if r.width() > 0.0 && r.height() > 0.0 {
