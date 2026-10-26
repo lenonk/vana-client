@@ -10062,3 +10062,16 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   auction bid in flight (LAB_101d95b0 with DAT_1066344e; cleared FUN_101d7ac0 / FUN_101da370).
 - Ours now adds the search (search::busy) and the bid (bid.pending) to the strip; the Help Desk's (its Q&A never
   loads in ours) and the mail windows' are not modelled.
+
+## 0x00E SubKind 5 / 6 and event op 0xb6 0x11 (2026-10-26; partly traced)
+
+- The 0x00E look switch (current jump table 0x1009ce88 on byte @0x30 & 7): SubKind 5 (0x1009cd38) sets entity +0xee =
+  6, SubKind 6 (0x1009cda2) +0xee = 7; both store the model word +0x10e = u16 @0x32 | 0x9000 (a change sets +0xf5 bit
+  1); SubKind 6 models 0x7b8..0x7cb and 0x7d3..0x7da also set +0xf6 = 2. Ours parses both as an ordinary model id
+  (dat/npc.rs, FUN_100c3180 type 0) *(not retail: the word's type bits pick another table; FUN_100c51c0 type 1 is id +
+  0x996b, type 2 the furniture table thunk_FUN_101cce00: < 0x100 0x809f + id, < 0x200 0xc7ef + id, 0xe00.. 0xe75b +
+  id)*. How FUN_100d0ef0 decodes the 0x9000 word is not traced (for LSB's only SubKind 6 NPC, Qiqirun 0x13fe, neither
+  44393 = type 1 with the full id nor 40297 = type 1 with 12 bits is a model).
+- Event op 0xb6 0x11 (FUN_100b1150 -> FUN_1008a750): only when the event actor's model is an XiModelActor (furniture
+  class), FUN_100c4380(val@2) swaps its model to file FUN_100c51c0(2, val) (the furniture table). Not done (needs the
+  SubKind 5 / 6 actors above).
