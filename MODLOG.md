@@ -9575,3 +9575,17 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   70862; 0x81: two goblin textures in an unused file). Ours read every one as 8-bit: the 4-bit ones failed, the
   32-bit ones decoded as garbage. Now 4 / 8 / 24 / 32 (dat/zone.rs parse_img); alpha stays PS2-style (doubled).
 - Flag 0x05 (20 images, 'r_3ba63' / 'r_3ba64') lives only in ROM/0/110 and 111, files no table points to: left out.
+
+## Linkshell: a real shell, live (2026-10-26)
+
+- Lnxcsfix, !additem 512: link5 "New Linkshell" -> link1 Name Link -> link11 ("Vanatest", red +3) -> OK: c2s 0x0C4
+  {1, active 1, name, rgb}; LSB (0x0c4 EquipOrCreate on item 512) registers the shell and turns the item into 513
+  with the name, but does not equip it (only an existing shell is equipped), so the row shows white and Enter opens
+  link13; Set as No.1 equips it (green row, header name, chat "[1]< Vanatest: Lnxcsfix >").
+- /lsmes sets the message ("Hello from the test (2026. Oct. 26 5:39:40)" in the log); /l talks on the shell.
+- Link List (link2 row 1): link12 with our own row ([WAR22/ ] Mit, rank 1, the holder icon); Enter -> link10 (Tell),
+  help 0xe "Send a chat message directly to this member."; Escape back to link12.
+- Create Pearl (link2 row 3): a "Linkpearl Vanatest" row appears, grey (another item of the worn group), the header
+  icon follows the cursor to the pearl.
+- Removed afterwards (char_equip slot 16, the two items, linkshells row 2). Still not seen: To Sack / To Pearl / Kick
+  (need a second member), Unequip and switching shells, a broken shell.
