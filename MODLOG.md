@@ -9599,3 +9599,12 @@ client/layout.rs (`Pulse`, `frame_colors`, `see_through`, `walk`); furniture.rs 
   Points 19 (char_job_points jptype0 1, spent 1).
 - Everything undone afterwards (rows deleted, level 22 and its EXP back, key items removed, the house left). Not
   tried: Lower (merit3 row 2), the mouse on jbpcat's page areas.
+
+## Party member status icons, live (2026-10-26)
+
+- Lnxcsfix as WHM 20 (`!changejob 3 20`, `!zone 230`), `!goto Vespera` (an LSB bot, RNG 52 in Windurst Woods),
+  `/pcmd add Vespera` (the bot accepts), Protect then Shell on it, F2 to target it: s2c 0x076 brings its icons and the
+  icon object draws "Vespera" in fontshp with the Protect and Shell icons above the log (x + 200), the party window
+  beside it listing both. LSB sends 0x076 only for PC members in the same zone (CParty::PushEffectsPacket), never
+  for trusts.
+- Undone: back to WAR 22 (its EXP restored), the enhancing magic skill row removed, /pcmd leave, the old place.

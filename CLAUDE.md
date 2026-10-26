@@ -139,7 +139,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - on-screen damage numbers (config 0x13; MODLOG "On-screen damage numbers"): done; left checking the glow copies'
     size against retail footage (the code ignores element scale), party / alliance relations for the colours;
   - status icons (spec `~/ffxi/lab/research/status_icons_spec.md`; MODLOG "Status icons"): own icons, timers, pulse,
-    Num+ focus and cancel, party member icons (untested live: needs a party) done;
+    Num+ focus and cancel, party member icons (seen live with a bot) done;
   - actor sounds (spec `~/ffxi/lab/research/actor_sounds_spec.md`; MODLOG "Actor sounds 1..3"): voices steal, init /
     ini<n> (worm emerge seen, burrow not seen live), ntob / bton / dead, op 0x78, op-0x24 swing pick, whole schedulers
     behind motion paths, sub-animation variants, op 0x53, pop0 / pop1 done; left the hide skip (+0x138), ?ead / sdep;
