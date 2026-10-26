@@ -363,6 +363,10 @@ struct Entity {
     invisible: bool,
     radar_off: bool,
     monstrosity: u16,
+    /// +0x212 / +0x213: the name prefixes; the names built from them (+0x214 full, +0x235 short) and their key.
+    mon_prefix: [u8; 2],
+    mon_name: Option<(String, String)>,
+    mon_key: (u16, [u8; 2]),
     /// The name plate's other fields (0x00D @0x32 / @0x33) and 0x067 @0x10 (Campaign bit 1, Level Sync bit 2).
     plate: net::PlateExtra,
     sync: u8,
@@ -1058,7 +1062,10 @@ fn self_entity(w: &World) -> Entity {
         radar_off: false,
         plate: net::PlateExtra::default(),
         sync: 0,
-        monstrosity: 0,
+        monstrosity: w.my_plate.monstrosity,
+        mon_prefix: w.my_plate.mon_prefix,
+        mon_name: w.my_mon_name.clone(),
+        mon_key: w.my_mon_key,
         sub: [0, 8, 0],
         master: 0,
         init_done: false,
@@ -1210,7 +1217,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         None => true,
         Some(others) => others && (*id >> 24 != 0 || *id == world.my_id),
     };
-    for (id, e) in world.entities.iter().filter(|(id, e)| !e.name.is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id) && invisible_alpha(world, **id).is_none_or(|k| k > 0.0)) {
+    for (id, e) in world.entities.iter().filter(|(id, e)| !monstrosity::name(e).is_empty() && !e.name.starts_with('_') && !e.no_plate && visible(id, e) && !hidden.contains(id) && named(id) && invisible_alpha(world, **id).is_none_or(|k| k > 0.0)) {
         if let Some((x, y, scale, z)) = plate_point(world, *id).and_then(project) {
             // FUN_100819d0: the target's plate alpha pulses, a * (sin(ticks * 16 deg) * 32 + 96) / 128.
             let pulse = if world.target == Some(*id) {
@@ -1224,7 +1231,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             let tint = name_colour(*id, e, world, |i| gu.ncol(i));
             let p = entity_plate(*id, e);
             let (prefix, icon) = plate::prefix(&p);
-            gu.name_plate(&prefix, &e.name, x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
         }
     }
     if !hidden.contains(&world.my_id)
@@ -1238,7 +1245,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let tint = faded(gu.ncol(if gm >= 3 { 0x0c + gm - 3 } else { 0 }));
         let p = self_plate(world);
         let (prefix, icon) = plate::prefix(&p);
-        gu.name_plate(&prefix, &world.name, x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
     }
     gu.depth(None);
 }
@@ -2117,6 +2124,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     minimap::prepare(gu, world, sw);
     let foot = timers_foot(gu, world, sw, sh);
     timers::prepare(gu, world, sw, sh, foot);
+    // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
+    world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
+    monstrosity::refresh(world);
     let me = (world.target == Some(world.my_id)).then(|| self_entity(world));
     let target = me.as_ref().or_else(|| world.target.and_then(|t| world.entities.get(&t)));
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
@@ -2684,7 +2694,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     let max = gu.window_rect("menu    targetwi", sw, sh).map_or(100.0, |r| r[2] - 13.0);
                     let tid = world.target.unwrap_or(0);
                     let tint = name_colour(tid, e, world, |i| gu.ncol(i));
-                    gu.wrapped_name(&e.name, max, t.x, t.y, tint, true, e.no_gauge);
+                    gu.wrapped_name(monstrosity::name(e), max, t.x, t.y, tint, true, e.no_gauge);
                 }
             }
             // Alliance rows (FUN_10202720) by their window slot: name (TP as on party rows), HP in the HP colour, MP,
@@ -2712,8 +2722,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 let row = t.align as usize;
                 // Ours from our own vitals; the others from the roster (name, HP / MP / TP, HPP).
                 let v = match rows.get(row) {
-                    Some(None) => world.vitals.map(|(hp, mp, tp, hpp, _)| (world.name.clone(), hp, mp, tp, hpp, 0u16, row)),
-                    Some(Some(m)) => Some((m.name.clone(), m.hp, m.mp, m.tp, m.hpp, m.zone, row)),
+                    Some(None) => {
+                        let own = world.party.own();
+                        let name = if own.id == world.my_id { monstrosity::row_name(own) } else { &world.name };
+                        world.vitals.map(|(hp, mp, tp, hpp, _)| (name.to_string(), hp, mp, tp, hpp, 0u16, row))
+                    }
+                    Some(Some(m)) => Some((if m.away == 0 { monstrosity::row_name(m) } else { &m.name }.to_string(), m.hp, m.mp, m.tp, m.hpp, m.zone, row)),
                     None => None,
                 };
                 let Some((name, hp, mp, tp, hpp, zone, row)) = v else { continue };
@@ -3234,6 +3248,9 @@ fn place_mogdoor(w: &mut World) {
             plate: net::PlateExtra::default(),
             sync: 0,
             monstrosity: 0,
+            mon_prefix: [0; 2],
+            mon_name: None,
+            mon_key: (0, [0; 2]),
             sub: [0, 8, 0],
             master: 0,
             init_done: false,
@@ -4665,6 +4682,9 @@ struct World {
     mog_zone: bool,
     /// 0x00A @0x7E: in Monstrosity (FUN_10097d50, with main job 23).
     mon_login: bool,
+    /// Our Monstrosity names (full, short) and the (word, prefixes) they were built from (client/monstrosity.rs).
+    my_mon_name: Option<(String, String)>,
+    my_mon_key: (u16, [u8; 2]),
     mh_owner: u32,
     mh_floors: bool,
     /// Our first s2c 0x067 kind 2 of this zone came (S+0x40c41, FUN_100f9620).
@@ -6089,6 +6109,8 @@ impl App {
                             ally_gauges: Vec::new(),
                             mog_zone: false,
                             mon_login: false,
+                            my_mon_name: None,
+                            my_mon_key: (0, [0; 2]),
                             mh_owner: 0,
                             mh_floors: false,
                             mh_seen: false,
@@ -6624,6 +6646,7 @@ impl App {
                         world.my_race = look_from(look).race;
                     }
                     world.my_index = index;
+                    world.party.refresh_self(char_id, index, &name, zone);
                     world.event = None;
                     world.event_pending = None;
                     world.screen = Default::default();
@@ -6801,6 +6824,9 @@ impl App {
                         plate: net::PlateExtra::default(),
                         sync: 0,
                         monstrosity: 0,
+                        mon_prefix: [0; 2],
+                        mon_name: None,
+                        mon_key: (0, [0; 2]),
                         sub: [0, 8, 0],
                         master: 0,
                         init_done: false,
@@ -6946,6 +6972,9 @@ impl App {
                     }
                     if let Some((inv, off, mon)) = e.radar {
                         (entry.invisible, entry.radar_off, entry.monstrosity) = (inv, off, mon);
+                    }
+                    if let Some(p) = e.mon_prefix {
+                        entry.mon_prefix = p;
                     }
                     if let Some(s) = e.sub_anim {
                         entry.sub[0] = s;

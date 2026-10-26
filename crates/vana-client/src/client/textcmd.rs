@@ -344,11 +344,9 @@ fn focus_name(w: &World) -> Option<String> {
     w.party.slots().slots.iter().flatten().find(|m| m.id == id).map(|m| m.name.clone())
 }
 
+/// `<t>` `<bt>` `<pet>` and the /check title (FUN_10076ff0, FUN_10133a80): a Monipulator's shown name.
 fn name_of(w: &World, t: (u32, u16)) -> Option<String> {
-    if t.0 == w.my_id {
-        return Some(w.name.clone());
-    }
-    w.entities.get(&t.0).map(|e| e.name.clone())
+    super::monstrosity::name_of(w, t.0).map(str::to_string)
 }
 
 /// FUN_10076ff0: a tag's text, None to leave it literal. In a target command the targets stay for the resolver.

@@ -10118,3 +10118,26 @@ Spec `~/ffxi/lab/research/monstrosity_spec.md` (sections 1, 4.1, 4.2). client/mo
 - Live (Lnxcsfix by !zone 285): a Rabbit (LSB look 0x010C, file 1568) walks and turns with its own motions; the name
   plate still shows "Lnxcsfix" with the 0xab glyph (the species name is part 2). Her rows were restored from a
   snapshot afterwards (chars by UPDATE only; ~/ffxi/lab/scratch/monstrosity/restore.py).
+
+## Monstrosity, part 2: the names (2026-10-26)
+
+Spec section 3.1. client/monstrosity.rs (`names`, `refresh`, `name`, `my_name`, `name_of`, `row_name`), dat/tables.rs
+`mon_prefixes`.
+- Prefixes: the DLL's English table at 0x10370480 (FUN_10142070; one table for both ids), 16-byte slots, id 0 empty,
+  0xf9.. empty; found by signature (MD5 over 0xf9 slots).
+- The words: 0x00D mask 0x04 @0x3E (+0x210, as before) and @0x40 / @0x41 (+0x212 / +0x213); ours from 0x037 @0x54 /
+  @0x56 / @0x57. Species name: item 0x7000 + word (0x8000 | s -> 0xf000 + s), only species records (Kind::Monster)
+  have one (0xC000 | s gives prefixes only).
+- FUN_10093460 full "P1 P2 Species" (31 bytes), FUN_100935c0 short "P1[0].P2[0]. Species" (23), each part optional;
+  rebuilt per frame when the word or ids change and the record reads (FUN_1008e870; retail retries until the item
+  cache has it).
+- The shown name (`+0x210 ? +0x214 : +0x7c`): name plates (ours too), the target window, battle lines (combat.rs
+  `who`, still a PC id: no article), event speakers and zone text speakers, text code 0x08 (our name), `<t>` `<bt>`
+  `<pet>` and the /check title (textcmd `name_of`), the action menu's Tell. Not: chat, `<me>`, party member codes.
+- Party rows in our zone (FUN_10202530): the record's short name (0x0DF u16 @0x1c, @0x1e / @0x1f, rebuilt after each
+  0x0DF by FUN_10099730) while the word is set; out of zone and alliance rows the character name.
+- FUN_100e8b80 (record 0 = ours) runs from the name colours every frame in retail; ours refreshed it only on party
+  packets, so a solo 0x0DF never landed. Now per frame and at the zone-in.
+- Live (Lnxcsfix in the Feretory, logged in there and by !zone): plate and target window "Rabbit" (LSB ids 0 / 0),
+  the solo party row "A.M. Ra..." (LSB packs the name ids into a u16 @0x1e: id1 = species & 0xff, id2 = 0x80 |
+  species >> 8; an LSB bug, retail shows the same from that packet). Rows restored afterwards.

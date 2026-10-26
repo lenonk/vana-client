@@ -92,9 +92,10 @@ pub(super) struct Pending {
 pub(super) fn who(w: &World, id: u32) -> Option<Who> {
     if id == w.my_id {
         // Our own gender from the race (inf: retail reads 0x40db0): 2, 4, 6 and 7 are female.
-        return Some(Who { name: w.name.clone(), pc: true, female: matches!(w.my_race, 2 | 4 | 6 | 7), ..Default::default() });
+        return Some(Who { name: super::monstrosity::my_name(w).to_string(), pc: true, female: matches!(w.my_race, 2 | 4 | 6 | 7), ..Default::default() });
     }
-    w.entities.get(&id).map(|e| Who { name: e.name.clone(), pc: id < 0x0100_0000, named: e.named, plural: e.plural, female: e.female })
+    // A Monipulator's shown name (FUN_100c1190 slots 0 / 1); still a PC id: no article.
+    w.entities.get(&id).map(|e| Who { name: super::monstrosity::name(e).to_string(), pc: id < 0x0100_0000, named: e.named, plural: e.plural, female: e.female })
 }
 
 /// s2c 0x05A (LAB_100a06e0): dropped for emote 0x61+ or a caster / target not here. The caster plays it (FUN_100a0b90)
@@ -1203,7 +1204,7 @@ pub(super) fn choose(w: &mut World, c: u8) -> bool {
         (0x16..=0x18, _) => super::textcmd::run(w, ["/quarry", "/scout", "/sprint"][(c - 0x16) as usize], super::textcmd::Mode::Internal),
         // FUN_1012b880 cases 3 / 4: the chat line, "/tell <target> " on a target (string 0x1036f5c8).
         (cmd::CHAT | cmd::TELL, _) => {
-            w.chat_input = match w.target.and_then(|t| w.entities.get(&t)).map(|e| e.name.clone()).filter(|n| !n.is_empty() && c == cmd::TELL) {
+            w.chat_input = match w.target.and_then(|t| w.entities.get(&t)).map(|e| super::monstrosity::name(e).to_string()).filter(|n| !n.is_empty() && c == cmd::TELL) {
                 Some(n) => format!("/tell {n} "),
                 None => String::new(),
             };

@@ -75,6 +75,13 @@ const TEXT_HELP: Sig = Sig {
     len: 0x40,
     md5: "17b93b0dfd37ab284614ea90cacc01c1",
 };
+/// 0x10370480 (FUN_10142070): the Monstrosity name prefixes, 16-byte slots from an empty id 0 to "Zymotic" (0xf8).
+const MON_PREFIXES: Sig = Sig {
+    name: "Monstrosity prefixes",
+    hint: &[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, b'A', b'b', b'a', b's', b'h', b'e', b'd', 0],
+    len: 0xf9 * 16,
+    md5: "97532e5b1c14131bf50a39cd77ac0ebf",
+};
 /// FUN_10161fd0's table 0x103353c8: the colours of in-line codes `1e 00..10` (0 = the line's own colour).
 const CODE_COLOURS: Sig = Sig {
     name: "colour codes",
@@ -204,6 +211,12 @@ pub fn knockback(dll: &[u8]) -> Result<[[f32; 3]; 8]> {
         }
     }
     Ok(t)
+}
+
+/// The 256 Monstrosity prefixes (ids 0xf9.. empty, as the DLL's).
+pub fn mon_prefixes(dll: &[u8]) -> Result<Vec<String>> {
+    let at = find(dll, &MON_PREFIXES)?;
+    Ok((0..256).map(|i| dll.get(at + i * 16..at + i * 16 + 16).filter(|_| i < 0xf9).map_or(String::new(), |s| String::from_utf8_lossy(s.split(|&b| b == 0).next().unwrap_or_default()).into_owned())).collect())
 }
 
 /// The 17 colours (D3DCOLOR) of the in-line codes `1e 00..10`.

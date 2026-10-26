@@ -70,6 +70,8 @@ pub struct EntityUpdate {
     /// Mask 0x04: InvisFlag u32 @0x20 bit 29 (+0x128 bit 6), 0x00E u8 @0x2B bit 0x40 (+0x130 bit 15), 0x00D's
     /// Monstrosity word u16 @0x3E (+0x210): the radar's tests (FUN_10098210, FUN_102203b0).
     pub radar: Option<(bool, bool, u16)>,
+    /// 0x00D mask 0x04 u8 @0x40 / @0x41 (+0x212 / +0x213, 0x1009a979..): the Monstrosity name prefixes.
+    pub mon_prefix: Option<[u8; 2]>,
     /// The sub-animation (actor +0x124 bits 1..3): 0x00E mask 0x04, @0x2A & 7 when @0x20 bit 0 (monster) or u32 @0x28
     /// bit 26 (asm 0x1009be45; LSB animationsub).
     pub sub_anim: Option<u8>,
@@ -139,6 +141,8 @@ pub struct SelfPlate {
     pub frozen: bool,
     pub charmed: bool,
     pub monstrosity: u16,
+    /// @0x56 / @0x57: the Monstrosity name prefixes (+0x212 / +0x213).
+    pub mon_prefix: [u8; 2],
     /// Flags0 bit 9 (actor +0x18c, FUN_101cc330): a zone treasure pool (LSB's Treasure-flag zones, e.g. Dynamis).
     pub zone_pool: bool,
 }
@@ -166,7 +170,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
     };
     let r = p.u8(0x5a);
     let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
-    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), zone_pool: bit(f0, 9) }
+    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), mon_prefix: [p.u8(0x56), p.u8(0x57)], zone_pool: bit(f0, 9) }
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /
@@ -847,6 +851,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
             let npc = kind == EntityKind::Npc;
             (p.u32(0x20) >> 29 & 1 != 0, npc && p.u8(0x2B) & 0x40 != 0, if !npc && p.data.len() >= 0x40 { p.u16(0x3E) } else { 0 })
         }),
+        mon_prefix: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x42).then(|| [p.u8(0x40), p.u8(0x41)]),
         sub_anim: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && (p.u8(0x20) & 1 != 0 || p.u32(0x28) & (1 << 26) != 0)).then(|| p.u8(0x2A) & 7),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
@@ -1074,7 +1079,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             tx.send(NetEvent::Vitals { hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17) })?;
                         }
                         let jobs = std::array::from_fn(|i| p.u8(0x20 + i));
-                        tx.send(NetEvent::PartyAttr(super::party::AttrUpdate { id: p.u32(4), index: p.u16(0x14), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17), jobs }))?;
+                        tx.send(NetEvent::PartyAttr(super::party::AttrUpdate { id: p.u32(4), index: p.u16(0x14), hp: p.u32(8), mp: p.u32(12), tp: p.u32(16), hpp: p.u8(0x16), mpp: p.u8(0x17), jobs, mon: p.u16(0x1c), mon_ids: [p.u8(0x1e), p.u8(0x1f)] }))?;
                     }
                     // Kinds 0 (party) and 5 (alliance) share list 0; LSB sends no others.
                     0x0C8 if matches!(p.u8(4), 0 | 5) => {

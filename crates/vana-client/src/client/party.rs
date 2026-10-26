@@ -22,6 +22,11 @@ pub struct Member {
     pub flags: u32,
     /// Main job, main level, sub job, sub level, master level.
     pub jobs: [u8; 5],
+    /// 0x0DF +0x4c the Monstrosity word, +0x4e / +0x4f the prefixes, +0x50 the short name (FUN_10099730, rebuilt
+    /// after every 0x0DF).
+    pub mon: u16,
+    pub mon_ids: [u8; 2],
+    pub mon_short: String,
     /// +0x1c the last update (the oldest record is reused when all 20 are taken).
     time: u64,
 }
@@ -57,6 +62,9 @@ pub struct AttrUpdate {
     pub hpp: u8,
     pub mpp: u8,
     pub jobs: [u8; 5],
+    /// u16 @0x1c, u8 @0x1e / @0x1f.
+    pub mon: u16,
+    pub mon_ids: [u8; 2],
 }
 
 pub const RECORDS: usize = 20;
@@ -175,6 +183,18 @@ impl Roster {
         let t = self.tick();
         let r = &mut self.recs[i];
         (r.index, r.hp, r.mp, r.tp, r.hpp, r.mpp, r.jobs, r.time) = (u.index, u.hp, u.mp, u.tp, u.hpp, u.mpp, u.jobs, t);
+        (r.mon, r.mon_ids) = (u.mon, u.mon_ids);
+        r.mon_short.clear();
+    }
+
+    /// Every record (FUN_10099730 walks all 20).
+    pub fn records_mut(&mut self) -> &mut [Member] {
+        &mut self.recs
+    }
+
+    /// Record 0, ours.
+    pub fn own(&self) -> &Member {
+        &self.recs[0]
     }
 
     /// FUN_100e99b0: member `a` moves to member `b`'s place in the order, the ones between shift by one (the party

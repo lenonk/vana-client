@@ -1360,9 +1360,9 @@ impl Host for LiveHost<'_> {
     fn name(&self, actor: u32) -> String {
         let id = self.wid(actor);
         if id == self.w.my_id {
-            return self.w.name.clone();
+            return super::monstrosity::my_name(self.w).to_string();
         }
-        self.w.entities.get(&id).map(|e| e.name.clone()).filter(|n| !n.is_empty()).or_else(|| self.w.npc_names.get(&id).cloned()).unwrap_or_default()
+        self.w.entities.get(&id).map(|e| super::monstrosity::name(e).to_string()).filter(|n| !n.is_empty()).or_else(|| self.w.npc_names.get(&id).cloned()).unwrap_or_default()
     }
 
     fn player_word(&self) -> u32 {
@@ -2393,7 +2393,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         return;
     };
     let named = t.mes & 0x8000 == 0;
-    let entity = w.entities.get(&t.actor).filter(|e| e.index == t.index).map(|e| e.name.clone());
+    let entity = w.entities.get(&t.actor).filter(|e| e.index == t.index).map(|e| super::monstrosity::name(e).to_string());
     // Bit 15 clear: the speaker must be here with that id and index, else the line is dropped (0x02A naming its
     // speaker excepted, inf).
     if named && entity.is_none() && t.name.is_empty() {
@@ -2414,7 +2414,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
     };
     let g = w.event.as_ref().map_or(w.event_mem.g, |l| l.rt.mem.g).map(|v| v as i32);
     let ctx = dialog::Ctx {
-        player: w.name.clone(),
+        player: super::monstrosity::my_name(w).to_string(),
         speaker,
         num: t.num,
         g,
