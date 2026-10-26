@@ -25,6 +25,10 @@ pub struct Layout {
     pub held: Option<Held>,
     /// An rmlo window (1, 2 or 4) and its cursor row.
     pub win: Option<(u8, u16)>,
+    /// bankmenu (Mog Safe / Safe 2) over the rmlo window: its cursor row.
+    pub bank: Option<u16>,
+    /// The furniture list ("menu    inventor" with layout's source): container, scroll, cursor.
+    pub list: Option<(u8, usize, usize)>,
 }
 
 /// A piece in the room, with its item.
@@ -191,7 +195,7 @@ pub fn enter(w: &mut World) {
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
     let win = sel.is_none().then_some((1, 1));
-    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win });
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None });
     w.pos = park(r.floor);
 }
 
@@ -230,6 +234,8 @@ fn place_held(w: &mut World, l: &mut Layout) {
         }
         w.sounds.push(8060);
     } else {
+        let p = &h.piece.piece;
+        log::info!("layout: does not fit at column {} level {} row {} turn {}", p.x, p.level, p.z, p.rot);
         w.sounds.push(Ui::Error as u32);
         l.held = Some(h);
     }
@@ -449,6 +455,16 @@ fn dim_rows(w: &World, l: &Layout, kind: u8) -> Vec<u16> {
 /// 0x90) of select mode or of the held piece. The arrows and turns are key functions (`update`).
 pub fn key(w: &mut World, key: egui::Key) -> bool {
     let Some(mut l) = w.layout.take() else { return false };
+    if l.list.is_some() {
+        list_key(w, &mut l, key);
+        w.layout = Some(l);
+        return true;
+    }
+    if let Some(row) = l.bank {
+        bank_key(w, &mut l, row, key);
+        w.layout = Some(l);
+        return true;
+    }
     let Some((kind, sel)) = l.win else {
         match key {
             egui::Key::Enter if l.held.is_some() => place_held(w, &mut l),
@@ -501,7 +517,12 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                         leave(w);
                         return true;
                     }
-                    Row::Place | Row::Equip => {
+                    // FUN_101d6c90: bankmenu over the window, which stays open under it.
+                    Row::Place => {
+                        l.win = Some((kind, sel));
+                        l.bank = Some(1);
+                    }
+                    Row::Equip => {
                         log::info!("layout: {} row {sel} not done", win_name(kind));
                         l.win = Some((kind, sel));
                     }
@@ -514,21 +535,164 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     true
 }
 
-/// The rmlo window at its layout with its dim rows; its row's help in the bars.
-pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
-    let Some(l) = &w.layout else { return Vec::new() };
-    let Some((kind, sel)) = l.win else { return Vec::new() };
-    let name = win_name(kind);
-    let off = dim_rows(w, l, kind);
-    let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), w.confirm.is_none(), &off) else { return Vec::new() };
-    let [x, y, ..] = win.frame;
-    gu.disabled_children(name, x, y, &off, Some(sel));
-    vec![win.frame]
+const BANKMENU: &str = "menu    bankmenu";
+const INVENTOR: &str = "menu    inventor";
+
+/// bankmenu's dim row (FUN_101d6cd0): Safe 2 until the second floor is unlocked.
+fn bank_dim(w: &World) -> Vec<u16> {
+    if w.mh_floors { Vec::new() } else { vec![2] }
 }
 
-/// The context: 0x3e while an rmlo window or a prompt is up, else 0x42.
+/// bankmenu (FUN_101d6d10): Up / Down, Enter opens the list on Mog Safe (1) or Safe 2 (9) and closes the rmlo window,
+/// Escape closes bankmenu only.
+fn bank_key(w: &mut World, l: &mut Layout, row: u16, key: egui::Key) {
+    use egui::Key as K;
+    match key {
+        K::ArrowUp | K::ArrowDown => {
+            l.bank = Some(3 - row);
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        K::Escape => {
+            l.bank = None;
+            w.sounds.push(Ui::Cancel as u32);
+        }
+        K::Enter if bank_dim(w).contains(&row) => w.sounds.push(Ui::Error as u32),
+        K::Enter => {
+            w.sounds.push(Ui::Select as u32);
+            (l.bank, l.win) = (None, None);
+            l.list = Some((if row == 1 { 1 } else { 9 }, 0, 0));
+        }
+        _ => {}
+    }
+}
+
+/// The list's rows (FUN_101f4270): furnishings and mannequins, flowerpots on 1F only; installed on this floor green,
+/// on another not listed, not installed white; a locked row (LockFlg not 0 / 5 / 0x1b) grey.
+fn list_rows(w: &World, l: &Layout, c: u8) -> Vec<(crate::inventory::Slot, u32)> {
+    let mut out = Vec::new();
+    for s in w.inv.viewed(c).into_iter().filter(|s| s.index != 0) {
+        let ty = item_type(w, s.id);
+        if !(ty == 10 || ty == MANNEQUIN || (ty == 12 && l.floor == 0)) {
+            continue;
+        }
+        let ext = w.inv.ext.get(&(c, s.index)).copied().unwrap_or([0; 24]);
+        let tint = if ext[1] & 0x40 == 0 {
+            0x8080_8080
+        } else if ext[1] & 3 == l.floor {
+            0x8050_9050
+        } else {
+            continue;
+        };
+        let lock = w.inv.locks.get(&(c, s.index)).copied().unwrap_or(0);
+        out.push((s, if matches!(lock, 0 | 5 | 0x1b) { tint } else { 0x8040_4040 }));
+    }
+    out
+}
+
+/// Installed pieces of a type in containers 1 and 9, any floor (FUN_101f4190).
+fn installed(w: &World, ty: u16) -> usize {
+    w.inv.slots.iter().filter(|((c, _), (id, _))| matches!(c, 1 | 9) && item_type(w, *id) == ty).filter(|(k, _)| w.inv.ext.get(k).is_some_and(|e| e[1] & 0x40 != 0)).count()
+}
+
+/// The list's keys (FUN_101f42e0): Enter holds the piece (a new one at its start, 3.5); the eleventh flowerpot and the
+/// ninth mannequin are refused by the moogle (0x62 / 0x63); Escape back to select mode.
+fn list_key(w: &mut World, l: &mut Layout, key: egui::Key) {
+    use egui::Key as K;
+    let Some((c, mut scroll, mut cursor)) = l.list else { return };
+    let rows = list_rows(w, l, c);
+    match key {
+        K::Escape => {
+            l.list = None;
+            w.sounds.push(Ui::Cancel as u32);
+        }
+        K::Enter => {
+            let Some((s, tint)) = rows.get(scroll + cursor).cloned() else { return };
+            let ty = item_type(w, s.id);
+            if tint == 0x8040_4040 {
+                w.sounds.push(Ui::Error as u32);
+            } else if ty == 12 && installed(w, 12) >= 10 && tint != 0x8050_9050 {
+                super::moogle::line(w, 0x62);
+            } else if ty == MANNEQUIN && installed(w, MANNEQUIN) >= 8 && tint != 0x8050_9050 {
+                super::moogle::line(w, 0x63);
+            } else if let Some(f) = l.table.entry(s.id) {
+                w.sounds.push(Ui::Select as u32);
+                l.list = None;
+                let pieces = l.pieces(w);
+                match pieces.iter().copied().find(|p| (p.piece.c, p.piece.slot) == (c, s.index)) {
+                    Some(p) => hold(w, l, p, false),
+                    None => {
+                        let grid = l.grid(w);
+                        let sel = l.selected(&pieces).map(|p| p.piece);
+                        let mut piece = Piece { c, slot: s.index, furn: f, x: 0, level: 0, z: 0, rot: 0 };
+                        start(&grid, &mut piece, l.floor, sel.as_ref());
+                        hold(w, l, Placed { piece, item: s.id }, true);
+                    }
+                }
+            }
+        }
+        _ => {
+            if super::items::list_keys(&mut scroll, &mut cursor, rows.len(), key) {
+                w.sounds.push(Ui::Cursor as u32);
+                l.list = Some((c, scroll, cursor));
+            }
+        }
+    }
+}
+
+/// The rmlo window at its layout with its dim rows, bankmenu over it, or the furniture list.
+pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    let Some(l) = &w.layout else { return Vec::new() };
+    let mut out = Vec::new();
+    if let Some((kind, sel)) = l.win {
+        let name = win_name(kind);
+        let off = dim_rows(w, l, kind);
+        let focus = w.confirm.is_none() && l.bank.is_none();
+        if let Some(win) = gu.lobby_window_off(name, sw, sh, (0.0, 0.0), Some(sel), focus, &off) {
+            let [x, y, ..] = win.frame;
+            gu.disabled_children(name, x, y, &off, focus.then_some(sel));
+            out.push(win.frame);
+        }
+    }
+    if let Some(row) = l.bank {
+        let off = bank_dim(w);
+        if let Some(win) = gu.lobby_window_off(BANKMENU, sw, sh, (0.0, 0.0), Some(row), true, &off) {
+            let [x, y, ..] = win.frame;
+            gu.disabled_children(BANKMENU, x, y, &off, Some(row));
+            out.push(win.frame);
+        }
+    }
+    if let Some((c, scroll, cursor)) = l.list
+        && let Some(info) = w.item_info.clone()
+    {
+        let rows = list_rows(w, l, c);
+        let slots: Vec<_> = rows.iter().map(|r| r.0.clone()).collect();
+        let mut list = crate::inventory::ItemList { rows: crate::inventory::build_rows(&slots, info.as_ref(), false), scroll, cursor };
+        for (r, (_, tint)) in list.rows.iter_mut().zip(&rows) {
+            r.tint = *tint;
+        }
+        super::items::upload_icons(gu, &info, list.visible().iter().map(|r| r.id));
+        let open = gu.gate_layout(INVENTOR, sw, sh, None);
+        let frame = gu.cursor_frame();
+        let (b, ui, style, font) = gu.parts();
+        if let Some(m) = ui.menu(INVENTOR).filter(|_| open) {
+            let _ = crate::render::invwin::push_inventory(b, ui, style, font, super::game_ui::GameUi::ATLAS, m, &list, sw, sh, if w.confirm.is_none() { frame } else { usize::MAX });
+            out.extend(gu.window_rect(INVENTOR, sw, sh));
+        }
+    }
+    out
+}
+
+/// The list's cursor item, for the item info window.
+pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
+    let l = w.layout.as_ref()?;
+    let (c, scroll, cursor) = l.list?;
+    let (s, _) = list_rows(w, l, c).get(scroll + cursor).cloned()?;
+    Some((s.id, w.inv.ext.get(&(c, s.index)).copied()))
+}
+
+/// The context: 0x3e while a window or a prompt is up, else 0x42.
 pub fn context(w: &World) -> u16 {
-    if w.layout.as_ref().is_some_and(|l| l.win.is_some()) || w.confirm.is_some() { 0x3e } else { 0x42 }
+    if w.layout.as_ref().is_some_and(|l| l.win.is_some() || l.bank.is_some() || l.list.is_some()) || w.confirm.is_some() { 0x3e } else { 0x42 }
 }
 
 /// The layout camera each frame (FUN_101d4080) into the world camera; true while laying out.
@@ -557,7 +721,11 @@ pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::Ba
     let Some(l) = &w.layout else { return };
     bars.title[0] = gu.title_msg(4).unwrap_or_default();
     bars.help[0] = gu.menu_msg(0xe, "");
-    if let Some((kind, sel)) = l.win {
+    if let Some(row) = l.bank {
+        let [help, title] = gu.focus_text(BANKMENU, row);
+        bars.help[1] = help.unwrap_or_default();
+        bars.title[1] = title.unwrap_or_default();
+    } else if let Some((kind, sel)) = l.win {
         let [help, _] = gu.focus_text(win_name(kind), sel);
         bars.help[1] = help.unwrap_or_default();
     }

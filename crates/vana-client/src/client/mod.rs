@@ -3555,6 +3555,7 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
         (None, _) if let Some((id, ext, mode)) = auction::info_source(world) => (id, ext, None, false, mode, 0),
+        (None, _) if let Some((id, ext)) = layout::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),

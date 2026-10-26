@@ -9307,3 +9307,22 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
   were checked; which of the two retail draws on top was not traced.
 - Ours, at the user's call: resynus draws through GameUi::lobby_window_padded, the frame 8 px wider each side and
   4 px taller top and bottom, its left and bottom edges where the layout puts them (the content moves right and up).
+
+## Mog House layout mode, part 3: Place (2026-10-26)
+
+Spec `layout_mode_spec.md` 2.5 (bankmenu, the furniture list), 3.5, 5.1 (client/layout.rs).
+- Place (rmlo1 row 1, rmlo2 row 3, rmlo4 row 4; FUN_101d6c90) opens bankmenu over the rmlo window: Mog Safe / Safe 2
+  (row 2 dim until the second floor is unlocked, `mh_floors`), titles 0xd 3 / 0xd 0xb5, help 938 / 939. Enter opens
+  the furniture list on container 1 or 9 and closes the rmlo window; Escape closes bankmenu only.
+- The list ("menu    inventor" with layout's source, FUN_101f4270): furnishings and mannequins, flowerpots on 1F only;
+  installed on this floor green 0x80509050, on another floor not listed, not installed white; LockFlg not 0 / 5 /
+  0x1b grey (Enter buzzes). Enter: the eleventh pot / ninth mannequin are refused by the moogle (0x62 / 0x63); an
+  installed piece is held as Move holds it; a new one starts at (9, 12) or the selected floor piece's cell, centred
+  (FUN_101cd3b0), and is held new (Escape drops it). The item info window shows the cursor's item.
+- Live (Lnxcsfix, San d'Oria house, a Desk installed and a Simple Bed in the Safe): rmlo2 Place, Mog Safe, the list
+  (bed white, desk green), Enter held the bed at column 7 row 1 (inside the 1F walkway: refused), moved to column 1
+  row 8, Enter sent 0x0FA 02 00 01 01 00 01 00 08 00 00 00 00 and the server wrote it installed there.
+- Correction to part 2: the "textures 31 -> 75" figure was a running total (render's upload counter and
+  TEXTURE_BYTES never go down); clear_furniture drops the old set's textures. Moving the held piece's instance
+  matrix instead of reloading is still the better way, not yet done.
+- Not yet: the mannequin's equipment row, the grid overlay (3.7), the link-999 ceiling in view 0.
