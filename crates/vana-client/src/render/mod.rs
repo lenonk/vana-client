@@ -9,6 +9,7 @@ pub mod upload;
 pub mod character;
 pub mod dancer;
 pub mod ui;
+pub mod mtext;
 pub mod screens;
 pub mod invwin;
 pub mod screenfx;

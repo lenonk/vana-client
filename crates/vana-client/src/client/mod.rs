@@ -1590,6 +1590,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // FUN_1012ec60 / FUN_101e9f10.
                 egui::Key::E if modifiers.ctrl || modifiers.alt => items::open_equipment(world),
                 egui::Key::I if modifiers.ctrl || modifiers.alt => items::open_items(world),
+                // Ours (Extras): plain T slides the Timers out or in, with no window open (Ctrl / Alt + T is /tell).
+                egui::Key::T if !modifiers.ctrl && !modifiers.alt && world.extra_timers && world.win.is_none() && world.menu.is_none() && world.config.is_none() && world.settings.is_none() => {
+                    world.timers.toggle();
+                    world.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
                 // Our settings screen, then the Config windows, take the keys while open.
                 _ if world.settings.is_some() => {
                     let mut s = world.settings.take().unwrap();
@@ -1602,6 +1607,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         world.sounds.extend(s.sounds.iter().map(|x| *x as u32));
                     }
                 }
+                // The modern Config page takes them while it shows.
+                _ if world.config.is_some() && modern::config_key(world, *key) => {}
                 _ if world.config.is_some() => {
                     let out = world.config.as_mut().unwrap().key(gu, &mut world.game, *key, sw);
                     config_out(world, out);
@@ -1959,7 +1966,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         world.sounds.extend(s.sounds.drain(..).map(|x| x as u32));
     }
-    if let (Some(c), Some(p), None) = (world.config.as_mut(), input.pointer, world.settings.as_ref()) {
+    // While Modern is on configwi alone is the modern page's (egui's mouse); retail's windows over it take it.
+    let modern_page = world.modern && world.config.as_ref().is_some_and(|c| c.stack.len() <= 1);
+    if let (Some(c), Some(p), None, false) = (world.config.as_mut(), input.pointer, world.settings.as_ref(), modern_page) {
         let out = c.pointer(gu, &mut world.game, p, input.moved, input.clicked, sw, sh);
         config_out(world, out);
     }
@@ -2716,7 +2725,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         c.covered = world.settings.is_some();
     }
     if let Some(c) = &world.config {
-        blockers.extend(c.draw(gu, &world.game, sw, sh));
+        // While Modern is on configwi is the modern layer's page; retail draws the windows over it.
+        let from = (world.modern as usize).min(c.stack.len());
+        blockers.extend(c.draw_from(gu, &world.game, sw, sh, from));
     }
     if let Some(s) = &world.settings {
         blockers.push(s.draw(gu, sw, sh));
@@ -3972,6 +3983,20 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         }
     }
     Some(r)
+}
+
+/// Wide Scan (FUN_101fb7d0): c2s 0x0F4 for a new list (0x0F6 while the last one is still open), the help bar's busy
+/// strip on until the list ends.
+fn scan_request(world: &mut World) {
+    let id = world.scan.start();
+    let _ = world.net.commands.send(NetCommand::Packet { id, body: ((id == 0x0F4) as u32).to_le_bytes().to_vec() });
+    world.scan.busy = true;
+}
+
+/// Tracking a Wide Scan result: c2s 0x0F5 with its index.
+fn scan_track(world: &mut World, index: u16) {
+    let _ = world.net.commands.send(NetCommand::Packet { id: 0x0F5, body: (index as u32).to_le_bytes().to_vec() });
+    world.scan.track(index);
 }
 
 /// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an

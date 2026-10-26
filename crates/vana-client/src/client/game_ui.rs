@@ -6,6 +6,7 @@ use crate::dat::font::{Font, Quality, encode_sjis};
 use crate::dat::msg::{Messages, group_file};
 use crate::dat::ui::{LOBBY_US, SpriteLib, UiFile, WINDOW_STYLE_BASE, companions};
 use crate::render::Gpu;
+use crate::render::mtext::{self, Face};
 use crate::render::screens::{self, HudState, LOBBY_CLEAR, TextSlot, TitleState};
 use crate::render::ui::{UiBatch, UiRenderer};
 use anyhow::{Context, Result};
@@ -491,11 +492,44 @@ impl GameUi {
     }
 
     pub fn text_width(&self, s: &str) -> f32 {
+        if self.batch.modern.is_some() {
+            return self.modern_runs(s, [0x80; 4]).iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
+        }
         self.data.font.text_width(&encode_sjis(s)) as f32
+    }
+
+    /// A game-font line's text as runs of one colour (its `1e xx` / `1f xx` codes as layout_line reads them).
+    fn modern_runs(&self, s: &str, base: [u8; 4]) -> Vec<(String, [u8; 4])> {
+        let mut out = vec![(String::new(), base)];
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            match c {
+                '\u{1e}' | '\u{1f}' => {
+                    if let Some(x) = it.next() {
+                        let col = self.data.font.code_colour((c == '\u{1f}') as u8, x as u32 as u8, base);
+                        out.push((String::new(), col));
+                    }
+                }
+                '\0' => break,
+                _ => out.last_mut().unwrap().0.push(c),
+            }
+        }
+        out.retain(|(t, _)| !t.is_empty());
+        out
     }
 
     /// One line in the game font; align 0 = left at x, 1 = centred on x.
     pub fn text(&mut self, s: &str, x: f32, y: f32, align: u8, color: [u8; 4]) {
+        if self.batch.modern.is_some() {
+            let runs = self.modern_runs(s, color);
+            let w: f32 = runs.iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
+            let mut x = if align == 1 { x - w / 2.0 } else { x };
+            for (t, c) in runs {
+                let col = [c[2], c[1], c[0], c[3]].map(|v| (v as f32 / 128.0).min(1.0));
+                x = self.batch.push_mtext(&t, Face::Regular, mtext::TEXT_EM, x, y + mtext::TEXT_DY, col, false);
+            }
+            return;
+        }
         let sjis = encode_sjis(s);
         let x = if align == 1 { x - self.data.font.text_width(&sjis) as f32 / 2.0 } else { x };
         let mut quads = Vec::new();
@@ -996,6 +1030,33 @@ impl GameUi {
     }
 
     /// A menu layout by name (window element first, then the children).
+    /// A menu child's caption as text (its normal sprite's caption glyphs), for the modern layer's own pages.
+    pub fn child_caption(&self, menu: &str, child: u16) -> Option<String> {
+        let e = self.data.lobby.menu(menu)?.elements.iter().skip(1).find(|e| e.id == child)?;
+        let r = e.refs.iter().find(|r| r.kind == 0)?;
+        let s = self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize)?;
+        let runs = crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        Some(runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" "))
+    }
+
+    /// A menu window's own captions (its headings) with their places in it: (text, x, y).
+    pub fn window_captions(&self, menu: &str) -> Vec<(String, f32, f32)> {
+        let Some(e) = self.data.lobby.menu(menu).and_then(|m| m.elements.first()) else { return Vec::new() };
+        e.refs
+            .iter()
+            .filter_map(|r| self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize))
+            .filter_map(|s| crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080))
+            .flatten()
+            .map(|(x, y, t, _)| (t, x, y))
+            .collect()
+    }
+
+    /// A menu child's place in its window.
+    pub fn child_place(&self, menu: &str, child: u16) -> Option<(f32, f32)> {
+        let e = self.data.lobby.menu(menu)?.elements.iter().skip(1).find(|e| e.id == child)?;
+        Some((e.x as f32, e.y as f32))
+    }
+
     pub fn menu_def(&self, name: &str) -> Option<&crate::dat::ui::Menu> {
         self.data.lobby.menu(name)
     }
@@ -1279,6 +1340,9 @@ impl GameUi {
     }
 
     pub fn label_width(&self, s: &str) -> f32 {
+        if self.batch.modern.is_some() {
+            return mtext::width(s, Face::Bold, 13.0);
+        }
         screens::label_width(s)
     }
 
@@ -1607,6 +1671,11 @@ impl GameUi {
         for (name, w, h, rgba) in self.replaced.drain(..) {
             r.replace_image(gpu, &name, w, h, &rgba);
         }
+        // The modern text's glyph atlas when it grew, and the screen scale its next glyphs are made for.
+        if let Some((side, rgba)) = mtext::take_dirty() {
+            r.replace_image(gpu, mtext::TEXTURE, side, side, &rgba);
+        }
+        mtext::set_scale(size[1] as f32 / layout[1].max(1) as f32);
         let c = LOBBY_CLEAR.map(|v| v as f64 / 255.0 * scene.clamp(0.0, 1.0) as f64);
         let clear = (!over).then_some(wgpu::Color { r: c[0], g: c[1], b: c[2], a: 1.0 });
         r.fade = fade;

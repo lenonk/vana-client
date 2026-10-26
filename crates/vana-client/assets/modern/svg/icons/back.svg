@@ -1,1 +1,41 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="#d9b16b" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M12 3 H24 L30 33 H6Z M18 3 V33"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.013" x2="32" y2="16.905" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6288bc"/>
+      <stop offset="1" stop-color="#2a3b51"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="10.959" x2="32" y2="58.987" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b0c7e8"/>
+      <stop offset="0.42" stop-color="#6f9ad6"/>
+      <stop offset="1" stop-color="#384d6b"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="16.082" x2="32" y2="57.066" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6288bc"/>
+      <stop offset="1" stop-color="#2a3b51"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="31.052" y1="9.702" x2="32.948" y2="20.449" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32" cy="15.076" r="3.659" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.3" stop-color="#b0c7e8"/>
+      <stop offset="0.78" stop-color="#6f9ad6"/>
+      <stop offset="1" stop-color="#3d5576"/>
+    </radialGradient>
+  </defs>
+  <title>back</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M43.401 10.035 C44.756 10.395 45.905 11.289 46.594 12.495 C48.3 13.589 49.791 14.961 51.009 16.636 C51.202 16.902 51.328 17.211 51.374 17.536 C53.192 30.263 55.463 42.076 58.644 53.89 C58.864 54.708 58.548 55.576 57.854 56.062 C56.514 57.001 55.207 57.559 53.924 57.891 C52.732 58.199 51.612 58.301 50.469 58.367 C48.655 58.47 46.964 58.465 45.328 59.374 C40.63 61.985 35.684 60.141 32.488 60.94 C32.168 61.02 31.832 61.02 31.512 60.94 C28.316 60.141 23.37 61.985 18.672 59.374 C17.036 58.465 15.345 58.47 13.531 58.367 C12.388 58.301 11.268 58.199 10.076 57.891 C8.793 57.559 7.486 57.001 6.146 56.062 C5.452 55.576 5.136 54.708 5.356 53.89 C8.537 42.076 10.808 30.263 12.626 17.536 C12.672 17.211 12.798 16.902 12.991 16.636 C14.209 14.961 15.7 13.589 17.406 12.495 C18.095 11.289 19.244 10.395 20.599 10.035 C22.408 5.083 26.963 3 32 3 C37.037 3 41.592 5.083 43.401 10.035 Z" fill="#0a1118"/>
+      <path id="hood" d="M21.937 16.905 C21.022 8.672 25.596 5.013 32 5.013 C38.404 5.013 42.978 8.672 42.063 16.905 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.281" stroke-linejoin="round"/>
+      <path id="cape" d="M14.618 17.82 C18.278 12.789 24.681 10.959 32 10.959 C39.319 10.959 45.722 12.789 49.382 17.82 C51.211 30.628 53.498 42.521 56.7 54.413 C52.126 57.615 48.467 55.328 44.35 57.615 C40.233 59.902 35.659 58.073 32 58.987 C28.341 58.073 23.767 59.902 19.65 57.615 C15.533 55.328 11.874 57.615 7.3 54.413 C10.502 42.521 12.789 30.628 14.618 17.82 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.281" stroke-linejoin="round"/>
+      <path id="folds" d="M25.235 16.818 C25.283 16.366 25.689 16.038 26.141 16.087 C26.593 16.135 26.921 16.541 26.872 16.993 C25.498 29.82 23.666 42.646 21.375 55.473 C21.295 55.92 20.868 56.219 20.42 56.139 C19.972 56.059 19.674 55.631 19.754 55.183 C22.038 42.395 23.865 29.606 25.235 16.818 Z M37.859 16.087 C38.311 16.038 38.717 16.366 38.765 16.818 C40.135 29.606 41.962 42.395 44.246 55.183 C44.326 55.631 44.028 56.059 43.58 56.139 C43.132 56.219 42.705 55.92 42.625 55.473 C40.334 42.646 38.502 29.82 37.128 16.993 C37.079 16.541 37.407 16.135 37.859 16.087 Z M31.177 17.82 C31.177 17.365 31.545 16.997 32 16.997 C32.455 16.997 32.823 17.365 32.823 17.82 L32.823 56.243 C32.823 56.698 32.455 57.066 32 57.066 C31.545 57.066 31.177 56.698 31.177 56.243 Z" fill="url(#linear-gradient-3)" opacity="0.65"/>
+      <path id="collar" d="M21.937 11.874 L42.063 11.874 C43.829 11.874 45.265 13.31 45.265 15.076 L45.265 15.076 C45.265 16.841 43.829 18.278 42.063 18.278 L21.937 18.278 C20.171 18.278 18.735 16.841 18.735 15.076 L18.735 15.076 C18.735 13.31 20.171 11.874 21.937 11.874 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.281" stroke-linejoin="round"/>
+      <path id="clasp" d="M35.659 15.076 C35.659 17.097 34.022 18.735 32 18.735 C29.978 18.735 28.341 17.097 28.341 15.076 C28.341 13.054 29.978 11.416 32 11.416 C34.022 11.416 35.659 13.054 35.659 15.076 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.098" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

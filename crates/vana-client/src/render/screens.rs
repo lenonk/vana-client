@@ -1,6 +1,16 @@
 //! Whole screens laid out as FFXiMain does: the lobby title menu, and the core HUD windows.
 
+use super::mtext::Face;
 use super::ui::UiBatch;
+
+/// The sprite font's size in the modern face (Modern on), and its line top against retail's pen.
+const SHAPE_EM: f32 = 13.0;
+const SHAPE_DY: f32 = -1.0;
+
+/// An ARGB tint (0x80 = 1.0) as straight colour.
+pub fn argb(tint: u32) -> [f32; 4] {
+    [16, 8, 0, 24].map(|sh| ((tint >> sh & 0xff) as f32 / 128.0).min(1.0))
+}
 use crate::dat::ui::{Cell, Menu, SpriteLib, UiFile};
 
 /// Title buttons, top to bottom, as children 1..5 of "menu    loby2win" (1-based sprite ids,
@@ -361,6 +371,16 @@ pub fn select_list(b: &mut UiBatch, lobby: &UiFile, w: f32, h: f32, cursor: usiz
 /// more to come (white: or a glyph wider than 8; other colours always) the rest becomes the ellipsis sprite 0x6c
 /// (font table +0x1b0) and 8 px. Returns the end x.
 pub fn push_shape_fit(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, max: f32, tint: u32) -> f32 {
+    if b.modern.is_some() {
+        let mut t = crate::dat::font::decode_sjis(s);
+        if super::mtext::width(&t, Face::Bold, SHAPE_EM) > max {
+            while !t.is_empty() && super::mtext::width(&format!("{t}..."), Face::Bold, SHAPE_EM) > max {
+                t.pop();
+            }
+            t.push_str("...");
+        }
+        return b.push_mtext(&t, Face::Bold, SHAPE_EM, x, y + SHAPE_DY, argb(tint), true);
+    }
     let Some(lib) = ui.lib("font    fontshp") else { return x };
     let glyphs = shape_glyphs(s);
     let (mut pen, mut x) = (8.0, x);
@@ -638,6 +658,9 @@ fn shape_glyphs(s: &[u8]) -> Vec<usize> {
 
 /// Sprite-font text left to right from x (FUN_101bfef0): each glyph advances its width - 1. Returns the end x.
 pub fn push_shape_text(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, tint: u32) -> f32 {
+    if b.modern.is_some() {
+        return b.push_mtext(&crate::dat::font::decode_sjis(s), Face::Bold, SHAPE_EM, x, y + SHAPE_DY, argb(tint), true);
+    }
     let Some(lib) = ui.lib("font    fontshp") else { return x };
     let mut x = x;
     for g in shape_glyphs(s) {
@@ -649,7 +672,7 @@ pub fn push_shape_text(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, t
 
 /// The Config pages' caption glyphs: the bold set at the top of "font    font" (ASCII order), cut as retail cuts
 /// them in its label sprites: (char, u, v, w, h, top within the 13-px line).
-const CAPTION_GLYPHS: [(char, u8, u8, u8, u8, u8); 92] = [
+pub(crate) const CAPTION_GLYPHS: [(char, u8, u8, u8, u8, u8); 92] = [
     ('!', 12, 0, 6, 11, 0), ('"', 21, 0, 8, 5, 0), ('#', 30, 0, 10, 11, 0), ('$', 40, 0, 10, 11, 0),
     ('%', 50, 0, 10, 11, 0), ('&', 60, 0, 10, 11, 0), ('\'', 73, 1, 4, 6, 1), ('(', 80, 0, 6, 12, 0),
     (')', 93, 0, 6, 12, 0), ('*', 100, 0, 10, 11, 0), ('+', 111, 1, 8, 10, 1), (',', 2, 17, 5, 7, 4),
@@ -682,6 +705,9 @@ const CAPTION_SPACE: f32 = 5.0;
 /// its 13-px line at y. Headings: one pass, alpha blended (465's text, b[1, 0, 1, 1]). Button captions (`shadow`):
 /// the glyphs at (+2, +2), alpha 49, subtracted (b[1, 2, 0, 1]), then additive (b[1, 0, 2, 1]). Returns the end x.
 pub fn push_label(b: &mut UiBatch, ui: &UiFile, s: &str, x: f32, y: f32, tint: u32, shadow: bool) -> f32 {
+    if b.modern.is_some() {
+        return b.push_mtext(s, Face::Bold, 13.0, x, y - 1.5, argb(tint), true);
+    }
     let glyph = |c: char| CAPTION_GLYPHS.iter().find(|g| g.0 == c);
     let cell = |g: &(char, u8, u8, u8, u8, u8), alpha: u8, blend: [u8; 4]| {
         let (w, h) = (g.3 as i16, g.4 as i16);
@@ -723,6 +749,12 @@ pub fn label_width(s: &str) -> f32 {
 
 /// Sprite-font text ending at x, drawn from its last glyph back (FUN_101c02c0, used for numbers).
 pub fn push_shape_text_right(b: &mut UiBatch, ui: &UiFile, s: &[u8], x: f32, y: f32, tint: u32) -> f32 {
+    if b.modern.is_some() {
+        let t = crate::dat::font::decode_sjis(s);
+        let x0 = x - super::mtext::width(&t, Face::Bold, SHAPE_EM);
+        b.push_mtext(&t, Face::Bold, SHAPE_EM, x0, y + SHAPE_DY, argb(tint), true);
+        return x0;
+    }
     let Some(lib) = ui.lib("font    fontshp") else { return x };
     let mut x = x;
     for g in shape_glyphs(s).into_iter().rev() {

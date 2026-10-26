@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="none" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M18 3 L23 13 L34 14 L26 22 L28 33 L18 27 L8 33 L10 22 L2 14 L13 13 Z"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="6.42" x2="32" y2="57.57" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8dd8d"/>
+      <stop offset="0.42" stop-color="#f2c230"/>
+      <stop offset="1" stop-color="#796118"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="19.358" x2="32" y2="47.094" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faeab7"/>
+    </linearGradient>
+  </defs>
+  <title>favorites</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.028 5.673 C30.714 3.865 33.286 3.865 33.972 5.673 L40.526 22.963 L58.993 23.846 C60.925 23.938 61.721 26.386 60.212 27.596 L45.793 39.171 L50.653 57.016 C51.161 58.881 49.079 60.393 47.462 59.333 L32 49.194 L16.538 59.333 C14.921 60.393 12.839 58.881 13.347 57.016 L18.207 39.171 L3.788 27.596 C2.279 26.386 3.075 23.938 5.007 23.846 L23.474 22.963 Z" fill="#0a1118"/>
+      <path id="star" d="M32 6.42 L39.044 25.003 L58.893 25.952 L43.395 38.392 L48.619 57.57 L32 46.673 L15.381 57.57 L20.605 38.392 L5.107 25.952 L24.956 25.003 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.342" stroke-linejoin="round"/>
+      <path id="shine" d="M32 19.358 L35.939 29.268 L46.587 29.958 L38.383 36.763 L41.009 47.094 L32 41.401 L22.991 47.094 L25.617 36.763 L17.413 29.958 L28.061 29.268 Z" fill="url(#linear-gradient-2)" opacity="0.35"/>
+    </g>
+  </g>
+</svg>

@@ -116,6 +116,8 @@ pub struct Config {
     pub modern_scale: u32,
     pub modern_places: std::collections::BTreeMap<String, ModernLayout>,
     pub modern_chat_font: f32,
+    /// The modern edge windows folded to their tabs, by panel (the minimap, Wide Scan).
+    pub modern_folded: std::collections::BTreeMap<String, bool>,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -235,6 +237,7 @@ impl Default for Config {
             modern_scale: 60,
             modern_places: Default::default(),
             modern_chat_font: 15.0,
+            modern_folded: Default::default(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

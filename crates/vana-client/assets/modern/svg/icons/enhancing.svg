@@ -1,1 +1,32 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#8bc2ff" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#8bc2ff" fill="#8bc2ff" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M18 2 L23 13 L34 18 L23 23 L18 34 L13 23 L2 18 L13 13Z"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="31.023" y1="5.873" x2="31.023" y2="58.127" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b0dff9"/>
+      <stop offset="0.42" stop-color="#6fc4f4"/>
+      <stop offset="1" stop-color="#38627a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="28.582" y1="12.221" x2="28.582" y2="52.267" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cdeafb"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="52.023" y1="39.569" x2="52.023" y2="53.243" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cdeafb"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="10.512" y1="40.058" x2="10.512" y2="50.802" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#cdeafb"/>
+    </linearGradient>
+  </defs>
+  <title>enhancing</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.457 4.402 C30.305 3.499 31.742 3.499 32.59 4.402 L55.054 28.331 C56.338 29.699 55.363 31.951 53.488 31.951 L42.451 31.951 L42.451 58.127 C42.451 59.314 41.489 60.276 40.302 60.276 L21.745 60.276 C20.558 60.276 19.596 59.314 19.596 58.127 L19.596 31.951 L8.559 31.951 C6.683 31.951 5.709 29.699 6.992 28.331 Z M49.947 39.013 C50.513 36.901 53.532 36.901 54.098 39.013 L55.223 43.206 L59.416 44.331 C61.528 44.897 61.528 47.916 59.416 48.482 L55.223 49.606 L54.098 53.8 C53.532 55.912 50.513 55.912 49.947 53.8 L48.823 49.606 L44.629 48.482 C42.517 47.916 42.517 44.897 44.629 44.331 L48.823 43.206 Z M8.438 39.497 C9.007 37.391 12.018 37.391 12.587 39.497 L13.407 42.534 L16.445 43.355 C18.551 43.924 18.551 46.935 16.445 47.504 L13.407 48.325 L12.587 51.362 C12.018 53.469 9.007 53.469 8.438 51.362 L7.617 48.325 L4.58 47.504 C2.473 46.935 2.473 43.924 4.58 43.355 L7.617 42.534 Z" fill="#0a1118"/>
+      <path id="arrow" d="M31.023 5.873 L53.488 29.802 L40.302 29.802 L40.302 58.127 L21.745 58.127 L21.745 29.802 L8.559 29.802 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.367" stroke-linejoin="round"/>
+      <path id="shine" d="M31.023 12.221 L26.14 17.593 L26.14 52.267 L28.582 52.267 L28.582 19.058 L31.023 16.128 Z" fill="url(#linear-gradient-2)" opacity="0.5"/>
+      <path id="sparkle_1" data-name="sparkle 1" d="M52.023 39.569 L53.468 44.961 L58.86 46.406 L53.468 47.852 L52.023 53.243 L50.577 47.852 L45.186 46.406 L50.577 44.961 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.074" stroke-linejoin="round"/>
+      <path id="sparkle_2" data-name="sparkle 2" d="M10.512 40.058 L11.655 44.287 L15.884 45.43 L11.655 46.572 L10.512 50.802 L9.37 46.572 L5.14 45.43 L9.37 44.287 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.074" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -279,6 +279,19 @@ impl Font {
         glyphs(sjis).into_iter().map(|g| self.advance(g)).sum()
     }
 
+    /// The colour a `1e xx` (kind 0) or `1f xx` (kind 1) code sets, keeping `base`'s alpha (layout_line's rule).
+    pub fn code_colour(&self, kind: u8, xx: u8, base: [u8; 4]) -> [u8; 4] {
+        let tables = CODE_TABLES.read().ok();
+        let table = |k: usize, xx: usize| tables.as_ref().and_then(|t| t.as_ref()).map_or([0x80; 4], |t| if k == 0 { t.0[xx] } else { t.1[xx] });
+        let xx = xx as usize;
+        let c = match kind {
+            0 if xx < 0x11 => self.codes[xx].to_le_bytes(),
+            0 => table(0, xx),
+            _ => table(1, xx),
+        };
+        if kind == 0 && c == [0; 4] { base } else { [c[0], c[1], c[2], base[3]] }
+    }
+
     /// One line at pen (x, y), as FUN_10118d60: 16 px cells, pen += round(advance * scale).
     /// `color` is BGRA with 0x80 = 1.0; gaiji shapes ignore it (drawn with 0x80808080).
     pub fn layout_line(&self, sjis: &[u8], x: i32, y: i32, color: [u8; 4], scale: [f32; 2], out: &mut Vec<Quad>) -> i32 {

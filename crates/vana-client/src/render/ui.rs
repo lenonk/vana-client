@@ -1,6 +1,7 @@
 //! Menu sprites as screen-space textured quads, like the client's pre-transformed D3D8 vertices.
 
 use super::Gpu;
+use super::mtext::{self, Face};
 use crate::dat::ui::{Cell, SpriteLib, UiFile};
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
@@ -90,6 +91,125 @@ pub struct ModernFrame {
     pub top: [f32; 4],
     pub bottom: [f32; 4],
     pub inset: f32,
+}
+
+/// A cell cut from the caption glyphs: "font    font" (screens::CAPTION_GLYPHS) or the menus' italic sheet "menu
+/// menu2fon" (letters, job / race / nation tokens, digits); its text and top within its line.
+fn caption_glyph(c: &Cell) -> Option<(&'static str, f32)> {
+    match c.texture.as_str() {
+        // Retail cuts some a pixel off the table, or only a part (the dot of '.'): the glyph whose box holds the cut's
+        // centre, its top moved by where the cut starts; the cut between "Min" and "Max" is the tilde.
+        "font    font" => {
+            if (c.uv[0], c.uv[1]) == (8, 119) {
+                return Some(("~", 4.0));
+            }
+            let (cu, cv) = (c.uv[0] as f32 + c.size[0] as f32 / 2.0, c.uv[1] as f32 + c.size[1] as f32 / 2.0);
+            let g = &super::screens::CAPTION_GLYPHS;
+            g.iter()
+                .position(|g| cu >= g.1 as f32 && cu < (g.1 + g.3) as f32 && cv >= g.2 as f32 && cv < (g.2 + g.4) as f32)
+                .map(|k| (CAPTION_STRS[k], g[k].5 as f32 + c.uv[1] as f32 - g[k].2 as f32))
+        }
+        "menu    menu2fon" => menu2fon(c.uv[0], c.uv[1]),
+        _ => None,
+    }
+}
+
+/// A cell that is a glyph of either caption sheet (menu2fon's top rows are the PlayOnline logo and marks, not text).
+fn glyph_cell(c: &Cell) -> bool {
+    c.texture == "font    font" || (c.texture == "menu    menu2fon" && c.uv[1] >= 92 && !matches!(c.uv[1], 145 | 157))
+}
+
+/// A sprite's caption read from its glyph cells (none when it has no caption glyph or one it cannot read): its runs
+/// of text with their left, line top and colour, the cells at (x, y) scaled (sx, sy) and tinted. Shadow-pass cells
+/// (alpha under 100) are left out.
+pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32) -> Option<Vec<(f32, f32, String, [f32; 4])>> {
+    if !cells.iter().any(|c| caption_glyph(c).is_some()) || cells.iter().any(|c| glyph_cell(c) && caption_glyph(c).is_none()) {
+        return None;
+    }
+    let t = [(tint >> 16) as u8, (tint >> 8) as u8, tint as u8, (tint >> 24) as u8];
+    let mut glyphs = Vec::new();
+    for c in cells {
+        let Some((ch, top)) = caption_glyph(c) else { continue };
+        if c.colors[0][3] < 100 {
+            continue;
+        }
+        let (cx, cy) = (x + c.corners[0][0] as f32 * sx, y + (c.corners[0][1] as f32 - top) * sy);
+        let colour = [0, 1, 2, 3].map(|i| ps2(((c.colors[0][i] as u32 * t[i] as u32) >> 7).min(255) as u8).min(1.0));
+        glyphs.push((cx, cy, c.size[0] as f32 * sx, ch, colour));
+    }
+    // Cells are not always stored left to right: lines by closeness in y (a new one more than 4 px down), then x.
+    glyphs.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mut line = (f32::MIN, 0i32);
+    let mut keyed: Vec<(i32, (f32, f32, f32, &str, [f32; 4]))> = Vec::with_capacity(glyphs.len());
+    for g in glyphs {
+        if g.1 - line.0 > 4.0 * sy {
+            line = (g.1, line.1 + 1);
+        }
+        keyed.push((line.1, g));
+    }
+    keyed.sort_by(|a, b| (a.0, a.1.0).partial_cmp(&(b.0, b.1.0)).unwrap_or(std::cmp::Ordering::Equal));
+    // A word gap is wider than the line's usual one by 2 px or more (retail's sets overlap letters by 0..3 px); 12 px
+    // or more starts another caption.
+    let mut runs: Vec<(f32, f32, f32, String, [f32; 4])> = Vec::new();
+    let mut k = 0;
+    while k < keyed.len() {
+        let line = keyed[k].0;
+        let end = keyed[k..].iter().position(|g| g.0 != line).map_or(keyed.len(), |n| k + n);
+        let row: Vec<_> = keyed[k..end].iter().map(|(_, g)| *g).collect();
+        let mut gaps: Vec<f32> = row.windows(2).map(|p| p[1].0 - (p[0].0 + p[0].2)).filter(|g| *g < 12.0 * sx).collect();
+        gaps.sort_by(|a, b| a.total_cmp(b));
+        let usual = gaps.get(gaps.len() / 2).copied().unwrap_or(0.0);
+        for (cx, cy, cw, ch, colour) in row {
+            match runs.last_mut() {
+                Some(r) if (r.1 - cy).abs() < 4.0 * sy && cx - r.2 < 12.0 * sx && cx >= r.2 - 4.0 * sx => {
+                    if cx - r.2 >= usual + 2.0 * sx {
+                        r.3.push(' ');
+                    }
+                    r.3.push_str(ch);
+                    r.2 = cx + cw;
+                }
+                _ => runs.push((cx, cy, cx + cw, ch.to_string(), colour)),
+            }
+        }
+        k = end;
+    }
+    Some(runs.into_iter().map(|(x0, top, _, text, colour)| (x0, top, text, colour)).collect())
+}
+
+/// CAPTION_GLYPHS' characters as strings.
+const CAPTION_STRS: [&str; 92] = [
+    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", "/", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", ":", ";", "<", "=", ">", "?", "@",
+    "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z", "[", "\\", "]", "^", "_", "`",
+    "a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z", "{", "}",
+];
+
+/// menu2fon's glyphs by where they are cut: the capitals' row at v 161, the small letters' (with Y, Z) from v 173,
+/// the job, race and nation tokens and digits below; the small "JEFGD?" and italic digits rows. The nearest glyph
+/// start on the row wins.
+fn menu2fon(u: u16, v: u16) -> Option<(&'static str, f32)> {
+    const CAPS: [(u16, &str); 24] = [(3, "A"), (13, "B"), (24, "C"), (34, "D"), (45, "E"), (55, "F"), (65, "G"), (76, "H"), (87, "I"), (94, "J"), (104, "K"), (114, "L"), (124, "M"), (137, "N"), (147, "O"), (158, "P"), (168, "Q"), (179, "R"), (190, "S"), (200, "T"), (210, "U"), (220, "V"), (231, "W"), (243, "X")];
+    const SMALL: [(u16, &str); 29] = [(4, "Y"), (13, "Z"), (22, "a"), (31, "b"), (40, "c"), (49, "d"), (59, "e"), (67, "f"), (74, "g"), (83, "h"), (93, "i"), (102, "."), (106, "k"), (116, "l"), (122, "m"), (135, "n"), (145, "o"), (155, "p"), (165, "q"), (173, "r"), (181, "s"), (190, "t"), (197, "u"), (207, "v"), (216, "w"), (226, "x"), (236, "y"), (245, "z"), (98, "j")];
+    const R184: [&str; 10] = ["WAR", "MNK", "WHM", "BLM", "RDM", "THF", "PLD", "DRK", "BST", "BRD"];
+    const R194: [&str; 5] = ["RNG", "SAM", "NIN", "DRG", "SMN"];
+    const R204: [&str; 5] = ["Hum", "Elv", "Tar", "Gal", "Mit"];
+    const R214: [&str; 5] = ["BLU", "COR", "PUP", "DNC", "SCH"];
+    const DIGITS: [&str; 10] = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9"];
+    let near = |row: &[(u16, &'static str)]| row.iter().min_by_key(|(x, _)| x.abs_diff(u)).filter(|(x, _)| x.abs_diff(u) <= 3).map(|(_, s)| *s);
+    match v {
+        161 | 162 => near(&CAPS).map(|s| (s, (v - 161) as f32)),
+        173..=176 => near(&SMALL).map(|s| (s, (v - 173) as f32)),
+        184 | 185 => Some((R184.get((u as usize + 12) / 25).copied().unwrap_or("M"), 0.0)),
+        194 if u < 128 => R194.get((u as usize + 12) / 25).map(|s| (*s, 0.0)),
+        194 => DIGITS.get((u as usize - 128 + 5) / 11).map(|s| (*s, 0.0)),
+        203 if u < 200 => Some(("/", 0.0)),
+        203 => Some(("[", 0.0)),
+        204 if u >= 200 => Some(("]", 0.0)),
+        204 => R204.get((u as usize + 12) / 25).map(|s| (*s, 0.0)),
+        214 => R214.get((u as usize + 12) / 25).map(|s| (*s, 0.0)),
+        92 => ["J", "E", "F", "G", "D", "?"].get(((u as usize).saturating_sub(145) % 52 + 4) / 9).map(|s| (*s, 0.0)),
+        101 => DIGITS.get((u as usize).saturating_sub(143) / 9).map(|s| (*s, 0.0)),
+        _ => None,
+    }
 }
 
 /// PS2 colour scale: 0x80 is 1.0.
@@ -201,6 +321,19 @@ impl UiBatch {
     }
 
     pub fn push_sprite_from(&mut self, ui: &UiFile, lib: &SpriteLib, index: usize, skip: usize, x: f32, y: f32, sx: f32, sy: f32, tint: u32, blend_word: u32) {
+        // Modern on: a caption cut from the caption glyphs (a menu row's word) is drawn in the modern face instead.
+        if self.modern.is_some()
+            && let Some(s) = lib.sprites.get(index)
+            && let Some(runs) = caption_runs(&s.cells[skip.min(s.cells.len())..], x, y, sx, sy, tint)
+        {
+            for c in s.cells.iter().skip(skip).filter(|c| caption_glyph(c).is_none()) {
+                self.push_cell(ui, c, x, y, sx, sy, tint, blend_word);
+            }
+            for (x0, top, text, colour) in runs {
+                self.push_mtext(&text, Face::Bold, 13.0 * sy, x0, top - 1.5 * sy, colour, true);
+            }
+            return;
+        }
         if let Some(s) = lib.sprites.get(index) {
             for c in s.cells.iter().skip(skip) {
                 self.push_cell(ui, c, x, y, sx, sy, tint, blend_word);
@@ -210,6 +343,25 @@ impl UiBatch {
 
     pub fn push_rect(&mut self, x: f32, y: f32, w: f32, h: f32, rgba: [f32; 4]) {
         self.push_quad(None, Blend::Alpha, [[x, y], [x + w, y], [x, y + h], [x + w, y + h]], [[0.0; 2]; 4], [rgba; 4]);
+    }
+
+    /// Modern text (Modern on): `s` in face `f` at an em of `em` layout pixels from x, its line's top at y, in `color`
+    /// (straight, 1.0 full), a soft shadow under it when `shadow`. Returns the end x.
+    #[allow(clippy::too_many_arguments)]
+    pub fn push_mtext(&mut self, s: &str, f: Face, em: f32, x: f32, y: f32, color: [f32; 4], shadow: bool) -> f32 {
+        let (quads, end) = mtext::layout(s, f, em, x, y);
+        let at = |r: [f32; 4], d: f32| [[r[0] + d, r[1] + d], [r[0] + r[2] + d, r[1] + d], [r[0] + d, r[1] + r[3] + d], [r[0] + r[2] + d, r[1] + r[3] + d]];
+        let uv = |u: [f32; 4]| [[u[0], u[1]], [u[2], u[1]], [u[0], u[3]], [u[2], u[3]]];
+        if shadow {
+            let d = (em / 14.0).max(0.6);
+            for (r, u) in &quads {
+                self.push_quad(Some(mtext::TEXTURE), Blend::Alpha, at(*r, d), uv(*u), [[0.0, 0.0, 0.0, color[3] * 0.75]; 4]);
+            }
+        }
+        for (r, u) in &quads {
+            self.push_quad(Some(mtext::TEXTURE), Blend::Alpha, at(*r, 0.0), uv(*u), [color; 4]);
+        }
+        end
     }
 
     /// A whole texture stretched over a rect, alpha blended.

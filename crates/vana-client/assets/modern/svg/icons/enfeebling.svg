@@ -1,1 +1,22 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d885d4" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d885d4" fill="#d885d4" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><circle cx="18" cy="18" r="13"/><path d="M9 9 L27 27 M27 9 L9 27"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="31.449" y1="5.204" x2="31.449" y2="58.797" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#cda4ea"/>
+      <stop offset="0.42" stop-color="#a45ad8"/>
+      <stop offset="1" stop-color="#522d6c"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="9.712" x2="32" y2="27.442" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#904fbe"/>
+      <stop offset="1" stop-color="#3e2252"/>
+    </linearGradient>
+  </defs>
+  <title>enfeebling</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M19.729 5.204 C19.729 3.987 20.715 3 21.933 3 L40.966 3 C42.183 3 43.169 3.987 43.169 5.204 L43.169 32.05 L54.489 32.05 C56.413 32.05 57.412 34.36 56.096 35.763 L33.056 60.305 C32.186 61.232 30.712 61.232 29.842 60.305 L6.802 35.763 C5.486 34.36 6.486 32.05 8.409 32.05 L19.729 32.05 Z M45.273 14.219 C45.273 10.508 48.273 7.508 51.985 7.508 C55.696 7.508 58.696 10.508 58.696 14.219 C58.696 17.931 55.696 20.931 51.985 20.931 C48.273 20.931 45.273 17.931 45.273 14.219 Z M5.304 17.225 C5.304 14.124 7.813 11.615 10.913 11.615 C14.014 11.615 16.523 14.124 16.523 17.225 C16.523 20.325 14.014 22.834 10.913 22.834 C7.813 22.834 5.304 20.325 5.304 17.225 Z M49.08 25.239 C49.08 22.799 51.048 20.831 53.487 20.831 C55.926 20.831 57.895 22.799 57.895 25.239 C57.895 27.678 55.926 29.646 53.487 29.646 C51.048 29.646 49.08 27.678 49.08 25.239 Z" fill="#0a1118"/>
+      <path id="arrow" d="M31.449 58.797 L54.489 34.254 L40.966 34.254 L40.966 5.204 L21.933 5.204 L21.933 34.254 L8.409 34.254 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.402" stroke-linejoin="round"/>
+      <path id="motes" d="M47.477 14.219 C47.477 11.725 49.49 9.712 51.985 9.712 C54.479 9.712 56.492 11.725 56.492 14.219 C56.492 16.714 54.479 18.727 51.985 18.727 C49.49 18.727 47.477 16.714 47.477 14.219 Z M7.508 17.225 C7.508 15.341 9.03 13.819 10.913 13.819 C12.797 13.819 14.319 15.341 14.319 17.225 C14.319 19.108 12.797 20.631 10.913 20.631 C9.03 20.631 7.508 19.108 7.508 17.225 Z M51.283 25.239 C51.283 24.016 52.265 23.035 53.487 23.035 C54.709 23.035 55.691 24.016 55.691 25.239 C55.691 26.461 54.709 27.442 53.487 27.442 C52.265 27.442 51.283 26.461 51.283 25.239 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.102" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -204,7 +204,7 @@ pub fn page(name: &str) -> &'static [(u16, Ctl)] {
 }
 
 /// Children that do not take Enter (state 5, drawn with their state-4 sprite).
-fn disabled(name: &str, child: u16, sw: f32, mon: bool) -> bool {
+pub fn disabled(name: &str, child: u16, sw: f32, mon: bool) -> bool {
     match name {
         // Misc. 3's style lock (FUN_1019b8c0 / FUN_1019b900): not in Monstrosity.
         "conf12wi" => mon && matches!(child, 3 | 4),
@@ -325,6 +325,10 @@ pub struct ConfigUi {
     pub covered: bool,
     /// Opened in Monstrosity: Misc. 3's style lock rows are off.
     pub mon: bool,
+    /// The modern Config page: the entry chosen, whether its page has the keys, and the row there.
+    pub m_entry: usize,
+    pub m_open: bool,
+    pub m_row: usize,
 }
 
 impl ConfigUi {
@@ -352,6 +356,20 @@ impl ConfigUi {
             out.changed.push(id);
             super::configui2::linked(v, id, out);
         }
+    }
+
+    /// The modern Config page: Enter on `child` of page `name` (whatever window is on top).
+    pub fn apply(&mut self, v: &mut Values, name: &str, child: u16, sw: f32) -> Out {
+        let mut out = Out::default();
+        self.enter(v, name, child, sw, &mut out);
+        out
+    }
+
+    /// The modern Config page's sliders: config id `id` set to `x`.
+    pub fn set_value(v: &mut Values, id: u16, x: u32) -> Out {
+        let mut out = Out::default();
+        Self::set(v, &mut out, id, x);
+        out
     }
 
     /// A window's layout position on screen, with its offset (-1, -1 = centred as the lobby's windows).
@@ -615,9 +633,14 @@ impl ConfigUi {
 
     /// Draws every open window, bottom first; returns their frame rects (mouse blockers).
     pub fn draw(&self, gu: &mut GameUi, v: &Values, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+        self.draw_from(gu, v, sw, sh, 0)
+    }
+
+    /// The windows from `from` up (the modern layer draws configwi itself).
+    pub fn draw_from(&self, gu: &mut GameUi, v: &Values, sw: f32, sh: f32, from: usize) -> Vec<[f32; 4]> {
         let mut rects = Vec::new();
         let n = self.stack.len();
-        for (i, w) in self.stack.iter().enumerate() {
+        for (i, w) in self.stack.iter().enumerate().skip(from) {
             let top = i + 1 == n && !self.covered;
             // A window under a later one at the same place (k1assign over conf6win, textcol3 over textcol2) is not
             // drawn *(inf)*.

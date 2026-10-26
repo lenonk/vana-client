@@ -1,1 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="#d9b16b" fill-opacity=".22" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M18 2 L31 12 L27 28 L9 33 L3 17Z M18 2 L17 17 L31 12 M17 17 L9 33 M17 17 L27 28"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="20.771" x2="32" y2="58.852" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d9aab"/>
+      <stop offset="1" stop-color="#3f4a58"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="31.512" y1="20.771" x2="31.512" y2="37.37" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3eaf0"/>
+      <stop offset="0.5" stop-color="#9aa8b7"/>
+      <stop offset="1" stop-color="#566374"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="29.649" y1="35.707" x2="33.179" y2="55.724" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="30.047" y1="5.148" x2="30.047" y2="27.606" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e1c693"/>
+      <stop offset="0.42" stop-color="#c9973a"/>
+      <stop offset="1" stop-color="#644c1d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="30.047" y1="5.148" x2="30.047" y2="16.865" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ecdbba"/>
+    </linearGradient>
+  </defs>
+  <title>materials</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M28.442 3.72 C29.295 2.76 30.799 2.76 31.653 3.72 L39.464 12.508 C39.919 13.02 40.102 13.717 39.959 14.386 L38.984 18.937 L51.571 25.714 C51.978 25.934 52.303 26.278 52.499 26.697 L59.334 41.344 C59.581 41.873 59.602 42.479 59.392 43.023 L54.51 55.717 C54.243 56.411 53.637 56.917 52.907 57.056 L32.402 60.962 C32.159 61.008 31.909 61.012 31.665 60.974 L13.113 58.044 C12.574 57.959 12.087 57.672 11.752 57.241 L4.917 48.453 C4.459 47.864 4.339 47.079 4.601 46.38 L10.46 30.757 C10.593 30.402 10.818 30.089 11.111 29.849 L21.608 21.26 L20.135 14.386 C19.992 13.717 20.176 13.02 20.63 12.508 Z" fill="#0a1118"/>
+      <path id="ore" d="M6.613 47.135 L12.471 31.511 L23.212 22.724 L37.859 20.771 L50.552 27.606 L57.387 42.252 L52.505 54.946 L32 58.852 L13.448 55.923 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.367" stroke-linejoin="round"/>
+      <path id="top_facet" data-name="top facet" d="M12.471 31.511 L23.212 22.724 L37.859 20.771 L50.552 27.606 L36.882 34.441 L21.259 37.37 Z" fill="url(#linear-gradient-2)"/>
+      <path id="dark_facet" data-name="dark facet" d="M50.552 27.606 L57.387 42.252 L52.505 54.946 L36.882 50.064 L36.882 34.441 Z" fill="#0a1118" opacity="0.3"/>
+      <path id="edges" d="M50.356 27.213 C50.873 26.954 51.266 27.74 50.749 27.999 L37.322 34.712 L37.322 50.064 C37.322 50.642 36.443 50.642 36.443 50.064 L36.443 34.97 L21.66 37.742 L19.743 54.995 C19.679 55.57 18.806 55.473 18.87 54.898 L20.793 37.587 L12.227 31.877 C11.746 31.556 12.234 30.825 12.715 31.146 L21.354 36.905 L36.741 34.02 Z" fill="#0a1118" opacity="0.5"/>
+      <path id="nuggets" d="M40.602 40.143 C41.081 38.825 42.858 38.259 44.586 38.893 C46.305 39.518 47.32 41.09 46.832 42.409 C46.354 43.727 44.577 44.293 42.848 43.658 C41.13 43.033 40.114 41.461 40.602 40.143 Z M26.259 42.955 C28.651 42.311 30.985 43.229 31.453 44.996 C31.932 46.763 30.369 48.726 27.977 49.361 C25.585 50.005 23.251 49.087 22.782 47.32 C22.304 45.553 23.866 43.59 26.259 42.955 Z M13.057 46.158 C13.057 45.084 14.102 44.205 15.401 44.205 C16.699 44.205 17.744 45.084 17.744 46.158 C17.744 47.232 16.699 48.111 15.401 48.111 C14.102 48.111 13.057 47.232 13.057 46.158 Z M45.475 51.04 C45.475 50.074 46.432 49.283 47.623 49.283 C48.814 49.283 49.771 50.074 49.771 51.04 C49.771 52.007 48.814 52.798 47.623 52.798 C46.432 52.798 45.475 52.007 45.475 51.04 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="0.976" stroke-linejoin="round"/>
+      <path id="gem" d="M30.047 5.148 L37.859 13.936 L34.929 27.606 L25.165 27.606 L22.236 13.936 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.172" stroke-linejoin="round"/>
+      <path id="gem_facet" data-name="gem facet" d="M30.047 5.148 L37.859 13.936 L30.047 16.865 L22.236 13.936 Z" fill="url(#linear-gradient-5)" opacity="0.45"/>
+    </g>
+  </g>
+</svg>

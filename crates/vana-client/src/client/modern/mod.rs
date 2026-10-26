@@ -8,6 +8,7 @@
 mod chat;
 mod combat;
 mod command;
+mod config;
 mod equip;
 mod extras;
 mod hud;
@@ -15,6 +16,7 @@ mod items;
 mod lists;
 mod paint;
 pub mod plates;
+mod storage;
 pub mod shot;
 mod theme;
 mod topbar;
@@ -23,6 +25,8 @@ use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
 pub use command::{CmdMenu, key as command_key};
+pub use config::key as config_key;
+pub use storage::key as storage_key;
 pub use theme::{Theme, frame_image};
 use theme::{Art, LABEL, STRONG};
 
@@ -46,6 +50,10 @@ pub struct Modern {
     arranging: std::cell::Cell<bool>,
     chat_edge: std::cell::Cell<Option<(Rect, bool)>>,
     zoom: f32,
+    /// When the Wide Scan tab last asked for a list (retail asks only as the map opens; the tab keeps it fresh).
+    scan_at: std::cell::Cell<Option<std::time::Instant>>,
+    /// The last complete Wide Scan list (shown while the next one streams in, then swapped at once).
+    scan_rows: std::cell::RefCell<Vec<(super::widescan::Entry, String)>>,
     /// A place changed during a drag: saved once the pointer is let go.
     dirty: bool,
 }
@@ -61,6 +69,8 @@ impl Modern {
             images: Default::default(),
             grid: Default::default(),
             marquee: Default::default(),
+            scan_at: Default::default(),
+            scan_rows: Default::default(),
             rects: Default::default(),
             arranging: Default::default(),
             chat_edge: Default::default(),
@@ -82,7 +92,7 @@ impl Modern {
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, this: HashMap::new(), retail: HashMap::new() };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, folded: &mut cfg.modern_folded, this: HashMap::new(), retail: HashMap::new() };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -93,6 +103,8 @@ impl Modern {
         lists::draw(&mut p, w);
         items::draw(&mut p, w);
         equip::draw(&mut p, w);
+        config::draw(&mut p, w);
+        storage::draw(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -168,6 +180,7 @@ struct Panels<'a> {
     layout: &'a mut Layout,
     changed: &'a mut bool,
     chat_font: &'a mut f32,
+    folded: &'a mut std::collections::BTreeMap<String, bool>,
     /// The panels drawn this frame, as others dock on them (the chat window while it fades: its bottom edge).
     this: HashMap<String, Rect>,
     /// Places retail works out this frame (the minimap left of the windows at the edge): the default until moved.
@@ -370,7 +383,8 @@ impl<'a> Panels<'a> {
         let pos = o.at.unwrap_or_else(|| self.resolve(id, &place, h));
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
-        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).show(ctx, |ui| {
+        // A panel at a fixed point may stand partly off screen (the Timers slid in).
+        let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
             if fold < 1.0 {
                 let top = pos.y + h * (1.0 - fold);
                 ui.set_clip_rect(ui.clip_rect().intersect(Rect::from_min_max(pos2(f32::NEG_INFINITY, top), pos2(f32::INFINITY, f32::INFINITY))));

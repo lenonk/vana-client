@@ -36,7 +36,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, 15.0);
-    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, this: Default::default(), retail: Default::default() };
+    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, folded: &mut Default::default(), this: Default::default(), retail: Default::default() };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
     let lines = vec![

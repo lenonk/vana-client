@@ -14,6 +14,9 @@ pub fn icon_texture(id: u16) -> String {
 
 /// Game-font text; `tint` is the ARGB word (quads take BGRA).
 fn text(b: &mut UiBatch, font: &Font, atlas: &str, s: &str, x: f32, y: f32, tint: u32) -> f32 {
+    if b.modern.is_some() {
+        return b.push_mtext(s, super::mtext::Face::Regular, super::mtext::TEXT_EM, x, y + super::mtext::TEXT_DY, super::screens::argb(tint), false);
+    }
     let mut quads = Vec::new();
     let end = font.layout_line(&encode_sjis(s), x.round() as i32, y.round() as i32, tint.to_le_bytes(), [1.0, 1.0], &mut quads);
     b.push_text(&quads, atlas);

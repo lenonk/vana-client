@@ -1,1 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#f39a80" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#f39a80" fill="none" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M6 6 L30 30 M30 6 L6 30"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.346" x2="32" y2="58.654" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f19b93"/>
+      <stop offset="0.42" stop-color="#e5493a"/>
+      <stop offset="1" stop-color="#72241d"/>
+    </linearGradient>
+  </defs>
+  <title>failure</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M16.105 5.248 L32 21.144 L47.895 5.248 C50.893 2.251 55.754 2.251 58.752 5.248 C61.749 8.246 61.749 13.107 58.752 16.105 L42.856 32 L58.752 47.895 C61.749 50.893 61.749 55.754 58.752 58.752 C55.754 61.749 50.893 61.749 47.895 58.752 L32 42.856 L16.105 58.752 C13.107 61.749 8.246 61.749 5.248 58.752 C2.251 55.754 2.251 50.893 5.248 47.895 L21.144 32 L5.248 16.105 C2.251 13.107 2.251 8.246 5.248 5.248 C8.246 2.251 13.107 2.251 16.105 5.248 Z" fill="#0a1118"/>
+      <path id="cross" d="M14.446 6.907 L32 24.461 L49.554 6.907 C51.636 4.825 55.011 4.825 57.093 6.907 C59.175 8.989 59.175 12.364 57.093 14.446 L39.539 32 L57.093 49.554 C59.175 51.636 59.175 55.011 57.093 57.093 C55.011 59.175 51.636 59.175 49.554 57.093 L32 39.539 L14.446 57.093 C12.364 59.175 8.989 59.175 6.907 57.093 C4.825 55.011 4.825 51.636 6.907 49.554 L24.461 32 L6.907 14.446 C4.825 12.364 4.825 8.989 6.907 6.907 C8.989 4.825 12.364 4.825 14.446 6.907 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.493" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

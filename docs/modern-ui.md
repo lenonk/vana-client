@@ -238,16 +238,27 @@ Milestone 1:
   taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's
   badges stay at its size left of the name until the SVG badge set is approved; the master stars above. No bars.
-- The Extras (modern/extras.rs): the Timers window (timers.rs's sections; the heading folds it, section headings fold
-  them, bars in the Timers add-on's colours, the last 15 s pulsing), the minimap round, north up, centred on us (the
-  map image as an egui texture on a disc, the radar's dots, our arrow, N, the zone and grid; the wheel zooms) and
-  the map overlay (its box at its opacity under every panel, a bronze edge; the game's mouse still pans and zooms).
-- Default places are retail's (user, 2026-10-26): the status icons (142, 48), the cast bar (16, 94), the Timers' left
-  dock (16, 122), the main menu and the command window at the right edge (W - 128, 48), the minimap where retail
-  works it out (top right, left of the windows at the edge). A place below zero x is from the right edge.
-- The retail windows still drawn retail-style wear the modern frame while Modern is on (render/ui.rs push_frame: the
-  pack's window_normal, its gradient and border in nine slices, in the same UI pass), the lobby's too when Modern is
-  chosen; their contents stay retail's until each has its modern counterpart.
-- To do: modern counterparts in the command window for Status, the journal lists, Social, System and Config (culled);
-  the SVG plate badges; the storage views with the merged bags; the lobby screens.
+- Edge windows (modern/extras.rs edge_window): the Timers, the minimap and Wide Scan stand on the screen's left or
+  right edge (the place's x: 0 or above left, below 0 right), no border on that side, rounded corners and a double
+  bronze line elsewhere; dragged they slide along the edge and change edge on the screen's other half; folded, a tab
+  out of the edge with the name running up (left) or down (right) and a double chevron. Open, they keep clear of the
+  command column and retail's windows at the edge; folded, those draw over the tab. T folds the Timers (Ctrl / Alt +
+  T is /tell). The minimap is square, north up, with the zone and grid; Wide Scan sits under it, folded by default,
+  named as retail's list, asking every 10 s while open and nothing is tracked, the last full list kept until the next
+  is all in. The map overlay draws in egui at its box and opacity.
+- Retail windows while Modern is on: the pack's frame (render/ui.rs push_frame), the game UI's text in Inter through a
+  glyph atlas (render/mtext.rs; game font, sprite font, labels), and the captions baked into menu sprites read back
+  from their glyph cells ("font    font" and "menu    menu2fon") and drawn as text; the lobby's too when Modern is
+  chosen.
+- Config (modern/config.rs): retail's list without Windows, Misc. 1..4 as one page; Gameplay, Misc., Mouse/Cam.
+  and Global drawn natively (rows from the pages' controls, named with their layouts' own captions, help lines);
+  the list pages open retail's windows over it.
+- Storage (modern/storage.rs): the bags as tabs, Mog Safe / Safe 2 and Mog Wardrobe 1..8 merged; the bag beside the
+  inventory; a click moves a stack (right click one), into a merged bag the first part with room that takes it;
+  retail's colours say what may move.
+- Plate badges: the approved SVG set (assets/modern/badges) in place of retail's glyphs; the pearl tinted by its
+  linkshell; rank stars, the recruiter star in its orb, the master stars above.
+- Icons: batches 1 and 2 (131) redrawn in VectorCraft and approved.
+- To do: native Status, journal and Social pages in the command window; the lobby screens' own layouts; search in the
+  other lists; BattleMod / rChat in the chat.
 - Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

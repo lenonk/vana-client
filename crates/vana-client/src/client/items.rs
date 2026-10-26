@@ -288,9 +288,9 @@ pub fn open_direct(w: &mut World) {
     w.action_menu = None;
 }
 
-/// The modern layer draws this window itself: the item list or the Equipment screen (not the storage view).
+/// The modern layer draws this window itself: the item list, the storage view, the Equipment screen.
 pub fn modern_list(w: &World) -> bool {
-    matches!(w.win, Some(Win::Items { store: None, .. } | Win::Equip(_)))
+    matches!(w.win, Some(Win::Items { .. } | Win::Equip(_)))
 }
 
 /// The list's rows: the occupied inventory slots but gil; for the direct list only those FUN_101f0810 colours
@@ -415,7 +415,10 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
     if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
-        store_key(w, &info, key, page, alt);
+        // The modern storage view has its own keys.
+        if !super::modern::storage_key(w, key) {
+            store_key(w, &info, key, page, alt);
+        }
         return true;
     }
     let mut close = false;
@@ -1017,7 +1020,7 @@ fn wardrobe(c: u8) -> bool {
 }
 
 /// A container's rows in view order (the inventory as the item list shows it).
-fn store_rows(w: &World, c: u8) -> Vec<Slot> {
+pub(super) fn store_rows(w: &World, c: u8) -> Vec<Slot> {
     if c == INVENTORY {
         return listed(w, false);
     }
@@ -1115,7 +1118,7 @@ pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
 
 /// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
 /// Not done: the equipped linkshell (7, s2c 0x0E0).
-fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
+pub(super) fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
     let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
     let it = info.item(s.id);
@@ -1491,7 +1494,7 @@ fn stora_container(row: u16) -> u8 {
 
 /// FUN_101dbc20 for a container: not on either side, not 1 / 2 / 4 / 9 away from the moogle, the Locker leased, the
 /// Satchel there (ItemNum >= 30), Safe 2 owned (s2c 0x067 @0x27), Sack and wardrobes 2..8 with a size.
-fn usable(w: &World, b: &Storage, c: u8) -> bool {
+pub(super) fn usable(w: &World, b: &Storage, c: u8) -> bool {
     let n = |c: u8| w.inv.sizes[c as usize];
     !(c == b.bank
         || c == b.side

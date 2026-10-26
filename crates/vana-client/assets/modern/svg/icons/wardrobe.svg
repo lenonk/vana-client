@@ -1,1 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><rect x="2" y="2" width="60" height="60" rx="5" fill="url(#dark)" stroke="url(#gold)" stroke-width="2"/><rect x="6" y="6" width="52" height="52" rx="3" fill="#d9b16b" opacity=".12"/><path d="M8 9 H56" stroke="#fff0ba" opacity=".23"/><g transform="translate(12 12)" stroke="#d9b16b" fill="none" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"><path d="M6 5 H30 V32 H6 Z M18 5 V32 M14 17 H16 M20 17 H22"/></g></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="53.06" x2="32" y2="58.87" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="12.392" x2="32" y2="54.997" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="16.265" x2="32" y2="51.608" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="20.139" x2="32" y2="47.735" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="31.536" y1="31.066" x2="32.464" y2="36.323" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="30.318" y1="1.158" x2="33.682" y2="20.237" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>wardrobe</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M31.278 3.126 C31.745 2.958 32.255 2.958 32.722 3.126 L56.929 11.84 C57.774 12.145 58.337 12.946 58.337 13.845 L58.337 16.265 C58.337 17.442 57.383 18.396 56.207 18.396 L54.464 18.396 L54.464 52.576 C54.464 53.878 53.913 55.071 53.012 55.909 L53.012 57.708 C53.012 59.523 51.535 61 49.72 61 L46.234 61 C44.418 61 42.942 59.523 42.942 57.708 L42.942 57.127 L21.058 57.127 L21.058 57.708 C21.058 59.523 19.582 61 17.766 61 L14.28 61 C12.465 61 10.988 59.523 10.988 57.708 L10.988 55.909 C10.087 55.071 9.536 53.878 9.536 52.576 L9.536 18.396 L7.793 18.396 C6.617 18.396 5.663 17.442 5.663 16.265 L5.663 13.845 C5.663 12.946 6.226 12.145 7.071 11.84 Z" fill="#0a1118"/>
+      <path id="feet" d="M13.119 54.222 C13.119 53.583 13.641 53.06 14.28 53.06 L17.766 53.06 C18.405 53.06 18.928 53.583 18.928 54.222 L18.928 57.708 C18.928 58.347 18.405 58.87 17.766 58.87 L14.28 58.87 C13.641 58.87 13.119 58.347 13.119 57.708 Z M45.072 54.222 C45.072 53.583 45.595 53.06 46.234 53.06 L49.72 53.06 C50.359 53.06 50.881 53.583 50.881 54.222 L50.881 57.708 C50.881 58.347 50.359 58.87 49.72 58.87 L46.234 58.87 C45.595 58.87 45.072 58.347 45.072 57.708 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.356" stroke-linejoin="round"/>
+      <path id="carcass" d="M14.087 12.392 L49.913 12.392 C51.249 12.392 52.334 13.477 52.334 14.813 L52.334 52.576 C52.334 53.912 51.249 54.997 49.913 54.997 L14.087 54.997 C12.751 54.997 11.666 53.912 11.666 52.576 L11.666 14.813 C11.666 13.477 12.751 12.392 14.087 12.392 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.356" stroke-linejoin="round"/>
+      <path id="doors" d="M15.055 17.815 C15.055 16.963 15.752 16.265 16.604 16.265 L29.482 16.265 C30.335 16.265 31.032 16.963 31.032 17.815 L31.032 50.058 C31.032 50.911 30.335 51.608 29.482 51.608 L16.604 51.608 C15.752 51.608 15.055 50.911 15.055 50.058 Z M32.968 17.815 C32.968 16.963 33.665 16.265 34.518 16.265 L47.396 16.265 C48.248 16.265 48.945 16.963 48.945 17.815 L48.945 50.058 C48.945 50.911 48.248 51.608 47.396 51.608 L34.518 51.608 C33.665 51.608 32.968 50.911 32.968 50.058 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.162" stroke-linejoin="round"/>
+      <path id="panels" d="M18.444 21.301 C18.444 20.661 18.967 20.139 19.606 20.139 L26.481 20.139 C27.12 20.139 27.643 20.661 27.643 21.301 L27.643 46.573 C27.643 47.212 27.12 47.735 26.481 47.735 L19.606 47.735 C18.967 47.735 18.444 47.212 18.444 46.573 Z M36.357 21.301 C36.357 20.661 36.88 20.139 37.519 20.139 L44.394 20.139 C45.033 20.139 45.556 20.661 45.556 21.301 L45.556 46.573 C45.556 47.212 45.033 47.735 44.394 47.735 L37.519 47.735 C36.88 47.735 36.357 47.212 36.357 46.573 Z" fill="url(#linear-gradient-4)" opacity="0.45"/>
+      <path id="handles" d="M27.062 33.694 C27.062 32.678 27.885 31.855 28.902 31.855 C29.918 31.855 30.741 32.678 30.741 33.694 C30.741 34.711 29.918 35.534 28.902 35.534 C27.885 35.534 27.062 34.711 27.062 33.694 Z M33.259 33.694 C33.259 32.678 34.082 31.855 35.098 31.855 C36.115 31.855 36.938 32.678 36.938 33.694 C36.938 34.711 36.115 35.534 35.098 35.534 C34.082 35.534 33.259 34.711 33.259 33.694 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="0.871" stroke-linejoin="round"/>
+      <path id="pediment" d="M7.793 13.845 L32 5.13 L56.207 13.845 L56.207 16.265 L7.793 16.265 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.356" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
