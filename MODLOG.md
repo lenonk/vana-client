@@ -664,19 +664,19 @@ Zone 230 is file 6650, with 16553 entries.
 |---|---|---|
 | 01 len kind args… | 2 + len | English grammar block (`FUN_100bc8a0`). See below. |
 | 02 / 03 lo hi | 3 | Set `DAT_10476f98` / `DAT_10476f9a`; 03 also calls `FUN_10132030` |
-| 05 n | 2 | Kind-2 text of work[n] |
+| 05 n | 2 | Kind-2 text (combat skills, slot 0x60) of work[n] (FUN_100964a0(2, ..)) |
 | 08 | 1 | Player name (entity +0x7c / +0x210) |
 | 09 | 1 | Speaker name |
 | 0a n | 2 | num[n] as "%d" |
 | 0c n | 2 + `[a/b]` | num[n] picks an alternative (`FUN_100bbc10`) |
-| 0d / 0e n | 2 | "SeSep" sound of work / num |
+| 0d / 0e n | 2 | Plays SeSep se id work[n] / num[n] (FUN_100382c0, pan 0x40, volume 0x7f) as the line is built |
 | 10 / 11 n | 2 | Name of work / num (`FUN_100bbaf0`) |
-| 12 n | 2 | Number |
+| 12 n | 2 | work[n] "%d"; with separators (FUN_101c9440) only for languages 2 / 3 |
 | 13 0/1 | 2 | |
 | 14 n | 2 | "%d:%02u:%02u" |
 | 16 / 1a n | 2 | Name: id < 0x100 → `FUN_100bba90`, else group 7 (id − 0x100) |
 | 17 n | 2 | Player emote motion ("exp0exp1gak0…") |
-| 18 / 19 n | 2 | |
+| 18 / 19 n | 2 | Roster name (G+0x57d8 +2): 18 the record whose MemberNumber (+1) is n, n = 0 ours (FUN_100e8df0); 19 record n (FUN_100e8db0); none -> nothing |
 | 1c n | 2 | Event string n (msg+0xd04+n*0x100) |
 | 1d | 1 | Compass direction of the speaker (group 0xf) |
 | 1e xx | 2 | Colour |
@@ -702,17 +702,22 @@ Zone 230 is file 6650, with 16553 entries.
 | 7f 37 | 2 | Type 1 |
 | 7f 38 lo hi | 4 | Wait, u16 (0x8002) |
 | 7f 80 x | 3 | Article / count mode |
-| 7f 81 n | 3 | |
+| 7f 81 n | 3 | Linkshell Concierge slot num[n]'s shell name (DAT_10488b08 x 16, s2c 0x048; FUN_100bda90) |
 | 7f 84 n | 3 | List of set bits as group 3 names |
 | 7f 85 | `[m/f]` | Player gender |
 | 7f 86 / 7f 92 n | `[..]` | Plural of work / num |
 | 7f 87 / 7f 88 | `[..]` | |
-| 7f 8f n | 3 | |
+| 7f 8f n | 3 | Job ability work[n] (FUN_100bd960: ability id + 0x200) |
 | 7f 90 / 7f 91 | `[..]` | Speaker / target gender |
 | 7f 93 | 2 | String at msg+0xc10 |
-| 7f 94 / 95 / 96 / 97 | 3 | "%02d" / "$%x" / binary / work number |
+| 7f 94 / 98 / 99 / 9a | 3 | num[n] "%02d" / "%03d" / "%04d" / "%05d" |
+| 7f 95 / 97 | 3 | "$%x" of num[n] / work[n] |
+| 7f 96 | 3 | "%" and num[n]'s binary digits from the top set bit |
+| 7f 9b | 3 | work[n] (unsigned) x 0.1 "%.1f" |
 | 7f a0..ab | 3 | Vana'diel date / time parts |
-| 7f ac, b0, b1, b4, b5 | 3 | |
+| 7f b0 / b1 / b7 | 3 | Name of work[n] (u16): b0 merit (FUN_10161070: below 0x20 the category at that list position, else the file-88 record keyed n; string 2 x name id of slot 0x1d), b1 job point (slot 0x1e, 2 x id), b7 alter ego point (slot 0x20, 2 x id) |
+| 7f b4 | 3 | work[n] clamped to 0..999999999 with separators, group 10 0x5f "%s gil" |
+| 7f b5 | 3 | Row num[n] (i16) of language slot 0x21 (Monstrosity: "Main Job: Warrior", feral skills; FUN_100bd9b0) |
 | Other 7f xx | 2 | |
 
 **Decoded examples from zone 230:**
@@ -9910,3 +9915,21 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
   frame plays its close).
 - Live: Status's Profile row in the Enter frame sinks two pixels with the ring around it, and is back at (-1, -1)
   after.
+
+## Event text: the other codes of FUN_100c1650 (2026-10-26)
+
+- A census of every zone dialogue file (0..299) found codes ours dropped: 18 (2953 lines: synergy furnaces "in use by
+  ..."), 19 (238: Mog Garden owners), 7f 94 (4754), 7f 95 / 96 / 99, 7f 81 (18, the Linkshell Concierge), 7f 93 (24),
+  7f b4 (1, Mog Garden), 7f b5 (19, Monstrosity), 0e (37), 05. The code table above now says what each does (jump
+  table 0x100c2a90, byte index 0x100c2b38 + sub - 0x31; formats 0x1035d62c / 624 / 0x10350958 / 0x1035d61c / 618 /
+  610).
+- 7f 93: msg+0xc10, the name FUN_100c2e20 gets (arg 5): for 0x036 / 0x02A the speaker entity's name, else sName; for
+  0x027 none (chat_audit c027_SPEC.md).
+- A missing point name makes FUN_100c1650 return 0 (the line waits for FUN_101c8450's cache to load); ours loads
+  synchronously.
+- Ours: dat/dialog.rs expand takes `Texts` (kinds 2 / 3 / 7 from BattleText::kind_name, the point names, slot 0x21)
+  from client/event.rs EventTexts; the point tables and slot 0x21 load only for lines that use them. The point-name
+  file ids (slots 0x1d..0x21) moved from GameUi to World.point_files. Expanded.sounds go to the UI sound queue.
+- Not done: 7f 81 (needs s2c 0x048 and the concierge window); 0x1e inline colours (the log keeps one colour per line;
+  being researched); 0x17 (a player emote motion), 0x1d (the speaker's compass direction), 0x13 (Japanese).
+- `vana-client dmsg-dump SLOT [IDS]` prints a language slot's d_msg file (this build's slot numbers).

@@ -45,10 +45,10 @@ pub struct Ask {
     pub entry: u16,
 }
 
-fn tables(w: &mut World, gu: &GameUi) -> Option<Arc<JobPointTables>> {
+pub(super) fn tables(w: &mut World) -> Option<Arc<JobPointTables>> {
     if w.jp_tables.is_none() {
         let index = w.index.clone()?;
-        w.jp_tables = Some(Arc::new(JobPointTables::load(&index, gu.point_names(1))));
+        w.jp_tables = Some(Arc::new(JobPointTables::load(&index, w.point_files[1])));
     }
     w.jp_tables.clone()
 }
@@ -62,12 +62,12 @@ pub fn on_list(w: &mut World, recs: &[(u16, u8, u16)]) {
 }
 
 /// statcom2 Enter on row 8 (k 7): merit2ca; c2s 0x0C0 while no 0x08D came this session.
-pub fn open(w: &mut World, gu: &GameUi) {
-    tables(w, gu);
+pub fn open(w: &mut World) {
+    tables(w);
     if !w.jp_seen {
         let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x0C0, body: Vec::new() });
     }
-    w.jp_ui = Some(JpUi { cursor: 0, top: 0, page: None, hold: 0.0, gift_names: gu.point_names(2) });
+    w.jp_ui = Some(JpUi { cursor: 0, top: 0, page: None, hold: 0.0, gift_names: w.point_files[2] });
 }
 
 fn job_level(w: &World, job: u8) -> u8 {

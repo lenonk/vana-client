@@ -69,10 +69,10 @@ pub struct MeritUi {
 }
 
 /// The merit tables and names, loaded on the first open (FUN_10160e40).
-fn tables(w: &mut World, gu: &GameUi) -> Option<Arc<MeritTables>> {
+pub(super) fn tables(w: &mut World) -> Option<Arc<MeritTables>> {
     if w.merit_tables.is_none() {
         let index = w.index.clone()?;
-        w.merit_tables = Some(Arc::new(MeritTables::load(&index, gu.point_names(0))));
+        w.merit_tables = Some(Arc::new(MeritTables::load(&index, w.point_files[0])));
     }
     w.merit_tables.clone()
 }
@@ -90,8 +90,8 @@ pub fn on_list(w: &mut World, recs: &[(u16, u8, u8)]) {
 }
 
 /// statcom2 Enter on row 7 (FUN_10148d00 k 6): merit1 and levmerit.
-pub fn open(w: &mut World, gu: &GameUi) {
-    tables(w, gu);
+pub fn open(w: &mut World) {
+    tables(w);
     w.merits_ui = Some(MeritUi { menu: w.cursor_recall(MENU), mode: None, list: None, edit: None });
 }
 

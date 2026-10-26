@@ -209,6 +209,11 @@ impl Roster {
         self.order.iter().map(|&i| &self.recs[i]).filter(|r| r.id != 0)
     }
 
+    /// Everyone listed with their record number, in display order (G+0x9534; text codes 0x18 / 0x19).
+    pub fn indexed(&self) -> impl Iterator<Item = (usize, &Member)> {
+        self.order.iter().map(|&i| (i, &self.recs[i])).filter(|(_, r)| r.id != 0)
+    }
+
     /// Mode 0: only our own party ((flags ^ own) & 3 == 0).
     pub fn party(&self) -> impl Iterator<Item = &Member> {
         let own = self.own_flags;

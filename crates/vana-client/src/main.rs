@@ -209,6 +209,13 @@ enum Cmd {
     },
     /// Print English client messages of a group (thunk_FUN_1014c660(group, id)); all when no ids given.
     MsgDump { group: u8, ids: Vec<usize> },
+    /// Print the English d_msg file of a language slot (this build's numbering): every field of each entry.
+    DmsgDump {
+        #[arg(value_parser = parse_num)]
+        slot: u32,
+        #[arg(value_parser = parse_num)]
+        ids: Vec<u32>,
+    },
     /// Decode a menu DAT (default 79, the US lobby): images, sprite sheets and a listing.
     UiDump {
         #[arg(long, default_value_t = dat::ui::LOBBY_US)]
@@ -1396,6 +1403,19 @@ fn main() -> Result<()> {
             let ids = if ids.is_empty() { (0..4096).take_while(|&i| m.raw(i).is_some()).collect() } else { ids };
             for i in ids {
                 println!("{i:#x}: {:?}", m.get(i).unwrap_or_default());
+            }
+            Ok(())
+        }
+        Cmd::DmsgDump { slot, ids } => {
+            let cfg = config::Config::load();
+            let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
+            let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
+            let file = dat::msg::current_slot_file(&dll, 1, slot as usize).ok_or_else(|| anyhow::anyhow!("no file for slot {slot:#x}"))?;
+            let m = dat::names::DMsg::load(&index, file)?;
+            println!("slot {slot:#x}: file {file}, {} entries", m.len());
+            let ids = if ids.is_empty() { (0..m.len() as u32).collect() } else { ids };
+            for i in ids {
+                println!("{i:#x}: {:?}", m.fields(i as usize).unwrap_or_default());
             }
             Ok(())
         }

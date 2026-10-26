@@ -39,10 +39,10 @@ pub struct Ask {
     pub entry: u16,
 }
 
-fn tables(w: &mut World, gu: &GameUi) -> Option<Arc<AeTables>> {
+pub(super) fn tables(w: &mut World) -> Option<Arc<AeTables>> {
     if w.ae_tables.is_none() {
         let index = w.index.clone()?;
-        w.ae_tables = Some(Arc::new(AeTables::load(&index, gu.point_names(3))));
+        w.ae_tables = Some(Arc::new(AeTables::load(&index, w.point_files[3])));
     }
     w.ae_tables.clone()
 }
@@ -53,8 +53,8 @@ pub fn on_data(w: &mut World, d: AeData) {
 }
 
 /// statcom2 Enter on row 13 (k 12): fp_cat and fp_info; c2s 0x0C2 while no 0x08E came.
-pub fn open(w: &mut World, gu: &GameUi) {
-    tables(w, gu);
+pub fn open(w: &mut World) {
+    tables(w);
     if w.ae_data.is_none() {
         let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x0C2, body: Vec::new() });
     }

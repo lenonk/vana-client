@@ -32,6 +32,8 @@ pub struct MeritEntry {
 pub struct MeritTables {
     pub cats: Vec<MeritCat>,
     pub entries: Vec<MeritEntry>,
+    /// File 88's u16 @0 per record (its own index, or 0).
+    keys: Vec<u16>,
     names: Option<DMsg>,
 }
 
@@ -41,8 +43,9 @@ impl MeritTables {
         let (c, e) = (read(89), read(88));
         let cats = c.chunks_exact(12).map(|r| MeritCat { name: u16_at(r, 0), id: r[3], cap: r[4] }).collect();
         let entries = e.chunks_exact(12).map(|r| MeritEntry { max: r[4], jobs: u32_at(r, 8) }).collect();
+        let keys = e.chunks_exact(12).map(|r| u16_at(r, 0)).collect();
         let names = names.and_then(|f| DMsg::load(index, f).map_err(|e| log::warn!("merit names {f}: {e:#}")).ok());
-        MeritTables { cats, entries, names }
+        MeritTables { cats, entries, keys, names }
     }
 
     /// The category at list position `pos` (1..31).
@@ -66,6 +69,13 @@ impl MeritTables {
 
     pub fn desc(&self, i: u16) -> String {
         self.names.as_ref().and_then(|n| n.text(2 * i as usize + 1)).unwrap_or_default()
+    }
+
+    /// FUN_10161070 (text code 7f b0): below 0x20 the category at that list position, else the merit record keyed
+    /// `id`.
+    pub fn name_of_id(&self, id: u16) -> Option<String> {
+        let n = if id < 0x20 { self.at(id).filter(|c| c.cap != 0)?.name } else { self.keys.get(id as usize).copied().filter(|&k| k == id)? };
+        Some(self.name(n)).filter(|t| !t.is_empty())
     }
 }
 
@@ -189,6 +199,17 @@ mod tests {
         assert_eq!((hp.id, hp.cap, ws.id, ws.cap, run.id, run.cap), (1, 75, 0x1a, 15, 0x1c, 10));
         assert_eq!(t.entry(32).map(|e| e.max), Some(15));
         assert!(t.entry(35).is_none());
+    }
+
+    /// 7f b0 (FUN_10161070): position 1 is the HP/MP category, record 0x40 the STR merit.
+    #[test]
+    fn merit_name_of_id() {
+        let Some(ix) = index() else { return };
+        let Ok(dll) = std::fs::read(crate::config::Config::load().ffxi_dir().join("FFXiMain.dll")) else { return };
+        let t = MeritTables::load(&ix, crate::dat::msg::current_slot_file(&dll, 1, 0x1d));
+        assert_eq!(t.name_of_id(1).as_deref(), Some("HP/MP"));
+        assert_eq!(t.name_of_id(0x40).as_deref(), Some("STR"));
+        assert_eq!(t.name_of_id(0xc00), None);
     }
 
     /// File 94: 22 jobs with ten entries each (WAR's start 0x20, 0x22, 0x21).

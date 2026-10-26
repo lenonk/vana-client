@@ -212,6 +212,24 @@ pub struct Ctx {
     pub names: Option<std::sync::Arc<dyn super::names::NameSource>>,
     /// The date builders' group 10 strings and settings (`7f ab` / `7f ac`).
     pub dates: Option<std::sync::Arc<Dates>>,
+    /// msg+0xc10: the name the line was queued with (7f 93; the speaker for 0x036 / 0x02A, none for 0x027).
+    pub msg_name: String,
+    /// The party roster (G+0x57d8) for 0x18 / 0x19: (record, id, MemberNumber, name) in display order; our id.
+    pub party: Vec<(u8, u32, u8, String)>,
+    pub me: u32,
+    /// The client's other name tables.
+    pub texts: Option<std::sync::Arc<dyn Texts>>,
+}
+
+/// Name tables FUN_100c1650 reads besides `names`.
+pub trait Texts: Send + Sync {
+    /// FUN_100964a0(kind, id): 2 combat skills (05), 3 list names (7f 84), 7 monster abilities (16 / 1a from 0x100).
+    fn kind(&self, kind: u8, id: u32) -> Option<Vec<u8>>;
+    /// The name of work[n]: 7f b0 a merit or merit category (FUN_10161070), b1 a job point entry, b7 an alter ego
+    /// point entry.
+    fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>>;
+    /// 7f b5: row num[n] of language slot 0x21 (Monstrosity), FUN_100bd9b0.
+    fn monstrosity(&self, row: i16) -> Option<Vec<u8>>;
 }
 
 /// Group 10 by id (raw) and config 0x95 (the date order) / 0x96 (12-hour).
@@ -358,6 +376,8 @@ pub struct Expanded {
     pub place: [Option<i16>; 2],
     /// A `1f xx` code: the log mode the line takes (overrides the packet's).
     pub mode: Option<u8>,
+    /// `0d n` / `0e n`: SeSep se ids of work[n] / num[n], played as the line is built (FUN_100382c0, pan 0x40, 0x7f).
+    pub sounds: Vec<u32>,
 }
 
 /// Expands the codes a plain NPC line uses; others are dropped. Not the full FUN_100bf790.
@@ -365,6 +385,10 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     use super::font::encode_sjis;
     let mut lines = vec![Vec::new()];
     let (mut prompt, mut choice, mut wait) = (false, None, None);
+    let mut sounds = Vec::new();
+    let work = |n: usize| ctx.work.get(n).copied().unwrap_or(0);
+    let num = |n: usize| ctx.num_at(n).unwrap_or(0);
+    let texts = ctx.texts.as_deref();
     let mut place = [None; 2];
     let mut mode = None;
     let mut pending: Pending = None;
@@ -439,13 +463,15 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
             0x10 | 0x11 | 0x16 | 0x1a => {
                 let v = if c == 0x10 || c == 0x16 { ctx.work.get(a).copied() } else { ctx.num_at(a) };
                 let names = ctx.names.as_deref();
-                let t = match (c, v) {
-                    (0x10 | 0x11, Some(id)) => names.and_then(|n| n.spell(id as u32)),
-                    (_, Some(id)) if (0..0x100).contains(&id) => names.and_then(|n| n.ability(id as u32)),
+                let t = match (c, v.map(|v| v as u16 as u32)) {
+                    (0x10 | 0x11, Some(id)) => names.and_then(|n| n.spell(id)).map(|t| encode_sjis(&t)),
+                    (_, Some(id)) if id < 0x100 => names.and_then(|n| n.ability(id)).map(|t| encode_sjis(&t)),
+                    // Kind 7 (monster abilities) from 0x100.
+                    (_, Some(id)) => texts.and_then(|t| t.kind(7, id - 0x100)),
                     _ => None,
                 };
                 if let Some(t) = t {
-                    push(&mut lines, &encode_sjis(&t));
+                    push(&mut lines, &t);
                 }
                 capital(&mut lines, &mut cap);
                 2
@@ -454,7 +480,40 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                 mode.get_or_insert(a as u8);
                 2
             }
-            0x1e | 0x05 | 0x0d | 0x0e | 0x10..=0x19 | 0x1b => 2,
+            // 05 n: kind-2 text (combat skills) of work[n] (FUN_100964a0(2, ..)).
+            0x05 => {
+                if let Some(t) = texts.and_then(|t| t.kind(2, work(a) as u16 as u32)) {
+                    push(&mut lines, &t);
+                }
+                2
+            }
+            0x0d | 0x0e => {
+                sounds.push(if c == 0x0d { work(a) } else { num(a) } as u32);
+                2
+            }
+            // 12 n: work[n] "%d" (separators only for languages 2 / 3, FUN_101c9440).
+            0x12 => {
+                push(&mut lines, work(a).to_string().as_bytes());
+                2
+            }
+            0x14 => {
+                let t = work(a);
+                push(&mut lines, format!("{}:{:02}:{:02}", t / 3600, (t % 3600 / 60) as u32, (t % 60) as u32).as_bytes());
+                2
+            }
+            // 18 n (FUN_100e8df0): the roster record whose MemberNumber is n (n = 0: ours); 19 n (FUN_100e8db0): record n.
+            0x18 | 0x19 => {
+                let m = ctx.party.iter().find(|m| match (c, a) {
+                    (0x18, 0) => m.1 == ctx.me,
+                    (0x18, _) => m.2 as usize == a,
+                    _ => m.0 as usize == a,
+                });
+                if let Some(m) = m.filter(|m| !m.3.is_empty()) {
+                    push(&mut lines, &encode_sjis(&m.3));
+                }
+                2
+            }
+            0x1e | 0x10..=0x19 | 0x1b => 2,
             0x7f => match a as u8 {
                 0x31 => {
                     prompt = true;
@@ -508,7 +567,62 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
                     push(&mut lines, &text);
                     3
                 }
-                0x36 | 0x81..=0x84 | 0x8f | 0x94..=0x97 | 0xad..=0xb5 => 3,
+                // 7f 84 n: the kind-3 names of work[4]'s set bits (n x 0x20 + bit), space separated.
+                0x84 => {
+                    let base = s.get(i + 2).copied().unwrap_or(0) as u32 * 0x20;
+                    let names: Vec<Vec<u8>> = (0..32).filter(|b| work(4) as u32 >> b & 1 != 0).filter_map(|b| texts.and_then(|t| t.kind(3, base + b))).collect();
+                    push(&mut lines, &names.join(&b' '));
+                    3
+                }
+                // 7f 8f n: the job ability of work[n] (FUN_100bd960: id + 0x200).
+                0x8f => {
+                    let id = (work(s.get(i + 2).copied().unwrap_or(0) as usize) as i16).clamp(0, 0x10ff) as u32;
+                    if let Some(t) = ctx.names.as_deref().and_then(|n| n.ability(id + 0x200)) {
+                        push(&mut lines, &encode_sjis(&t));
+                    }
+                    3
+                }
+                0x93 => {
+                    push(&mut lines, &encode_sjis(&ctx.msg_name));
+                    2
+                }
+                // 7f 94 / 98 / 99 / 9a n: num[n] "%02d" / "%03d" / "%04d" / "%05d"; 95 "$%x" of num[n], 97 of work[n]; 96
+                // "%" and num[n]'s binary digits; 9b work[n] (unsigned) x 0.1 "%.1f".
+                0x94..=0x9b => {
+                    let n = s.get(i + 2).copied().unwrap_or(0) as usize;
+                    let t = match a as u8 {
+                        0x94 => format!("{:02}", num(n)),
+                        0x98 => format!("{:03}", num(n)),
+                        0x99 => format!("{:04}", num(n)),
+                        0x9a => format!("{:05}", num(n)),
+                        0x95 => format!("${:x}", num(n)),
+                        0x96 => format!("%{:b}", num(n)),
+                        0x97 => format!("${:x}", work(n)),
+                        _ => format!("{:.1}", work(n) as u32 as f64 * 0.1),
+                    };
+                    push(&mut lines, t.as_bytes());
+                    3
+                }
+                0xb0 | 0xb1 | 0xb7 => {
+                    let id = work(s.get(i + 2).copied().unwrap_or(0) as usize) as u16;
+                    if let Some(t) = texts.and_then(|t| t.point(a as u8, id)) {
+                        push(&mut lines, &t);
+                    }
+                    3
+                }
+                // 7f b4 n: work[n] in 0..999999999 with separators (FUN_101c9440), group 10 0x5f "%s gil".
+                0xb4 => {
+                    let v = work(s.get(i + 2).copied().unwrap_or(0) as usize).clamp(0, 999_999_999) as u32;
+                    push(&mut lines, format!("{} gil", super::battle::separated(v)).as_bytes());
+                    3
+                }
+                0xb5 => {
+                    if let Some(t) = texts.and_then(|t| t.monstrosity(num(s.get(i + 2).copied().unwrap_or(0) as usize) as i16)) {
+                        push(&mut lines, &t);
+                    }
+                    3
+                }
+                0x36 | 0x81..=0x83 | 0xad..=0xb6 => 3,
                 _ => 2,
             },
             0x20..0x7f => {
@@ -522,7 +636,7 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
     while lines.len() > 1 && lines.last().is_some_and(|l| l.is_empty()) {
         lines.pop();
     }
-    Expanded { lines, prompt, choice, wait, place, mode }
+    Expanded { lines, prompt, choice, wait, place, mode, sounds }
 }
 
 #[cfg(test)]
@@ -633,5 +747,51 @@ mod tests {
         assert_eq!(file_id(256), 85591);
         assert_eq!(file_id(1000), 57945);
         assert_eq!(file_id(2000), 68511);
+    }
+
+    struct Stub;
+
+    impl Texts for Stub {
+        fn kind(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+            Some(format!("k{kind}:{id}").into_bytes())
+        }
+
+        fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>> {
+            Some(format!("p{sub:x}:{id}").into_bytes())
+        }
+
+        fn monstrosity(&self, row: i16) -> Option<Vec<u8>> {
+            Some(format!("m{row}").into_bytes())
+        }
+    }
+
+    fn line(zone: u16, id: u32, ctx: &Ctx) -> Option<String> {
+        let cfg = crate::config::Config::load();
+        let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok()?;
+        let e = expand(&Dialog::load(&index, zone).ok()?.raw(id)?, ctx);
+        Some(e.lines.iter().map(|l| decode_sjis(l)).collect::<Vec<_>>().join("|"))
+    }
+
+    /// FUN_100c1650's other codes on real lines: 7f b5 (zone 71), 7f b4 (280), 7f 94 (1), 18 (1), 7f 93 (43), 7f 95 /
+    /// 96 (210), and 0e's sound (102).
+    #[test]
+    fn more_codes() {
+        let texts = Some(std::sync::Arc::new(Stub) as std::sync::Arc<dyn Texts>);
+        let ctx = Ctx { num: [3, 12, 0, 0, 0, 0, 0, 0], work: [1234567, 0, 0, 0, 0], texts: texts.clone(), ..Default::default() };
+        let Some(t) = line(71, 11627, &ctx) else { return };
+        assert_eq!(t, "m3 (lv. 12)");
+        assert_eq!(line(280, 7592, &ctx).unwrap(), "GIL:1,234,567 gil");
+        let t = line(1, 70, &Ctx { num: [5, 0, 12, 0, 0, 0, 0, 7], ..Default::default() }).unwrap();
+        assert!(t.contains("05") && t.contains("12") && t.contains("07"), "{t}");
+        let party = vec![(0, 0x100, 0, "Me".into()), (3, 0x200, 1, "Ally".into())];
+        let ctx = Ctx { party, me: 0x100, msg_name: "Kupipi".into(), num: [10, 0, 0, 0, 0, 0, 0, 0], ..Default::default() };
+        assert_eq!(line(1, 22, &ctx).unwrap(), "The synergy furnace is currently in use by Ally.");
+        assert!(line(43, 7418, &ctx).unwrap().starts_with("Your ally, Kupipi, has obtained 10 Petras!"));
+        let t = line(210, 7492, &Ctx { num: [0x2d, 0, 0, 0, 0, 0, 0, 0], ..Default::default() }).unwrap();
+        assert!(t.ends_with("$2d|Base-2 (binary): %101101"), "{t}");
+        let cfg = crate::config::Config::load();
+        let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).unwrap();
+        let e = expand(&Dialog::load(&index, 102).unwrap().raw(12608).unwrap(), &Ctx { num: [0, 41, 0, 0, 0, 0, 0, 0], ..Default::default() });
+        assert_eq!(e.sounds, [41]);
     }
 }

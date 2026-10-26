@@ -4473,6 +4473,10 @@ struct World {
     /// Alter Ego Points: the window, the tables and s2c 0x08E's data.
     ae_ui: Option<aepoints::AeUi>,
     ae_tables: Option<Arc<crate::dat::merits::AeTables>>,
+    /// The d_msg files of language slots 0x1d..0x21: merit, job point, gift, alter ego point and Monstrosity names.
+    point_files: [Option<u32>; 5],
+    /// Slot 0x21's names (7f b5), loaded on first use.
+    mon_names: Option<Arc<crate::dat::names::DMsg>>,
     ae_data: Option<aepoints::AeData>,
     jp_list: HashMap<u16, (u8, u16)>,
     jp_seen: bool,
@@ -5006,6 +5010,7 @@ pub struct App {
     search_words: Option<Arc<crate::dat::tables::SearchWords>>,
     blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
     cnq_tables: Option<Arc<crate::dat::tables::CnqTables>>,
+    point_files: [Option<u32>; 5],
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
@@ -5199,6 +5204,7 @@ impl App {
             search_words: None,
             blu_data: None,
             cnq_tables: None,
+            point_files: [None; 5],
             game_ui: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
@@ -5556,6 +5562,7 @@ impl App {
             let blu_desc = crate::dat::msg::current_slot_file(&dll, 1, 0x1a);
             self.blu_data = Some(Arc::new(crate::dat::blumagic::BluData::load(self.index.as_ref().unwrap(), blu_desc)));
             self.cnq_tables = crate::dat::tables::conquest(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
+            self.point_files = [0x1d, 0x1e, 0x1f, 0x20, 0x21].map(|slot| crate::dat::msg::current_slot_file(&dll, 1, slot));
             self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
@@ -5916,6 +5923,8 @@ impl App {
                             jp_tables: None,
                             ae_ui: None,
                             ae_tables: None,
+                            point_files: self.point_files,
+                            mon_names: None,
                             ae_data: None,
                             jp_list: HashMap::new(),
                             jp_seen: false,

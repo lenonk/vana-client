@@ -148,8 +148,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     prompt as retail, login screen sounds, the fade waits, the generic press rings on every window done;
   - UI sounds (audit `~/ffxi/lab/research/sound_audit.md`): done, <ncall> / <scall> too (the tell sound "0p40" is in no
     resident file);
-  - the message formatter (dat/msgfmt.rs), /clock and the event date codes 7f a0..ac done; left 7f b0 / b1 / b4 / b5,
-    the other callers;
+  - the message formatter (dat/msgfmt.rs), /clock, the event date codes 7f a0..ac and the other event codes (MODLOG
+    "Event text: the other codes of FUN_100c1650") done; left 7f 81 (with the Linkshell Concierge: s2c 0x048, its
+    window), inline colours 1e xx in the log, the other callers;
   - list scroll bars (MODLOG "List scroll bars"): done for the item, magic, shop, query, log, map and config lists;
     the key item / quest / mission / currency lists, the status point lists, auclist, the Link List; the mouse and
     the wheel on them;

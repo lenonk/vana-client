@@ -59,8 +59,6 @@ pub struct GameUiData {
     /// The registry's group masks (u16 +0x2a, window +0x38): FUN_1015fa00 suspends a window whose bits a window
     /// above it holds.
     groups: std::collections::HashMap<String, u16>,
-    /// The d_msg files of language slots 0x1d..0x20 (current numbering): merit, job point, gift and alter ego names.
-    point_names: [Option<u32>; 4],
 }
 
 /// The menu registry in FFXiMain: {name[32], handler, u32 flags, ...} records 0x2c apart from "menu    menuwind" to
@@ -151,17 +149,11 @@ impl GameUiData {
         let styles = (0..8).filter_map(|k| parse(WINDOW_STYLE_BASE + k).map_err(|e| log::warn!("window style {k}: {e:#}")).ok()).collect();
         let (registry, groups) = menu_registry(ffximain);
         let status = [0x3a, 0x3b].map(|slot| crate::dat::msg::current_slot_file(ffximain, 1, slot).and_then(|f| index.read(f).map_err(|e| log::warn!("status info {f}: {e:#}")).ok()).map(std::sync::Arc::new));
-        let point_names = [0x1d, 0x1e, 0x1f, 0x20].map(|slot| crate::dat::msg::current_slot_file(ffximain, 1, slot));
-        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry, groups, point_names })
+        Ok(Self { lobby, style, font, menu_msgs, title_msgs, cmd_help, map_regions, region_groups, item_fmt, aug_text, servers, aug_tables, mnc2, lobby_msgs, stats, area_names, errors, count_fmt, styles, status, registry, groups })
     }
 }
 
 impl GameUi {
-    /// The name file of language slot 0x1d + k: 0 merits, 1 job points, 2 gifts, 3 alter ego points.
-    pub fn point_names(&self, k: usize) -> Option<u32> {
-        self.data.point_names.get(k).copied().flatten()
-    }
-
     /// "menu    dmgnum" (file 39542) and its texture: the on-screen damage number glyphs.
     pub fn dmgnum(&self) -> Option<(&SpriteLib, &crate::dat::ui::UiImage)> {
         let lib = self.data.lobby.lib("menu    dmgnum")?;

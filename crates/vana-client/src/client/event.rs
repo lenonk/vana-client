@@ -2285,6 +2285,52 @@ pub fn talk(w: &mut World, target: u32) -> bool {
     true
 }
 
+/// The tables an event line's codes read (dialog::Texts); the point and Monstrosity names are loaded only for lines
+/// that use them.
+struct EventTexts {
+    bt: Option<Arc<crate::dat::battle::BattleText>>,
+    merits: Option<Arc<crate::dat::merits::MeritTables>>,
+    jp: Option<Arc<crate::dat::merits::JobPointTables>>,
+    ae: Option<Arc<crate::dat::merits::AeTables>>,
+    mon: Option<Arc<crate::dat::names::DMsg>>,
+}
+
+fn event_texts(w: &mut World, raw: &[u8]) -> EventTexts {
+    let has = |sub: u8| raw.windows(2).any(|p| p == [0x7f, sub]);
+    if has(0xb5) && w.mon_names.is_none()
+        && let (Some(index), Some(f)) = (w.index.clone(), w.point_files[4])
+    {
+        w.mon_names = crate::dat::names::DMsg::load(&index, f).map_err(|e| log::warn!("Monstrosity names {f}: {e:#}")).ok().map(Arc::new);
+    }
+    EventTexts {
+        bt: w.battle.clone(),
+        merits: if has(0xb0) { super::merits::tables(w) } else { None },
+        jp: if has(0xb1) { super::jobpoints::tables(w) } else { None },
+        ae: if has(0xb7) { super::aepoints::tables(w) } else { None },
+        mon: w.mon_names.clone(),
+    }
+}
+
+impl dialog::Texts for EventTexts {
+    fn kind(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+        self.bt.as_ref()?.kind_name(kind, id)
+    }
+
+    fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>> {
+        let t = match sub {
+            0xb0 => self.merits.as_ref()?.name_of_id(id)?,
+            0xb1 => self.jp.as_ref()?.name(id),
+            _ => self.ae.as_ref()?.name(id),
+        };
+        Some(crate::dat::font::encode_sjis(&t)).filter(|t| !t.is_empty())
+    }
+
+    fn monstrosity(&self, row: i16) -> Option<Vec<u8>> {
+        let t = self.mon.as_ref()?.text(usize::try_from(row).ok()?)?;
+        Some(crate::dat::font::encode_sjis(&t))
+    }
+}
+
 /// s2c 0x036 / 0x02A: zone dialogue by server id (mapped to the install with MsgShift), into the log.
 pub fn zone_text(w: &mut World, t: &ZoneText) {
     let Some(zone) = w.zone else { return };
@@ -2312,6 +2358,8 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         return;
     }
     let speaker = if t.name.is_empty() { entity.clone().unwrap_or_default() } else { t.name.clone() };
+    // msg+0xc10: FUN_100ad5e0 / FUN_100ad660 get the speaker entity's name, else sName; 0x027 none.
+    let msg_name = if t.packet == 0x027 { String::new() } else { entity.clone().unwrap_or_else(|| t.name.clone()) };
     // The "%s : " prefix (FUN_100abbb0; MesNum bit 15 none). 0x027: String1's, or with String2 / Flags 1 the NPC's
     // own name (a PC: String2); bit 15 set: String2 when set and Flags 2.
     let prefix = match t.packet {
@@ -2326,8 +2374,25 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         let group10 = Box::new(move |id: u16| bt.group10_raw(id as usize));
         Arc::new(dialog::Dates { group10, date_key: (w.game.get(0x95) & 3) as usize, h12: w.game.get(0x96) & 1 != 0 })
     });
-    let ctx = dialog::Ctx { player: w.name.clone(), speaker, num: t.num, g, strings: t.strings.clone(), female: matches!(w.my_race, 2 | 4 | 6 | 7), names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>), dates, ..Default::default() };
+    let party = w.party.indexed().map(|(i, m)| (i as u8, m.id, m.number, m.name.clone())).collect();
+    let texts = Some(Arc::new(event_texts(w, &raw)) as Arc<dyn dialog::Texts>);
+    let ctx = dialog::Ctx {
+        player: w.name.clone(),
+        speaker,
+        num: t.num,
+        g,
+        strings: t.strings.clone(),
+        female: matches!(w.my_race, 2 | 4 | 6 | 7),
+        names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>),
+        dates,
+        msg_name,
+        party,
+        me: w.my_id,
+        texts,
+        ..Default::default()
+    };
     let e = dialog::expand(&raw, &ctx);
+    w.sounds.extend(&e.sounds);
     // The log mode: Type below 8 by table 0x1035b944, else 0; a 1f code in the text overrides it.
     const MODES: [u8; 8] = [0x8e, 0xa1, 0x90, 0x91, 0x92, 0xa1, 0x94, 0x95];
     let mode = e.mode.unwrap_or(MODES.get(t.kind as usize).copied().unwrap_or(0));

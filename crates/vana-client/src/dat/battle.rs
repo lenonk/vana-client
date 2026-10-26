@@ -277,6 +277,17 @@ impl BattleText {
         self.basic.raw(id as u32)
     }
 
+    /// FUN_100964a0(kind, id) for kinds 2 (combat skills), 3 (list names) and 7 (monster abilities).
+    pub fn kind_name(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+        let d = match kind {
+            2 => &self.skills,
+            3 => &self.lists,
+            7 => &self.mob_skills,
+            _ => return None,
+        };
+        Some(Self::name_of(d, id)).filter(|t| !t.is_empty())
+    }
+
     fn name_of(d: &Option<Dialog>, id: u32) -> Vec<u8> {
         d.as_ref().and_then(|d| d.raw(id)).map(|r| r.split(|&b| b == 0).next().unwrap_or_default().to_vec()).unwrap_or_default()
     }
