@@ -2367,6 +2367,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if st.target.is_some() {
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
+    // The status icons are layer 0 (registry +0x29): every window draws over them.
+    buffs::draw(gu, world, sw, sh);
+    buffs::draw_party(gu, world, sw, sh, log.rect);
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(layout::draw(gu, world, sw, sh));
     blockers.extend(auction::draw(gu, world, sw, sh));
@@ -2377,8 +2380,6 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
     blockers.extend(trade::draw(gu, world, sw, sh));
     blockers.extend(gauge::draw(gu, world, sw, sh));
-    buffs::draw(gu, world, sw, sh);
-    buffs::draw_party(gu, world, sw, sh, log.rect);
     // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
     blockers.extend(search::draw(gu, world, sw, sh));
     // arealist draws over scresult (layer 3) and beside searchma / scsibori.
