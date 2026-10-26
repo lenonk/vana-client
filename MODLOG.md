@@ -9205,3 +9205,14 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
 - Not yet: Place (bankmenu and the furniture list), the mannequin's equipment row, the grid overlay, the link-999
   ceiling in view 0. Known: each furniture reload adds its textures to the GPU again (31 -> 75 over five moves): the
   held piece should move its instance matrix instead.
+
+## Event op 0xb6 subs 0 / 1 on a model NPC (2026-10-25)
+
+- FUN_100b1150 sub 0 writes entity +0xfc and sub 1 +0xef. +0xfc is the face of a race-and-gear look but the model id
+  of a model NPC (0x00E SubKind 0 sets it), +0xef its race code. Ours always built a race-and-gear look from them, so
+  a model NPC turned into race 0 with a face of the value: nothing drawn.
+- The user's case: A Shantotto Ascension's second cutscene (West Sarutabaruta event 0x3e, from Windurst Waters on
+  Burgeoning Dread): LSB's Moogle (17248868) is model 52; the script's `b6 00 #2361` makes it the letter-carrying
+  moogle (0x939). It was missing (the user) or the small model 52 (our replay). Now sub 0 on a model NPC sets its
+  model and sub 1 its race code (Entity::race). Replayed live with Lnxcsfix (!addmission 11 1, !zone 238, !zone 115):
+  the moogle at full size with its letter.

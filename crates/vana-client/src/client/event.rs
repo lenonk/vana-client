@@ -484,7 +484,8 @@ impl LiveHost<'_> {
         if a == PLAYER { self.w.my_id } else { a }
     }
 
-    /// Op 0xb6 (FUN_100b1150) on the event actor's look (0x16: the player's): 0 face, 1 race, 2..0xa slot sub - 2
+    /// Op 0xb6 (FUN_100b1150) on the event actor's look (0x16: the player's): 0 face (a model NPC's model), 1 race (its
+    /// race code), 2..0xa slot sub - 2
     /// (face head body hands legs feet main sub range), 0xb race and slots 0..7, 0xc the fixed model val@2 (type 7),
     /// 0x16 race, face and slots 1..8 of the player. 0xd / 0xe (race and slots with flags) and the scales 0xf / 0x17
     /// are not applied yet.
@@ -500,6 +501,26 @@ impl LiveHost<'_> {
             return;
         }
         let cur = self.w.actors.get(&id).and_then(|a| a.source);
+        // A model NPC (0x00E SubKind 0): +0xfc is its model and +0xef its race code, so subs 0 / 1 change those; the
+        // other subs build a race-and-gear look as for a PC.
+        let model_npc = match cur {
+            Some(super::Source::Npc(NpcLook::Model(_))) => true,
+            None => self.w.entities.get(&id).is_some_and(|e| e.sub_kind == 0 && e.model != 0),
+            _ => false,
+        };
+        if model_npc && sub == 0 {
+            let source = super::Source::Npc(NpcLook::Model(v(0)));
+            if cur.is_none_or(|c| format!("{c:?}") != format!("{source:?}")) {
+                self.w.event_looks.push((id, source));
+            }
+            return;
+        }
+        if model_npc && sub == 1 {
+            if let Some(e) = self.w.entities.get_mut(&id) {
+                e.race = (v(0) != 0).then_some(v(0) as u8);
+            }
+            return;
+        }
         let mut look = match cur {
             Some(super::Source::Pc(l)) | Some(super::Source::Npc(NpcLook::Equipped(l))) => l,
             _ => crate::dat::character::Look::default(),
