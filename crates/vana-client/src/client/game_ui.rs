@@ -607,16 +607,28 @@ impl GameUi {
     /// `lobby_window_swaps` where a swap may take its sprite from another library (FUN_1011ae50 with another table).
     #[allow(clippy::too_many_arguments)]
     pub fn lobby_window_lib_swaps(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16], swaps: &[(u16, Option<&str>, usize)]) -> Option<LobbyWin> {
+        self.lobby_window_full(name, w, h, off, sel, hand, hide, swaps, [0.0; 4])
+    }
+
+    /// Ours, not retail: the frame grown by `pad` (left, top, right, bottom) around the unchanged content; its left
+    /// and bottom edges stay where the layout puts them (the content moves right and up).
+    pub fn lobby_window_padded(&mut self, name: &str, w: f32, h: f32, sel: Option<u16>, hand: bool, pad: [f32; 4]) -> Option<LobbyWin> {
+        self.lobby_window_full(name, w, h, (pad[0], -pad[3]), sel, hand, &[], &[], pad)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn lobby_window_full(&mut self, name: &str, w: f32, h: f32, off: (f32, f32), sel: Option<u16>, hand: bool, hide: &[u16], swaps: &[(u16, Option<&str>, usize)], pad: [f32; 4]) -> Option<LobbyWin> {
         let frame = self.cursor_frame();
         let (dx, dy) = (off.0, off.1 + self.stack_dy(name, w, h));
-        let (fx, fy, fw, fh) = screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0);
+        let grow = |(fx, fy, fw, fh): (f32, f32, f32, f32)| (fx - pad[0], fy - pad[1], fw + pad[0] + pad[2], fh + pad[1] + pad[3]);
+        let (fx, fy, fw, fh) = grow(screens::frame_rect(self.data.lobby.menu(name)?, w, h, 1.0, 1.0));
         if !self.win_gate(name, [fx + dx, fy + dy, fw, fh]) {
             return None;
         }
         let ui = &self.data.lobby;
         let m = ui.menu(name)?;
         let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
-        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let (fx, fy, fw, fh) = grow(screens::frame_rect(m, w, h, 1.0, 1.0));
         let (x, y, fx, fy) = (x + dx, y + dy, fx + dx, fy + dy);
         self.batch.push_frame(ui, &self.data.style, fx, fy, fw, fh, 1.0, 1.0, 0x8080_8080, 0, false, false);
         if let Some(r) = m.elements[0].refs.iter().find(|r| r.kind == 0)

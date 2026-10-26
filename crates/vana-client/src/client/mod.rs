@@ -2654,7 +2654,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Stacked by lobby_window_off itself. The hover runs every frame (FUN_10125360: the cursor moves when the child
     // under the pointer changes, SE 0001); the release confirms the cursor child (FUN_1015de50, SE 0002).
     if dead && world.ko_offer == 2 && world.confirm.is_none() {
-        if let Some(win) = gu.lobby_window_off("menu    resynus", sw, sh, (0.0, 0.0), Some(if world.raise_yes { 1 } else { 2 }), true, &[]) {
+        // Ours (the user's call): the frame a little larger so the baked text does not touch its edges.
+        if let Some(win) = gu.lobby_window_padded("menu    resynus", sw, sh, Some(if world.raise_yes { 1 } else { 2 }), true, [8.0, 4.0, 8.0, 4.0]) {
             let hovered = input.pointer.and_then(|p| win.children.iter().find(|(id, r)| matches!(id, 1 | 2) && inside(r, p)).map(|(id, _)| *id));
             if hovered.is_some() {
                 gu.hover.set(true);

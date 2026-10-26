@@ -9298,3 +9298,12 @@ Spec `layout_mode_spec.md` 2.3, 2.5, 3.0..3.4, 4.1..4.3, 5.2, 5.3 (client/layout
   auction."); Daggers By Level then Job (WAR), the Crystals name toggle saved, reloaded on the next open and cleared.
 - Inferred / not compared with retail: the date column's width (the sprite font's "26/10/25" fills its 65 px), the
   stack rows' name colour, the old 0x550-byte AUCSORT.DAT (cleared instead of converted).
+
+## The raise prompt's frame, larger (ours, 2026-10-26)
+
+- The user found the prompt cramped: framesus 90 bakes "Allow yourself / to be revived?" into the window's sprite,
+  reaching x 111 of its 112 px and the frame's top edge, and the compass behind it showed past the right edge.
+  Retail's layout and the compass (kept while dead, FUN_1021ed90; closed only by group-4 windows, FUN_1015ed10)
+  were checked; which of the two retail draws on top was not traced.
+- Ours, at the user's call: resynus draws through GameUi::lobby_window_padded, the frame 8 px wider each side and
+  4 px taller top and bottom, its left and bottom edges where the layout puts them (the content moves right and up).
