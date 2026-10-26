@@ -8345,8 +8345,8 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
 - The drawing (XiFurnitureActor, FUN_100c4410): the file's first MMB, static, no fade. Ours: each file its own
   geometry (MMB and texture names repeat across files) with a placement per piece, drawn with the scenery pass
   (render set_furniture, textures after the zone's; a '_' name gets the alpha test as retail's +0x770), loaded on a
-  thread whenever the scanned set changes. Lit as scenery for now *(retail lights it as an actor plus the house's
-  'l_01' light)*.
+  thread whenever the scanned set changes. Lit as scenery with no area plus the zone light 'l_01' (MODLOG "Mog House
+  furniture: the l_01 light").
 - Effects: each piece is an actor to the effect system (id 0x04000000 | an index down from 0x3ff, its file, its
   matrix): the file's auto model generators start (FUN_10085060), and a file with an 'init' scheduler runs it once.
 - Live (Lnxcsfix in the San d'Oria house, char_inventory rows with the exdata): Simple Bed, Desk with the Porcelain
@@ -8361,7 +8361,7 @@ Spec: `~/ffxi/lab/research/camera_collision_spec.md` (FUN_1001ee60 [2019 FUN_100
   CXiSklFurnitureActor): an actor (id after the MMB pieces') loading the same file formula through Source::File,
   standing at the piece's place and idling. Live: the Prishe Statue (277) on its pedestal. Its 'pop0' / 'init' are
   not started *(inf: retail plays them as a server NPC's)*.
-- Not done: mannequins (type 14, the 0x026 look), actor lighting, the item-gated zone NPC (FUN_101d4c80), layout mode.
+- Not done: mannequins (type 14, the 0x026 look), the item-gated zone NPC (FUN_101d4c80), layout mode.
 
 ## Ground tilt (2026-10-25; spec ~/ffxi/lab/research/ground_tilt_spec.md)
 
@@ -9933,3 +9933,21 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Not done: 7f 81 (needs s2c 0x048 and the concierge window); 0x1e inline colours (the log keeps one colour per line;
   being researched); 0x17 (a player emote motion), 0x1d (the speaker's compass direction), 0x13 (Japanese).
 - `vana-client dmsg-dump SLOT [IDS]` prints a language slot's d_msg file (this build's slot numbers).
+
+## Mog House furniture: the l_01 light (2026-10-26; spec ~/ffxi/lab/research/furniture_light_spec.md)
+
+- Correction: XiFurnitureActor is lit as scenery, not as an actor. Its draw FUN_101844c0 (from FUN_100c4c20 with the
+  zone renderer DAT_10631f24) sets the directional light, ambient and fog with FUN_1018b9a0 / b9e0 / ba20 mode 0 (the
+  background group) and area 0, as the scenery frame does; no material light factor (one fixed zone material). Skinned
+  pieces and mannequins take the actor path, as ours already does.
+- Its one point light: with the myroom object set, the light-table entry keyed 'l_01' (FUN_10178760) in the first
+  point slot (+0x394b0, D3D light 1), else that slot off. Every Mog House scene (389 / 390 / 391, 2F 83806..83809)
+  lists only 'l_01', fed by an auto-start world generator; the room and the actors on its floor already took it.
+- Ours: render set_furniture gives every furniture instance lights [slot of 'l_01' + 1, 0, 0, 0] (furniture_lights),
+  kept in furn_inst for move_furniture.
+- Live (Lnxcsfix in the San d'Oria house, Simple Bed / Desk + Porcelain Flowerpot / Fire Lamp / aquarium / Imperial
+  Standard; before / after shots, ~/ffxi/lab/scratch/furnlight/cmp_*.png): the bed's top, the banner and the aquarium
+  frame warm slightly; walls, rug and actors unchanged. Pieces near the walls change little (our point-light falloff,
+  spec 8.2).
+- Open (spec 8): the scenery ambient may be twice retail's (D3DRS_AMBIENT = ftol(ambient x 128)); the 3 blended pieces
+  keep z writes in retail *(inf)*. Neither changed.

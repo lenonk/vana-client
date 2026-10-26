@@ -984,6 +984,12 @@ pub struct Instance {
     band: [f32; 4],
 }
 
+/// FUN_101844c0: furniture is lit as scenery with one point light, the zone light keyed 'l_01' (slot +0x394b0; every
+/// Mog House scene lists only it); none when the zone has no such light.
+fn furniture_lights(keys: &[u32]) -> [u32; 4] {
+    [keys.iter().position(|&k| k == u32::from_le_bytes(*b"l_01")).map_or(0, |s| s as u32 + 1), 0, 0, 0]
+}
+
 /// Instance stride (actors with a CPU-posed mesh use the same layout, lights 0).
 const INSTANCE_BYTES: u64 = std::mem::size_of::<Instance>() as u64;
 
@@ -1361,8 +1367,10 @@ impl ZoneRenderer {
             b
         };
         self.furn_base = Some(self.textures.len());
+        let lights = furniture_lights(&self.light_keys);
         for (geo, textures) in files {
-            let [v, i, m] = geo.parts();
+            let [v, i, _] = geo.parts();
+            let inst: Vec<Instance> = geo.matrices.iter().map(|m| Instance { lights, ..*m }).collect();
             let tex_base = self.textures.len();
             let white = self.textures[0].clone();
             self.textures.extend(std::iter::repeat_n(white, textures.len()));
@@ -1371,13 +1379,13 @@ impl ZoneRenderer {
             self.furniture.push(SubGeometry {
                 vertices: buffer("furniture vertices", v, wgpu::BufferUsages::VERTEX),
                 indices: buffer("furniture indices", i, wgpu::BufferUsages::INDEX),
-                instances: buffer("furniture instances", m, wgpu::BufferUsages::VERTEX),
+                instances: buffer("furniture instances", bytemuck::cast_slice(&inst), wgpu::BufferUsages::VERTEX),
                 draws,
                 tex_base,
                 link: 0,
                 shown: false,
             });
-            self.furn_inst.push(geo.matrices.clone());
+            self.furn_inst.push(inst);
         }
         if !self.budgeted {
             let base = self.furn_base.unwrap_or(0);
@@ -2224,5 +2232,15 @@ mod refract_tests {
         let near = |a: f32, b: f32| (a - b).abs() < 1e-6;
         assert_eq!(Refract::tf_alpha(0x80), 0.0);
         assert!(near(Refract::tf_alpha(0x40), 0.250_980) && near(Refract::tf_alpha(0x0b), 0.458_824) && near(Refract::tf_alpha(0xff), 0.505_882));
+    }
+}
+
+#[cfg(test)]
+mod furniture_tests {
+    /// FUN_101844c0: l_01 at table slot 0 is light 1; no l_01, no light.
+    #[test]
+    fn furniture_lights() {
+        assert_eq!(super::furniture_lights(&[u32::from_le_bytes(*b"l_01")]), [1, 0, 0, 0]);
+        assert_eq!(super::furniture_lights(&[]), [0; 4]);
     }
 }
