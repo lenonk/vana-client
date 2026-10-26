@@ -82,16 +82,21 @@ keyboard in combat.
 Charcoal / slate, muted bronze, parchment, restrained jewel tones, readable contrast; Vana'diel-inspired icons and
 type, little ornament. Text is rendered at run time, never baked into sprites.
 
-The pack, as checked on 2026-10-26 (`crates/vana-client/assets/modern`):
+The pack in use is the production pack v2 (2026-10-26, `crates/vana-client/assets/modern`; the first pack was
+replaced the same day):
 
-- `manifest.json` (schema 1): 196 sprites with atlas rects and nine-slice margins: 22 nine-slice frames, buttons and
-  rows; 7 gauges; 10 status / target sprites; 126 icons (36 px); 8 drag / window overlays; 23 key caps.
-- `atlases/*.png`: six packed RGBA atlases at 1x (panels 96 px with 16 px margins, rows 128 x 32).
-- `svg/`: the editable sources of every sprite. `theme.json`: colours, type roles and sizes, scale, metrics.
-- The icons are simple line symbols on a dark tile, placeholders by the pack's own note.
-- The gauge sprites have their fill baked in at about 70%; track and fill are not separate, so the layer draws gauges
-  itself from the same shapes and colours (client/modern/paint.rs).
-- The concept sheet and the four mockups are illustrations, not assets (baked text, generated art).
+- `manifest.json`: 304 items with logical sizes, 2x atlas rects and nine-slice insets in logical pixels; six 2x
+  atlases; `svg/` sources; `theme.json` (the palette); `NINE_SLICE.md` (the frame contract).
+- Window frames (normal, focused, inactive, alert, tooltip, border-only): 80 x 80 logical, 24 insets, ornamented
+  edges meant to be tiled, never stretched. Every variant shares the border shape and has a pure vertical gradient
+  inside; the layer cuts each variant's border out with the border-only frame's alpha and draws the gradient
+  stretched under it, so a window of any size has no banding and no stretched ornament (client/modern/paint.rs).
+- Gauges as empty / full pairs (HP, MP, TP, cast, experience, recast), drawn as the empty bar with the full one cut
+  at the value.
+- Controls: buttons, list rows, inputs, tabs, title bars, item slots and drop outlines, arrows, check boxes, key caps,
+  scroll thumbs. 22 job pictograms (not SE's emblems). Indicators: target rings by relation, priorities, item and
+  status badges. 131 generic icons (placeholders for game art).
+- Text is never in the art; fonts are Inter and JetBrains Mono (Cinzel was dropped with the first pack).
 
 ## Technical plan
 
@@ -131,14 +136,19 @@ scale.
 
 ## State (branch ui-update)
 
-Milestone 1, first pass:
+Milestone 1:
 
-- client/modern: `theme.rs` (theme, manifest, atlases as egui textures, fonts), `paint.rs` (nine-slice, gauges),
-  `hud.rs` (panels), `mod.rs` (the layer, zoom, panels with saved places).
-- egui's zoom follows the window height against theme.json's 1080 reference (clamped 0.75 .. 2.5).
-- Panels: Status (name, jobs, HP / MP / TP; no MP row without MP), Party (the others, HP; the party cursor, the
-  target and hover marked with the row sprites; a click targets the member), Target (name, HP). Movable; places saved
+- client/modern: `theme.rs` (palette, manifest, atlases as egui textures, the frames, fonts), `paint.rs` (windows of
+  any size, nine-slices, gauges), `hud.rs` (the panels from views gathered from the World), `mod.rs` (the layer,
+  zoom, panels with saved places), `shot.rs` (`vana-client modern-shot [--backdrop PNG] --out PNG`: the panels with
+  sample values and every frame at several sizes, offscreen).
+- egui's zoom follows the window height against 1080 (clamped 0.75 .. 2.5).
+- Panels in the normal frame: Status (job pictogram, name, jobs; HP / MP / TP gauges and values; no MP row without
+  MP), Party (the others in list rows: pictogram, name, HP; the party cursor or our target selected, hover, away
+  members greyed; a click targets the member), Target (the ring for its relation, name, HP). Movable; places saved
   per character in config `modern_layout` when the pointer is let go.
 - The retail party, alliance and target windows are not drawn while Modern is on.
-- Seen live (Lnxcsfix, 2026-10-26): Status and Target. The Party panel not yet (the bots did not accept invites).
-- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, reset layout.
+- Seen live (Lnxcsfix, 2026-10-26): Status, Target, a panel moved and its place kept. Party only offscreen (the bots
+  did not accept invites).
+- Not yet: keyboard focus between panels, alliance rows, the target's cast and claim colours, reset layout, the
+  focused / inactive frames for focus.

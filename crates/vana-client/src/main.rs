@@ -456,6 +456,17 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// The modern UI layer offscreen: its panels with sample values and every window frame, over a screenshot.
+    ModernShot {
+        #[arg(long, default_value_t = 1920)]
+        width: u32,
+        #[arg(long, default_value_t = 1080)]
+        height: u32,
+        #[arg(long)]
+        backdrop: Option<PathBuf>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Disassemble a zone's event scripts (event DAT), with dialogue text inlined.
     EventDump {
         zone: u16,
@@ -1016,6 +1027,7 @@ fn main() -> Result<()> {
             println!("bounds {} .. {}; wrote {}", mesh.min, mesh.max, out.display());
             Ok(())
         }
+        Cmd::ModernShot { width, height, backdrop, out } => client::modern_shot(width, height, backdrop.as_deref(), &out),
         Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, world, help_time, bench, out, .. } => {
             client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, world, frame, view, help_time, width, height, bench }, &out)
         }

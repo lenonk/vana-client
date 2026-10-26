@@ -9,6 +9,7 @@ mod netwait;
 mod modern;
 mod monstrosity;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
+pub use modern::shot::shot as modern_shot;
 pub use hudtop::topbar_shot;
 mod event;
 mod buffs;

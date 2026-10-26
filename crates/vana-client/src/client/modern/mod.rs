@@ -4,13 +4,14 @@
 
 mod hud;
 mod paint;
+pub mod shot;
 mod theme;
 
 use super::World;
-use egui::{Color32, Context, FontFamily, Rect, RichText, Shape, pos2};
+use egui::{Context, FontFamily, FontId, Rect, Shape, Ui, pos2, vec2};
 use std::collections::BTreeMap;
 pub use theme::Theme;
-use theme::{Art, DISPLAY};
+use theme::{Art, STRONG};
 
 /// A character's window places in points, by window id (config `modern_layout`).
 pub type Layout = BTreeMap<String, [f32; 2]>;
@@ -27,8 +28,8 @@ impl Modern {
         Self { theme: Theme::load(), art: Art::load(ctx), zoom: 0.0 }
     }
 
-    /// One frame: egui's zoom for the window height (theme.json "scale"), then the panels. True when a panel moved
-    /// (the layout is to be saved).
+    /// One frame: egui's zoom for the window height, then the panels. True when a panel moved (the layout is to be
+    /// saved).
     pub fn ui(&mut self, ctx: &Context, w: &mut World, window: [u32; 2], layout: &mut Layout) -> bool {
         let native = ctx.native_pixels_per_point().unwrap_or(1.0);
         let zoom = self.theme.zoom(window[1] as f32 / native);
@@ -51,6 +52,13 @@ pub fn off(ctx: &Context, m: Option<&mut Modern>) {
     }
 }
 
+/// A panel's title row: an optional icon, the title, an optional note at the right.
+struct Title<'a> {
+    icon: Option<&'a str>,
+    text: &'a str,
+    note: Option<&'a str>,
+}
+
 /// What a frame's panels share.
 struct Panels<'a> {
     m: &'a Modern,
@@ -60,18 +68,14 @@ struct Panels<'a> {
 }
 
 impl Panels<'_> {
-    /// A movable panel `width` points wide: the pack's panel_window behind it, the title in the display face with a
-    /// rule under it, then `add`'s contents. Placed from the layout, else at `default` (fractions of the screen); a
-    /// new place is kept once the pointer is let go.
-    fn panel(&mut self, id: &str, title: &str, width: f32, default: [f32; 2], add: impl FnOnce(&mut egui::Ui)) -> Option<Rect> {
-        let t = &self.m.theme;
+    /// A movable panel `width` points wide in the pack's normal window frame (any size: paint::window), its title row,
+    /// then `add`'s contents. Placed from the layout, else at `default` (fractions of the screen); a new place is kept
+    /// once the pointer is let go.
+    fn panel(&mut self, id: &str, title: Title, width: f32, default: [f32; 2], add: impl FnOnce(&mut Ui)) -> Option<Rect> {
+        let m = self.m;
         let screen = self.ctx.content_rect();
         let saved = self.layout.get(id).map(|p| pos2(p[0], p[1]));
         let pos = saved.unwrap_or(pos2(screen.width() * default[0], screen.height() * default[1]));
-        let pad = 14.0;
-        let (accent, edge, text) = (t.color("accent"), t.color("edge"), t.color("text"));
-        let title_size = t.ui + 3.0;
-        let frame = self.m.art.sprite("panel_window");
         let shown = egui::Window::new(format!("modern {id}"))
             .title_bar(false)
             .resizable(false)
@@ -80,18 +84,15 @@ impl Panels<'_> {
             .constrain(true)
             .show(self.ctx, |ui| {
                 let bg = ui.painter().add(Shape::Noop);
-                let inner = egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                    ui.set_width(width - 2.0 * pad);
-                    ui.visuals_mut().override_text_color = Some(text);
-                    ui.label(RichText::new(title).family(FontFamily::Name(DISPLAY.into())).size(title_size).color(accent));
-                    let y = ui.cursor().min.y + 3.0;
-                    let x = ui.max_rect().x_range();
-                    ui.painter().hline(x, y, egui::Stroke::new(1.0, edge.gamma_multiply(0.6)));
-                    ui.add_space(9.0);
+                let inner = egui::Frame::NONE.inner_margin(egui::Margin { left: 22, right: 22, top: 16, bottom: 18 }).show(ui, |ui| {
+                    ui.set_width(width - 44.0);
+                    ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
+                    title_row(ui, m, &title);
+                    ui.add_space(6.0);
                     add(ui);
                 });
-                if let Some(s) = frame {
-                    ui.painter().set(bg, paint::nine_slice(&s, inner.response.rect, 1.0, Color32::WHITE));
+                if let Some(f) = m.art.frame("window_normal") {
+                    ui.painter().set(bg, paint::window(f, inner.response.rect, 1.0));
                 }
                 inner.response.rect
             })?;
@@ -102,5 +103,21 @@ impl Panels<'_> {
             *self.moved = true;
         }
         shown.inner
+    }
+}
+
+fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
+    let h = 28.0;
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
+    let p = ui.painter();
+    let mut x = r.min.x;
+    if let Some(s) = t.icon.and_then(|i| m.art.sprite(i)) {
+        p.add(paint::image(&s, pos2(x, r.center().y - 13.0), 26.0, egui::Color32::WHITE));
+        x += 34.0;
+    }
+    let font = FontId::new(m.theme.title, FontFamily::Name(STRONG.into()));
+    p.text(pos2(x, r.center().y), egui::Align2::LEFT_CENTER, t.text, font, m.theme.color("gold"));
+    if let Some(n) = t.note {
+        p.text(pos2(r.max.x, r.center().y), egui::Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.small), m.theme.color("muted"));
     }
 }
