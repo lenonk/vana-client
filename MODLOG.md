@@ -8983,3 +8983,22 @@ lists and the storage view:
   rows_abs.
 - Not done: the arrows' hover state (message 9 disables the paged list until a row is hovered, so a Ctrl-click on an
   arrow does nothing in retail; ours switches).
+
+## Weapon skills from NPCs and trusts: the per-race files (2026-10-25)
+
+- FUN_100a9230 (vtable +0x2c0 of all seven actor classes) sends a category 3 / 14 / 15 action through FUN_100d25e0
+  whenever the caster is a CXiSkeletonActor (FUN_1002c8f0 walks the class chain from vtable[0]); only other casters
+  use the generic file (0xd48 + animation). Every actor class with a model is one: their descriptors (vtable[0] returns
+  it, +8 the parent) are XiChocoboActor2, CXiGeomActor, CXiSklFurnitureActor, CXiMannequinActor, CXiDancerActor and
+  XiSkeletonActor2 over CXiSkeletonActor, and CXiSkeletonActor itself.
+- FUN_100d25e0 takes the race code from FUN_10084420: vtable +0x3b4 true (XiSkeletonActor2 and XiChocoboActor2,
+  FUN_100d7410) gives the actor's own +0xa0c (set by FUN_100a4b50), else the entity's race byte +0xef. A model-id
+  look never writes +0xef (FUN_1009afe0 stores the model at +0xfc and +0xee = 2), so it stays 0 from FUN_1008a350:
+  table entry 0, Hume male's files (33227 + animation). Race codes 9 and up load nothing.
+- So a trust's weapon skill (LSB: category 3, mob skill 238 Uriel Blade animation 243 for Valaineral, model 3014 on
+  an elv_ skeleton) plays 33470, the leap with golden rays and the burst, not 3643 (rings and an orb, the generic
+  file). Ours took the per-race files for PC looks only. Now every actor with a model does, race 0 for model looks.
+  Its body info byte 9 (the skirt file) is taken as unset *(inf)*.
+- The fx-sweep could not see it: it ran each animation's generic file and checked op coverage only.
+- Live (Lnxcsfix, West Ronfaure, trust Valaineral on a Wild Rabbit): "skill files [33470]", main / cst1 / mot1 and the
+  tbb2 / grw2 / fls2 generators.

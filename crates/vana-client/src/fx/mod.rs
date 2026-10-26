@@ -54,7 +54,8 @@ pub trait Actors {
     fn hidden(&self, id: u32) -> bool;
     /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
     fn models(&self) -> Vec<(u32, Vec<u32>)>;
-    /// PC skeletons (CXiSkeletonActor): race code and body info byte 9 (+0x881).
+    /// Skeleton actors (CXiSkeletonActor: every actor with a model, PCs, NPCs and monsters alike): FUN_10084420's race
+    /// code and body info byte 9 (+0x881).
     fn pc(&self, _id: u32) -> Option<(u8, i8)> {
         None
     }

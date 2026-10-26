@@ -3803,8 +3803,10 @@ impl crate::fx::Actors for FxActors<'_> {
     }
 
     fn pc(&self, id: u32) -> Option<(u8, i8)> {
-        let pc = self.actors.get(&id)?.character.as_ref()?.pc?;
-        Some((pc.race, pc.skirt))
+        let ch = self.actors.get(&id)?.character.as_ref()?;
+        // A model NPC's race byte (+0xef) is never set by its look, so 0: Hume male's files (a trust's weapon skill).
+        // Its body info byte 9 is taken as unset *(inf)*.
+        Some(ch.pc.map_or((0, -1), |pc| (pc.race, pc.skirt)))
     }
 
     fn foot(&self, id: u32) -> Option<Vec3> {

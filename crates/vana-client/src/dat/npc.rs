@@ -214,6 +214,17 @@ pub fn load_npc(index: &DatIndex, look: &NpcLook) -> Result<Character> {
 mod tests {
     use super::*;
 
+    /// Prints a model file's init scheduler (by hand: `cargo test --release init_of -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn init_of() {
+        let index = crate::dat::DatIndex::open(&crate::config::Config::load().ffxi_dir()).unwrap();
+        for id in [99_921u32] {
+            let file = index.read(id).unwrap();
+            println!("{id}: {:?}", init_scheduler(&file));
+        }
+    }
+
     /// Mount files (mount_model_spec.md 2.3): the raptor, the tiger's side-saddle for Hume F, the moogle whose `moun`
     /// comes before its `info`.
     #[test]

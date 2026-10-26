@@ -245,8 +245,7 @@ impl Effects {
                     self.end_action(&ctx);
                     return;
                 };
-                // Skeleton casters of weapon skills load per-race files (FUN_100d0570); those are not loaded yet
-                // *(inf: falls back to the generic file)*.
+                // The generic file; run_pending swaps in the per-race files for a skeleton caster.
                 self.pending.push(Pending { file: Some(base + anim), actor: None, name: MAIN, a1: Who::Actor(caster), a2: first, action: Some(ctx), speed, end_cast: Some(caster), age: 0.0, skill: matches!(a.category, 3 | 0xe | 0xf).then_some((a.category, anim as u16)), skill_caster: None, wait_motion: None, num: None, quiet: false, own: false });
             }
             7..=0xa | 0xc => {
@@ -374,8 +373,9 @@ impl Effects {
         let list = std::mem::take(&mut self.pending);
         for mut p in list {
             p.age += f.dt;
-            // FUN_100d0570: PC skeletons take weapon skills from per-race files (and a skirt variant), loaded as
-            // motion files on the actor; others keep the generic file.
+            // FUN_100a9230 -> FUN_100d25e0: a skeleton caster (any actor with a model) takes weapon skills from its race
+            // code's files (and a skirt variant), loaded as motion files on the actor; only a caster without one keeps
+            // the generic file.
             if let (Some((cat, anim)), Some(caster)) = (p.skill.take(), p.a1.id())
                 && let Some((race, skirt)) = actors.pc(caster)
                 && let Some((file, second)) = skill_files(cat, anim, race, skirt)
