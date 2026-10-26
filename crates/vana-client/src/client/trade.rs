@@ -367,6 +367,79 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     handover_info(w).or_else(|| p2p_info(w))
 }
 
+/// The child of window `name` (ids in `ids`) under the pointer, from its layout at its drawn place.
+fn child_at(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> Option<u16> {
+    let ((x, y), lay) = (gu.window_xy(name, sw, sh)?, gu.layout(name)?);
+    let hit = |e: &crate::dat::ui::MenuElement| p.0 >= x + e.x as f32 && p.0 < x + e.x as f32 + e.w as f32 && p.1 >= y + e.y as f32 && p.1 < y + e.y as f32 + e.h as f32;
+    lay.elements.iter().skip(1).find(|e| ids.contains(&e.id) && hit(e)).map(|e| e.id)
+}
+
+fn over(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32)) -> bool {
+    gu.window_rect(name, sw, sh).is_some_and(|[x, y, ww, hh]| p.0 >= x && p.0 < x + ww && p.1 >= y && p.1 < y + hh)
+}
+
+/// The mouse on the focused trade window: a child under it takes the cursor, a click on the cursor's child is Enter
+/// and a right click on the window Escape; the picker's rows as the item list's (items::pointer).
+pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    let (window, picker, ctr) = match (&w.handover, &w.p2p.ui) {
+        (Some(h), _) => match h.focus {
+            Focus::Window => (Some((HANDOVER, h.cursor, 1..=11)), None, None),
+            Focus::Picker => (None, Some(h.list), None),
+            Focus::Qty => (None, None, Some(ITEMCTRL)),
+            Focus::Money => (None, None, Some(MONEYCTR)),
+        },
+        (None, Some(u)) => match u.focus {
+            PFocus::Trade => (Some((TRADE, u.cursor, 1..=11)), None, None),
+            PFocus::Gift => (Some((GIFT, u.gift, 1..=8)), None, None),
+            PFocus::Picker => (None, Some(u.list), None),
+            PFocus::Qty => (None, None, Some(ITEMCTRL)),
+            PFocus::Money => (None, None, Some(MONEYCTR)),
+        },
+        _ => return,
+    };
+    if let Some((name, cursor, ids)) = window {
+        if right && over(gu, name, sw, sh, p) {
+            key(w, gu, egui::Key::Escape);
+            return;
+        }
+        let Some(id) = child_at(gu, name, sw, sh, p, ids) else { return };
+        gu.hover.set(true);
+        if id != cursor && (moved || clicked) {
+            match (&mut w.handover, &mut w.p2p.ui) {
+                (Some(h), _) => h.cursor = id,
+                (None, Some(u)) if u.focus == PFocus::Gift => u.gift = id,
+                // After our OK only OK and Cancel take the cursor.
+                (None, Some(u)) if w.p2p.state != 4 || matches!(id, 9 | 10) => u.cursor = id,
+                _ => return,
+            }
+            w.sounds.push(Ui::Cursor as u32);
+        } else if clicked {
+            key(w, gu, egui::Key::Enter);
+        }
+    } else if let Some((sc, cu)) = picker {
+        if right && super::post::picker_row(gu, sw, sh, p).is_some() {
+            key(w, gu, egui::Key::Escape);
+            return;
+        }
+        let Some(row) = super::post::picker_row(gu, sw, sh, p).filter(|r| sc + r < super::post::picker_rows(w).len()) else { return };
+        gu.hover.set(true);
+        if row != cu && (moved || clicked) {
+            match (&mut w.handover, &mut w.p2p.ui) {
+                (Some(h), _) => h.list.1 = row,
+                (None, Some(u)) => u.list.1 = row,
+                _ => {}
+            }
+        } else if clicked {
+            key(w, gu, egui::Key::Enter);
+        }
+    } else if let Some(name) = ctr
+        && right
+        && over(gu, name, sw, sh, p)
+    {
+        key(w, gu, egui::Key::Escape);
+    }
+}
+
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     handover_bars(gu, w, bars);
     p2p_bars(gu, w, bars);

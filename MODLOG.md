@@ -9405,3 +9405,16 @@ FUN_101cf510 (client/layout.rs `overlay`, render/lines.wgsl, ZoneRenderer `set_l
   retail (WM_CHAR FUN_101ab630, apart from the key functions context 0x42 masks).
 - Live (Lnxcsfix, its Mog House): `/layout`, Space, `/keyitem` -> the 0x50 line. With the main menu up `/keyitem`
   ran (menuwind has no 0x20000).
+
+## Trade windows: the mouse (2026-10-26)
+
+- The focused trade window takes the mouse as the other windows do (the generic window manager's hover / click):
+  the child under the pointer takes the cursor (SE 0001), a click on the cursor's child is Enter and a right click
+  on the window is Escape. Hand-over: slots 1..8, OK 9, Cancel 10, gil 11; player trade: "menu    trade" 1..11
+  (after our OK only OK / Cancel take the cursor, as the keys) and "menu    gift" 1..8. The picker (the inventory list
+  at x 200, post::picker_row) as the item list: hover moves the row cursor, a click on it is Enter, a right click
+  Escape. itemctrl / moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
+- Live (Lnxcsfix, the Moogle in its house, main menu Trade): hover slot 2, click (picker), hover and click Distilled
+  Water (No. of Items), Enter (in slot 2), right click (cursor to Cancel), click Cancel (closed). Player trade not
+  tried live (one account).
+- Script note: a test's first `move` has no egui pointer delta, so it does not count as moved; move twice.

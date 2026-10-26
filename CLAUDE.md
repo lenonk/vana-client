@@ -103,7 +103,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     yellow, the requirement column, the scroll colours, the settled flag (s2c 0x01D) done; left the dice / attachment
     colours (need s2c 0x063 sub 4 and 0x044);
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
-    done but untested live (needs a second account); left mouse in both, the target prompt with no target;
+    done but untested live (needs a second account); the mouse in both done (MODLOG "Trade windows: the mouse"; player
+    trade's not tried live); left the target prompt with no target;
   - /check on a player (client/inspect.rs, MODLOG "/check on a player"): the inspect window done; left the bazaar
     list behind View Wares (c2s 0x105);
   - main menu rows (specs in `~/ffxi/lab/research/`: `party_menu_spec.md`, `status_window_spec.md`,
