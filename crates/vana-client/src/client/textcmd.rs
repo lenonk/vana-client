@@ -46,6 +46,7 @@ mod id {
     pub const MAILBOX: u16 = 0x7c;
     pub const LAYOUT: u16 = 0x7f;
     pub const REMODEL: u16 = 0x80;
+    pub const GARDEN: u16 = 0x83;
     pub const LASTSYNTH: u16 = 0x9d;
     pub const SENDPOST: u16 = 0x7e;
     pub const SHOUT: u16 = 0x02;
@@ -115,6 +116,7 @@ mod id {
     pub const JOBMASTERDISP: u16 = 0x8b;
     pub const PARTYINFO: u16 = 0x1ad;
     pub const BLACKLIST: u16 = 0x3b;
+    pub const MUTELIST: u16 = 0x3c;
     pub const PRCMD: u16 = 0x61;
     pub const ACMD: u16 = 0x57;
     pub const JOIN: u16 = 0x58;
@@ -868,6 +870,29 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             super::layout::enter(w);
             Ok(())
         }
+        // FUN_1007e8d0 (/garden): the gate as /layout's to the busy window (no furnished-room or visitor check), the
+        // moogle home (7 0x48); then bankmenu (FUN_101d3380 mode 2).
+        id::GARDEN => {
+            if !w.room_flag || w.myroom.is_none() {
+                return Err(());
+            }
+            if w.mh_owner != 0 {
+                refuse(w, 0xbc);
+                return Err(());
+            }
+            if !status_gate(w, 0x44) {
+                return Ok(());
+            }
+            if super::moogle::job_cooling(w) || w.layout.is_some() || w.remodel.is_some() {
+                return Err(());
+            }
+            if !super::myroom::in_city(w.zone) {
+                refuse(w, 0x48);
+                return Ok(());
+            }
+            super::layout::garden(w);
+            Ok(())
+        }
         // FUN_1007e7a0 (/remodel): the gate as /layout's to the cooldown; a busy window (Err); not furnished (7 0x47);
         // 2F not unlocked (Err); open to visitors or asked to be (SE 0004); then the Remodel list (FUN_101d6890).
         id::REMODEL => {
@@ -1610,6 +1635,15 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::BLACKLIST => blacklist(w, args),
+        // FUN_1007ca40: a fresh condition (no area), status 0x20000000 (flag 0x40), searched in every area; nothing while
+        // a query is out (FUN_1020a9d0).
+        id::MUTELIST => {
+            if !super::search::busy(w) {
+                let cond = crate::net::search::Cond { flags: crate::net::search::STATUS, status: 0x2000_0000, last_area: -1, ..Default::default() };
+                super::search::run(w, cond, super::search::Scope::World);
+            }
+            Ok(())
+        }
         id::PRCMD => prcmd(w, args, mode),
         id::JOIN | id::DECLINE => {
             // FUN_1007d640 / FUN_1007d670: c2s 0x074 {u8 Res 1 / 0}; the invite is no longer pending.

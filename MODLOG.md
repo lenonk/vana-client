@@ -9798,3 +9798,18 @@ PS2-era system, statuses 6 / 0x26.. and 0x081 / 0x066, is not done: LSB never se
 - Live (Lnxcsfix): Region Info hover / click Conquest (the map), right click (the map fades out), right click (the
   main menu back); /helpdesk hover Mentor Search, click Config, right clicks back and out; the action menu's Chat
   (Right) window hover Party, right click; /check on bot Doran (after !goto), hover the ring slot, right click.
+
+## /garden and /mutelist (2026-10-26)
+
+- /garden (FUN_1007e8d0): the Mog House gate as /layout's up to the busy window (no furnished-room check, no visitor
+  check), no moogle -> 7 0x48 (index 6); then FUN_101d3380(2, -1, 1): bankmenu (FUN_101d6c90) with the callback
+  LAB_101d3bf0 (asm 0x101d3bf0): cancelled -> FUN_101d3380(0, -1, 1) (leave; mode 0 reopens "menu    myroom"), picked
+  -> the list object DAT_10664420 vtable +0x58(container), then FUN_101d3380(3, -1, 1) (the list in layout context).
+  Ours: layout::garden enters layout mode with bankmenu up and no rmlo window; cancelling it leaves. Mode 2 itself
+  does not call FUN_101d3f60 (the layout camera); ours has it from the start *(inf: the camera retail shows there)*.
+  myroom's row 4 (Gardening) runs /garden.
+- /mutelist (FUN_1007ca40): FUN_1020a600(0) (a fresh condition with the zone), FUN_10107b40 (the area cleared),
+  FUN_10107e70(cond, 0x20000000) (flag 0x40, cond[0x18] = the status), FUN_1020a9d0(1, ..): the search in every area
+  (nothing while a query is out).
+- Live (Lnxcsfix in its San d'Oria house): /garden showed bankmenu over layout mode, Escape left (the moogle menu
+  back); /mutelist: "Search result: 0 people found in all known areas." with the empty results window.

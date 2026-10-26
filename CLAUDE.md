@@ -210,8 +210,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   alone, Shift-JIS text both ways, auto-translate (dictionary, phrases, Tab completion), /clock, the /l linkshell
   check (s2c 0x0E0), /playtime, /ver, /chatmode, the on / off toggles, /localsettings, the line history (Up / Down)
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). Left: s2c 0x0B4 (PvP, the system message filter); the spec's part C
-  (window, list and server-flag commands) left: /mutelist, /guide /primer, /garden (the toggles' consumers, /furcc
-  included, are done; the map on an elevator, /layout and /remodel done).
+  (window, list and server-flag commands) left: /guide /primer (the toggles' consumers, /furcc
+  included, are done; the map on an elevator, /layout, /remodel, /garden and /mutelist done).
 - Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
   that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the

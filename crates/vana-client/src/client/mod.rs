@@ -4563,6 +4563,8 @@ struct World {
     /// Mog House layout mode (client/layout.rs), and its view kept for the house visit (myroom +0x24).
     layout: Option<layout::Layout>,
     layout_view: u8,
+    /// /garden's bankmenu was cancelled: layout mode ends after the key.
+    layout_leave: bool,
     /// Fishing (client/fishing.rs) while the fishing model is set up; the /fish latch (DAT_10487e49); the bite wait
     /// (+0x1e4, ticks); the "Fish" gauge's percent (party window +0x3a); our last 0x037 status (+0x16c).
     fishing: Option<fishing::Fishing>,
@@ -5979,6 +5981,7 @@ impl App {
                             lock_carry: false,
                             layout: None,
                             layout_view: 0,
+                            layout_leave: false,
                             fishing: None,
                             fish_pending: false,
                             hook_wait: 0,
