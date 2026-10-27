@@ -703,6 +703,9 @@ enum Cmd {
         /// The caster moves by this much a tick once the effect starts.
         #[arg(long, value_delimiter = ',', allow_hyphen_values = true)]
         walk: Vec<f32>,
+        /// The victim despawns at this tick (as a killed mob does mid-effect).
+        #[arg(long)]
+        despawn: Option<u32>,
     },
     /// Effects audit: every weapon skill, mob TP move, spell, ability and item effect file run headless ("main" of
     /// base + animation, as 0x028 starts it) against stand-in actors; mob moves cast by a model that uses them (a TSV
@@ -1126,7 +1129,7 @@ fn main() -> Result<()> {
         Cmd::CsShot { zone, file, scheduler, out_dir, steps, width, height } => eventdump::cs_shot(zone, file, &scheduler, steps, &out_dir, width, height),
         Cmd::NpcShot { model, look, anim, frame, yaw, motions, out } => npc_shot(model, look, &anim, frame, yaw, &motions, &out),
         Cmd::TextShot { text, font, lang, color, bg, alpha, zoom, out } => text_shot(&text, &font, &lang, &color, &bg, alpha, zoom, &out),
-        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour),
+        Cmd::FxShot { zone, out, eye, caster, victim, category, anim, frames, every, hour, dust, file, walk, despawn } => fx_shot(zone, &out, &eye, &caster, &victim, (category, anim, dust, file), &walk, frames, every, hour, despawn),
         Cmd::FxSweep { out, kinds, ticks, mob_models, only } => fx_sweep(&out, &kinds, ticks, mob_models.as_deref(), &only),
         Cmd::ZoneShot { zone, out, eye, target, hour, weather, effects, moon, start, sched, sub, voyage } => {
             use glam::Vec3;
@@ -2097,18 +2100,24 @@ struct ShotActors {
     ticks: std::cell::Cell<f32>,
     fx_files: std::cell::RefCell<Vec<(u32, u32)>>,
     ground: client::ground::Ground,
+    /// The victim despawned (fx-shot --despawn).
+    gone: std::cell::Cell<bool>,
 }
 
 impl ShotActors {
+    fn find(&self, id: u32) -> Option<&(u32, glam::Vec3, glam::Vec3)> {
+        self.at.iter().find(|a| a.0 == id && !(self.gone.get() && id == self.at[1].0))
+    }
+
     fn pos(&self, id: u32) -> Option<glam::Vec3> {
-        let a = self.at.iter().find(|a| a.0 == id)?;
+        let a = self.find(id)?;
         Some(if id == self.at[0].0 { a.1 + self.walk * self.ticks.get() } else { a.1 })
     }
 }
 
 impl fx::Actors for ShotActors {
     fn matrix(&self, id: u32) -> Option<glam::Mat4> {
-        let (_, _, fwd) = self.at.iter().find(|a| a.0 == id)?;
+        let (_, _, fwd) = self.find(id)?;
         let f = fwd.normalize();
         Some(glam::Mat4::from_cols(f.extend(0.0), glam::Vec3::Y.extend(0.0), f.cross(glam::Vec3::Y).extend(0.0), self.pos(id)?.extend(1.0)))
     }
@@ -2146,7 +2155,7 @@ impl fx::Actors for ShotActors {
 }
 
 #[allow(clippy::too_many_arguments)]
-fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust, fx_file): (u8, u16, Option<String>, Option<u32>), walk: &[f32], frames: u32, every: u32, hour: f32) -> Result<()> {
+fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim: &[f32], (category, anim, dust, fx_file): (u8, u16, Option<String>, Option<u32>), walk: &[f32], frames: u32, every: u32, hour: f32, despawn: Option<u32>) -> Result<()> {
     use glam::Vec3;
     let cfg = config::Config::load();
     let index = std::sync::Arc::new(dat::DatIndex::open(&cfg.ffxi_dir())?);
@@ -2164,7 +2173,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
         println!("caster on {c} surface {:?}", g.surface(c));
     }
     let walk = if walk.len() == 3 { v3(walk) } else { Vec3::ZERO };
-    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)], walk, ticks: std::cell::Cell::new(0.0), fx_files: Default::default(), ground: g };
+    let actors = ShotActors { at: [(0x0001_0001, c, t - c), (0x0100_0001, t, c - t)], walk, ticks: std::cell::Cell::new(0.0), fx_files: Default::default(), ground: g, gone: Default::default() };
     let mut fx = fx::Effects::new();
     fx.set_keys(std::sync::Arc::new(keys));
     fx.set_index(index.clone());
@@ -2206,6 +2215,11 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
             started = true;
         }
         for _ in 0..every {
+            if despawn.is_some_and(|d| actors.ticks.get() as u32 == d) && !actors.gone.get() {
+                println!("victim despawned at tick {}", actors.ticks.get());
+                actors.gone.set(true);
+                fx.forget_actor(0x0100_0001);
+            }
             fx.tick(&f, &actors);
             sync_fx_files(&mut fx, &actors.fx_files);
             actors.ticks.set(actors.ticks.get() + 1.0);
