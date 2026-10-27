@@ -76,8 +76,26 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// The list as the modern layer draws it: each row's text and whether it is grey, the cursor.
+pub(super) fn look(w: &World, gu: &GameUi) -> Option<(Vec<(String, bool)>, usize)> {
+    let r = w.remodel?;
+    let rows = ROWS.iter().enumerate().map(|(k, (text, _))| (gu.lobby_msg(0x0c, *text as usize, ""), tint(w, k) == GREY)).collect();
+    Some((rows, r.sel))
+}
+
+/// The mouse's cursor move onto row `k`. True when it moved.
+pub(super) fn set_sel(w: &mut World, k: usize) -> bool {
+    let Some(r) = w.remodel.as_mut().filter(|r| r.sel != k && k < ROWS.len()) else { return false };
+    r.sel = k;
+    true
+}
+
 /// The generic list's mouse: hover moves the cursor, a click on the cursor row is Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     let Some(r) = w.remodel else { return };
     let (Some((x, y)), Some(lay)) = (gu.window_xy(WINDOW, sw, sh), gu.layout(WINDOW)) else { return };
     let Some(e) = lay.elements.iter().skip(1).find(|e| {
@@ -112,6 +130,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// windowps 75 cursor bar while focused.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(r) = w.remodel else { return rects };
     let focused = w.confirm.is_none();
     let Some(win) = gu.lobby_window_off(WINDOW, sw, sh, (0.0, 0.0), Some(r.sel as u16 + 1), focused, &[]) else { return rects };

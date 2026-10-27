@@ -525,6 +525,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let at = Rect::from_min_size(pos2(r.min.x + 14.0, r.min.y - 12.0), vec2(26.0, 26.0));
         p.over("party").image(t, at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
+    // FUN_102041d0: a pending invite, keytops3 69 centred on the party window's top-left corner.
+    if w.invite.is_some()
+        && let (Some(gu), Some(r)) = (p.gu, p.this.get("party").copied())
+        && let Some(t) = p.m.sprite_icon(p.ctx, gu, "menu    keytops3", 69)
+    {
+        let at = Rect::from_center_size(r.min, vec2(30.0, 30.0));
+        p.over("party").image(t, at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+    }
     for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
         if let Some(rows) = rows {
             picked = picked.or(party_panel(p, id, "Alliance", rows, small, None));

@@ -2686,7 +2686,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
     treasure::draw_chest(gu, world, sw, sh);
-    partymenu::draw_invite_icon(gu, world, sw, sh);
+    if !world.modern {
+        partymenu::draw_invite_icon(gu, world, sw, sh);
+    }
     // On the log's top: in Modern the chat window's with what rides on it (gu.log_top).
     let log_top = gu.log_top.unwrap_or(log.rect[1]);
     blockers.extend(shop::draw(gu, world, sw, sh, log_top));

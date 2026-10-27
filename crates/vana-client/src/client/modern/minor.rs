@@ -1,9 +1,9 @@
 //! Small retail windows in the modern style; their modules keep the rules and keys: the block list (blklist.rs, its
 //! names and blkmain's Delete) and the chat mode window (chatctrl.rs, its seven rows with the tell name, the shells
 //! and the Unity, the cursor row's range under them), the comment editor (seacom.rs) and the Linkshell Concierge
-//! (concierge.rs).
+//! (concierge.rs) and Mog House Remodel (remodel.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, seacom};
+use super::super::{World, blklist, chatctrl, concierge, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, paint, social};
 use crate::audio::Ui as Se;
@@ -21,6 +21,49 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     chat_mode(p, w);
     comment(p, w);
     concierge_list(p, w);
+    remodel_list(p, w);
+}
+
+/// Mog House Remodel (remodel.rs): "No changes" and the 2F styles, the patio grey without its key item.
+fn remodel_list(p: &mut Panels, w: &mut World) {
+    let Some(gu) = p.gu else { return };
+    let Some((rows, sel)) = remodel::look(w, gu) else { return };
+    let m = p.m;
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none();
+    let title = gu.focus_text(remodel::WINDOW, 0)[1].clone().unwrap_or_else(|| "Remodel".into());
+    let (mut hover, mut click) = (None, None);
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), W + 44.0, |ui| {
+        for (k, (text, grey)) in rows.iter().enumerate() {
+            let (r, resp) = ui.allocate_exact_size(vec2(W, ROW), if free { Sense::click() } else { Sense::hover() });
+            let face = match () {
+                _ if k == sel && free => "controls/list_row_selected",
+                _ if k == sel || free && resp.hovered() => "controls/list_row_hover",
+                _ if *grey => "controls/list_row_disabled",
+                _ => "controls/list_row_normal",
+            };
+            if let Some(s) = m.art.sprite(face) {
+                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+            }
+            let c = if *grey { m.theme.color("muted") } else { m.theme.color("text") };
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
+            if free && resp.hovered() && moved {
+                hover = Some(k);
+            }
+            if free && resp.clicked() {
+                click = Some(k);
+            }
+            ui.add_space(2.0);
+        }
+    });
+    for k in hover.into_iter().chain(click) {
+        if remodel::set_sel(w, k) {
+            w.sounds.push(Se::Cursor as u32);
+        }
+    }
+    if click.is_some() {
+        remodel::key(w, egui::Key::Enter);
+    }
 }
 
 /// A retail tint (0x80 is full) as a colour.

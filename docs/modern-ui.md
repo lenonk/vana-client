@@ -354,6 +354,10 @@ Milestone 1:
   focus and Enter), the header and every shell with its icon in the shell's colour, green for ours, the language and
   the members wanted. Live: Set Bazaar's Edit Comment typed and erased (nothing sent); the Bastok Mines concierge with
   two seeded rows (removed after), the English tab, Escape back to the event.
+- Mog House Remodel (2026-10-27, minor.rs over remodel.rs): its five rows in the command window's place (the moogle's
+  menu waits under it), the patio grey without its key item. A pending party invite: keytops3 69 centred on the party
+  panel's top-left corner as retail's (hud.rs; not seen live: bots don't invite). Live: /remodel on Lnxcsfix (char_stats
+  mhflag 0x20 for the test, restored after), the rows by keys, Escape; nothing sent.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

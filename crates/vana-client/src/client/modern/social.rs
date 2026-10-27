@@ -593,8 +593,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     // The moogle's menus (the Mog House and the Nomad Moogle), the one over another beside it.
     let wins = moogle::views(w, gu);
     if !wins.is_empty() {
-        // The Delivery Box takes the window while it is open; the moogle's menu waits under it.
-        if super::super::post::active(w) {
+        // The Delivery Box and Remodel take the window while they are open; the moogle's menu waits under them.
+        if super::super::post::active(w) || w.remodel.is_some() {
             return;
         }
         let focused = w.confirm.is_none();
