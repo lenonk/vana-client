@@ -21,6 +21,7 @@ mod loot;
 mod macros;
 mod paint;
 pub mod plates;
+mod post;
 mod shop;
 mod social;
 mod status;
@@ -183,6 +184,7 @@ impl Modern {
         loot::draw(&mut p, w);
         shop::draw(&mut p, w);
         auction::draw(&mut p, w);
+        post::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {

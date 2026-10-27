@@ -317,6 +317,13 @@ Milestone 1:
   the sale's price), the price history (date, seller → buyer, price) and the inventory for sale; the bid or sale price
   (moneyctr's buttons) and shopsell under them; the prompts are the modern confirm. Live: Bid → Weapons → Katana, auc3,
   Price History, Bid's price (cancelled), Sell, Sales Status, by keys and mouse. No bid or sale made.
+- The Delivery Box (2026-10-27, modern/post.rs over post.rs): in the command window's place (the moogle's menu waits
+  under it, not drawn). Receive: post1's eight slots as tiles, the cursor slot's sender, post2's three choices as
+  buttons (Return off for an AH sale). Send laid out as retail's delivery and stringdl (their links decide the keys):
+  the recipient field with OK / Exit under it, the gil field over the slots, OK (send) and Cancel (close) right of the
+  two rows, the inventory picker beside while a slot asks for an item; the count and the gil inside the panel. Live:
+  Receive (empty box), Send with a recipient typed and accepted, Gil's amount asked and dropped, Cancel back to the
+  moogle; nothing sent.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

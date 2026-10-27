@@ -51,7 +51,7 @@ pub(super) fn tint(m: &super::Modern, t: u32) -> Color32 {
 /// A slot tile: its item's icon and count, the cursor's ring (bronze while another part has the focus), a red cross
 /// over a material not held.
 #[allow(clippy::too_many_arguments)]
-fn tile(ui: &mut Ui, m: &super::Modern, r: Rect, id: egui::Id, icon: Option<egui::TextureId>, count: u32, cursor: Option<bool>, missing: bool) -> egui::Response {
+pub(super) fn tile(ui: &mut Ui, m: &super::Modern, r: Rect, id: egui::Id, icon: Option<egui::TextureId>, count: u32, cursor: Option<bool>, missing: bool) -> egui::Response {
     let resp = ui.interact(r, id, Sense::click());
     let face = match () {
         _ if missing => "controls/item_slot_invalid",
@@ -122,7 +122,7 @@ pub(super) fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, li
 
 /// An item list: every row with its icon, name, count and colour, the cursor's row kept in view. (hovered, clicked).
 #[allow(clippy::too_many_arguments)]
-fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, rows: &[Slot], tints: &[u32], cur: usize, focused: bool, stars: &[bool]) -> (Option<usize>, Option<usize>) {
+pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, salt: &str, rows: &[Slot], tints: &[u32], cur: usize, focused: bool, stars: &[bool]) -> (Option<usize>, Option<usize>) {
     let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
     let (mut hover, mut click) = (None, None);
     let seen = egui::Id::unique((salt, "cursor seen"));

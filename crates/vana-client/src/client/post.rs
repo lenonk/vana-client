@@ -1214,6 +1214,9 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     const WHITE: u32 = 0x8080_8080;
     const NAME: u32 = 0x8060_6010;
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(info) = w.item_info.clone() else { return rects };
     if let Some(r) = &w.post.recv_ui {
         let focused = |f: RFocus| !r.busy && r.focus == f && w.confirm.is_none();
@@ -1317,6 +1320,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 /// inventory list's rows as the item list; itemctrl / moneyctr only the right click (Escape). Nothing while busy.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{generic, over};
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return;
+    }
     let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
     if let Some(r) = &w.post.recv_ui {
         if r.busy || r.state == 0x12 {
@@ -1532,4 +1539,133 @@ pub(super) fn draw_rows(gu: &mut GameUi, rows: &[crate::inventory::Slot], info: 
     let mut r = gu.window_rect("menu    inventor", sw, sh)?;
     r[0] += 200.0 - gu.window_rect_x("menu    inventor");
     Some(r)
+}
+
+/// A box slot as the modern layer shows it: item, count, shown, dimmed.
+pub(super) type SlotLook = (u16, u32, bool, bool);
+
+/// Which part of the send UI has the keys.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum SendPart {
+    Delivery,
+    Recipient,
+    List,
+    Qty,
+    Money,
+}
+
+/// What the modern layer shows of the Delivery Box.
+pub(super) enum Look {
+    /// post1's slots and cursor; post2's cursor when it has the keys (Return off for an AH sale); the cursor slot's
+    /// sender; a request on its way.
+    Recv { slots: [SlotLook; 8], cursor: u16, post2: Option<u16>, no_return: bool, sender: Option<String>, busy: bool },
+    /// delivery's slots and cursor, cancel mode, stringdl (its label, text, editing, the name shown, cursor, mode), the
+    /// picker's rows, tints and cursor, itemctrl's and moneyctr's values; a request on its way.
+    Send {
+        slots: [SlotLook; 8],
+        cursor: u16,
+        part: SendPart,
+        cancel: bool,
+        label: String,
+        text: String,
+        editing: bool,
+        shown: Option<String>,
+        dl_cursor: u16,
+        dl_mode: u8,
+        rows: Vec<crate::inventory::Slot>,
+        tints: Vec<u32>,
+        row: usize,
+        qty: Option<(u32, u32)>,
+        money: Option<(u32, u32, u32)>,
+        busy: bool,
+    },
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    if let Some(r) = &w.post.recv_ui {
+        let slots = std::array::from_fn(|i| {
+            let x = &w.post.recv[i];
+            (x.item, x.stack, matches!(x.stat, 6 | 7 | 0xa..=0xe), false)
+        });
+        let sender = w.post.recv.get((r.cursor as usize).wrapping_sub(1)).filter(|x| matches!(x.stat, 6 | 7 | 0xa..=0xe)).map(|x| x.name.clone());
+        return Some(Look::Recv { slots, cursor: r.cursor, post2: (r.focus == RFocus::Post2).then_some(r.post2), no_return: r.no_return, sender, busy: r.busy || r.state == 0x12 });
+    }
+    let s = w.post.send_ui.as_ref()?;
+    let slots = std::array::from_fn(|i| {
+        let x = &w.post.send[i];
+        (x.item, x.stack, matches!(x.stat, 1..=5 | 8 | 9 | 0xe..=0x10), matches!(x.stat, 2..=4 | 8 | 0xe | 0xf))
+    });
+    let part = match s.focus {
+        SFocus::Delivery => SendPart::Delivery,
+        SFocus::Stringdl => SendPart::Recipient,
+        SFocus::List => SendPart::List,
+        SFocus::Qty => SendPart::Qty,
+        SFocus::Money => SendPart::Money,
+    };
+    let rows = picker_rows(w);
+    let tints = rows.iter().map(|r| picker_tint(w, r, s.on_account)).collect();
+    Some(Look::Send {
+        slots,
+        cursor: s.cursor,
+        part,
+        cancel: matches!(s.state, 0xf | 0x10) || s.dl.mode == 2,
+        label: w.battle.as_ref().and_then(|b| b.group9(s.dl.label)).unwrap_or_default(),
+        text: s.dl.text.clone(),
+        editing: s.dl.editing,
+        shown: s.dl.shown.clone(),
+        dl_cursor: s.dl.cursor,
+        dl_mode: s.dl.mode,
+        rows,
+        tints,
+        row: s.list.0 + s.list.1,
+        qty: s.qty.map(|(_, v, max)| (v, max)),
+        money: s.money,
+        busy: s.busy,
+    })
+}
+
+/// The cursor of the part with the keys onto `k` (post1 / post2 / delivery / stringdl child, or the picker's row).
+/// True when it moved.
+pub(super) fn set_cursor(w: &mut World, k: u16) -> bool {
+    if let Some(r) = w.post.recv_ui.as_mut() {
+        let c = if r.focus == RFocus::Post2 { &mut r.post2 } else { &mut r.cursor };
+        let ok = if r.focus == RFocus::Post2 { (1..=3).contains(&k) } else { (1..=8).contains(&k) };
+        if !ok || *c == k {
+            return false;
+        }
+        *c = k;
+        return true;
+    }
+    let n = picker_rows(w).len();
+    let Some(s) = w.post.send_ui.as_mut() else { return false };
+    let c = match s.focus {
+        SFocus::Delivery if s.state == 0x10 && k == 11 => return false,
+        SFocus::Delivery if (1..=11).contains(&k) => &mut s.cursor,
+        SFocus::Stringdl if !s.dl.editing && (1..=3).contains(&k) => &mut s.dl.cursor,
+        SFocus::List => {
+            let at = k as usize;
+            if at >= n || s.list.0 + s.list.1 == at {
+                return false;
+            }
+            let rows = crate::inventory::VISIBLE_ROWS;
+            if at < s.list.0 || at >= s.list.0 + rows {
+                s.list.0 = (at + 1).saturating_sub(rows);
+            }
+            s.list.1 = at - s.list.0;
+            return true;
+        }
+        _ => return false,
+    };
+    if *c == k {
+        return false;
+    }
+    *c = k;
+    true
+}
+
+/// moneyctr's value outright (All, 0).
+pub(super) fn set_money(w: &mut World, v: u32) {
+    if let Some(m) = w.post.send_ui.as_mut().and_then(|s| s.money.as_mut()) {
+        m.2 = v.min(m.1);
+    }
 }
