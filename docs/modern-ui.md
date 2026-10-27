@@ -411,7 +411,18 @@ Milestone 1:
 - The title's buttons (2026-10-27, modern/lobby.rs title_buttons over render/screens.rs TitleState.modern): the pack's
   buttons on retail's own rects (loby2win's backing and button sprites skipped), the cursor's lit, the disabled dimmed,
   the Update button as retail places it; retail's keys and mouse untouched (hover moves the cursor, a click is Enter).
-  The logo, the expansion banners and the help bar stay. Live: hover, Select Character by the mouse, back by Escape.
+  The labels are sized to the buttons (half their height; user, 2026-10-27: the panel-sized font was far too small). The
+  logo, the expansion banners and the help bar stay. Live: hover, Select Character by the mouse, back by Escape.
+- The creator (2026-10-27, modern/lobby.rs creator_screen over client/creator.rs and client/mod.rs, which keep every
+  step's rules and keys): one panel where the select list sits, the step's help line and "n/7"; the step's choices as
+  rows (the race by its group 6 name, Face / Hair as the stats line's words, the size, job and nation rows' own
+  captions); on the name step the name field, Random (Num+) and OK (Enter), then the world list (worldsel) and the
+  pass (chmkpass) with its OK; up to the name the race, its STR..CHR for the job and the Face / Hair / Size line; on
+  the nation step the nation's title and description (they were centred on the screen). The confirm (ptc6yesn) and
+  the ok windows as the select screen's prompts; the race title and the script stats are not drawn, the nation
+  emblem stays. The mouse as retail's (a row moves the choice, a click is Enter). Live: race by hover and click, the
+  steps by keys, Random, a typed name, the world and the pass by the mouse, LSB's name check, the nation, the
+  confirm's No, Escape out to the title.
 - The Battle tab (2026-10-27, not retail; the BattleMod / rChat way of keeping battle text apart): battle messages
   (combat.rs print) are tagged BATTLE_MODE; the chat's Battle tab shows them alone, and the chat settings' "Battle in
   All: Shown / Hidden" (config modern_battle_in_all, Shown by default) takes them out of All. Retail's own Chat
@@ -430,7 +441,7 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- To do: the creator's own layout; condensed battle lines (BattleMod's one line per action).
+- To do: condensed battle lines (BattleMod's one line per action).
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.

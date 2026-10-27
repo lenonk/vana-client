@@ -1,7 +1,10 @@
 //! The modern lobby screens over the retail ones (client/select.rs keeps the select screen's rules and keys): the
 //! character list with each character's job, level, race and area, the cursor's details, the counts, the settings
-//! windows (chfwin, chswin) and the prompts (ptc6yesn, ok, the rename field) as modern panels. The 3D scene stays.
+//! windows (chfwin, chswin) and the prompts (ptc6yesn, ok, the rename field) as modern panels; the creator's steps
+//! (client/creator.rs and client/mod.rs keep its rules and keys) as one panel with the picks and their stats, its
+//! confirm and ok windows as the select screen's. The 3D scenes stay.
 
+use super::super::creator::{self, Page};
 use super::super::game_ui::GameUi;
 use super::super::select::{Pointer, View};
 use super::craft::{button, tint};
@@ -41,7 +44,8 @@ impl Modern {
                 p.add(paint::nine_slice(&s, rect, 0.5, Color32::WHITE));
             }
             let c = if !on { self.theme.color("muted") } else if *lit { self.theme.color("gold") } else { self.theme.color("text") };
-            p.text(rect.center(), Align2::CENTER_CENTER, *label, FontId::new(self.theme.ui, FontFamily::Name(super::STRONG.into())), c);
+            // The label sized to the button (retail's captions fill about half its height).
+            p.text(rect.center(), Align2::CENTER_CENTER, *label, FontId::new((rect.height() * 0.5).max(self.theme.ui), FontFamily::Name(super::STRONG.into())), c);
         }
     }
 
@@ -55,6 +59,228 @@ impl Modern {
         list_panel(&mut p, gu, v, &mut out);
         windows(&mut p, gu, v, &mut out);
         out
+    }
+
+    /// The creator: what the mouse did, for client/mod.rs's creator step.
+    pub fn creator_screen(&mut self, ctx: &Context, gu: &GameUi, window: [u32; 2], scale: u32, c: &Page) -> creator::Pointer {
+        self.zoom_to(ctx, window, scale);
+        let mut layout = Default::default();
+        let (mut changed, mut font) = (false, 15.0);
+        let focus = if c.ok.is_some() || c.confirm.is_some() { "creator prompt" } else { "creator" };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some(focus) };
+        let mut out = creator::Pointer::default();
+        creator_panel(&mut p, gu, c, &mut out);
+        creator_prompts(&mut p, gu, c, &mut out);
+        if !c.free {
+            out = creator::Pointer::default();
+        }
+        out
+    }
+}
+
+/// A list row in the pack's art, lit on the cursor; its response.
+fn pick_row(ui: &mut Ui, m: &Modern, text: &str, on: bool, live: bool) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(vec2(W - 14.0, 28.0), if live { Sense::click() } else { Sense::hover() });
+    let face = match () {
+        _ if on => "controls/list_row_selected",
+        _ if live && resp.hovered() => "controls/list_row_hover",
+        _ => "controls/list_row_normal",
+    };
+    if let Some(s) = m.art.sprite(face) {
+        ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
+    }
+    let c = if on { m.theme.color("gold") } else { m.theme.color("text") };
+    ui.painter().text(pos2(rect.min.x + 24.0, rect.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
+    ui.add_space(2.0);
+    resp
+}
+
+/// A step's choices: the race's name (group 6), Face / Hair as the stats line words, the size, job and nation rows'
+/// own captions.
+fn step_rows(gu: &GameUi, step: usize) -> Vec<String> {
+    let n = creator::STEPS.get(step).map_or(0, |s| s.1);
+    let caption = |k: usize| gu.child_caption(creator::STEPS[step].0, k as u16 + 1).filter(|c| !c.is_empty());
+    (0..n)
+        .map(|k| match step {
+            0 => gu.lobby_msg(6, k, ""),
+            1 => gu.creator_look_words(k, 0, 0)[0].clone(),
+            2 => gu.creator_look_words(0, k, 0)[1].clone(),
+            3 => caption(k).unwrap_or_else(|| gu.creator_look_words(0, 0, k)[2].clone()),
+            6 => caption(k).unwrap_or_else(|| gu.nation_words(k).0),
+            _ => caption(k).unwrap_or_default(),
+        })
+        .collect()
+}
+
+/// A text field: the text (or `empty`, dimmed) and the caret at char `caret` while `caret` is Some and blinking on.
+fn field(ui: &mut Ui, m: &Modern, text: &str, empty: &str, caret: Option<usize>) {
+    let (r, _) = ui.allocate_exact_size(vec2(W - 14.0, 30.0), Sense::hover());
+    let face = if caret.is_some() { "controls/input_focused" } else { "controls/input_normal" };
+    if let Some(s) = m.art.sprite(face) {
+        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+    }
+    let font = FontId::proportional(m.theme.ui);
+    let at = pos2(r.min.x + 12.0, r.center().y);
+    if text.is_empty() {
+        ui.painter().text(at, Align2::LEFT_CENTER, empty, font.clone(), m.theme.color("muted"));
+    } else {
+        ui.painter().text(at, Align2::LEFT_CENTER, text, font.clone(), m.theme.color("text"));
+    }
+    let blink = (ui.ctx().input(|i| i.time) * 2.0) as i64 % 2 == 0;
+    if let Some(k) = caret.filter(|_| blink) {
+        let head: String = text.chars().take(k).collect();
+        let x = at.x + ui.painter().layout_no_wrap(head, font, Color32::WHITE).size().x;
+        ui.painter().line_segment([pos2(x, r.min.y + 7.0), pos2(x, r.max.y - 7.0)], egui::Stroke::new(1.5, m.theme.color("text")));
+    }
+    ui.ctx().request_repaint();
+}
+
+/// The creator's panel: the help line, the step's rows (or the name, the world list, the pass), the picks' stats up to
+/// the name, the nation's description on its step.
+fn creator_panel(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Pointer) {
+    let m = p.m;
+    let v = c.view;
+    let screen = p.ctx.content_rect();
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let live = c.free && c.ok.is_none() && c.confirm.is_none();
+    let at = pos2(screen.width() * 0.0121, screen.height() * 0.06);
+    let note = Some(format!("{}/7", v.step + 1));
+    // From the confirm on, retail's step windows are closed (the emblem and the prompt stay).
+    if v.step >= 7 {
+        return;
+    }
+    let sel = match v.step {
+        0 => v.race,
+        1 => v.face,
+        2 => v.hair,
+        3 => v.size,
+        4 => v.job,
+        6 => v.nation,
+        _ => 0,
+    };
+    let small = |t: &str, colour: Color32| egui::RichText::new(t).size(m.theme.small).color(colour);
+    p.panel_at("creator", Some(Title { icon: Some("icons/party"), text: "Create Character", note: note.as_deref() }), W + 44.0, at, |ui| {
+        ui.label(small(&c.help, if c.status { m.theme.color("gold") } else { m.theme.color("muted") }));
+        ui.add_space(8.0);
+        if v.step != 5 {
+            for (k, t) in step_rows(gu, v.step).iter().enumerate() {
+                let resp = pick_row(ui, m, t, k == sel, live);
+                if live && resp.hovered() && moved {
+                    out.row.0 = Some(k);
+                }
+                if live && resp.clicked() {
+                    out.row.1 = Some(k);
+                }
+            }
+        }
+        if v.step == 5 && !v.name_hidden {
+            let typing = v.world.is_none();
+            field(ui, m, v.name, "", typing.then_some(v.name.chars().count()));
+            if typing {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    if button(ui, m, "Random", 140.0, false, !live) {
+                        out.random = true;
+                    }
+                    if button(ui, m, "OK", 140.0, true, !live || v.name.is_empty()) {
+                        out.enter = true;
+                    }
+                });
+            }
+            if let Some(w) = &v.world {
+                ui.add_space(8.0);
+                ui.label(egui::RichText::new(gu.lobby_msg(1, 0, "World")).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
+                ui.add_space(4.0);
+                match w.pass {
+                    None => {
+                        egui::ScrollArea::vertical().id_salt("creator worlds").max_height(screen.height() * 0.4).auto_shrink([false, true]).show(ui, |ui| {
+                            for (k, t) in w.rows.iter().enumerate() {
+                                let resp = pick_row(ui, m, t, k == w.cursor, live);
+                                if live && resp.hovered() && moved {
+                                    out.world.0 = Some(k);
+                                }
+                                if live && resp.clicked() {
+                                    out.world.1 = Some(k);
+                                }
+                            }
+                        });
+                    }
+                    Some((pass, caret, _)) => {
+                        ui.label(small(w.rows.get(w.cursor).map_or("", |s| s.as_str()), m.theme.color("text")));
+                        ui.add_space(4.0);
+                        field(ui, m, pass, &gu.lobby_msg(8, 0x3e, ""), Some(caret));
+                        ui.add_space(6.0);
+                        if button(ui, m, "OK", 140.0, true, !live) {
+                            out.enter = true;
+                        }
+                    }
+                }
+            }
+        }
+        if v.step <= 5 {
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new(gu.lobby_msg(6, v.race, "")).size(m.theme.ui).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
+            ui.add_space(4.0);
+            let stats = gu.creator_stat_values(v.race, v.job);
+            let (r, _) = ui.allocate_exact_size(vec2(W - 14.0, 4.0 * 18.0), Sense::hover());
+            for (k, n) in stats.iter().enumerate() {
+                let x = r.min.x + 8.0 + (k % 2) as f32 * (W / 2.0);
+                let y = r.min.y + 9.0 + (k / 2) as f32 * 18.0;
+                ui.painter().text(pos2(x, y), Align2::LEFT_CENTER, ["STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR"][k], FontId::proportional(m.theme.small), m.theme.color("muted"));
+                ui.painter().text(pos2(x + 120.0, y), Align2::RIGHT_CENTER, n.to_string(), FontId::proportional(m.theme.small), m.theme.color("text"));
+            }
+            ui.add_space(4.0);
+            ui.label(small(&gu.creator_look_words(v.face, v.hair, v.size).join("    "), m.theme.color("muted")));
+        }
+        if v.step == 6 {
+            let (title, body) = gu.nation_words(v.nation);
+            ui.add_space(10.0);
+            ui.label(egui::RichText::new(title).size(m.theme.ui).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
+            ui.add_space(4.0);
+            ui.label(small(&body, m.theme.color("text")));
+        }
+    });
+}
+
+/// The confirm (ptc6yesn, Yes / No) and the ok window, under the middle as the select screen's.
+fn creator_prompts(p: &mut Panels, gu: &GameUi, c: &Page, out: &mut creator::Pointer) {
+    let m = p.m;
+    let screen = p.ctx.content_rect();
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let low = pos2(screen.center().x - 230.0, screen.height() * 0.62);
+    if let Some(text) = &c.ok {
+        p.panel_at("creator prompt", None, 460.0, low, |ui| {
+            ui.label(egui::RichText::new(text).size(m.theme.ui).color(m.theme.color("text")));
+            ui.add_space(10.0);
+            if button(ui, m, "OK", 130.0, true, false) {
+                out.ok = true;
+            }
+        });
+    } else if let Some((text, yes)) = &c.confirm {
+        let caption = |k: u16, d: &str| gu.child_caption("menu    ptc6yesn", k).filter(|c| !c.is_empty()).unwrap_or_else(|| d.to_string());
+        p.panel_at("creator prompt", None, 460.0, low, |ui| {
+            ui.label(egui::RichText::new(text).size(m.theme.ui).color(m.theme.color("text")));
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                for (child, d) in [(true, "Yes"), (false, "No")] {
+                    let (r, resp) = ui.allocate_exact_size(vec2(130.0, 30.0), Sense::click());
+                    let on = child == *yes;
+                    let face = if on { "controls/button_selected" } else if resp.hovered() { "controls/button_hover" } else { "controls/button_normal" };
+                    if let Some(s) = m.art.sprite(face) {
+                        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+                    }
+                    let label = caption(if child { 1 } else { 2 }, d);
+                    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.ui), if on { m.theme.color("gold") } else { m.theme.color("text") });
+                    if resp.hovered() && moved {
+                        out.yes.0 = Some(child);
+                    }
+                    if resp.clicked() {
+                        out.yes.1 = Some(child);
+                    }
+                    ui.add_space(8.0);
+                }
+            });
+        });
     }
 }
 

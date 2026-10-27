@@ -1867,12 +1867,31 @@ impl GameUi {
         let mut x = self.script_text(&face, 30.0, 342.0);
         x = self.script_text(&hair, x + 10.0, 342.0);
         self.script_text(&size, x + 10.0, 342.0);
-        let base = (v.job.min(5) + v.race.min(7) * 6) * 7;
-        for i in 0..7 {
-            if let Some(&n) = self.data.stats.get(base + i) {
-                self.script_text(format!("{n:4}").as_bytes(), 84.0, 216.0 + 16.0 * i as f32);
-            }
+        for (i, n) in self.creator_stat_values(v.race, v.job).into_iter().enumerate() {
+            self.script_text(format!("{n:4}").as_bytes(), 84.0, 216.0 + 16.0 * i as f32);
         }
+    }
+
+    /// A race's and job's STR..CHR in the creator (FUN_102306d0's table).
+    pub fn creator_stat_values(&self, race: usize, job: usize) -> Vec<u8> {
+        let base = (job.min(5) + race.min(7) * 6) * 7;
+        self.data.stats.iter().skip(base).take(7).copied().collect()
+    }
+
+    /// The creator's Face / Hair / Size words (group 1 5..7 with their %c / %s filled).
+    pub fn creator_look_words(&self, face: usize, hair: usize, size: usize) -> [String; 3] {
+        let fill = |f: String, arg: &str| f.replacen("%c", arg, 1).replacen("%s", arg, 1).trim().to_string();
+        [
+            fill(self.lobby_msg(1, 5, "Face %c "), &(face + 1).to_string()),
+            fill(self.lobby_msg(1, 6, "Hair %s "), &self.lobby_msg(1, 0xb + hair.min(1), "A")),
+            fill(self.lobby_msg(1, 7, "Size %s "), &self.lobby_msg(1, 8 + size.min(2), "S")),
+        ]
+    }
+
+    /// The nation step's description: its title and body (group 8 0x1d / 0x1e, 0x28 / 0x29, 0x33 / 0x34).
+    pub fn nation_words(&self, nation: usize) -> (String, String) {
+        let n = nation.min(2);
+        (self.lobby_msg(8, [0x1d, 0x28, 0x33][n], ""), self.lobby_msg(8, [0x1e, 0x29, 0x34][n], ""))
     }
 
     /// A frameless window (registry flag 0x20, e.g. race1..8, nation1..3): its sprite, every cell.

@@ -476,6 +476,16 @@ impl WorldStep {
         WorldAct::Sound(crate::audio::Ui::Cursor)
     }
 
+    /// The modern list's row `k` (every world shown): the cursor there, kept in retail's window; true when it moved.
+    pub fn point(&mut self, k: usize) -> bool {
+        let moved = k < self.rows.len() && k != self.cursor;
+        if moved {
+            self.cursor = k;
+            self.top = self.top.min(k).max((k + 1).saturating_sub(WORLD_ROWS));
+        }
+        moved
+    }
+
     /// The mouse on visible row `i`: the cursor there; true when it moved.
     pub fn hover(&mut self, i: usize) -> bool {
         let c = self.top + i;
@@ -487,16 +497,60 @@ impl WorldStep {
     }
 }
 
-/// The creator's 2D layer (after `gu.clear()`): help line, the step menu with its choice highlighted,
-/// then the race title, stats, name entry or nation emblem. Returns the menu's item rects, or the world list's rows.
-pub fn draw_ui(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView, sw: f32, sh: f32, status: Option<&str>, dt: Option<f32>) -> Vec<[f32; 4]> {
-    // lobyhelp 0x19 / 0x22 on the world step (FUN_10241270); 0x22 stays through the checks (inf).
-    let help = match (status, &v.world) {
+/// What the modern creator's mouse did (modern/lobby.rs creator_screen): the step's row, a world row, Yes (true) or No
+/// on the confirm, each (hovered, clicked); the ok window's OK; Enter on the name, world or pass; Num+'s random name.
+#[derive(Default)]
+pub struct Pointer {
+    pub row: (Option<usize>, Option<usize>),
+    pub world: (Option<usize>, Option<usize>),
+    pub yes: (Option<bool>, Option<bool>),
+    pub ok: bool,
+    pub enter: bool,
+    pub random: bool,
+}
+
+/// The creator as the modern panels see it: the help line (or the status, `status`), the ok window's text, the
+/// confirm's (text, Yes lit), and whether input is taken (no request under way).
+pub struct Page<'a> {
+    pub view: &'a super::game_ui::CreatorView<'a>,
+    pub help: String,
+    pub status: bool,
+    pub ok: Option<String>,
+    pub confirm: Option<(String, bool)>,
+    pub free: bool,
+}
+
+/// The help line of the creator's current state (lobyhelp 0x19 / 0x22 on the world step, FUN_10241270; 0x22 stays
+/// through the checks, inf).
+pub fn help_text(gu: &super::game_ui::GameUi, v: &super::game_ui::CreatorView, status: Option<&str>) -> String {
+    match (status, &v.world) {
         (Some(s), _) => s.to_string(),
         (None, Some(w)) => gu.lobby_msg(8, if w.pass.is_some() { 0x71 } else { 0x70 }, ""),
         (None, None) if v.step == 5 && v.name_hidden => gu.lobby_msg(8, 0x71, ""),
         _ => gu.creator_help(v.step),
-    };
+    }
+}
+
+/// FUN_102384d0's random name (Num+ on the name step).
+pub fn roll_name(index: &crate::dat::DatIndex) -> Option<String> {
+    let mut b = [0u8; 4];
+    random_name(index, || {
+        let _ = getrandom::fill(&mut b);
+        u32::from_le_bytes(b) & 0x7fff
+    })
+}
+
+/// The modern creator's 2D layer: the nation's emblem from the nation step on (the panels draw the rest).
+pub fn draw_modern(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView, sw: f32, sh: f32) {
+    if v.step >= 6 {
+        gu.bare_window(&format!("menu    nation{}", v.nation.min(2) + 1), sw, sh);
+    }
+}
+
+/// The creator's 2D layer (after `gu.clear()`): help line, the step menu with its choice highlighted,
+/// then the race title, stats, name entry or nation emblem. Returns the menu's item rects, or the world list's rows.
+pub fn draw_ui(gu: &mut super::game_ui::GameUi, v: &super::game_ui::CreatorView, sw: f32, sh: f32, status: Option<&str>, dt: Option<f32>) -> Vec<[f32; 4]> {
+    let help = help_text(gu, v, status);
     gu.help_line(&help, sw, sh, if status.is_some() { super::game_ui::YELLOW } else { super::game_ui::WHITE }, dt);
     let sel = match v.step {
         0 => v.race,

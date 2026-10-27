@@ -9413,7 +9413,7 @@ impl App {
                     self.title_press = None;
                 }
                 // Only the title's buttons and the select screen are the modern layer's: elsewhere egui keeps its zoom.
-                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete) || !self.cfg.modern_ui {
+                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete | LobbyScreen::Create) || !self.cfg.modern_ui {
                     modern::off(ctx, self.modern.as_mut());
                 }
                 match screen {
@@ -9806,16 +9806,9 @@ impl App {
                             && keys
                             && !world_open
                             && self.input.pressed(0x4e)
-                            && let Some(index) = self.index.as_ref()
+                            && let Some(n) = self.index.as_ref().and_then(|i| creator::roll_name(i))
                         {
-                            let mut b = [0u8; 4];
-                            let mut rand = || {
-                                let _ = getrandom::fill(&mut b);
-                                u32::from_le_bytes(b) & 0x7fff
-                            };
-                            if let Some(n) = creator::random_name(index, &mut rand) {
-                                *new_name = n;
-                            }
+                            *new_name = n;
                         }
                         for ev in input.events.iter().filter(|_| !busy) {
                             match ev {
@@ -9870,9 +9863,61 @@ impl App {
                         let name_hidden = step == 5 && self.creator_world.is_none() && (popup || busy || world_check.is_some());
                         let world = self.creator_world.as_ref().map(|w| w.view());
                         let view = game_ui::CreatorView { step, race: *race, face: *face as usize / 2, hair: *face as usize % 2, size: *size as usize, job: *job, nation: *nation, name: new_name, world, name_hidden };
-                        let rects = creator::draw_ui(gu, &view, sw, sh, (!status.is_empty()).then_some(status.as_str()), None);
+                        let status_line = (!status.is_empty()).then_some(status.as_str());
+                        // Modern: the panels draw the steps and prompts; their mouse acts as retail's below.
+                        let modern_ui = self.cfg.modern_ui;
+                        let (rects, ptr) = if modern_ui {
+                            creator::draw_modern(gu, &view, sw, sh);
+                            let page = creator::Page {
+                                view: &view,
+                                help: creator::help_text(gu, &view, status_line),
+                                status: status_line.is_some(),
+                                ok: self.creator_ok.as_ref().map(|o| o.0.clone()),
+                                confirm: (step == 7).then(|| (select::register_text(gu, new_name), self.creator_yes)),
+                                free: !busy,
+                            };
+                            let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                            (Vec::new(), m.creator_screen(ctx, gu, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, &page))
+                        } else {
+                            (creator::draw_ui(gu, &view, sw, sh, status_line, None), creator::Pointer::default())
+                        };
                         let pointer = input.pointer.filter(|_| !busy);
-                        if let Some((text, _)) = &self.creator_ok {
+                        let mut check = false;
+                        if modern_ui {
+                            if self.creator_ok.is_some() {
+                                ok |= ptr.ok;
+                            } else if let Some(ws) = self.creator_world.as_mut().filter(|_| step == 5) {
+                                if let Some(k) = ptr.world.0
+                                    && ws.point(k)
+                                {
+                                    world_se.push(crate::audio::Ui::Cursor);
+                                }
+                                let pick = ptr.world.1.inspect(|&k| {
+                                    ws.point(k);
+                                });
+                                check = ptr.enter && ws.pass.is_some();
+                                if (pick.is_some() || ptr.enter && ws.pass.is_none())
+                                    && let creator::WorldAct::Sound(s) = ws.pick()
+                                {
+                                    world_se.push(s);
+                                }
+                            } else if step < 7 {
+                                if let Some(k) = ptr.row.0.or(ptr.row.1) {
+                                    sel = k;
+                                }
+                                next |= ptr.row.1.is_some() || ptr.enter;
+                                if ptr.random
+                                    && let Some(n) = self.index.as_ref().and_then(|i| creator::roll_name(i))
+                                {
+                                    *new_name = n;
+                                }
+                            } else if step == 7 {
+                                if let Some(y) = ptr.yes.0 {
+                                    self.creator_yes = y;
+                                }
+                                answer = answer.or(ptr.yes.1);
+                            }
+                        } else if let Some((text, _)) = &self.creator_ok {
                             if let Some(r) = gu.ok_window(text, sw, sh)
                                 && pointer.is_some_and(|p| inside(&r, p))
                             {
@@ -9935,6 +9980,9 @@ impl App {
                         };
                         for se in world_se {
                             ui_se(&mut self.audio, se);
+                        }
+                        if check {
+                            world_check = self.creator_world.take();
                         }
                         // Enter on the pass: the checks in retail's order (FUN_10239720 448223..); the world is always
                         // a table row here, so 3118 / 3119 cannot come up, and the local filter (3322) is not traced.
