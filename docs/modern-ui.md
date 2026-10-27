@@ -369,6 +369,10 @@ Milestone 1:
   (the layout's own captions) in the spells' place while it is open. A row of the other list takes a click while
   nothing is picked (its focus moves first, as Num+). Live on Lnxcsfix as BLU 75 (back to WAR 22 after): the lists,
   the help, Undead filtered, a spell picked and dropped; nothing set.
+- Layout mode's windows (2026-10-27, minor.rs over layout.rs): the rmlo window as a column with its dim rows, bankmenu
+  beside it, the furniture list as the item list (installed here green, locked grey) in their place; the title is
+  layout mode's (title slot 0). The mannequin's dressing windows stay retail's for now. Live: /layout in the Mog
+  House, rmlo1, bankmenu (Mog Safe 2 dim), the list (empty safe).
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

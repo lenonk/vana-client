@@ -1,9 +1,10 @@
 //! Small retail windows in the modern style; their modules keep the rules and keys: the block list (blklist.rs, its
 //! names and blkmain's Delete) and the chat mode window (chatctrl.rs, its seven rows with the tell name, the shells
 //! and the Unity, the cursor row's range under them), the comment editor (seacom.rs) and the Linkshell Concierge
-//! (concierge.rs), Mog House Remodel (remodel.rs) and the Adventuring Primer's lists (primer.rs).
+//! (concierge.rs), Mog House Remodel (remodel.rs), the Adventuring Primer's lists (primer.rs) and layout mode's
+//! windows (layout.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, primer, remodel, seacom};
+use super::super::{World, blklist, chatctrl, concierge, layout, primer, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, paint, social};
 use crate::audio::Ui as Se;
@@ -23,6 +24,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     concierge_list(p, w);
     remodel_list(p, w);
     primer_lists(p, w);
+    layout_windows(p, w);
 }
 
 /// Plain rows (text, grey), the cursor's lit while focused and kept in view. (hovered, clicked) while focused.
@@ -357,4 +359,51 @@ fn chat_mode(p: &mut Panels, w: &mut World) {
     if free {
         social::act(w, gu, got, chatctrl::set_sel, |w, _| chatctrl::key(w, egui::Key::Enter));
     }
+}
+
+/// Layout mode (layout.rs): the rmlo window as a column, bankmenu beside it, the furniture list (installed here green,
+/// locked grey) in their place while it is open.
+fn layout_windows(p: &mut Panels, w: &mut World) {
+    let Some(gu) = p.gu else { return };
+    let Some(v) = layout::look(w) else { return };
+    if v.win.is_none() && v.bank.is_none() && v.list.is_none() {
+        return;
+    }
+    let m = p.m;
+    let ctx = p.ctx;
+    let info = w.item_info.clone();
+    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none();
+    // Title slot 0 in layout mode (layout::bars).
+    let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
+    let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
+    let (mut win, mut bank, mut row) = ((None, None), (None, None), (None, None));
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
+        if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
+            row = super::craft::list(ui, m, ctx, info, "layout furniture", rows, tints, *cur, free, &[]);
+            return;
+        }
+        ui.horizontal_top(|ui| {
+            if let Some((name, sel, off)) = &v.win {
+                let col = MenuWin { name, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+                win = social::column(ui, m, gu, &col, free && v.bank.is_none(), moved);
+            }
+            if let Some((sel, off)) = &v.bank {
+                ui.add_space(12.0);
+                let col = MenuWin { name: layout::BANK, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+                bank = social::column(ui, m, gu, &col, free, moved);
+            }
+        });
+    });
+    if !free {
+        return;
+    }
+    let enter = |w: &mut World, _: &super::super::game_ui::GameUi| {
+        layout::key(w, egui::Key::Enter);
+    };
+    social::act(w, gu, bank, layout::set_bank, enter);
+    social::act(w, gu, win, layout::set_win, enter);
+    act(w, row, layout::set_row, |w| {
+        layout::key(w, egui::Key::Enter);
+    });
 }
