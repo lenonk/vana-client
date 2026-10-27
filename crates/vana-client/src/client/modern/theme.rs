@@ -300,7 +300,7 @@ mod tests {
             assert_ne!(t.color(c), Color32::MAGENTA, "{c}");
         }
         let m: ManifestFile = serde_json::from_str(MANIFEST).unwrap();
-        assert_eq!(m.items.len(), 304);
+        assert_eq!(m.items.len(), 518);
         assert!(m.items.iter().all(|it| ATLASES.iter().any(|(n, _)| *n == it.atlas.file)));
         for (_, bytes) in ATLASES {
             assert!(decode(bytes).is_some());

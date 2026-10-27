@@ -427,7 +427,7 @@ const TILT: f32 = 0.4536;
 pub fn where_panel(p: &mut Panels, v: &WhereView) {
     let m = p.m;
     p.panel("where", None, 430.0, |ui| {
-        // The zone over the time and day at the left, the compass, the grid, the weather at the right end over both lines.
+        // The zone over the time and day at the left, the compass, the weather over both lines, the grid at the right.
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::hover());
         let right = r.max.x - 92.0;
         let dial = pos2(right - 16.0 - DIAL, r.center().y);
@@ -445,10 +445,13 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
         if let Some(c) = &v.compass {
             compass(painter, m, dial, c);
         }
+        // The grid at the top right as before; the weather left of its column, over both lines (a double weather's
+        // art fills the same square).
         const WEATHER: f32 = 36.0;
-        painter.text(pos2(r.max.x - WEATHER - 8.0, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        const GRID_W: f32 = 46.0;
+        painter.text(pos2(r.max.x, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
         if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
-            painter.add(paint::image(&s, pos2(r.max.x - WEATHER, r.center().y - WEATHER / 2.0), WEATHER, Color32::WHITE));
+            painter.add(paint::image(&s, pos2(r.max.x - GRID_W - WEATHER, r.center().y - WEATHER / 2.0), WEATHER, Color32::WHITE));
         }
     });
 }
