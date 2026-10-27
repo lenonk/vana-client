@@ -530,6 +530,118 @@ fn text(gu: &mut GameUi, s: &str, x: f32, y: f32, tint: u32) {
     gu.text(s, x, y, 0, tint.to_le_bytes());
 }
 
+/// A row as the modern Journal draws it: its name, colour (retail's tints), the "new" mark, a category, the count.
+pub struct RowView {
+    pub name: String,
+    pub tint: u32,
+    pub new: bool,
+    pub category: bool,
+    pub count: Option<(u32, u32)>,
+}
+
+/// An objective's description there: its name and tint, both pages' text, the progress (its tint), the once-only
+/// note and the rewards, with their labels.
+pub struct DescView {
+    pub name: String,
+    pub tint: u32,
+    pub text: String,
+    pub progress_label: String,
+    pub progress: String,
+    pub progress_tint: u32,
+    pub once: Option<String>,
+    pub rewards_label: String,
+    pub rewards: String,
+}
+
+/// What the modern Journal draws of an open list: its title, rows, cursor, the empty line, the cursor row's
+/// description, whether it is down in a category and whether its sibling categories are there.
+pub struct View {
+    pub mode: usize,
+    pub title: String,
+    pub rows: Vec<RowView>,
+    pub cursor: usize,
+    pub empty: Option<String>,
+    pub desc: Option<DescView>,
+    pub deep: bool,
+    pub siblings: bool,
+}
+
+pub fn view(w: &World, gu: &GameUi) -> Option<View> {
+    let l = w.quests.as_ref()?.roe.as_ref()?;
+    let category = |id: u16| w.item_info.as_ref().and_then(|c| c.category(id)).map(|c| c.name.clone()).unwrap_or_default();
+    let title = if l.stack.len() > 1 {
+        category(l.stack[l.stack.len() - 1].0)
+    } else {
+        match l.mode {
+            2 => format!("{}  {}/30", gu.lobby_msg(0xc, 0x6d, ""), w.roe.taken()),
+            3 => gu.lobby_msg(0xc, 0x6e, ""),
+            _ => gu.lobby_msg(0xc, 0x208, ""),
+        }
+    };
+    let rows = l
+        .rows
+        .iter()
+        .map(|&id| {
+            if id >= 0xf200 {
+                return RowView { name: category(id), tint: WHITE, new: false, category: true, count: None };
+            }
+            let o = objective(w, id);
+            let new = !w.roe.completed_id(id) && !w.roe.claimable(id, o.as_deref());
+            let count = o.as_deref().map(|o| (count(w, id, o).0, o.goal));
+            RowView { name: o.as_ref().map_or(String::new(), |o| o.name.clone()), tint: colour(w, l.mode, id, o.as_deref(), l.mode == 3), new, category: false, count }
+        })
+        .collect();
+    let empty = (l.built && l.rows.is_empty() && l.mode != 4).then(|| gu.lobby_msg(0xc, if l.mode == 2 { 0x72 } else { 0x87 }, ""));
+    let desc = l.rows.get(l.cursor).filter(|&&id| id < 0xf200).and_then(|&id| {
+        let o = objective(w, id)?;
+        let (have, full) = count(w, id, &o);
+        let at_goal = l.mode == 4 && w.roe.done(id, Some(&o)) && have == o.goal;
+        let extra = |v: u32, m: usize| (v != 0).then(|| format!("{v}{}", gu.lobby_msg(0xc, m, "")));
+        let mut rewards = vec![format!("{}{}", o.sparks, gu.lobby_msg(0xc, 0x7b, "")), format!("{}{}", o.exp, gu.lobby_msg(0xc, 0x7c, ""))];
+        rewards.extend([extra(o.cap, 0x7d), extra(o.acc, 0x7e)].into_iter().flatten());
+        let text = if o.pages[1].is_empty() { o.pages[0].clone() } else { format!("{} {}", o.pages[0], o.pages[1]) };
+        Some(DescView {
+            name: o.name.clone(),
+            tint: colour(w, l.mode, id, Some(&o), false),
+            text,
+            progress_label: gu.lobby_msg(0xc, 0x81, ""),
+            progress: format!("{have}/{}", o.goal),
+            progress_tint: if full || at_goal { 0x8020_60a0 } else { WHITE },
+            once: (!o.repeatable).then(|| gu.lobby_msg(0xc, 0x84, "")),
+            rewards_label: gu.lobby_msg(0xc, 0x83, ""),
+            rewards: rewards.join("   "),
+        })
+    });
+    Some(View { mode: l.mode, title, rows, cursor: l.cursor, empty, desc, deep: l.stack.len() > 1, siblings: l.siblings != (0, 0), })
+}
+
+/// The modern Journal moves the cursor itself (hover, a click); a description open goes back to the list.
+pub fn set_cursor(w: &mut World, k: usize) -> bool {
+    let Some(l) = w.quests.as_mut().and_then(|q| q.roe.as_mut()) else { return false };
+    l.state = 0;
+    if k >= l.rows.len() || k == l.cursor {
+        return false;
+    }
+    l.cursor = k;
+    show(l);
+    true
+}
+
+/// The modern Journal's keys: as retail's, but the description shows beside the list at once, so Up / Down and Left /
+/// Right leave it first.
+pub fn modern_key(w: &mut World, key: egui::Key, page: bool) {
+    let Some(mut l) = w.quests.as_ref().and_then(|q| q.roe.clone()) else { return };
+    if l.state == 1 && matches!(key, egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight) {
+        l.state = 0;
+    }
+    self::key(w, &mut l, key, page);
+    if let Some(q) = w.quests.as_mut()
+        && q.roe.is_some()
+    {
+        q.roe = Some(l);
+    }
+}
+
 /// quest01 in the RoE modes (0x10232530): the title and empty texts, the rows (icon, name, gauge and count), the
 /// description with its count and rewards (FUN_102323d0, FUN_10232090), the arrows.
 pub fn draw(gu: &mut GameUi, w: &World, l: &List, sw: f32, sh: f32, rects: &mut Vec<[f32; 4]>) {

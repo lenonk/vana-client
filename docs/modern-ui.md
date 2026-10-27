@@ -245,7 +245,9 @@ Milestone 1:
   command column and retail's windows at the edge; folded, those draw over the tab. T folds the Timers (Ctrl / Alt +
   T is /tell). The minimap is square, north up, with the zone and grid; Wide Scan sits under it, folded by default,
   named as retail's list, asking every 10 s while open and nothing is tracked, the last full list kept until the next
-  is all in. The map overlay draws in egui at its box and opacity.
+  is all in. Its filter (ours): Players / NPCs / Monsters toggles (config `modern_scan_kinds`) and a name field (a
+  click takes the keys, every word must be in the name; Enter keeps it, Escape or the cross clears it). The map
+  overlay draws in egui at its box and opacity.
 - Retail windows while Modern is on: the pack's frame (render/ui.rs push_frame), the game UI's text in Inter through a
   glyph atlas (render/mtext.rs; game font, sprite font, labels), and the captions baked into menu sprites read back
   from their glyph cells ("font    font" and "menu    menu2fon") and drawn as text; the lobby's too when Modern is
@@ -259,6 +261,37 @@ Milestone 1:
 - Plate badges: the approved SVG set (assets/modern/badges) in place of retail's glyphs; the pearl tinted by its
   linkshell; rank stars, the recruiter star in its orb, the master stars above.
 - Icons: batches 1 and 2 (131) redrawn in VectorCraft and approved.
-- To do: native Status, journal and Social pages in the command window; the lobby screens' own layouts; search in the
-  other lists; BattleMod / rChat in the chat.
+- Status (modern/status.rs): the persona, the level gauge, retail's rows on the left with the page under the cursor
+  beside them at once (profile with the attributes, job and master levels with the job icons, combat / magic / craft
+  skills named by their sprites' captions, Currencies 1 and 2 as one list with "only those held"); Unity, Play Time,
+  Merit Points, Job Points and Alter Ego Points open retail's windows over it.
+- Journal (modern/journal.rs): Missions, Quests and Key Items as tabs of one window (Tab or a click switches): every
+  log / area / category on the left with counts, the chosen one's rows on the right (a log's or an area's current and
+  completed together), the cursor row's description under them at once; a new key item is marked seen by Enter or a
+  click (no "Examine?" question); the Records of Eminence values and buttons under Quests open retail's lists. Typing
+  searches every key item, quest or mission there is (listsearch.rs).
+- Social (modern/social.rs): the Party menu, Search and Linkshell windows drawn from retail's own menus (their rows
+  named by their label sprites, retail's disabled rows and swaps, a window opened over another shown beside it);
+  link11 / link12 stay retail's. Set Bazaar the same way. View House is the storage view itself, opened on the Mog
+  Safe, with every bag its menu allows as a tab (each opened as its row would).
+- Chat timestamps are in the monospace face.
+- The full log is the chat window itself at full height (under the top bar), with its tabs, scrolled by the wheel and
+  the full log's keys; the chat line's channel is a tab on its top edge. A line sent on Say, Party, Linkshell,
+  Linkshell 2 or Unity becomes the default channel (ours; retail sets it only by /chatmode and the Chat window).
+- The game's windows that stack on the log stand on top of what rides on the chat window.
+- Default places are the user's arrangement (2026-10-26): the status icons, the command window and the Timers at the
+  left under the top bar, the main menu and the minimap at the right, the chat window most of the screen's width.
+- Keys: Config's list takes Right as Enter (into the page); the Items sort strip is reached by Up from the first item,
+  walked by Left / Right, left by Down.
+- Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
+  Linkshell, Linkshell 2, Assist E, Assist J, Unity, Shout; each chat line keeps its mode (combat.rs ChatLog).
+- The mouse, both interfaces (user, 2026-10-26: as modern MMOs; clicks unchanged): a drag holds the pointer hidden
+  where it began (locked, raw motion; confined and warped back on X11); a right drag turns the camera and the character
+  faces where it looks; first person looks with the mouse (0x8d / 0x8e invert it); the wheel moves the camera in and
+  out (0.5 .. 3 of retail's 3..6 rest, saved as cam_dist), fully in into first person and out of it; no screen edge
+  panning; Mouse/Cam.'s Mouse Control and Screen Edge Panning greyed in Classic, left out in Modern.
+- Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
+  window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
+  Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
+- To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
 - Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.

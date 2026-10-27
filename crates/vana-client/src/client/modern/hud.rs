@@ -116,11 +116,11 @@ fn bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32) {
 }
 
 /// A bar `BAR` high under the row's text; the labels over bars at `LABEL_SIZE`.
-const BAR: f32 = 14.0;
+pub(super) const BAR: f32 = 14.0;
 const LABEL_SIZE: f32 = 18.0;
 
 /// A bar with its label and value over its top edge, the label a little in from the bar's start.
-fn labelled_bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32, label: (&str, Color32), value: (&str, Color32)) {
+pub(super) fn labelled_bar(ui: &Ui, m: &Modern, kind: &str, r: Rect, f: f32, label: (&str, Color32), value: (&str, Color32)) {
     bar(ui, m, kind, r, f);
     let p = ui.painter();
     let font = FontId::new(LABEL_SIZE, FontFamily::Name(super::LABEL.into()));
@@ -181,6 +181,14 @@ fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, 
 /// Our effects alone (the name, jobs and bars are the party window's): their icons and times, shown while any.
 pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     if v.effects.is_empty() {
+        return;
+    }
+    // Retail's icons are layer 0, under every window: a retail window over where they stand (the hand-over, the item
+    // pickers at the top left) hides them until it closes.
+    if let Some(r) = p.m.rects.borrow().get("status").copied()
+        && super::extras::under_retail(p.m, r)
+    {
+        p.this.insert("status".into(), r);
         return;
     }
     let look = p.look();
@@ -422,7 +430,7 @@ fn compass(painter: &Painter, m: &Modern, c: Pos2, v: &CompassView) {
     }
     painter.circle_filled(c, 2.0, gold);
     // Retail's letters on the rim, upright: s4 N at local +y, s1 E at -x, s3 S at -y, s2 W at +x.
-    let font = FontId::new(11.0, FontFamily::Name(super::STRONG.into()));
+    let font = FontId::new(12.5, FontFamily::Name(super::STRONG.into()));
     for ((lx, ly), letter) in [((0.0, 1.0), "N"), ((-1.0, 0.0), "E"), ((0.0, -1.0), "S"), ((1.0, 0.0), "W")] {
         let p = at(lx, ly, DIAL);
         painter.circle_filled(p, 6.5, m.theme.color("charcoal"));
@@ -530,7 +538,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
     let day = ((secs % 27648) / 3456) as usize;
     let name = w.battle.as_ref().and_then(|b| b.day_name(day)).unwrap_or_default();
     Some(WhereView {
-        zone: w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, w.pos_zone as u32)).unwrap_or_else(|| crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone))),
+        zone: w.names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, w.pos_zone as u32)).unwrap_or_else(|| crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone)))),
         grid: p.m.grid(w, gu),
         time: (m / 60, m % 60),
         day: (day, name),
@@ -549,7 +557,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
     let hp_colour = |hpp: u8| p.gu.map_or(p.m.theme.color("text"), |gu| super::chat::colour(gu.hp_tint(hpp).to_le_bytes()));
     let marked = |slot: usize, id: u32, index: u16| hand == Some(slot) || w.target.is_some_and(|t| t == id || (id != w.my_id && w.entities.get(&t).is_some_and(|e| e.index == index)));
     let marks = |id: u32, party: usize| (id != 0 && id == slots.leaders[party]) as u8 | ((id != 0 && id == slots.alliance_leader) as u8) << 1;
-    let zone = |z: u16| p.gu.map(|gu| crate::dat::font::decode_sjis(&gu.area_name(z))).unwrap_or_default();
+    let zone = |z: u16| p.gu.map(|gu| crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(z)))).unwrap_or_default();
     let effects = |id: u32| w.party_buffs.get(&id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false }).collect());
     let gauge = |k: usize, hpp: u8, mpp: u8| w.party_gauges.get(k).map_or((hpp, mpp), |g| (g.1, g.2));
     // A member's max HP: as last seen at 100 %, else HP / HP %.

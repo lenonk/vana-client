@@ -421,6 +421,38 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
         }
         return true;
     }
+    // Modern: the sort strip stands above the list as a row, so Up from the first item goes to it, Left / Right move
+    // along it (and between Yes / No), Down comes back to the list.
+    if w.modern
+        && let Some(Win::Items { scroll, cursor, sub: None, sort, manual: None, store: None, direct: false }) = w.win.as_mut()
+    {
+        use crate::audio::Ui;
+        use egui::Key as K;
+        match (sort.as_mut(), key) {
+            (None, K::ArrowUp) if *scroll + *cursor == 0 => {
+                *sort = Some(SortWin { cursor: 1, ask: None });
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: Some(yes), .. }), K::ArrowLeft | K::ArrowRight) => {
+                *yes = !*yes;
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(s @ SortWin { ask: None, .. }), K::ArrowLeft | K::ArrowRight) => {
+                s.cursor = if key == K::ArrowRight { s.cursor % 3 + 1 } else if s.cursor <= 1 { 3 } else { s.cursor - 1 };
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: None, .. }), K::ArrowDown) => {
+                *sort = None;
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: None, .. }), K::ArrowUp) => return true,
+            _ => {}
+        }
+    }
     let mut close = false;
     let mut open_recycle = false;
     match &mut w.win {

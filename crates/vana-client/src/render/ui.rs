@@ -77,8 +77,10 @@ pub struct UiBatch {
     runs: Vec<Run>,
     clip: Option<[f32; 4]>,
     depth: Option<f32>,
-    /// While Modern is on: the frame the retail windows' frames are drawn with.
+    /// While Modern is on: the frame the retail windows' frames are drawn with, and the frames drawn this frame (the
+    /// modern layer's edge windows give way to them).
     pub modern: Option<ModernFrame>,
+    pub frames: Vec<[f32; 4]>,
 }
 
 /// The modern UI's window frame for the retail windows: the border texture's name, its corner as a share of its
@@ -161,8 +163,16 @@ pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32)
         let usual = gaps.get(gaps.len() / 2).copied().unwrap_or(0.0);
         for (cx, cy, cw, ch, colour) in row {
             match runs.last_mut() {
-                Some(r) if (r.1 - cy).abs() < 4.0 * sy && cx - r.2 < 12.0 * sx && cx >= r.2 - 4.0 * sx => {
-                    if cx - r.2 >= usual + 2.0 * sx {
+                // The apostrophe is the comma raised to the letters' top ("San d'Oria", 4 px above them).
+                Some(r) if ((r.1 - cy).abs() < 4.0 * sy || (ch == "," && cy < r.1 && r.1 - cy < 6.0 * sy)) && cx - r.2 < 12.0 * sx && cx >= r.2 - 4.0 * sx => {
+                    // No gap counts around an apostrophe, after "(" or before ")".
+                    let ch = if ch == "," && cy < r.1 - 2.0 * sy { "'" } else { ch };
+                    let last = r.3.chars().last();
+                    // A word's first capital leaves a wider gap before its small letters ("B eastmaster").
+                    let first_cap = last.is_some_and(|c| c.is_ascii_uppercase()) && r.3.chars().rev().nth(1).is_none_or(|c| c == ' ');
+                    let small = ch.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+                    let tight = ch == "'" || ch == ")" || matches!(last, Some('\'' | '('));
+                    if !tight && cx - r.2 >= usual + if first_cap && small { 4.0 } else { 2.0 } * sx {
                         r.3.push(' ');
                     }
                     r.3.push_str(ch);
@@ -173,7 +183,23 @@ pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32)
         }
         k = end;
     }
-    Some(runs.into_iter().map(|(x0, top, _, text, colour)| (x0, top, text, colour)).collect())
+    Some(runs.into_iter().map(|(x0, top, _, text, colour)| (x0, top, il(&text), colour)).collect())
+}
+
+/// The caption sets draw I and l alike: an I inside a small word is l ("Select"), a word's l before a consonant I
+/// ("Invisible").
+fn il(s: &str) -> String {
+    let c: Vec<char> = s.chars().collect();
+    (0..c.len())
+        .map(|i| {
+            let (prev, next) = (i.checked_sub(1).map(|k| c[k]), c.get(i + 1).copied());
+            match c[i] {
+                'I' if prev.is_some_and(|p| p.is_ascii_lowercase()) => 'l',
+                'l' if !prev.is_some_and(|p| p.is_ascii_alphabetic()) && next.is_some_and(|n| n.is_ascii_lowercase() && !"aeiouyl".contains(n)) => 'I',
+                ch => ch,
+            }
+        })
+        .collect()
 }
 
 /// CAPTION_GLYPHS' characters as strings.
@@ -419,6 +445,7 @@ impl UiBatch {
     pub fn push_frame(&mut self, ui: &UiFile, style: &SpriteLib, x: f32, y: f32, w: f32, h: f32, sx: f32, sy: f32, tint: u32, blend_word: u32, alt_back: bool, no_edges: bool) {
         if let Some(f) = self.modern.clone() {
             self.push_modern_frame(&f, x, y, w * sx, h * sy, ((tint >> 24 & 0xff) as f32 / 128.0).min(1.0), no_edges);
+            self.frames.push([x, y, w * sx, h * sy]);
             return;
         }
         let mut piece = |k: usize, ox: f32, oy: f32, pw: f32, ph: f32| {

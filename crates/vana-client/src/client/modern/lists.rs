@@ -175,10 +175,22 @@ pub(super) fn search_hits(p: &Panels, w: &World) -> Option<(String, usize, Vec<H
     let s = w.list_search.as_ref()?;
     let hits = listsearch::hits(w, &s.text);
     let icon = |h: &Hit| match h.slot {
+        _ if h.journal.is_some() => None,
         Some(_) => w.item_info.as_ref().and_then(|info| p.m.item_icon(p.ctx, info, h.id)),
         None => p.gu.and_then(|gu| magic::row_icon(w, h.kind, h.id).and_then(|(lib, k)| p.m.sprite_icon(p.ctx, gu, lib, k))),
     };
     let icons = hits.iter().take(listsearch::MAX).map(icon).collect();
+    // A journal hit's note: its quest area or mission log by the game's titles.
+    let mut hits = hits;
+    if let Some(gu) = p.gu {
+        for h in &mut hits {
+            match h.journal {
+                Some(listsearch::Journal::Quest(area, _)) => h.note = format!("{} ({})", super::journal::area_title(gu, area), h.note),
+                Some(listsearch::Journal::Mission(log, _)) => h.note = super::journal::log_title(gu, log),
+                _ => {}
+            }
+        }
+    }
     Some((s.text.clone(), s.sel, hits, icons))
 }
 

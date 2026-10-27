@@ -3,7 +3,7 @@
 //! through retail's own keys (the category, the row, Enter), so every check and the target prompt still apply.
 
 use super::magic::{self, Cat, Kind};
-use super::{World, items};
+use super::{World, items, journal, keyitems, missions, quests};
 use super::suggest::{self, Action, Suggestion};
 use crate::audio::Ui as Se;
 
@@ -59,7 +59,7 @@ pub fn pick_action(w: &mut World, action: Action) {
         })
     });
     if in_list || cat.is_some() {
-        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0, slot: None, note: String::new() });
+        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0, slot: None, note: String::new(), journal: None });
     }
 }
 
@@ -81,6 +81,18 @@ pub struct Hit {
     pub score: i32,
     pub slot: Option<u8>,
     pub note: String,
+    /// A journal row: a key item (`cat` its category), a quest or a mission.
+    pub journal: Option<Journal>,
+}
+
+/// Where a journal hit is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Journal {
+    KeyItem,
+    /// The area and the entry (current first).
+    Quest(usize, usize),
+    /// The log and the entry.
+    Mission(usize, usize),
 }
 
 /// Rows a search shows at most.
@@ -159,6 +171,53 @@ fn name(w: &World, kind: Kind, id: u16) -> String {
 /// The hits for the open window, best first (the list's own order among equals).
 pub fn hits(w: &World, query: &str) -> Vec<Hit> {
     let mut out = Vec::new();
+    // The key items we hold, over every category (the category as the note).
+    if key_items(w) {
+        for (k, (title, items)) in keyitems::all(w).into_iter().enumerate() {
+            for (id, name) in items.into_iter().filter(|(id, _)| w.has_key_item(*id)) {
+                if let Some(score) = score(&name, query) {
+                    out.push(Hit { kind: Kind::Ability, cat: Some(k), id, name, score, slot: None, note: title.clone(), journal: Some(Journal::KeyItem) });
+                }
+            }
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        return out;
+    }
+    // The quests we have or have done, in every area (current or completed as the note).
+    if quest_list(w) {
+        let logs = w.logs.clone();
+        for area in (0..11).filter(|&a| quests::area_on(w.expansions, a)) {
+            let Some(f) = logs.as_ref().and_then(|l| l.quests.get(area)) else { continue };
+            let (rows, split) = quests::merged(w, area);
+            for (k, i) in rows.into_iter().enumerate() {
+                let Some(e) = f.entries.get(i) else { continue };
+                let name = e.name.trim_start_matches('+').to_string();
+                if let Some(score) = score(&name, query) {
+                    let note = (if k < split { "current" } else { "completed" }).to_string();
+                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note, journal: Some(Journal::Quest(area, i)) });
+                }
+            }
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        return out;
+    }
+    // The current and completed missions of every log.
+    if mission_list(w) {
+        let logs = w.logs.clone();
+        for log in missions::shown_logs(w) {
+            let Some(f) = logs.as_ref().and_then(|l| l.missions.get(log)) else { continue };
+            for r in journal::mission_rows(&w.journal, log, f) {
+                let (journal::Row::Current(i) | journal::Row::Done(i)) = r else { continue };
+                let Some(e) = f.entries.get(i) else { continue };
+                let name = journal::indent(&e.name).0.to_string();
+                if let Some(score) = score(&name, query) {
+                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note: String::new(), journal: Some(Journal::Mission(log, i)) });
+                }
+            }
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        return out;
+    }
     if let Some(direct) = item_list(w) {
         let mut seen: Vec<(u16, u32)> = Vec::new();
         let info = w.item_info.as_ref();
@@ -171,7 +230,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
             if out.iter().all(|h: &Hit| h.id != s.id)
                 && let Some(score) = score(&n, query)
             {
-                out.push(Hit { kind: Kind::Ability, cat: None, id: s.id, name: n, score, slot: Some(s.index), note: String::new() });
+                out.push(Hit { kind: Kind::Ability, cat: None, id: s.id, name: n, score, slot: Some(s.index), note: String::new(), journal: None });
             }
         }
         for h in &mut out {
@@ -185,7 +244,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
         for id in rows {
             let n = name(w, kind, id);
             if let Some(score) = score(&n, query) {
-                out.push(Hit { kind, cat, id, name: n, score, slot: None, note: String::new() });
+                out.push(Hit { kind, cat, id, name: n, score, slot: None, note: String::new(), journal: None });
             }
         }
     };
@@ -220,7 +279,22 @@ pub fn can_run(w: &World) -> bool {
         && w.prompt.is_none()
         && w.confirm.is_none()
         && !w.typing
-        && (w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0) || (w.win.is_some() && item_list(w).is_some()))
+        && (w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0) || (w.win.is_some() && item_list(w).is_some()) || key_items(w) || quest_list(w) || mission_list(w))
+}
+
+/// The modern quest list (no Records of Eminence list over it).
+fn quest_list(w: &World) -> bool {
+    w.quests.as_ref().is_some_and(|q| q.state == 1 && q.roe.is_none() && q.list.as_ref().is_some_and(|l| l.state == 0))
+}
+
+/// The modern mission list.
+fn mission_list(w: &World) -> bool {
+    w.missions.as_ref().and_then(|m| m.list.as_ref()).is_some_and(|l| l.state == 1)
+}
+
+/// The key items window on its categories or a category's list (no question up).
+fn key_items(w: &World) -> bool {
+    w.keyitems.as_ref().is_some_and(|k| matches!(k.state, 1 | 2) && k.ask.is_none())
 }
 
 /// The search's keys and typed text this frame, and Tab's suggestions. True when it took them (the game then sees
@@ -321,6 +395,30 @@ pub fn set_sel(w: &mut World, sel: usize) {
 /// Enter acts on it, as the keys would.
 pub fn pick(w: &mut World, h: &Hit) {
     w.list_search = None;
+    match h.journal {
+        Some(Journal::Quest(area, entry)) => {
+            quests::show_area(w, area, Some(entry));
+            w.sounds.push(Se::Select as u32);
+            return;
+        }
+        Some(Journal::Mission(log, entry)) => {
+            missions::show_log(w, log, Some(entry));
+            w.sounds.push(Se::Select as u32);
+            return;
+        }
+        _ => {}
+    }
+    // A key item: its category opens with the cursor on it, at the page's top.
+    if h.journal == Some(Journal::KeyItem) {
+        keyitems::show_category(w, h.cat.unwrap_or(0));
+        if let Some(k) = w.keyitems.as_mut()
+            && let Some(i) = k.items.iter().position(|(id, _)| *id == h.id)
+        {
+            (k.top, k.cursor) = (i, i);
+        }
+        w.sounds.push(Se::Select as u32);
+        return;
+    }
     if let (Some(slot), Some(direct)) = (h.slot, item_list(w)) {
         let Some(k) = items::listed(w, direct).iter().position(|s| s.index == slot) else { return };
         if let Some(items::Win::Items { scroll, cursor, .. }) = w.win.as_mut() {

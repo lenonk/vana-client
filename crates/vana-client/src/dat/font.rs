@@ -435,6 +435,26 @@ impl Font {
 /// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
 const PAIR_BASE: u32 = 0xF0000;
 
+/// The game's own glyphs as Unicode for faces that lack them (the modern interface's): its apostrophe (0x8552) and
+/// curly quotes (0x87B2 / 0x87B3); the other private-use characters (gaiji, pairs Shift-JIS lacks, the in-line colour
+/// codes and phrase bytes kept in plane 16) are left out.
+pub fn plain_char(c: char) -> Option<char> {
+    match c as u32 {
+        0xF8552 => Some('\u{2019}'),
+        0xF87B2 => Some('\u{201C}'),
+        0xF87B3 => Some('\u{201D}'),
+        // Full-width forms (Shift-JIS 81 xx: Kupipi's "pre～sent") as their ASCII, the ideographic space as a space.
+        0xFF01..=0xFF5E => char::from_u32(c as u32 - 0xFEE0),
+        0x3000 => Some(' '),
+        0xE000..=0xF8FF | 0xF0000..=0x10FFFF => None,
+        _ => Some(c),
+    }
+}
+
+pub fn plain(s: &str) -> String {
+    s.chars().filter_map(plain_char).collect()
+}
+
 /// An in-line code `1e xx` / `1f xx` kept in a String as one character, U+100400 + 0x100 x (code - 0x1e) + xx, so a
 /// wrap never splits it and encode_sjis gives the bytes back.
 pub const CODE_BASE: u32 = 0x10_0400;

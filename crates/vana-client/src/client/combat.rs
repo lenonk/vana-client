@@ -18,7 +18,12 @@ pub struct ChatLog {
     /// Local time each line came in (hour, minute, second), whether it is a chat line (retail stamps only those) and
     /// whether its continuation lines are indented (the mode's flag, FUN_10127870).
     times: Vec<([u8; 3], bool, bool)>,
+    /// Each line's chat mode (record byte 0: its colour and the full log's tab filters, FUN_101299f0), NO_MODE for the
+    /// lines printed without one.
+    modes: Vec<u16>,
 }
+
+pub const NO_MODE: u16 = 0xffff;
 
 impl ChatLog {
     pub fn push(&mut self, s: impl Into<String>) {
@@ -26,23 +31,34 @@ impl ChatLog {
     }
 
     pub fn push_colour(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, false);
+        self.push_line(s, colour, false, false, NO_MODE);
     }
 
     /// A line whose continuation lines are indented.
     pub fn push_indented(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, true);
+        self.push_line(s, colour, false, true, NO_MODE);
     }
 
     /// A chat line (s2c 0x017 or our sends' echoes), which config 0xb5 stamps.
     pub fn push_chat(&mut self, s: String, colour: [u8; 4], indent: bool) {
-        self.push_line(s, colour, true, indent);
+        self.push_line(s, colour, true, indent, NO_MODE);
     }
 
-    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool) {
+    /// A chat line with its mode.
+    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8) {
+        self.push_line(s, colour, true, indent, mode as u16);
+    }
+
+    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool, mode: u16) {
         log::debug!(target: "chat", "{}", crate::dat::font::strip_codes(&s));
         self.times.push((super::cfgapply::local_hms(), chat, indent));
+        self.modes.push(mode);
         self.lines.push((s, colour));
+    }
+
+    /// The lines' modes, in the lines' order.
+    pub fn modes(&self) -> &[u16] {
+        &self.modes
     }
 
     /// Lines with the time they came in, whether they are chat lines and whether they indent.

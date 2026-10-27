@@ -171,7 +171,13 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   engaged monsters stand in btl0 unless their scheduler overrides it (op 0x79).
 - Movement ratio FUN_100c68f0: moved this frame / (ticks * SpeedBase * 0.1 / 60), x1.6 riding; smoothed
   0.25 new + 0.75 old, max 3; 0 at once below 1e-4. Speed @0x1C, SpeedBase @0x1D (x0.1 units/s).
-- Our run speed comes from our own Speed byte in 0x00A (50 -> 5.0 units/s).
+- Our run speed comes from our own Speed byte in 0x00A (50 -> 5.0 units/s), then from every 0x037: flags1 (u32 @0x2C)
+  Speed bits 0..11 -> actor +0x15c, SpeedBase bits 17..24 -> +0x9c (x0.1; FUN_1009d0f0 at 0x1009d3e0). FUN_100a48d0
+  doubles the speed while riding (status 5 / 0x55: FUN_10093ed0 / FUN_10093ef0), caps it at 30 units/s, x1/60 per
+  tick. LSB sends MOUNT_SPEED / 2 (40) while mounted, so a chocobo runs 8.0 units/s.
+- Music 212 ("Dash de Chocobo", the chocobo ride) is 44100 Hz ADPCM, 382 s, no loop point; retail's DirectSound
+  buffer has no frequency control (flags 0x50080 | 0x8000), so it plays at the header rate. Checked against retail
+  by the user 2026-10-26: same speed.
 - Remote entities ease toward the server position at their speed; jumps over 15 units snap.
 
 ## Lobby title screen
@@ -3141,6 +3147,9 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
 - Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
   (+0x840 bits 20..21), 'fvib', the footstep-effects option DAT_10444158 (taken as on). The i900 wading ripple and
   point 0x35: done (section "The bone-0 drop, the wade point 0x35").
+- Sneak (2026-10-26): the sound needs entity +0x128 bit 8 clear. 0x00D / 0x00E set it from u32 @0x28 bit 21 (asm
+  0x1009a5d2, 0x1009c228), 0x037 from u32 @0x38 bit 2 (0x1009d591); LSB's SilenceFlag, set while GM-hidden or under
+  Sneak. Dust and footprints still happen. Ours: Marks.silent, footsteps::steps. Seen live: Silent Oil on Lnxcsfix.
 
 ### Keyframe sampling in the update stream (FUN_100499d0, jump table 0x1004d08c = op - 1) (2026-10-22)
 - FUN_10053520 / FUN_10053740 (linear / eased, by S[s+1] & 0xf) sample with the **first key's value (+0x34)
@@ -10323,3 +10332,65 @@ client/creator.rs (`WorldStep`, `WorldAct`, draw_ui), game_ui.rs (`WorldView`, `
   FFXI-3111 -> list; Escape pass -> list -> name; "1234567890" -> netwait "Checking name and Gold World Pass." ->
   FFXI-3339 (LSB: the account has characters) -> list; empty pass -> op 4 -> nation; Escape, the steps again, the same
   triple -> nation at once.
+
+## The default chat mode's setters (2026-10-26)
+- FUN_101ad670 (set the chat mode) has three callers in 30261006_0: /chatmode (FUN_10080830), the Chat window's Enter
+  (chatctrl, all.c line 228303) and FUN_101b83e0's message 0x200 (mode 2, Say). A channel command with text ("/p hi")
+  does not change the default mode; the line after it goes to the old mode. The modern UI (ours) keeps the last of
+  Say, Party, Linkshell, Linkshell 2 and Unity as the default; tells, shouts and emotes do not stick.
+
+## The full log's tabs and the log filters (2026-10-26)
+Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables read raw from the unpacked DLL).
+- Tab list .data 0x1036f940 (built by FUN_10138700, filtered at each open by FUN_10138800): eleven (filter, fep pair)
+  entries; English order Window 1 (filter 0), Window 2 (8, only with config 0xb4), Say (3), Tell (4), Party (1),
+  Linkshell (2), Linkshell 2 (7), Assist E (10), Assist J (9), Unity (6), Shout (5); Japanese swaps the Assist pair.
+  There is no "All" tab: Window 1 is it while the second window is off. logwin.rs's "Filter 0 (all)" comment holds
+  only then.
+- The filter (FUN_101299f0, jump table 0x10129b10) by the line's mode byte (record byte 0, the colour's): Party 5 /
+  0xd / 0xd2 (trusts), Linkshell 6 / 0xe, Say 1 / 9, Tell 4 / 0xc, Shout 2 / 0xa / 3 / 0xb (Yell included), Unity
+  0xd3 / 0xd4, Linkshell 2 0xd5 / 0xd6, Assist J 0xdb / 0xdc, Assist E 0xdd / 0xde (own echo / others'). Emotes,
+  messages, NPC talk, battle and system lines, the linkshell message (0xcd / 0xd9 / 0xda) and /echo show in no
+  channel tab.
+- Windows 1 / 2 (FUN_10129b40 / FUN_10129b80) use config 0xb9 / 0xba and 0xbb / 0xbc (the Log page's bits via the
+  mode's colour id, FUN_10129bb0); window 1 shows everything while the second window is off, and the 0x017 GM bit
+  always. Rows reach the small windows only through their filter (FUN_10128ce0); every row goes to the history store.
+- Key function 0x11 (Num+, Ctrl / Alt + F) is the full log's next tab (message 8, wrapping, SE 0002); no previous;
+  it opens on Window 1. Channel tabs gather about 50 rows back from the store *(inf: wrapped rows)*.
+- Resolves "filters 1..8 not decoded" above (the 2019 FUN_10125940).
+
+## Modern UI sweep fixes (2026-10-26)
+
+- Zone-line death pose: LSB's 0x037 carries status 3 (Death) for a character leaving by a zone line (isDead() counts
+  status Disappear) while HP is left; ours keeps the old status for a 2 / 3 with HP > 0 *(inf: retail never sees it)*.
+- Modern text on retail windows (GameUi::shown, font::plain_char) drops plane 16 too: the in-line colour codes
+  (CODE_BASE, `1e 02` .. `1e 01` round event item names) drew as tofu in the choice menus.
+- Retail windows draw under every egui panel: the modern status icons hide while a retail window (the hand-over, the
+  item pickers) covers them, as retail's layer-0 icons are drawn over; Timers keeps clear of the command column.
+- The modern command menu hides while FUN_1015fa00's walk suspends the main menu (mcrmenu over it: World.main_off).
+- Modern panels for: the area picker (arealist, every row), the search results and the person menu (scresult /
+  scoption), Region Info's menu, the moogle menus (myroom / mogext, storage, mogpost, jobchang / jobcselu with the
+  levels); the auto-translate list over the chat line (fep's candidates, a page of seven). Their rules and keys stay
+  the retail modules'.
+- The top bar follows the modern command menu's cursor (retail row help, else the category's rows).
+- LSB tells no seller of an auction sale: the buyer alone gets 0x04C, a DB trigger puts the gil in the seller's
+  delivery box (auctionutils.cpp). Nothing for a client to show at the time.
+- Modern panels also for: Settings / Extras (Settings::view: tabs in rows of six, buttons, sliders, the option's
+  help on hover, the heading's while the cursor holds it), Help Desk's pages (helpdesk / faqmain), the Link List (one
+  people list with the search results) and the Log Out / Shut Down prompt (modern::confirm).
+- Config: the gamma Red / Green / Blue headings (nine in all); a list page shows its window's help.
+- The full log's Numpad + (key function 0x11) cycles its tabs in modern too.
+- Captions read from the menu sprites (render/ui.rs caption_runs): the apostrophe is the comma raised 4 px ("San
+  d'Oria"); no gap counts around an apostrophe, after "(" or before ")"; a word's first capital leaves a wider gap
+  before its small letters ("Beastmaster", "Rune Fencer"). The caption sets draw I and l alike: an I inside a small
+  word is l ("Select Character"), a word's l before a consonant I ("Invisible", "Inventors'"). Checked over every
+  caption of every menu, old against new: only those changed.
+- Modern text (font::plain_char): the game's apostrophe and curly quotes as Unicode, full-width forms FF01..FF5E as
+  ASCII (Kupipi's "pre～sent"), U+3000 as a space; the chat panel's lines and the area names go through it too.
+  GameUi's modern runs take the in-line codes kept as one character (CODE_BASE) as colours, so event item names in
+  the choice menus keep their colour (seen live: Arvilauge's "VCS registration cards.").
+- /map (FUN_1007d2c0) and the Map row (FUN_101f7810(0)) have no Mog House check: there they open ZoneNo's map, the
+  city's, and LSB answers Wide Scan with the zone's entities. The minimap and the Wide Scan list show the city in the
+  Mog House as retail would.
+- The Wide Scan flyout's filter (ours): kind toggles (config modern_scan_kinds) and a name field.
+- The receive Delivery Box shows the look-only inventory list (equipped items grey) beside post1 / post2
+  (FUN_1014ce80); seen live in modern with the moogle panel stepped right of it.

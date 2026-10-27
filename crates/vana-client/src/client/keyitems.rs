@@ -81,7 +81,7 @@ pub fn categories(list: &[(u32, String)]) -> Vec<(String, Vec<(u16, String)>)> {
     out
 }
 
-fn all(w: &World) -> Vec<(String, Vec<(u16, String)>)> {
+pub(super) fn all(w: &World) -> Vec<(String, Vec<(u16, String)>)> {
     w.names.as_ref().map_or(Vec::new(), |n| categories(&n.key_item_list()))
 }
 
@@ -147,7 +147,7 @@ pub fn page(h: &[f32], top: usize, forward: bool) -> usize {
     if forward { (top + fit(h, top)).min(max_top(h)) } else { (0..top).find(|&i| i + fit(h, i) >= top).unwrap_or(0) }
 }
 
-fn show_category(w: &mut World, cat: usize) {
+pub(super) fn show_category(w: &mut World, cat: usize) {
     let cats = all(w);
     let items: Vec<(u16, String)> = cats.get(cat).map_or(Vec::new(), |c| c.1.iter().filter(|(id, _)| w.has_key_item(*id)).cloned().collect());
     if let Some(k) = w.keyitems.as_mut() {
@@ -156,7 +156,7 @@ fn show_category(w: &mut World, cat: usize) {
 }
 
 /// c2s 0x064 (FUN_10097f10): our UniqueNo, the table's 16 seen words, our ActIndex, the table.
-fn mark_seen(w: &mut World, id: u16) {
+pub(super) fn mark_seen(w: &mut World, id: u16) {
     let word = id as usize >> 5;
     if word >= 128 {
         return;

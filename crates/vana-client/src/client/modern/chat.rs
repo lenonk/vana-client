@@ -10,12 +10,32 @@ use egui::text::{LayoutJob, TextFormat};
 use egui::{Color32, FontId, Id, Order, Rect, Sense, Ui, Vec2, pos2, vec2};
 use std::sync::OnceLock;
 
-/// The tabs: every line, chat lines (s2c 0x017 and our sends), the rest (battle and system).
-pub const TABS: [&str; 3] = ["All", "Chat", "Battle"];
+/// The tabs: retail's full log's (FUN_10138700 / FUN_101299f0; scratch chatfilters/SPEC.md): every line, then each
+/// channel's chat modes, our own echo with the others' (Shout with Yell, Party with the trusts').
+pub const TABS: [(&str, &[u8]); 10] = [
+    ("All", &[]),
+    ("Say", &[1, 9]),
+    ("Tell", &[4, 12]),
+    ("Party", &[5, 13, 0xd2]),
+    ("Linkshell", &[6, 14]),
+    ("Linkshell 2", &[0xd5, 0xd6]),
+    ("Assist E", &[0xdd, 0xde]),
+    ("Assist J", &[0xdb, 0xdc]),
+    ("Unity", &[0xd3, 0xd4]),
+    ("Shout", &[2, 10, 3, 11]),
+];
+
+/// A line of this mode shows on tab `tab`.
+fn shows(tab: u8, mode: u16) -> bool {
+    tab == 0 || TABS.get(tab as usize).is_some_and(|t| mode < 0x100 && t.1.contains(&(mode as u8)))
+}
 /// Lines kept in the window's scroll.
 const KEEP: usize = 300;
 /// The default room: the width and the lines' height in points.
-const ROOM: Vec2 = vec2(620.0, 8.0 * 19.0);
+/// The default room: most of the screen's width (the user's arrangement), eight or nine lines.
+fn default_room(ctx: &egui::Context) -> Vec2 {
+    vec2(ctx.content_rect().width() * 0.8715, 174.0)
+}
 /// The font sizes the settings offer.
 const FONT_SIZES: std::ops::RangeInclusive<f32> = 10.0..=32.0;
 /// The tab row's height and the gap under it.
@@ -42,8 +62,9 @@ fn codes() -> &'static [u32; 17] {
 pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId, wrap: f32) -> LayoutJob {
     let mut job = LayoutJob::default();
     job.wrap.max_width = wrap;
+    // The timestamp in the monospace face (its digits keep their columns), a little smaller to sit with the text.
     if !stamp.0.is_empty() {
-        job.append(stamp.0, 0.0, TextFormat::simple(font.clone(), stamp.1));
+        job.append(stamp.0, 0.0, TextFormat::simple(FontId::monospace(font.size * 0.9), stamp.1));
     }
     let mut cur = base;
     let mut run = String::new();
@@ -71,9 +92,8 @@ pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId
                 let (t, c) = if ch == '\u{E008}' { ("{", Color32::from_rgb(0x50, 0xd0, 0x50)) } else { ("}", Color32::from_rgb(0xe0, 0x50, 0x50)) };
                 job.append(t, 0.0, TextFormat::simple(font.clone(), c));
             }
-            // The game's own glyphs and other private-use characters have no face here.
-            c if ('\u{E000}'..='\u{F8FF}').contains(&c) || c as u32 >= 0xF0000 => {}
-            c => run.push(c),
+            // The game's own glyphs as Unicode; the other private-use characters have no face here.
+            c => run.extend(crate::dat::font::plain_char(c)),
         }
     }
     flush(&mut job, &mut run, cur);
@@ -84,8 +104,12 @@ pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId
 fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
     let tab = m.chat_tab.get();
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_H), Sense::hover());
-    for (i, name) in TABS.iter().enumerate() {
-        let r = Rect::from_min_size(row.min + vec2(i as f32 * 82.0, 0.0), vec2(78.0, 24.0));
+    let font = FontId::proportional(m.theme.small);
+    let mut x = row.min.x;
+    for (i, (name, _)) in TABS.iter().enumerate() {
+        let tw = ui.fonts_mut(|f| f.layout_no_wrap(name.to_string(), font.clone(), Color32::WHITE).size().x);
+        let r = Rect::from_min_size(pos2(x, row.min.y), vec2((tw + 24.0).max(64.0), 24.0));
+        x = r.max.x + 4.0;
         let resp = ui.interact(r, ui.scope_id().with(("chat tab", i)), Sense::click());
         let s = if i == tab as usize {
             "controls/tab_active"
@@ -98,7 +122,7 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
             ui.painter().add(paint::nine_slice(&s, r, r.height() / s.size.y, Color32::WHITE.gamma_multiply(alpha)));
         }
         let c = if i == tab as usize { m.theme.color("gold") } else { m.theme.color("text") };
-        ui.painter().text(r.center() + vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, *name, FontId::proportional(m.theme.small), c.gamma_multiply(alpha));
+        ui.painter().text(r.center() + vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, *name, font.clone(), c.gamma_multiply(alpha));
         if resp.clicked() {
             m.chat_tab.set(i as u8);
         }
@@ -168,7 +192,8 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32) -> bool {
 /// What the chat window shows: the lines (timestamp, text, colour, chat line or not), the chat line while typing,
 /// and whether a message waits for a key.
 pub struct ChatView<'a> {
-    pub lines: Vec<(String, &'a str, [u8; 4], bool)>,
+    /// The lines: timestamp, text, colour, chat mode (combat::NO_MODE without one).
+    pub lines: Vec<(String, &'a str, [u8; 4], u16)>,
     pub input: Option<InputView>,
     pub waiting: bool,
 }
@@ -178,6 +203,8 @@ pub struct InputView {
     pub channel: &'static str,
     pub pieces: Vec<(String, bool)>,
     pub caret: usize,
+    /// The auto-translate list (Tab): the candidates and the cursor.
+    pub fep: Option<(Vec<String>, usize)>,
 }
 
 /// The channel a line goes to (chatctrl::line_mode's codes).
@@ -205,10 +232,16 @@ fn stamp_of(stamps: (u32, bool), time: [u8; 3], chat: bool) -> String {
 }
 
 pub fn view(w: &World) -> ChatView<'_> {
+    view_keep(w, KEEP)
+}
+
+/// The view with the newest `keep` lines.
+fn view_keep(w: &World, keep: usize) -> ChatView<'_> {
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
-    let all: Vec<_> = w.chat.iter_timed().collect();
-    let lines = all[all.len().saturating_sub(KEEP)..].iter().map(|((line, c), (time, chat, _))| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *chat)).collect();
-    let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w) });
+    let modes = w.chat.modes();
+    let all: Vec<_> = w.chat.iter_timed().zip(modes.iter().copied()).collect();
+    let lines = all[all.len().saturating_sub(keep)..].iter().map(|(((line, c), (time, chat, _)), mode)| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode)).collect();
+    let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w), fep: w.fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)) });
     ChatView { lines, input, waiting: event::prompt(w) }
 }
 
@@ -219,15 +252,23 @@ fn input(ui: &mut Ui, m: &Modern, v: &InputView, t: f32, size: f32, r: Rect) {
         ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
     }
     let font = FontId::proportional(size);
+    // The channel as a tab on the line's top edge (it takes no click); the line keeps what was typed.
+    let tf = FontId::proportional(m.theme.small);
+    let tw = ui.fonts_mut(|f| f.layout_no_wrap(v.channel.to_string(), tf.clone(), Color32::WHITE).size().x);
+    let tab = Rect::from_min_size(pos2(r.min.x + 10.0, r.min.y - TAB_H + 3.0), vec2(tw + 28.0, TAB_H));
+    if let Some(s) = m.art.sprite("controls/tab_active") {
+        ui.painter().add(paint::nine_slice(&s, tab, tab.height() / s.size.y, Color32::WHITE));
+    }
+    ui.painter().text(tab.center() + vec2(0.0, 1.0), egui::Align2::CENTER_CENTER, v.channel, tf, m.theme.color("gold"));
     let p = ui.painter().with_clip_rect(r.shrink(4.0));
-    let cr = p.text(pos2(r.min.x + 10.0, r.center().y), egui::Align2::LEFT_CENTER, v.channel, FontId::proportional(size * m.theme.small / m.theme.ui), m.theme.color("gold"));
-    let mut x = cr.max.x + 10.0;
+    let mut x = r.min.x + 12.0;
     let (mut caret_x, mut chars) = (x, 0);
     for (text, phrase) in &v.pieces {
         let c = if *phrase { Color32::from_rgb(0x80, 0xb0, 0xff) } else { m.theme.color("text") };
-        let n = text.chars().count();
+        // A phrase is one unit of four chars in the line (fep.rs): the caret stands before or after it.
+        let n = if *phrase { 4 } else { text.chars().count() };
         if v.caret >= chars && v.caret <= chars + n {
-            let before: String = text.chars().take(v.caret - chars).collect();
+            let before: String = if *phrase { if v.caret > chars { text.clone() } else { String::new() } } else { text.chars().take(v.caret - chars).collect() };
             caret_x = x + ui.fonts_mut(|f| f.layout_no_wrap(before, font.clone(), c).size().x);
         }
         x = p.text(pos2(x, r.center().y), egui::Align2::LEFT_CENTER, text, font.clone(), c).max.x;
@@ -240,6 +281,29 @@ fn input(ui: &mut Ui, m: &Modern, v: &InputView, t: f32, size: f32, r: Rect) {
     if (10..=24).contains(&((t * 30.0) as u64 % 26)) {
         p.vline(caret_x + 1.0, (r.center().y - size * 0.55)..=(r.center().y + size * 0.55), egui::Stroke::new(1.5, m.theme.color("text")));
     }
+    if let Some((cands, sel)) = &v.fep {
+        candidates(ui, m, cands, *sel, pos2(caret_x - 8.0, r.min.y - TAB_H));
+    }
+}
+
+/// The auto-translate list over the chat line at the word (retail's "menu    fep"): "n/m", a page of seven, the
+/// cursor's row lit; its keys stay fep.rs's (Tab / arrows move, Enter takes, Escape closes).
+fn candidates(ui: &mut Ui, m: &Modern, cands: &[String], sel: usize, bottom_left: egui::Pos2) {
+    let font = FontId::proportional(m.theme.small);
+    let first = sel / fep::ROWS * fep::ROWS;
+    egui::Area::new(egui::Id::unique("fep list")).order(egui::Order::Foreground).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(bottom_left).show(ui.ctx(), |ui| {
+        egui::Frame::NONE.fill(m.theme.color("charcoal").gamma_multiply(0.97)).stroke(egui::Stroke::new(1.0, m.theme.color("bronze"))).corner_radius(6.0).inner_margin(6.0).show(ui, |ui| {
+            ui.set_min_width(160.0);
+            ui.label(egui::RichText::new(format!("{}/{}", sel + 1, cands.len())).size(m.theme.small - 1.0).color(m.theme.color("muted")));
+            for (k, c) in cands.iter().enumerate().skip(first).take(fep::ROWS) {
+                let (rr, _) = ui.allocate_exact_size(vec2(ui.available_width().max(160.0), m.theme.small + 8.0), Sense::hover());
+                if k == sel {
+                    ui.painter().rect_filled(rr, 4.0, m.theme.color("focus").gamma_multiply(0.35));
+                }
+                ui.painter().text(pos2(rr.min.x + 6.0, rr.center().y), egui::Align2::LEFT_CENTER, c, font.clone(), if k == sel { m.theme.color("gold") } else { m.theme.color("text") });
+            }
+        });
+    });
 }
 
 /// What the rule gives the window this frame (logwin::LogAnim): its height in rows over its chrome (eased; below 0 the
@@ -269,13 +333,18 @@ fn wrap_width(room: Vec2) -> f32 {
 /// while more than a row away, then a sixth), new rows slide in, and with none it goes on folding down through its
 /// chrome until it is gone, carrying what rides on it. The full log closes it, as retail closes the small logs.
 pub fn panel(p: &mut Panels, w: &mut World) {
+    // A message waiting for a key (an NPC talking) shows on All: the channel tabs never show it (retail's either).
+    if super::super::event::prompt(w) && p.m.chat_tab.get() != 0 {
+        p.m.chat_tab.set(0);
+    }
     if w.full_log.is_some() {
+        full(p, w);
         return;
     }
     let m = p.m;
     let tab = m.chat_tab.get();
     let font = FontId::proportional(*p.chat_font);
-    let room = p.room("chat", ROOM);
+    let room = p.room("chat", default_room(p.ctx));
     let wrap = wrap_width(room);
     let row = p.ctx.fonts_mut(|f| f.row_height(&font));
     let mut rule = w.log_rule;
@@ -284,6 +353,9 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     rule.focused |= m.arranging.replace(false);
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
     let ml = &mut w.modern_log;
+    if std::mem::take(&mut ml.fill) {
+        ml.anim.fill(&rule.cfg);
+    }
     ml.anim.chat_line(rule.typing, &rule.cfg);
     let key = (wrap.to_bits(), font.size.to_bits(), tab);
     if ml.key != key {
@@ -291,8 +363,9 @@ pub fn panel(p: &mut Panels, w: &mut World) {
         (ml.key, ml.seen) = (key, w.chat.len());
         ml.anim.settle();
     }
-    for ((line, c), (time, chat, _)) in w.chat.iter_timed().skip(ml.seen) {
-        if tab == 0 || (tab == 1) == chat {
+    let modes = w.chat.modes();
+    for (((line, c), (time, chat, _)), mode) in w.chat.iter_timed().zip(modes.iter().copied()).skip(ml.seen) {
+        if shows(tab, mode) {
             let job = line_job((&stamp_of(stamps, time, chat), Color32::WHITE), line, *c, &font, wrap);
             for _ in 0..p.ctx.fonts_mut(|f| f.layout_job(job)).rows.len().max(1) {
                 ml.anim.add_line(&rule.cfg);
@@ -316,6 +389,95 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     draw(p, &view(w), shown, rule.line_open);
 }
 
+/// A channel tab with nothing on it says so (and where everything is).
+fn empty_tab(p: &egui::Painter, m: &Modern, tab: u8, at: egui::Pos2, size: f32) {
+    let name = TABS.get(tab as usize).map_or("", |t| t.0);
+    p.text(at, egui::Align2::LEFT_TOP, format!("No {name} messages. All shows everything."), FontId::proportional(size * 0.85), m.theme.color("muted"));
+}
+
+/// The full log (Enter on the focused log) in the chat window itself: from under the top bar to its bottom, its tabs,
+/// the lines from `scroll` rows above the newest; the wheel and the full log's keys scroll it.
+fn full(p: &mut Panels, w: &mut World) {
+    let Some(fl) = w.full_log else { return };
+    let m = p.m;
+    if std::mem::take(&mut w.full_log_next) {
+        m.chat_tab.set((m.chat_tab.get() + 1) % TABS.len() as u8);
+    }
+    let size = *p.chat_font;
+    let font = FontId::proportional(size);
+    let row = p.ctx.fonts_mut(|f| f.row_height(&font));
+    let sh = p.ctx.content_rect().height();
+    let place = p.place("chat");
+    // Retail's full log starts at 48 of the 448 layout; what rides on the chat window (the location panel ...) keeps
+    // its room above it (last frame's stack).
+    let bottom = if place.dock.is_none() && place.b > 0.0 { place.b * sh } else { sh * 0.985 };
+    let riders = {
+        let rects = m.rects.borrow();
+        rects.get("chat").map_or(0.0, |c| rects.iter().filter(|(id, _)| id.as_str() != "chat" && p.rests_on(id, "chat")).map(|(_, r)| c.min.y - r.min.y).fold(0.0, f32::max))
+    };
+    let height = (bottom - sh * 0.107 - riders).max(chrome() + 4.0 * row);
+    let lines_h = height - chrome();
+    let v = view_keep(w, usize::MAX);
+    let t = p.ctx.input(|i| i.time) as f32;
+    let tab = m.chat_tab.get();
+    let mut button = (Rect::NOTHING, false);
+    let (mut short, mut hovered) = (None, false);
+    let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), ..Default::default() }, |ui, room| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        button = tabs(ui, m, 1.0);
+        ui.add_space(GAP);
+        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
+        hovered = resp.hovered();
+        let wrap = wrap_width(room);
+        // The chat line in the bottom row while typing.
+        let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
+        let lines = Rect::from_min_max(area.min, pos2(area.max.x, input_r.map_or(area.max.y, |r| r.min.y - TAB_H)));
+        let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min, lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
+        let mut y = lines.max.y + fl.scroll as f32 * row;
+        for (st, line, c, mode) in v.lines.iter().rev() {
+            if !shows(tab, *mode) {
+                continue;
+            }
+            if y <= area.min.y {
+                break;
+            }
+            let galley = painter.layout_job(line_job((st, m.theme.color("muted")), line, *c, &font, wrap));
+            y -= galley.size().y;
+            painter.galley(pos2(area.min.x, y), galley, m.theme.color("text"));
+        }
+        // The oldest line reached below the top: scrolled past it by this many rows.
+        if tab != 0 && y >= lines.max.y + fl.scroll as f32 * row - 0.5 {
+            empty_tab(&painter, m, tab, pos2(area.min.x, lines.max.y - row), size);
+        }
+        if y > area.min.y + 0.5 {
+            short = Some(((y - area.min.y) / row).floor() as usize);
+        }
+        if let (Some(i), Some(r)) = (&v.input, input_r) {
+            input(ui, m, i, t, size, r);
+        }
+    });
+    if let Some(r) = r {
+        m.chat_edge.set(Some((r, false)));
+    }
+    if let Some(f) = w.full_log.as_mut() {
+        if let Some(k) = short {
+            f.scroll = f.scroll.saturating_sub(k);
+        }
+        if hovered {
+            let d = p.ctx.input(|i| i.smooth_scroll_delta.y) / row + m.wheel.get();
+            let rows = d.trunc();
+            m.wheel.set(d - rows);
+            f.scroll = (f.scroll as f32 + rows).max(0.0) as usize;
+        }
+    }
+    if button.1 {
+        m.chat_settings.set(!m.chat_settings.get());
+    }
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font) {
+        *p.changed = true;
+    }
+}
+
 /// The chat window for the rule's frame `s`: the tabs, the rows from the displayed one up, the chat line in the bottom
 /// row with an empty row above it as retail leaves (`lift`), the Enter key cap after the newest line while a message
 /// waits (retail's arrow).
@@ -330,30 +492,39 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     if total < 0.5 {
         // Gone: what sits on it sits on its bottom.
         let at = p.resolve("chat", &p.place("chat"), 0.0);
-        let r = Rect::from_min_size(at, vec2(p.room("chat", ROOM).x, 0.0));
+        let r = Rect::from_min_size(at, vec2(p.room("chat", default_room(p.ctx)).x, 0.0));
         p.this.insert("chat".into(), r);
         m.chat_edge.set(Some((r, true)));
         return;
     }
-    let lines_h = (s.rows * row).max(0.0);
-    let height = chrome() + lines_h;
+    // Whole pixels: an eased height in fractions moved the bottom edge a pixel back and forth as it changed.
+    let ppp = p.ctx.pixels_per_point();
+    let height = ((chrome() + (s.rows * row).max(0.0)) * ppp).round() / ppp;
+    let lines_h = height - chrome();
+    // The lines stand on the window's bottom edge, which stays put while it resizes, on a whole pixel: the layout
+    // above them is rounded to pixels from the moving top, which made the text hop a pixel as the height changed.
+    let floor = {
+        let place = p.place("chat");
+        let y = p.resolve("chat", &place, height).y + height - super::ROOM_MARGIN.bottom as f32;
+        (y * ppp).round() / ppp
+    };
     let mut button = (Rect::NOTHING, false);
     // Below its chrome it folds into its bottom edge, what rides on it going down with it.
-    let r = p.show("chat", Show { size: ROOM, resizable: true, height: Some(height), fold: total / height, ..Default::default() }, |ui, room| {
+    let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), fold: total / height, ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
         button = tabs(ui, m, 1.0);
         ui.add_space(GAP);
         let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
         let wrap = wrap_width(room);
-        let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
-        let base = area.max.y - if lift { 2.0 * row } else { 0.0 } + s.slide as f32 * row / 16.0;
+        let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, floor - row - 5.0), pos2(area.max.x, floor + 5.0)));
+        let base = floor - if lift { 2.0 * row } else { 0.0 } + s.slide as f32 * row / 16.0;
         let top = area.min.y.max(base - s.draw_n as f32 * row);
-        let clip = Rect::from_min_max(pos2(area.min.x, top), pos2(area.max.x + 8.0, input_r.map_or(area.max.y, |r| r.min.y)));
+        let clip = Rect::from_min_max(pos2(area.min.x, top), pos2(area.max.x + 8.0, input_r.map_or(floor + if s.slide == 0 { 4.0 } else { 0.0 }, |r| r.min.y)));
         let painter = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
         let mut y = base + s.pending as f32 * row;
         let mut newest = None;
-        for (st, line, c, chat) in v.lines.iter().rev() {
-            if !(tab == 0 || (tab == 1) == *chat) {
+        for (st, line, c, mode) in v.lines.iter().rev() {
+            if !shows(tab, *mode) {
                 continue;
             }
             if y <= clip.min.y {
@@ -365,6 +536,9 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
                 newest = galley.rows.last().map(|r| pos2(area.min.x + r.rect().max.x, y + r.rect().center().y));
             }
             painter.galley(pos2(area.min.x, y), galley, m.theme.color("text"));
+        }
+        if newest.is_none() && tab != 0 {
+            empty_tab(&painter, m, tab, pos2(area.min.x, base - row), size);
         }
         if v.waiting
             && let (Some(at), Some(k)) = (newest, m.art.sprite("controls/key_enter"))

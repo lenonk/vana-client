@@ -14,7 +14,7 @@ const GREY: u32 = 0x8040_4040;
 /// FUN_1022f670: the chooser's rows moved to these y (window-relative; child 1 35 high).
 const ROW_Y: [f32; 5] = [14.0, 46.0, 110.0, 142.0, 174.0];
 /// Titles (group 0xd) by area: current, completed (FUN_10231c60).
-const TITLES: [[usize; 11]; 2] = [[0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x88, 0x91, 0x9c, 0xa0, 0xa3], [0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x89, 0x92, 0x9d, 0xa1, 0xa4]];
+pub(super) const TITLES: [[usize; 11]; 2] = [[0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x88, 0x91, 0x9c, 0xa0, 0xa3], [0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x89, 0x92, 0x9d, 0xa1, 0xa4]];
 
 /// Records of Eminence (s2c 0x110 / 0x111 / 0x112; DAT_104804d0.., flags DAT_104807ec).
 #[derive(Clone, Debug)]
@@ -59,7 +59,7 @@ impl Roe {
     }
 
     /// FUN_10230b00: the set bits of the log's first 0x173 bytes.
-    fn completed(&self) -> u32 {
+    pub(super) fn completed(&self) -> u32 {
         if self.flags & 4 == 0 { 0 } else { self.log[..0x173].iter().map(|b| b.count_ones()).sum() }
     }
 
@@ -129,7 +129,7 @@ fn has(s: &super::journal::Store, area: usize, n: u32, done: bool) -> bool {
 }
 
 /// FUN_10231ec0 / FUN_10231f50: current (and repeatable '+' or not completed) / completed, in file order.
-fn rows(w: &World, area: usize, mode: usize) -> Vec<usize> {
+pub(super) fn rows(w: &World, area: usize, mode: usize) -> Vec<usize> {
     let Some(f) = w.logs.as_ref().and_then(|l| l.quests.get(area)) else { return Vec::new() };
     let s = &w.journal;
     f.entries
@@ -144,7 +144,7 @@ fn rows(w: &World, area: usize, mode: usize) -> Vec<usize> {
 }
 
 /// DAT_10386998: areas 5..10 need Zilart, ToAU, WotG, Abyssea (any of 8..10), Adoulin; 0..4 always.
-fn area_on(enabled: u32, area: usize) -> bool {
+pub(super) fn area_on(enabled: u32, area: usize) -> bool {
     match area {
         5 => enabled & 2 != 0,
         6 => enabled & 8 != 0,
@@ -152,6 +152,24 @@ fn area_on(enabled: u32, area: usize) -> bool {
         8 => enabled & 0x700 != 0,
         9 | 10 => enabled & 0x800 != 0,
         _ => true,
+    }
+}
+
+/// The modern list's rows: the area's current quests, then its completed ones; and where the completed start.
+pub(super) fn merged(w: &World, area: usize) -> (Vec<usize>, usize) {
+    let mut r = rows(w, area, 0);
+    let split = r.len();
+    r.extend(rows(w, area, 1));
+    (r, split)
+}
+
+/// The modern list (mode 2, both): an area's quests with the cursor on an entry (else the first).
+pub(super) fn show_area(w: &mut World, area: usize, entry: Option<usize>) {
+    super::roe::open_hook(w);
+    let (rows, _) = merged(w, area);
+    let cursor = entry.and_then(|e| rows.iter().position(|&i| i == e)).unwrap_or(0);
+    if let Some(q) = w.quests.as_mut() {
+        q.list = Some(List { mode: 2, area, state: 0, rows, top: cursor, cursor });
     }
 }
 
@@ -256,7 +274,7 @@ fn list_key(w: &mut World, l: &mut List, key: egui::Key, page: bool) {
                     break;
                 }
             }
-            (l.area, l.rows, l.top, l.cursor) = (a, rows(w, a, l.mode), 0, 0);
+            (l.area, l.rows, l.top, l.cursor) = (a, if l.mode == 2 { merged(w, a).0 } else { rows(w, a, l.mode) }, 0, 0);
             w.sounds.push(Ui::Cursor as u32);
         }
         (0, egui::Key::Enter) => {
@@ -361,6 +379,10 @@ fn value(gu: &mut GameUi, v: u32, x: f32, y: f32) {
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(q) = &w.quests else { return rects };
+    // The modern Journal draws all of it, the Records of Eminence lists too.
+    if w.modern {
+        return rects;
+    }
     let all: Vec<u16> = (1..=5).collect();
     let focused = q.list.is_none() && q.roe.is_none() && w.confirm.is_none();
     if let Some(win) = gu.lobby_window_off(CHOOSER, sw, sh, (0.0, 0.0), None, false, &all) {

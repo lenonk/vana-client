@@ -188,7 +188,8 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 /// on it is Enter, a right click Escape).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::generic;
-    let Some(l) = w.linklist.as_ref() else { return };
+    // The modern layer draws the list and takes its mouse.
+    let Some(l) = w.linklist.as_ref().filter(|_| !w.modern) else { return };
     let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
     if let Some((name, sel)) = l.acts {
         generic(w, gu, name, sel, 1..=4, p, moved, clicked, right, |w, id| {
@@ -204,6 +205,63 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: 
             l.cursor = top + id as usize - 1;
         }
     }, keys);
+}
+
+/// The modern layer's view: the members with their shell item (0x201 holder, 0x202 pearlsack, 0x203 pearl), the
+/// cursor, the empty / failed line, and the member window's rows (child, caption, enabled) with its cursor.
+pub struct View {
+    pub rows: Vec<(Record, u16)>,
+    pub cursor: usize,
+    pub focused: bool,
+    pub alt: bool,
+    pub empty: Option<String>,
+    pub acts: Vec<(u16, String, bool)>,
+    pub act_sel: Option<u16>,
+}
+
+pub fn view(w: &World, gu: &GameUi) -> Option<View> {
+    let l = w.linklist.as_ref()?;
+    let bt = w.battle.as_ref();
+    let empty = if l.busy {
+        Some("Searching...".to_string())
+    } else if l.failed || l.rows.is_empty() {
+        bt.and_then(|b| b.group7(if l.failed { 0x65 } else { 0x6b }))
+    } else {
+        None
+    };
+    let rows = l.rows.iter().map(|(r, rank)| (r.clone(), match rank {
+        2 => 0x202,
+        3 => 0x203,
+        _ => 0x201,
+    })).collect();
+    let (acts, act_sel) = match (l.acts, l.rows.get(l.cursor)) {
+        (Some((name, sel)), Some((r, theirs))) => {
+            let off = off(w, l, name, r, *theirs);
+            let kids: Vec<u16> = gu.layout(name).map(|lay| lay.elements.iter().skip(1).filter(|e| e.links[2] != 0xff).map(|e| e.id).collect()).unwrap_or_default();
+            let acts = kids.into_iter().map(|c| (c, gu.child_caption(name, c).or_else(|| gu.focus_text(name, c)[1].clone()).unwrap_or_default(), !off.contains(&c))).collect();
+            (acts, Some(sel))
+        }
+        _ => (Vec::new(), None),
+    };
+    Some(View { rows, cursor: l.cursor, focused: l.acts.is_none() && w.confirm.is_none(), alt: l.alt, empty, acts, act_sel })
+}
+
+/// The modern layer's mouse: the list's cursor to row `k`; true when it moved.
+pub fn set_cursor(w: &mut World, k: usize) -> bool {
+    let Some(l) = w.linklist.as_mut().filter(|l| l.acts.is_none() && k < l.rows.len()) else { return false };
+    let moved = l.cursor != k;
+    l.cursor = k;
+    l.top = l.top.min(k).max((k + 1).saturating_sub(ROWS));
+    moved
+}
+
+/// The member window's cursor to child `c`; true when it moved.
+pub fn set_act(w: &mut World, c: u16) -> bool {
+    let Some((name, sel)) = w.linklist.as_ref().and_then(|l| l.acts) else { return false };
+    if let Some(l) = w.linklist.as_mut() {
+        l.acts = Some((name, c));
+    }
+    sel != c
 }
 
 /// Num+ (list message 8, FUN_1020a580): the job cells' other view.
@@ -261,7 +319,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
-    let Some(l) = &w.linklist else { return rects };
+    let Some(l) = w.linklist.as_ref().filter(|_| !w.modern) else { return rects };
     let focused = l.acts.is_none() && w.confirm.is_none();
     let n = l.rows.len();
     let sel = if focused && n > 0 { (l.cursor - l.top + 1) as u16 } else { 0 };

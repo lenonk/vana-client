@@ -135,6 +135,8 @@ pub struct ModernLog {
     pub seen: usize,
     pub key: (u32, u32, u8),
     pub shown: Option<f32>,
+    /// The full log just closed: open at the max lines (its text stays in view rather than folding away).
+    pub fill: bool,
 }
 
 impl LogAnim {

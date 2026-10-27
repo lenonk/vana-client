@@ -167,8 +167,9 @@ const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "M
 const MODS: usize = 7;
 const EXTRA_TABS: [&str; 3] = ["Maps", "Timers", "Misc."];
 
-/// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out.
-fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
+/// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out. `modern`: the minimap's and
+/// the Timers' place and size are set by dragging them there, so those rows are left out.
+fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     use Val::*;
     use When::*;
     const GENERAL: &[Row] = &[
@@ -233,6 +234,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
     ];
     match kind {
+        Kind::Extras if modern => [&MAPS[..3], &TIMERS[..1], EXTRA_MISC][tab.min(2)],
         Kind::Extras => [MAPS, TIMERS, EXTRA_MISC][tab.min(2)],
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
@@ -310,7 +312,7 @@ impl SettingsUi {
     }
 
     fn rows(&self) -> &'static [Row] {
-        rows(self.kind, self.tab, self.in_game)
+        rows(self.kind, self.tab, self.in_game, self.s.modern_ui)
     }
 
     fn ctl(r: &Row) -> Ctl {
@@ -791,6 +793,122 @@ impl SettingsUi {
 
     pub fn title(&self) -> &'static str {
         if self.kind == Kind::Extras { "Extras" } else { "Settings" }
+    }
+}
+
+/// A row as the modern layer draws it: its heading, its help (with when a change shows), its controls.
+pub struct VRow {
+    pub label: String,
+    pub help: String,
+    pub ctl: VCtl,
+}
+
+/// Buttons (caption, the choice that holds), or a slider (stops, the one it is at, the value shown).
+pub enum VCtl {
+    Buttons(Vec<(String, bool)>),
+    Slider { n: usize, at: usize, shown: String },
+}
+
+/// The page as the modern layer draws it; the cursor's row (0 the page name) and column, a slider being edited.
+pub struct View {
+    pub title: &'static str,
+    pub tabs: &'static [&'static str],
+    pub tab: usize,
+    pub rows: Vec<VRow>,
+    pub row: usize,
+    pub col: usize,
+    pub edit: bool,
+    pub help: String,
+}
+
+fn when_text(w: When) -> &'static str {
+    match w {
+        When::Now => "",
+        When::NextZone => " Takes effect at the next zone load.",
+        When::Restart => " Takes effect on restart.",
+        When::Stored => " Saved; not used by this client yet.",
+    }
+}
+
+impl SettingsUi {
+    pub fn view(&self) -> View {
+        let rows = if self.on_mods() {
+            let n = self.s.mods.len();
+            let m = self.mods_ui.as_ref();
+            (0..self.mods_total())
+                .filter_map(|i| {
+                    if i < n {
+                        let on = self.s.mods[i].enabled;
+                        let ctl = VCtl::Buttons(vec![("ON".into(), on), ("OFF".into(), !on), ("Move".into(), false)]);
+                        Some(VRow { label: format!("{}. {}", i + 1, self.s.mods[i].name), help: format!("Mod pack {} of {n}: a higher one's textures win.", i + 1), ctl })
+                    } else {
+                        let p = m?.packs.get(i - n)?;
+                        let name = p.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                        let label = m.and_then(|m| m.progress(&p.slug)).map_or(name.clone(), |pm| format!("{}%  {name}", pm / 10));
+                        Some(VRow { label, help: format!("{} game file{} to install.", p.files, if p.files == 1 { "" } else { "s" }), ctl: VCtl::Buttons(vec![("Install".into(), false)]) })
+                    }
+                })
+                .collect()
+        } else {
+            self.rows()
+                .iter()
+                .map(|r| {
+                    let ctl = match Self::ctl(r) {
+                        Ctl::Buttons(_) => VCtl::Buttons(r.choices.iter().map(|c| (c.1.to_string(), c.0 == self.get(r.val))).collect()),
+                        Ctl::Slider => {
+                            let (n, at) = self.stops(r);
+                            VCtl::Slider { n, at, shown: self.shown(r) }
+                        }
+                    };
+                    VRow { label: r.label.to_string(), help: format!("{}{}", r.help, when_text(r.when)), ctl }
+                })
+                .collect()
+        };
+        View { title: self.title(), tabs: self.tabs(), tab: self.tab, rows, row: self.row, col: self.col, edit: self.edit, help: self.help() }
+    }
+
+    /// The modern layer's mouse: page `t`.
+    pub fn m_tab(&mut self, t: usize) {
+        if t != self.tab {
+            self.edit = false;
+            self.turn(t as i32 - self.tab as i32);
+        }
+    }
+
+    /// The cursor to a control (row from 1); true when it moved.
+    pub fn m_point(&mut self, row: usize, col: usize) -> bool {
+        if self.edit || self.mods_ui.as_ref().is_some_and(|m| m.held.is_some()) || (row, col) == (self.row, self.col) {
+            return false;
+        }
+        (self.row, self.col) = (row, col);
+        let (mods, row) = (self.on_mods(), self.row);
+        if let Some(m) = self.mods_ui.as_mut().filter(|_| mods) {
+            m.follow(row);
+        }
+        true
+    }
+
+    /// A click on a button: the cursor there and Enter.
+    pub fn m_click(&mut self, row: usize, col: usize) {
+        self.sounds.clear();
+        self.m_point(row, col);
+        if self.on_mods() {
+            self.mods_enter();
+        } else {
+            self.enter();
+        }
+    }
+
+    /// A slider set to stop `i` by the pointer.
+    pub fn m_slide(&mut self, row: usize, i: usize) {
+        self.sounds.clear();
+        let Some(r) = row.checked_sub(1).and_then(|k| self.rows().get(k)) else { return };
+        (self.row, self.col, self.edit) = (row, 0, false);
+        let (_, at) = self.stops(r);
+        if at != i {
+            self.set_stop(r, i);
+            self.sounds.push(Se::Cursor);
+        }
     }
 }
 

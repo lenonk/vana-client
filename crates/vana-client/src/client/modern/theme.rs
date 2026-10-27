@@ -67,7 +67,7 @@ impl Theme {
         // The pack's previews: parchment white text, a slate grey for the quiet parts.
         colors.entry("text".into()).or_insert(Color32::from_rgb(0xe6, 0xe1, 0xd6));
         colors.entry("muted".into()).or_insert(Color32::from_rgb(0x8f, 0x9d, 0xa6));
-        Self { colors, ui: 15.0, title: 17.0, small: 13.0 }
+        Self { colors, ui: 16.0, title: 18.0, small: 14.5 }
     }
 
     /// A palette colour (theme.json "palette").

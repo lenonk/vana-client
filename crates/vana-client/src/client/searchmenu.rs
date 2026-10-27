@@ -409,6 +409,23 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     }
 }
 
+/// The windows as the modern page draws them: the level fields' values, the name typed.
+pub(super) fn views(w: &World) -> Vec<super::modern::MenuWin> {
+    let Some(m) = &w.searchmenu else { return Vec::new() };
+    m.stack
+        .iter()
+        .map(|win| {
+            let values = match win.name {
+                LEVELS | MLEVELS => vec![(1, win.vals.0.to_string()), (2, win.vals.1.to_string())],
+                NAMES if win.edit.is_some() => vec![(1, format!("{}|", w.search_name))],
+                NAMES => vec![(1, w.search_name.clone())],
+                _ => Vec::new(),
+            };
+            super::modern::MenuWin { name: win.name, sel: win.sel, off: win.off.clone(), labels: Vec::new(), marked: win.edit.into_iter().collect(), values }
+        })
+        .collect()
+}
+
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(m) = &w.searchmenu else { return rects };

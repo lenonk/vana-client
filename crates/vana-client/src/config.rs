@@ -86,6 +86,8 @@ pub struct Config {
     pub minimap_dock: u32,
     pub minimap_size: u32,
     pub minimap_span: f32,
+    /// Ours (the wheel, as modern MMOs): the camera's rest distance as a share of retail's.
+    pub cam_dist: f32,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -118,6 +120,8 @@ pub struct Config {
     pub modern_chat_font: f32,
     /// The modern edge windows folded to their tabs, by panel (the minimap, Wide Scan).
     pub modern_folded: std::collections::BTreeMap<String, bool>,
+    /// The Wide Scan flyout's kinds shown: 1 players, 2 NPCs, 4 monsters.
+    pub modern_scan_kinds: u8,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -230,6 +234,7 @@ impl Default for Config {
             minimap_dock: 0,
             minimap_size: 1,
             minimap_span: 160.0,
+            cam_dist: 1.0,
             cursor_size: 0,
             auto_sort: 0,
             mods: Vec::new(),
@@ -238,6 +243,7 @@ impl Default for Config {
             modern_places: Default::default(),
             modern_chat_font: 15.0,
             modern_folded: Default::default(),
+            modern_scan_kinds: 7,
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

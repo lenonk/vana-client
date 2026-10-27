@@ -158,6 +158,12 @@ impl GameUiData {
     }
 }
 
+/// A caption read from glyph cells: the gap after a hyphen inside a word ("Hand- to-Hand") is the cut's, not a space.
+fn hyphens(s: &str) -> String {
+    let c: Vec<char> = s.chars().collect();
+    c.iter().enumerate().filter(|&(i, &ch)| !(ch == ' ' && i > 1 && c[i - 1] == '-' && c[i - 2].is_alphabetic())).map(|(_, &ch)| ch).collect()
+}
+
 impl GameUi {
     /// "menu    dmgnum" (file 39542) and its texture: the on-screen damage number glyphs.
     pub fn dmgnum(&self) -> Option<(&SpriteLib, &crate::dat::ui::UiImage)> {
@@ -511,7 +517,16 @@ impl GameUi {
                     }
                 }
                 '\0' => break,
-                _ => out.last_mut().unwrap().0.push(c),
+                // The same codes kept as one character (decode_sjis), as event item names.
+                c if (crate::dat::font::CODE_BASE..crate::dat::font::CODE_BASE + 0x200).contains(&(c as u32)) => {
+                    let k = c as u32 - crate::dat::font::CODE_BASE;
+                    out.push((String::new(), self.data.font.code_colour((k >> 8) as u8, k as u8, base)));
+                }
+                _ => {
+                    if let Some(c) = crate::dat::font::plain_char(c) {
+                        out.last_mut().unwrap().0.push(c);
+                    }
+                }
             }
         }
         out.retain(|(t, _)| !t.is_empty());
@@ -1036,7 +1051,14 @@ impl GameUi {
         let r = e.refs.iter().find(|r| r.kind == 0)?;
         let s = self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize)?;
         let runs = crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
-        Some(runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" "))
+        Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" ")))
+    }
+
+    /// A sprite's caption as text (a skill's or a job's name sprite).
+    pub fn sprite_caption(&self, lib: &str, index: usize) -> Option<String> {
+        let s = self.data.lobby.lib(lib)?.sprites.get(index)?;
+        let runs = crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" "))).filter(|t| !t.is_empty())
     }
 
     /// A menu window's own captions (its headings) with their places in it: (text, x, y).
@@ -1047,7 +1069,7 @@ impl GameUi {
             .filter_map(|r| self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize))
             .filter_map(|s| crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080))
             .flatten()
-            .map(|(x, y, t, _)| (t, x, y))
+            .map(|(x, y, t, _)| (hyphens(&t), x, y))
             .collect()
     }
 
@@ -1098,7 +1120,12 @@ impl GameUi {
 
     /// A message of group 0xb (key assignment labels and prompts).
     pub fn group_b(&self, id: usize) -> Option<String> {
-        self.data.lobby_msgs.get(&0x0b).and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+        self.data.lobby_msgs.get(&0x0b).and_then(|m| m.get(id)).filter(|s| !s.is_empty()).map(|s| self.shown(s))
+    }
+
+    /// Text as the faces drawing it can show: with the modern skin the game's own glyphs become Unicode.
+    fn shown(&self, s: String) -> String {
+        if self.skin_on { crate::dat::font::plain(&s) } else { s }
     }
 
     /// A cell's corners (x0, y0, x1, y1) in sprite space.
@@ -1192,6 +1219,11 @@ impl GameUi {
         }
         self.skin_on = on;
         self.batch.modern = if on { self.modern_frame.clone().flatten() } else { None };
+    }
+
+    /// The retail windows' frames drawn this frame in the modern skin (UI pixels).
+    pub fn drawn_frames(&self) -> &[[f32; 4]] {
+        &self.batch.frames
     }
 
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
@@ -1383,12 +1415,12 @@ impl GameUi {
 
     /// A message of group 0xe, or `fallback` when the file did not load.
     pub fn menu_msg(&self, id: usize, fallback: &str) -> String {
-        self.data.menu_msgs.as_ref().and_then(|m| m.get(id)).unwrap_or_else(|| fallback.to_string())
+        self.shown(self.data.menu_msgs.as_ref().and_then(|m| m.get(id)).unwrap_or_else(|| fallback.to_string()))
     }
 
     /// A message of group 0xd (window titles); None when missing or empty.
     pub fn title_msg(&self, id: usize) -> Option<String> {
-        self.data.title_msgs.as_ref().and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+        self.data.title_msgs.as_ref().and_then(|m| m.get(id)).filter(|s| !s.is_empty()).map(|s| self.shown(s))
     }
 
     /// The action menu's help line for a command: group 0xe by the table at 0x103634fc (FUN_10127790).
@@ -1410,7 +1442,7 @@ impl GameUi {
         let Some(m) = self.data.lobby.menu(name) else { return [None, None] };
         let msg = |e: &crate::dat::ui::MenuElement, k: usize| {
             let id = e.strings[k].parse::<i32>().ok().filter(|&i| i >= 0)? as usize;
-            if k == 0 { self.data.menu_msgs.as_ref()?.get(id).filter(|s| !s.is_empty()) } else { self.title_msg(id) }
+            if k == 0 { self.data.menu_msgs.as_ref()?.get(id).filter(|s| !s.is_empty()).map(|s| self.shown(s)) } else { self.title_msg(id) }
         };
         let item = m.elements.iter().skip(1).find(|e| e.id == child);
         [0, 1].map(|k| item.and_then(|e| msg(e, k)).or_else(|| msg(&m.elements[0], k)))
@@ -1692,7 +1724,7 @@ impl GameUi {
     }
 
     pub fn lobby_msg(&self, group: u8, id: usize, fallback: &str) -> String {
-        crate::dat::font::decode_sjis(&self.lobby_msg_raw(group, id, fallback))
+        self.shown(crate::dat::font::decode_sjis(&self.lobby_msg_raw(group, id, fallback)))
     }
 
     /// The help line of a creator step (lobyhelp +0x2c = step + 0x13 -> group 8 0x6b..0x6f, the name step group

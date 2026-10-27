@@ -380,7 +380,7 @@ pub fn run_requests(w: &mut World) {
 }
 
 /// scoption+0x20: the request list's rows 4 / 5 (decided by the condition, so a refine keeps them).
-fn request_mode(w: &World, res: &Results) -> bool {
+pub(super) fn request_mode(w: &World, res: &Results) -> bool {
     res.mode != 3 && w.search_cond.flags & search::REQUEST != 0
 }
 
@@ -686,10 +686,10 @@ pub(super) const GENRE: [usize; 10] = [492, 495, 493, 496, 494, 499, 498, 71, 70
 const RACE: [usize; 9] = [0, 0, 0, 1, 1, 2, 2, 3, 4];
 
 const SCRESULT: &str = "menu    scresult";
-const SCOPTION: &str = "menu    scoption";
+pub(super) const SCOPTION: &str = "menu    scoption";
 
 /// FUN_1020a740's status icon index and the Ballista team (ncol, icon index) by the record flags.
-fn status_icon(f: u32) -> (usize, Option<(usize, usize)>) {
+pub(super) fn status_icon(f: u32) -> (usize, Option<(usize, usize)>) {
     let team = match f & 0xe0000 {
         0x20000 => Some((0x12, 0x16)),
         0x40000 => Some((0x13, 0x17)),

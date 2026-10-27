@@ -87,30 +87,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let mut mouse = Mouse::default();
     let title = Title { icon: None, text: "Equipment", note: Some(&gil) };
     p.panel("window", Some(title), GRID_W + 18.0 + LIST_W, |ui| {
-        // The persona: name and jobs, HP / MP / TP at the right.
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(&persona.name).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
-            // WAR22/WHM11: the main in gold (blue while capped or in merit mode), the sub in blue.
-            if let Some(main) = job(stats.main) {
-                let mut jobs = egui::text::LayoutJob::default();
-                let font = FontId::proportional(m.theme.ui);
-                jobs.append(&main, 0.0, egui::TextFormat::simple(font.clone(), if persona.main_blue { m.theme.color("focus") } else { m.theme.color("gold") }));
-                if let Some(sub) = job(stats.sub) {
-                    jobs.append(&format!("/{sub}"), 0.0, egui::TextFormat::simple(font, m.theme.color("focus")));
-                }
-                ui.label(jobs);
-            }
-            if persona.ready {
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.spacing_mut().item_spacing.x = 6.0;
-                    for (label, value, c) in [("TP", persona.tp.trim().to_string(), "tp"), ("MP", format!("{}{}", persona.mp.0.trim(), persona.mp.1), "mp"), ("HP", format!("{}{}", persona.hp.0.trim(), persona.hp.1), "hp")] {
-                        ui.label(egui::RichText::new(value).font(mono(m.theme.small)).color(m.theme.color("text")));
-                        ui.label(egui::RichText::new(label).size(m.theme.small).color(m.theme.color(c)));
-                        ui.add_space(8.0);
-                    }
-                });
-            }
-        });
+        persona_row(ui, m, &persona, &stats);
         ui.add_space(8.0);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {
@@ -217,6 +194,34 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         painter.image(t, Rect::from_center_size(at, vec2(32.0, 32.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::from_white_alpha(220));
     }
     apply(w, &v, mouse, held.is_some());
+}
+
+/// The persona row: the name and jobs (WAR22/WHM11), HP / MP / TP at the right.
+pub(super) fn persona_row(ui: &mut Ui, m: &super::Modern, persona: &crate::inventory::Persona, stats: &gitems::CharStats) {
+    let mono = |size: f32| FontId::monospace(size);
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(&persona.name).size(m.theme.title).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
+        // WAR22/WHM11: the main in gold (blue while capped or in merit mode), the sub in blue.
+        if let Some(main) = job(stats.main) {
+            let mut jobs = egui::text::LayoutJob::default();
+            let font = FontId::proportional(m.theme.ui);
+            jobs.append(&main, 0.0, egui::TextFormat::simple(font.clone(), if persona.main_blue { m.theme.color("focus") } else { m.theme.color("gold") }));
+            if let Some(sub) = job(stats.sub) {
+                jobs.append(&format!("/{sub}"), 0.0, egui::TextFormat::simple(font, m.theme.color("focus")));
+            }
+            ui.label(jobs);
+        }
+        if persona.ready {
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                ui.spacing_mut().item_spacing.x = 6.0;
+                for (label, value, c) in [("TP", persona.tp.trim().to_string(), "tp"), ("MP", format!("{}{}", persona.mp.0.trim(), persona.mp.1), "mp"), ("HP", format!("{}{}", persona.hp.0.trim(), persona.hp.1), "hp")] {
+                    ui.label(egui::RichText::new(value).font(mono(m.theme.small)).color(m.theme.color("text")));
+                    ui.label(egui::RichText::new(label).size(m.theme.small).color(m.theme.color(c)));
+                    ui.add_space(8.0);
+                }
+            });
+        }
+    });
 }
 
 /// The slot's pieces from every bag: the icon, the name (green worn, grey out of reach) and where it is; or, before a

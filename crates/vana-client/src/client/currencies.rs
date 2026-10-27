@@ -53,8 +53,41 @@ pub fn open(w: &mut World, mode: u8) {
     w.currencies = Some(Currencies { mode, values: None, top: 0, cursor: 0, wait: 31.0 });
 }
 
+/// The modern Status page's currencies: both lists asked for at once (again every 31 ticks until each came).
+pub fn ask_both(w: &mut World) {
+    let Some(s) = w.status.as_mut().filter(|s| s.cur_wait.is_none()) else { return };
+    s.cur_wait = Some(31.0);
+    request(w, 1);
+    request(w, 2);
+}
+
+/// Both lists as one: (label, value, help) in retail's order, Currencies then Currencies 2.
+pub fn merged(gu: &GameUi, cur: &[Option<Vec<i64>>; 2]) -> Vec<(String, i64, String)> {
+    let mut out = Vec::new();
+    for (k, values) in cur.iter().enumerate() {
+        let Some(values) = values else { continue };
+        for (r, v) in rows(k as u8 + 1).iter().zip(values) {
+            out.push((gu.lobby_msg(0x0c, r.2 as usize, ""), *v, gu.menu_msg(r.3 as usize, "")));
+        }
+    }
+    out
+}
+
 /// Per frame while the data is missing (FUN_1022aca0 / FUN_1022ace0): the request again every 31 ticks.
 pub fn update(w: &mut World, ticks: f32) {
+    let mut missing = Vec::new();
+    if let Some(s) = w.status.as_mut()
+        && let Some(t) = s.cur_wait.as_mut()
+    {
+        *t -= ticks;
+        if *t <= 0.0 {
+            *t = 31.0;
+            missing = (1..=2u8).filter(|&m| s.cur[m as usize - 1].is_none()).collect();
+        }
+    }
+    for m in missing {
+        request(w, m);
+    }
     let Some(c) = w.currencies.as_mut().filter(|c| c.values.is_none()) else { return };
     c.wait -= ticks;
     if c.wait <= 0.0 {
@@ -66,6 +99,9 @@ pub fn update(w: &mut World, ticks: f32) {
 
 /// s2c 0x113 (mode 1) / 0x118 (mode 2): the stored callback once (FUN_10229f00 / FUN_1022a090).
 pub fn on_packet(w: &mut World, mode: u8, p: &[u8]) {
+    if let Some(s) = w.status.as_mut().filter(|s| s.cur_wait.is_some() && (1..=2).contains(&mode)) {
+        s.cur[mode as usize - 1] = Some(rows(mode).iter().map(|&r| read(p, r)).collect());
+    }
     let Some(c) = w.currencies.as_mut().filter(|c| c.mode == mode && c.values.is_none()) else { return };
     c.values = Some(rows(mode).iter().map(|&r| read(p, r)).collect());
 }

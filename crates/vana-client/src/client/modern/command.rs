@@ -17,6 +17,8 @@ pub struct Entry {
 enum Kind {
     Row(u8, u16),
     Sub(&'static [Entry]),
+    /// Ours: the Journal on its Records of Eminence tab (retail reaches them through Quests).
+    Roe,
 }
 
 const fn row(label: &'static str, icon: &'static str, page: u8, id: u16) -> Entry {
@@ -32,7 +34,12 @@ const SOCIAL: &[Entry] = &[
     row("View House", "icons/mog_house", 1, 4),
     row("Set Bazaar", "icons/currency", 1, 5),
 ];
-const JOURNAL: &[Entry] = &[row("Missions", "icons/quest", 1, 1), row("Quests", "icons/quest_log", 1, 2), row("Key Items", "icons/key", 1, 3)];
+const JOURNAL: &[Entry] = &[
+    row("Missions", "icons/quest", 1, 1),
+    row("Quests", "icons/quest_log", 1, 2),
+    Entry { label: "Records of Eminence", icon: "icons/quest_log", kind: Kind::Roe },
+    row("Key Items", "icons/key", 1, 3),
+];
 const WORLD: &[Entry] = &[row("Map", "icons/map", 0, 12), row("Region Info", "icons/find", 0, 11), row("Current Time", "icons/timer", 1, 10)];
 const SYSTEM: &[Entry] = &[
     row("Macros", "icons/macro", 1, 6),
@@ -74,6 +81,8 @@ fn label(w: &World, e: &Entry) -> &'static str {
 fn disabled(w: &World, e: &Entry) -> bool {
     match e.kind {
         Kind::Row(page, id) => menu_disabled_on(w, page).contains(&id),
+        // As Quests.
+        Kind::Roe => menu_disabled_on(w, 1).contains(&2),
         Kind::Sub(_) => false,
     }
 }
@@ -85,7 +94,7 @@ pub fn key(w: &mut World, key: egui::Key) {
     let mut c = w.cmd;
     let sub = match TOP[c.top].kind {
         Kind::Sub(s) => Some(s),
-        Kind::Row(..) => None,
+        Kind::Row(..) | Kind::Roe => None,
     };
     match (c.sub, key) {
         (None, K::ArrowDown | K::ArrowUp) => {
@@ -118,14 +127,39 @@ pub fn key(w: &mut World, key: egui::Key) {
     w.cmd = c;
 }
 
+/// What the top bar shows for the cursor: a retail row's (page, child), else a title and help of ours.
+pub enum BarFocus {
+    Row(u8, u16),
+    Text(&'static str, String),
+}
+
+pub fn bar_focus(w: &World) -> BarFocus {
+    let c = w.cmd;
+    let top = &TOP[c.top.min(TOP.len() - 1)];
+    let e = match (&top.kind, c.sub) {
+        (Kind::Sub(s), Some(k)) => s.get(k).unwrap_or(top),
+        _ => top,
+    };
+    match e.kind {
+        Kind::Row(page, id) => BarFocus::Row(page, id),
+        Kind::Roe => BarFocus::Text("Records of Eminence", "View your Records of Eminence objectives and progress.".into()),
+        Kind::Sub(s) => BarFocus::Text(e.label, s.iter().map(|r| label(w, r)).collect::<Vec<_>>().join(", ") + "."),
+    }
+}
+
 /// A row: refused with 0004 while disabled, else the retail row runs.
 fn pick(w: &mut World, e: &Entry) {
-    if let Kind::Row(page, id) = e.kind {
-        if disabled(w, e) {
-            w.sounds.push(Se::Error as u32);
-        } else {
-            w.menu_click = Some((page, id));
+    if disabled(w, e) && !matches!(e.kind, Kind::Sub(_)) {
+        w.sounds.push(Se::Error as u32);
+        return;
+    }
+    match e.kind {
+        Kind::Row(page, id) => w.menu_click = Some((page, id)),
+        Kind::Roe => {
+            w.menu_click = Some((1, 2));
+            w.journal_roe = Some(0);
         }
+        Kind::Sub(_) => {}
     }
 }
 
@@ -170,7 +204,7 @@ fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor:
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
-    if w.menu.is_none() {
+    if w.menu.is_none() || w.main_off {
         return;
     }
     let m = p.m;
@@ -196,7 +230,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 c.sub = Some(0);
                 w.sounds.push(Se::Select as u32);
             }
-            Kind::Row(..) => pick(w, &TOP[k]),
+            Kind::Row(..) | Kind::Roe => pick(w, &TOP[k]),
         }
     }
     w.cmd = c;

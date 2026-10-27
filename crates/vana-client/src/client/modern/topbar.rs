@@ -112,8 +112,9 @@ fn help(m: &Modern, ctx: &Context, p: &Painter, r: Rect, v: &TopView) {
 /// netstat: the meter (four bars by level, the lit step walking as retail's frames do), the percentage, S / R.
 fn network(p: &Painter, m: &Modern, r: Rect, v: &TopView) {
     let (step, level) = v.meter;
+    // Good green, fair yellow, poor red.
     let lit = match level {
-        3 => m.theme.color("tp"),
+        3 => Color32::from_rgb(0x58, 0xd0, 0x68),
         2 => Color32::from_rgb(0xd8, 0xb0, 0x40),
         1 => m.theme.color("hp"),
         _ => m.theme.color("muted"),

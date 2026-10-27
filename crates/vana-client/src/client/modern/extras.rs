@@ -60,7 +60,9 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
     };
     let icons: Vec<Vec<Vec<Option<egui::TextureId>>>> = if out { secs.iter().map(|s| s.iter().map(|g| g.rows.iter().map(|r| icon(&r.icon)).collect()).collect()).collect() } else { Vec::new() };
     let mut fold: Option<usize> = None;
-    let toggle = edge_window(p, "timers", WIDTH, !out, &[], "Timers", |ui, left| {
+    // Clear of the menu's windows as the right edge's are (the item list grows over it on the left).
+    let avoid = column(p, w);
+    let toggle = edge_window(p, "timers", WIDTH, !out, &avoid, "Timers", |ui, left| {
         let toggle = flyout_header(ui, m, "Timers", left).clicked();
         for (k, groups) in secs.iter().enumerate() {
             let n: usize = groups.iter().map(|g| g.rows.len()).sum();
@@ -108,35 +110,45 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rec
     let mut toggle = false;
     if folded {
         // The label runs down the tab by the screen's edge; the double chevron points into the screen.
-        let font = FontId::new(m.theme.small, FontFamily::Name(super::STRONG.into()));
+        let font = FontId::new(m.theme.small + 1.5, FontFamily::Name(super::STRONG.into()));
         let galley = ctx.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font, Color32::WHITE));
         let gw = galley.size().x;
-        let size = vec2(TAB_W, (gw + 16.0).max(TAB_H));
+        let size = vec2(TAB_W, (gw + 28.0).max(TAB_H));
         let r = if left { Rect::from_min_size(pos2(screen.min.x, top), size) } else { Rect::from_min_size(pos2(screen.max.x - TAB_W, top), size) };
+        // A retail window over it (they draw under every panel): it steps aside until that closes.
+        if under_retail(m, r) {
+            p.this.insert(key.to_string(), r);
+            return false;
+        }
         let mut rect = r;
         let mut dy = None;
         egui::Area::new(id).order(egui::Order::Middle).fixed_pos(r.min).constrain(false).show(ctx, |ui| {
-            // A click opens it; a drag slides it along the edge.
+            // A click opens it; a drag slides it along the edge, and to the other edge past the screen's middle.
             let (rr, resp) = ui.allocate_exact_size(r.size(), Sense::click_and_drag());
             if resp.dragged() {
-                dy = Some(resp.drag_delta().y);
+                dy = Some((resp.drag_delta().y, resp.interact_pointer_pos()));
             }
             rect = rr;
-            ui.painter().add(edge_frame_shape(rr, left, true, m, false));
+            ui.painter().add(edge_frame_shape(rr, left, true, m, false, 7));
+            feedback(ui, m, rr, &resp, 7);
             let c = if resp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
             // The word turned toward the screen: a quarter counter-clockwise on the left (read bottom up), clockwise on
             // the right (read top down).
-            let (at, angle) = if left { (pos2(rr.min.x + 3.0, rr.center().y + gw / 2.0), -std::f32::consts::FRAC_PI_2) } else { (pos2(rr.max.x - 3.0, rr.center().y - gw / 2.0), std::f32::consts::FRAC_PI_2) };
+            let (at, angle) = if left { (pos2(rr.min.x + 4.0, rr.center().y + gw / 2.0), -std::f32::consts::FRAC_PI_2) } else { (pos2(rr.max.x - 4.0, rr.center().y - gw / 2.0), std::f32::consts::FRAC_PI_2) };
             ui.painter().add(egui::epaint::TextShape::new(at, galley, c).with_angle(angle));
-            let cx = if left { rr.max.x - 8.0 } else { rr.min.x + 8.0 };
+            let cx = if left { rr.max.x - 10.0 } else { rr.min.x + 10.0 };
             for d in [-3.0, 3.0] {
                 chevron(ui.painter(), pos2(cx + d, rr.center().y), !left, c);
             }
             toggle = resp.clicked();
         });
         p.this.insert(key.to_string(), rect);
-        if let Some(dy) = dy {
+        ghost(m, ctx, key, rect, dy.and_then(|d| d.1), 7);
+        if let Some((dy, at)) = dy {
             place.y = ((top + dy) / screen.height().max(1.0)).clamp(0.0, 0.95);
+            if let Some(at) = at {
+                place.x = side(at, screen, place.x);
+            }
             m.arranging.set(true);
             p.layout.insert(key.to_string(), place);
             *p.changed = true;
@@ -161,32 +173,46 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rec
         }
     }
     let attached = x == edge_x;
+    if under_retail(m, Rect::from_min_size(pos2(x, top), vec2(width, h))) {
+        p.this.insert(key.to_string(), Rect::from_min_size(pos2(x, top), vec2(width, h)));
+        return false;
+    }
     let margin = egui::Margin { left: if left && attached { 12 } else { 18 }, right: if !left && attached { 12 } else { 18 }, top: 12, bottom: 14 };
     let mut moved: Option<(f32, Option<Pos2>)> = None;
     let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(pos2(x, top)).constrain(false).show(ctx, |ui| {
+        // Room to the screen's bottom (an area offers only last frame's size).
+        ui.set_max_height((screen.max.y - top).max(ui.min_rect().height()));
         let bg = ui.painter().add(Shape::Noop);
+        // The background moves it: sensed under the contents (last frame's size), so they keep their clicks.
+        let drag = ui.interact(Rect::from_min_size(pos2(x, top), vec2(width, h)), id.with("drag"), Sense::drag());
+        if drag.dragged() {
+            moved = Some((drag.drag_delta().y, drag.interact_pointer_pos()));
+        }
+        m.edge_grip.set(None);
         let inner = egui::Frame::NONE.inner_margin(margin).show(ui, |ui| {
             ui.set_width(width - margin.sum().x);
             ui.visuals_mut().override_text_color = Some(m.theme.color("text"));
             toggle = add(ui, left);
         });
-        let r = inner.response.rect;
-        ui.painter().set(bg, edge_frame_shape(r, left, attached, m, true));
-        // The background moves it (the contents keep their clicks).
-        let drag = ui.interact(r, id.with("drag"), Sense::drag());
-        if drag.dragged() {
-            moved = Some((drag.drag_delta().y, None));
+        if let Some(g) = m.edge_grip.take() {
+            moved = Some(g);
         }
-        if drag.drag_stopped() {
-            moved = Some((0.0, drag.interact_pointer_pos().or(ctx.pointer_latest_pos())));
+        let r = inner.response.rect;
+        ui.painter().set(bg, edge_frame_shape(r, left, attached, m, true, 16));
+        if moved.is_some() {
+            ui.painter().rect_stroke(r.expand(1.0), 16, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        } else if drag.hovered() {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
         }
         r
     });
     p.this.insert(key.to_string(), shown.inner);
-    if let Some((dy, released)) = moved {
+    ghost(m, ctx, key, shown.inner, moved.and_then(|d| d.1), 16);
+    if let Some((dy, at)) = moved {
         place.y = ((top + dy) / screen.height().max(1.0)).clamp(0.0, 0.95);
-        if let Some(at) = released {
-            place.x = if at.x < screen.center().x { 0.0 } else { -0.001 };
+        if let Some(at) = at {
+            place.x = side(at, screen, place.x);
         }
         m.arranging.set(true);
         p.layout.insert(key.to_string(), place);
@@ -195,9 +221,69 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rec
     toggle
 }
 
+/// The edge for a pointer at `at`: the left one on the screen's left half (a place's x 0), else the right (below 0);
+/// the current one kept within a band around the middle.
+fn side(at: Pos2, screen: Rect, x: f32) -> f32 {
+    let band = screen.width() * 0.05;
+    if at.x < screen.center().x - band {
+        0.0
+    } else if at.x > screen.center().x + band {
+        -0.001
+    } else {
+        x
+    }
+}
+
+/// A heading's drag moves its edge window (as its background's does); the hand says it can.
+fn grip(m: &super::Modern, resp: &egui::Response) {
+    if resp.dragged() {
+        m.edge_grip.set(Some((resp.drag_delta().y, resp.interact_pointer_pos())));
+    } else if resp.hovered() {
+        resp.ctx.set_cursor_icon(egui::CursorIcon::Grab);
+    }
+}
+
+/// While an edge window or its tab is dragged (`at` the pointer), a see-through copy of it follows the pointer where
+/// it was taken; let go, the window lands on that side's edge.
+fn ghost(m: &super::Modern, ctx: &egui::Context, key: &str, r: Rect, at: Option<Pos2>, radius: u8) {
+    let mut g = m.edge_ghost.borrow_mut();
+    let Some(at) = at else {
+        if g.as_ref().is_some_and(|(k, _)| k == key) {
+            *g = None;
+        }
+        return;
+    };
+    let off = match g.as_ref() {
+        Some((k, off)) if k == key => *off,
+        _ => {
+            let off = at - r.min;
+            *g = Some((key.to_string(), off));
+            off
+        }
+    };
+    let painter = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("edge ghost", key))));
+    let gr = Rect::from_min_size(at - off, r.size());
+    painter.rect(gr, radius, m.theme.color("surface").gamma_multiply(0.45), Stroke::new(2.0, m.theme.color("gold")), egui::StrokeKind::Inside);
+}
+
+/// While a tab is dragged: a gold outline and the grabbing hand; hovered, the open hand.
+fn feedback(ui: &Ui, m: &super::Modern, r: Rect, resp: &egui::Response, radius: u8) {
+    if resp.dragged() {
+        ui.painter().rect_stroke(r.expand(1.0), radius, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    } else if resp.hovered() {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::Grab);
+    }
+}
+
+/// A retail window drawn this frame overlaps `r`.
+pub(super) fn under_retail(m: &super::Modern, r: Rect) -> bool {
+    m.retail.borrow().iter().any(|f| f.intersects(r.shrink(2.0)))
+}
+
 /// The window's width and its folded tab's size.
 const WIDTH: f32 = 250.0;
-const TAB_W: f32 = 34.0;
+const TAB_W: f32 = 40.0;
 const TAB_H: f32 = 56.0;
 
 /// A chevron at `c` pointing left or right.
@@ -208,7 +294,7 @@ fn chevron(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
 
 /// The edge window's frame over `r`: no border on the anchored side (it runs past the screen's edge), the other
 /// corners rounded, a bronze line with a thin gold one inside it, and on the inner side a small diamond when `jewel`.
-fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool) -> Shape {
+fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool, radius: u8) -> Shape {
     let ext = match (attached, left) {
         (false, _) => r,
         (true, true) => Rect::from_min_max(pos2(r.min.x - 10.0, r.min.y), r.max),
@@ -220,9 +306,9 @@ fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewe
         (true, false) => egui::CornerRadius { nw: k, sw: k, ne: 0, se: 0 },
     };
     let mut v = vec![
-        Shape::Rect(egui::epaint::RectShape::filled(ext, round(16), m.theme.color("surface").gamma_multiply(0.95))),
-        Shape::Rect(egui::epaint::RectShape::stroke(ext, round(16), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),
-        Shape::Rect(egui::epaint::RectShape::stroke(ext.shrink(4.0), round(12), Stroke::new(1.0, m.theme.color("gold").gamma_multiply(0.45)), egui::StrokeKind::Inside)),
+        Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.theme.color("surface").gamma_multiply(0.95))),
+        Shape::Rect(egui::epaint::RectShape::stroke(ext, round(radius), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),
+        Shape::Rect(egui::epaint::RectShape::stroke(ext.shrink(4.0), round(radius.saturating_sub(4)), Stroke::new(1.0, m.theme.color("gold").gamma_multiply(0.45)), egui::StrokeKind::Inside)),
     ];
     if jewel {
         let c = pos2(if left { ext.max.x - 1.0 } else { ext.min.x + 1.0 }, ext.center().y);
@@ -234,7 +320,8 @@ fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewe
 
 /// The Timers heading: the title, and on the inner side a chevron toward the edge (a click folds it there).
 fn flyout_header(ui: &mut Ui, m: &super::Modern, text: &str, left: bool) -> egui::Response {
-    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click_and_drag());
+    grip(m, &resp);
     let c = if resp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
     let font = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
     let cy = r.center().y;
@@ -299,10 +386,17 @@ fn map_texture(m: &super::Modern, ctx: &egui::Context, img: &MapImage) -> egui::
 
 /// Our arrow at `c` pointing along `facing` (radians; 0 east, turning toward south on the map).
 fn arrow(painter: &egui::Painter, c: Pos2, facing: f32, size: f32, m: &super::Modern) {
+    arrow_in(painter, c, facing, size, m.theme.color("gold"));
+}
+
+/// Our own arrow on the minimap and the map overlay: reddish orange, to stand out on the parchment (user, 2026-10-26).
+const ME: Color32 = Color32::from_rgb(0xf2, 0x55, 0x22);
+
+fn arrow_in(painter: &egui::Painter, c: Pos2, facing: f32, size: f32, colour: Color32) {
     let d = vec2(facing.cos(), facing.sin());
     let n = vec2(-d.y, d.x);
     let pts = vec![c + d * size, c - d * size * 0.55 + n * size * 0.65, c - d * size * 0.25, c - d * size * 0.55 - n * size * 0.65];
-    painter.add(Shape::convex_polygon(pts.clone(), m.theme.color("gold"), Stroke::new(1.5, Color32::from_black_alpha(220))));
+    painter.add(Shape::convex_polygon(pts, colour, Stroke::new(1.5, Color32::from_black_alpha(220))));
 }
 
 /// The minimap on a screen edge (edge_window): the zone and grid over a square map, north up, centred on us,
@@ -317,16 +411,27 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let Some(img) = w.minimap.as_mut().and_then(|o| o.modern_image()) else { return };
     let (m, ctx) = (p.m, p.ctx);
     let tex = map_texture(m, ctx, &img);
-    let d = minimap::SIZES[w.minimap_size.min(2) as usize];
+    // Its own size once resized (the place's w), else Small / Medium / Large as big on screen as the retail-drawn one:
+    // its layout pixels through the UI's scale.
+    let mp = p.place("minimap");
+    let d = if mp.w > 0.0 { mp.w } else { minimap::SIZES[w.minimap_size.min(2) as usize] * ctx.content_rect().width() / w.ui_wh.0.max(1.0) };
+    let max_d = ctx.content_rect().height() * 0.7;
+    let mut resize: Option<f32> = None;
     let (pos, facing, span) = (f.pos, f.facing, f.span);
     let dots = f.dots.clone();
     let avoid = column(p, w);
-    let label = p.gu.map(|gu| format!("{}  {}", crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone)), m.grid(w, gu))).unwrap_or_default();
+    // The Wide Scan row picked and the area narrowed to, in world x / z.
+    let origin = m.scan_origin.get();
+    let picked = m.scan_pick.get().and_then(|i| m.scan_rows.borrow().iter().find(|r| r.0.index == i).map(|r| (origin.0 + r.0.dx as f32, origin.1 + r.0.dz as f32)));
+    let (picking, narrowed) = (m.scan_picking.get(), m.scan_area.get());
+    let mut chosen: Option<(f32, f32, f32)> = None;
+    let label = p.gu.map(|gu| format!("{}  {}", crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone))), m.grid(w, gu))).unwrap_or_default();
     let folded = p.folded.get("minimap").copied().unwrap_or(false);
     let mut wheel = 0.0f32;
     let toggle = edge_window(p, "minimap", d + 30.0, folded, &avoid, "Map", |ui, left| {
-        // The heading: the zone and grid, the fold chevron on the inner side.
-        let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+        // The heading: the zone and grid, the fold chevron on the inner side; dragged it moves the window.
+        let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click_and_drag());
+        grip(m, &hresp);
         let c = if hresp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
         let font = FontId::new(m.theme.small, FontFamily::Name(super::STRONG.into()));
         if left {
@@ -337,7 +442,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
             chevron(ui.painter(), pos2(hr.min.x + 5.0, hr.center().y), false, c);
         }
         ui.add_space(4.0);
-        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ui.available_width()), Sense::hover());
+        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ui.available_width()), if picking { Sense::click() } else { Sense::hover() });
         let painter = ui.painter().with_clip_rect(area);
         painter.rect_filled(area, 0.0, m.theme.color("charcoal"));
         let s = minimap::px_per_unit(&img.region);
@@ -358,8 +463,48 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
                 painter.circle(q, 3.0, col, Stroke::new(1.0, Color32::from_black_alpha(200)));
             }
         }
-        arrow(&painter, c, facing, 9.0, m);
+        arrow_in(&painter, c, facing, 9.0, ME);
+        // World x / z on the map and back.
+        let at = |x: f32, wz: f32| c + vec2((x * s - px) * z, (-wz * s - py) * z);
+        if let Some((x, wz, r)) = narrowed {
+            painter.circle(at(x, wz), r * s * z, m.theme.color("focus").gamma_multiply(0.12), Stroke::new(1.5, m.theme.color("focus")));
+        }
+        if let Some((x, wz)) = picked {
+            painter.circle_stroke(at(x, wz), 7.0, Stroke::new(2.0, m.theme.color("gold")));
+        }
+        // Narrow down range (retail's mapscan): the click is the centre, the radius 0.65 of the half map shown.
+        if picking {
+            if let Some(q) = resp.hover_pos() {
+                painter.circle_stroke(q, 0.65 * area.width() / 2.0, Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.7)));
+                ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+            }
+            if resp.clicked()
+                && let Some(q) = resp.interact_pointer_pos()
+            {
+                let x = ((q.x - c.x) / z + px) / s;
+                let wz = -(((q.y - c.y) / z + py) / s);
+                chosen = Some((x, wz, 0.65 * span / 2.0 / s));
+            }
+        }
         ui.painter().rect_stroke(area, 2.0, Stroke::new(1.5, m.theme.color("bronze")), egui::StrokeKind::Outside);
+        // The resize grip on the bottom corner away from the edge: three short diagonals; a drag resizes it, square.
+        let corner = if left { pos2(area.max.x, area.max.y) } else { pos2(area.min.x, area.max.y) };
+        let gr = Rect::from_center_size(corner, vec2(22.0, 22.0));
+        let g = ui.interact(gr, egui::Id::unique("minimap grip"), Sense::drag());
+        let gc = if g.hovered() || g.dragged() { m.theme.color("gold") } else { m.theme.color("bronze") };
+        let sx = if left { -1.0 } else { 1.0 };
+        for k in [4.0, 8.0, 12.0] {
+            ui.painter().line_segment([corner + vec2(sx * k, -2.0), corner + vec2(sx * 2.0, -k)], Stroke::new(1.5, gc));
+        }
+        if g.hovered() || g.dragged() {
+            ui.ctx().set_cursor_icon(if left { egui::CursorIcon::ResizeNwSe } else { egui::CursorIcon::ResizeNeSw });
+        }
+        if g.dragged() {
+            let dx = g.drag_delta().x * -sx;
+            let dy = g.drag_delta().y;
+            let step = if dx.abs() > dy.abs() { dx } else { dy };
+            resize = Some((d + step).clamp(120.0, max_d));
+        }
         // N at the top.
         let n = pos2(area.center().x, area.min.y + 10.0);
         painter.circle(n, 8.0, m.theme.color("charcoal").gamma_multiply(0.85), Stroke::new(1.0, m.theme.color("bronze")));
@@ -387,13 +532,25 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
         w.minimap_span = (w.minimap_span * 1.25f32.powf(-wheel)).clamp(minimap::SPAN.0, minimap::SPAN.1);
         w.minimap_dirty = true;
     }
+    if let Some(nd) = resize {
+        let mut place = p.place("minimap");
+        place.w = nd;
+        p.layout.insert("minimap".into(), place);
+        m.arranging.set(true);
+        *p.changed = true;
+    }
+    if let Some(a) = chosen {
+        m.scan_area.set(Some(a));
+        m.scan_picking.set(false);
+        w.sounds.push(crate::audio::Ui::Select as u32);
+    }
 }
 
 /// What the windows at the right edge take (the command column as last drawn, and the retail windows there: where
 /// retail puts its own minimap's right edge); edge windows open there keep clear of it.
 fn column(p: &Panels, w: &World) -> Vec<Rect> {
     let screen = p.ctx.content_rect();
-    let mut avoid: Vec<Rect> = super::COLUMN.iter().chain(&["command sub"]).filter_map(|c| p.m.rects.borrow().get(*c).copied()).collect();
+    let mut avoid: Vec<Rect> = super::COLUMN.iter().filter_map(|c| p.m.rects.borrow().get(*c).copied()).collect();
     if let Some(f) = w.minimap_frame.as_ref() {
         let right = (f.rect[0] + f.rect[2]) / w.ui_wh.0.max(1.0) * screen.width();
         if right < screen.max.x - 2.0 {
@@ -409,10 +566,14 @@ fn column(p: &Panels, w: &World) -> Vec<Rect> {
 /// nothing is tracked, and shows the last complete list until the next one is all in.
 fn widescan_panel(p: &mut Panels, w: &mut World) {
     if !w.extra_minimap || hidden(w) {
+        w.scan_typing = false;
         return;
     }
     let (m, ctx) = (p.m, p.ctx);
-    let folded = p.folded.get("widescan").copied().unwrap_or(true);
+    let folded = p.folded.get("widescan").copied().unwrap_or(false);
+    if folded {
+        w.scan_typing = false;
+    }
     // Unmoved, under the map on its edge.
     if !p.layout.contains_key("widescan")
         && let Some(r) = p.this.get("minimap").copied()
@@ -423,6 +584,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     if w.scan.busy && w.scan.list_state == 2 {
         w.scan.busy = false;
     }
+    // Folded it asks for nothing.
     let now = std::time::Instant::now();
     if !folded && w.scan.track.index == 0 && w.scan.list_state != 1 && m.scan_at.get().is_none_or(|t| now.duration_since(t).as_secs_f32() >= 10.0) {
         m.scan_at.set(Some(now));
@@ -446,19 +608,104 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     let streaming = w.scan.list_state == 1 || (w.scan.busy && w.scan.list_state != 2);
     if !streaming {
         *m.scan_rows.borrow_mut() = rows;
+        m.scan_origin.set(w.scan.origin);
     }
-    let rows = m.scan_rows.borrow().clone();
+    let origin = m.scan_origin.get();
+    let area = m.scan_area.get();
+    let all = m.scan_rows.borrow().len();
+    // Narrowed: the rows within the area.
+    let rows: Vec<_> = m
+        .scan_rows
+        .borrow()
+        .iter()
+        .filter(|(e, _)| area.is_none_or(|(x, z, r)| (origin.0 + e.dx as f32 - x).hypot(origin.1 + e.dz as f32 - z) <= r))
+        .cloned()
+        .collect();
+    // The filter (ours): the kinds shown, and every word typed somewhere in the name.
+    let kinds = *p.scan_kinds;
+    let words: Vec<String> = w.scan_find.to_lowercase().split_whitespace().map(str::to_string).collect();
+    let rows: Vec<_> = rows
+        .into_iter()
+        .filter(|(e, name)| {
+            let lower = name.to_lowercase();
+            kinds & kind_bit(e.kind) != 0 && words.iter().all(|wd| lower.contains(wd.as_str()))
+        })
+        .collect();
+    let filtered = area.is_some() || kinds != 7 || !words.is_empty();
+    let (find, typing) = (w.scan_find.clone(), w.scan_typing);
+    let (mut flip, mut field_click, mut clear) = (0u8, false, false);
     let tracked = w.scan.track.index;
     let avoid = column(p, w);
+    let (picked, picking) = (m.scan_pick.get(), m.scan_picking.get());
     let mut pick: Option<u16> = None;
+    let mut chose: Option<u16> = None;
+    let mut narrow = false;
+    let mut show_all = false;
+    let mut cancel = false;
+    let mut scan = false;
     let toggle = edge_window(p, "widescan", 290.0, folded, &avoid, "Wide Scan", |ui, left| {
-        let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click());
+        let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click_and_drag());
+        grip(m, &hresp);
         let c = if hresp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };
         let font = FontId::new(m.theme.small + 1.0, FontFamily::Name(super::STRONG.into()));
         let tx = if left { hr.min.x } else { hr.min.x + 18.0 };
-        ui.painter().text(pos2(tx, hr.center().y), Align2::LEFT_CENTER, format!("Wide Scan ({})", rows.len()), font, c);
+        let count = if filtered { format!("Wide Scan ({} of {all})", rows.len()) } else { format!("Wide Scan ({})", rows.len()) };
+        ui.painter().text(pos2(tx, hr.center().y), Align2::LEFT_CENTER, count, font, c);
         chevron(ui.painter(), pos2(if left { hr.max.x - 6.0 } else { hr.min.x + 5.0 }, hr.center().y), left, c);
         ui.add_space(4.0);
+        // Scan now (between the 10-s refreshes: camping a notorious monster); greyed while a list comes in.
+        let label = if streaming { "Scanning..." } else { "Scan" };
+        ui.horizontal(|ui| {
+            if ui.add_enabled(!streaming, egui::Button::new(egui::RichText::new(label).size(m.theme.small))).clicked() {
+                scan = true;
+            }
+            if area.is_some() && ui.button(egui::RichText::new("Show all").size(m.theme.small)).clicked() {
+                show_all = true;
+            }
+        });
+        ui.add_space(4.0);
+        ui.horizontal(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            for (bit, label) in [(1u8, "Players"), (2, "NPCs"), (4, "Monsters")] {
+                let on = kinds & bit != 0;
+                let text = egui::RichText::new(label).size(m.theme.small).color(if on { kind_colour(bit) } else { m.theme.color("muted") });
+                if ui.add(egui::Button::new(text).selected(on)).clicked() {
+                    flip ^= bit;
+                }
+            }
+        });
+        ui.add_space(4.0);
+        // The name field: a click takes the keys (Enter keeps the filter, Escape clears it); the cross clears it.
+        let (fr, fresp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+        ui.painter().rect_filled(fr, 5.0, m.theme.color("charcoal"));
+        ui.painter().rect_stroke(fr, 5.0, Stroke::new(1.0, if typing { m.theme.color("focus") } else { m.theme.color("bronze").gamma_multiply(0.6) }), egui::StrokeKind::Inside);
+        let font = FontId::proportional(m.theme.small);
+        let (text, col) = if find.is_empty() && !typing { ("Filter by name".to_string(), m.theme.color("muted")) } else { (find.clone(), m.theme.color("text")) };
+        let tr = ui.painter().with_clip_rect(fr.shrink(3.0)).text(pos2(fr.min.x + 8.0, fr.center().y), Align2::LEFT_CENTER, text, font, col);
+        if typing && (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0 {
+            let x = if find.is_empty() { fr.min.x + 8.0 } else { tr.max.x + 1.0 };
+            ui.painter().vline(x, (fr.center().y - 7.0)..=(fr.center().y + 7.0), Stroke::new(1.5, m.theme.color("text")));
+        }
+        if !find.is_empty() {
+            let xr = Rect::from_center_size(pos2(fr.max.x - 12.0, fr.center().y), vec2(16.0, 16.0));
+            let x = ui.interact(xr, egui::Id::unique("scan filter clear"), Sense::click());
+            let xc = if x.hovered() { m.theme.color("text") } else { m.theme.color("muted") };
+            ui.painter().text(xr.center(), Align2::CENTER_CENTER, "\u{00d7}", FontId::proportional(m.theme.small + 2.0), xc);
+            clear |= x.clicked();
+        }
+        field_click = fresp.clicked();
+        if picking {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Click the map where to look.").size(m.theme.small).color(m.theme.color("focus")));
+                if ui.button(egui::RichText::new("Cancel").size(m.theme.small)).clicked() {
+                    cancel = true;
+                }
+            });
+        }
+        ui.add_space(4.0);
+        if rows.is_empty() && filtered && all > 0 {
+            ui.label(egui::RichText::new("Nothing matches the filter.").size(m.theme.small).color(m.theme.color("muted")));
+        }
         egui::ScrollArea::vertical().max_height(320.0).min_scrolled_height(320.0).show(ui, |ui| {
             for (e, name) in &rows {
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), Sense::click());
@@ -466,33 +713,108 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
                 if on || resp.hovered() {
                     ui.painter().rect_filled(r, 4.0, m.theme.color("focus").gamma_multiply(if on { 0.35 } else { 0.15 }));
                 }
-                let col = match e.kind {
-                    0 => Color32::from_rgb(110, 170, 255),
-                    1 => Color32::from_rgb(110, 210, 120),
-                    _ => Color32::from_rgb(235, 95, 95),
-                };
+                let col = kind_colour(kind_bit(e.kind));
                 ui.painter().text(pos2(r.min.x + 4.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.small), col);
                 let d = (e.dx as f32).hypot(e.dz as f32);
                 let info = if e.level > 0 { format!("Lv{} {d:.0}", e.level) } else { format!("{d:.0}") };
                 ui.painter().text(pos2(r.max.x - 26.0, r.center().y), Align2::RIGHT_CENTER, info, FontId::monospace(m.theme.small - 1.0), m.theme.color("muted"));
                 arrow(ui.painter(), pos2(r.max.x - 12.0, r.center().y), (-(e.dz as f32)).atan2(e.dx as f32), 6.0, m);
-                // Players are not tracked (retail's list).
-                if resp.clicked() && e.kind != 0 {
-                    pick = Some(e.index);
+                if picked == Some(e.index) {
+                    ui.painter().rect_stroke(r, 4.0, Stroke::new(1.5, m.theme.color("gold")), egui::StrokeKind::Inside);
+                }
+                // A click (or right click) opens the row's options, retail's mapscan: Track target (not a player's),
+                // Narrow down range.
+                if resp.clicked() || resp.secondary_clicked() {
+                    chose = Some(e.index);
+                }
+                if picked == Some(e.index) {
+                    ui.horizontal(|ui| {
+                        ui.add_space(12.0);
+                        let track = if e.index == tracked { "Stop tracking" } else { "Track target" };
+                        if ui.add_enabled(e.kind != 0, egui::Button::new(egui::RichText::new(track).size(m.theme.small))).clicked() {
+                            pick = Some(e.index);
+                        }
+                        if ui.button(egui::RichText::new("Narrow down range").size(m.theme.small)).clicked() {
+                            narrow = true;
+                        }
+                    });
+                    ui.add_space(4.0);
                 }
             }
         });
         hresp.clicked()
     });
+    if flip != 0 {
+        *p.scan_kinds ^= flip;
+        *p.changed = true;
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+    if clear {
+        (w.scan_find, w.scan_typing) = (String::new(), false);
+        w.sounds.push(crate::audio::Ui::Cancel as u32);
+    } else if field_click {
+        w.scan_typing = true;
+        w.sounds.push(crate::audio::Ui::Select as u32);
+    } else if typing && ctx.input(|i| i.pointer.any_click()) {
+        // A click anywhere else ends the typing; the filter stays.
+        w.scan_typing = false;
+    }
     if toggle {
         p.folded.insert("widescan".into(), !folded);
         *p.changed = true;
         w.sounds.push(crate::audio::Ui::Cursor as u32);
     }
+    if scan && w.scan.list_state != 1 {
+        m.scan_at.set(Some(now));
+        super::super::scan_request(w);
+        w.sounds.push(crate::audio::Ui::Select as u32);
+    }
+    if let Some(i) = chose {
+        m.scan_pick.set(if picked == Some(i) { None } else { Some(i) });
+        w.sounds.push(crate::audio::Ui::Select as u32);
+    }
+    if narrow {
+        (m.scan_picking.set(true), m.scan_pick.set(None));
+        // The map is where the area is picked.
+        p.folded.insert("minimap".into(), false);
+        w.sounds.push(crate::audio::Ui::Select as u32);
+    }
+    if cancel {
+        m.scan_picking.set(false);
+        w.sounds.push(crate::audio::Ui::Cancel as u32);
+    }
+    if show_all {
+        m.scan_area.set(None);
+        w.sounds.push(crate::audio::Ui::Cancel as u32);
+    }
+    if pick.is_some() {
+        m.scan_pick.set(None);
+    }
     match pick {
         Some(i) if i == tracked => w.confirm = Some((super::super::Confirm::StopTracking, false)),
-        Some(i) => super::super::scan_track(w, i),
+        Some(i) => {
+            super::super::scan_track(w, i);
+            w.sounds.push(crate::audio::Ui::Select as u32);
+        }
         None => {}
+    }
+}
+
+/// Wide Scan's kind as the filter's bit: players 1, NPCs 2, monsters 4.
+fn kind_bit(kind: u8) -> u8 {
+    match kind {
+        0 => 1,
+        1 => 2,
+        _ => 4,
+    }
+}
+
+/// The list's colours: players blue, NPCs green, monsters red.
+fn kind_colour(bit: u8) -> Color32 {
+    match bit {
+        1 => Color32::from_rgb(110, 170, 255),
+        2 => Color32::from_rgb(110, 210, 120),
+        _ => Color32::from_rgb(235, 95, 95),
     }
 }
 
@@ -515,7 +837,7 @@ fn overlay(p: &mut Panels, w: &mut World) {
     painter.image(tex, img_r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::from_white_alpha((255.0 * opacity.clamp(0.0, 1.0)) as u8));
     let (px, py) = img.region.px(pos.0, pos.1);
     let me = boxr.min + vec2((px as f32 - view.0) * z.x, (py as f32 - view.1) * z.y);
-    arrow(&painter, me, facing, 11.0, m);
+    arrow_in(&painter, me, facing, 11.0, ME);
     let edge = ctx.layer_painter(egui::LayerId::background());
     edge.rect_stroke(boxr, 6.0, Stroke::new(2.0, m.theme.color("bronze").gamma_multiply(0.8)), egui::StrokeKind::Outside);
 }

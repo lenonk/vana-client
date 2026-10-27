@@ -41,6 +41,11 @@ fn view(w: &World) -> Option<(Storage, usize, usize)> {
 
 /// The bags this view may show: the one it opened on, and while it is not read-only those retail lets it switch to.
 fn bags(w: &World, b: &Storage) -> Vec<usize> {
+    // From View House: the bags its menu allows (each opens as its row would).
+    if w.viewhouse.is_some() {
+        let open = super::super::viewhouse::open_containers(w);
+        return (0..BAGS.len()).filter(|&g| BAGS[g].1.iter().any(|c| open.contains(c))).collect();
+    }
     (0..BAGS.len()).filter(|&g| BAGS[g].1.contains(&b.bank) || (!b.read_only && b.bank != BIN && BAGS[g].1.iter().any(|&c| c != BIN && c != 3 && gitems::usable(w, &Storage { bank: 0xff, ..*b }, c)))).collect()
 }
 
@@ -115,7 +120,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.vertical(|ui| {
                     ui.set_width(340.0);
                     ui.label(egui::RichText::new(title).size(m.theme.small).color(m.theme.color("gold")));
-                    egui::ScrollArea::vertical().id_salt(bank_side).max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
+                    egui::ScrollArea::vertical().id_salt(bank_side).max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
                         for (k, name) in names.iter().enumerate() {
                             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
                             let focus = on_bank == bank_side && k == cur;
@@ -187,6 +192,13 @@ fn store_mut(w: &mut World) -> Option<&mut Storage> {
 
 /// Another bag: its first part, the cursor on its top.
 fn switch(w: &mut World, g: usize) {
+    if w.viewhouse.is_some() {
+        let open = super::super::viewhouse::open_containers(w);
+        if let Some(child) = BAGS[g].1.iter().find(|c| open.contains(c)).and_then(|&c| super::super::viewhouse::child_of(c)) {
+            super::super::viewhouse::open_row(w, child);
+        }
+        return;
+    }
     if let Some(b) = store_mut(w)
         && group(b.bank) != g
     {
@@ -271,6 +283,8 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
         K::Enter if n > 0 => take(w, side, cur.min(n - 1), false),
         K::Escape => {
             w.win = None;
+            // From View House its menu closes too (the view is the whole of it here).
+            super::super::viewhouse::close(w);
             w.sounds.push(Se::Close as u32);
         }
         _ => {}

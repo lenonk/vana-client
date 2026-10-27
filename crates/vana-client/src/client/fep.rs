@@ -10,7 +10,7 @@ use crate::dat::font::PHRASE_BASE;
 /// Raw and expanded limits of the chat line (E+0xa54 = 0x78).
 pub(super) const MAX: usize = 120;
 /// Rows a page (FUN_1018f550).
-const ROWS: usize = 7;
+pub(super) const ROWS: usize = 7;
 
 #[derive(Clone, Debug)]
 pub struct Cand {

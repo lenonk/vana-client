@@ -99,10 +99,12 @@ pub(super) fn steps(w: &mut World, places: &HashMap<u32, Place>, points: Vec<(u6
         w.contacts.insert(id, (pl.pos + foot, g.floor_normal(pl.pos).unwrap_or(Vec3::Y)));
         // Dust "w100" walking / "0100" running, unless leg mode 3 (footstep-effects option DAT_10444158, default on).
         let dust = (ch.cib[0] != 3).then_some([if level == 101 { b'w' } else { b'0' }, b'0' + surface, b'0', b'0']);
-        log::debug!("footstep {id:#x} {} level {level}", String::from_utf8_lossy(&name));
         // Footprints on surfaces 3, 4 and 8, unless leg mode 3.
         let print = ch.cib[0] != 3 && matches!(surface, 3 | 4 | 8);
-        w.effects.footstep(id, pl.pos, name, dust, print, rain, level);
+        // +0x128 bit 8 (Sneak) silences the step; the dust and prints stay.
+        let silent = if id == w.my_id { w.my_plate.marks.silent } else { w.entities.get(&id).is_some_and(|e| e.marks.silent) };
+        log::debug!("footstep {id:#x} {} level {level}{}", String::from_utf8_lossy(&name), if silent { " silent" } else { "" });
+        w.effects.footstep(id, pl.pos, (!silent).then_some(name), dust, print, rain, level);
     }
 }
 
@@ -131,7 +133,7 @@ mod tests {
         let f = crate::fx::Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view, view_rot: view, eye, draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         let mut plays = Vec::new();
         for level in [127, 101] {
-            fx.footstep(1, pos, *b"0112", None, false, false, level);
+            fx.footstep(1, pos, Some(*b"0112"), None, false, false, level);
             fx.tick(&f, &crate::fx::NoActors);
             plays.extend(fx.sound_cmds.drain(..).filter_map(|c| match c {
                 SoundCmd::Play { se, vol, pan, .. } if se != 2009 => Some((se, vol, pan)),

@@ -2859,7 +2859,7 @@ mod tests {
         fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
         fx.load_zone(Library::load(332, index.read(332).unwrap()).unwrap());
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), *b"0112", Some(*b"w100"), false, false, 101);
+        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), Some(*b"0112"), Some(*b"w100"), false, false, 101);
         fx.tick(&f, &Walker);
         let dust: Vec<&crate::fx::Instance> = fx.insts.iter().flatten().filter(|x| &x.name == b"w100").collect();
         assert_eq!(dust.len(), 1);

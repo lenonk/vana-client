@@ -2,6 +2,7 @@
 //! at several sizes, over a screenshot when one is given.
 
 use super::chat::{self, ChatView, InputView};
+use super::super::combat::NO_MODE;
 use super::hud::{self, Effect, Icon, PartyRow, StatusView, TargetView, WhereView};
 use super::{Layout, Modern, Panels, paint};
 use crate::render::Gpu;
@@ -36,19 +37,21 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, 15.0);
-    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, folded: &mut Default::default(), this: Default::default(), retail: Default::default() };
+    let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default() };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
     let lines = vec![
-        (String::new(), "=== Area: West Ronfaure ===", wh, false),
-        ("[18:42:10] ".to_string(), "Raven : rdy?", [0x80, 0x80, 0x80, 0x80], true),
-        (String::new(), "Lenon starts casting Protect on Koru.", [0x30, 0x78, 0x80, 0x80], false),
-        (String::new(), "Koru gains the effect of Protect.", wh, false),
-        (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], false),
-        ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], true),
+        (String::new(), "=== Area: West Ronfaure ===", wh, NO_MODE),
+        ("[18:42:10] ".to_string(), "Raven : rdy?", [0x80, 0x80, 0x80, 0x80], 9u16),
+        (String::new(), "Lenon starts casting Protect on Koru.", [0x30, 0x78, 0x80, 0x80], NO_MODE),
+        (String::new(), "Koru gains the effect of Protect.", wh, NO_MODE),
+        (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], NO_MODE),
+        ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], 13),
+        // The game's own glyphs and an event item name (1e 02 .. 1e 01).
+        (String::new(), "Kupipi : A pre\u{FF5E}sent? Take this \u{100402}Fire Crystal\u{100401} to the \u{F87B2}Mog House\u{F87B3}.", wh, NO_MODE),
     ];
     let shown = chat::Shown { rows: 8.0, draw_n: 8, pending: 0, slide: 0 };
-    chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22 }), waiting: false }, shown, true);
+    chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { effects: mine }, false);

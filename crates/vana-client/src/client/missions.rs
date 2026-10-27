@@ -53,11 +53,31 @@ pub fn open_menu(w: &mut World) {
 }
 
 /// FUN_1022dbd0 + miss00's open (FUN_1022dcf0): the list on `log`, or waiting while the store is incomplete.
-fn open_list(w: &mut World, log: usize) {
+pub(super) fn open_list(w: &mut World, log: usize) {
     let mut l = List { log, state: 0, rows: Vec::new(), top: 0, cursor: 1 };
     build(w, &mut l);
     if let Some(m) = w.missions.as_mut() {
         m.list = Some(l);
+    }
+}
+
+/// The logs the modern page lists: the three nations, then those whose expansion is enabled (TVR once RoV is past
+/// 340), as the Left / Right cycle allows.
+pub(super) fn shown_logs(w: &World) -> Vec<usize> {
+    (0..15).filter(|&l| (l < 3 || w.expansions >> journal::MISSION_BITS[l] & 1 != 0) && !(l == 11 && w.journal.rov < 0x154)).collect()
+}
+
+/// The modern page: a log with the cursor on an entry (else the first row that is not a header).
+pub(super) fn show_log(w: &mut World, log: usize, entry: Option<usize>) {
+    if w.missions.is_none() {
+        w.missions = Some(Missions { menu: None, list: None });
+    }
+    open_list(w, log);
+    if let Some(l) = w.missions.as_mut().and_then(|m| m.list.as_mut()) {
+        let at = entry.and_then(|e| l.rows.iter().position(|r| matches!(r, Row::Current(i) | Row::Done(i) if *i == e)));
+        if let Some(k) = at {
+            (l.cursor, l.top) = (k, k);
+        }
     }
 }
 

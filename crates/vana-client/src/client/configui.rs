@@ -212,6 +212,8 @@ pub fn disabled(name: &str, child: u16, sw: f32, mon: bool) -> bool {
         "conf13wi" => matches!(child, 3..=5),
         // Macro palette size: below 1024 wide the full palette does not fit (FUN_10193e50, simplified).
         "conf6win" => child == 12 && sw < 1024.0,
+        // Ours (user, 2026-10-26: the mouse as modern MMOs): Mouse Control's type and Screen Edge Panning do nothing.
+        "conf7" => matches!(child, 1..=4),
         _ => false,
     }
 }
@@ -329,6 +331,8 @@ pub struct ConfigUi {
     pub m_entry: usize,
     pub m_open: bool,
     pub m_row: usize,
+    /// The modern page's category (Log, Font Colors).
+    pub m_cat: usize,
 }
 
 impl ConfigUi {

@@ -514,6 +514,45 @@ fn report(w: &mut World, kind: u8) {
     }
 }
 
+/// The page as the modern layer's lines: the header, the slots (a question's with its value line), Execute, Go back /
+/// Delete this message., Return; the field being typed in.
+pub fn view(w: &World, gu: &GameUi) -> Option<super::helpdesk::PageView> {
+    use super::helpdesk::{Line, PageView};
+    let f = main(w)?;
+    let page = f.page();
+    let g9 = |id: usize| w.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
+    let mut lines = Vec::new();
+    let header = f.node().map_or(String::new(), |n| n.header.clone());
+    if !header.is_empty() {
+        lines.push(Line::Text(header, false));
+    }
+    let slots: Vec<(String, Option<String>)> = f.visible().iter().map(|s| (s.text.clone(), s.var.clone())).collect();
+    if page != Page::Leaf {
+        for (k, (text, var)) in slots.iter().enumerate() {
+            let value = var.as_ref().filter(|_| page == Page::Question).map(|v| f.inputs.get(v).cloned().unwrap_or_default());
+            lines.push(Line::Row { id: k as i32 + 1, text: text.clone(), on: true, value });
+        }
+    }
+    if page == Page::Question {
+        lines.push(Line::Row { id: slots.len() as i32 + 1, text: g9(0x7d), on: true, value: None });
+    }
+    if f.history() || page == Page::Leaf {
+        lines.push(Line::Row { id: 0, text: if f.history() { g9(0x79) } else { g9(0x7b) }, on: true, value: None });
+    }
+    lines.push(Line::Row { id: -1, text: g9(0x7a), on: true, value: None });
+    let field = f.field.as_ref().map(|b| String::from_utf8_lossy(b).into_owned());
+    let title = gu.title_msg(0x3c).unwrap_or_else(|| "Help Desk".into());
+    Some(PageView { title, lines, cursor: f.cursor as i32, focused: w.confirm.is_none() && w.search.is_none(), field })
+}
+
+/// The modern layer's mouse: the cursor to row `id` (not while typing); true when it moved.
+pub fn set_cursor(w: &mut World, id: i32) -> bool {
+    let Some(f) = main_mut(w).filter(|f| f.field.is_none()) else { return false };
+    let moved = f.cursor as i32 != id;
+    (f.cursor, f.follow) = (id as i16, true);
+    moved
+}
+
 /// One drawn entry: its row (None for the header), place, lines, the question's value line below it.
 struct Entry {
     row: Option<i16>,

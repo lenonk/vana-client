@@ -13,9 +13,12 @@ mod equip;
 mod extras;
 mod hud;
 mod items;
+mod journal;
 mod lists;
 mod paint;
 pub mod plates;
+mod social;
+mod status;
 mod storage;
 pub mod shot;
 mod theme;
@@ -24,8 +27,10 @@ mod topbar;
 use super::World;
 use super::game_ui::GameUi;
 use egui::{Color32, Context, FontFamily, FontId, Id, LayerId, Order, Pos2, Rect, Sense, Shape, Ui, Vec2, pos2, vec2};
-pub use command::{CmdMenu, key as command_key};
+pub use command::{BarFocus, CmdMenu, bar_focus, key as command_key};
 pub use config::key as config_key;
+pub use journal::key as journal_key;
+pub use status::key as status_key;
 pub use storage::key as storage_key;
 pub use theme::{Theme, frame_image};
 use theme::{Art, LABEL, STRONG};
@@ -52,8 +57,34 @@ pub struct Modern {
     zoom: f32,
     /// When the Wide Scan tab last asked for a list (retail asks only as the map opens; the tab keeps it fresh).
     scan_at: std::cell::Cell<Option<std::time::Instant>>,
-    /// The last complete Wide Scan list (shown while the next one streams in, then swapped at once).
+    /// The last complete Wide Scan list (shown while the next one streams in, then swapped at once) and where it was
+    /// asked from; the row picked (its options open, ringed on the minimap); Narrow down range: waiting for a click on
+    /// the minimap, then the area kept (world x, z, radius).
     scan_rows: std::cell::RefCell<Vec<(super::widescan::Entry, String)>>,
+    scan_origin: std::cell::Cell<(f32, f32)>,
+    scan_pick: std::cell::Cell<Option<u16>>,
+    scan_picking: std::cell::Cell<bool>,
+    scan_area: std::cell::Cell<Option<(f32, f32, f32)>>,
+    /// Captions read from the game's name sprites (skills, jobs, ranks), by library and index.
+    captions: std::cell::RefCell<HashMap<(String, usize), Option<String>>>,
+    /// The full log's wheel, in rows not yet scrolled.
+    wheel: std::cell::Cell<f32>,
+    /// The Status page's currencies: only those held.
+    held_only: std::cell::Cell<bool>,
+    /// The Journal's tab and cursor last drawn (a moved cursor is scrolled into view), and the quest list's line of
+    /// each quest (headings between them).
+    journal_seen: std::cell::Cell<(u8, usize)>,
+    /// The Config page and row last drawn (a moved row is scrolled into view).
+    config_seen: std::cell::Cell<(usize, usize)>,
+    journal_rows: std::cell::RefCell<Vec<usize>>,
+    /// egui's text styles enlarged (put back when the layer goes off).
+    styled: bool,
+    /// An edge window's heading dragged this frame: the move and, while held, where the pointer is (the side follows).
+    edge_grip: std::cell::Cell<Option<(f32, Option<Pos2>)>>,
+    /// The edge window being dragged and where the pointer holds it (its ghost follows the pointer).
+    edge_ghost: std::cell::RefCell<Option<(String, Vec2)>>,
+    /// The retail windows drawn this frame: the edge windows give way to them (they draw under every panel).
+    retail: std::cell::RefCell<Vec<Rect>>,
     /// A place changed during a drag: saved once the pointer is let go.
     dirty: bool,
 }
@@ -71,10 +102,24 @@ impl Modern {
             marquee: Default::default(),
             scan_at: Default::default(),
             scan_rows: Default::default(),
+            scan_origin: Default::default(),
+            scan_pick: Default::default(),
+            scan_picking: Default::default(),
+            scan_area: Default::default(),
             rects: Default::default(),
             arranging: Default::default(),
             chat_edge: Default::default(),
             zoom: 0.0,
+            captions: Default::default(),
+            held_only: Default::default(),
+            wheel: Default::default(),
+            journal_seen: Default::default(),
+            config_seen: Default::default(),
+            journal_rows: Default::default(),
+            styled: false,
+            retail: Default::default(),
+            edge_grip: Default::default(),
+            edge_ghost: Default::default(),
             dirty: false,
         }
     }
@@ -88,11 +133,31 @@ impl Modern {
             ctx.set_zoom_factor(zoom);
             self.zoom = zoom;
         }
+        // egui's own text (tooltips, the few labels without a size) a little larger than its defaults.
+        if !self.styled {
+            ctx.all_styles_mut(|s| {
+                use egui::TextStyle as T;
+                for (t, size) in [(T::Body, 14.5), (T::Button, 14.5), (T::Small, 12.5), (T::Monospace, 14.0)] {
+                    if let Some(f) = s.text_styles.get_mut(&t) {
+                        f.size = size;
+                    }
+                }
+            });
+            self.styled = true;
+        }
+        // The game's keys are not egui's: Tab (targeting) must not walk egui's focus onto a widget for Enter or Space
+        // (talking, a door) to press it (a chat tab switched by itself). Nothing here keeps the keyboard focus.
+        ctx.memory_mut(|mem| {
+            if let Some(id) = mem.focused() {
+                mem.surrender_focus(id);
+            }
+        });
+        *self.retail.borrow_mut() = w.retail_frames.iter().map(|r| Rect::from_min_size(pos2(r[0], r[1]), vec2(r[2], r[3]))).collect();
         topbar::draw(self, ctx, &w.hud_top.view);
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, folded: &mut cfg.modern_folded, this: HashMap::new(), retail: HashMap::new() };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new() };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -104,7 +169,20 @@ impl Modern {
         items::draw(&mut p, w);
         equip::draw(&mut p, w);
         config::draw(&mut p, w);
+        status::draw(&mut p, w);
+        journal::draw(&mut p, w);
+        social::draw(&mut p, w);
         storage::draw(&mut p, w);
+        // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
+        // window (the location panel, the combat window), as retail's stack over its compass and action menu.
+        if let Some((r, faded)) = self.chat_edge.get() {
+            let riders = p.this.iter().filter(|(id, _)| id.as_str() != "chat" && p.rests_on(id, "chat")).map(|(_, r)| r.min.y);
+            let top = riders.chain((!faded).then_some(r.min.y)).reduce(f32::min);
+            if let Some(t) = top {
+                self.chat_edge.set(Some((Rect::from_min_max(pos2(r.min.x, t), r.max), false)));
+            }
+        }
+        confirm(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -150,10 +228,27 @@ fn pointer_look(tint: u32) -> (&'static str, Color32) {
 
 /// With the layer off egui is back at its own size (the F12 lines).
 pub fn off(ctx: &Context, m: Option<&mut Modern>) {
-    if let Some(m) = m.filter(|m| m.zoom != 0.0) {
+    let Some(m) = m else { return };
+    if m.zoom != 0.0 {
         ctx.set_zoom_factor(1.0);
         m.zoom = 0.0;
     }
+    if m.styled {
+        let defaults = egui::Style::default().text_styles;
+        ctx.all_styles_mut(|s| s.text_styles = defaults.clone());
+        m.styled = false;
+    }
+}
+
+/// A retail list menu as the modern pages draw it (client/partymenu.rs and the others fill it): its layout, cursor,
+/// disabled rows, windowps label sprites swapped in, rows marked, values at a row's right.
+pub struct MenuWin {
+    pub name: &'static str,
+    pub sel: u16,
+    pub off: Vec<u16>,
+    pub labels: Vec<(u16, usize)>,
+    pub marked: Vec<u16>,
+    pub values: Vec<(u16, String)>,
 }
 
 /// A panel's title row: an optional icon, the title, an optional note at the right.
@@ -181,6 +276,7 @@ struct Panels<'a> {
     changed: &'a mut bool,
     chat_font: &'a mut f32,
     folded: &'a mut std::collections::BTreeMap<String, bool>,
+    scan_kinds: &'a mut u8,
     /// The panels drawn this frame, as others dock on them (the chat window while it fades: its bottom edge).
     this: HashMap<String, Rect>,
     /// Places retail works out this frame (the minimap left of the windows at the edge): the default until moved.
@@ -193,40 +289,89 @@ const ROOM_MARGIN: egui::Margin = egui::Margin { bottom: 26, ..MARGIN };
 
 /// The panels placed by their bottom, growing upward (the chat window, the party window).
 const BOTTOM: [&str; 2] = ["chat", "party"];
-/// The right edge's column (the main menu and the windows it opens): other panels anchored there keep left of it.
-const COLUMN: [&str; 2] = ["command", "window"];
+/// The right edge's column (the main menu, its submenu and the windows it opens): other panels anchored there keep
+/// left of it.
+const COLUMN: [&str; 3] = ["command", "command sub", "window"];
 
-/// Where each panel starts: the chat and party windows on the screen's bottom, the location panel on the chat window
-/// and the combat window on it (retail's compass and action menu ride the log), the target on the party window
-/// (retail's targetwi, flag 0x2000).
+/// Where each panel starts (the user's own arrangement, 2026-10-26): the chat and party windows on the screen's
+/// bottom, the location panel on the chat window and the combat window on it (retail's compass and action menu ride
+/// the log), the target on the party window (retail's targetwi, flag 0x2000), the status icons, the command window and
+/// the Timers at the left under the top bar, the main menu and the minimap at the right.
 fn default_place(id: &str) -> Place {
     let at = |x, y| Place { x, y, ..Default::default() };
     let on = |to: &str| Place { dock: Some(Dock { to: to.into(), gap: 4.0, dx: 0.0 }), ..Default::default() };
     match id {
-        "chat" => Place { x: 0.012, b: 0.985, ..Default::default() },
-        "party" => Place { x: 0.87, b: 0.985, ..Default::default() },
-        "where" => on("chat"),
+        "chat" => Place { x: 0.0121, b: 0.9998, ..Default::default() },
+        "party" => Place { x: 0.8836, b: 0.9992, ..Default::default() },
+        "where" => Place { dock: Some(Dock { to: "chat".into(), gap: -0.5, dx: 1.25 }), ..Default::default() },
         "combat" => on("where"),
         "target" => on("party"),
         // The magic and ability windows ride on the combat window (retail's sit on the log), the list on its categories.
         "cats" => on("combat"),
         "list" => on("cats"),
-        // Retail's places in its 448-high layout (x as a share of a 16:9 layout's 796; below zero from the right edge):
-        // the status icons at (142, 48), the main menu at the right edge (W - 128, 48).
-        "status" => at(0.178, 0.107),
-        "command" => at(-0.02, 0.107),
+        // Below zero x is from the right edge.
+        "status" => at(0.0637, 0.0313),
+        "command" => at(-0.0047, 0.034),
         // raid1 / raid2's places (y 48 and 150 of the 448 layout).
         "alliance1" => at(0.87, 0.107),
         "alliance2" => at(0.87, 0.335),
-        // The cast bar at (16, 94); the Timers' left dock under it at (16, 122); the minimap at the top right edge, y 50.
+        // The cast bar at retail's (16, 94); the Timers on the left edge, the minimap on the right one.
         "cast" => at(0.02, 0.21),
-        "timers" => at(0.02, 0.272),
-        "minimap" => at(-0.001, 0.112),
-        // The command window: every window the command menu opens shows here, where retail's open (the main menu's
-        // column; the menu closes as they open). The item info rides the log as retail's (mode 0, flag 0x1000).
-        "window" => at(-0.02, 0.107),
+        "timers" => at(0.0, 0.2187),
+        "minimap" => at(-0.001, 0.0353),
+        // The command window: every window the command menu opens shows here. The item info rides the log as retail's
+        // (mode 0, flag 0x1000).
+        "window" => at(0.0047, 0.0347),
         "iteminfo" => on("combat"),
         _ => at(0.3, 0.3),
+    }
+}
+
+/// The yes / no prompt (retail's comyn, stacked on the log): the question and Yes / No, the cursor's lit; its keys stay
+/// retail's (Left / Right, Enter, Escape is No). A click answers; hovering moves the cursor.
+fn confirm(p: &mut Panels, w: &mut World) {
+    let Some((_, yes)) = w.confirm else { return };
+    let m = p.m;
+    let screen = p.ctx.content_rect();
+    let edge = m.chat_edge.get().map_or(screen.max.y, |(r, _)| r.min.y);
+    let caption = |k: u16, d: &str| p.gu.and_then(|g| g.child_caption("menu    comyn", k)).unwrap_or_else(|| d.to_string());
+    let (y_label, n_label) = (caption(1, "Yes"), caption(2, "No"));
+    let text = w.confirm_text.clone();
+    let h = m.rects.borrow().get("confirm").map_or(110.0, |r| r.height());
+    let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
+    let (mut hover, mut click) = (None, None);
+    p.panel_at("confirm", None, 380.0, at, |ui| {
+        ui.label(egui::RichText::new(&text).size(m.theme.ui).color(m.theme.color("text")));
+        ui.add_space(10.0);
+        ui.horizontal(|ui| {
+            for (val, label) in [(true, &y_label), (false, &n_label)] {
+                let (r, resp) = ui.allocate_exact_size(vec2(120.0, 30.0), Sense::click());
+                let on = val == yes;
+                let face = if on { "controls/button_selected" } else if resp.hovered() { "controls/button_hover" } else { "controls/button_normal" };
+                if let Some(s) = m.art.sprite(face) {
+                    ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+                }
+                ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, label, FontId::proportional(m.theme.ui), if on { m.theme.color("gold") } else { m.theme.color("text") });
+                if resp.hovered() && ui.ctx().input(|i| i.pointer.delta() != Vec2::ZERO) {
+                    hover = Some(val);
+                }
+                if resp.clicked() {
+                    click = Some(val);
+                }
+                ui.add_space(8.0);
+            }
+        });
+    });
+    if let Some(v) = hover.or(click)
+        && let Some(c) = w.confirm.as_mut()
+        && c.1 != v
+    {
+        c.1 = v;
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+    if let Some(v) = click {
+        w.confirm_click = Some(v);
+        w.sounds.push(crate::audio::Ui::Select as u32);
     }
 }
 
@@ -300,7 +445,9 @@ impl<'a> Panels<'a> {
             return pos2(t.min.x + d.dx, t.min.y - d.gap - h);
         }
         let s = self.ctx.content_rect();
-        let y = if BOTTOM.contains(&id) { s.height() * place.b - h } else { s.height() * place.y };
+        // A bottom-placed panel's bottom on a whole pixel (its height changing must not move it).
+        let ppp = self.ctx.pixels_per_point();
+        let y = if BOTTOM.contains(&id) { (s.height() * place.b * ppp).round() / ppp - h } else { s.height() * place.y };
         if place.x >= 0.0 {
             return pos2(s.width() * place.x, y);
         }
@@ -380,11 +527,27 @@ impl<'a> Panels<'a> {
         let mut place = self.place(id);
         let room = if o.resizable { self.room(id, o.size) } else { o.size };
         let h = o.height.or_else(|| m.rects.borrow().get(id).map(|r| r.height())).unwrap_or(0.0);
-        let pos = o.at.unwrap_or_else(|| self.resolve(id, &place, h));
+        let mut pos = o.at.unwrap_or_else(|| self.resolve(id, &place, h));
+        // The command window steps right of a retail window it would hide (they draw under every panel): the item
+        // pickers a page opens at the top left (Set Bazaar's prices, the hand-over).
+        if id == "window" && o.at.is_none() {
+            let size = vec2(o.size.x.max(1.0), h.max(1.0));
+            for _ in 0..4 {
+                let r = Rect::from_min_size(pos, size).shrink(2.0);
+                let Some(right) = m.retail.borrow().iter().filter(|f| f.intersects(r)).map(|f| f.max.x).reduce(f32::max) else { break };
+                pos.x = right + 8.0;
+            }
+        }
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
+            // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller
+            // (a scroll area in it) stays clipped at its first height.
+            // Not for the panels placed by their exact height (the chat window folding, the party window).
+            if o.height.is_none() && !o.resizable {
+                ui.set_max_height((screen.max.y - pos.y).max(ui.min_rect().height()));
+            }
             if fold < 1.0 {
                 let top = pos.y + h * (1.0 - fold);
                 ui.set_clip_rect(ui.clip_rect().intersect(Rect::from_min_max(pos2(f32::NEG_INFINITY, top), pos2(f32::INFINITY, f32::INFINITY))));
@@ -483,6 +646,11 @@ impl Modern {
             Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
         });
         t.as_ref().map(|t| t.id())
+    }
+
+    /// A name sprite's caption as text, read once.
+    fn caption(&self, gu: &GameUi, lib: &str, index: usize) -> Option<String> {
+        self.captions.borrow_mut().entry((lib.to_string(), index)).or_insert_with(|| gu.sprite_caption(lib, index)).clone()
     }
 
     /// An item's icon from the game's files (32 x 32) as an egui texture, made once.
