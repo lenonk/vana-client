@@ -451,7 +451,7 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) -> bool {
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
     let Some(m) = &w.moogle else { return rects };
-    if w.win.is_some() {
+    if w.win.is_some() || w.modern {
         return rects;
     }
     let mut off = if m.nomad { Vec::new() } else { myroom_off(w, m) };
@@ -500,12 +500,78 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
+/// The modern layer's windows, bottom up: myroom / mogext (child 6's Open / Close caption), then the storage menu,
+/// mogpost or jobchang and jobcselu (the levels as values) over it. None while a storage view is up.
+pub(super) fn views(w: &World, gu: &GameUi) -> Vec<super::modern::MenuWin> {
+    use super::modern::MenuWin;
+    let Some(m) = &w.moogle else { return Vec::new() };
+    if w.win.is_some() {
+        return Vec::new();
+    }
+    let mut off = if m.nomad { Vec::new() } else { myroom_off(w, m) };
+    let child6 = (!m.nomad).then(|| if w.mh_open { 608 } else if m.open_pending { 607 } else { 606 });
+    if child6.is_some() {
+        off.retain(|&c| c != 6);
+    }
+    let mut out = vec![MenuWin { name: m.name(), sel: m.sel, off, labels: child6.map(|s| (6, s)).into_iter().collect(), marked: Vec::new(), values: Vec::new() }];
+    let win = |name, sel, off: Vec<u16>| MenuWin { name, sel, off, labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+    if let Some((sel, off)) = &m.storage {
+        out.push(win(if m.nomad { STORAGE2 } else { STORAGE }, *sel, off.clone()));
+    }
+    if let Some(c) = m.post {
+        out.push(win(MOGPOST, c, Vec::new()));
+    }
+    if let Some(j) = m.jobs {
+        out.push(win(JOBCHANG, j.sel, if w.job_info.is_some_and(|i| i.sub_ok) { Vec::new() } else { vec![2] }));
+        if let Some((_, sel)) = j.select {
+            let off = jobs_off(w);
+            let fmt = gu.item_msg(10, 0x5a).unwrap_or_default();
+            let (main, sub) = jobs_now(w);
+            let values = (1..=32u16)
+                .filter(|c| !off.contains(c))
+                .map(|c| {
+                    let n = c as u8;
+                    let mut lv = w.job_info.map_or(0, |j| j.levels.get(n as usize).copied().unwrap_or(0));
+                    if n == main {
+                        lv = w.stats.as_ref().map_or(lv, |s| s.main.1);
+                    }
+                    (c, fmt.replace("%d", &lv.to_string()))
+                })
+                .collect();
+            let marked = [main as u16, sub as u16].into_iter().filter(|&c| c != 0).collect();
+            out.push(MenuWin { name: JOBCSELU, sel, off, labels: Vec::new(), marked, values });
+        }
+    }
+    out
+}
+
+/// The modern layer's mouse on the top window: its cursor to `c`; true when it moved.
+pub(super) fn set_cursor(w: &mut World, c: u16) -> bool {
+    let Some(m) = w.moogle.as_mut() else { return false };
+    let at = if let Some(j) = m.jobs.as_mut() {
+        match j.select.as_mut() {
+            Some((_, sel)) => sel,
+            None => &mut j.sel,
+        }
+    } else if let Some(p) = m.post.as_mut() {
+        p
+    } else if let Some((sel, _)) = m.storage.as_mut() {
+        sel
+    } else {
+        &mut m.sel
+    };
+    let moved = *at != c;
+    *at = c;
+    moved
+}
+
 /// The mouse on the focused window (the generic window): myroom / mogext, the storage menu, mogpost, jobchang and
 /// jobcselu. Nothing while a storage view is up (the item lists take it).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::generic;
     let Some(m) = w.moogle.clone() else { return };
-    if w.win.is_some() {
+    // The modern layer draws these and takes their mouse.
+    if w.win.is_some() || w.modern {
         return;
     }
     let keys = |w: &mut World, gu: &GameUi, k: egui::Key| {

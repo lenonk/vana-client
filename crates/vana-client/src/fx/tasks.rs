@@ -2859,7 +2859,7 @@ mod tests {
         fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
         fx.load_zone(Library::load(332, index.read(332).unwrap()).unwrap());
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), *b"0112", Some(*b"w100"), false, false, 101);
+        fx.footstep(7, Vec3::new(3.0, 0.0, -2.0), Some(*b"0112"), Some(*b"w100"), false, false, 101);
         fx.tick(&f, &Walker);
         let dust: Vec<&crate::fx::Instance> = fx.insts.iter().flatten().filter(|x| &x.name == b"w100").collect();
         assert_eq!(dust.len(), 1);
@@ -2883,7 +2883,7 @@ mod tests {
         fx.set_index(index.clone());
         fx.set_global(Library::load(0, index.read(0).unwrap()).unwrap());
         let hit = ActionResult { kind: 1, scale: 1, value: 7, message: 1, ..Default::default() };
-        let a = Action { actor: HUME, category: 1, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ORC, results: vec![hit] }] };
+        let a = Action { actor: HUME, category: 1, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ORC, results: vec![hit] }], seq: 0 };
         fx.on_action(&a, Some("ati0".into()));
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         // Wait for the actors' files first, as a loaded model would have them.
@@ -2907,7 +2907,7 @@ mod tests {
             assert!(started.iter().any(|s| s.1 == g && s.0 == 45), "{g}: {started:?}");
         }
         // The orc hits back: orc ati0 dada at 36, then chit on the orc plays DAT 0 hit2 at the Hume (a doll).
-        let a = Action { actor: ORC, category: 1, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: HUME, results: vec![ActionResult { kind: 1, scale: 1, value: 3, message: 1, ..Default::default() }] }] };
+        let a = Action { actor: ORC, category: 1, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: HUME, results: vec![ActionResult { kind: 1, scale: 1, value: 3, message: 1, ..Default::default() }] }], seq: 0 };
         fx.on_action(&a, Some("ati0".into()));
         let mut started: Vec<(u32, String)> = Vec::new();
         for tick in 0..240 {
@@ -2942,7 +2942,7 @@ mod tests {
         }
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
         let names = |fx: &Effects| -> Vec<String> { fx.insts.iter().flatten().filter(|x| !x.stopping).map(|x| String::from_utf8_lossy(&x.name).into_owned()).collect() };
-        let start = Action { actor: HUME, category: 8, arg: u32::from_le_bytes(*b"cawh"), info: 0, targets: vec![ActionTarget { id: HUME, results: vec![ActionResult::default()] }] };
+        let start = Action { actor: HUME, category: 8, arg: u32::from_le_bytes(*b"cawh"), info: 0, targets: vec![ActionTarget { id: HUME, results: vec![ActionResult::default()] }], seq: 0 };
         fx.on_action(&start, None);
         let mut casting: Vec<String> = Vec::new();
         for _ in 0..60 {
@@ -2955,7 +2955,7 @@ mod tests {
         // cawh's op 0x05 plays the cast motion mw0? on the caster.
         let moved: Vec<String> = fx.motions.drain(..).filter_map(|(id, m)| (id == HUME).then_some(m).flatten().map(|m| m.name)).collect();
         assert!(moved.iter().any(|n| n == "mw0"), "{moved:?}");
-        let finish = Action { actor: HUME, category: 4, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 1, message: 7, value: 30, ..Default::default() }] }] };
+        let finish = Action { actor: HUME, category: 4, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 1, message: 7, value: 30, ..Default::default() }] }], seq: 0 };
         fx.on_action(&finish, None);
         let mut seen: Vec<String> = Vec::new();
         for _ in 0..200 {
@@ -3023,7 +3023,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
+        let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }], seq: 0 };
         fx.on_action(&a, None);
         let mut gens: Vec<String> = Vec::new();
         let mut moves: Vec<String> = Vec::new();
@@ -3089,7 +3089,7 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
+        let a = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }], seq: 0 };
         fx.on_action(&a, None);
         for _ in 0..5 {
             fx.tick(&f, &OrcLoading);
@@ -3106,7 +3106,7 @@ mod tests {
         let Ok(index) = crate::dat::DatIndex::open(&cfg.ffxi_dir()) else { return };
         let index = std::sync::Arc::new(index);
         let f = Frame { dt: 1.0, seconds: 1.0 / 60.0, dayfrac: 0.5, view: Mat4::IDENTITY, view_rot: Mat4::IDENTITY, eye: Vec3::new(0.0, -2.0, -10.0), draw_distance: 2000.0, area_light: Vec3::ONE, focal: 350.0, moon_phase: 0, weekday: 0 };
-        let combo = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }] };
+        let combo = Action { actor: HUME, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: ORC, results: vec![ActionResult { animation: 16, message: 185, value: 40, ..Default::default() }] }], seq: 0 };
         let run = |second: Option<usize>| -> Vec<usize> {
             let mut fx = Effects::new();
             fx.set_index(index.clone());
@@ -3184,7 +3184,7 @@ mod skillchain_tests {
         assert_eq!(fx.sched_ops((g, proc_)).first().map(|o| o.code), Some(0x80));
         for (kind, burst) in [(0u8, false), (14, true)] {
             let r = ActionResult { animation: 16, message: 185, value: 40, proc: (kind != 0).then_some(Side { kind, info: 0, value: 57, message: 301 }), ..Default::default() };
-            let a = Action { actor: 1, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: 2, results: vec![r] }] };
+            let a = Action { actor: 1, category: 3, arg: 1, info: 0, targets: vec![ActionTarget { id: 2, results: vec![r] }], seq: 0 };
             let ctx = Rc::new(RefCell::new(ActionCtx { action: a, cur: 0, swing: None, printed: vec![true], last: 0, client_swing: false }));
             fx.spawn_task((g, proc_), Who::Actor(1), Who::Actor(2), Some(ctx), 1.0, None);
             let (mut prints, mut reacts, mut holds) = (Vec::new(), Vec::new(), Vec::new());

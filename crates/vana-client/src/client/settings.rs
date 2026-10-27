@@ -32,8 +32,13 @@ pub struct Settings {
     pub monitor: String,
     pub gpu: String,
     pub cursor_size: u32,
+    pub modern_ui: bool,
+    pub modern_scale: u32,
+    pub modern_opacity: u32,
     /// The mod packs in priority order (the Mods page; config `mods`).
     pub mods: Vec<crate::config::ModRef>,
+    /// Panel Places' Reset pressed: this character's modern panels go back to where they start (not kept).
+    pub reset_places: bool,
 }
 
 impl Settings {
@@ -60,7 +65,11 @@ impl Settings {
             monitor: c.monitor.clone(),
             gpu: c.gpu.clone(),
             cursor_size: c.cursor_size,
+            modern_ui: c.modern_ui,
+            modern_scale: c.modern_scale,
+            modern_opacity: pct(c.modern_opacity),
             mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
+            reset_places: false,
         }
     }
 
@@ -82,6 +91,9 @@ impl Settings {
         c.minimap_size = self.minimap_size;
         c.retail_aspect = self.retail_aspect;
         c.cursor_size = self.cursor_size;
+        c.modern_ui = self.modern_ui;
+        c.modern_scale = self.modern_scale;
+        c.modern_opacity = self.modern_opacity as f32 / 100.0;
         c.mods = self.mods.clone();
     }
 }
@@ -129,6 +141,10 @@ enum Val {
     Monitor,
     /// The graphics adapter ("Default" then the app's list).
     Gpu,
+    ModernUi,
+    ModernScale,
+    ModernOpacity,
+    ResetPlaces,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -148,6 +164,7 @@ struct Row {
 }
 
 const OFF_ON: &[(u32, &str)] = &[(1, "ON"), (0, "OFF")];
+const MODERN_SCALES: &[(u32, &str)] = &[(50, "50%"), (55, "55%"), (60, "60%"), (65, "65%"), (70, "70%"), (75, "75%"), (80, "80%"), (85, "85%"), (90, "90%"), (95, "95%"), (100, "100%"), (105, "105%"), (110, "110%"), (115, "115%"), (120, "120%"), (125, "125%"), (130, "130%"), (135, "135%"), (140, "140%"), (145, "145%"), (150, "150%")];
 
 const fn row(label: &'static str, help: &'static str, val: Val, choices: &'static [(u32, &'static str)], when: When) -> Row {
     Row { label, help, val, choices, when }
@@ -158,8 +175,9 @@ const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "M
 const MODS: usize = 7;
 const EXTRA_TABS: [&str; 3] = ["Maps", "Timers", "Misc."];
 
-/// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out.
-fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
+/// `in_game`: the volumes are the Gameplay page's there, so the Sound page leaves them out. `modern`: the minimap's and
+/// the Timers' place and size are set by dragging them there, so those rows are left out.
+fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
     use Val::*;
     use When::*;
     const GENERAL: &[Row] = &[
@@ -205,6 +223,10 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),
         row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
+        row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
+        row("Interface Size", "The modern interface's size (not retail).", ModernScale, MODERN_SCALES, Now),
+        row("Panel Opacity", "How opaque the modern interface's window backgrounds are (not retail).", ModernOpacity, &[], Now),
+        row("Panel Places", "Reset puts this character's modern windows back where they start (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
     ];
     const MAPS: &[Row] = &[
         row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
@@ -222,9 +244,12 @@ fn rows(kind: Kind, tab: usize, in_game: bool) -> &'static [Row] {
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
     ];
     match kind {
+        Kind::Extras if modern => [&MAPS[..3], &TIMERS[..1], EXTRA_MISC][tab.min(2)],
         Kind::Extras => [MAPS, TIMERS, EXTRA_MISC][tab.min(2)],
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
+        // Panel Places (the last Linux row) is a character's: in game only.
+        Kind::Settings if !in_game && tab == 6 => &LINUX[..LINUX.len() - 1],
         Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
     }
 }
@@ -299,12 +324,12 @@ impl SettingsUi {
     }
 
     fn rows(&self) -> &'static [Row] {
-        rows(self.kind, self.tab, self.in_game)
+        rows(self.kind, self.tab, self.in_game, self.s.modern_ui)
     }
 
     fn ctl(r: &Row) -> Ctl {
         match r.val {
-            Val::Size(..) | Val::Gamma | Val::FrameLimit | Val::Monitor | Val::Gpu | Val::Music | Val::Effects | Val::MapOpacity => Ctl::Slider,
+            Val::Size(..) | Val::Gamma | Val::FrameLimit | Val::Monitor | Val::Gpu | Val::Music | Val::Effects | Val::MapOpacity | Val::ModernOpacity => Ctl::Slider,
             _ if r.choices.len() <= 3 => Ctl::Buttons(r.choices.len()),
             _ => Ctl::Slider,
         }
@@ -341,6 +366,10 @@ impl SettingsUi {
             Val::FrameLimit => self.s.frame_limit,
             Val::Aniso => self.s.anisotropy as u32,
             Val::PartyTp => self.s.party_tp as u32,
+            Val::ModernUi => self.s.modern_ui as u32,
+            Val::ModernScale => self.s.modern_scale,
+            Val::ModernOpacity => self.s.modern_opacity,
+            Val::ResetPlaces => self.s.reset_places as u32,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
@@ -362,6 +391,10 @@ impl SettingsUi {
             Val::Tool(n) => self.tool_set(n, x),
             Val::Aniso => self.s.anisotropy = x as u16,
             Val::PartyTp => self.s.party_tp = x != 0,
+            Val::ModernUi => self.s.modern_ui = x != 0,
+            Val::ModernScale => self.s.modern_scale = x,
+            Val::ModernOpacity => self.s.modern_opacity = x,
+            Val::ResetPlaces => self.s.reset_places = x != 0,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,
@@ -404,6 +437,7 @@ impl SettingsUi {
             Val::Music => (21, (self.s.music / 5) as usize),
             Val::Effects => (21, (self.s.effects / 5) as usize),
             Val::MapOpacity => (19, (self.s.map_opacity.clamp(10, 100) / 5 - 2) as usize),
+            Val::ModernOpacity => (19, (self.s.modern_opacity.clamp(10, 100) / 5 - 2) as usize),
             v => {
                 let list: Vec<u32> = r.choices.iter().map(|c| c.0).collect();
                 (list.len(), pos(&list, self.get(v)))
@@ -435,6 +469,7 @@ impl SettingsUi {
             Val::Music => self.s.music = (i as u32 * 5).min(100),
             Val::Effects => self.s.effects = (i as u32 * 5).min(100),
             Val::MapOpacity => self.s.map_opacity = ((i as u32 + 2) * 5).clamp(10, 100),
+            Val::ModernOpacity => self.s.modern_opacity = ((i as u32 + 2) * 5).clamp(10, 100),
             v => {
                 if let Some(c) = r.choices.get(i) {
                     self.set(v, c.0);
@@ -459,6 +494,7 @@ impl SettingsUi {
             Val::Music => format!("{}%", self.s.music),
             Val::Effects => format!("{}%", self.s.effects),
             Val::MapOpacity => format!("{}%", self.s.map_opacity),
+            Val::ModernOpacity => format!("{}%", self.s.modern_opacity),
             Val::Monitor => self.monitors.iter().find(|m| m.0 == self.s.monitor).or(self.monitors.first()).map_or_else(|| "Default".into(), |m| m.0.clone()),
             Val::Gpu if self.s.gpu.is_empty() => "Default".into(),
             // The name without the driver's part ("AMD Radeon RX 6800 XT (RADV NAVI21)").
@@ -776,6 +812,122 @@ impl SettingsUi {
 
     pub fn title(&self) -> &'static str {
         if self.kind == Kind::Extras { "Extras" } else { "Settings" }
+    }
+}
+
+/// A row as the modern layer draws it: its heading, its help (with when a change shows), its controls.
+pub struct VRow {
+    pub label: String,
+    pub help: String,
+    pub ctl: VCtl,
+}
+
+/// Buttons (caption, the choice that holds), or a slider (stops, the one it is at, the value shown).
+pub enum VCtl {
+    Buttons(Vec<(String, bool)>),
+    Slider { n: usize, at: usize, shown: String },
+}
+
+/// The page as the modern layer draws it; the cursor's row (0 the page name) and column, a slider being edited.
+pub struct View {
+    pub title: &'static str,
+    pub tabs: &'static [&'static str],
+    pub tab: usize,
+    pub rows: Vec<VRow>,
+    pub row: usize,
+    pub col: usize,
+    pub edit: bool,
+    pub help: String,
+}
+
+fn when_text(w: When) -> &'static str {
+    match w {
+        When::Now => "",
+        When::NextZone => " Takes effect at the next zone load.",
+        When::Restart => " Takes effect on restart.",
+        When::Stored => " Saved; not used by this client yet.",
+    }
+}
+
+impl SettingsUi {
+    pub fn view(&self) -> View {
+        let rows = if self.on_mods() {
+            let n = self.s.mods.len();
+            let m = self.mods_ui.as_ref();
+            (0..self.mods_total())
+                .filter_map(|i| {
+                    if i < n {
+                        let on = self.s.mods[i].enabled;
+                        let ctl = VCtl::Buttons(vec![("ON".into(), on), ("OFF".into(), !on), ("Move".into(), false)]);
+                        Some(VRow { label: format!("{}. {}", i + 1, self.s.mods[i].name), help: format!("Mod pack {} of {n}: a higher one's textures win.", i + 1), ctl })
+                    } else {
+                        let p = m?.packs.get(i - n)?;
+                        let name = p.path.file_name().map(|f| f.to_string_lossy().into_owned()).unwrap_or_default();
+                        let label = m.and_then(|m| m.progress(&p.slug)).map_or(name.clone(), |pm| format!("{}%  {name}", pm / 10));
+                        Some(VRow { label, help: format!("{} game file{} to install.", p.files, if p.files == 1 { "" } else { "s" }), ctl: VCtl::Buttons(vec![("Install".into(), false)]) })
+                    }
+                })
+                .collect()
+        } else {
+            self.rows()
+                .iter()
+                .map(|r| {
+                    let ctl = match Self::ctl(r) {
+                        Ctl::Buttons(_) => VCtl::Buttons(r.choices.iter().map(|c| (c.1.to_string(), c.0 == self.get(r.val))).collect()),
+                        Ctl::Slider => {
+                            let (n, at) = self.stops(r);
+                            VCtl::Slider { n, at, shown: self.shown(r) }
+                        }
+                    };
+                    VRow { label: r.label.to_string(), help: format!("{}{}", r.help, when_text(r.when)), ctl }
+                })
+                .collect()
+        };
+        View { title: self.title(), tabs: self.tabs(), tab: self.tab, rows, row: self.row, col: self.col, edit: self.edit, help: self.help() }
+    }
+
+    /// The modern layer's mouse: page `t`.
+    pub fn m_tab(&mut self, t: usize) {
+        if t != self.tab {
+            self.edit = false;
+            self.turn(t as i32 - self.tab as i32);
+        }
+    }
+
+    /// The cursor to a control (row from 1); true when it moved.
+    pub fn m_point(&mut self, row: usize, col: usize) -> bool {
+        if self.edit || self.mods_ui.as_ref().is_some_and(|m| m.held.is_some()) || (row, col) == (self.row, self.col) {
+            return false;
+        }
+        (self.row, self.col) = (row, col);
+        let (mods, row) = (self.on_mods(), self.row);
+        if let Some(m) = self.mods_ui.as_mut().filter(|_| mods) {
+            m.follow(row);
+        }
+        true
+    }
+
+    /// A click on a button: the cursor there and Enter.
+    pub fn m_click(&mut self, row: usize, col: usize) {
+        self.sounds.clear();
+        self.m_point(row, col);
+        if self.on_mods() {
+            self.mods_enter();
+        } else {
+            self.enter();
+        }
+    }
+
+    /// A slider set to stop `i` by the pointer.
+    pub fn m_slide(&mut self, row: usize, i: usize) {
+        self.sounds.clear();
+        let Some(r) = row.checked_sub(1).and_then(|k| self.rows().get(k)) else { return };
+        (self.row, self.col, self.edit) = (row, 0, false);
+        let (_, at) = self.stops(r);
+        if at != i {
+            self.set_stop(r, i);
+            self.sounds.push(Se::Cursor);
+        }
     }
 }
 

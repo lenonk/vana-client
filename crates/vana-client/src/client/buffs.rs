@@ -8,7 +8,7 @@ const WINDOW: &str = "menu    buff";
 
 /// FUN_10227bf0 step 2: the 0x037 ids in order, 0xffff and 0 (KO) skipped, each with its 0x063 end time when the
 /// timer copy has the same id at that index, else 0x7fffffff.
-fn icons(w: &World) -> Vec<(u16, u32)> {
+pub(super) fn icons(w: &World) -> Vec<(u16, u32)> {
     (0..32)
         .filter_map(|i| {
             let id = w.buffs[i];
@@ -21,6 +21,9 @@ fn icons(w: &World) -> Vec<(u16, u32)> {
         .collect()
 }
 
+/// The modern status panel's icons a row (modern/hud.rs).
+pub const MODERN_ROW: usize = 10;
+
 /// FUN_10222150 for the 9-column list: Left / Right one cell, Up / Down a row (staying when there is none; the wrap
 /// rules there are not followed), SE 0001 on a move; Enter (FUN_10227eb0) cancels a cancellable effect: c2s 0x0F1 and
 /// the icon goes at once. Escape does nothing here.
@@ -32,11 +35,13 @@ pub fn key(gu: &GameUi, w: &mut World, key: egui::Key) {
     }
     let n = list.len();
     let at = w.buff_cursor.min(n - 1);
+    // A row is retail's 9 icons, or the modern panel's as it draws them.
+    let row = if w.modern { MODERN_ROW } else { 9 };
     let to = match key {
         egui::Key::ArrowLeft => (at + n - 1) % n,
         egui::Key::ArrowRight => (at + 1) % n,
-        egui::Key::ArrowUp if at >= 9 => at - 9,
-        egui::Key::ArrowDown if at + 9 < n => at + 9,
+        egui::Key::ArrowUp if at >= row => at - row,
+        egui::Key::ArrowDown if at + row < n => at + row,
         // Escape leaves status select mode (seen in retail; the window's own message 6 does nothing).
         egui::Key::Escape => {
             w.log_focus = 0;
@@ -76,7 +81,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// LAB_10228080's label: "%dh" from an hour (at most 99), "%dm" from a minute, seconds below; none at 5 s or less.
-fn label(rem: i32) -> Option<String> {
+pub(super) fn label(rem: i32) -> Option<String> {
     let rem = rem.min(356_400);
     match rem {
         r if r <= 5 => None,

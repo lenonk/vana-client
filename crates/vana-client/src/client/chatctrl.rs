@@ -140,8 +140,68 @@ pub fn key(w: &mut World, key: egui::Key) {
     w.chatctrl = Some(c);
 }
 
+/// FUN_1012cc20: the range by row (table 0x10371b6c, windowps sprites): Say Vicinity, Tell Target only, Party,
+/// Linkshell (2), Unity, Shout Wide area.
+fn range(sel: u16) -> usize {
+    match sel {
+        1 => 284,
+        2 | 8 => 285,
+        3 => 286,
+        4 => 287,
+        5 => 709,
+        6 => 710,
+        _ => 289,
+    }
+}
+
+/// Linkshell `n`'s name while it is equipped.
+fn ls_name_of(w: &World, n: usize) -> Option<String> {
+    let (index, bag) = w.linkshells[n];
+    let e = w.inv.ext.get(&(bag, index)).filter(|_| ls_on(w, n))?;
+    let mut packed = [0u8; 16];
+    packed[..15].copy_from_slice(&e[9..24]);
+    Some(super::linkshell::ls_name(&packed))
+}
+
+/// The window as the modern layer draws it: the cursor, the disabled rows, the values beside rows 2 (the tell name), 4
+/// / 5 (the shells or "No Linkshell") and 6 (the Unity), and the cursor row's range (a windowps sprite).
+pub(super) struct Look {
+    pub sel: u16,
+    pub off: Vec<u16>,
+    pub values: Vec<(u16, String)>,
+    pub range: usize,
+}
+
+pub(super) fn look(w: &World, gu: &GameUi) -> Option<Look> {
+    let c = w.chatctrl.as_ref()?;
+    let tell = match c.tell {
+        -2 => w.tell_name.clone(),
+        -1 => target_name(w),
+        i if i >= 0 => c.names.get(i as usize).cloned(),
+        _ => None,
+    };
+    let none = gu.lobby_msg(0xc, 0x55, "");
+    let f = unity(w);
+    let mut values: Vec<(u16, String)> = tell.into_iter().map(|n| (2, n)).collect();
+    values.push((4, ls_name_of(w, 1).unwrap_or_else(|| none.clone())));
+    values.push((5, ls_name_of(w, 2).unwrap_or(none)));
+    values.push((6, gu.lobby_msg(0xc, 0x1a2 + if f > 11 { 0 } else { f as usize }, "")));
+    Some(Look { sel: c.sel, off: disabled(w), values, range: range(c.sel) })
+}
+
+/// The mouse's cursor move onto row `k`. True when it moved.
+pub(super) fn set_sel(w: &mut World, k: u16) -> bool {
+    let Some(c) = w.chatctrl.as_mut().filter(|c| c.sel != k && (1..=7).contains(&k)) else { return false };
+    c.sel = k;
+    true
+}
+
 /// The mouse: the generic window (winhits.rs).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     let Some(sel) = w.chatctrl.as_ref().map(|c| c.sel) else { return };
     super::winhits::generic(w, gu, WINDOW, sel, 1..=7, p, moved, clicked, right, |w, id| {
         if let Some(c) = w.chatctrl.as_mut() {
@@ -231,6 +291,9 @@ pub fn unity_line(gu: &mut GameUi, w: &World, x: f32, y: f32) {
 /// 283 "Chat Range" and the cursor row's range under it.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(c) = &w.chatctrl else { return rects };
     let off = disabled(w);
     let focused = w.confirm.is_none();
@@ -252,17 +315,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         unity_line(gu, w, x + 80.0, y + 86.0);
         rects.push(win.frame);
     }
-    // FUN_1012cc20: the range by row (table 0x10371b6c): Say Vicinity, Tell Target only, Party, Linkshell (2), Unity,
-    // Shout Wide area.
-    let range = match c.sel {
-        1 => 284,
-        2 | 8 => 285,
-        3 => 286,
-        4 => 287,
-        5 => 709,
-        6 => 710,
-        _ => 289,
-    };
+    let range = range(c.sel);
     if gu.gate_layout(SUBWINDO, sw, sh, None)
         && let Some(m) = gu.stacked_menu(SUBWINDO, sw, sh)
     {

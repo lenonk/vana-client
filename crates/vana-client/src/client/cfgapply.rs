@@ -31,6 +31,8 @@ pub fn apply(w: &mut World, id: u16) {
         0x0e | 0x0f | 0x10 | 0x11 => {
             w.log.cfg = super::logwin::LogCfg::from_config(&w.game);
             w.log.fill();
+            let cfg = w.log.cfg;
+            w.modern_log.anim.fill(&cfg);
         }
         0x9c => w.log.cfg = super::logwin::LogCfg::from_config(&w.game),
         // SE / music level (FUN_10035060 / FUN_10036480): the app sets the mixer.

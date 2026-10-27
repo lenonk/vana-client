@@ -18,7 +18,22 @@ pub struct ChatLog {
     /// Local time each line came in (hour, minute, second), whether it is a chat line (retail stamps only those) and
     /// whether its continuation lines are indented (the mode's flag, FUN_10127870).
     times: Vec<([u8; 3], bool, bool)>,
+    /// Each line's chat mode (record byte 0: its colour and the full log's tab filters, FUN_101299f0), NO_MODE for the
+    /// lines printed without one.
+    modes: Vec<u16>,
+    /// Lines changed in place (condensed battle lines) so far.
+    edits: u64,
+    /// A line that repeats the last one counts on it instead ("Target out of range. (x3)"; BattleMod's cancelmulti):
+    /// on with the modern chat's Condense; the last line's index, text and count.
+    fold: bool,
+    repeat: Option<(usize, String, u32)>,
+    /// Lines restored from the last session (with their divider): never saved again.
+    restored: usize,
 }
+
+pub const NO_MODE: u16 = 0xffff;
+/// Battle messages (print): the modern chat's Battle tab (not retail).
+pub const BATTLE_MODE: u16 = 0xfffe;
 
 impl ChatLog {
     pub fn push(&mut self, s: impl Into<String>) {
@@ -26,23 +41,75 @@ impl ChatLog {
     }
 
     pub fn push_colour(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, false);
+        self.push_line(s, colour, false, false, NO_MODE);
+    }
+
+    /// A battle message's line.
+    pub fn push_battle(&mut self, s: String, colour: [u8; 4]) {
+        self.push_line(s, colour, false, false, BATTLE_MODE);
     }
 
     /// A line whose continuation lines are indented.
     pub fn push_indented(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, true);
+        self.push_line(s, colour, false, true, NO_MODE);
     }
 
     /// A chat line (s2c 0x017 or our sends' echoes), which config 0xb5 stamps.
     pub fn push_chat(&mut self, s: String, colour: [u8; 4], indent: bool) {
-        self.push_line(s, colour, true, indent);
+        self.push_line(s, colour, true, indent, NO_MODE);
     }
 
-    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool) {
+    /// A chat line with its mode.
+    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8) {
+        self.push_line(s, colour, true, indent, mode as u16);
+    }
+
+    fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool, mode: u16) {
         log::debug!(target: "chat", "{}", crate::dat::font::strip_codes(&s));
+        // Players' lines are never folded; system and battle lines are, when the last one is the same.
+        if self.fold
+            && !chat
+            && let Some((k, base, n)) = self.repeat.as_mut()
+            && *k + 1 == self.lines.len()
+            && *base == s
+            && self.lines[*k].1 == colour
+            && self.modes[*k] == mode
+        {
+            *n += 1;
+            self.lines[*k].0 = format!("{base} (x{n})");
+            self.edits += 1;
+            return;
+        }
+        self.repeat = (!chat).then(|| (self.lines.len(), s.clone(), 1));
         self.times.push((super::cfgapply::local_hms(), chat, indent));
+        self.modes.push(mode);
         self.lines.push((s, colour));
+    }
+
+    /// Line `k`'s text replaced (a condensed battle line grown); it no longer counts repeats.
+    pub fn set_text(&mut self, k: usize, s: String) {
+        if let Some(l) = self.lines.get_mut(k) {
+            l.0 = s;
+            self.edits += 1;
+        }
+        if self.repeat.as_ref().is_some_and(|r| r.0 == k) {
+            self.repeat = None;
+        }
+    }
+
+    /// Whether repeated lines fold (the modern chat's Condense).
+    pub fn set_fold(&mut self, on: bool) {
+        self.fold = on;
+    }
+
+    /// How many lines have been changed in place: the logs wrap again when it moves.
+    pub fn edits(&self) -> u64 {
+        self.edits
+    }
+
+    /// The lines' modes, in the lines' order.
+    pub fn modes(&self) -> &[u16] {
+        &self.modes
     }
 
     /// Lines with the time they came in, whether they are chat lines and whether they indent.
@@ -64,6 +131,54 @@ impl ChatLog {
     }
 }
 
+/// A saved chat line (ChatLog::save): its text, colour, mode, time, whether a chat line and indented.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedLine {
+    text: String,
+    colour: [u8; 4],
+    mode: u16,
+    time: [u8; 3],
+    chat: bool,
+    indent: bool,
+}
+
+/// Lines a character's history keeps.
+const HISTORY: usize = 200;
+
+impl ChatLog {
+    /// This session's newest lines to `path` (the modern chat's history across logins; ours, not retail).
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let from = self.lines.len().saturating_sub(HISTORY).max(self.restored);
+        let saved: Vec<SavedLine> = (from..self.lines.len())
+            .map(|k| SavedLine { text: self.lines[k].0.clone(), colour: self.lines[k].1, mode: self.modes[k], time: self.times[k].0, chat: self.times[k].1, indent: self.times[k].2 })
+            .collect();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, serde_json::to_vec(&saved)?)
+    }
+
+    /// The last session's lines from `path` before this one's, dimmed, under a divider; nothing when there are none.
+    pub fn restore(&mut self, path: &std::path::Path, divider: &str) {
+        let Ok(bytes) = std::fs::read(path) else { return };
+        let Ok(saved) = serde_json::from_slice::<Vec<SavedLine>>(&bytes) else { return };
+        if saved.is_empty() {
+            return;
+        }
+        for l in saved {
+            let [b, g, r, a] = l.colour;
+            self.times.push((l.time, l.chat, l.indent));
+            self.modes.push(l.mode);
+            self.lines.push((l.text, [b, g, r, a / 2 + a / 8]));
+        }
+        self.times.push((super::cfgapply::local_hms(), false, false));
+        self.modes.push(NO_MODE);
+        self.lines.push((divider.to_string(), [0x60, 0x60, 0x60, 0x60]));
+        self.repeat = None;
+        self.restored = self.lines.len();
+    }
+}
+
 /// A motion played once over the looping one (scheduler op 0x05): name, ticks played, length, speed.
 #[derive(Clone, Debug)]
 pub struct OneShot {
@@ -81,6 +196,9 @@ struct Msg {
     work: [i32; 5],
     /// A 0x028 record's message (0 main, 1 proc, 2 react): it may also put its number on screen (FUN_1009e090).
     which: Option<u8>,
+    /// Its action's serial (Action::seq), and whether the action has more than one target.
+    seq: u32,
+    multi: bool,
 }
 
 /// Main lines waiting for the attacker's hit ("dada" in its attack scheduler).
@@ -229,6 +347,174 @@ pub fn render(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, cfg: &
     line.lines.into_iter().filter(|l| !l.is_empty()).map(|l| (l, colour)).collect()
 }
 
+/// A battle line the later records of its action merge into (modern chat, not retail): the action, the message, the
+/// line with its number as SLOT, where it is in the log and the numbers so far.
+pub(super) struct Condensed {
+    seq: u32,
+    id: u16,
+    template: String,
+    line: usize,
+    /// The numbers so far, each with whether it was a critical hit.
+    values: Vec<(i32, bool)>,
+}
+
+const SLOT: i32 = 2_000_000_003;
+/// A target name's stand-in in a template (digits: no name has them; it passes the game's text encoding).
+const NAME: &str = "Xq7Zq9";
+
+/// An action's lines on several targets merged into one (BattleMod's condensetargets): the action, the line with the
+/// targets as NAME (plural verb) and the number as SLOT, where it is, whether the name opens it, the targets so far.
+pub(super) struct Targets {
+    seq: u32,
+    template: String,
+    line: usize,
+    first: bool,
+    entries: Vec<(String, i32)>,
+}
+
+/// "a", "a and b", "a, b, and c".
+fn join(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [a] => a.clone(),
+        [a, b] => format!("{a} and {b}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
+/// A merged target line: the names (each with its article) and the numbers in the plural template.
+fn targets_text(g: &Targets) -> String {
+    let names: Vec<String> = g.entries.iter().map(|e| e.0.clone()).collect();
+    let mut names = join(&names);
+    if g.first
+        && let Some(c) = names.chars().next()
+    {
+        names = c.to_uppercase().chain(names.chars().skip(1)).collect();
+    }
+    let values: Vec<String> = g.entries.iter().map(|e| e.1.to_string()).collect();
+    g.template.replacen(NAME, &names, 1).replacen(&SLOT.to_string(), &join(&values), 1)
+}
+
+/// A target as a merged line names it: "the" before a common noun, as the messages do.
+fn target_name(t: &Who) -> String {
+    if t.pc || t.named { t.name.clone() } else { format!("the {}", t.name) }
+}
+
+/// A record of an action on several targets: its target line (the one naming the target, the number all else that
+/// differs) joins the action's earlier one of the same plural text ("Nine, Raven, and Koru take 50, 48, and 45
+/// points of damage."); a first one is printed and kept. True when the whole message was merged.
+fn condense_targets(w: &mut World, bt: &battle::BattleText, m: &Msg, lines: &[(String, [u8; 4])], ctx: &Ctx) -> bool {
+    let Some(target) = ctx.target.clone() else { return false };
+    let rel = relation(w, m.actor, m.target);
+    // The value as a number in the text (SLOT), else as the message reads it (a status id named in the line).
+    let found = [SLOT, m.work[1]].into_iter().find_map(|v| {
+        let mut tc = ctx.clone();
+        tc.work[1] = v;
+        tc.target = Some(Who { name: NAME.into(), ..target.clone() });
+        let single = render(bt, m.id, rel, &tc, &w.game);
+        let k = single.iter().position(|l| l.0.contains(NAME))?;
+        let own = single[k].0.replacen(NAME, &target.name, 1).replacen(&SLOT.to_string(), &m.work[1].to_string(), 1);
+        (single.len() == lines.len() && lines[k].0 == own).then(|| (tc, k, single[k].0.clone()))
+    });
+    let Some((mut tc, k, single)) = found else { return false };
+    tc.target = Some(Who { name: NAME.into(), pc: true, named: true, plural: true, female: false });
+    let Some(mut template) = render(bt, m.id, rel, &tc, &w.game).get(k).map(|l| l.0.clone()).filter(|t| t.contains(NAME)) else { return false };
+    // A possessive ("X's attacks"): each name keeps its own ("Lnxcsfix's and Aurelie's"), not the plural's "X'".
+    let mut name = target_name(&target);
+    if template.contains(&format!("{NAME}'")) {
+        template = template.replacen(&format!("{NAME}'"), NAME, 1);
+        let after = single.split(NAME).nth(1).unwrap_or("");
+        name += after.split(' ').next().unwrap_or("'s");
+    }
+    let entry = (name, m.work[1]);
+    if lines.len() == 1
+        && let Some(g) = w.condensed_targets.iter_mut().find(|g| g.seq == m.seq && g.template == template)
+    {
+        g.entries.push(entry);
+        let text = targets_text(g);
+        w.chat.set_text(g.line, text);
+        return true;
+    }
+    if w.condensed_targets.len() >= 32 {
+        w.condensed_targets.remove(0);
+    }
+    let first = template.starts_with(NAME);
+    w.condensed_targets.push(Targets { seq: m.seq, template, line: w.chat.len() + k, first, entries: vec![entry] });
+    false
+}
+
+/// A record's line as its template: the text with work[`slot`] as SLOT, when the number is all that differs.
+fn template_of(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, slot: usize, line: &str, cfg: &crate::gamecfg::Values) -> Option<String> {
+    let mut tc = ctx.clone();
+    tc.work[slot] = SLOT;
+    let template = render(bt, id, rel, &tc, cfg).into_iter().next()?.0;
+    let own = template.replacen(&SLOT.to_string(), &ctx.work[slot].to_string(), 1);
+    (own == line).then_some(template)
+}
+
+/// A condensed line: the template with the numbers' sum and the numbers after it before the closing stop (a critical
+/// one marked "!"; BattleMod's sumdamage), or with no number its count.
+fn condensed_text(template: &str, values: &[(i32, bool)]) -> String {
+    let slot = SLOT.to_string();
+    if template.contains(&slot) {
+        let sum: i32 = values.iter().map(|v| v.0).sum();
+        let line = template.replacen(&slot, &sum.to_string(), 1);
+        if values.len() < 2 {
+            return line;
+        }
+        let parts: Vec<String> = values.iter().map(|(v, crit)| format!("{v}{}", if *crit { "!" } else { "" })).collect();
+        let (body, stop) = match line.strip_suffix(['.', '!']) {
+            Some(b) => (b, &line[b.len()..]),
+            None => (line.as_str(), ""),
+        };
+        format!("{body} ({}){stop}", parts.join(" + "))
+    } else if values.len() > 1 {
+        format!("{template} (x{})", values.len())
+    } else {
+        template.to_string()
+    }
+}
+
+/// The hit a critical hit's message belongs with (melee 67 -> 1, ranged 353 -> 352): BattleMod's condensecrits.
+fn crit_of(id: u16) -> Option<u16> {
+    match id {
+        67 => Some(1),
+        353 => Some(352),
+        _ => None,
+    }
+}
+
+/// A critical hit joins its action's hit line on the same target, marked "!" (it never starts one: alone it prints as
+/// retail's two lines). True when it joined.
+fn condense_crit(w: &mut World, bt: &battle::BattleText, m: &Msg, ctx: &Ctx) -> bool {
+    let Some(hit) = crit_of(m.id) else { return false };
+    let mut tc = ctx.clone();
+    tc.work[1] = SLOT;
+    let Some(template) = render(bt, hit, relation(w, m.actor, m.target), &tc, &w.game).into_iter().next().map(|l| l.0).filter(|t| t.contains(&SLOT.to_string())) else { return false };
+    let Some(g) = w.condensed.iter_mut().find(|g| g.seq == m.seq && g.id == hit && g.template == template) else { return false };
+    g.values.push((m.work[1], true));
+    w.chat.set_text(g.line, condensed_text(&g.template, &g.values));
+    true
+}
+
+/// A record's line merges into its action's earlier line of the same text but the number ("hits the Hare for 12, 15
+/// points of damage"); a line with no number into its twin ("misses the Hare. (x2)"). True when it merged.
+fn condense(w: &mut World, bt: &battle::BattleText, m: &Msg, which: u8, line: &str, ctx: &Ctx) -> bool {
+    let slot = 1 + which.min(2) as usize;
+    let Some(template) = template_of(bt, m.id, relation(w, m.actor, m.target), ctx, slot, line, &w.game) else { return false };
+    let value = m.work[slot];
+    if let Some(g) = w.condensed.iter_mut().find(|g| g.seq == m.seq && g.id == m.id && g.template == template) {
+        g.values.push((value, false));
+        w.chat.set_text(g.line, condensed_text(&g.template, &g.values));
+        return true;
+    }
+    if w.condensed.len() >= 64 {
+        w.condensed.remove(0);
+    }
+    w.condensed.push(Condensed { seq: m.seq, id: m.id, template, line: w.chat.len(), values: vec![(value, false)] });
+    false
+}
+
 fn print(w: &mut World, m: Msg) {
     let Some(bt) = w.battle.clone() else {
         log::info!("battle message {} before the message tables loaded", m.id);
@@ -252,8 +538,22 @@ fn print(w: &mut World, m: Msg) {
         return;
     }
     let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
-    for (l, c) in render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game) {
-        w.chat.push_colour(l, c);
+    let lines = render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game);
+    if w.modern && w.condense && m.which == Some(0) && condense_crit(w, &bt, &m, &ctx) {
+        return;
+    }
+    if w.modern && w.condense && m.which == Some(0) && m.multi && condense_targets(w, &bt, &m, &lines, &ctx) {
+        return;
+    }
+    if w.modern
+        && w.condense
+        && let (Some(which), [(line, _)]) = (m.which, lines.as_slice())
+        && condense(w, &bt, &m, which, line, &ctx)
+    {
+        return;
+    }
+    for (l, c) in lines {
+        w.chat.push_battle(l, c);
     }
 }
 
@@ -280,7 +580,7 @@ fn record_messages(a: &Action) -> Vec<Msg> {
         let ids = [Some(r.message), r.proc.as_ref().map(|p| p.message), r.react.as_ref().map(|p| p.message)];
         for (which, id) in ids.into_iter().enumerate() {
             if let Some(id) = id.filter(|&id| id != 0) {
-                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8) });
+                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8), seq: a.seq, multi: a.targets.len() > 1 });
             }
         }
     }
@@ -472,7 +772,7 @@ pub(super) fn message_queue(w: &mut World, dt: f32) {
             log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
             w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
         }
-        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
+        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None, seq: 0, multi: false });
     }
 }
 
@@ -485,6 +785,8 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
             one_action(w, &r);
         }
     }
+    w.action_seq = w.action_seq.wrapping_add(1).max(1);
+    let a = &Action { seq: w.action_seq, ..a.clone() };
     if a.category != category::BASIC_ATTACK || a.records().len() < 2 {
         one_action(w, a);
         return;
@@ -501,9 +803,38 @@ fn swing_left(w: &World, actor: u32) -> Duration {
     Duration::from_secs_f32(ticks / 60.0)
 }
 
+/// A spell being cast or a skill being readied, seen in 0x028 category 8 / 7 (the modern target panel; not retail).
+#[derive(Clone, Copy, Debug)]
+pub struct Casting {
+    pub skill: bool,
+    pub id: u16,
+    pub start: Instant,
+    /// The spell's base cast time (the record's; the caster's own speed is not sent): none for a skill.
+    pub secs: Option<f32>,
+}
+
+/// Category 8 "ca" starts a cast, 7 readies a skill (the result's value); any other arg there is the interrupt; a
+/// finish (3, 4, 11) ends it.
+fn track_cast(w: &mut World, a: &Action) {
+    let value = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.value as u16);
+    let start = a.arg & 0xffff == 0x6163;
+    match a.category {
+        category::MAGIC_START | category::SKILL_START if start => {
+            let skill = a.category == category::SKILL_START;
+            let secs = (!skill).then(|| w.actions.as_ref().and_then(|x| x.spell(value)).map(|r| r.cast as f32 / 3.0)).flatten().filter(|&s| s > 0.0);
+            w.casts.insert(a.actor, Casting { skill, id: value, start: Instant::now(), secs });
+        }
+        category::MAGIC_START | category::SKILL_START | category::MAGIC_FINISH | category::SKILL_FINISH | category::MOB_SKILL_FINISH => {
+            w.casts.remove(&a.actor);
+        }
+        _ => {}
+    }
+}
+
 /// 0x028: messages per (target, result) record (FUN_1009c730: main, additional effect, reaction) with
 /// work = [cmd_arg, value, proc value, react value, bit]; melee waits for the attacker's hit.
 fn one_action(w: &mut World, a: &Action) {
+    track_cast(w, a);
     // Our cast finished (category 4, magic file 0xaf0): the spell's recast (asm 0x100a900d).
     if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
         super::magic::set_recast(w, a.arg as u16, a.info);
@@ -538,7 +869,8 @@ fn one_action(w: &mut World, a: &Action) {
             fx_load(w, id);
         }
     }
-    let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
+    let record = a.records().first().map(|(_, r)| (r.kind, r.animation));
+    let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first, record)).flatten();
     // The swing's holds (ops 0x59 / 0x20): the attacker's status changes and reactions wait, the target's status too.
     if let Some((_, _, att, tgt)) = &attack {
         let now = Instant::now();
@@ -581,14 +913,19 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
         _ => r.react.as_ref().map(|p| p.message),
     };
     if let Some(id) = id.filter(|&id| id != 0) {
-        print(w, Msg { id, actor: a.actor, target, work, which: Some(which) });
+        print(w, Msg { id, actor: a.actor, target, work, which: Some(which), seq: a.seq, multi: a.targets.len() > 1 });
     }
 }
 
-/// An actor waits while held by a swing / op 0x20 / 0x59, a skill action's file loading, or a knockback.
+/// An actor waits while held by a swing / op 0x20 / 0x59, a skill action's file loading, or a knockback; a melee
+/// round's target also while the round has swings left to play (retail's one scheduler holds it through them all; our
+/// split round played one hit at a time let it die, and its defeat print, before the killing swing).
 pub(super) fn held(w: &World, id: u32) -> bool {
     let now = Instant::now();
-    w.holds.get(&id).is_some_and(|t| *t > now) || w.loads.get(&id).is_some_and(|l| l.1 > now) || w.knocks.contains_key(&id)
+    w.holds.get(&id).is_some_and(|t| *t > now)
+        || w.loads.get(&id).is_some_and(|l| l.1 > now)
+        || w.knocks.contains_key(&id)
+        || w.rounds.values().any(|(_, rest)| rest.iter().any(|a| a.targets.iter().any(|t| t.id == id)))
 }
 
 /// A running knockback (actor +0x102): velocity per tick, signed speed, decay, constant-phase ticks left, the
@@ -841,7 +1178,18 @@ pub(super) fn swing_patterns(moving: bool, sub: u8) -> (String, String) {
     if moving { (f, i) } else { (i, f) }
 }
 
-pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
+/// FUN_100d46f0 by the hit's record (FUN_10185ea0: kind @4, animation @6): kind 1 animation 1 (the off hand) tries the
+/// sub weapon's `b..?` swings first, 2 / 3 `c..?` / `d..?` (4 "ls05" not handled), then the `a..?` ones.
+pub(super) fn swing_hand(record: Option<(u8, u16)>) -> Option<char> {
+    match record {
+        Some((1, 1)) => Some('b'),
+        Some((1, 2)) => Some('c'),
+        Some((1, 3)) => Some('d'),
+        _ => None,
+    }
+}
+
+pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>, record: Option<(u8, u16)>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
     let moving = moving(w, actor);
     let sub = w.entities.get(&actor).map_or(0, |e| e.sub[2]);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
@@ -849,9 +1197,13 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
     let ch = a.character.clone()?;
     let names = actmotion::scheduler_names(&a.extra, &ch);
     let (first, other) = swing_patterns(moving, sub);
-    let mut pool = sched::matching(names.iter().copied(), &first);
-    if pool.is_empty() {
-        pool = sched::matching(names.iter().copied(), &other);
+    let hand = |p: &str| swing_hand(record).map(|h| format!("{h}{}", &p[1..]));
+    let mut pool = Vec::new();
+    for p in [hand(&first), Some(first.clone()), hand(&other), Some(other.clone())].into_iter().flatten() {
+        pool = sched::matching(names.iter().copied(), &p);
+        if !pool.is_empty() {
+            break;
+        }
     }
     let name = if moving {
         *pool.first()?
@@ -1417,6 +1769,25 @@ mod tests {
         if target == ME { Relation::TargetIsMe } else if actor == ME { Relation::CasterIsMe } else { Relation::Other }
     }
 
+    /// Area hits merged: the plural text from the message table, the targets joined with their articles.
+    #[test]
+    fn targets_merged() {
+        let Some(bt) = load() else { return };
+        let plural = Who { name: NAME.into(), pc: true, named: true, plural: true, female: false };
+        let ctx = Ctx { actor: who(ME), target: Some(plural), me: "Tuxedo".into(), work: [0, SLOT, 0, 0, 0], ..Default::default() };
+        let t = render(&bt, 264, Relation::Other, &ctx, &Default::default())[0].0.clone();
+        assert_eq!(t, format!("{NAME} take {SLOT} points of damage."));
+        // Magic's first record: its second line is the same target line.
+        assert_eq!(render(&bt, 2, Relation::Other, &ctx, &Default::default())[1].0, t);
+        let g = Targets { seq: 1, template: t, line: 0, first: true, entries: vec![("the Wild Rabbit".into(), 50), ("the Orc".into(), 48), ("Raven".into(), 45)] };
+        assert_eq!(targets_text(&g), "The Wild Rabbit, the Orc, and Raven take 50, 48, and 45 points of damage.");
+        // A status by id: no number in the line; a possessive keeps each name's own.
+        let ctx = Ctx { work: [0, 68, 0, 0, 0], ..ctx };
+        let t = render(&bt, 285, Relation::Other, &ctx, &Default::default())[0].0.replacen(&format!("{NAME}'"), NAME, 1);
+        let g = Targets { seq: 1, template: t, line: 0, first: true, entries: vec![("Lnxcsfix's".into(), 68), ("Aurelie's".into(), 68)] };
+        assert_eq!(targets_text(&g), "Lnxcsfix's and Aurelie's attacks are enhanced.");
+    }
+
     /// Replays LSB-built 0x029 / 0x02D / 0x028 bytes through the client's parsers and the message table.
     #[test]
     fn replayed_packets() {
@@ -1435,7 +1806,7 @@ mod tests {
         // The rabbit hits for 7 with a 3-point additional effect, then misses.
         let hit = ActionResult { kind: 1, scale: 1, value: 7, message: 1, proc: Some(Side { kind: 1, info: 0, value: 3, message: 163 }), ..Default::default() };
         let miss = ActionResult { miss: 1, kind: 1, message: 15, ..Default::default() };
-        let a = Action { actor: RABBIT, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ME, results: vec![hit, miss] }] };
+        let a = Action { actor: RABBIT, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ME, results: vec![hit, miss] }], seq: 0 };
         let decoded = parse(&sub(pack(&a)).data);
         let lines: Vec<(String, [u8; 4])> = action_messages(&decoded).into_iter().flat_map(|(id, t, work)| say(id, decoded.actor, t, work)).collect();
         assert_eq!(lines[0], ("The Wild Rabbit hits Tuxedo for 7 points of damage.".to_string(), red));
@@ -1447,6 +1818,28 @@ mod tests {
         let d = parse(&pack(&a));
         let (id, t, work) = action_messages(&d)[0];
         assert_eq!(say(id, d.actor, t, work), [("Tuxedo hits the Wild Rabbit for 12 points of damage.".to_string(), white)]);
+
+        // Condensed (modern chat): the hits of a round as one line, misses counted.
+        let ctx = |work: [i32; 5]| Ctx { actor: who(ME), target: who(RABBIT), me: "Tuxedo".into(), work, ..Default::default() };
+        let line = say(1, ME, RABBIT, [0, 12, 0, 0, 0])[0].0.clone();
+        let t = template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, &line, &cfg).unwrap();
+        assert_eq!(condensed_text(&t, &[(12, false), (15, false), (9, false)]), "Tuxedo hits the Wild Rabbit for 36 points of damage (12 + 15 + 9).");
+        assert_eq!(condensed_text(&t, &[(12, false)]), "Tuxedo hits the Wild Rabbit for 12 points of damage.");
+        assert_eq!(condensed_text(&t, &[(12, false), (30, true)]), "Tuxedo hits the Wild Rabbit for 42 points of damage (12 + 30!).");
+        let miss = say(15, ME, RABBIT, [0; 5])[0].0.clone();
+        let t = template_of(&bt, 15, rel(ME, RABBIT), &ctx([0; 5]), 1, &miss, &cfg).unwrap();
+        assert_eq!(condensed_text(&t, &[(0, false), (0, false)]), "Tuxedo misses the Wild Rabbit. (x2)");
+        // Repeated system lines fold into one with a count; players' lines never do.
+        let mut log = ChatLog::default();
+        log.set_fold(true);
+        for _ in 0..3 {
+            log.push_colour("Target out of range.".into(), [0x80; 4]);
+        }
+        log.push_chat("Raven : rdy?".into(), [0x80; 4], false);
+        log.push_chat("Raven : rdy?".into(), [0x80; 4], false);
+        assert_eq!(log.lines().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), ["Target out of range. (x3)", "Raven : rdy?", "Raven : rdy?"]);
+        // A line whose text is not the template with its number in is left alone.
+        assert_eq!(template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, "something else", &cfg), None);
     }
 
     /// FUN_101275b0 over the layouts, filtered as FUN_10127230 does for a solo player.

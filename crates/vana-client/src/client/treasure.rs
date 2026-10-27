@@ -307,6 +307,10 @@ pub fn key(w: &mut World, key: egui::Key) {
 /// The mouse (the generic window messages 9 / 5 / 6): hovering a row of loot (or Cast Lot / Pass of lootope) moves
 /// the hand there, a click on the hand's child is Enter, a right click on the window is Escape.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(l) = w.loot.clone() else { return };
     // lnowin (shown while lootope is not): the pointer over it hands it the focus (loot's update sends itself message 8,
     // SE 0013); there a click is Enter (Done), a right click Escape.
@@ -405,6 +409,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// greyed once lotted), lnowin at its layout spot unless lootope is up.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let (Some(l), Some(info)) = (&w.loot, w.item_info.clone()) else { return rects };
     let rows = rows(w);
     let focused = l.ope.is_none() && !l.done && w.confirm.is_none();
@@ -474,11 +481,73 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
 
 /// FUN_102041d0: while the pool holds items, partywin shows a chest (fontshp 0x7a) on its top edge near the left end.
 pub fn draw_chest(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
-    if count(w) == 0 {
+    if count(w) == 0 || w.modern {
         return;
     }
     let name = gu.party_window_name().to_string();
     if let Some([x, y, ..]) = gu.window_rect(&name, sw, sh) {
         gu.sprite("font    fontshp", 0x7a, x + 8.0, y - 8.0, 0x8080_8080);
     }
+}
+
+/// A pool row as the modern layer shows it.
+pub(super) struct RowView {
+    pub item: u16,
+    pub qty: u32,
+    /// Our lot (-1 passed, 0 none) and the highest lot with its lotter.
+    pub own_lot: i16,
+    pub high: Option<(u16, String)>,
+}
+
+/// What the modern layer shows: the rows oldest first, loot's cursor (from 1), lootope (its row and cursor, Cast Lot
+/// off once we lotted), lnowin focused.
+pub(super) struct View {
+    pub rows: Vec<RowView>,
+    pub cursor: u16,
+    pub ope: Option<(u16, u16, bool)>,
+    pub done: bool,
+}
+
+pub(super) fn view(w: &World) -> Option<View> {
+    let l = w.loot.as_ref()?;
+    let rows = rows(w)
+        .into_iter()
+        .map(|i| {
+            let s = &w.treasure[i];
+            RowView { item: s.item, qty: s.qty, own_lot: s.own_lot, high: (s.high_lot != 0).then(|| (s.high_lot, s.high_name.clone())) }
+        })
+        .collect();
+    let ope = l.ope.as_ref().map(|o| (o.row, o.cursor, o.own_lot != 0 && o.own_lot != -1));
+    Some(View { rows, cursor: l.cursor, ope, done: l.done })
+}
+
+/// The cursor onto row `k` (from 1) with nothing open over loot. True when it moved.
+pub(super) fn set_cursor(w: &mut World, k: u16) -> bool {
+    let n = rows(w).len() as u16;
+    match w.loot.as_mut().filter(|l| l.ope.is_none() && !l.done && (1..=n).contains(&k)) {
+        Some(l) if l.cursor != k => {
+            l.cursor = k;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// Cast Lot (`lot`) or Pass on row `k` as lootope would: the row's lootope opened on that choice, then Enter.
+pub(super) fn act(w: &mut World, k: u16, lot: bool) {
+    let Some(&slot) = rows(w).get((k as usize).wrapping_sub(1)) else { return };
+    let s = &w.treasure[slot];
+    let ope = Ope { slot: slot as u8, item: s.item, own_lot: s.own_lot, cursor: if lot { 1 } else { 2 }, row: k };
+    if let Some(l) = w.loot.as_mut() {
+        (l.cursor, l.ope, l.done) = (k, Some(ope), false);
+    }
+    key(w, egui::Key::Enter);
+}
+
+/// lnowin's Done: pass on every row not acted on.
+pub(super) fn pass_rest(w: &mut World) {
+    if let Some(l) = w.loot.as_mut() {
+        (l.ope, l.done) = (None, true);
+    }
+    key(w, egui::Key::Enter);
 }

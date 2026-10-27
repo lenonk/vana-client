@@ -18,6 +18,12 @@ pub fn set_code_tables(ids: [[u8; 4]; 256], modes: [[u8; 4]; 256]) {
     *CODE_TABLES.write().unwrap() = Some(Box::new((ids, modes)));
 }
 
+/// An entry of those tables: `k` 0 the colour ids (`1e` from 0x11), 1 the modes (`1f xx`); 0x80808080 before they
+/// are set.
+pub fn code_table(k: usize, xx: usize) -> [u8; 4] {
+    CODE_TABLES.read().ok().and_then(|t| t.as_ref().map(|t| if k == 0 { t.0[xx & 0xff] } else { t.1[xx & 0xff] })).unwrap_or([0x80; 4])
+}
+
 /// Glyph cell size in screen pixels (and in atlas texels for the 1024x2048 atlases).
 pub const CELL: i32 = 16;
 pub const COLUMNS: i32 = 64;
@@ -273,6 +279,19 @@ impl Font {
         glyphs(sjis).into_iter().map(|g| self.advance(g)).sum()
     }
 
+    /// The colour a `1e xx` (kind 0) or `1f xx` (kind 1) code sets, keeping `base`'s alpha (layout_line's rule).
+    pub fn code_colour(&self, kind: u8, xx: u8, base: [u8; 4]) -> [u8; 4] {
+        let tables = CODE_TABLES.read().ok();
+        let table = |k: usize, xx: usize| tables.as_ref().and_then(|t| t.as_ref()).map_or([0x80; 4], |t| if k == 0 { t.0[xx] } else { t.1[xx] });
+        let xx = xx as usize;
+        let c = match kind {
+            0 if xx < 0x11 => self.codes[xx].to_le_bytes(),
+            0 => table(0, xx),
+            _ => table(1, xx),
+        };
+        if kind == 0 && c == [0; 4] { base } else { [c[0], c[1], c[2], base[3]] }
+    }
+
     /// One line at pen (x, y), as FUN_10118d60: 16 px cells, pen += round(advance * scale).
     /// `color` is BGRA with 0x80 = 1.0; gaiji shapes ignore it (drawn with 0x80808080).
     pub fn layout_line(&self, sjis: &[u8], x: i32, y: i32, color: [u8; 4], scale: [f32; 2], out: &mut Vec<Quad>) -> i32 {
@@ -415,6 +434,26 @@ impl Font {
 /// 0x20 pass through as control characters; undecodable pairs become U+FFFD.
 /// Private-use base for two-byte codes standard Shift-JIS has no character for (decode_sjis / encode_sjis).
 const PAIR_BASE: u32 = 0xF0000;
+
+/// The game's own glyphs as Unicode for faces that lack them (the modern interface's): its apostrophe (0x8552) and
+/// curly quotes (0x87B2 / 0x87B3); the other private-use characters (gaiji, pairs Shift-JIS lacks, the in-line colour
+/// codes and phrase bytes kept in plane 16) are left out.
+pub fn plain_char(c: char) -> Option<char> {
+    match c as u32 {
+        0xF8552 => Some('\u{2019}'),
+        0xF87B2 => Some('\u{201C}'),
+        0xF87B3 => Some('\u{201D}'),
+        // Full-width forms (Shift-JIS 81 xx: Kupipi's "pre～sent") as their ASCII, the ideographic space as a space.
+        0xFF01..=0xFF5E => char::from_u32(c as u32 - 0xFEE0),
+        0x3000 => Some(' '),
+        0xE000..=0xF8FF | 0xF0000..=0x10FFFF => None,
+        _ => Some(c),
+    }
+}
+
+pub fn plain(s: &str) -> String {
+    s.chars().filter_map(plain_char).collect()
+}
 
 /// An in-line code `1e xx` / `1f xx` kept in a String as one character, U+100400 + 0x100 x (code - 0x1e) + xx, so a
 /// wrap never splits it and encode_sjis gives the bytes back.

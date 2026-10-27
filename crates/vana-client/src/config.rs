@@ -19,6 +19,15 @@ pub fn data_dir() -> PathBuf {
     app_dir(dirs::data_dir())
 }
 
+/// A character's saved chat lines (the modern chat's history): in the data dir, or beside an FFXI_CONFIG copy.
+pub fn chat_history_path(name: &str) -> PathBuf {
+    let dir = match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("chat"),
+        None => data_dir().join("chat"),
+    };
+    dir.join(format!("{name}.json"))
+}
+
 /// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {
@@ -86,6 +95,11 @@ pub struct Config {
     pub minimap_dock: u32,
     pub minimap_size: u32,
     pub minimap_span: f32,
+    /// Ours (the wheel, as modern MMOs): the camera's rest distance as a share of retail's.
+    pub cam_dist: f32,
+    /// Ours: resting's ticks as timed on the first rest seen, [first heal, interval, the server's look period] in
+    /// seconds (client/resttick.rs).
+    pub rest_tick: Option<[f32; 3]>,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -109,7 +123,54 @@ pub struct Config {
     pub game: crate::gamecfg::GameConfig,
     /// DAT overlays (not retail; dat::overlay): folders under mods_dir(), highest priority first.
     pub mods: Vec<ModRef>,
+    /// Not retail (docs/modern-ui.md): the modern UI layer instead of the retail HUD windows it replaces, its panels'
+    /// places by character, then panel, and the chat window's font size in points.
+    pub modern_ui: bool,
+    /// The modern layer's size in percent of its 1080-line design.
+    pub modern_scale: u32,
+    /// How opaque the modern windows' backgrounds are (0.1 ..= 1).
+    pub modern_opacity: f32,
+    pub modern_places: std::collections::BTreeMap<String, ModernLayout>,
+    pub modern_chat_font: f32,
+    /// The modern edge windows folded to their tabs, by panel (the minimap, Wide Scan).
+    pub modern_folded: std::collections::BTreeMap<String, bool>,
+    /// The Wide Scan flyout's kinds shown: 1 players, 2 NPCs, 4 monsters.
+    pub modern_scan_kinds: u8,
+    /// The modern chat's All tab shows the battle lines too (the Battle tab has them alone).
+    pub modern_battle_in_all: bool,
+    /// The modern chat merges an action's lines that differ only in their number (BattleMod's condensing).
+    pub modern_condense: bool,
+    /// The list search's recent picks by character, newest first (listsearch.rs).
+    pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
 }
+
+/// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
+/// screen, so it keeps its place whatever the Interface Size or the resolution; for the chat window its room in points
+/// (0: the default); or docked on another panel.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ModernPlace {
+    pub x: f32,
+    pub y: f32,
+    pub w: f32,
+    pub h: f32,
+    pub b: f32,
+    pub dock: Option<ModernDock>,
+}
+
+/// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left, or
+/// from its right (`right`) for one placed from the right edge, whose left moves as it folds or grows.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ModernDock {
+    pub to: String,
+    pub gap: f32,
+    pub dx: f32,
+    #[serde(default)]
+    pub right: bool,
+}
+
+/// A character's panel places by panel id.
+pub type ModernLayout = std::collections::BTreeMap<String, ModernPlace>;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct ModRef {
@@ -196,9 +257,21 @@ impl Default for Config {
             minimap_dock: 0,
             minimap_size: 1,
             minimap_span: 160.0,
+            cam_dist: 1.0,
+            rest_tick: None,
             cursor_size: 0,
             auto_sort: 0,
             mods: Vec::new(),
+            modern_ui: false,
+            modern_scale: 60,
+            modern_opacity: 0.85,
+            modern_places: Default::default(),
+            modern_chat_font: 15.0,
+            modern_folded: Default::default(),
+            modern_scan_kinds: 7,
+            modern_battle_in_all: true,
+            modern_condense: true,
+            modern_recent: Default::default(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

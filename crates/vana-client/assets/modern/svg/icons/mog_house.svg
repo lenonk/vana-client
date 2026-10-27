@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="34.821" y1="8.17" x2="34.821" y2="18.041" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="40.93" y1="5.068" x2="40.93" y2="14.092" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8f92"/>
+      <stop offset="0.4" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#8e1f30"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="22.741" x2="32" y2="58.932" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3ddcf"/>
+      <stop offset="1" stop-color="#bdb5a5"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="16.16" x2="32" y2="42.011" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c8b3ee"/>
+      <stop offset="0.42" stop-color="#9b74e0"/>
+      <stop offset="1" stop-color="#4e3a70"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32" cy="34.021" r="3.948" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-5" x1="32" y1="42.293" x2="32" y2="58.932" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="35.044" y1="49.547" x2="35.536" y2="52.336" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>mog_house</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M35.04 6.645 C36.125 4.471 38.369 3 40.93 3 C44.564 3 47.511 5.947 47.511 9.58 C47.511 13.213 44.564 16.16 40.93 16.16 C38.81 16.16 36.914 15.154 35.709 13.584 C35.339 14.362 35.464 15.264 35.757 16.044 C35.85 16.294 35.909 16.551 35.934 16.809 L59.667 37.151 C60.72 38.054 60.601 39.721 59.431 40.466 L54.261 43.756 C53.498 44.242 52.508 44.175 51.816 43.591 L50.989 42.892 L50.989 58.932 C50.989 60.074 50.063 61 48.921 61 L15.079 61 C13.937 61 13.011 60.074 13.011 58.932 L13.011 42.892 L12.184 43.591 C11.492 44.175 10.502 44.242 9.739 43.756 L4.569 40.466 C3.399 39.721 3.28 38.054 4.333 37.151 L29.51 15.571 L29.51 15.571 C29.114 11.619 31.281 8.157 35.04 6.645 Z" fill="#0a1118"/>
+      <path id="antenna" d="M36.942 8.198 C37.446 8.072 37.956 8.379 38.082 8.882 C38.208 9.386 37.902 9.896 37.398 10.022 C34.183 10.826 32.607 13.536 33.82 16.77 C34.003 17.257 33.756 17.798 33.27 17.981 C32.784 18.163 32.242 17.917 32.06 17.431 C30.453 13.145 32.637 9.274 36.942 8.198 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="0.94" stroke-linejoin="round"/>
+      <path id="pompom" d="M45.442 9.58 C45.442 12.071 43.421 14.092 40.93 14.092 C38.439 14.092 36.418 12.071 36.418 9.58 C36.418 7.089 38.439 5.068 40.93 5.068 C43.421 5.068 45.442 7.089 45.442 9.58 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.316" stroke-linejoin="round"/>
+      <path id="walls" d="M15.079 37.781 L32 22.741 L48.921 37.781 L48.921 58.932 L15.079 58.932 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.316" stroke-linejoin="round"/>
+      <path id="roof" d="M5.679 38.721 L32 16.16 L58.321 38.721 L53.151 42.011 L32 24.151 L10.849 42.011 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.316" stroke-linejoin="round"/>
+      <path id="window" d="M35.948 34.021 C35.948 36.202 34.181 37.969 32 37.969 C29.819 37.969 28.052 36.202 28.052 34.021 C28.052 31.84 29.819 30.073 32 30.073 C34.181 30.073 35.948 31.84 35.948 34.021 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.128" stroke-linejoin="round"/>
+      <path id="door" d="M25.89 58.932 L25.89 48.122 C25.89 44.643 28.616 42.293 32 42.293 C35.384 42.293 38.11 44.643 38.11 48.122 L38.11 58.932 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.316" stroke-linejoin="round"/>
+      <path id="knob" d="M36.512 50.942 C36.512 51.618 35.967 52.164 35.29 52.164 C34.613 52.164 34.068 51.618 34.068 50.942 C34.068 50.265 34.613 49.72 35.29 49.72 C35.967 49.72 36.512 50.265 36.512 50.942 Z" fill="url(#linear-gradient-6)"/>
+    </g>
+  </g>
+</svg>

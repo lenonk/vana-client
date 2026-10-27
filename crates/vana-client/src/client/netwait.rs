@@ -207,11 +207,16 @@ impl NetWait {
     }
 }
 
+/// What the wait shows: its text and the bar's progress (the modern layer's panel).
+pub fn view(gu: &GameUi, nw: &NetWait) -> (String, f32) {
+    (nw.text.map_or(String::new(), |t| gu.lobby_msg(8, t as usize, "")), nw.p)
+}
+
 /// Both windows (FUN_102408a0 / FUN_102409a0), centred as the prompts: the status text in netwait's frame, then the
 /// netbar track (lobbywin 81, frameless) with its fill, lobbywin 77 from the track's left edge, 256 p wide, while
 /// 0.01 < p < 1.1.
 pub fn draw(gu: &mut GameUi, nw: &NetWait, w: f32, h: f32) {
-    let text = nw.text.map_or(String::new(), |t| gu.lobby_msg(8, t as usize, ""));
+    let (text, _) = view(gu, nw);
     gu.netwait_window(&text, w, h);
     gu.netbar_window(nw.p, w, h);
 }

@@ -171,7 +171,13 @@ xiloader (`~/ffxi/lab/xiloader`, ceb79a0), Ghidra on the installer. Decompiled o
   engaged monsters stand in btl0 unless their scheduler overrides it (op 0x79).
 - Movement ratio FUN_100c68f0: moved this frame / (ticks * SpeedBase * 0.1 / 60), x1.6 riding; smoothed
   0.25 new + 0.75 old, max 3; 0 at once below 1e-4. Speed @0x1C, SpeedBase @0x1D (x0.1 units/s).
-- Our run speed comes from our own Speed byte in 0x00A (50 -> 5.0 units/s).
+- Our run speed comes from our own Speed byte in 0x00A (50 -> 5.0 units/s), then from every 0x037: flags1 (u32 @0x2C)
+  Speed bits 0..11 -> actor +0x15c, SpeedBase bits 17..24 -> +0x9c (x0.1; FUN_1009d0f0 at 0x1009d3e0). FUN_100a48d0
+  doubles the speed while riding (status 5 / 0x55: FUN_10093ed0 / FUN_10093ef0), caps it at 30 units/s, x1/60 per
+  tick. LSB sends MOUNT_SPEED / 2 (40) while mounted, so a chocobo runs 8.0 units/s.
+- Music 212 ("Dash de Chocobo", the chocobo ride) is 44100 Hz ADPCM, 382 s, no loop point; retail's DirectSound
+  buffer has no frequency control (flags 0x50080 | 0x8000), so it plays at the header rate. Checked against retail
+  by the user 2026-10-26: same speed.
 - Remote entities ease toward the server position at their speed; jumps over 15 units snap.
 
 ## Lobby title screen
@@ -1705,7 +1711,7 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
   (skeleton + 2600). Skirt: FUN_100d0d00(race, 1, 0) = 0x10352348[race * 2 + max(body info[9] - 1, 0)] +
   info[3]: 9800 / 9928, 12976 / 13104, 16152 / 16280, 19328 / 19456, 22504 / 22632, 25904 / 26032,
   29080 / 29208. Dual wield loads 0x103523a4 (40815..) + info[3] and 0x1035236c (40431..) + sub info[3]
-  (+0x88a) with skirts 0x103523b8 / 0x10352380 instead (not implemented).
+  (+0x88a) with skirts 0x103523b8 / 0x10352380 instead (done 2026-10-27: "Dual wield" below).
 - Weapon motion set = main weapon file 0x45 info[3] (FUN_100cea10 case 6): 8392 (main 0) 10 = hand-to-hand,
   8393 (main 1) 2, 8394 / 8395 3, 8396 / 8397 1, 8400 4, 8410 5. A battle file holds btl0/1, wlk1, run1,
   at00..at21, dfm1 / dbm1, gdm1, the swing schedulers ati0..2 atf0 atb0 atr0 atl0, "in 0" / "out0", atk0;
@@ -3141,6 +3147,9 @@ From ~/ffxi/lab/research/effects/footsteps_sound.md section 1.
 - Not done: the zone flag +0x1cf alt name (surface 3 -> 2), the model-scope fses retry, the culled-pass skip
   (+0x840 bits 20..21), 'fvib', the footstep-effects option DAT_10444158 (taken as on). The i900 wading ripple and
   point 0x35: done (section "The bone-0 drop, the wade point 0x35").
+- Sneak (2026-10-26): the sound needs entity +0x128 bit 8 clear. 0x00D / 0x00E set it from u32 @0x28 bit 21 (asm
+  0x1009a5d2, 0x1009c228), 0x037 from u32 @0x38 bit 2 (0x1009d591); LSB's SilenceFlag, set while GM-hidden or under
+  Sneak. Dust and footprints still happen. Ours: Marks.silent, footsteps::steps. Seen live: Silent Oil on Lnxcsfix.
 
 ### Keyframe sampling in the update stream (FUN_100499d0, jump table 0x1004d08c = op - 1) (2026-10-22)
 - FUN_10053520 / FUN_10053740 (linear / eased, by S[s+1] & 0xf) sample with the **first key's value (+0x34)
@@ -10372,3 +10381,186 @@ info window mode 3; scrollbar Owner::MonCustom.
   (FUN_102233xx): the radii always count. Ours: target.rs `range_tint` subtracts ours and the target's (the pet
   origin entry is not modelled).
 - LSB: ours 0.4 (Mithra), NPCs 0 (Rumoie); a monster's not seen yet.
+
+## The default chat mode's setters (2026-10-26)
+- FUN_101ad670 (set the chat mode) has three callers in 30261006_0: /chatmode (FUN_10080830), the Chat window's Enter
+  (chatctrl, all.c line 228303) and FUN_101b83e0's message 0x200 (mode 2, Say). A channel command with text ("/p hi")
+  does not change the default mode; the line after it goes to the old mode. The modern UI (ours) keeps the last of
+  Say, Party, Linkshell, Linkshell 2 and Unity as the default; tells, shouts and emotes do not stick.
+
+## The full log's tabs and the log filters (2026-10-26)
+Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables read raw from the unpacked DLL).
+- Tab list .data 0x1036f940 (built by FUN_10138700, filtered at each open by FUN_10138800): eleven (filter, fep pair)
+  entries; English order Window 1 (filter 0), Window 2 (8, only with config 0xb4), Say (3), Tell (4), Party (1),
+  Linkshell (2), Linkshell 2 (7), Assist E (10), Assist J (9), Unity (6), Shout (5); Japanese swaps the Assist pair.
+  There is no "All" tab: Window 1 is it while the second window is off. logwin.rs's "Filter 0 (all)" comment holds
+  only then.
+- The filter (FUN_101299f0, jump table 0x10129b10) by the line's mode byte (record byte 0, the colour's): Party 5 /
+  0xd / 0xd2 (trusts), Linkshell 6 / 0xe, Say 1 / 9, Tell 4 / 0xc, Shout 2 / 0xa / 3 / 0xb (Yell included), Unity
+  0xd3 / 0xd4, Linkshell 2 0xd5 / 0xd6, Assist J 0xdb / 0xdc, Assist E 0xdd / 0xde (own echo / others'). Emotes,
+  messages, NPC talk, battle and system lines, the linkshell message (0xcd / 0xd9 / 0xda) and /echo show in no
+  channel tab.
+- Windows 1 / 2 (FUN_10129b40 / FUN_10129b80) use config 0xb9 / 0xba and 0xbb / 0xbc (the Log page's bits via the
+  mode's colour id, FUN_10129bb0); window 1 shows everything while the second window is off, and the 0x017 GM bit
+  always. Rows reach the small windows only through their filter (FUN_10128ce0); every row goes to the history store.
+- Key function 0x11 (Num+, Ctrl / Alt + F) is the full log's next tab (message 8, wrapping, SE 0002); no previous;
+  it opens on Window 1. Channel tabs gather about 50 rows back from the store *(inf: wrapped rows)*.
+- Resolves "filters 1..8 not decoded" above (the 2019 FUN_10125940).
+
+## Modern UI sweep fixes (2026-10-26)
+
+- Zone-line death pose: LSB's 0x037 carries status 3 (Death) for a character leaving by a zone line (isDead() counts
+  status Disappear) while HP is left; ours keeps the old status for a 2 / 3 with HP > 0 *(inf: retail never sees it)*.
+- Modern text on retail windows (GameUi::shown, font::plain_char) drops plane 16 too: the in-line colour codes
+  (CODE_BASE, `1e 02` .. `1e 01` round event item names) drew as tofu in the choice menus.
+- Retail windows draw under every egui panel: the modern status icons hide while a retail window (the hand-over, the
+  item pickers) covers them, as retail's layer-0 icons are drawn over; Timers keeps clear of the command column.
+- The modern command menu hides while FUN_1015fa00's walk suspends the main menu (mcrmenu over it: World.main_off).
+- Modern panels for: the area picker (arealist, every row), the search results and the person menu (scresult /
+  scoption), Region Info's menu, the moogle menus (myroom / mogext, storage, mogpost, jobchang / jobcselu with the
+  levels); the auto-translate list over the chat line (fep's candidates, a page of seven). Their rules and keys stay
+  the retail modules'.
+- The top bar follows the modern command menu's cursor (retail row help, else the category's rows).
+- LSB tells no seller of an auction sale: the buyer alone gets 0x04C, a DB trigger puts the gil in the seller's
+  delivery box (auctionutils.cpp). Nothing for a client to show at the time.
+- Modern panels also for: Settings / Extras (Settings::view: tabs in rows of six, buttons, sliders, the option's
+  help on hover, the heading's while the cursor holds it), Help Desk's pages (helpdesk / faqmain), the Link List (one
+  people list with the search results) and the Log Out / Shut Down prompt (modern::confirm).
+- Config: the gamma Red / Green / Blue headings (nine in all); a list page shows its window's help.
+- The full log's Numpad + (key function 0x11) cycles its tabs in modern too.
+- Captions read from the menu sprites (render/ui.rs caption_runs): the apostrophe is the comma raised 4 px ("San
+  d'Oria"); no gap counts around an apostrophe, after "(" or before ")"; a word's first capital leaves a wider gap
+  before its small letters ("Beastmaster", "Rune Fencer"). The caption sets draw I and l alike: an I inside a small
+  word is l ("Select Character"), a word's l before a consonant I ("Invisible", "Inventors'"). Checked over every
+  caption of every menu, old against new: only those changed.
+- Modern text (font::plain_char): the game's apostrophe and curly quotes as Unicode, full-width forms FF01..FF5E as
+  ASCII (Kupipi's "pre～sent"), U+3000 as a space; the chat panel's lines and the area names go through it too.
+  GameUi's modern runs take the in-line codes kept as one character (CODE_BASE) as colours, so event item names in
+  the choice menus keep their colour (seen live: Arvilauge's "VCS registration cards.").
+- /map (FUN_1007d2c0) and the Map row (FUN_101f7810(0)) have no Mog House check: there they open ZoneNo's map, the
+  city's, and LSB answers Wide Scan with the zone's entities. The minimap and the Wide Scan list show the city in the
+  Mog House as retail would.
+- The Wide Scan flyout's filter (ours): kind toggles (config modern_scan_kinds) and a name field.
+- The receive Delivery Box shows the look-only inventory list (equipped items grey) beside post1 / post2
+  (FUN_1014ce80); seen live in modern with the moogle panel stepped right of it.
+- Rest ticks (ours, user 2026-10-27; client/resttick.rs): LSB's /heal (c2s 0x0E8) adds the Healing effect with a 10 s
+  tick (map.HEALING_TICK_DELAY); healing.lua heals from the second tick, so the first heal is 20 s in. Effects are only
+  looked at every 3 s (zone_entities.cpp charTick, m_EffectCheckTime + 3s; TickEffects runs the ticks whose time has
+  passed), so a tick lands on the first look after its time: gaps of 9, 9, 12 s. No packet says when: the first rest
+  with four rises in HP or MP is timed and kept in config rest_tick as [first heal, interval, look period] (live:
+  22.1 s, 9.9 s snapped to 10, 3.0 s); after that the party window's strip under its title counts to the next tick,
+  each on the first look at or after its time, the looks placed by any rise seen in the zone and the server's start
+  bounded by this rest's rises. Seen live (Lnxcsfix): the countdown reached 0 as HP rose 310 -> 346, then 12 s.
+- Captions read by the letters' ink (render/ui.rs ink: the light pixels; "font    font" letters sit in fully opaque
+  dark cells, menu2fon's in alpha-0x44 glows) and by both gaps (ink and cell; each misses gaps the other shows). Retail
+  spaces its captions unevenly ("Set tings" and "Set as" have the same gaps), so a doubtful gap (1..3 px over the
+  line's usual) is settled by the game's own English words (menu help, titles, lobby, area names, item formats,
+  augments: about 3200): the fewest spaces leaving every part a known word of three letters or more, or a common
+  short one; none such, the gap rule. Never a space before ":" "." "," "!" "?" or after "/"; always after ":" and ","
+  and around "&"; a digit after a letter or "." is spaced ("Rank 1", "Misc. 2"). Letters overlap up to 3 px past the
+  line's usual (cmbmenu's "Crystal Synthesis" read "Cry stal Synthe sis"). Checked over every caption of every menu:
+  fixed "Settings", "Server", "Thumbs Up", "Copy to Clipboard", "Price History", "By Resistance", "Battle Content",
+  "Mode Switch", "Display Name Only", "Missions & Quests", "Crystal Synthesis", the colons; colorank's colon (aligned
+  in its own column) is its own run. Left: ptc1prog's "Whole patchprogress" (that window is never shown).
+- Modern Synthesis and trade (modern/craft.rs over synth.rs / trade.rs, which keep every rule and key; their retail
+  draws and mouse are left out in modern): cmbmenu as the menu column and the crystal list in its yellow; tskill1 as
+  the crystal tile with its element, eight material tiles (a red cross on one not held in mode 2) and the window's own
+  OK / Cancel; the history with the favourites starred (retail's keytops3 101) and cmbhwin's two rows as buttons; the
+  hand-over (our name, eight tiles, the gil, OK / Cancel) and player trade with the partner's side, their OK lighting
+  their name; the inventory as one list of every row in the modules' colours. A click on an item puts it in the
+  cursor's slot, the first empty one when the cursor is on OK or Cancel (set_row, then the module's Enter). The count
+  asked (itemctrl's "-", "+", "1", "All") and the gil (moneyctr: "-" / "+" by the step, x10 / /10 the step, All and
+  0 set outright, the step's digit underlined) sit in the panel. Seen live (Lnxcsfix, 2026-10-27): the crystal list,
+  logs placed and taken back by mouse, Arrowwood Lumber made by clicking OK, the history and Favorite / Unfavorite,
+  the hand-over to Arvilauge with 10 gil (no onTrade: nothing taken). Player trade not tried live (no second player).
+- Modern macro windows (modern/macros.rs over macroedit.rs, esmenu.rs and esedit.rs, which keep every rule and key;
+  their retail draws and mouse are left out in modern): mcrmenu as the menu column; the forty books in one list (the
+  active one starred, mcr_page and the row set from the book) with mcrselop beside it and the name field in its row;
+  the palettes as two rows of ten keycaps (digit, title) with the sets as tabs (Macros::switch) and mcrbedit's rows
+  as buttons on the cursor's macro; the editor with Prev / Next, the title and six lines (a click edits, the
+  module's text input types), mcrledit's rows as buttons on the cursor's line. Edit Equip. Set: the page as tabs and
+  its twenty sets with mcresmn beside them; the slot editor as the grid of sixteen tiles (an item's icon, Remove's
+  cross, Keep the slot's name), mcrmogc's sixteen containers as tabs and one list (Remove / Keep, then the items in
+  the module's colours). The palette shown while Ctrl or Alt is held: its ten keys over the chat window (the screen's
+  bottom while the chat window has faded), the cursor's lit. Seen live (Lnxcsfix, 2026-10-27): every page above, a
+  line typed and kept over a relog then deleted, Bronze Sword put in Set001's Main through c2s 0x052 / s2c 0x116 and
+  set back to Keep, the Ctrl palette.
+- A faded chat window's rect lies at the screen's bottom edge: what stands on the chat window (the modern prompt,
+  the held palette) stands on the screen's bottom then.
+- LSB loses an NM's drops (seen 2026-10-27, Porphyrion in Upper Delkfutt's Tower, six Delkfutt Keys "always"): the
+  player switched to another Gigas, LSB dropped Porphyrion's claim 3 s later (mob_controller.cpp DoCombatTick: an
+  owner whose PClaimedMob is another mob abandons it), and Valaineral's weapon skill killed it; TakeWeaponskillDamage
+  claims only for player attackers, so it died unowned and DistributeRewards gave no drops or EXP. Trust melee does
+  reclaim for the master (battle_entity.cpp ClaimMob for any attacker). Server side; not changed (no LSB patches).
+
+## Zone lines: the per-frame segment test (2026-10-27)
+
+- User report: the Mog House entrance in Ru'Lude Gardens did nothing. The zone has one Mog House line, `zmrmzmrn`
+  at (48.99, 17.19, -79.99), 12 x 10 x 10, under the floor of the lift beside the Elevator Button (LSB event 75,
+  zone event 0x4b: "Enter the residential area?", then the player walks onto the lift and the script lowers its own
+  body 0.05 a tick from y 10 to 15 while thread npc02b lowers the lift; fade `fdo2`, op 0x47 sends the spot, end).
+  LSB ignores that 0x05C (onEventUpdate does not return 1: a mode 2 reply, the old place).
+- FUN_1008b100 (from the per-frame actor pass, 0x10096969) runs every frame with our actor in (+0x120 bit 9), not
+  zoning (DAT_10487e48) and no request pending (DAT_1048098e == 0); it does not look at events or input.
+  FUN_10181510 -> FUN_10175910(actor +4, model +0x34): each 'z' / 'Z' rect with a second name dword (8-character
+  names) maps both points into its unit box; a hit is either point inside or the segment crossing one of its faces
+  (FUN_101768a0 over the 6 planes at 0x10376bc0). A hit: FUN_100a6070(0), DAT_10482f1e = 1 (the zone-line fade-out,
+  60 ticks in FUN_1008abe0), DAT_1048098e = 1. FUN_1008abe0 sends 0x05E once the fade is done and the zone-in state
+  (DAT_104807f0 byte 3) is 0, then DAT_1048098e = 2; FUN_1009ee60 mode 5 about us (a reset) clears it.
+- So the event's draw override (the model) sinking into the box while the actor's own place stays at the button is
+  what zones you in retail. Ours tested only our own place, and only while a move key was held.
+- Ours: every frame (in the scene, not dead, nothing pending), Region::touches(our place, event::own_pose or our
+  place); a hit during an event waits for its end (LSB blocks 0x05E in an event), then 0x05E as before. The 5 s
+  resend and the 8 s give-up stay *(not retail: retail sends once and re-arms only on a mode 5 reset)*. Test
+  dat::zone::tests::zone_line_segments. Live (Lnxcsfix, 2026-10-27): Elevator Button, Yes, the ride; at the event's
+  end `zone line zmrmzmrn`, then the Jeuno Mog House (zone 243 at 0, 0, 0, music 126).
+
+## Dual wield (2026-10-27)
+
+- User report: Nine (Mithra NIN/THF, a Wakizashi in each hand: main and sub model 310) swung twice but the second blade
+  was not in her hand. Engaged, we loaded the one-weapon battle files, whose motions leave the sub weapon's bones at the
+  hip: the blade stuck out sideways behind her while the left hand swung empty.
+- FUN_100cd3e0 (+0x8b5): a sub-slot model is a weapon (dual wield) unless its id (low 12 bits) is in a shield range
+  [0, 0x3f], [0x75, 0x8f], [0x1d7, 0x1ff], [0x280, 0x2bf]. FUN_100cea10 case 7 then takes the sub file's info[3] (@0x33)
+  as +0x88a and zeroes +0x87d (the upper-body file pick, skeleton + 1 + it); a shield keeps info[5] there.
+- Engaging (state 0 -> 1 at 0x10089f46 in the old build): +0x8b5 picks FUN_100cf900 over FUN_100cf650. It loads the
+  race base file FUN_100d0d00(race, 0, 0) (as the one-weapon loader), then FUN_100d0dc0(race, 1 / 2): table 0x103523a4
+  + main info[3] and 0x1035236c + sub info[3], then FUN_100d0d00(race, 1, 1 / 2): skirts 0x103523b8 / 0x10352380
+  [race * 2 + max(skirt - 1, 0)] + the same sets; a set of -1 skips its file. Tables (u16 x 9 / x 18, unchanged in
+  30261006_0 at 0x1035d754..): dual main 40815 40815 42095 43375 44655 45935 45935 47215 48495, dual sub 40431 40431
+  41711 42991 44271 45551 45551 46831 48111; skirts in dat/motionfile.rs. Mithra, set 3, skirt 2: 47218 / 46834 /
+  47474 / 47090. The main file holds ati4 / ati5, atf0.., "in 0" / "out0", in10 / ot10; the sub file bti4 / bti5,
+  btf0 btb0 btr0 btl0, in20 / ot20.
+- The swing (FUN_100d4600 -> FUN_100d46f0): the hit's record (FUN_10185ea0: the action's records of 0x34, +8 the
+  0x2c-byte result FUN_10185a20 parsed, its u16 @4 kind and @6 animation) picks the scheduler's first letter: kind 1
+  with animation 1 (LSB LEFT_ATTACK, the off hand) 'b', 2 'c', 3 'd' (kicks), 4 the fixed "ls05" (a throw), then the
+  'a' set. With +0x8b5 a 'b' scheduler calls the model's vtable +0x250(1) *(not traced: no effect seen; the after-image
+  comes from the scheduler's own file)*.
+- Ours: dat/motionfile.rs dual_wield / battle_files (PcMotion.dual = the sub's info[3]), dat/character.rs (the upper
+  file pick zeroed), combat::swing_hand (start_attack gets the round's record). Test dual_wield_files. Live
+  (Lnxcsfix NIN 30, two Wakizashi, a Wild Rabbit in West Ronfaure): battle files [47218, 46834, 47346, 46962], both
+  blades in hand, records "kind 1 anim 0" then "kind 1 anim 1" played ati5 then bti4; out0 sheathed both at the hips.
+- /equip (FUN_1007b390) looks an item up with FUN_101efff0(.., 1, 1) -> FUN_101f0060: the first flag skips items whose
+  +8 (LockFlg: equipped, bazaar) is set, the second items an /equip took under 2 s ago (FUN_101efee0 marks, six slots,
+  FUN_101eff30 checks; the clock DAT_10492e10+0xc counts whole seconds of timeGetTime), so `/equip main` then
+  `/equip sub` on a pair takes both. FUN_1007b1c0 first: the slot already wears an item of that name: nothing. Ours
+  matched the first by name, the one in the main hand, and refused 7 0x8e. Fixed (textcmd::find_free).
+
+## Our upscale pack: every texture through Upscayl Standard 4x (2026-10-27; not retail)
+
+texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standard-4x) after a comparison page.
+- tex-export: every stock IMG chunk (DatIndex::open_stock: no mods) once by an FNV key over size and pixels, as PNG,
+  with manifest.tsv (file id, chunk, key, name): 131,017 chunks in 47,911 files, 33,363 unique images (762 Mpx);
+  files with images named menu* / font* / cntg* / map* / ex3_* left out (pixel-cell UI, fonts, Primer pictures,
+  maps), and images whose 4x passes 4096 a side.
+- Upscayl CLI (/usr/share/upscayl/bin/upscayl-bin) leaks RAM per image (4.5 GB after 14k in one folder run):
+  ~/ffxi/lab/scratch/upscale/tools/batch.py runs it per 1,500 hard links (it skips symlinks), ~150 s a batch.
+- tex-pack: each manifest file rebuilt from the stock one with its images re-encoded (texpresso ClusterFit; DXT1 for
+  a DXT1 original, else DXT3 with the alpha halved to the PS2 scale the client doubles), every encoding cached by key
+  (files share images), ids sharing a file built once, built files kept (resumable). A chunk's size field is 19 bits
+  of 16-byte units (8 MB): 26 images (4x of 512 x 1024 DXT3 and up) are halved until they fit (zone 100 broke before).
+- Result: ~/.local/share/vana-client/mods/vana-upscale, 35,770 DATs, 29 GB, every file's chunk walk checked. The
+  overlay takes its IMG chunks by name like any pack; it joins the Mods list disabled at the bottom.
+- Compared in vana-client (zone-shot / char-shot / npc-shot with FFXI_CONFIG copies: stock, the HD packs, ours):
+  https://claude.ai/artifact/7GyTPK1BW21D5i8jkZkWmF. Its cost is the HD packs' (4x textures, GPU mips, the upload
+  budget).

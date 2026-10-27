@@ -10,10 +10,10 @@ use crate::audio::Ui;
 use crate::fx::sched::Who;
 use std::time::{Duration, Instant};
 
-const TSKILL1: &str = "menu    tskill1";
-const CMBMENU: &str = "menu    cmbmenu";
+pub(super) const TSKILL1: &str = "menu    tskill1";
+pub(super) const CMBMENU: &str = "menu    cmbmenu";
 const CMBHLST: &str = "menu    cmbhlst";
-const CMBHWIN: &str = "menu    cmbhwin";
+pub(super) const CMBHWIN: &str = "menu    cmbhwin";
 const ITEMCTRL: &str = "menu    itemctrl";
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -786,6 +786,9 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{generic, over};
+    if w.modern {
+        return;
+    }
     let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k);
     // A picker row: hover moves the cursor, a click on it is Enter.
     let list = |w: &mut World, (scroll, cursor): (usize, usize), n: usize, set: fn(&mut World, usize)| {
@@ -1149,6 +1152,139 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     w.synth.shown.as_ref().filter(|s| matches!(s.result, 0 | 0xc) && s.item != 0).map(|s| (s.item, None))
 }
 
+/// The modern layer's view (this module keeps every rule and key): cmbmenu, the crystal list, the history with
+/// cmbhwin, and tskill1 with its picker and the count asked.
+pub(super) struct View {
+    /// cmbmenu: its cursor, its rows off (the 23 s rule), whether it has the focus.
+    pub menu: Option<(u16, bool, bool)>,
+    /// The crystal list: its rows and the cursor's row.
+    pub crystals: Option<(Vec<crate::inventory::Slot>, usize)>,
+    /// The history (newest first), cmbhlst's cursor, cmbhwin's while it has the focus, whether either has it.
+    pub history: Option<(Vec<Record>, u16, Option<u16>, bool)>,
+    pub win: Option<WinView>,
+}
+
+/// tskill1: the crystal and its element, the slots (item, count, missing in mode 2), the cursor and focus.
+pub(super) struct WinView {
+    pub crystal: u16,
+    pub element: Option<u16>,
+    pub found: bool,
+    pub slots: [(u16, u32, bool); 8],
+    pub cursor: u16,
+    pub on_slots: bool,
+    pub on_list: bool,
+    /// The picker (none in mode 2): rows, their colours, the cursor's row.
+    pub picker: Option<(Vec<crate::inventory::Slot>, Vec<u32>, usize)>,
+    /// The count asked: value, most, whether it is the amount to make (ours) rather than a stack's.
+    pub count: Option<(u32, u32, bool)>,
+    pub complete: bool,
+    pub history: bool,
+}
+
+pub(super) fn view(w: &World) -> View {
+    let s = &w.synth;
+    let free = w.confirm.is_none();
+    let m = s.menu.as_ref();
+    let menu = m.filter(|m| s.win.is_none() && m.history.is_none()).map(|m| (m.sel, menu_off(w), m.crystals.is_none() && free));
+    let crystals = m.filter(|m| s.win.is_none() && m.history.is_none()).and_then(|m| m.crystals).map(|(sc, cu)| (crystal_rows(w), sc + cu));
+    let away = s.win.as_ref().is_some_and(|x| x.focus == Focus::Away) && free;
+    let history = m.and_then(|m| m.history).map(|(cur, fav)| (s.history.clone(), cur, fav, away));
+    let win = s.win.as_ref().map(|x| {
+        let picker = (x.from != From::History).then(|| {
+            let rows = picker_rows(w);
+            let tints = rows.iter().map(|r| tint(w, x, r)).collect();
+            (rows, tints, x.list.0 + x.list.1)
+        });
+        let count = match x.focus {
+            Focus::Qty => x.qty.map(|(_, _, v, max)| (v, max, false)),
+            Focus::Amount(v, max, _) => Some((v, max, true)),
+            _ => None,
+        };
+        let element = match x.crystal.1 {
+            0x1000..=0x1007 => Some(x.crystal.1 - 0x1000),
+            0x108e..=0x1095 => Some(x.crystal.1 - 0x108e),
+            0x196a..=0x1971 => Some(x.crystal.1 - 0x196a),
+            _ => None,
+        };
+        WinView {
+            crystal: x.crystal.1,
+            element,
+            found: x.found,
+            slots: std::array::from_fn(|i| if x.slots[i].0 != 0 || x.missing[i] { (x.slots[i].1, x.slots[i].2, x.missing[i]) } else { (0, 0, false) }),
+            cursor: x.cursor,
+            on_slots: x.focus == Focus::Slots && free,
+            on_list: x.focus == Focus::List && free,
+            picker,
+            count,
+            complete: complete(x),
+            history: x.from == From::History,
+        }
+    });
+    View { menu, crystals, history, win }
+}
+
+/// The modern layer's mouse: cmbmenu's cursor to `c`; true when it moved.
+pub(super) fn set_menu(w: &mut World, c: u16) -> bool {
+    let Some(m) = w.synth.menu.as_mut().filter(|m| m.crystals.is_none()) else { return false };
+    let moved = m.sel != c;
+    m.sel = c;
+    moved
+}
+
+/// The crystal list's cursor onto row `k`.
+pub(super) fn set_crystal(w: &mut World, k: usize) -> bool {
+    let Some(c) = w.synth.menu.as_mut().and_then(|m| m.crystals.as_mut()) else { return false };
+    let moved = c.0 + c.1 != k;
+    *c = super::post::list_at(k);
+    moved
+}
+
+/// cmbhlst's cursor onto record `c` (tskill1 follows, as the keys do), cmbhwin's while it has the focus.
+pub(super) fn set_history(w: &mut World, c: u16) -> bool {
+    let Some((cur, fav)) = w.synth.menu.as_ref().and_then(|m| m.history) else { return false };
+    if let Some(f) = fav {
+        if let Some(m) = w.synth.menu.as_mut() {
+            m.history = Some((cur, Some(c)));
+        }
+        return f != c;
+    }
+    if cur == c || c == 0 || c as usize > w.synth.history.len() {
+        return false;
+    }
+    if let Some(m) = w.synth.menu.as_mut() {
+        m.history = Some((c, None));
+    }
+    if let Some(s) = w.synth.win.as_mut() {
+        s.focus = Focus::Away;
+    }
+    refresh(w);
+    true
+}
+
+/// tskill1's cursor onto child `c` (the picker closes; in mode 2 only Synthesize and Cancel take it).
+pub(super) fn set_slot(w: &mut World, c: u16) -> bool {
+    let Some(s) = w.synth.win.as_mut() else { return false };
+    let free = matches!(s.focus, Focus::Slots | Focus::List) || (s.focus == Focus::Away && matches!(c, 9 | 10));
+    if !free {
+        return false;
+    }
+    let moved = s.cursor != c || s.focus != Focus::Slots;
+    (s.focus, s.cursor) = (Focus::Slots, c);
+    moved
+}
+
+/// The picker's cursor onto row `k`, the picker taking the focus for the cursor's slot (the first empty one when the
+/// cursor is on Synthesize or Cancel).
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(s) = w.synth.win.as_mut().filter(|s| s.from != From::History && matches!(s.focus, Focus::Slots | Focus::List)) else { return false };
+    if !(1..=8).contains(&s.cursor) {
+        s.cursor = s.slots[..8].iter().position(|x| x.0 == 0).map_or(1, |i| i as u16 + 1);
+    }
+    let moved = s.focus != Focus::List || s.list.0 + s.list.1 != k;
+    (s.focus, s.list) = (Focus::List, super::post::list_at(k));
+    moved
+}
+
 /// cmbhlst moved to (200, 48) (FUN_101e2b60): per record newest first the icon at half size at (+3, +6 + 18k), the
 /// name in the game font at (+21, +5 + 18k), the favourite (keytops3 101) at (+166, +5 + 18k); the bar keytops3 428 at
 /// (0, +6) on the cursor row while focused. cmbhwin at (384, 48), its rows disabled with no record.
@@ -1197,6 +1333,10 @@ fn draw_history(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, cur:
 /// (+0x24, +4), the slots' icons and counts; the picker list at (200, 48) and itemctrl.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return rects;
+    }
     let Some(info) = w.item_info.clone() else { return rects };
     if let Some((cur, fav)) = w.synth.menu.as_ref().and_then(|m| m.history) {
         rects.extend(draw_history(gu, w, &info, cur, fav, sw, sh));

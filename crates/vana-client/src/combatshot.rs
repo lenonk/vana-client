@@ -63,10 +63,10 @@ fn replay(bt: &BattleText, mob: &str) -> Vec<(String, [u8; 4])> {
     };
     let atk0 = u32::from_le_bytes(*b"atk0");
     let res = |m: u16, v: u32| ActionResult { kind: 1, message: m, value: v, ..Default::default() };
-    act(Action { actor: ME, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: MOB, results: vec![res(1, 12)] }] });
+    act(Action { actor: ME, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: MOB, results: vec![res(1, 12)] }], seq: 0 });
     let proc = ActionResult { proc: Some(Side { kind: 1, info: 0, value: 3, message: 163 }), ..res(1, 7) };
-    act(Action { actor: MOB, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: ME, results: vec![proc, ActionResult { miss: 1, ..res(15, 0) }] }] });
-    act(Action { actor: ME, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: MOB, results: vec![res(1, 9)] }] });
+    act(Action { actor: MOB, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: ME, results: vec![proc, ActionResult { miss: 1, ..res(15, 0) }] }], seq: 0 });
+    act(Action { actor: ME, category: category::BASIC_ATTACK, arg: atk0, info: 0, targets: vec![ActionTarget { id: MOB, results: vec![res(1, 9)] }], seq: 0 });
     let mut lines = lines;
     for (p, two) in [(message_packet(0x29, ME, MOB, [0, 0], 6), false), (message_packet(0x2d, ME, ME, [50, 0], 8), true), (message_packet(0x2d, ME, ME, [2, 0], 9), true)] {
         let m = if two { battle_message2(&p) } else { battle_message(&p) };

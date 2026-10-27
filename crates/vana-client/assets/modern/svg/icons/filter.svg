@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="10.398" x2="32" y2="58.069" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b5d8f5"/>
+      <stop offset="0.42" stop-color="#79b8ec"/>
+      <stop offset="1" stop-color="#3c5c76"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="20.827" y1="13.377" x2="20.827" y2="28.275" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d0e6f8"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="30.597" y1="1.448" x2="33.403" y2="17.362" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>filter</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M3 9.107 C3 6.142 5.398 3.744 8.363 3.744 L55.637 3.744 C58.602 3.744 61 6.142 61 9.107 L61 9.703 C61 12.626 58.667 14.999 55.759 15.064 L40.64 33.044 L40.64 50.124 C40.64 50.883 40.247 51.587 39.601 51.985 L26.69 59.93 C25.237 60.824 23.36 59.774 23.36 58.069 L23.36 33.044 L8.241 15.064 C5.333 14.999 3 12.626 3 9.703 Z" fill="#0a1118"/>
+      <path id="funnel" d="M7.171 10.398 L56.829 10.398 L38.455 32.247 L38.455 50.124 L25.545 58.069 L25.545 32.247 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="shine" d="M12.634 13.377 L25.048 28.275 L29.021 28.275 L17.599 13.377 Z" fill="url(#linear-gradient-2)" opacity="0.45"/>
+      <path id="rim" d="M8.363 5.929 L55.637 5.929 C57.395 5.929 58.815 7.349 58.815 9.107 L58.815 9.703 C58.815 11.461 57.395 12.881 55.637 12.881 L8.363 12.881 C6.605 12.881 5.185 11.461 5.185 9.703 L5.185 9.107 C5.185 7.349 6.605 5.929 8.363 5.929 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

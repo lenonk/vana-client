@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="10.151" x2="32" y2="58.815" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b0c7e8"/>
+      <stop offset="0.42" stop-color="#6f9ad6"/>
+      <stop offset="1" stop-color="#384d6b"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="28.276" x2="32" y2="57.574" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6288bc"/>
+      <stop offset="1" stop-color="#2a3b51"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="6.178" x2="32" y2="13.13" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="31.131" y1="4.725" x2="32.869" y2="14.583" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>legs</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M27.444 3.993 C28.091 3.374 28.966 3 29.914 3 L34.086 3 C35.034 3 35.909 3.374 36.556 3.993 L47.394 3.993 C49.693 3.993 51.565 5.865 51.565 8.164 L51.565 11.144 C51.565 12.055 51.268 12.915 50.752 13.615 L53.052 58.704 C53.116 59.952 52.119 61 50.87 61 L35.973 61 C34.84 61 33.895 60.134 33.796 59.006 L32 38.48 L30.204 59.006 C30.105 60.134 29.16 61 28.027 61 L13.13 61 C11.881 61 10.884 59.952 10.948 58.704 L13.248 13.615 L13.248 13.615 C12.732 12.915 12.435 12.055 12.435 11.144 L12.435 8.164 C12.435 5.865 14.307 3.993 16.606 3.993 Z" fill="#0a1118"/>
+      <path id="trousers" d="M15.613 10.151 L48.387 10.151 L50.87 58.815 L35.973 58.815 L33.192 27.034 L30.808 27.034 L28.027 58.815 L13.13 58.815 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="creases" d="M21.326 28.967 C21.355 28.557 21.711 28.248 22.122 28.278 C22.532 28.307 22.841 28.663 22.811 29.074 L20.825 56.882 C20.796 57.292 20.439 57.601 20.029 57.572 C19.619 57.542 19.31 57.186 19.339 56.776 Z M42.674 28.967 L44.661 56.776 C44.69 57.186 44.381 57.542 43.971 57.572 C43.561 57.601 43.204 57.292 43.175 56.882 L41.189 29.074 C41.159 28.663 41.468 28.307 41.878 28.278 C42.289 28.248 42.645 28.557 42.674 28.967 Z" fill="url(#linear-gradient-2)" opacity="0.6"/>
+      <path id="waistband" d="M16.606 6.178 L47.394 6.178 C48.486 6.178 49.38 7.072 49.38 8.164 L49.38 11.144 C49.38 12.236 48.486 13.13 47.394 13.13 L16.606 13.13 C15.514 13.13 14.62 12.236 14.62 11.144 L14.62 8.164 C14.62 7.072 15.514 6.178 16.606 6.178 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="buckle" d="M29.914 5.185 L34.086 5.185 C34.85 5.185 35.476 5.811 35.476 6.575 L35.476 12.733 C35.476 13.498 34.85 14.123 34.086 14.123 L29.914 14.123 C29.15 14.123 28.524 13.498 28.524 12.733 L28.524 6.575 C28.524 5.811 29.15 5.185 29.914 5.185 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

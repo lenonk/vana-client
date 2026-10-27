@@ -41,6 +41,7 @@ mod net;
 mod render;
 mod secret;
 mod sounddump;
+mod texpack;
 mod uishot;
 mod inventory;
 mod invshot;
@@ -215,6 +216,32 @@ enum Cmd {
         slot: u32,
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
+    },
+    /// Save the images (IMG chunks) of the game's own DAT files (never a mod's) as PNGs: every image of the given ids, or
+    /// with --random N one image each from N random files that hold any.
+    TexDump {
+        #[arg(value_parser = parse_num)]
+        ids: Vec<u32>,
+        #[arg(long)]
+        random: Option<usize>,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Every stock image once (by content) as a PNG plus manifest.tsv, for an upscaler (texpack.rs).
+    TexExport {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// A mod folder from upscaled PNGs: each file in the export's manifest rebuilt with its images as DXT.
+    TexPack {
+        /// The tex-export folder (its manifest.tsv).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// The upscaled PNGs.
+        #[arg(long)]
+        upscaled: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
     },
     /// Decode a menu DAT (default 79, the US lobby): images, sprite sheets and a listing.
     UiDump {
@@ -455,6 +482,37 @@ enum Cmd {
         bench: u32,
         #[arg(long)]
         out: PathBuf,
+    },
+    /// The modern UI layer offscreen: its panels with sample values and every window frame, over a screenshot.
+    ModernShot {
+        #[arg(long, default_value_t = 1920)]
+        width: u32,
+        #[arg(long, default_value_t = 1080)]
+        height: u32,
+        /// Interface Size in percent (config modern_scale).
+        #[arg(long, default_value_t = 60)]
+        scale: u32,
+        #[arg(long)]
+        backdrop: Option<PathBuf>,
+        #[arg(long)]
+        out: PathBuf,
+        /// The chat's font size (config modern_chat_font).
+        #[arg(long, default_value_t = 15.0)]
+        chat_font: f32,
+        /// Another body face (with --font-strong for titles), and a list panel in place of the frames.
+        #[arg(long, requires = "font_strong")]
+        font: Option<PathBuf>,
+        #[arg(long)]
+        font_strong: Option<PathBuf>,
+        /// The main menu and a submenu in a row style: framed, hairline, soft, gilt, bevel.
+        #[arg(long)]
+        rows: Option<String>,
+        /// The panels, the menu and an edge window in a border style: pack, hairline, gilt, corners, shadow.
+        #[arg(long)]
+        borders: Option<String>,
+        /// The windows' background opacity (config modern_opacity).
+        #[arg(long, default_value_t = 0.85)]
+        opacity: f32,
     },
     /// Disassemble a zone's event scripts (event DAT), with dialogue text inlined.
     EventDump {
@@ -1016,6 +1074,10 @@ fn main() -> Result<()> {
             println!("bounds {} .. {}; wrote {}", mesh.min, mesh.max, out.display());
             Ok(())
         }
+        Cmd::ModernShot { width, height, scale, backdrop, out, chat_font, font, font_strong, rows, borders, opacity } => {
+            let list = font.is_some();
+            client::modern_shot(width, height, scale, backdrop.as_deref(), &out, &client::ModernShotOpts { chat_font, font: font.zip(font_strong), list, rows, borders, opacity })
+        }
         Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, world, help_time, bench, out, .. } => {
             client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, world, frame, view, help_time, width, height, bench }, &out)
         }
@@ -1378,6 +1440,9 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
+        Cmd::TexDump { ids, random, out } => tex_dump(&ids, random, &out),
+        Cmd::TexExport { out } => texpack::export(&out),
+        Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
         Cmd::TopbarShot { out, fade, menu, menu_swap, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, menu_swap.as_deref(), target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),
@@ -1545,6 +1610,57 @@ fn run_with_progress(opts: &install::Options) -> Result<()> {
         }
         worker.join().unwrap()
     })
+}
+
+/// `tex-dump`: a file's images as `<id>_<k>_<name>.png`; with `random`, one random image from each of that many random
+/// files that hold images.
+fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result<()> {
+    let cfg = config::Config::load();
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
+    std::fs::create_dir_all(out)?;
+    let mut seed = [0u8; 8];
+    getrandom::fill(&mut seed).map_err(|e| anyhow::anyhow!("random bytes: {e}"))?;
+    let mut state = u64::from_le_bytes(seed) | 1;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let images = |id: u32| -> Vec<dat::zone::Texture> {
+        let Ok(bytes) = index.read(id) else { return Vec::new() };
+        let Ok(chunks) = dat::chunks(&bytes) else { return Vec::new() };
+        chunks.iter().filter(|c| c.kind == 0x20).filter_map(|c| dat::zone::parse_img(c.data).ok()).collect()
+    };
+    let save = |id: u32, k: usize, t: &dat::zone::Texture| -> Result<()> {
+        let name: String = t.name.trim().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+        let path = out.join(format!("{id}_{k}_{name}.png"));
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&path)?), t.width, t.height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.write_header()?.write_image_data(&t.rgba)?;
+        println!("{} {}x{}", path.display(), t.width, t.height);
+        Ok(())
+    };
+    for &id in ids {
+        for (k, t) in images(id).iter().enumerate() {
+            save(id, k, t)?;
+        }
+    }
+    if let Some(n) = random {
+        let (mut got, mut tries) = (0, 0);
+        while got < n && tries < 20000 {
+            tries += 1;
+            let id = (next() % 0x10000) as u32;
+            let imgs = images(id);
+            if imgs.is_empty() {
+                continue;
+            }
+            let k = (next() % imgs.len() as u64) as usize;
+            save(id, k, &imgs[k])?;
+            got += 1;
+        }
+    }
+    Ok(())
 }
 
 fn dump_msi(path: &PathBuf, out: &PathBuf) -> Result<()> {
@@ -1884,7 +2000,7 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             fx.reg.audit = Some(fx::Audit::default());
             let (a, t) = if category == 11 { (SWEEP_MOB, SWEEP_PC) } else { (SWEEP_PC, if category == 5 { SWEEP_PC } else { SWEEP_MOB }) };
             let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim as u16, ..Default::default() };
-            let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }] };
+            let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }], seq: 0 };
             fx.on_action(&action, None);
             let (mut n, mut kicks, mut peak) = (0, 0usize, 0.0f32);
             let started = std::time::Instant::now();
@@ -2057,7 +2173,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let files = [8392u32, 9672, 7072, 1300];
     fx.preload(&files);
     let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim, ..Default::default() };
-    let action = net::action::Action { actor: 0x0001_0001, category, arg: if category == 1 { u32::from_le_bytes(*b"atk0") } else { anim as u32 }, info: 0, targets: vec![net::action::ActionTarget { id: 0x0100_0001, results: vec![result] }] };
+    let action = net::action::Action { actor: 0x0001_0001, category, arg: if category == 1 { u32::from_le_bytes(*b"atk0") } else { anim as u32 }, info: 0, targets: vec![net::action::ActionTarget { id: 0x0100_0001, results: vec![result] }], seq: 0 };
     let camera = render::Camera { eye: v3(eye), target: (c + t) / 2.0 + Vec3::new(0.0, -1.2, 0.0), up: Vec3::NEG_Y, fov_y: 50f32.to_radians() };
     let paths: Vec<PathBuf> = (0..frames).map(|i| out.with_file_name(format!("{}_{i:02}.png", out.file_stem().unwrap().to_string_lossy()))).collect();
     let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();
@@ -2079,7 +2195,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
             match (&dust, fx_file) {
                 (Some(d), _) => {
                     let name = <[u8; 4]>::try_from(d.as_bytes()).ok();
-                    fx.footstep(0x0001_0001, c, *b"0000", name.filter(|n| n != b"fmrk"), name == Some(*b"fmrk"), false, 101);
+                    fx.footstep(0x0001_0001, c, Some(*b"0000"), name.filter(|n| n != b"fmrk"), name == Some(*b"fmrk"), false, 101);
                 }
                 (None, Some(n)) => {
                     let who = fx::sched::Who::Actor(0x0001_0001);

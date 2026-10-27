@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="6.174" x2="32" y2="57.818" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eeb0e5"/>
+      <stop offset="0.42" stop-color="#e070d0"/>
+      <stop offset="1" stop-color="#703868"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="23.455" x2="32" y2="30.606" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+  </defs>
+  <title>tell</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.185 49.965 L12.233 59.712 C10.414 60.758 8.301 58.865 9.142 56.942 L14.249 45.269 C7.377 41.047 3 34.44 3 27.031 C3 14.264 15.971 3.989 32 3.989 C48.029 3.989 61 14.264 61 27.031 C61 39.797 48.029 50.072 32 50.072 C31.051 50.072 30.112 50.036 29.185 49.965 Z" fill="#0a1118"/>
+      <path id="bubble" d="M5.185 27.031 C5.185 15.51 17.192 6.174 32 6.174 C46.808 6.174 58.815 15.51 58.815 27.031 C58.815 38.551 46.808 47.887 32 47.887 C30.879 47.887 29.774 47.833 28.69 47.729 L11.144 57.818 L17.04 44.342 C9.889 40.596 5.185 34.242 5.185 27.031 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="dots" d="M17.003 27.031 C17.003 25.054 18.602 23.455 20.579 23.455 C22.555 23.455 24.154 25.054 24.154 27.031 C24.154 29.007 22.555 30.606 20.579 30.606 C18.602 30.606 17.003 29.007 17.003 27.031 Z M28.425 27.031 C28.425 25.054 30.024 23.455 32 23.455 C33.976 23.455 35.575 25.054 35.575 27.031 C35.575 29.007 33.976 30.606 32 30.606 C30.024 30.606 28.425 29.007 28.425 27.031 Z M39.846 27.031 C39.846 25.054 41.445 23.455 43.421 23.455 C45.398 23.455 46.997 25.054 46.997 27.031 C46.997 29.007 45.398 30.606 43.421 30.606 C41.445 30.606 39.846 29.007 39.846 27.031 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

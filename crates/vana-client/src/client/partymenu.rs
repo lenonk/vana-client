@@ -632,6 +632,25 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
+/// The windows as the modern page draws them (none while a party-list pick hides the menu): the label sprites
+/// swapped in, the languages spoken, the alarm chosen.
+pub(super) fn views(w: &World) -> Vec<super::modern::MenuWin> {
+    let Some(m) = w.partymenu.as_ref().filter(|m| !m.hidden) else { return Vec::new() };
+    m.stack
+        .iter()
+        .map(|win| {
+            let mut labels = swaps(w, win.name);
+            labels.extend(find_child(win.name).map(|c| (c, if seeker(w).is_some() { 79 } else { 82 })));
+            let marked = match win.name {
+                LANGS => LANG_BITS.iter().enumerate().filter(|(_, b)| m.langs & 1 << **b != 0).map(|(r, _)| r as u16 + 1).collect(),
+                ALARM => vec![w.game.get(0xc7) as u16 + 1],
+                _ => Vec::new(),
+            };
+            super::modern::MenuWin { name: win.name, sel: win.sel, off: disabled(w, win.name), labels, marked, values: Vec::new() }
+        })
+        .collect()
+}
+
 /// While an invite is pending the party window shows keytops3 69 centred on its top-left corner (FUN_102041d0).
 pub fn draw_invite_icon(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     if w.invite.is_none() {

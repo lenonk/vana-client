@@ -1,0 +1,23 @@
+{
+  "palette": {
+    "charcoal": "#0a1118",
+    "surface": "#14212c",
+    "bronze": "#b88b49",
+    "gold": "#e4c077",
+    "focus": "#79b8ec",
+    "hp": "#e94c5b",
+    "mp": "#419ee6",
+    "tp": "#dba13b"
+  },
+  "fonts": {
+    "display": "Cinzel or comparable fantasy serif",
+    "ui": "Inter",
+    "log": "JetBrains Mono"
+  },
+  "interaction": {
+    "combat": "keyboard-first",
+    "exploration": "mouse-friendly, keyboard fully supported",
+    "storage": "drag-and-drop and keyboard transfer"
+  },
+  "asset_resolution": "SVG sources + PNG 2x"
+}

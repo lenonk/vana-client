@@ -899,6 +899,29 @@ fn draw_naming(gu: &mut GameUi, w: &World, nm: &Naming, sw: f32, sh: f32) -> Opt
     Some(win.frame)
 }
 
+/// The modern page's view (none while link11 or link12 shows retail's): each shell row with its shell's name and
+/// colour, the cursor, and the submenu.
+pub(super) fn modern_view(w: &World) -> Option<(Vec<(Row, String, u32)>, usize, Option<super::modern::MenuWin>)> {
+    let l = w.linkshell.as_ref().filter(|l| l.naming.is_none() && w.linklist.is_none())?;
+    let rows = rows(w)
+        .into_iter()
+        .map(|r| {
+            let e = ext(w, r.bag, r.slot);
+            let (name, t) = if group(&e) == 0 { (String::new(), tint(7, 7, 7)) } else { (ls_name(&e[9..24]), shell_tint(&e)) };
+            (r, name, t)
+        })
+        .collect();
+    let sub = l.sub.as_ref().map(|s| super::modern::MenuWin {
+        name: s.name,
+        sel: s.sel,
+        off: s.off.clone(),
+        labels: if matches!(s.name, HOLDER | SACK | PEARL) { vec![(2, 122)] } else { Vec::new() },
+        marked: Vec::new(),
+        values: Vec::new(),
+    });
+    Some((rows, l.cursor, sub))
+}
+
 /// link6 (or link11 in its place), link5 (FUN_101f6a60: rows from (+3, +3) 18 apart, cells per FUN_101f4bb0 types
 /// 0x46 / 0x19 / 0x27, the windowps 75 cursor bar at (+0, +4) while focused, the empty text 7 0x68 at (+35, +27)),
 /// then the submenu.

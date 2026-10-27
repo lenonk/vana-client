@@ -90,7 +90,7 @@ impl ListWin {
 
 /// What a category row opens.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Cat {
+pub(super) enum Cat {
     Magic(u16, bool),
     Ability(u16),
     Ranged,
@@ -108,7 +108,7 @@ pub struct Cats {
 
 /// Rows (child id, opens) top to bottom: mgcmenu FUN_1013f750 (list mode), magselec FUN_1013f680 (cast mode, no
 /// Trust), abimenu FUN_1013fa70, abiselec FUN_1013f7f0 (Mount sits above Pet in both).
-fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
+pub(super) fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
     match menu {
         "menu    mgcmenu" => &[(1, Cat::Magic(1, true)), (2, Cat::Magic(2, true)), (3, Cat::Magic(5, true)), (4, Cat::Magic(4, true)), (5, Cat::Magic(3, true)), (6, Cat::Magic(6, true)), (7, Cat::Magic(7, true)), (8, Cat::Magic(8, true))],
         "menu    magselec" => &[(1, Cat::Magic(1, false)), (2, Cat::Magic(2, false)), (3, Cat::Magic(5, false)), (4, Cat::Magic(4, false)), (5, Cat::Magic(3, false)), (6, Cat::Magic(6, false)), (7, Cat::Magic(7, false))],
@@ -124,10 +124,63 @@ fn cat_rows(menu: &str) -> &'static [(u16, Cat)] {
     }
 }
 
+/// A category row's name (the windows draw them as sprites): spell types 1 White .. 8 Trust, ability types 4 traits,
+/// 1 abilities, 3 weapon skills, 2 pet commands, 0x14 Monster Skills (Monstrosity's own words in its windows).
+pub(super) fn cat_label(menu: &str, cat: Cat) -> &'static str {
+    let mon = menu.starts_with("menu    mp_");
+    match cat {
+        Cat::Magic(ty, _) => type_label(ty),
+        Cat::Ability(4) if mon => "Traits",
+        Cat::Ability(1) if mon => "Monster Abilities",
+        Cat::Ability(ty) => ability_label(ty),
+        Cat::Ranged => "Ranged Attack",
+        Cat::Mount => "Mounts",
+        Cat::Friends => "Friend List",
+        Cat::Emote => "Emotes",
+    }
+}
+
+/// A spell type's name (record +2; 0 every type).
+pub(super) fn type_label(ty: u16) -> &'static str {
+    match ty {
+        1 => "White Magic",
+        2 => "Black Magic",
+        3 => "Summoning Magic",
+        4 => "Ninjutsu",
+        5 => "Songs",
+        6 => "Blue Magic",
+        7 => "Geomancy",
+        8 => "Trust",
+        _ => "Magic",
+    }
+}
+
+/// An ability type's name.
+pub(super) fn ability_label(ty: u16) -> &'static str {
+    match ty {
+        1 => "Job Abilities",
+        2 => "Pet Commands",
+        3 => "Weapon Skills",
+        4 => "Job Traits",
+        0x14 => "Monster Skills",
+        _ => "Abilities",
+    }
+}
+
+/// The open list's row `id` under the cursor, scrolled into view. False when it is not in the list.
+pub(super) fn focus_row(win: &mut ListWin, id: u16) -> bool {
+    let Some(at) = win.rows.iter().position(|&r| r == id) else { return false };
+    if at < win.scroll || at >= win.scroll + VISIBLE {
+        win.scroll = at.saturating_sub(VISIBLE / 2).min(win.rows.len().saturating_sub(VISIBLE));
+    }
+    win.cursor = at - win.scroll;
+    true
+}
+
 /// Table 0x10386159 by ability type: (the type Esc goes back to, the kind: subwindo mode and cost check).
 const ABILITY_TYPES: [(u8, u8); 24] = [(0, 2), (0, 2), (0, 5), (0, 4), (0, 0), (0, 0), (2, 6), (0, 0), (1, 2), (1, 8), (2, 6), (1, 3), (1, 3), (1, 3), (1, 2), (1, 8), (1, 3), (1, 2), (2, 8), (1, 2), (0x14, 9), (1, 2), (1, 2), (1, 2)];
 
-fn ability_kind(ty: u8) -> u8 {
+pub(super) fn ability_kind(ty: u8) -> u8 {
     ABILITY_TYPES.get(ty as usize).map_or(0, |t| t.1)
 }
 
@@ -141,7 +194,7 @@ pub fn spell_recast(w: &World, s: u16) -> f32 {
 }
 
 /// Seconds left on an ability's 0x119 timer (FUN_10225120; timer 900 none).
-fn ability_recast(w: &World, timer: u16) -> f32 {
+pub(super) fn ability_recast(w: &World, timer: u16) -> f32 {
     w.ability_recast.get(&timer).map_or(0.0, |t| t.saturating_duration_since(Instant::now()).as_secs_f32())
 }
 
@@ -172,7 +225,7 @@ fn order_mut<'a>(w: &'a mut World, aix: bool) -> Option<&'a mut super::macros::O
 
 /// FUN_1022c3a0's rows: known spells (0x0AA) in the mix.dat order, by type and exclusion; cast mode needs 0x119 seen,
 /// the job / level rule, SCH / GEO main for flags 8 / 0x20, and for blue magic 0x200..0x2df a set spell (s2c 0x044).
-fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
+pub(super) fn magic_rows(w: &World, ty: u16, list_mode: bool, exclude: u32) -> Vec<u16> {
     let (Some(acts), Some(st)) = (w.actions.as_ref(), w.stats.as_ref()) else { return Vec::new() };
     order(w, false, &w.spells_known)
         .into_iter()
@@ -226,7 +279,7 @@ fn recall(w: &World, win: &mut ListWin) {
 }
 
 /// FUN_1022c990 / FUN_102243d0 store the cursor row's id at close; ours keeps it as the cursor moves.
-fn remember(w: &mut World) {
+pub(super) fn remember(w: &mut World) {
     let Some(win) = w.ability.as_ref().or(w.magic.as_ref()) else { return };
     let key = (win.kind != Kind::Magic, win.list_mode && win.kind == Kind::Magic, win.ty);
     if let Some(id) = win.at() {
@@ -265,7 +318,7 @@ pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
 }
 
 /// FUN_10226650: the owned mounts (s2c 0x0AE bits) in moix.dat order; none before the first 0x0AE.
-fn mount_rows(w: &World) -> Vec<u16> {
+pub(super) fn mount_rows(w: &World) -> Vec<u16> {
     let Some(bits) = w.mount_bits else { return Vec::new() };
     let order: Vec<u16> = w.macros.as_ref().map_or_else(|| (0..0x40).collect(), |m| m.moix.clone());
     order.into_iter().filter(|&id| id < 64 && bits & (1 << id) != 0).collect()
@@ -324,12 +377,12 @@ pub fn open_emote(w: &mut World) {
     w.cats = None;
 }
 
-fn emote_entry(w: &World, id: u16) -> Option<EmoteEntry> {
+pub(super) fn emote_entry(w: &World, id: u16) -> Option<EmoteEntry> {
     w.emote_tree.as_ref()?.iter().find(|e| e.id == id).cloned()
 }
 
 /// FUN_102253e0 / FUN_10225430: a job emote (0x4c..0x61) or chair (0x63..0x6e) not unlocked (s2c 0x11A).
-fn emote_locked(w: &World, id: u16) -> bool {
+pub(super) fn emote_locked(w: &World, id: u16) -> bool {
     match id {
         0x4c..=0x61 => w.emote_jobs & (1 << (id - 0x4c)) == 0,
         0x63..=0x6e => w.emote_chairs & (1 << (id - 0x63)) == 0,
@@ -338,11 +391,11 @@ fn emote_locked(w: &World, id: u16) -> bool {
 }
 
 /// FUN_10226d80: the mount refusals: the status checks, then the shared recast (group 7 0x4c).
-fn mount_check(w: &World) -> Option<usize> {
+pub(super) fn mount_check(w: &World) -> Option<usize> {
     status_check(w).or_else(|| w.mount_recast.is_some_and(|t| t > Instant::now()).then_some(0x4c))
 }
 
-fn mount_name(w: &World, id: u16) -> String {
+pub(super) fn mount_name(w: &World, id: u16) -> String {
     w.names.as_ref().and_then(|n| n.mount(id as u32)).map_or_else(String::new, |m| m.0)
 }
 
@@ -363,7 +416,7 @@ pub fn open_cats(w: &mut World, menu: &'static str) {
 }
 
 /// A status check shared by both lists: fishing, mounted, healing, sitting, a place without actions.
-fn status_check(w: &World) -> Option<usize> {
+pub(super) fn status_check(w: &World) -> Option<usize> {
     let s = w.my_motion.status;
     match s {
         6 => Some(0x4d),
@@ -376,7 +429,7 @@ fn status_check(w: &World) -> Option<usize> {
 }
 
 /// FUN_1022cf30: the group 7 line refusing a spell, or None.
-fn magic_check(w: &World, s: u16) -> Option<usize> {
+pub(super) fn magic_check(w: &World, s: u16) -> Option<usize> {
     if let Some(m) = status_check(w) {
         return Some(m);
     }
@@ -405,7 +458,7 @@ fn magic_check(w: &World, s: u16) -> Option<usize> {
 const SILENT: usize = usize::MAX;
 
 /// FUN_10224b70: the line refusing an ability, or None (traits: "Job traits are always active.").
-fn ability_check(w: &World, i: u16) -> Option<usize> {
+pub(super) fn ability_check(w: &World, i: u16) -> Option<usize> {
     let a = w.actions.as_ref()?.abilities.get(i as usize)?.clone();
     if a.kind == 4 {
         return Some(0x5e);
@@ -440,7 +493,7 @@ fn list_icon(icon: u16, hd: u16, standard: bool) -> (&'static str, usize) {
     }
 }
 
-fn row_icon(w: &World, kind: Kind, id: u16) -> Option<(&'static str, usize)> {
+pub(super) fn row_icon(w: &World, kind: Kind, id: u16) -> Option<(&'static str, usize)> {
     let standard = w.game.get(0x99) & 4 != 0;
     let acts = w.actions.as_ref()?;
     Some(match kind {
@@ -458,11 +511,11 @@ pub fn list_icon_of(w: &World, spell: bool, id: u16) -> Option<(&'static str, us
     row_icon(w, if spell { Kind::Magic } else { Kind::Ability }, id)
 }
 
-fn spell_name(w: &World, s: u16) -> String {
+pub(super) fn spell_name(w: &World, s: u16) -> String {
     w.names.as_ref().and_then(|n| n.spell(s as u32)).unwrap_or_default()
 }
 
-fn ability_name(w: &World, i: u16) -> String {
+pub(super) fn ability_name(w: &World, i: u16) -> String {
     w.names.as_ref().and_then(|n| n.ability(i as u32)).unwrap_or_default()
 }
 
@@ -479,7 +532,7 @@ fn refuse(w: &mut World, id: usize) {
 
 /// FUN_1022c7a0 / FUN_102241a0: Enter on a row: the checks, then the target prompt for the spell's or ability's
 /// targets; a row naming a sub-list opens that list instead.
-fn enter(w: &mut World, kind: Kind) {
+pub(super) fn enter(w: &mut World, kind: Kind) {
     let Some(win) = (match kind {
         Kind::Magic => w.magic.as_ref(),
         Kind::Ability | Kind::Mount | Kind::Emote => w.ability.as_ref(),
@@ -572,7 +625,7 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 
 /// FUN_10222150: Down / Up step and wrap; Right / Left are re-sent as 0x19 / 0x18, a page of the view with the screen
 /// row kept.
-fn step(win: &mut ListWin, key: egui::Key) -> bool {
+pub(super) fn step(win: &mut ListWin, key: egui::Key) -> bool {
     let n = win.rows.len();
     if n == 0 {
         return false;
@@ -961,7 +1014,7 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
 }
 
 /// "%d:%02d" (">= 1 h: %d:%02d:%02d", FUN_101c93c0) of the seconds left, rounded up.
-fn clock(secs: f32) -> String {
+pub(super) fn clock(secs: f32) -> String {
     let s = secs.ceil() as u32;
     if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) }
 }

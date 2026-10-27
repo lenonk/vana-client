@@ -8,7 +8,7 @@ use super::linkshell::{LIST, ls_name};
 use crate::audio::Ui;
 
 const HEADER: &str = "menu    link6";
-const FILTER: &str = "menu    lscswin";
+pub(super) const FILTER: &str = "menu    lscswin";
 const ROWS: usize = 10;
 const PITCH: f32 = 18.0;
 /// Table 0x1037f318: {0, 18, 280, 320, end 350}.
@@ -179,6 +179,10 @@ pub fn num_plus(w: &mut World) {
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     let Some(c) = w.concierge_ui.clone() else { return };
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     if right {
         key(w, gu, egui::Key::Escape);
         return;
@@ -225,6 +229,73 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
+/// A shell row as the modern layer draws it: its item and tint, the name (ours: linkshell 1's group), the language
+/// letter, the members wanted.
+pub(super) struct RowLook {
+    pub item: u16,
+    pub tint: u32,
+    pub name: String,
+    pub ours: bool,
+    pub lang: &'static str,
+    pub wanted: u32,
+}
+
+/// The concierge as the modern layer draws it: the title, the filter's child (1 all .. 4 other) and lscswin's cursor
+/// while it has the keys, the rows (None the header) and the cursor.
+pub(super) struct Look {
+    pub title: String,
+    pub filter: u16,
+    pub lsc: Option<u16>,
+    pub rows: Vec<Option<RowLook>>,
+    pub cursor: usize,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let c = w.concierge_ui.as_ref()?;
+    let ls1 = super::linkshell::group_of(w, 1);
+    let rows = rows(w)
+        .into_iter()
+        .map(|r| {
+            r.map(|i| {
+                let s = &w.concierge[i];
+                let group = u32::from_le_bytes([s.ext[0], s.ext[1], s.ext[2], s.ext[3]]);
+                let lang = match language(s.attrs) {
+                    1 => "J",
+                    2 => "E",
+                    5 => "?",
+                    _ => "",
+                };
+                RowLook { item: s.item, tint: super::linkshell::tint(s.ext[6], s.ext[6] >> 4, s.ext[7]), name: ls_name(&s.ext[9..24]), ours: ls1 == Some(group), lang, wanted: s.attrs >> 6 & 0xf }
+            })
+        })
+        .collect();
+    let title = w.battle.as_ref().and_then(|b| b.group9(0x119 + c.title as usize)).unwrap_or_default();
+    let filter = match c.filter {
+        1 => 2,
+        2 => 3,
+        5 => 4,
+        _ => 1,
+    };
+    Some(Look { title, filter, lsc: c.lsc, rows, cursor: c.cursor })
+}
+
+/// The mouse's cursor move onto row `k` of the list. True when it moved.
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let n = rows(w).len();
+    let Some(c) = w.concierge_ui.as_mut().filter(|c| c.lsc.is_none() && c.cursor != k && k < n) else { return false };
+    c.cursor = k;
+    c.top = c.top.min(k).max((k + 1).saturating_sub(ROWS));
+    true
+}
+
+/// A filter tab by the mouse: lscswin takes the keys on child `k` and Enter sets it.
+pub(super) fn pick_filter(w: &mut World, gu: &GameUi, k: u16) {
+    if let Some(c) = w.concierge_ui.as_mut().filter(|_| (1..=4).contains(&k)) {
+        c.lsc = Some(k);
+    }
+    key(w, gu, egui::Key::Enter);
+}
+
 /// The list's bar (messages 0x16..0x1b).
 pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     let n = rows(w).len();
@@ -247,6 +318,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// focus (its draw marks no filter).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(c) = &w.concierge_ui else { return rects };
     let focused = w.confirm.is_none();
     if let Some(info) = &w.item_info {

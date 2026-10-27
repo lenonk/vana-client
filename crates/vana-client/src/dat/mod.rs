@@ -63,6 +63,13 @@ impl DatIndex {
         Some(o)
     }
 
+    /// The install alone, no mods (texture exports for packs).
+    pub fn open_stock(ffxi_dir: &Path) -> Result<Self> {
+        let mut index = Self::open(ffxi_dir)?;
+        index.overlays = None;
+        Ok(index)
+    }
+
     /// A game-root file (cursors and the like), from the highest-priority mod that has one.
     pub fn root_file(&self, name: &str) -> PathBuf {
         self.overlays.as_ref().and_then(|o| o.root_file(name)).unwrap_or_else(|| self.root.join(name))

@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="4.893" x2="32" y2="34.151" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#c8d2dc"/>
+      <stop offset="1" stop-color="#6b7889"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="29.187" y1="29.816" x2="34.813" y2="61.721" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="39.573" x2="32" y2="52.223" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#04080c"/>
+      <stop offset="1" stop-color="#28343f"/>
+    </linearGradient>
+  </defs>
+  <title>unlock</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M17.199 17.801 C17.199 9.306 23.935 3 32 3 C40.065 3 46.801 9.306 46.801 17.801 L46.801 30.711 C49.516 31.369 51.534 33.816 51.534 36.733 L51.534 54.804 C51.534 58.225 48.759 61 45.338 61 L18.662 61 C15.241 61 12.466 58.225 12.466 54.804 L12.466 36.733 C12.466 33.312 15.241 30.537 18.662 30.537 L37.852 30.537 L37.852 17.801 C37.852 14.249 35.122 11.95 32 11.95 C28.878 11.95 26.148 14.249 26.148 17.801 L26.148 23.395 C26.148 24.44 25.301 25.288 24.255 25.288 L19.092 25.288 C18.046 25.288 17.199 24.44 17.199 23.395 Z" fill="#0a1118"/>
+      <path id="shackle" d="M19.092 17.801 C19.092 10.352 24.981 4.893 32 4.893 C39.019 4.893 44.908 10.352 44.908 17.801 L44.908 34.151 L39.745 34.151 L39.745 17.801 C39.745 13.203 36.168 10.056 32 10.056 C27.832 10.056 24.255 13.203 24.255 17.801 L24.255 23.395 L19.092 23.395 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.205" stroke-linejoin="round"/>
+      <path id="body" d="M18.662 32.43 L45.338 32.43 C47.713 32.43 49.641 34.358 49.641 36.733 L49.641 54.804 C49.641 57.179 47.713 59.107 45.338 59.107 L18.662 59.107 C16.287 59.107 14.359 57.179 14.359 54.804 L14.359 36.733 C14.359 34.358 16.287 32.43 18.662 32.43 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.205" stroke-linejoin="round"/>
+      <path id="keyhole" d="M28.386 43.187 C28.386 41.191 30.004 39.573 32 39.573 C33.996 39.573 35.614 41.191 35.614 43.187 C35.614 44.41 35.007 45.49 34.078 46.144 L34.754 52.223 L29.246 52.223 L29.922 46.144 C28.993 45.49 28.386 44.41 28.386 43.187 Z" fill="url(#linear-gradient-3)"/>
+    </g>
+  </g>
+</svg>

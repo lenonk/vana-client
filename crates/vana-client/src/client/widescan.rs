@@ -35,6 +35,8 @@ pub struct Scan {
     pub busy: bool,
     /// Bit 4: c2s 0x0D2 sent, cleared by any s2c 0x0A0 or the map closing.
     pub party_busy: bool,
+    /// Where we stood (world x, z) when the list was asked for: the results' offsets are from there.
+    pub origin: (f32, f32),
 }
 
 impl Scan {

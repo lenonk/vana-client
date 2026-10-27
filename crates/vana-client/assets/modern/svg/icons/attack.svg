@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="45.89" y1="13.942" x2="45.89" y2="51.237" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f39da5"/>
+      <stop offset="0.42" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#74262e"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="31.132" y1="10.73" x2="31.132" y2="43.971" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#c8d2dc"/>
+      <stop offset="1" stop-color="#6b7889"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32.447" y1="10.73" x2="32.447" y2="43.82" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f7c0c6"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="13.237" y1="40.418" x2="13.237" y2="50.073" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="15.472" y1="31.872" x2="18.811" y2="50.81" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="7.934" y1="45.969" x2="9.307" y2="53.755" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>attack</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M46.943 8.676 C48.733 7.971 50.512 9.75 49.806 11.54 L48.808 14.074 L49.04 14.329 C49.067 14.357 49.092 14.387 49.117 14.417 L50.733 16.384 C50.76 16.418 50.787 16.452 50.813 16.488 L52.308 18.545 C52.329 18.574 52.349 18.603 52.369 18.633 L53.764 20.76 C53.788 20.797 53.811 20.835 53.833 20.874 L55.098 23.082 C55.116 23.113 55.133 23.145 55.15 23.178 L56.304 25.446 C56.323 25.484 56.341 25.522 56.359 25.562 L57.382 27.9 C57.398 27.936 57.413 27.973 57.427 28.009 L58.32 30.388 C58.334 30.426 58.347 30.464 58.359 30.503 L59.122 32.931 C59.135 32.972 59.146 33.012 59.157 33.053 L59.779 35.522 C59.788 35.557 59.796 35.592 59.803 35.627 L60.304 38.126 C60.313 38.169 60.32 38.213 60.326 38.256 L60.678 40.775 C60.683 40.813 60.687 40.85 60.691 40.888 L60.911 43.417 C60.915 43.458 60.917 43.499 60.919 43.54 L60.999 46.089 C61 46.13 61 46.17 60.999 46.211 L60.939 48.75 C60.938 48.788 60.936 48.825 60.934 48.863 L60.743 51.402 C60.65 52.639 59.555 53.557 58.321 53.434 L57.719 53.374 C56.785 53.28 56.011 52.606 55.792 51.692 L55.207 49.256 L54.401 46.986 L53.424 44.779 L52.299 42.679 L51.041 40.707 L49.668 38.855 L48.194 37.137 L46.637 35.561 L45.01 34.13 L43.326 32.856 L41.584 31.738 L39.806 30.76 L38.018 29.945 L37.21 29.647 L24.453 42.409 L27.003 44.958 C27.865 45.821 27.865 47.219 27.003 48.081 L23.881 51.202 C23.019 52.065 21.621 52.065 20.759 51.202 L17.213 47.657 L14.179 50.696 C13.776 53.391 11.451 55.482 8.62 55.482 C5.524 55.482 3 52.958 3 49.862 C3 47.032 5.091 44.706 7.786 44.303 L10.825 41.269 L7.28 37.724 C6.418 36.861 6.418 35.463 7.28 34.601 L10.401 31.48 C11.263 30.617 12.661 30.617 13.524 31.48 L16.073 34.029 L37.53 12.581 C37.744 12.367 38 12.199 38.281 12.088 Z" fill="#0a1118"/>
+      <path id="trail" d="M45.695 13.942 L47.411 15.819 L49.027 17.786 L50.522 19.843 L51.917 21.971 L53.182 24.179 L54.336 26.447 L55.36 28.786 L56.253 31.164 L57.016 33.593 L57.638 36.062 L58.14 38.561 L58.491 41.08 L58.712 43.609 L58.792 46.158 L58.732 48.698 L58.541 51.237 L57.939 51.177 L57.327 48.627 L56.454 46.169 L55.41 43.81 L54.205 41.562 L52.861 39.454 L51.395 37.477 L49.82 35.64 L48.153 33.954 L46.407 32.419 L44.591 31.044 L42.714 29.839 L40.797 28.786 L38.86 27.902 L36.903 27.18 L34.936 26.618 L32.989 26.206 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.405" stroke-linejoin="round"/>
+      <path id="blade" d="M19.771 43.971 L44.34 19.392 L47.752 10.73 L39.091 14.143 L14.512 38.712 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.405" stroke-linejoin="round"/>
+      <path id="edge" d="M19.62 43.82 L44.199 19.251 L47.752 10.73 L41.71 16.772 L17.141 41.341 Z" fill="url(#linear-gradient-3)" opacity="0.55"/>
+      <path id="grip" d="M14.803 40.418 L8.41 46.801 L11.681 50.073 L18.065 43.679 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.405" stroke-linejoin="round"/>
+      <path id="guard" d="M25.441 46.52 L11.962 33.041 L8.841 36.162 L22.32 49.641 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.405" stroke-linejoin="round"/>
+      <path id="pommel" d="M12.033 49.862 C12.033 51.739 10.507 53.274 8.62 53.274 C6.744 53.274 5.208 51.739 5.208 49.862 C5.208 47.975 6.744 46.45 8.62 46.45 C10.507 46.45 12.033 47.975 12.033 49.862 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.405" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -212,6 +212,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   Mods page") done. Sound overlays (a mod's sound*/win before the game's) and root files (the cursor
   pack) done. Left: mod VTABLE / FTABLE (new file ids, e.g.
   Remapster's 109 extra maps, which need an add-on in retail too).
+  - Our own pack (user, 2026-10-27): every game texture through Upscayl Standard 4x, `tex-export` / batch.py /
+    `tex-pack` into mods/vana-upscale (29 GB; MODLOG "Our upscale pack"); the work files stay in
+    ~/ffxi/lab/scratch/upscale (export, up, meta/encoded) for a rebuild.
 - Extras (gameplay additions, the Windower / Ashita add-ons built in): the Config list's Extras row and page, all
   off by default, built from the Config pages' own sprites (MODLOG "Config: Extras and Settings"). Config-type
   options (resolution, frame limit, ...) go in Settings, not here. Done: the map overlay, the synthesis amount,
@@ -227,8 +230,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). s2c 0x0B4's system message filter done (its PvP word is dead on LSB). The spec's part C
   (window, list and server-flag commands) done: the toggles' consumers, /furcc, the map on an elevator, /layout,
   /remodel, /garden, /mutelist, /guide /primer.
-- Last of all (the user's plans, 2026-10-23): a modern UI as an Extras option, keeping the classic feel: windows
-  that can be moved, elements turned on and off, more than new art; after that, an embedded Lua layer for mods.
+- The modern UI (Settings > Linux > Interface: Classic / Modern; docs/modern-ui.md): kept and merged into master
+  (user, 2026-10-27: "past the PoC stage"). After it, an embedded Lua layer for mods.
+- Deferred until after the first release (user, 2026-10-27): gamepad support.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
   user in WinBoat): release/build-windows.sh links everything in (no MinGW DLLs); the exe icon is a resource
   (crates/vana-client/build.rs, assets/vana-client.rc / .ico; not seen in Explorer yet).

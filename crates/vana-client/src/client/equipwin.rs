@@ -8,10 +8,11 @@ use super::World;
 use super::game_ui::GameUi;
 use super::items::{INVENTORY, Win};
 use super::net::NetCommand;
-use super::scrollbar::Owner;
+use super::scrollbar::{Msg, Owner};
 use crate::audio::Ui;
 use crate::inventory::{Equipment, ItemList, SLOT_CHILD, Slot, VISIBLE_ROWS, build_rows, gil_text};
 use crate::render::invwin::{INVENTOR_BAR, push_equipment, push_item_list, push_money, push_persona};
+use std::time::Instant;
 
 const LIST: &str = "menu    inventor";
 const GRID: &str = "menu    equip";
@@ -27,7 +28,7 @@ pub(super) const SE_FOCUS: u32 = 13;
 /// The grid children in a picked item's walk order (0x1036f744).
 pub(super) const ORDER: [u16; 16] = [1, 5, 9, 13, 2, 6, 10, 14, 3, 7, 11, 15, 4, 8, 12, 16];
 /// mnstorag's rows: Inventory, Wardrobe, Wardrobe 2..8.
-const STORE_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
+pub(super) const STORE_BAGS: [u8; 9] = [0, 8, 10, 11, 12, 13, 14, 15, 16];
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Focus {
@@ -58,6 +59,10 @@ pub struct EquipWin {
     ctrl: Option<bool>,
     /// The main menu's cursor to resume when the screen closes (FUN_101f2600 resumes menuwind).
     return_menu: Option<usize>,
+    /// The modern screen (slot first, from every bag): the slot whose pieces are listed, a piece being moved first.
+    modern: bool,
+    list_slot: Option<usize>,
+    pending: Option<Pending>,
 }
 
 fn slot_of(child: u16) -> usize {
@@ -138,7 +143,22 @@ pub fn pup_bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     bars.help[1] = gu.focus_text(PUPEQUIP, p.sel)[0].clone().unwrap_or_default();
 }
 
+/// pupequip's name and cursor for the modern layer.
+pub(super) fn pup_look(w: &World) -> Option<(&'static str, u16)> {
+    w.pupequip.as_ref().map(|p| (PUPEQUIP, p.sel))
+}
+
+/// The mouse's cursor move onto pupequip's row `k`. True when it moved.
+pub(super) fn set_pup(w: &mut World, k: u16) -> bool {
+    let Some(p) = w.pupequip.as_mut().filter(|p| p.sel != k && (1..=2).contains(&k)) else { return false };
+    p.sel = k;
+    true
+}
+
 pub fn pup_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    if w.modern {
+        return None;
+    }
     let p = w.pupequip.as_ref()?;
     gu.lobby_window_off(PUPEQUIP, sw, sh, (0.0, 0.0), Some(p.sel), w.confirm.is_none(), &[]).map(|win| win.frame)
 }
@@ -160,7 +180,7 @@ pub fn open(w: &mut World) {
     }
     let _ = w.net.commands.send(NetCommand::StatusRequest(1));
     let return_menu = w.menu;
-    w.win = Some(Win::Equip(Box::new(EquipWin { grid: 1, mode: 2, focus: Focus::Grid, container: INVENTORY, mask: 0xffff, scroll: 0, cursor: 0, picked: None, allowed: 0, compare: None, alt: 0, ctrl: None, return_menu })));
+    w.win = Some(Win::Equip(Box::new(EquipWin { grid: 1, mode: 2, focus: Focus::Grid, container: INVENTORY, mask: 0xffff, scroll: 0, cursor: 0, picked: None, allowed: 0, compare: None, alt: 0, ctrl: None, return_menu, modern: w.modern, list_slot: None, pending: None })));
     w.menu = None;
     w.action_menu = None;
 }
@@ -225,7 +245,7 @@ fn row_at(w: &World, e: &EquipWin) -> Option<Slot> {
     (e.scroll + e.cursor).checked_sub(1).and_then(|k| rows(w, e).get(k).cloned())
 }
 
-fn encumbered(w: &World, slot: usize) -> bool {
+pub(super) fn encumbered(w: &World, slot: usize) -> bool {
     w.job_info.as_ref().is_some_and(|j| j.encumbrance & (1 << slot) != 0)
 }
 
@@ -282,7 +302,7 @@ pub(super) fn try_equip(w: &mut World, slot: usize, c: u8, index: u8, id: u16) -
 /// Num+ (message 8): the grid in mode 2 goes to mode 1 on the list (FUN_101322b0); the list in mode 1 with nothing
 /// picked back to mode 2 on the grid (FUN_101306f0); SE 0013.
 pub fn num_plus(w: &mut World) {
-    let Some(e) = win_mut(w) else { return };
+    let Some(e) = win_mut(w).filter(|e| !e.modern) else { return };
     match (e.focus, e.mode, e.picked) {
         (Focus::Grid, 2, _) => (e.mode, e.focus) = (1, Focus::List),
         (Focus::List, 1, None) => (e.mode, e.focus, e.mask) = (2, Focus::Grid, 0xffff),
@@ -294,6 +314,10 @@ pub fn num_plus(w: &mut World) {
 
 pub fn key(w: &mut World, key: egui::Key) {
     let Some(e) = win(w) else { return };
+    if e.modern {
+        modern_key(w, key);
+        return;
+    }
     let focus = e.focus;
     if let Some(e) = win_mut(w) {
         // FUN_101306f0: the list's messages 1..6 drop the compare.
@@ -524,6 +548,16 @@ pub fn compare_key(w: &mut World, held: bool) {
 /// The compared piece while itemxinf is open: Some(None) for an empty slot; (item, extdata, container).
 pub fn compare(w: &World) -> Option<Option<(u16, Option<[u8; 24]>, u8)>> {
     let e = win(w)?;
+    // The modern list compares with the slot's piece at once (none when the slot is empty or it is the row).
+    if e.modern {
+        let slot = e.list_slot.filter(|_| e.focus == Focus::List)?;
+        let (c, i) = w.inv.equip[slot]?;
+        let row = candidates(w, slot).into_iter().nth(e.scroll + e.cursor)?;
+        if (row.c, row.slot.index) == (c, i) {
+            return None;
+        }
+        return Some(Some((w.inv.slots.get(&(c, i))?.0, w.inv.ext.get(&(c, i)).copied(), c)));
+    }
     let at = (*e.compare.as_ref()?).and_then(|(c, i)| Some((w.inv.slots.get(&(c, i))?.0, w.inv.ext.get(&(c, i)).copied(), c)));
     Some(at)
 }
@@ -533,6 +567,10 @@ pub fn compare(w: &World) -> Option<Option<(u16, Option<[u8; 24]>, u8)>> {
 pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8)> {
     let e = win(w)?;
     let (c, s) = match e.focus {
+        Focus::List if e.modern => {
+            let x = candidates(w, e.list_slot?).into_iter().nth(e.scroll + e.cursor)?;
+            (x.c, x.slot)
+        }
         Focus::List => (e.container, row_at(w, e)?),
         Focus::Storage(_) => return None,
         Focus::Grid => {
@@ -567,9 +605,13 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// The scroll bar / wheel on the list (FUN_101f6c70).
 pub fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     let Some(e) = win(w) else { return false };
-    let n = n_rows(w, e);
+    let (n, rows) = match (e.modern, e.list_slot) {
+        (true, Some(s)) => (candidates(w, s).len(), MODERN_ROWS),
+        (true, None) => return false,
+        _ => (n_rows(w, e), VISIBLE_ROWS),
+    };
     let Some(e) = win_mut(w) else { return false };
-    super::scrollbar::rows(m, &mut e.scroll, &mut e.cursor, n, VISIBLE_ROWS)
+    super::scrollbar::rows(m, &mut e.scroll, &mut e.cursor, n, rows)
 }
 
 /// Mouse on the list while it has the focus: hover moves the cursor, a click on the highlighted row acts as Enter.
@@ -607,6 +649,254 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
+/// The modern screen (slot first, from every bag): where a candidate is.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) enum Reach {
+    /// Worn, or in a bag it equips from.
+    Direct,
+    /// Moved to the inventory first: the satchel, sack and case; the moogle's bags at the moogle.
+    Move,
+    /// Out of reach now: a closed wardrobe, the moogle's bags away from it, no room in the inventory.
+    Far,
+}
+
+/// A piece the modern list shows for a slot: its bag and slot, the equipment slot it is worn in, its reach.
+#[derive(Clone, Debug)]
+pub(super) struct Candidate {
+    pub c: u8,
+    pub slot: Slot,
+    pub worn: Option<usize>,
+    pub reach: Reach,
+}
+
+/// A moved piece waiting to land in the inventory before it goes on: the slot, the item, the inventory indices that
+/// held it before, when it was sent.
+pub(super) struct Pending {
+    slot: usize,
+    id: u16,
+    before: Vec<u8>,
+    at: Instant,
+}
+
+/// The modern list's rows on screen (retail's ten were a limit of its windows).
+pub(super) const MODERN_ROWS: usize = 12;
+
+/// The bags searched, in this order: the inventory and the wardrobes, the satchel, sack and case, the moogle's.
+const ALL_BAGS: [u8; 16] = [0, 8, 10, 11, 12, 13, 14, 15, 16, 5, 6, 7, 1, 2, 4, 9];
+
+/// In our own Mog House with its moogle (FUN_101dae10's rule for the Safe, Storage, Locker and Safe 2).
+fn at_moogle(w: &World) -> bool {
+    w.myroom.is_some() && w.zone.is_some_and(super::items::moogle_zone) && w.mh_owner == 0
+}
+
+fn reach(w: &World, c: u8) -> Reach {
+    let room = super::items::has_free(w, INVENTORY);
+    match c {
+        0 | 8 | 10..=16 if bag_open(w, c) => Reach::Direct,
+        5..=7 if room => Reach::Move,
+        1 | 2 | 4 | 9 if room && at_moogle(w) => Reach::Move,
+        _ => Reach::Far,
+    }
+}
+
+/// Every piece the character can wear in `slot` now, from every bag: the one worn there first, then by level (highest
+/// first) and name.
+pub(super) fn candidates(w: &World, slot: usize) -> Vec<Candidate> {
+    let Some(info) = w.item_info.as_ref() else { return Vec::new() };
+    let mut out = Vec::new();
+    for &c in &ALL_BAGS {
+        for s in w.inv.slots_of(c).into_iter().filter(|s| s.index != 0 && s.id != 0) {
+            let Some(it) = info.item(s.id) else { continue };
+            if it.slots & (1 << slot) == 0 || !super::shop::can_wear(w, &it, s.id) {
+                continue;
+            }
+            let worn = (0..16).find(|&k| w.inv.equip[k] == Some((c, s.index)));
+            let key = (worn != Some(slot), std::cmp::Reverse(it.level), it.name.clone());
+            out.push((key, Candidate { c, slot: s, worn, reach: reach(w, c) }));
+        }
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out.into_iter().map(|x| x.1).collect()
+}
+
+/// What the modern layer shows: the grid cursor, the focus, the slot whose pieces are listed, the list's scroll,
+/// cursor and rows, a piece on its way to the inventory.
+pub(super) struct View {
+    pub grid: u16,
+    pub focus: Focus,
+    pub list_slot: Option<usize>,
+    pub scroll: usize,
+    pub cursor: usize,
+    pub rows: Vec<Candidate>,
+    pub pending: bool,
+}
+
+pub(super) fn view(w: &World) -> Option<View> {
+    let e = win(w)?;
+    let rows = e.list_slot.map_or(Vec::new(), |s| candidates(w, s));
+    Some(View { grid: e.grid, focus: e.focus, list_slot: e.list_slot, scroll: e.scroll, cursor: e.cursor, rows, pending: e.pending.is_some() })
+}
+
+/// A wardrobe's number (1 Wardrobe, 2..8), 0 for any other container.
+pub(super) fn wardrobe(c: u8) -> u8 {
+    match c {
+        8 => 1,
+        10..=16 => c - 8,
+        _ => 0,
+    }
+}
+
+/// The modern screen: a slot's pieces listed with the focus on them (Enter or a click on the slot).
+pub(super) fn open_slot(w: &mut World, child: u16) {
+    let slot = slot_of(child);
+    if encumbered(w, slot) {
+        w.sounds.push(Ui::Error as u32);
+        return;
+    }
+    if let Some(e) = win_mut(w) {
+        (e.grid, e.list_slot, e.focus, e.scroll, e.cursor) = (child, Some(slot), Focus::List, 0, 0);
+    }
+    w.sounds.push(Ui::Select as u32);
+}
+
+/// The modern list's cursor onto a shown row, the list taking the focus back from the grid. True when it moved.
+pub(super) fn point_row(w: &mut World, row: usize) -> bool {
+    let Some(slot) = win(w).and_then(|e| e.list_slot) else { return false };
+    let n = candidates(w, slot).len();
+    let Some(e) = win_mut(w) else { return false };
+    let row = row.min(n.saturating_sub(e.scroll + 1));
+    if e.focus == Focus::List && e.cursor == row {
+        return false;
+    }
+    (e.focus, e.cursor) = (Focus::List, row);
+    w.sounds.push(Ui::Cursor as u32);
+    true
+}
+
+/// A piece into `slot`: at once from its bag, else moved to the inventory and put on when it lands there (tick); the
+/// piece worn there picked again comes off. Nothing else changes: the list, its bag and the focus stay. True when sent.
+pub(super) fn equip_candidate(w: &mut World, slot: usize, x: &Candidate) -> bool {
+    let ok = match x.reach {
+        Reach::Direct => try_equip(w, slot, x.c, x.slot.index, x.slot.id),
+        Reach::Move => {
+            let before = w.inv.slots_of(INVENTORY).iter().filter(|s| s.id == x.slot.id).map(|s| s.index).collect();
+            super::items::send_move(w, x.c, INVENTORY, x.slot.index, 1);
+            log::info!("equip: {:?} from container {} to the inventory first", (x.slot.index, x.slot.id), x.c);
+            if let Some(e) = win_mut(w) {
+                e.pending = Some(Pending { slot, id: x.slot.id, before, at: Instant::now() });
+            }
+            true
+        }
+        Reach::Far => false,
+    };
+    w.sounds.push(if ok { Ui::Select } else { Ui::Error } as u32);
+    ok
+}
+
+/// The piece worn in `slot` comes off.
+pub(super) fn unequip(w: &mut World, slot: usize) {
+    if let Some((c, index)) = w.inv.equip[slot]
+        && let Some(&(id, _)) = w.inv.slots.get(&(c, index))
+    {
+        try_equip(w, slot, c, index, id);
+        w.sounds.push(Ui::Select as u32);
+    }
+}
+
+/// Per frame: a moved piece goes on once it lands in the inventory (s2c 0x01F / 0x020); given up after 5 s.
+pub fn tick(w: &mut World) {
+    let Some(p) = win(w).and_then(|e| e.pending.as_ref()) else { return };
+    let (slot, id) = (p.slot, p.id);
+    let landed = w.inv.slots_of(INVENTORY).into_iter().find(|s| s.id == id && !p.before.contains(&s.index)).map(|s| s.index);
+    if landed.is_none() && p.at.elapsed().as_secs_f32() < 5.0 {
+        return;
+    }
+    if let Some(e) = win_mut(w) {
+        e.pending = None;
+    }
+    match landed {
+        Some(index) => {
+            try_equip(w, slot, INVENTORY, index, id);
+        }
+        None => log::info!("equip: {id:#x} never reached the inventory"),
+    }
+}
+
+/// The modern screen's keys: the grid as retail's walk, Enter lists the slot's pieces from every bag; the list Up /
+/// Down, Left / Right a page, Enter puts the piece on (the grid takes the focus, the list stays until the cursor moves),
+/// Escape back to the grid.
+fn modern_key(w: &mut World, key: egui::Key) {
+    use egui::Key as K;
+    let Some(e) = win(w) else { return };
+    let (focus, grid, list_slot) = (e.focus, e.grid, e.list_slot);
+    match (focus, list_slot) {
+        (Focus::List, Some(slot)) => {
+            let all = candidates(w, slot);
+            let n = all.len().max(1);
+            let Some(e) = win_mut(w) else { return };
+            match key {
+                K::ArrowUp | K::ArrowDown => {
+                    let at = e.scroll + e.cursor;
+                    let to = if key == K::ArrowDown { (at + 1).min(n - 1) } else { at.saturating_sub(1) };
+                    if to != at {
+                        if to < e.scroll {
+                            e.scroll = to;
+                        } else if to >= e.scroll + MODERN_ROWS {
+                            e.scroll = to + 1 - MODERN_ROWS;
+                        }
+                        e.cursor = to - e.scroll;
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
+                }
+                K::ArrowLeft | K::ArrowRight => {
+                    if super::scrollbar::rows(if key == K::ArrowRight { Msg::PageDown } else { Msg::PageUp }, &mut e.scroll, &mut e.cursor, n, MODERN_ROWS) {
+                        w.sounds.push(Ui::Cursor as u32);
+                    }
+                }
+                K::Enter => {
+                    let at = e.scroll + e.cursor;
+                    match all.get(at) {
+                        Some(x) => {
+                            if equip_candidate(w, slot, x)
+                                && let Some(e) = win_mut(w)
+                            {
+                                e.focus = Focus::Grid;
+                            }
+                        }
+                        None => w.sounds.push(Ui::Error as u32),
+                    }
+                }
+                K::Escape => {
+                    (e.focus, e.list_slot) = (Focus::Grid, None);
+                    w.sounds.push(Ui::Cancel as u32);
+                }
+                _ => {}
+            }
+        }
+        _ => match key {
+            K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight => {
+                let (col, row) = ((grid - 1) / 4, (grid - 1) % 4);
+                let (col, row) = match key {
+                    K::ArrowDown => (col, (row + 1) % 4),
+                    K::ArrowUp => (col, (row + 3) % 4),
+                    K::ArrowRight => ((col + 1) % 4, row),
+                    _ => ((col + 3) % 4, row),
+                };
+                if let Some(e) = win_mut(w) {
+                    (e.grid, e.list_slot, e.focus) = (1 + col * 4 + row, None, Focus::Grid);
+                }
+                w.sounds.push(Ui::Cursor as u32);
+            }
+            K::Enter => open_slot(w, grid),
+            K::Escape => {
+                w.sounds.push(Ui::Cancel as u32);
+                close(w);
+            }
+            _ => {}
+        },
+    }
+}
+
 /// The four windows: persona and money, the list at (314, 48) with the strip row and the wardrobe number, the grid with
 /// the encumbrance crosses and the wardrobe numbers on wardrobe pieces; mnstorag over the list's place.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
@@ -638,11 +928,6 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let list = ItemList { rows: list_rows, scroll: e.scroll, cursor: e.cursor };
     super::items::upload_icons(gu, &info, list.visible().iter().map(|r| r.id).filter(|&id| id != 0));
     let open = [("menu    persona", None), ("menu    money", None), (LIST, Some(LIST_X)), (GRID, None)].map(|(n, x)| gu.gate_layout(n, sw, sh, x));
-    let wardrobe = |c: u8| match c {
-        8 => 1,
-        10..=16 => c - 8,
-        _ => 0,
-    };
     let mut list_bar = None;
     {
         let (b, ui, style, font) = gu.parts();

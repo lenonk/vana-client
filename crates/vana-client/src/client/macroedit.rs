@@ -8,12 +8,12 @@ use super::World;
 use super::game_ui::GameUi;
 use crate::audio::Ui;
 
-const MENU: &str = "menu    mcrmenu";
-const SELEC: &str = "menu    mcrselec";
-const SELOP: &str = "menu    mcrselop";
-const BEDIT: &str = "menu    mcrbedit";
-const MACRO: &str = "menu    macro";
-const LEDIT: &str = "menu    mcrledit";
+pub(super) const MENU: &str = "menu    mcrmenu";
+pub(super) const SELEC: &str = "menu    mcrselec";
+pub(super) const SELOP: &str = "menu    mcrselop";
+pub(super) const BEDIT: &str = "menu    mcrbedit";
+pub(super) const MACRO: &str = "menu    macro";
+pub(super) const LEDIT: &str = "menu    mcrledit";
 const WHITE: u32 = 0x8080_8080;
 /// SE 0013 (FUN_10037e90): the focus between a palette and its options window.
 const SE_FOCUS: u32 = 13;
@@ -299,6 +299,15 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     // mcrselec: Up / Down along the links (wrap), Left / Right flip the page, Enter mcrselop, Escape writes the ttl
     // files and closes.
     match key {
+        // Ours: the modern layer lists both pages as one column; Up / Down run on through it.
+        K::ArrowUp | K::ArrowDown if w.modern => {
+            let at = w.mcr_page * 20 + sel as usize - 1;
+            let to = if key == K::ArrowDown { (at + 1) % 40 } else { (at + 39) % 40 };
+            w.mcr_page = to / 20;
+            w.macroedit.as_mut().and_then(|m| m.book.as_mut()).unwrap().sel = (to % 20 + 1) as u16;
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        K::ArrowLeft | K::ArrowRight if w.modern => {}
         K::ArrowUp | K::ArrowDown => {
             let k = if key == K::ArrowUp { 2 } else { 3 };
             let to = gu.menu_links(SELEC, sel).map_or(sel, |l| l[k] as u16);
@@ -634,8 +643,166 @@ pub(super) fn caret(w: &World) -> &'static str {
     if (w.started.elapsed().as_secs_f32() * 60.0) as u32 % 60 < 40 { "|" } else { "" }
 }
 
+/// The modern layer's view (this module keeps every rule and key): mcrmenu, the book list with mcrselop and the name
+/// field, the palettes with mcrbedit, the editor with mcrledit. None while Edit Equip. Set is up.
+pub(super) struct View {
+    /// mcrmenu: its cursor, Edit Equip. Set off (Monstrosity), whether it has the focus.
+    pub menu: (u16, bool, bool),
+    pub books: Option<Books>,
+    pub palettes: Option<Palettes>,
+    pub editor: Option<EditorView>,
+}
+
+/// mcrselec over both pages: the 40 names, the active book, the cursor's book, mcrselop's cursor, the name field.
+pub(super) struct Books {
+    pub names: Vec<String>,
+    pub active: usize,
+    pub cur: usize,
+    pub opt: Option<u16>,
+    pub paste_ok: bool,
+    pub rename: Option<String>,
+    pub focused: bool,
+}
+
+/// The two palettes: the twenty titles (Ctrl 0..9, Alt 10..19), the focused palette and each one's cell, mcrbedit's
+/// cursor, the book and set.
+pub(super) struct Palettes {
+    pub titles: Vec<String>,
+    pub focus: u8,
+    pub cols: [u16; 2],
+    pub bopt: Option<u16>,
+    pub paste_ok: bool,
+    pub book: String,
+    pub set: usize,
+    pub focused: bool,
+}
+
+/// "menu    macro": "Ctrl 1" or the like, the title and six lines (the edited one live), the cursor, mcrledit's.
+pub(super) struct EditorView {
+    pub label: String,
+    pub fields: Vec<String>,
+    pub sel: u16,
+    pub editing: Option<usize>,
+    pub lopt: Option<u16>,
+    pub paste_ok: bool,
+    pub focused: bool,
+}
+
+pub(super) fn view(w: &World, gu: &GameUi) -> Option<View> {
+    let (me, m) = (w.macroedit.as_ref()?, w.macros.as_ref()?);
+    if me.sets.is_some() {
+        return None;
+    }
+    let free = w.confirm.is_none();
+    let menu = (me.menu_sel, super::monstrosity::active(w), free && me.book.is_none());
+    let text = |b: &[u8]| String::from_utf8_lossy(b).into_owned();
+    let books = me.book.as_ref().map(|b| Books {
+        names: (0..40).map(|k| m.book_title(k)).collect(),
+        active: m.book,
+        cur: book_of(w, b.sel),
+        opt: b.opt,
+        paste_ok: m.book_copied(),
+        rename: b.rename.as_ref().map(|t| text(t)),
+        focused: free && b.opt.is_none() && b.edit.is_none() && b.rename.is_none(),
+    });
+    let edit = me.book.as_ref().and_then(|b| b.edit.as_ref());
+    let palettes = edit.filter(|e| e.editor.is_none()).map(|e| Palettes {
+        titles: m.recs.iter().take(20).map(|r| r.title()).collect(),
+        focus: e.focus,
+        cols: e.cols,
+        bopt: e.bopt,
+        paste_ok: if set_mode(e) { m.set_copied } else { m.macro_copied() },
+        book: m.book_title(m.book),
+        set: m.set,
+        focused: free && e.bopt.is_none(),
+    });
+    let editor = edit.and_then(|e| e.editor.as_ref()).map(|d| {
+        let (alt, n) = (d.i >= 10, (d.i % 10 + 1) % 10);
+        EditorView {
+            label: gu.lobby_msg(0x0a, if alt { 0x5c } else { 0x5b }, "Ctrl %d").replacen("%d", &n.to_string(), 1),
+            fields: d.fields.iter().map(|f| text(f)).collect(),
+            sel: d.sel,
+            editing: d.editing,
+            lopt: d.lopt,
+            paste_ok: w.mcr_line.is_some(),
+            focused: free && d.lopt.is_none() && d.editing.is_none(),
+        }
+    });
+    Some(View { menu, books, palettes, editor })
+}
+
+/// The modern layer's mouse: mcrmenu's cursor to `c`; true when it moved.
+pub(super) fn set_menu(w: &mut World, c: u16) -> bool {
+    let Some(m) = w.macroedit.as_mut().filter(|m| m.book.is_none() && m.sets.is_none()) else { return false };
+    let moved = m.menu_sel != c;
+    m.menu_sel = c;
+    moved
+}
+
+/// The book list's cursor onto book `k` (0..39: its page and row).
+pub(super) fn set_book(w: &mut World, k: usize) -> bool {
+    let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()).filter(|b| b.opt.is_none() && b.edit.is_none() && b.rename.is_none()) else { return false };
+    let sel = (k % 20) as u16 + 1;
+    let moved = b.sel != sel || w.mcr_page != k / 20;
+    b.sel = sel;
+    w.mcr_page = k / 20;
+    moved
+}
+
+/// mcrselop's cursor onto row `o`.
+pub(super) fn set_opt(w: &mut World, o: u16) -> bool {
+    let Some(b) = w.macroedit.as_mut().and_then(|m| m.book.as_mut()).filter(|b| b.opt.is_some()) else { return false };
+    let moved = b.opt != Some(o);
+    b.opt = Some(o);
+    moved
+}
+
+/// The palettes' cursor onto palette `p` (1 Ctrl, 2 Alt) at cell `col` (0..9), mcrbedit closed.
+pub(super) fn set_cell(w: &mut World, p: u8, col: u16) -> bool {
+    let Some(e) = edit_mut(w).filter(|e| e.editor.is_none()) else { return false };
+    let moved = e.focus != p || e.cols[p as usize - 1] != col || e.bopt.is_some();
+    (e.focus, e.bopt) = (p, None);
+    e.cols[p as usize - 1] = col;
+    moved
+}
+
+/// mcrbedit opened (as Num+ does) with its cursor on `o`.
+pub(super) fn set_bopt(w: &mut World, o: u16) {
+    if let Some(e) = edit_mut(w).filter(|e| e.editor.is_none()) {
+        e.bopt = Some(o);
+    }
+}
+
+/// Another set of the book (FUN_101a2890: the set file written, the other read).
+pub(super) fn set_set(w: &mut World, set: usize) {
+    if let Some(m) = w.macros.as_mut().filter(|m| m.set != set) {
+        let book = m.book;
+        m.switch(book, set);
+        w.sounds.push(Ui::Cursor as u32);
+    }
+}
+
+/// The editor's cursor onto child `c` (1 Prev, 2 Next, 3 the title, 4..9 the lines), mcrledit closed.
+pub(super) fn set_field(w: &mut World, c: u16) -> bool {
+    let Some(d) = edit_mut(w).and_then(|e| e.editor.as_mut()).filter(|d| d.editing.is_none()) else { return false };
+    let moved = d.sel != c || d.lopt.is_some();
+    (d.sel, d.lopt) = (c, None);
+    moved
+}
+
+/// mcrledit opened on the cursor's line with its cursor on `o`.
+pub(super) fn set_lopt(w: &mut World, o: u16) {
+    if let Some(d) = edit_mut(w).and_then(|e| e.editor.as_mut()).filter(|d| d.editing.is_none() && (4..=9).contains(&d.sel)) {
+        d.lopt = Some(o);
+    }
+}
+
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return rects;
+    }
     let (Some(me), Some(m)) = (&w.macroedit, &w.macros) else { return rects };
     let free = w.confirm.is_none();
     let off: &[u16] = if super::monstrosity::active(w) { &[2] } else { &[] };
@@ -762,6 +929,9 @@ pub(super) fn generic(w: &mut World, gu: &GameUi, name: &str, cursor: u16, ids: 
 /// The mouse on the chain (no typing field open). Over the other palette the focus moves there at that column
 /// *(inf: retail's window focus on a click)*.
 pub fn pointer(w: &mut World, gu: &GameUi, _sw: f32, _sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    if w.modern {
+        return;
+    }
     let Some(me) = w.macroedit.as_ref() else { return };
     if me.sets.is_some() {
         super::esmenu::pointer(w, gu, _sw, _sh, p, moved, clicked, right);

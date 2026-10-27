@@ -4,16 +4,21 @@ pub mod ground;
 pub mod combat;
 mod actmotion;
 mod flyover;
+mod resttick;
 mod creator;
 mod netwait;
+mod modern;
 mod monstrosity;
 mod moncustom;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
+pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
 mod event;
 mod buffs;
 mod game_ui;
 mod hudtop;
+mod listsearch;
+mod suggest;
 mod augment;
 mod iteminfo;
 mod map;
@@ -212,19 +217,24 @@ fn pick_key(id: u32, k: u16) -> u64 {
 /// is us and trusts only (FUN_10201f00), Synthesis for 23 s after a request; in Monstrosity Party and Synthesis, and
 /// socialme's Set Bazaar (FUN_1014e720).
 fn menu_disabled(w: &World) -> Vec<u16> {
+    menu_disabled_on(w, w.menu_page)
+}
+
+/// `menu_disabled` for either page (the modern Command Menu shows both at once).
+fn menu_disabled_on(w: &World, page: u8) -> Vec<u16> {
     let mut off = Vec::new();
     if monstrosity::active(w) {
-        return if w.menu_page == 0 { vec![6, 10] } else { vec![5] };
+        return if page == 0 { vec![6, 10] } else { vec![5] };
     }
-    if w.menu_page == 0 && w.party.slots().trusts_only() {
+    if page == 0 && w.party.slots().trusts_only() {
         off.push(6);
     }
     // FUN_10140270: Synthesis within 23 s of the last synthesis request.
-    if w.menu_page == 0 && synth::menu_off(w) {
+    if page == 0 && synth::menu_off(w) {
         off.push(10);
     }
     // FUN_10140270: row 12 (Mog House) is disabled while visiting another's house.
-    if w.menu_page == 0 && w.myroom.is_some() && w.mh_owner != 0 {
+    if page == 0 && w.myroom.is_some() && w.mh_owner != 0 {
         off.push(12);
     }
     off
@@ -530,6 +540,17 @@ fn lobby_text(lu: &mut GameUi, slots: &[crate::render::screens::TextSlot], help:
 
 const LOGIN_LABELS: [&str; 4] = ["Server", "Account", "Password", "One-time code"];
 
+/// The login form as drawn, for the modern layer (UI pixels): the frame, each field (rect, label, shown text, hint),
+/// the box (rect, caption, on), the buttons (rect, caption, enabled), the focus, busy.
+pub struct LoginView {
+    pub frame: [f32; 4],
+    pub fields: Vec<([f32; 4], &'static str, String, &'static str)>,
+    pub check: ([f32; 4], &'static str, bool),
+    pub buttons: Vec<([f32; 4], &'static str, bool)>,
+    pub focus: usize,
+    pub busy: bool,
+}
+
 /// The tail of `text` that fits in `max` pixels, so the caret end stays visible.
 fn fit_tail(lu: &GameUi, text: &str, max: f32) -> String {
     let mut t = text;
@@ -554,28 +575,31 @@ enum LoginChoice {
 /// Not retail (PlayOnline logged in): the generic window sounds (FUN_10118260) go to `sounds`: 0001 when the focus
 /// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>) -> Option<LoginChoice> {
+#[allow(clippy::too_many_arguments)]
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>) -> Option<LoginChoice> {
     let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
     const ITEMS: usize = 8;
     const CHECK: usize = 4;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
-    let (ww, wh) = (380.0, 162.0);
+    // The modern layer's form is half again as large (its text sized to the fields).
+    let f = if modern.is_some() { 1.5 } else { 1.0 };
+    let (ww, wh) = (380.0 * f, 162.0 * f);
     // Centred between the title logo's foot (about half the height) and the copyright line (about 0.8).
     let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 0.65 - wh / 2.0).round());
-    let row = |i: usize| wy + 14.0 + i as f32 * 22.0;
-    let field_rect = |i: usize| [wx + 148.0, row(i), ww - 164.0, 18.0];
+    let row = |i: usize| wy + 14.0 * f + i as f32 * 22.0 * f;
+    let field_rect = |i: usize| [wx + 148.0 * f, row(i), ww - 164.0 * f, 18.0 * f];
     // Remember password: the game font's box (filled when on) and its caption under the fields.
     const CAPTION: &str = "Remember password";
-    let check_rect = [wx + 148.0, row(CHECK), lu.text_width(&format!("\u{25a1} {CAPTION}")) + 4.0, 18.0];
-    let ay = row(5) + 6.0;
+    let check_rect = [wx + 148.0 * f, row(CHECK), (lu.text_width(&format!("\u{25a1} {CAPTION}")) + 4.0) * f, 18.0 * f];
+    let ay = row(5) + 6.0 * f;
     // Config-page buttons (88 px, wider for a longer caption), centred 24 px apart.
     const ACTIONS: [&str; 3] = ["Log in", "Create account", "Exit"];
-    let widths = ACTIONS.map(|a| (lu.label_width(a) + 14.0).max(88.0).round());
-    let mut bx = (wx + (ww - widths.iter().sum::<f32>() - 48.0) / 2.0).round();
+    let widths = ACTIONS.map(|a| ((lu.label_width(a) + 14.0).max(88.0) * f).round());
+    let mut bx = (wx + (ww - widths.iter().sum::<f32>() - 48.0 * f) / 2.0).round();
     let arects = [0, 1, 2].map(|k| {
-        let r = [bx, ay, widths[k], 16.0];
-        bx += widths[k] + 24.0;
+        let r = [bx, ay, widths[k], 16.0 * f];
+        bx += widths[k] + 24.0 * f;
         r
     });
     // Log in and Create account need the server, account and password.
@@ -669,8 +693,23 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             _ => "Enter your account information to log in.",
         }
     };
-    let slots = lu.title(sw, sh, None, 0, [true; 5]);
-    lobby_text(lu, &slots, help, if busy || status.is_empty() { WHITE } else { YELLOW }, version);
+    let slots = lu.title_update(sw, sh, None, 0, [true; 5], None, 0, None, true, modern.is_some());
+    let help_colour = if busy || status.is_empty() { WHITE } else { YELLOW };
+    // Modern: the layer draws the form on these rects (its mouse stays this one's) and the help bar.
+    if let Some(out) = modern {
+        lu.modern_help = Some((help.to_string(), help_colour));
+        let shown = |i: usize| if i == 2 { "*".repeat(fields[i].chars().count()) } else { fields[i].clone() };
+        *out = Some(LoginView {
+            frame: [wx, wy, ww, wh],
+            fields: (0..4).map(|i| (field_rect(i), LOGIN_LABELS[i], shown(i), if i == 3 { "only with 2FA" } else { "" })).collect(),
+            check: (check_rect, CAPTION, *remember),
+            buttons: (0..3).map(|k| (arects[k], ACTIONS[k], enabled[k])).collect(),
+            focus: *focus,
+            busy,
+        });
+        return if busy { None } else { chosen };
+    }
+    lobby_text(lu, &slots, help, help_colour, version);
     lu.frame(wx, wy, ww, wh);
     for (i, label) in LOGIN_LABELS.iter().enumerate() {
         let r = field_rect(i);
@@ -911,7 +950,7 @@ fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
         None => (cfgapply::chat_colour(&world.game, kind), line, false),
     };
     for l in line.split('\n') {
-        world.chat.push_chat(l.to_string(), colour, indent);
+        world.chat.push_mode(l.to_string(), colour, indent, mode);
     }
 }
 
@@ -991,6 +1030,40 @@ fn log_cycle(w: &mut World) {
     w.log_active = w.log_focus == 1;
 }
 
+/// The modern full log's find (ours, as rChat's): a letter or digit starts it, text adds, Backspace takes off (the
+/// last one ends it), Escape clears it before the log closes. True when it took something this frame.
+fn log_find_events(w: &mut World, events: &[egui::Event]) -> bool {
+    if !w.modern || w.full_log.is_none() || w.typing || event::active(w) {
+        w.log_find = None;
+        return false;
+    }
+    let mut took = false;
+    for e in events {
+        match e {
+            egui::Event::Text(t) if w.log_find.is_some() || t.chars().next().is_some_and(|c| c.is_alphanumeric()) => {
+                w.log_find.get_or_insert_with(String::new).push_str(t);
+                took = true;
+            }
+            egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } if w.log_find.is_some() => {
+                if let Some(f) = w.log_find.as_mut() {
+                    f.pop();
+                }
+                if w.log_find.as_ref().is_some_and(|f| f.is_empty()) {
+                    w.log_find = None;
+                }
+                took = true;
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } if w.log_find.is_some() => {
+                w.log_find = None;
+                w.sounds.push(crate::audio::Ui::Cancel as u32);
+                took = true;
+            }
+            _ => {}
+        }
+    }
+    took
+}
+
 /// The full log's keys (FUN_10133890): arrows move the row / scroll (SE "0001"), Enter on a speaker line
 /// opens charlnk (not done; SE "0004"), Escape closes it and refocuses logwindo.
 fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
@@ -1002,6 +1075,12 @@ fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
             w.sounds.push(crate::audio::Ui::Cancel as u32);
         }
         egui::Key::Enter => w.sounds.push(4),
+        // The modern one only scrolls (no row cursor); its draw stops at the oldest line.
+        k if w.modern => {
+            if fl.key(k, true, logwin::full_lines(sh), usize::MAX / 2) {
+                w.sounds.push(1);
+            }
+        }
         k => {
             if fl.key(k, held, logwin::full_lines(sh), w.log.history()) {
                 w.sounds.push(1);
@@ -1257,7 +1336,11 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             let tint = name_colour(*id, e, world, |i| gu.ncol(i));
             let p = entity_plate(*id, e);
             let (prefix, icon) = plate::prefix(&p);
-            gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            if world.modern {
+                modern::plates::draw(gu, &prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            } else {
+                gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+            }
         }
     }
     if !hidden.contains(&world.my_id)
@@ -1271,7 +1354,11 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let tint = faded(gu.ncol(if gm >= 3 { 0x0c + gm - 3 } else { 0 }));
         let p = self_plate(world);
         let (prefix, icon) = plate::prefix(&p);
-        gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        if world.modern {
+            modern::plates::draw(gu, &prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        } else {
+            gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+        }
     }
     gu.depth(None);
 }
@@ -1313,8 +1400,15 @@ fn plate_point(world: &World, id: u32) -> Option<Vec3> {
 
 /// The in-game HUD in the game's own windows: chat log and input line, party, target, main menu
 /// ('-' opens it) and the KO prompt. Returns the rects that take clicks away from the world.
+/// The alliance windows are down while a window set is up (main and social menus, item / equipment windows, magic /
+/// ability lists, map, config, palettes) or an event holds us (the mapping to our state: inferred).
+fn alliance_hidden(world: &World) -> bool {
+    world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world)
+}
+
 fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2], keys: &mut HashSet<KeyCode>, view_proj: glam::Mat4, numpad_slash: bool) -> Vec<[f32; 4]> {
     let (sw, sh) = (size[0] as f32, size[1] as f32);
+    world.ui_wh = (sw, sh);
     // The focused list's scroll bar and the wheel, before the windows see the press.
     let taken = scrollbar::frame(gu, world, input);
     let input = taken.as_ref().unwrap_or(input);
@@ -1360,7 +1454,33 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let comment_typing = seacom::typing(world);
     let macro_typing = macroedit::typing(world);
     let faq_typing = faqmain::typing(world);
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing;
+    // The Wide Scan flyout's name filter.
+    let scan_typing = world.scan_typing && world.modern;
+    if scan_typing {
+        for ev in &input.events {
+            match ev {
+                egui::Event::Text(t) => world.scan_find.extend(t.chars().filter(|c| !c.is_control())),
+                egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } => {
+                    world.scan_find.pop();
+                }
+                egui::Event::Key { key: egui::Key::Enter, pressed: true, .. } => world.scan_typing = false,
+                egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } => (world.scan_find, world.scan_typing) = (String::new(), false),
+                _ => {}
+            }
+        }
+        keys.clear();
+    }
+    // The modern full log's find takes the text, Backspace and Escape while the log is open.
+    let find_typing = log_find_events(world, &input.events);
+    if find_typing {
+        keys.clear();
+    }
+    // The modern magic and ability windows' search takes the keys and text while it runs.
+    let list_typing = listsearch::events(world, &input.events);
+    if list_typing {
+        keys.clear();
+    }
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || list_typing || scan_typing || find_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1382,7 +1502,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
         keys.clear();
-    } else if input_open {
+    } else if input_open && !scan_typing && !find_typing {
         event::input_events(world, &input.events);
         keys.clear();
     }
@@ -1566,6 +1686,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // FUN_1012ec60 / FUN_101e9f10.
                 egui::Key::E if modifiers.ctrl || modifiers.alt => items::open_equipment(world),
                 egui::Key::I if modifiers.ctrl || modifiers.alt => items::open_items(world),
+                // Ours (Extras): plain T slides the Timers out or in, with no window open (Ctrl / Alt + T is /tell).
+                egui::Key::T if !modifiers.ctrl && !modifiers.alt && world.extra_timers && world.win.is_none() && world.menu.is_none() && world.config.is_none() && world.settings.is_none() => {
+                    world.timers.toggle();
+                    world.sounds.push(crate::audio::Ui::Cursor as u32);
+                }
                 // Our settings screen, then the Config windows, take the keys while open.
                 _ if world.settings.is_some() => {
                     let mut s = world.settings.take().unwrap();
@@ -1578,6 +1703,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                         world.sounds.extend(s.sounds.iter().map(|x| *x as u32));
                     }
                 }
+                // The modern Config page takes them while it shows.
+                _ if world.config.is_some() && modern::config_key(world, *key) => {}
                 _ if world.config.is_some() => {
                     let out = world.config.as_mut().unwrap().key(gu, &mut world.game, *key, sw);
                     config_out(world, out);
@@ -1629,7 +1756,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.merits_ui.is_some() => merits::key(world, gu, *key),
                 _ if world.jp_ui.is_some() => jobpoints::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.ae_ui.is_some() => aepoints::key(world, *key, modifiers.ctrl || modifiers.alt),
+                _ if world.status.is_some() && modern::status_key(world, *key) => {}
                 _ if world.status.is_some() => status::key(world, gu, *key),
+                _ if modern::journal_key(world, gu, *key, modifiers.ctrl || modifiers.alt) => {}
                 _ if world.missions.is_some() => missions::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.quests.is_some() => quests::key(world, *key, modifiers.ctrl || modifiers.alt),
                 _ if world.keyitems.is_some() => keyitems::key(world, gu, *key, modifiers.ctrl || modifiers.alt),
@@ -1709,6 +1838,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // The menu opens on the page it was closed on.
                 // While dead the K.O. window or the raise prompt has the focus and takes it (message 7, FUN_1015dd00).
                 egui::Key::Minus if !world.ko_open && world.ko_offer != 2 => world.menu = if world.menu.is_some() { None } else { Some(world.menu_mem[world.menu_page as usize & 1]) },
+                // The modern Command Menu takes the menu keys (client/modern/command.rs).
+                egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.modern && world.menu.is_some() && !world.log_active => {
+                    modern::command_key(world, *key)
+                }
                 egui::Key::Escape if world.menu.is_some() => world.menu = None,
                 egui::Key::Escape if world.overlay.is_some() => world.overlay = None,
                 // FUN_102110c0: the raise prompt refuses Escape (+0x39 = 0: SE 0004) and keeps the key.
@@ -1804,7 +1937,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Social page: child 11 Shut Down (FUN_10159f90), 12 Log Out (FUN_1015a020) ask first.
     world.menu_picked = false;
-    if let Some(id) = pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1).filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
+    // A modern Command Menu pick names its page and child.
+    let clicked = world.menu_click.take();
+    if let Some((page, _)) = clicked {
+        world.menu_page = page;
+    }
+    let picked = clicked.map(|c| c.1 as usize).or_else(|| pick.and_then(|k| items.get(k)).map(|(i, _)| i + 1));
+    if let Some(id) = picked.filter(|&id| !menu_disabled(world).contains(&(id as u16))) {
         world.menu_picked = true;
         // FUN_10140400: a row that opens its window plays 0002 (the rows below that can refuse push their own).
         if matches!((world.menu_page, id), (0, 1 | 2 | 3 | 4 | 5 | 6 | 8 | 10)) {
@@ -1918,31 +2057,36 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         missions::command(world, gu, arg.as_deref());
     }
     // Mouse on the settings screen, else the Config windows.
-    if let (Some(s), Some(p)) = (world.settings.as_mut(), input.pointer) {
+    if let (Some(s), Some(p)) = (world.settings.as_mut().filter(|_| !world.modern), input.pointer) {
         s.pointer(gu, p, input.moved, input.clicked, sw, sh);
         if s.hover {
             gu.hover.set(true);
         }
         world.sounds.extend(s.sounds.drain(..).map(|x| x as u32));
     }
-    if let (Some(c), Some(p), None) = (world.config.as_mut(), input.pointer, world.settings.as_ref()) {
+    // While Modern is on configwi alone is the modern page's (egui's mouse); retail's windows over it take it.
+    let modern_page = world.modern && world.config.as_ref().is_some_and(|c| c.stack.len() <= 1);
+    if let (Some(c), Some(p), None, false) = (world.config.as_mut(), input.pointer, world.settings.as_ref(), modern_page) {
         let out = c.pointer(gu, &mut world.game, p, input.moved, input.clicked, sw, sh);
         config_out(world, out);
     }
-    // Mouse on an open window's item list.
+    // Mouse on an open window's item list (the modern layer's own list takes it there).
     if world.win.is_some()
+        && !(world.modern && items::modern_list(world))
         && let Some(p) = input.pointer
     {
         items::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.linkshell.is_some() && world.linklist.is_none() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| world.linkshell.as_ref().is_some_and(|l| !world.modern || l.naming.is_some()) && world.linklist.is_none() && world.confirm.is_none()) {
         linkshell::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.concierge_ui.is_some() && world.confirm.is_none()) {
         concierge::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| world.arealist.is_some() && world.confirm.is_none()) {
-        arealist::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        if !world.modern {
+            arealist::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        }
     }
     if let Some(p) = input.pointer.filter(|_| world.blklist.is_some() && world.confirm.is_none()) {
         blklist::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
@@ -1998,34 +2142,40 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if input.right_clicked && world.seacom_edit.is_some() && world.confirm.is_none() {
         seacom::right_click(world);
     } else if let Some(p) = input.pointer.filter(|_| world.search.is_some() && !searchmenu::refining(world) && world.arealist.is_none() && world.seacom_edit.is_none() && world.confirm.is_none()) {
-        search::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+        if !world.modern {
+            search::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+        }
     }
     if let Some(p) = input.pointer.filter(|_| world.linklist.is_some() && world.confirm.is_none()) {
         linklist::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| searchmenu::focused(world)) {
+    if let Some(p) = input.pointer.filter(|_| !world.modern && searchmenu::focused(world)) {
         searchmenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| partymenu::focused(world)) {
+    if let Some(p) = input.pointer.filter(|_| !world.modern && partymenu::focused(world)) {
         partymenu::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     if let Some(p) = input.pointer.filter(|_| viewhouse::focused(world)) {
-        viewhouse::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        if !world.modern {
+            viewhouse::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        }
     }
     if let Some(p) = input.pointer.filter(|_| bazaar::focused(world)) {
-        bazaar::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        if !world.modern {
+            bazaar::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+        }
     }
-    if let Some(p) = input.pointer.filter(|_| world.keyitems.is_some() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| !world.modern && world.keyitems.is_some() && world.confirm.is_none()) {
         keyitems::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.quests.is_some() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| !world.modern && world.quests.is_some() && world.confirm.is_none()) {
         quests::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
-    if let Some(p) = input.pointer.filter(|_| world.missions.is_some() && world.confirm.is_none()) {
+    if let Some(p) = input.pointer.filter(|_| !world.modern && world.missions.is_some() && world.confirm.is_none()) {
         missions::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // Taken before the sub-windows run: a right click closing one must not reach statcom2 the same frame.
-    let status_pointer = input.pointer.filter(|_| world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.ae_ui.is_none() && world.confirm.is_none());
+    let status_pointer = input.pointer.filter(|_| !world.modern && world.status.is_some() && world.currencies.is_none() && world.unity.is_none() && world.merits_ui.is_none() && world.jp_ui.is_none() && world.ae_ui.is_none() && world.confirm.is_none());
     if let Some(p) = input.pointer.filter(|_| world.currencies.is_some() && world.confirm.is_none()) {
         currencies::pointer(world, gu, sw, sh, p, input.moved);
     }
@@ -2049,7 +2199,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         bluset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     } else if let Some(p) = input.pointer.filter(|_| world.moncustom.is_some() && world.confirm.is_none()) {
         moncustom::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
-    } else if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
+    } else if let Some(p) = input.pointer.filter(|_| !world.modern && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some())) {
         magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // The party cursor (<stpc>, a party menu pick): the mouse over the party windows' rows.
@@ -2058,7 +2208,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
-        let row = event::choice(world).and_then(|_| {
+        // The modern layer's choice panel takes its own clicks.
+        let row = event::choice(world).filter(|_| !world.modern).and_then(|_| {
             let r = gu.window_rect("menu    query", sw, sh)?;
             let p = input.pointer?;
             gu.children("menu    query").iter().position(|c| inside(&[r[0] + c[0], r[1] + c[1], c[2].max(132.0), c[3].max(16.0)], p))
@@ -2067,7 +2218,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     // Mog House door menu rows (child n of mogdoor): hover moves the cursor, a click picks.
-    let door_rows: Vec<[f32; 4]> = match (&world.mogdoor, gu.window_xy(myroom::WINDOW, sw, sh)) {
+    let door_rows: Vec<[f32; 4]> = match (world.mogdoor.as_ref().filter(|_| !world.modern), gu.window_xy(myroom::WINDOW, sw, sh)) {
         (Some(m), Some((wx, wy))) => gu.children(myroom::WINDOW).iter().take(m.rows()).map(|c| [wx + c[0], wy + c[1], c[2].max(120.0), c[3].max(16.0)]).collect(),
         _ => Vec::new(),
     };
@@ -2087,7 +2238,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Action menu rows: hover moves the cursor; on the focused menu the left release over the cursor row picks it
     // (FUN_1015de50; on no row SE 0004), the button held 60 ticks on a row runs its Right function and starts again
     // (FUN_1012b4b0; a row change restarts it), and a right click is Escape (msg 6, FUN_1015def0; ours only over it).
-    let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none()).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
+    let action_rows = world.action_menu.as_ref().filter(|_| world.prompt.is_none() && !world.modern).and_then(|m| gu.window_rect(&combat::window_name(m.items.len()), sw, sh).map(|r| (r, combat::rows(r[0], r[1], m.items.len()))));
     let focused = world.magic.is_none() && world.ability.is_none() && world.cats.is_none() && world.win.is_none() && world.menu.is_none() && world.loot.is_none() && world.chatctrl.is_none();
     let (mut held, mut right_click) = (false, false);
     if let (Some((r, rows)), Some(p), Some(m)) = (&action_rows, input.pointer, world.action_menu.as_mut()) {
@@ -2119,6 +2270,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
         right_click = focused && input.right_clicked && inside(r, p);
+    }
+    // The modern combat window's click picks its row.
+    if let Some(k) = world.action_click.take()
+        && let Some(m) = world.action_menu.as_mut()
+        && k < m.items.len()
+    {
+        m.sel = k;
+        act = m.items.get(k).copied();
     }
     // mp_pmode has no hold timer.
     if held && !monstrosity::active(world) {
@@ -2170,8 +2329,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.chat.push_colour(l, colour);
     }
     minimap::prepare(gu, world, sw);
-    let foot = timers_foot(gu, world, sw, sh);
-    timers::prepare(gu, world, sw, sh, foot);
+    // The modern layer draws the Timers, the minimap and the map overlay itself.
+    if !world.modern {
+        let foot = timers_foot(gu, world, sw, sh);
+        timers::prepare(gu, world, sw, sh, foot);
+    }
     // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
     monstrosity::refresh(world);
@@ -2191,6 +2353,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The party window's rows (slots 0..5): ours from our own vitals, the rest from the roster.
     let party_slots = world.party.slots();
     let rows: Vec<Option<party::Member>> = std::iter::once(None).chain(party_slots.slots[1..6].iter().take_while(|m| m.is_some()).cloned()).collect();
+    for m in party_slots.slots.iter().flatten().filter(|m| m.hpp == 100 && m.hp > 0) {
+        world.party_hp_max.insert(m.id, m.hp);
+    }
     let mine = world.vitals.map(|v| (v.3 as f32 / 100.0, v.4 as f32 / 100.0));
     // FUN_101cad00 per draw at retail's 30 fps: a += trunc((t - a) * 0.15), or a = t once that is 0. A row whose member
     // changed starts from 0 (its bars sweep up); a new target starts at its HP.
@@ -2237,7 +2402,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // raid1 / raid2 (FUN_10203c80): shown while their party exists and no window of the registry +0x2a 0x01 / 0x80
     // set is up (main and social menus, item / equipment windows, magic / ability lists, map, config, palettes) nor an
     // event holds us (the mapping to our state: inferred). Closing them drops a party-list cursor silently.
-    let hide = world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world);
+    let hide = alliance_hidden(world);
     world.ally_gauges.resize(12, (0, 0));
     let alliance: [Option<[Option<crate::render::screens::AllyRow>; 6]>; 2] = std::array::from_fn(|k| {
         (party_slots.counts[k + 1] > 0 && !hide).then(|| {
@@ -2261,7 +2426,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let menu_off = world.action_menu.is_some() && !gu.want("menu    playermo");
     let target_off = target.is_some() && event::keeps_target(world) && !gu.want("menu    targetwi");
     let main_off = world.menu.is_some() && !gu.want(crate::render::screens::menu_window(world.menu_page));
-    let st = crate::render::screens::HudState {
+    world.main_off = main_off;
+    let mut st = crate::render::screens::HudState {
         party_anim: world.party_gauges.iter().map(|g| (g.1 as f32 / 100.0, g.2 as f32 / 100.0)).collect(),
         target_anim: tgt.map(|_| world.target_gauge.1 as f32 / 100.0),
         target_glyph: world.target.and_then(|id| if id == world.my_id { plate::target_glyph(&self_plate(world)) } else { world.entities.get(&id).and_then(|e| plate::target_glyph(&entity_plate(id, e))) }),
@@ -2278,14 +2444,20 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             (id != 0 && id == party_slots.leaders[0]) as u8 | ((id != 0 && id == party_slots.alliance_leader) as u8) << 1
         }).collect(),
         target: target.filter(|_| event::keeps_target(world) && !target_off).map(|t| (!t.no_gauge).then_some(t.hpp as f32 / 100.0)),
-        menu_selected: world.menu.filter(|_| !main_off).and_then(|k| items.get(k)).map(|(i, _)| *i),
+        menu_selected: world.menu.filter(|_| !main_off && !world.modern).and_then(|k| items.get(k)).map(|(i, _)| *i),
         menu_page: world.menu_page,
         menu_off: menu_disabled(world),
         menu_swap: menu_swap(world),
         menu_focused: !world.log_active && world.confirm.is_none() && world.missions.is_none() && world.quests.is_none() && world.keyitems.is_none() && world.linkshell.is_none() && world.helpdesk.is_none() && world.macroedit.is_none(),
         chat_log: false,
     };
+    // The modern layer draws its own target panel; the cursor over the target stays.
+    let target_up = st.target.is_some();
+    if world.modern {
+        (st.party_window, st.target, st.alliance) = (String::new(), None, [None, None]);
+    }
     gu.clear();
+    gu.modern_skin(world.modern);
     name_plates(gu, world, sw, sh, view_proj);
     if world.overlay.as_ref().is_some_and(|o| o.zone != world.pos_zone) {
         world.overlay = Some(map::Overlay::open(world, gu.map_regions()));
@@ -2293,7 +2465,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         o.follow(world, gu.map_regions());
         world.overlay = Some(o);
     }
-    if let Some(o) = world.overlay.as_mut() {
+    if let Some(o) = world.overlay.as_mut().filter(|_| !world.modern) {
         let facing = world.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
         o.draw(gu, (world.pos.x, world.pos.z), facing, sw, sh, world.map_opacity);
     }
@@ -2334,7 +2506,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             }
         }
     }
-    minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
+    if !world.modern {
+        minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
+    }
     timers::draw(gu, &mut world.timers, sw);
     let slots = gu.hud(sw, sh, &st);
 
@@ -2342,24 +2516,37 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // locked, windowps 212 over the target window (0x10149bc0).
     // In a prompt (FUN_101501a0 with +0xc4 set) the saved target keeps it and the pick gets a second one 10 px up,
     // tinted by range (FUN_10150610), and flashes (+0x88 |= 0x600) unless red.
+    // The modern layer draws the pack's pointers where these go.
     let frame = (world.target_since.elapsed().as_secs_f32() * 60.0 / 4.0) as usize % gu.lib_len("anc     anc_l").max(1);
+    let mut pointers = Vec::new();
     if let Some(p) = world.prompt.as_ref() {
         if let Some((x, y)) = p.saved.and_then(|t| target_point(world, t, sw, sh, view_proj)) {
-            gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
+            pointers.push((x, y, 1u8, 0xe080_8080u32));
         }
         if let Some(t) = world.target {
             let tint = target::range_tint(world, t);
             if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
-                gu.sprite("anc     anc_l", frame, x.round(), (y - 10.0).round(), tint);
+                pointers.push((x, y - 10.0, 2, tint));
             }
         }
     }
     layout::draw_cursor(gu, world, sw, sh, view_proj);
-    if let (Some(t), true, None) = (world.target, st.target.is_some(), world.prompt.as_ref()) {
-        if let Some((x, y)) = target_point(world, t, sw, sh, view_proj) {
-            gu.sprite("anc     anc_l", frame, x.round(), y.round(), 0xe080_8080);
+    if let (Some(t), true, None) = (world.target, target_up, world.prompt.as_ref())
+        && let Some((x, y)) = target_point(world, t, sw, sh, view_proj)
+    {
+        pointers.push((x, y, 0, 0xe080_8080));
+    }
+    world.modern_pointers.clear();
+    for (x, y, kind, tint) in pointers {
+        if world.modern {
+            world.modern_pointers.push((x / sw.max(1.0), y / sh.max(1.0), kind, tint));
+        } else {
+            gu.sprite("anc     anc_l", frame, x.round(), y.round(), tint);
         }
+    }
+    if let (Some(_), true, None) = (world.target, target_up, world.prompt.as_ref()) {
         if world.locked
+            && !world.modern
             && let Some(r) = gu.window_rect("menu    targetwi", sw, sh)
         {
             gu.sprite("menu    windowps", 212, r[0], r[1], 0x8080_8080);
@@ -2386,8 +2573,19 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.log_takers = takers;
     if event::active(world) && world.full_log.take().is_some() {
         world.log_focus = 0;
+        world.modern_log.fill = true;
     }
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
+    // The same inputs for the modern chat window's run of the rule; its combat window is retail's playermo (flag 0x1000).
+    world.log_rule = logwin::LogRule {
+        stacked: stacked || (world.modern && world.action_menu.is_some()),
+        page_rows: event::prompt(world).then_some(page_rows),
+        typing: world.typing,
+        line_open,
+        focused: world.log_active,
+        shrink: shrink_log,
+        cfg: world.log.cfg,
+    };
     world.log.chat_line(world.typing);
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
     let log = world.log.frame(sw, sh);
@@ -2395,6 +2593,15 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.timers.log = Some(log.rect);
     gu.log_top = Some(log.rect[1]);
     gu.log_faded = world.log.faded();
+    // The modern chat window stands for the log: stacked windows 2 px above the part of it showing (as it fades it
+    // folds into its bottom edge).
+    if world.modern
+        && let Some((r, _)) = world.modern_chat_edge
+    {
+        gu.log_top = Some(r[1]);
+        gu.log_faded = false;
+        world.timers.log = Some(r);
+    }
     // FUN_101626e0 (asm 0x10162a52): with the log held by a stacked window, a height change moves the pointer with
     // it while it is inside one, so it stays on the same child. Ours shifts the drawn cursor (no warp on Wayland).
     if !stacked {
@@ -2425,10 +2632,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
-    } else if let Some(fl) = world.full_log {
-        // The small logs are closed while the full log is open (FUN_1015c280).
+    } else if let Some(fl) = world.full_log.filter(|_| !world.modern) {
+        // The small logs are closed while the full log is open (FUN_1015c280); the modern one is the chat window.
         blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, world.game.get(0xb4) != 0));
-    } else if log.alpha > 0.0 || log.lines > 0 {
+    } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);
         let newest = world.log.draw(gu, &log, line_open);
@@ -2447,7 +2654,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push(log.rect);
     }
     // The chat line ("menu    inline") (16, H - 38), (textw + 14) x 22, windowps 37; FUN_101b7fd0.
-    if world.typing {
+    if world.typing && !world.modern {
         let (x, y, w) = (16.0, sh - 38.0, tw + 14.0);
         gu.frame(x, y, w, 22.0);
         gu.sprite_from("menu    windowps", 37, 1, x, y, 0x8080_8080);
@@ -2536,7 +2743,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             blockers.push(fep::draw(gu, f, word_x - 8.0, y));
         }
     }
-    if let Some(inp) = event::input(world) {
+    if let Some(inp) = event::input(world).filter(|_| !world.modern) {
         let text = String::from_utf8_lossy(&inp.text).into_owned();
         blockers.extend(draw_event_input(gu, inp.kind, &text, inp.caret, sw, sh));
     }
@@ -2544,8 +2751,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect("menu    targetwi", sw, sh));
     }
     // The status icons are layer 0 (registry +0x29): every window draws over them.
-    buffs::draw(gu, world, sw, sh);
-    buffs::draw_party(gu, world, sw, sh, log.rect);
+    if !world.modern {
+        buffs::draw(gu, world, sw, sh);
+        buffs::draw_party(gu, world, sw, sh, log.rect);
+    }
     fishing::draw_gauge(gu, world, sw, sh);
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(remodel::draw(gu, world, sw, sh));
@@ -2554,19 +2763,34 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
     treasure::draw_chest(gu, world, sw, sh);
-    partymenu::draw_invite_icon(gu, world, sw, sh);
-    blockers.extend(shop::draw(gu, world, sw, sh, log.rect[1]));
+    if !world.modern {
+        partymenu::draw_invite_icon(gu, world, sw, sh);
+    }
+    // On the log's top: in Modern the chat window's with what rides on it (gu.log_top).
+    let log_top = gu.log_top.unwrap_or(log.rect[1]);
+    blockers.extend(shop::draw(gu, world, sw, sh, log_top));
     blockers.extend(trade::draw(gu, world, sw, sh));
-    blockers.extend(gauge::draw(gu, world, sw, sh));
+    // The modern party panel always shows our HP / MP / TP.
+    if !world.modern {
+        blockers.extend(gauge::draw(gu, world, sw, sh));
+    }
     // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
-    blockers.extend(search::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(search::draw(gu, world, sw, sh));
+    }
     // arealist draws over scresult (layer 3) and beside searchma / scsibori.
-    blockers.extend(arealist::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(arealist::draw(gu, world, sw, sh));
+    }
     blockers.extend(seacom::draw(gu, world, sw, sh));
-    blockers.extend(region::draw_menu(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(region::draw_menu(gu, world, sw, sh));
+    }
     blockers.extend(inspect::draw(gu, world, sw, sh));
     blockers.extend(synth::draw(gu, world, sw, sh));
-    blockers.extend(items::draw(gu, world, sw, sh));
+    if !(world.modern && items::modern_list(world)) {
+        blockers.extend(items::draw(gu, world, sw, sh));
+    }
     // The action menu (FUN_101276a0), beneath the lists it opens: label sprites, the highlighted one tinted 0x80805020; none
     // while it opens; the hand only while it has the focus.
     if let (Some(m), Some((r, rows))) = (world.action_menu.as_ref().filter(|_| !menu_off), &action_rows) {
@@ -2585,44 +2809,65 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
 
     // chatctrl over the action menu that opened it.
     blockers.extend(chatctrl::draw(gu, world, sw, sh));
-    blockers.extend(partymenu::draw(gu, world, sw, sh));
-    blockers.extend(levelsync::draw(gu, world, sw, sh));
-    blockers.extend(viewhouse::draw(gu, world, sw, sh));
-    blockers.extend(bazaar::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(partymenu::draw(gu, world, sw, sh));
+    }
+    if !world.modern {
+        blockers.extend(levelsync::draw(gu, world, sw, sh));
+        blockers.extend(viewhouse::draw(gu, world, sw, sh));
+        blockers.extend(bazaar::draw(gu, world, sw, sh));
+    }
     // guide00 suspends faqsub (window group 0x1c).
     if world.primer.is_none() {
         blockers.extend(helpdesk::draw(gu, world, sw, sh));
     }
     blockers.extend(primer::draw(gu, world, sw, sh));
     blockers.extend(macroedit::draw(gu, world, sw, sh));
-    blockers.extend(searchmenu::draw(gu, world, sw, sh));
-    blockers.extend(status::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(searchmenu::draw(gu, world, sw, sh));
+    }
+    if !world.modern {
+        blockers.extend(status::draw(gu, world, sw, sh));
+    }
     blockers.extend(currencies::draw(gu, world, sw, sh));
     blockers.extend(unity::draw(gu, world, sw, sh));
     blockers.extend(merits::draw(gu, world, sw, sh));
     blockers.extend(equipwin::pup_draw(gu, world, sw, sh));
     blockers.extend(jobpoints::draw(gu, world, sw, sh));
     blockers.extend(aepoints::draw(gu, world, sw, sh));
-    blockers.extend(missions::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(missions::draw(gu, world, sw, sh));
+        blockers.extend(keyitems::draw(gu, world, sw, sh));
+    }
     blockers.extend(quests::draw(gu, world, sw, sh));
-    blockers.extend(keyitems::draw(gu, world, sw, sh));
-    blockers.extend(linkshell::draw(gu, world, sw, sh));
+    if !world.modern || world.linkshell.as_ref().is_some_and(|l| l.naming.is_some()) || world.linklist.is_some() {
+        blockers.extend(linkshell::draw(gu, world, sw, sh));
+    }
     blockers.extend(concierge::draw(gu, world, sw, sh));
     blockers.extend(linklist::draw(gu, world, sw, sh));
     blockers.extend(blklist::draw(gu, world, sw, sh));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
-    blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
-    blockers.extend(magic::draw(gu, world, sw, sh));
+    if !world.modern {
+        blockers.extend(draw_item_info(gu, world, sw, sh, log_top));
+    }
+    // The modern layer draws the magic and ability windows itself.
+    if !world.modern {
+        blockers.extend(magic::draw(gu, world, sw, sh));
+    }
     blockers.extend(bluset::draw(gu, world, sw, sh));
     blockers.extend(moncustom::draw(gu, world, sw, sh));
-    magic::draw_cast_bar(gu, world, sw, sh);
+    if !world.modern {
+        magic::draw_cast_bar(gu, world, sw, sh);
+    }
     if let Some(c) = world.config.as_mut() {
         c.covered = world.settings.is_some();
     }
     if let Some(c) = &world.config {
-        blockers.extend(c.draw(gu, &world.game, sw, sh));
+        // While Modern is on configwi is the modern layer's page; retail draws the windows over it.
+        let from = (world.modern as usize).min(c.stack.len());
+        blockers.extend(c.draw_from(gu, &world.game, sw, sh, from));
     }
-    if let Some(s) = &world.settings {
+    if let Some(s) = world.settings.as_ref().filter(|_| !world.modern) {
         blockers.push(s.draw(gu, sw, sh));
     }
     // The map covers the screen (mapframe takes the mouse), as does cnqframe.
@@ -2630,7 +2875,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push([0.0, 0.0, sw, sh]);
     }
     // The choice menu (FUN_100b0960): question at the top, three option rows with the anc_s hand.
-    if let Some(c) = event::choice(world)
+    if let Some(c) = event::choice(world).filter(|_| !world.modern)
         && let Some((qx, qy)) = gu.window("menu    query", sw, sh)
     {
         let (question, options, scroll, cursor) = (c.question.clone(), c.options.clone(), c.scroll, c.cursor);
@@ -2655,34 +2900,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect(crate::render::screens::menu_window(world.menu_page), sw, sh));
     }
     // FUN_101d62b0: the door menu, title group 9 0x45 and its rows 0x14 to the right of child n.
-    if let Some(m) = &world.mogdoor
+    if let Some(m) = world.mogdoor.as_ref().filter(|_| !world.modern)
         && let Some((wx, wy)) = gu.window(myroom::WINDOW, sw, sh)
     {
         let kids = gu.children(myroom::WINDOW);
-        let g9 = |id: usize| world.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
-        gu.text(&g9(0x45), wx + 3.0, wy + 3.0, 0, WHITE);
-        let rows: Vec<(usize, String, [u8; 4])> = if m.list {
-            let names = world.names.clone();
-            myroom::areas(m.bit)
-                .iter()
-                .enumerate()
-                .map(|(k, &z)| {
-                    let name = names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).unwrap_or_default();
-                    let c = if z == 0x118 && !m.garden { [0x40, 0x20, 0x40, 0x80] } else { WHITE };
-                    (k, name, c)
-                })
-                .collect()
-        } else {
-            myroom::ROWS
-                .iter()
-                .enumerate()
-                .map(|(k, &(child, id))| {
-                    let id = if k == 1 && world.mh_owner != 0 { 0xf1 } else { id };
-                    let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
-                    (child as usize - 1, g9(id), c)
-                })
-                .collect()
-        };
+        let (title, rows) = mogdoor_rows(world);
+        gu.text(&title, wx + 3.0, wy + 3.0, 0, WHITE);
         for (k, (child, text, c)) in rows.iter().enumerate() {
             let Some(r) = kids.get(*child) else { continue };
             let (x, y) = (wx + r[0] + 20.0, wy + r[1]);
@@ -2698,6 +2921,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // wider), the keycap cells, each cell's macro title: letters and digits in the mcralpha sprites, anything else in
     // the UI font.
     if world.palette.0 != 0
+        && !world.modern
         && let Some(m) = world.macros.as_ref()
     {
         let p = world.palette.0 as usize;
@@ -2715,10 +2939,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // The yes / no prompt (FUN_10210e30): "menu    comyn" stacked on the log (registry flag 0x1000: frame top = log top
     // - 88 - 2, at least 16), the question at (+4, +4) wrapped to w - 8 (FUN_10211050), Yes / No children 1 / 2.
-    if let Some((kind, yes)) = world.confirm {
+    if let Some((kind, _)) = world.confirm {
+        world.confirm_text = confirm_msg(gu, world, kind);
+    }
+    // The modern layer draws it (modern::confirm) and takes its mouse.
+    if let Some((kind, yes)) = world.confirm.filter(|_| !world.modern) {
         let on_yes = world.confirm.map_or(yes, |c| c.1);
         let layout = if matches!(kind, Confirm::Merit(_) | Confirm::JobPoint(_)) { "menu    merityn" } else { "menu    comyn" };
-        let mut dy = gu.window_rect(layout, sw, sh).map_or(0.0, |r| (log.rect[1] - r[3] - 2.0).max(16.0) - r[1]);
+        let mut dy = gu.window_rect(layout, sw, sh).map_or(0.0, |r| (log_top - r[3] - 2.0).max(16.0) - r[1]);
         // FUN_10232770's prompts sit under quest01 (FUN_10119110: bottom + 2).
         if let Confirm::Roe(a) = kind
             && roe::under_list(a)
@@ -2889,6 +3117,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else {
         world.raise_hover = None;
     }
+    let answer = answer.or(world.confirm_click.take().filter(|_| world.confirm.is_some()));
     match (answer, world.confirm) {
         (Some(yes), Some((Confirm::Auction(a), _))) => {
             world.confirm = None;
@@ -3100,7 +3329,19 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     let mut bars = hudtop::BarText::default();
     let map0 = world.map.as_ref().and_then(|m| m.focus());
     let cfg_focus = world.config.as_ref().and_then(|c| c.focus());
-    let focus = cfg_focus.as_ref().map(|(n, c)| (n.as_str(), *c)).or(items::focus(world)).or(map0).or_else(|| world.menu.and_then(|k| items.get(k)).map(|(i, _)| (crate::render::screens::menu_window(world.menu_page), *i as u16 + 1)));
+    // The modern command menu's cursor, not the retail menu's.
+    let modern_menu = world.menu.filter(|_| world.modern).map(|_| modern::bar_focus(world));
+    let menu_focus = match &modern_menu {
+        Some(modern::BarFocus::Row(page, id)) => Some((crate::render::screens::menu_window(*page), *id)),
+        Some(modern::BarFocus::Text(..)) => None,
+        None => world.menu.and_then(|k| items.get(k)).map(|(i, _)| (crate::render::screens::menu_window(world.menu_page), *i as u16 + 1)),
+    };
+    let focus = cfg_focus.as_ref().map(|(n, c)| (n.as_str(), *c)).or(items::focus(world)).or(map0).or(menu_focus);
+    if focus.is_none()
+        && let Some(modern::BarFocus::Text(title, help)) = modern_menu
+    {
+        (bars.help[1], bars.title[1]) = (help, title.into());
+    }
     // mapframe's base draw (FUN_101eebd0, +0xb4) puts the map's place name (FUN_101cbc10(zone, 1)) in helpwind slot 2.
     if let Some(zone) = world.map.as_ref().and_then(|m| m.help_zone())
         && let Some(names) = world.names.as_ref()
@@ -3279,6 +3520,35 @@ fn open_mogdoor(w: &mut World) {
 }
 
 /// FUN_101d6540 on a choice.
+/// The door menu's title (group 9 0x45) and rows: (child - 1, text, colour); the exit areas while choosing one.
+fn mogdoor_rows(world: &World) -> (String, Vec<(usize, String, [u8; 4])>) {
+    let g9 = |id: usize| world.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
+    let Some(m) = &world.mogdoor else { return (String::new(), Vec::new()) };
+    let rows = if m.list {
+        let names = world.names.clone();
+        myroom::areas(m.bit)
+            .iter()
+            .enumerate()
+            .map(|(k, &z)| {
+                let name = names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).unwrap_or_default();
+                let c = if z == 0x118 && !m.garden { [0x40, 0x20, 0x40, 0x80] } else { WHITE };
+                (k, name, c)
+            })
+            .collect()
+    } else {
+        myroom::ROWS
+            .iter()
+            .enumerate()
+            .map(|(k, &(child, id))| {
+                let id = if k == 1 && world.mh_owner != 0 { 0xf1 } else { id };
+                let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
+                (child as usize - 1, g9(id), c)
+            })
+            .collect()
+    };
+    (g9(0x45), rows)
+}
+
 fn mogdoor_pick(w: &mut World) {
     let Some(m) = w.mogdoor.as_mut() else { return };
     match m.pick() {
@@ -3806,12 +4076,11 @@ fn draw_event_input(gu: &mut GameUi, kind: i32, text: &str, caret: usize, sw: f3
     Some(win.frame)
 }
 
-/// The item info window (FUN_1013cba0 / FUN_1013d760) for the open list's cursor item, else the event's: mode 0 at
-/// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
-fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
-    let cache = world.item_info.clone()?;
+/// The item the info window describes now: the open list's cursor item, else a shop's, the auction's ..., else the
+/// event's; (item, extdata, container, equipped, mode, flags).
+fn item_info_source(world: &World) -> Option<(u16, Option<[u8; 24]>, Option<u8>, bool, u8, u32)> {
     let post_item = post::info_source(world).or_else(|| synth::info_source(world));
-    let (id, ext, container, equipped, mode, flags) = match (items::info_source(world), event::option_item(world)) {
+    Some(match (items::info_source(world), event::option_item(world)) {
         (Some((id, ext, c, _, eq, mode)), _) => (id, ext, Some(c), eq, mode, 0),
         // The shop list's row: mode 1 at (130, 240), right of the money window (FUN_1013e3b0(1, ..)).
         (None, _) if let Some((id, ext)) = shop::info_source(world) => (id, ext, None, false, 1, 0),
@@ -3827,7 +4096,14 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some(id) = moncustom::info_source(world) => (id, None, None, false, 3, 0),
         (None, Some((id, ext, f))) => (id, ext, None, false, 4, f as u32),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
-    };
+    })
+}
+
+/// The item info window (FUN_1013cba0 / FUN_1013d760) for the open list's cursor item, else the event's: mode 0 at
+/// (16, 240) stacked on the log (frame top = log top - height - 2, at least 16), mode 1 at (130, 240).
+fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32) -> Option<[f32; 4]> {
+    let cache = world.item_info.clone()?;
+    let (id, ext, container, equipped, mode, flags) = item_info_source(world)?;
     let it = cache.item(id)?;
     let mut p = world.info_page.get();
     if p.1 != id {
@@ -3887,6 +4163,21 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
     Some(r)
 }
 
+/// Wide Scan (FUN_101fb7d0): c2s 0x0F4 for a new list (0x0F6 while the last one is still open), the help bar's busy
+/// strip on until the list ends.
+fn scan_request(world: &mut World) {
+    let id = world.scan.start();
+    world.scan.origin = (world.pos.x, world.pos.z);
+    let _ = world.net.commands.send(NetCommand::Packet { id, body: ((id == 0x0F4) as u32).to_le_bytes().to_vec() });
+    world.scan.busy = true;
+}
+
+/// Tracking a Wide Scan result: c2s 0x0F5 with its index.
+fn scan_track(world: &mut World, index: u16) {
+    let _ = world.net.commands.send(NetCommand::Packet { id: 0x0F5, body: (index as u32).to_le_bytes().to_vec() });
+    world.scan.track(index);
+}
+
 /// FUN_100c63d0: the drawn rotation eases 0.125 a tick toward the actor's, or op 0x59's percent of 0.00125 during an
 /// event.
 fn turn_rate(a: &Actor, in_event: bool) -> f32 {
@@ -3926,6 +4217,19 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     Some(p)
 }
 
+/// Our run speed in units per second (FUN_100a48d0): Speed x0.1, doubled while riding (status 5 / 0x55), at most 30.
+fn own_speed(w: &World) -> f32 {
+    let s = if w.my_motion.speed > 0 { w.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
+    let riding = matches!(w.my_motion.status, 5 | 0x55);
+    (if riding { s * 2.0 } else { s }).min(30.0)
+}
+
+/// Our movement ratio at full stride (FUN_100c68f0): the run speed over SpeedBase x0.1, x1.6 riding; at most 3.
+fn own_rate(w: &World) -> f32 {
+    let base = w.my_motion.speed_base as f32 * 0.1 * if matches!(w.my_motion.status, 5 | 0x55) { 1.6 } else { 1.0 };
+    if base > 0.0 { (own_speed(w) / base).min(3.0) } else { 1.0 }
+}
+
 /// A bound actor draws from its VM body while the event runs, posing with its event status (+0x174, op 0xac 1);
 /// otherwise ourselves from the session, others from their entity.
 fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
@@ -3935,7 +4239,7 @@ fn base_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
     }
     if id == w.my_id {
         let m = w.my_motion;
-        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier } else { 0.0 }, size });
+        return Some(Place { pos: drawn_pos(w), forward: forward_from_dir(my_dir), tilt: [0.0; 2], status: m.status, ratio: if w.moving { w.move_tier * own_rate(w) } else { 0.0 }, size });
     }
     let e = w.entities.get(&id)?;
     Some(Place { pos: e.pos, forward: Vec3::new(e.yaw.cos(), 0.0, -e.yaw.sin()), tilt: [0.0; 2], status: e.motion.status, ratio: e.ratio, size })
@@ -4395,6 +4699,8 @@ struct World {
     /// Since when the zone-in fade waits for a lift actor.
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
+    /// A zone line touched in an event, asked for once it ends (DAT_1048098e = 1).
+    zone_touch: Option<zone::Region>,
     zone_hold: Option<zonefade::Hold>,
     /// The limited-time RoE record last seen in slot 63 this login (DAT_10487eec), and "New Challenge" waiting to play
     /// (DAT_104807ec bit 3).
@@ -4493,6 +4799,14 @@ struct World {
     zone_uploading: Option<Instant>,
     /// Config `party_tp` (retail config 0xae bit 0); /partyinfo asks the App to save it.
     party_tp: bool,
+    /// Config `modern_ui`: the modern layer draws the windows it has, the retail ones are left out.
+    modern: bool,
+    /// Config `modern_condense` (with `modern`): an action's battle lines merge (combat::condense).
+    condense: bool,
+    /// The lines later records of their action merge into, and the last action's serial.
+    condensed: Vec<combat::Condensed>,
+    condensed_targets: Vec<combat::Targets>,
+    action_seq: u32,
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
     item_search: bool,
@@ -4517,6 +4831,14 @@ struct World {
     /// vector (DAT_1047555c), and this frame's speed fraction (FUN_100a5f60: 1, 1/3 or 0).
     walk: bool,
     autorun: bool,
+    /// Ours (modern MMOs): a right drag turns the camera and the character faces where it looks.
+    mouse_look: bool,
+    /// The modern Journal's Records of Eminence tab and its entry (Current objectives, Objective List, Vana'Bout).
+    journal_roe: Option<usize>,
+    /// The modern Journal's rows have the keys (else its logs, areas or categories on the left).
+    journal_on_list: bool,
+    /// Items /equip took in the last seconds (FUN_101efee0; six, each held while under 2 s old).
+    equip_claims: Vec<((u8, u8), Instant)>,
     autorun_dir: Vec3,
     move_tier: f32,
     /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the last four step
@@ -4596,6 +4918,8 @@ struct World {
     /// Region Info: the conquest data and marker tables, the region menu, the map (cnqframe), a /regionmap to open.
     conquest: region::Data,
     region_menu: Option<region::Menu>,
+    /// FUN_1015fa00's walk suspends the main menu (mcrmenu over its group): the modern command menu hides too.
+    main_off: bool,
     cnq: Option<region::CnqMap>,
     region_cmd: Option<usize>,
     /// The own search comment (shared with /seacom) and its editor while open.
@@ -4694,6 +5018,8 @@ struct World {
     /// The windows that take the log's focus open last frame (main menu, item windows, action menu, confirm, config).
     log_takers: u8,
     full_log: Option<logwin::FullLog>,
+    /// The modern full log's find: typed while it is open, it shows the lines holding the text (not retail).
+    log_find: Option<String>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
     map: Option<map::MapWin>,
     /// The map overlay (extra, Ctrl / Alt + O).
@@ -4711,8 +5037,38 @@ struct World {
     /// Main menu open, with the highlighted row (top to bottom) and page (0 commands, 1 social).
     menu: Option<usize>,
     menu_page: u8,
+    /// The modern Command Menu's cursor, and a row it picked (page, child) for the menu dispatch.
+    cmd: modern::CmdMenu,
+    menu_click: Option<(u8, u16)>,
+    /// A row of the action menu the modern combat window clicked.
+    action_click: Option<usize>,
+    /// The modern chat window's run of the log's rule, the rule's inputs world_hud gathers for it, and its rect in UI
+    /// pixels and fade last frame (the game's stacked windows and the Timers window sit on it).
+    modern_log: logwin::ModernLog,
+    log_rule: logwin::LogRule,
+    modern_chat_edge: Option<([f32; 4], bool)>,
+    /// The retail windows drawn this frame (egui points): the modern edge windows give way to them.
+    retail_frames: Vec<[f32; 4]>,
+    /// The modern magic and ability windows' search (listsearch.rs), their suggestions (taken when a window opens or
+    /// changes, held while it is navigated; by the window they were taken for) and the one Tab has the focus on.
+    list_search: Option<listsearch::ListSearch>,
+    /// The search's recent picks (listsearch::key_of), newest first, and whether they changed since the save.
+    recent_picks: Vec<String>,
+    recent_save: bool,
+    suggestions: Option<(listsearch::WindowKey, Vec<suggest::Suggestion>)>,
+    suggest_sel: Option<usize>,
+    /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
+    party_hp_max: HashMap<u32, u32>,
+    /// Where retail's target cursors (anc_l) go this frame, for the modern layer's own: screen fractions, the kind (0
+    /// the target, 1 a prompt's saved target, 2 its pick) and the pick's range tint.
+    modern_pointers: Vec<(f32, f32, u8, u32)>,
+    /// The game UI's layout size this frame (the modern layer turns its rects into screen fractions).
+    ui_wh: (f32, f32),
     /// A yes/no prompt (FUN_102075f0) and whether Yes is highlighted.
     confirm: Option<(Confirm, bool)>,
+    /// The prompt's question as drawn, and an answer the modern layer's mouse gave.
+    confirm_text: String,
+    confirm_click: Option<bool>,
     /// Close the window once the server has logged us out.
     shutdown: bool,
     /// Zone music slots (0x00A / 0x05F) and the choice among them.
@@ -4736,6 +5092,11 @@ struct World {
     point_masks: Option<[u8; 64]>,
     /// Wide Scan results and tracking (the session store, lost on zoning).
     scan: widescan::Scan,
+    /// The Wide Scan flyout's name filter (ours) and whether it takes the keys.
+    scan_find: String,
+    /// Key function 0x11 in the full log: its next tab (the modern layer takes it).
+    full_log_next: bool,
+    scan_typing: bool,
     /// The item info window opened by event ops 0x93 / 0xcc (FUN_1013e520): item, extdata, flags (+0x374).
     info_win: Option<(u16, Option<[u8; 24]>, u32)>,
     /// Its page (+0x380), the item the page is for, and the page count last built.
@@ -4919,6 +5280,10 @@ struct World {
     minimap_size: u32,
     minimap_span: f32,
     minimap_dirty: bool,
+    /// Resting's ticks: the rest watched and what was learnt (saved in config rest_tick).
+    rest: resttick::RestTick,
+    /// The wheel's camera distance changed (saved in config cam_dist).
+    cam_dist_dirty: bool,
     /// Config auto_sort (items::auto_sort_tick): the containers kept sorted, changed since saved; those with a new item
     /// and the seconds until they sort.
     auto_sort: u32,
@@ -4930,6 +5295,8 @@ struct World {
     voyage: voyage::Voyage,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
     cast_bar: Option<(f32, f32)>,
+    /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
+    casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
     msgshift: Option<Arc<crate::dat::msgshift::MsgShift>>,
     zone_text: Option<(u16, Arc<crate::dat::dialog::Dialog>)>,
@@ -5168,6 +5535,10 @@ pub struct App {
     /// When the left button went down, and the right one (where and when): the drag rule (FUN_10125040).
     press_time: Option<Instant>,
     right_press: Option<((f64, f64), Instant)>,
+    /// Ours (modern MMOs): a look drag holds the pointer, hidden, where it began. Some(true) locked (raw motion turns
+    /// the camera), Some(false) only confined (X11: warped back after each move).
+    look_grab: Option<bool>,
+    grab_at: Option<(f64, f64)>,
     /// A world click confirmed or opened a window: this frame's click is not the windows' (FUN_10123ea0).
     swallow_click: bool,
     /// The window size the last frame drew at (the mouse pick's projection).
@@ -5210,6 +5581,8 @@ pub struct App {
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
+    /// The modern UI layer (client/modern), made the first time it is switched on.
+    modern: Option<modern::Modern>,
     /// Whether this frame's UI pass drew game UI (lobby art or the HUD).
     ui_drawn: bool,
     /// Event crossfade and fade passes over the scene.
@@ -5388,6 +5761,8 @@ impl App {
             press_at: None,
             press_time: None,
             right_press: None,
+            look_grab: None,
+            grab_at: None,
             swallow_click: false,
             window_size: [1, 1],
             last_cursor: None,
@@ -5415,6 +5790,7 @@ impl App {
             cnq_tables: None,
             point_files: [None; 5],
             game_ui: None,
+            modern: None,
             game_ui_state: LoadState::Idle,
             ui_drawn: false,
             screen_fx: None,
@@ -5485,8 +5861,14 @@ impl App {
         } else if self.audio.is_none() {
             self.audio_tried = false;
         }
+        if let Some(gu) = self.game_ui.as_mut() {
+            gu.modern_skin(self.cfg.modern_ui);
+        }
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
+            w.modern = self.cfg.modern_ui;
+            w.condense = self.cfg.modern_condense;
+            w.chat.set_fold(self.cfg.modern_ui && self.cfg.modern_condense);
             w.map_opacity = self.cfg.map_overlay_opacity;
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;
@@ -5591,6 +5973,12 @@ impl App {
     fn to_login(&mut self, error: bool) {
         if let Phase::World(w) = &mut self.phase {
             self.line_hist = std::mem::take(&mut w.line_hist);
+            // The modern chat's history for the next login (not retail).
+            if self.cfg.modern_ui
+                && let Err(e) = w.chat.save(&crate::config::chat_history_path(&w.name))
+            {
+                log::warn!("chat history: {e}");
+            }
         }
         self.phase = Phase::login(&self.cfg);
         self.lobby_fade = LobbyFade::default();
@@ -5913,7 +6301,12 @@ impl App {
                 log::warn!("title flyover: {e:#}");
                 self.flyover_state = LoadState::Failed;
             }
-            Task::GameUi(Ok(data)) => self.game_ui = Some(GameUi::new(data)),
+            Task::GameUi(Ok(data)) => {
+                let mut gu = GameUi::new(data);
+                // The lobby's windows wear the modern frames when Modern is chosen (the default stays retail).
+                gu.modern_skin(self.cfg.modern_ui);
+                self.game_ui = Some(gu);
+            }
             Task::GameUi(Err(e)) => {
                 log::warn!("lobby UI: {e:#}");
                 self.game_ui_state = LoadState::Failed;
@@ -6012,6 +6405,7 @@ impl App {
                             ride_y: 0.0,
                             lift_wait: None,
                             zoning_since: None,
+                            zone_touch: None,
                             zone_hold: None,
                             roe_timed: 0,
                             new_challenge: false,
@@ -6060,13 +6454,18 @@ impl App {
                             cam: Default::default(),
                             lock_height: -1.5,
                             unlock_ticks: 0.0,
-                            camst: camera::State::new(),
+                            camst: camera::State::with_dist(self.cfg.cam_dist),
                             last_status: 0,
                             auto_lock: true,
                             models: HashMap::new(),
                             models_loading: HashSet::new(),
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
+                            modern: self.cfg.modern_ui,
+                            condense: self.cfg.modern_condense,
+                            condensed: Vec::new(),
+                            condensed_targets: Vec::new(),
+                            action_seq: 0,
                             party_tp_save: false,
                             item_search: false,
                             follow: None,
@@ -6088,6 +6487,10 @@ impl App {
                             moving: false,
                             walk: false,
                             autorun: false,
+                            mouse_look: false,
+                            journal_roe: None,
+                            journal_on_list: false,
+                            equip_claims: Vec::new(),
                             autorun_dir: Vec3::ZERO,
                             move_tier: 0.0,
                             step_ticks: 0.0,
@@ -6145,6 +6548,9 @@ impl App {
                             seacom_edit: None,
                             conquest: region::Data::new(self.cnq_tables.clone()),
                             region_menu: None,
+                            confirm_text: String::new(),
+                            confirm_click: None,
+                            main_off: false,
                             cnq: None,
                             region_cmd: None,
                             logs: None,
@@ -6225,11 +6631,27 @@ impl App {
                             log_active: false,
                             log_takers: 0,
                             full_log: None,
+                            log_find: None,
                             map: None,
                             key_items: Vec::new(),
                             downloading: Some(Instant::now()),
                             menu: None,
                             menu_page: 0,
+                            cmd: Default::default(),
+                            menu_click: None,
+                            action_click: None,
+                            modern_log: Default::default(),
+                            log_rule: Default::default(),
+                            modern_chat_edge: None,
+                            retail_frames: Vec::new(),
+                            list_search: None,
+                            recent_picks: self.cfg.modern_recent.get(&login.name).cloned().unwrap_or_default(),
+                            recent_save: false,
+                            suggestions: None,
+                            suggest_sel: None,
+                            party_hp_max: HashMap::new(),
+                            modern_pointers: Vec::new(),
+                            ui_wh: (1.0, 1.0),
                             confirm: None,
                             shutdown: false,
                             music: Default::default(),
@@ -6243,6 +6665,9 @@ impl App {
                             map_cmds: Vec::new(),
                             point_masks: None,
                             scan: Default::default(),
+                            scan_find: String::new(),
+                            full_log_next: false,
+                            scan_typing: false,
                             info_win: None,
                             info_page: std::cell::Cell::new((0, 0, 1)),
                             win_hits: Default::default(),
@@ -6356,6 +6781,8 @@ impl App {
                             minimap_size: self.cfg.minimap_size,
                             minimap_span: self.cfg.minimap_span,
                             minimap_dirty: false,
+                            rest: resttick::RestTick::new(self.cfg.rest_tick),
+                            cam_dist_dirty: false,
                             auto_sort: self.cfg.auto_sort,
                             auto_sort_dirty: false,
                             sort_due: (0, 0.0),
@@ -6364,6 +6791,7 @@ impl App {
                             voyage: Default::default(),
                             recasts_seen: false,
                             cast_bar: None,
+                            casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
                             zone_text: None,
@@ -6384,6 +6812,10 @@ impl App {
                         }));
                         if let Phase::World(w) = &mut self.phase {
                             cfgapply::apply_all(w);
+                            // The last session's lines in the modern chat, dimmed (not retail).
+                            if self.cfg.modern_ui {
+                                w.chat.restore(&crate::config::chat_history_path(&w.name), "------ last session ------");
+                            }
                         }
                         if let Ok((index, _)) = self.game_data() {
                             if let Phase::World(w) = &mut self.phase {
@@ -6922,7 +7354,7 @@ impl App {
                     }
                     world.my_init_done = false;
                     world.effects.reset_equip(char_id);
-                    world.zoning_since = None;
+                    (world.zoning_since, world.zone_touch) = (None, None);
                     world.pos = Vec3::from(pos);
                     world.pos_zone = zone;
                     world.unsettled = true;
@@ -7462,12 +7894,16 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer } => {
+                NetEvent::SelfStatus { speed, status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer } => {
+                    // LSB sends Death (3) for a character leaving by a zone line (its isDead() counts status Disappear)
+                    // with HP left: not a death, the status stays (ours, inferred).
+                    let status = if matches!(status, 2 | 3) && hpp > 0 { world.server_status } else { status };
                     // LAB_1009d0f0: entering 0x38 sets the bite wait from @0x4a (seconds).
                     if world.server_status != 0x38 && status == 0x38 && fish_timer > 0 {
                         world.hook_wait = fish_timer as i32 * 60;
                     }
                     world.server_status = status;
+                    (world.my_motion.speed, world.my_motion.speed_base) = speed;
                     (world.my_ride.chocobo, world.my_ride.mount) = ride;
                     let me = world.my_id;
                     indi::apply(world, me, indi);
@@ -8016,6 +8452,7 @@ impl App {
         partymenu::update(world);
         status::update(world);
         items::auto_sort_tick(world, dt);
+        equipwin::tick(world);
         auction::update(world, dt);
         currencies::update(world, dt * 60.0);
         merits::update(world);
@@ -8320,8 +8757,8 @@ impl App {
             camera::toggle_first(world);
         }
         // Screen edge panning (0x8f = 0, FUN_10120fc0): the pointer at the window's left / right edge turns the
-        // camera *(inf: margin and rate)*.
-        let edge = match (world.game.get(0x8f), self.last_cursor, self.gfx.as_ref()) {
+        // camera *(inf: margin and rate)*. Off for good (ours, user 2026-10-26: the mouse as modern MMOs).
+        let edge = match (1, self.last_cursor, self.gfx.as_ref()) {
             (0, Some((cx, _)), Some(g)) if self.cursor_in && !world.locked => {
                 let w = g.config.width as f64;
                 if cx <= 2.0 { -1.0 } else if cx >= w - 3.0 { 1.0 } else { 0.0 }
@@ -8359,8 +8796,7 @@ impl App {
             (world.step_hist, world.step_to, world.step_ticks) = ([world.pos; 4], world.pos, 0.0);
         }
         world.step_ticks += dt * 60.0;
-        // Speed byte x0.1 = units per second (5.0 for a normal run).
-        let speed = if world.my_motion.speed > 0 { world.my_motion.speed as f32 * 0.1 } else { RUN_SPEED };
+        let speed = own_speed(world);
         let falls = !in_event && !world.unsettled && world.in_scene();
         let shafts = world.lifts.shafts();
         let ride = |a: Vec3, b: Vec3| lifts::ride_in(&shafts, a, b);
@@ -8432,20 +8868,25 @@ impl App {
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && (cx != 0.0 || cy != 0.0 || (world.started.elapsed().as_secs_f32() * 2.0).fract() < dt * 2.0) {
             log::info!("cam t {:.3} eye {:.3} look {:.3} drawn {:.3} unlock {:.1} v6 {cx:.2} v7 {cy:.2} first {}", world.started.elapsed().as_secs_f32(), world.cam.eye, world.cam.look, world.draw_pos, world.unlock_ticks, world.camst.first);
         }
-        // Touching a zone line asks the server to move us; wait for its answer before asking again.
-        if stepping && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
-            if let Some(line) = world.zone_lines.iter().find(|r| r.contains(world.pos.to_array())) {
-                world.zoning_since = Some(Instant::now());
-                log::info!("zone line {}", line.name);
-                let _ = world.net.commands.send(NetCommand::ZoneLine { tag: line.tag(), pos: world.pos.to_array() });
-            }
+        // FUN_1008b100, every frame: a zone line between our position and where we are drawn (an event's pose: Jeuno's
+        // Mog House lifts carry us down into theirs) asks the server to move us, once no event runs (LSB refuses it in
+        // one). Wait for its answer before asking again.
+        let settled = world.in_scene() && !world.unsettled;
+        if settled && !world.dead() && world.zone_touch.is_none() && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
+            let (at, drawn) = (world.pos.to_array(), event::own_pose(world).unwrap_or(world.pos).to_array());
+            world.zone_touch = world.zone_lines.iter().find(|r| r.touches(at, drawn)).cloned();
+        }
+        if !in_event && let Some(line) = world.zone_touch.take() {
+            world.zoning_since = Some(Instant::now());
+            log::info!("zone line {}", line.name);
+            let _ = world.net.commands.send(NetCommand::ZoneLine { tag: line.tag(), pos: world.pos.to_array() });
         }
         if let Ok(mut me) = world.net.me.lock() {
             me.pos = world.pos.to_array();
             // Standing still keeps the facing; only the camera turns. Locked, we face the target.
             if let Some((_, Some(y))) = pin {
                 me.dir = dir_from_forward(Vec3::new(y.cos(), 0.0, -y.sin()));
-            } else if lock_target.is_some() || face_cam || (turn != 0.0 && !stepping) {
+            } else if lock_target.is_some() || face_cam || world.mouse_look || (turn != 0.0 && !stepping) {
                 me.dir = dir_from_forward(face);
             } else if stepping {
                 me.dir = dir_from_forward(step.normalize());
@@ -8549,6 +8990,11 @@ impl App {
         // mcrbedit's set mode: Ctrl (0x76) or Alt (0x77) held.
         let held = self.input.test(0x76, input::mode::HELD) || self.input.test(0x77, input::mode::HELD);
         macroedit::update(world, dt * 60.0, held);
+        // The full log's message 8: its next tab, wrapping, SE 0002.
+        if self.input.test(0x11, input::mode::PRESS) && world.full_log.is_some() {
+            world.full_log_next = true;
+            world.sounds.push(crate::audio::Ui::Select as u32);
+        }
         // The search results' list message 8 (FUN_1020a580): the job cells' other view, no sound.
         if self.input.test(0x11, input::mode::PRESS) && world.concierge_ui.is_some() {
             concierge::num_plus(world);
@@ -8726,6 +9172,64 @@ impl App {
     /// A mouse button (from the window or a test script): presses, drags, and the world click on releases
     /// (FUN_101585f0: key functions 0x8b / 0x8c -> results 0x16 / 0x17); a drag is 65 UI px^2 from the press or 25
     /// ticks held (FUN_10125040).
+    /// A look drag's motion (pixels, or raw counts while locked): the camera turns as a drag always did (Mouse/Cam.
+    /// inverts its axes); with the right button the character faces where it looks (modern MMOs); in first person it
+    /// turns the look itself.
+    fn look(&mut self, dx: f64, dy: f64) {
+        let right = self.dragging;
+        let Phase::World(world) = &mut self.phase else { return };
+        let inv = |w: &World, id: u16| if w.game.get(id) == 1 { -1.0 } else { 1.0 };
+        match () {
+            // The map's input context (0x26) has no camera functions; its drag scrolls the map.
+            _ if world.map.is_some() || world.cnq.is_some() => {}
+            // Mouse/Cam. 0x8b / 0x8c invert the third-person camera's X / Y (FUN_1001e030).
+            _ if world.locked => {
+                let (ix, iy) = (inv(world, 0x8b), inv(world, 0x8c));
+                world.cam_turn.0 += (dx * 0.008 * ix) as f32;
+                world.cam_turn.1 -= (dy * 0.02 * iy) as f32;
+            }
+            // First person: 0x8d / 0x8e.
+            _ if world.camst.first => {
+                let (ix, iy) = (inv(world, 0x8d), inv(world, 0x8e));
+                camera::first_look(world, (dx * 0.004 * ix) as f32, (dy * 0.004 * iy) as f32);
+            }
+            _ if world.unlock_ticks > 0.0 => {}
+            _ => {
+                let (ix, iy) = (inv(world, 0x8b), inv(world, 0x8c));
+                camera::drag(world, (dx * 0.008 * ix) as f32, (dy * 0.03 * iy) as f32);
+                world.mouse_look = right;
+            }
+        }
+    }
+
+    /// A look drag begins: the pointer hidden and held where it is, as modern MMOs do.
+    fn grab_pointer(&mut self) {
+        let Some(g) = self.gfx.as_ref() else { return };
+        use winit::window::CursorGrabMode;
+        let locked = g.window.set_cursor_grab(CursorGrabMode::Locked).is_ok();
+        if !locked {
+            let _ = g.window.set_cursor_grab(CursorGrabMode::Confined);
+        }
+        (self.look_grab, self.grab_at) = (Some(locked), self.last_cursor);
+        self.mouse.visible = false;
+    }
+
+    /// The last button up: the pointer free again where the drag began.
+    fn release_pointer(&mut self) {
+        if self.look_grab.take().is_none() {
+            return;
+        }
+        if let Some(g) = self.gfx.as_ref() {
+            let _ = g.window.set_cursor_grab(winit::window::CursorGrabMode::None);
+            if let Some(at) = self.grab_at {
+                let _ = g.window.set_cursor_position(winit::dpi::PhysicalPosition::new(at.0, at.1));
+                self.last_cursor = Some(at);
+            }
+        }
+        self.mouse.visible = true;
+        self.mouse.invalidate();
+    }
+
     fn mouse_button(&mut self, button: MouseButton, pressed: bool, consumed: bool) {
         self.mouse.visible = true;
         if pressed && button == MouseButton::Right {
@@ -8779,6 +9283,14 @@ impl App {
                 self.middle_down = pressed;
             }
             _ => {}
+        }
+        if !self.dragging
+            && let Phase::World(w) = &mut self.phase
+        {
+            w.mouse_look = false;
+        }
+        if !self.left_down && !self.dragging && !self.middle_down {
+            self.release_pointer();
         }
     }
 
@@ -8905,6 +9417,9 @@ impl App {
         let k = self.ui_k;
         let screen_size = size;
         let ppp = ctx.pixels_per_point();
+        if let Some(m) = &self.modern {
+            m.set_opacity(self.cfg.modern_opacity);
+        }
         // The stacked-window pointer follow, only with the drawn (software) cursor.
         let ptr_dy = match &self.phase {
             Phase::World(w) if self.cfg.tool("0021") == 0 => w.ptr_dy,
@@ -8913,15 +9428,17 @@ impl App {
         let swallow = ctx.input(|i| i.pointer.primary_released()) && std::mem::take(&mut self.swallow_click);
         let notches = self.list_wheel.trunc();
         self.list_wheel -= notches;
+        // Over a modern panel the pointer is egui's: the game's windows get no clicks or wheel there.
+        let mine = !(matches!(&self.phase, Phase::World(w) if w.modern) && (ctx.is_pointer_over_egui() || ctx.egui_is_using_pointer()));
         let input = ctx.input(|i| UiInput {
-            wheel: notches as i32,
+            wheel: if mine { notches as i32 } else { 0 },
             pointer: i.pointer.hover_pos().map(|p| (p.x * ppp * k.0, p.y * ppp * k.1 + ptr_dy)),
             moved: i.pointer.delta() != egui::Vec2::ZERO,
-            clicked: i.pointer.primary_clicked() && !swallow,
-            pressed: i.pointer.primary_pressed(),
-            down: i.pointer.primary_down(),
-            released: i.pointer.primary_released() && !swallow,
-            right_clicked: i.pointer.secondary_clicked(),
+            clicked: i.pointer.primary_clicked() && !swallow && mine,
+            pressed: i.pointer.primary_pressed() && mine,
+            down: i.pointer.primary_down() && mine,
+            released: i.pointer.primary_released() && !swallow && mine,
+            right_clicked: i.pointer.secondary_clicked() && mine,
             events: i.events.clone(),
         });
         if input.moved
@@ -8990,9 +9507,32 @@ impl App {
                     let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
-                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    let modern_ui = self.cfg.modern_ui;
+                    let mut view = None;
+                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view));
+                    let window = [size[0], size[1]];
+                    // The popups keep retail's size but stand clear of our (larger) form: their bottom above its top.
+                    let form_top = view.as_ref().map_or(f32::MAX, |v| v.frame[1] - 10.0);
+                    let place = |frame: [f32; 4], mut r: [f32; 4]| {
+                        r[1] -= (frame[1] + frame[3] - form_top).max(0.0);
+                        r
+                    };
+                    let lift = |r: [f32; 4]| place(r, r);
+                    if let Some(v) = &view {
+                        let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                        mo.login_form(ctx, window, self.cfg.modern_scale, self.ui_k, v);
+                        if let (Some((text, colour)), Some((strip, ver))) = (lu.modern_help.take(), lu.help_rects(size[0] as f32, size[1] as f32)) {
+                            mo.help_bar(ctx, window, self.cfg.modern_scale, self.ui_k, strip, ver, &text, colour, &self.cfg.client_version);
+                        }
+                    }
                     if let Some(nw) = self.netwait.as_ref() {
-                        netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                        if modern_ui {
+                            let (text, p) = netwait::view(lu, nw);
+                            let frame = lu.popup_rects("menu    netwait", size[0] as f32, size[1] as f32).map_or([0.0; 4], |r| lift(r.frame));
+                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).wait_panel(ctx, window, self.cfg.modern_scale, self.ui_k, frame, &text, p);
+                        } else {
+                            netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                        }
                     }
                     // Unticked: the remembered password goes at once.
                     if remembered && !self.cfg.remember_password {
@@ -9018,9 +9558,16 @@ impl App {
                             None => e.clone(),
                         };
                         let (sw, sh) = (size[0] as f32, size[1] as f32);
-                        let ok = lu.ok_window(&text, sw, sh);
                         let key = input.events.iter().any(|ev| matches!(ev, egui::Event::Key { key: egui::Key::Enter | egui::Key::Escape, pressed: true, .. }));
-                        let click = input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)));
+                        let click = if modern_ui {
+                            let r = lu.popup_rects("menu    ok", sw, sh);
+                            let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
+                            let ok = r.as_ref().and_then(|r| r.children.first().map(|c| place(r.frame, c.1))).unwrap_or(frame);
+                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).ok_popup(ctx, window, self.cfg.modern_scale, self.ui_k, frame, ok, &text)
+                        } else {
+                            let ok = lu.ok_window(&text, sw, sh);
+                            input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)))
+                        };
                         if key || click {
                             self.login_error = None;
                             if let Some(a) = self.audio.as_mut() {
@@ -9047,6 +9594,10 @@ impl App {
                 let escape = ctx.input(|i| i.key_pressed(egui::Key::Escape));
                 if *screen != LobbyScreen::Main {
                     self.title_press = None;
+                }
+                // Only the title's buttons and the select screen are the modern layer's: elsewhere egui keeps its zoom.
+                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete | LobbyScreen::Create) && self.netwait.is_none() || !self.cfg.modern_ui {
+                    modern::off(ctx, self.modern.as_mut());
                 }
                 match screen {
                     LobbyScreen::Main => {
@@ -9114,7 +9665,14 @@ impl App {
                             let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
                             let wardrobes = lobby.as_ref().map_or(0, |l| l.features);
                             let press = self.title_press.filter(|p| p.0 == *menu && p.0 != UPDATE).map(|p| ((9.0 - p.1.elapsed().as_secs_f32() * 60.0).max(0.0), p.2));
-                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over);
+                            let modern_title = self.cfg.modern_ui;
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over, modern_title);
+                            // Modern: the buttons in the modern style on retail's rects (their mouse as above).
+                            if modern_title {
+                                let buttons: Vec<([f32; 4], &str, bool, bool)> = rects.iter().map(|&(m, r)| (r, if m == UPDATE { "Update" } else { ITEMS[m].0 }, m == *menu && !window_over, m == UPDATE || enabled[m])).collect();
+                                let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                                mo.title_buttons(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, &buttons);
+                            }
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
                                 (None, Some(s), _) => s.help(),
@@ -9135,7 +9693,14 @@ impl App {
                                 _ if *menu == UPDATE => "Update the game files or vana-client.".to_string(),
                                 _ => ITEMS[*menu].1.to_string(),
                             };
-                            lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
+                            if modern_title {
+                                let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                                if let Some((strip, ver)) = lu.help_rects(screen_size[0] as f32, screen_size[1] as f32) {
+                                    mo.help_bar(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, strip, ver, &help, WHITE, &self.cfg.client_version);
+                                }
+                            } else {
+                                lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
+                            }
                             // lobycwin and our settings screen over the title.
                             if let Some(c) = self.lobby_cfg.as_mut() {
                                 c.owned = self.installed;
@@ -9322,8 +9887,23 @@ impl App {
                         let (sw, sh) = (screen_size[0] as f32, screen_size[1] as f32);
                         let list = select::List::new(chars);
                         let shown = if busy { None } else if !status.is_empty() { Some((status.as_str(), YELLOW)) } else { None };
-                        let sin = select::Input { events: &input.events, pointer: input.pointer, moved: input.moved, clicked: input.clicked, busy };
-                        let out = self.select_ui.step(gu, &sin, &list, chars, deleting, sw, sh, shown);
+                        let modern_ui = self.cfg.modern_ui;
+                        let sin = select::Input { events: &input.events, pointer: input.pointer, moved: input.moved, clicked: input.clicked, busy, modern: modern_ui };
+                        let mut out = self.select_ui.step(gu, &sin, &list, chars, deleting, sw, sh, shown);
+                        // Modern: the layer draws the screen and its mouse acts as retail's.
+                        if modern_ui {
+                            let mut v = self.select_ui.view(gu, &list, chars, deleting);
+                            if let Some((t, _)) = shown {
+                                v.help = t.to_string();
+                            }
+                            let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                            let ptr = m.select_screen(ctx, gu, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, &v);
+                            let more = self.select_ui.pointer(gu, ptr, &list, chars, deleting, busy);
+                            out.sounds.extend(more.sounds);
+                            out.action = out.action.or(more.action);
+                            out.moved = more.moved.or(out.moved);
+                            out.input |= more.input;
+                        }
                         if let Some(a) = self.audio.as_mut() {
                             for s in &out.sounds {
                                 a.ui(*s);
@@ -9416,16 +9996,9 @@ impl App {
                             && keys
                             && !world_open
                             && self.input.pressed(0x4e)
-                            && let Some(index) = self.index.as_ref()
+                            && let Some(n) = self.index.as_ref().and_then(|i| creator::roll_name(i))
                         {
-                            let mut b = [0u8; 4];
-                            let mut rand = || {
-                                let _ = getrandom::fill(&mut b);
-                                u32::from_le_bytes(b) & 0x7fff
-                            };
-                            if let Some(n) = creator::random_name(index, &mut rand) {
-                                *new_name = n;
-                            }
+                            *new_name = n;
                         }
                         for ev in input.events.iter().filter(|_| !busy) {
                             match ev {
@@ -9480,9 +10053,61 @@ impl App {
                         let name_hidden = step == 5 && self.creator_world.is_none() && (popup || busy || world_check.is_some());
                         let world = self.creator_world.as_ref().map(|w| w.view());
                         let view = game_ui::CreatorView { step, race: *race, face: *face as usize / 2, hair: *face as usize % 2, size: *size as usize, job: *job, nation: *nation, name: new_name, world, name_hidden };
-                        let rects = creator::draw_ui(gu, &view, sw, sh, (!status.is_empty()).then_some(status.as_str()), None);
+                        let status_line = (!status.is_empty()).then_some(status.as_str());
+                        // Modern: the panels draw the steps and prompts; their mouse acts as retail's below.
+                        let modern_ui = self.cfg.modern_ui;
+                        let (rects, ptr) = if modern_ui {
+                            creator::draw_modern(gu, &view, sw, sh);
+                            let page = creator::Page {
+                                view: &view,
+                                help: creator::help_text(gu, &view, status_line),
+                                status: status_line.is_some(),
+                                ok: self.creator_ok.as_ref().map(|o| o.0.clone()),
+                                confirm: (step == 7).then(|| (select::register_text(gu, new_name), self.creator_yes)),
+                                free: !busy,
+                            };
+                            let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                            (Vec::new(), m.creator_screen(ctx, gu, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, &page))
+                        } else {
+                            (creator::draw_ui(gu, &view, sw, sh, status_line, None), creator::Pointer::default())
+                        };
                         let pointer = input.pointer.filter(|_| !busy);
-                        if let Some((text, _)) = &self.creator_ok {
+                        let mut check = false;
+                        if modern_ui {
+                            if self.creator_ok.is_some() {
+                                ok |= ptr.ok;
+                            } else if let Some(ws) = self.creator_world.as_mut().filter(|_| step == 5) {
+                                if let Some(k) = ptr.world.0
+                                    && ws.point(k)
+                                {
+                                    world_se.push(crate::audio::Ui::Cursor);
+                                }
+                                let pick = ptr.world.1.inspect(|&k| {
+                                    ws.point(k);
+                                });
+                                check = ptr.enter && ws.pass.is_some();
+                                if (pick.is_some() || ptr.enter && ws.pass.is_none())
+                                    && let creator::WorldAct::Sound(s) = ws.pick()
+                                {
+                                    world_se.push(s);
+                                }
+                            } else if step < 7 {
+                                if let Some(k) = ptr.row.0.or(ptr.row.1) {
+                                    sel = k;
+                                }
+                                next |= ptr.row.1.is_some() || ptr.enter;
+                                if ptr.random
+                                    && let Some(n) = self.index.as_ref().and_then(|i| creator::roll_name(i))
+                                {
+                                    *new_name = n;
+                                }
+                            } else if step == 7 {
+                                if let Some(y) = ptr.yes.0 {
+                                    self.creator_yes = y;
+                                }
+                                answer = answer.or(ptr.yes.1);
+                            }
+                        } else if let Some((text, _)) = &self.creator_ok {
                             if let Some(r) = gu.ok_window(text, sw, sh)
                                 && pointer.is_some_and(|p| inside(&r, p))
                             {
@@ -9545,6 +10170,9 @@ impl App {
                         };
                         for se in world_se {
                             ui_se(&mut self.audio, se);
+                        }
+                        if check {
+                            world_check = self.creator_world.take();
                         }
                         // Enter on the pass: the checks in retail's order (FUN_10239720 448223..); the world is always
                         // a table row here, so 3118 / 3119 cannot come up, and the local filter (3322) is not traced.
@@ -9672,7 +10300,13 @@ impl App {
                     _ => {}
                 }
                 if let (Some(nw), Some(gu)) = (self.netwait.as_ref(), self.game_ui.as_mut()) {
-                    netwait::draw(gu, nw, screen_size[0] as f32, screen_size[1] as f32);
+                    if self.cfg.modern_ui {
+                        let (text, p) = netwait::view(gu, nw);
+                        let frame = gu.popup_rects("menu    netwait", screen_size[0] as f32, screen_size[1] as f32).map_or([0.0; 4], |r| r.frame);
+                        self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).wait_panel(ctx, [screen_size[0], screen_size[1]], self.cfg.modern_scale, self.ui_k, frame, &text, p);
+                    } else {
+                        netwait::draw(gu, nw, screen_size[0] as f32, screen_size[1] as f32);
+                    }
                 }
             }
             Phase::World(world) => {
@@ -9739,6 +10373,24 @@ impl App {
                     gu.set_style(world.game.get(0x12) as usize);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
+                if world.modern
+                    && let Some(gu) = self.game_ui.as_ref()
+                {
+                    // The retail windows drawn this frame, in egui points.
+                    let (k, uk) = (ctx.pixels_per_point(), self.ui_k);
+                    world.retail_frames = gu.drawn_frames().iter().map(|r| [r[0] / (k * uk.0), r[1] / (k * uk.1), r[2] / (k * uk.0), r[3] / (k * uk.1)]).collect();
+                    let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                    gu.modern_order.borrow_mut().clear();
+                    save |= m.ui(ctx, gu, world, window, &mut self.cfg);
+                    // Its chat window in UI pixels for next frame's stacked windows.
+                    let (k, uk) = (ctx.pixels_per_point(), self.ui_k);
+                    world.modern_chat_edge = m.chat_rect().map(|(r, faded)| ([r.min.x * k * uk.0, r.min.y * k * uk.1, r.width() * k * uk.0, r.height() * k * uk.1], faded));
+                } else {
+                    modern::off(ctx, self.modern.as_mut());
+                    if let Some(gu) = self.game_ui.as_ref() {
+                        gu.modern_order.borrow_mut().clear();
+                    }
+                }
                 // What the Config windows and the settings screen hand to the app.
                 if let Some(kind) = world.want_settings.take() {
                     // Size lists come from the window, not the menu layout it is scaled to.
@@ -9755,9 +10407,23 @@ impl App {
                     s.dirty = false;
                     s.s.store(&mut self.cfg);
                     apply = true;
+                    // Panel Places' Reset: this character's saved places go; the row reads As Moved again.
+                    if std::mem::take(&mut s.s.reset_places) {
+                        log::info!("modern: panel places of {} reset", world.name);
+                        self.cfg.modern_places.remove(&world.name);
+                        if let Err(e) = self.cfg.save() {
+                            log::warn!("config: {e:#}");
+                        }
+                    }
                 }
                 if std::mem::take(&mut world.volume_dirty) {
                     apply = true;
+                }
+                if std::mem::take(&mut world.recent_save) {
+                    self.cfg.modern_recent.insert(world.name.clone(), world.recent_picks.clone());
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
                 }
                 if std::mem::take(&mut world.party_tp_save) {
                     self.cfg.party_tp = world.party_tp;
@@ -9771,8 +10437,20 @@ impl App {
                         log::warn!("config: {e:#}");
                     }
                 }
+                if std::mem::take(&mut world.cam_dist_dirty) {
+                    self.cfg.cam_dist = world.camst.dist;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
                 if std::mem::take(&mut world.minimap_dirty) {
                     self.cfg.minimap_span = world.minimap_span;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
+                if std::mem::take(&mut world.rest.dirty) {
+                    self.cfg.rest_tick = world.rest.learnt;
                     if let Err(e) = self.cfg.save() {
                         log::warn!("config: {e:#}");
                     }
@@ -10134,6 +10812,7 @@ impl App {
             trade::update(w);
             combat::battle_frame(w);
             synth::update(w);
+            resttick::update(w);
             servmes::frame(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).
@@ -10207,18 +10886,21 @@ impl App {
                 Phase::World(w) => [event::shot_name(w).map(|n| format!("cam:{n}")), event::message_id(w).map(|i| format!("msg:{i}")), (!event::active(w)).then(|| "noevent".to_string())].into_iter().flatten().collect(),
                 _ => Vec::new(),
             };
-            let (events, shot, action) = sc.next(phase, &probes, gfx.window.scale_factor() as f32);
+            // egui's points per pixel (its zoom included: the modern layer sets one), as egui reads the events.
+            let (events, shot, action) = sc.next(phase, &probes, gfx.egui_ctx.pixels_per_point());
             for e in &events {
                 self.input.drive_event(e);
             }
-            // Script pointer steps go through the same world mouse path as the window's (physical pixels).
+            // Script pointer steps go through the same world mouse path as the window's (physical pixels), consumed as
+            // egui-winit consumes them.
             let ppp = gfx.window.scale_factor();
+            let consumed = gfx.egui_ctx.egui_wants_pointer_input();
             for e in &events {
                 match e {
                     egui::Event::PointerMoved(p) => self.last_cursor = Some((p.x as f64 * ppp, p.y as f64 * ppp)),
-                    egui::Event::PointerButton { button, pressed, .. } => {
+                    egui::Event::PointerButton { button, pressed, .. } if !consumed || !*pressed => {
                         let b = if *button == egui::PointerButton::Secondary { MouseButton::Right } else { MouseButton::Left };
-                        self.mouse_button(b, *pressed, false);
+                        self.mouse_button(b, *pressed, consumed);
                     }
                     _ => {}
                 }
@@ -10254,13 +10936,23 @@ impl App {
                 let mob = world.entities.iter().filter(|(id, e)| e.mob && !matches!(e.motion.status, 2 | 3) && world.actors.get(id).is_some_and(|a| a.gpu.is_some())).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
                 target::set(world, mob);
             }
+            // Test drives only: act:target:NAME targets the nearest entity of that name.
+            if let (Some(name), Phase::World(world)) = (action.as_deref().and_then(|a| a.strip_prefix("target:")), &mut self.phase) {
+                let pos = world.pos;
+                let id = world.entities.iter().filter(|(_, e)| e.name == name).min_by(|a, b| (a.1.pos - pos).length().total_cmp(&(b.1.pos - pos).length())).map(|(id, _)| *id);
+                target::set(world, id);
+            }
             // act:fxdump logs every live effect element and the player's position.
             if let (Some("fxdump"), Phase::World(world)) = (action.as_deref(), &self.phase) {
                 fx_dump(world);
             }
             // act:wheel:N turns the wheel N notches (up positive): the focused list's, else the camera's.
             if let Some(n) = action.as_deref().and_then(|a| a.strip_prefix("wheel:")).and_then(|n| n.parse::<f32>().ok()) {
-                if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
+                // Over a modern panel it is egui's, as egui-winit consumes the window's.
+                if consumed && matches!(&self.phase, Phase::World(w) if w.modern) {
+                    let (unit, delta, phase, source) = (egui::MouseWheelUnit::Line, egui::vec2(0.0, n), egui::TouchPhase::Move, egui::MouseWheelSource::Unknown);
+                    raw.events.push(egui::Event::MouseWheel { unit, delta, phase, source, modifiers: Default::default() });
+                } else if self.game_ui.as_ref().is_some_and(|g| g.wants_wheel()) {
                     self.list_wheel += n;
                 } else {
                     self.wheel += n;
@@ -11348,6 +12040,13 @@ impl ApplicationHandler for App {
         self.gfx = Some(Gfx { window, gpu, surface, config, depth, egui_ctx, egui_state, egui_renderer });
     }
 
+    /// The raw motion while a look drag holds the pointer locked.
+    fn device_event(&mut self, _: &ActiveEventLoop, _: winit::event::DeviceId, event: winit::event::DeviceEvent) {
+        if let (Some(true), winit::event::DeviceEvent::MouseMotion { delta }) = (self.look_grab, event) {
+            self.look(delta.0, delta.1);
+        }
+    }
+
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _: WindowId, event: WindowEvent) {
         let Some(gfx) = &mut self.gfx else { return };
         let consumed = gfx.egui_state.on_window_event(&gfx.window, &event).consumed;
@@ -11431,8 +12130,8 @@ impl ApplicationHandler for App {
                 self.mouse_button(button, state == ElementState::Pressed, consumed);
             }
             WindowEvent::CursorMoved { position, .. } => {
-                // FUN_100016c0: window-message motion shows the cursor only past 2 px.
-                if self.last_cursor.is_none_or(|(x, y)| (position.x - x).abs() > 2.0 || (position.y - y).abs() > 2.0) {
+                // FUN_100016c0: window-message motion shows the cursor only past 2 px (not while a look drag holds it).
+                if self.look_grab.is_none() && self.last_cursor.is_none_or(|(x, y)| (position.x - x).abs() > 2.0 || (position.y - y).abs() > 2.0) {
                     self.mouse.visible = true;
                 }
                 // A left-drag that starts on the map overlay pans it instead of turning the camera.
@@ -11449,21 +12148,18 @@ impl ApplicationHandler for App {
                 }
                 let looking = self.dragging || self.middle_down || (self.left_down && self.press_at.is_some_and(|a| (a.0 - position.x).abs() + (a.1 - position.y).abs() >= 5.0));
                 if let (true, Some((x, y))) = (looking, self.last_cursor) {
-                    match &mut self.phase {
-                        // The map's input context (0x26) has no camera functions; its drag scrolls the map.
-                        Phase::World(world) if world.map.is_some() || world.cnq.is_some() => {}
-                        // Mouse/Cam. 0x8b / 0x8c invert the third-person camera's X / Y (FUN_1001e030).
-                        Phase::World(world) if world.locked => {
-                            let (ix, iy) = (if world.game.get(0x8b) == 1 { -1.0 } else { 1.0 }, if world.game.get(0x8c) == 1 { -1.0 } else { 1.0 });
-                            world.cam_turn.0 += ((position.x - x) * 0.008 * ix) as f32;
-                            world.cam_turn.1 -= ((position.y - y) * 0.02 * iy) as f32;
-                        }
-                        Phase::World(world) if world.unlock_ticks > 0.0 || world.camst.first => {}
-                        Phase::World(world) => {
-                            let (ix, iy) = (if world.game.get(0x8b) == 1 { -1.0 } else { 1.0 }, if world.game.get(0x8c) == 1 { -1.0 } else { 1.0 });
-                            camera::drag(world, ((position.x - x) * 0.008 * ix) as f32, ((position.y - y) * 0.03 * iy) as f32);
-                        }
-                        _ => {}
+                    if self.look_grab.is_none() {
+                        self.grab_pointer();
+                    }
+                    // Locked, the raw motion turns it (device events); confined, this motion does and the pointer
+                    // goes back where the drag began, so it never meets the window's edge.
+                    if self.look_grab != Some(true) {
+                        self.look(position.x - x, position.y - y);
+                    }
+                    if let (Some(false), Some(at), Some(g)) = (self.look_grab, self.grab_at, self.gfx.as_ref()) {
+                        let _ = g.window.set_cursor_position(winit::dpi::PhysicalPosition::new(at.0, at.1));
+                        self.last_cursor = Some(at);
+                        return;
                     }
                 }
                 self.last_cursor = Some((position.x, position.y));
@@ -11491,9 +12187,10 @@ impl ApplicationHandler for App {
                         self.list_wheel += d;
                         return;
                     }
-                    // Field of view, as the keys (and retail's wheel on keyboard type 2, FUN_10253af0).
-                    if !world.locked {
-                        self.wheel += d;
+                    // Ours (modern MMOs): the camera's distance, into first person and out (retail's wheel turned the
+                    // field of view, FUN_10253af0; the zoom keys still do).
+                    if camera::zoom_distance(world, d) {
+                        world.cam_dist_dirty = true;
                     }
                 }
             }

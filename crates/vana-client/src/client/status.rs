@@ -35,11 +35,16 @@ pub struct StatusUi {
     pub shown: Option<u16>,
     /// Disabled children; 3 / 4 / 5 are enabled once when the stats are first ready (+0x14), 12 / 13 when their test
     /// first passes (+0x15 / +0x16).
-    off: Vec<u16>,
+    pub(super) off: Vec<u16>,
     once: bool,
     /// c2s 0x061 {0} out (helpwind busy bit 0x40) until the next 0x061.
     pub busy: bool,
     return_menu: Option<usize>,
+    /// The modern page's currencies (both lists, s2c 0x113 / 0x118) once asked for, and the wait until they go again.
+    pub cur: [Option<Vec<i64>>; 2],
+    pub cur_wait: Option<f32>,
+    /// The modern page's scroll asked for by Left / Right (pages: -1 / +1).
+    pub m_page: i32,
 }
 
 /// FUN_10140400 case 5: persona in Status mode (FUN_10146ec0: at (16, 16), its group 0x30 so titlewin is suspended),
@@ -55,7 +60,7 @@ pub fn open(w: &mut World) {
         off.push(8);
     }
     let _ = w.net.commands.send(NetCommand::StatusRequest(0));
-    w.status = Some(StatusUi { sel: w.cursor_recall(STATCOM), shown: None, off, once: false, busy: true, return_menu: w.menu });
+    w.status = Some(StatusUi { sel: w.cursor_recall(STATCOM), shown: None, off, once: false, busy: true, return_menu: w.menu, cur: [None, None], cur_wait: None, m_page: 0 });
     w.menu = None;
 }
 
@@ -104,7 +109,7 @@ pub fn update(w: &mut World) {
     }
 }
 
-fn close(w: &mut World) {
+pub(super) fn close(w: &mut World) {
     if let Some(s) = w.status.take() {
         w.menu = s.return_menu;
     }
@@ -133,30 +138,45 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 _ => close(w),
             }
         }
-        egui::Key::Enter if s.off.contains(&s.sel) => w.sounds.push(Ui::Error as u32),
-        egui::Key::Enter => {
-            w.sounds.push(Ui::Select as u32);
-            if s.shown == Some(s.sel) {
-                return;
-            }
-            let shown = page(s.sel).map(|_| s.sel);
-            if let Some(st) = w.status.as_mut() {
-                st.shown = shown;
-            }
-            match s.sel {
-                9 => super::textcmd::run(w, "/playtime", super::textcmd::Mode::Internal),
-                // FUN_1022a620(1 / 2): evitem with the currencies.
-                6 => super::currencies::open(w, 1),
-                10 => super::currencies::open(w, 2),
-                11 => super::unity::open(w),
-                7 => super::merits::open(w),
-                8 => super::jobpoints::open(w),
-                13 => super::aepoints::open(w),
-                c if page(c).is_none() => log::info!("status: statcom2 row {c} is not implemented yet"),
-                _ => {}
-            }
-        }
+        egui::Key::Enter => enter(w),
         _ => {}
+    }
+}
+
+/// Enter on the cursor row: a disabled one SE 0004; else SE 0002 and its page, or its window or command.
+pub(super) fn enter(w: &mut World) {
+    let Some(s) = w.status.clone() else { return };
+    if s.off.contains(&s.sel) {
+        w.sounds.push(Ui::Error as u32);
+        return;
+    }
+    w.sounds.push(Ui::Select as u32);
+    if s.shown == Some(s.sel) {
+        return;
+    }
+    let shown = page(s.sel).map(|_| s.sel);
+    if let Some(st) = w.status.as_mut() {
+        st.shown = shown;
+    }
+    match s.sel {
+        9 => super::textcmd::run(w, "/playtime", super::textcmd::Mode::Internal),
+        // FUN_1022a620(1 / 2): evitem with the currencies (the modern page lists both itself).
+        6 | 10 if w.modern => {}
+        6 => super::currencies::open(w, 1),
+        10 => super::currencies::open(w, 2),
+        11 => super::unity::open(w),
+        7 => super::merits::open(w),
+        8 => super::jobpoints::open(w),
+        13 => super::aepoints::open(w),
+        c if page(c).is_none() => log::info!("status: statcom2 row {c} is not implemented yet"),
+        _ => {}
+    }
+}
+
+/// The modern page shows the page under the cursor at once (retail's after Enter), for the title's help line.
+pub(super) fn show_page(w: &mut World) {
+    if let Some(s) = w.status.as_mut() {
+        s.shown = page(s.sel).map(|_| s.sel);
     }
 }
 
@@ -192,6 +212,10 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(s) = &w.status else { return };
     let [help, _] = gu.focus_text(STATCOM, s.sel);
     bars.help[1] = help.unwrap_or_default();
+    // The modern page has no persona suspending titlewin: statcom2's own caption (child 14) titles it.
+    if w.modern {
+        bars.title[1] = gu.child_caption(STATCOM, 14).filter(|t| !t.is_empty()).unwrap_or_else(|| "Status".into());
+    }
     if s.shown == Some(1)
         && let (Some(st), Some(names)) = (&w.stats, &w.names)
     {
@@ -201,7 +225,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 /// FUN_101c9440(v, 0, 1): 0..999,999,999 in groups of three with group 0xc 0x5b between.
-fn grouped(v: i64, sep: &str) -> String {
+pub(super) fn grouped(v: i64, sep: &str) -> String {
     let v = v.clamp(0, 999_999_999);
     match v {
         0..1000 => format!("{v}"),
@@ -242,7 +266,7 @@ fn draw_level(gu: &mut GameUi, w: &World, x: f32, y: f32) {
 }
 
 /// FUN_10107320's table 0x10364cb0 (English).
-const RACES: [&str; 9] = ["", "Hume", "Hume", "Elvaan", "Elvaan", "Tarutaru", "Tarutaru", "Mithra", "Galka"];
+pub(super) const RACES: [&str; 9] = ["", "Hume", "Hume", "Elvaan", "Elvaan", "Tarutaru", "Tarutaru", "Mithra", "Galka"];
 
 /// FUN_10147ac0: the nation crest (keytops3 74 + nation), the race, the home point (group 4), the rank and its gauge
 /// (framesus 103 / 98, points / 4096); with the Monstrosity data (0x063 types 3 and 4) the gladiator rank, prestige,
@@ -277,7 +301,7 @@ fn draw_profile(gu: &mut GameUi, w: &World, x: f32, y: f32) {
 /// joblevel (FUN_10148030) / masterle (FUN_1014c540): the jobs 1..22 there are, alternating left and right from y 0x13,
 /// 14 px a row: the name (windowps 212 + job) at x 0x0a / 0x82, gold for the main job, blue for the support job; the
 /// level right-aligned at 0x6e / 0xe6.
-fn job_rows(w: &World, master: bool) -> Vec<(u8, u8)> {
+pub(super) fn job_rows(w: &World, master: bool) -> Vec<(u8, u8)> {
     let (Some(j), Some(st)) = (w.job_info, w.stats.as_ref()) else { return Vec::new() };
     let flags = if master { j.ml_jobs } else { j.flags & !1 };
     (1..=22u8)
@@ -311,7 +335,7 @@ fn draw_jobs(gu: &mut GameUi, w: &World, x: f32, y: f32, rows: &[(u8, u8)]) {
 }
 
 /// The skills of btlskill (1..31) / mgcskill (32..47) that exist (FUN_101484b0 / FUN_101486b0).
-fn skill_rows(w: &World, magic: bool) -> Vec<(usize, u16)> {
+pub(super) fn skill_rows(w: &World, magic: bool) -> Vec<(usize, u16)> {
     let Some(b) = w.skill_base else { return Vec::new() };
     let r = if magic { 32..48 } else { 1..32 };
     r.filter(|&i| exists(b[i])).map(|i| (i, b[i])).collect()
@@ -330,7 +354,7 @@ fn draw_skills(gu: &mut GameUi, x: f32, y: f32, rows: &[(usize, u16)], magic: bo
 
 /// trdskill (FUN_101488a0): a row per craft 48..62 there is: the name keytops3 208 + id at 0x0a, the rank (keytops3 193 +
 /// rank, below 16) at 0x6e in blue when capped, "(%d)" of the level right-aligned at 0xf5.
-fn craft_rows(w: &World) -> Vec<(usize, u16)> {
+pub(super) fn craft_rows(w: &World) -> Vec<(usize, u16)> {
     let Some(b) = w.skill_base else { return Vec::new() };
     (48..63).filter(|&i| b[i] != 0xffff).map(|i| (i, b[i])).collect()
 }

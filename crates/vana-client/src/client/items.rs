@@ -288,9 +288,14 @@ pub fn open_direct(w: &mut World) {
     w.action_menu = None;
 }
 
+/// The modern layer draws this window itself: the item list, the storage view, the Equipment screen.
+pub fn modern_list(w: &World) -> bool {
+    matches!(w.win, Some(Win::Items { .. } | Win::Equip(_)))
+}
+
 /// The list's rows: the occupied inventory slots but gil; for the direct list only those FUN_101f0810 colours
 /// (crystals, maze tabulae, usable non-equipment, equipped charged gear).
-fn listed(w: &World, direct: bool) -> Vec<Slot> {
+pub(super) fn listed(w: &World, direct: bool) -> Vec<Slot> {
     let info = w.item_info.as_ref();
     w.inv
         .viewed(INVENTORY)
@@ -410,8 +415,43 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
     let rows = listed(w, direct).len();
     let shown = listed(w, direct);
     if matches!(w.win, Some(Win::Items { store: Some(_), .. })) {
-        store_key(w, &info, key, page, alt);
+        // The modern storage view has its own keys.
+        if !super::modern::storage_key(w, key) {
+            store_key(w, &info, key, page, alt);
+        }
         return true;
+    }
+    // Modern: the sort strip stands above the list as a row, so Up from the first item goes to it, Left / Right move
+    // along it (and between Yes / No), Down comes back to the list.
+    if w.modern
+        && let Some(Win::Items { scroll, cursor, sub: None, sort, manual: None, store: None, direct: false }) = w.win.as_mut()
+    {
+        use crate::audio::Ui;
+        use egui::Key as K;
+        match (sort.as_mut(), key) {
+            (None, K::ArrowUp) if *scroll + *cursor == 0 => {
+                *sort = Some(SortWin { cursor: 1, ask: None });
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: Some(yes), .. }), K::ArrowLeft | K::ArrowRight) => {
+                *yes = !*yes;
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(s @ SortWin { ask: None, .. }), K::ArrowLeft | K::ArrowRight) => {
+                s.cursor = if key == K::ArrowRight { s.cursor % 3 + 1 } else if s.cursor <= 1 { 3 } else { s.cursor - 1 };
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: None, .. }), K::ArrowDown) => {
+                *sort = None;
+                w.sounds.push(Ui::Cursor as u32);
+                return true;
+            }
+            (Some(SortWin { ask: None, .. }), K::ArrowUp) => return true,
+            _ => {}
+        }
     }
     let mut close = false;
     let mut open_recycle = false;
@@ -667,14 +707,32 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>, u8, u8, bool, u8
 }
 
 /// The item's target prompt is up (SubThen::Item).
-fn item_prompt(w: &World) -> bool {
+pub(super) fn item_prompt(w: &World) -> bool {
     matches!(w.prompt.as_ref().map(|p| &p.then), Some(super::target::SubThen::Item { .. }))
+}
+
+/// The list's rows in their colours; FUN_101f0810: the direct list's, yellow for usable items, equipped charged gear
+/// blue when ready (extdata kind 1, u16 @2 bit 0x4000), else grey.
+pub(super) fn list_rows(w: &World, info: &ItemCache, shown: &[Slot], direct: bool) -> Vec<crate::inventory::Row> {
+    let mut rows = build_rows(shown, info, false);
+    if direct {
+        for (r, s) in rows.iter_mut().zip(shown) {
+            let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
+            let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
+            r.tint = match (gear, ready) {
+                (false, _) => crate::inventory::TINT_FLAGGED,
+                (true, true) => 0x8040_7090,
+                (true, false) => crate::inventory::TINT_DIM,
+            };
+        }
+    }
+    rows
 }
 
 /// FUN_101f2de0 / FUN_101f2ec0: [Use, Drop] enabled. Use: crystals and maze tabulae, non-equipment with record flag
 /// 0x400, equipped charged gear whose extdata (kind 1) has u16 @2 bit 0x4000; never as a monster (main job 0x17).
 /// Drop: the slot's lock byte is 0.
-fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
+pub(super) fn iuse_states(w: &World, index: u8, id: u16) -> [bool; 2] {
     let Some(it) = w.item_info.as_ref().and_then(|c| c.item(id)) else { return [false, false] };
     let ext = w.inv.ext.get(&(INVENTORY, index));
     let equipped = w.inv.equip.contains(&Some((INVENTORY, index)));
@@ -918,20 +976,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         Win::Items { scroll, cursor, store: Some(b), .. } => rects.extend(draw_storage(gu, w, info, *scroll, *cursor, b, sw, sh, frame)),
         Win::Items { scroll, cursor, sub, direct, sort, manual, .. } => {
             let shown = listed(w, *direct);
-            let mut rows = build_rows(&shown, info.as_ref(), false);
-            // FUN_101f0810: the direct list's colours, yellow for usable items, equipped charged gear blue when ready
-            // (extdata kind 1, u16 @2 bit 0x4000), else grey.
-            if *direct {
-                for (r, s) in rows.iter_mut().zip(&shown) {
-                    let gear = info.item(s.id).is_some_and(|it| matches!(it.item_type, 4 | 5));
-                    let ready = w.inv.ext.get(&(INVENTORY, s.index)).is_some_and(|e| e[0] == 1 && u16::from_le_bytes([e[2], e[3]]) & 0x4000 != 0);
-                    r.tint = match (gear, ready) {
-                        (false, _) => crate::inventory::TINT_FLAGGED,
-                        (true, true) => 0x8040_7090,
-                        (true, false) => crate::inventory::TINT_DIM,
-                    };
-                }
-            }
+            let rows = list_rows(w, info, &shown, *direct);
             let list = ItemList { rows, scroll: *scroll, cursor: *cursor };
             if !*direct && sub.is_none() && sort.is_none() {
                 draw_count(gu, shown.len(), w.inv.sizes[INVENTORY as usize], sw, sh);
@@ -1007,7 +1052,7 @@ fn wardrobe(c: u8) -> bool {
 }
 
 /// A container's rows in view order (the inventory as the item list shows it).
-fn store_rows(w: &World, c: u8) -> Vec<Slot> {
+pub(super) fn store_rows(w: &World, c: u8) -> Vec<Slot> {
     if c == INVENTORY {
         return listed(w, false);
     }
@@ -1015,7 +1060,7 @@ fn store_rows(w: &World, c: u8) -> Vec<Slot> {
 }
 
 /// FUN_1021cc60: an empty slot in 1..size.
-fn has_free(w: &World, c: u8) -> bool {
+pub(super) fn has_free(w: &World, c: u8) -> bool {
     (w.inv.sizes[c as usize] as usize).saturating_sub(1) > w.inv.slots_of(c).iter().filter(|x| x.index != 0).count()
 }
 
@@ -1105,7 +1150,7 @@ pub fn open_dae10(w: &mut World, c: u8, nomad: bool) -> bool {
 
 /// FUN_101db220 for a row of the bank side (`bank_side`) or the inventory side; the first rule that applies wins.
 /// Not done: the equipped linkshell (7, s2c 0x0E0).
-fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
+pub(super) fn tint(w: &World, info: &ItemCache, st: &Storage, bank_side: bool, s: &Slot) -> u32 {
     use crate::inventory::{TINT_DIM, TINT_WHITE};
     let (own, dest) = if bank_side { (st.bank, st.side) } else { (st.side, st.bank) };
     let it = info.item(s.id);
@@ -1170,7 +1215,7 @@ fn manual_tint(w: &World, c: u8, held: Option<u8>, s: &Slot) -> u32 {
 }
 
 /// FUN_100eb710: c2s 0x029 {n, from, to, slot, 0x52} (0x52: the destination's first free slot).
-fn send_move(w: &World, from: u8, to: u8, index: u8, n: u32) {
+pub(super) fn send_move(w: &World, from: u8, to: u8, index: u8, n: u32) {
     let mut b = vec![0u8; 8];
     b[0..4].copy_from_slice(&n.to_le_bytes());
     (b[4], b[5], b[6], b[7]) = (from, to, index, 0x52);
@@ -1481,7 +1526,7 @@ fn stora_container(row: u16) -> u8 {
 
 /// FUN_101dbc20 for a container: not on either side, not 1 / 2 / 4 / 9 away from the moogle, the Locker leased, the
 /// Satchel there (ItemNum >= 30), Safe 2 owned (s2c 0x067 @0x27), Sack and wardrobes 2..8 with a size.
-fn usable(w: &World, b: &Storage, c: u8) -> bool {
+pub(super) fn usable(w: &World, b: &Storage, c: u8) -> bool {
     let n = |c: u8| w.inv.sizes[c as usize];
     !(c == b.bank
         || c == b.side

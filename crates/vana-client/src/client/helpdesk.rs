@@ -150,9 +150,64 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
-/// The mouse: faqsub's rows as the generic window's children (winhits.rs); faqmain only the right click.
+/// A line of a Help Desk page as the modern layer draws it: text that is no row (grey or not), or a row (its id, its
+/// text, enabled, the question's value line).
+pub enum Line {
+    Text(String, bool),
+    Row { id: i32, text: String, on: bool, value: Option<String> },
+}
+
+/// The page the modern layer draws: its title, lines, the cursor row, whether it has the keys, the open text field.
+pub struct PageView {
+    pub title: String,
+    pub lines: Vec<Line>,
+    pub cursor: i32,
+    pub focused: bool,
+    pub field: Option<String>,
+}
+
+/// faqsub's menu or Config page, or faqmain's page over it, as lines.
+pub fn view(w: &World, gu: &GameUi) -> Option<PageView> {
+    let h = w.helpdesk.as_ref()?;
+    if h.main.is_some() {
+        return super::faqmain::view(w, gu);
+    }
+    let mut lines = Vec::new();
+    if h.config {
+        lines.push(Line::Text(text(w, 3), false));
+        for (row, &i) in CONFIG.iter().enumerate() {
+            if row == 3 {
+                lines.push(Line::Text(text(w, i), true));
+            } else {
+                lines.push(Line::Row { id: row as i32, text: text(w, i), on: config_on(w, row), value: None });
+            }
+        }
+    } else {
+        for (row, &i) in MENU.iter().enumerate() {
+            lines.push(Line::Row { id: row as i32, text: text(w, i), on: row != 0, value: None });
+            if row == 0 {
+                lines.push(Line::Text(text(w, 1), true));
+            }
+        }
+    }
+    Some(PageView { title: text(w, 25), lines, cursor: h.cursor as i32, focused: focused(w), field: None })
+}
+
+/// The modern layer's mouse: the page's cursor to row `id`; true when it moved.
+pub fn set_cursor(w: &mut World, id: i32) -> bool {
+    let Some(h) = w.helpdesk.as_mut() else { return false };
+    if h.main.is_some() {
+        return super::faqmain::set_cursor(w, id);
+    }
+    let moved = h.cursor as i32 != id;
+    h.cursor = id.max(0) as usize;
+    moved
+}
+
+/// The mouse: faqsub's rows as the generic window's children (winhits.rs); faqmain only the right click. The modern
+/// layer takes it there.
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    let Some(h) = w.helpdesk.as_ref() else { return };
+    let Some(h) = w.helpdesk.as_ref().filter(|_| !w.modern) else { return };
     if h.main.is_some() {
         if right && super::winhits::over(w, "menu    faqmain", p) {
             key(w, egui::Key::Escape);
@@ -248,7 +303,7 @@ fn layout(gu: &GameUi, w: &World, h: &HelpDesk, width: f32) -> Vec<Entry> {
 /// The window frame, the entries clipped to the content rect, the markers at (x - 16, y): the hand on the cursor row,
 /// framesus 35 at y + 4 on the other rows; the scroll keeps the cursor row inside; the bar at x1 - 8.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
-    let h = w.helpdesk.as_ref()?;
+    let h = w.helpdesk.as_ref().filter(|_| !w.modern)?;
     if h.main.is_some() {
         let r = super::faqmain::draw(gu, w, sw, sh);
         if let Some(frame) = r {

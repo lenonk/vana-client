@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="18.898" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6c275" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#f2a83a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#f2a83a" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="17.778" y1="25.504" x2="23.989" y2="60.729" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="40.011" y1="3.271" x2="46.222" y2="38.496" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-2" cx="32" cy="32" r="10.216" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+  </defs>
+  <title>skillchain</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M37.853 6.975 C43.135 1.676 51.727 1.674 57.026 6.973 C62.326 12.273 62.324 20.865 57.022 26.15 L48.379 34.793 C46.759 36.418 44.818 37.552 42.746 38.181 L44.345 41.013 C45.557 43.159 43.159 45.557 41.013 44.345 L38.181 42.746 C37.551 44.818 36.416 46.761 34.789 48.383 L26.147 57.025 C20.865 62.324 12.273 62.326 6.973 57.027 C1.679 51.732 1.672 43.142 6.976 37.852 L15.621 29.207 C17.241 27.582 19.182 26.448 21.254 25.819 L19.655 22.987 C18.443 20.841 20.841 18.443 22.987 19.655 L25.819 21.254 C26.467 19.122 27.631 17.193 29.209 15.619 Z M45.243 14.362 L38.572 21.033 L41.013 19.655 C43.159 18.443 45.557 20.841 44.345 22.987 L42.967 25.428 L49.641 18.753 C50.856 17.538 50.852 15.577 49.638 14.362 C48.421 13.146 46.46 13.146 45.243 14.362 Z M21.033 38.572 L14.359 45.247 C13.144 46.462 13.148 48.423 14.362 49.638 C15.579 50.854 17.54 50.854 18.757 49.638 L25.428 42.967 L22.987 44.345 C20.841 45.557 18.443 43.159 19.655 41.013 Z" fill="#0a1118"/>
+      <path id="aura" d="M50.898 32 C50.898 42.438 42.438 50.898 32 50.898 C21.562 50.898 13.102 42.438 13.102 32 C13.102 21.562 21.562 13.102 32 13.102 C42.438 13.102 50.898 21.562 50.898 32 Z" fill="url(#radial-gradient-1)" opacity="0.8"/>
+      <path id="link_1" data-name="link 1" d="M17.351 30.935 C21.679 26.593 28.721 26.592 33.065 30.935 C37.408 35.279 37.407 42.321 33.061 46.652 L24.416 55.297 C20.089 59.639 13.046 59.641 8.703 55.297 C4.36 50.954 4.361 43.913 8.704 39.582 Z M21.281 34.866 L12.63 43.517 C10.461 45.679 10.462 49.197 12.633 51.367 C14.803 53.537 18.321 53.539 20.486 51.367 L29.138 42.715 C31.306 40.554 31.305 37.036 29.134 34.866 C26.964 32.695 23.446 32.694 21.281 34.866 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.556" stroke-linejoin="round"/>
+      <path id="link_2" data-name="link 2" d="M39.584 8.703 C43.911 4.361 50.954 4.359 55.297 8.703 C59.641 13.046 59.639 20.089 55.294 24.42 L46.649 33.065 C42.321 37.407 35.279 37.408 30.935 33.065 C26.592 28.722 26.593 21.681 30.937 17.35 Z M43.514 12.633 L34.862 21.285 C32.694 23.446 32.695 26.964 34.865 29.134 C37.036 31.305 40.554 31.306 42.719 29.134 L51.37 20.483 C53.539 18.321 53.537 14.803 51.367 12.633 C49.197 10.463 45.678 10.461 43.514 12.633 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.556" stroke-linejoin="round"/>
+      <path id="flash" d="M42.216 21.784 L36.446 32 L42.216 42.216 L32 36.447 L21.784 42.216 L27.553 32 L21.784 21.784 L32 27.553 Z" fill="url(#radial-gradient-2)" stroke="#0a1118" stroke-width="1.223" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

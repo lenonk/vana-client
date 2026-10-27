@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="44.911" y1="30.51" x2="44.911" y2="58.318" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3eaf0"/>
+      <stop offset="0.5" stop-color="#9aa8b7"/>
+      <stop offset="1" stop-color="#566374"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="44.911" y1="34.88" x2="44.911" y2="53.949" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d9aab"/>
+      <stop offset="1" stop-color="#3f4a58"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="44.911" y1="38.654" x2="44.911" y2="50.155" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.45" stop-color="#c8d2dc"/>
+      <stop offset="1" stop-color="#6b7889"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="21.052" y1="2.884" x2="29.044" y2="48.205" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="25.048" y1="11.144" x2="25.048" y2="39.945" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8dd5cc"/>
+      <stop offset="0.42" stop-color="#2fb3a3"/>
+      <stop offset="1" stop-color="#185a52"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="25.048" y1="16.606" x2="25.048" y2="34.572" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe6"/>
+      <stop offset="1" stop-color="#ecd08e"/>
+    </linearGradient>
+  </defs>
+  <title>subjob</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M46.906 28.448 C54.849 29.431 61 36.206 61 44.414 C61 53.298 53.795 60.503 44.911 60.503 C36.987 60.503 30.398 54.771 29.067 47.227 C15.592 49.708 3 39.417 3 25.545 C3 13.364 12.867 3.497 25.048 3.497 C38.437 3.497 48.639 15.28 46.906 28.448 Z" fill="#0a1118"/>
+      <path id="sub" d="M58.815 44.414 C58.815 52.091 52.588 58.318 44.911 58.318 C37.234 58.318 31.007 52.091 31.007 44.414 C31.007 36.737 37.234 30.51 44.911 30.51 C52.588 30.51 58.815 36.737 58.815 44.414 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="sub_field" data-name="sub field" d="M54.445 44.414 C54.445 49.678 50.175 53.949 44.911 53.949 C39.647 53.949 35.377 49.678 35.377 44.414 C35.377 39.151 39.647 34.88 44.911 34.88 C50.175 34.88 54.445 39.151 54.445 44.414 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+      <path id="sub_star" data-name="sub star" d="M44.911 38.654 L46.49 42.845 L50.959 43.044 L47.463 45.835 L48.645 50.155 L44.911 47.692 L41.177 50.155 L42.359 45.835 L38.863 43.044 L43.332 42.845 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+      <path id="main" d="M44.911 25.545 C44.911 36.519 36.022 45.408 25.048 45.408 C14.074 45.408 5.185 36.519 5.185 25.545 C5.185 14.57 14.074 5.682 25.048 5.682 C36.022 5.682 44.911 14.57 44.911 25.545 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.39" stroke-linejoin="round"/>
+      <path id="main_field" data-name="main field" d="M39.449 25.545 C39.449 33.5 33.003 39.945 25.048 39.945 C17.093 39.945 10.647 33.5 10.647 25.545 C10.647 17.589 17.093 11.144 25.048 11.144 C33.003 11.144 39.449 17.589 39.449 25.545 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+      <path id="main_star" data-name="main star" d="M25.048 16.606 L27.501 23.161 L34.493 23.469 L29.011 27.829 L30.888 34.572 L25.048 30.709 L19.208 34.572 L21.085 27.829 L15.603 23.469 L22.595 23.161 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -32,6 +32,17 @@ pub struct PcMotion {
     pub draw: i8,
     /// Body info[9] (+0x881): skirt motion set, 1 or 2 (0 / -1 = none).
     pub skirt: i8,
+    /// Dual wield (+0x8b5, a weapon in the sub slot): the sub weapon's info[3] (+0x88a), its battle motion set.
+    pub dual: Option<i8>,
+}
+
+/// FUN_100cd3e0: a sub-slot model is a shield when its id (low 12 bits) is in one of these ranges, else a weapon held
+/// in the left hand (dual wield).
+const SHIELDS: [(u16, u16); 4] = [(0, 0x3f), (0x75, 0x8f), (0x1d7, 0x1ff), (0x280, 0x2bf)];
+
+pub fn dual_wield(sub: u16) -> bool {
+    let id = sub & 0xfff;
+    !SHIELDS.iter().any(|&(lo, hi)| (lo..=hi).contains(&id))
 }
 
 /// Op 0x5b / 0x5f sub 3, 5 (FUN_100b3570 -> FUN_100d00a0): one file, val + a base by range.
@@ -80,14 +91,46 @@ const BATTLE_SKIRT: [[u32; 2]; 9] = [
     [29080, 29208],
 ];
 
-/// Engaged without dual wield (FUN_100cf650): FUN_100d0dc0(race, 0) and FUN_100d0d00(race, 1, 0).
+/// Dual wield's files (FUN_100cf900): upper body by the main weapon (0x103523a4) and by the sub (0x1035236c), the skirt
+/// files likewise (0x103523b8 / 0x10352380). The same tables in 30261006_0 at 0x1035d7c4 / 0x1035d78c.
+const DUAL_MAIN: [u32; 9] = [40815, 40815, 42095, 43375, 44655, 45935, 45935, 47215, 48495];
+const DUAL_SUB: [u32; 9] = [40431, 40431, 41711, 42991, 44271, 45551, 45551, 46831, 48111];
+const DUAL_MAIN_SKIRT: [[u32; 2]; 9] = [
+    [40943, 41071],
+    [40943, 41071],
+    [42223, 42351],
+    [43503, 43631],
+    [44783, 44911],
+    [46063, 46191],
+    [46063, 46191],
+    [47343, 47471],
+    [48623, 48751],
+];
+const DUAL_SUB_SKIRT: [[u32; 2]; 9] = [
+    [40559, 40687],
+    [40559, 40687],
+    [41839, 41967],
+    [43119, 43247],
+    [44399, 44527],
+    [45679, 45807],
+    [45679, 45807],
+    [46959, 47087],
+    [48239, 48367],
+];
+
+/// Engaged (FUN_100cf650; FUN_100cf900 with dual wield): FUN_100d0dc0(race, 0) and FUN_100d0d00(race, 1, 0), or with
+/// dual wield the main's then the sub's upper body, then their skirts; a set of -1 loads nothing.
 pub fn battle_files(pc: &PcMotion) -> Vec<u32> {
-    if pc.weapon < 0 {
-        return Vec::new();
-    }
     let r = if pc.race > 8 { 1 } else { pc.race as usize };
     let skirt = (pc.skirt as i32 - 1).clamp(0, 1) as usize;
-    vec![BATTLE_UPPER[r] + pc.weapon as u32, BATTLE_SKIRT[r][skirt] + pc.weapon as u32]
+    let Some(sub) = pc.dual else {
+        if pc.weapon < 0 {
+            return Vec::new();
+        }
+        return vec![BATTLE_UPPER[r] + pc.weapon as u32, BATTLE_SKIRT[r][skirt] + pc.weapon as u32];
+    };
+    let set = |base: u32, v: i8| (v >= 0).then(|| base + v as u32);
+    [set(DUAL_MAIN[r], pc.weapon), set(DUAL_SUB[r], sub), set(DUAL_MAIN_SKIRT[r][skirt], pc.weapon), set(DUAL_SUB_SKIRT[r][skirt], sub)].into_iter().flatten().collect()
 }
 
 /// Emote files of PC looks (FUN_100cfc10, model kinds 0 / 1 / 6): 0x103523dc[race] + group and the skirt
@@ -192,7 +235,7 @@ mod tests {
         assert_eq!(mannequin_pose(9, None), (1, "mq1"));
         assert_eq!(mannequin_pose(0x10, None), (2, "mq0"));
         assert_eq!(mannequin_pose(25, None), (3, "mq1"));
-        let pc = |race, skirt| PcMotion { race, weapon: -1, draw: 0, skirt };
+        let pc = |race, skirt| PcMotion { race, weapon: -1, draw: 0, skirt, dual: None };
         assert_eq!(mannequin_files(&pc(7, 1), 1), vec![26193, 26257]);
         assert_eq!(mannequin_files(&pc(8, 0), 0), vec![29368]);
         assert_eq!(mannequin_files(&pc(0, 2), 0), mannequin_files(&pc(1, 2), 0));
@@ -240,7 +283,7 @@ mod tests {
         let Some(index) = index() else { return };
         assert_eq!(emote_motion(13), Some(15));
         assert_eq!(emote_motion(15), None);
-        let (files, name) = emote_files(&PcMotion { race: 3, weapon: -1, draw: 0, skirt: 1 }, 15);
+        let (files, name) = emote_files(&PcMotion { race: 3, weapon: -1, draw: 0, skirt: 1, dual: None }, 15);
         assert_eq!((files.as_slice(), name.as_str()), ([16409, 16473].as_slice(), "em07"));
         assert!(has_sched(&MotionFile::load(&index, 16409).unwrap(), "em07"));
     }
@@ -249,7 +292,7 @@ mod tests {
     #[test]
     fn pc_battle_files() {
         let Some(index) = index() else { return };
-        let pc = PcMotion { race: 1, weapon: 10, draw: 0, skirt: 1 };
+        let pc = PcMotion { race: 1, weapon: 10, draw: 0, skirt: 1, dual: None };
         assert_eq!(battle_files(&pc), [9682, 9810]);
         let f = MotionFile::load(&index, 9682).unwrap();
         assert!(f.animations.iter().any(|a| a.name == "btl1"));
@@ -264,5 +307,16 @@ mod tests {
         let ati0 = &f.schedulers.iter().find(|(n, _)| n == "ati0").unwrap().1;
         let p = crate::dat::sched::plan(ati0, &["dada"]);
         assert!(p.hit_at.is_some() && p.motions.first().is_some_and(|m| m.name == "at0"));
+    }
+
+    /// Mithra with a Wakizashi in each hand (main and sub model 310, set 3): the dual wield files, the sub's swings.
+    #[test]
+    fn dual_wield_files() {
+        assert!(dual_wield(310) && dual_wield(0x7136) && !dual_wield(0) && !dual_wield(0x80) && !dual_wield(0x1e0) && !dual_wield(0x2a0));
+        let pc = PcMotion { race: 7, weapon: 3, draw: 0, skirt: 2, dual: Some(3) };
+        assert_eq!(battle_files(&pc), [47218, 46834, 47474, 47090]);
+        assert_eq!(battle_files(&PcMotion { dual: Some(-1), ..pc }), [47218, 47474]);
+        let Some(index) = index() else { return };
+        assert!(has_sched(&MotionFile::load(&index, 46834).unwrap(), "bti4"));
     }
 }

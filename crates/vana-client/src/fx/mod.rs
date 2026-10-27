@@ -2155,10 +2155,10 @@ impl Effects {
         }
     }
 
-    /// A footstep (FUN_100d2970 step 7): SeSep `name` in the zone's 'fses' folder ('fser' in the rain weathers when
-    /// not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127 running). Then
-    /// the dust generator `dust` of that folder, if any, bursts once on actor `id`.
-    pub fn footstep(&mut self, id: u32, pos: Vec3, name: [u8; 4], dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
+    /// A footstep (FUN_100d2970 step 7): SeSep `name` (none while sneaking) in the zone's 'fses' folder ('fser' in the
+    /// rain weathers when not covered), else DAT 0's 'foot'; one shot at `pos`, centred, at `level` (101 walking, 127
+    /// running). Then the dust generator `dust` of that folder, if any, bursts once on actor `id`.
+    pub fn footstep(&mut self, id: u32, pos: Vec3, name: Option<[u8; 4]>, dust: Option<[u8; 4]>, print: bool, rain: bool, level: i32) {
         let Some(l) = self.zone_lib else { return };
         self.foot_folder.insert(id, rain);
         let folder = crate::dat::generator::fourcc(if rain { "fser" } else { "fses" });
@@ -2170,6 +2170,7 @@ impl Effects {
         if print {
             self.prints.push(id);
         }
+        let Some(name) = name else { return };
         let found = lib.find_in(f, 0x3d, name).map(|n| (l, n)).or_else(|| {
             let g = self.reg.global?;
             self.reg.libs[g].find_global(0x3d, u32::from_le_bytes(*b"foot")).map(|n| (g, n))

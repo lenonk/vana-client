@@ -6,6 +6,7 @@ use crate::dat::font::{Font, Quality, encode_sjis};
 use crate::dat::msg::{Messages, group_file};
 use crate::dat::ui::{LOBBY_US, SpriteLib, UiFile, WINDOW_STYLE_BASE, companions};
 use crate::render::Gpu;
+use crate::render::mtext::{self, Face};
 use crate::render::screens::{self, HudState, LOBBY_CLEAR, TextSlot, TitleState};
 use crate::render::ui::{UiBatch, UiRenderer};
 use anyhow::{Context, Result};
@@ -157,6 +158,12 @@ impl GameUiData {
     }
 }
 
+/// A caption read from glyph cells: the gap after a hyphen inside a word ("Hand- to-Hand") is the cut's, not a space.
+fn hyphens(s: &str) -> String {
+    let c: Vec<char> = s.chars().collect();
+    c.iter().enumerate().filter(|&(i, &ch)| !(ch == ' ' && i > 1 && c[i - 1] == '-' && c[i - 2].is_alphabetic())).map(|(_, &ch)| ch).collect()
+}
+
 impl GameUi {
     /// "menu    dmgnum" (file 39542) and its texture: the on-screen damage number glyphs.
     pub fn dmgnum(&self) -> Option<(&SpriteLib, &crate::dat::ui::UiImage)> {
@@ -166,6 +173,22 @@ impl GameUi {
     }
 }
 
+/// The English words of the interface's texts (menu help, titles, lobby, area names, item formats, augments), lower
+/// case: what settles a doubtful gap in a menu caption.
+fn caption_words(d: &GameUiData) -> std::collections::HashSet<String> {
+    let tables = [&d.menu_msgs, &d.title_msgs, &d.area_names, &d.item_fmt, &d.aug_text].into_iter().flatten().chain(d.lobby_msgs.values());
+    let mut out = std::collections::HashSet::new();
+    for m in tables {
+        for id in 0..m.len() {
+            let Some(t) = m.get(id) else { continue };
+            for w in t.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| w.len() > 1 || matches!(*w, "a" | "A" | "I")) {
+                out.insert(w.to_ascii_lowercase());
+            }
+        }
+    }
+    out
+}
+
 pub struct GameUi {
     data: GameUiData,
     renderer: Option<UiRenderer>,
@@ -173,6 +196,11 @@ pub struct GameUi {
     pub scene_depth: Option<wgpu::TextureView>,
     /// What this frame draws, rebuilt by the UI code each frame.
     batch: UiBatch,
+    /// The modern frame for the retail windows (made on first use; None inside when the pack has none).
+    modern_frame: Option<Option<crate::render::ui::ModernFrame>>,
+    skin_on: bool,
+    /// The lobby's help line for the modern layer's help bar (the login form sets it).
+    pub modern_help: Option<(String, [u8; 4])>,
     started: Instant,
     /// Images (item icons) waiting for upload, and the names already uploaded.
     pending: Vec<(String, u32, u32, Vec<u8>)>,
@@ -196,6 +224,8 @@ pub struct GameUi {
     /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
     /// pointer moves.
     pub hover: std::cell::Cell<bool>,
+    /// Ours: the retail windows the modern layer draws as one column this frame, their children top to bottom.
+    pub modern_order: std::cell::RefCell<std::collections::HashMap<String, Vec<u16>>>,
     /// The focused lists' bars drawn this frame, and a press held on one (client/scrollbar.rs).
     pub bars: Vec<super::scrollbar::Site>,
     pub bar_hold: Option<super::scrollbar::Hold>,
@@ -289,7 +319,8 @@ pub struct WorldView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        crate::render::ui::set_caption_words(caption_words(&data));
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -462,13 +493,14 @@ impl GameUi {
 
     /// The title art; `owned` is the lobby's expansion bitmask (bit 1 Zilart .. bit 11 Adoulin).
     pub fn title(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5]) -> Vec<TextSlot> {
-        self.title_update(w, h, selected, owned, enabled, None, 0, None, true)
+        self.title_update(w, h, selected, owned, enabled, None, 0, None, true, false)
     }
 
     /// The title with the Update button above Select Character (selected, enabled).
     #[allow(clippy::too_many_arguments)]
-    pub fn title_update(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5], update: Option<(bool, bool)>, wardrobes: u32, press: Option<(f32, bool)>, hand: bool) -> Vec<TextSlot> {
-        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update, hand, wardrobes, press };
+    #[allow(clippy::too_many_arguments)]
+    pub fn title_update(&mut self, w: f32, h: f32, selected: Option<usize>, owned: u32, enabled: [bool; 5], update: Option<(bool, bool)>, wardrobes: u32, press: Option<(f32, bool)>, hand: bool, modern: bool) -> Vec<TextSlot> {
+        let st = TitleState { selected: selected.unwrap_or(0), owned: owned >> 1, cursor_frame: self.cursor_frame(), buttons: selected.is_some(), shift: Self::shift(owned), enabled, update, hand, wardrobes, press, modern };
         let (b, text) = screens::title_screen(&self.data.lobby, &self.data.style, w, h, &st);
         self.batch = b;
         text
@@ -488,11 +520,53 @@ impl GameUi {
     }
 
     pub fn text_width(&self, s: &str) -> f32 {
+        if self.batch.modern.is_some() {
+            return self.modern_runs(s, [0x80; 4]).iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
+        }
         self.data.font.text_width(&encode_sjis(s)) as f32
+    }
+
+    /// A game-font line's text as runs of one colour (its `1e xx` / `1f xx` codes as layout_line reads them).
+    fn modern_runs(&self, s: &str, base: [u8; 4]) -> Vec<(String, [u8; 4])> {
+        let mut out = vec![(String::new(), base)];
+        let mut it = s.chars();
+        while let Some(c) = it.next() {
+            match c {
+                '\u{1e}' | '\u{1f}' => {
+                    if let Some(x) = it.next() {
+                        let col = self.data.font.code_colour((c == '\u{1f}') as u8, x as u32 as u8, base);
+                        out.push((String::new(), col));
+                    }
+                }
+                '\0' => break,
+                // The same codes kept as one character (decode_sjis), as event item names.
+                c if (crate::dat::font::CODE_BASE..crate::dat::font::CODE_BASE + 0x200).contains(&(c as u32)) => {
+                    let k = c as u32 - crate::dat::font::CODE_BASE;
+                    out.push((String::new(), self.data.font.code_colour((k >> 8) as u8, k as u8, base)));
+                }
+                _ => {
+                    if let Some(c) = crate::dat::font::plain_char(c) {
+                        out.last_mut().unwrap().0.push(c);
+                    }
+                }
+            }
+        }
+        out.retain(|(t, _)| !t.is_empty());
+        out
     }
 
     /// One line in the game font; align 0 = left at x, 1 = centred on x.
     pub fn text(&mut self, s: &str, x: f32, y: f32, align: u8, color: [u8; 4]) {
+        if self.batch.modern.is_some() {
+            let runs = self.modern_runs(s, color);
+            let w: f32 = runs.iter().map(|(t, _)| mtext::width(t, Face::Regular, mtext::TEXT_EM)).sum();
+            let mut x = if align == 1 { x - w / 2.0 } else { x };
+            for (t, c) in runs {
+                let col = [c[2], c[1], c[0], c[3]].map(|v| (v as f32 / 128.0).min(1.0));
+                x = self.batch.push_mtext(&t, Face::Regular, mtext::TEXT_EM, x, y + mtext::TEXT_DY, col, false);
+            }
+            return;
+        }
         let sjis = encode_sjis(s);
         let x = if align == 1 { x - self.data.font.text_width(&sjis) as f32 / 2.0 } else { x };
         let mut quads = Vec::new();
@@ -534,7 +608,17 @@ impl GameUi {
 
     /// A layout's cursor links of child `child` (up, down, ?, ?, right, left).
     pub fn menu_links(&self, name: &str, child: u16) -> Option<[u8; 6]> {
-        self.data.lobby.menu(name)?.elements.iter().skip(1).find(|e| e.id == child).map(|e| e.links)
+        let mut l = self.data.lobby.menu(name)?.elements.iter().skip(1).find(|e| e.id == child)?.links;
+        // Ours: a window the modern layer draws as one column steps up and down that column (wrapping), whatever its
+        // retail layout.
+        if let Some(order) = self.modern_order.borrow().get(name)
+            && let Some(i) = order.iter().position(|&c| c == child)
+        {
+            let n = order.len();
+            let (up, down) = (order[(i + n - 1) % n] as u8, order[(i + 1) % n] as u8);
+            (l[0], l[1], l[2], l[3]) = (up, down, up, down);
+        }
+        Some(l)
     }
 
     /// A lobby window as FUN_101144b0 draws it: style frame, the window sprite from its second cell, each child's
@@ -562,6 +646,22 @@ impl GameUi {
                 self.cursor(x + e.x as f32, y + e.y as f32);
             }
         }
+    }
+
+    /// The help strip's rect and the version line's start, for the modern help bar.
+    pub fn help_rects(&self, w: f32, h: f32) -> Option<([f32; 4], (f32, f32))> {
+        Some((screens::help_rect(&self.data.lobby, w, h)?, screens::version_at(w, h)))
+    }
+
+    /// Where a centred lobby window (the prompts) would stand, drawing nothing: its frame and its children's rects (the
+    /// modern layer's popups take retail's place and size).
+    pub fn popup_rects(&self, name: &str, w: f32, h: f32) -> Option<LobbyWin> {
+        let (dx, dy) = (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc());
+        let m = self.data.lobby.menu(name)?;
+        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
+        let children = m.elements.iter().skip(1).map(|c| (c.id, [x + dx + c.x as f32, y + dy + c.y as f32, c.w as f32, c.h as f32])).collect();
+        Some(LobbyWin { frame: [fx + dx, fy + dy, fw, fh], children })
     }
 
     pub fn lobby_window(&mut self, name: &str, w: f32, h: f32, centred: bool, sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {
@@ -993,6 +1093,40 @@ impl GameUi {
     }
 
     /// A menu layout by name (window element first, then the children).
+    /// A menu child's caption as text (its normal sprite's caption glyphs), for the modern layer's own pages.
+    pub fn child_caption(&self, menu: &str, child: u16) -> Option<String> {
+        let e = self.data.lobby.menu(menu)?.elements.iter().skip(1).find(|e| e.id == child)?;
+        let r = e.refs.iter().find(|r| r.kind == 0)?;
+        let s = self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize)?;
+        let runs = crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" ")))
+    }
+
+    /// A sprite's caption as text (a skill's or a job's name sprite).
+    pub fn sprite_caption(&self, lib: &str, index: usize) -> Option<String> {
+        let s = self.data.lobby.lib(lib)?.sprites.get(index)?;
+        let runs = crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" "))).filter(|t| !t.is_empty())
+    }
+
+    /// A menu window's own captions (its headings) with their places in it: (text, x, y).
+    pub fn window_captions(&self, menu: &str) -> Vec<(String, f32, f32)> {
+        let Some(e) = self.data.lobby.menu(menu).and_then(|m| m.elements.first()) else { return Vec::new() };
+        e.refs
+            .iter()
+            .filter_map(|r| self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize))
+            .filter_map(|s| crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080))
+            .flatten()
+            .map(|(x, y, t, _)| (hyphens(&t), x, y))
+            .collect()
+    }
+
+    /// A menu child's place in its window.
+    pub fn child_place(&self, menu: &str, child: u16) -> Option<(f32, f32)> {
+        let e = self.data.lobby.menu(menu)?.elements.iter().skip(1).find(|e| e.id == child)?;
+        Some((e.x as f32, e.y as f32))
+    }
+
     pub fn menu_def(&self, name: &str) -> Option<&crate::dat::ui::Menu> {
         self.data.lobby.menu(name)
     }
@@ -1034,7 +1168,12 @@ impl GameUi {
 
     /// A message of group 0xb (key assignment labels and prompts).
     pub fn group_b(&self, id: usize) -> Option<String> {
-        self.data.lobby_msgs.get(&0x0b).and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+        self.data.lobby_msgs.get(&0x0b).and_then(|m| m.get(id)).filter(|s| !s.is_empty()).map(|s| self.shown(s))
+    }
+
+    /// Text as the faces drawing it can show: with the modern skin the game's own glyphs become Unicode.
+    fn shown(&self, s: String) -> String {
+        if self.skin_on { crate::dat::font::plain(&s) } else { s }
     }
 
     /// A cell's corners (x0, y0, x1, y1) in sprite space.
@@ -1117,9 +1256,28 @@ impl GameUi {
         self.batch.set_depth(depth);
     }
 
+    /// While Modern is on the retail windows' frames are the modern UI's (made and uploaded once).
+    pub fn modern_skin(&mut self, on: bool) {
+        if on && self.modern_frame.is_none() {
+            let f = super::modern::frame_image("window_normal").map(|fi| {
+                self.image("modern frame", fi.size[0] as u32, fi.size[1] as u32, fi.rgba);
+                crate::render::ui::ModernFrame { texture: "modern frame".into(), corner_uv: fi.corner_uv, corner: 6.0, top: fi.top, bottom: fi.bottom, inset: fi.inset }
+            });
+            self.modern_frame = Some(f);
+        }
+        self.skin_on = on;
+        self.batch.modern = if on { self.modern_frame.clone().flatten() } else { None };
+    }
+
+    /// The retail windows' frames drawn this frame in the modern skin (UI pixels).
+    pub fn drawn_frames(&self) -> &[[f32; 4]] {
+        &self.batch.frames
+    }
+
     /// Starts an empty frame (the HUD frame: name plates, then the windows).
     pub fn clear(&mut self) {
         self.batch = UiBatch::default();
+        self.batch.modern = if self.skin_on { self.modern_frame.clone().flatten() } else { None };
         self.log_top = None;
         self.target_up = false;
     }
@@ -1262,6 +1420,9 @@ impl GameUi {
     }
 
     pub fn label_width(&self, s: &str) -> f32 {
+        if self.batch.modern.is_some() {
+            return mtext::width(s, Face::Bold, 13.0);
+        }
         screens::label_width(s)
     }
 
@@ -1302,7 +1463,7 @@ impl GameUi {
 
     /// A message of group 0xe, or `fallback` when the file did not load.
     pub fn menu_msg(&self, id: usize, fallback: &str) -> String {
-        self.data.menu_msgs.as_ref().and_then(|m| m.get(id)).unwrap_or_else(|| fallback.to_string())
+        self.shown(self.data.menu_msgs.as_ref().and_then(|m| m.get(id)).unwrap_or_else(|| fallback.to_string()))
     }
 
     /// A message of group 0xd (window titles); None when missing or empty.
@@ -1312,7 +1473,7 @@ impl GameUi {
     }
 
     pub fn title_msg(&self, id: usize) -> Option<String> {
-        self.data.title_msgs.as_ref().and_then(|m| m.get(id)).filter(|s| !s.is_empty())
+        self.data.title_msgs.as_ref().and_then(|m| m.get(id)).filter(|s| !s.is_empty()).map(|s| self.shown(s))
     }
 
     /// The action menu's help line for a command: group 0xe by the table at 0x103634fc (FUN_10127790).
@@ -1334,7 +1495,7 @@ impl GameUi {
         let Some(m) = self.data.lobby.menu(name) else { return [None, None] };
         let msg = |e: &crate::dat::ui::MenuElement, k: usize| {
             let id = e.strings[k].parse::<i32>().ok().filter(|&i| i >= 0)? as usize;
-            if k == 0 { self.data.menu_msgs.as_ref()?.get(id).filter(|s| !s.is_empty()) } else { self.title_msg(id) }
+            if k == 0 { self.data.menu_msgs.as_ref()?.get(id).filter(|s| !s.is_empty()).map(|s| self.shown(s)) } else { self.title_msg(id) }
         };
         let item = m.elements.iter().skip(1).find(|e| e.id == child);
         [0, 1].map(|k| item.and_then(|e| msg(e, k)).or_else(|| msg(&m.elements[0], k)))
@@ -1366,6 +1527,55 @@ impl GameUi {
             self.image(&name, w, h, rgba);
         }
         Some(name)
+    }
+
+    /// A status icon's pixels (the modern layer's copy).
+    /// A menu sprite as straight RGBA over its cells' bounds (each cell's texture area stretched to its corners, its
+    /// first corner colour applied, 0x80 = 1.0), for the modern layer's textures.
+    pub fn sprite_rgba(&self, lib: &str, index: usize) -> Option<(u32, u32, Vec<u8>)> {
+        let ui = &self.data.lobby;
+        let s = ui.lib(lib)?.sprites.get(index)?;
+        let xs = s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[0] as i32));
+        let ys = s.cells.iter().flat_map(|c| c.corners.iter().map(|p| p[1] as i32));
+        let (x0, x1, y0, y1) = (xs.clone().min()?, xs.max()?, ys.clone().min()?, ys.max()?);
+        let (w, h) = ((x1 - x0).max(1) as usize, (y1 - y0).max(1) as usize);
+        let mut out = vec![0u8; w * h * 4];
+        for c in &s.cells {
+            let Some(img) = ui.images.get(&c.texture) else { continue };
+            let (l, t) = (c.corners[0][0] as i32 - x0, c.corners[0][1] as i32 - y0);
+            let (cw, ch) = ((c.corners[3][0] - c.corners[0][0]).max(1) as i32, (c.corners[3][1] - c.corners[0][1]).max(1) as i32);
+            let k = c.colors[0].map(|v| v as f32 / 128.0);
+            for py in 0..ch {
+                for px in 0..cw {
+                    let (mut u, mut v) = (px * c.size[0] as i32 / cw, py * c.size[1] as i32 / ch);
+                    if c.flip & 1 != 0 {
+                        u = c.size[0] as i32 - 1 - u;
+                    }
+                    if c.flip & 2 != 0 {
+                        v = c.size[1] as i32 - 1 - v;
+                    }
+                    let (u, v) = (c.uv[0] as i32 + u, c.uv[1] as i32 + v);
+                    let (ox, oy) = (l + px, t + py);
+                    if u < 0 || v < 0 || u >= img.width as i32 || v >= img.height as i32 || ox < 0 || oy < 0 || ox >= w as i32 || oy >= h as i32 {
+                        continue;
+                    }
+                    let si = (v as usize * img.width as usize + u as usize) * 4;
+                    let src: [f32; 4] = std::array::from_fn(|i| (img.rgba[si + i] as f32 * k[i]).min(255.0));
+                    let di = (oy as usize * w + ox as usize) * 4;
+                    // Over what is there.
+                    let a = src[3] / 255.0;
+                    for i in 0..3 {
+                        out[di + i] = (src[i] * a + out[di + i] as f32 * (1.0 - a)) as u8;
+                    }
+                    out[di + 3] = (src[3] + out[di + 3] as f32 * (1.0 - a)).min(255.0) as u8;
+                }
+            }
+        }
+        Some((w as u32, h as u32, out))
+    }
+
+    pub fn status_rgba(&self, small: bool, id: u16) -> Option<(u32, u32, Vec<u8>)> {
+        crate::dat::statusinfo::icon(self.data.status[small as usize].as_deref()?, id)
     }
 
     /// A status info entry (cancellable, never timed, description).
@@ -1546,6 +1756,11 @@ impl GameUi {
         for (name, w, h, rgba) in self.replaced.drain(..) {
             r.replace_image(gpu, &name, w, h, &rgba);
         }
+        // The modern text's glyph atlas when it grew, and the screen scale its next glyphs are made for.
+        if let Some((side, rgba)) = mtext::take_dirty() {
+            r.replace_image(gpu, mtext::TEXTURE, side, side, &rgba);
+        }
+        mtext::set_scale(size[1] as f32 / layout[1].max(1) as f32);
         let c = LOBBY_CLEAR.map(|v| v as f64 / 255.0 * scene.clamp(0.0, 1.0) as f64);
         let clear = (!over).then_some(wgpu::Color { r: c[0], g: c[1], b: c[2], a: 1.0 });
         r.fade = fade;
@@ -1562,7 +1777,7 @@ impl GameUi {
     }
 
     pub fn lobby_msg(&self, group: u8, id: usize, fallback: &str) -> String {
-        crate::dat::font::decode_sjis(&self.lobby_msg_raw(group, id, fallback))
+        self.shown(crate::dat::font::decode_sjis(&self.lobby_msg_raw(group, id, fallback)))
     }
 
     /// The help line of a creator step (lobyhelp +0x2c = step + 0x13 -> group 8 0x6b..0x6f, the name step group
@@ -1675,12 +1890,31 @@ impl GameUi {
         let mut x = self.script_text(&face, 30.0, 342.0);
         x = self.script_text(&hair, x + 10.0, 342.0);
         self.script_text(&size, x + 10.0, 342.0);
-        let base = (v.job.min(5) + v.race.min(7) * 6) * 7;
-        for i in 0..7 {
-            if let Some(&n) = self.data.stats.get(base + i) {
-                self.script_text(format!("{n:4}").as_bytes(), 84.0, 216.0 + 16.0 * i as f32);
-            }
+        for (i, n) in self.creator_stat_values(v.race, v.job).into_iter().enumerate() {
+            self.script_text(format!("{n:4}").as_bytes(), 84.0, 216.0 + 16.0 * i as f32);
         }
+    }
+
+    /// A race's and job's STR..CHR in the creator (FUN_102306d0's table).
+    pub fn creator_stat_values(&self, race: usize, job: usize) -> Vec<u8> {
+        let base = (job.min(5) + race.min(7) * 6) * 7;
+        self.data.stats.iter().skip(base).take(7).copied().collect()
+    }
+
+    /// The creator's Face / Hair / Size words (group 1 5..7 with their %c / %s filled).
+    pub fn creator_look_words(&self, face: usize, hair: usize, size: usize) -> [String; 3] {
+        let fill = |f: String, arg: &str| f.replacen("%c", arg, 1).replacen("%s", arg, 1).trim().to_string();
+        [
+            fill(self.lobby_msg(1, 5, "Face %c "), &(face + 1).to_string()),
+            fill(self.lobby_msg(1, 6, "Hair %s "), &self.lobby_msg(1, 0xb + hair.min(1), "A")),
+            fill(self.lobby_msg(1, 7, "Size %s "), &self.lobby_msg(1, 8 + size.min(2), "S")),
+        ]
+    }
+
+    /// The nation step's description: its title and body (group 8 0x1d / 0x1e, 0x28 / 0x29, 0x33 / 0x34).
+    pub fn nation_words(&self, nation: usize) -> (String, String) {
+        let n = nation.min(2);
+        (self.lobby_msg(8, [0x1d, 0x28, 0x33][n], ""), self.lobby_msg(8, [0x1e, 0x29, 0x34][n], ""))
     }
 
     /// A frameless window (registry flag 0x20, e.g. race1..8, nation1..3): its sprite, every cell.

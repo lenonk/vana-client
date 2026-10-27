@@ -195,6 +195,20 @@ fn install_time() -> u32 {
     now
 }
 
+/// The editor as the modern layer draws it: the mode, the three lines, the line being edited.
+pub(super) fn view(w: &World) -> Option<(u8, [String; 3], usize)> {
+    let e = w.seacom_edit?;
+    let s = if e.mode == 0 { &w.bazaar_msg } else { &w.seacom };
+    Some((e.mode, s.lines.clone(), e.line))
+}
+
+/// The mouse onto line `k`.
+pub(super) fn set_edit_line(w: &mut World, k: usize) {
+    if let Some(e) = w.seacom_edit.as_mut().filter(|_| k < 3) {
+        e.line = k;
+    }
+}
+
 /// Help slot 2: 0xe 0x32 while the editor is open; title slot 2 0xd 0x0f "Set Bazaar" in mode 0 (none in mode 2).
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     if let Some(e) = w.seacom_edit {
@@ -209,7 +223,7 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// (FUN_1020b4b0) at (x0 + 8, y0 + 8) in mode 2; in mode 0 at x0 + 4, x1 - x0 - 8 wide, no dot.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
-    let Some(e) = w.seacom_edit else {
+    let Some(e) = w.seacom_edit.filter(|_| !w.modern) else {
         gu.force_flags(EDITOR, None);
         return rects;
     };

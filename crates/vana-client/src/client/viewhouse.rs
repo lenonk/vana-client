@@ -74,9 +74,37 @@ pub fn open(w: &mut World) {
     w.sounds.push(Ui::Select as u32);
 }
 
-fn close(w: &mut World) {
+pub(super) fn close(w: &mut World) {
     if let Some(v) = w.viewhouse.take() {
         w.menu = v.return_menu;
+    }
+}
+
+/// A container's row.
+pub(super) fn child_of(c: u8) -> Option<u16> {
+    (1..=15u16).find(|&k| container(k) == Some(c))
+}
+
+/// The containers whose rows are enabled (the modern storage view's tabs from here).
+pub(super) fn open_containers(w: &World) -> Vec<u8> {
+    let Some(v) = w.viewhouse.as_ref() else { return Vec::new() };
+    (1..=15u16).filter(|k| !v.off.contains(k)).filter_map(container).collect()
+}
+
+/// A row's Enter (the modern storage view's tabs): its view opens, a disabled one SE 0004.
+pub(super) fn open_row(w: &mut World, child: u16) {
+    let Some(v) = w.viewhouse.as_mut() else { return };
+    if v.off.contains(&child) {
+        w.sounds.push(Ui::Error as u32);
+        return;
+    }
+    v.sel = child;
+    let Some(c) = container(child) else { return };
+    w.sounds.push(Ui::Select as u32);
+    if matches!(c, 1 | 2 | 4 | 9) {
+        super::items::open_dae10(w, c, false);
+    } else {
+        super::items::open_daf70(w, c, c == 5, false);
     }
 }
 

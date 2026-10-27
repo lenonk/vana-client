@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="51.837" y1="10.275" x2="51.837" y2="22.858" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="54.315" y1="6.637" x2="54.315" y2="15.681" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8f92"/>
+      <stop offset="0.4" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#8e1f30"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="30.14" y1="7.447" x2="33.27" y2="25.194" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="31.705" y1="20.99" x2="31.705" y2="57.363" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#cb9aa3"/>
+      <stop offset="0.42" stop-color="#a04858"/>
+      <stop offset="1" stop-color="#50242c"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="31.705" y1="30.132" x2="31.705" y2="31.508" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d3f4d"/>
+      <stop offset="1" stop-color="#3d1b21"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="31.705" y1="20.99" x2="31.705" y2="57.363" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c98e58"/>
+      <stop offset="0.45" stop-color="#8f5a32"/>
+      <stop offset="1" stop-color="#4e2c17"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-7" x1="30.667" y1="24.934" x2="32.743" y2="36.707" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>mog_case</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M53.19 17.749 C53.022 18.111 52.881 18.47 52.767 18.827 L53.332 18.827 C57.24 18.827 60.41 21.997 60.41 25.905 L60.41 52.447 C60.41 56.355 57.24 59.525 53.332 59.525 L10.078 59.525 C6.17 59.525 3 56.355 3 52.447 L3 25.905 C3 21.997 6.17 18.827 10.078 18.827 L20.302 18.827 L20.302 15.092 C20.302 9.935 24.051 6.637 28.756 6.637 L34.654 6.637 C39.359 6.637 43.108 9.935 43.108 15.092 L43.108 18.827 L46.508 18.827 C46.79 17.207 47.379 15.597 48.269 14.012 C46.207 9.647 49.357 4.475 54.315 4.475 C58.007 4.475 61 7.468 61 11.159 C61 15.322 57.249 18.44 53.19 17.749 Z M28.756 14.698 C28.64 14.698 28.492 14.709 28.395 14.731 C28.377 14.811 28.363 14.937 28.363 15.092 L28.363 18.827 L35.047 18.827 L35.047 15.092 C35.047 14.937 35.033 14.811 35.015 14.731 L35.015 14.731 C34.918 14.709 34.77 14.698 34.654 14.698 Z" fill="#0a1118"/>
+      <path id="stalk" d="M53.69 10.534 C54.035 10.188 54.595 10.188 54.941 10.534 C55.286 10.879 55.286 11.439 54.941 11.785 C51.522 15.204 49.977 18.55 50.281 21.893 C50.325 22.379 49.967 22.81 49.48 22.854 C48.993 22.898 48.563 22.54 48.519 22.053 C48.167 18.187 49.899 14.324 53.69 10.534 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="0.983" stroke-linejoin="round"/>
+      <path id="pompom" d="M58.837 11.159 C58.837 13.656 56.812 15.681 54.315 15.681 C51.818 15.681 49.793 13.656 49.793 11.159 C49.793 8.662 51.818 6.637 54.315 6.637 C56.812 6.637 58.837 8.662 58.837 11.159 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.376" stroke-linejoin="round"/>
+      <path id="handle" d="M22.464 15.092 C22.464 11.111 25.267 8.8 28.756 8.8 L34.654 8.8 C38.143 8.8 40.946 11.111 40.946 15.092 L40.946 21.973 C40.946 23.004 40.11 23.841 39.078 23.841 C38.046 23.841 37.21 23.004 37.21 21.973 L37.21 15.092 C37.21 13.174 36.08 12.536 34.654 12.536 L28.756 12.536 C27.33 12.536 26.2 13.174 26.2 15.092 L26.2 21.973 C26.2 23.004 25.364 23.841 24.332 23.841 C23.301 23.841 22.464 23.004 22.464 21.973 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.376" stroke-linejoin="round"/>
+      <path id="case" d="M10.078 20.99 L53.332 20.99 C56.045 20.99 58.247 23.192 58.247 25.905 L58.247 52.447 C58.247 55.161 56.045 57.363 53.332 57.363 L10.078 57.363 C7.365 57.363 5.163 55.161 5.163 52.447 L5.163 25.905 C5.163 23.192 7.365 20.99 10.078 20.99 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.376" stroke-linejoin="round"/>
+      <path id="seam" d="M5.654 30.132 L57.756 30.132 C58.662 30.132 58.662 31.508 57.756 31.508 L5.654 31.508 C4.748 31.508 4.748 30.132 5.654 30.132 Z" fill="url(#linear-gradient-5)"/>
+      <path id="straps" d="M14.993 22.169 C14.993 21.521 15.524 20.99 16.173 20.99 L19.712 20.99 C20.361 20.99 20.892 21.521 20.892 22.169 L20.892 56.183 C20.892 56.832 20.361 57.363 19.712 57.363 L16.173 57.363 C15.524 57.363 14.993 56.832 14.993 56.183 Z M42.519 22.169 C42.519 21.521 43.049 20.99 43.698 20.99 L47.237 20.99 C47.886 20.99 48.417 21.521 48.417 22.169 L48.417 56.183 C48.417 56.832 47.886 57.363 47.237 57.363 L43.698 57.363 C43.049 57.363 42.519 56.832 42.519 56.183 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.081" stroke-linejoin="round"/>
+      <path id="buckles" d="M14.01 29.051 C14.01 28.402 14.541 27.871 15.19 27.871 L20.695 27.871 C21.344 27.871 21.875 28.402 21.875 29.051 L21.875 32.59 C21.875 33.239 21.344 33.769 20.695 33.769 L15.19 33.769 C14.541 33.769 14.01 33.239 14.01 32.59 Z M41.536 29.051 C41.536 28.402 42.066 27.871 42.715 27.871 L48.22 27.871 C48.869 27.871 49.4 28.402 49.4 29.051 L49.4 32.59 C49.4 33.239 48.869 33.769 48.22 33.769 L42.715 33.769 C42.066 33.769 41.536 33.239 41.536 32.59 Z" fill="url(#linear-gradient-7)" stroke="#0a1118" stroke-width="0.983" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

@@ -132,6 +132,8 @@ pub struct Marks {
     pub gm_icon_off: bool,
     pub new_char: bool,
     pub mentor: bool,
+    /// Sneak (actor +0x128 bit 8): 0x00D / 0x00E u32 @0x28 bit 21, 0x037 u32 @0x38 bit 2; no footstep sound.
+    pub silent: bool,
 }
 
 /// Our own plate's fields from 0x037 (nameplate_icons_spec.md 6): Flags0 u32 @0x28, Flags1 @0x2c, the linkshell colour
@@ -173,6 +175,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
         gm_icon_off: bit(f1, 31),
         new_char: bit(f3, 3),
         mentor: bit(f3, 4),
+        silent: bit(f3, 2),
         ..Marks::default()
     };
     let r = p.u8(0x5a);
@@ -435,7 +438,8 @@ pub enum NetEvent {
     /// `icons`: the status icon ids (u8 @4 + i and 2 bits each @0x4C; 0xffff none).
     /// `team`: the PvP team byte (+0x1ff, u32 @0x34 >> 21; LSB allegiance).
     /// `ride`: ChocoboIndex u32 @0x28 bits 13..15 and the mount id u8 @0x5B.
-    SelfStatus { status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8, fish_timer: u16 },
+    /// `speed`: flags1 (u32 @0x2C) Speed bits 0..11 and SpeedBase bits 17..24 (FUN_1009d0f0 -> actor +0x15c / +0x9c).
+    SelfStatus { speed: (u8, u8), status: u8, hpp: u8, dead: (u32, u32), pet: u16, flags: u32, icons: [u16; 32], team: u8, fellow: u16, plate: SelfPlate, ride: (u8, u8), indi: u8, fish_timer: u16 },
     /// s2c 0x115: the hooked fish.
     Fish(super::fishing::FishParams),
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
@@ -839,6 +843,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
                 gm_icon_off: p.u32(0x24) >> 28 & 1 != 0,
                 new_char: pc && p.u32(0x28) >> 23 & 1 != 0,
                 mentor: p.u8(0x2B) & 1 != 0,
+                silent: p.u32(0x28) >> 21 & 1 != 0,
             }
         }),
         plate: (kind == EntityKind::Player && flags & 0x20 == 0 && p.data.len() >= 0x34).then(|| {
@@ -981,7 +986,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             let (lo, hi) = (p.u8(4 + i) as u16, (p.u8(0x4C + i / 4) as u16 >> (2 * (i % 4))) & 3);
                             if lo == 0xff && hi == 0 { 0xffff } else { hi << 8 | lo }
                         });
-                        tx.send(NetEvent::SelfStatus { status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 }, fish_timer: if p.data.len() > 0x4b { p.u16(0x4a) } else { 0 } })?;
+                        let speed = ((p.u32(0x2C) & 0xfff).min(255) as u8, (p.u32(0x2C) >> 17) as u8);
+                        tx.send(NetEvent::SelfStatus { speed, status, hpp: (p.u32(0x28) >> 16) as u8, dead: (p.u32(0x3C), p.u32(0x40)), pet: (p.u32(0x34) >> 3) as u16, flags: p.u32(0x28), icons, team: (p.u32(0x34) >> 21) as u8, fellow: p.u16(0x48), plate: self_plate(&p), ride: ((p.u32(0x28) >> 13 & 7) as u8, if p.data.len() > 0x5b { p.u8(0x5b) } else { 0 }), indi: if p.data.len() > 0x58 { p.u8(0x58) & 0x7f } else { 0x10 }, fish_timer: if p.data.len() > 0x4b { p.u16(0x4a) } else { 0 } })?;
                     }
                     // FUN_10098f90: 5 x {u32 UniqueNo, u16 ActIndex, pad, u64 bits, u8 icons[32]}; icon = (hi << 8 | lo) &
                     // 0x3ff, none when lo 0xff with hi 0.

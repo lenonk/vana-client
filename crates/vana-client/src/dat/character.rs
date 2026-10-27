@@ -894,8 +894,10 @@ pub fn load_character(index: &DatIndex, look: &Look) -> Result<Character> {
         main_info = part_file(look.race, 6, look.main).and_then(|id| index.read(id).ok()).and_then(|b| load_file(&b).ok()).and_then(|f| f.info);
     }
     let byte = |i: Option<[u8; 16]>, at: usize| i.map_or(-1, |i| i[at] as i8);
-    ch.pc = Some(super::motionfile::PcMotion { race: look.race, weapon: byte(main_info, 3), draw: byte(main_info, 4), skirt: byte(body_info, 9) });
-    let upper = skel_id + 1 + selector(sub_info, 5).min(1);
+    // FUN_100cea10 case 7: a weapon in the sub slot gives its info[3] (+0x88a) and zeroes the upper-body pick (+0x87d).
+    let dual = super::motionfile::dual_wield(look.sub);
+    ch.pc = Some(super::motionfile::PcMotion { race: look.race, weapon: byte(main_info, 3), draw: byte(main_info, 4), skirt: byte(body_info, 9), dual: dual.then(|| byte(sub_info, 3)) });
+    let upper = skel_id + 1 + if dual { 0 } else { selector(sub_info, 5).min(1) };
     let skirt = skel_id + 3 + selector(body_info, 9).saturating_sub(1).min(1);
     for (what, id) in [("upper-body motions", upper), ("skirt motions", skirt)] {
         match index.read(id).and_then(|b| load_file(&b)) {

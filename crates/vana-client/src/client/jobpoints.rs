@@ -3,7 +3,7 @@
 
 use super::World;
 use super::game_ui::GameUi;
-use super::merits::bluehelp;
+use super::merits::{PointList, PointRow, bluehelp};
 use crate::audio::Ui;
 use crate::dat::merits::{Gifts, JobPointTables};
 use std::sync::Arc;
@@ -251,9 +251,98 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     }
 }
 
+/// The Job Points windows as the modern layer draws them.
+pub(super) struct Look {
+    /// The job shown's (capacity, current, spent).
+    pub points: Option<[u16; 3]>,
+    pub jobs: PointList,
+    /// jbpcat: its page (0 the categories, 1 the gifts) and rows.
+    pub page: Option<(usize, PointList)>,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let u = w.jp_ui.as_ref()?;
+    let t = w.jp_tables.clone()?;
+    let free = w.confirm.is_none();
+    let job = u.page.as_ref().map(|p| p.job).or_else(|| t.jobs.get(u.cursor).map(|j| j.0)).unwrap_or(0);
+    let rows = t
+        .jobs
+        .iter()
+        .map(|&(j, _)| {
+            let ok = job_level(w, j) >= 99;
+            let level = points(w, j).filter(|_| ok).map(|p| (format!("{} P", p[1]), if p[1] >= 500 { BLUE } else { WHITE }));
+            PointRow { name: t.name(j as u16), tint: if ok { WHITE } else { GREY }, level, ..Default::default() }
+        })
+        .collect();
+    let help = t.jobs.get(u.cursor).map_or((String::new(), String::new()), |&(j, _)| (t.name(j as u16), t.desc(j as u16)));
+    let jobs = PointList { rows, cursor: u.cursor, focused: free && u.page.is_none(), help };
+    let page = u.page.as_ref().map(|p| {
+        let pg = p.page;
+        let cursor = p.cursor[pg];
+        let (rows, help) = if pg == 0 {
+            let es = t.entries(p.job);
+            let rows = es
+                .iter()
+                .map(|&e| {
+                    let (c, lc, cost) = colours(w, &t, p.job, e);
+                    let (level, next) = w.jp_list.get(&e).copied().unwrap_or((0, 0));
+                    let max = t.max.get(e as usize).copied().unwrap_or(0);
+                    PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), ..Default::default() }
+                })
+                .collect();
+            (rows, es.get(cursor).map_or((String::new(), String::new()), |&e| (t.name(e), t.desc(e))))
+        } else {
+            let gifts = gift_rows(&p.gifts);
+            let have = points(w, p.job).map(|q| q[2]);
+            let rows = gifts
+                .iter()
+                .map(|&g| {
+                    let need = p.gifts.needs[g];
+                    let c = if have.is_some_and(|h| h >= need) { WHITE } else { GREY };
+                    PointRow { name: p.gifts.name(g), tint: c, level: Some((need.to_string(), c)), ..Default::default() }
+                })
+                .collect();
+            (rows, gifts.get(cursor).map_or((String::new(), String::new()), |&g| (p.gifts.name(g), p.gifts.desc(g))))
+        };
+        (pg, PointList { rows, cursor, focused: free, help })
+    });
+    Some(Look { points: points(w, job).filter(|_| (1..32).contains(&job)), jobs, page })
+}
+
+/// The mouse's cursor moves: a job (merit2ca), a row of jbpcat's page. True when it moved.
+pub(super) fn set_job(w: &mut World, k: usize) -> bool {
+    let n = w.jp_tables.as_ref().map_or(0, |t| t.jobs.len());
+    let Some(u) = w.jp_ui.as_mut().filter(|u| u.page.is_none() && u.cursor != k && k < n) else { return false };
+    scroll(&mut u.cursor, &mut u.top, k, JOB_ROWS);
+    true
+}
+
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(t) = w.jp_tables.clone() else { return false };
+    let Some(p) = w.jp_ui.as_mut().and_then(|u| u.page.as_mut()) else { return false };
+    let pg = p.page;
+    if p.cursor[pg] == k || k >= page_len(p, &t) {
+        return false;
+    }
+    let (c, tp) = (&mut p.cursor[pg], &mut p.top[pg]);
+    scroll(c, tp, k, PAGE_ROWS);
+    true
+}
+
+/// jbpcat's page by the mouse (a tab): as Left / Right.
+pub(super) fn set_page(w: &mut World, pg: usize) {
+    if w.jp_ui.as_ref().and_then(|u| u.page.as_ref()).is_some_and(|p| p.page != pg) {
+        key(w, egui::Key::ArrowRight, false);
+    }
+}
+
 /// The mouse on the focused list (the generic window's rows): hover moves the cursor, a click on it is Enter, a right
 /// click over the window Escape.
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws them and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(t) = w.jp_tables.clone() else { return };
     let Some(u) = w.jp_ui.as_ref() else { return };
     let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k, false);
@@ -291,6 +380,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(u) = &w.jp_ui else { return rects };
     let Some(t) = w.jp_tables.clone() else { return rects };
     let free = w.confirm.is_none();

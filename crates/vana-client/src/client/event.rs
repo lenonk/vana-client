@@ -621,7 +621,7 @@ impl LiveHost<'_> {
         let act = Action { actor: a, category, targets: vec![ActionTarget { id: b, results: vec![result] }], ..Default::default() };
         if category == 1 {
             // FUN_100d67b0 (characters only): a swing unless one is already playing (+0x2a4) *(inf: not checked)*.
-            if let Some((_, swing, _, _)) = super::combat::start_attack(self.w, a, Some(b)) {
+            if let Some((_, swing, _, _)) = super::combat::start_attack(self.w, a, Some(b), None) {
                 self.w.effects.on_action(&act, Some(swing));
             }
         } else {
@@ -1893,6 +1893,11 @@ pub fn position_ack(w: &mut World, mode: u8) {
     }
 }
 
+/// Where the running event draws us (the VM bodies are a draw override; our own position stays).
+pub fn own_pose(w: &World) -> Option<Vec3> {
+    w.event.as_ref()?.st.poses.get(&w.my_id).map(|p| p.pos)
+}
+
 pub fn active(w: &World) -> bool {
     w.event.is_some() || w.event_pending.is_some()
 }
@@ -2095,6 +2100,13 @@ fn move_cursor(c: &mut Choice, to: isize, page: bool) {
 
 pub fn choice(w: &World) -> Option<&Choice> {
     w.event.as_ref()?.st.choice.as_ref()
+}
+
+/// The mouse's cursor move onto option `k` (the view follows, as a step). True when it moved.
+pub(super) fn set_choice(w: &mut World, k: usize) -> bool {
+    let Some(c) = w.event.as_mut().and_then(|l| l.st.choice.as_mut()).filter(|c| c.cursor != k && k < c.options.len()) else { return false };
+    move_cursor(c, k as isize, false);
+    true
 }
 
 /// The open message, for the event message window.

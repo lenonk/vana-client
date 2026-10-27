@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32.492" r="26.819" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fe0b4" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#5fd394" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#5fd394" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="26.705" y1="2.462" x2="37.295" y2="62.522" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="10.441" x2="32" y2="54.544" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a7e7c4"/>
+      <stop offset="0.42" stop-color="#5fd394"/>
+      <stop offset="1" stop-color="#306a4a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="29.517" y1="12.13" x2="29.517" y2="28.023" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c7f0da"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="50.376" y1="5.177" x2="50.376" y2="20.076" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c7f0da"/>
+    </linearGradient>
+  </defs>
+  <title>healing</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M48.266 4.609 C48.843 2.464 51.909 2.464 52.486 4.609 L53.739 9.264 L58.393 10.516 C60.539 11.093 60.539 14.159 58.393 14.737 L53.739 15.989 L52.692 19.877 L52.859 19.877 C57.086 19.877 60.508 23.299 60.508 27.526 L60.508 37.459 C60.508 41.685 57.086 45.107 52.859 45.107 L44.615 45.107 L44.615 53.352 C44.615 57.578 41.193 61 36.966 61 L27.034 61 C22.807 61 19.385 57.578 19.385 53.352 L19.385 45.107 L11.141 45.107 C6.914 45.107 3.492 41.685 3.492 37.459 L3.492 27.526 C3.492 23.299 6.914 19.877 11.141 19.877 L19.385 19.877 L19.385 11.633 C19.385 7.407 22.807 3.985 27.034 3.985 L36.966 3.985 C40.618 3.985 43.668 6.538 44.431 9.959 L47.013 9.264 Z M44.615 15.344 L44.615 19.877 L48.06 19.877 L47.013 15.989 Z" fill="#0a1118"/>
+      <path id="aura" d="M58.819 32.492 C58.819 47.302 46.81 59.311 32 59.311 C17.19 59.311 5.181 47.302 5.181 32.492 C5.181 17.682 17.19 5.673 32 5.673 C46.81 5.673 58.819 17.682 58.819 32.492 Z" fill="url(#radial-gradient-1)" opacity="0.45"/>
+      <path id="frame" d="M21.57 11.633 C21.57 8.614 24.014 6.17 27.034 6.17 L36.966 6.17 C39.986 6.17 42.43 8.614 42.43 11.633 L42.43 22.063 L52.859 22.063 C55.879 22.063 58.322 24.506 58.322 27.526 L58.322 37.459 C58.322 40.478 55.879 42.922 52.859 42.922 L42.43 42.922 L42.43 53.352 C42.43 56.371 39.986 58.815 36.966 58.815 L27.034 58.815 C24.014 58.815 21.57 56.371 21.57 53.352 L21.57 42.922 L11.141 42.922 C8.121 42.922 5.678 40.478 5.678 37.459 L5.678 27.526 C5.678 24.506 8.121 22.063 11.141 22.063 L21.57 22.063 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.391" stroke-linejoin="round"/>
+      <path id="cross" d="M25.842 13.421 C25.842 11.772 27.173 10.441 28.821 10.441 L35.179 10.441 C36.827 10.441 38.158 11.772 38.158 13.421 L38.158 26.334 L51.071 26.334 C52.72 26.334 54.051 27.665 54.051 29.314 L54.051 35.671 C54.051 37.32 52.72 38.651 51.071 38.651 L38.158 38.651 L38.158 51.564 C38.158 53.213 36.827 54.544 35.179 54.544 L28.821 54.544 C27.173 54.544 25.842 53.213 25.842 51.564 L25.842 38.651 L12.929 38.651 C11.28 38.651 9.949 37.32 9.949 35.671 L9.949 29.314 C9.949 27.665 11.28 26.334 12.929 26.334 L25.842 26.334 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+      <path id="sheen" d="M29.517 12.13 L29.517 12.13 C30.609 12.13 31.503 13.024 31.503 14.116 L31.503 26.036 C31.503 27.129 30.609 28.023 29.517 28.023 L29.517 28.023 C28.424 28.023 27.53 27.129 27.53 26.036 L27.53 14.116 C27.53 13.024 28.424 12.13 29.517 12.13 Z" fill="url(#linear-gradient-3)" opacity="0.55"/>
+      <path id="sparkle" d="M50.376 5.177 L51.955 11.047 L57.826 12.626 L51.955 14.206 L50.376 20.076 L48.797 14.206 L42.926 12.626 L48.797 11.047 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="0.993" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

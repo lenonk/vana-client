@@ -1,0 +1,7617 @@
+{
+  "format": "vana-ui-production-v2",
+  "asset_count": 304,
+  "reference": "User-approved ornate dark bronze/charcoal UI design",
+  "scale": "SVG 1x coordinate system; PNG exports 2x",
+  "items": [
+    {
+      "id": "frames/panel_charcoal",
+      "svg": "svg/frames/panel_charcoal.svg",
+      "png": "png/frames/panel_charcoal.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          8,
+          8,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "frames/panel_navy",
+      "svg": "svg/frames/panel_navy.svg",
+      "png": "png/frames/panel_navy.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          208,
+          8,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "frames/panel_parchment",
+      "svg": "svg/frames/panel_parchment.svg",
+      "png": "png/frames/panel_parchment.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          408,
+          8,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "frames/panel_wine",
+      "svg": "svg/frames/panel_wine.svg",
+      "png": "png/frames/panel_wine.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          608,
+          8,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "controls/button_normal",
+      "svg": "svg/controls/button_normal.svg",
+      "png": "png/controls/button_normal.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_hover",
+      "svg": "svg/controls/button_hover.svg",
+      "png": "png/controls/button_hover.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          336,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_pressed",
+      "svg": "svg/controls/button_pressed.svg",
+      "png": "png/controls/button_pressed.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          664,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_disabled",
+      "svg": "svg/controls/button_disabled.svg",
+      "png": "png/controls/button_disabled.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          992,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_selected",
+      "svg": "svg/controls/button_selected.svg",
+      "png": "png/controls/button_selected.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1320,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_danger",
+      "svg": "svg/controls/button_danger.svg",
+      "png": "png/controls/button_danger.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1648,
+          8,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/button_confirm",
+      "svg": "svg/controls/button_confirm.svg",
+      "png": "png/controls/button_confirm.png",
+      "size": [
+        160,
+        40
+      ],
+      "png_size": [
+        320,
+        80
+      ],
+      "nine_slice": [
+        14,
+        10,
+        14,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          96,
+          320,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/list_row_normal",
+      "svg": "svg/controls/list_row_normal.svg",
+      "png": "png/controls/list_row_normal.png",
+      "size": [
+        256,
+        30
+      ],
+      "png_size": [
+        512,
+        60
+      ],
+      "nine_slice": [
+        24,
+        7,
+        12,
+        7
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          336,
+          96,
+          512,
+          60
+        ]
+      }
+    },
+    {
+      "id": "controls/list_row_hover",
+      "svg": "svg/controls/list_row_hover.svg",
+      "png": "png/controls/list_row_hover.png",
+      "size": [
+        256,
+        30
+      ],
+      "png_size": [
+        512,
+        60
+      ],
+      "nine_slice": [
+        24,
+        7,
+        12,
+        7
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          856,
+          96,
+          512,
+          60
+        ]
+      }
+    },
+    {
+      "id": "controls/list_row_selected",
+      "svg": "svg/controls/list_row_selected.svg",
+      "png": "png/controls/list_row_selected.png",
+      "size": [
+        256,
+        30
+      ],
+      "png_size": [
+        512,
+        60
+      ],
+      "nine_slice": [
+        24,
+        7,
+        12,
+        7
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1376,
+          96,
+          512,
+          60
+        ]
+      }
+    },
+    {
+      "id": "controls/list_row_disabled",
+      "svg": "svg/controls/list_row_disabled.svg",
+      "png": "png/controls/list_row_disabled.png",
+      "size": [
+        256,
+        30
+      ],
+      "png_size": [
+        512,
+        60
+      ],
+      "nine_slice": [
+        24,
+        7,
+        12,
+        7
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          184,
+          512,
+          60
+        ]
+      }
+    },
+    {
+      "id": "controls/input_normal",
+      "svg": "svg/controls/input_normal.svg",
+      "png": "png/controls/input_normal.png",
+      "size": [
+        256,
+        36
+      ],
+      "png_size": [
+        512,
+        72
+      ],
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          528,
+          184,
+          512,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/input_focused",
+      "svg": "svg/controls/input_focused.svg",
+      "png": "png/controls/input_focused.png",
+      "size": [
+        256,
+        36
+      ],
+      "png_size": [
+        512,
+        72
+      ],
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1048,
+          184,
+          512,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/input_invalid",
+      "svg": "svg/controls/input_invalid.svg",
+      "png": "png/controls/input_invalid.png",
+      "size": [
+        256,
+        36
+      ],
+      "png_size": [
+        512,
+        72
+      ],
+      "nine_slice": [
+        9,
+        9,
+        9,
+        9
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          264,
+          512,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/arrow_up",
+      "svg": "svg/controls/arrow_up.svg",
+      "png": "png/controls/arrow_up.png",
+      "size": [
+        20,
+        20
+      ],
+      "png_size": [
+        40,
+        40
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          528,
+          264,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "id": "controls/arrow_down",
+      "svg": "svg/controls/arrow_down.svg",
+      "png": "png/controls/arrow_down.png",
+      "size": [
+        20,
+        20
+      ],
+      "png_size": [
+        40,
+        40
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          576,
+          264,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "id": "controls/arrow_left",
+      "svg": "svg/controls/arrow_left.svg",
+      "png": "png/controls/arrow_left.png",
+      "size": [
+        20,
+        20
+      ],
+      "png_size": [
+        40,
+        40
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          624,
+          264,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "id": "controls/arrow_right",
+      "svg": "svg/controls/arrow_right.svg",
+      "png": "png/controls/arrow_right.png",
+      "size": [
+        20,
+        20
+      ],
+      "png_size": [
+        40,
+        40
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          672,
+          264,
+          40,
+          40
+        ]
+      }
+    },
+    {
+      "id": "controls/checkbox_off",
+      "svg": "svg/controls/checkbox_off.svg",
+      "png": "png/controls/checkbox_off.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          720,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/checkbox_on",
+      "svg": "svg/controls/checkbox_on.svg",
+      "png": "png/controls/checkbox_on.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          776,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/move",
+      "svg": "svg/controls/move.svg",
+      "png": "png/controls/move.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          832,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/close",
+      "svg": "svg/controls/close.svg",
+      "png": "png/controls/close.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          888,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/resize",
+      "svg": "svg/controls/resize.svg",
+      "png": "png/controls/resize.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          944,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/search",
+      "svg": "svg/controls/search.svg",
+      "png": "png/controls/search.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1000,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "controls/drag",
+      "svg": "svg/controls/drag.svg",
+      "png": "png/controls/drag.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1056,
+          264,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/hp_empty",
+      "svg": "svg/gauges/hp_empty.svg",
+      "png": "png/gauges/hp_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          8,
+          8,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/hp_full",
+      "svg": "svg/gauges/hp_full.svg",
+      "png": "png/gauges/hp_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          400,
+          8,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/mp_empty",
+      "svg": "svg/gauges/mp_empty.svg",
+      "png": "png/gauges/mp_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          792,
+          8,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/mp_full",
+      "svg": "svg/gauges/mp_full.svg",
+      "png": "png/gauges/mp_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          1184,
+          8,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/tp_empty",
+      "svg": "svg/gauges/tp_empty.svg",
+      "png": "png/gauges/tp_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          1576,
+          8,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/tp_full",
+      "svg": "svg/gauges/tp_full.svg",
+      "png": "png/gauges/tp_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          8,
+          64,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/cast_empty",
+      "svg": "svg/gauges/cast_empty.svg",
+      "png": "png/gauges/cast_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          400,
+          64,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/cast_full",
+      "svg": "svg/gauges/cast_full.svg",
+      "png": "png/gauges/cast_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          792,
+          64,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/experience_empty",
+      "svg": "svg/gauges/experience_empty.svg",
+      "png": "png/gauges/experience_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          1184,
+          64,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/experience_full",
+      "svg": "svg/gauges/experience_full.svg",
+      "png": "png/gauges/experience_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          1576,
+          64,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/recast_empty",
+      "svg": "svg/gauges/recast_empty.svg",
+      "png": "png/gauges/recast_empty.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          8,
+          120,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "gauges/recast_full",
+      "svg": "svg/gauges/recast_full.svg",
+      "png": "png/gauges/recast_full.png",
+      "size": [
+        192,
+        24
+      ],
+      "png_size": [
+        384,
+        48
+      ],
+      "nine_slice": [
+        12,
+        8,
+        12,
+        8
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/gauges_0@2x.png",
+        "rect": [
+          400,
+          120,
+          384,
+          48
+        ]
+      }
+    },
+    {
+      "id": "icons/items",
+      "svg": "svg/icons/items.svg",
+      "png": "png/icons/items.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/magic",
+      "svg": "svg/icons/magic.svg",
+      "png": "png/icons/magic.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/abilities",
+      "svg": "svg/icons/abilities.svg",
+      "png": "png/icons/abilities.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/job",
+      "svg": "svg/icons/job.svg",
+      "png": "png/icons/job.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/equipment",
+      "svg": "svg/icons/equipment.svg",
+      "png": "png/icons/equipment.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/status",
+      "svg": "svg/icons/status.svg",
+      "png": "png/icons/status.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/party",
+      "svg": "svg/icons/party.svg",
+      "png": "png/icons/party.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/linkshell",
+      "svg": "svg/icons/linkshell.svg",
+      "png": "png/icons/linkshell.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/system",
+      "svg": "svg/icons/system.svg",
+      "png": "png/icons/system.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/map",
+      "svg": "svg/icons/map.svg",
+      "png": "png/icons/map.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/find",
+      "svg": "svg/icons/find.svg",
+      "png": "png/icons/find.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/config",
+      "svg": "svg/icons/config.svg",
+      "png": "png/icons/config.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/sword",
+      "svg": "svg/icons/sword.svg",
+      "png": "png/icons/sword.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/shield",
+      "svg": "svg/icons/shield.svg",
+      "png": "png/icons/shield.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/fire",
+      "svg": "svg/icons/fire.svg",
+      "png": "png/icons/fire.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/ice",
+      "svg": "svg/icons/ice.svg",
+      "png": "png/icons/ice.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/wind",
+      "svg": "svg/icons/wind.svg",
+      "png": "png/icons/wind.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/earth",
+      "svg": "svg/icons/earth.svg",
+      "png": "png/icons/earth.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/lightning",
+      "svg": "svg/icons/lightning.svg",
+      "png": "png/icons/lightning.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/water",
+      "svg": "svg/icons/water.svg",
+      "png": "png/icons/water.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/light",
+      "svg": "svg/icons/light.svg",
+      "png": "png/icons/light.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/dark",
+      "svg": "svg/icons/dark.svg",
+      "png": "png/icons/dark.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/healing",
+      "svg": "svg/icons/healing.svg",
+      "png": "png/icons/healing.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/enhancing",
+      "svg": "svg/icons/enhancing.svg",
+      "png": "png/icons/enhancing.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/enfeebling",
+      "svg": "svg/icons/enfeebling.svg",
+      "png": "png/icons/enfeebling.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/elemental",
+      "svg": "svg/icons/elemental.svg",
+      "png": "png/icons/elemental.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/summoning",
+      "svg": "svg/icons/summoning.svg",
+      "png": "png/icons/summoning.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/geomancy",
+      "svg": "svg/icons/geomancy.svg",
+      "png": "png/icons/geomancy.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/ninjutsu",
+      "svg": "svg/icons/ninjutsu.svg",
+      "png": "png/icons/ninjutsu.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/songs",
+      "svg": "svg/icons/songs.svg",
+      "png": "png/icons/songs.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/food",
+      "svg": "svg/icons/food.svg",
+      "png": "png/icons/food.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/medicine",
+      "svg": "svg/icons/medicine.svg",
+      "png": "png/icons/medicine.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/materials",
+      "svg": "svg/icons/materials.svg",
+      "png": "png/icons/materials.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/key",
+      "svg": "svg/icons/key.svg",
+      "png": "png/icons/key.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/quest",
+      "svg": "svg/icons/quest.svg",
+      "png": "png/icons/quest.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/currency",
+      "svg": "svg/icons/currency.svg",
+      "png": "png/icons/currency.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/head",
+      "svg": "svg/icons/head.svg",
+      "png": "png/icons/head.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/body",
+      "svg": "svg/icons/body.svg",
+      "png": "png/icons/body.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/hands",
+      "svg": "svg/icons/hands.svg",
+      "png": "png/icons/hands.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/legs",
+      "svg": "svg/icons/legs.svg",
+      "png": "png/icons/legs.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/feet",
+      "svg": "svg/icons/feet.svg",
+      "png": "png/icons/feet.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/ring",
+      "svg": "svg/icons/ring.svg",
+      "png": "png/icons/ring.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/ear",
+      "svg": "svg/icons/ear.svg",
+      "png": "png/icons/ear.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/neck",
+      "svg": "svg/icons/neck.svg",
+      "png": "png/icons/neck.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/waist",
+      "svg": "svg/icons/waist.svg",
+      "png": "png/icons/waist.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/back",
+      "svg": "svg/icons/back.svg",
+      "png": "png/icons/back.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/bow",
+      "svg": "svg/icons/bow.svg",
+      "png": "png/icons/bow.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/ammo",
+      "svg": "svg/icons/ammo.svg",
+      "png": "png/icons/ammo.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/attack",
+      "svg": "svg/icons/attack.svg",
+      "png": "png/icons/attack.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/poison",
+      "svg": "svg/icons/poison.svg",
+      "png": "png/icons/poison.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/haste",
+      "svg": "svg/icons/haste.svg",
+      "png": "png/icons/haste.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/protect",
+      "svg": "svg/icons/protect.svg",
+      "png": "png/icons/protect.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/sleep",
+      "svg": "svg/icons/sleep.svg",
+      "png": "png/icons/sleep.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/silence",
+      "svg": "svg/icons/silence.svg",
+      "png": "png/icons/silence.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/refresh",
+      "svg": "svg/icons/refresh.svg",
+      "png": "png/icons/refresh.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/cure",
+      "svg": "svg/icons/cure.svg",
+      "png": "png/icons/cure.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/weaponskill",
+      "svg": "svg/icons/weaponskill.svg",
+      "png": "png/icons/weaponskill.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/claimed",
+      "svg": "svg/icons/claimed.svg",
+      "png": "png/icons/claimed.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_war_crest",
+      "svg": "svg/indicators/job_war_crest.svg",
+      "png": "png/indicators/job_war_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          8,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_mnk_crest",
+      "svg": "svg/indicators/job_mnk_crest.svg",
+      "png": "png/indicators/job_mnk_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          88,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_whm_crest",
+      "svg": "svg/indicators/job_whm_crest.svg",
+      "png": "png/indicators/job_whm_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          168,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_blm_crest",
+      "svg": "svg/indicators/job_blm_crest.svg",
+      "png": "png/indicators/job_blm_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          248,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_rdm_crest",
+      "svg": "svg/indicators/job_rdm_crest.svg",
+      "png": "png/indicators/job_rdm_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          328,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_thf_crest",
+      "svg": "svg/indicators/job_thf_crest.svg",
+      "png": "png/indicators/job_thf_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          408,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_pld_crest",
+      "svg": "svg/indicators/job_pld_crest.svg",
+      "png": "png/indicators/job_pld_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          488,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_drk_crest",
+      "svg": "svg/indicators/job_drk_crest.svg",
+      "png": "png/indicators/job_drk_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          568,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_bst_crest",
+      "svg": "svg/indicators/job_bst_crest.svg",
+      "png": "png/indicators/job_bst_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          648,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_brd_crest",
+      "svg": "svg/indicators/job_brd_crest.svg",
+      "png": "png/indicators/job_brd_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          728,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_rng_crest",
+      "svg": "svg/indicators/job_rng_crest.svg",
+      "png": "png/indicators/job_rng_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          808,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_sam_crest",
+      "svg": "svg/indicators/job_sam_crest.svg",
+      "png": "png/indicators/job_sam_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          888,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_nin_crest",
+      "svg": "svg/indicators/job_nin_crest.svg",
+      "png": "png/indicators/job_nin_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          968,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_drg_crest",
+      "svg": "svg/indicators/job_drg_crest.svg",
+      "png": "png/indicators/job_drg_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1048,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_smn_crest",
+      "svg": "svg/indicators/job_smn_crest.svg",
+      "png": "png/indicators/job_smn_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1128,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_blu_crest",
+      "svg": "svg/indicators/job_blu_crest.svg",
+      "png": "png/indicators/job_blu_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1208,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_cor_crest",
+      "svg": "svg/indicators/job_cor_crest.svg",
+      "png": "png/indicators/job_cor_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1288,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_pup_crest",
+      "svg": "svg/indicators/job_pup_crest.svg",
+      "png": "png/indicators/job_pup_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1368,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_dnc_crest",
+      "svg": "svg/indicators/job_dnc_crest.svg",
+      "png": "png/indicators/job_dnc_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1448,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_sch_crest",
+      "svg": "svg/indicators/job_sch_crest.svg",
+      "png": "png/indicators/job_sch_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1528,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_geo_crest",
+      "svg": "svg/indicators/job_geo_crest.svg",
+      "png": "png/indicators/job_geo_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1608,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/job_run_crest",
+      "svg": "svg/indicators/job_run_crest.svg",
+      "png": "png/indicators/job_run_crest.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "Original abstract placeholder crest, not official job emblem",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1688,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_arrow",
+      "svg": "svg/indicators/target_arrow.svg",
+      "png": "png/indicators/target_arrow.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1768,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/subtarget",
+      "svg": "svg/indicators/subtarget.svg",
+      "png": "png/indicators/subtarget.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1848,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_ring",
+      "svg": "svg/indicators/target_ring.svg",
+      "png": "png/indicators/target_ring.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1928,
+          8,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/focus",
+      "svg": "svg/indicators/focus.svg",
+      "png": "png/indicators/focus.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          8,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/available",
+      "svg": "svg/indicators/available.svg",
+      "png": "png/indicators/available.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          88,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/unavailable",
+      "svg": "svg/indicators/unavailable.svg",
+      "png": "png/indicators/unavailable.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          168,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "icons/trade",
+      "svg": "svg/icons/trade.svg",
+      "png": "png/icons/trade.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/sort",
+      "svg": "svg/icons/sort.svg",
+      "png": "png/icons/sort.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          416,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/stack",
+      "svg": "svg/icons/stack.svg",
+      "png": "png/icons/stack.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/split",
+      "svg": "svg/icons/split.svg",
+      "png": "png/icons/split.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/deposit",
+      "svg": "svg/icons/deposit.svg",
+      "png": "png/icons/deposit.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/withdraw",
+      "svg": "svg/icons/withdraw.svg",
+      "png": "png/icons/withdraw.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_house",
+      "svg": "svg/icons/mog_house.svg",
+      "png": "png/icons/mog_house.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_safe",
+      "svg": "svg/icons/mog_safe.svg",
+      "png": "png/icons/mog_safe.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_locker",
+      "svg": "svg/icons/mog_locker.svg",
+      "png": "png/icons/mog_locker.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_satchel",
+      "svg": "svg/icons/mog_satchel.svg",
+      "png": "png/icons/mog_satchel.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_sack",
+      "svg": "svg/icons/mog_sack.svg",
+      "png": "png/icons/mog_sack.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mog_case",
+      "svg": "svg/icons/mog_case.svg",
+      "png": "png/icons/mog_case.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/wardrobe",
+      "svg": "svg/icons/wardrobe.svg",
+      "png": "png/icons/wardrobe.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/equip_set",
+      "svg": "svg/icons/equip_set.svg",
+      "png": "png/icons/equip_set.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/lock",
+      "svg": "svg/icons/lock.svg",
+      "png": "png/icons/lock.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/unlock",
+      "svg": "svg/icons/unlock.svg",
+      "png": "png/icons/unlock.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/pin",
+      "svg": "svg/icons/pin.svg",
+      "png": "png/icons/pin.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          552,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/unpin",
+      "svg": "svg/icons/unpin.svg",
+      "png": "png/icons/unpin.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/chat",
+      "svg": "svg/icons/chat.svg",
+      "png": "png/icons/chat.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/tell",
+      "svg": "svg/icons/tell.svg",
+      "png": "png/icons/tell.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/linkshell_chat",
+      "svg": "svg/icons/linkshell_chat.svg",
+      "png": "png/icons/linkshell_chat.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/emote",
+      "svg": "svg/icons/emote.svg",
+      "png": "png/icons/emote.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/quest_log",
+      "svg": "svg/icons/quest_log.svg",
+      "png": "png/icons/quest_log.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/keybind",
+      "svg": "svg/icons/keybind.svg",
+      "png": "png/icons/keybind.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/timer",
+      "svg": "svg/icons/timer.svg",
+      "png": "png/icons/timer.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/cooldown",
+      "svg": "svg/icons/cooldown.svg",
+      "png": "png/icons/cooldown.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/recast",
+      "svg": "svg/icons/recast.svg",
+      "png": "png/icons/recast.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/range",
+      "svg": "svg/icons/range.svg",
+      "png": "png/icons/range.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/line_of_sight",
+      "svg": "svg/icons/line_of_sight.svg",
+      "png": "png/icons/line_of_sight.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/claim",
+      "svg": "svg/icons/claim.svg",
+      "png": "png/icons/claim.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/aggro",
+      "svg": "svg/icons/aggro.svg",
+      "png": "png/icons/aggro.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/party_target",
+      "svg": "svg/icons/party_target.svg",
+      "png": "png/icons/party_target.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          688,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/assist",
+      "svg": "svg/icons/assist.svg",
+      "png": "png/icons/assist.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/follow",
+      "svg": "svg/icons/follow.svg",
+      "png": "png/icons/follow.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/mount",
+      "svg": "svg/icons/mount.svg",
+      "png": "png/icons/mount.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/sneak",
+      "svg": "svg/icons/sneak.svg",
+      "png": "png/icons/sneak.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/invisible",
+      "svg": "svg/icons/invisible.svg",
+      "png": "png/icons/invisible.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/raise",
+      "svg": "svg/icons/raise.svg",
+      "png": "png/icons/raise.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/rest",
+      "svg": "svg/icons/rest.svg",
+      "png": "png/icons/rest.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/craft",
+      "svg": "svg/icons/craft.svg",
+      "png": "png/icons/craft.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/auction",
+      "svg": "svg/icons/auction.svg",
+      "png": "png/icons/auction.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/delivery",
+      "svg": "svg/icons/delivery.svg",
+      "png": "png/icons/delivery.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/settings",
+      "svg": "svg/icons/settings.svg",
+      "png": "png/icons/settings.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/notification",
+      "svg": "svg/icons/notification.svg",
+      "png": "png/icons/notification.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/warning",
+      "svg": "svg/icons/warning.svg",
+      "png": "png/icons/warning.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/success",
+      "svg": "svg/icons/success.svg",
+      "png": "png/icons/success.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/failure",
+      "svg": "svg/icons/failure.svg",
+      "png": "png/icons/failure.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          824,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/help",
+      "svg": "svg/icons/help.svg",
+      "png": "png/icons/help.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/filter",
+      "svg": "svg/icons/filter.svg",
+      "png": "png/icons/filter.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/favorites",
+      "svg": "svg/icons/favorites.svg",
+      "png": "png/icons/favorites.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/recent",
+      "svg": "svg/icons/recent.svg",
+      "png": "png/icons/recent.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/macro",
+      "svg": "svg/icons/macro.svg",
+      "png": "png/icons/macro.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/subjob",
+      "svg": "svg/icons/subjob.svg",
+      "png": "png/icons/subjob.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/party_invite",
+      "svg": "svg/icons/party_invite.svg",
+      "png": "png/icons/party_invite.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/trade_request",
+      "svg": "svg/icons/trade_request.svg",
+      "png": "png/icons/trade_request.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/inspect",
+      "svg": "svg/icons/inspect.svg",
+      "png": "png/icons/inspect.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/target_nearest",
+      "svg": "svg/icons/target_nearest.svg",
+      "png": "png/icons/target_nearest.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/target_next",
+      "svg": "svg/icons/target_next.svg",
+      "png": "png/icons/target_next.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/target_previous",
+      "svg": "svg/icons/target_previous.svg",
+      "png": "png/icons/target_previous.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1504,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/cancel",
+      "svg": "svg/icons/cancel.svg",
+      "png": "png/icons/cancel.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1640,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/confirm",
+      "svg": "svg/icons/confirm.svg",
+      "png": "png/icons/confirm.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1776,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/transfer",
+      "svg": "svg/icons/transfer.svg",
+      "png": "png/icons/transfer.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1912,
+          960,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/cursor",
+      "svg": "svg/icons/cursor.svg",
+      "png": "png/icons/cursor.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          8,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/scroll",
+      "svg": "svg/icons/scroll.svg",
+      "png": "png/icons/scroll.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          144,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/drag_drop",
+      "svg": "svg/icons/drag_drop.svg",
+      "png": "png/icons/drag_drop.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          280,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/gear_swap",
+      "svg": "svg/icons/gear_swap.svg",
+      "png": "png/icons/gear_swap.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          416,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/cast_interrupt",
+      "svg": "svg/icons/cast_interrupt.svg",
+      "png": "png/icons/cast_interrupt.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          552,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/magic_burst",
+      "svg": "svg/icons/magic_burst.svg",
+      "png": "png/icons/magic_burst.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          688,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/skillchain",
+      "svg": "svg/icons/skillchain.svg",
+      "png": "png/icons/skillchain.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          824,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/enmity",
+      "svg": "svg/icons/enmity.svg",
+      "png": "png/icons/enmity.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          960,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/distance",
+      "svg": "svg/icons/distance.svg",
+      "png": "png/icons/distance.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1096,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/check",
+      "svg": "svg/icons/check.svg",
+      "png": "png/icons/check.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1232,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "icons/disengage",
+      "svg": "svg/icons/disengage.svg",
+      "png": "png/icons/disengage.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/icons_0@2x.png",
+        "rect": [
+          1368,
+          1096,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_normal",
+      "svg": "svg/controls/item_slot_normal.svg",
+      "png": "png/controls/item_slot_normal.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1112,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_hover",
+      "svg": "svg/controls/item_slot_hover.svg",
+      "png": "png/controls/item_slot_hover.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1256,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_selected",
+      "svg": "svg/controls/item_slot_selected.svg",
+      "png": "png/controls/item_slot_selected.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1400,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_invalid",
+      "svg": "svg/controls/item_slot_invalid.svg",
+      "png": "png/controls/item_slot_invalid.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1544,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_drop_valid",
+      "svg": "svg/controls/item_slot_drop_valid.svg",
+      "png": "png/controls/item_slot_drop_valid.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1688,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_drop_invalid",
+      "svg": "svg/controls/item_slot_drop_invalid.svg",
+      "png": "png/controls/item_slot_drop_invalid.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1832,
+          264,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/item_slot_locked",
+      "svg": "svg/controls/item_slot_locked.svg",
+      "png": "png/controls/item_slot_locked.png",
+      "size": [
+        68,
+        68
+      ],
+      "png_size": [
+        136,
+        136
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          408,
+          136,
+          136
+        ]
+      }
+    },
+    {
+      "id": "controls/drag_outline_idle",
+      "svg": "svg/controls/drag_outline_idle.svg",
+      "png": "png/controls/drag_outline_idle.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          152,
+          408,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "controls/drag_outline_dragging",
+      "svg": "svg/controls/drag_outline_dragging.svg",
+      "png": "png/controls/drag_outline_dragging.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          352,
+          408,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "controls/drag_outline_drop_valid",
+      "svg": "svg/controls/drag_outline_drop_valid.svg",
+      "png": "png/controls/drag_outline_drop_valid.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          552,
+          408,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "controls/drag_outline_drop_invalid",
+      "svg": "svg/controls/drag_outline_drop_invalid.svg",
+      "png": "png/controls/drag_outline_drop_invalid.png",
+      "size": [
+        96,
+        96
+      ],
+      "png_size": [
+        192,
+        192
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          752,
+          408,
+          192,
+          192
+        ]
+      }
+    },
+    {
+      "id": "controls/key_esc",
+      "svg": "svg/controls/key_esc.svg",
+      "png": "png/controls/key_esc.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          952,
+          408,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_tab",
+      "svg": "svg/controls/key_tab.svg",
+      "png": "png/controls/key_tab.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1068,
+          408,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_enter",
+      "svg": "svg/controls/key_enter.svg",
+      "png": "png/controls/key_enter.png",
+      "size": [
+        78,
+        36
+      ],
+      "png_size": [
+        156,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1184,
+          408,
+          156,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_space",
+      "svg": "svg/controls/key_space.svg",
+      "png": "png/controls/key_space.png",
+      "size": [
+        78,
+        36
+      ],
+      "png_size": [
+        156,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1348,
+          408,
+          156,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_shift",
+      "svg": "svg/controls/key_shift.svg",
+      "png": "png/controls/key_shift.png",
+      "size": [
+        78,
+        36
+      ],
+      "png_size": [
+        156,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1512,
+          408,
+          156,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_ctrl",
+      "svg": "svg/controls/key_ctrl.svg",
+      "png": "png/controls/key_ctrl.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1676,
+          408,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_alt",
+      "svg": "svg/controls/key_alt.svg",
+      "png": "png/controls/key_alt.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1816,
+          408,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_backspace",
+      "svg": "svg/controls/key_backspace.svg",
+      "png": "png/controls/key_backspace.png",
+      "size": [
+        126,
+        36
+      ],
+      "png_size": [
+        252,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          608,
+          252,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_home",
+      "svg": "svg/controls/key_home.svg",
+      "png": "png/controls/key_home.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          268,
+          608,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_end",
+      "svg": "svg/controls/key_end.svg",
+      "png": "png/controls/key_end.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          408,
+          608,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_pgup",
+      "svg": "svg/controls/key_pgup.svg",
+      "png": "png/controls/key_pgup.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          524,
+          608,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_pgdn",
+      "svg": "svg/controls/key_pgdn.svg",
+      "png": "png/controls/key_pgdn.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          664,
+          608,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_up",
+      "svg": "svg/controls/key_up.svg",
+      "png": "png/controls/key_up.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          804,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_down",
+      "svg": "svg/controls/key_down.svg",
+      "png": "png/controls/key_down.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          896,
+          608,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_left",
+      "svg": "svg/controls/key_left.svg",
+      "png": "png/controls/key_left.png",
+      "size": [
+        66,
+        36
+      ],
+      "png_size": [
+        132,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1036,
+          608,
+          132,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_right",
+      "svg": "svg/controls/key_right.svg",
+      "png": "png/controls/key_right.png",
+      "size": [
+        78,
+        36
+      ],
+      "png_size": [
+        156,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1176,
+          608,
+          156,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f1",
+      "svg": "svg/controls/key_f1.svg",
+      "png": "png/controls/key_f1.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1340,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f2",
+      "svg": "svg/controls/key_f2.svg",
+      "png": "png/controls/key_f2.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1432,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f3",
+      "svg": "svg/controls/key_f3.svg",
+      "png": "png/controls/key_f3.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1524,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f4",
+      "svg": "svg/controls/key_f4.svg",
+      "png": "png/controls/key_f4.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1616,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f5",
+      "svg": "svg/controls/key_f5.svg",
+      "png": "png/controls/key_f5.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1708,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f6",
+      "svg": "svg/controls/key_f6.svg",
+      "png": "png/controls/key_f6.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1800,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f7",
+      "svg": "svg/controls/key_f7.svg",
+      "png": "png/controls/key_f7.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1892,
+          608,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f8",
+      "svg": "svg/controls/key_f8.svg",
+      "png": "png/controls/key_f8.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          688,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f9",
+      "svg": "svg/controls/key_f9.svg",
+      "png": "png/controls/key_f9.png",
+      "size": [
+        42,
+        36
+      ],
+      "png_size": [
+        84,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          100,
+          688,
+          84,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f10",
+      "svg": "svg/controls/key_f10.svg",
+      "png": "png/controls/key_f10.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          192,
+          688,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f11",
+      "svg": "svg/controls/key_f11.svg",
+      "png": "png/controls/key_f11.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          308,
+          688,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/key_f12",
+      "svg": "svg/controls/key_f12.svg",
+      "png": "png/controls/key_f12.png",
+      "size": [
+        54,
+        36
+      ],
+      "png_size": [
+        108,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          424,
+          688,
+          108,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/scroll_thumb_empty",
+      "svg": "svg/controls/scroll_thumb_empty.svg",
+      "png": "png/controls/scroll_thumb_empty.png",
+      "size": [
+        20,
+        84
+      ],
+      "png_size": [
+        40,
+        168
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          540,
+          688,
+          40,
+          168
+        ]
+      }
+    },
+    {
+      "id": "controls/scroll_thumb_half",
+      "svg": "svg/controls/scroll_thumb_half.svg",
+      "png": "png/controls/scroll_thumb_half.png",
+      "size": [
+        20,
+        84
+      ],
+      "png_size": [
+        40,
+        168
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          588,
+          688,
+          40,
+          168
+        ]
+      }
+    },
+    {
+      "id": "controls/scroll_thumb_full",
+      "svg": "svg/controls/scroll_thumb_full.svg",
+      "png": "png/controls/scroll_thumb_full.png",
+      "size": [
+        20,
+        84
+      ],
+      "png_size": [
+        40,
+        168
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          636,
+          688,
+          40,
+          168
+        ]
+      }
+    },
+    {
+      "id": "controls/tab_normal",
+      "svg": "svg/controls/tab_normal.svg",
+      "png": "png/controls/tab_normal.png",
+      "size": [
+        128,
+        36
+      ],
+      "png_size": [
+        256,
+        72
+      ],
+      "nine_slice": [
+        15,
+        12,
+        15,
+        6
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          684,
+          688,
+          256,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/tab_hover",
+      "svg": "svg/controls/tab_hover.svg",
+      "png": "png/controls/tab_hover.png",
+      "size": [
+        128,
+        36
+      ],
+      "png_size": [
+        256,
+        72
+      ],
+      "nine_slice": [
+        15,
+        12,
+        15,
+        6
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          948,
+          688,
+          256,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/tab_active",
+      "svg": "svg/controls/tab_active.svg",
+      "png": "png/controls/tab_active.png",
+      "size": [
+        128,
+        36
+      ],
+      "png_size": [
+        256,
+        72
+      ],
+      "nine_slice": [
+        15,
+        12,
+        15,
+        6
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1212,
+          688,
+          256,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/tab_disabled",
+      "svg": "svg/controls/tab_disabled.svg",
+      "png": "png/controls/tab_disabled.png",
+      "size": [
+        128,
+        36
+      ],
+      "png_size": [
+        256,
+        72
+      ],
+      "nine_slice": [
+        15,
+        12,
+        15,
+        6
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1476,
+          688,
+          256,
+          72
+        ]
+      }
+    },
+    {
+      "id": "controls/titlebar_normal",
+      "svg": "svg/controls/titlebar_normal.svg",
+      "png": "png/controls/titlebar_normal.png",
+      "size": [
+        256,
+        40
+      ],
+      "png_size": [
+        512,
+        80
+      ],
+      "nine_slice": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          864,
+          512,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/titlebar_hover",
+      "svg": "svg/controls/titlebar_hover.svg",
+      "png": "png/controls/titlebar_hover.png",
+      "size": [
+        256,
+        40
+      ],
+      "png_size": [
+        512,
+        80
+      ],
+      "nine_slice": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          528,
+          864,
+          512,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/titlebar_focused",
+      "svg": "svg/controls/titlebar_focused.svg",
+      "png": "png/controls/titlebar_focused.png",
+      "size": [
+        256,
+        40
+      ],
+      "png_size": [
+        512,
+        80
+      ],
+      "nine_slice": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          1048,
+          864,
+          512,
+          80
+        ]
+      }
+    },
+    {
+      "id": "controls/titlebar_disabled",
+      "svg": "svg/controls/titlebar_disabled.svg",
+      "png": "png/controls/titlebar_disabled.png",
+      "size": [
+        256,
+        40
+      ],
+      "png_size": [
+        512,
+        80
+      ],
+      "nine_slice": [
+        16,
+        10,
+        16,
+        10
+      ],
+      "notes": "",
+      "atlas": {
+        "file": "atlases/controls_0@2x.png",
+        "rect": [
+          8,
+          952,
+          512,
+          80
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_red",
+      "svg": "svg/indicators/priority_red.svg",
+      "png": "png/indicators/priority_red.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          248,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_yellow",
+      "svg": "svg/indicators/priority_yellow.svg",
+      "png": "png/indicators/priority_yellow.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          328,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_green",
+      "svg": "svg/indicators/priority_green.svg",
+      "png": "png/indicators/priority_green.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          408,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_blue",
+      "svg": "svg/indicators/priority_blue.svg",
+      "png": "png/indicators/priority_blue.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          488,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_purple",
+      "svg": "svg/indicators/priority_purple.svg",
+      "png": "png/indicators/priority_purple.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          568,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/priority_white",
+      "svg": "svg/indicators/priority_white.svg",
+      "png": "png/indicators/priority_white.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          648,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_normal",
+      "svg": "svg/indicators/item_badge_normal.svg",
+      "png": "png/indicators/item_badge_normal.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          728,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_rare",
+      "svg": "svg/indicators/item_badge_rare.svg",
+      "png": "png/indicators/item_badge_rare.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          784,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_ex",
+      "svg": "svg/indicators/item_badge_ex.svg",
+      "png": "png/indicators/item_badge_ex.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          840,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_rare_ex",
+      "svg": "svg/indicators/item_badge_rare_ex.svg",
+      "png": "png/indicators/item_badge_rare_ex.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          896,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_quest",
+      "svg": "svg/indicators/item_badge_quest.svg",
+      "png": "png/indicators/item_badge_quest.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          952,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/item_badge_equipped",
+      "svg": "svg/indicators/item_badge_equipped.svg",
+      "png": "png/indicators/item_badge_equipped.png",
+      "size": [
+        24,
+        24
+      ],
+      "png_size": [
+        48,
+        48
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1008,
+          88,
+          48,
+          48
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_buff",
+      "svg": "svg/indicators/status_buff.svg",
+      "png": "png/indicators/status_buff.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1064,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_debuff",
+      "svg": "svg/indicators/status_debuff.svg",
+      "png": "png/indicators/status_debuff.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1128,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_ready",
+      "svg": "svg/indicators/status_ready.svg",
+      "png": "png/indicators/status_ready.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1192,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_recast",
+      "svg": "svg/indicators/status_recast.svg",
+      "png": "png/indicators/status_recast.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1256,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_casting",
+      "svg": "svg/indicators/status_casting.svg",
+      "png": "png/indicators/status_casting.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1320,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_silenced",
+      "svg": "svg/indicators/status_silenced.svg",
+      "png": "png/indicators/status_silenced.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1384,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_out_of_range",
+      "svg": "svg/indicators/status_out_of_range.svg",
+      "png": "png/indicators/status_out_of_range.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1448,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/status_not_enough_mp",
+      "svg": "svg/indicators/status_not_enough_mp.svg",
+      "png": "png/indicators/status_not_enough_mp.png",
+      "size": [
+        28,
+        28
+      ],
+      "png_size": [
+        56,
+        56
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1512,
+          88,
+          56,
+          56
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_neutral",
+      "svg": "svg/indicators/target_neutral.svg",
+      "png": "png/indicators/target_neutral.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1576,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_friendly",
+      "svg": "svg/indicators/target_friendly.svg",
+      "png": "png/indicators/target_friendly.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1656,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_hostile",
+      "svg": "svg/indicators/target_hostile.svg",
+      "png": "png/indicators/target_hostile.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1736,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_claimed",
+      "svg": "svg/indicators/target_claimed.svg",
+      "png": "png/indicators/target_claimed.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1816,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_party",
+      "svg": "svg/indicators/target_party.svg",
+      "png": "png/indicators/target_party.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          1896,
+          88,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_dead",
+      "svg": "svg/indicators/target_dead.svg",
+      "png": "png/indicators/target_dead.png",
+      "size": [
+        36,
+        36
+      ],
+      "png_size": [
+        72,
+        72
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/indicators_0@2x.png",
+        "rect": [
+          8,
+          168,
+          72,
+          72
+        ]
+      }
+    },
+    {
+      "id": "frames/window_normal",
+      "svg": "svg/frames/window_normal.svg",
+      "png": "png/frames/window_normal.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          808,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "frames/window_normal_border",
+      "svg": "svg/frames/window_normal_border.svg",
+      "png": "png/frames/window_normal_border.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          976,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "frames/window_focused",
+      "svg": "svg/frames/window_focused.svg",
+      "png": "png/frames/window_focused.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          1144,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "frames/window_inactive",
+      "svg": "svg/frames/window_inactive.svg",
+      "png": "png/frames/window_inactive.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          1312,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "frames/window_alert",
+      "svg": "svg/frames/window_alert.svg",
+      "png": "png/frames/window_alert.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          1480,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "frames/window_tooltip",
+      "svg": "svg/frames/window_tooltip.svg",
+      "png": "png/frames/window_tooltip.png",
+      "size": [
+        80,
+        80
+      ],
+      "png_size": [
+        160,
+        160
+      ],
+      "nine_slice": [
+        24,
+        24,
+        24,
+        24
+      ],
+      "notes": "Tile horizontal and vertical edge strips; center can tile or stretch. Corners fixed.",
+      "atlas": {
+        "file": "atlases/frames_0@2x.png",
+        "rect": [
+          1648,
+          8,
+          160,
+          160
+        ]
+      }
+    },
+    {
+      "id": "jobs/war",
+      "svg": "svg/jobs/war.svg",
+      "png": "png/jobs/war.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Warrior (WAR) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          8,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/mnk",
+      "svg": "svg/jobs/mnk.svg",
+      "png": "png/jobs/mnk.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Monk (MNK) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          144,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/whm",
+      "svg": "svg/jobs/whm.svg",
+      "png": "png/jobs/whm.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "White Mage (WHM) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          280,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/blm",
+      "svg": "svg/jobs/blm.svg",
+      "png": "png/jobs/blm.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Black Mage (BLM) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          416,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/rdm",
+      "svg": "svg/jobs/rdm.svg",
+      "png": "png/jobs/rdm.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Red Mage (RDM) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          552,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/thf",
+      "svg": "svg/jobs/thf.svg",
+      "png": "png/jobs/thf.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Thief (THF) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          688,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/pld",
+      "svg": "svg/jobs/pld.svg",
+      "png": "png/jobs/pld.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Paladin (PLD) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          824,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/drk",
+      "svg": "svg/jobs/drk.svg",
+      "png": "png/jobs/drk.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Dark Knight (DRK) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          960,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/bst",
+      "svg": "svg/jobs/bst.svg",
+      "png": "png/jobs/bst.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Beastmaster (BST) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1096,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/brd",
+      "svg": "svg/jobs/brd.svg",
+      "png": "png/jobs/brd.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Bard (BRD) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1232,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/rng",
+      "svg": "svg/jobs/rng.svg",
+      "png": "png/jobs/rng.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Ranger (RNG) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1368,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/sam",
+      "svg": "svg/jobs/sam.svg",
+      "png": "png/jobs/sam.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Samurai (SAM) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1504,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/nin",
+      "svg": "svg/jobs/nin.svg",
+      "png": "png/jobs/nin.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Ninja (NIN) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1640,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/drg",
+      "svg": "svg/jobs/drg.svg",
+      "png": "png/jobs/drg.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Dragoon (DRG) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1776,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/smn",
+      "svg": "svg/jobs/smn.svg",
+      "png": "png/jobs/smn.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Summoner (SMN) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          1912,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/blu",
+      "svg": "svg/jobs/blu.svg",
+      "png": "png/jobs/blu.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Blue Mage (BLU) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          8,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/cor",
+      "svg": "svg/jobs/cor.svg",
+      "png": "png/jobs/cor.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Corsair (COR) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          144,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/pup",
+      "svg": "svg/jobs/pup.svg",
+      "png": "png/jobs/pup.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Puppetmaster (PUP) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          280,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/dnc",
+      "svg": "svg/jobs/dnc.svg",
+      "png": "png/jobs/dnc.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Dancer (DNC) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          416,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/sch",
+      "svg": "svg/jobs/sch.svg",
+      "png": "png/jobs/sch.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Scholar (SCH) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          552,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/geo",
+      "svg": "svg/jobs/geo.svg",
+      "png": "png/jobs/geo.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Geomancer (GEO) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          688,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "jobs/run",
+      "svg": "svg/jobs/run.svg",
+      "png": "png/jobs/run.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "Rune Fencer (RUN) - individually drawn class-specific pictogram, not a copied retail emblem",
+      "atlas": {
+        "file": "atlases/jobs_0@2x.png",
+        "rect": [
+          824,
+          144,
+          128,
+          128
+        ]
+      }
+    }
+  ],
+  "nine_slice_semantics": "Logical SVG pixels. Scale insets for 2x PNG; tile edges and center for window frames.",
+  "job_icons": {
+    "WAR": {
+      "name": "Warrior",
+      "asset": "jobs/war",
+      "kind": "original class-specific vector pictogram"
+    },
+    "MNK": {
+      "name": "Monk",
+      "asset": "jobs/mnk",
+      "kind": "original class-specific vector pictogram"
+    },
+    "WHM": {
+      "name": "White Mage",
+      "asset": "jobs/whm",
+      "kind": "original class-specific vector pictogram"
+    },
+    "BLM": {
+      "name": "Black Mage",
+      "asset": "jobs/blm",
+      "kind": "original class-specific vector pictogram"
+    },
+    "RDM": {
+      "name": "Red Mage",
+      "asset": "jobs/rdm",
+      "kind": "original class-specific vector pictogram"
+    },
+    "THF": {
+      "name": "Thief",
+      "asset": "jobs/thf",
+      "kind": "original class-specific vector pictogram"
+    },
+    "PLD": {
+      "name": "Paladin",
+      "asset": "jobs/pld",
+      "kind": "original class-specific vector pictogram"
+    },
+    "DRK": {
+      "name": "Dark Knight",
+      "asset": "jobs/drk",
+      "kind": "original class-specific vector pictogram"
+    },
+    "BST": {
+      "name": "Beastmaster",
+      "asset": "jobs/bst",
+      "kind": "original class-specific vector pictogram"
+    },
+    "BRD": {
+      "name": "Bard",
+      "asset": "jobs/brd",
+      "kind": "original class-specific vector pictogram"
+    },
+    "RNG": {
+      "name": "Ranger",
+      "asset": "jobs/rng",
+      "kind": "original class-specific vector pictogram"
+    },
+    "SAM": {
+      "name": "Samurai",
+      "asset": "jobs/sam",
+      "kind": "original class-specific vector pictogram"
+    },
+    "NIN": {
+      "name": "Ninja",
+      "asset": "jobs/nin",
+      "kind": "original class-specific vector pictogram"
+    },
+    "DRG": {
+      "name": "Dragoon",
+      "asset": "jobs/drg",
+      "kind": "original class-specific vector pictogram"
+    },
+    "SMN": {
+      "name": "Summoner",
+      "asset": "jobs/smn",
+      "kind": "original class-specific vector pictogram"
+    },
+    "BLU": {
+      "name": "Blue Mage",
+      "asset": "jobs/blu",
+      "kind": "original class-specific vector pictogram"
+    },
+    "COR": {
+      "name": "Corsair",
+      "asset": "jobs/cor",
+      "kind": "original class-specific vector pictogram"
+    },
+    "PUP": {
+      "name": "Puppetmaster",
+      "asset": "jobs/pup",
+      "kind": "original class-specific vector pictogram"
+    },
+    "DNC": {
+      "name": "Dancer",
+      "asset": "jobs/dnc",
+      "kind": "original class-specific vector pictogram"
+    },
+    "SCH": {
+      "name": "Scholar",
+      "asset": "jobs/sch",
+      "kind": "original class-specific vector pictogram"
+    },
+    "GEO": {
+      "name": "Geomancer",
+      "asset": "jobs/geo",
+      "kind": "original class-specific vector pictogram"
+    },
+    "RUN": {
+      "name": "Rune Fencer",
+      "asset": "jobs/run",
+      "kind": "original class-specific vector pictogram"
+    }
+  }
+}

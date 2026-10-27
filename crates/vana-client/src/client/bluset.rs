@@ -399,6 +399,10 @@ fn hit(gu: &GameUi, sw: f32, sh: f32, p: (f32, f32)) -> Option<(Focus, usize)> {
 /// Mouse *(inf)*: over the other list the focus moves there (message 8) while nothing is picked; rows move the
 /// cursor, a click on the cursor row is Enter.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool) {
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     let Some(s) = w.bluset.clone().filter(|s| s.sibo.is_none()) else { return };
     let Some((f, k)) = hit(gu, sw, sh, p) else { return };
     gu.hover.set(true);
@@ -481,37 +485,144 @@ fn list_window(gu: &mut GameUi, name: &str, sw: f32, sh: f32, c: (usize, usize),
     Some((win.frame, (x + 3.0, y + 4.0)))
 }
 
+/// bluehelp's texts: the name, "(family - type) " (group 10 0x54), the description, "Lv.%d  MP cost %d  Blue Magic
+/// Points %d" (0x55), both through sprintf.
+fn help_text(gu: &GameUi, w: &World, id: u16) -> Option<[String; 4]> {
+    let d = data(w)?;
+    let e = d.entry(id)?;
+    let fmt = |id: usize, args: &[String]| super::textcmd::printf(&w.battle.as_ref().and_then(|b| b.group10(id)).unwrap_or_default(), args);
+    let head = fmt(0x54, &[gu.lobby_msg(0xc, 0x3e + e.family as usize, ""), gu.lobby_msg(0xc, 0x52 + e.physical as usize, "")]);
+    let mp = w.actions.as_ref().and_then(|a| a.spell(id)).map_or(0, |r| r.mp as i32);
+    let foot = fmt(0x55, &[spell_level(w, id).to_string(), mp.to_string(), e.points.to_string()]);
+    Some([spell_name(w, id), head, d.description(e), foot])
+}
+
 /// bluehelp (FUN_101ec500 with LAB_101dfc80 / LAB_101dfd60): the name and "(family - type) " on one line, the
 /// description from (16, 20), the level, MP cost and points below; at least 56 high, growing down.
 fn help(gu: &mut GameUi, w: &World, sw: f32, sh: f32, id: u16) -> Option<[f32; 4]> {
-    let d = data(w)?;
-    let e = d.entry(id)?;
+    let [name, head, desc, foot] = help_text(gu, w, id)?;
     let [x, y, fw, fh] = gu.window_rect(HELP, sw, sh)?;
-    let desc = d.description(e);
     let lines: Vec<String> = desc.split('\n').flat_map(|l| gu.wrap(l, fw - 20.0)).collect();
     let h = (16.0 * lines.len() as f32 + 40.0).max(fh);
     if !gu.window_sized(HELP, x, y, fw, h) {
         return None;
     }
-    text(gu, &spell_name(w, id), x + 4.0, y + 4.0, WHITE);
-    // group 10 0x54 "(%s - %s) " and 0x55 "Lv.%d  MP cost %d  Blue Magic Points %d" go through sprintf.
-    let fmt = |id: usize, args: &[String]| super::textcmd::printf(&w.battle.as_ref().and_then(|b| b.group10(id)).unwrap_or_default(), args);
-    let head = fmt(0x54, &[gu.lobby_msg(0xc, 0x3e + e.family as usize, ""), gu.lobby_msg(0xc, 0x52 + e.physical as usize, "")]);
+    text(gu, &name, x + 4.0, y + 4.0, WHITE);
     let hw = gu.text_width(&head);
     text(gu, &head, x + fw - 4.0 - hw, y + 4.0, WHITE);
     for (i, l) in lines.iter().enumerate() {
         text(gu, l, x + 16.0, y + 20.0 + 16.0 * i as f32, WHITE);
     }
-    let mp = w.actions.as_ref().and_then(|a| a.spell(id)).map_or(0, |r| r.mp as i32);
-    let foot = fmt(0x55, &[spell_level(w, id).to_string(), mp.to_string(), e.points.to_string()]);
     text(gu, &foot, x + 16.0, y + 20.0 + 16.0 * lines.len() as f32, WHITE);
     Some([x, y, fw, h])
+}
+
+/// A list row as the modern layer draws it: the slot number in its band's colour (bluequip), the spell's icon, the
+/// text in its tint.
+pub(super) struct RowLook {
+    pub number: Option<(usize, u32)>,
+    pub icon: Option<usize>,
+    pub text: String,
+    pub tint: u32,
+}
+
+/// The Set Spells screen as the modern layer draws it.
+pub(super) struct Look {
+    pub used: u32,
+    pub total: u32,
+    pub equip: (Vec<RowLook>, usize),
+    pub inven: (Vec<RowLook>, usize),
+    /// bluequip has the keys (else bluinven); a slot or a spell is picked.
+    pub on_equip: bool,
+    pub picking: bool,
+    pub help: Option<[String; 4]>,
+    /// bluesibo's families and cursor row (1..18) while it is open.
+    pub sibo: Option<(Vec<String>, u16)>,
+}
+
+fn spell_icon(w: &World, id: u16) -> Option<usize> {
+    w.actions.as_ref().and_then(|a| a.spell(id)).map(|r| r.icon as usize)
+}
+
+pub(super) fn look(w: &World, gu: &GameUi) -> Option<Look> {
+    let s = w.bluset.as_ref()?;
+    let bands = band_colours(w, s);
+    let equip = (0..s.slots)
+        .map(|i| {
+            let idx = slot(w, s.side, i);
+            let id = (idx != 0).then_some(0x200 + idx as u16);
+            let tint = if s.slot_pick == Some(i) { PICKED } else { WHITE };
+            RowLook { number: Some((i + 1, bands[i])), icon: id.and_then(|id| spell_icon(w, id)), text: id.map(|id| spell_name(w, id)).unwrap_or_default(), tint }
+        })
+        .collect();
+    let rows = inven_rows(w, s);
+    let inven = rows
+        .iter()
+        .map(|r| match *r {
+            Row::Type => RowLook { number: None, icon: None, text: gu.sprite_caption("menu    framesus", 130).unwrap_or_else(|| "Type".into()), tint: WHITE },
+            Row::RemoveAll => RowLook { number: None, icon: None, text: w.battle.as_ref().and_then(|b| b.group9(0xe3)).unwrap_or_default(), tint: 0x8090_9040 },
+            Row::Spell(id) => RowLook { number: None, icon: spell_icon(w, id), text: spell_name(w, id), tint: spell_tint(w, s, id) },
+        })
+        .collect();
+    let shown = match s.focus {
+        Focus::Equip => Some(slot(w, s.side, s.equip.0)).filter(|&i| i != 0).map(|i| 0x200 + i as u16),
+        Focus::Inven => match rows.get(s.inven.0) {
+            Some(&Row::Spell(id)) => Some(id),
+            _ => None,
+        },
+    };
+    // bluesibo's rows as its layout draws them (their sprites' captions).
+    let sibo = s.sibo.map(|r| ((1..=SIBO_ROWS).map(|k| gu.child_caption(SIBO, k).unwrap_or_default()).collect(), r));
+    Some(Look {
+        used: used(w, s),
+        total: s.total,
+        equip: (equip, s.equip.0),
+        inven: (inven, s.inven.0),
+        on_equip: s.focus == Focus::Equip,
+        picking: s.spell_pick.is_some() || s.slot_pick.is_some(),
+        help: shown.and_then(|id| help_text(gu, w, id)),
+        sibo,
+    })
+}
+
+/// The mouse's cursor moves: a slot (bluequip), a row of bluinven, bluesibo's row; with nothing picked a row of the
+/// other list takes the focus first (as Num+). True when the cursor moved.
+pub(super) fn set_row(w: &mut World, equip: bool, k: usize) -> bool {
+    let Some(s) = w.bluset.as_ref().filter(|s| s.sibo.is_none()) else { return false };
+    if (s.focus == Focus::Equip) != equip {
+        if s.spell_pick.is_some() || s.slot_pick.is_some() {
+            return false;
+        }
+        num_plus(w);
+    }
+    let n = match w.bluset.as_ref() {
+        Some(s) if equip => s.slots,
+        Some(s) => inven_rows(w, s).len(),
+        None => 0,
+    };
+    let Some(s) = w.bluset.as_mut() else { return false };
+    let c = if equip { &mut s.equip } else { &mut s.inven };
+    if c.0 == k || k >= n {
+        return false;
+    }
+    c.0 = k;
+    c.1 = c.1.min(k).max((k + 1).saturating_sub(VISIBLE));
+    true
+}
+
+pub(super) fn set_sibo(w: &mut World, r: u16) -> bool {
+    let Some(cur) = w.bluset.as_mut().and_then(|s| s.sibo.as_mut()).filter(|c| **c != r && (1..=SIBO_ROWS).contains(&r)) else { return false };
+    *cur = r;
+    true
 }
 
 /// The screen: persona, bluepoin, bluequip, bluinven, bluehelp, bluesibo (drawn after the magic list so the window
 /// walk suspends it, blusortw and mgcmenu).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(s) = &w.bluset else { return rects };
     let free = w.confirm.is_none() && s.sibo.is_none();
     // persona as on the Equipment screen.

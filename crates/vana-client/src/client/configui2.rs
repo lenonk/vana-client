@@ -701,6 +701,48 @@ pub fn draw(ui: &ConfigUi, w: &Win, top: bool, gu: &mut GameUi, v: &Values, sw: 
     }
 }
 
+/// The modern Config's list pages (cfilter, fxfilter, conf11s in category `cat` for the first log window): each row's
+/// label (group 0xb) and state sprite (framesus 88 ON, 89 OFF, 83 Hold, 136 / 137 with the tell icon).
+pub(super) fn modern_rows(v: &Values, page: &str, cat: usize) -> Vec<(u16, usize)> {
+    match page {
+        "cfilter" => (0..CFILTER.len()).map(|r| (CFILTER[r].2, cfilter_state(v, r))).collect(),
+        "fxfilter" => (0..18u16).map(|r| (153 + r, if v.get(0x92) & (1 << r) != 0 { 88 } else { 89 })).collect(),
+        "conf11s" => LOG_ROWS[cat.min(3)].iter().map(|&(label, bit)| (label, if log_bit(v, 0, bit) { 88 } else { 89 })).collect(),
+        _ => Vec::new(),
+    }
+}
+
+/// A row's Enter there (retail's toggles).
+pub(super) fn modern_toggle(v: &mut Values, out: &mut Out, page: &str, cat: usize, r: usize) {
+    match page {
+        "cfilter" if r < CFILTER.len() => cfilter_toggle(v, out, r),
+        "fxfilter" if r < 18 => {
+            let on = v.get(0x92) & (1 << r) != 0;
+            set_bit(v, out, 0x92, 1 << r, !on);
+        }
+        "conf11s" => {
+            if let Some(&(_, bit)) = LOG_ROWS[cat.min(3)].get(r) {
+                let on = log_bit(v, 0, bit);
+                let (lo, hi) = log_ids(0);
+                if bit < 32 { set_bit(v, out, lo, 1 << bit, !on) } else { set_bit(v, out, hi, 1 << (bit - 32), !on) }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Font Colors' rows of a category: (label, sample, config id).
+pub(super) fn colour_rows(cat: usize) -> &'static [(u16, u16, u16)] {
+    COLOUR_ROWS[cat.min(3)]
+}
+
+/// A colour set as textcol3's OK does: 0x80RRGGBB.
+pub(super) fn set_colour(v: &mut Values, out: &mut Out, id: u16, [r, g, b]: [u8; 3]) {
+    if v.set(id, 0x8000_0000 | (r as u32) << 16 | (g as u32) << 8 | b as u32) {
+        out.changed.push(id);
+    }
+}
+
 fn text_b(gu: &mut GameUi, id: u16, x: f32, y: f32, colour: [u8; 4]) {
     if let Some(t) = gu.group_b(id as usize) {
         gu.text(&t, x, y, 0, colour);

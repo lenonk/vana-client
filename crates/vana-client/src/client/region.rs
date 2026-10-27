@@ -239,12 +239,18 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
         }
         return;
     }
-    let Some(sel) = w.region_menu.as_ref().filter(|r| !r.hidden).map(|r| r.sel) else { return };
+    // The modern layer draws the menu and takes its mouse.
+    let Some(sel) = shown(w).filter(|_| !w.modern) else { return };
     super::winhits::generic(w, gu, MENU, sel, 1..=4, p, moved, clicked, right, |w, id| {
         if let Some(r) = w.region_menu.as_mut() {
             r.sel = id;
         }
     }, |w, gu, k| menu_key(w, gu, k, sw, sh));
+}
+
+/// The menu's cursor while it shows (not while its map is up).
+pub fn shown(w: &World) -> Option<u16> {
+    w.region_menu.as_ref().filter(|r| !r.hidden).map(|r| r.sel)
 }
 
 /// /regionmap, /besiegemap, /campaignmap, /colonizationmap (0x50..0x53, FUN_1007d300): the map when none is open.

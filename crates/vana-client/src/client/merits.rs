@@ -9,8 +9,8 @@ use crate::dat::merits::MeritTables;
 use std::sync::Arc;
 
 pub const MENU: &str = "menu    merit1";
-const MODE: &str = "menu    merit2";
-const EDIT: &str = "menu    merit3";
+pub(super) const MODE: &str = "menu    merit2";
+pub(super) const EDIT: &str = "menu    merit3";
 const LIST: &str = "menu    meritcat";
 const LEV: &str = "menu    levmerit";
 const INFO: &str = "menu    meritinf";
@@ -439,9 +439,128 @@ fn list_key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// A points list's row for the modern layer (merits, job points, alter ego points): the name and the cells in retail's
+/// colours; a header (a job's group, its windowps sprite) carries its totals in `level`.
+#[derive(Clone, Default)]
+pub(super) struct PointRow {
+    pub name: String,
+    pub tint: u32,
+    pub level: Option<(String, u32)>,
+    pub cost: Option<(String, u32)>,
+    pub header: Option<usize>,
+    /// A setting's current choice (Unity's chat).
+    pub mark: bool,
+}
+
+/// A points list as drawn: every row, the cursor, whether it has the keys; the cursor row's name and description.
+pub(super) struct PointList {
+    pub rows: Vec<PointRow>,
+    pub cursor: usize,
+    pub focused: bool,
+    pub help: (String, String),
+}
+
+/// The Merit Points windows as the modern layer draws them.
+pub(super) struct Look {
+    /// merit1's cursor and disabled rows; merit2's cursor and its disabled row.
+    pub menu: (u16, Vec<u16>),
+    pub mode: Option<(u16, u16)>,
+    /// Limit points; merit points and the most.
+    pub limit: Option<u16>,
+    pub points: Option<(u16, u8)>,
+    /// The category shown (0 the list of categories), its rows.
+    pub cat: u8,
+    pub list: Option<PointList>,
+    /// merit3: its cursor, sortyn's (Some while it asks), Raise and Lower allowed.
+    pub edit: Option<(u16, Option<bool>, bool, bool)>,
+}
+
+fn totals(w: &World, t: &MeritTables, cat: u8) -> (String, u32) {
+    let (s, c) = (spent(w, cat), cap(w, t, cat) as u32);
+    (format!("{s}/{c}"), if s >= c { BLUE } else { WHITE })
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let m = w.merits_ui.as_ref()?;
+    let t = w.merit_tables.clone()?;
+    let free = w.confirm.is_none();
+    let list = m.list.as_ref().map(|l| {
+        let rows = l
+            .rows
+            .iter()
+            .map(|r| match *r {
+                Row::Cat { pos, id } => PointRow { name: t.at(pos).map_or(String::new(), |c| t.name(c.name)), tint: WHITE, level: Some(totals(w, &t, id)), ..Default::default() },
+                Row::Header { group, cat } => PointRow { tint: GROUP[group as usize % 3], level: Some(totals(w, &t, cat)), header: Some(592 + group as usize), ..Default::default() },
+                Row::Merit { index, group } => {
+                    let (c, lc, cost) = colours(w, &t, index, group);
+                    let (next, level) = w.merit_list.get(&index).copied().unwrap_or((0, 0));
+                    let max = t.entry(index).map_or(0, |e| e.max);
+                    PointRow { name: t.name(index), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.filter(|_| next != 0).map(|cc| (format!("{next} P"), cc)), ..Default::default() }
+                }
+            })
+            .collect();
+        let id = match l.rows.get(l.cursor) {
+            Some(Row::Cat { pos, .. }) => t.at(*pos).map(|c| c.name),
+            Some(Row::Merit { index, .. }) => Some(*index),
+            _ => None,
+        };
+        let help = id.map_or((String::new(), String::new()), |i| (t.name(i), t.desc(i)));
+        PointList { rows, cursor: l.cursor, focused: free && m.edit.is_none(), help }
+    });
+    let edit = m.edit.as_ref().map(|e| {
+        let (raise, lower) = cursor_merit(w).map_or((false, false), |(i, g)| can(w, i, g));
+        (e.sel, e.sortyn, raise, lower)
+    });
+    Some(Look {
+        menu: (m.menu, if monstrosity(w) { vec![2] } else { Vec::new() }),
+        mode: m.mode.map(|s| (s, mode_off(w))),
+        limit: w.merits.map(|x| x.0),
+        points: points(w),
+        cat: m.list.as_ref().map_or(0, |l| l.cat),
+        list,
+        edit,
+    })
+}
+
+/// The mouse's cursor moves: merit1, merit2, the list, merit3 and sortyn. True when it moved.
+pub(super) fn set_menu(w: &mut World, k: u16) -> bool {
+    let Some(m) = w.merits_ui.as_mut().filter(|m| m.menu != k && (1..=2).contains(&k)) else { return false };
+    m.menu = k;
+    true
+}
+
+pub(super) fn set_mode(w: &mut World, k: u16) -> bool {
+    let Some(sel) = w.merits_ui.as_mut().and_then(|m| m.mode.as_mut()).filter(|s| **s != k && (1..=2).contains(&k)) else { return false };
+    *sel = k;
+    true
+}
+
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(l) = w.merits_ui.as_mut().and_then(|m| m.list.as_mut()).filter(|l| l.cursor != k && k < l.rows.len()) else { return false };
+    l.cursor = k;
+    l.top = l.top.min(k).max((k + 1).saturating_sub(ROWS));
+    true
+}
+
+pub(super) fn set_edit(w: &mut World, k: u16) -> bool {
+    let Some(e) = w.merits_ui.as_mut().and_then(|m| m.edit.as_mut()).filter(|e| e.sel != k && e.sortyn.is_none()) else { return false };
+    e.sel = k;
+    true
+}
+
+pub(super) fn set_sortyn(w: &mut World, yes: bool) -> bool {
+    let Some(s) = w.merits_ui.as_mut().and_then(|m| m.edit.as_mut()).and_then(|e| e.sortyn.as_mut()).filter(|s| **s != yes) else { return false };
+    *s = yes;
+    true
+}
+
 /// Mouse: hover moves the cursor over the focused window's rows, a click is Enter, a right click Escape *(inf: the
 /// generic window and list events)*.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws them and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(m) = w.merits_ui.as_ref() else { return };
     if w.confirm.is_some() || m.edit.as_ref().is_some_and(|e| e.sortyn.is_some()) {
         return;
@@ -541,6 +660,9 @@ pub fn sortyn(gu: &mut GameUi, sw: f32, sh: f32, yes: bool) -> Option<[f32; 4]> 
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(m) = &w.merits_ui else { return rects };
     let Some(t) = w.merit_tables.clone() else { return rects };
     let free = w.confirm.is_none();

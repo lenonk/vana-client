@@ -3862,6 +3862,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "texpresso"
+version = "2.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8550677e2259d675a7841cb1403db35f330cc9e58674c8c5caa12dd12c51dc71"
+dependencies = [
+ "libm",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.69"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4258,6 +4267,7 @@ dependencies = [
 name = "vana-client"
 version = "0.1.0"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "bytemuck",
  "clap",
@@ -4284,6 +4294,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sevenz-rust2",
+ "texpresso",
  "tokio",
  "tokio-rustls",
  "unrar",

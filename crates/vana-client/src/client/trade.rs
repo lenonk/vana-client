@@ -11,9 +11,9 @@ use crate::audio::Ui;
 use crate::inventory::ItemInfo;
 use std::time::{Duration, Instant};
 
-const HANDOVER: &str = "menu    handover";
-const TRADE: &str = "menu    trade";
-const GIFT: &str = "menu    gift";
+pub(super) const HANDOVER: &str = "menu    handover";
+pub(super) const TRADE: &str = "menu    trade";
+pub(super) const GIFT: &str = "menu    gift";
 const GIL: u16 = 0xffff;
 const MONEYCTR: &str = "menu    moneyctr";
 const ITEMCTRL: &str = "menu    itemctrl";
@@ -387,6 +387,148 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
     handover_info(w).or_else(|| p2p_info(w))
 }
 
+/// The modern layer's view (this module keeps every rule and key): the hand-over or player trade, our slots and
+/// gil, theirs, the cursor and focus, the picker and the count or gil asked.
+pub(super) struct View {
+    /// The NPC handed to or the partner.
+    pub with: String,
+    pub player: bool,
+    /// Our slots (item, count), gil and OK.
+    pub mine: [(u16, u32); 8],
+    pub gil: u32,
+    pub our_ok: bool,
+    /// Theirs in player trade: slots, gil, OK.
+    pub theirs: Option<([(u16, u32); 8], u32, bool)>,
+    pub cursor: u16,
+    /// Their window's cursor while it has the focus.
+    pub gift: Option<u16>,
+    pub on_window: bool,
+    pub on_list: bool,
+    /// The picker: rows, their colours, the cursor's row.
+    pub picker: (Vec<crate::inventory::Slot>, Vec<u32>, usize),
+    /// A stack's count asked (value, most); the gil asked (step, most, value).
+    pub qty: Option<(u32, u32)>,
+    pub money: Option<(u32, u32, u32)>,
+}
+
+pub(super) fn view(w: &World) -> Option<View> {
+    let free = w.confirm.is_none();
+    let rows = super::post::picker_rows(w);
+    let name = |id: u32| w.entities.get(&id).map(|e| e.name.clone()).unwrap_or_default();
+    if let Some(h) = &w.handover {
+        let tints = rows.iter().map(|r| picker_tint(h, r)).collect();
+        return Some(View {
+            with: name(h.npc.0),
+            player: false,
+            mine: std::array::from_fn(|i| h.slots[i].map_or((0, 0), |s| (s.0, s.2))),
+            gil: h.gil,
+            our_ok: false,
+            theirs: None,
+            cursor: h.cursor,
+            gift: None,
+            on_window: h.focus == Focus::Window && free,
+            on_list: h.focus == Focus::Picker && free,
+            picker: (rows, tints, h.list.0 + h.list.1),
+            qty: h.qty.map(|(_, v, max)| (v, max)),
+            money: h.money,
+        });
+    }
+    let u = w.p2p.ui.as_ref()?;
+    let p = &w.p2p;
+    let tints = rows.iter().map(|r| p2p_tint(w, r)).collect();
+    let theirs = std::array::from_fn(|i| {
+        let e = &p.theirs[i + 1];
+        if e.0 > 0 && e.1 != 0 && e.1 != GIL { (e.1, e.0) } else { (0, 0) }
+    });
+    Some(View {
+        with: p.partner.map(|x| name(x.0)).unwrap_or_default(),
+        player: true,
+        mine: std::array::from_fn(|i| {
+            let e = &p.mine[i + 1];
+            if offered(e) { (e.1, e.0) } else { (0, 0) }
+        }),
+        gil: if p.mine[0].1 == GIL && p.mine[0].2 == 0 { p.mine[0].0 } else { 0 },
+        our_ok: p.state == 4,
+        theirs: Some((theirs, p.theirs[0].0, p.partner_ok)),
+        cursor: u.cursor,
+        gift: (u.focus == PFocus::Gift).then_some(u.gift),
+        on_window: u.focus == PFocus::Trade && free,
+        on_list: u.focus == PFocus::Picker && free,
+        picker: (rows, tints, u.list.0 + u.list.1),
+        qty: u.qty.map(|(_, v, max)| (v, max)),
+        money: u.money,
+    })
+}
+
+/// The modern layer's mouse: our window's cursor onto child `c` (1..8 the slots, 9 OK, 10 Cancel, 11 gil); the picker
+/// or their window gives the focus back. After our OK only OK and Cancel take it. True when it moved.
+pub(super) fn set_cursor(w: &mut World, c: u16) -> bool {
+    if let Some(h) = w.handover.as_mut() {
+        if !matches!(h.focus, Focus::Window | Focus::Picker) {
+            return false;
+        }
+        let moved = h.cursor != c || h.focus != Focus::Window;
+        (h.focus, h.cursor) = (Focus::Window, c);
+        return moved;
+    }
+    let locked = w.p2p.state == 4;
+    let Some(u) = w.p2p.ui.as_mut().filter(|u| matches!(u.focus, PFocus::Trade | PFocus::Gift | PFocus::Picker)) else { return false };
+    if locked && !matches!(c, 9 | 10) {
+        return false;
+    }
+    let moved = u.cursor != c || u.focus != PFocus::Trade;
+    (u.focus, u.cursor) = (PFocus::Trade, c);
+    moved
+}
+
+/// Their window's cursor onto slot `g` (player trade, before our OK).
+pub(super) fn set_gift(w: &mut World, g: u16) -> bool {
+    let locked = w.p2p.state == 4;
+    let Some(u) = w.p2p.ui.as_mut().filter(|u| !locked && matches!(u.focus, PFocus::Trade | PFocus::Gift)) else { return false };
+    let moved = u.gift != g || u.focus != PFocus::Gift;
+    (u.focus, u.gift) = (PFocus::Gift, g);
+    moved
+}
+
+/// The picker's cursor onto row `k`, the picker taking the focus for the cursor's slot (the first empty one when the
+/// cursor is elsewhere).
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let at = super::post::list_at(k);
+    if let Some(h) = w.handover.as_mut() {
+        if !matches!(h.focus, Focus::Window | Focus::Picker) {
+            return false;
+        }
+        if !(1..=8).contains(&h.cursor) {
+            h.cursor = h.slots.iter().position(|s| s.is_none()).map_or(1, |i| i as u16 + 1);
+        }
+        let moved = h.focus != Focus::Picker || h.list.0 + h.list.1 != k;
+        (h.focus, h.list) = (Focus::Picker, at);
+        return moved;
+    }
+    let free: Option<u16> = (1..=8u16).find(|&c| !offered(&w.p2p.mine[c as usize]));
+    let locked = w.p2p.state == 4;
+    let Some(u) = w.p2p.ui.as_mut().filter(|u| !locked && matches!(u.focus, PFocus::Trade | PFocus::Gift | PFocus::Picker)) else { return false };
+    if !(1..=8).contains(&u.cursor) {
+        u.cursor = free.unwrap_or(1);
+    }
+    let moved = u.focus != PFocus::Picker || u.list.0 + u.list.1 != k;
+    (u.focus, u.list) = (PFocus::Picker, at);
+    moved
+}
+
+/// The modern layer's All and 0: the gil asked set outright (moneyctr's ends).
+pub(super) fn set_money(w: &mut World, v: u32) {
+    let money = match (&mut w.handover, &mut w.p2p.ui) {
+        (Some(h), _) => &mut h.money,
+        (None, Some(u)) => &mut u.money,
+        _ => return,
+    };
+    if let Some((_, max, x)) = money.as_mut() {
+        *x = v.min(*max);
+        w.sounds.push(Ui::Cursor as u32);
+    }
+}
+
 /// The child of window `name` (ids in `ids`) under the pointer, from its layout at its drawn place.
 pub(super) fn child_at(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32), ids: std::ops::RangeInclusive<u16>) -> Option<u16> {
     let ((x, y), lay) = (gu.window_xy(name, sw, sh)?, gu.layout(name)?);
@@ -401,6 +543,10 @@ pub(super) fn over(gu: &GameUi, name: &str, sw: f32, sh: f32, p: (f32, f32)) -> 
 /// The mouse on the focused trade window: a child under it takes the cursor, a click on the cursor's child is Enter
 /// and a right click on the window Escape; the picker's rows as the item list's (items::pointer).
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return;
+    }
     let (window, picker, ctr) = match (&w.handover, &w.p2p.ui) {
         (Some(h), _) => match h.focus {
             Focus::Window => (Some((HANDOVER, h.cursor, 1..=11)), None, None),
@@ -466,6 +612,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 }
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
+    if w.modern {
+        return Vec::new();
+    }
     let mut r = handover_draw(gu, w, sw, sh);
     r.extend(p2p_draw(gu, w, sw, sh));
     r

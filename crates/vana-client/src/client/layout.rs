@@ -841,6 +841,9 @@ fn list_key(w: &mut World, l: &mut Layout, key: egui::Key) {
 pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let Some(l) = &w.layout else { return Vec::new() };
     let mut out = super::mannequin::draw(gu, w, sw, sh);
+    if w.modern {
+        return out;
+    }
     if let Some((kind, sel)) = l.win {
         let name = win_name(kind);
         let off = dim_rows(w, l, kind);
@@ -882,12 +885,59 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     out
 }
 
+/// Layout mode's windows as the modern layer draws them: the rmlo window (its name, cursor, dim rows), bankmenu over
+/// it, the furniture list (rows, tints, the cursor row).
+pub(super) struct Look {
+    pub win: Option<(&'static str, u16, Vec<u16>)>,
+    pub bank: Option<(u16, Vec<u16>)>,
+    pub list: Option<(Vec<crate::inventory::Slot>, Vec<u32>, usize)>,
+}
+
+pub(super) const BANK: &str = BANKMENU;
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let l = w.layout.as_ref().filter(|l| l.dress.is_none())?;
+    let list = l.list.map(|(c, scroll, cursor)| {
+        let rows = list_rows(w, l, c);
+        (rows.iter().map(|r| r.0.clone()).collect(), rows.iter().map(|r| r.1).collect(), scroll + cursor)
+    });
+    Some(Look { win: l.win.map(|(kind, sel)| (win_name(kind), sel, dim_rows(w, l, kind))), bank: l.bank.map(|r| (r, bank_dim(w))), list })
+}
+
+/// The mouse's cursor moves: the rmlo window, bankmenu, the furniture list's row. True when it moved.
+pub(super) fn set_win(w: &mut World, k: u16) -> bool {
+    let Some(l) = w.layout.as_mut().filter(|l| l.bank.is_none() && l.list.is_none()) else { return false };
+    let Some((_, sel)) = l.win.as_mut().filter(|(kind, sel)| *sel != k && (1..=rows(*kind).len() as u16).contains(&k)) else { return false };
+    *sel = k;
+    true
+}
+
+pub(super) fn set_bank(w: &mut World, k: u16) -> bool {
+    let Some(r) = w.layout.as_mut().and_then(|l| l.bank.as_mut()).filter(|r| **r != k && (1..=2).contains(&k)) else { return false };
+    *r = k;
+    true
+}
+
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(l) = w.layout.as_ref() else { return false };
+    let Some((c, scroll, cursor)) = l.list else { return false };
+    if scroll + cursor == k || k >= list_rows(w, l, c).len() {
+        return false;
+    }
+    let top = scroll.min(k).max((k + 1).saturating_sub(crate::inventory::VISIBLE_ROWS));
+    if let Some(l) = w.layout.as_mut() {
+        l.list = Some((c, top, k - top));
+    }
+    true
+}
+
 /// The mouse (winhits.rs): an rmlo window or bankmenu as the generic window; the furniture list's rows as the item
 /// list (hover moves the row, a click on it is Enter, a right click Escape). The dressing windows have their own.
 pub fn pointer(w: &mut World, gu: &super::game_ui::GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::generic;
     let Some(l) = &w.layout else { return };
-    if l.dress.is_some() {
+    // The modern layer draws these and takes their mouse.
+    if l.dress.is_some() || w.modern {
         return;
     }
     let keys = |w: &mut World, _: &super::game_ui::GameUi, k: egui::Key| {

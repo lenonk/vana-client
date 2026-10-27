@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.024" x2="32" y2="58.975" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f39da5"/>
+      <stop offset="0.42" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#74262e"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32.198" y1="16.091" x2="32.198" y2="37.302" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32.198" y1="40.899" x2="32.198" y2="49.384" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+  </defs>
+  <title>aggro</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.311 4.279 C30.985 2.574 33.412 2.574 34.085 4.279 L37.696 13.422 L42.833 10.903 C44.126 10.269 45.653 11.151 45.751 12.588 L46.144 18.399 L54.755 17.531 C56.49 17.356 57.624 19.32 56.606 20.735 L51.588 27.705 L56.794 30.973 C58.059 31.767 58.059 33.616 56.794 34.41 L51.65 37.639 L57.368 45.055 C58.471 46.485 57.282 48.545 55.492 48.305 L46.067 47.043 L45.514 52.467 C45.374 53.842 43.925 54.678 42.665 54.112 L37.633 51.852 L34.048 59.808 C33.332 61.397 31.065 61.397 30.349 59.808 L26.819 51.975 L21.388 54.848 C20.068 55.546 18.467 54.621 18.412 53.128 L18.191 47.095 L8.537 48.532 C6.724 48.801 5.509 46.699 6.65 45.263 L12.763 37.567 L8.011 34.375 C6.816 33.573 6.816 31.81 8.011 31.007 L12.847 27.758 L7.791 20.735 C6.773 19.32 7.907 17.356 9.641 17.531 L18.187 18.393 L18.412 12.254 C18.467 10.761 20.068 9.837 21.388 10.535 L26.726 13.358 Z" fill="#0a1118"/>
+      <path id="burst" d="M32.198 5.024 L36.616 16.211 L43.726 12.725 L44.261 20.628 L54.959 19.549 L48.679 28.274 L55.715 32.691 L48.679 37.109 L55.761 46.294 L44.261 44.754 L43.496 52.261 L36.616 49.172 L32.198 58.975 L27.781 49.172 L20.44 53.054 L20.136 44.754 L8.239 46.525 L15.718 37.109 L9.143 32.691 L15.718 28.274 L9.438 19.549 L20.136 20.628 L20.44 12.328 L27.781 16.211 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.291" stroke-linejoin="round"/>
+      <path id="bar" d="M28.048 16.091 L36.348 16.091 L34.596 37.302 L29.801 37.302 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.107" stroke-linejoin="round"/>
+      <path id="dot" d="M36.441 45.141 C36.441 47.484 34.541 49.384 32.198 49.384 C29.856 49.384 27.956 47.484 27.956 45.141 C27.956 42.799 29.856 40.899 32.198 40.899 C34.541 40.899 36.441 42.799 36.441 45.141 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.107" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>
