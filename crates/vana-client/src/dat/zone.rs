@@ -435,6 +435,9 @@ pub fn parse_img(p: &[u8]) -> Result<Texture> {
     let mut dxt = None;
     let mut rgba = match flag {
         0xA1 => {
+            if p.len() < 69 {
+                bail!("IMG {name}: DXT header cut short");
+            }
             let kind = &p[57..61];
             let size = u32_at(p, 61) as usize;
             let data = p.get(69..69 + size).ok_or_else(|| anyhow::anyhow!("IMG {name}: DXT data out of range"))?;

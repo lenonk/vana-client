@@ -41,6 +41,7 @@ mod net;
 mod render;
 mod secret;
 mod sounddump;
+mod texpack;
 mod uishot;
 mod inventory;
 mod invshot;
@@ -223,6 +224,22 @@ enum Cmd {
         ids: Vec<u32>,
         #[arg(long)]
         random: Option<usize>,
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// Every stock image once (by content) as a PNG plus manifest.tsv, for an upscaler (texpack.rs).
+    TexExport {
+        #[arg(long)]
+        out: PathBuf,
+    },
+    /// A mod folder from upscaled PNGs: each file in the export's manifest rebuilt with its images as DXT.
+    TexPack {
+        /// The tex-export folder (its manifest.tsv).
+        #[arg(long)]
+        manifest: PathBuf,
+        /// The upscaled PNGs.
+        #[arg(long)]
+        upscaled: PathBuf,
         #[arg(long)]
         out: PathBuf,
     },
@@ -1421,6 +1438,8 @@ fn main() -> Result<()> {
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
         Cmd::TexDump { ids, random, out } => tex_dump(&ids, random, &out),
+        Cmd::TexExport { out } => texpack::export(&out),
+        Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
         Cmd::TopbarShot { out, fade, menu, menu_swap, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, menu_swap.as_deref(), target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),

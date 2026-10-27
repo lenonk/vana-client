@@ -1,0 +1,263 @@
+//! An upscaled texture pack from the game's own images (not retail; a mod made by us):
+//! `tex-export` saves every stock IMG chunk once (by content) as a PNG with a manifest of where each one goes;
+//! an upscaler (Upscayl) enlarges that folder; `tex-pack` rebuilds each file with its images at the new size as DXT,
+//! into a mod folder laid out like the game (dat/overlay.rs merges its images by name).
+
+use crate::dat::{self, zone::Texture};
+use anyhow::{Context, Result};
+use std::collections::HashMap;
+use std::io::Write;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Images drawn by pixel cells (menus, fonts, the Primer's pictures, maps): their files are left out.
+const SKIP_PREFIXES: [&str; 5] = ["menu", "font", "cntg", "map", "ex3_"];
+/// The largest side the client reads (dat::zone::parse_img).
+const MAX_SIDE: u32 = 4096;
+/// Threads for the CPU work (cores 12..15 stay free for the LSB server).
+const THREADS: usize = 12;
+
+/// A file's IMG chunks: (chunk index, the chunk's payload).
+fn images(bytes: &[u8]) -> Vec<(usize, &[u8])> {
+    dat::chunks(bytes).map_or(Vec::new(), |c| c.iter().enumerate().filter(|(_, c)| c.kind == 0x20).map(|(k, c)| (k, c.data)).collect())
+}
+
+fn image_name(p: &[u8]) -> String {
+    String::from_utf8_lossy(p.get(1..17).unwrap_or_default()).into_owned()
+}
+
+/// FNV-1a over the size and pixels: the key an image is saved under once.
+fn key(t: &Texture) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in t.width.to_le_bytes().iter().chain(&t.height.to_le_bytes()).chain(&t.rgba) {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+fn save_png(path: &Path, w: u32, h: u32, rgba: &[u8]) -> Result<()> {
+    let tmp = path.with_extension("part");
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&tmp)?), w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_compression(png::Compression::Fast);
+    enc.write_header()?.write_image_data(rgba)?;
+    std::fs::rename(&tmp, path)?;
+    Ok(())
+}
+
+fn load_png(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
+    let mut d = png::Decoder::new(std::io::BufReader::new(std::fs::File::open(path)?));
+    d.set_transformations(png::Transformations::normalize_to_color8() | png::Transformations::ALPHA);
+    let mut r = d.read_info()?;
+    let mut buf = vec![0u8; r.output_buffer_size().context("png size")?];
+    let info = r.next_frame(&mut buf)?;
+    buf.truncate(info.buffer_size());
+    anyhow::ensure!(info.color_type == png::ColorType::Rgba, "{}: not RGBA", path.display());
+    Ok((info.width, info.height, buf))
+}
+
+/// `tex-export`: every stock file's images (files with a skipped prefix left out) once each as `<key>.png` in `out`,
+/// and `manifest.tsv` (file id, chunk index, key, name).
+pub fn export(out: &Path) -> Result<()> {
+    let cfg = crate::config::Config::load();
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
+    std::fs::create_dir_all(out)?;
+    let n = index.len() as u32;
+    let next = std::sync::atomic::AtomicU32::new(0);
+    let rows = Mutex::new(Vec::new());
+    let seen: Mutex<std::collections::HashSet<String>> = Mutex::new(Default::default());
+    let (skipped, saved) = (std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0));
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                loop {
+                    let id = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if id >= n {
+                        break;
+                    }
+                    let Ok(bytes) = index.read(id) else { continue };
+                    let imgs = images(&bytes);
+                    if imgs.is_empty() {
+                        continue;
+                    }
+                    if imgs.iter().any(|(_, p)| SKIP_PREFIXES.iter().any(|x| image_name(p).starts_with(x))) {
+                        skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        continue;
+                    }
+                    for (k, p) in imgs {
+                        let Ok(t) = dat::zone::parse_img(p) else { continue };
+                        if t.width * 4 > MAX_SIDE || t.height * 4 > MAX_SIDE {
+                            continue;
+                        }
+                        let key = key(&t);
+                        rows.lock().unwrap().push(format!("{id}\t{k}\t{key}\t{}", t.name.trim()));
+                        if seen.lock().unwrap().insert(key.clone()) {
+                            let path = out.join(format!("{key}.png"));
+                            if !path.exists() && save_png(&path, t.width, t.height, &t.rgba).is_ok() {
+                                saved.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    });
+    let mut rows = rows.into_inner().unwrap();
+    rows.sort_by_key(|r| r.split('\t').take(2).map(|v| v.parse::<u64>().unwrap_or(0)).fold(0, |a, v| a * 1_000_000 + v));
+    let mut f = std::io::BufWriter::new(std::fs::File::create(out.join("manifest.tsv"))?);
+    for r in &rows {
+        writeln!(f, "{r}")?;
+    }
+    println!("{} image chunks, {} unique saved now, {} files skipped (UI, fonts, maps)", rows.len(), saved.into_inner(), skipped.into_inner());
+    Ok(())
+}
+
+/// An IMG chunk's payload at the upscaled size: the stock header (name, flags) with the new width and height, DXT1
+/// for a DXT1 original (its 1-bit alpha), else DXT3 with the PS2-style alpha (0x80 opaque) the client doubles.
+fn image_chunk(stock: &[u8], w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let dxt1 = stock[0] == 0xA1 && &stock[57..61] == b"1TXD";
+    let (format, kind, pitch) = if dxt1 { (texpresso::Format::Bc1, b"1TXD", w * 2) } else { (texpresso::Format::Bc2, b"3TXD", w * 4) };
+    let mut px = rgba.to_vec();
+    if !dxt1 {
+        for p in px.chunks_exact_mut(4) {
+            p[3] = (p[3] as u16).div_ceil(2) as u8;
+        }
+    }
+    let size = format.compressed_size(w as usize, h as usize);
+    let mut data = vec![0u8; size];
+    let params = texpresso::Params { algorithm: texpresso::Algorithm::ClusterFit, weigh_colour_by_alpha: !dxt1, ..Default::default() };
+    format.compress(&px, w as usize, h as usize, params, &mut data);
+    let mut out = stock[..57].to_vec();
+    out[0] = 0xA1;
+    out[21..25].copy_from_slice(&w.to_le_bytes());
+    out[25..29].copy_from_slice(&h.to_le_bytes());
+    out.extend_from_slice(kind);
+    out.extend_from_slice(&(size as u32).to_le_bytes());
+    out.extend_from_slice(&pitch.to_le_bytes());
+    out.extend_from_slice(&data);
+    out
+}
+
+/// A chunk with `payload` (the stock chunk's 16-byte header, its size word redone; padded to 16 bytes).
+fn chunk_bytes(stock_header: &[u8], payload: &[u8]) -> Vec<u8> {
+    let total = (16 + payload.len()).div_ceil(16) * 16;
+    let mut out = stock_header[..16].to_vec();
+    let word = u32::from_le_bytes(out[4..8].try_into().unwrap());
+    let word = (word & 0x7f) | (((total / 16) as u32) << 7);
+    out[4..8].copy_from_slice(&word.to_le_bytes());
+    out.extend_from_slice(payload);
+    out.resize(total, 0);
+    out
+}
+
+/// `tex-pack`: each manifest file rebuilt from the stock one with its upscaled images (`up`: `<key>.png`, any upscaler's
+/// name suffix allowed) into `out/ROM*/dir/file.DAT`. Files already built are kept (it can resume).
+pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
+    let cfg = crate::config::Config::load();
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
+    let stock_root = cfg.ffxi_dir();
+    // The upscaled files by key (the name up to the first '_' or '.').
+    let mut by_key: HashMap<String, PathBuf> = HashMap::new();
+    for e in std::fs::read_dir(up)?.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".png") {
+            by_key.insert(name.split(['_', '.']).next().unwrap_or_default().to_string(), e.path());
+        }
+    }
+    let mut files: Vec<(u32, Vec<(usize, String)>)> = Vec::new();
+    for line in std::fs::read_to_string(manifest_dir.join("manifest.tsv"))?.lines() {
+        let f: Vec<&str> = line.split('\t').collect();
+        let (Ok(id), Ok(k)) = (f[0].parse::<u32>(), f[1].parse::<usize>()) else { continue };
+        match files.last_mut() {
+            Some((last, v)) if *last == id => v.push((k, f[2].to_string())),
+            _ => files.push((id, vec![(k, f[2].to_string())])),
+        }
+    }
+    // Ids sharing a file: built once.
+    let mut paths = std::collections::HashSet::new();
+    files.retain(|(id, _)| index.path(*id).is_some_and(|p| paths.insert(p)));
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let (built, missing) = (std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0));
+    std::thread::scope(|s| {
+        for _ in 0..THREADS {
+            s.spawn(|| {
+                loop {
+                    let i = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    let Some((id, wanted)) = files.get(i) else { break };
+                    let Some(stock) = index.path(*id) else { continue };
+                    let Ok(rel) = stock.strip_prefix(&stock_root) else { continue };
+                    let dest = out.join(rel);
+                    if dest.exists() {
+                        continue;
+                    }
+                    let Ok(bytes) = std::fs::read(&stock) else { continue };
+                    let Ok(chunks) = dat::chunks(&bytes) else { continue };
+                    let keys: HashMap<usize, &String> = wanted.iter().map(|(k, key)| (*k, key)).collect();
+                    let mut outb = Vec::with_capacity(bytes.len() * 8);
+                    let mut changed = false;
+                    for (k, c) in chunks.iter().enumerate() {
+                        let header = &bytes[c.offset..c.offset + 16];
+                        let end = c.offset + 16 + c.data.len();
+                        let up = keys.get(&k).and_then(|key| by_key.get(*key));
+                        match up.map(|p| load_png(p)) {
+                            Some(Ok((w, h, rgba))) if w <= MAX_SIDE && h <= MAX_SIDE => {
+                                outb.extend(chunk_bytes(header, &image_chunk(c.data, w, h, &rgba)));
+                                changed = true;
+                            }
+                            _ => {
+                                if keys.contains_key(&k) {
+                                    missing.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                                }
+                                outb.extend_from_slice(&bytes[c.offset..end]);
+                            }
+                        }
+                    }
+                    if !changed {
+                        continue;
+                    }
+                    if let Some(dir) = dest.parent() {
+                        let _ = std::fs::create_dir_all(dir);
+                    }
+                    let tmp = dest.with_extension("part");
+                    if std::fs::write(&tmp, &outb).is_ok() && std::fs::rename(&tmp, &dest).is_ok() {
+                        let n = built.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+                        if n % 500 == 0 {
+                            println!("{n} files built");
+                        }
+                    }
+                }
+            });
+        }
+    });
+    println!("{} files built, {} images had no upscaled copy (kept stock)", built.into_inner(), missing.into_inner());
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chunk_round_trip() {
+        // A 4x4 DXT3 stock image becomes an 8x8 one the client reads back at that size.
+        let mut stock = vec![0u8; 69 + 16];
+        stock[0] = 0xA1;
+        stock[1..17].copy_from_slice(b"tim     testtex ");
+        stock[21..25].copy_from_slice(&4u32.to_le_bytes());
+        stock[25..29].copy_from_slice(&4u32.to_le_bytes());
+        stock[31] = 8;
+        stock[57..61].copy_from_slice(b"3TXD");
+        stock[61..65].copy_from_slice(&16u32.to_le_bytes());
+        let rgba: Vec<u8> = (0..64).flat_map(|i| [i as u8 * 4, 128, 255 - i as u8 * 4, 255]).collect();
+        let p = image_chunk(&stock, 8, 8, &rgba);
+        let t = dat::zone::parse_img(&p).unwrap();
+        assert_eq!((t.width, t.height, t.name.trim()), (8, 8, "tim     testtex".trim()));
+        assert!(t.rgba.chunks(4).all(|px| px[3] >= 254));
+        let header = [b'i', b'm', b'g', b'1', 0x20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let c = chunk_bytes(&header, &p);
+        assert_eq!(c.len() % 16, 0);
+        let parsed = dat::chunks(&c).unwrap();
+        assert_eq!((parsed[0].kind, parsed[0].data.len() >= p.len()), (0x20, true));
+    }
+}
