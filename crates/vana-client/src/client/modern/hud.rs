@@ -516,6 +516,15 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     // ptw0 ("Solo") while our party has no leader.
     let title = if party.len() <= 1 && w.party.slots().leaders[0] == 0 { "Solo" } else { "Party" };
     let mut picked = party_panel(p, "party", title, &party, small, super::super::resttick::shown(w));
+    // FUN_102041d0: while the pool holds items, retail's chest (fontshp 0x7a) on the party window's top edge near its
+    // left end.
+    if super::super::treasure::count(w) > 0
+        && let (Some(gu), Some(r)) = (p.gu, p.this.get("party").copied())
+        && let Some(t) = p.m.sprite_icon(p.ctx, gu, "font    fontshp", 0x7a)
+    {
+        let at = Rect::from_min_size(pos2(r.min.x + 14.0, r.min.y - 12.0), vec2(26.0, 26.0));
+        p.over("party").image(t, at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+    }
     for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
         if let Some(rows) = rows {
             picked = picked.or(party_panel(p, id, "Alliance", rows, small, None));

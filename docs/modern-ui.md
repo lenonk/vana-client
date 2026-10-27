@@ -299,6 +299,12 @@ Milestone 1:
   Left / Right), Right or Enter go to the rows, Left or Escape back (World::journal_on_list; the cursor of the column
   without the keys dims). The macro book list, both pages as one column, runs Up / Down across them (Left / Right do
   nothing there).
+- The treasure pool (2026-10-27, modern/loot.rs over treasure.rs): one panel docked on the action menu, the pool's rows
+  oldest first (icon, name and count, the best lot and its lotter, ours or "Passed"), Lot / Pass on the cursor's row
+  (lootope's choices, lit while it is open; once lotted our lot stands where Lot was), "Pass on the rest" (lnowin).
+  Retail's keys stay (Enter, Up / Down, Num+ to lnowin); hover moves the cursor, a click on a button acts. The party
+  window shows retail's chest (fontshp 0x7a) on its top edge while the pool holds items. Live with a bot in the party
+  (a solo pool hands items out at once) and !addtreasure.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

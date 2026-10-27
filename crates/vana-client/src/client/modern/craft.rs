@@ -104,7 +104,7 @@ fn grid(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, s
 }
 
 /// A button in the pack's frame: lit under the cursor, grey when off; true when clicked.
-fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, lit: bool, off: bool) -> bool {
+pub(super) fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, lit: bool, off: bool) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
     let face = match () {
         _ if off => "controls/button_disabled",
