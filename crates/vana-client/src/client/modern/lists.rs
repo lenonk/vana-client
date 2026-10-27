@@ -95,6 +95,10 @@ impl Mouse {
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
+    // Set Spells suspends the magic list and its sort window (the window walk), as retail's.
+    if w.bluset.is_some() {
+        return;
+    }
     let s = listsearch::suggestions(w);
     cats(p, w, &s);
     list(p, w, &s);

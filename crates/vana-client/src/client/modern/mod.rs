@@ -6,6 +6,7 @@
 //! as screen fractions. The chat window also resizes by its corner grip: more room for the lines, nothing scaled.
 
 mod auction;
+mod bluset;
 mod chat;
 mod combat;
 mod command;
@@ -191,6 +192,7 @@ impl Modern {
         post::draw(&mut p, w);
         inspect::draw(&mut p, w);
         minor::draw(&mut p, w);
+        bluset::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {

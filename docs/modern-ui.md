@@ -362,6 +362,13 @@ Milestone 1:
   in the command window's place (Help Desk's faqsub waits under it), guide01's arrows as < / > buttons beside the
   category's name; a topic's page stays the map window's (mode 7, 2x by default as retail's), the lists hidden while it
   is up. Live: /primer, a category, a topic's page and back, > to the next category, a row click opening its page.
+- Set Spells (2026-10-27, modern/bluset.rs over bluset.rs): one panel in the command window's place (the magic list
+  waits under it, as retail's window walk suspends it): the points used / total in the title, the slots (their numbers
+  in the band colours, the spell's icon and name) beside the known spells (Type, Remove All, every spell in its tint:
+  picked orange, set green, too dear or too high grey), the cursor spell's help under them; Refine by Type's families
+  (the layout's own captions) in the spells' place while it is open. A row of the other list takes a click while
+  nothing is picked (its focus moves first, as Num+). Live on Lnxcsfix as BLU 75 (back to WAR 22 after): the lists,
+  the help, Undead filtered, a spell picked and dropped; nothing set.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
