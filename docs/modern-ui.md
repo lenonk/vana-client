@@ -299,6 +299,8 @@ Milestone 1:
   Left / Right), Right or Enter go to the rows, Left or Escape back (World::journal_on_list; the cursor of the column
   without the keys dims). The macro book list, both pages as one column, runs Up / Down across them (Left / Right do
   nothing there).
+- A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
+  2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
   Linkshell, Linkshell 2, Assist E, Assist J, Unity, Shout; each chat line keeps its mode (combat.rs ChatLog).
 - The mouse, both interfaces (user, 2026-10-26: as modern MMOs; clicks unchanged): a drag holds the pointer hidden

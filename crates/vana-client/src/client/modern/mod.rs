@@ -543,6 +543,11 @@ impl<'a> Panels<'a> {
                 pos.x = right + 8.0;
             }
         }
+        // A panel running past the screen's bottom rises until it fits (its place stays): rows under the edge could be
+        // walked to but not seen.
+        if o.at.is_none() && o.height.is_none() && !BOTTOM.contains(&id) && h > 0.0 {
+            pos.y = pos.y.min(screen.max.y - h).max(screen.min.y);
+        }
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
