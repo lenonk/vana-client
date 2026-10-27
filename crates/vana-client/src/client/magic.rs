@@ -290,7 +290,9 @@ pub(super) fn remember(w: &mut World) {
 /// FUN_1022b220: the magic list, built and opened.
 pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
     let rows = magic_rows(w, ty, list_mode, exclude);
-    let mut win = ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false, sort: None, sort_focus: None, ask: None, manual: 0, picked: 0 };
+    // Ours: the modern UI gives every magic list its sort window (retail: mgcmenu's list mode only, attached below).
+    let sort = w.modern.then_some(if ty == 6 { "menu    blusortw" } else { "menu    mgcsortw" });
+    let mut win = ListWin { kind: Kind::Magic, ty, exclude, list_mode, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 };
     recall(w, &mut win);
     w.magic = Some(win);
     w.menu = None;
@@ -305,7 +307,9 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
 /// passed on to sub-lists and the Escape back to the parent).
 pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     let rows = ability_rows(w, ty);
-    let sort = sortable.then_some("menu    abisortw");
+    // Ours: the modern UI sorts Job Abilities, Weapon Skills and their sub-lists however they were opened.
+    let parent = ABILITY_TYPES.get(ty as usize).map_or(0, |t| t.0);
+    let sort = (sortable || (w.modern && (matches!(ty, 1 | 3) || matches!(parent, 1 | 3)))).then_some("menu    abisortw");
     let mut win = ListWin { kind: Kind::Ability, ty, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 };
     recall(w, &mut win);
     w.ability = Some(win);
@@ -328,7 +332,7 @@ pub(super) fn mount_rows(w: &World) -> Vec<u16> {
 /// in mode 10. Kept in `w.ability` (type 0xfffe for the cursor memory).
 pub fn open_mount(w: &mut World, sortable: bool) {
     let rows = mount_rows(w);
-    let sort = sortable.then_some("menu    abisortw");
+    let sort = (sortable || w.modern).then_some("menu    abisortw");
     let mut win = ListWin { kind: Kind::Mount, ty: 0xfffe, exclude: 0, list_mode: false, rows, scroll: 0, cursor: 0, hidden: false, sort, sort_focus: None, ask: None, manual: 0, picked: 0 };
     recall(w, &mut win);
     w.ability = Some(win);
