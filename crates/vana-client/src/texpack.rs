@@ -116,18 +116,33 @@ pub fn export(out: &Path) -> Result<()> {
 /// An IMG chunk's payload at the upscaled size: the stock header (name, flags) with the new width and height, DXT1
 /// for a DXT1 original (its 1-bit alpha), else DXT3 with the PS2-style alpha (0x80 opaque) the client doubles.
 fn image_chunk(stock: &[u8], w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
-    let dxt1 = stock[0] == 0xA1 && &stock[57..61] == b"1TXD";
-    let (format, kind, pitch) = if dxt1 { (texpresso::Format::Bc1, b"1TXD", w * 2) } else { (texpresso::Format::Bc2, b"3TXD", w * 4) };
+    image_chunk_from(stock, w, h, &encode(is_dxt1(stock), w, h, rgba))
+}
+
+fn is_dxt1(stock: &[u8]) -> bool {
+    stock[0] == 0xA1 && &stock[57..61] == b"1TXD"
+}
+
+/// The pixels as DXT1, or DXT3 with the alpha halved.
+fn encode(dxt1: bool, w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let format = if dxt1 { texpresso::Format::Bc1 } else { texpresso::Format::Bc2 };
     let mut px = rgba.to_vec();
     if !dxt1 {
         for p in px.chunks_exact_mut(4) {
             p[3] = (p[3] as u16).div_ceil(2) as u8;
         }
     }
-    let size = format.compressed_size(w as usize, h as usize);
-    let mut data = vec![0u8; size];
+    let mut data = vec![0u8; format.compressed_size(w as usize, h as usize)];
     let params = texpresso::Params { algorithm: texpresso::Algorithm::ClusterFit, weigh_colour_by_alpha: !dxt1, ..Default::default() };
     format.compress(&px, w as usize, h as usize, params, &mut data);
+    data
+}
+
+/// The chunk payload around encoded `data`.
+fn image_chunk_from(stock: &[u8], w: u32, h: u32, data: &[u8]) -> Vec<u8> {
+    let dxt1 = is_dxt1(stock);
+    let (kind, pitch) = if dxt1 { (b"1TXD", w * 2) } else { (b"3TXD", w * 4) };
+    let size = data.len();
     let mut out = stock[..57].to_vec();
     out[0] = 0xA1;
     out[21..25].copy_from_slice(&w.to_le_bytes());
@@ -135,8 +150,30 @@ fn image_chunk(stock: &[u8], w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
     out.extend_from_slice(kind);
     out.extend_from_slice(&(size as u32).to_le_bytes());
     out.extend_from_slice(&pitch.to_le_bytes());
-    out.extend_from_slice(&data);
+    out.extend_from_slice(data);
     out
+}
+
+/// An image's encoding, made once per key and format (files share images): `cache/<key>.bc1|bc2` holds w, h, data.
+fn encoded(cache: &Path, key: &str, png: &Path, dxt1: bool) -> Result<(u32, u32, Vec<u8>)> {
+    let path = cache.join(format!("{key}.{}", if dxt1 { "bc1" } else { "bc2" }));
+    if let Ok(b) = std::fs::read(&path)
+        && b.len() > 8
+    {
+        return Ok((u32::from_le_bytes(b[0..4].try_into()?), u32::from_le_bytes(b[4..8].try_into()?), b[8..].to_vec()));
+    }
+    let (w, h, rgba) = load_png(png)?;
+    anyhow::ensure!(w <= MAX_SIDE && h <= MAX_SIDE, "{key}: {w}x{h} too large");
+    let data = encode(dxt1, w, h, &rgba);
+    let mut b = Vec::with_capacity(8 + data.len());
+    b.extend_from_slice(&w.to_le_bytes());
+    b.extend_from_slice(&h.to_le_bytes());
+    b.extend_from_slice(&data);
+    let tmp = path.with_extension(format!("part{:?}", std::thread::current().id()).replace(['(', ')'], ""));
+    if std::fs::write(&tmp, &b).is_ok() {
+        let _ = std::fs::rename(&tmp, &path);
+    }
+    Ok((w, h, data))
 }
 
 /// A chunk with `payload` (the stock chunk's 16-byte header, its size word redone; padded to 16 bytes).
@@ -152,7 +189,8 @@ fn chunk_bytes(stock_header: &[u8], payload: &[u8]) -> Vec<u8> {
 }
 
 /// `tex-pack`: each manifest file rebuilt from the stock one with its upscaled images (`up`: `<key>.png`, any upscaler's
-/// name suffix allowed) into `out/ROM*/dir/file.DAT`. Files already built are kept (it can resume).
+/// name suffix allowed) into `out/ROM*/dir/file.DAT`. Files already built are kept and every encoding is cached in
+/// `<manifest>/encoded`, so it can resume.
 pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
     let cfg = crate::config::Config::load();
     let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
@@ -177,6 +215,8 @@ pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
     // Ids sharing a file: built once.
     let mut paths = std::collections::HashSet::new();
     files.retain(|(id, _)| index.path(*id).is_some_and(|p| paths.insert(p)));
+    let cache = manifest_dir.join("encoded");
+    std::fs::create_dir_all(&cache)?;
     let next = std::sync::atomic::AtomicUsize::new(0);
     let (built, missing) = (std::sync::atomic::AtomicU32::new(0), std::sync::atomic::AtomicU32::new(0));
     std::thread::scope(|s| {
@@ -199,10 +239,10 @@ pub fn pack(manifest_dir: &Path, up: &Path, out: &Path) -> Result<()> {
                     for (k, c) in chunks.iter().enumerate() {
                         let header = &bytes[c.offset..c.offset + 16];
                         let end = c.offset + 16 + c.data.len();
-                        let up = keys.get(&k).and_then(|key| by_key.get(*key));
-                        match up.map(|p| load_png(p)) {
-                            Some(Ok((w, h, rgba))) if w <= MAX_SIDE && h <= MAX_SIDE => {
-                                outb.extend(chunk_bytes(header, &image_chunk(c.data, w, h, &rgba)));
+                        let up = keys.get(&k).and_then(|key| by_key.get(*key).map(|p| (key, p)));
+                        match up.map(|(key, p)| encoded(&cache, key, p, is_dxt1(c.data))) {
+                            Some(Ok((w, h, data))) => {
+                                outb.extend(chunk_bytes(header, &image_chunk_from(c.data, w, h, &data)));
                                 changed = true;
                             }
                             _ => {
