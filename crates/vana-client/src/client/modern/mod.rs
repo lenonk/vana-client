@@ -26,6 +26,7 @@ mod minor;
 mod paint;
 pub mod plates;
 mod points;
+mod rows;
 mod post;
 mod shop;
 mod social;
@@ -55,6 +56,8 @@ pub struct Modern {
     /// The chat window's tab and whether its settings are open; game textures (status icons) as egui textures, by key.
     chat_tab: std::cell::Cell<u8>,
     chat_settings: std::cell::Cell<bool>,
+    /// How menu rows look (rows.rs).
+    row_style: std::cell::Cell<rows::Style>,
     images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
     /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
     grid: std::cell::RefCell<(Option<std::time::Instant>, String)>,
@@ -108,6 +111,7 @@ impl Modern {
             art: Art::load(ctx),
             chat_tab: Default::default(),
             chat_settings: Default::default(),
+            row_style: Default::default(),
             images: Default::default(),
             grid: Default::default(),
             marquee: Default::default(),

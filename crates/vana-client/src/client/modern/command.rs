@@ -3,9 +3,8 @@
 //! (client/mod.rs's menu dispatch) through `World::menu_click`.
 
 use super::super::{World, menu_disabled_on, monstrosity};
-use super::{Panels, Title, paint};
+use super::{Panels, Title};
 use crate::audio::Ui as Se;
-use egui::{Align2, Color32, FontFamily, FontId, Sense, vec2};
 
 /// A row: its label, the pack's icon, and the retail row it runs (page, child) or the submenu it opens.
 pub struct Entry {
@@ -60,6 +59,12 @@ const TOP: &[Entry] = &[
     row("Synthesis", "icons/craft", 0, 10),
     Entry { label: "System", icon: "icons/system", kind: Kind::Sub(SYSTEM) },
 ];
+
+/// The top level's and Journal's rows (label, icon, opens a submenu), for modern-shot's row comparison.
+pub(super) fn sample() -> [Vec<(&'static str, &'static str, bool)>; 2] {
+    let rows = |l: &[Entry]| l.iter().map(|e| (e.label, e.icon, matches!(e.kind, Kind::Sub(_)))).collect();
+    [rows(TOP), rows(JOURNAL)]
+}
 
 /// The menu's cursor: the top row, and the submenu's row while one is open.
 #[derive(Clone, Copy, Debug, Default)]
@@ -167,38 +172,14 @@ fn pick(w: &mut World, e: &Entry) {
 fn rows(ui: &mut egui::Ui, m: &super::Modern, w: &World, list: &[Entry], cursor: Option<usize>, open: Option<usize>) -> (Option<usize>, Option<usize>) {
     let (mut clicked, mut hovered) = (None, None);
     for (k, e) in list.iter().enumerate() {
-        let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
-        let off = disabled(w, e);
-        let sprite = if off {
-            "controls/list_row_disabled"
-        } else if cursor == Some(k) || open == Some(k) {
-            "controls/list_row_selected"
-        } else if resp.hovered() {
-            "controls/list_row_hover"
-        } else {
-            "controls/list_row_normal"
-        };
-        let p = ui.painter();
-        if let Some(s) = m.art.sprite(sprite) {
-            p.add(paint::nine_slice(&s, r, r.height() / s.size.y, Color32::WHITE));
-        }
-        if let Some(s) = m.art.sprite(e.icon) {
-            p.add(paint::image(&s, egui::pos2(r.min.x + 20.0, r.center().y - 11.0), 22.0, if off { Color32::from_gray(110) } else { Color32::WHITE }));
-        }
-        let colour = if off { m.theme.color("muted") } else { m.theme.color("text") };
-        p.text(egui::pos2(r.min.x + 50.0, r.center().y), Align2::LEFT_CENTER, label(w, e), FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), colour);
-        if matches!(e.kind, Kind::Sub(_))
-            && let Some(s) = m.art.sprite("controls/arrow_right")
-        {
-            p.add(paint::image(&s, egui::pos2(r.max.x - 26.0, r.center().y - 8.0), 16.0, Color32::WHITE));
-        }
+        let on = cursor == Some(k) || open == Some(k);
+        let resp = super::rows::menu_row(ui, m, e.icon, label(w, e), on, disabled(w, e), matches!(e.kind, Kind::Sub(_)), false);
         if resp.clicked() {
             clicked = Some(k);
         }
         if resp.hovered() {
             hovered = Some(k);
         }
-        ui.add_space(2.0);
     }
     (clicked, hovered)
 }

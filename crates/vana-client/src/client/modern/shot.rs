@@ -42,6 +42,27 @@ fn list_sample(p: &mut Panels) {
     });
 }
 
+/// The main menu as command.rs draws it, Journal open with its submenu: a hovered row, one disabled.
+fn menu_sample(p: &mut Panels) {
+    let m = p.m;
+    let [top, journal] = super::command::sample();
+    let at = p.ctx.content_rect().right_top() + vec2(-290.0, 60.0);
+    let mut rect = None;
+    p.panel_at("command", Some(super::Title { icon: None, text: "Menu", note: None }), 250.0, at, |ui| {
+        let r = ui.min_rect();
+        for (label, icon, sub) in &top {
+            super::rows::menu_row(ui, m, icon, label, *label == "Journal", false, *sub, *label == "Magic");
+        }
+        rect = Some(r);
+    });
+    let Some(r) = rect else { return };
+    p.panel_at("command sub", Some(super::Title { icon: Some("icons/quest_log"), text: "Journal", note: None }), 250.0, pos2(r.min.x - 274.0, r.min.y - 12.0), |ui| {
+        for (label, icon, sub) in &journal {
+            super::rows::menu_row(ui, m, icon, label, *label == "Quests", *label == "Key Items", *sub, false);
+        }
+    });
+}
+
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let top = crate::client::hudtop::TopView {
         title: "Status".into(),
@@ -88,8 +109,11 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.list {
         list_sample(&mut p);
     }
+    if opts.rows.is_some() {
+        menu_sample(&mut p);
+    }
     *m.rects.borrow_mut() = std::mem::take(&mut p.this);
-    if opts.list {
+    if opts.list || opts.rows.is_some() {
         return;
     }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
@@ -114,6 +138,8 @@ pub struct Opts {
     pub chat_font: f32,
     pub font: Option<(std::path::PathBuf, std::path::PathBuf)>,
     pub list: bool,
+    /// A menu row style by name (rows.rs): the main menu and a submenu drawn in it.
+    pub rows: Option<String>,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
@@ -132,6 +158,9 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     let view = target.create_view(&Default::default());
     let ctx = egui::Context::default();
     let m = Modern::new(&ctx);
+    if let Some(name) = &opts.rows {
+        m.row_style.set(super::rows::Style::from_name(name).with_context(|| format!("no row style {name}"))?);
+    }
     if let Some((r, s)) = &opts.font {
         super::theme::install_fonts_with(&ctx, Some((std::fs::read(r)?, std::fs::read(s)?)));
     }
