@@ -2133,7 +2133,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
-        let row = event::choice(world).and_then(|_| {
+        // The modern layer's choice panel takes its own clicks.
+        let row = event::choice(world).filter(|_| !world.modern).and_then(|_| {
             let r = gu.window_rect("menu    query", sw, sh)?;
             let p = input.pointer?;
             gu.children("menu    query").iter().position(|c| inside(&[r[0] + c[0], r[1] + c[1], c[2].max(132.0), c[3].max(16.0)], p))
@@ -2142,7 +2143,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
 
     // Mog House door menu rows (child n of mogdoor): hover moves the cursor, a click picks.
-    let door_rows: Vec<[f32; 4]> = match (&world.mogdoor, gu.window_xy(myroom::WINDOW, sw, sh)) {
+    let door_rows: Vec<[f32; 4]> = match (world.mogdoor.as_ref().filter(|_| !world.modern), gu.window_xy(myroom::WINDOW, sw, sh)) {
         (Some(m), Some((wx, wy))) => gu.children(myroom::WINDOW).iter().take(m.rows()).map(|c| [wx + c[0], wy + c[1], c[2].max(120.0), c[3].max(16.0)]).collect(),
         _ => Vec::new(),
     };
@@ -2797,7 +2798,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.push([0.0, 0.0, sw, sh]);
     }
     // The choice menu (FUN_100b0960): question at the top, three option rows with the anc_s hand.
-    if let Some(c) = event::choice(world)
+    if let Some(c) = event::choice(world).filter(|_| !world.modern)
         && let Some((qx, qy)) = gu.window("menu    query", sw, sh)
     {
         let (question, options, scroll, cursor) = (c.question.clone(), c.options.clone(), c.scroll, c.cursor);
@@ -2822,34 +2823,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         blockers.extend(gu.window_rect(crate::render::screens::menu_window(world.menu_page), sw, sh));
     }
     // FUN_101d62b0: the door menu, title group 9 0x45 and its rows 0x14 to the right of child n.
-    if let Some(m) = &world.mogdoor
+    if let Some(m) = world.mogdoor.as_ref().filter(|_| !world.modern)
         && let Some((wx, wy)) = gu.window(myroom::WINDOW, sw, sh)
     {
         let kids = gu.children(myroom::WINDOW);
-        let g9 = |id: usize| world.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
-        gu.text(&g9(0x45), wx + 3.0, wy + 3.0, 0, WHITE);
-        let rows: Vec<(usize, String, [u8; 4])> = if m.list {
-            let names = world.names.clone();
-            myroom::areas(m.bit)
-                .iter()
-                .enumerate()
-                .map(|(k, &z)| {
-                    let name = names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).unwrap_or_default();
-                    let c = if z == 0x118 && !m.garden { [0x40, 0x20, 0x40, 0x80] } else { WHITE };
-                    (k, name, c)
-                })
-                .collect()
-        } else {
-            myroom::ROWS
-                .iter()
-                .enumerate()
-                .map(|(k, &(child, id))| {
-                    let id = if k == 1 && world.mh_owner != 0 { 0xf1 } else { id };
-                    let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
-                    (child as usize - 1, g9(id), c)
-                })
-                .collect()
-        };
+        let (title, rows) = mogdoor_rows(world);
+        gu.text(&title, wx + 3.0, wy + 3.0, 0, WHITE);
         for (k, (child, text, c)) in rows.iter().enumerate() {
             let Some(r) = kids.get(*child) else { continue };
             let (x, y) = (wx + r[0] + 20.0, wy + r[1]);
@@ -3453,6 +3432,35 @@ fn open_mogdoor(w: &mut World) {
 }
 
 /// FUN_101d6540 on a choice.
+/// The door menu's title (group 9 0x45) and rows: (child - 1, text, colour); the exit areas while choosing one.
+fn mogdoor_rows(world: &World) -> (String, Vec<(usize, String, [u8; 4])>) {
+    let g9 = |id: usize| world.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
+    let Some(m) = &world.mogdoor else { return (String::new(), Vec::new()) };
+    let rows = if m.list {
+        let names = world.names.clone();
+        myroom::areas(m.bit)
+            .iter()
+            .enumerate()
+            .map(|(k, &z)| {
+                let name = names.as_ref().and_then(|n| crate::dat::names::NameSource::place(&**n, z as u32)).unwrap_or_default();
+                let c = if z == 0x118 && !m.garden { [0x40, 0x20, 0x40, 0x80] } else { WHITE };
+                (k, name, c)
+            })
+            .collect()
+    } else {
+        myroom::ROWS
+            .iter()
+            .enumerate()
+            .map(|(k, &(child, id))| {
+                let id = if k == 1 && world.mh_owner != 0 { 0xf1 } else { id };
+                let c = if k == 2 && !m.floors { [0x40, 0x40, 0x40, 0x80] } else { WHITE };
+                (child as usize - 1, g9(id), c)
+            })
+            .collect()
+    };
+    (g9(0x45), rows)
+}
+
 fn mogdoor_pick(w: &mut World) {
     let Some(m) = w.mogdoor.as_mut() else { return };
     match m.pick() {

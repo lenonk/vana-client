@@ -377,6 +377,11 @@ Milestone 1:
   pupequip as a column in the command window's place; while fishing the fish's gauge is a labelled bar ("Fish", grey
   at 0) at retail's place, the screen's centre at 0.2 H (not seen live yet). Live: pupequip on Lnxcsfix as PUP 30 (back
   to WAR 22 after), Master by the mouse opening the Equipment screen.
+- Event choices and the Mog House door menu (2026-10-27, modern/mod.rs log_list): stacked on the chat window as the
+  confirm is, the question and every option with the log's in-line colours (the concierge's green "linkpearls"), the
+  cursor's lit and kept in view; hover moves it, a click picks; the keys stay retail's. The door menu's rows come from
+  client/mod.rs mogdoor_rows, shared with the retail draw (not seen live: LSB gives Lnxcsfix's house no exit bit, so
+  the door asks Yes / No). Live: the Bastok Mines concierge's choice by keys and mouse, Escape cancelling.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

@@ -203,6 +203,8 @@ impl Modern {
             }
         }
         confirm(&mut p, w);
+        choice(&mut p, w);
+        mogdoor(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -402,6 +404,91 @@ fn confirm(p: &mut Panels, w: &mut World) {
     if let Some(v) = click {
         w.confirm_click = Some(v);
         w.sounds.push(crate::audio::Ui::Select as u32);
+    }
+}
+
+/// A list stacked on the log as comyn is (an event's choice, the Mog House door menu): the question and every row in
+/// its colour (in-line colour codes as the log's), the cursor's lit and kept in view. (hovered, clicked).
+fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])], cursor: usize, free: bool) -> (Option<usize>, Option<usize>) {
+    const W: f32 = 460.0;
+    const ROW: f32 = 28.0;
+    let m = p.m;
+    let screen = p.ctx.content_rect();
+    let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
+    let h = m.rects.borrow().get(id).map_or(160.0, |r| r.height());
+    let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
+    let moved = p.ctx.input(|i| i.pointer.delta() != Vec2::ZERO);
+    let (mut hover, mut click) = (None, None);
+    p.panel_at(id, None, W, at, |ui| {
+        let font = FontId::proportional(m.theme.ui);
+        let job = |t: &str, base: [u8; 4], wrap: f32| chat::line_job(("", Color32::WHITE), t, base, &font, wrap);
+        if !question.is_empty() {
+            ui.label(job(question, [0x80; 4], W - 44.0));
+            ui.add_space(6.0);
+        }
+        let seen = egui::Id::unique((id, "log list cursor seen"));
+        let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
+        ui.ctx().data_mut(|d| d.insert_temp(seen, cursor));
+        egui::ScrollArea::vertical().id_salt((id, "rows")).max_height(8.0 * (ROW + 2.0)).auto_shrink([false, true]).show(ui, |ui| {
+            for (k, (text, base)) in rows.iter().enumerate() {
+                let (r, resp) = ui.allocate_exact_size(vec2(W - 58.0, ROW), Sense::click());
+                let face = match () {
+                    _ if k == cursor => "controls/list_row_selected",
+                    _ if resp.hovered() => "controls/list_row_hover",
+                    _ => "controls/list_row_normal",
+                };
+                if let Some(s) = m.art.sprite(face) {
+                    ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+                }
+                let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
+                let g = ui.painter().layout_job(job(text, *base, f32::INFINITY));
+                ui.painter().with_clip_rect(clip).galley(pos2(r.min.x + 24.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
+                if k == cursor && follow {
+                    ui.scroll_to_rect(r, None);
+                }
+                if free && resp.hovered() && moved {
+                    hover = Some(k);
+                }
+                if free && resp.clicked() {
+                    click = Some(k);
+                }
+                ui.add_space(2.0);
+            }
+        });
+    });
+    (hover, click)
+}
+
+/// An event's choice (retail's query): its keys stay retail's (event.rs). Hovering moves the cursor, a click picks.
+fn choice(p: &mut Panels, w: &mut World) {
+    let Some(c) = super::event::choice(w) else { return };
+    let rows: Vec<(String, [u8; 4])> = c.options.iter().map(|o| (o.1.clone(), [0x80; 4])).collect();
+    let (question, cursor) = (c.question.clone(), c.cursor);
+    let (hover, click) = log_list(p, "choice", &question, &rows, cursor, w.confirm.is_none());
+    for k in hover.into_iter().chain(click) {
+        if super::event::set_choice(w, k) {
+            w.sounds.push(crate::audio::Ui::Cursor as u32);
+        }
+    }
+    if click.is_some() {
+        super::event::key(w, egui::Key::Enter);
+    }
+}
+
+/// The Mog House door menu (FUN_101d62b0): its title and rows (the exit areas while choosing one).
+fn mogdoor(p: &mut Panels, w: &mut World) {
+    let Some(sel) = w.mogdoor.as_ref().map(|m| m.sel) else { return };
+    let (title, rows) = super::mogdoor_rows(w);
+    let rows: Vec<(String, [u8; 4])> = rows.into_iter().map(|r| (r.1, r.2)).collect();
+    let (hover, click) = log_list(p, "mogdoor", &title, &rows, sel, w.confirm.is_none());
+    if let Some(m) = w.mogdoor.as_mut()
+        && let Some(k) = hover.or(click).filter(|&k| k != m.sel)
+    {
+        m.sel = k;
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+    if click.is_some() {
+        super::mogdoor_pick(w);
     }
 }
 

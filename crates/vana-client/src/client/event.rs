@@ -2102,6 +2102,13 @@ pub fn choice(w: &World) -> Option<&Choice> {
     w.event.as_ref()?.st.choice.as_ref()
 }
 
+/// The mouse's cursor move onto option `k` (the view follows, as a step). True when it moved.
+pub(super) fn set_choice(w: &mut World, k: usize) -> bool {
+    let Some(c) = w.event.as_mut().and_then(|l| l.st.choice.as_mut()).filter(|c| c.cursor != k && k < c.options.len()) else { return false };
+    move_cursor(c, k as isize, false);
+    true
+}
+
 /// The open message, for the event message window.
 pub fn message(w: &mut World) -> Option<&mut Msg> {
     w.event.as_mut()?.st.msg.as_mut()
