@@ -3,7 +3,7 @@
 
 use super::World;
 use super::game_ui::GameUi;
-use super::merits::bluehelp;
+use super::merits::{PointList, PointRow, bluehelp};
 use crate::audio::Ui;
 use crate::dat::merits::AeTables;
 use std::sync::Arc;
@@ -182,8 +182,63 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     }
 }
 
+/// The Alter Ego Points windows as the modern layer draws them: the points, fp_cat, fp_cat2 while open.
+pub(super) struct Look {
+    pub points: Option<u16>,
+    pub cats: PointList,
+    pub attrs: Option<PointList>,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let u = w.ae_ui.as_ref()?;
+    let t = w.ae_tables.clone()?;
+    let free = w.confirm.is_none();
+    let rows = t.cats.iter().map(|&(k, _)| PointRow { name: t.name(k), tint: WHITE, ..Default::default() }).collect();
+    let help = t.cats.get(u.cursor).map_or((String::new(), String::new()), |&(k, _)| (t.name(k), t.desc(k)));
+    let cats = PointList { rows, cursor: u.cursor, focused: free && u.attrs.is_none(), help };
+    let attrs = u.attrs.map(|(k, cursor, _)| {
+        let es = t.entries(k);
+        let rows = es
+            .iter()
+            .map(|&e| {
+                let (c, lc, cost) = colours(w, &t, e);
+                let i = e as usize % 32;
+                let level = w.ae_data.map_or(0, |d| d.upgrades[i]);
+                let max = t.max.get(e as usize).copied().unwrap_or(0);
+                let next = w.ae_data.map_or(0, |d| d.costs[i]);
+                PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), header: None }
+            })
+            .collect();
+        let help = es.get(cursor).map_or((String::new(), String::new()), |&e| (t.name(e), t.desc(e)));
+        PointList { rows, cursor, focused: free, help }
+    });
+    Some(Look { points: w.ae_data.map(|d| d.points), cats, attrs })
+}
+
+/// The mouse's cursor moves: a category (fp_cat), an attribute (fp_cat2). True when it moved.
+pub(super) fn set_cat(w: &mut World, k: usize) -> bool {
+    let n = w.ae_tables.as_ref().map_or(0, |t| t.cats.len());
+    let Some(u) = w.ae_ui.as_mut().filter(|u| u.attrs.is_none() && u.cursor != k && k < n) else { return false };
+    scroll(&mut u.cursor, &mut u.top, k);
+    true
+}
+
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(t) = w.ae_tables.clone() else { return false };
+    let Some((cat, c, top)) = w.ae_ui.as_mut().and_then(|u| u.attrs.as_mut()) else { return false };
+    if *c == k || k >= t.entries(*cat).len() {
+        return false;
+    }
+    scroll(c, top, k);
+    true
+}
+
 /// The mouse on the focused list (the generic window's rows).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws them and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(t) = w.ae_tables.clone() else { return };
     let Some(u) = w.ae_ui.as_ref() else { return };
     let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k, false);
@@ -217,6 +272,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(u) = &w.ae_ui else { return rects };
     let Some(t) = w.ae_tables.clone() else { return rects };
     let free = w.confirm.is_none();

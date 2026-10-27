@@ -1,7 +1,7 @@
 //! The modern Status page in the command window (client/status.rs keeps the state and its rules): the persona, the
 //! level and its gauge, retail's rows on the left and beside them the page under the cursor at once (retail shows one
 //! after Enter): profile, job and master levels, combat, magic and craft skills, and Currencies 1 and 2 as one list.
-//! The rows with windows of their own (Unity, Merit Points, Job Points, Alter Ego Points) open retail's over it.
+//! Unity opens retail's window over it; Merit Points, Job Points and Alter Ego Points open modern/points.rs.
 
 use super::super::status::{self, STATCOM};
 use super::super::{World, currencies, items as gitems, monstrosity};

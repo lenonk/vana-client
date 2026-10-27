@@ -22,6 +22,7 @@ mod loot;
 mod macros;
 mod paint;
 pub mod plates;
+mod points;
 mod post;
 mod shop;
 mod social;
@@ -177,6 +178,7 @@ impl Modern {
         equip::draw(&mut p, w);
         config::draw(&mut p, w);
         status::draw(&mut p, w);
+        points::draw(&mut p, w);
         journal::draw(&mut p, w);
         social::draw(&mut p, w);
         craft::draw(&mut p, w);

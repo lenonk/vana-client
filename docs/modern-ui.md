@@ -329,6 +329,14 @@ Milestone 1:
   name, View Wares and the bazaar message under it while it has the cursor. It opens on View Wares as retail's; a
   disabled button with the cursor shows it dimmed (craft::button). Live: a bot checked, arrows, hover and click with
   the item info following.
+- Merit Points, Job Points and Alter Ego Points (2026-10-27, modern/points.rs over merits.rs, jobpoints.rs and
+  aepoints.rs; their rows as merits::PointRow): in the command window's place, Status's page hidden under them. The
+  limit or capacity gauge and the points in the title; merit1 / merit2 as columns (their links walk them as drawn), the
+  lists beside with every row (level / most, NEXT and the cost in retail's colours; a category's spent / cap; a job's
+  two groups under their captions with their totals), the cursor row's description under them (bluehelp), merit3 and
+  sortyn as buttons, the raise asked by the modern confirm (merityn: Escape is the error sound, as retail). Job Points'
+  two pages as tabs. Live on Lnxcsfix (WAR 99 with Limit Breaker, Job Breaker and the Cipher Bracelet for the test,
+  restored after): every list, Raise up to the confirm (declined) in the Mog House, an alter ego row by the mouse.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
