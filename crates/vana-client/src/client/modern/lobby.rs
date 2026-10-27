@@ -86,9 +86,7 @@ fn pick_row(ui: &mut Ui, m: &Modern, text: &str, on: bool, live: bool) -> egui::
         _ if live && resp.hovered() => "controls/list_row_hover",
         _ => "controls/list_row_normal",
     };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
-    }
+    super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
     let c = if on { m.theme.color("gold") } else { m.theme.color("text") };
     ui.painter().text(pos2(rect.min.x + 24.0, rect.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
     ui.add_space(2.0);
@@ -292,9 +290,7 @@ fn row(ui: &mut Ui, m: &Modern, r: &super::super::select::RowView, on: bool, foc
         _ if on || focused && resp.hovered() => "controls/list_row_hover",
         _ => "controls/list_row_normal",
     };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
-    }
+    super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
     let [_, race, job, level, area] = &r.info;
     let top = rect.min.y + 14.0;
     let strong = FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into()));
@@ -375,9 +371,7 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             let child = k as u16 + 1;
             let (r, resp) = ui.allocate_exact_size(vec2(220.0, 28.0), Sense::click());
             let face = if child == cur { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, t, FontId::proportional(m.theme.small), m.theme.color("text"));
             if resp.hovered() && moved {
                 out.child.0 = Some(child);
@@ -447,7 +441,7 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
             ui.add_space(6.0);
             let (r, _) = ui.allocate_exact_size(vec2(400.0, 30.0), Sense::hover());
-            if let Some(s) = m.art.sprite("controls/list_row_selected") {
+            if let Some(s) = m.art.sprite("controls/input_focused") {
                 ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
             }
             let shown = if blink { format!("{name}|") } else { name.clone() };

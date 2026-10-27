@@ -6,7 +6,7 @@ use super::super::bluset::{self, RowLook};
 use super::super::World;
 use super::super::game_ui::GameUi;
 use super::craft::tint;
-use super::{Panels, STRONG, Title, paint};
+use super::{Panels, STRONG, Title};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -37,9 +37,7 @@ fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, rows: &[RowLook
                 _ if k == cursor || clicks && resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
             let y = rect.center().y;
             let mut x = rect.min.x + 24.0;
             if let Some((n, band)) = r.number {

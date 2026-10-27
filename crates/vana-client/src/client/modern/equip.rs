@@ -258,9 +258,7 @@ fn list(ui: &mut Ui, m: &super::Modern, v: &equipwin::View, icons: &[Option<egui
             _ if list_on && resp.hovered() => "controls/list_row_hover",
             _ => "controls/list_row_normal",
         };
-        if let Some(s) = m.art.sprite(face) {
-            ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-        }
+        super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
         let dim = if x.reach == Reach::Far { Color32::from_gray(110) } else { Color32::WHITE };
         if let Some(t) = icons.get(k).copied().flatten() {
             ui.painter().image(t, Rect::from_min_size(pos2(r.min.x + 10.0, r.center().y - ICON / 2.0), vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), dim);

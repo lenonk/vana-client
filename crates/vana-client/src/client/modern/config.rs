@@ -413,9 +413,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         _ if k == entry || resp.hovered() => "controls/list_row_hover",
                         _ => "controls/list_row_normal",
                     };
-                    if let Some(s) = m.art.sprite(face) {
-                        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-                    }
+                    super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                     ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, *label, FontId::proportional(m.theme.ui), m.theme.color("text"));
                     if resp.clicked() {
                         click = Some(Click::Entry(k));

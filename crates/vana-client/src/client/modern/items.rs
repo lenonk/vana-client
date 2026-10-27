@@ -121,9 +121,7 @@ fn list(p: &mut Panels, w: &mut World) {
                 _ => "controls/list_row_normal",
             };
             let painter = ui.painter();
-            if let Some(s) = m.art.sprite(sprite) {
-                painter.add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(painter, m, r, sprite, Color32::WHITE);
             if let Some(t) = icons.get(k).copied().flatten() {
                 let at = pos2(r.min.x + 10.0, r.center().y - ICON / 2.0);
                 painter.image(t, Rect::from_min_size(at, vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);

@@ -1,4 +1,5 @@
-//! Menu row looks: the pack's framed rows, and lighter styles offered beside them (modern-shot --rows).
+//! Row looks: the pack's framed rows, and lighter styles offered beside them (modern-shot --rows); Gilt is the one in
+//! use (user, 2026-10-27: the framed rows "too busy", but not plain either).
 
 use super::{Modern, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Mesh, Painter, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
@@ -6,13 +7,13 @@ use egui::{Align2, Color32, FontFamily, FontId, Mesh, Painter, Rect, Sense, Shap
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Style {
     /// The pack's row art: framed rows, a diamond bullet, the boxed arrow.
-    #[default]
     Framed,
     /// No frames: hairlines between rows, the cursor a blue band fading right with a gold edge.
     Hairline,
     /// Rounded rows with a faint border, the cursor filled blue with a gold border.
     Soft,
     /// Bare rows, the cursor between two fading gold rules with a gold diamond.
+    #[default]
     Gilt,
     /// Raised rows (a light top, a dark bottom), the cursor blue with a soft glow.
     Bevel,
@@ -157,6 +158,29 @@ fn ink(m: &Modern, s: State, style: Style) -> Color32 {
         _ if s.on && matches!(style, Style::Hairline | Style::Gilt) => m.theme.color("gold"),
         _ => m.theme.color("text"),
     }
+}
+
+/// A row's background from its face in the pack's names ("controls/list_row_selected", "_hover", "_disabled",
+/// "_normal") in the current style: the framed art, else the style's look; a tint other than white dims it.
+pub fn face(p: &Painter, m: &Modern, r: Rect, face: &str, tint: Color32) {
+    let style = m.row_style.get();
+    if style == Style::Framed || !face.starts_with("controls/list_row_") {
+        if let Some(s) = m.art.sprite(face) {
+            p.add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), tint));
+        }
+        return;
+    }
+    let s = State { on: face.ends_with("_selected"), hover: face.ends_with("_hover"), off: face.ends_with("_disabled") };
+    let mut q = p.clone();
+    if tint != Color32::WHITE {
+        q.multiply_opacity(0.55);
+    }
+    back(&q, m, r, s, style);
+}
+
+/// The submenu mark at a row's right in the current style (the framed art's boxed arrow, else the style's chevron).
+pub fn more_mark(p: &Painter, m: &Modern, r: Rect, on: bool) {
+    more(p, m, r, State { on, ..Default::default() }, m.row_style.get());
 }
 
 /// A menu row in the current style (Modern::row_style): its icon, its label, the submenu mark when `sub`; hovered by

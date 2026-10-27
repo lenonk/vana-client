@@ -292,9 +292,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                 "controls/list_row_disabled"
             };
             let painter = ui.painter();
-            if let Some(s) = m.art.sprite(sprite) {
-                painter.add(paint::nine_slice(&s, r, (row_h / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(painter, m, r, sprite, Color32::WHITE);
             // The hand at the row's left, reaching over the frame (retail's anc2s over the log's edge): the pack's arrow
             // turned to point at the row.
             if let Some(tint) = row.hand {

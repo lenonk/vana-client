@@ -4,7 +4,7 @@
 
 use super::super::{World, treasure};
 use super::craft::button;
-use super::{Panels, Title, paint};
+use super::{Panels, Title};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontId, Rect, Sense, pos2, vec2};
 
@@ -35,9 +35,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 _ if resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
             let it = info.item(r.item);
             if let Some(t) = m.item_icon(ctx, &info, r.item) {
                 let tint = if r.own_lot == -1 { Color32::from_gray(110) } else { Color32::WHITE };

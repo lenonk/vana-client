@@ -30,9 +30,7 @@ fn list_sample(p: &mut Panels) {
         for (k, (name, n)) in rows.iter().enumerate() {
             let (r, _) = ui.allocate_exact_size(vec2(296.0, 28.0), egui::Sense::hover());
             let face = if k == 2 { "controls/list_row_selected" } else { "controls/list_row_normal" };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             ui.painter().text(pos2(r.min.x + 24.0, r.center().y), egui::Align2::LEFT_CENTER, *name, egui::FontId::proportional(m.theme.small), m.theme.color("text"));
             ui.painter().text(pos2(r.max.x - 12.0, r.center().y), egui::Align2::RIGHT_CENTER, n.to_string(), egui::FontId::proportional(m.theme.small), m.theme.color("muted"));
             ui.add_space(2.0);

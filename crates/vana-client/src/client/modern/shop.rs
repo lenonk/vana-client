@@ -7,7 +7,7 @@ use super::super::items::ItemCache;
 use super::super::shop::{self, Look, Req, View};
 use super::super::World;
 use super::craft::{button, caption, count_row, money_row, tint};
-use super::{Panels, Title, paint};
+use super::{Panels, Title};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -56,9 +56,7 @@ fn list(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look,
                 _ if k == v.cursor || resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(sp) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&sp, rect, (rect.height() / sp.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
             let name_tint = tint(m, r.tint);
             if r.id != 0
                 && let Some(t) = m.item_icon(&ctx, info, r.id)

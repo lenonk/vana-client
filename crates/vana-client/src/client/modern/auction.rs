@@ -7,7 +7,7 @@ use super::super::game_ui::GameUi;
 use super::super::items::ItemCache;
 use super::super::World;
 use super::craft::{button, caption, money_row, tint};
-use super::{MenuWin, Panels, Title, paint, social};
+use super::{MenuWin, Panels, Title, social};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -59,9 +59,7 @@ fn item_rows(ui: &mut Ui, m: &super::Modern, info: &ItemCache, salt: &str, rows:
                 _ if k == cur || resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(sp) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&sp, rect, (rect.height() / sp.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
             if let Some(t) = m.item_icon(&ctx, info, r.item) {
                 ui.painter().image(t, Rect::from_min_size(pos2(rect.min.x + 8.0, rect.center().y - ICON / 2.0), vec2(ICON, ICON)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
@@ -101,9 +99,7 @@ fn history_rows(ui: &mut Ui, m: &super::Modern, rows: &[[String; 4]], cur: usize
             _ if resp.hovered() => "controls/list_row_hover",
             _ => "controls/list_row_normal",
         };
-        if let Some(sp) = m.art.sprite(face) {
-            ui.painter().add(paint::nine_slice(&sp, rect, (rect.height() / sp.size.y).min(1.0), Color32::WHITE));
-        }
+        super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
         let (font, text) = (FontId::proportional(m.theme.small), m.theme.color("text"));
         let y = rect.center().y;
         ui.painter().text(pos2(rect.min.x + 10.0, y), Align2::LEFT_CENTER, &r[0], font.clone(), m.theme.color("muted"));

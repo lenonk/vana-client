@@ -122,9 +122,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     };
                     let (r, resp) = ui.allocate_exact_size(vec2(GRID_W, 28.0), Sense::click());
                     let face = if on && *dl_cursor == 1 { "controls/list_row_selected" } else { "controls/list_row_normal" };
-                    if let Some(sp) = m.art.sprite(face) {
-                        ui.painter().add(super::paint::nine_slice(&sp, r, (r.height() / sp.size.y).min(1.0), Color32::WHITE));
-                    }
+                    super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                     ui.painter().text(pos2(r.min.x + 10.0, r.center().y), egui::Align2::LEFT_CENTER, name, FontId::proportional(m.theme.ui), m.theme.color("text"));
                     if can && on && resp.clicked() {
                         mouse.click = Some(1);

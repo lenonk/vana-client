@@ -139,9 +139,7 @@ pub(super) fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &I
                 _ if resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(sp) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&sp, r, (r.height() / sp.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             let t = tints.get(k).copied().unwrap_or(TINT_WHITE);
             if let Some(tex) = m.item_icon(ctx, info, s.id) {
                 let dim = if t == TINT_DIM { Color32::from_gray(110) } else { Color32::WHITE };

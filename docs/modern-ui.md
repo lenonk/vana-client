@@ -452,6 +452,11 @@ Milestone 1:
   tab made the menu jump 270 px when it opened), and a dock saved on one gives way to the panel's own place. A dock on
   a panel placed from the right counts from its right side (ModernDock.right). Retail's strip right of its own minimap
   is not kept clear. Live: the user's layout copied in, frames alike, the menu over the minimap.
+- Row look (user, 2026-10-27: the framed rows "too busy", but not plain; Gilt picked from five rendered by
+  `modern-shot --rows`): every list and menu row goes through rows.rs (face for a row face, menu_row for the main
+  menu): bare rows, the cursor between two gold rules fading at the ends with a gold diamond and gold label, a faint
+  gold wash on hover, thin chevrons for submenus. The framed art stays as Style::Framed. The text fields that had the
+  selected row's art (the rename field, the event input) use the input art.
 - The Num+ status cursor (user report 2026-10-27: no box on the picked buff): the modern status icons box the cursor's
   icon in retail's orange-red (anc_equi), and Up / Down move by the panel's 10-icon rows (retail's 9 while classic).
   Live: Num+ twice boxes Protect, Right moves it to Shell, the top bar names it.

@@ -7,7 +7,7 @@ use super::super::merits::{self, PointList, PointRow};
 use super::super::game_ui::GameUi;
 use super::super::{World, aepoints, jobpoints, unity};
 use super::craft::{button, caption, tint};
-use super::{MenuWin, Panels, Title, hud, paint, social};
+use super::{MenuWin, Panels, Title, hud, social};
 use crate::audio::Ui as Se;
 use crate::inventory::TINT_WHITE;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
@@ -40,9 +40,7 @@ fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, l: &PointList, 
                 _ if k == l.cursor || l.focused && resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(sp) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&sp, rect, (rect.height() / sp.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
             let y = rect.center().y;
             let level_x = if cost_col { rect.max.x - 120.0 } else { rect.max.x - 12.0 };
             let (name, font) = match r.header {

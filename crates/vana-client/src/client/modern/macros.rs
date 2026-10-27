@@ -141,9 +141,7 @@ fn row_face(ui: &Ui, m: &super::Modern, r: Rect, cursor: bool, focused: bool, ho
         _ if cursor || hovered => "controls/list_row_hover",
         _ => "controls/list_row_normal",
     };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-    }
+    super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
 }
 
 /// mcrselec over both pages (the active book starred, the name field in its row) and mcrselop beside it.

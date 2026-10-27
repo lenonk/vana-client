@@ -4,7 +4,7 @@
 
 use super::super::game_ui::GameUi;
 use super::super::{World, arealist, bazaar, helpdesk, levelsync, linklist, linkshell, moogle, partymenu, region, search, searchmenu, viewhouse};
-use super::{MenuWin, Panels, Title, paint};
+use super::{MenuWin, Panels, Title};
 use crate::inventory::ItemInfo;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -56,9 +56,7 @@ pub(super) fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, f
                 _ if focused && resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             let c = if off { m.theme.color("muted") } else { m.theme.color("text") };
             let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
             ui.painter().with_clip_rect(clip).text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, &name, FontId::proportional(m.theme.small), c);
@@ -123,9 +121,7 @@ fn area_column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, a: &arealist::AreaLi
                     _ if k == a.cursor || focused && resp.hovered() => "controls/list_row_hover",
                     _ => "controls/list_row_normal",
                 };
-                if let Some(s) = m.art.sprite(face) {
-                    ui.painter().add(paint::nine_slice(&s, rr, (rr.height() / s.size.y).min(1.0), Color32::WHITE));
-                }
+                super::rows::face(ui.painter(), m, rr, face, Color32::WHITE);
                 ui.painter().text(pos2(rr.min.x + 24.0, rr.center().y), Align2::LEFT_CENTER, &r.name, FontId::proportional(m.theme.small), m.theme.color("text"));
                 let cell = match &r.cell {
                     arealist::Cell::Paren(s) => format!("({s})"),
@@ -244,9 +240,7 @@ fn people(p: &mut Panels, v: People, moved: bool) -> PeopleMouse {
                             _ if k == v.cursor || v.focused && resp.hovered() => "controls/list_row_hover",
                             _ => "controls/list_row_normal",
                         };
-                        if let Some(s) = m.art.sprite(face) {
-                            ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-                        }
+                        super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                         let font = FontId::proportional(m.theme.small);
                         let y = r.center().y;
                         match (&v.header, k.checked_sub(first)) {
@@ -295,9 +289,7 @@ fn people(p: &mut Panels, v: People, moved: bool) -> PeopleMouse {
                             _ if resp.hovered() => "controls/list_row_hover",
                             _ => "controls/list_row_normal",
                         };
-                        if let Some(s) = m.art.sprite(face) {
-                            ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-                        }
+                        super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                         let tc = if *on { m.theme.color("text") } else { m.theme.color("muted") };
                         ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.small), tc);
                         if resp.hovered() && moved {
@@ -482,9 +474,7 @@ fn help_page(p: &mut Panels, v: &helpdesk::PageView, moved: bool) -> (Option<i32
                             _ if !on => "controls/list_row_disabled",
                             _ => "controls/list_row_normal",
                         };
-                        if let Some(s) = m.art.sprite(face) {
-                            ui.painter().add(paint::nine_slice(&s, r, (ROW / s.size.y).min(1.0), Color32::WHITE));
-                        }
+                        super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                         ui.painter().galley(pos2(r.min.x + 24.0, r.center().y - galley.size().y / 2.0), galley, tc);
                         if let Some(val) = value {
                             ui.add_space(2.0);
@@ -726,9 +716,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         for (k, (r, name, t)) in rows.iter().enumerate() {
                             let (rr, resp) = ui.allocate_exact_size(vec2(LS_W, ROW), Sense::click());
                             let face = if k == cursor && sub.is_none() && focused { "controls/list_row_selected" } else if k == cursor || resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
-                            if let Some(s) = m.art.sprite(face) {
-                                ui.painter().add(paint::nine_slice(&s, rr, (rr.height() / s.size.y).min(1.0), Color32::WHITE));
-                            }
+                            super::rows::face(ui.painter(), m, rr, face, Color32::WHITE);
                             if let Some(tex) = icons.get(k).copied().flatten() {
                                 let ir = Rect::from_min_size(pos2(rr.min.x + 8.0, rr.center().y - 11.0), vec2(22.0, 22.0));
                                 ui.painter().image(tex, ir, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), super::chat::colour(t.to_le_bytes()));

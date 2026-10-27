@@ -6,7 +6,7 @@
 
 use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, layout, primer, remodel, seacom};
 use super::craft::{button, caption};
-use super::{MenuWin, Panels, Title, paint, social};
+use super::{MenuWin, Panels, Title, social};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontId, Sense, pos2, vec2};
 
@@ -45,9 +45,7 @@ fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String,
                 _ if *grey => "controls/list_row_disabled",
                 _ => "controls/list_row_normal",
             };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             let c = if *grey { m.theme.color("muted") } else { m.theme.color("text") };
             let clip = egui::Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
             ui.painter().with_clip_rect(clip).text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
@@ -184,9 +182,7 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
                     _ if k == v.cursor || focused && resp.hovered() => "controls/list_row_hover",
                     _ => "controls/list_row_normal",
                 };
-                if let Some(s) = m.art.sprite(face) {
-                    ui.painter().add(paint::nine_slice(&s, rect, (rect.height() / s.size.y).min(1.0), Color32::WHITE));
-                }
+                super::rows::face(ui.painter(), m, rect, face, Color32::WHITE);
                 let y = rect.center().y;
                 let small = FontId::proportional(m.theme.small);
                 match r {
@@ -253,9 +249,7 @@ fn comment(p: &mut Panels, w: &mut World) {
         for (k, l) in lines.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(420.0, ROW), Sense::click());
             let face = if k == line { "controls/list_row_selected" } else { "controls/list_row_normal" };
-            if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-            }
+            super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
             let text = if k == line && blink { format!("{l}|") } else { l.clone() };
             ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::monospace(m.theme.small), m.theme.color("text"));
             if resp.clicked() {
@@ -300,9 +294,7 @@ fn block_list(p: &mut Panels, w: &mut World) {
                     _ if k == cursor || focused && resp.hovered() => "controls/list_row_hover",
                     _ => "controls/list_row_normal",
                 };
-                if let Some(s) = m.art.sprite(face) {
-                    ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-                }
+                super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                 ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.small), m.theme.color("text"));
                 if k == cursor && follow {
                     ui.scroll_to_rect(r, None);

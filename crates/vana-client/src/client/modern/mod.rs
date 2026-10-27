@@ -494,9 +494,7 @@ fn log_list(p: &mut Panels, id: &str, question: &str, rows: &[(String, [u8; 4])]
                     _ if resp.hovered() => "controls/list_row_hover",
                     _ => "controls/list_row_normal",
                 };
-                if let Some(s) = m.art.sprite(face) {
-                    ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-                }
+                rows::face(ui.painter(), m, r, face, Color32::WHITE);
                 let clip = Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
                 let g = ui.painter().layout_job(job(text, *base, f32::INFINITY));
                 ui.painter().with_clip_rect(clip).galley(pos2(r.min.x + 24.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);
@@ -552,7 +550,7 @@ fn event_input(p: &mut Panels, w: &World) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(&title).size(m.theme.ui).color(m.theme.color("gold")));
             let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-            if let Some(s) = m.art.sprite("controls/list_row_selected") {
+            if let Some(s) = m.art.sprite("controls/input_focused") {
                 ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
             }
             let shown = format!("{}|{}", &text[..caret], &text[caret..]);

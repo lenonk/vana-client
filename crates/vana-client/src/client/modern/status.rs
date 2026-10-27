@@ -218,9 +218,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                         _ if resp.hovered() => "controls/list_row_hover",
                         _ => "controls/list_row_normal",
                     };
-                    if let Some(sp) = m.art.sprite(face) {
-                        ui.painter().add(paint::nine_slice(&sp, r, (r.height() / sp.size.y).min(1.0), Color32::WHITE));
-                    }
+                    super::rows::face(ui.painter(), m, r, face, Color32::WHITE);
                     ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, *label, FontId::proportional(m.theme.ui), if off { muted } else { white });
                     if resp.hovered() && moved {
                         hover = Some(k);

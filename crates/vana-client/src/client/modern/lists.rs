@@ -35,9 +35,7 @@ fn row(ui: &mut Ui, m: &super::Modern, icon: Option<egui::TextureId>, pack: Opti
         Look::Normal => "controls/list_row_normal",
     };
     let p = ui.painter();
-    if let Some(s) = m.art.sprite(sprite) {
-        p.add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-    }
+    super::rows::face(p, m, r, sprite, Color32::WHITE);
     let tint = if look == Look::Off { Color32::from_gray(110) } else { Color32::WHITE };
     let at = pos2(r.min.x + 10.0, r.center().y - 11.0);
     if let Some(t) = icon {

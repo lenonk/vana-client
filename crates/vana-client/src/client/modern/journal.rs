@@ -7,7 +7,7 @@
 use super::super::game_ui::GameUi;
 use super::super::journal::{self, Row};
 use super::super::{World, keyitems, listsearch, missions, quests, roe};
-use super::{Panels, Title, lists, paint};
+use super::{Panels, Title, lists};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
@@ -223,9 +223,7 @@ fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, ke
         _ if resp.hovered() => "controls/list_row_hover",
         _ => "controls/list_row_normal",
     };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), if on && !keys { UNFOCUSED } else { Color32::WHITE }));
-    }
+    super::rows::face(ui.painter(), m, r, face, if on && !keys { UNFOCUSED } else { Color32::WHITE });
     let c = if off { m.theme.color("muted") } else { m.theme.color("text") };
     let clip = Rect::from_min_max(r.min, pos2(r.max.x - if count.is_empty() { 8.0 } else { 44.0 }, r.max.y));
     ui.painter().with_clip_rect(clip).text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
@@ -251,10 +249,8 @@ fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, keys: boo
                 _ if resp.hovered() => "controls/list_row_hover",
                 _ => "controls/list_row_normal",
             };
-            if let Some(s) = m.art.sprite(face) {
-                let tint = if k == cursor && !keys { UNFOCUSED } else { Color32::WHITE };
-                ui.painter().add(paint::nine_slice(&s, r.shrink2(vec2(0.0, 1.0)), (r.height() / s.size.y).min(1.0), tint));
-            }
+            let tint = if k == cursor && !keys { UNFOCUSED } else { Color32::WHITE };
+            super::rows::face(ui.painter(), m, r.shrink2(vec2(0.0, 1.0)), face, tint);
             let mut x = r.min.x + 24.0 + l.indent;
             if l.new {
                 ui.painter().circle_filled(pos2(x + 3.0, r.center().y), 4.0, m.theme.color("gold"));
