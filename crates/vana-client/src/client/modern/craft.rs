@@ -106,14 +106,16 @@ fn grid(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, s
 /// A button in the pack's frame: lit under the cursor, grey when off; true when clicked.
 pub(super) fn button(ui: &mut Ui, m: &super::Modern, label: &str, width: f32, lit: bool, off: bool) -> bool {
     let (r, resp) = ui.allocate_exact_size(vec2(width, 28.0), Sense::click());
-    let face = match () {
-        _ if off => "controls/button_disabled",
-        _ if lit => "controls/button_selected",
-        _ if resp.hovered() => "controls/button_hover",
-        _ => "controls/button_normal",
+    // The cursor still shows on a disabled button (dimmed), as retail's hand does.
+    let (face, tint) = match () {
+        _ if off && lit => ("controls/button_selected", Color32::from_gray(140)),
+        _ if off => ("controls/button_disabled", Color32::WHITE),
+        _ if lit => ("controls/button_selected", Color32::WHITE),
+        _ if resp.hovered() => ("controls/button_hover", Color32::WHITE),
+        _ => ("controls/button_normal", Color32::WHITE),
     };
     if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+        ui.painter().add(paint::nine_slice(&s, r, 0.5, tint));
     }
     let c = if off { m.theme.color("muted") } else if lit { m.theme.color("gold") } else { m.theme.color("text") };
     ui.painter().text(r.center(), Align2::CENTER_CENTER, label, FontId::proportional(m.theme.small), c);

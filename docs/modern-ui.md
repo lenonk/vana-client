@@ -324,6 +324,11 @@ Milestone 1:
   two rows, the inventory picker beside while a slot asks for an item; the count and the gil inside the panel. Live:
   Receive (empty box), Send with a recipient typed and accepted, Gil's amount asked and dropped, Cancel back to the
   moogle; nothing sent.
+- /check on a player (2026-10-27, modern/inspect.rs over inspect.rs): the name, the help bar's jobs line, the sixteen
+  slots in retail's grid (child 1 + column x 4 + row, so the links walk it as drawn), the linkshell's tinted icon and
+  name, View Wares and the bazaar message under it while it has the cursor. It opens on View Wares as retail's; a
+  disabled button with the cursor shows it dimmed (craft::button). Live: a bot checked, arrows, hover and click with
+  the item info following.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

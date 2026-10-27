@@ -272,6 +272,10 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 
 /// The mouse: the generic window over the slots and View Wares (winhits.rs).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     let Some(cursor) = w.inspect.win.as_ref().map(|win| win.cursor) else { return };
     super::winhits::generic(w, gu, WINDOW, cursor, 1..=VIEW, p, moved, clicked, right, |w, id| {
         w.inspect.prev = id;
@@ -318,6 +322,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     const WHITE: u32 = 0x8080_8080;
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let (Some(win), Some(info)) = (&w.inspect.win, w.item_info.clone()) else { return rects };
     let enabled = w.inspect.view_enabled();
     let off: &[u16] = if enabled { &[] } else { &[VIEW] };
@@ -366,4 +373,22 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         rects.push(cw.frame);
     }
     rects
+}
+
+/// The window's cursor onto child `k` (a slot, or View Wares) as the mouse moves it. True when it moved.
+pub(super) fn set_cursor(w: &mut World, k: u16) -> bool {
+    let Some(win) = w.inspect.win.as_mut().filter(|_| (1..=VIEW).contains(&k)) else { return false };
+    if win.cursor == k {
+        return false;
+    }
+    if k != VIEW {
+        win.col = (k - 1) / 4;
+    }
+    (win.cursor, w.inspect.prev) = (k, k);
+    true
+}
+
+/// View Wares' child and whether it can be pressed now.
+pub(super) fn view_wares(w: &World) -> (u16, bool) {
+    (VIEW, w.inspect.view_enabled())
 }

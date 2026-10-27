@@ -14,6 +14,7 @@ mod craft;
 mod equip;
 mod extras;
 mod hud;
+mod inspect;
 mod items;
 mod journal;
 mod lists;
@@ -185,6 +186,7 @@ impl Modern {
         shop::draw(&mut p, w);
         auction::draw(&mut p, w);
         post::draw(&mut p, w);
+        inspect::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {
@@ -337,6 +339,8 @@ fn default_place(id: &str) -> Place {
         "iteminfo" => on("combat"),
         // The treasure pool rides the action menu it is opened from.
         "loot" => on("combat"),
+        // /check beside the command window's place.
+        "check" => at(0.2, 0.0347),
         _ => at(0.3, 0.3),
     }
 }
