@@ -10496,3 +10496,22 @@ Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables
   FUN_101eff30 checks; the clock DAT_10492e10+0xc counts whole seconds of timeGetTime), so `/equip main` then
   `/equip sub` on a pair takes both. FUN_1007b1c0 first: the slot already wears an item of that name: nothing. Ours
   matched the first by name, the one in the main hand, and refused 7 0x8e. Fixed (textcmd::find_free).
+
+## Our upscale pack: every texture through Upscayl Standard 4x (2026-10-27; not retail)
+
+texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standard-4x) after a comparison page.
+- tex-export: every stock IMG chunk (DatIndex::open_stock: no mods) once by an FNV key over size and pixels, as PNG,
+  with manifest.tsv (file id, chunk, key, name): 131,017 chunks in 47,911 files, 33,363 unique images (762 Mpx);
+  files with images named menu* / font* / cntg* / map* / ex3_* left out (pixel-cell UI, fonts, Primer pictures,
+  maps), and images whose 4x passes 4096 a side.
+- Upscayl CLI (/usr/share/upscayl/bin/upscayl-bin) leaks RAM per image (4.5 GB after 14k in one folder run):
+  ~/ffxi/lab/scratch/upscale/tools/batch.py runs it per 1,500 hard links (it skips symlinks), ~150 s a batch.
+- tex-pack: each manifest file rebuilt from the stock one with its images re-encoded (texpresso ClusterFit; DXT1 for
+  a DXT1 original, else DXT3 with the alpha halved to the PS2 scale the client doubles), every encoding cached by key
+  (files share images), ids sharing a file built once, built files kept (resumable). A chunk's size field is 19 bits
+  of 16-byte units (8 MB): 26 images (4x of 512 x 1024 DXT3 and up) are halved until they fit (zone 100 broke before).
+- Result: ~/.local/share/vana-client/mods/vana-upscale, 35,770 DATs, 29 GB, every file's chunk walk checked. The
+  overlay takes its IMG chunks by name like any pack; it joins the Mods list disabled at the bottom.
+- Compared in vana-client (zone-shot / char-shot / npc-shot with FFXI_CONFIG copies: stock, the HD packs, ours):
+  https://claude.ai/artifact/7GyTPK1BW21D5i8jkZkWmF. Its cost is the HD packs' (4x textures, GPU mips, the upload
+  budget).

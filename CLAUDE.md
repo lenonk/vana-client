@@ -212,6 +212,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   Mods page") done. Sound overlays (a mod's sound*/win before the game's) and root files (the cursor
   pack) done. Left: mod VTABLE / FTABLE (new file ids, e.g.
   Remapster's 109 extra maps, which need an add-on in retail too).
+  - Our own pack (user, 2026-10-27): every game texture through Upscayl Standard 4x, `tex-export` / batch.py /
+    `tex-pack` into mods/vana-upscale (29 GB; MODLOG "Our upscale pack"); the work files stay in
+    ~/ffxi/lab/scratch/upscale (export, up, meta/encoded) for a rebuild.
 - Extras (gameplay additions, the Windower / Ashita add-ons built in): the Config list's Extras row and page, all
   off by default, built from the Config pages' own sprites (MODLOG "Config: Extras and Settings"). Config-type
   options (resolution, frame limit, ...) go in Settings, not here. Done: the map overlay, the synthesis amount,
