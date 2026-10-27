@@ -10564,3 +10564,18 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
 - Compared in vana-client (zone-shot / char-shot / npc-shot with FFXI_CONFIG copies: stock, the HD packs, ours):
   https://claude.ai/artifact/7GyTPK1BW21D5i8jkZkWmF. Its cost is the HD packs' (4x textures, GPU mips, the upload
   budget).
+
+## Modern UI: unusable actions greyed (2026-10-27; ours, not retail)
+
+- User request: actions that can't be used now show disabled in the modern UI (retail greys only list rows).
+- magic.rs: spell_ready / ability_ready (magic_check / ability_check plus effects we carry: sleep, petrification,
+  stun, charm, terror, lullaby stop everything; silence / mute magic; amnesia abilities, not ranged attacks or
+  items), cat_ready (a category with any usable row; traits never grey; Mounts by mount_check), command_ready (the
+  action menu's Abilities / Magic / Trust / Items by their categories), action_ready (a macro line's spell learned, a
+  job ability in s2c 0x0AC's bits).
+- modern/lists.rs: list rows, suggestions, search hits and category rows grey by those; modern/combat.rs: the action
+  menu rows grey (they still open, as retail's). textcmd::line_action resolves /ma /ws /ja /pet lines by name (cached
+  per line on Modern); the held Ctrl / Alt palette greys a macro whose action lines none can be used (a macro without
+  any never greys).
+- Live (Lnxcsfix WAR 21, San d'Oria): Magic and Items greyed, Abilities and Trust live; under Amnesia Job Abilities,
+  Weapon Skills, Pet Commands grey, Mounts live. The palette not seen live (no macros on the test character).

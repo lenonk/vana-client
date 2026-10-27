@@ -2636,20 +2636,43 @@ fn emote_body(target: u32, index: u16, number: u8, mode: u8, param: u16) -> Vec<
 /// FUN_1022b430: a spell by name (case-insensitive, exact) of `kind` (0 any); its id, or Err when unknown, not
 /// learned (s2c 0x0AA) or out of the jobs' reach.
 fn find_spell(w: &World, name: &str, kind: u16) -> Result<u16, ()> {
-    let (Some(names), Some(acts)) = (w.names.as_ref(), w.actions.as_ref()) else { return Err(()) };
+    let (id, acts) = (spell_named(w, name, kind).ok_or(())?, w.actions.as_ref().ok_or(())?);
+    let learned = spell_learned(w, id);
+    let st = w.stats.as_ref().ok_or(())?;
+    if !learned || !acts.can_cast(id, st.main, st.sub, 0) {
+        log::info!("spell {id}: learned {learned}, jobs {:?} / {:?}", st.main, st.sub);
+        return Err(());
+    }
+    Ok(id)
+}
+
+/// FUN_1022b430's name search alone: a spell of `kind` (0 any) some job can learn.
+fn spell_named(w: &World, name: &str, kind: u16) -> Option<u16> {
+    let (names, acts) = (w.names.as_ref()?, w.actions.as_ref()?);
     let s = acts
         .spells
         .iter()
         .filter(|s| s.id != 0 && (kind == 0 || s.kind == kind) && s.levels.iter().any(|&l| l >= 0))
-        .find(|s| crate::dat::names::NameSource::spell(&**names, s.id as u32).is_some_and(|n| n.eq_ignore_ascii_case(name)))
-        .ok_or(())?;
-    let learned = w.spells_known.get(s.id as usize / 8).is_some_and(|b| b & (1 << (s.id % 8)) != 0);
-    let st = w.stats.as_ref().ok_or(())?;
-    if !learned || !acts.can_cast(s.id, st.main, st.sub, 0) {
-        log::info!("spell {}: learned {learned}, jobs {:?} / {:?}", s.id, st.main, st.sub);
-        return Err(());
+        .find(|s| crate::dat::names::NameSource::spell(&**names, s.id as u32).is_some_and(|n| n.eq_ignore_ascii_case(name)))?;
+    Some(s.id)
+}
+
+pub(super) fn spell_learned(w: &World, id: u16) -> bool {
+    w.spells_known.get(id as usize / 8).is_some_and(|b| b & (1 << (id % 8)) != 0)
+}
+
+/// Ours (the modern macro keys): a line's spell or ability record as /ma, /ws, /ja and /pet find it by name, learned
+/// or not; None for any other line, or before the name tables load.
+pub(super) fn line_action(w: &World, line: &str) -> Option<(super::magic::Kind, u16)> {
+    use super::magic::Kind;
+    let args = tokens(line, true);
+    let name = args.get(1)?;
+    match table().get(args.first()?.as_str())?.0 {
+        id::MAGIC | id::NINJUTSU | id::SONG => spell_named(w, name, 0).map(|s| (Kind::Magic, s)),
+        id::WS => ability_named(w, name, 0..0x200).map(|a| (Kind::Ability, a)),
+        id::JA | id::PET => ability_named(w, name, 0x400..0x600).or_else(|| ability_named(w, name, 0x200..0x400)).map(|a| (Kind::Ability, a)),
+        _ => None,
     }
-    Ok(s.id)
 }
 
 /// FUN_1007b710: /ma (any), /nin (4), /so (5): 0x01A category 3 with the spell id.

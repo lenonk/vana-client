@@ -69,6 +69,8 @@ pub struct Modern {
     row_style: std::cell::Cell<rows::Style>,
     border_style: std::cell::Cell<borders::Style>,
     images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
+    /// Macro lines and the spell or ability each names (textcmd::line_action), for greying the macro keys.
+    macro_acts: std::cell::RefCell<HashMap<String, Option<(super::magic::Kind, u16)>>>,
     /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
     grid: std::cell::RefCell<(Option<std::time::Instant>, String)>,
     marquee: std::cell::RefCell<topbar::Marquee>,
@@ -128,6 +130,7 @@ impl Modern {
             row_style: Default::default(),
             border_style: Default::default(),
             images: Default::default(),
+            macro_acts: Default::default(),
             grid: Default::default(),
             marquee: Default::default(),
             scan_at: Default::default(),
@@ -908,6 +911,31 @@ impl Modern {
             Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([32, 32], &rgba), egui::TextureOptions::LINEAR))
         });
         t.as_ref().map(|t| t.id())
+    }
+
+    /// Ours: no line of the macro that names a spell or ability (/ma, /ja, /pet, /ws) can be used now; one with none
+    /// never greys.
+    fn macro_off(&self, w: &World, m: &super::macros::Macro) -> bool {
+        let mut any = false;
+        let mut acts = self.macro_acts.borrow_mut();
+        for k in 0..6 {
+            let line = crate::dat::font::decode_sjis(m.line(k));
+            if line.is_empty() {
+                continue;
+            }
+            let act = match acts.get(&line) {
+                Some(a) => *a,
+                // Not kept before the name tables load: every line would read as no action.
+                None if w.names.is_none() || w.actions.is_none() => continue,
+                None => *acts.entry(line.clone()).or_insert_with(|| super::textcmd::line_action(w, &line)),
+            };
+            let Some((kind, id)) = act else { continue };
+            any = true;
+            if super::magic::action_ready(w, kind, id) {
+                return false;
+            }
+        }
+        any
     }
 
     /// A status icon from the game's files (config 0x99 bit 2: the small set) as an egui texture, made once.

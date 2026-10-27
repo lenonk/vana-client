@@ -457,6 +457,65 @@ pub(super) fn magic_check(w: &World, s: u16) -> Option<usize> {
 /// A refusal with no line and no sound.
 const SILENT: usize = usize::MAX;
 
+/// Ours (the modern UI dims by it): an effect we carry stops every action: sleep, petrification, stun, charm, terror,
+/// lullaby. Retail leaves these to the server's refusal.
+fn halted(w: &World) -> bool {
+    w.buffs.iter().any(|&b| matches!(b, 2 | 7 | 10 | 14 | 17 | 19 | 28 | 193))
+}
+
+/// Ours: as halted, and silence or mute for magic, amnesia for abilities (ranged attacks and items stay).
+fn blocked(w: &World, magic: bool) -> bool {
+    halted(w) || w.buffs.iter().any(|&b| if magic { matches!(b, 6 | 29) } else { b == 16 })
+}
+
+/// Ours: the spell can be cast now (its list row and the menus above it dim otherwise).
+pub(super) fn spell_ready(w: &World, s: u16) -> bool {
+    magic_check(w, s).is_none() && !blocked(w, true)
+}
+
+/// Ours: the ability can be used now; traits never are.
+pub(super) fn ability_ready(w: &World, i: u16) -> bool {
+    ability_check(w, i).is_none() && !blocked(w, false)
+}
+
+/// Ours: something in the category can be used now. Traits are a list to read, never dimmed.
+/// A macro line's spell or ability (textcmd::line_action) usable now: a spell learned, a job ability among s2c
+/// 0x0AC's bits.
+pub(super) fn action_ready(w: &World, kind: Kind, id: u16) -> bool {
+    match kind {
+        Kind::Magic => super::textcmd::spell_learned(w, id) && spell_ready(w, id),
+        Kind::Ability if (0x200..0x400).contains(&id) => {
+            let bit = (id - 0x200) as usize;
+            w.commands_known.get(64 + bit / 8).is_some_and(|b| b & (1 << (bit % 8)) != 0) && ability_ready(w, id)
+        }
+        Kind::Ability => ability_ready(w, id),
+        Kind::Mount | Kind::Emote => true,
+    }
+}
+
+pub(super) fn cat_ready(w: &World, cat: Cat) -> bool {
+    match cat {
+        Cat::Magic(ty, _) => magic_rows(w, ty, false, 0).into_iter().any(|s| spell_ready(w, s)),
+        Cat::Ability(4) | Cat::Friends | Cat::Emote => true,
+        Cat::Ability(ty) => ability_rows(w, ty).into_iter().any(|i| ability_ready(w, i)),
+        Cat::Ranged => status_check(w).is_none() && !halted(w),
+        Cat::Mount => mount_check(w).is_none() && !mount_rows(w).is_empty(),
+    }
+}
+
+/// Ours: an action menu or main menu command has something usable now (Magic, Abilities, Trust, Items).
+pub(super) fn command_ready(w: &World, c: u8) -> bool {
+    let any = |menu: &str| cat_rows(menu).iter().any(|&(_, cat)| !matches!(cat, Cat::Ability(4)) && cat_ready(w, cat));
+    match c {
+        7 => any("menu    abiselec"),
+        0x44 => any("menu    mp_abisc"),
+        8 | 0x43 => any("menu    magselec"),
+        0x19 => cat_ready(w, Cat::Magic(8, false)),
+        9 => status_check(w).is_none() && !halted(w) && !super::items::listed(w, true).is_empty(),
+        _ => true,
+    }
+}
+
 /// FUN_10224b70: the line refusing an ability, or None (traits: "Job traits are always active.").
 pub(super) fn ability_check(w: &World, i: u16) -> Option<usize> {
     let a = w.actions.as_ref()?.abilities.get(i as usize)?.clone();

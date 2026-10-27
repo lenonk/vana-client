@@ -15,35 +15,35 @@ use std::time::Instant;
 
 const ROW: f32 = 34.0;
 
-/// A row's look: under the cursor, Manual Sort's picked one, greyed (can't be used now).
+/// A row's look: under the cursor, Manual Sort's picked one.
 #[derive(Clone, Copy, PartialEq)]
 enum Look {
     Normal,
     Cursor,
     Picked,
-    Off,
 }
 
-/// A row's frame (the pack's list rows), its icon and name; returns its response.
-fn row(ui: &mut Ui, m: &super::Modern, icon: Option<egui::TextureId>, pack: Option<&str>, name: &str, right: &str, look: Look) -> egui::Response {
+/// A row's frame (the pack's list rows), its icon and name, greyed when `off` (can't be used now); its response.
+#[allow(clippy::too_many_arguments)]
+fn row(ui: &mut Ui, m: &super::Modern, icon: Option<egui::TextureId>, pack: Option<&str>, name: &str, right: &str, look: Look, off: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW), Sense::click());
     let sprite = match look {
         Look::Cursor => "controls/list_row_selected",
         Look::Picked => "controls/list_row_hover",
         _ if resp.hovered() => "controls/list_row_hover",
-        Look::Off => "controls/list_row_disabled",
+        _ if off => "controls/list_row_disabled",
         Look::Normal => "controls/list_row_normal",
     };
     let p = ui.painter();
     super::rows::face(p, m, r, sprite, Color32::WHITE);
-    let tint = if look == Look::Off { Color32::from_gray(110) } else { Color32::WHITE };
+    let tint = if off { Color32::from_gray(110) } else { Color32::WHITE };
     let at = pos2(r.min.x + 10.0, r.center().y - 11.0);
     if let Some(t) = icon {
         p.image(t, Rect::from_min_size(at, vec2(22.0, 22.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
     } else if let Some(s) = pack.and_then(|i| m.art.sprite(i)) {
         p.add(paint::image(&s, at, 22.0, tint));
     }
-    let colour = super::rows::label_colour(m, look == Look::Cursor, look == Look::Off);
+    let colour = super::rows::label_colour(m, look == Look::Cursor, off);
     p.text(pos2(r.min.x + 40.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.ui), colour);
     if !right.is_empty() {
         p.text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, right, FontId::proportional(m.theme.small), m.theme.color("muted"));
@@ -122,7 +122,7 @@ fn suggested(ui: &mut Ui, p: (&super::Modern, Option<&super::super::game_ui::Gam
             None => name,
         };
         let look = if w.suggest_sel == Some(k) { Look::Cursor } else { Look::Normal };
-        let resp = row(ui, m, icon, None, &label, "", look);
+        let resp = row(ui, m, icon, None, &label, "", look, off(w, kind, id));
         ui.label(egui::RichText::new(&s.reason).size(m.theme.small).color(m.theme.color("muted")));
         mouse.take(k, &resp, moved);
     }
@@ -172,7 +172,9 @@ pub(super) fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Op
             _ => right.to_string(),
         };
         let look = if k == sel { Look::Cursor } else { Look::Normal };
-        let resp = row(ui, m, icons.get(k).copied().flatten(), None, &h.name, &right, look);
+        // Spells and abilities grey as in their lists (items keep their window's rules).
+        let dim = h.slot.is_none() && h.journal.is_none() && off(w, h.kind, h.id);
+        let resp = row(ui, m, icons.get(k).copied().flatten(), None, &h.name, &right, look, dim);
         mouse.take(k, &resp, moved);
     }
     mouse
@@ -240,7 +242,7 @@ fn cats(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
         for (k, &(_, cat)) in rows.iter().enumerate() {
             // The category cursor gives way while Tab has the suggestions.
             let look = if k == c.sel && w.suggest_sel.is_none() { Look::Cursor } else { Look::Normal };
-            let resp = row(ui, m, None, Some(cat_icon(cat)), magic::cat_label(c.menu, cat), "", look);
+            let resp = row(ui, m, None, Some(cat_icon(cat)), magic::cat_label(c.menu, cat), "", look, !magic::cat_ready(w, cat));
             mouse.take(k, &resp, moved);
         }
     });
@@ -267,6 +269,16 @@ fn cats(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
     }
 }
 
+/// Whether a spell or ability can't be used now (status, recast, MP / TP, effects we carry); traits never grey.
+fn off(w: &World, kind: Kind, id: u16) -> bool {
+    match kind {
+        Kind::Magic => !magic::spell_ready(w, id),
+        Kind::Ability => w.actions.as_ref().and_then(|a| a.abilities.get(id as usize)).is_some_and(|a| a.kind != 4) && !magic::ability_ready(w, id),
+        Kind::Mount => magic::mount_check(w).is_some(),
+        Kind::Emote => magic::emote_locked(w, id),
+    }
+}
+
 /// A list row's name, value at the right (MP cost; a recast under way), whether it can't be used now.
 fn row_view(w: &World, kind: Kind, id: u16) -> (String, String, bool) {
     match kind {
@@ -274,13 +286,12 @@ fn row_view(w: &World, kind: Kind, id: u16) -> (String, String, bool) {
             let mp = w.actions.as_ref().and_then(|a| a.spell(id)).map_or(0, |r| r.mp);
             let recast = magic::spell_recast(w, id);
             let right = if recast > 0.0 { format!("{}   {mp} MP", magic::clock(recast)) } else { format!("{mp} MP") };
-            (magic::spell_name(w, id), right, magic::magic_check(w, id).is_some())
+            (magic::spell_name(w, id), right, off(w, kind, id))
         }
         Kind::Ability => {
             let a = w.actions.as_ref().and_then(|a| a.abilities.get(id as usize));
             let recast = a.map_or(0.0, |a| if a.timer == 900 { 0.0 } else { magic::ability_recast(w, a.timer) });
-            let off = a.is_some_and(|a| a.kind != 4) && magic::ability_check(w, id).is_some();
-            (magic::ability_name(w, id), if recast > 0.0 { magic::clock(recast) } else { String::new() }, off)
+            (magic::ability_name(w, id), if recast > 0.0 { magic::clock(recast) } else { String::new() }, off(w, kind, id))
         }
         Kind::Mount => (magic::mount_name(w, id), String::new(), magic::mount_check(w).is_some()),
         Kind::Emote => (magic::emote_entry(w, id).and_then(|e| w.names.as_ref()?.emote_text(e.name as u32)).unwrap_or_default(), String::new(), magic::emote_locked(w, id)),
@@ -402,8 +413,8 @@ fn list(p: &mut Panels, w: &mut World, sugg: &[Suggestion]) {
         for (k, &id) in win.rows.iter().skip(win.scroll).take(VISIBLE).enumerate() {
             let (name, right, off) = row_view(w, win.kind, id);
             let picked = win.manual == 2 && win.scroll + k == win.picked;
-            let look = if k == win.cursor && win.sort_focus.is_none() { Look::Cursor } else if picked { Look::Picked } else if off { Look::Off } else { Look::Normal };
-            let resp = row(ui, m, icons.get(k).copied().flatten(), None, &name, &right, look);
+            let look = if k == win.cursor && win.sort_focus.is_none() { Look::Cursor } else if picked { Look::Picked } else { Look::Normal };
+            let resp = row(ui, m, icons.get(k).copied().flatten(), None, &name, &right, look, off);
             mouse.take(k, &resp, moved);
         }
         // The bar: the rows shown out of all, at the right edge.

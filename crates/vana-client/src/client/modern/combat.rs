@@ -3,7 +3,7 @@
 //! `World::action_click`), the arrow of a command with a Right function (Call for Help / Disengage swap, Magic's
 //! magselec, Chat's chat mode) runs that.
 
-use super::super::{World, combat, monstrosity};
+use super::super::{World, combat, magic, monstrosity};
 use super::{Panels, Title, paint};
 use crate::audio::Ui as Se;
 use egui::{Align2, Color32, FontFamily, FontId, Sense, pos2, vec2};
@@ -55,10 +55,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         for (k, &c) in menu.items.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
             let on = k == menu.sel;
+            // Nothing in it can be used now (status, recasts, MP / TP): greyed, still opens as retail's.
+            let off = !magic::command_ready(w, c);
             let face = if on {
                 "controls/list_row_selected"
             } else if resp.hovered() {
                 "controls/list_row_hover"
+            } else if off {
+                "controls/list_row_disabled"
             } else {
                 "controls/list_row_normal"
             };
@@ -68,9 +72,9 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             // Disengage reads Call for Help once swapped (DAT_10578174).
             let (label, icon) = if c == 3 && menu.call_help { command(2) } else { (label, icon) };
             if let Some(s) = m.art.sprite(icon) {
-                painter.add(paint::image(&s, pos2(r.min.x + 20.0, r.center().y - 12.0), 24.0, Color32::WHITE));
+                painter.add(paint::image(&s, pos2(r.min.x + 20.0, r.center().y - 12.0), 24.0, if off { Color32::from_gray(110) } else { Color32::WHITE }));
             }
-            painter.text(pos2(r.min.x + 52.0, r.center().y), Align2::LEFT_CENTER, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), super::rows::label_colour(m, on, false));
+            painter.text(pos2(r.min.x + 52.0, r.center().y), Align2::LEFT_CENTER, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), super::rows::label_colour(m, on, off));
             let mut on_arrow = false;
             if has_right(c) {
                 let a = super::rows::more_mark(painter, m, r, on);

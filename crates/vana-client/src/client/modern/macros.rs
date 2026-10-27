@@ -189,8 +189,8 @@ fn books(ui: &mut Ui, m: &super::Modern, gu: &GameUi, b: &macroedit::Books, move
     });
 }
 
-/// A keycap: its key's digit, the macro's title, the cursor's ring.
-fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Option<bool>) -> egui::Response {
+/// A keycap: its key's digit, the macro's title, the cursor's ring; dimmed when `off` (nothing in it can be used now).
+fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Option<bool>, off: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(vec2(KEY_W, KEY_H), Sense::click());
     let face = match () {
         _ if cursor.is_some() => "controls/item_slot_selected",
@@ -198,7 +198,7 @@ fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Opt
         _ => "controls/item_slot_normal",
     };
     if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+        ui.painter().add(paint::nine_slice(&s, r, 0.5, if off { Color32::from_gray(130) } else { Color32::WHITE }));
     }
     if let Some(focus) = cursor {
         let c = if focus { m.theme.color("focus") } else { m.theme.color("bronze") };
@@ -206,7 +206,8 @@ fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Opt
     }
     ui.painter().text(r.min + vec2(8.0, 6.0), Align2::LEFT_TOP, format!("{}", (digit + 1) % 10), FontId::monospace(m.theme.small), m.theme.color("muted"));
     let clip = r.shrink(4.0);
-    ui.painter().with_clip_rect(clip).text(pos2(r.center().x, r.center().y + 6.0), Align2::CENTER_CENTER, title, FontId::proportional(m.theme.small), m.theme.color("text"));
+    let colour = m.theme.color(if off { "muted" } else { "text" });
+    ui.painter().with_clip_rect(clip).text(pos2(r.center().x, r.center().y + 6.0), Align2::CENTER_CENTER, title, FontId::proportional(m.theme.small), colour);
     resp
 }
 
@@ -230,7 +231,7 @@ fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palette
             for col in 0..10u16 {
                 let i = col as usize + 10 * (pal as usize - 1);
                 let cursor = (pv.cols[pal as usize - 1] == col && pv.focus == pal).then_some(pv.focused);
-                let resp = keycap(ui, m, col as usize, pv.titles.get(i).map_or("", |t| t.as_str()), cursor);
+                let resp = keycap(ui, m, col as usize, pv.titles.get(i).map_or("", |t| t.as_str()), cursor, false);
                 if resp.hovered() && moved && pv.focused {
                     mouse.cell.0 = Some((pal, col));
                 }
@@ -306,11 +307,12 @@ fn held_palette(p: &mut Panels, w: &World) {
     let label = if pal == 1 { "Ctrl" } else { "Alt" };
     let note = format!("{}  Set {}", mac.book_title(mac.book), mac.set + 1);
     let titles: Vec<String> = (0..10).map(|k| mac.recs[k + 10 * (pal - 1)].title()).collect();
+    let off: Vec<bool> = (0..10).map(|k| m.macro_off(w, &mac.recs[k + 10 * (pal - 1)])).collect();
     let cur = w.palette.3[pal - 1];
     p.panel_at("macro palette", Some(Title { icon: Some("icons/macro"), text: label, note: Some(&note) }), width, at, |ui| {
         ui.horizontal(|ui| {
             for (k, t) in titles.iter().enumerate() {
-                keycap(ui, m, k, t, (k == cur).then_some(true));
+                keycap(ui, m, k, t, (k == cur).then_some(true), off[k]);
             }
         });
     });
