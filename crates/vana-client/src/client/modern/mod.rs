@@ -205,6 +205,7 @@ impl Modern {
         confirm(&mut p, w);
         choice(&mut p, w);
         mogdoor(&mut p, w);
+        event_input(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
         self.dirty |= changed;
@@ -473,6 +474,35 @@ fn choice(p: &mut Panels, w: &mut World) {
     if click.is_some() {
         super::event::key(w, egui::Key::Enter);
     }
+}
+
+/// An event's text input (retail's passinpu over the message line): its title (group 0xb by kind) or "Password:",
+/// the text as typed with a steady caret; the keys stay event.rs's.
+fn event_input(p: &mut Panels, w: &World) {
+    let Some(inp) = super::event::input(w) else { return };
+    let Some(gu) = p.gu else { return };
+    let m = p.m;
+    let title = match inp.kind {
+        1..=5 => gu.group_b([0xb9, 0xbe, 0xb9, 0xc8, 0xc9][inp.kind as usize - 1]).unwrap_or_default(),
+        _ => gu.child_caption("menu    passinpu", 1).unwrap_or_else(|| "Password:".into()),
+    };
+    let text = String::from_utf8_lossy(&inp.text).into_owned();
+    let caret = inp.caret.min(text.len());
+    let screen = p.ctx.content_rect();
+    let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
+    let h = m.rects.borrow().get("event input").map_or(80.0, |r| r.height());
+    let at = pos2(screen.width() * 0.0121, edge - h - 6.0);
+    p.panel_at("event input", None, 460.0, at, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(&title).size(m.theme.ui).color(m.theme.color("gold")));
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+            if let Some(s) = m.art.sprite("controls/list_row_selected") {
+                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+            }
+            let shown = format!("{}|{}", &text[..caret], &text[caret..]);
+            ui.painter().text(pos2(r.min.x + 10.0, r.center().y), egui::Align2::LEFT_CENTER, shown, FontId::monospace(m.theme.ui), m.theme.color("text"));
+        });
+    });
 }
 
 /// The Mog House door menu (FUN_101d62b0): its title and rows (the exit areas while choosing one).

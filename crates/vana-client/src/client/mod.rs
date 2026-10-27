@@ -2667,7 +2667,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             blockers.push(fep::draw(gu, f, word_x - 8.0, y));
         }
     }
-    if let Some(inp) = event::input(world) {
+    if let Some(inp) = event::input(world).filter(|_| !world.modern) {
         let text = String::from_utf8_lossy(&inp.text).into_owned();
         blockers.extend(draw_event_input(gu, inp.kind, &text, inp.caret, sw, sh));
     }
