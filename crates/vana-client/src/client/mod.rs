@@ -1406,6 +1406,27 @@ fn alliance_hidden(world: &World) -> bool {
     world.menu.is_some() || world.win.is_some() || world.config.is_some() || world.map.is_some() || world.cnq.is_some() || world.magic.is_some() || world.ability.is_some() || world.palette.0 != 0 || event::active(world)
 }
 
+/// Diagnostic: a window or list closed since the last frame, logged with the keys before it.
+fn window_closes(w: &mut World, events: &[egui::Event]) {
+    let open = [w.magic.is_some(), w.ability.is_some(), w.cats.is_some(), w.menu.is_some(), w.win.is_some(), w.action_menu.is_some(), w.config.is_some(), w.prompt.is_some(), w.typing]
+        .iter()
+        .enumerate()
+        .fold(0u16, |m, (i, &on)| m | (on as u16) << i);
+    let closed = w.open_seen & !open;
+    if closed != 0 {
+        log::info!("closed {closed:#05x} (magic 1, ability 2, cats 4, menu 8, win 0x10, action 0x20, config 0x40, prompt 0x80, chat line 0x100), open now {open:#05x}; keys before: {}", w.recent_keys.iter().cloned().collect::<Vec<_>>().join(" "));
+    }
+    w.open_seen = open;
+    for e in events {
+        if let egui::Event::Key { key, pressed, repeat, .. } = e {
+            w.recent_keys.push_back(format!("{}{key:?}{}", if *pressed { "" } else { "^" }, if *repeat { "*" } else { "" }));
+            if w.recent_keys.len() > 12 {
+                w.recent_keys.pop_front();
+            }
+        }
+    }
+}
+
 fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2], keys: &mut HashSet<KeyCode>, view_proj: glam::Mat4, numpad_slash: bool) -> Vec<[f32; 4]> {
     let (sw, sh) = (size[0] as f32, size[1] as f32);
     world.ui_wh = (sw, sh);
@@ -5015,6 +5036,9 @@ struct World {
     typing: bool,
     /// Space opened the chat line: its own space may still come as text, now or a frame later (dropped once).
     space_open: bool,
+    /// Diagnostic (a list closed while an arrow was held, 2026-10-27): the windows open last frame, the latest keys.
+    open_seen: u16,
+    recent_keys: std::collections::VecDeque<String>,
     /// Key function 0x78's focus cycle (FUN_10151550, DAT_10565d34 +0x68: 0 none, 1 logwindo, 2 buff), whether
     /// logwindo is the active menu, and the full log (menu fulllog) when open.
     log_focus: u8,
@@ -6632,6 +6656,8 @@ impl App {
                             music_changing: false,
                             typing: false,
                             space_open: false,
+                            open_seen: 0,
+                            recent_keys: Default::default(),
                             log_focus: 0,
                             log_active: false,
                             log_takers: 0,
@@ -10376,6 +10402,7 @@ impl App {
                 if let Some(gu) = self.game_ui.as_mut() {
                     self.ui_drawn = true;
                     gu.set_style(world.game.get(0x12) as usize);
+                    window_closes(world, &input.events);
                     self.hud_blockers = world_hud(gu, world, &input, screen_size, &mut self.keys, view_proj, self.numpad_slash);
                 }
                 if world.modern
