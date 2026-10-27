@@ -436,6 +436,14 @@ Milestone 1:
   Filters (Config, 0x32 / 0x33) still decide which battle messages print at all. The settings popup opens above the
   gear when the chat window sits in the screen's lower half (it opened off-screen before). Live: Cure and a say line,
   the Battle tab with the cast lines alone, Hidden leaving All to the chat.
+- From rChat (pChat in ESO; 2026-10-27): unread counts on the chat tabs (Say ... Shout; not All or Battle): the lines a
+  tab shows since it, or All showing them, was last on screen, "9+" past nine; a line from another player naming you
+  (a whole word, any case; retail's incoming modes only, never our own echoes) gets a gold wash and a gold bar at its
+  left. Live: two /say lines on the Battle tab counted on Say, cleared by opening it. Not yet: the log kept across
+  logins, search in the full log.
+- A click on a panel that does not move it leaves its place alone (egui starts a window's drag on the press: a click
+  on the location panel while the chat folded saved it undocked, and it stopped riding the chat). Live: a click keeps
+  the dock, a real drag moves and saves it.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

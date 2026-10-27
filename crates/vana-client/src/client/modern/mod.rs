@@ -57,6 +57,10 @@ pub struct Modern {
     /// The chat window's tab and whether its settings are open; game textures (status icons) as egui textures, by key.
     chat_tab: std::cell::Cell<u8>,
     chat_settings: std::cell::Cell<bool>,
+    /// Where each chat tab was last seen (the log's length then; chat.rs unread).
+    chat_seen: std::cell::RefCell<[Option<usize>; 11]>,
+    /// The panel a drag has really moved (show): a press alone moves nothing.
+    dragging: std::cell::RefCell<Option<String>>,
     /// How menu rows look (rows.rs), and window borders (borders.rs).
     row_style: std::cell::Cell<rows::Style>,
     border_style: std::cell::Cell<borders::Style>,
@@ -113,6 +117,8 @@ impl Modern {
             art: Art::load(ctx),
             chat_tab: Default::default(),
             chat_settings: Default::default(),
+            chat_seen: Default::default(),
+            dragging: Default::default(),
             row_style: Default::default(),
             border_style: Default::default(),
             images: Default::default(),
@@ -815,7 +821,10 @@ impl<'a> Panels<'a> {
         let mut changed = false;
         let bottom = BOTTOM.contains(&id);
         let (sw, sh) = (screen.width().max(1.0), screen.height().max(1.0));
-        if shown.response.dragged() {
+        // egui drags a movable window from the press: a click that never moves it leaves its place (and dock) alone.
+        let moved = shown.response.total_drag_delta().is_some_and(|d| d.length() > 2.0);
+        if shown.response.dragged() && (moved || m.dragging.borrow().as_deref() == Some(id)) {
+            *m.dragging.borrow_mut() = Some(id.to_string());
             m.arranging.set(true);
             place.dock = None;
             place.x = r.min.x / sw;
@@ -826,7 +835,8 @@ impl<'a> Panels<'a> {
             }
             changed = true;
         }
-        if shown.response.drag_stopped() {
+        if shown.response.drag_stopped() && m.dragging.borrow().as_deref() == Some(id) {
+            *m.dragging.borrow_mut() = None;
             place.dock = self.dock_for(id, r);
             changed = true;
         }

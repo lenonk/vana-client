@@ -109,7 +109,7 @@ pub fn line_job(stamp: (&str, Color32), line: &str, base: [u8; 4], font: &FontId
 }
 
 /// The tab row at the window's fade, the settings button at its right: the button's rect and whether it was clicked.
-fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
+fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool) {
     let tab = m.chat_tab.get();
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_H), Sense::hover());
     let font = FontId::proportional(m.theme.small);
@@ -131,6 +131,15 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
         }
         let c = if i == tab as usize { m.theme.color("gold") } else { m.theme.color("text") };
         ui.painter().text(r.center() + vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, *name, font.clone(), c.gamma_multiply(alpha));
+        // New lines since the tab was last shown: a count on its corner.
+        if let Some(&k) = unread.get(i).filter(|&&k| k > 0 && i != tab as usize) {
+            let text = if k > 9 { "9+".to_string() } else { k.to_string() };
+            let f = FontId::proportional(m.theme.small * 0.8);
+            let tw = ui.fonts_mut(|fs| fs.layout_no_wrap(text.clone(), f.clone(), Color32::WHITE).size().x);
+            let b = Rect::from_center_size(pos2(r.max.x - 5.0, r.min.y + 3.0), vec2((tw + 8.0).max(15.0), 15.0));
+            ui.painter().rect_filled(b, 7.5, m.theme.color("gold").gamma_multiply(alpha));
+            ui.painter().text(b.center(), egui::Align2::CENTER_CENTER, text, f, Color32::from_rgb(0x18, 0x14, 0x0c).gamma_multiply(alpha));
+        }
         if resp.clicked() {
             m.chat_tab.set(i as u8);
         }
@@ -227,10 +236,48 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in
 /// What the chat window shows: the lines (timestamp, text, colour, chat line or not), the chat line while typing,
 /// and whether a message waits for a key.
 pub struct ChatView<'a> {
-    /// The lines: timestamp, text, colour, chat mode (combat::NO_MODE without one).
-    pub lines: Vec<(String, &'a str, [u8; 4], u16)>,
+    /// The lines: timestamp, text, colour, chat mode (combat::NO_MODE without one), whether it names us.
+    pub lines: Vec<(String, &'a str, [u8; 4], u16, bool)>,
     pub input: Option<InputView>,
     pub waiting: bool,
+    /// The lines each tab has had since it was last shown (rChat's unread markers).
+    pub unread: [u32; 11],
+}
+
+/// Other players' lines (retail's incoming modes: say, shout, yell, tell, party, linkshells, emote, unity, assist).
+fn incoming(mode: u16) -> bool {
+    matches!(mode, 9 | 10 | 0xb | 0xc | 0xd | 0xe | 0xf | 0xd4 | 0xd6 | 0xdc | 0xde)
+}
+
+/// Whether `line` names `me` as a word (rChat's mentions; any case).
+pub fn mentions(line: &str, me: &str) -> bool {
+    if me.is_empty() {
+        return false;
+    }
+    let (l, n) = (line.to_lowercase(), me.to_lowercase());
+    let word = |c: Option<char>| c.is_none_or(|c| !c.is_alphanumeric());
+    l.match_indices(&n).any(|(at, _)| word(l[..at].chars().next_back()) && word(l[at + n.len()..].chars().next()))
+}
+
+/// The unread counts for the tabs (not All, not Battle): what each tab shows since it (or All showing it) was last
+/// on screen; the shown tab's mark moves to the log's end.
+fn unread(m: &Modern, w: &World, battle_in_all: bool) -> [u32; 11] {
+    let n = w.chat.len();
+    let modes = w.chat.modes();
+    let mut seen = m.chat_seen.borrow_mut();
+    let tab = m.chat_tab.get() as usize;
+    for t in 0..TABS.len() {
+        let looked = t == tab || (tab == 0 && (t != BATTLE_TAB as usize || battle_in_all));
+        if seen[t].is_none() || looked {
+            seen[t] = Some(n);
+        }
+    }
+    let mut out = [0u32; 11];
+    for (t, o) in out.iter_mut().enumerate().skip(1).take(TABS.len() - 2) {
+        let from = seen[t].unwrap_or(n).min(n);
+        *o = modes[from..].iter().filter(|&&md| shows(t as u8, md, battle_in_all)).count() as u32;
+    }
+    out
 }
 
 /// The chat line: its channel, its pieces (phrases flagged) and the caret's character index.
@@ -275,9 +322,9 @@ fn view_keep(w: &World, keep: usize) -> ChatView<'_> {
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
     let modes = w.chat.modes();
     let all: Vec<_> = w.chat.iter_timed().zip(modes.iter().copied()).collect();
-    let lines = all[all.len().saturating_sub(keep)..].iter().map(|(((line, c), (time, chat, _)), mode)| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode)).collect();
+    let lines = all[all.len().saturating_sub(keep)..].iter().map(|(((line, c), (time, chat, _)), mode)| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode, incoming(*mode) && mentions(line, &w.name))).collect();
     let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w), fep: w.fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)) });
-    ChatView { lines, input, waiting: event::prompt(w) }
+    ChatView { lines, input, waiting: event::prompt(w), unread: [0; 11] }
 }
 
 /// The chat line in the pack's focused input at `r`: the channel, the text (phrases in their blue) at `size` and the
@@ -424,7 +471,15 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     ml.shown = Some(h.max(floor));
     let a = &ml.anim;
     let shown = Shown { rows: h.max(floor), draw_n: a.draw_n(), pending: a.pending(), slide: a.off() + if rule.line_open { 16 } else { 0 } };
-    draw(p, &view(w), shown, rule.line_open);
+    let mut v = view(w);
+    v.unread = unread(m, w, *p.battle_in_all);
+    draw(p, &v, shown, rule.line_open);
+}
+
+/// A line naming us (rChat's mentions): a faint gold wash behind it and a gold bar at its left.
+fn mention_mark(p: &egui::Painter, m: &Modern, r: Rect) {
+    p.rect_filled(Rect::from_min_max(pos2(r.min.x - 4.0, r.min.y), pos2(r.max.x + 6.0, r.max.y)), 3.0, m.theme.color("gold").gamma_multiply(0.24));
+    p.rect_filled(Rect::from_min_max(pos2(r.min.x - 8.0, r.min.y + 1.0), pos2(r.min.x - 5.5, r.max.y - 1.0)), 1.0, m.theme.color("gold"));
 }
 
 /// A channel tab with nothing on it says so (and where everything is).
@@ -455,7 +510,8 @@ fn full(p: &mut Panels, w: &mut World) {
     };
     let height = (bottom - sh * 0.107 - riders).max(chrome() + 4.0 * row);
     let lines_h = height - chrome();
-    let v = view_keep(w, usize::MAX);
+    let mut v = view_keep(w, usize::MAX);
+    v.unread = unread(m, w, *p.battle_in_all);
     let t = p.ctx.input(|i| i.time) as f32;
     let tab = m.chat_tab.get();
     let battle_in_all = *p.battle_in_all;
@@ -463,7 +519,7 @@ fn full(p: &mut Panels, w: &mut World) {
     let (mut short, mut hovered) = (None, false);
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        button = tabs(ui, m, 1.0);
+        button = tabs(ui, m, 1.0, &v.unread);
         ui.add_space(GAP);
         let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
         hovered = resp.hovered();
@@ -471,9 +527,9 @@ fn full(p: &mut Panels, w: &mut World) {
         // The chat line in the bottom row while typing.
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
         let lines = Rect::from_min_max(area.min, pos2(area.max.x, input_r.map_or(area.max.y, |r| r.min.y - TAB_H)));
-        let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min, lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
+        let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min - vec2(10.0, 0.0), lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
         let mut y = lines.max.y + fl.scroll as f32 * row;
-        for (st, line, c, mode) in v.lines.iter().rev() {
+        for (st, line, c, mode, named) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
@@ -482,6 +538,9 @@ fn full(p: &mut Panels, w: &mut World) {
             }
             let galley = painter.layout_job(line_job((st, m.theme.color("muted")), line, *c, &font, wrap));
             y -= galley.size().y;
+            if *named {
+                mention_mark(&painter, m, Rect::from_min_size(pos2(area.min.x, y), vec2(galley.size().x, galley.size().y)));
+            }
             painter.galley(pos2(area.min.x, y), galley, m.theme.color("text"));
         }
         // The oldest line reached below the top: scrolled past it by this many rows.
@@ -552,18 +611,19 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     // Below its chrome it folds into its bottom edge, what rides on it going down with it.
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), fold: total / height, ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        button = tabs(ui, m, 1.0);
+        button = tabs(ui, m, 1.0, &v.unread);
         ui.add_space(GAP);
         let (area, _) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
         let wrap = wrap_width(room);
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, floor - row - 5.0), pos2(area.max.x, floor + 5.0)));
         let base = floor - if lift { 2.0 * row } else { 0.0 } + s.slide as f32 * row / 16.0;
         let top = area.min.y.max(base - s.draw_n as f32 * row);
-        let clip = Rect::from_min_max(pos2(area.min.x, top), pos2(area.max.x + 8.0, input_r.map_or(floor + if s.slide == 0 { 4.0 } else { 0.0 }, |r| r.min.y)));
+        // Room left of the lines for the mention mark.
+        let clip = Rect::from_min_max(pos2(area.min.x - 10.0, top), pos2(area.max.x + 8.0, input_r.map_or(floor + if s.slide == 0 { 4.0 } else { 0.0 }, |r| r.min.y)));
         let painter = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
         let mut y = base + s.pending as f32 * row;
         let mut newest = None;
-        for (st, line, c, mode) in v.lines.iter().rev() {
+        for (st, line, c, mode, named) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
@@ -572,6 +632,9 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
             }
             let galley = painter.layout_job(line_job((st, m.theme.color("muted")), line, *c, &font, wrap));
             y -= galley.size().y;
+            if *named {
+                mention_mark(&painter, m, Rect::from_min_size(pos2(area.min.x, y), vec2(galley.size().x, galley.size().y)));
+            }
             if newest.is_none() {
                 newest = galley.rows.last().map(|r| pos2(area.min.x + r.rect().max.x, y + r.rect().center().y));
             }
@@ -598,5 +661,19 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     }
     if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
         *p.changed = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mentions;
+
+    #[test]
+    fn mention_words() {
+        assert!(mentions("(Raven) lenon, cure me pls", "Lenon"));
+        assert!(mentions("Raven : thanks Lenon!", "Lenon"));
+        assert!(!mentions("Raven : Lenonade anyone?", "Lenon"));
+        assert!(!mentions("Ninetails : hi", "Nine"));
+        assert!(!mentions("anything", ""));
     }
 }

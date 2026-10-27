@@ -102,11 +102,15 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         (String::new(), "Koru gains the effect of Protect.", wh, NO_MODE),
         (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], NO_MODE),
         ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], 13),
+        ("[18:42:33] ".to_string(), "(Raven) lenon, cure me pls", [0x80, 0x70, 0x40, 0x80], 13),
         // The game's own glyphs and an event item name (1e 02 .. 1e 01).
         (String::new(), "Kupipi : A pre\u{FF5E}sent? Take this \u{100402}Fire Crystal\u{100401} to the \u{F87B2}Mog House\u{F87B3}.", wh, NO_MODE),
     ];
     let shown = chat::Shown { rows: 8.0, draw_n: 8, pending: 0, slide: 0 };
-    chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false }, shown, true);
+    let mut unread = [0; 11];
+    unread[2] = 3;
+    let named = |l: &str, mode: u16| mode == 13 && chat::mentions(l, "Lenon");
+    chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d, named(b, *d))).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false, unread }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { effects: mine, cursor: None }, false);
