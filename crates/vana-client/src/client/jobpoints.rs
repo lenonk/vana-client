@@ -287,7 +287,7 @@ pub(super) fn look(w: &World) -> Option<Look> {
                     let (c, lc, cost) = colours(w, &t, p.job, e);
                     let (level, next) = w.jp_list.get(&e).copied().unwrap_or((0, 0));
                     let max = t.max.get(e as usize).copied().unwrap_or(0);
-                    PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), header: None }
+                    PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), ..Default::default() }
                 })
                 .collect();
             (rows, es.get(cursor).map_or((String::new(), String::new()), |&e| (t.name(e), t.desc(e))))

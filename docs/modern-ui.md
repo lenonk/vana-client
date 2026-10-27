@@ -337,6 +337,10 @@ Milestone 1:
   sortyn as buttons, the raise asked by the modern confirm (merityn: Escape is the error sound, as retail). Job Points'
   two pages as tabs. Live on Lnxcsfix (WAR 99 with Limit Breaker, Job Breaker and the Cipher Bracelet for the test,
   restored after): every list, Raise up to the confirm (declined) in the Mog House, an alter ego row by the mouse.
+- Unity (2026-10-27, points.rs over unity.rs): ut_menu as a column with the accolades in the title, quest00 beside it
+  (Unity Information's lines and the chat setting with a dot on the current one, or the two weeks), quest01's ranking
+  of every unity under its rows; Unity Lists opens the area list's own panel. Live: both pages, a week's ranking, a
+  row and Unity Lists by the mouse.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

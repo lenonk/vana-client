@@ -1,14 +1,15 @@
 //! The modern Merit Points, Job Points and Alter Ego Points over client/merits.rs, jobpoints.rs and aepoints.rs, which
 //! keep every rule and key: the gauge and the points at the top, the windows' lists side by side with every row (level
 //! / most and the next cost in retail's colours), the cursor row's description under them; merit3 and sortyn as
-//! buttons, the raise asked by the modern confirm (merityn).
+//! buttons, the raise asked by the modern confirm (merityn). Unity (client/unity.rs) in the same place.
 
-use super::super::merits::{self, PointList};
+use super::super::merits::{self, PointList, PointRow};
 use super::super::game_ui::GameUi;
-use super::super::{World, aepoints, jobpoints};
+use super::super::{World, aepoints, jobpoints, unity};
 use super::craft::{button, caption, tint};
 use super::{MenuWin, Panels, Title, hud, paint, social};
 use crate::audio::Ui as Se;
+use crate::inventory::TINT_WHITE;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
 
 const ROW: f32 = 28.0;
@@ -52,6 +53,9 @@ fn rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, salt: &str, l: &PointList, 
             ui.painter().with_clip_rect(clip).text(pos2(rect.min.x + 24.0, y), Align2::LEFT_CENTER, name, font, tint(m, r.tint));
             if let Some((s, c)) = &r.level {
                 ui.painter().text(pos2(level_x, y), Align2::RIGHT_CENTER, s, FontId::monospace(m.theme.small), tint(m, *c));
+            }
+            if r.mark {
+                ui.painter().circle_filled(pos2(rect.max.x - 16.0, y), 4.5, m.theme.color("gold"));
             }
             if let Some((s, c)) = &r.cost {
                 ui.painter().text(pos2(rect.max.x - 100.0, y), Align2::LEFT_CENTER, &next, FontId::proportional(m.theme.small), tint(m, *c));
@@ -121,7 +125,78 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         job_points(p, w);
     } else if w.ae_ui.is_some() {
         alter_ego(p, w);
+    } else if w.unity.is_some() {
+        unity_panel(p, w);
     }
+}
+
+/// ut_menu as a column, quest00 beside it (Unity Information's lines and chat setting, or the two weeks), quest01's
+/// ranking under its rows; the area list (row 3) is a panel of its own.
+fn unity_panel(p: &mut Panels, w: &mut World) {
+    let Some(gu) = p.gu else { return };
+    let Some(v) = unity::look(w, gu) else { return };
+    let m = p.m;
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none() && w.arealist.is_none();
+    let note = format!("{}/99999", v.accolades);
+    let width = COL_W + if v.info.is_some() { 16.0 + LIST_W } else { 0.0 } + 44.0;
+    let (mut menu, mut rows_got, mut ranks_got) = ((None, None), (None, None), (None, None));
+    p.panel("window", Some(Title { icon: Some("icons/status"), text: "Unity", note: Some(&note) }), width, |ui| {
+        ui.horizontal_top(|ui| {
+            let col = MenuWin { name: unity::MENU, sel: v.sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+            menu = social::column(ui, m, gu, &col, free && v.info.is_none(), moved);
+            let Some(i) = &v.info else { return };
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(LIST_W);
+                heading(ui, m, &i.heading);
+                for l in &i.waiting {
+                    ui.label(egui::RichText::new(l).size(m.theme.small).color(m.theme.color("muted")));
+                }
+                for [a, b, c] in &i.lines {
+                    let (r, _) = ui.allocate_exact_size(vec2(LIST_W - 14.0, 24.0), Sense::hover());
+                    let y = r.center().y;
+                    ui.painter().text(pos2(r.min.x + 4.0, y), Align2::LEFT_CENTER, a, FontId::proportional(m.theme.small), m.theme.color("muted"));
+                    ui.painter().text(pos2(r.min.x + 200.0, y), Align2::LEFT_CENTER, b, FontId::proportional(m.theme.small), m.theme.color("text"));
+                    ui.painter().text(pos2(r.max.x - 4.0, y), Align2::RIGHT_CENTER, c, FontId::monospace(m.theme.small), m.theme.color("text"));
+                }
+                if !i.chat_label.is_empty() {
+                    ui.add_space(8.0);
+                    ui.label(egui::RichText::new(&i.chat_label).size(m.theme.small).color(m.theme.color("text")));
+                }
+                ui.add_space(4.0);
+                let two = PointList {
+                    rows: i.rows.iter().enumerate().map(|(k, t)| PointRow { name: t.clone(), tint: TINT_WHITE, mark: i.mode == 1 && (k == 0) == i.chat, ..Default::default() }).collect(),
+                    cursor: i.sel as usize - 1,
+                    focused: free && i.ranks.is_none(),
+                    help: Default::default(),
+                };
+                rows_got = rows(ui, m, gu, "unity rows", &two, LIST_W, false);
+                let Some((title, order, cursor)) = &i.ranks else { return };
+                ui.add_space(10.0);
+                heading(ui, m, title);
+                let list = PointList {
+                    rows: order.iter().map(|[rk, name, pt]| PointRow { name: format!("{rk}   {name}"), tint: TINT_WHITE, level: Some((pt.clone(), TINT_WHITE)), ..Default::default() }).collect(),
+                    cursor: *cursor,
+                    focused: free,
+                    help: Default::default(),
+                };
+                if list.rows.is_empty() {
+                    for l in &i.waiting {
+                        ui.label(egui::RichText::new(l).size(m.theme.small).color(m.theme.color("muted")));
+                    }
+                }
+                ranks_got = rows(ui, m, gu, "unity ranks", &list, LIST_W, false);
+            });
+        });
+    });
+    if !free {
+        return;
+    }
+    let enter = |w: &mut World, gu: &GameUi| unity::key(w, gu, egui::Key::Enter, false);
+    social::act(w, gu, menu, unity::set_menu, enter);
+    social::act(w, gu, (rows_got.0.map(|k| k as u16 + 1), rows_got.1.map(|k| k as u16 + 1)), unity::set_info, enter);
+    act(w, ranks_got, unity::set_rank, |_| {});
 }
 
 /// What the mouse did on the Merit Points windows.

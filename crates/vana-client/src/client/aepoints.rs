@@ -206,7 +206,7 @@ pub(super) fn look(w: &World) -> Option<Look> {
                 let level = w.ae_data.map_or(0, |d| d.upgrades[i]);
                 let max = t.max.get(e as usize).copied().unwrap_or(0);
                 let next = w.ae_data.map_or(0, |d| d.costs[i]);
-                PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), header: None }
+                PointRow { name: t.name(e), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.map(|cc| (format!("{next} P"), cc)), ..Default::default() }
             })
             .collect();
         let help = es.get(cursor).map_or((String::new(), String::new()), |&e| (t.name(e), t.desc(e)));

@@ -448,6 +448,8 @@ pub(super) struct PointRow {
     pub level: Option<(String, u32)>,
     pub cost: Option<(String, u32)>,
     pub header: Option<usize>,
+    /// A setting's current choice (Unity's chat).
+    pub mark: bool,
 }
 
 /// A points list as drawn: every row, the cursor, whether it has the keys; the cursor row's name and description.
@@ -493,7 +495,7 @@ pub(super) fn look(w: &World) -> Option<Look> {
                     let (c, lc, cost) = colours(w, &t, index, group);
                     let (next, level) = w.merit_list.get(&index).copied().unwrap_or((0, 0));
                     let max = t.entry(index).map_or(0, |e| e.max);
-                    PointRow { name: t.name(index), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.filter(|_| next != 0).map(|cc| (format!("{next} P"), cc)), header: None }
+                    PointRow { name: t.name(index), tint: c, level: Some((format!("{level}/{max}"), lc)), cost: cost.filter(|_| next != 0).map(|cc| (format!("{next} P"), cc)), ..Default::default() }
                 }
             })
             .collect();

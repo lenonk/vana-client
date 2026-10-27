@@ -39,7 +39,7 @@ pub(super) fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, f
         ui.set_width(COL_W);
         let t = title(gu, v);
         // The panel already carries the page's name; a window's own title shows when it adds something.
-        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info" | "Synthesis" | "MacroPalette") {
+        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info" | "Synthesis" | "MacroPalette" | "Unity") {
             ui.label(egui::RichText::new(t).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
             ui.add_space(4.0);
         }

@@ -6,7 +6,7 @@ use super::World;
 use super::game_ui::GameUi;
 use crate::audio::Ui;
 
-const MENU: &str = "menu    ut_menu";
+pub(super) const MENU: &str = "menu    ut_menu";
 const POINT: &str = "menu    ut_point";
 const CHOOSER: &str = "menu    quest00";
 const LIST: &str = "menu    quest01";
@@ -287,6 +287,9 @@ fn plate(gu: &mut GameUi, x: f32, y: f32, on: bool, focused: bool) {
 /// ut_menu, ut_point ("%d/%d" accolades / 99999 right at (100, 0x14)), and quest00 / quest01 in the Unity modes.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(u) = &w.unity else { return rects };
     let free = w.confirm.is_none() && w.arealist.is_none();
     if let Some(win) = gu.lobby_window_off(MENU, sw, sh, (0.0, 0.0), Some(u.sel), free && u.info.is_none(), &[]) {
@@ -397,6 +400,99 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     rects
 }
 
+/// The Unity windows as the modern layer draws them.
+pub(super) struct Look {
+    /// ut_menu's cursor; ut_point's accolades.
+    pub sel: u16,
+    pub accolades: u32,
+    pub info: Option<InfoLook>,
+}
+
+/// quest00 (mode 1 Unity Information, 2 Ranking Information) and quest01 over it.
+pub(super) struct InfoLook {
+    pub mode: u8,
+    pub heading: String,
+    /// Mode 1's lines: label, rank, points (empty cells left out); group 9's two lines while the data is not in.
+    pub lines: Vec<[String; 3]>,
+    pub waiting: Vec<String>,
+    /// Mode 1's chat line (0xc 0x1b7) and which row is the current setting.
+    pub chat_label: String,
+    pub chat: bool,
+    /// The two rows and quest00's cursor.
+    pub rows: [String; 2],
+    pub sel: u16,
+    /// quest01: the week's title, its rows (rank, unity, average) and the cursor.
+    pub ranks: Option<(String, Vec<[String; 3]>, usize)>,
+}
+
+pub(super) fn look(w: &World, gu: &GameUi) -> Option<Look> {
+    let u = w.unity.as_ref()?;
+    let accolades = if w.recasts_seen { w.stats.as_ref().map_or(0, |s| s.unity >> 10 & 0x1ffff) } else { 0 };
+    let msg = |id: usize| gu.lobby_msg(0xc, id, "");
+    let waiting: Vec<String> = w.battle.as_ref().map_or(Vec::new(), |bt| [0x61, 0x62].iter().filter_map(|&k| bt.group9(k)).collect());
+    let info = u.info.as_ref().map(|i| {
+        let ok = ready(w);
+        let mut lines = Vec::new();
+        if i.mode == 1 && ok {
+            let me = unity_of(w);
+            lines.push([msg(0x18d), msg(0x192 + me as usize), String::new()]);
+            for (week, id) in [(0usize, 0x18e), (1, 0x18f)] {
+                let r = w.unity_tables.ranking(week);
+                let (rk, pt) = if me == 0 { (msg(0x1b2), String::new()) } else { (rank_text(gu, rank(&r, me)), format!("{}pt", average(&r, me).min(999_999))) };
+                lines.push([msg(id), rk, pt]);
+            }
+            if me != 0 {
+                let eval = w.stats.as_ref().map_or(0, |s| s.unity_eval);
+                lines.push([msg(0x1c4), String::new(), format!("{}pt", eval >> 16)]);
+                lines.push([msg(0x1c5), String::new(), format!("{}pt", eval & 0xffff)]);
+            }
+        }
+        let rows = if i.mode == 1 { [msg(0x1b8), msg(0x1b9)] } else { [msg(400), msg(401)] };
+        let ranks = i.ranks.as_ref().map(|rk| {
+            let full = w.unity_tables.ranking(rk.week);
+            let order: Vec<[String; 3]> = if ok {
+                full.iter().filter(|e| e.0 != 0).map(|&(un, avg)| [rank_text(gu, rank(&full, un)), msg(0x192 + un as usize), format!("{avg}pt")]).collect()
+            } else {
+                Vec::new()
+            };
+            (msg(if rk.week == 0 { 400 } else { 0x191 }), order, rk.cursor)
+        });
+        InfoLook {
+            mode: i.mode,
+            heading: msg(if i.mode == 1 { 0x18b } else { 0x18c }),
+            lines,
+            waiting: if ok { Vec::new() } else { waiting.clone() },
+            chat_label: if i.mode == 1 { msg(0x1b7) } else { String::new() },
+            chat: i.chat,
+            rows,
+            sel: i.sel,
+            ranks,
+        }
+    });
+    Some(Look { sel: u.sel, accolades, info })
+}
+
+/// The mouse's cursor moves: ut_menu, quest00's two rows, quest01's rows. True when it moved.
+pub(super) fn set_menu(w: &mut World, k: u16) -> bool {
+    let Some(u) = w.unity.as_mut().filter(|u| u.info.is_none() && u.sel != k && (1..=3).contains(&k)) else { return false };
+    u.sel = k;
+    true
+}
+
+pub(super) fn set_info(w: &mut World, k: u16) -> bool {
+    let Some(i) = w.unity.as_mut().and_then(|u| u.info.as_mut()).filter(|i| i.ranks.is_none() && i.sel != k && (1..=2).contains(&k)) else { return false };
+    i.sel = k;
+    true
+}
+
+pub(super) fn set_rank(w: &mut World, k: usize) -> bool {
+    let n = if ready(w) { 11 } else { 0 };
+    let Some(r) = w.unity.as_mut().and_then(|u| u.info.as_mut()).and_then(|i| i.ranks.as_mut()).filter(|r| r.cursor != k && k < n) else { return false };
+    r.cursor = k;
+    r.top = r.top.min(k).max((k + 1).saturating_sub(VISIBLE));
+    true
+}
+
 /// The ranking's bar (the paged list, as its Ctrl / Alt keys).
 pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     let n = if ready(w) { 11 } else { 0 };
@@ -411,7 +507,8 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::generic;
     let Some(u) = w.unity.as_ref() else { return };
-    if w.arealist.is_some() {
+    // The modern layer draws them and takes their mouse.
+    if w.arealist.is_some() || w.modern {
         return;
     }
     let keys = |w: &mut World, gu: &GameUi, k: egui::Key| key(w, gu, k, false);
