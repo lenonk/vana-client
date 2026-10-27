@@ -278,7 +278,7 @@ fn chevron(p: &egui::Painter, c: Pos2, left: bool, col: Color32) {
 
 /// The edge window's frame over `r`: no border on the anchored side (it runs past the screen's edge), the other
 /// corners rounded, a bronze line with a thin gold one inside it, and on the inner side a small diamond when `jewel`.
-fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool, radius: u8) -> Shape {
+pub(super) fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewel: bool, radius: u8) -> Shape {
     let ext = match (attached, left) {
         (false, _) => r,
         (true, true) => Rect::from_min_max(pos2(r.min.x - 10.0, r.min.y), r.max),
@@ -289,6 +289,10 @@ fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::Modern, jewe
         (true, true) => egui::CornerRadius { nw: 0, sw: 0, ne: k, se: k },
         (true, false) => egui::CornerRadius { nw: k, sw: k, ne: 0, se: 0 },
     };
+    // The other border styles draw their own (borders.rs), without the jewel.
+    if let Some(s) = super::borders::edge(m, ext, round(radius)) {
+        return s;
+    }
     let mut v = vec![
         Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.theme.color("surface").gamma_multiply(0.95))),
         Shape::Rect(egui::epaint::RectShape::stroke(ext, round(radius), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),

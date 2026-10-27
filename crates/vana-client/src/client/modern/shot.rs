@@ -61,6 +61,21 @@ fn menu_sample(p: &mut Panels) {
     });
 }
 
+/// An edge window on the right edge under the menu (Wide Scan's look, a few rows), in its frame.
+fn edge_sample(m: &Modern, ctx: &egui::Context) {
+    let screen = ctx.content_rect();
+    let r = Rect::from_min_max(pos2(screen.max.x - 290.0, 560.0), pos2(screen.max.x, 800.0));
+    let p = ctx.layer_painter(LayerId::new(Order::Middle, Id::unique("edge sample")));
+    p.add(super::extras::edge_frame_shape(r, false, true, m, true, 16));
+    let font = egui::FontId::new(m.theme.small + 1.0, egui::FontFamily::Name(super::STRONG.into()));
+    p.text(pos2(r.min.x + 36.0, r.min.y + 22.0), egui::Align2::LEFT_CENTER, "Wide Scan (37)", font, m.theme.color("gold"));
+    for (k, (name, d)) in [("Rumoie", 0), ("Fulchia", 15), ("Home Point #3", 29), ("Trail Markings", 31), ("Artisan Moogle", 45), ("Lotte", 62), ("Valderotaux", 64)].iter().enumerate() {
+        let y = r.min.y + 52.0 + 22.0 * k as f32;
+        p.text(pos2(r.min.x + 22.0, y), egui::Align2::LEFT_CENTER, *name, egui::FontId::proportional(m.theme.small), Color32::from_rgb(0x7c, 0xe0, 0x8a));
+        p.text(pos2(r.max.x - 30.0, y), egui::Align2::RIGHT_CENTER, d.to_string(), egui::FontId::proportional(m.theme.small), m.theme.color("muted"));
+    }
+}
+
 fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let top = crate::client::hudtop::TopView {
         title: "Status".into(),
@@ -107,11 +122,14 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     if opts.list {
         list_sample(&mut p);
     }
-    if opts.rows.is_some() {
+    if opts.rows.is_some() || opts.borders.is_some() {
         menu_sample(&mut p);
     }
     *m.rects.borrow_mut() = std::mem::take(&mut p.this);
-    if opts.list || opts.rows.is_some() {
+    if opts.borders.is_some() {
+        edge_sample(m, ctx);
+    }
+    if opts.list || opts.rows.is_some() || opts.borders.is_some() {
         return;
     }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
@@ -138,6 +156,8 @@ pub struct Opts {
     pub list: bool,
     /// A menu row style by name (rows.rs): the main menu and a submenu drawn in it.
     pub rows: Option<String>,
+    /// A window border style by name (borders.rs): the panels, the menu and an edge window drawn in it.
+    pub borders: Option<String>,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
@@ -158,6 +178,9 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     let m = Modern::new(&ctx);
     if let Some(name) = &opts.rows {
         m.row_style.set(super::rows::Style::from_name(name).with_context(|| format!("no row style {name}"))?);
+    }
+    if let Some(name) = &opts.borders {
+        m.border_style.set(super::borders::Style::from_name(name).with_context(|| format!("no border style {name}"))?);
     }
     if let Some((r, s)) = &opts.font {
         super::theme::install_fonts_with(&ctx, Some((std::fs::read(r)?, std::fs::read(s)?)));

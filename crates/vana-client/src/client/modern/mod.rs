@@ -7,6 +7,7 @@
 
 mod auction;
 mod bluset;
+mod borders;
 mod chat;
 mod combat;
 mod command;
@@ -56,8 +57,9 @@ pub struct Modern {
     /// The chat window's tab and whether its settings are open; game textures (status icons) as egui textures, by key.
     chat_tab: std::cell::Cell<u8>,
     chat_settings: std::cell::Cell<bool>,
-    /// How menu rows look (rows.rs).
+    /// How menu rows look (rows.rs), and window borders (borders.rs).
     row_style: std::cell::Cell<rows::Style>,
+    border_style: std::cell::Cell<borders::Style>,
     images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
     /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
     grid: std::cell::RefCell<(Option<std::time::Instant>, String)>,
@@ -112,6 +114,7 @@ impl Modern {
             chat_tab: Default::default(),
             chat_settings: Default::default(),
             row_style: Default::default(),
+            border_style: Default::default(),
             images: Default::default(),
             grid: Default::default(),
             marquee: Default::default(),
@@ -777,9 +780,7 @@ impl<'a> Panels<'a> {
             });
             let r = inner.response.rect;
             let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
-            if let Some(f) = m.art.frame(frame) {
-                ui.painter().set(bg, paint::faded(paint::window(f, showing, 1.0), alpha));
-            }
+            ui.painter().set(bg, paint::faded(borders::window(m, frame, showing), alpha));
             if !o.resizable {
                 return None;
             }

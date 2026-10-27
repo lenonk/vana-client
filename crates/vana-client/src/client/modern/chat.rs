@@ -213,9 +213,7 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in
             });
         });
         let r = inner.response.rect;
-        if let Some(f) = m.art.frame("window_normal") {
-            ui.painter().set(bg, paint::window(f, r, 1.0));
-        }
+        ui.painter().set(bg, super::borders::window(m, "window_normal", r));
         r
     });
     let r = shown.inner;

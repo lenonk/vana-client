@@ -178,11 +178,6 @@ pub fn face(p: &Painter, m: &Modern, r: Rect, face: &str, tint: Color32) {
     back(&q, m, r, s, style);
 }
 
-/// The submenu mark at a row's right in the current style (the framed art's boxed arrow, else the style's chevron).
-pub fn more_mark(p: &Painter, m: &Modern, r: Rect, on: bool) {
-    more(p, m, r, State { on, ..Default::default() }, m.row_style.get());
-}
-
 /// A menu row in the current style (Modern::row_style): its icon, its label, the submenu mark when `sub`; hovered by
 /// the pointer or `hover`. Its response.
 pub fn menu_row(ui: &mut Ui, m: &Modern, icon: &str, label: &str, on: bool, off: bool, sub: bool, hover: bool) -> egui::Response {

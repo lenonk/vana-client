@@ -14,6 +14,15 @@ pub fn faded(s: Shape, a: f32) -> Shape {
             }
             Shape::Mesh(m)
         }
+        Shape::Rect(mut r) => {
+            r.fill = r.fill.gamma_multiply(a);
+            r.stroke.color = r.stroke.color.gamma_multiply(a);
+            Shape::Rect(r)
+        }
+        Shape::LineSegment { points, mut stroke } => {
+            stroke.color = stroke.color.gamma_multiply(a);
+            Shape::LineSegment { points, stroke }
+        }
         s => s,
     }
 }

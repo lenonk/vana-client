@@ -27,10 +27,8 @@ pub fn draw(m: &Modern, ctx: &Context, v: &TopView) {
     let p = ctx.layer_painter(LayerId::new(Order::Background, Id::unique("modern top bar")));
     let screen = ctx.content_rect();
     let frame = |r: Rect| {
-        if let Some(f) = m.art.frame("window_normal")
-            && v.alpha > 0.0
-        {
-            p.add(paint::faded(paint::window(f, r, 1.0), v.alpha));
+        if v.alpha > 0.0 {
+            p.add(paint::faded(super::borders::window(m, "window_normal", r), v.alpha));
         }
     };
     // titlewin: the title, clipped to the box; the content is drawn whatever the fade.
