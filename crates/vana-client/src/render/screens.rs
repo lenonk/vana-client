@@ -45,6 +45,8 @@ pub struct TitleState {
     pub wardrobes: u32,
     /// The selected button's press: window +0x5e (9 ticks down to 0) and whether it was taken (+0x1c).
     pub press: Option<(f32, bool)>,
+    /// The modern layer draws the buttons (their backing, the Update button and the hand left out here).
+    pub modern: bool,
 }
 
 /// FUN_10119fb0's two gold rings for press counter `c` of `n` ticks: (scale, alpha 0..128, blend word) of each ring
@@ -97,7 +99,7 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
 
     // loby1win (FUN_1023a9c0): panel 0xba, a 2x wash of sprite 0's first cell, then sprite 0's art.
     // 0xba is the shadow panel behind the five buttons.
-    if st.buttons {
+    if st.buttons && !st.modern {
         b.push_sprite(lobby, lib, 0xba, (st.shift * sx).trunc(), 0.0, sx, sy, 0xf080_8080, 0);
         // The Update button gets the same backing: the panel one pitch up, clipped to the button.
         if st.update.is_some()
@@ -122,7 +124,7 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
 
     // loby2win (retail FUN_10240030). The year digits after "(c) 2002" are gone: the art now reads "(c) SQUARE ENIX".
     text.push(TextSlot { what: "ver.<client version>", x: w - 512.0 + 370.0, y: h - 448.0 + 364.0, align: 0 });
-    if let Some(m) = lobby.menu("menu    loby2win").filter(|_| st.buttons) {
+    if let Some(m) = lobby.menu("menu    loby2win").filter(|_| st.buttons && !st.modern) {
         for (i, &(on, off)) in TITLE_BUTTONS.iter().enumerate() {
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
             let on = if st.enabled[i] { on } else { off };

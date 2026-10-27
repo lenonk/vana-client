@@ -9412,8 +9412,8 @@ impl App {
                 if *screen != LobbyScreen::Main {
                     self.title_press = None;
                 }
-                // Only the select screen is the modern layer's: elsewhere egui keeps its own zoom.
-                if !matches!(screen, LobbyScreen::Select | LobbyScreen::Delete) || !self.cfg.modern_ui {
+                // Only the title's buttons and the select screen are the modern layer's: elsewhere egui keeps its zoom.
+                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete) || !self.cfg.modern_ui {
                     modern::off(ctx, self.modern.as_mut());
                 }
                 match screen {
@@ -9482,7 +9482,14 @@ impl App {
                             let shown = if *menu == UPDATE { 0 } else { CHILD[*menu] };
                             let wardrobes = lobby.as_ref().map_or(0, |l| l.features);
                             let press = self.title_press.filter(|p| p.0 == *menu && p.0 != UPDATE).map(|p| ((9.0 - p.1.elapsed().as_secs_f32() * 60.0).max(0.0), p.2));
-                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over);
+                            let modern_title = self.cfg.modern_ui;
+                            let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over, modern_title);
+                            // Modern: the buttons in the modern style on retail's rects (their mouse as above).
+                            if modern_title {
+                                let buttons: Vec<([f32; 4], &str, bool, bool)> = rects.iter().map(|&(m, r)| (r, if m == UPDATE { "Update" } else { ITEMS[m].0 }, m == *menu, m == UPDATE || enabled[m])).collect();
+                                let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                                mo.title_buttons(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, &buttons);
+                            }
                             let help = match (&self.update_ui, &self.lobby_settings, &self.lobby_cfg) {
                                 (Some(u), _, _) => u.help(),
                                 (None, Some(s), _) => s.help(),

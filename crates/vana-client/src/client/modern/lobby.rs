@@ -22,6 +22,29 @@ impl Modern {
         }
     }
 
+    /// The title's buttons on retail's own rects (`buttons`: the rect in UI pixels, the label, lit, enabled); their
+    /// mouse stays the title's (client/mod.rs hits the same rects).
+    pub fn title_buttons(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), buttons: &[([f32; 4], &str, bool, bool)]) {
+        self.zoom_to(ctx, window, scale);
+        let k = ctx.pixels_per_point();
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::unique("modern title buttons")));
+        let hover = ctx.input(|i| i.pointer.hover_pos());
+        for (r, label, lit, on) in buttons {
+            let rect = egui::Rect::from_min_size(pos2(r[0] / (k * ui_k.0), r[1] / (k * ui_k.1)), vec2(r[2] / (k * ui_k.0), r[3] / (k * ui_k.1)));
+            let face = match () {
+                _ if !on => "controls/button_disabled",
+                _ if *lit => "controls/button_selected",
+                _ if hover.is_some_and(|h| rect.contains(h)) => "controls/button_hover",
+                _ => "controls/button_normal",
+            };
+            if let Some(s) = self.art.sprite(face) {
+                p.add(paint::nine_slice(&s, rect, 0.5, Color32::WHITE));
+            }
+            let c = if !on { self.theme.color("muted") } else if *lit { self.theme.color("gold") } else { self.theme.color("text") };
+            p.text(rect.center(), Align2::CENTER_CENTER, *label, FontId::new(self.theme.ui, FontFamily::Name(super::STRONG.into())), c);
+        }
+    }
+
     /// The select (or delete) screen: what the mouse did, for SelectUi::pointer.
     pub fn select_screen(&mut self, ctx: &Context, gu: &GameUi, window: [u32; 2], scale: u32, v: &View) -> Pointer {
         self.zoom_to(ctx, window, scale);

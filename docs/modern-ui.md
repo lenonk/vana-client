@@ -406,8 +406,12 @@ Milestone 1:
   skips the retail draw and mouse): over the 3D scene, a list of every character (the name in its colour, the job and
   level, the race, the area), the cursor's details (World / Race / Job / Level / Area by group 1's labels), the counts,
   a Settings button (chfwin, as Num+ or the right button), chfwin and chswin beside it, the prompt (ptc6yesn), the ok
-  window and the rename field below; the mouse as retail's (a row moves the cursor, a click is Enter). The title and the
-  creator stay retail's (their own art). Live: the list by keys, the login prompt (No), Settings by the mouse.
+  window and the rename field below; the mouse as retail's (a row moves the cursor, a click is Enter). Live: the list
+  by keys, the login prompt (No), Settings by the mouse.
+- The title's buttons (2026-10-27, modern/lobby.rs title_buttons over render/screens.rs TitleState.modern): the pack's
+  buttons on retail's own rects (loby2win's backing and button sprites skipped), the cursor's lit, the disabled dimmed,
+  the Update button as retail places it; retail's keys and mouse untouched (hover moves the cursor, a click is Enter).
+  The logo, the expansion banners and the help bar stay. Live: hover, Select Character by the mouse, back by Escape.
 - The Battle tab (2026-10-27, not retail; the BattleMod / rChat way of keeping battle text apart): battle messages
   (combat.rs print) are tagged BATTLE_MODE; the chat's Battle tab shows them alone, and the chat settings' "Battle in
   All: Shown / Hidden" (config modern_battle_in_all, Shown by default) takes them out of All. Retail's own Chat
@@ -426,7 +430,7 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- To do: the title's and the creator's own layouts; condensed battle lines (BattleMod's one line per action).
+- To do: the creator's own layout; condensed battle lines (BattleMod's one line per action).
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.
