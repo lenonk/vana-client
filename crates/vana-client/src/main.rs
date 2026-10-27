@@ -216,8 +216,8 @@ enum Cmd {
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
     },
-    /// Save the images (IMG chunks) of DAT files as PNGs: every image of the given ids, or with --random N one image each
-    /// from N random files that hold any.
+    /// Save the images (IMG chunks) of the game's own DAT files (never a mod's) as PNGs: every image of the given ids, or
+    /// with --random N one image each from N random files that hold any.
     TexDump {
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
@@ -1594,7 +1594,7 @@ fn run_with_progress(opts: &install::Options) -> Result<()> {
 /// files that hold images.
 fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result<()> {
     let cfg = config::Config::load();
-    let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
     std::fs::create_dir_all(out)?;
     let mut seed = [0u8; 8];
     getrandom::fill(&mut seed).map_err(|e| anyhow::anyhow!("random bytes: {e}"))?;
