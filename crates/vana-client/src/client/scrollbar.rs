@@ -38,6 +38,8 @@ pub enum Owner {
     Linkshell,
     /// The Set Spells screen's focused list.
     BlueSet,
+    /// Monstrosity Customization's list (mp_invnt).
+    MonCustom,
     /// The merit, job point and alter ego point lists, Unity's ranking.
     Points,
     /// The auction list and its sell list.
@@ -179,6 +181,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Journal => super::missions::bar(w, m) || super::quests::bar(w, m) || super::roe::bar(w, m) || super::keyitems::bar(w, m) || super::currencies::bar(w, m),
         Owner::Linkshell => super::linkshell::bar(w, m) || super::linklist::bar(w, m) || super::concierge::bar(w, m),
         Owner::BlueSet => super::bluset::bar(w, m),
+        Owner::MonCustom => super::moncustom::bar(w, bar.0, m),
         Owner::Auction => super::auction::bar(w, m),
         Owner::Primer => super::primer::bar(w, m),
         Owner::Faq => super::faqmain::bar(w, m, bar),

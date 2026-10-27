@@ -1306,6 +1306,11 @@ impl GameUi {
     }
 
     /// A message of group 0xd (window titles); None when missing or empty.
+    /// File 81's `mon_` order: the species list's order.
+    pub fn mon_order(&self) -> &[u16] {
+        &self.data.mon_order
+    }
+
     pub fn title_msg(&self, id: usize) -> Option<String> {
         self.data.title_msgs.as_ref().and_then(|m| m.get(id)).filter(|s| !s.is_empty())
     }

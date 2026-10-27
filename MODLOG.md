@@ -10323,3 +10323,40 @@ client/creator.rs (`WorldStep`, `WorldAct`, draw_ui), game_ui.rs (`WorldView`, `
   FFXI-3111 -> list; Escape pass -> list -> name; "1234567890" -> netwait "Checking name and Gold World Pass." ->
   FFXI-3339 (LSB: the account has characters) -> list; empty pass -> op 4 -> nation; Escape, the steps again, the same
   triple -> nation at once.
+
+## Monstrosity, part 10: Customization (2026-10-27; spec ~/ffxi/lab/research/monstrosity_custom_spec.md)
+
+client/moncustom.rs; status.rs `draw_mon_custom`; mod.rs (main menu row 2, keys, mouse, Num+, bars, prompts); items'
+info window mode 3; scrollbar Owner::MonCustom.
+- Main menu row 2 in Monstrosity (FUN_10141ba0): the pending buffer from 0x044, mp_stat mode 1 at its layout place
+  (16, 48) with titlewin kept ("Customization"), level mode 2 (+0x34: (16, 260)), mp_cstm, mp_mncst on top with its
+  remembered cursor. Only mp_mncst's Escape closes them all; the main menu resumes.
+- Species: the list (Refine by Type, then file 81's `mon_` order, owned only, the Lv column), the record's text in the
+  help line, the current species green; another family asks 0xe 0x2c5 (default No); the same or an unknown base
+  refuses (0004). mp_mntp2 sets both lists' type filter (rows 3..5, 7..11, 16..18 disabled).
+- Faculties: mp_cstm's grid (slot i <-> child {1, 4, 7, 10, 2, 5, 8, 11, 3, 6, 9, 12}, wrapping links), the species
+  icon on child 13, the ten 0x061 fields at the equipment window's places + 4; the cost panel (bluehelp 112 x 88 in
+  level's place: 9 0x102 "Cost", used / cap from 0x044); the instinct list (Type, Refine by Cost, 9 0xe3 "(Remove
+  All)", the catalogues 0xeff8..0xeffe owned, greyed when the points left cannot pay); slot then instinct or instinct
+  then slot equips (FUN_10141cc0: the same one on its slot removes, set elsewhere or over the cap 0004); Remove All
+  asks 9 0x101; mp_kncst edits min / max (arrows +-1 / +-10, Keep, Cancel, Reset 1..50); iteminfo mode 3 at
+  (130, 260) with the id alone; Num+ between the grid and the list. mp_cstm draws no cursor while unfocused (+0x63 =
+  0); a slot picked first stays marked.
+- Naming: mp_mnnm's two rows, the 249 prefixes (the empty one first), descriptors 1 / 2 into the packet.
+- Commit: c2s 0x102 (flags 1 species, 4 instincts, 8 / 0x10 descriptors) at most once a second *(inf: retail's 30
+  frames)*, only in the Feretory (elsewhere the change is dropped); a species commit plays 'star' (file 70589) on us
+  and greys mp_mncst until it ends.
+- A changed look waits while its actor is held (FUN_10095dd0 runs only when FUN_10095850 says free: busy +0x11c = 0,
+  set by ops 0x1f / 0x20 / 0x59 and the loads) and then makes the actor anew (FUN_10092900 deletes the model,
+  FUN_1008f740 builds one at colour 0x80808080). The star holds us 130 ticks (op 0x1f) and fades the old model to
+  0x00808080 (op 0x29, 35 ticks): ours applied the look at once, so the new model took the fade and stayed invisible.
+  Now held looks wait (World.held_looks) and a rebuilt actor's colour starts over. *(Not modelled: FUN_10095850's
+  status / flag conditions besides the busy count.)*
+- Live (Lnxcsfix, Feretory, `!addallmonstrosity`, rows restored after): the windows at their places, species list
+  order and Lv 99, Rabbit -> Lapinion (same family, no prompt): star, the Rabbit fades, Lapinion appears at the hold's
+  end; Rabbit Ins. II equipped (cost 0 / 11 -> 4 / 11, DEX +5 from 0x061, iteminfo "HP+3% DEX+5 Evasion+15 Cost:4");
+  the names list; Escape back to the main menu.
+- Unclear: the title "Customization" is clipped by titlewin's width in ours (retail not seen).
+- LSB (report only): 0x044's rank and descriptors stay 0 (the cap reads level + 10 for every rank); its 0x102 handler
+  takes only the first of species / instincts / descriptors (else-if), so two changes inside one commit window lose
+  the later ones.

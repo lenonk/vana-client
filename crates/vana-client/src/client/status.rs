@@ -346,6 +346,40 @@ fn draw_crafts(gu: &mut GameUi, x: f32, y: f32, rows: &[(usize, u16)]) {
     }
 }
 
+/// mp_stat's contents (FUN_10144830, the same in every mode): our monster's name, rank, infamy and the persona rows.
+fn push_mon_stat(gu: &mut GameUi, w: &World, m: &crate::dat::ui::Menu, sw: f32, sh: f32) {
+    let mut p = super::items::persona(w);
+    p.name = w.my_mon_name.as_ref().map_or(String::new(), |n| n.1.clone());
+    p.ready = p.ready && w.mon_in && w.party.own().id == w.my_id;
+    let g1 = |o: usize| w.mon_g1.get(o).copied().unwrap_or(0);
+    let rank = ["Mon", "NM", "HNM"].get((g1(4) & 3) as usize).copied();
+    let infamy = (g1(0xa) as u16 | (g1(0xb) as u16) << 8).to_string();
+    let (b, ui, style, _) = gu.parts();
+    crate::render::invwin::push_mon_stat(b, ui, style, m, &p, rank, &infamy, sw, sh);
+}
+
+/// Customization's mp_stat (mode 1, FUN_101446f0): at its layout place (16, 48), titlewin kept; level 0x34 px lower
+/// (mode 2) unless Faculties put the cost panel there.
+pub fn draw_mon_custom(gu: &mut GameUi, w: &World, sw: f32, sh: f32, level: bool) -> Vec<[f32; 4]> {
+    let mut rects = Vec::new();
+    if gu.gate_layout_at(MP_STAT, sw, sh, None, None)
+        && let Some(m) = gu.layout(MP_STAT).cloned()
+    {
+        push_mon_stat(gu, w, &m, sw, sh);
+        rects.extend(gu.window_rect(MP_STAT, sw, sh));
+    }
+    if level {
+        if let Some((x, y)) = gu.window_off(LEVEL, sw, sh, 0.0, 52.0) {
+            draw_level(gu, w, x, y);
+        }
+        rects.extend(gu.window_rect(LEVEL, sw, sh).map(|mut r| {
+            r[1] += 52.0;
+            r
+        }));
+    }
+    rects
+}
+
 /// persona (16, 16), level, statcom2 with its disabled rows, and the shown page at its computed height (FUN_1011a5a0:
 /// ((n + 1) / 2) * 14 + 0x16 for two a row, n * 14 + 0x16 for the crafts).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
@@ -359,14 +393,7 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
         && let Some(mut m) = gu.layout(MP_STAT).cloned()
     {
         m.elements[0].y = 16;
-        let mut p = super::items::persona(w);
-        p.name = w.my_mon_name.as_ref().map_or(String::new(), |n| n.1.clone());
-        p.ready = p.ready && w.mon_in && w.party.own().id == w.my_id;
-        let g1 = |o: usize| w.mon_g1.get(o).copied().unwrap_or(0);
-        let rank = ["Mon", "NM", "HNM"].get((g1(4) & 3) as usize).copied();
-        let infamy = (g1(0xa) as u16 | (g1(0xb) as u16) << 8).to_string();
-        let (b, ui, style, _) = gu.parts();
-        crate::render::invwin::push_mon_stat(b, ui, style, &m, &p, rank, &infamy, sw, sh);
+        push_mon_stat(gu, w, &m, sw, sh);
         rects.extend(gu.window_rect(MP_STAT, sw, sh).map(|mut r| {
             r[1] -= 32.0;
             r

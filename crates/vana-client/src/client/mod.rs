@@ -7,6 +7,7 @@ mod flyover;
 mod creator;
 mod netwait;
 mod monstrosity;
+mod moncustom;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use hudtop::topbar_shot;
 mod event;
@@ -261,7 +262,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some()
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -970,7 +971,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w)) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1550,6 +1551,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     _ => magic::open_ability(world, 2, false),
                 },
                 _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
+                _ if world.moncustom.is_some() && world.confirm.is_none() => moncustom::key(world, gu, *key),
                 _ if world.prompt.is_none() && world.confirm.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
                     magic::key(world, *key);
                 }
@@ -1809,7 +1811,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             // Child 1 Status (FUN_10140400 case 5): persona, level and statcom2.
             (0, 1) => status::open(world),
             // In Monstrosity row 2 is Customization (FUN_10141ba0).
-            (0, 2) if monstrosity::active(world) => log::info!("Monstrosity: Customization (main menu row 2) is not implemented yet"),
+            (0, 2) if monstrosity::active(world) => moncustom::open(world),
             (0, 2) => items::menu_equipment(world),
             // Children 3 Magic (mgcmenu) and 5 Abilities (abimenu), FUN_10140400.
             (0, 3) => magic::open_cats(world, "menu    mgcmenu"),
@@ -2042,6 +2044,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.
     if let Some(p) = input.pointer.filter(|_| world.bluset.is_some() && world.confirm.is_none()) {
         bluset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
+    } else if let Some(p) = input.pointer.filter(|_| world.moncustom.is_some() && world.confirm.is_none()) {
+        moncustom::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     } else if let Some(p) = input.pointer.filter(|_| world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) {
         magic::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
@@ -2169,6 +2173,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
     monstrosity::refresh(world);
     monstrosity::moves(world);
+    moncustom::tick(world);
     // The in-line code colours follow the text colour settings.
     if let Some(bt) = world.battle.clone() {
         let key: [u32; 28] = std::array::from_fn(|i| world.game.get(if i < 23 { 0x1b + i as u16 } else { [0x9b, 0xb0, 0xb3, 0xcb, 0xcc][i - 23] }));
@@ -2606,6 +2611,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(draw_item_info(gu, world, sw, sh, log.rect[1]));
     blockers.extend(magic::draw(gu, world, sw, sh));
     blockers.extend(bluset::draw(gu, world, sw, sh));
+    blockers.extend(moncustom::draw(gu, world, sw, sh));
     magic::draw_cast_bar(gu, world, sw, sh);
     if let Some(c) = world.config.as_mut() {
         c.covered = world.settings.is_some();
@@ -2937,6 +2943,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             bluset::remove_all(world);
         }
+        (Some(true), Some((Confirm::MonRemoveAll, _))) => {
+            world.confirm = None;
+            moncustom::remove_all(world);
+        }
+        (Some(true), Some((Confirm::MonSpecies(v), _))) => {
+            world.confirm = None;
+            moncustom::species_yes(world, v);
+        }
         (Some(true), Some((Confirm::Roe(a), _))) => {
             world.confirm = None;
             roe::answer(world, a);
@@ -3147,6 +3161,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     }
     magic::bars(gu, world, &mut bars);
     bluset::bars(gu, world, &mut bars);
+    moncustom::bars(gu, world, &mut bars);
     moogle::bars(gu, world, &mut bars);
     remodel::bars(gu, world, &mut bars);
     layout::bars(gu, world, &mut bars);
@@ -3230,6 +3245,8 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Request(_), _) => partyreq::ask_text(world),
         (Confirm::Roe(a), _) => roe::ask_text(gu, a),
         (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
+        (Confirm::MonRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0x101)).unwrap_or_default(),
+        (Confirm::MonSpecies(_), _) => gu.menu_msg(0x2c5, ""),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
             gu.lobby_msg(0x0a, 0x30, "Really dispose of the %s?").replacen("%s", &name, 1)
@@ -3802,6 +3819,8 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = post_item => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = treasure::info_source(world) => (id, ext, None, false, 0, 0),
+        // Faculties: mode 3 at (130, 260), the id alone.
+        (None, _) if let Some(id) = moncustom::info_source(world) => (id, None, None, false, 3, 0),
         (None, Some((id, ext, f))) => (id, ext, None, false, 4, f as u32),
         _ => world.info_win.map(|(id, ext, f)| (id, ext, None, false, 0, f))?,
     };
@@ -3834,12 +3853,13 @@ fn draw_item_info(gu: &mut GameUi, world: &World, sw: f32, sh: f32, log_top: f32
         1 => (130.0 - fx, 240.0 - fy),
         // Mode 2 (the auction's bid price): at (16, 48).
         2 => (16.0 - fx, 48.0 - fy),
+        3 => (130.0 - fx, 260.0 - fy),
         4 => (0.0, (query_top - fh - 2.0).max(16.0) - fy),
         _ => (0.0, (log_top - fh - 2.0).max(16.0) - fy),
     };
     // FUN_1013e590: the window's group (+0x38) by mode, so it stays up beside the window it serves.
     gu.set_group("menu    iteminfo", Some(match mode {
-        1 => 0x0a,
+        1 | 3 => 0x0a,
         4 => 0x50,
         _ => 0x0c,
     }));
@@ -4315,6 +4335,8 @@ struct World {
     event_voices: bool,
     /// Looks set by event op 0xb6 (and the riding animals, ride.rs), for the model loader.
     event_looks: Vec<(u32, Source)>,
+    /// Changed looks waiting while their actor is held (FUN_10095dd0 waits for FUN_10095850).
+    held_looks: Vec<(u32, Source)>,
     /// Event op 0xab 0x11 (DAT_1035af3c != -1): once no event runs, every model but ours is built again.
     rebuild_models: bool,
     /// Our riding fields (0x037, 0x067), and every rider's state (ride.rs).
@@ -4857,6 +4879,8 @@ struct World {
     blu_reset: Option<Instant>,
     blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
     bluset: Option<bluset::Screen>,
+    /// Monstrosity Customization (client/moncustom.rs).
+    moncustom: Option<moncustom::Screen>,
     /// The server message's transfer, its one request per lobby login (first zone) still to come, and the world's
     /// name for its header.
     servmes: Option<servmes::Transfer>,
@@ -4976,6 +5000,10 @@ enum Confirm {
     Roe(roe::Ask),
     /// bluinven's Remove All (FUN_10210e30): group 9 0xe4 "Remove all set blue magic spells?".
     BlueRemoveAll,
+    /// Customization's Remove All (FUN_101431b0): group 9 0x101 "Remove all?".
+    MonRemoveAll,
+    /// A species of another family (FUN_10142b50): 0xe 0x2c5, the experience reset.
+    MonSpecies(u16),
 }
 
 impl World {
@@ -6177,6 +6205,7 @@ impl App {
                             doors: Default::default(),
                             event_voices: false,
                             event_looks: Vec::new(),
+                            held_looks: Vec::new(),
                             rebuild_models: false,
                             my_ride: Default::default(),
                             my_aura: Default::default(),
@@ -6301,6 +6330,7 @@ impl App {
                             blu_reset: None,
                             blu_data: self.blu_data.clone(),
                             bluset: None,
+                            moncustom: None,
                             treasure: Default::default(),
                             loot: None,
                             linkshells: Default::default(),
@@ -7578,8 +7608,9 @@ impl App {
                 }
             }
         }
-        // Looks the event scripts changed (op 0xb6) load like the server's.
+        // Looks the event scripts changed (op 0xb6) load like the server's; held ones go first, newer ones win.
         looks.extend(std::mem::take(&mut world.event_looks));
+        looks.splice(0..0, std::mem::take(&mut world.held_looks));
         // Load a character model whenever an actor's look is new or changed.
         let mut wanted = Vec::new();
         for (id, source) in looks {
@@ -7588,9 +7619,20 @@ impl App {
             }
             let key = format!("{source:?}");
             let spawn_fx = world.entities.get(&id).is_some_and(|e| e.spawn_fx);
+            // FUN_10095dd0: a changed look waits while its actor is held (busy +0x11c: ops 0x1f / 0x20 / 0x59, a load).
+            if world.actors.get(&id).is_some_and(|a| a.character.is_some() && a.key != key) && combat::held(world, id) {
+                world.held_looks.retain(|l| l.0 != id);
+                world.held_looks.push((id, source));
+                continue;
+            }
             let actor = world.actors.entry(id).or_insert_with(Actor::new);
             if actor.key == key {
                 continue;
+            }
+            // Then the actor is made anew (FUN_10092900, FUN_1008f740): its colour starts at 0x80808080 (the star of a
+            // Monstrosity species change fades the old model to alpha 0 under its hold).
+            if actor.character.is_some() {
+                (actor.alpha, actor.rgb, actor.fade) = (actmotion::OPAQUE, [actmotion::OPAQUE; 3], None);
             }
             actor.key = key.clone();
             // FUN_1008f740 / FUN_100c56e0: a 'spop' model starts at colour 0x00808080, invisible.
@@ -8473,6 +8515,8 @@ impl App {
         items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
         if self.input.test(0x11, input::mode::PRESS) && world.bluset.is_some() {
             bluset::num_plus(world);
+        } else if self.input.test(0x11, input::mode::PRESS) && world.moncustom.is_some() {
+            moncustom::num_plus(world);
         } else if self.input.test(0x11, input::mode::PRESS) && (world.magic.is_some() || world.ability.is_some()) {
             magic::num_plus(world);
         }
