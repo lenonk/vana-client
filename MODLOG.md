@@ -10424,3 +10424,22 @@ Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables
   0 set outright, the step's digit underlined) sit in the panel. Seen live (Lnxcsfix, 2026-10-27): the crystal list,
   logs placed and taken back by mouse, Arrowwood Lumber made by clicking OK, the history and Favorite / Unfavorite,
   the hand-over to Arvilauge with 10 gil (no onTrade: nothing taken). Player trade not tried live (no second player).
+- Modern macro windows (modern/macros.rs over macroedit.rs, esmenu.rs and esedit.rs, which keep every rule and key;
+  their retail draws and mouse are left out in modern): mcrmenu as the menu column; the forty books in one list (the
+  active one starred, mcr_page and the row set from the book) with mcrselop beside it and the name field in its row;
+  the palettes as two rows of ten keycaps (digit, title) with the sets as tabs (Macros::switch) and mcrbedit's rows
+  as buttons on the cursor's macro; the editor with Prev / Next, the title and six lines (a click edits, the
+  module's text input types), mcrledit's rows as buttons on the cursor's line. Edit Equip. Set: the page as tabs and
+  its twenty sets with mcresmn beside them; the slot editor as the grid of sixteen tiles (an item's icon, Remove's
+  cross, Keep the slot's name), mcrmogc's sixteen containers as tabs and one list (Remove / Keep, then the items in
+  the module's colours). The palette shown while Ctrl or Alt is held: its ten keys over the chat window (the screen's
+  bottom while the chat window has faded), the cursor's lit. Seen live (Lnxcsfix, 2026-10-27): every page above, a
+  line typed and kept over a relog then deleted, Bronze Sword put in Set001's Main through c2s 0x052 / s2c 0x116 and
+  set back to Keep, the Ctrl palette.
+- A faded chat window's rect lies at the screen's bottom edge: what stands on the chat window (the modern prompt,
+  the held palette) stands on the screen's bottom then.
+- LSB loses an NM's drops (seen 2026-10-27, Porphyrion in Upper Delkfutt's Tower, six Delkfutt Keys "always"): the
+  player switched to another Gigas, LSB dropped Porphyrion's claim 3 s later (mob_controller.cpp DoCombatTick: an
+  owner whose PClaimedMob is another mob abandons it), and Valaineral's weapon skill killed it; TakeWeaponskillDamage
+  claims only for player attackers, so it died unowned and DistributeRewards gave no drops or EXP. Trust melee does
+  reclaim for the master (battle_entity.cpp ClaimMob for any attacker). Server side; not changed (no LSB patches).

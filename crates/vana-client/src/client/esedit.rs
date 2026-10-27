@@ -358,6 +358,9 @@ fn mogc_key(w: &mut World, gu: &GameUi, key: egui::Key, o: u16) {
 /// (message 8), as the Equipment screen.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::macroedit::{child_under, generic};
+    if w.modern {
+        return;
+    }
     let Some(e) = ed(w) else { return };
     if let Some(o) = e.mogc {
         generic(w, gu, MOGC, o, 1..=16, p, moved, clicked, right, |w, id| {
@@ -398,6 +401,82 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
         }
     } else if clicked {
         key(w, gu, egui::Key::Enter);
+    }
+}
+
+/// The modern layer's view (this module keeps every rule and key): per grid child (1..16) the slot's state (0 keep, 1 an
+/// item, 2 remove) and item; the cursor and focus; the list's container and its rows after the storage strip
+/// (Remove, Keep, the items: item, name, count, colour) with the cursor's.
+pub(super) struct View {
+    pub slots: [(u8, u16); 16],
+    pub grid: u16,
+    pub on_list: bool,
+    /// Children the cursor may take (mode 1 with an item picked: its slots).
+    pub allowed: [bool; 16],
+    pub container: u8,
+    pub rows: Vec<(u16, String, u32, u32)>,
+    pub cur: Option<usize>,
+}
+
+pub(super) fn view(w: &World) -> Option<View> {
+    let e = ed(w)?;
+    let info = w.item_info.as_ref()?;
+    let group9 = |id: usize| w.battle.as_ref().and_then(|b| b.group9(id)).unwrap_or_default();
+    let mut rows: Vec<(u16, String, u32, u32)> = [(0x113, Picked::Remove), (0x114, Picked::Keep)].into_iter().map(|(k, p)| (0, group9(k), 0, if e.picked == Some(p) { 0x8080_4020 } else { 0x8090_9040 })).collect();
+    let shown = items(w, e);
+    for s in &shown {
+        let tint = if e.picked == Some(Picked::Item(s.index)) {
+            0x8080_4020
+        } else if in_set(e, e.container, s.index) {
+            0x8050_9050
+        } else {
+            WHITE
+        };
+        rows.push((s.id, info.item(s.id).map_or(String::new(), |it| it.name.clone()), s.count, tint));
+    }
+    Some(View {
+        slots: std::array::from_fn(|k| {
+            let x = e.work[slot_of(k as u16 + 1)];
+            (x[0] & 3, u16::from_le_bytes([x[2], x[3]]))
+        }),
+        grid: e.grid,
+        on_list: e.on_list && e.mogc.is_none(),
+        allowed: std::array::from_fn(|k| e.mode == 2 || e.mask == 0 || e.mask & 1 << slot_of(k as u16 + 1) != 0),
+        container: e.container,
+        rows,
+        cur: (e.scroll + e.cursor).checked_sub(1),
+    })
+}
+
+/// The modern layer's mouse: the grid's cursor onto child `c` (in mode 1 only onto the picked item's slots), the focus
+/// back on the grid; true when it moved.
+pub(super) fn set_grid(w: &mut World, c: u16) -> bool {
+    let Some(e) = ed_mut(w).filter(|e| e.mogc.is_none()) else { return false };
+    if e.mode == 1 && e.mask != 0 && e.mask & 1 << slot_of(c) == 0 {
+        return false;
+    }
+    let moved = e.grid != c || e.on_list;
+    (e.grid, e.on_list) = (c, false);
+    if moved && e.mode == 2 {
+        e.filter = None;
+    }
+    moved
+}
+
+/// The list's cursor onto row `k` of the view's rows (the storage strip above them), the focus on the list.
+pub(super) fn set_row(w: &mut World, k: usize) -> bool {
+    let Some(e) = ed_mut(w).filter(|e| e.mogc.is_none()) else { return false };
+    let (scroll, cursor) = super::post::list_at(k + 1);
+    let moved = e.scroll + e.cursor != k + 1 || !e.on_list;
+    (e.scroll, e.cursor, e.on_list) = (scroll, cursor, true);
+    moved
+}
+
+/// mcrmogc's pick without its window: the list on container `c` (child 1 -> 0, 2 -> 1, 3 -> 2, the others their own).
+pub(super) fn set_container(w: &mut World, c: u8) {
+    if let Some(e) = ed_mut(w).filter(|e| e.container != c) {
+        (e.container, e.scroll, e.cursor, e.mogc) = (c, 0, 0, None);
+        w.sounds.push(Ui::Cursor as u32);
     }
 }
 

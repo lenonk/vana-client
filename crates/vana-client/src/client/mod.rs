@@ -2860,6 +2860,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // wider), the keycap cells, each cell's macro title: letters and digits in the mcralpha sprites, anything else in
     // the UI font.
     if world.palette.0 != 0
+        && !world.modern
         && let Some(m) = world.macros.as_ref()
     {
         let p = world.palette.0 as usize;

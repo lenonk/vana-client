@@ -16,6 +16,7 @@ mod hud;
 mod items;
 mod journal;
 mod lists;
+mod macros;
 mod paint;
 pub mod plates;
 mod social;
@@ -174,6 +175,7 @@ impl Modern {
         journal::draw(&mut p, w);
         social::draw(&mut p, w);
         craft::draw(&mut p, w);
+        macros::draw(&mut p, w);
         storage::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
@@ -335,7 +337,8 @@ fn confirm(p: &mut Panels, w: &mut World) {
     let Some((_, yes)) = w.confirm else { return };
     let m = p.m;
     let screen = p.ctx.content_rect();
-    let edge = m.chat_edge.get().map_or(screen.max.y, |(r, _)| r.min.y);
+    // On the chat window, else the screen's bottom (a faded chat window folds into the screen's edge).
+    let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
     let caption = |k: u16, d: &str| p.gu.and_then(|g| g.child_caption("menu    comyn", k)).unwrap_or_else(|| d.to_string());
     let (y_label, n_label) = (caption(1, "Yes"), caption(2, "No"));
     let text = w.confirm_text.clone();

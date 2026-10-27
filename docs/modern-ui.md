@@ -238,6 +238,9 @@ Milestone 1:
   item puts it in the cursor's slot; the count and the gil asked inside the panel with buttons for their keys (gil:
   All and 0 outright). Synthesis keeps its menu, crystal list and history (favourites starred, Favorite /
   Unfavorite as buttons); player trade shows the partner's side. Seen live but player trade (no second player).
+- Macros (modern/macros.rs): the forty books in one list, the palettes as keycaps with the sets as tabs, the editor's
+  lines clicked to edit; Edit Equip. Set's pages as tabs, its slot editor as a grid of tiles beside the storage as
+  tabs and one list; the palette while Ctrl or Alt is held over the chat window. Seen live.
 - Rest ticks (ours, user 2026-10-27): resting, the party window shows a strip under its title: "Timing rest ticks..."
   until the first clean rest has been timed (config `rest_tick`), then "Next tick", a bar and the seconds left, on the
   server's own clock as learnt (client/resttick.rs). Seen live.
