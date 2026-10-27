@@ -1,9 +1,9 @@
 //! Small retail windows in the modern style; their modules keep the rules and keys: the block list (blklist.rs, its
 //! names and blkmain's Delete) and the chat mode window (chatctrl.rs, its seven rows with the tell name, the shells
 //! and the Unity, the cursor row's range under them), the comment editor (seacom.rs) and the Linkshell Concierge
-//! (concierge.rs) and Mog House Remodel (remodel.rs).
+//! (concierge.rs), Mog House Remodel (remodel.rs) and the Adventuring Primer's lists (primer.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, remodel, seacom};
+use super::super::{World, blklist, chatctrl, concierge, primer, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, paint, social};
 use crate::audio::Ui as Se;
@@ -22,23 +22,22 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     comment(p, w);
     concierge_list(p, w);
     remodel_list(p, w);
+    primer_lists(p, w);
 }
 
-/// Mog House Remodel (remodel.rs): "No changes" and the 2F styles, the patio grey without its key item.
-fn remodel_list(p: &mut Panels, w: &mut World) {
-    let Some(gu) = p.gu else { return };
-    let Some((rows, sel)) = remodel::look(w, gu) else { return };
-    let m = p.m;
-    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
-    let free = w.confirm.is_none();
-    let title = gu.focus_text(remodel::WINDOW, 0)[1].clone().unwrap_or_else(|| "Remodel".into());
+/// Plain rows (text, grey), the cursor's lit while focused and kept in view. (hovered, clicked) while focused.
+fn plain_rows(ui: &mut egui::Ui, m: &super::Modern, salt: &str, rows: &[(String, bool)], cursor: usize, focused: bool) -> (Option<usize>, Option<usize>) {
+    let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let seen = egui::Id::unique((salt, "plain cursor seen"));
+    let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(cursor);
+    ui.ctx().data_mut(|d| d.insert_temp(seen, cursor));
     let (mut hover, mut click) = (None, None);
-    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), W + 44.0, |ui| {
+    egui::ScrollArea::vertical().id_salt(salt).max_height(TALL).auto_shrink([false, true]).show(ui, |ui| {
         for (k, (text, grey)) in rows.iter().enumerate() {
-            let (r, resp) = ui.allocate_exact_size(vec2(W, ROW), if free { Sense::click() } else { Sense::hover() });
+            let (r, resp) = ui.allocate_exact_size(vec2(W - 14.0, ROW), if focused { Sense::click() } else { Sense::hover() });
             let face = match () {
-                _ if k == sel && free => "controls/list_row_selected",
-                _ if k == sel || free && resp.hovered() => "controls/list_row_hover",
+                _ if k == cursor && focused => "controls/list_row_selected",
+                _ if k == cursor || focused && resp.hovered() => "controls/list_row_hover",
                 _ if *grey => "controls/list_row_disabled",
                 _ => "controls/list_row_normal",
             };
@@ -46,24 +45,93 @@ fn remodel_list(p: &mut Panels, w: &mut World) {
                 ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
             }
             let c = if *grey { m.theme.color("muted") } else { m.theme.color("text") };
-            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
-            if free && resp.hovered() && moved {
+            let clip = egui::Rect::from_min_max(r.min, pos2(r.max.x - 8.0, r.max.y));
+            ui.painter().with_clip_rect(clip).text(pos2(r.min.x + 24.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.small), c);
+            if k == cursor && follow {
+                ui.scroll_to_rect(r, None);
+            }
+            if focused && resp.hovered() && moved {
                 hover = Some(k);
             }
-            if free && resp.clicked() {
+            if focused && resp.clicked() {
                 click = Some(k);
             }
             ui.add_space(2.0);
         }
     });
+    (hover, click)
+}
+
+/// A list's mouse: hover moves the cursor (SE 0001), a click moves it and is Enter.
+fn act(w: &mut World, (hover, click): (Option<usize>, Option<usize>), set: impl Fn(&mut World, usize) -> bool, enter: impl Fn(&mut World)) {
     for k in hover.into_iter().chain(click) {
-        if remodel::set_sel(w, k) {
+        if set(w, k) {
             w.sounds.push(Se::Cursor as u32);
         }
     }
     if click.is_some() {
-        remodel::key(w, egui::Key::Enter);
+        enter(w);
     }
+}
+
+/// Mog House Remodel (remodel.rs): "No changes" and the 2F styles, the patio grey without its key item.
+fn remodel_list(p: &mut Panels, w: &mut World) {
+    let Some(gu) = p.gu else { return };
+    let Some((rows, sel)) = remodel::look(w, gu) else { return };
+    let m = p.m;
+    let free = w.confirm.is_none();
+    let title = gu.focus_text(remodel::WINDOW, 0)[1].clone().unwrap_or_else(|| "Remodel".into());
+    let mut got = (None, None);
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), W + 44.0, |ui| {
+        got = plain_rows(ui, m, "remodel rows", &rows, sel, free);
+    });
+    act(w, got, remodel::set_sel, |w| remodel::key(w, egui::Key::Enter));
+}
+
+/// The Adventuring Primer (primer.rs): guide00's categories, guide01's topics beside them with its arrows (the other
+/// categories); hidden while a page is up in the map window.
+fn primer_lists(p: &mut Panels, w: &mut World) {
+    let Some(v) = primer::look(w).filter(|v| !v.page) else { return };
+    let m = p.m;
+    let free = w.confirm.is_none();
+    let title = w.battle.as_ref().and_then(|b| b.group9(0xc5)).unwrap_or_else(|| "Help Desk".into());
+    let width = W + if v.list.is_some() { 16.0 + W } else { 0.0 } + 44.0;
+    let (mut cats, mut topics, mut turn) = ((None, None), (None, None), None);
+    p.panel("window", Some(Title { icon: Some("icons/help"), text: &title, note: None }), width, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(W);
+                let rows: Vec<(String, bool)> = v.cats.iter().map(|c| (c.clone(), false)).collect();
+                cats = plain_rows(ui, m, "primer cats", &rows, v.cursor, free && v.list.is_none());
+            });
+            let Some((name, list, cursor)) = &v.list else { return };
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(W);
+                ui.horizontal(|ui| {
+                    if button(ui, m, "<", 28.0, false, false) && free {
+                        turn = Some(egui::Key::ArrowLeft);
+                    }
+                    ui.label(egui::RichText::new(name).size(m.theme.small).color(m.theme.color("gold")));
+                    if button(ui, m, ">", 28.0, false, false) && free {
+                        turn = Some(egui::Key::ArrowRight);
+                    }
+                });
+                ui.add_space(4.0);
+                let rows: Vec<(String, bool)> = list.iter().map(|t| (t.clone(), false)).collect();
+                topics = plain_rows(ui, m, "primer topics", &rows, *cursor, free);
+            });
+        });
+    });
+    if !free {
+        return;
+    }
+    if let Some(k) = turn {
+        primer::key(w, k, false);
+        return;
+    }
+    act(w, cats, primer::set_cat, |w| primer::key(w, egui::Key::Enter, false));
+    act(w, topics, primer::set_topic, |w| primer::key(w, egui::Key::Enter, false));
 }
 
 /// A retail tint (0x80 is full) as a colour.

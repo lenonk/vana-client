@@ -205,11 +205,46 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
     moved
 }
 
+/// The Primer as the modern layer draws it: the categories and guide00's cursor, guide01's category name, topics and
+/// cursor; `page` while a page image is up.
+pub(super) struct Look {
+    pub cats: Vec<String>,
+    pub cursor: usize,
+    pub list: Option<(String, Vec<String>, usize)>,
+    pub page: bool,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let p = w.primer.as_ref()?;
+    let cats = if ready(p) { p.cats.iter().map(|c| c.name.clone()).collect() } else { Vec::new() };
+    let list = p.list.as_ref().and_then(|l| p.cats.get(l.cat).map(|c| (c.name.clone(), c.topics.iter().map(|t| t.name.clone()).collect(), l.cursor)));
+    Some(Look { cats, cursor: p.cursor, list, page: p.list.as_ref().is_some_and(|l| l.page) })
+}
+
+/// The mouse's cursor moves: guide00's row (while guide01 is closed), guide01's row. True when it moved.
+pub(super) fn set_cat(w: &mut World, k: usize) -> bool {
+    let Some(p) = w.primer.as_mut().filter(|p| p.list.is_none() && p.cursor != k && k < p.cats.len()) else { return false };
+    p.cursor = k;
+    true
+}
+
+pub(super) fn set_topic(w: &mut World, k: usize) -> bool {
+    let Some(p) = w.primer.as_mut() else { return false };
+    let Some(l) = p.list.as_mut().filter(|l| !l.page && l.cursor != k && k < p.cats[l.cat].topics.len()) else { return false };
+    l.cursor = k;
+    l.top = l.top.min(k).max((k + 1).saturating_sub(ROWS));
+    true
+}
+
 /// The mouse (winhits.rs): guide00 / guide01 rows as the generic window, guide01's arrows (children 9 / 10) as Left /
 /// Right; with a page up a click is its Enter (FUN_101fa900: every left release) and a right click its Escape.
 pub fn pointer(w: &mut World, gu: &GameUi, pt: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{child_under, generic};
     let Some(p) = w.primer.as_ref() else { return };
+    // The modern layer draws the lists and takes their mouse; a page stays the map window's.
+    if w.modern && !p.list.as_ref().is_some_and(|l| l.page) {
+        return;
+    }
     let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k, false);
     match &p.list {
         Some(l) if l.page => {
@@ -264,6 +299,9 @@ fn text(gu: &mut GameUi, s: &str, x: f32, y: f32, tint: u32) {
 /// is up; guide01 over it (FUN_10234270: the rows, the category's name at (60, 10), the bar at x1 - 8).
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(p) = &w.primer else { return rects };
     let free = w.confirm.is_none();
     let page = p.list.as_ref().is_some_and(|l| l.page);

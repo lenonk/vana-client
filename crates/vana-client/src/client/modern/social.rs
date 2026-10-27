@@ -576,7 +576,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         return;
     }
     // Help Desk: its menu and Config pages, and the GM call's questionnaire over them.
-    if let Some(v) = helpdesk::view(w, gu) {
+    // guide00 suspends faqsub (window group 0x1c): the Primer takes the window.
+    if let Some(v) = helpdesk::view(w, gu).filter(|_| w.primer.is_none()) {
         let (hover, click) = help_page(p, &v, moved);
         for id in hover.into_iter().chain(click) {
             if helpdesk::set_cursor(w, id) {
