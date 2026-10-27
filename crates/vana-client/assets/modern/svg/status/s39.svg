@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="26.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c1d7f8"/>
+      <stop offset="0.45" stop-color="#4e8feb"/>
+      <stop offset="0.85" stop-color="#2f7be8"/>
+      <stop offset="1" stop-color="#1a4480"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="31.28" y1="10.87" x2="31.28" y2="26.847" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#b6d1f7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="34.684" x2="32" y2="41.219" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+  </defs>
+  <title>s39</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M3 32 C3 15.985 15.985 3 32 3 C48.015 3 61 15.985 61 32 C61 48.015 48.015 61 32 61 C15.985 61 3 48.015 3 32 Z" fill="#0a1118"/>
+      <path id="bubble" d="M58.8 32 C58.8 46.8 46.8 58.8 32 58.8 C17.2 58.8 5.2 46.8 5.2 32 C5.2 17.2 17.2 5.2 32 5.2 C46.8 5.2 58.8 17.2 58.8 32 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="shine" d="M30.154 10.95 C38.344 10.238 46.188 14.326 50.299 21.436 C50.726 22.175 50.473 23.121 49.734 23.549 C48.995 23.976 48.049 23.723 47.621 22.984 C44.112 16.914 37.416 13.422 30.426 14.03 C23.444 14.647 17.448 19.243 15.053 25.828 C14.761 26.631 13.874 27.045 13.072 26.753 C12.269 26.461 11.855 25.574 12.147 24.772 C14.952 17.057 21.976 11.673 30.154 10.95 Z" fill="url(#linear-gradient-1)" opacity="0.8"/>
+      <path id="ripple" d="M47.388 39.394 C43.636 42.5 39.882 40.995 36.56 39.611 C33.69 38.415 31.281 37.359 28.87 39.368 C25.103 42.508 21.337 40.999 18.005 39.611 C15.135 38.415 12.725 37.358 10.309 39.369 C9.652 39.915 8.678 39.825 8.131 39.169 C7.585 38.512 7.675 37.538 8.331 36.991 C12.099 33.857 15.864 35.368 19.195 36.757 C22.065 37.953 24.474 39.007 26.89 36.992 C30.653 33.856 34.419 35.369 37.75 36.757 C40.62 37.953 43.028 39.006 45.439 36.993 C45.46 36.976 45.481 36.959 45.502 36.943 C50.238 33.391 53.169 34.483 55.773 37.087 C56.377 37.691 56.377 38.669 55.773 39.273 C55.169 39.877 54.191 39.877 53.587 39.273 C51.987 37.674 50.752 36.881 47.388 39.394 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

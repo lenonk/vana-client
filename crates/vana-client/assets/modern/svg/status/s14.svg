@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="27.221" y1="12.629" x2="34.489" y2="53.851" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32.92" y1="9.36" x2="32.92" y2="54.64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7adcb"/>
+      <stop offset="0.42" stop-color="#f06aa0"/>
+      <stop offset="1" stop-color="#783550"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="21.835" y1="14.951" x2="21.835" y2="22.249" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#facbde"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="40.283" y1="14.171" x2="43.587" y2="32.909" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="51.818" y1="12.218" x2="54.022" y2="24.722" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="10.975" y1="42.17" x2="10.975" y2="53.26" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f39da5"/>
+      <stop offset="0.42" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#74262e"/>
+    </linearGradient>
+  </defs>
+  <title>s14</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M32.922 11.446 C35.053 8.837 38.237 7.16 42.17 7.16 C46.03 7.16 49.656 8.736 52.392 11.439 L52.392 11.439 L58.599 10.869 C60.262 10.716 61.484 12.409 60.816 13.94 L57.238 22.142 C57.702 27.88 55.598 33.305 52.454 38.004 C49.68 42.15 46.082 45.804 42.646 48.937 C39.401 51.896 36.241 54.433 34.474 56.197 C33.615 57.055 32.223 57.054 31.364 56.196 C29.016 53.847 24.408 50.312 19.975 45.864 L16.869 48.108 L18.718 51.806 C19.415 53.2 18.476 54.862 16.922 54.983 L10.912 55.453 C9.981 55.526 9.106 55.004 8.728 54.15 L7.208 50.714 L4.216 49.218 C2.956 48.587 2.605 46.947 3.498 45.856 L7.658 40.776 C8.349 39.932 9.555 39.722 10.491 40.283 L12.686 41.599 L14.843 40.04 C11.178 35.212 8.54 29.73 8.54 23.68 C8.54 14.149 15.537 7.16 23.68 7.16 C27.606 7.16 30.793 8.838 32.922 11.446 Z" fill="#0a1118"/>
+      <path id="shaft_back" data-name="shaft back" d="M9.87 50.45 L53.78 18.73 L51.83 16.03 L7.93 47.75 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="heart" d="M32.92 54.64 C27.38 49.1 10.74 38.01 10.74 23.68 C10.74 15.37 16.75 9.36 23.68 9.36 C28.3 9.36 31.54 12.13 32.92 15.83 C34.31 12.13 37.54 9.36 42.17 9.36 C49.1 9.36 55.1 15.37 55.1 23.68 C55.1 38.01 38.47 49.1 32.92 54.64 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="glint" d="M25.37 15.63 C26.36 16.81 25.57 19.08 23.62 20.73 C21.66 22.36 19.27 22.74 18.3 21.57 C17.31 20.39 18.1 18.12 20.05 16.47 C22.01 14.84 24.39 14.46 25.37 15.63 Z" fill="url(#linear-gradient-3)" opacity="0.55"/>
+      <path id="shaft_front" data-name="shaft front" d="M31.9 31.14 L53.62 18.83 L51.99 15.94 L30.25 28.24 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="arrow_head" data-name="arrow head" d="M58.8 13.06 L54.08 23.88 L47.04 14.14 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="fletching" d="M5.2 47.25 L9.36 42.17 L13.98 44.94 L8.9 49.1 Z M8.9 49.1 L13.98 47.25 L16.75 52.79 L10.74 53.26 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

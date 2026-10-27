@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="26.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6d46e" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#f2c230" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#f2c230" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.2" x2="32" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8dd8d"/>
+      <stop offset="0.42" stop-color="#f2c230"/>
+      <stop offset="1" stop-color="#796118"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="24.405" y1="5.2" x2="24.405" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fcf0cb"/>
+      <stop offset="1" stop-color="#f6d46e"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="39.595" y1="5.2" x2="39.595" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d5ab2a"/>
+      <stop offset="1" stop-color="#5c4a12"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="5.2" x2="32" y2="21.28" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faeab7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="32" y1="4.888" x2="32" y2="59.113" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faeab7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="23.96" y1="11.45" x2="23.96" y2="23.96" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faeab7"/>
+    </linearGradient>
+  </defs>
+  <title>s512</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.493 3.598 C31.34 2.801 32.66 2.801 33.507 3.598 L48.697 17.888 C49.139 18.303 49.39 18.883 49.39 19.49 L49.39 44.51 C49.39 45.117 49.139 45.697 48.697 46.112 L33.507 60.402 C32.66 61.199 31.34 61.199 30.493 60.402 L15.303 46.112 C14.861 45.697 14.61 45.117 14.61 44.51 L14.61 19.49 C14.61 18.883 14.861 18.303 15.303 17.888 Z" fill="#0a1118"/>
+      <path id="aura" d="M53.44 32 C53.44 46.8 43.84 58.8 32 58.8 C20.16 58.8 10.56 46.8 10.56 32 C10.56 17.2 20.16 5.2 32 5.2 C43.84 5.2 53.44 17.2 53.44 32 Z" fill="url(#radial-gradient-1)" opacity="0.55"/>
+      <path id="crystal" d="M32 5.2 L47.19 19.49 L47.19 44.51 L32 58.8 L16.81 44.51 L16.81 19.49 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="facets_light" data-name="facets light" d="M16.81 19.49 L32 5.2 L25.62 21.28 L25.62 46.29 L32 58.8 L16.81 44.51 Z" fill="url(#linear-gradient-2)" opacity="0.9"/>
+      <path id="facets_dark" data-name="facets dark" d="M38.38 21.28 L32 5.2 L47.19 19.49 L47.19 19.49 L47.19 44.51 L47.19 44.51 L32 58.8 L38.38 46.29 Z" fill="url(#linear-gradient-3)" opacity="0.85"/>
+      <path id="crown_light" data-name="crown light" d="M32 5.2 L25.62 21.28 L38.38 21.28 Z" fill="url(#linear-gradient-4)" opacity="0.35"/>
+      <path id="facet_lines" data-name="facet lines" d="M32.291 5.085 L38.574 20.922 L47.128 19.184 C47.531 19.102 47.656 19.714 47.252 19.796 L38.693 21.536 L38.693 45.908 L47.128 44.204 C47.532 44.122 47.655 44.735 47.252 44.816 L38.59 46.567 L32.28 58.939 C32.228 59.045 32.119 59.113 32 59.113 L32 59.113 C31.881 59.113 31.772 59.045 31.72 58.939 L25.41 46.567 L16.748 44.816 C16.345 44.735 16.468 44.122 16.872 44.204 L25.307 45.908 L25.307 21.536 L16.748 19.796 C16.344 19.714 16.469 19.102 16.872 19.184 L25.426 20.922 L31.709 5.085 L31.709 5.085 C31.813 4.822 32.187 4.822 32.291 5.085 Z M32 6.048 L26.08 20.967 L37.92 20.967 Z M25.933 21.593 L25.933 45.977 L38.067 45.977 L38.067 21.593 Z M26.13 46.603 L32 58.112 L37.87 46.603 Z" fill="url(#linear-gradient-5)" opacity="0.45"/>
+      <path id="glint" d="M23.96 11.45 L25.28 16.38 L30.21 17.71 L25.28 19.03 L23.96 23.96 L22.64 19.03 L17.71 17.71 L22.64 16.38 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

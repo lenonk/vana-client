@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.73" x2="32" y2="58.27" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#c1d6d2"/>
+      <stop offset="0.42" stop-color="#8fb4ad"/>
+      <stop offset="1" stop-color="#485a56"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="17.287" y1="12.087" x2="17.287" y2="20.383" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d8e5e2"/>
+    </linearGradient>
+  </defs>
+  <title>s1</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M32 9.063 C34.735 5.737 38.807 3.53 43.56 3.53 C53.185 3.53 61 11.345 61 22.02 C61 34.106 52.038 43.871 43.504 51.318 C39.491 54.819 35.6 57.785 33.554 59.827 C32.696 60.684 31.304 60.684 30.446 59.827 C28.4 57.785 24.509 54.819 20.496 51.318 C11.962 43.871 3 34.106 3 22.02 C3 11.345 10.815 3.53 20.44 3.53 C25.193 3.53 29.265 5.737 32 9.063 Z" fill="#0a1118"/>
+      <path id="heart" d="M5.2 22.02 C5.2 12.56 12.03 5.73 20.44 5.73 C25.69 5.73 29.9 8.88 32 13.08 C34.1 8.88 38.31 5.73 43.56 5.73 C51.97 5.73 58.8 12.56 58.8 22.02 C58.8 39.36 38.31 51.97 32 58.27 C25.69 51.97 5.2 39.36 5.2 22.02 Z M30.42 14.66 L25.69 23.59 L34.1 30.95 L26.75 39.36 L32.53 47.24 L30.42 54.07 L33.58 54.07 L35.68 47.24 L29.9 39.36 L37.25 30.95 L28.85 23.59 L33.58 14.66 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="glint" d="M21.31 12.86 C22.44 14.2 21.53 16.78 19.31 18.65 C17.09 20.51 14.38 20.94 13.26 19.61 C12.14 18.27 13.04 15.69 15.26 13.82 C17.49 11.96 20.2 11.53 21.31 12.86 Z" fill="url(#linear-gradient-2)" opacity="0.45"/>
+    </g>
+  </g>
+</svg>

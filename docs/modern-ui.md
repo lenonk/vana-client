@@ -279,6 +279,11 @@ Milestone 1:
 - Plate badges: the approved SVG set (assets/modern/badges) in place of retail's glyphs; the pearl tinted by its
   linkshell; rank stars, the recruiter star in its orb, the master stars above.
 - Icons: batches 1 and 2 (131) redrawn in VectorCraft and approved.
+- Status icons (2026-10-27): one of ours for each distinct retail image (193 for 598 status ids; Signet split from
+  KO's skull, Signet / Sanction / Sigil / Ionis one crystal in blue / red / green / yellow), drawn in VectorCraft from
+  `status-dump`'s stock icons, the bare set (user's pick): atlases/status_0@2x.png, manifest "status/s<id>",
+  status_map.tsv (status id -> icon); Modern::status_icon draws them everywhere (effects, party rows, Timers, Level
+  Sync), the game's icons only for an id without one. Sources ~/ffxi/lab/scratch/uiupdate/vc/status.
 - Status (modern/status.rs): the persona, the level gauge, retail's rows on the left with the page under the cursor
   beside them at once (profile with the attributes, job and master levels with the job icons, combat / magic / craft
   skills named by their sprites' captions, Currencies 1 and 2 as one list with "only those held"); Unity, Play Time,

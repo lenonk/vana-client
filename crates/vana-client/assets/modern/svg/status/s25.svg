@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="26.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8dcfc"/>
+      <stop offset="0.45" stop-color="#bf9cf6"/>
+      <stop offset="0.85" stop-color="#b48af4"/>
+      <stop offset="1" stop-color="#634c86"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="32.01" y1="13.68" x2="32.01" y2="50.326" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="23.065" y1="16.584" x2="23.065" y2="25.581" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e5d6fb"/>
+    </linearGradient>
+  </defs>
+  <title>s25</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M3 32 C3 15.985 15.985 3 32 3 C48.015 3 61 15.985 61 32 C61 48.015 48.015 61 32 61 C15.985 61 3 48.015 3 32 Z" fill="#0a1118"/>
+      <path id="orb" d="M58.8 32 C58.8 46.8 46.8 58.8 32 58.8 C17.2 58.8 5.2 46.8 5.2 32 C5.2 17.2 17.2 5.2 32 5.2 C46.8 5.2 58.8 17.2 58.8 32 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="note" d="M32.56 15.513 L32.56 13.68 C33.053 14.244 33.564 14.771 34.086 15.27 L35.27 15.27 C35.79 15.27 36.23 15.7 36.23 16.23 L36.23 17.16 C41.029 21.131 45.78 23.965 44.52 32.81 C43.286 29.123 40.154 26.858 36.23 25.648 L36.23 43.02 C36.23 43.54 35.79 43.97 35.27 43.97 L34.481 43.97 C33.925 46.141 32.073 48.251 29.41 49.43 C25.39 51.23 21.03 50.23 19.69 47.22 C18.35 44.2 20.52 40.3 24.55 38.51 C27.323 37.268 30.249 37.364 32.24 38.528 L32.24 16.23 C32.24 15.945 32.364 15.689 32.56 15.513 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="glint" d="M27.94 17.67 C29.08 19.28 27.81 22.12 25.11 24.01 C22.42 25.9 19.32 26.11 18.19 24.5 C17.05 22.88 18.32 20.04 21.02 18.15 C23.71 16.27 26.81 16.05 27.94 17.67 Z" fill="url(#linear-gradient-2)" opacity="0.55"/>
+    </g>
+  </g>
+</svg>

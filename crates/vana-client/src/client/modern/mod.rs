@@ -938,16 +938,31 @@ impl Modern {
         any
     }
 
-    /// A status icon from the game's files (config 0x99 bit 2: the small set) as an egui texture, made once.
-    fn status_icon(&self, ctx: &Context, gu: &GameUi, small: bool, id: u16) -> Option<egui::TextureId> {
+    /// A status icon and its uv: the pack's (status_map.tsv, ours), else the game's (config 0x99 bit 2: the small set),
+    /// made once.
+    fn status_icon(&self, ctx: &Context, gu: &GameUi, small: bool, id: u16) -> Option<(egui::TextureId, Rect)> {
+        if let Some(s) = status_art().get(&id).and_then(|name| self.art.sprite(&format!("status/{name}"))) {
+            return Some((s.tex, s.uv));
+        }
         let key = format!("status {}:{id}", small as u8);
         let mut images = self.images.borrow_mut();
         let t = images.entry(key.clone()).or_insert_with(|| {
             let (w, h, rgba) = gu.status_rgba(small, id)?;
             Some(ctx.load_texture(key, egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba), egui::TextureOptions::LINEAR))
         });
-        t.as_ref().map(|t| t.id())
+        t.as_ref().map(|t| (t.id(), FULL_UV))
     }
+}
+
+/// A whole texture's uv.
+const FULL_UV: Rect = Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0));
+
+/// Our status icons by status id (assets/modern/status_map.tsv: ids sharing a retail image share ours).
+fn status_art() -> &'static HashMap<u16, &'static str> {
+    static MAP: std::sync::OnceLock<HashMap<u16, &'static str>> = std::sync::OnceLock::new();
+    MAP.get_or_init(|| {
+        include_str!("../../../assets/modern/status_map.tsv").lines().filter_map(|l| l.split_once('\t')).filter_map(|(id, n)| Some((id.parse().ok()?, n))).collect()
+    })
 }
 
 fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {

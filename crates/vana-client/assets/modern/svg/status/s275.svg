@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="12.793" x2="32" y2="51.207" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7bf8a"/>
+      <stop offset="0.42" stop-color="#f08a2a"/>
+      <stop offset="1" stop-color="#784515"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="26.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+  </defs>
+  <title>s275</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.824 4.875 C29.985 3.798 30.91 3 32 3 C33.09 3 34.015 3.798 34.176 4.875 L35.062 10.811 C44.434 12.154 51.846 19.566 53.189 28.938 L59.125 29.824 C60.202 29.985 61 30.91 61 32 C61 33.09 60.202 34.015 59.125 34.176 L53.189 35.062 C51.846 44.434 44.434 51.846 35.062 53.189 L34.176 59.125 C34.015 60.202 33.09 61 32 61 C30.91 61 29.985 60.202 29.824 59.125 L28.938 53.189 C19.566 51.846 12.154 44.434 10.811 35.062 L10.811 35.062 L4.875 34.176 C3.798 34.015 3 33.09 3 32 C3 30.91 3.798 29.985 4.875 29.824 L10.811 28.938 C12.154 19.566 19.566 12.154 28.938 10.811 Z M27.214 22.368 C25.119 23.411 23.411 25.119 22.368 27.214 L26.584 26.584 Z M36.786 22.368 L37.416 26.584 L41.632 27.214 C40.589 25.119 38.881 23.411 36.786 22.368 Z M41.632 36.786 L37.416 37.416 L36.786 41.632 C38.881 40.589 40.589 38.881 41.632 36.786 Z M22.368 36.786 C23.411 38.881 25.119 40.589 27.214 41.632 L26.584 37.416 Z" fill="#0a1118"/>
+      <path id="ring" d="M12.793 32 C12.793 21.393 21.393 12.793 32 12.793 C42.607 12.793 51.207 21.393 51.207 32 C51.207 42.607 42.607 51.207 32 51.207 C21.393 51.207 12.793 42.607 12.793 32 Z M32 19.047 C24.847 19.047 19.047 24.847 19.047 32 C19.047 39.153 24.847 44.953 32 44.953 C39.153 44.953 44.953 39.153 44.953 32 C44.953 24.847 39.153 19.047 32 19.047 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="cross" d="M32 5.2 L35.48 28.52 L58.8 32 L35.48 35.48 L32 58.8 L28.52 35.48 L5.2 32 L28.52 28.52 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

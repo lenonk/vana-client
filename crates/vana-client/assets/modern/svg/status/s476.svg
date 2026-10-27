@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="17.508" x2="32" y2="46.492" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dee793"/>
+      <stop offset="0.42" stop-color="#c3d43a"/>
+      <stop offset="1" stop-color="#626a1d"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="15.97" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#edf2c4"/>
+      <stop offset="0.45" stop-color="#ccda58"/>
+      <stop offset="0.85" stop-color="#c3d43a"/>
+      <stop offset="1" stop-color="#6b7520"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-2" x1="32.107" y1="21.12" x2="32.107" y2="46.492" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#dee793"/>
+      <stop offset="0.42" stop-color="#c3d43a"/>
+      <stop offset="1" stop-color="#626a1d"/>
+    </linearGradient>
+  </defs>
+  <title>s476</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M15.196 25.078 C19.292 15.141 31.033 10.978 40.42 15.895 C45.488 15.097 52.878 14.644 57.406 17.687 C60.445 19.73 61.676 23.105 60.664 26.625 C59.155 31.868 53.2 36.275 48.804 38.922 C44.708 48.859 32.967 53.022 23.58 48.105 C18.512 48.903 11.122 49.356 6.594 46.313 C3.555 44.27 2.324 40.895 3.336 37.375 C4.845 32.132 10.8 27.725 15.196 25.078 Z M48.054 23.484 C48.844 24.97 49.421 26.557 49.771 28.203 C50.744 27.343 52.431 25.705 52.82 24.422 C51.698 23.688 49.353 23.518 48.054 23.484 Z M14.229 35.797 C13.256 36.657 11.569 38.295 11.18 39.578 C12.302 40.312 14.647 40.482 15.946 40.516 C15.156 39.03 14.579 37.443 14.229 35.797 Z" fill="#0a1118"/>
+      <path id="aura_ring" data-name="aura ring" d="M28.148 21.404 C42.086 16.329 56.085 15.775 58.485 22.356 C60.887 28.939 49.802 37.52 35.852 42.596 C21.914 47.671 7.915 48.225 5.515 41.644 C3.113 35.061 14.198 26.48 28.148 21.404 Z M29.432 24.936 C15.353 30.058 7.984 37.448 9.045 40.356 C10.107 43.267 20.499 44.187 34.568 39.064 C48.647 33.942 56.016 26.552 54.955 23.644 C53.893 20.733 43.501 19.813 29.432 24.936 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="sphere" d="M47.97 32 C47.97 40.82 40.82 47.97 32 47.97 C23.18 47.97 16.03 40.82 16.03 32 C16.03 23.18 23.18 16.03 32 16.03 C40.82 16.03 47.97 23.18 47.97 32 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="ring_front" data-name="ring front" d="M56.076 21.235 C57.051 20.879 58.13 21.381 58.485 22.356 C60.887 28.939 49.802 37.52 35.852 42.596 C21.914 47.671 7.915 48.225 5.515 41.644 C5.159 40.669 5.661 39.59 6.636 39.235 C7.611 38.879 8.69 39.381 9.045 40.356 C10.107 43.267 20.499 44.187 34.568 39.064 C48.647 33.942 56.016 26.552 54.955 23.644 C54.599 22.669 55.101 21.59 56.076 21.235 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

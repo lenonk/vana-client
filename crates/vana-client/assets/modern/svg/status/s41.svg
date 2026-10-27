@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.2" x2="32" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#95dfb6"/>
+      <stop offset="0.42" stop-color="#3fc47a"/>
+      <stop offset="1" stop-color="#20623d"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="44.015" y1="5.2" x2="44.015" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#cff0de"/>
+      <stop offset="1" stop-color="#79d6a2"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="19.985" y1="32" x2="19.985" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#37ac6b"/>
+      <stop offset="1" stop-color="#184a2e"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="28.347" y1="11.281" x2="35.653" y2="52.719" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="32" y1="21.83" x2="32" y2="42.17" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#bcead0"/>
+    </linearGradient>
+  </defs>
+  <title>s41</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.362 3.731 C31.236 2.757 32.764 2.757 33.638 3.731 L57.668 30.531 C58.417 31.367 58.417 32.633 57.668 33.469 L33.638 60.269 C32.764 61.243 31.236 61.243 30.362 60.269 L6.332 33.469 C5.583 32.633 5.583 31.367 6.332 30.531 Z" fill="#0a1118"/>
+      <path id="gem" d="M32 5.2 L56.03 32 L32 58.8 L7.97 32 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="facet_light" data-name="facet light" d="M32 5.2 L56.03 32 L32 32 Z" fill="url(#linear-gradient-2)" opacity="0.6"/>
+      <path id="facet_dark" data-name="facet dark" d="M32 58.8 L7.97 32 L32 32 Z" fill="url(#linear-gradient-3)" opacity="0.6"/>
+      <path id="inlay" d="M31.222 13.785 C31.628 13.303 32.372 13.303 32.778 13.785 L47.568 31.345 C47.886 31.724 47.886 32.276 47.568 32.655 L32.778 50.215 C32.372 50.697 31.628 50.697 31.222 50.215 L16.432 32.655 C16.114 32.276 16.114 31.724 16.432 31.345 Z M32 16.018 L18.539 32 L32 47.982 L45.461 32 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="star" d="M32 21.83 L34.15 29.85 L42.17 32 L34.15 34.15 L32 42.17 L29.85 34.15 L21.83 32 L29.85 29.85 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.1" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

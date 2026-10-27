@@ -153,7 +153,7 @@ const RES_W: f32 = 660.0;
 
 /// A person in a people list: an icon, the name in its colour, the jobs, race / nation / rank, the area when not ours.
 struct Person {
-    icon: Option<egui::TextureId>,
+    icon: Option<(egui::TextureId, egui::Rect)>,
     name: String,
     colour: Color32,
     jobs: String,
@@ -163,7 +163,7 @@ struct Person {
 
 /// A search record as a row (FUN_1020a740's cells in words): `icon` the row's own (the search's status icon, the link
 /// list's shell item), `alt` the other job view (Num+).
-fn person(w: &World, gu: &GameUi, r: &crate::net::search::Record, icon: Option<egui::TextureId>, alt: bool) -> Person {
+fn person(w: &World, gu: &GameUi, r: &crate::net::search::Record, icon: Option<(egui::TextureId, egui::Rect)>, alt: bool) -> Person {
     let (_, team) = search::status_icon(r.flags);
     let nc = match () {
         _ if team.is_some() => team.map_or(0x8080_8080, |t| gu.ncol(t.0)),
@@ -250,8 +250,8 @@ fn people(p: &mut Panels, v: People, moved: bool) -> PeopleMouse {
                             }
                             (_, Some(i)) => {
                                 let pr = &v.rows[i];
-                                if let Some(t) = pr.icon {
-                                    ui.painter().image(t, Rect::from_center_size(pos2(r.min.x + 16.0, y), vec2(18.0, 18.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                                if let Some((t, uv)) = pr.icon {
+                                    ui.painter().image(t, Rect::from_center_size(pos2(r.min.x + 16.0, y), vec2(18.0, 18.0)), uv, Color32::WHITE);
                                 }
                                 ui.painter().text(pos2(r.min.x + 32.0, y), Align2::LEFT_CENTER, &pr.name, font.clone(), pr.colour);
                                 ui.painter().text(pos2(r.min.x + 190.0, y), Align2::LEFT_CENTER, &pr.jobs, FontId::monospace(m.theme.small), m.theme.color("text"));
@@ -331,7 +331,7 @@ fn results(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
         .map(|r| {
             let (k, _) = search::status_icon(r.flags);
             let icon = search::icon(k).filter(|_| k > 1).and_then(|(lib, s)| m.sprite_icon(p.ctx, gu, lib, s));
-            person(w, gu, r, icon, res.alt)
+            person(w, gu, r, icon.map(|t| (t, super::FULL_UV)), res.alt)
         })
         .collect();
     let opts: Vec<(u16, String, bool)> = res.option.map_or(Vec::new(), |_| {
@@ -384,7 +384,7 @@ fn link_list(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
     let Some(v) = linklist::view(w, gu) else { return };
     let m = p.m;
     let info = w.item_info.clone();
-    let rows = v.rows.iter().map(|(r, item)| person(w, gu, r, info.as_ref().and_then(|i| m.item_icon(p.ctx, i, *item)), v.alt)).collect();
+    let rows = v.rows.iter().map(|(r, item)| person(w, gu, r, info.as_ref().and_then(|i| m.item_icon(p.ctx, i, *item)).map(|t| (t, super::FULL_UV)), v.alt)).collect();
     let empty = v.empty.clone();
     let title = gu.title_msg(0x47).unwrap_or_else(|| "Linkshell".into());
     let pv = People { id: "linklist", title: &title, icon: "icons/linkshell", header: None, empty, rows, cursor: v.cursor, focused: v.focused, opts: v.acts.clone(), opt_sel: v.act_sel };

@@ -171,9 +171,9 @@ fn effect_icon(p: Look, painter: &egui::Painter, e: &Effect, r: Rect, small: boo
     let tint = if e.ending { Color32::from_gray((140.0 + 115.0 * (t * 4.0).sin().abs()) as u8) } else { Color32::WHITE };
     match e.icon {
         Icon::Game(id) => {
-            if let Some(tex) = p.gu.and_then(|gu| p.m.status_icon(p.ctx, gu, small, id)) {
+            if let Some((tex, uv)) = p.gu.and_then(|gu| p.m.status_icon(p.ctx, gu, small, id)) {
                 let mut mesh = egui::Mesh::with_texture(tex);
-                mesh.add_rect_with_uv(r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
+                mesh.add_rect_with_uv(r, uv, tint);
                 painter.add(egui::Shape::mesh(mesh));
             }
         }

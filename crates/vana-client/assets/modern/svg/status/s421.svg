@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="38.315" y1="6.75" x2="38.315" y2="57.25" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d9aab"/>
+      <stop offset="1" stop-color="#3f4a58"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="25.685" y1="6.75" x2="25.685" y2="57.25" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6db1bc"/>
+      <stop offset="0.5" stop-color="#2f8fa0"/>
+      <stop offset="1" stop-color="#216470"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="14.91" x2="32" y2="23.84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8d9aab"/>
+      <stop offset="1" stop-color="#3f4a58"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="40.16" x2="32" y2="49.09" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#6db1bc"/>
+      <stop offset="0.5" stop-color="#2f8fa0"/>
+      <stop offset="1" stop-color="#216470"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="26.608" y1="1.421" x2="37.392" y2="62.579" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>s421</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M2.996 32 C2.996 15.987 15.987 2.996 32 2.996 C48.013 2.996 61.004 15.987 61.004 32 C61.004 48.013 48.013 61.004 32 61.004 C15.987 61.004 2.996 48.013 2.996 32 Z" fill="#0a1118"/>
+      <path id="disc" d="M57.25 32 C57.25 45.94 45.94 57.25 32 57.25 C18.06 57.25 6.75 45.94 6.75 32 C6.75 18.06 18.06 6.75 32 6.75 C45.94 6.75 57.25 18.06 57.25 32 Z" fill="#0a1118" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="dim_half" data-name="dim half" d="M32 6.75 C45.98 6.75 57.25 18.02 57.25 32 C57.25 45.98 45.98 57.25 32 57.25 C25.01 57.25 19.38 51.61 19.38 44.62 C19.38 37.63 25.01 32 32 32 C38.99 32 44.62 26.37 44.62 19.38 C44.62 12.39 38.99 6.75 32 6.75 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="lit_half" data-name="lit half" d="M32 57.25 C18.02 57.25 6.75 45.98 6.75 32 C6.75 18.02 18.02 6.75 32 6.75 C38.99 6.75 44.62 12.39 44.62 19.38 C44.62 26.37 38.99 32 32 32 C25.01 32 19.38 37.63 19.38 44.62 C19.38 51.61 25.01 57.25 32 57.25 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="dot_in_lit" data-name="dot in lit" d="M36.47 19.38 C36.47 21.84 34.47 23.84 32 23.84 C29.53 23.84 27.53 21.84 27.53 19.38 C27.53 16.91 29.53 14.91 32 14.91 C34.47 14.91 36.47 16.91 36.47 19.38 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="dot_in_dim" data-name="dot in dim" d="M36.47 44.62 C36.47 47.09 34.47 49.09 32 49.09 C29.53 49.09 27.53 47.09 27.53 44.62 C27.53 42.16 29.53 40.16 32 40.16 C34.47 40.16 36.47 42.16 36.47 44.62 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="ring" d="M5.196 32 C5.196 17.202 17.202 5.196 32 5.196 C46.798 5.196 58.804 17.202 58.804 32 C58.804 46.798 46.798 58.804 32 58.804 C17.202 58.804 5.196 46.798 5.196 32 Z M32 8.304 C18.918 8.304 8.304 18.918 8.304 32 C8.304 45.082 18.918 55.696 32 55.696 C45.082 55.696 55.696 45.082 55.696 32 C55.696 18.918 45.082 8.304 32 8.304 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

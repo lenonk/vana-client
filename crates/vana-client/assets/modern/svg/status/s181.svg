@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.2" x2="32" y2="40.93" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b18533"/>
+      <stop offset="1" stop-color="#4c3916"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="24.981" y1="13.121" x2="24.981" y2="25.468" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#ecdbba"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="31.495" y1="39.16" x2="31.495" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d9b675"/>
+      <stop offset="0.5" stop-color="#c9973a"/>
+      <stop offset="1" stop-color="#8d6a29"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="27.76" y1="39.16" x2="27.76" y2="46.15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e1c693"/>
+      <stop offset="0.42" stop-color="#c9973a"/>
+      <stop offset="1" stop-color="#644c1d"/>
+    </linearGradient>
+  </defs>
+  <title>s181</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M20.309 10.579 C22.968 6.029 27.898 3 33.51 3 C39.93 3 45.446 6.963 47.703 12.61 C53.957 13.172 58.86 18.43 58.86 24.82 C58.86 26.595 58.481 28.293 57.792 29.831 C57.328 33.753 54.242 36.675 51.001 38.577 C47.987 40.346 44.092 41.697 39.679 42.452 L47.348 57.817 C48.077 59.278 47.012 61 45.38 61 L17.61 61 C15.969 61 14.904 59.259 15.652 57.798 L23.489 42.482 C17.876 41.544 10.612 39.154 7.057 34.337 C4.907 31.425 4.493 27.972 6.182 24.753 C5.624 16.711 12.264 10.047 20.309 10.579 Z" fill="#0a1118"/>
+      <path id="cloud" d="M21.559 12.956 C23.597 8.387 28.178 5.2 33.51 5.2 C39.523 5.2 44.581 9.253 46.114 14.771 C46.272 14.764 46.43 14.76 46.59 14.76 C52.15 14.76 56.66 19.27 56.66 24.82 C56.66 26.408 56.292 27.91 55.637 29.246 C55.219 35.733 44.565 40.93 31.5 40.93 C18.16 40.93 7.34 35.52 7.34 28.85 C7.34 27.592 7.725 26.378 8.44 25.237 C8.38 24.773 8.35 24.3 8.35 23.82 C8.35 17.7 13.3 12.75 19.42 12.75 C20.152 12.75 20.867 12.821 21.559 12.956 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="cloud_light" data-name="cloud light" d="M28.89 13.4 C33.27 12.63 37.08 13.51 37.41 15.37 C37.74 17.24 34.46 19.37 30.08 20.14 C25.7 20.92 21.89 20.03 21.55 18.17 C21.23 16.31 24.51 14.18 28.89 13.4 Z M15.58 20.54 C17.67 19.78 19.73 20.19 20.19 21.43 C20.64 22.69 19.32 24.32 17.23 25.09 C15.13 25.84 13.07 25.44 12.62 24.19 C12.16 22.93 13.48 21.3 15.58 20.54 Z" fill="url(#linear-gradient-2)" opacity="0.35"/>
+      <path id="mountains" d="M17.61 58.8 L27.66 39.16 L32.07 46.82 L36.29 40.59 L45.38 58.8 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.3" stroke-linejoin="round"/>
+      <path id="snow" d="M27.66 39.16 L30.92 45.38 L28.24 44.43 L25.37 46.15 L24.6 45.19 Z" fill="url(#linear-gradient-4)"/>
+    </g>
+  </g>
+</svg>

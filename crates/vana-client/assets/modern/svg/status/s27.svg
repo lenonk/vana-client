@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="45.4" x2="32" y2="57.19" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eecb9f"/>
+      <stop offset="0.42" stop-color="#e0a050"/>
+      <stop offset="1" stop-color="#705028"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="36.82" x2="32" y2="46.47" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="31.609" x2="32" y2="37.9" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9ddfad"/>
+      <stop offset="0.42" stop-color="#4cc46a"/>
+      <stop offset="1" stop-color="#266235"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="6.81" x2="32" y2="30.39" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eecb9f"/>
+      <stop offset="0.42" stop-color="#e0a050"/>
+      <stop offset="1" stop-color="#705028"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="33.087" y1="11.171" x2="33.087" y2="22.299" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+  </defs>
+  <title>s27</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M4.61 30.296 C4.659 14.696 16.83 4.61 32 4.61 C47.2 4.61 59.39 14.736 59.39 30.39 C59.39 30.4 59.39 30.41 59.39 30.42 C60.338 30.684 61 31.549 61 32.54 L61 37.9 C61 38.599 60.674 39.223 60.165 39.626 C60.994 42.397 60.051 45.41 57.747 47.199 C58.457 48.408 58.86 49.812 58.86 51.3 C58.86 55.765 55.235 59.39 50.76 59.39 L13.24 59.39 C8.765 59.39 5.14 55.765 5.14 51.3 C5.14 49.812 5.543 48.408 6.253 47.199 C3.949 45.41 3.006 42.397 3.835 39.626 C3.326 39.223 3 38.599 3 37.9 L3 32.54 C3 31.404 3.723 30.809 4.61 30.296 Z" fill="#0a1118"/>
+      <path id="bun_bottom" data-name="bun bottom" d="M13.24 45.4 L50.76 45.4 C54.02 45.4 56.66 48.04 56.66 51.3 L56.66 51.3 C56.66 54.55 54.02 57.19 50.76 57.19 L13.24 57.19 C9.98 57.19 7.34 54.55 7.34 51.3 L7.34 51.3 C7.34 48.04 9.98 45.4 13.24 45.4 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="patty" d="M10.56 36.82 L53.44 36.82 C56.11 36.82 58.26 38.98 58.26 41.65 L58.26 41.65 C58.26 44.32 56.11 46.47 53.44 46.47 L10.56 46.47 C7.89 46.47 5.74 44.32 5.74 41.65 L5.74 41.65 C5.74 38.98 7.89 36.82 10.56 36.82 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="lettuce" d="M5.2 32.54 C9.49 29.32 13.78 35.75 18.6 32.54 C23.42 29.32 27.71 35.75 32 32.54 C36.29 29.32 40.58 35.75 45.4 32.54 C50.22 29.32 54.51 35.75 58.8 32.54 L58.8 37.9 L5.2 37.9 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.1" stroke-linejoin="round"/>
+      <path id="bun_top" data-name="bun top" d="M6.81 30.39 C6.81 15.92 18.06 6.81 32 6.81 C45.94 6.81 57.19 15.92 57.19 30.39 Z" fill="url(#linear-gradient-4)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="seeds" d="M28.27 11.89 C28.37 11.36 29.15 11.06 30.03 11.21 C30.9 11.37 31.53 11.92 31.44 12.45 C31.35 12.97 30.56 13.27 29.68 13.12 C28.82 12.96 28.18 12.41 28.27 11.89 Z M36.97 13.64 C37.2 13.15 38.04 13.06 38.84 13.43 C39.64 13.81 40.12 14.5 39.89 14.99 C39.66 15.47 38.83 15.57 38.02 15.19 C37.22 14.82 36.75 14.12 36.97 13.64 Z M20.95 14.47 C21.78 14.17 22.61 14.33 22.79 14.84 C22.97 15.33 22.45 15.98 21.61 16.3 C20.78 16.6 19.95 16.43 19.77 15.93 C19.59 15.44 20.11 14.78 20.95 14.47 Z M44.62 18.74 C45.48 18.51 46.28 18.74 46.42 19.25 C46.56 19.77 45.97 20.37 45.11 20.6 C44.25 20.83 43.45 20.6 43.31 20.09 C43.17 19.58 43.76 18.98 44.62 18.74 Z M33.97 18.72 C34.85 18.57 35.63 18.87 35.73 19.39 C35.82 19.92 35.18 20.47 34.32 20.63 C33.44 20.78 32.65 20.48 32.56 19.95 C32.47 19.43 33.1 18.88 33.97 18.72 Z M24.01 20.86 C24.15 20.35 24.96 20.12 25.81 20.35 C26.67 20.58 27.26 21.18 27.12 21.7 C26.98 22.21 26.18 22.44 25.32 22.21 C24.46 21.98 23.87 21.38 24.01 20.86 Z" fill="url(#linear-gradient-5)"/>
+    </g>
+  </g>
+</svg>

@@ -55,10 +55,10 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
     let (out, folded) = (w.timers.out, w.timers.folded);
     let icon = |i: &Icon| match *i {
         Icon::Status(id) => m.status_icon(ctx, gu, small, id),
-        Icon::List(lib, k) => m.sprite_icon(ctx, gu, lib, k),
+        Icon::List(lib, k) => m.sprite_icon(ctx, gu, lib, k).map(|t| (t, super::FULL_UV)),
         Icon::None => None,
     };
-    let icons: Vec<Vec<Vec<Option<egui::TextureId>>>> = if out { secs.iter().map(|s| s.iter().map(|g| g.rows.iter().map(|r| icon(&r.icon)).collect()).collect()).collect() } else { Vec::new() };
+    let icons: Vec<Vec<Vec<Option<(egui::TextureId, Rect)>>>> = if out { secs.iter().map(|s| s.iter().map(|g| g.rows.iter().map(|r| icon(&r.icon)).collect()).collect()).collect() } else { Vec::new() };
     let mut fold: Option<usize> = None;
     // Clear of the menu's windows as the right edge's are (the item list grows over it on the left).
     let toggle = edge_window(p, "timers", WIDTH, !out, "Timers", |ui, left| {
@@ -335,7 +335,7 @@ fn header(ui: &mut Ui, m: &super::Modern, text: &str, open: bool) -> egui::Respo
     resp
 }
 
-fn group(ui: &mut Ui, m: &super::Modern, g: &Group, icons: &[Option<egui::TextureId>], pulse: f32) {
+fn group(ui: &mut Ui, m: &super::Modern, g: &Group, icons: &[Option<(egui::TextureId, Rect)>], pulse: f32) {
     if let Some(name) = &g.name {
         ui.label(egui::RichText::new(name).size(m.theme.small).color(m.theme.color("muted")));
     }
@@ -344,8 +344,8 @@ fn group(ui: &mut Ui, m: &super::Modern, g: &Group, icons: &[Option<egui::Textur
         let waiting = r.left <= 0.0;
         let k = if !r.fills && r.left > 0.0 && r.left <= 15.0 { 0.5 + 0.5 * pulse } else { 1.0 };
         let tint = Color32::from_white_alpha((255.0 * k) as u8);
-        if let Some(t) = icon {
-            ui.painter().image(*t, Rect::from_min_size(pos2(rect.min.x, rect.min.y + 3.0), vec2(22.0, 22.0)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), tint);
+        if let Some((t, uv)) = icon {
+            ui.painter().image(*t, Rect::from_min_size(pos2(rect.min.x, rect.min.y + 3.0), vec2(22.0, 22.0)), *uv, tint);
         }
         let text = if waiting { m.theme.color("muted") } else { m.theme.color("text") };
         let x = rect.min.x + 30.0;

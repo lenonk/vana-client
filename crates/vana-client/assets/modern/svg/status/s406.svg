@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.64" x2="32" y2="58.36" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8c78a"/>
+      <stop offset="0.42" stop-color="#f39a2a"/>
+      <stop offset="1" stop-color="#7a4d15"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="31.581" y1="15.086" x2="31.581" y2="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7a4a2a"/>
+      <stop offset="1" stop-color="#3a1f10"/>
+    </linearGradient>
+  </defs>
+  <title>s406</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.104 4.524 C30.953 3.082 33.047 3.082 33.896 4.524 L39.003 13.197 L46 11.802 C47.258 11.552 48.464 12.428 48.615 13.702 L49.452 20.789 L59.275 22.962 C60.91 23.323 61.557 25.315 60.447 26.568 L53.775 34.106 L57.268 40.322 C57.897 41.441 57.436 42.861 56.271 43.398 L49.789 46.385 L50.75 56.41 C50.91 58.076 49.215 59.306 47.68 58.637 L38.455 54.612 L33.616 59.852 C32.746 60.795 31.254 60.795 30.384 59.852 L25.545 54.612 L16.32 58.637 C14.785 59.306 13.09 58.076 13.25 56.41 L14.211 46.385 L7.729 43.398 C6.564 42.861 6.103 41.441 6.732 40.322 L10.225 34.106 L3.553 26.568 C2.443 25.315 3.09 23.323 4.725 22.962 L14.548 20.789 L15.385 13.702 C15.536 12.428 16.742 11.552 18 11.802 L24.997 13.197 Z" fill="#0a1118"/>
+      <path id="impact" d="M32 5.64 L37.9 15.66 L46.43 13.96 L47.45 22.6 L58.8 25.11 L51.09 33.82 L55.35 41.4 L47.45 45.04 L48.56 56.62 L37.9 51.97 L32 58.36 L26.1 51.97 L15.44 56.62 L16.55 45.04 L8.65 41.4 L12.91 33.82 L5.2 25.11 L16.55 22.6 L17.57 13.96 L26.1 15.66 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="sole_print" data-name="sole print" d="M27.45 15.64 C32.91 13.82 38.36 16.55 38.82 22.91 C39.27 28.36 37.45 32 37.45 35.64 L26.55 35.64 C26.09 31.09 24.27 27.45 24.27 22.91 C24.27 18.82 25.18 16.55 27.45 15.64 Z M32 52 C27.45 52 26.09 45.64 26.55 40.18 L37.45 40.18 C37.91 45.64 36.55 52 32 52 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

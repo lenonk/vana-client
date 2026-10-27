@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="26.609" y1="1.425" x2="37.391" y2="62.575" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="9.03" x2="32" y2="54.97" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ad84de"/>
+      <stop offset="0.5" stop-color="#8a4fd0"/>
+      <stop offset="1" stop-color="#613792"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32.595" y1="38.74" x2="32.595" y2="47.12" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32.595" y1="39.453" x2="32.595" y2="44.897" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="33.05" y1="22.27" x2="33.05" y2="41.73" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-6" x1="42.12" y1="20.47" x2="42.12" y2="33.35" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-7" x1="36.01" y1="18.07" x2="36.01" y2="33.35" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-8" x1="29.665" y1="16.88" x2="29.665" y2="33.35" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-9" x1="23.32" y1="18.97" x2="23.32" y2="33.35" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-10" x1="27.546" y1="28.128" x2="27.546" y2="36.98" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-11" x1="32" y1="15.439" x2="32" y2="48.561" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8f92"/>
+      <stop offset="0.4" stop-color="#e94c5b"/>
+      <stop offset="1" stop-color="#8e1f30"/>
+    </linearGradient>
+  </defs>
+  <title>s261</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M3 32 C3 15.985 15.985 3 32 3 C48.015 3 61 15.985 61 32 C61 48.015 48.015 61 32 61 C15.985 61 3 48.015 3 32 Z" fill="#0a1118"/>
+      <path id="seal_rim" data-name="seal rim" d="M58.8 32 C58.8 46.8 46.8 58.8 32 58.8 C17.2 58.8 5.2 46.8 5.2 32 C5.2 17.2 17.2 5.2 32 5.2 C46.8 5.2 58.8 17.2 58.8 32 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="seal" d="M54.97 32 C54.97 44.68 44.68 54.97 32 54.97 C19.32 54.97 9.03 44.68 9.03 32 C9.03 19.32 19.32 9.03 32 9.03 C44.68 9.03 54.97 19.32 54.97 32 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="cuff" d="M25.71 38.74 L39.48 38.74 C40.48 38.74 41.28 39.54 41.28 40.54 L41.28 45.32 C41.28 46.32 40.48 47.12 39.48 47.12 L25.71 47.12 C24.72 47.12 23.91 46.32 23.91 45.32 L23.91 40.54 C23.91 39.54 24.72 38.74 25.71 38.74 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="cuff_lines" data-name="cuff lines" d="M23.869 40.963 L41.239 39.453 L41.321 40.407 L23.951 41.917 Z M23.869 43.943 L41.239 42.453 L41.321 43.407 L23.951 44.897 Z" fill="url(#linear-gradient-4)"/>
+      <path id="hand" d="M20.62 27.36 C20.62 23.77 22.42 22.27 25.41 22.27 L40.99 22.27 C43.97 22.27 45.48 24.36 45.48 27.96 L45.48 35.74 C45.48 39.64 43.08 41.73 39.78 41.73 L26.61 41.73 C22.72 41.73 20.62 39.34 20.62 35.74 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="pinky" d="M42.13 20.47 L42.13 20.47 C43.88 20.47 45.29 21.89 45.29 23.64 L45.29 30.17 C45.29 31.92 43.88 33.35 42.13 33.35 L42.13 33.35 C40.37 33.35 38.95 31.92 38.95 30.17 L38.95 23.64 C38.95 21.89 40.37 20.47 42.13 20.47 Z" fill="url(#linear-gradient-6)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="ring" d="M36.01 18.07 L36.01 18.07 C37.83 18.07 39.3 19.55 39.3 21.37 L39.3 30.06 C39.3 31.88 37.83 33.35 36.01 33.35 L36.01 33.35 C34.19 33.35 32.72 31.88 32.72 30.06 L32.72 21.37 C32.72 19.55 34.19 18.07 36.01 18.07 Z" fill="url(#linear-gradient-7)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="middle" d="M29.66 16.88 L29.66 16.88 C31.48 16.88 32.96 18.35 32.96 20.17 L32.96 30.06 C32.96 31.88 31.48 33.35 29.66 33.35 L29.66 33.35 C27.85 33.35 26.37 31.88 26.37 30.06 L26.37 20.17 C26.37 18.35 27.85 16.88 29.66 16.88 Z" fill="url(#linear-gradient-8)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="index" d="M23.32 18.97 L23.32 18.97 C25.14 18.97 26.61 20.45 26.61 22.27 L26.61 30.06 C26.61 31.88 25.14 33.35 23.32 33.35 L23.32 33.35 C21.49 33.35 20.03 31.88 20.03 30.06 L20.03 22.27 C20.03 20.45 21.49 18.97 23.32 18.97 Z" fill="url(#linear-gradient-9)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="thumb" d="M18.52 32.75 C18.52 29.16 20.62 27.65 23.62 28.26 L34.39 30.35 C37.09 30.95 37.39 35.45 34.7 36.04 L23.01 36.94 C20.03 37.25 18.52 35.74 18.52 32.75 Z" fill="url(#linear-gradient-10)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="strike" d="M44.803 16.083 C45.663 15.224 47.057 15.224 47.917 16.083 C48.776 16.943 48.776 18.337 47.917 19.197 L19.197 47.917 C18.337 48.776 16.943 48.776 16.083 47.917 C15.224 47.057 15.224 45.663 16.083 44.803 Z" fill="url(#linear-gradient-11)" stroke="#0a1118" stroke-width="1.2" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

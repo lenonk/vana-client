@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="27.026" y1="3.792" x2="36.974" y2="60.208" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="26.609" y1="1.425" x2="37.391" y2="62.575" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="20.32" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bf8df8" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#a35cf5" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#a35cf5" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="19.21" x2="32" y2="44.79" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#bf8df8"/>
+      <stop offset="0.5" stop-color="#a35cf5"/>
+      <stop offset="1" stop-color="#7240ac"/>
+    </linearGradient>
+  </defs>
+  <title>s427</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.331 3.767 C31.208 2.745 32.792 2.745 33.669 3.767 L34.927 5.232 C47.466 6.586 57.414 16.534 58.768 29.073 L60.233 30.331 C61.255 31.208 61.255 32.792 60.233 33.669 L58.768 34.927 C57.414 47.466 47.466 57.414 34.927 58.768 L33.669 60.233 C32.792 61.255 31.208 61.255 30.331 60.233 L29.073 58.768 L29.073 58.768 C16.534 57.414 6.586 47.466 5.232 34.927 L3.767 33.669 C2.745 32.792 2.745 31.208 3.767 30.331 L5.232 29.073 L5.232 29.073 C6.586 16.534 16.534 6.586 29.073 5.232 Z M34.508 13.27 L33.456 14.199 C32.624 14.934 31.376 14.934 30.544 14.199 L29.492 13.27 C21.059 14.386 14.386 21.059 13.27 29.492 L14.199 30.544 C14.934 31.376 14.934 32.624 14.199 33.456 L13.27 34.508 C14.386 42.941 21.059 49.614 29.492 50.73 L29.492 50.73 L30.544 49.801 C31.376 49.066 32.624 49.066 33.456 49.801 L34.508 50.73 L34.508 50.73 C42.941 49.614 49.614 42.941 50.73 34.508 L49.801 33.456 C49.066 32.624 49.066 31.376 49.801 30.544 L50.73 29.492 C49.614 21.059 42.941 14.386 34.508 13.27 Z M33.277 17.979 C33.686 17.373 34.369 17.01 35.1 17.01 L36.88 17.01 C38.408 17.01 39.472 18.536 38.945 19.97 L36.324 27.09 L39.37 27.09 C41.162 27.09 42.203 29.131 41.151 30.582 L29.911 46.082 C29.288 46.94 28.141 47.232 27.184 46.776 C26.226 46.32 25.73 45.245 26.005 44.221 L27.963 36.91 L24.63 36.91 C22.871 36.91 21.823 34.936 22.807 33.479 Z" fill="#0a1118"/>
+      <path id="ring" d="M7.275 32 C7.275 18.337 18.337 7.275 32 7.275 C45.663 7.275 56.725 18.337 56.725 32 C56.725 45.663 45.663 56.725 32 56.725 C18.337 56.725 7.275 45.663 7.275 32 Z M32 10.905 C20.343 10.905 10.905 20.343 10.905 32 C10.905 43.657 20.343 53.095 32 53.095 C43.657 53.095 53.095 43.657 53.095 32 C53.095 20.343 43.657 10.905 32 10.905 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="studs" d="M28.41 9.38 L32 5.2 L35.59 9.38 L32 12.55 Z M5.2 32 L9.38 28.41 L12.55 32 L9.38 35.59 Z M51.45 32 L54.62 28.41 L58.8 32 L54.62 35.59 Z M28.41 54.62 L32 51.45 L35.59 54.62 L32 58.8 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="aura" d="M52.32 32 C52.32 43.22 43.22 52.32 32 52.32 C20.78 52.32 11.68 43.22 11.68 32 C11.68 20.78 20.78 11.68 32 11.68 C43.22 11.68 52.32 20.78 52.32 32 Z" fill="url(#radial-gradient-1)" opacity="0.55"/>
+      <path id="bolt" d="M35.1 19.21 L24.63 34.71 L30.83 34.71 L28.13 44.79 L39.37 29.29 L33.17 29.29 L36.88 19.21 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.3" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

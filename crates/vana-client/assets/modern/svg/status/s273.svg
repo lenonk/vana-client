@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="17.87" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e98cde" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#e05ad0" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#e05ad0" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.2" x2="32" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#eea4e5"/>
+      <stop offset="0.42" stop-color="#e05ad0"/>
+      <stop offset="1" stop-color="#702d68"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="32" y1="21.9" x2="32" y2="42.1" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f7d6f3"/>
+      <stop offset="1" stop-color="#e98cde"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="32" y1="27.53" x2="32" y2="36.47" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#f4c5ef"/>
+    </linearGradient>
+  </defs>
+  <title>s273</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.829 4.842 C30.004 3.78 30.923 3 32 3 C33.077 3 33.996 3.78 34.171 4.842 L37.083 22.524 L40.906 20.053 C41.776 19.489 42.922 19.611 43.656 20.344 C44.389 21.078 44.511 22.224 43.947 23.094 L41.476 26.917 L59.158 29.829 C60.22 30.004 61 30.923 61 32 C61 33.077 60.22 33.996 59.158 34.171 L41.476 37.083 L43.947 40.906 C44.511 41.776 44.389 42.922 43.656 43.656 C42.922 44.389 41.776 44.511 40.906 43.947 L37.083 41.476 L34.171 59.158 C33.996 60.22 33.077 61 32 61 C30.923 61 30.004 60.22 29.829 59.158 L26.917 41.476 L23.094 43.947 C22.224 44.511 21.078 44.389 20.344 43.656 C19.611 42.922 19.489 41.776 20.053 40.906 L22.524 37.083 L4.842 34.171 C3.78 33.996 3 33.077 3 32 C3 30.923 3.78 30.004 4.842 29.829 L22.524 26.917 L20.053 23.094 C19.489 22.224 19.611 21.078 20.344 20.344 C21.078 19.611 22.224 19.489 23.094 20.053 L26.917 22.524 Z" fill="#0a1118"/>
+      <path id="aura" d="M49.87 32 C49.87 41.87 41.87 49.87 32 49.87 C22.13 49.87 14.13 41.87 14.13 32 C14.13 22.13 22.13 14.13 32 14.13 C41.87 14.13 49.87 22.13 49.87 32 Z" fill="url(#radial-gradient-1)" opacity="0.9"/>
+      <path id="star" d="M32 5.2 L35.79 28.21 L58.8 32 L35.79 35.79 L32 58.8 L28.21 35.79 L5.2 32 L28.21 28.21 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="cross_star" data-name="cross star" d="M42.1 21.9 L35.57 32 L42.1 42.1 L32 35.57 L21.9 42.1 L28.43 32 L21.9 21.9 L32 28.43 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="core" d="M36.47 32 C36.47 34.47 34.47 36.47 32 36.47 C29.53 36.47 27.53 34.47 27.53 32 C27.53 29.53 29.53 27.53 32 27.53 C34.47 27.53 36.47 29.53 36.47 32 Z" fill="url(#linear-gradient-3)"/>
+    </g>
+  </g>
+</svg>

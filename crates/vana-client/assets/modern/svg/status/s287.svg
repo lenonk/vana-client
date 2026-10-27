@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="32" y1="5.2" x2="32" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#b69bd8"/>
+      <stop offset="0.42" stop-color="#7a4ab8"/>
+      <stop offset="1" stop-color="#3d255c"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="34.68" y1="5.2" x2="34.68" y2="30.21" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ded2ed"/>
+      <stop offset="1" stop-color="#a280cd"/>
+    </linearGradient>
+    <radialGradient id="radial-gradient-1" cx="32.895" cy="31.771" r="9.825" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+  </defs>
+  <title>s287</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M32.358 3.529 C33.303 2.72 34.732 2.855 35.508 3.826 L49.798 21.696 C50.193 22.19 50.356 22.83 50.247 23.452 L44.887 53.822 C44.746 54.617 44.182 55.272 43.416 55.527 L27.336 60.887 C26.297 61.233 25.162 60.763 24.672 59.784 L13.952 38.344 C13.717 37.874 13.658 37.336 13.786 36.826 L19.146 15.386 C19.256 14.944 19.502 14.546 19.848 14.249 Z" fill="#0a1118"/>
+      <path id="shard" d="M33.79 5.2 L48.08 23.07 L42.72 53.44 L26.64 58.8 L15.92 37.36 L21.28 15.92 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="facet" d="M33.79 5.2 L48.08 23.07 L33.79 30.21 L21.28 15.92 Z" fill="url(#linear-gradient-2)" opacity="0.6"/>
+      <path id="eye" d="M23.07 30.21 C28.43 26.64 37.36 26.64 42.72 32 C37.36 37.36 28.43 37.36 23.07 30.21 Z" fill="url(#radial-gradient-1)" stroke="#0a1118" stroke-linejoin="round"/>
+      <path id="slit" d="M34.5 31.11 C34.5 33.18 33.78 34.86 32.89 34.86 C32.01 34.86 31.29 33.18 31.29 31.11 C31.29 29.03 32.01 27.35 32.89 27.35 C33.78 27.35 34.5 29.03 34.5 31.11 Z" fill="#0a1118"/>
+    </g>
+  </g>
+</svg>
