@@ -167,7 +167,7 @@ impl Modern {
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new() };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w) };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -305,6 +305,41 @@ struct Panels<'a> {
     this: HashMap<String, Rect>,
     /// Places retail works out this frame (the minimap left of the windows at the edge): the default until moved.
     retail: HashMap<String, Place>,
+    /// The panel with the keys (focus_panel): drawn in the focused frame.
+    focus: Option<&'static str>,
+}
+
+/// The panel that takes the keys now, as the key dispatch (client/mod.rs) routes them: the prompt, the chat line, an
+/// event's choice or input, the lists, the windows the command menu opens, the main menu, the action menu.
+fn focus_panel(w: &World) -> Option<&'static str> {
+    use super::{event, searchmenu, treasure};
+    Some(match () {
+        _ if w.confirm.is_some() => "confirm",
+        _ if w.typing => "chat",
+        _ if w.palette.0 != 0 => "macro palette",
+        _ if w.concierge_ui.is_some() => "window",
+        _ if event::choice(w).is_some() => "choice",
+        _ if event::input(w).is_some() => "event input",
+        _ if event::active(w) => return None,
+        _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() => "window",
+        _ if w.magic.is_some() || w.ability.is_some() => "list",
+        _ if w.cats.is_some() => "cats",
+        _ if w.inspect.up() => "check",
+        _ if w.seacom_edit.is_some() => "comment",
+        _ if w.chatctrl.is_some() => "chatctrl",
+        _ if treasure::active(w) => "loot",
+        _ if w.levelsync.is_some() => "levelsync",
+        _ if w.search.is_some() && !searchmenu::refining(w) && w.arealist.is_none() => "results",
+        _ if w.arealist.is_some() && w.searchmenu.is_none() => "arealist",
+        _ if w.linklist.is_some() => "linklist",
+        _ if w.blklist.is_some() => "blklist",
+        _ if w.mogdoor.is_some() => "mogdoor",
+        _ if w.menu.is_none() && super::window_over_actions(w) => "window",
+        _ if w.menu.is_some() && w.cmd.sub.is_some() => "command sub",
+        _ if w.menu.is_some() => "command",
+        _ if w.action_menu.is_some() => "combat",
+        _ => return None,
+    })
 }
 
 /// The panel margins inside the frame; the resizable one keeps a taller strip below for its glyph.
@@ -693,6 +728,8 @@ impl<'a> Panels<'a> {
         }
         let margin = if o.resizable { ROOM_MARGIN } else { MARGIN };
         let (title, frame, alpha, fold) = (o.title, o.frame, o.alpha, o.fold.clamp(0.0, 1.0));
+        // The panel with the keys in the focused frame.
+        let frame = if frame == "window_normal" && self.focus == Some(id) { "window_focused" } else { frame };
         // A panel at a fixed point may stand partly off screen (the Timers slid in).
         let shown = egui::Area::new(Id::unique(("modern panel", id))).order(Order::Middle).current_pos(pos).movable(o.at.is_none()).constrain(o.at.is_none()).show(ctx, |ui| {
             // An area offers its contents only last frame's size: room to the screen's bottom, or a page grown taller

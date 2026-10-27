@@ -397,6 +397,11 @@ Milestone 1:
   over a bar by its base cast time (the record's; others' speed is not sent; gone 2 s after it should have landed) or
   "Readying <skill>" for 10 s at most. Live: Cure on ourselves as WHM 30 (the bar, gone on landing); a Forest Hare's
   Foot Kick logged ready (value 257) and finished 0.4 s later, too quick to catch on a shot.
+- The panel with the keys (2026-10-27, modern/mod.rs focus_panel): worked out each frame as the key dispatch routes
+  them (the prompt, the chat line, an event's choice or input, the magic / ability lists, /check, the comment editor,
+  the chat mode window, the treasure pool, the people lists, the windows the menus open, the main menu or its
+  submenu, the action menu); that panel draws in the pack's window_focused frame (blue edge), the rest in their own.
+  Live: the main menu, Status, the chat line while typing, the action menu.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
@@ -412,4 +417,4 @@ Milestone 1:
 - To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
-- Not yet: keyboard focus between panels, alliance rows live.
+- Not yet: alliance rows live.
