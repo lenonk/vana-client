@@ -173,6 +173,22 @@ impl GameUi {
     }
 }
 
+/// The English words of the interface's texts (menu help, titles, lobby, area names, item formats, augments), lower
+/// case: what settles a doubtful gap in a menu caption.
+fn caption_words(d: &GameUiData) -> std::collections::HashSet<String> {
+    let tables = [&d.menu_msgs, &d.title_msgs, &d.area_names, &d.item_fmt, &d.aug_text].into_iter().flatten().chain(d.lobby_msgs.values());
+    let mut out = std::collections::HashSet::new();
+    for m in tables {
+        for id in 0..m.len() {
+            let Some(t) = m.get(id) else { continue };
+            for w in t.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| w.len() > 1 || matches!(*w, "a" | "A" | "I")) {
+                out.insert(w.to_ascii_lowercase());
+            }
+        }
+    }
+    out
+}
+
 pub struct GameUi {
     data: GameUiData,
     renderer: Option<UiRenderer>,
@@ -299,6 +315,7 @@ pub struct WorldView<'a> {
 
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
+        crate::render::ui::set_caption_words(caption_words(&data));
         Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
@@ -1050,14 +1067,14 @@ impl GameUi {
         let e = self.data.lobby.menu(menu)?.elements.iter().skip(1).find(|e| e.id == child)?;
         let r = e.refs.iter().find(|r| r.kind == 0)?;
         let s = self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize)?;
-        let runs = crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        let runs = crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
         Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" ")))
     }
 
     /// A sprite's caption as text (a skill's or a job's name sprite).
     pub fn sprite_caption(&self, lib: &str, index: usize) -> Option<String> {
         let s = self.data.lobby.lib(lib)?.sprites.get(index)?;
-        let runs = crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
+        let runs = crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080)?;
         Some(hyphens(&runs.into_iter().map(|r| r.2).collect::<Vec<_>>().join(" "))).filter(|t| !t.is_empty())
     }
 
@@ -1067,7 +1084,7 @@ impl GameUi {
         e.refs
             .iter()
             .filter_map(|r| self.data.lobby.lib(&r.lib)?.sprites.get(r.index as usize))
-            .filter_map(|s| crate::render::ui::caption_runs(&s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080))
+            .filter_map(|s| crate::render::ui::caption_runs(&self.data.lobby.images, &s.cells, 0.0, 0.0, 1.0, 1.0, 0x8080_8080))
             .flatten()
             .map(|(x, y, t, _)| (hyphens(&t), x, y))
             .collect()

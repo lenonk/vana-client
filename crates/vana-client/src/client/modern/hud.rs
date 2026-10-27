@@ -4,6 +4,7 @@
 //! weather, the compass) and the cast bar. What they show is gathered from the World first (the views), so the offscreen shot can
 //! draw them too.
 
+use super::super::resttick::Shown;
 use super::super::{App, World, buffs, hudtop, items::JOBS, monstrosity, radar, self_entity, target, vana_now};
 use super::{Look, Modern, Panels, Title, chat, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
@@ -202,11 +203,32 @@ pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
 const PARTY_ROW: f32 = 60.0;
 const ALLY_ROW: f32 = 50.0;
 
+/// The rest tick's strip under the party window's title (ours, client/resttick.rs).
+const REST_H: f32 = 24.0;
+
+fn rest_strip(ui: &mut Ui, m: &Modern, rest: Shown) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), REST_H), Sense::hover());
+    let font = FontId::proportional(m.theme.small);
+    let y = r.min.y + 9.0;
+    let painter = ui.painter();
+    match rest {
+        Shown::Timing(t) => {
+            painter.text(pos2(r.min.x + 4.0, y), Align2::LEFT_CENTER, "Timing rest ticks...", font.clone(), m.theme.color("muted"));
+            painter.text(pos2(r.max.x - 4.0, y), Align2::RIGHT_CENTER, format!("{t:.0} s"), font, m.theme.color("muted"));
+        }
+        Shown::Next(f, left) => {
+            let label = painter.text(pos2(r.min.x + 4.0, y), Align2::LEFT_CENTER, "Next tick", font.clone(), m.theme.color("text"));
+            let secs = painter.text(pos2(r.max.x - 4.0, y), Align2::RIGHT_CENTER, format!("{:.0} s", left.ceil()), font, m.theme.color("text"));
+            bar(ui, m, "recast", Rect::from_min_max(pos2(label.max.x + 10.0, y - 3.5), pos2(secs.min.x - 10.0, y + 3.5)), f);
+        }
+    }
+}
+
 /// The party window (ours first; "Solo" outside a party) or an alliance's, as retail's ptwN / raid1 / raid2: per row
 /// the job, leader marks, the name over the HP bar with the HP number in its colour, the MP bar and number and TP
 /// (party rows), a member elsewhere greyed with the zone's name, the hand on the party cursor's or our target's row.
 /// Its height is exact, so the party window grows upward with no frame's lag. The slot clicked, if any.
-pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], small: bool) -> Option<usize> {
+pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], small: bool, rest: Option<Shown>) -> Option<usize> {
     if rows.is_empty() {
         return None;
     }
@@ -214,13 +236,17 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
     let full = id == "party";
     let row_h = if full { PARTY_ROW } else { ALLY_ROW };
     let note = (title != "Solo").then(|| format!("{} / 6", rows.len()));
-    // Margins, the title row (28, egui's 3 under it, our 6), the rows 4 apart.
+    // Margins, the title row (28, egui's 3 under it, our 6), the rest tick's strip, the rows 4 apart.
     let n = rows.len() as f32;
-    let height = super::MARGIN.sum().y + 37.0 + n * row_h + (n - 1.0) * 4.0;
+    let strip = if rest.is_some() { REST_H } else { 0.0 };
+    let height = super::MARGIN.sum().y + 37.0 + strip + n * row_h + (n - 1.0) * 4.0;
     let mut clicked = None;
     let show = super::Show { title: Some(Title { icon: None, text: title, note: note.as_deref() }), size: vec2(340.0, 0.0), height: Some(height), ..Default::default() };
     p.show(id, show, |ui, _| {
         ui.spacing_mut().item_spacing.y = 0.0;
+        if let Some(r) = rest {
+            rest_strip(ui, m, r);
+        }
         for (i, row) in rows.iter().enumerate() {
             if i > 0 {
                 ui.add_space(4.0);
@@ -483,10 +509,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (party, allies) = party_rows(p.look(), w);
     // ptw0 ("Solo") while our party has no leader.
     let title = if party.len() <= 1 && w.party.slots().leaders[0] == 0 { "Solo" } else { "Party" };
-    let mut picked = party_panel(p, "party", title, &party, small);
+    let mut picked = party_panel(p, "party", title, &party, small, super::super::resttick::shown(w));
     for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
         if let Some(rows) = rows {
-            picked = picked.or(party_panel(p, id, "Alliance", rows, small));
+            picked = picked.or(party_panel(p, id, "Alliance", rows, small, None));
         }
     }
     if let Some(k) = picked {

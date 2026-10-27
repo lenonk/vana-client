@@ -2,7 +2,7 @@
 
 use super::Gpu;
 use super::mtext::{self, Face};
-use crate::dat::ui::{Cell, SpriteLib, UiFile};
+use crate::dat::ui::{Cell, SpriteLib, UiFile, UiImage};
 use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
@@ -124,7 +124,47 @@ fn glyph_cell(c: &Cell) -> bool {
 /// A sprite's caption read from its glyph cells (none when it has no caption glyph or one it cannot read): its runs
 /// of text with their left, line top and colour, the cells at (x, y) scaled (sx, sy) and tinted. Shadow-pass cells
 /// (alpha under 100) are left out.
-pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32) -> Option<Vec<(f32, f32, String, [f32; 4])>> {
+/// A glyph cell's opaque columns in its own pixels (first, one past the last), so gaps are measured between the
+/// letters, not their cells' padding; the whole cell when its sheet is not at hand. Cached per cell.
+fn ink(images: &HashMap<String, UiImage>, c: &Cell) -> (f32, f32) {
+    type Key = (String, [u16; 2], [u16; 2]);
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<Key, (f32, f32)>>> = std::sync::OnceLock::new();
+    let key = (c.texture.clone(), c.uv, c.size);
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(v) = cache.lock().ok().and_then(|m| m.get(&key).copied()) {
+        return v;
+    }
+    let whole = (0.0, c.size[0] as f32);
+    let Some(img) = images.get(&c.texture) else { return whole };
+    let (w, h) = (img.width as usize, img.height as usize);
+    // The letter is light; its outline dark at the same alpha.
+    let lit = |p: &[u8]| p[3] >= 0x80 && p[0].max(p[1]).max(p[2]) >= 0x80;
+    let opaque = |col: usize| (c.uv[1] as usize..(c.uv[1] + c.size[1]) as usize).any(|row| row < h && col < w && img.rgba.get((row * w + col) * 4..(row * w + col) * 4 + 4).is_some_and(lit));
+    let cols: Vec<usize> = (0..c.size[0] as usize).filter(|&k| opaque(c.uv[0] as usize + k)).collect();
+    let v = match (cols.first(), cols.last()) {
+        (Some(&a), Some(&b)) if c.flip & 1 == 0 => (a as f32, b as f32 + 1.0),
+        (Some(&a), Some(&b)) => ((c.size[0] as usize - 1 - b) as f32, (c.size[0] as usize - a) as f32),
+        _ => whole,
+    };
+    if let Ok(mut m) = cache.lock() {
+        m.insert(key, v);
+    }
+    v
+}
+
+/// The game's English words (its menu help, titles, lobby and area texts, lower case), set once its texts load: what
+/// settles a doubtful gap in a caption.
+static CAPTION_WORDS: std::sync::OnceLock<std::collections::HashSet<String>> = std::sync::OnceLock::new();
+
+pub fn set_caption_words(words: std::collections::HashSet<String>) {
+    let _ = CAPTION_WORDS.set(words);
+}
+
+/// A doubtful gap kept in a run's text until its words are known: split by the gap rule alone, or not.
+const GAP_SPLIT: char = '\u{E101}';
+const GAP_JOIN: char = '\u{E100}';
+
+pub fn caption_runs(images: &HashMap<String, UiImage>, cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32) -> Option<Vec<(f32, f32, String, [f32; 4])>> {
     if !cells.iter().any(|c| caption_glyph(c).is_some()) || cells.iter().any(|c| glyph_cell(c) && caption_glyph(c).is_none()) {
         return None;
     }
@@ -135,14 +175,16 @@ pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32)
         if c.colors[0][3] < 100 {
             continue;
         }
-        let (cx, cy) = (x + c.corners[0][0] as f32 * sx, y + (c.corners[0][1] as f32 - top) * sy);
+        // Placed by the letter's ink, not its cell.
+        let (l, r) = ink(images, c);
+        let (cx, cy) = (x + (c.corners[0][0] as f32 + l) * sx, y + (c.corners[0][1] as f32 - top) * sy);
         let colour = [0, 1, 2, 3].map(|i| ps2(((c.colors[0][i] as u32 * t[i] as u32) >> 7).min(255) as u8).min(1.0));
-        glyphs.push((cx, cy, c.size[0] as f32 * sx, ch, colour));
+        glyphs.push((cx, cy, (r - l) * sx, ch, colour, l * sx, c.size[0] as f32 * sx));
     }
     // Cells are not always stored left to right: lines by closeness in y (a new one more than 4 px down), then x.
     glyphs.sort_by(|a, b| a.1.total_cmp(&b.1));
     let mut line = (f32::MIN, 0i32);
-    let mut keyed: Vec<(i32, (f32, f32, f32, &str, [f32; 4]))> = Vec::with_capacity(glyphs.len());
+    let mut keyed: Vec<(i32, (f32, f32, f32, &str, [f32; 4], f32, f32))> = Vec::with_capacity(glyphs.len());
     for g in glyphs {
         if g.1 - line.0 > 4.0 * sy {
             line = (g.1, line.1 + 1);
@@ -150,40 +192,126 @@ pub fn caption_runs(cells: &[Cell], x: f32, y: f32, sx: f32, sy: f32, tint: u32)
         keyed.push((line.1, g));
     }
     keyed.sort_by(|a, b| (a.0, a.1.0).partial_cmp(&(b.0, b.1.0)).unwrap_or(std::cmp::Ordering::Equal));
-    // A word gap is wider than the line's usual one by 2 px or more (retail's sets overlap letters by 0..3 px); 12 px
-    // or more starts another caption.
+    // Against the line's usual gap: 4 px more is a word gap, 1..3 px doubtful (retail's spacing is uneven: "Set tings"
+    // and "Set as" differ by nothing), settled by the words; 12 px or more starts another caption.
     let mut runs: Vec<(f32, f32, f32, String, [f32; 4])> = Vec::new();
     let mut k = 0;
     while k < keyed.len() {
         let line = keyed[k].0;
         let end = keyed[k..].iter().position(|g| g.0 != line).map_or(keyed.len(), |n| k + n);
         let row: Vec<_> = keyed[k..end].iter().map(|(_, g)| *g).collect();
-        let mut gaps: Vec<f32> = row.windows(2).map(|p| p[1].0 - (p[0].0 + p[0].2)).filter(|g| *g < 12.0 * sx).collect();
-        gaps.sort_by(|a, b| a.total_cmp(b));
-        let usual = gaps.get(gaps.len() / 2).copied().unwrap_or(0.0);
-        for (cx, cy, cw, ch, colour) in row {
+        // The usual gap between the letters' ink and between their cells (each misses some gaps the other shows).
+        let median = |f: &dyn Fn(&(f32, f32, f32, &str, [f32; 4], f32, f32), &(f32, f32, f32, &str, [f32; 4], f32, f32)) -> f32| {
+            let mut gaps: Vec<f32> = row.windows(2).map(|p| f(&p[0], &p[1])).filter(|g| *g < 12.0 * sx).collect();
+            gaps.sort_by(|a, b| a.total_cmp(b));
+            gaps.get(gaps.len() / 2).copied().unwrap_or(0.0)
+        };
+        let usual = median(&|a, b| b.0 - (a.0 + a.2));
+        let usual_cell = median(&|a, b| (b.0 - b.5) - (a.0 - a.5 + a.6));
+        let mut cell_end = 0.0;
+        for (cx, cy, cw, ch, colour, cl, cwidth) in row {
             match runs.last_mut() {
                 // The apostrophe is the comma raised to the letters' top ("San d'Oria", 4 px above them).
-                Some(r) if ((r.1 - cy).abs() < 4.0 * sy || (ch == "," && cy < r.1 && r.1 - cy < 6.0 * sy)) && cx - r.2 < 12.0 * sx && cx >= r.2 - 4.0 * sx => {
-                    // No gap counts around an apostrophe, after "(" or before ")".
+                // Letters overlap up to 3 px past the line's usual (tight sets such as cmbmenu's "Crystal Synthesis").
+                Some(r) if ((r.1 - cy).abs() < 4.0 * sy || (ch == "," && cy < r.1 && r.1 - cy < 6.0 * sy)) && cx - r.2 < 12.0 * sx && cx >= r.2 - (4.0 * sx).max(3.0 * sx - usual) => {
                     let ch = if ch == "," && cy < r.1 - 2.0 * sy { "'" } else { ch };
                     let last = r.3.chars().last();
-                    // A word's first capital leaves a wider gap before its small letters ("B eastmaster").
-                    let first_cap = last.is_some_and(|c| c.is_ascii_uppercase()) && r.3.chars().rev().nth(1).is_none_or(|c| c == ' ');
-                    let small = ch.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+                    let excess = (cx - r.2 - usual) / sx;
+                    let excess_cell = (cx - cl - cell_end - usual_cell) / sx;
+                    // No gap counts around an apostrophe, after "(" or before ")".
                     let tight = ch == "'" || ch == ")" || matches!(last, Some('\'' | '('));
-                    if !tight && cx - r.2 >= usual + if first_cap && small { 4.0 } else { 2.0 } * sx {
+                    if !tight && excess >= 4.0 {
                         r.3.push(' ');
+                    } else if !tight && (excess >= 1.0 || excess_cell >= 2.0) {
+                        // The gap rule alone: a word's first capital and narrow small letters leave wider gaps.
+                        let first_cap = last.is_some_and(|c| c.is_ascii_uppercase()) && r.3.chars().rev().nth(1).is_none_or(|c| c == ' ');
+                        let small = ch.chars().next().is_some_and(|c| c.is_ascii_lowercase());
+                        let need = match (first_cap, small) {
+                            (true, true) => 4.0,
+                            (false, true) => 3.0,
+                            _ => 2.0,
+                        };
+                        r.3.push(if excess >= need { GAP_SPLIT } else { GAP_JOIN });
                     }
                     r.3.push_str(ch);
                     r.2 = cx + cw;
                 }
                 _ => runs.push((cx, cy, cx + cw, ch.to_string(), colour)),
             }
+            cell_end = cx - cl + cwidth;
         }
         k = end;
     }
-    Some(runs.into_iter().map(|(x0, top, _, text, colour)| (x0, top, il(&text), colour)).collect())
+    Some(runs.into_iter().map(|(x0, top, _, text, colour)| (x0, top, resolve(&text), colour)).collect())
+}
+
+/// A run's doubtful gaps settled, word by word: the fewest spaces that leave every part a known word ("Settings",
+/// "Set as", "Red Mage"); none known, the gap rule's. Never a space before ":" "." "," "!" "?" or after "/", always
+/// around "&".
+fn resolve(text: &str) -> String {
+    // Captions draw every frame: each marked text is settled once.
+    static CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<String, String>>> = std::sync::OnceLock::new();
+    let cache = CACHE.get_or_init(Default::default);
+    if let Some(v) = cache.lock().ok().and_then(|m| m.get(text).cloned()) {
+        return v;
+    }
+    let v = settle(text);
+    if CAPTION_WORDS.get().is_some()
+        && let Ok(mut m) = cache.lock()
+    {
+        m.insert(text.to_string(), v.clone());
+    }
+    v
+}
+
+fn settle(text: &str) -> String {
+    let words = CAPTION_WORDS.get();
+    // A part is a known word of three letters or more, or a common short one ("Set as", not "Un sort" or "Mode ls").
+    const SHORT: [&str; 13] = ["a", "i", "as", "of", "to", "in", "on", "at", "by", "or", "an", "up", "no"];
+    let known = |part: &str| {
+        let part = il(part);
+        part.split(|c: char| !c.is_ascii_alphabetic()).filter(|w| !w.is_empty()).all(|w| {
+            let w = w.to_ascii_lowercase();
+            (w.len() > 2 || SHORT.contains(&w.as_str())) && words.is_some_and(|d| d.contains(&w))
+        })
+    };
+    let mut out = Vec::new();
+    for token in text.split(' ') {
+        let chars: Vec<char> = token.chars().collect();
+        let marks: Vec<usize> = (0..chars.len()).filter(|&i| matches!(chars[i], GAP_SPLIT | GAP_JOIN)).collect();
+        // Punctuation settles its own gaps.
+        let forced = |i: usize| -> Option<bool> {
+            let (prev, next) = (i.checked_sub(1).map(|k| chars[k]), chars.get(i + 1).copied());
+            match (prev, next) {
+                (_, Some(':' | '.' | ',' | '!' | '?')) | (Some('/'), _) => Some(false),
+                (Some(p), Some(n)) if p.is_ascii_digit() && n.is_ascii_digit() => Some(false),
+                // "Rank 1", "Misc. 2", "+ : Sort", "Cursor, etc.", "Meat & Eggs".
+                (_, Some('&')) | (Some('&' | ':' | ','), _) => Some(true),
+                (Some(p), Some(n)) if n.is_ascii_digit() && (p.is_ascii_alphabetic() || p == '.') => Some(true),
+                _ => None,
+            }
+        };
+        let open: Vec<usize> = marks.iter().copied().filter(|&i| forced(i).is_none()).collect();
+        let build = |split: &dyn Fn(usize) -> bool| -> String {
+            (0..chars.len())
+                .filter_map(|i| match chars[i] {
+                    GAP_SPLIT | GAP_JOIN => forced(i).unwrap_or_else(|| split(i)).then_some(' '),
+                    c => Some(c),
+                })
+                .collect()
+        };
+        let mut best: Option<(usize, String)> = None;
+        if words.is_some() && open.len() <= 8 {
+            for mask in 0u32..1 << open.len() {
+                let cand = build(&|i| open.iter().position(|&m| m == i).is_some_and(|k| mask >> k & 1 != 0));
+                if cand.split(' ').all(known) && best.as_ref().is_none_or(|b| (mask.count_ones() as usize) < b.0) {
+                    best = Some((mask.count_ones() as usize, cand));
+                }
+            }
+        }
+        out.push(best.map_or_else(|| build(&|i| chars[i] == GAP_SPLIT), |b| b.1));
+    }
+    il(&out.join(" "))
 }
 
 /// The caption sets draw I and l alike: an I inside a small word is l ("Select"), a word's l before a consonant I
@@ -350,7 +478,7 @@ impl UiBatch {
         // Modern on: a caption cut from the caption glyphs (a menu row's word) is drawn in the modern face instead.
         if self.modern.is_some()
             && let Some(s) = lib.sprites.get(index)
-            && let Some(runs) = caption_runs(&s.cells[skip.min(s.cells.len())..], x, y, sx, sy, tint)
+            && let Some(runs) = caption_runs(&ui.images, &s.cells[skip.min(s.cells.len())..], x, y, sx, sy, tint)
         {
             for c in s.cells.iter().skip(skip).filter(|c| caption_glyph(c).is_none()) {
                 self.push_cell(ui, c, x, y, sx, sy, tint, blend_word);

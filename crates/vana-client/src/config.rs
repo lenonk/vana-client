@@ -88,6 +88,9 @@ pub struct Config {
     pub minimap_span: f32,
     /// Ours (the wheel, as modern MMOs): the camera's rest distance as a share of retail's.
     pub cam_dist: f32,
+    /// Ours: resting's ticks as timed on the first rest seen, [first heal, interval, the server's look period] in
+    /// seconds (client/resttick.rs).
+    pub rest_tick: Option<[f32; 3]>,
     /// The drawn cursor's size (config 0021 off) in percent of retail's pixels on screen; 0 = auto (grows with the
     /// window height from 720). Not retail: it was sized for 640 x 480. The .ani cursors keep their own size.
     pub cursor_size: u32,
@@ -235,6 +238,7 @@ impl Default for Config {
             minimap_size: 1,
             minimap_span: 160.0,
             cam_dist: 1.0,
+            rest_tick: None,
             cursor_size: 0,
             auto_sort: 0,
             mods: Vec::new(),

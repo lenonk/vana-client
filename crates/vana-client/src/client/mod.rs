@@ -4,6 +4,7 @@ pub mod ground;
 pub mod combat;
 mod actmotion;
 mod flyover;
+mod resttick;
 mod creator;
 mod netwait;
 mod modern;
@@ -5152,6 +5153,8 @@ struct World {
     minimap_size: u32,
     minimap_span: f32,
     minimap_dirty: bool,
+    /// Resting's ticks: the rest watched and what was learnt (saved in config rest_tick).
+    rest: resttick::RestTick,
     /// The wheel's camera distance changed (saved in config cam_dist).
     cam_dist_dirty: bool,
     /// Config auto_sort (items::auto_sort_tick): the containers kept sorted, changed since saved; those with a new item
@@ -6625,6 +6628,7 @@ impl App {
                             minimap_size: self.cfg.minimap_size,
                             minimap_span: self.cfg.minimap_span,
                             minimap_dirty: false,
+                            rest: resttick::RestTick::new(self.cfg.rest_tick),
                             cam_dist_dirty: false,
                             auto_sort: self.cfg.auto_sort,
                             auto_sort_dirty: false,
@@ -10126,6 +10130,12 @@ impl App {
                         log::warn!("config: {e:#}");
                     }
                 }
+                if std::mem::take(&mut world.rest.dirty) {
+                    self.cfg.rest_tick = world.rest.learnt;
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
                 if std::mem::take(&mut world.timers.dirty) {
                     (self.cfg.timers_out, self.cfg.timers_folded) = (world.timers.out, world.timers.folded);
                     if let Err(e) = self.cfg.save() {
@@ -10483,6 +10493,7 @@ impl App {
             trade::update(w);
             combat::battle_frame(w);
             synth::update(w);
+            resttick::update(w);
             servmes::frame(w);
         }
         // Nothing is shown until the title can draw: its UI data and flyover (or a failure to say so).

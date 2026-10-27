@@ -234,6 +234,9 @@ Milestone 1:
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
 - Party rows show the sub job small on the main job's corner.
+- Rest ticks (ours, user 2026-10-27): resting, the party window shows a strip under its title: "Timing rest ticks..."
+  until the first clean rest has been timed (config `rest_tick`), then "Next tick", a bar and the seconds left, on the
+  server's own clock as learnt (client/resttick.rs). Seen live.
 - Name plates (modern/plates.rs): the name in Inter Bold Italic with a dark outline, retail's size (capitals a little
   taller than retail's letters, set wide as retail's are; the user's pick, 2026-10-26), place, colours, target pulse and depth test (walls hide them; drawn in the same UI pass as
   quads). Each name is rasterized once per size bucket (16 / 28 / 48 / 80 px em) and uploaded as a UI image. Retail's

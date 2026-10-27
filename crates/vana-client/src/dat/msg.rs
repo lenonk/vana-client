@@ -79,6 +79,10 @@ impl Messages {
         Ok(Self { entries })
     }
 
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+
     /// The text of entry `id`: a d_msg entry is a field count, (offset, kind) pairs, then fields whose
     /// text starts 0x1c bytes in; an XISTRING entry is the text itself.
     pub fn get(&self, id: usize) -> Option<String> {
