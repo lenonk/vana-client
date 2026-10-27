@@ -186,24 +186,24 @@ fn effect_icon(p: Look, painter: &egui::Painter, e: &Effect, r: Rect, small: boo
 }
 
 /// The effects panel's icons: their size, the step between them, how many a row.
-const FX: f32 = 28.0;
-const FX_STEP: f32 = 36.0;
+const FX: f32 = 32.0;
+const FX_STEP: f32 = 40.0;
 const FX_ROW: usize = buffs::MODERN_ROW;
 
 /// Effects in rows of `per` icons `size` points square, `step` apart, their times under them.
 fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, per: usize, small: bool, cursor: Option<usize>) {
     let m = p.m;
     for (row, chunk) in effects.chunks(per).enumerate() {
-        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size + 16.0), Sense::hover());
+        let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size + 19.0), Sense::hover());
         for (k, e) in chunk.iter().enumerate() {
             let at = Rect::from_min_size(pos2(r.min.x + k as f32 * step, r.min.y), vec2(size, size));
             effect_icon(p, ui.painter(), e, at, small);
-            // Retail's cursor box (anc_equi) in its orange-red.
+            // Retail's cursor box (anc_equi) in its orange-red, on the icon's cell, clear of the time under it.
             if cursor == Some(row * per + k) {
-                ui.painter().rect_stroke(at.expand(3.0), 4.0, egui::Stroke::new(2.5, Color32::from_rgb(0xff, 0x6a, 0x2a)), egui::StrokeKind::Outside);
+                ui.painter().rect_stroke(at.expand(1.0), 4.0, egui::Stroke::new(2.0, Color32::from_rgb(0xff, 0x6a, 0x2a)), egui::StrokeKind::Outside);
             }
             if let Some(l) = &e.label {
-                paint::outlined(ui.painter(), pos2(at.center().x, at.max.y + 1.0), Align2::CENTER_TOP, l, FontId::proportional(m.theme.small), m.theme.color("text"));
+                paint::outlined(ui.painter(), pos2(at.center().x, at.max.y + 4.0), Align2::CENTER_TOP, l, FontId::proportional(m.theme.small), m.theme.color("text"));
             }
         }
     }
