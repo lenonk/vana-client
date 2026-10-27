@@ -5188,6 +5188,8 @@ struct World {
     voyage: voyage::Voyage,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
     cast_bar: Option<(f32, f32)>,
+    /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
+    casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
     msgshift: Option<Arc<crate::dat::msgshift::MsgShift>>,
     zone_text: Option<(u16, Arc<crate::dat::dialog::Dialog>)>,
@@ -6661,6 +6663,7 @@ impl App {
                             voyage: Default::default(),
                             recasts_seen: false,
                             cast_bar: None,
+                            casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
                             zone_text: None,

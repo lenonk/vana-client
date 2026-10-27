@@ -517,9 +517,38 @@ fn swing_left(w: &World, actor: u32) -> Duration {
     Duration::from_secs_f32(ticks / 60.0)
 }
 
+/// A spell being cast or a skill being readied, seen in 0x028 category 8 / 7 (the modern target panel; not retail).
+#[derive(Clone, Copy, Debug)]
+pub struct Casting {
+    pub skill: bool,
+    pub id: u16,
+    pub start: Instant,
+    /// The spell's base cast time (the record's; the caster's own speed is not sent): none for a skill.
+    pub secs: Option<f32>,
+}
+
+/// Category 8 "ca" starts a cast, 7 readies a skill (the result's value); any other arg there is the interrupt; a
+/// finish (3, 4, 11) ends it.
+fn track_cast(w: &mut World, a: &Action) {
+    let value = a.targets.first().and_then(|t| t.results.first()).map_or(0, |r| r.value as u16);
+    let start = a.arg & 0xffff == 0x6163;
+    match a.category {
+        category::MAGIC_START | category::SKILL_START if start => {
+            let skill = a.category == category::SKILL_START;
+            let secs = (!skill).then(|| w.actions.as_ref().and_then(|x| x.spell(value)).map(|r| r.cast as f32 / 3.0)).flatten().filter(|&s| s > 0.0);
+            w.casts.insert(a.actor, Casting { skill, id: value, start: Instant::now(), secs });
+        }
+        category::MAGIC_START | category::SKILL_START | category::MAGIC_FINISH | category::SKILL_FINISH | category::MOB_SKILL_FINISH => {
+            w.casts.remove(&a.actor);
+        }
+        _ => {}
+    }
+}
+
 /// 0x028: messages per (target, result) record (FUN_1009c730: main, additional effect, reaction) with
 /// work = [cmd_arg, value, proc value, react value, bit]; melee waits for the attacker's hit.
 fn one_action(w: &mut World, a: &Action) {
+    track_cast(w, a);
     // Our cast finished (category 4, magic file 0xaf0): the spell's recast (asm 0x100a900d).
     if a.actor == w.my_id && a.category == category::MAGIC_FINISH {
         super::magic::set_recast(w, a.arg as u16, a.info);

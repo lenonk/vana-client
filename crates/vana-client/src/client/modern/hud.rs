@@ -86,6 +86,27 @@ pub struct TargetView {
     /// The name's retail colour (FUN_1008db40: unclaimed monster pale yellow, claimed by our party red, by others
     /// magenta ...); none outside the game (the offscreen shot).
     pub colour: Option<Color32>,
+    /// What it is casting (and how far by the spell's base time) or readying (not retail).
+    pub cast: Option<(String, Option<f32>)>,
+}
+
+/// The target's cast or readied skill: a spell's name and how far by its base cast time (gone 2 s after it should
+/// have landed), a skill's name for 10 s at most; a finish or an interrupt ends it sooner (combat::track_cast).
+fn target_cast(w: &World, id: u32) -> Option<(String, Option<f32>)> {
+    use crate::dat::names::NameSource;
+    let c = w.casts.get(&id)?;
+    let t = c.start.elapsed().as_secs_f32();
+    let name = if c.skill {
+        if c.id >= 0x100 { w.battle.as_ref().map(|b| b.mob_skill(c.id)) } else { w.names.as_ref().and_then(|n| n.ability(c.id as u32)) }
+    } else {
+        w.names.as_ref().and_then(|n| n.spell(c.id as u32))
+    }
+    .filter(|n| !n.is_empty())?;
+    match c.secs {
+        Some(s) if t <= s + 2.0 => Some((name, Some((t / s).min(1.0)))),
+        None if t <= 10.0 => Some((name, None)),
+        _ => None,
+    }
 }
 
 pub struct WhereView {
@@ -356,6 +377,14 @@ pub fn target_panel(p: &mut Panels, v: &TargetView) {
         ui.add_space(6.0);
         if let Some((pct, f)) = v.hp {
             gauge_row(ui, m, "HP", "hp", f, &format!("{pct}%"));
+        }
+        match &v.cast {
+            Some((name, Some(f))) => gauge_row(ui, m, name, "mp", *f, ""),
+            Some((name, None)) => {
+                ui.add_space(4.0);
+                ui.label(egui::RichText::new(format!("Readying {name}")).size(m.theme.small).color(m.theme.color("tp")));
+            }
+            None => {}
         }
     });
     if let Some(r) = r.filter(|_| v.locked) {
@@ -693,5 +722,5 @@ fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<
         "indicators/target_neutral"
     };
     let colour = gu.map(|gu| super::chat::colour(super::super::name_colour(id, e, w, |i| gu.ncol(i)).to_le_bytes()));
-    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)), colour })
+    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)), colour, cast: target_cast(w, id) })
 }

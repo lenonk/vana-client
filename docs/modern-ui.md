@@ -391,6 +391,12 @@ Milestone 1:
   places (config modern_places) and saves; every panel goes back to where it starts the next frame (positions come
   from the places each frame). The row reads As Moved again. Live: the Settings panel dragged away, Reset by keys and
   by the mouse.
+- The target's cast (2026-10-27, not retail: combat.rs track_cast, World.casts; hud.rs target_cast): 0x028 category 8
+  with "ca" starts a spell, 7 with "ca" readies a skill (the first result's value: a mob skill from 0x100, else a
+  weapon skill); another arg there is the interrupt; categories 3 / 4 / 11 end it. The target panel shows a spell's name
+  over a bar by its base cast time (the record's; others' speed is not sent; gone 2 s after it should have landed) or
+  "Readying <skill>" for 10 s at most. Live: Cure on ourselves as WHM 30 (the bar, gone on landing); a Forest Hare's
+  Foot Kick logged ready (value 257) and finished 0.4 s later, too quick to catch on a shot.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
@@ -406,4 +412,4 @@ Milestone 1:
 - To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
-- Not yet: keyboard focus between panels, the target's cast, alliance rows live.
+- Not yet: keyboard focus between panels, alliance rows live.
