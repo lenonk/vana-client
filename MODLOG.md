@@ -10413,3 +10413,14 @@ Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables
   fixed "Settings", "Server", "Thumbs Up", "Copy to Clipboard", "Price History", "By Resistance", "Battle Content",
   "Mode Switch", "Display Name Only", "Missions & Quests", "Crystal Synthesis", the colons; colorank's colon (aligned
   in its own column) is its own run. Left: ptc1prog's "Whole patchprogress" (that window is never shown).
+- Modern Synthesis and trade (modern/craft.rs over synth.rs / trade.rs, which keep every rule and key; their retail
+  draws and mouse are left out in modern): cmbmenu as the menu column and the crystal list in its yellow; tskill1 as
+  the crystal tile with its element, eight material tiles (a red cross on one not held in mode 2) and the window's own
+  OK / Cancel; the history with the favourites starred (retail's keytops3 101) and cmbhwin's two rows as buttons; the
+  hand-over (our name, eight tiles, the gil, OK / Cancel) and player trade with the partner's side, their OK lighting
+  their name; the inventory as one list of every row in the modules' colours. A click on an item puts it in the
+  cursor's slot, the first empty one when the cursor is on OK or Cancel (set_row, then the module's Enter). The count
+  asked (itemctrl's "-", "+", "1", "All") and the gil (moneyctr: "-" / "+" by the step, x10 / /10 the step, All and
+  0 set outright, the step's digit underlined) sit in the panel. Seen live (Lnxcsfix, 2026-10-27): the crystal list,
+  logs placed and taken back by mouse, Arrowwood Lumber made by clicking OK, the history and Favorite / Unfavorite,
+  the hand-over to Arvilauge with 10 gil (no onTrade: nothing taken). Player trade not tried live (no second player).

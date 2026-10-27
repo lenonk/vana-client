@@ -1459,8 +1459,6 @@ pub(super) fn draw_money(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option
     gu.window_rect("menu    money", sw, sh)
 }
 
-/// The inventory list moved to x 200 (the source's +4): the picker with its colours, or look-only.
-#[allow(clippy::too_many_arguments)]
 /// The picker's visible row under the pointer (its list drawn at x 200, draw_rows).
 pub(super) fn picker_row(gu: &GameUi, sw: f32, sh: f32, p: (f32, f32)) -> Option<usize> {
     let mut r = gu.window_rect("menu    inventor", sw, sh)?;
@@ -1469,6 +1467,14 @@ pub(super) fn picker_row(gu: &GameUi, sw: f32, sh: f32, p: (f32, f32)) -> Option
     (p.0 >= r[0] && p.0 < r[0] + r[2] && row >= 0.0 && (row as usize) < crate::inventory::VISIBLE_ROWS).then_some(row as usize)
 }
 
+/// A list's (scroll, cursor) with row `k` under the cursor, as the list keys would leave it.
+pub(super) fn list_at(k: usize) -> (usize, usize) {
+    let scroll = (k + 1).saturating_sub(crate::inventory::VISIBLE_ROWS);
+    (scroll, k - scroll)
+}
+
+/// The inventory list moved to x 200 (the source's +4): the picker with its colours, or look-only.
+#[allow(clippy::too_many_arguments)]
 pub(super) fn draw_list(gu: &mut GameUi, w: &World, info: &super::items::ItemCache, list: (usize, usize), focused: bool, tints: Option<&[u32]>, sw: f32, sh: f32) -> Option<[f32; 4]> {
     draw_rows(gu, &picker_rows(w), info, list, focused, tints, sw, sh)
 }

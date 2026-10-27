@@ -9,6 +9,7 @@ mod chat;
 mod combat;
 mod command;
 mod config;
+mod craft;
 mod equip;
 mod extras;
 mod hud;
@@ -172,6 +173,7 @@ impl Modern {
         status::draw(&mut p, w);
         journal::draw(&mut p, w);
         social::draw(&mut p, w);
+        craft::draw(&mut p, w);
         storage::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.

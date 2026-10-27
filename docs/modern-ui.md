@@ -234,6 +234,10 @@ Milestone 1:
   Modern is on.
 - Seen live (Lnxcsfix, 2026-10-26): every panel above.
 - Party rows show the sub job small on the main job's corner.
+- Synthesis and trade (modern/craft.rs): the slots as tiles beside one inventory list of every row; a click on an
+  item puts it in the cursor's slot; the count and the gil asked inside the panel with buttons for their keys (gil:
+  All and 0 outright). Synthesis keeps its menu, crystal list and history (favourites starred, Favorite /
+  Unfavorite as buttons); player trade shows the partner's side. Seen live but player trade (no second player).
 - Rest ticks (ours, user 2026-10-27): resting, the party window shows a strip under its title: "Timing rest ticks..."
   until the first clean rest has been timed (config `rest_tick`), then "Next tick", a bar and the seconds left, on the
   server's own clock as learnt (client/resttick.rs). Seen live.

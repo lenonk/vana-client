@@ -39,7 +39,7 @@ fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, focused: boo
         ui.set_width(COL_W);
         let t = title(gu, v);
         // The panel already carries the page's name; a window's own title shows when it adds something.
-        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info") {
+        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info" | "Synthesis") {
             ui.label(egui::RichText::new(t).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
             ui.add_space(4.0);
         }
@@ -78,7 +78,7 @@ fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, focused: boo
 }
 
 /// The stack's windows side by side (the last three), the top one focused when `focused`.
-fn stack(ui: &mut Ui, m: &super::Modern, gu: &GameUi, wins: &[MenuWin], focused: bool, moved: bool) -> (Option<u16>, Option<u16>) {
+pub(super) fn stack(ui: &mut Ui, m: &super::Modern, gu: &GameUi, wins: &[MenuWin], focused: bool, moved: bool) -> (Option<u16>, Option<u16>) {
     let mut out = (None, None);
     ui.horizontal_top(|ui| {
         let n = wins.len();
@@ -497,13 +497,13 @@ fn area_act(w: &mut World, gu: &GameUi, (hover, click): (Option<usize>, Option<u
 }
 
 /// A stack's panel width: its columns (three at most) and the margins.
-fn width(n: usize) -> f32 {
+pub(super) fn width(n: usize) -> f32 {
     let cols = n.clamp(1, 3) as f32;
     cols * COL_W + (cols - 1.0) * 12.0 + 44.0
 }
 
 /// What a page's mouse does to its top window: hover moves the cursor (SE 0001), a click moves it and is Enter.
-fn act(w: &mut World, gu: &GameUi, (hover, click): (Option<u16>, Option<u16>), set: impl Fn(&mut World, u16) -> bool, enter: impl Fn(&mut World, &GameUi)) {
+pub(super) fn act(w: &mut World, gu: &GameUi, (hover, click): (Option<u16>, Option<u16>), set: impl Fn(&mut World, u16) -> bool, enter: impl Fn(&mut World, &GameUi)) {
     if let Some(c) = hover
         && set(w, c)
     {
