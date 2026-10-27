@@ -1517,6 +1517,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         match ev {
             egui::Event::Text(t) | egui::Event::Paste(t) if world.typing && !opened => {
                 world.line_hist.edited();
+                let t = if std::mem::take(&mut world.space_open) { t.strip_prefix(' ').unwrap_or(t) } else { t.as_str() };
                 // Space moves the open candidate list instead (FUN_101b6810 returns -1).
                 let open = world.fep.is_some();
                 let t: String = t.chars().filter(|c| !c.is_control() && !(open && *c == ' ')).collect();
@@ -1901,6 +1902,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 }
                 egui::Key::Space => {
                     world.typing = true;
+                    world.space_open = true;
                     opened = true;
                     keys.clear();
                 }
@@ -5011,6 +5013,8 @@ struct World {
     light_acc: f32,
     /// Typing a chat line (game keys go to the input line instead).
     typing: bool,
+    /// Space opened the chat line: its own space may still come as text, now or a frame later (dropped once).
+    space_open: bool,
     /// Key function 0x78's focus cycle (FUN_10151550, DAT_10565d34 +0x68: 0 none, 1 logwindo, 2 buff), whether
     /// logwindo is the active menu, and the full log (menu fulllog) when open.
     log_focus: u8,
@@ -6627,6 +6631,7 @@ impl App {
                             music_fades: Vec::new(),
                             music_changing: false,
                             typing: false,
+                            space_open: false,
                             log_focus: 0,
                             log_active: false,
                             log_takers: 0,
