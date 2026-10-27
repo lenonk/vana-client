@@ -839,8 +839,9 @@ pub struct Effects {
     weathers: Vec<WeatherSet>,
     weather_serial: u32,
     tasks: Vec<Option<sched::Task>>,
-    /// The task being run (its slot is empty meanwhile).
-    stepping: Option<usize>,
+    /// The tasks being run, outermost first (their slots are empty meanwhile; a task an op creates runs inside its
+    /// creator's step).
+    stepping: Vec<usize>,
     dolls: Vec<tasks::Doll>,
     pending: Vec<tasks::Pending>,
     /// Actor +0xa0: the cast 4cc stored by FUN_10083d60.
@@ -1019,7 +1020,7 @@ impl Effects {
             weathers: Vec::new(),
             weather_serial: 0,
             tasks: Vec::new(),
-            stepping: None,
+            stepping: Vec::new(),
             dolls: Vec::new(),
             pending: Vec::new(),
             casting: HashMap::new(),

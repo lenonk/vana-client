@@ -141,6 +141,8 @@ pub struct Task {
     pub ends_loop: bool,
     /// The end op was reached on a loop: FUN_10057c20 resets it at the next step (no op runs then).
     pub restart: bool,
+    /// Took its first step when an op created it: the frame's own step passes it by once.
+    pub stepped: bool,
     /// +0x140 (op 0x52): the countdown runs on the Vana'diel clock (1/60 Vana'diel seconds).
     pub vana: bool,
     /// +0x22: paused while an actor of it is hidden (FUN_10074a30); no op progress, no time.
@@ -157,7 +159,7 @@ impl Task {
         });
         static UID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
         let uid = UID.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false, ends_loop: false, restart: false, vana: false, paused: 0 }
+        Self { res, ops, ip: 0, countdown: 0.0, speed, a1, a2, action, parent: None, early: 0.0, waiting: false, stop_at: None, stack: Vec::new(), loop_at: None, done: false, motions, num: None, uid, looping: false, ends_loop: false, restart: false, stepped: false, vana: false, paused: 0 }
     }
 }
 

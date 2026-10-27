@@ -456,6 +456,7 @@ impl Effects {
                                     self.skill_mains.push((t.uid, c));
                                 }
                             }
+                            self.run_new(ti, actors);
                         }
                         None => {
                             if let Some(a) = self.reg.audit.as_mut() {
@@ -569,9 +570,8 @@ impl Effects {
         if let Some(p) = parent.and_then(|p| self.tasks.get(p)?.as_ref()) {
             t.motions = p.motions;
         }
-        // Not the slot of the task being run (it is taken out while it runs).
-        let busy = self.stepping;
-        match self.tasks.iter().enumerate().position(|(i, t)| t.is_none() && Some(i) != busy) {
+        // Not the slot of a task being run (it is taken out while it runs).
+        match self.tasks.iter().enumerate().position(|(i, t)| t.is_none() && !self.stepping.contains(&i)) {
             Some(i) => {
                 self.tasks[i] = Some(t);
                 i
@@ -609,7 +609,7 @@ impl Effects {
                 i += 1;
                 continue;
             };
-            if t.paused > 0 {
+            if t.paused > 0 || std::mem::take(&mut t.stepped) {
                 self.tasks[i] = Some(t);
                 i += 1;
                 continue;
@@ -625,57 +625,13 @@ impl Effects {
                 i += 1;
                 continue;
             }
-            self.stepping = Some(i);
+            self.stepping.push(i);
             if !t.waiting {
                 t.countdown -= if t.vana { self.vana_dt } else { f.dt };
             }
-            let mut guard = 0;
-            while !t.done && !t.waiting && t.countdown <= 0.0 && guard < 512 {
-                guard += 1;
-                if t.ip >= t.ops.len() || t.stop_at == Some(t.ip) {
-                    // FUN_10057c20: op 0x73's children and end-stream loops start over (the step after).
-                    if (t.looping || t.ends_loop) && t.stop_at.is_none() {
-                        t.restart = true;
-                        break;
-                    }
-                    t.done = true;
-                    break;
-                }
-                let op = t.ops[t.ip].clone();
-                t.countdown += op.wait as f32 * t.speed;
-                match self.run_op(i, &mut t, &op, actors) {
-                    Flow::Next => t.ip += 1,
-                    Flow::Jump => {}
-                    Flow::Wait => {
-                        t.ip += 1;
-                        t.waiting = true;
-                    }
-                    Flow::Retry => {
-                        t.countdown = t.countdown.max(0.0) - op.wait as f32 * t.speed + 1e-3;
-                        break;
-                    }
-                    Flow::Pause => break,
-                    Flow::End => t.done = true,
-                }
-                // FUN_10061e30: reaching the end op with +0xa0 resumes the parent that much sooner.
-                if t.early != 0.0 && t.ops.get(t.ip).is_none_or(|o| o.code == 0) {
-                    t.countdown -= t.early;
-                    t.early = 0.0;
-                }
-            }
-            if t.done {
-                if let Some(p) = t.parent
-                    && let Some(Some(pt)) = self.tasks.get_mut(p)
-                {
-                    pt.waiting = false;
-                }
-                if t.action.as_ref().is_some_and(|a| Rc::strong_count(a) == 1) {
-                    self.end_action(&t.action);
-                }
-            } else {
-                self.tasks[i] = Some(t);
-            }
-            self.stepping = None;
+            self.run_ready(i, &mut t, actors);
+            self.settle(t, i);
+            self.stepping.pop();
             i += 1;
         }
         let live: Vec<u64> = self.tasks.iter().flatten().map(|t| t.uid).collect();
@@ -760,6 +716,75 @@ impl Effects {
         }
     }
 
+    /// A task's ops while its countdown allows, each adding its wait x speed.
+    fn run_ready(&mut self, i: usize, t: &mut Task, actors: &dyn Actors) {
+        let mut guard = 0;
+        while !t.done && !t.waiting && t.countdown <= 0.0 && guard < 512 {
+            guard += 1;
+            if t.ip >= t.ops.len() || t.stop_at == Some(t.ip) {
+                // FUN_10057c20: op 0x73's children and end-stream loops start over (the step after).
+                if (t.looping || t.ends_loop) && t.stop_at.is_none() {
+                    t.restart = true;
+                    break;
+                }
+                t.done = true;
+                break;
+            }
+            let op = t.ops[t.ip].clone();
+            t.countdown += op.wait as f32 * t.speed;
+            match self.run_op(i, t, &op, actors) {
+                Flow::Next => t.ip += 1,
+                Flow::Jump => {}
+                Flow::Wait => {
+                    t.ip += 1;
+                    t.waiting = true;
+                }
+                Flow::Retry => {
+                    t.countdown = t.countdown.max(0.0) - op.wait as f32 * t.speed + 1e-3;
+                    break;
+                }
+                Flow::Pause => break,
+                Flow::End => t.done = true,
+            }
+            // FUN_10061e30: reaching the end op with +0xa0 resumes the parent that much sooner.
+            if t.early != 0.0 && t.ops.get(t.ip).is_none_or(|o| o.code == 0) {
+                t.countdown -= t.early;
+                t.early = 0.0;
+            }
+        }
+    }
+
+    /// After a step: a task that ended wakes its parent and ends its action; one still running goes back in its slot.
+    fn settle(&mut self, t: Task, i: usize) {
+        if t.done {
+            if let Some(p) = t.parent
+                && let Some(Some(pt)) = self.tasks.get_mut(p)
+            {
+                pt.waiting = false;
+            }
+            if t.action.as_ref().is_some_and(|a| Rc::strong_count(a) == 1) {
+                self.end_action(&t.action);
+            }
+        } else {
+            self.tasks[i] = Some(t);
+        }
+    }
+
+    /// FUN_10055c00 / FUN_10055cc0 -> FUN_10073910: a task an op creates takes its first step at once (vtable +0x20), before
+    /// the op after its creator's (efon's efkl kills the old orbs before the new ones start). True when it already ended.
+    fn run_new(&mut self, i: usize, actors: &dyn Actors) -> bool {
+        let Some(mut t) = self.tasks[i].take() else { return true };
+        let outer = self.stepping.first().copied();
+        self.stepping.push(i);
+        self.run_ready(i, &mut t, actors);
+        // Once a frame: the frame's step is still to come for a start before it or a slot past its running task.
+        t.stepped = outer.is_none_or(|o| i > o);
+        let done = t.done;
+        self.settle(t, i);
+        self.stepping.pop();
+        done
+    }
+
     fn run_op(&mut self, me: usize, t: &mut Task, op: &SOp, actors: &dyn Actors) -> Flow {
         let scope = |s: &Self, k: u8| s.reg.resolve(t.res.0, t.res.1, k, op.name());
         log::trace!("effects: task {:?} op {:#04x} {}", t.res, op.code, String::from_utf8_lossy(&op.name().to_le_bytes()));
@@ -802,6 +827,7 @@ impl Effects {
                     if let Some(c) = self.tasks[i].as_mut() {
                         c.looping = op.code == 0x73;
                     }
+                    self.run_new(i, actors);
                 }
                 Flow::Next
             }
@@ -812,8 +838,8 @@ impl Effects {
             0x6a | 0x67 => Flow::End,
             0x3b => match scope(self, kind::SCHEDULER) {
                 Some(r) => {
-                    self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
-                    Flow::Wait
+                    let c = self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
+                    if self.run_new(c, actors) { Flow::Next } else { Flow::Wait }
                 }
                 None => Flow::Next,
             },
@@ -832,7 +858,8 @@ impl Effects {
                     if op.code == 0x85 {
                         self.kill_tasks(r, Some((t.a1, t.a2)));
                     } else {
-                        self.spawn_task(r, a1, a2, t.action.clone(), t.speed, None);
+                        let i = self.spawn_task(r, a1, a2, t.action.clone(), t.speed, None);
+                        self.run_new(i, actors);
                     }
                 }
                 Flow::Next
@@ -842,8 +869,8 @@ impl Effects {
                 let Some(id) = t.a1.id() else { return Flow::Next };
                 match self.find_on_actor(id, op.name(), actors, Parts::Last, false) {
                     Ok(Some(r)) => {
-                        self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
-                        Flow::Wait
+                        let c = self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, Some(me));
+                        if self.run_new(c, actors) { Flow::Next } else { Flow::Wait }
                     }
                     Ok(None) => Flow::Next,
                     Err(()) => Flow::Retry,
@@ -942,7 +969,7 @@ impl Effects {
                         if let Some(Some(ct)) = self.tasks.get_mut(c) {
                             ct.early = 10.0;
                         }
-                        Flow::Wait
+                        if self.run_new(c, actors) { Flow::Next } else { Flow::Wait }
                     }
                     Ok(None) => Flow::Next,
                     Err(()) => Flow::Retry,

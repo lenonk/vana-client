@@ -10610,3 +10610,17 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   with an empty roster and the new zone's 0x0C8 fills it.
 - Ours: the zone-in handler resets world.party (and party_asked). Live: Kupipi listed in West Ronfaure; after the zone
   change the window shows Solo with us alone. 0x0C8 tables are logged (info), 0x0DD at debug.
+
+## A new scheduler task takes its first step at once (2026-10-27)
+
+- User report: Shantotto II had none of her six coloured orbs (retail: they circle her), and left effects behind in
+  fights. Her model file (100017) `ids0` -> op 0x57 `efon`: op 0x03 `efkl` (op 0x1e on all twelve), then op 0x02 g1s1 ..
+  t1t1 (the orbs and their trails). Ours queued `efkl` as a new task that ran after `efon` had started the twelve, so it
+  killed every orb at once (fxdump: no live element of file 100017).
+- Retail: ops 0x03 / 0x73 (FUN_10055c00 / FUN_10055cc0), 0x09, 0x57, 0x3b, 0x3c and the action starts (LAB_100a7640)
+  create the task with FUN_10055d30 and then call FUN_10073910: the new task becomes the current one and its vtable
+  +0x20 (the step) runs there and then, before the creator's next op.
+- Ours: Effects::run_new steps a new task at once (fx/tasks.rs: ops 0x03 / 0x73, 0x09 / 0x57, 0x3b, 0x3c, 0x24 / 0x5d
+  and run_pending's starts), then marks it `stepped` so the frame's own step passes it by once *(inf: one step a frame,
+  which keeps triggers.md 2.2's T+5 for the hit sparks; test fist_hit_sparks)*; `stepping` is a stack of the slots
+  being run. Live: Shantotto II summoned in West Ronfaure, 36 live elements of 100017, the orbs circling her.
