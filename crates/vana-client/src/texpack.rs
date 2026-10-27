@@ -59,6 +59,35 @@ fn load_png(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
     Ok((info.width, info.height, buf))
 }
 
+/// `status-dump`: the stock 32 x 32 status icons as `<id>.png` and status.tsv (id, name, description, icon key; ids
+/// sharing a key share the image), the material for redrawing them.
+pub fn status_dump(out: &Path) -> Result<()> {
+    let cfg = crate::config::Config::load();
+    let index = dat::DatIndex::open_stock(&cfg.ffxi_dir())?;
+    let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
+    let file = dat::msg::current_slot_file(&dll, 1, 0x3a).context("status info slot")?;
+    let bytes = index.read(file)?;
+    let names = dat::battle::BattleText::load(&index, &dll)?;
+    std::fs::create_dir_all(out)?;
+    let mut tsv = std::fs::File::create(out.join("status.tsv"))?;
+    writeln!(tsv, "id\tname\tdescription\ticon")?;
+    let mut n = 0;
+    for id in 0..(bytes.len() / dat::statusinfo::ENTRY) as u16 {
+        let Some((w, h, rgba)) = dat::statusinfo::icon(&bytes, id) else { continue };
+        // A fully clear icon is an unused slot.
+        if rgba.chunks(4).all(|p| p[3] == 0) {
+            continue;
+        }
+        let t = Texture { name: String::new(), format: 0, width: w, height: h, rgba, dxt: None };
+        save_png(&out.join(format!("{id}.png")), w, h, &t.rgba)?;
+        let desc = dat::statusinfo::entry(&bytes, id).map(|e| e.desc).unwrap_or_default();
+        writeln!(tsv, "{id}\t{}\t{}\t{}", names.status_title(id), desc.replace(['\t', '\n'], " "), key(&t))?;
+        n += 1;
+    }
+    println!("{n} status icons from file {file} in {}", out.display());
+    Ok(())
+}
+
 /// `tex-export`: every stock file's images (files with a skipped prefix left out) once each as `<key>.png` in `out`,
 /// and `manifest.tsv` (file id, chunk index, key, name).
 pub fn export(out: &Path) -> Result<()> {

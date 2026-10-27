@@ -227,6 +227,11 @@ enum Cmd {
         #[arg(long)]
         out: PathBuf,
     },
+    /// The stock status icons as PNGs plus status.tsv (id, name, description, icon key).
+    StatusDump {
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Every stock image once (by content) as a PNG plus manifest.tsv, for an upscaler (texpack.rs).
     TexExport {
         #[arg(long)]
@@ -1445,6 +1450,7 @@ fn main() -> Result<()> {
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
         Cmd::TexDump { ids, random, out } => tex_dump(&ids, random, &out),
         Cmd::TexExport { out } => texpack::export(&out),
+        Cmd::StatusDump { out } => texpack::status_dump(&out),
         Cmd::TexPack { manifest, upscaled, out } => texpack::pack(&manifest, &upscaled, &out),
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
