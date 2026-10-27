@@ -4443,6 +4443,10 @@ impl crate::fx::Actors for FxActors<'_> {
         self.actors.get(&id).map_or(1.0, |a| a.scale)
     }
 
+    fn posed(&self, id: u32) -> bool {
+        self.actors.get(&id).is_some_and(|a| !a.bones.is_empty())
+    }
+
     fn ready(&self, id: u32) -> Option<bool> {
         if self.furniture(id).is_some() {
             return Some(true);

@@ -10624,3 +10624,33 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   and run_pending's starts), then marks it `stepped` so the frame's own step passes it by once *(inf: one step a frame,
   which keeps triggers.md 2.2's T+5 for the hit sparks; test fist_hit_sparks)*; `stepping` is a stack of the slots
   being run. Live: Shantotto II summoned in West Ronfaure, 36 live elements of 100017, the orbs circling her.
+
+## Dolls made before the actor's first pose (Shantotto II's summon sparkle, 2026-10-27)
+
+- User report: Shantotto II's summon sparkle shows at a Taru's standing height while she hovers well above it.
+  Her model's `spop` (DAT 100017) runs op 0x9a, then op 0x19 0x399: file 0xaf0 + 921 = 3721's main, whose 13
+  generators attach in mode 1 at point 0x2b on Doll(1), taken the frame her model came in.
+- Ours took the doll's points (0..0x30) at once, before her bones had a pose: the skeleton's rest pose, without the
+  hover (live: rest point 0x2b y -0.41, at her first pose y -1.52).
+- Ours now: a doll of an actor not yet posed (Actors::posed: no bones yet) keeps no points; who_point reads the live
+  ones until the first pose, and step_tasks fills the doll's points then *(inf: retail's model is posed before its
+  init schedulers run, so its doll never sees the rest pose)*. Live: the user confirmed the sparkle on Shantotto II.
+
+## Held elements and their linked clones (Mihli's leftover puffs, 2026-10-27)
+
+- User report: effects left behind in fights, first put on Shantotto II, then on Mihli Aliapoh's Protectra; retail
+  shows nothing. Live repro (Lnxcsfix WHM 20 with Mihli, a Forest Hare in West Ronfaure): the leftover is file 4628
+  (Mihli's job ability at the start of the fight, category 6 arg 0xf5, a second before her Protectra), folder
+  `bsho`: pko1 / fro3 elements (flag 0x20000001, no draw, life 80) held at life 0 for good, each driving a linked
+  clone (pkb2 / frm4, three teal puffs over her head) that never stopped emitting. Protectra (2927) itself ended clean.
+- Retail FUN_10043ca0: life < 1 -> the end stream (FUN_1004d770); unless flag 0x20000000 the element is deleted; held
+  ones get life 0 and are deleted once their linked clone (+0x164) has a reference count (+0x18 & 0x7fff) under 2.
+  The element holds one reference (AddRef at 0x1004dee2 when emission op 0x44 / 0x53 / 0x6a makes it) and every live
+  element holds one on its generator (released in FUN_10043b30), so the held element goes when the clone has no live
+  elements. With no linked clone it stays held.
+- Update ops 0x33 / 0x46 (FUN_100499d0, case 0x1004a654): the clone follows the element every frame, but runs
+  (FUN_10048740) only while the element's life (+0x110) or the clone's own life (+0xd0) is not 0; op 0x25 needs the
+  element's life. +0xd0 is the clone's life and +0xc8 its elapsed (FUN_10048740's t = 1 - (life - elapsed) / life).
+- Ours (fx/mod.rs): Effects::expire deletes a held element whose clone is gone or has no live elements; drive() still
+  moves a 0x33 / 0x46 clone with a held element but runs it only while either life is not 0. fx-shot of 4628 in zone
+  100: before, 40+ `bsho` elements at 40 s; after, the puffs fade out by 4 s and nothing of 4628 is left.

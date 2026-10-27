@@ -50,6 +50,10 @@ pub trait Actors {
     fn ready(&self, _id: u32) -> Option<bool> {
         Some(true)
     }
+    /// The actor's bones have been posed (before that its points are the skeleton's rest pose).
+    fn posed(&self, _id: u32) -> bool {
+        true
+    }
     /// Hidden actors (+0xb2 bit 1) get no attached effects.
     fn hidden(&self, id: u32) -> bool;
     /// Actors whose model is up, with the model's files (FUN_10083970 reads their generators).
@@ -1724,7 +1728,8 @@ impl Effects {
 
     /// Whether instance `i` runs this frame: its own task always; an element's clone while the element lives and its
     /// update stream has op 0x25 (emit every frame, life != 0), or 0x33 / 0x46 (the clone follows the element:
-    /// its rotation, scale and world position, 0x46 also turned to the camera). The clone of a dead element stops.
+    /// its rotation, scale and world position, 0x46 also turned to the camera; it runs while either life is not 0).
+    /// The clone of a dead element stops.
     fn drive(&mut self, i: usize, f: &Frame) -> bool {
         let Some(e) = self.insts[i].as_ref().and_then(|x| x.driven) else { return true };
         let elem = self.elems.get(e as usize).and_then(|c| c.as_ref()).filter(|c| c.child == Some(i));
@@ -1751,7 +1756,8 @@ impl Effects {
             m.w_axis = b.world.extend(1.0);
             x.matrix = Some(m);
             x.scale_a = b.scale;
-            return true;
+            // Run only while the element's life or the clone's own (+0xd0) is not 0: a held element stops it.
+            return life != 0.0 || x.life != 0.0;
         }
         has(&self.reg, 0x25) && life != 0.0
     }
@@ -2145,9 +2151,12 @@ impl Effects {
                 _ => self.reg.unhandled(3, op.code),
             }
         }
+        // A held element goes once its linked clone has no live elements (theirs keep the clone's count at 2 or more).
+        let child = self.elems[e as usize].as_ref().and_then(|c| c.child);
+        let released = child.is_some_and(|ch| self.insts.get(ch).and_then(|x| x.as_ref()).is_none_or(|x| x.live.is_empty()));
         let Some(c) = self.elems[e as usize].as_mut() else { return };
         if c.life < 1.0 {
-            if c.flags & 0x2000_0000 != 0 {
+            if c.flags & 0x2000_0000 != 0 && !released {
                 c.life = 0.0;
                 self.writes.push(Write::Words(e, w::LIFE, vec![0]));
                 self.writes.push(Write::Words(e, w::CTRL, vec![ctl::LIFE_SET]));

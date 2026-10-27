@@ -61,6 +61,9 @@ pub struct Doll {
     pub matrix: Mat4,
     pub follow: bool,
     pub points: Vec<Option<Vec3>>,
+    /// Made before the actor's first pose (a model just in, e.g. a trust's `spop`): the points are taken at that pose,
+    /// the live ones until then *(inf: retail's model is posed before its init schedulers run)*.
+    pub unposed: bool,
 }
 
 const MAIN: u32 = u32::from_le_bytes(*b"main");
@@ -603,6 +606,11 @@ impl Effects {
     /// Every task one frame on (the CMoSchedularTask update): countdown -= ticks; ops run while it is <= 0, each
     /// adding its wait x speed.
     pub(super) fn step_tasks(&mut self, f: &Frame, actors: &dyn Actors) {
+        for d in self.dolls.iter_mut().filter(|d| d.unposed && actors.posed(d.of)) {
+            d.points = (0..DOLL_POINTS).map(|k| actors.point(d.of, k)).collect();
+            d.unposed = false;
+            log::debug!("effects: doll of {:#x} takes its points at the first pose (point 0x2b {:?})", d.of, d.points.get(0x2b).copied().flatten());
+        }
         let mut i = 0;
         while i < self.tasks.len() {
             let Some(mut t) = self.tasks[i].take() else {
@@ -1726,8 +1734,12 @@ impl Effects {
         let Who::Actor(id) = w else { return w };
         let Some(m) = actors.matrix(id) else { return w };
         let d = Who::Doll(self.dolls.len());
-        let points = (0..DOLL_POINTS).map(|k| actors.point(id, k)).collect();
-        self.dolls.push(Doll { of: id, matrix: m, follow, points });
+        let unposed = !actors.posed(id);
+        if unposed {
+            log::debug!("effects: doll of {id:#x} made before its first pose (rest point 0x2b {:?})", actors.point(id, 0x2b));
+        }
+        let points = (0..DOLL_POINTS).map(|k| if unposed { None } else { actors.point(id, k) }).collect();
+        self.dolls.push(Doll { of: id, matrix: m, follow, points, unposed });
         self.move_clones(w, d, me);
         d
     }
@@ -1781,7 +1793,7 @@ impl Effects {
     fn who_point(&self, w: Who, k: u16, other: Who, eye: Option<Vec3>, off: Vec3, actors: &dyn Actors) -> Option<(Mat4, Vec3)> {
         let (id, m) = self.who_matrix(w, actors)?;
         let local = |k: u16| match w {
-            Who::Doll(d) if k < DOLL_POINTS => self.dolls.get(d).and_then(|d| d.points[k as usize]),
+            Who::Doll(d) if k < DOLL_POINTS => self.dolls.get(d).and_then(|d| if d.unposed { actors.point(d.of, k) } else { d.points[k as usize] }),
             _ => actors.point(id, k),
         };
         // Op 0x7b's offset turns with the actor (TransformCoord by its yaw).
