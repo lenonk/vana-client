@@ -219,6 +219,7 @@ impl Modern {
         *self.rects.borrow_mut() = this;
         // The chat settings act at once (the world reads it as lines print).
         w.condense = cfg.modern_condense;
+        w.chat.set_fold(cfg.modern_condense);
         self.dirty |= changed;
         let save = self.dirty && !ctx.input(|i| i.pointer.any_down());
         if save {

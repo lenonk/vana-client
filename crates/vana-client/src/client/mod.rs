@@ -5765,6 +5765,7 @@ impl App {
             w.party_tp = self.cfg.party_tp;
             w.modern = self.cfg.modern_ui;
             w.condense = self.cfg.modern_condense;
+            w.chat.set_fold(self.cfg.modern_ui && self.cfg.modern_condense);
             w.map_opacity = self.cfg.map_overlay_opacity;
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;

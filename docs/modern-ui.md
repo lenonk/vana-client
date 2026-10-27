@@ -459,7 +459,9 @@ Milestone 1:
   `modern-shot --rows`): every list and menu row goes through rows.rs (face for a row face, menu_row for the main
   menu): bare rows, the cursor between two gold rules fading at the ends with a gold diamond and gold label, a faint
   gold wash on hover, thin chevrons for submenus. The framed art stays as Style::Framed. The text fields that had the
-  selected row's art (the rename field, the event input) use the input art.
+  selected row's art (the rename field, the event input) use the input art. The action menu (combat.rs, on button
+  art before) draws its rows the same way, the submenu mark a chevron that still takes the Right click; Gilt's
+  diamond sits in the row's left margin, clear of every list's icon; list labels are gold under the cursor.
 - The Num+ status cursor (user report 2026-10-27: no box on the picked buff): the modern status icons box the cursor's
   icon in retail's orange-red (anc_equi), and Up / Down move by the panel's 10-icon rows (retail's 9 while classic).
   Live: Num+ twice boxes Protect, Right moves it to Shell, the top bar names it.
@@ -470,7 +472,12 @@ Milestone 1:
   round's later swings still join it; a line whose text is not its template with the number in is left alone
   (combat.rs condense / template_of). The retail log wraps again when a line changes (ChatLog::edits). The chat
   settings popup now holds the chat window open (it folded away with the popup under the mouse). Live: MNK rounds of
-  two hits as one line, Off giving one line a hit.
+  two hits as one line, Off giving one line a hit. Then (2026-10-27, BattleMod's sumdamage, condensecrits and
+  cancelmulti): a merged line gives the sum with the hits after it ("for 33 points of damage (18 + 15)."), a critical
+  hit joins its round's hit line marked "!" (alone it stays retail's two lines), and a system or battle line equal to
+  the one before counts on it ("The Wild Rabbit is out of range. (x2)"; players' lines never fold). With the split
+  rounds the target is held while its round has swings left (combat::held), so its death and "defeats" no longer
+  print before the killing swing (seen live before the fix).
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.

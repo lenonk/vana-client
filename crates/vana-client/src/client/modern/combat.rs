@@ -6,7 +6,7 @@
 use super::super::{World, combat, monstrosity};
 use super::{Panels, Title, paint};
 use crate::audio::Ui as Se;
-use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, pos2, vec2};
+use egui::{Align2, Color32, FontFamily, FontId, Sense, pos2, vec2};
 
 /// A command's label (the retail label sprites, LABELS at 0x103634f8) and the pack's icon.
 fn command(c: u8) -> (&'static str, &'static str) {
@@ -54,30 +54,26 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     p.panel("combat", Some(Title { icon: Some("icons/attack"), text: title, note: target.as_deref() }), 270.0, |ui| {
         for (k, &c) in menu.items.iter().enumerate() {
             let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
-            let sprite = if k == menu.sel {
-                "controls/button_selected"
+            let on = k == menu.sel;
+            let face = if on {
+                "controls/list_row_selected"
             } else if resp.hovered() {
-                "controls/button_hover"
+                "controls/list_row_hover"
             } else {
-                "controls/button_normal"
+                "controls/list_row_normal"
             };
             let painter = ui.painter();
-            if let Some(s) = m.art.sprite(sprite) {
-                painter.add(paint::nine_slice(&s, r, r.height() / s.size.y, Color32::WHITE));
-            }
+            super::rows::face(painter, m, r, face, Color32::WHITE);
             let (label, icon) = command(c);
             // Disengage reads Call for Help once swapped (DAT_10578174).
             let (label, icon) = if c == 3 && menu.call_help { command(2) } else { (label, icon) };
             if let Some(s) = m.art.sprite(icon) {
-                painter.add(paint::image(&s, pos2(r.min.x + 8.0, r.center().y - 12.0), 24.0, Color32::WHITE));
+                painter.add(paint::image(&s, pos2(r.min.x + 20.0, r.center().y - 12.0), 24.0, Color32::WHITE));
             }
-            painter.text(pos2(r.min.x + 40.0, r.center().y), Align2::LEFT_CENTER, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("text"));
+            painter.text(pos2(r.min.x + 52.0, r.center().y), Align2::LEFT_CENTER, label, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), super::rows::label_colour(m, on, false));
             let mut on_arrow = false;
-            if has_right(c)
-                && let Some(s) = m.art.sprite("controls/arrow_right")
-            {
-                let a = Rect::from_min_size(pos2(r.max.x - 30.0, r.center().y - 9.0), vec2(18.0, 18.0));
-                painter.add(paint::image(&s, a.min, 18.0, Color32::WHITE));
+            if has_right(c) {
+                let a = super::rows::more_mark(painter, m, r, on);
                 on_arrow = resp.hover_pos().is_some_and(|p| a.expand(4.0).contains(p));
             }
             if resp.hovered() {

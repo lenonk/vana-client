@@ -23,6 +23,10 @@ pub struct ChatLog {
     modes: Vec<u16>,
     /// Lines changed in place (condensed battle lines) so far.
     edits: u64,
+    /// A line that repeats the last one counts on it instead ("Target out of range. (x3)"; BattleMod's cancelmulti):
+    /// on with the modern chat's Condense; the last line's index, text and count.
+    fold: bool,
+    repeat: Option<(usize, String, u32)>,
 }
 
 pub const NO_MODE: u16 = 0xffff;
@@ -60,17 +64,40 @@ impl ChatLog {
 
     fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool, mode: u16) {
         log::debug!(target: "chat", "{}", crate::dat::font::strip_codes(&s));
+        // Players' lines are never folded; system and battle lines are, when the last one is the same.
+        if self.fold
+            && !chat
+            && let Some((k, base, n)) = self.repeat.as_mut()
+            && *k + 1 == self.lines.len()
+            && *base == s
+            && self.lines[*k].1 == colour
+            && self.modes[*k] == mode
+        {
+            *n += 1;
+            self.lines[*k].0 = format!("{base} (x{n})");
+            self.edits += 1;
+            return;
+        }
+        self.repeat = (!chat).then(|| (self.lines.len(), s.clone(), 1));
         self.times.push((super::cfgapply::local_hms(), chat, indent));
         self.modes.push(mode);
         self.lines.push((s, colour));
     }
 
-    /// Line `k`'s text replaced (a condensed battle line grown).
+    /// Line `k`'s text replaced (a condensed battle line grown); it no longer counts repeats.
     pub fn set_text(&mut self, k: usize, s: String) {
         if let Some(l) = self.lines.get_mut(k) {
             l.0 = s;
             self.edits += 1;
         }
+        if self.repeat.as_ref().is_some_and(|r| r.0 == k) {
+            self.repeat = None;
+        }
+    }
+
+    /// Whether repeated lines fold (the modern chat's Condense).
+    pub fn set_fold(&mut self, on: bool) {
+        self.fold = on;
     }
 
     /// How many lines have been changed in place: the logs wrap again when it moves.
@@ -276,7 +303,8 @@ pub(super) struct Condensed {
     id: u16,
     template: String,
     line: usize,
-    values: Vec<i32>,
+    /// The numbers so far, each with whether it was a critical hit.
+    values: Vec<(i32, bool)>,
 }
 
 const SLOT: i32 = 2_000_000_003;
@@ -290,17 +318,49 @@ fn template_of(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, slot:
     (own == line).then_some(template)
 }
 
-/// A condensed line: the template with the numbers listed, or with no number its count.
-fn condensed_text(template: &str, values: &[i32]) -> String {
+/// A condensed line: the template with the numbers' sum and the numbers after it before the closing stop (a critical
+/// one marked "!"; BattleMod's sumdamage), or with no number its count.
+fn condensed_text(template: &str, values: &[(i32, bool)]) -> String {
     let slot = SLOT.to_string();
     if template.contains(&slot) {
-        let list: Vec<String> = values.iter().map(|v| v.to_string()).collect();
-        template.replacen(&slot, &list.join(", "), 1)
+        let sum: i32 = values.iter().map(|v| v.0).sum();
+        let line = template.replacen(&slot, &sum.to_string(), 1);
+        if values.len() < 2 {
+            return line;
+        }
+        let parts: Vec<String> = values.iter().map(|(v, crit)| format!("{v}{}", if *crit { "!" } else { "" })).collect();
+        let (body, stop) = match line.strip_suffix(['.', '!']) {
+            Some(b) => (b, &line[b.len()..]),
+            None => (line.as_str(), ""),
+        };
+        format!("{body} ({}){stop}", parts.join(" + "))
     } else if values.len() > 1 {
         format!("{template} (x{})", values.len())
     } else {
         template.to_string()
     }
+}
+
+/// The hit a critical hit's message belongs with (melee 67 -> 1, ranged 353 -> 352): BattleMod's condensecrits.
+fn crit_of(id: u16) -> Option<u16> {
+    match id {
+        67 => Some(1),
+        353 => Some(352),
+        _ => None,
+    }
+}
+
+/// A critical hit joins its action's hit line on the same target, marked "!" (it never starts one: alone it prints as
+/// retail's two lines). True when it joined.
+fn condense_crit(w: &mut World, bt: &battle::BattleText, m: &Msg, ctx: &Ctx) -> bool {
+    let Some(hit) = crit_of(m.id) else { return false };
+    let mut tc = ctx.clone();
+    tc.work[1] = SLOT;
+    let Some(template) = render(bt, hit, relation(w, m.actor, m.target), &tc, &w.game).into_iter().next().map(|l| l.0).filter(|t| t.contains(&SLOT.to_string())) else { return false };
+    let Some(g) = w.condensed.iter_mut().find(|g| g.seq == m.seq && g.id == hit && g.template == template) else { return false };
+    g.values.push((m.work[1], true));
+    w.chat.set_text(g.line, condensed_text(&g.template, &g.values));
+    true
 }
 
 /// A record's line merges into its action's earlier line of the same text but the number ("hits the Hare for 12, 15
@@ -310,14 +370,14 @@ fn condense(w: &mut World, bt: &battle::BattleText, m: &Msg, which: u8, line: &s
     let Some(template) = template_of(bt, m.id, relation(w, m.actor, m.target), ctx, slot, line, &w.game) else { return false };
     let value = m.work[slot];
     if let Some(g) = w.condensed.iter_mut().find(|g| g.seq == m.seq && g.id == m.id && g.template == template) {
-        g.values.push(value);
+        g.values.push((value, false));
         w.chat.set_text(g.line, condensed_text(&g.template, &g.values));
         return true;
     }
     if w.condensed.len() >= 64 {
         w.condensed.remove(0);
     }
-    w.condensed.push(Condensed { seq: m.seq, id: m.id, template, line: w.chat.len(), values: vec![value] });
+    w.condensed.push(Condensed { seq: m.seq, id: m.id, template, line: w.chat.len(), values: vec![(value, false)] });
     false
 }
 
@@ -345,6 +405,9 @@ fn print(w: &mut World, m: Msg) {
     }
     let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
     let lines = render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game);
+    if w.modern && w.condense && m.which == Some(0) && condense_crit(w, &bt, &m, &ctx) {
+        return;
+    }
     if w.modern
         && w.condense
         && let (Some(which), [(line, _)]) = (m.which, lines.as_slice())
@@ -717,10 +780,15 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
     }
 }
 
-/// An actor waits while held by a swing / op 0x20 / 0x59, a skill action's file loading, or a knockback.
+/// An actor waits while held by a swing / op 0x20 / 0x59, a skill action's file loading, or a knockback; a melee
+/// round's target also while the round has swings left to play (retail's one scheduler holds it through them all; our
+/// split round played one hit at a time let it die, and its defeat print, before the killing swing).
 pub(super) fn held(w: &World, id: u32) -> bool {
     let now = Instant::now();
-    w.holds.get(&id).is_some_and(|t| *t > now) || w.loads.get(&id).is_some_and(|l| l.1 > now) || w.knocks.contains_key(&id)
+    w.holds.get(&id).is_some_and(|t| *t > now)
+        || w.loads.get(&id).is_some_and(|l| l.1 > now)
+        || w.knocks.contains_key(&id)
+        || w.rounds.values().any(|(_, rest)| rest.iter().any(|a| a.targets.iter().any(|t| t.id == id)))
 }
 
 /// A running knockback (actor +0x102): velocity per tick, signed speed, decay, constant-phase ticks left, the
@@ -1599,10 +1667,21 @@ mod tests {
         let ctx = |work: [i32; 5]| Ctx { actor: who(ME), target: who(RABBIT), me: "Tuxedo".into(), work, ..Default::default() };
         let line = say(1, ME, RABBIT, [0, 12, 0, 0, 0])[0].0.clone();
         let t = template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, &line, &cfg).unwrap();
-        assert_eq!(condensed_text(&t, &[12, 15, 9]), "Tuxedo hits the Wild Rabbit for 12, 15, 9 points of damage.");
+        assert_eq!(condensed_text(&t, &[(12, false), (15, false), (9, false)]), "Tuxedo hits the Wild Rabbit for 36 points of damage (12 + 15 + 9).");
+        assert_eq!(condensed_text(&t, &[(12, false)]), "Tuxedo hits the Wild Rabbit for 12 points of damage.");
+        assert_eq!(condensed_text(&t, &[(12, false), (30, true)]), "Tuxedo hits the Wild Rabbit for 42 points of damage (12 + 30!).");
         let miss = say(15, ME, RABBIT, [0; 5])[0].0.clone();
         let t = template_of(&bt, 15, rel(ME, RABBIT), &ctx([0; 5]), 1, &miss, &cfg).unwrap();
-        assert_eq!(condensed_text(&t, &[0, 0]), "Tuxedo misses the Wild Rabbit. (x2)");
+        assert_eq!(condensed_text(&t, &[(0, false), (0, false)]), "Tuxedo misses the Wild Rabbit. (x2)");
+        // Repeated system lines fold into one with a count; players' lines never do.
+        let mut log = ChatLog::default();
+        log.set_fold(true);
+        for _ in 0..3 {
+            log.push_colour("Target out of range.".into(), [0x80; 4]);
+        }
+        log.push_chat("Raven : rdy?".into(), [0x80; 4], false);
+        log.push_chat("Raven : rdy?".into(), [0x80; 4], false);
+        assert_eq!(log.lines().iter().map(|l| l.0.as_str()).collect::<Vec<_>>(), ["Target out of range. (x3)", "Raven : rdy?", "Raven : rdy?"]);
         // A line whose text is not the template with its number in is left alone.
         assert_eq!(template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, "something else", &cfg), None);
     }

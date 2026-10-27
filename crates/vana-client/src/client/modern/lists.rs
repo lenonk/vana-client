@@ -43,7 +43,7 @@ fn row(ui: &mut Ui, m: &super::Modern, icon: Option<egui::TextureId>, pack: Opti
     } else if let Some(s) = pack.and_then(|i| m.art.sprite(i)) {
         p.add(paint::image(&s, at, 22.0, tint));
     }
-    let colour = if look == Look::Off { m.theme.color("muted") } else { m.theme.color("text") };
+    let colour = super::rows::label_colour(m, look == Look::Cursor, look == Look::Off);
     p.text(pos2(r.min.x + 40.0, r.center().y), Align2::LEFT_CENTER, name, FontId::proportional(m.theme.ui), colour);
     if !right.is_empty() {
         p.text(pos2(r.max.x - 12.0, r.center().y), Align2::RIGHT_CENTER, right, FontId::proportional(m.theme.small), m.theme.color("muted"));

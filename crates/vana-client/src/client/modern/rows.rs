@@ -106,8 +106,9 @@ fn back(p: &Painter, m: &Modern, r: Rect, s: State, style: Style) {
                 p.add(gradient(Rect::from_min_max(pos2(mid, r.min.y), r.max), gold.gamma_multiply(0.13), gold.gamma_multiply(0.02), true));
                 rule(p, r, r.min.y, gold.gamma_multiply(0.9));
                 rule(p, r, r.max.y - 1.0, gold.gamma_multiply(0.9));
-                let c = pos2(r.min.x + 9.0, r.center().y);
-                p.add(Shape::convex_polygon(vec![pos2(c.x, c.y - 4.5), pos2(c.x + 4.5, c.y), pos2(c.x, c.y + 4.5), pos2(c.x - 4.5, c.y)], gold, Stroke::NONE));
+                // In the row's left margin, clear of the icons every list draws from x + 10.
+                let c = pos2(r.min.x + 5.5, r.center().y);
+                p.add(Shape::convex_polygon(vec![pos2(c.x, c.y - 3.5), pos2(c.x + 3.5, c.y), pos2(c.x, c.y + 3.5), pos2(c.x - 3.5, c.y)], gold, Stroke::NONE));
             } else if s.hover {
                 p.rect_filled(r, 0.0, gold.gamma_multiply(0.06));
             }
@@ -176,6 +177,17 @@ pub fn face(p: &Painter, m: &Modern, r: Rect, face: &str, tint: Color32) {
         q.multiply_opacity(0.55);
     }
     back(&q, m, r, s, style);
+}
+
+/// The label colour of a row (gold on the cursor in the Hairline and Gilt styles).
+pub fn label_colour(m: &Modern, on: bool, off: bool) -> Color32 {
+    ink(m, State { on, off, hover: false }, m.row_style.get())
+}
+
+/// The submenu mark at a row's right in the current style; the rect it takes (a click there opens the submenu).
+pub fn more_mark(p: &Painter, m: &Modern, r: Rect, on: bool) -> Rect {
+    more(p, m, r, State { on, ..Default::default() }, m.row_style.get());
+    Rect::from_center_size(pos2(r.max.x - 18.0, r.center().y), vec2(22.0, 22.0))
 }
 
 /// A menu row in the current style (Modern::row_style): its icon, its label, the submenu mark when `sub`; hovered by
