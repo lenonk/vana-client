@@ -4722,6 +4722,8 @@ struct World {
     mouse_look: bool,
     /// The modern Journal's Records of Eminence tab and its entry (Current objectives, Objective List, Vana'Bout).
     journal_roe: Option<usize>,
+    /// The modern Journal's rows have the keys (else its logs, areas or categories on the left).
+    journal_on_list: bool,
     autorun_dir: Vec3,
     move_tier: f32,
     /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the last four step
@@ -6347,6 +6349,7 @@ impl App {
                             autorun: false,
                             mouse_look: false,
                             journal_roe: None,
+                            journal_on_list: false,
                             autorun_dir: Vec3::ZERO,
                             move_tier: 0.0,
                             step_ticks: 0.0,
@@ -10088,12 +10091,16 @@ impl App {
                     let (k, uk) = (ctx.pixels_per_point(), self.ui_k);
                     world.retail_frames = gu.drawn_frames().iter().map(|r| [r[0] / (k * uk.0), r[1] / (k * uk.1), r[2] / (k * uk.0), r[3] / (k * uk.1)]).collect();
                     let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                    gu.modern_order.borrow_mut().clear();
                     save |= m.ui(ctx, gu, world, window, &mut self.cfg);
                     // Its chat window in UI pixels for next frame's stacked windows.
                     let (k, uk) = (ctx.pixels_per_point(), self.ui_k);
                     world.modern_chat_edge = m.chat_rect().map(|(r, faded)| ([r.min.x * k * uk.0, r.min.y * k * uk.1, r.width() * k * uk.0, r.height() * k * uk.1], faded));
                 } else {
                     modern::off(ctx, self.modern.as_mut());
+                    if let Some(gu) = self.game_ui.as_ref() {
+                        gu.modern_order.borrow_mut().clear();
+                    }
                 }
                 // What the Config windows and the settings screen hand to the app.
                 if let Some(kind) = world.want_settings.take() {

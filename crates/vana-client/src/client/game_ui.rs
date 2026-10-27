@@ -222,6 +222,8 @@ pub struct GameUi {
     /// The pointer is over an enabled item (mouse cursor kind 1); set by the windows' hit tests, cleared when the
     /// pointer moves.
     pub hover: std::cell::Cell<bool>,
+    /// Ours: the retail windows the modern layer draws as one column this frame, their children top to bottom.
+    pub modern_order: std::cell::RefCell<std::collections::HashMap<String, Vec<u16>>>,
     /// The focused lists' bars drawn this frame, and a press held on one (client/scrollbar.rs).
     pub bars: Vec<super::scrollbar::Site>,
     pub bar_hold: Option<super::scrollbar::Hold>,
@@ -316,7 +318,7 @@ pub struct WorldView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         crate::render::ui::set_caption_words(caption_words(&data));
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -603,7 +605,17 @@ impl GameUi {
 
     /// A layout's cursor links of child `child` (up, down, ?, ?, right, left).
     pub fn menu_links(&self, name: &str, child: u16) -> Option<[u8; 6]> {
-        self.data.lobby.menu(name)?.elements.iter().skip(1).find(|e| e.id == child).map(|e| e.links)
+        let mut l = self.data.lobby.menu(name)?.elements.iter().skip(1).find(|e| e.id == child)?.links;
+        // Ours: a window the modern layer draws as one column steps up and down that column (wrapping), whatever its
+        // retail layout.
+        if let Some(order) = self.modern_order.borrow().get(name)
+            && let Some(i) = order.iter().position(|&c| c == child)
+        {
+            let n = order.len();
+            let (up, down) = (order[(i + n - 1) % n] as u8, order[(i + 1) % n] as u8);
+            (l[0], l[1], l[2], l[3]) = (up, down, up, down);
+        }
+        Some(l)
     }
 
     /// A lobby window as FUN_101144b0 draws it: style frame, the window sprite from its second cell, each child's

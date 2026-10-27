@@ -299,6 +299,15 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
     // mcrselec: Up / Down along the links (wrap), Left / Right flip the page, Enter mcrselop, Escape writes the ttl
     // files and closes.
     match key {
+        // Ours: the modern layer lists both pages as one column; Up / Down run on through it.
+        K::ArrowUp | K::ArrowDown if w.modern => {
+            let at = w.mcr_page * 20 + sel as usize - 1;
+            let to = if key == K::ArrowDown { (at + 1) % 40 } else { (at + 39) % 40 };
+            w.mcr_page = to / 20;
+            w.macroedit.as_mut().and_then(|m| m.book.as_mut()).unwrap().sel = (to % 20 + 1) as u16;
+            w.sounds.push(Ui::Cursor as u32);
+        }
+        K::ArrowLeft | K::ArrowRight if w.modern => {}
         K::ArrowUp | K::ArrowDown => {
             let k = if key == K::ArrowUp { 2 } else { 3 };
             let to = gu.menu_links(SELEC, sel).map_or(sel, |l| l[k] as u16);

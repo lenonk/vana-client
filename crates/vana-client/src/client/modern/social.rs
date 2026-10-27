@@ -43,7 +43,10 @@ fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, focused: boo
             ui.label(egui::RichText::new(t).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
             ui.add_space(4.0);
         }
-        for (id, name) in rows(m, gu, v) {
+        let rows = rows(m, gu, v);
+        // The keys walk the column as drawn (GameUi::menu_links).
+        gu.modern_order.borrow_mut().insert(v.name.to_string(), rows.iter().map(|r| r.0).collect());
+        for (id, name) in rows {
             let (r, resp) = ui.allocate_exact_size(vec2(COL_W, ROW), if focused { Sense::click() } else { Sense::hover() });
             let off = v.off.contains(&id);
             let face = match () {

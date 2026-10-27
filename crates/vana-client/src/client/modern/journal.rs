@@ -16,6 +16,8 @@ const LIST_W: f32 = 430.0;
 const ROW: f32 = 28.0;
 const ROWS: usize = 11;
 const DESC_H: f32 = 120.0;
+/// A cursor row in the column without the keys.
+const UNFOCUSED: Color32 = Color32::from_gray(95);
 
 #[derive(Clone, Copy, PartialEq)]
 enum Tab {
@@ -54,7 +56,7 @@ pub(super) fn log_title(gu: &GameUi, log: usize) -> String {
 }
 
 fn close(w: &mut World) {
-    (w.missions, w.quests, w.keyitems, w.journal_roe) = (None, None, None, None);
+    (w.missions, w.quests, w.keyitems, w.journal_roe, w.journal_on_list) = (None, None, None, None, false);
 }
 
 /// Records of Eminence: quest00's rows 2..4 (Current objectives, Objective List, Vana'Bout; FUN_10230740(row)).
@@ -127,8 +129,10 @@ fn examine(w: &mut World) {
     w.sounds.push(Se::Select as u32);
 }
 
-/// Up / Down along the rows, Left / Right the log, area or category (with Ctrl / Alt a page), Enter marks a new key
-/// item seen, Tab the next tab, Escape closes. True when the Journal took the key.
+/// The keys follow the columns as drawn: on the logs, areas or categories at the left Up / Down step them (retail's
+/// Left / Right) and Right or Enter go to the rows; on the rows Up / Down (with Ctrl / Alt and Left / Right a page) are
+/// retail's, Left or Escape go back. Enter marks a new key item seen, Tab the next tab, Escape at the left closes. True
+/// when the Journal took the key.
 pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) -> bool {
     use egui::Key as K;
     let Some(t) = tab(w) else { return false };
@@ -136,8 +140,13 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) -> bool {
         return false;
     }
     settle(w);
+    let on_list = w.journal_on_list && t != Tab::Roe;
     match (t, key) {
         (Tab::Roe, K::Escape) if w.quests.as_ref().is_some_and(|q| q.roe.is_some()) => roe::modern_key(w, key, page),
+        (_, K::Escape | K::ArrowLeft) if on_list && !page => {
+            w.journal_on_list = false;
+            w.sounds.push(if key == K::Escape { Se::Cancel } else { Se::Cursor } as u32);
+        }
         (_, K::Escape) => {
             w.sounds.push(Se::Cancel as u32);
             close(w);
@@ -146,12 +155,24 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key, page: bool) -> bool {
             let k = TABS.iter().position(|x| x.0 == t).unwrap_or(0);
             switch(w, TABS[(k + 1) % TABS.len()].0);
         }
+        (Tab::Missions | Tab::Quests | Tab::KeyItems, K::ArrowUp | K::ArrowDown) if !on_list => {
+            let side = if key == K::ArrowDown { K::ArrowRight } else { K::ArrowLeft };
+            match t {
+                Tab::Missions => missions::key(w, gu, side, false),
+                Tab::Quests => quests::key(w, side, false),
+                _ => {
+                    next_category(w, key == K::ArrowDown);
+                    w.sounds.push(Se::Cursor as u32);
+                }
+            }
+        }
+        (Tab::Missions | Tab::Quests | Tab::KeyItems, K::ArrowRight | K::Enter) if !on_list => {
+            w.journal_on_list = true;
+            w.sounds.push(Se::Select as u32);
+        }
+        (Tab::Missions | Tab::Quests | Tab::KeyItems, K::ArrowLeft | K::ArrowRight) if !page => {}
         (Tab::Missions, K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight) => missions::key(w, gu, key, page),
         (Tab::Quests, K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight) => quests::key(w, key, page),
-        (Tab::KeyItems, K::ArrowLeft | K::ArrowRight) if !page => {
-            next_category(w, key == K::ArrowRight);
-            w.sounds.push(Se::Cursor as u32);
-        }
         (Tab::KeyItems, K::ArrowUp | K::ArrowDown | K::ArrowLeft | K::ArrowRight) => keyitems::key(w, gu, key, page),
         (Tab::KeyItems, K::Enter) => examine(w),
         // A list open: retail's keys (a category's Escape goes up, the root's back to the summary).
@@ -193,8 +214,8 @@ struct Mouse {
     click: Option<usize>,
 }
 
-/// A navigation row (a log, an area, a category) with its count.
-fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, off: bool) -> egui::Response {
+/// A navigation row (a log, an area, a category) with its count; the chosen one lit while this column has the keys.
+fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, keys: bool, off: bool) -> egui::Response {
     let (r, resp) = ui.allocate_exact_size(vec2(NAV_W, ROW), Sense::click());
     let face = match () {
         _ if on => "controls/list_row_selected",
@@ -203,7 +224,7 @@ fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, of
         _ => "controls/list_row_normal",
     };
     if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), if on && !keys { UNFOCUSED } else { Color32::WHITE }));
     }
     let c = if off { m.theme.color("muted") } else { m.theme.color("text") };
     let clip = Rect::from_min_max(r.min, pos2(r.max.x - if count.is_empty() { 8.0 } else { 44.0 }, r.max.y));
@@ -213,8 +234,10 @@ fn nav_row(ui: &mut Ui, m: &super::Modern, text: &str, count: &str, on: bool, of
     resp
 }
 
-/// The rows, the cursor's kept in view as it moves; hover moves the cursor, a click takes the row.
-fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, follow: bool, moved: bool, mouse: &mut Mouse) {
+/// The rows, the cursor's kept in view as it moves (lit while the rows have the keys); hover moves the cursor, a click
+/// takes the row.
+#[allow(clippy::too_many_arguments)]
+fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, keys: bool, follow: bool, moved: bool, mouse: &mut Mouse) {
     egui::ScrollArea::vertical().id_salt("journal list").max_height(ROWS as f32 * ROW).min_scrolled_height(ROWS as f32 * ROW).auto_shrink([false, false]).show(ui, |ui| {
         ui.set_width(LIST_W);
         for (k, l) in lines.iter().enumerate() {
@@ -223,9 +246,14 @@ fn list(ui: &mut Ui, m: &super::Modern, lines: &[Line], cursor: usize, follow: b
                 ui.painter().text(pos2(r.min.x + 4.0, r.center().y + 2.0), Align2::LEFT_CENTER, &l.text, FontId::new(m.theme.small, FontFamily::Name(super::STRONG.into())), m.theme.color("gold"));
                 continue;
             }
-            let face = if k == cursor { "controls/list_row_selected" } else if resp.hovered() { "controls/list_row_hover" } else { "controls/list_row_normal" };
+            let face = match () {
+                _ if k == cursor => "controls/list_row_selected",
+                _ if resp.hovered() => "controls/list_row_hover",
+                _ => "controls/list_row_normal",
+            };
             if let Some(s) = m.art.sprite(face) {
-                ui.painter().add(paint::nine_slice(&s, r.shrink2(vec2(0.0, 1.0)), (r.height() / s.size.y).min(1.0), Color32::WHITE));
+                let tint = if k == cursor && !keys { UNFOCUSED } else { Color32::WHITE };
+                ui.painter().add(paint::nine_slice(&s, r.shrink2(vec2(0.0, 1.0)), (r.height() / s.size.y).min(1.0), tint));
             }
             let mut x = r.min.x + 24.0 + l.indent;
             if l.new {
@@ -286,7 +314,10 @@ fn tabs(ui: &mut Ui, m: &super::Modern, t: Tab, mouse: &mut Mouse) {
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
-    let Some(t) = tab(w) else { return };
+    let Some(t) = tab(w) else {
+        w.journal_on_list = false;
+        return;
+    };
     let Some(gu) = p.gu else { return };
     settle(w);
     let m = p.m;
@@ -438,6 +469,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             }
         }
     }
+    let on_list = w.journal_on_list && t != Tab::Roe;
     let follow = m.journal_seen.get() != (t as u8, cursor);
     m.journal_seen.set((t as u8, cursor));
 
@@ -448,7 +480,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.set_width(NAV_W);
                 egui::ScrollArea::vertical().id_salt("journal nav").max_height(ROWS as f32 * ROW + DESC_H + 40.0).min_scrolled_height(ROWS as f32 * ROW + DESC_H + 40.0).auto_shrink([false, true]).show(ui, |ui| {
                     for (k, (text, count, off)) in nav.iter().enumerate() {
-                        if nav_row(ui, m, text, count, k == chosen, *off).clicked() {
+                        if nav_row(ui, m, text, count, k == chosen, !on_list, *off).clicked() {
                             mouse.nav = Some(k);
                         }
                     }
@@ -467,7 +499,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     ui.label(egui::RichText::new("Preparing data...").size(m.theme.small).color(muted));
                     return;
                 }
-                list(ui, m, &lines, cursor, follow, moved, &mut mouse);
+                list(ui, m, &lines, cursor, on_list, follow, moved, &mut mouse);
                 match &desc {
                     Some((name, text)) => description(ui, m, name, text),
                     None => {
@@ -488,6 +520,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         return;
     }
     if let Some(k) = mouse.nav {
+        w.journal_on_list = false;
         w.sounds.push(Se::Cursor as u32);
         match t {
             Tab::Missions => {
@@ -534,7 +567,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if changed == Some(true) {
         w.sounds.push(Se::Cursor as u32);
     }
-    if mouse.click.is_some() && t == Tab::KeyItems {
-        examine(w);
+    if mouse.click.is_some() {
+        w.journal_on_list = true;
+        if t == Tab::KeyItems {
+            examine(w);
+        }
     }
 }

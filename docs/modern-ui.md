@@ -293,6 +293,12 @@ Milestone 1:
   left under the top bar, the main menu and the minimap at the right, the chat window most of the screen's width.
 - Keys: Config's list takes Right as Enter (into the page); the Items sort strip is reached by Up from the first item,
   walked by Left / Right, left by Down.
+- Keys follow the drawing (user, 2026-10-27): a retail window drawn as a column (MenuWin through social::column)
+  records its rows top to bottom each frame and GameUi::menu_links steps Up / Down along them, wrapping, whatever its
+  retail layout's links. The Journal has two columns: on the left Up / Down step the log, area or category (retail's
+  Left / Right), Right or Enter go to the rows, Left or Escape back (World::journal_on_list; the cursor of the column
+  without the keys dims). The macro book list, both pages as one column, runs Up / Down across them (Left / Right do
+  nothing there).
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
   Linkshell, Linkshell 2, Assist E, Assist J, Unity, Shout; each chat line keeps its mode (combat.rs ChatLog).
 - The mouse, both interfaces (user, 2026-10-26: as modern MMOs; clicks unchanged): a drag holds the pointer hidden
