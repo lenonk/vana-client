@@ -44,7 +44,7 @@ pub use journal::key as journal_key;
 pub use status::key as status_key;
 pub use storage::key as storage_key;
 pub use theme::{Theme, frame_image};
-use theme::{Art, LABEL, STRONG};
+use theme::{Art, LABEL, NAME, STRONG};
 
 pub use crate::config::{ModernDock as Dock, ModernLayout as Layout, ModernPlace as Place};
 use std::collections::HashMap;

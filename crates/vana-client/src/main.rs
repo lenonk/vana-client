@@ -469,6 +469,14 @@ enum Cmd {
         backdrop: Option<PathBuf>,
         #[arg(long)]
         out: PathBuf,
+        /// The chat's font size (config modern_chat_font).
+        #[arg(long, default_value_t = 15.0)]
+        chat_font: f32,
+        /// Another body face (with --font-strong for titles), and a list panel in place of the frames.
+        #[arg(long, requires = "font_strong")]
+        font: Option<PathBuf>,
+        #[arg(long)]
+        font_strong: Option<PathBuf>,
     },
     /// Disassemble a zone's event scripts (event DAT), with dialogue text inlined.
     EventDump {
@@ -1030,7 +1038,10 @@ fn main() -> Result<()> {
             println!("bounds {} .. {}; wrote {}", mesh.min, mesh.max, out.display());
             Ok(())
         }
-        Cmd::ModernShot { width, height, scale, backdrop, out } => client::modern_shot(width, height, scale, backdrop.as_deref(), &out),
+        Cmd::ModernShot { width, height, scale, backdrop, out, chat_font, font, font_strong } => {
+            let list = font.is_some();
+            client::modern_shot(width, height, scale, backdrop.as_deref(), &out, &client::ModernShotOpts { chat_font, font: font.zip(font_strong), list })
+        }
         Cmd::CreatorShot { screen: true, race, face, hair, frame, view, width, height, step, size, job, nation, name, world, help_time, bench, out, .. } => {
             client::creator_screen_shot(&client::CreatorScreenShot { race, face, hair, size, job, nation, step, name, world, frame, view, help_time, width, height, bench }, &out)
         }

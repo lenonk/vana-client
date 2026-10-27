@@ -317,7 +317,7 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
             x += 32.0;
             let right = r.max.x - 10.0;
             let Some(v) = &row.here else {
-                let font = FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into()));
+                let font = FontId::new(m.theme.ui, FontFamily::Name(super::NAME.into()));
                 painter.text(pos2(x, r.center().y), Align2::LEFT_CENTER, &row.name, font, m.theme.color("muted"));
                 painter.text(pos2(right, r.center().y), Align2::RIGHT_CENTER, format!("({})", row.zone), FontId::proportional(m.theme.small), m.theme.color("muted"));
                 if resp.clicked() {

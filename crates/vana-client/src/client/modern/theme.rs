@@ -31,6 +31,8 @@ const FRAME_MASK: &str = "frames/window_normal_border";
 /// Emphasis beside egui's Proportional (Inter) and Monospace (JetBrains Mono): titles and names; the bars' labels.
 pub const STRONG: &str = "strong";
 pub const LABEL: &str = "label";
+/// Party-list names out of the zone: their own face, kept whatever the interface's is.
+pub const NAME: &str = "name";
 
 #[derive(Deserialize, Default)]
 #[serde(default)]
@@ -255,14 +257,28 @@ pub fn font(name: &str) -> Option<&'static [u8]> {
 /// Inter Bold Italic for the bars' labels (LABEL), JetBrains Mono for logs (Monospace); egui's own fonts stay behind
 /// them for missing glyphs.
 pub fn install_fonts(ctx: &Context) {
+    install_fonts_with(ctx, None);
+}
+
+/// `install_fonts` with another body and title face (`modern-shot --font`, for comparing typefaces).
+pub fn install_fonts_with(ctx: &Context, body: Option<(Vec<u8>, Vec<u8>)>) {
     let mut defs = FontDefinitions::default();
     for (name, bytes) in FONTS {
         defs.font_data.insert(name.to_string(), Arc::new(FontData::from_static(bytes)));
     }
+    let (regular, strong) = match body {
+        Some((r, s)) => {
+            defs.font_data.insert("body-regular".into(), Arc::new(FontData::from_owned(r)));
+            defs.font_data.insert("body-strong".into(), Arc::new(FontData::from_owned(s)));
+            ("body-regular", "body-strong")
+        }
+        None => ("Inter-Regular", "Inter-SemiBold"),
+    };
     let fallbacks = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     let with = |first: &str| -> Vec<String> { std::iter::once(first.to_string()).chain(fallbacks.iter().cloned()).collect() };
-    defs.families.insert(FontFamily::Proportional, with("Inter-Regular"));
-    defs.families.insert(FontFamily::Name(STRONG.into()), with("Inter-SemiBold"));
+    defs.families.insert(FontFamily::Proportional, with(regular));
+    defs.families.insert(FontFamily::Name(STRONG.into()), with(strong));
+    defs.families.insert(FontFamily::Name(NAME.into()), with("Inter-SemiBold"));
     defs.families.insert(FontFamily::Name(LABEL.into()), with("Inter-BoldItalic"));
     let mono = defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
     defs.families.insert(FontFamily::Monospace, std::iter::once("JetBrainsMono-Regular".to_string()).chain(mono).collect());

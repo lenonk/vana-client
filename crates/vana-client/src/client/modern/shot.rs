@@ -21,7 +21,28 @@ fn load_png(path: &Path) -> Result<([usize; 2], Vec<u8>)> {
     Ok(([info.width as usize, info.height as usize], buf))
 }
 
-fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
+/// A list as the menus draw theirs: rows in the pack's art, the name at the left, the count at the right.
+fn list_sample(p: &mut Panels) {
+    let m = p.m;
+    let rows = [("Hi-Potion", 12), ("Echo Drops", 4), ("Fire Crystal", 99), ("Scroll of Protect II", 1), ("Sleep Bolt", 87), ("Mithkabob", 6)];
+    let at = p.ctx.content_rect().center() + vec2(-160.0, -240.0);
+    p.panel_at("items", Some(super::Title { icon: Some("icons/items"), text: "Items", note: Some("42/80") }), 320.0, at, |ui| {
+        for (k, (name, n)) in rows.iter().enumerate() {
+            let (r, _) = ui.allocate_exact_size(vec2(296.0, 28.0), egui::Sense::hover());
+            let face = if k == 2 { "controls/list_row_selected" } else { "controls/list_row_normal" };
+            if let Some(s) = m.art.sprite(face) {
+                ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+            }
+            ui.painter().text(pos2(r.min.x + 24.0, r.center().y), egui::Align2::LEFT_CENTER, *name, egui::FontId::proportional(m.theme.small), m.theme.color("text"));
+            ui.painter().text(pos2(r.max.x - 12.0, r.center().y), egui::Align2::RIGHT_CENTER, n.to_string(), egui::FontId::proportional(m.theme.small), m.theme.color("muted"));
+            ui.add_space(2.0);
+        }
+        ui.add_space(4.0);
+        ui.label(egui::RichText::new("Restores 100 HP.").size(m.theme.small).color(m.theme.color("muted")));
+    });
+}
+
+fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     let top = crate::client::hudtop::TopView {
         title: "Status".into(),
         help: "View status.".into(),
@@ -36,7 +57,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
         meter: (1, 3),
     };
     super::topbar::draw(m, ctx, &top);
-    let (mut changed, mut chat_font) = (false, 15.0);
+    let (mut changed, mut chat_font) = (false, opts.chat_font);
     let mut p = Panels { m, ctx, gu: None, layout, changed: &mut changed, chat_font: &mut chat_font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("target") };
     // The chat window first, as the layer draws it: the location panel sits on it.
     let wh = [0x80, 0x80, 0x80, 0x80];
@@ -64,7 +85,13 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     hud::party_panel(&mut p, "party", "Party", &[row(0, "Lenon", 5, true, 0.98, false, vec![]), row(1, "Raven", 1, true, 0.88, false, theirs.clone()), row(2, "Koru", 3, true, 0.62, true, vec![]), row(3, "Shantotto", 4, true, 0.95, false, vec![]), row(4, "Prishe", 2, false, 1.0, false, vec![])], false, Some(super::super::resttick::Shown::Next(0.6, 4.0)));
     hud::cast_panel(&mut p, 0.6);
     hud::target_panel(&mut p, &TargetView { name: "Robber Crab".into(), ring: "indicators/target_hostile", locked: true, hp: Some((72, 0.72)), colour: Some(egui::Color32::from_rgb(255, 80, 80)), cast: Some(("Firaga".into(), Some(0.4))) });
+    if opts.list {
+        list_sample(&mut p);
+    }
     *m.rects.borrow_mut() = std::mem::take(&mut p.this);
+    if opts.list {
+        return;
+    }
     // Every frame at a few sizes: nine-slice corners, tiled edges, the stretched gradient.
     let painter = ctx.layer_painter(LayerId::new(Order::Foreground, Id::unique("frames")));
     let screen = ctx.content_rect();
@@ -81,7 +108,15 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout) {
     }
 }
 
-pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path) -> Result<()> {
+/// The shot's options: the chat's font size; another body and title face (regular, strong), which also puts a list
+/// panel in place of the frames.
+pub struct Opts {
+    pub chat_font: f32,
+    pub font: Option<(std::path::PathBuf, std::path::PathBuf)>,
+    pub list: bool,
+}
+
+pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
     let gpu = Gpu::headless()?;
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let target = gpu.device.create_texture(&wgpu::TextureDescriptor {
@@ -97,6 +132,9 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     let view = target.create_view(&Default::default());
     let ctx = egui::Context::default();
     let m = Modern::new(&ctx);
+    if let Some((r, s)) = &opts.font {
+        super::theme::install_fonts_with(&ctx, Some((std::fs::read(r)?, std::fs::read(s)?)));
+    }
     let zoom = m.theme.zoom(height as f32, scale);
     ctx.set_zoom_factor(zoom);
     let bg = backdrop.map(load_png).transpose()?.map(|(size, rgba)| ctx.load_texture("backdrop", egui::ColorImage::from_rgba_unmultiplied(size, &rgba), egui::TextureOptions::LINEAR));
@@ -114,7 +152,7 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
             if let Some(t) = &bg {
                 ctx.layer_painter(LayerId::background()).image(t.id(), ctx.content_rect(), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
-            sample(&m, ctx, &mut layout);
+            sample(&m, ctx, &mut layout, opts);
         });
         for (id, ds) in &output.textures_delta.set {
             deltas.push((*id, ds.clone()));
