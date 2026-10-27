@@ -165,8 +165,14 @@ pub(super) fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Op
             (Some(c), Some(cats)) => magic::cat_rows(cats.menu).get(c).map_or("", |r| magic::cat_label(cats.menu, r.1)),
             _ => &h.note,
         };
+        // A recent pick says so (it ranks first among the matches).
+        let right = match (h.recent, right.is_empty()) {
+            (true, true) => "recent".to_string(),
+            (true, false) => format!("recent · {right}"),
+            _ => right.to_string(),
+        };
         let look = if k == sel { Look::Cursor } else { Look::Normal };
-        let resp = row(ui, m, icons.get(k).copied().flatten(), None, &h.name, right, look);
+        let resp = row(ui, m, icons.get(k).copied().flatten(), None, &h.name, &right, look);
         mouse.take(k, &resp, moved);
     }
     mouse

@@ -59,7 +59,7 @@ pub fn pick_action(w: &mut World, action: Action) {
         })
     });
     if in_list || cat.is_some() {
-        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0, slot: None, note: String::new(), journal: None });
+        pick(w, &Hit { kind, cat, id, name: String::new(), score: 0, slot: None, note: String::new(), journal: None, recent: false });
     }
 }
 
@@ -83,6 +83,8 @@ pub struct Hit {
     pub note: String,
     /// A journal row: a key item (`cat` its category), a quest or a mission.
     pub journal: Option<Journal>,
+    /// Picked lately (World::recent_picks): ranked up and marked.
+    pub recent: bool,
 }
 
 /// Where a journal hit is.
@@ -168,15 +170,60 @@ fn name(w: &World, kind: Kind, id: u16) -> String {
     }
 }
 
-/// The hits for the open window, best first (the list's own order among equals).
+/// Recent picks remembered at most.
+const RECENT: usize = 24;
+
+/// A hit's key among the recent picks: its kind and id (an item by its id, a journal row by its place).
+pub fn key_of(h: &Hit) -> String {
+    match (h.journal, h.slot, h.kind) {
+        (Some(Journal::KeyItem), _, _) => format!("k:{}", h.id),
+        (Some(Journal::Quest(a, e)), _, _) => format!("q:{a}:{e}"),
+        (Some(Journal::Mission(l, e)), _, _) => format!("n:{l}:{e}"),
+        (None, Some(_), _) => format!("i:{}", h.id),
+        (None, None, Kind::Magic) => format!("m:{}", h.id),
+        (None, None, Kind::Ability) => format!("a:{}", h.id),
+        (None, None, Kind::Mount) => format!("o:{}", h.id),
+        (None, None, Kind::Emote) => format!("e:{}", h.id),
+    }
+}
+
+/// Recent picks rank up (the newest most) and are marked; best first again, the list's order among equals.
+fn boost(recent: &[String], hits: &mut [Hit]) {
+    for h in hits.iter_mut() {
+        if let Some(r) = recent.iter().position(|k| *k == key_of(h)) {
+            h.score += 400 - 15 * r as i32;
+            h.recent = true;
+        }
+    }
+    hits.sort_by(|a, b| b.score.cmp(&a.score));
+}
+
+/// The hits for the open window, best first: recent picks first among matches (boost), then the scores, then the list's
+/// own order.
 pub fn hits(w: &World, query: &str) -> Vec<Hit> {
+    let mut out = matches(w, query);
+    boost(&w.recent_picks, &mut out);
+    out
+}
+
+/// A pick remembered as the newest (the oldest beyond RECENT forgotten); saved with the config.
+fn remember(w: &mut World, h: &Hit) {
+    let key = key_of(h);
+    w.recent_picks.retain(|k| *k != key);
+    w.recent_picks.insert(0, key);
+    w.recent_picks.truncate(RECENT);
+    w.recent_save = true;
+}
+
+/// The matches for the open window by score (the list's own order among equals).
+fn matches(w: &World, query: &str) -> Vec<Hit> {
     let mut out = Vec::new();
     // The key items we hold, over every category (the category as the note).
     if key_items(w) {
         for (k, (title, items)) in keyitems::all(w).into_iter().enumerate() {
             for (id, name) in items.into_iter().filter(|(id, _)| w.has_key_item(*id)) {
                 if let Some(score) = score(&name, query) {
-                    out.push(Hit { kind: Kind::Ability, cat: Some(k), id, name, score, slot: None, note: title.clone(), journal: Some(Journal::KeyItem) });
+                    out.push(Hit { kind: Kind::Ability, cat: Some(k), id, name, score, slot: None, note: title.clone(), journal: Some(Journal::KeyItem), recent: false });
                 }
             }
         }
@@ -194,7 +241,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
                 let name = e.name.trim_start_matches('+').to_string();
                 if let Some(score) = score(&name, query) {
                     let note = (if k < split { "current" } else { "completed" }).to_string();
-                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note, journal: Some(Journal::Quest(area, i)) });
+                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note, journal: Some(Journal::Quest(area, i)), recent: false });
                 }
             }
         }
@@ -211,7 +258,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
                 let Some(e) = f.entries.get(i) else { continue };
                 let name = journal::indent(&e.name).0.to_string();
                 if let Some(score) = score(&name, query) {
-                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note: String::new(), journal: Some(Journal::Mission(log, i)) });
+                    out.push(Hit { kind: Kind::Ability, cat: None, id: 0, name, score, slot: None, note: String::new(), journal: Some(Journal::Mission(log, i)), recent: false });
                 }
             }
         }
@@ -230,7 +277,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
             if out.iter().all(|h: &Hit| h.id != s.id)
                 && let Some(score) = score(&n, query)
             {
-                out.push(Hit { kind: Kind::Ability, cat: None, id: s.id, name: n, score, slot: Some(s.index), note: String::new(), journal: None });
+                out.push(Hit { kind: Kind::Ability, cat: None, id: s.id, name: n, score, slot: Some(s.index), note: String::new(), journal: None, recent: false });
             }
         }
         for h in &mut out {
@@ -244,7 +291,7 @@ pub fn hits(w: &World, query: &str) -> Vec<Hit> {
         for id in rows {
             let n = name(w, kind, id);
             if let Some(score) = score(&n, query) {
-                out.push(Hit { kind, cat, id, name: n, score, slot: None, note: String::new(), journal: None });
+                out.push(Hit { kind, cat, id, name: n, score, slot: None, note: String::new(), journal: None, recent: false });
             }
         }
     };
@@ -394,7 +441,9 @@ pub fn set_sel(w: &mut World, sel: usize) {
 /// A hit picked: from a category window its list opens first (Enter on its row); then the cursor goes to the row and
 /// Enter acts on it, as the keys would.
 pub fn pick(w: &mut World, h: &Hit) {
-    w.list_search = None;
+    if w.list_search.take().is_some() {
+        remember(w, h);
+    }
     match h.journal {
         Some(Journal::Quest(area, entry)) => {
             quests::show_area(w, area, Some(entry));
@@ -444,7 +493,23 @@ pub fn pick(w: &mut World, h: &Hit) {
 
 #[cfg(test)]
 mod tests {
-    use super::score;
+    use super::{Hit, Kind, boost, key_of, score};
+
+    fn hit(id: u16, score: i32) -> Hit {
+        Hit { kind: Kind::Magic, cat: None, id, name: String::new(), score, slot: None, note: String::new(), journal: None, recent: false }
+    }
+
+    #[test]
+    fn recent_first() {
+        // Cure (a start, 996) beats Cure IV (993) until Cure IV was picked lately; the newest pick ranks highest.
+        let mut hits = vec![hit(1, 996), hit(4, 993), hit(3, 994)];
+        boost(&[key_of(&hit(4, 0)), key_of(&hit(3, 0))], &mut hits);
+        assert_eq!(hits.iter().map(|h| h.id).collect::<Vec<_>>(), [4, 3, 1]);
+        assert!(hits[0].recent && hits[1].recent && !hits[2].recent);
+        // An item and a spell of the same id are different picks.
+        let item = Hit { slot: Some(3), ..hit(4, 0) };
+        assert_ne!(key_of(&item), key_of(&hit(4, 0)));
+    }
 
     #[test]
     fn scores() {

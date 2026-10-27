@@ -129,6 +129,8 @@ pub struct Config {
     pub modern_battle_in_all: bool,
     /// The modern chat merges an action's lines that differ only in their number (BattleMod's condensing).
     pub modern_condense: bool,
+    /// The list search's recent picks by character, newest first (listsearch.rs).
+    pub modern_recent: std::collections::BTreeMap<String, Vec<String>>,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -257,6 +259,7 @@ impl Default for Config {
             modern_scan_kinds: 7,
             modern_battle_in_all: true,
             modern_condense: true,
+            modern_recent: Default::default(),
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

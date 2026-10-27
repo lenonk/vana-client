@@ -4955,6 +4955,9 @@ struct World {
     /// The modern magic and ability windows' search (listsearch.rs), their suggestions (taken when a window opens or
     /// changes, held while it is navigated; by the window they were taken for) and the one Tab has the focus on.
     list_search: Option<listsearch::ListSearch>,
+    /// The search's recent picks (listsearch::key_of), newest first, and whether they changed since the save.
+    recent_picks: Vec<String>,
+    recent_save: bool,
     suggestions: Option<(listsearch::WindowKey, Vec<suggest::Suggestion>)>,
     suggest_sel: Option<usize>,
     /// Party and alliance members' HP as last seen at 100 % (their max; the server sends only HP and HP %).
@@ -6529,6 +6532,8 @@ impl App {
                             modern_chat_edge: None,
                             retail_frames: Vec::new(),
                             list_search: None,
+                            recent_picks: self.cfg.modern_recent.get(&login.name).cloned().unwrap_or_default(),
+                            recent_save: false,
                             suggestions: None,
                             suggest_sel: None,
                             party_hp_max: HashMap::new(),
@@ -10231,6 +10236,12 @@ impl App {
                 }
                 if std::mem::take(&mut world.volume_dirty) {
                     apply = true;
+                }
+                if std::mem::take(&mut world.recent_save) {
+                    self.cfg.modern_recent.insert(world.name.clone(), world.recent_picks.clone());
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
                 }
                 if std::mem::take(&mut world.party_tp_save) {
                     self.cfg.party_tp = world.party_tp;

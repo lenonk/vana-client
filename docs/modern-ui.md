@@ -197,7 +197,10 @@ Milestone 1:
 - Search (listsearch.rs): typing in a category window or a list searches its names (start, word start, anywhere,
   letters in order; roman numerals as digits), from a category window every list behind it; Up / Down, Enter
   picks through retail's keys (the category, the row, Enter: checks and the target prompt as ever), Backspace,
-  Escape ends it.
+  Escape ends it. Recent picks (2026-10-27): what is picked through the search is remembered per character (config
+  modern_recent, newest first, 24 kept; a spell, ability, mount, emote, item, key item, quest or mission by its id or
+  place) and ranks first among the matches (+400, less the older it is), marked "recent". Live: Potion over
+  Hi-Potion for "potion" until Hi-Potion was picked, then Hi-Potion first, marked, and saved.
 - The Items window (modern/items.rs) over items.rs's state: the list and the action menu's direct-use list with the
   game's icons, quantities and row colours, the count, a bar; itmsort2 as a strip (Auto-sort and its question, Manual
   Sort, the Recycle Bin), iuse (Use / Drop) and the drop question under the rows, Manual Sort's hint; the mouse as
