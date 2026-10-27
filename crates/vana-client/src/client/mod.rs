@@ -10134,6 +10134,14 @@ impl App {
                     s.dirty = false;
                     s.s.store(&mut self.cfg);
                     apply = true;
+                    // Panel Places' Reset: this character's saved places go; the row reads As Moved again.
+                    if std::mem::take(&mut s.s.reset_places) {
+                        log::info!("modern: panel places of {} reset", world.name);
+                        self.cfg.modern_places.remove(&world.name);
+                        if let Err(e) = self.cfg.save() {
+                            log::warn!("config: {e:#}");
+                        }
+                    }
                 }
                 if std::mem::take(&mut world.volume_dirty) {
                     apply = true;

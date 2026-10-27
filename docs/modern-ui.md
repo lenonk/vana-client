@@ -387,6 +387,10 @@ Milestone 1:
   the door asks Yes / No). Live: the Bastok Mines concierge's choice by keys and mouse, Escape cancelling.
 - An event's text input (passinpu): a panel stacked on the chat window, its title (group 0xb by kind) or "Password:"
   and the text with its caret; the keys stay event.rs's (not seen live: no event on hand asks for text).
+- Panel Places (2026-10-27, settings.rs, Settings > Linux, in game only): Reset drops this character's saved panel
+  places (config modern_places) and saves; every panel goes back to where it starts the next frame (positions come
+  from the places each frame). The row reads As Moved again. Live: the Settings panel dragged away, Reset by keys and
+  by the mouse.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
@@ -402,4 +406,4 @@ Milestone 1:
 - To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
-- Not yet: keyboard focus between panels, the target's cast, a way to reset places, alliance rows live.
+- Not yet: keyboard focus between panels, the target's cast, alliance rows live.

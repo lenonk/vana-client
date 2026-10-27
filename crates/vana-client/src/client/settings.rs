@@ -36,6 +36,8 @@ pub struct Settings {
     pub modern_scale: u32,
     /// The mod packs in priority order (the Mods page; config `mods`).
     pub mods: Vec<crate::config::ModRef>,
+    /// Panel Places' Reset pressed: this character's modern panels go back to where they start (not kept).
+    pub reset_places: bool,
 }
 
 impl Settings {
@@ -65,6 +67,7 @@ impl Settings {
             modern_ui: c.modern_ui,
             modern_scale: c.modern_scale,
             mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
+            reset_places: false,
         }
     }
 
@@ -137,6 +140,7 @@ enum Val {
     Gpu,
     ModernUi,
     ModernScale,
+    ResetPlaces,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -217,6 +221,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
         row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
         row("Interface Size", "The modern interface's size (not retail).", ModernScale, MODERN_SCALES, Now),
+        row("Panel Places", "Reset puts this character's modern windows back where they start (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
     ];
     const MAPS: &[Row] = &[
         row("Map Overlay", "Ctrl / Alt + O shows the zone map over the screen, as the map add-ons do.", MapOverlay, OFF_ON, Now),
@@ -238,6 +243,8 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         Kind::Extras => [MAPS, TIMERS, EXTRA_MISC][tab.min(2)],
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
+        // Panel Places (the last Linux row) is a character's: in game only.
+        Kind::Settings if !in_game && tab == 6 => &LINUX[..LINUX.len() - 1],
         Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
     }
 }
@@ -356,6 +363,7 @@ impl SettingsUi {
             Val::PartyTp => self.s.party_tp as u32,
             Val::ModernUi => self.s.modern_ui as u32,
             Val::ModernScale => self.s.modern_scale,
+            Val::ResetPlaces => self.s.reset_places as u32,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
             Val::SynthAmount => self.s.synth_amount as u32,
@@ -379,6 +387,7 @@ impl SettingsUi {
             Val::PartyTp => self.s.party_tp = x != 0,
             Val::ModernUi => self.s.modern_ui = x != 0,
             Val::ModernScale => self.s.modern_scale = x,
+            Val::ResetPlaces => self.s.reset_places = x != 0,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
             Val::StampAll => self.s.stamp_all_lines = x != 0,
