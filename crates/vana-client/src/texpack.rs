@@ -14,6 +14,8 @@ use std::sync::Mutex;
 const SKIP_PREFIXES: [&str; 5] = ["menu", "font", "cntg", "map", "ex3_"];
 /// The largest side the client reads (dat::zone::parse_img).
 const MAX_SIDE: u32 = 4096;
+/// A chunk's size field: 19 bits of 16-byte units (dat::chunks).
+const MAX_CHUNK: usize = 0x7FFFF * 16;
 /// Threads for the CPU work (cores 12..15 stay free for the LSB server).
 const THREADS: usize = 12;
 
@@ -162,8 +164,13 @@ fn encoded(cache: &Path, key: &str, png: &Path, dxt1: bool) -> Result<(u32, u32,
     {
         return Ok((u32::from_le_bytes(b[0..4].try_into()?), u32::from_le_bytes(b[4..8].try_into()?), b[8..].to_vec()));
     }
-    let (w, h, rgba) = load_png(png)?;
+    let (mut w, mut h, mut rgba) = load_png(png)?;
     anyhow::ensure!(w <= MAX_SIDE && h <= MAX_SIDE, "{key}: {w}x{h} too large");
+    // Halved until its chunk fits (4x of a 512 x 1024 DXT3 is past 8 MB).
+    let format = if dxt1 { texpresso::Format::Bc1 } else { texpresso::Format::Bc2 };
+    while 16 + 69 + format.compressed_size(w as usize, h as usize) > MAX_CHUNK && w > 4 && h > 4 {
+        (w, h, rgba) = half(w, h, &rgba);
+    }
     let data = encode(dxt1, w, h, &rgba);
     let mut b = Vec::with_capacity(8 + data.len());
     b.extend_from_slice(&w.to_le_bytes());
@@ -176,9 +183,25 @@ fn encoded(cache: &Path, key: &str, png: &Path, dxt1: bool) -> Result<(u32, u32,
     Ok((w, h, data))
 }
 
+/// A 2x2 box filter.
+fn half(w: u32, h: u32, rgba: &[u8]) -> (u32, u32, Vec<u8>) {
+    let (nw, nh) = (w / 2, h / 2);
+    let mut out = vec![0u8; (nw * nh * 4) as usize];
+    for y in 0..nh as usize {
+        for x in 0..nw as usize {
+            for c in 0..4 {
+                let at = |dx: usize, dy: usize| rgba[((2 * y + dy) * w as usize + 2 * x + dx) * 4 + c] as u32;
+                out[(y * nw as usize + x) * 4 + c] = ((at(0, 0) + at(1, 0) + at(0, 1) + at(1, 1) + 2) / 4) as u8;
+            }
+        }
+    }
+    (nw, nh, out)
+}
+
 /// A chunk with `payload` (the stock chunk's 16-byte header, its size word redone; padded to 16 bytes).
 fn chunk_bytes(stock_header: &[u8], payload: &[u8]) -> Vec<u8> {
     let total = (16 + payload.len()).div_ceil(16) * 16;
+    assert!(total <= MAX_CHUNK, "chunk of {total} bytes past the size field");
     let mut out = stock_header[..16].to_vec();
     let word = u32::from_le_bytes(out[4..8].try_into().unwrap());
     let word = (word & 0x7f) | (((total / 16) as u32) << 7);
