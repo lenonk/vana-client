@@ -348,6 +348,12 @@ Milestone 1:
   name, the shells ("No Linkshell") and the Unity at the right, subwindo's range under them. Retail's engaged gauge
   window (gaugewin) is not drawn: the party panel shows our HP / MP / TP. Live: a name added, picked by the mouse and
   deleted by the button; the chat mode window from the action menu's Chat arrow; Level Sync with a bot in the party.
+- The comment editor and the Linkshell Concierge (2026-10-27, minor.rs over seacom.rs and concierge.rs): the editor's
+  three lines (the edited one live, a click picks a line, OK closes as Escape does) on the combat window as retail's
+  sits on the log; the concierge's event title, lscswin's four filters as tabs (clickable at any time: the filter's
+  focus and Enter), the header and every shell with its icon in the shell's colour, green for ours, the language and
+  the members wanted. Live: Set Bazaar's Edit Comment typed and erased (nothing sent); the Bastok Mines concierge with
+  two seeded rows (removed after), the English tab, Escape back to the event.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

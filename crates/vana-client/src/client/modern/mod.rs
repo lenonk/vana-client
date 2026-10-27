@@ -348,6 +348,8 @@ fn default_place(id: &str) -> Place {
         "blklist" => at(0.2, 0.0347),
         // The chat mode window rides the action menu it is opened from.
         "chatctrl" => on("combat"),
+        // The comment editor sits on the log as retail's (flag 0x1000).
+        "comment" => on("combat"),
         _ => at(0.3, 0.3),
     }
 }
