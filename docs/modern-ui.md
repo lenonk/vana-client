@@ -305,6 +305,12 @@ Milestone 1:
   Retail's keys stay (Enter, Up / Down, Num+ to lnowin); hover moves the cursor, a click on a button acts. The party
   window shows retail's chest (fontshp 0x7a) on its top edge while the pool holds items. Live with a bot in the party
   (a solo pool hands items out at once) and !addtreasure.
+- Shops (2026-10-27, modern/shop.rs over shop.rs): NPC and guild shops and Set Bazaar's prices in the command
+  window's place: Buy / Sell as tabs (shopmain / guildsho, a click on the other tab leaves the list and opens it), the
+  whole list (icon, name in retail's tint, the requirement's words, the price or count), the quantity (itemctrl's
+  buttons), the price (moneyctr's) and the confirm ("Buy 2 x Name for N G?", shopbuy / shopsell's captions) inside the
+  panel. Live at Capucine: buy by mouse, appraise and sell by keys, Escape back out. Guild shops and Set Prices not
+  seen live yet.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

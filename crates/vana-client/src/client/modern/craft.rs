@@ -40,7 +40,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
 }
 
 /// A row's text colour: the module's tint, the theme's text for plain white, muted for grey.
-fn tint(m: &super::Modern, t: u32) -> Color32 {
+pub(super) fn tint(m: &super::Modern, t: u32) -> Color32 {
     match t {
         TINT_WHITE => m.theme.color("text"),
         TINT_DIM => m.theme.color("muted"),
@@ -174,7 +174,7 @@ fn list(ui: &mut Ui, m: &super::Modern, ctx: &egui::Context, info: &ItemCache, s
 
 /// The count asked (itemctrl's for a stack, or the amount to make): the value of most and its keys as buttons (itemctrl's
 /// own "-", "+", "1", "All"), OK and Cancel.
-fn count_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, label: &str, v: u32, max: u32) -> Option<egui::Key> {
+pub(super) fn count_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, label: &str, v: u32, max: u32) -> Option<egui::Key> {
     use egui::Key as K;
     let mut key = None;
     ui.label(egui::RichText::new(label).size(m.theme.small).color(m.theme.color("gold")));
@@ -201,7 +201,7 @@ fn count_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, label: &str, v: u32, m
 
 /// The gil asked (moneyctr): the amount with the digit the arrows step underlined; its keys as buttons ("-" / "+" by
 /// the step, the step x10 / /10), All and 0 outright, OK and Cancel. A key, or an amount to set.
-fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max, v): (u32, u32, u32)) -> (Option<egui::Key>, Option<u32>) {
+pub(super) fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max, v): (u32, u32, u32)) -> (Option<egui::Key>, Option<u32>) {
     use egui::Key as K;
     let (mut key, mut set) = (None, None);
     ui.label(egui::RichText::new("Gil").size(m.theme.small).color(m.theme.color("gold")));
@@ -242,7 +242,7 @@ fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max, v): (u32, 
     (key, set)
 }
 
-fn caption(gu: &GameUi, menu: &str, child: u16, fallback: &str) -> String {
+pub(super) fn caption(gu: &GameUi, menu: &str, child: u16, fallback: &str) -> String {
     gu.child_caption(menu, child).unwrap_or_else(|| fallback.to_string())
 }
 

@@ -157,7 +157,7 @@ struct Row {
 
 /// A stock entry's requirement (FUN_1020f8a0): a craft rank, a job level, or a line of group 0xc.
 #[derive(Clone, Copy, Debug, PartialEq)]
-enum Req {
+pub(super) enum Req {
     /// Skill 0x30..0x3a and GuildInfo / 100 (the rank + 1), only above 1.
     Rank { skill: u16, need: u16 },
     /// Skill 0x40 + job and the level (GuildInfo low byte), only for jobs above WAR.
@@ -1030,6 +1030,9 @@ fn draw_req(gu: &mut GameUi, req: Req, end: f32, y: f32, tint: u32) {
 /// at (16, 240) over shopmain, itemctrl over money.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let (Some(s), Some(info)) = (&w.shop, w.item_info.clone()) else { return rects };
     let stacked = |gu: &GameUi, name: &str| gu.window_rect(name, sw, sh).map_or((0.0, 0.0), |r| (0.0, (log_top - r[3] - 2.0).max(16.0) - r[1]));
     let main_focus = s.view.is_none() && s.confirm.is_none();
@@ -1129,6 +1132,10 @@ pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32, log_top: f32) -> Vec<[
 /// moneyctr take only the right click (Escape) *(their arrows by mouse not done)*.
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{child_under, generic, over};
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(s) = w.shop.as_ref() else { return };
     let keys = |w: &mut World, _: &GameUi, k: egui::Key| key(w, k);
     if let Some((_, child)) = s.confirm {
@@ -1165,5 +1172,93 @@ pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: 
                 s.main = id;
             }
         }, keys);
+    }
+}
+
+/// A list row as the modern layer shows it.
+pub(super) struct RowLook {
+    pub id: u16,
+    pub text: Option<String>,
+    pub tint: u32,
+    pub price: Option<String>,
+    pub price_tint: u32,
+    pub req: Option<Req>,
+    pub count: Option<u32>,
+}
+
+/// What the modern layer shows: the kind (guild, Set Prices), shopmain's cursor, the list open and its rows and cursor
+/// (absolute), what is being asked (the quantity, moneyctr's price, the confirm with its cursor) and the item it is
+/// for with its unit price.
+pub(super) struct Look {
+    pub guild: bool,
+    pub bazaar: bool,
+    pub main: u16,
+    pub view: Option<View>,
+    pub loading: bool,
+    pub rows: Vec<RowLook>,
+    pub cursor: usize,
+    pub qty: Option<(u32, u32)>,
+    pub money: Option<(u32, u32, u32)>,
+    pub confirm: Option<(u32, u16)>,
+    pub busy: Option<(u16, Option<u32>)>,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let s = w.shop.as_ref()?;
+    let rows = rows(w, s).into_iter().map(|r| RowLook { id: r.id, text: r.text, tint: r.tint, price: r.price, price_tint: r.price_tint, req: r.req, count: r.count }).collect();
+    let loading = match s.view {
+        Some(View::Buy) if s.guild => w.guild[0].count().is_none(),
+        Some(View::Wanted) => w.guild[1].count().is_none(),
+        _ => false,
+    };
+    let slot_item = |at: u8| w.inv.slots.get(&(super::items::INVENTORY, at)).map(|x| x.0);
+    let busy = s.busy.and_then(|at| match s.view? {
+        View::Buy if s.guild => w.guild[0].items.get(at as usize).map(|g| (g.item, Some(g.price & 0x7fff_ffff))),
+        View::Buy => s.stock.get(at as usize).copied().flatten().map(|e| (e.item, Some(e.price))),
+        View::Inv(_) => slot_item(at).map(|id| (id, w.guild[1].find(id).map(|g| g.price & 0x7fff_ffff))),
+        View::Sell => slot_item(at).map(|id| (id, price_of(s, id))),
+        View::Bazaar | View::Wanted => slot_item(at).map(|id| (id, None)),
+    });
+    Some(Look { guild: s.guild, bazaar: s.bazaar, main: s.main, view: s.view, loading, rows, cursor: s.list.0 + s.list.1, qty: s.qty, money: s.money, confirm: s.confirm, busy })
+}
+
+/// shopmain's cursor onto Buy (1) or Sell (2) with nothing open. True when it moved.
+pub(super) fn set_main(w: &mut World, k: u16) -> bool {
+    match w.shop.as_mut().filter(|s| s.view.is_none() && s.confirm.is_none()) {
+        Some(s) if s.main != k && (1..=2).contains(&k) => {
+            s.main = k;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// The list's cursor onto row `at` (the scroll follows) while the list has the keys. True when it moved.
+pub(super) fn set_row(w: &mut World, at: usize) -> bool {
+    let n = w.shop.as_ref().map_or(0, |s| rows(w, s).len());
+    let Some(s) = w.shop.as_mut().filter(|s| s.view.is_some() && s.qty.is_none() && s.money.is_none() && s.confirm.is_none()) else { return false };
+    if at >= n || s.list.0 + s.list.1 == at {
+        return false;
+    }
+    let scroll = if at < s.list.0 || at >= s.list.0 + ROWS { (at + 1).saturating_sub(ROWS).min(at) } else { s.list.0 };
+    s.list = (scroll, at - scroll);
+    true
+}
+
+/// The confirm's cursor (1 yes, 2 no). True when it moved.
+pub(super) fn set_confirm(w: &mut World, child: u16) -> bool {
+    match w.shop.as_mut().and_then(|s| s.confirm.as_mut()) {
+        Some(c) if c.1 != child => {
+            c.1 = child;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// moneyctr's value outright (All, 0).
+pub(super) fn set_money(w: &mut World, v: u32) {
+    if let Some(m) = w.shop.as_mut().and_then(|s| s.money.as_mut()) {
+        m.2 = v.min(m.1);
     }
 }
