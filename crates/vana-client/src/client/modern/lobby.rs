@@ -49,6 +49,133 @@ impl Modern {
         }
     }
 
+    /// The login form on the rects login_window placed (UI pixels): the frame, the labelled fields in the input art (the
+    /// focused one lit, its caret), Remember password's box, the buttons; their mouse stays the form's.
+    pub fn login_form(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), v: &super::super::LoginView) {
+        self.zoom_to(ctx, window, scale);
+        let k = ctx.pixels_per_point();
+        let pt = |r: [f32; 4]| egui::Rect::from_min_size(pos2(r[0] / (k * ui_k.0), r[1] / (k * ui_k.1)), vec2(r[2] / (k * ui_k.0), r[3] / (k * ui_k.1)));
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::unique("modern login form")));
+        let frame = pt(v.frame).expand(6.0);
+        p.add(super::borders::window(self, "window_normal", frame));
+        let blink = (ctx.input(|i| i.time) * 2.0) as i64 % 2 == 0;
+        // Text sized to the fields (the retail-sized form drew it far too small).
+        let size = v.fields.first().map_or(self.theme.small, |f| (pt(f.0).height() * 0.62).max(self.theme.small));
+        self.lobby_text.set(size);
+        let font = FontId::proportional(size);
+        for (i, (r, label, text, hint)) in v.fields.iter().enumerate() {
+            let r = pt(*r);
+            p.text(pos2(frame.min.x + 20.0, r.center().y), Align2::LEFT_CENTER, *label, font.clone(), self.theme.color("muted"));
+            let on = v.focus == i && !v.busy;
+            if let Some(s) = self.art.sprite(if on { "controls/input_focused" } else { "controls/input_normal" }) {
+                p.add(paint::nine_slice(&s, r.expand2(vec2(2.0, 3.0)), 0.5, Color32::WHITE));
+            }
+            let at = pos2(r.min.x + 6.0, r.center().y);
+            if text.is_empty() && !on && !hint.is_empty() {
+                p.text(at, Align2::LEFT_CENTER, *hint, font.clone(), self.theme.color("muted"));
+            }
+            let g = p.layout_no_wrap(text.clone(), font.clone(), self.theme.color("text"));
+            // The tail stays in view.
+            let room = r.width() - 12.0;
+            let x = if g.size().x > room { at.x - (g.size().x - room) } else { at.x };
+            let end = x + g.size().x;
+            p.with_clip_rect(r).galley(pos2(x, at.y - g.size().y / 2.0), g, self.theme.color("text"));
+            if on && blink {
+                p.line_segment([pos2(end + 1.0, r.min.y + 3.0), pos2(end + 1.0, r.max.y - 3.0)], egui::Stroke::new(1.5, self.theme.color("text")));
+            }
+        }
+        let (cr, caption, onv) = &v.check;
+        let cr = pt(*cr);
+        let lit = v.focus == 4 && !v.busy;
+        let side = size * 1.1;
+        let bx = egui::Rect::from_min_size(pos2(cr.min.x, cr.center().y - side / 2.0), vec2(side, side));
+        if let Some(s) = self.art.sprite(if *onv { "controls/checkbox_on" } else { "controls/checkbox_off" }) {
+            p.add(paint::image(&s, bx.min, side, if v.busy { Color32::from_gray(120) } else { Color32::WHITE }));
+        }
+        p.text(pos2(bx.max.x + 6.0, bx.center().y), Align2::LEFT_CENTER, *caption, font.clone(), if lit { self.theme.color("gold") } else { self.theme.color("text") });
+        let hover = ctx.input(|i| i.pointer.hover_pos());
+        for (k, (r, label, enabled)) in v.buttons.iter().enumerate() {
+            let r = pt(*r).expand2(vec2(4.0, 3.0));
+            let on = v.focus == 5 + k && !v.busy;
+            let face = match () {
+                _ if v.busy || !enabled => "controls/button_disabled",
+                _ if on => "controls/button_selected",
+                _ if hover.is_some_and(|h| r.contains(h)) => "controls/button_hover",
+                _ => "controls/button_normal",
+            };
+            if let Some(s) = self.art.sprite(face) {
+                p.add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+            }
+            let c = if v.busy || !enabled { self.theme.color("muted") } else if on { self.theme.color("gold") } else { self.theme.color("text") };
+            p.text(r.center(), Align2::CENTER_CENTER, *label, FontId::new(size, FontFamily::Name(super::STRONG.into())), c);
+        }
+    }
+
+    /// The lobby's help bar on retail's lobyhelp strip (UI pixels, the screen's width): the help line centred in its
+    /// colour, the client version above the strip at retail's spot.
+    #[allow(clippy::too_many_arguments)]
+    pub fn help_bar(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), strip: [f32; 4], ver: (f32, f32), text: &str, colour: [u8; 4], version: &str) {
+        self.zoom_to(ctx, window, scale);
+        let k = ctx.pixels_per_point();
+        let size = self.lobby_text.get().max(self.theme.ui);
+        let screen = ctx.content_rect();
+        // Retail's strip, made tall enough for the text; its ends past the screen's sides.
+        let cy = (strip[1] + strip[3] / 2.0) / (k * ui_k.1);
+        let h = (strip[3] / (k * ui_k.1)).max(size * 1.7).round();
+        let r = egui::Rect::from_min_max(pos2(screen.min.x - 24.0, cy - h / 2.0), pos2(screen.max.x + 24.0, cy + h / 2.0));
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, egui::Id::unique("modern help bar")));
+        p.add(super::borders::window(self, "window_normal", r));
+        let c = super::chat::colour(colour);
+        p.text(pos2(screen.center().x, cy + 1.0), Align2::CENTER_CENTER, text, FontId::proportional(size), c);
+        p.text(pos2(ver.0 / (k * ui_k.0), r.min.y - 3.0), Align2::LEFT_BOTTOM, format!("ver.{version}"), FontId::proportional(size), self.theme.color("text"));
+    }
+
+    /// A lobby popup on retail's rect (UI pixels): the pack's frame, the text in Fira Sans above the form's size, centred
+    /// in the frame above `foot` px as retail's text block.
+    fn popup_frame(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), id: &str, frame: [f32; 4], text: &str, foot: f32) -> (egui::Painter, f32, egui::Rect) {
+        self.zoom_to(ctx, window, scale);
+        let k = ctx.pixels_per_point();
+        let pt = |r: [f32; 4]| egui::Rect::from_min_size(pos2(r[0] / (k * ui_k.0), r[1] / (k * ui_k.1)), vec2(r[2] / (k * ui_k.0), r[3] / (k * ui_k.1)));
+        let r = pt(frame);
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique(("modern lobby popup", id))));
+        p.add(super::borders::window(self, "window_normal", r));
+        // Above the login form's text (Fira reads smaller than the game font at one size).
+        let form = self.lobby_text.get();
+        let size = if form > 0.0 { form * 1.2 } else { self.theme.ui * 1.5 };
+        let area = egui::Rect::from_min_max(r.min + vec2(16.0, 8.0), pos2(r.max.x - 16.0, r.max.y - foot / (k * ui_k.1)));
+        let galley = p.layout(text.to_string(), FontId::proportional(size), self.theme.color("text"), area.width());
+        p.galley(pos2(area.center().x - galley.size().x / 2.0, area.center().y - galley.size().y / 2.0), galley, self.theme.color("text"));
+        (p, size, r)
+    }
+
+    /// The lobby's waits (netwait and its bar): netwait's rect, the text, the progress bar inside the frame's foot.
+    pub fn wait_panel(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), frame: [f32; 4], text: &str, progress: f32) {
+        let (p, size, r) = self.popup_frame(ctx, window, scale, ui_k, "wait", frame, text, 28.0);
+        let bar = egui::Rect::from_center_size(pos2(r.center().x, r.max.y - size * 1.4), vec2(r.width() * 0.5, size * 0.45));
+        p.rect(bar, bar.height() / 2.0, self.theme.color("charcoal"), egui::Stroke::new(1.0, self.theme.color("bronze").gamma_multiply(0.7)), egui::StrokeKind::Outside);
+        let f = progress.clamp(0.0, 1.0);
+        if f > 0.0 {
+            p.rect_filled(egui::Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f, bar.max.y)), bar.height() / 2.0, self.theme.color("focus"));
+        }
+        ctx.request_repaint();
+    }
+
+    /// The login error (menu ok) on its rect: the text and OK centred under it; true when OK was clicked.
+    pub fn ok_popup(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), frame: [f32; 4], ok: [f32; 4], text: &str) -> bool {
+        let (p, size, r) = self.popup_frame(ctx, window, scale, ui_k, "ok", frame, text, 34.0);
+        let k = ctx.pixels_per_point();
+        // On retail's OK row, centred across the frame, sized to the text.
+        let (bw, bh) = ((ok[2] / (k * ui_k.0) * 1.2).max(size * 5.0), (ok[3] / (k * ui_k.1) + 6.0).max(size * 1.45));
+        let cy = (ok[1] + ok[3] / 2.0) / (k * ui_k.1);
+        let b = egui::Rect::from_center_size(pos2(r.center().x, cy.min(r.max.y - bh / 2.0 - 5.0)), vec2(bw, bh));
+        let hover = ctx.input(|i| i.pointer.hover_pos()).is_some_and(|h| b.contains(h));
+        if let Some(s) = self.art.sprite(if hover { "controls/button_hover" } else { "controls/button_selected" }) {
+            p.add(paint::nine_slice(&s, b, 0.5, Color32::WHITE));
+        }
+        p.text(b.center(), Align2::CENTER_CENTER, "OK", FontId::new(size, FontFamily::Name(super::STRONG.into())), self.theme.color("gold"));
+        hover && ctx.input(|i| i.pointer.primary_clicked())
+    }
+
     /// The select (or delete) screen: what the mouse did, for SelectUi::pointer.
     pub fn select_screen(&mut self, ctx: &Context, gu: &GameUi, window: [u32; 2], scale: u32, v: &View) -> Pointer {
         self.zoom_to(ctx, window, scale);
@@ -448,4 +575,8 @@ fn windows(p: &mut Panels, gu: &GameUi, v: &View, out: &mut Pointer) {
             ui.painter().text(pos2(r.min.x + 12.0, r.center().y), Align2::LEFT_CENTER, shown, FontId::proportional(m.theme.ui), m.theme.color("text"));
         });
     }
+}
+
+fn ctx_repaint(ui: &Ui) {
+    ui.ctx().request_repaint();
 }

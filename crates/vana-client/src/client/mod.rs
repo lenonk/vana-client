@@ -537,6 +537,17 @@ fn lobby_text(lu: &mut GameUi, slots: &[crate::render::screens::TextSlot], help:
 
 const LOGIN_LABELS: [&str; 4] = ["Server", "Account", "Password", "One-time code"];
 
+/// The login form as drawn, for the modern layer (UI pixels): the frame, each field (rect, label, shown text, hint),
+/// the box (rect, caption, on), the buttons (rect, caption, enabled), the focus, busy.
+pub struct LoginView {
+    pub frame: [f32; 4],
+    pub fields: Vec<([f32; 4], &'static str, String, &'static str)>,
+    pub check: ([f32; 4], &'static str, bool),
+    pub buttons: Vec<([f32; 4], &'static str, bool)>,
+    pub focus: usize,
+    pub busy: bool,
+}
+
 /// The tail of `text` that fits in `max` pixels, so the caret end stays visible.
 fn fit_tail(lu: &GameUi, text: &str, max: f32) -> String {
     let mut t = text;
@@ -561,28 +572,31 @@ enum LoginChoice {
 /// Not retail (PlayOnline logged in): the generic window sounds (FUN_10118260) go to `sounds`: 0001 when the focus
 /// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>) -> Option<LoginChoice> {
+#[allow(clippy::too_many_arguments)]
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>) -> Option<LoginChoice> {
     let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
     const ITEMS: usize = 8;
     const CHECK: usize = 4;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
-    let (ww, wh) = (380.0, 162.0);
+    // The modern layer's form is half again as large (its text sized to the fields).
+    let f = if modern.is_some() { 1.5 } else { 1.0 };
+    let (ww, wh) = (380.0 * f, 162.0 * f);
     // Centred between the title logo's foot (about half the height) and the copyright line (about 0.8).
     let (wx, wy) = (((sw - ww) / 2.0).round(), (sh * 0.65 - wh / 2.0).round());
-    let row = |i: usize| wy + 14.0 + i as f32 * 22.0;
-    let field_rect = |i: usize| [wx + 148.0, row(i), ww - 164.0, 18.0];
+    let row = |i: usize| wy + 14.0 * f + i as f32 * 22.0 * f;
+    let field_rect = |i: usize| [wx + 148.0 * f, row(i), ww - 164.0 * f, 18.0 * f];
     // Remember password: the game font's box (filled when on) and its caption under the fields.
     const CAPTION: &str = "Remember password";
-    let check_rect = [wx + 148.0, row(CHECK), lu.text_width(&format!("\u{25a1} {CAPTION}")) + 4.0, 18.0];
-    let ay = row(5) + 6.0;
+    let check_rect = [wx + 148.0 * f, row(CHECK), (lu.text_width(&format!("\u{25a1} {CAPTION}")) + 4.0) * f, 18.0 * f];
+    let ay = row(5) + 6.0 * f;
     // Config-page buttons (88 px, wider for a longer caption), centred 24 px apart.
     const ACTIONS: [&str; 3] = ["Log in", "Create account", "Exit"];
-    let widths = ACTIONS.map(|a| (lu.label_width(a) + 14.0).max(88.0).round());
-    let mut bx = (wx + (ww - widths.iter().sum::<f32>() - 48.0) / 2.0).round();
+    let widths = ACTIONS.map(|a| ((lu.label_width(a) + 14.0).max(88.0) * f).round());
+    let mut bx = (wx + (ww - widths.iter().sum::<f32>() - 48.0 * f) / 2.0).round();
     let arects = [0, 1, 2].map(|k| {
-        let r = [bx, ay, widths[k], 16.0];
-        bx += widths[k] + 24.0;
+        let r = [bx, ay, widths[k], 16.0 * f];
+        bx += widths[k] + 24.0 * f;
         r
     });
     // Log in and Create account need the server, account and password.
@@ -676,8 +690,23 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             _ => "Enter your account information to log in.",
         }
     };
-    let slots = lu.title(sw, sh, None, 0, [true; 5]);
-    lobby_text(lu, &slots, help, if busy || status.is_empty() { WHITE } else { YELLOW }, version);
+    let slots = lu.title_update(sw, sh, None, 0, [true; 5], None, 0, None, true, modern.is_some());
+    let help_colour = if busy || status.is_empty() { WHITE } else { YELLOW };
+    // Modern: the layer draws the form on these rects (its mouse stays this one's) and the help bar.
+    if let Some(out) = modern {
+        lu.modern_help = Some((help.to_string(), help_colour));
+        let shown = |i: usize| if i == 2 { "*".repeat(fields[i].chars().count()) } else { fields[i].clone() };
+        *out = Some(LoginView {
+            frame: [wx, wy, ww, wh],
+            fields: (0..4).map(|i| (field_rect(i), LOGIN_LABELS[i], shown(i), if i == 3 { "only with 2FA" } else { "" })).collect(),
+            check: (check_rect, CAPTION, *remember),
+            buttons: (0..3).map(|k| (arects[k], ACTIONS[k], enabled[k])).collect(),
+            focus: *focus,
+            busy,
+        });
+        return if busy { None } else { chosen };
+    }
+    lobby_text(lu, &slots, help, help_colour, version);
     lu.frame(wx, wy, ww, wh);
     for (i, label) in LOGIN_LABELS.iter().enumerate() {
         let r = field_rect(i);
@@ -9423,9 +9452,32 @@ impl App {
                     let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
                     let shown = if self.login_error.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
-                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds);
+                    let modern_ui = self.cfg.modern_ui;
+                    let mut view = None;
+                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view));
+                    let window = [size[0], size[1]];
+                    // The popups keep retail's size but stand clear of our (larger) form: their bottom above its top.
+                    let form_top = view.as_ref().map_or(f32::MAX, |v| v.frame[1] - 10.0);
+                    let place = |frame: [f32; 4], mut r: [f32; 4]| {
+                        r[1] -= (frame[1] + frame[3] - form_top).max(0.0);
+                        r
+                    };
+                    let lift = |r: [f32; 4]| place(r, r);
+                    if let Some(v) = &view {
+                        let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                        mo.login_form(ctx, window, self.cfg.modern_scale, self.ui_k, v);
+                        if let (Some((text, colour)), Some((strip, ver))) = (lu.modern_help.take(), lu.help_rects(size[0] as f32, size[1] as f32)) {
+                            mo.help_bar(ctx, window, self.cfg.modern_scale, self.ui_k, strip, ver, &text, colour, &self.cfg.client_version);
+                        }
+                    }
                     if let Some(nw) = self.netwait.as_ref() {
-                        netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                        if modern_ui {
+                            let (text, p) = netwait::view(lu, nw);
+                            let frame = lu.popup_rects("menu    netwait", size[0] as f32, size[1] as f32).map_or([0.0; 4], |r| lift(r.frame));
+                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).wait_panel(ctx, window, self.cfg.modern_scale, self.ui_k, frame, &text, p);
+                        } else {
+                            netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                        }
                     }
                     // Unticked: the remembered password goes at once.
                     if remembered && !self.cfg.remember_password {
@@ -9451,9 +9503,16 @@ impl App {
                             None => e.clone(),
                         };
                         let (sw, sh) = (size[0] as f32, size[1] as f32);
-                        let ok = lu.ok_window(&text, sw, sh);
                         let key = input.events.iter().any(|ev| matches!(ev, egui::Event::Key { key: egui::Key::Enter | egui::Key::Escape, pressed: true, .. }));
-                        let click = input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)));
+                        let click = if modern_ui {
+                            let r = lu.popup_rects("menu    ok", sw, sh);
+                            let frame = r.as_ref().map_or([0.0; 4], |r| lift(r.frame));
+                            let ok = r.as_ref().and_then(|r| r.children.first().map(|c| place(r.frame, c.1))).unwrap_or(frame);
+                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).ok_popup(ctx, window, self.cfg.modern_scale, self.ui_k, frame, ok, &text)
+                        } else {
+                            let ok = lu.ok_window(&text, sw, sh);
+                            input.clicked && ok.is_some_and(|r| input.pointer.is_some_and(|p| inside(&r, p)))
+                        };
                         if key || click {
                             self.login_error = None;
                             if let Some(a) = self.audio.as_mut() {
@@ -9482,7 +9541,7 @@ impl App {
                     self.title_press = None;
                 }
                 // Only the title's buttons and the select screen are the modern layer's: elsewhere egui keeps its zoom.
-                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete | LobbyScreen::Create) || !self.cfg.modern_ui {
+                if !matches!(screen, LobbyScreen::Main | LobbyScreen::Select | LobbyScreen::Delete | LobbyScreen::Create) && self.netwait.is_none() || !self.cfg.modern_ui {
                     modern::off(ctx, self.modern.as_mut());
                 }
                 match screen {
@@ -9579,7 +9638,14 @@ impl App {
                                 _ if *menu == UPDATE => "Update the game files or vana-client.".to_string(),
                                 _ => ITEMS[*menu].1.to_string(),
                             };
-                            lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
+                            if modern_title {
+                                let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                                if let Some((strip, ver)) = lu.help_rects(screen_size[0] as f32, screen_size[1] as f32) {
+                                    mo.help_bar(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, strip, ver, &help, WHITE, &self.cfg.client_version);
+                                }
+                            } else {
+                                lobby_text(lu, &slots, &help, WHITE, &self.cfg.client_version);
+                            }
                             // lobycwin and our settings screen over the title.
                             if let Some(c) = self.lobby_cfg.as_mut() {
                                 c.owned = self.installed;
@@ -10179,7 +10245,13 @@ impl App {
                     _ => {}
                 }
                 if let (Some(nw), Some(gu)) = (self.netwait.as_ref(), self.game_ui.as_mut()) {
-                    netwait::draw(gu, nw, screen_size[0] as f32, screen_size[1] as f32);
+                    if self.cfg.modern_ui {
+                        let (text, p) = netwait::view(gu, nw);
+                        let frame = gu.popup_rects("menu    netwait", screen_size[0] as f32, screen_size[1] as f32).map_or([0.0; 4], |r| r.frame);
+                        self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).wait_panel(ctx, [screen_size[0], screen_size[1]], self.cfg.modern_scale, self.ui_k, frame, &text, p);
+                    } else {
+                        netwait::draw(gu, nw, screen_size[0] as f32, screen_size[1] as f32);
+                    }
                 }
             }
             Phase::World(world) => {

@@ -199,6 +199,8 @@ pub struct GameUi {
     /// The modern frame for the retail windows (made on first use; None inside when the pack has none).
     modern_frame: Option<Option<crate::render::ui::ModernFrame>>,
     skin_on: bool,
+    /// The lobby's help line for the modern layer's help bar (the login form sets it).
+    pub modern_help: Option<(String, [u8; 4])>,
     started: Instant,
     /// Images (item icons) waiting for upload, and the names already uploaded.
     pending: Vec<(String, u32, u32, Vec<u8>)>,
@@ -318,7 +320,7 @@ pub struct WorldView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         crate::render::ui::set_caption_words(caption_words(&data));
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -644,6 +646,22 @@ impl GameUi {
                 self.cursor(x + e.x as f32, y + e.y as f32);
             }
         }
+    }
+
+    /// The help strip's rect and the version line's start, for the modern help bar.
+    pub fn help_rects(&self, w: f32, h: f32) -> Option<([f32; 4], (f32, f32))> {
+        Some((screens::help_rect(&self.data.lobby, w, h)?, screens::version_at(w, h)))
+    }
+
+    /// Where a centred lobby window (the prompts) would stand, drawing nothing: its frame and its children's rects (the
+    /// modern layer's popups take retail's place and size).
+    pub fn popup_rects(&self, name: &str, w: f32, h: f32) -> Option<LobbyWin> {
+        let (dx, dy) = (((w - 512.0) / 2.0).trunc(), ((h - 448.0) / 2.0).trunc());
+        let m = self.data.lobby.menu(name)?;
+        let (fx, fy, fw, fh) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let (x, y) = screens::window_pos(m, w, h, 1.0, 1.0);
+        let children = m.elements.iter().skip(1).map(|c| (c.id, [x + dx + c.x as f32, y + dy + c.y as f32, c.w as f32, c.h as f32])).collect();
+        Some(LobbyWin { frame: [fx + dx, fy + dy, fw, fh], children })
     }
 
     pub fn lobby_window(&mut self, name: &str, w: f32, h: f32, centred: bool, sel: Option<u16>, hand: bool, hide: &[u16]) -> Option<LobbyWin> {

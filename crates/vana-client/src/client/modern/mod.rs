@@ -59,6 +59,8 @@ pub struct Modern {
     chat_settings: std::cell::Cell<bool>,
     /// Where each chat tab was last seen (the log's length then; chat.rs unread).
     chat_seen: std::cell::RefCell<[Option<usize>; 11]>,
+    /// The login form's text size (lobby.rs), for the lobby's popups.
+    lobby_text: std::cell::Cell<f32>,
     /// The panel a drag has really moved (show): a press alone moves nothing.
     dragging: std::cell::RefCell<Option<String>>,
     /// How menu rows look (rows.rs), and window borders (borders.rs).
@@ -119,6 +121,7 @@ impl Modern {
             chat_settings: Default::default(),
             chat_seen: Default::default(),
             dragging: Default::default(),
+            lobby_text: Default::default(),
             row_style: Default::default(),
             border_style: Default::default(),
             images: Default::default(),

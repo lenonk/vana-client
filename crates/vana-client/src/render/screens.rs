@@ -120,10 +120,14 @@ pub fn title_screen(lobby: &UiFile, style: &SpriteLib, w: f32, h: f32, st: &Titl
         }
     }
 
-    text.extend(push_help_frame(&mut b, lobby, style, w, h));
+    // The modern layer draws its own help bar.
+    if !st.modern {
+        text.extend(push_help_frame(&mut b, lobby, style, w, h));
+    }
 
     // loby2win (retail FUN_10240030). The year digits after "(c) 2002" are gone: the art now reads "(c) SQUARE ENIX".
-    text.push(TextSlot { what: "ver.<client version>", x: w - 512.0 + 370.0, y: h - 448.0 + 364.0, align: 0 });
+    let (vx, vy) = version_at(w, h);
+    text.push(TextSlot { what: "ver.<client version>", x: vx, y: vy, align: 0 });
     if let Some(m) = lobby.menu("menu    loby2win").filter(|_| st.buttons && !st.modern) {
         for (i, &(on, off)) in TITLE_BUTTONS.iter().enumerate() {
             let Some(c) = m.elements.iter().find(|e| e.id as usize == i + 1) else { continue };
@@ -314,6 +318,17 @@ pub fn title_button_rects(lobby: &UiFile, w: f32, h: f32, shift: f32) -> Vec<[f3
 
 /// lobyhelp: anchored bottom (header 0x13 = 2), frame offset (-256, 155) from its (256, 224),
 /// widened to the UI width by FUN_10236ac0; the help line is centred at frame y + 5.
+/// Where the title's version line starts (loby2win's slot).
+pub fn version_at(w: f32, h: f32) -> (f32, f32) {
+    (w - 512.0 + 370.0, h - 448.0 + 364.0)
+}
+
+/// The help strip's rect (menu lobyhelp, the screen's width).
+pub fn help_rect(lobby: &UiFile, w: f32, h: f32) -> Option<[f32; 4]> {
+    let (fx, fy, _, fh) = frame_rect(lobby.menu("menu    lobyhelp")?, w, h, 1.0, 1.0);
+    Some([fx, fy, w, fh])
+}
+
 pub fn push_help_frame(b: &mut UiBatch, lobby: &UiFile, style: &SpriteLib, w: f32, h: f32) -> Option<TextSlot> {
     let m = lobby.menu("menu    lobyhelp")?;
     let (fx, fy, _, fh) = frame_rect(m, w, h, 1.0, 1.0);
