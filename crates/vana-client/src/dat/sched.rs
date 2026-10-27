@@ -135,6 +135,20 @@ pub fn plan(data: &[u8], hit: &[&str]) -> Plan {
     p
 }
 
+/// Op 0x84's calls (dual wield draw / sheathe): the tick, sheathe (u16 @8), the sub hand (u16 @10).
+pub fn hand_calls(data: &[u8]) -> Vec<(u32, bool, bool)> {
+    let mut t = 0u32;
+    let mut out = Vec::new();
+    for op in ops(data) {
+        if op.code == 0x84 {
+            let u16_at = |o: usize| op.raw.get(o..o + 2).map_or(0, |b| u16::from_le_bytes([b[0], b[1]]));
+            out.push((t, u16_at(8) != 0, u16_at(10) != 0));
+        }
+        t += op.wait as u32;
+    }
+    out
+}
+
 /// Scheduler names matching a 4cc pattern ('?' = any byte), as FUN_100cc740 counts them.
 pub fn matching<'a>(names: impl Iterator<Item = &'a str>, pattern: &str) -> Vec<&'a str> {
     let p = pattern.as_bytes();

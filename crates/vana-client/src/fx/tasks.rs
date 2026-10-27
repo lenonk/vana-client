@@ -881,6 +881,26 @@ impl Effects {
                     Err(()) => Flow::Retry,
                 }
             }
+            // Op 0x84 (case at 0x10059ae3): one hand's draw / sheathe (dat::motionfile::hand_scheduler), a plain child on
+            // actor1's own files.
+            0x84 => {
+                let Some(a1) = t.a1.id() else { return Flow::Next };
+                let (out, sub) = (op.u16_at(8) != 0, op.u16_at(10) != 0);
+                let Some(d) = actors.hand_draw(a1, sub) else { return Flow::Next };
+                let name = u32::from_le_bytes(crate::dat::motionfile::hand_name(out, sub, d));
+                match self.find_on_actor(a1, name, actors, Parts::Last, false) {
+                    Ok(Some(r)) => {
+                        // A quiet draw's hand stays quiet: the client's play holds both hands and the battle files.
+                        let i = self.spawn_task(r, t.a1, t.a2, t.action.clone(), t.speed, None);
+                        if let Some(c) = self.tasks[i].as_mut() {
+                            c.motions = t.motions;
+                        }
+                        Flow::Next
+                    }
+                    Ok(None) => Flow::Next,
+                    Err(()) => Flow::Retry,
+                }
+            }
             // Swing pick (FUN_100d4600, combat chose it) and the counter swing: call-and-wait, parent back 10 sooner.
             // Op 0x5c: the counter swing, `cni0` standing, `cnf0` moving (ours moves forward only), and no wait.
             0x5c => {

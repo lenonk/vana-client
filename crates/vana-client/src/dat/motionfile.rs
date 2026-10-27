@@ -34,6 +34,8 @@ pub struct PcMotion {
     pub skirt: i8,
     /// Dual wield (+0x8b5, a weapon in the sub slot): the sub weapon's info[3] (+0x88a), its battle motion set.
     pub dual: Option<i8>,
+    /// Sub weapon info[4] (+0x87f, FUN_100ceae0 case 7): its hand's draw digit (scheduler op 0x84).
+    pub sub_draw: i8,
 }
 
 /// FUN_100cd3e0: a sub-slot model is a shield when its id (low 12 bits) is in one of these ranges, else a weapon held
@@ -220,6 +222,16 @@ pub fn draw_scheduler(pc: &PcMotion, out: bool) -> String {
     format!("{}{}", if out { "out" } else { "in " }, pc.draw.max(0))
 }
 
+/// Scheduler op 0x84 (case at 0x10059ae3, dual wield "in 0" / "out0"): one hand's draw or sheathe, "in1" / "ot1"
+/// (main) or "in2" / "ot2" (sub) and that hand's digit (+0x87c / +0x87f, below 0 taken as 0).
+pub fn hand_name(out: bool, sub: bool, digit: i8) -> [u8; 4] {
+    [if out { b'o' } else { b'i' }, if out { b't' } else { b'n' }, if sub { b'2' } else { b'1' }, b'0' + digit.max(0) as u8]
+}
+
+pub fn hand_scheduler(pc: &PcMotion, out: bool, sub: bool) -> String {
+    String::from_utf8_lossy(&hand_name(out, sub, if sub { pc.sub_draw } else { pc.draw })).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -235,7 +247,7 @@ mod tests {
         assert_eq!(mannequin_pose(9, None), (1, "mq1"));
         assert_eq!(mannequin_pose(0x10, None), (2, "mq0"));
         assert_eq!(mannequin_pose(25, None), (3, "mq1"));
-        let pc = |race, skirt| PcMotion { race, weapon: -1, draw: 0, skirt, dual: None };
+        let pc = |race, skirt| PcMotion { race, weapon: -1, draw: 0, skirt, dual: None, sub_draw: 0 };
         assert_eq!(mannequin_files(&pc(7, 1), 1), vec![26193, 26257]);
         assert_eq!(mannequin_files(&pc(8, 0), 0), vec![29368]);
         assert_eq!(mannequin_files(&pc(0, 2), 0), mannequin_files(&pc(1, 2), 0));
@@ -283,7 +295,7 @@ mod tests {
         let Some(index) = index() else { return };
         assert_eq!(emote_motion(13), Some(15));
         assert_eq!(emote_motion(15), None);
-        let (files, name) = emote_files(&PcMotion { race: 3, weapon: -1, draw: 0, skirt: 1, dual: None }, 15);
+        let (files, name) = emote_files(&PcMotion { race: 3, weapon: -1, draw: 0, skirt: 1, dual: None, sub_draw: 0 }, 15);
         assert_eq!((files.as_slice(), name.as_str()), ([16409, 16473].as_slice(), "em07"));
         assert!(has_sched(&MotionFile::load(&index, 16409).unwrap(), "em07"));
     }
@@ -292,7 +304,7 @@ mod tests {
     #[test]
     fn pc_battle_files() {
         let Some(index) = index() else { return };
-        let pc = PcMotion { race: 1, weapon: 10, draw: 0, skirt: 1, dual: None };
+        let pc = PcMotion { race: 1, weapon: 10, draw: 0, skirt: 1, dual: None, sub_draw: 0 };
         assert_eq!(battle_files(&pc), [9682, 9810]);
         let f = MotionFile::load(&index, 9682).unwrap();
         assert!(f.animations.iter().any(|a| a.name == "btl1"));
@@ -309,14 +321,23 @@ mod tests {
         assert!(p.hit_at.is_some() && p.motions.first().is_some_and(|m| m.name == "at0"));
     }
 
-    /// Mithra with a Wakizashi in each hand (main and sub model 310, set 3): the dual wield files, the sub's swings.
+    /// Mithra with a Wakizashi in each hand (main and sub model 310, set 3): the dual wield files, the sub's swings,
+    /// the draw: "in 0" calls the main hand's "in10" (i0c) at tick 6 and the sub's "in20" (i1c) at 40.
     #[test]
     fn dual_wield_files() {
         assert!(dual_wield(310) && dual_wield(0x7136) && !dual_wield(0) && !dual_wield(0x80) && !dual_wield(0x1e0) && !dual_wield(0x2a0));
-        let pc = PcMotion { race: 7, weapon: 3, draw: 0, skirt: 2, dual: Some(3) };
+        let pc = PcMotion { race: 7, weapon: 3, draw: 0, skirt: 2, dual: Some(3), sub_draw: 0 };
         assert_eq!(battle_files(&pc), [47218, 46834, 47474, 47090]);
         assert_eq!(battle_files(&PcMotion { dual: Some(-1), ..pc }), [47218, 47474]);
         let Some(index) = index() else { return };
-        assert!(has_sched(&MotionFile::load(&index, 46834).unwrap(), "bti4"));
+        let sub = MotionFile::load(&index, 46834).unwrap();
+        assert!(has_sched(&sub, "bti4"));
+        let main = MotionFile::load(&index, 47218).unwrap();
+        let sched = |f: &MotionFile, n: &str| f.schedulers.iter().find(|(m, _)| m == n).unwrap().1.clone();
+        assert_eq!(crate::dat::sched::hand_calls(&sched(&main, "in 0")), [(6, false, false), (40, false, true)]);
+        assert_eq!(crate::dat::sched::hand_calls(&sched(&main, "out0")), [(6, true, true), (40, true, false)]);
+        assert_eq!([hand_scheduler(&pc, false, false), hand_scheduler(&pc, false, true), hand_scheduler(&pc, true, true)], ["in10", "in20", "ot20"]);
+        assert_eq!(crate::dat::sched::plan(&sched(&main, "in10"), &[]).motions[0].name, "i0c");
+        assert_eq!(crate::dat::sched::plan(&sched(&sub, "in20"), &[]).motions[0].name, "i1c");
     }
 }

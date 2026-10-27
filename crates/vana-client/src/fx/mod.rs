@@ -123,6 +123,10 @@ pub trait Actors {
     fn ranged_class(&self, _id: u32) -> Option<i8> {
         None
     }
+    /// Actor +0x87c / +0x87f: the main / sub hand's draw digit (op 0x84); None for no PC look.
+    fn hand_draw(&self, _id: u32, _sub: bool) -> Option<i8> {
+        None
+    }
     /// Vtable +0x124 (entity +0x130 bit 1, op 0x9a): the model file's 0x1000 generators stay off.
     fn model_gens_off(&self, _id: u32) -> bool {
         false

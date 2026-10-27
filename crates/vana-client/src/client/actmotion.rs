@@ -362,7 +362,20 @@ pub(super) fn fx_too(fx: &mut crate::fx::Effects, id: u32, name: &str) {
 /// plays once when there is no scheduler. Returns false when the actor has neither.
 pub(super) fn start(a: &mut Actor, ch: &Character, name: &str, base: &str) -> bool {
     let play = match scheduler(&a.extra, ch, name) {
-        Some(d) => Play::new(name, d, base),
+        Some(d) => {
+            let mut play = Play::new(name, d, base);
+            // Op 0x84 (dual wield "in 0" / "out0"): each hand's draw or sheathe scheduler, its motions from that tick.
+            if let Some(pc) = &ch.pc {
+                for (t, out, sub) in sched::hand_calls(d) {
+                    let Some(hd) = scheduler(&a.extra, ch, &crate::dat::motionfile::hand_scheduler(pc, out, sub)) else { continue };
+                    let p = sched::plan(hd, &[]);
+                    play.length = play.length.max((t + p.length) as f32);
+                    play.motions.extend(p.motions.into_iter().map(|m| sched::Motion { at: m.at + t, ..m }));
+                }
+                play.motions.sort_by_key(|m| m.at);
+            }
+            play
+        }
         None if !find(&a.extra, ch, name).is_empty() => {
             let len = find(&a.extra, ch, name).iter().map(|x| x.frames as f32 / (x.speed * 0.5).max(1e-3)).fold(0.0, f32::max);
             let m = sched::Motion { name: name.to_string(), at: 0, speed: 1.0, ticks: len.ceil() as u16, count: 1, blend: crate::motion::BLEND_TICKS as u16 };

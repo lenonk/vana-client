@@ -10579,3 +10579,22 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   any never greys).
 - Live (Lnxcsfix WAR 21, San d'Oria): Magic and Items greyed, Abilities and Trust live; under Amnesia Job Abilities,
   Weapon Skills, Pet Commands grey, Mounts live. The palette not seen live (no macros on the test character).
+
+## Dual wield: the draw and sheathe (scheduler op 0x84) (2026-10-27)
+
+- User report: with a weapon in each hand neither the draw nor the sheathe played. The dual main file's "in 0" /
+  "out0" (Mithra 47218) hold no motion: ops 0x07, 0x2f, 0x2e, 0x1f (wait 6), then two op 0x84 (waits 0x22, 0x20);
+  "out0" calls "waot" (op 0x03) first.
+- Op 0x84 (case at 0x10059ae3 in the old build, FUN_10057000): names "in10" / "ot10" / "in20" / "ot20" indexed by
+  u16 @8 | u16 @10 * 2 (@8 sheathe, @10 the sub hand), the last byte replaced by '0' + the hand's digit: ECX = actor
+  + 0x878, FUN_1005d300 +0x87c (main weapon info[4]) or FUN_1005d310 +0x87f (sub weapon info[4], set by FUN_100ceae0
+  case 7 from the sub model's info @0x34); below 0 taken as 0. FUN_100cc440(.., 7, name, -1, 0, 0) then
+  FUN_1004d400(0): a plain child scheduler on the actor's files.
+- So "in 0" draws the main hand ("in1N": motion i0c?, sound sinr) at tick 6 and the sub ("in2N" in the sub file:
+  i1c?) at 40; "out0" sheathes the sub ("ot2N": o0c?) first, then the main ("ot1N": o1c?). One-weapon "in N" / "out N"
+  hold their motions themselves (no 0x84).
+- Ours: PcMotion.sub_draw (sub info[4]), dat::motionfile::hand_name / hand_scheduler, dat::sched::hand_calls;
+  actmotion::start merges each called hand scheduler's motions from its tick; the effects engine runs op 0x84 as a
+  plain child on actor1, quiet as its parent (the hand schedulers' sounds; a child playing its own motion replaced the
+  merged play, and the battle files left before the second hand's sheathe). Test dual_wield_files. Live (Lnxcsfix NIN
+  30, two Wakizashi, a Wild Rabbit in West Ronfaure): engaged i0c then i1c, disengaged o0c then o1c.

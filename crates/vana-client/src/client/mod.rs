@@ -1408,13 +1408,13 @@ fn alliance_hidden(world: &World) -> bool {
 
 /// Diagnostic: a window or list closed since the last frame, logged with the keys before it.
 fn window_closes(w: &mut World, events: &[egui::Event]) {
-    let open = [w.magic.is_some(), w.ability.is_some(), w.cats.is_some(), w.menu.is_some(), w.win.is_some(), w.action_menu.is_some(), w.config.is_some(), w.prompt.is_some(), w.typing]
+    let open = [w.magic.is_some(), w.ability.is_some(), w.cats.is_some(), w.menu.is_some(), w.win.is_some(), w.action_menu.is_some(), w.config.is_some(), w.prompt.is_some()]
         .iter()
         .enumerate()
         .fold(0u16, |m, (i, &on)| m | (on as u16) << i);
     let closed = w.open_seen & !open;
     if closed != 0 {
-        log::info!("closed {closed:#05x} (magic 1, ability 2, cats 4, menu 8, win 0x10, action 0x20, config 0x40, prompt 0x80, chat line 0x100), open now {open:#05x}; keys before: {}", w.recent_keys.iter().cloned().collect::<Vec<_>>().join(" "));
+        log::info!("closed {closed:#05x} (magic 1, ability 2, cats 4, menu 8, win 0x10, action 0x20, config 0x40, prompt 0x80), open now {open:#05x}; keys before: {}", w.recent_keys.iter().cloned().collect::<Vec<_>>().join(" "));
     }
     w.open_seen = open;
     for e in events {
@@ -4363,6 +4363,11 @@ impl crate::fx::Actors for FxActors<'_> {
 
     fn ranged_class(&self, id: u32) -> Option<i8> {
         self.actors.get(&id)?.character.as_ref().map(|c| c.ranged)
+    }
+
+    fn hand_draw(&self, id: u32, sub: bool) -> Option<i8> {
+        let pc = self.actors.get(&id)?.character.as_ref()?.pc?;
+        Some(if sub { pc.sub_draw } else { pc.draw })
     }
 
     fn model_gens_off(&self, id: u32) -> bool {
