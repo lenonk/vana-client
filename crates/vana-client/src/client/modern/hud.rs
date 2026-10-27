@@ -117,8 +117,8 @@ pub struct WhereView {
     /// Vana'diel hours and minutes, the weekday (0 Firesday ..) and its name.
     pub time: (u32, u32),
     pub day: (usize, String),
-    /// The weather's element (day order) and whether it is the double weather.
-    pub weather: Option<(usize, bool)>,
+    /// The weather id (0 clear .. 19 darkness; 4..19 an element's single and double weather): our icon `weather/wNN`.
+    pub weather: Option<u16>,
     /// None where retail has no compass (ships and airships).
     pub compass: Option<CompassView>,
 }
@@ -446,13 +446,8 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
             compass(painter, m, dial, c);
         }
         painter.text(pos2(r.max.x, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
-        if let Some((e, double)) = v.weather
-            && let Some(s) = m.art.sprite(ELEMENTS[e % 8])
-        {
-            let n = if double { 2 } else { 1 };
-            for k in 0..n {
-                painter.add(paint::image(&s, pos2(r.max.x - 20.0 - 22.0 * k as f32, low - 10.0), 20.0, Color32::WHITE));
-            }
+        if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
+            painter.add(paint::image(&s, pos2(r.max.x - 20.0, low - 10.0), 20.0, Color32::WHITE));
         }
     });
 }
@@ -558,13 +553,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let at = Rect::from_min_size(pos2(r.min.x + 14.0, r.min.y - 12.0), vec2(26.0, 26.0));
         p.over("party").image(t, at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
-    // FUN_102041d0: a pending invite, keytops3 69 centred on the party window's top-left corner.
+    // FUN_102041d0: a pending invite (retail's keytops3 69, our marker) centred on the party window's top-left corner.
     if w.invite.is_some()
-        && let (Some(gu), Some(r)) = (p.gu, p.this.get("party").copied())
-        && let Some(t) = p.m.sprite_icon(p.ctx, gu, "menu    keytops3", 69)
+        && let Some(r) = p.this.get("party").copied()
+        && let Some(s) = p.m.art.sprite("indicators/party_invite_pending")
     {
-        let at = Rect::from_center_size(r.min, vec2(30.0, 30.0));
-        p.over("party").image(t, at, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        p.over("party").add(paint::image(&s, r.min - vec2(15.0, 15.0), 30.0, Color32::WHITE));
     }
     for (id, rows) in ["alliance1", "alliance2"].into_iter().zip(&allies) {
         if let Some(rows) = rows {
@@ -605,13 +599,6 @@ fn status_view(p: Look, w: &World) -> Option<StatusView> {
     Some(StatusView { effects: effects(p, w), cursor: (w.log_focus == 2).then_some(w.buff_cursor) })
 }
 
-/// FFXI weather ids 4..19 by pairs: fire, water, earth, wind, ice, lightning, light, dark (the second of a pair the
-/// double weather), as day-order elements.
-fn weather_element(weather: u16) -> Option<(usize, bool)> {
-    let e = [0, 2, 1, 3, 4, 5, 6, 7].get((weather.checked_sub(4)? / 2) as usize).copied()?;
-    Some((e, weather % 2 == 1))
-}
-
 fn where_view(p: Look, w: &World) -> Option<WhereView> {
     let gu = p.gu?;
     let (t, at) = w.clock?;
@@ -624,7 +611,7 @@ fn where_view(p: Look, w: &World) -> Option<WhereView> {
         grid: p.m.grid(w, gu),
         time: (m / 60, m % 60),
         day: (day, name),
-        weather: weather_element(w.weather),
+        weather: Some(w.weather).filter(|&id| id < 20),
         compass: compass_view(w),
     })
 }

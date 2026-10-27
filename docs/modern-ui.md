@@ -284,6 +284,10 @@ Milestone 1:
   `status-dump`'s stock icons, the bare set (user's pick): atlases/status_0@2x.png, manifest "status/s<id>",
   status_map.tsv (status id -> icon); Modern::status_icon draws them everywhere (effects, party rows, Timers, Level
   Sync), the game's icons only for an id without one. Sources ~/ffxi/lab/scratch/uiupdate/vc/status.
+- Weather icons and target markers (2026-10-27, bare): weather/w00..w19 by weather id (the location panel shows one
+  icon, Clear and the skies too, a double weather drawn as its own stronger icon); the target arrow, subtarget arrow
+  and the five relation rings redrawn under their indicators/ ids; indicators/party_invite_pending in place of
+  retail's keytops3 69 on the party window. Atlases weather_0 / markers_0. Sources vc/weather, vc/markers.
 - Status (modern/status.rs): the persona, the level gauge, retail's rows on the left with the page under the cursor
   beside them at once (profile with the attributes, job and master levels with the job icons, combat / magic / craft
   skills named by their sprites' captions, Currencies 1 and 2 as one list with "only those held"); Unity, Play Time,

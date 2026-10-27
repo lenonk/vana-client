@@ -1,6 +1,6 @@
 {
   "format": "vana-ui-production-v2",
-  "asset_count": 497,
+  "asset_count": 518,
   "reference": "User-approved ornate dark bronze/charcoal UI design",
   "scale": "SVG 1x coordinate system; PNG exports 2x",
   "items": [
@@ -3032,54 +3032,6 @@
         "file": "atlases/indicators_0@2x.png",
         "rect": [
           1688,
-          8,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/target_arrow",
-      "svg": "svg/indicators/target_arrow.svg",
-      "png": "png/indicators/target_arrow.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1768,
-          8,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/subtarget",
-      "svg": "svg/indicators/subtarget.svg",
-      "png": "png/indicators/subtarget.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1848,
           8,
           72,
           72
@@ -6655,30 +6607,6 @@
       }
     },
     {
-      "id": "indicators/target_neutral",
-      "svg": "svg/indicators/target_neutral.svg",
-      "png": "png/indicators/target_neutral.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1576,
-          88,
-          72,
-          72
-        ]
-      }
-    },
-    {
       "id": "indicators/target_friendly",
       "svg": "svg/indicators/target_friendly.svg",
       "png": "png/indicators/target_friendly.png",
@@ -6697,102 +6625,6 @@
         "rect": [
           1656,
           88,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/target_hostile",
-      "svg": "svg/indicators/target_hostile.svg",
-      "png": "png/indicators/target_hostile.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1736,
-          88,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/target_claimed",
-      "svg": "svg/indicators/target_claimed.svg",
-      "png": "png/indicators/target_claimed.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1816,
-          88,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/target_party",
-      "svg": "svg/indicators/target_party.svg",
-      "png": "png/indicators/target_party.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          1896,
-          88,
-          72,
-          72
-        ]
-      }
-    },
-    {
-      "id": "indicators/target_dead",
-      "svg": "svg/indicators/target_dead.svg",
-      "png": "png/indicators/target_dead.png",
-      "size": [
-        36,
-        36
-      ],
-      "png_size": [
-        72,
-        72
-      ],
-      "nine_slice": null,
-      "notes": "",
-      "atlas": {
-        "file": "atlases/indicators_0@2x.png",
-        "rect": [
-          8,
-          168,
           72,
           72
         ]
@@ -12127,6 +11959,678 @@
         "rect": [
           8,
           1640,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w00",
+      "svg": "svg/weather/w00.svg",
+      "png": "png/weather/w00.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          8,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w01",
+      "svg": "svg/weather/w01.svg",
+      "png": "png/weather/w01.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          144,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w02",
+      "svg": "svg/weather/w02.svg",
+      "png": "png/weather/w02.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          280,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w03",
+      "svg": "svg/weather/w03.svg",
+      "png": "png/weather/w03.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          416,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w04",
+      "svg": "svg/weather/w04.svg",
+      "png": "png/weather/w04.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          552,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w05",
+      "svg": "svg/weather/w05.svg",
+      "png": "png/weather/w05.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          688,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w06",
+      "svg": "svg/weather/w06.svg",
+      "png": "png/weather/w06.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          824,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w07",
+      "svg": "svg/weather/w07.svg",
+      "png": "png/weather/w07.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          960,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w08",
+      "svg": "svg/weather/w08.svg",
+      "png": "png/weather/w08.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          8,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w09",
+      "svg": "svg/weather/w09.svg",
+      "png": "png/weather/w09.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          144,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w10",
+      "svg": "svg/weather/w10.svg",
+      "png": "png/weather/w10.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          280,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w11",
+      "svg": "svg/weather/w11.svg",
+      "png": "png/weather/w11.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          416,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w12",
+      "svg": "svg/weather/w12.svg",
+      "png": "png/weather/w12.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          552,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w13",
+      "svg": "svg/weather/w13.svg",
+      "png": "png/weather/w13.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          688,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w14",
+      "svg": "svg/weather/w14.svg",
+      "png": "png/weather/w14.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          824,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w15",
+      "svg": "svg/weather/w15.svg",
+      "png": "png/weather/w15.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          960,
+          144,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w16",
+      "svg": "svg/weather/w16.svg",
+      "png": "png/weather/w16.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          8,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w17",
+      "svg": "svg/weather/w17.svg",
+      "png": "png/weather/w17.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          144,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w18",
+      "svg": "svg/weather/w18.svg",
+      "png": "png/weather/w18.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          280,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "weather/w19",
+      "svg": "svg/weather/w19.svg",
+      "png": "png/weather/w19.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/weather_0@2x.png",
+        "rect": [
+          416,
+          280,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_arrow",
+      "svg": "svg/indicators/target_arrow.svg",
+      "png": "png/indicators/target_arrow.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          8,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/subtarget",
+      "svg": "svg/indicators/subtarget.svg",
+      "png": "png/indicators/subtarget.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          144,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_dead",
+      "svg": "svg/indicators/target_dead.svg",
+      "png": "png/indicators/target_dead.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          280,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_party",
+      "svg": "svg/indicators/target_party.svg",
+      "png": "png/indicators/target_party.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          416,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_claimed",
+      "svg": "svg/indicators/target_claimed.svg",
+      "png": "png/indicators/target_claimed.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          552,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_hostile",
+      "svg": "svg/indicators/target_hostile.svg",
+      "png": "png/indicators/target_hostile.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          688,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/target_neutral",
+      "svg": "svg/indicators/target_neutral.svg",
+      "png": "png/indicators/target_neutral.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          824,
+          8,
+          128,
+          128
+        ]
+      }
+    },
+    {
+      "id": "indicators/party_invite_pending",
+      "svg": "svg/indicators/party_invite_pending.svg",
+      "png": "png/indicators/party_invite_pending.png",
+      "size": [
+        64,
+        64
+      ],
+      "png_size": [
+        128,
+        128
+      ],
+      "nine_slice": null,
+      "notes": "",
+      "atlas": {
+        "file": "atlases/markers_0@2x.png",
+        "rect": [
+          960,
+          8,
           128,
           128
         ]

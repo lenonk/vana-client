@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="38" y1="7.6" x2="38" y2="33.7" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e3eaf0"/>
+      <stop offset="0.5" stop-color="#9aa8b7"/>
+      <stop offset="1" stop-color="#566374"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="28" y1="23.2" x2="28" y2="53.65" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="0.5" stop-color="#ece7db"/>
+      <stop offset="1" stop-color="#b2aa9a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="24" y1="28.804" x2="24" y2="35.196" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#eceff3"/>
+    </linearGradient>
+  </defs>
+  <title>w02</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.177 11.701 C31.238 7.93 35.236 5.4 39.8 5.4 C45.117 5.4 49.651 8.831 51.268 13.63 C56.176 14.453 59.561 18.961 59.049 23.883 C59.471 27.256 57.298 29.955 54.643 31.734 C53.256 32.664 51.576 33.468 49.668 34.116 C51.602 36.351 52.505 39.271 52.188 42.201 C52.508 44.641 51.577 46.881 49.962 48.698 C48.651 50.175 46.799 51.485 44.538 52.561 C35.316 56.953 20.684 56.953 11.462 52.561 C7.747 50.792 3.75 47.666 3.75 43.15 C3.75 41.119 4.589 39.2 6.116 37.514 C7.313 32.005 12.297 28.156 17.923 28.358 C17.93 28.344 17.937 28.331 17.944 28.318 C16.191 25.405 16.717 22.231 18.954 19.721 C20.029 14.969 24.307 11.619 29.177 11.701 Z" fill="#0a1118"/>
+      <path id="cloud_back" data-name="cloud back" d="M30.52 14.043 C31.921 10.279 35.546 7.6 39.8 7.6 C44.656 7.6 48.692 11.091 49.537 15.702 C49.591 15.701 49.646 15.7 49.7 15.7 C53.68 15.7 56.9 18.92 56.9 22.9 C56.9 23.245 56.876 23.584 56.829 23.915 C56.876 24.174 56.9 24.436 56.9 24.7 C56.9 29.67 48.44 33.7 38 33.7 C27.56 33.7 19.1 29.67 19.1 24.7 C19.1 23.291 19.78 21.957 20.993 20.769 C21.587 16.882 24.948 13.9 29 13.9 C29.519 13.9 30.027 13.949 30.52 14.043 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="cloud_front" data-name="cloud front" d="M19.274 30.716 C20.91 26.326 25.139 23.2 30.1 23.2 C35.764 23.2 40.474 27.274 41.46 32.652 C41.523 32.651 41.587 32.65 41.65 32.65 C46.29 32.65 50.05 36.41 50.05 41.05 C50.05 41.452 50.022 41.847 49.967 42.234 C50.022 42.536 50.05 42.841 50.05 43.15 C50.05 48.95 40.18 53.65 28 53.65 C15.82 53.65 5.95 48.95 5.95 43.15 C5.95 41.505 6.744 39.949 8.158 38.564 C8.85 34.026 12.768 30.55 17.5 30.55 C18.106 30.55 18.699 30.607 19.274 30.716 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="light" d="M30.89 30.78 C31.18 32.42 28.33 34.28 24.52 34.95 C20.71 35.63 17.39 34.85 17.11 33.22 C16.82 31.58 19.67 29.72 23.48 29.05 C27.29 28.37 30.61 29.15 30.89 30.78 Z" fill="url(#linear-gradient-3)" opacity="0.5"/>
+    </g>
+  </g>
+</svg>

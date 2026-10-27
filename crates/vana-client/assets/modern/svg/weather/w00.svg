@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <radialGradient id="radial-gradient-1" cx="32" cy="32" r="27.73" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f6e0a2" stop-opacity="0.95"/>
+      <stop offset="0.5" stop-color="#f2d27a" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#f2d27a" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="radial-gradient-2" cx="32" cy="32" r="20.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fffbe0"/>
+      <stop offset="0.55" stop-color="#ffe27a"/>
+      <stop offset="1" stop-color="#f0a830"/>
+    </radialGradient>
+    <linearGradient id="linear-gradient-1" x1="25.065" y1="20.337" x2="25.065" y2="29.793" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#faefd0"/>
+    </linearGradient>
+  </defs>
+  <title>w00</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M9 32 C9 19.305 19.305 9 32 9 C44.695 9 55 19.305 55 32 C55 44.695 44.695 55 32 55 C19.305 55 9 44.695 9 32 Z" fill="#0a1118"/>
+      <path id="glow" d="M59.73 32 C59.73 47.32 47.32 59.73 32 59.73 C16.68 59.73 4.27 47.32 4.27 32 C4.27 16.68 16.68 4.27 32 4.27 C47.32 4.27 59.73 16.68 59.73 32 Z" fill="url(#radial-gradient-1)" opacity="0.6"/>
+      <path id="sun" d="M52.8 32 C52.8 43.48 43.48 52.8 32 52.8 C20.52 52.8 11.2 43.48 11.2 32 C11.2 20.52 20.52 11.2 32 11.2 C43.48 11.2 52.8 20.52 52.8 32 Z" fill="url(#radial-gradient-2)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="glint" d="M30.06 21.57 C31.29 23.32 30.06 26.31 27.3 28.24 C24.54 30.18 21.29 30.32 20.07 28.56 C18.84 26.81 20.07 23.82 22.83 21.89 C25.59 19.95 28.84 19.81 30.06 21.57 Z" fill="url(#linear-gradient-1)" opacity="0.6"/>
+    </g>
+  </g>
+</svg>

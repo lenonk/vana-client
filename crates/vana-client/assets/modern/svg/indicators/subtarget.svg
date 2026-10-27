@@ -1,1 +1,40 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 36 36"><defs><linearGradient id="gold" x2="0.2" y2="1"><stop stop-color="#fff0b4"/><stop offset=".22" stop-color="#b88b49"/><stop offset=".52" stop-color="#60401e"/><stop offset=".78" stop-color="#e4c077"/><stop offset="1" stop-color="#68421d"/></linearGradient><linearGradient id="dark" x2="0" y2="1"><stop stop-color="#25323c"/><stop offset=".48" stop-color="#121d26"/><stop offset="1" stop-color="#070d13"/></linearGradient><linearGradient id="blue" x2="0" y2="1"><stop stop-color="#8bb9df"/><stop offset=".24" stop-color="#3e709d"/><stop offset=".75" stop-color="#173957"/><stop offset="1" stop-color="#0d1e30"/></linearGradient><linearGradient id="red" x2="0" y2="1"><stop stop-color="#ffc0ad"/><stop offset=".3" stop-color="#e94c5b"/><stop offset="1" stop-color="#7d1b30"/></linearGradient><linearGradient id="mana" x2="0" y2="1"><stop stop-color="#bdeaff"/><stop offset=".3" stop-color="#419ee6"/><stop offset="1" stop-color="#174c92"/></linearGradient><linearGradient id="amber" x2="0" y2="1"><stop stop-color="#fff0a5"/><stop offset=".3" stop-color="#dba13b"/><stop offset="1" stop-color="#8e5217"/></linearGradient><linearGradient id="purple" x2="0" y2="1"><stop stop-color="#f2cfff"/><stop offset=".3" stop-color="#a56de5"/><stop offset="1" stop-color="#4e267d"/></linearGradient><linearGradient id="green" x2="0" y2="1"><stop stop-color="#d3ffc0"/><stop offset=".3" stop-color="#68c56a"/><stop offset="1" stop-color="#245e35"/></linearGradient></defs><path d="M18 3 L30 17 L22 17 L18 34 L14 17 L6 17Z" fill="url(#blue)" stroke="#bfeaff"/></svg>
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="26.705" y1="1.969" x2="37.295" y2="62.031" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="22.79" y1="10.6" x2="22.79" y2="52.4" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#d3e6f9"/>
+      <stop offset="1" stop-color="#84b8ef"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="41.21" y1="10.6" x2="41.21" y2="52.4" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#4688cc"/>
+      <stop offset="1" stop-color="#1e3b58"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="32" y1="10.062" x2="32" y2="52.938" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#c1dcf7"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-5" x1="31.415" y1="27.32" x2="32.585" y2="33.95" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff3c4"/>
+      <stop offset="0.35" stop-color="#e4c077"/>
+      <stop offset="0.72" stop-color="#b88b49"/>
+      <stop offset="1" stop-color="#7a5426"/>
+    </linearGradient>
+  </defs>
+  <title>subtarget</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M30.375 3.717 C31.247 2.762 32.753 2.762 33.625 3.717 L57.245 29.607 C58.53 31.015 57.526 33.29 55.62 33.29 L42.249 33.29 L34.1 59.454 C33.462 61.506 30.538 61.506 29.9 59.454 L21.751 33.29 L8.38 33.29 C6.474 33.29 5.47 31.015 6.755 29.607 Z" fill="#0a1118"/>
+      <path id="frame" d="M32 5.2 L55.62 31.09 L40.63 31.09 L32 58.8 L23.37 31.09 L8.38 31.09 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="facet_left" data-name="facet left" d="M32 10.6 L32 52.4 L25.27 30.79 L13.58 30.79 Z" fill="url(#linear-gradient-2)" stroke="#0a1118" stroke-width="0.9" stroke-linejoin="round"/>
+      <path id="facet_right" data-name="facet right" d="M32 10.6 L50.42 30.79 L38.73 30.79 L32 52.4 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="0.9" stroke-linejoin="round"/>
+      <path id="ridge" d="M31.455 10.6 C31.455 9.882 32.545 9.882 32.545 10.6 L32.545 52.4 C32.545 53.118 31.455 53.118 31.455 52.4 Z" fill="url(#linear-gradient-4)" opacity="0.7"/>
+      <path id="stud" d="M34.91 30.64 C34.91 32.25 33.61 33.54 32 33.54 C30.39 33.54 29.09 32.25 29.09 30.64 C29.09 29.03 30.39 27.73 32 27.73 C33.61 27.73 34.91 29.03 34.91 30.64 Z" fill="url(#linear-gradient-5)" stroke="#0a1118" stroke-linejoin="round"/>
+    </g>
+  </g>
+</svg>

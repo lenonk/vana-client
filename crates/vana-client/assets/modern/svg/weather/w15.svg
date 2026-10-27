@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="64" height="64" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="linear-gradient-1" x1="26" y1="5.2" x2="26" y2="46.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#cca5fa"/>
+      <stop offset="0.42" stop-color="#a35cf5"/>
+      <stop offset="1" stop-color="#522e7a"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-2" x1="29.47" y1="5.2" x2="29.47" y2="21.15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8d6fc"/>
+      <stop offset="1" stop-color="#bf8df8"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-3" x1="38" y1="17.2" x2="38" y2="58.8" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#e8d6fc"/>
+      <stop offset="1" stop-color="#bf8df8"/>
+    </linearGradient>
+    <linearGradient id="linear-gradient-4" x1="41.47" y1="17.2" x2="41.47" y2="33.15" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dfc6fc"/>
+    </linearGradient>
+  </defs>
+  <title>w15</title>
+  <g id="Layer_1" data-name="Layer 1">
+    <g id="emblem">
+      <path id="halo" d="M29.395 3.942 C29.807 3.352 30.481 3 31.2 3 L34.67 3 C36.252 3 37.319 4.627 36.687 6.078 L31.086 18.95 L36.75 18.95 C37.501 18.95 38.195 19.333 38.597 19.955 L41.395 15.942 C41.807 15.352 42.481 15 43.2 15 L46.67 15 C48.252 15 49.319 16.627 48.687 18.078 L43.086 30.95 L48.75 30.95 C50.527 30.95 51.572 32.961 50.55 34.415 L32.52 60.065 C31.9 60.947 30.733 61.25 29.762 60.781 C28.792 60.311 28.304 59.208 28.611 58.175 L33.323 42.28 L27.25 42.28 C26.466 42.28 25.745 41.863 25.351 41.192 L20.52 48.065 C19.9 48.947 18.733 49.25 17.762 48.781 C16.792 48.311 16.304 47.208 16.611 46.175 L21.323 30.28 L15.25 30.28 C13.477 30.28 12.431 28.277 13.445 26.822 Z" fill="#0a1118"/>
+      <path id="bolt" d="M31.2 5.2 L15.25 28.08 L24.27 28.08 L18.72 46.8 L36.75 21.15 L27.73 21.15 L34.67 5.2 Z" fill="url(#linear-gradient-1)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="shine" d="M31.2 5.2 L34.67 5.2 L27.73 21.15 L24.27 21.15 Z" fill="url(#linear-gradient-2)" opacity="0.5"/>
+      <path id="bolt-2" data-name="bolt" d="M43.2 17.2 L27.25 40.08 L36.27 40.08 L30.72 58.8 L48.75 33.15 L39.73 33.15 L46.67 17.2 Z" fill="url(#linear-gradient-3)" stroke="#0a1118" stroke-width="1.4" stroke-linejoin="round"/>
+      <path id="shine-2" data-name="shine" d="M43.2 17.2 L46.67 17.2 L39.73 33.15 L36.27 33.15 Z" fill="url(#linear-gradient-4)" opacity="0.5"/>
+    </g>
+  </g>
+</svg>

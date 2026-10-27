@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 const THEME: &str = include_str!("../../../assets/modern/theme.json");
 const MANIFEST: &str = include_str!("../../../assets/modern/manifest.json");
-const ATLASES: [(&str, &[u8]); 7] = [
+const ATLASES: [(&str, &[u8]); 9] = [
     ("atlases/frames_0@2x.png", include_bytes!("../../../assets/modern/atlases/frames_0@2x.png")),
     ("atlases/controls_0@2x.png", include_bytes!("../../../assets/modern/atlases/controls_0@2x.png")),
     ("atlases/gauges_0@2x.png", include_bytes!("../../../assets/modern/atlases/gauges_0@2x.png")),
@@ -17,6 +17,8 @@ const ATLASES: [(&str, &[u8]); 7] = [
     ("atlases/indicators_0@2x.png", include_bytes!("../../../assets/modern/atlases/indicators_0@2x.png")),
     ("atlases/jobs_0@2x.png", include_bytes!("../../../assets/modern/atlases/jobs_0@2x.png")),
     ("atlases/status_0@2x.png", include_bytes!("../../../assets/modern/atlases/status_0@2x.png")),
+    ("atlases/weather_0@2x.png", include_bytes!("../../../assets/modern/atlases/weather_0@2x.png")),
+    ("atlases/markers_0@2x.png", include_bytes!("../../../assets/modern/atlases/markers_0@2x.png")),
 ];
 const FONTS: [(&str, &[u8]); 5] = [
     ("FiraSans-Regular", include_bytes!("../../../assets/fonts/FiraSans-Regular.ttf")),
