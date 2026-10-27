@@ -9412,6 +9412,10 @@ impl App {
                 if *screen != LobbyScreen::Main {
                     self.title_press = None;
                 }
+                // Only the select screen is the modern layer's: elsewhere egui keeps its own zoom.
+                if !matches!(screen, LobbyScreen::Select | LobbyScreen::Delete) || !self.cfg.modern_ui {
+                    modern::off(ctx, self.modern.as_mut());
+                }
                 match screen {
                     LobbyScreen::Main => {
                         const ITEMS: [(&str, &str); 5] = [
@@ -9686,8 +9690,23 @@ impl App {
                         let (sw, sh) = (screen_size[0] as f32, screen_size[1] as f32);
                         let list = select::List::new(chars);
                         let shown = if busy { None } else if !status.is_empty() { Some((status.as_str(), YELLOW)) } else { None };
-                        let sin = select::Input { events: &input.events, pointer: input.pointer, moved: input.moved, clicked: input.clicked, busy };
-                        let out = self.select_ui.step(gu, &sin, &list, chars, deleting, sw, sh, shown);
+                        let modern_ui = self.cfg.modern_ui;
+                        let sin = select::Input { events: &input.events, pointer: input.pointer, moved: input.moved, clicked: input.clicked, busy, modern: modern_ui };
+                        let mut out = self.select_ui.step(gu, &sin, &list, chars, deleting, sw, sh, shown);
+                        // Modern: the layer draws the screen and its mouse acts as retail's.
+                        if modern_ui {
+                            let mut v = self.select_ui.view(gu, &list, chars, deleting);
+                            if let Some((t, _)) = shown {
+                                v.help = t.to_string();
+                            }
+                            let m = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
+                            let ptr = m.select_screen(ctx, gu, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, &v);
+                            let more = self.select_ui.pointer(gu, ptr, &list, chars, deleting, busy);
+                            out.sounds.extend(more.sounds);
+                            out.action = out.action.or(more.action);
+                            out.moved = more.moved.or(out.moved);
+                            out.input |= more.input;
+                        }
                         if let Some(a) = self.audio.as_mut() {
                             for s in &out.sounds {
                                 a.ui(*s);

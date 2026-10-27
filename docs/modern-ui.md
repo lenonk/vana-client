@@ -402,6 +402,12 @@ Milestone 1:
   the chat mode window, the treasure pool, the people lists, the windows the menus open, the main menu or its
   submenu, the action menu); that panel draws in the pack's window_focused frame (blue edge), the rest in their own.
   Live: the main menu, Status, the chat line while typing, the action menu.
+- Character select (2026-10-27, modern/lobby.rs over select.rs, which keeps every rule and key; select::Input.modern
+  skips the retail draw and mouse): over the 3D scene, a list of every character (the name in its colour, the job and
+  level, the race, the area), the cursor's details (World / Race / Job / Level / Area by group 1's labels), the counts,
+  a Settings button (chfwin, as Num+ or the right button), chfwin and chswin beside it, the prompt (ptc6yesn), the ok
+  window and the rename field below; the mouse as retail's (a row moves the cursor, a click is Enter). The title and the
+  creator stay retail's (their own art). Live: the list by keys, the login prompt (No), Settings by the mouse.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
@@ -414,7 +420,7 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
+- To do: the title's and the creator's own layouts; BattleMod / rChat in the chat.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.

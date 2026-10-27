@@ -18,6 +18,7 @@ mod hud;
 mod inspect;
 mod items;
 mod journal;
+mod lobby;
 mod lists;
 mod loot;
 mod macros;

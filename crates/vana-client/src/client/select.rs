@@ -455,6 +455,43 @@ pub struct Input<'a> {
     pub moved: bool,
     pub clicked: bool,
     pub busy: bool,
+    /// The modern layer draws the screen and takes the mouse (View, Pointer): no retail draw.
+    pub modern: bool,
+}
+
+/// A character row as the modern layer draws it: the name in its colour, then World / Race / Job / Level / Area.
+pub struct RowView {
+    pub name: String,
+    pub tint: u32,
+    pub info: [String; 5],
+}
+
+/// The select (or delete) screen as the modern layer draws it.
+pub struct View {
+    pub rows: Vec<RowView>,
+    /// The info's labels (group 1 0..4).
+    pub labels: [String; 5],
+    pub cursor: usize,
+    pub list_focus: bool,
+    pub deleting: bool,
+    pub help: String,
+    pub counts: [String; 3],
+    /// chfwin's rows and cursor (Load / Save), chswin's (the slots), the prompt (text, Yes lit), the ok window's text,
+    /// the name being entered.
+    pub options: Option<(Vec<String>, u16)>,
+    pub slots: Option<(Vec<String>, u16)>,
+    pub prompt: Option<(String, bool)>,
+    pub ok: Option<String>,
+    pub rename: Option<String>,
+}
+
+/// What the modern layer's mouse did: a list row hovered / clicked, a window child (chfwin's, chswin's, the prompt's
+/// Yes 1 / No 2, the ok window's 1) hovered / clicked, the options asked for (as the right button on the list).
+#[derive(Default)]
+pub struct Pointer {
+    pub row: (Option<usize>, Option<usize>),
+    pub child: (Option<u16>, Option<u16>),
+    pub options: bool,
 }
 
 /// Mouse targets of the last draw.
@@ -536,6 +573,11 @@ impl SelectUi {
                 }
                 _ => {}
             }
+        }
+        if input.modern {
+            gu.clear();
+            self.rects = Rects::default();
+            return out;
         }
         self.rects = draw(gu, self, list, chars, deleting, w, h, status);
         if let Some(p) = input.pointer {
@@ -765,6 +807,87 @@ impl SelectUi {
                 }
             }
         }
+    }
+
+    /// The screen for the modern layer: every used row with its info, the windows over the list.
+    pub fn view(&self, gu: &GameUi, list: &List, chars: &[Character], deleting: bool) -> View {
+        let rows = (0..list.entries.len())
+            .filter_map(|i| list.get(chars, i))
+            .map(|c| {
+                let sjis = |b: Vec<u8>| crate::dat::font::plain(&crate::dat::font::decode_sjis(&b));
+                let info = [c.world.clone(), sjis(gu.lobby_msg_raw(6, (c.race as usize).saturating_sub(1), "")), sjis(gu.lobby_msg_raw(3, c.main_job as usize, "")), c.main_level.max(1).to_string(), sjis(gu.area_name(c.zone))];
+                RowView { name: c.name.clone(), tint: name_tint(c), info }
+            })
+            .collect();
+        let labels = std::array::from_fn(|k| crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.lobby_msg_raw(1, k, ""))));
+        let more = list.purchased as i64 - list.registered as i64;
+        let fmts = gu.count_formats();
+        let counts = [printf(&fmts[0], &[&list.purchased.to_string()]), printf(&fmts[1], &[&list.registered.to_string()]), printf(&fmts[if more == 1 { 3 } else { 2 }], &[&more.to_string()])];
+        let captions = |menu: &str, n: u16| (1..=n).map(|k| gu.child_caption(menu, k).unwrap_or_default()).collect::<Vec<_>>();
+        let name = list.get(chars, self.cursor).map_or("", |c| c.name.as_str());
+        View {
+            rows,
+            labels,
+            cursor: self.cursor,
+            list_focus: self.focus == Focus::List,
+            deleting,
+            help: self.help(gu, deleting),
+            counts,
+            options: match self.focus {
+                Focus::Options(k) => Some((captions("menu    chfwin", 2), k)),
+                Focus::Slots(..) | Focus::Prompt(Prompt::Settings { .. }, _) => Some((captions("menu    chfwin", 2), 0)),
+                _ => None,
+            },
+            slots: if let Focus::Slots(_, k) = self.focus { Some((captions("menu    chswin", 5), k)) } else { None },
+            prompt: if let Focus::Prompt(p, yes) = &self.focus { Some((prompt_text(gu, p, name), *yes)) } else { None },
+            ok: if let Focus::Ok(t, _) = &self.focus { Some(t.clone()) } else { None },
+            rename: if let Focus::Rename(n) = &self.focus { Some(n.clone()) } else { None },
+        }
+    }
+
+    /// The modern layer's mouse, as the retail mouse: a row moves the cursor and a click on it is Enter; a window's
+    /// child moves its cursor and a click is Enter; the options as the right button.
+    pub fn pointer(&mut self, gu: &GameUi, p: Pointer, list: &List, chars: &[Character], deleting: bool, busy: bool) -> Out {
+        let mut out = Out::default();
+        if p.options {
+            match self.focus {
+                Focus::List if !deleting => self.open_options(list, &mut out),
+                Focus::Options(_) => self.close_options(&mut out),
+                _ => {}
+            }
+            return out;
+        }
+        if self.focus == Focus::List {
+            for i in p.row.0.into_iter().chain(p.row.1).filter(|&i| i < list.entries.len()) {
+                out.input = true;
+                self.move_cursor(i, &mut out);
+            }
+            if p.row.1.is_some() && !busy {
+                self.confirm(gu, list, chars, deleting, &mut out);
+            }
+            return out;
+        }
+        for c in p.child.0.into_iter().chain(p.child.1) {
+            match self.focus.clone() {
+                Focus::Options(k) if c != k => {
+                    out.sounds.push(Se::Cursor);
+                    self.focus = Focus::Options(c);
+                }
+                Focus::Slots(m, k) if c != k => {
+                    out.sounds.push(Se::Cursor);
+                    self.focus = Focus::Slots(m, c);
+                }
+                Focus::Prompt(pr, yes) if (c == 1) != yes => {
+                    out.sounds.push(Se::Cursor);
+                    self.focus = Focus::Prompt(pr, c == 1);
+                }
+                _ => {}
+            }
+        }
+        if p.child.1.is_some() {
+            self.key(gu, egui::Key::Enter, egui::Modifiers::NONE, list, chars, deleting, busy, &mut out);
+        }
+        out
     }
 
     fn help(&self, gu: &GameUi, deleting: bool) -> String {
@@ -1020,7 +1143,7 @@ pub fn screen_shot(shot: &ScreenShot, out: &std::path::Path) -> Result<()> {
     let mut enc = gpu.device.create_command_encoder(&Default::default());
     scene.advance(FRAME, st.cursor);
     scene.render(&gpu, format, &mut enc, (&view, Some(&target_tex), [w, h]), &depth, w as f32 / h.max(1) as f32, None);
-    let input = Input { events: &[], pointer: None, moved: false, clicked: false, busy: false };
+    let input = Input { events: &[], pointer: None, moved: false, clicked: false, busy: false, modern: false };
     st.step(&mut gu, &input, &list, &chars, shot.deleting, w as f32, h as f32, None);
     gu.render(&gpu, format, &mut enc, &view, [w, h], [w, h], true, 1.0, 1.0);
     let row = (w * 4).div_ceil(256) * 256;
