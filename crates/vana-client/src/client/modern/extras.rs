@@ -61,8 +61,7 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
     let icons: Vec<Vec<Vec<Option<egui::TextureId>>>> = if out { secs.iter().map(|s| s.iter().map(|g| g.rows.iter().map(|r| icon(&r.icon)).collect()).collect()).collect() } else { Vec::new() };
     let mut fold: Option<usize> = None;
     // Clear of the menu's windows as the right edge's are (the item list grows over it on the left).
-    let avoid = column(p, "timers");
-    let toggle = edge_window(p, "timers", WIDTH, !out, &avoid, "Timers", |ui, left| {
+    let toggle = edge_window(p, "timers", WIDTH, !out, "Timers", |ui, left| {
         let toggle = flyout_header(ui, m, "Timers", left).clicked();
         for (k, groups) in secs.iter().enumerate() {
             let n: usize = groups.iter().map(|g| g.rows.len()).sum();
@@ -95,12 +94,12 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
 }
 
 /// A window on the screen's left or right edge (its place: x 0 or above the left, below 0 the right; y its top): its
-/// frame open on that side; folded, a small tab out of the edge with `label` running down it beside a double chevron. Open, it stands clear of `avoid`
-/// (the windows at the same edge) by moving off the edge. Dragged it moves up and down, and let go on the screen's
-/// other half it goes to that edge. `add` draws the contents (told the side) and says whether its fold button was
-/// clicked; the tab's click counts too. Returns that.
+/// frame open on that side; folded, a small tab out of the edge with `label` running down it beside a double chevron.
+/// It stays where it was put: the menu's windows draw over it (user, 2026-10-27). Dragged it moves up and down, and let
+/// go on the screen's other half it goes to that edge. `add` draws the contents (told the side) and says whether its
+/// fold button was clicked; the tab's click counts too. Returns that.
 #[allow(clippy::too_many_arguments)]
-fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rect], label: &str, add: impl FnOnce(&mut Ui, bool) -> bool) -> bool {
+fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, label: &str, add: impl FnOnce(&mut Ui, bool) -> bool) -> bool {
     let (m, ctx) = (p.m, p.ctx);
     let screen = ctx.content_rect();
     let mut place = p.place(key);
@@ -157,27 +156,12 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rec
     }
     let h = m.rects.borrow().get(key).map_or(TAB_H, |r| r.height());
     let edge_x = if left { screen.min.x } else { screen.max.x - width };
-    // Stepped clear of each window in its way, until none is (one moved past may meet the next).
-    let mut x = edge_x;
-    for _ in 0..avoid.len() {
-        let before = x;
-        for r in avoid.iter().filter(|r| r.min.y < top + h && r.max.y > top) {
-            if left && r.min.x < x + width && r.max.x > x {
-                x = x.max(r.max.x + 4.0);
-            } else if !left && r.max.x > x && r.min.x < x + width {
-                x = x.min(r.min.x - 4.0 - width);
-            }
-        }
-        if x == before {
-            break;
-        }
-    }
-    let attached = x == edge_x;
+    let x = edge_x;
     if under_retail(m, Rect::from_min_size(pos2(x, top), vec2(width, h))) {
         p.this.insert(key.to_string(), Rect::from_min_size(pos2(x, top), vec2(width, h)));
         return false;
     }
-    let margin = egui::Margin { left: if left && attached { 12 } else { 18 }, right: if !left && attached { 12 } else { 18 }, top: 12, bottom: 14 };
+    let margin = egui::Margin { left: if left { 12 } else { 18 }, right: if !left { 12 } else { 18 }, top: 12, bottom: 14 };
     let mut moved: Option<(f32, Option<Pos2>)> = None;
     let shown = egui::Area::new(id).order(egui::Order::Middle).fixed_pos(pos2(x, top)).constrain(false).show(ctx, |ui| {
         // Room to the screen's bottom (an area offers only last frame's size).
@@ -198,7 +182,7 @@ fn edge_window(p: &mut Panels, key: &str, width: f32, folded: bool, avoid: &[Rec
             moved = Some(g);
         }
         let r = inner.response.rect;
-        ui.painter().set(bg, edge_frame_shape(r, left, attached, m, true, 16));
+        ui.painter().set(bg, edge_frame_shape(r, left, true, m, true, 16));
         if moved.is_some() {
             ui.painter().rect_stroke(r.expand(1.0), 16, Stroke::new(2.5, m.theme.color("gold")), egui::StrokeKind::Outside);
             ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
@@ -419,7 +403,6 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let mut resize: Option<f32> = None;
     let (pos, facing, span) = (f.pos, f.facing, f.span);
     let dots = f.dots.clone();
-    let avoid = column(p, "minimap");
     // The Wide Scan row picked and the area narrowed to, in world x / z.
     let origin = m.scan_origin.get();
     let picked = m.scan_pick.get().and_then(|i| m.scan_rows.borrow().iter().find(|r| r.0.index == i).map(|r| (origin.0 + r.0.dx as f32, origin.1 + r.0.dz as f32)));
@@ -428,7 +411,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let label = p.gu.map(|gu| format!("{}  {}", crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(w.pos_zone))), m.grid(w, gu))).unwrap_or_default();
     let folded = p.folded.get("minimap").copied().unwrap_or(false);
     let mut wheel = 0.0f32;
-    let toggle = edge_window(p, "minimap", d + 30.0, folded, &avoid, "Map", |ui, left| {
+    let toggle = edge_window(p, "minimap", d + 30.0, folded, "Map", |ui, left| {
         // The heading: the zone and grid, the fold chevron on the inner side; dragged it moves the window.
         let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click_and_drag());
         grip(m, &hresp);
@@ -546,18 +529,6 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     }
 }
 
-/// What the windows at the right edge take (the command column as last drawn, and the retail windows drawn there);
-/// edge window `key` open there keeps clear of it.
-fn column(p: &Panels, key: &str) -> Vec<Rect> {
-    let screen = p.ctx.content_rect();
-    // Not the ones docked on this window: they move with it, so stepping clear of them never settles.
-    let mut avoid: Vec<Rect> = super::COLUMN.iter().filter(|c| !p.rests_on(c, key)).filter_map(|c| p.m.rects.borrow().get(*c).copied()).collect();
-    // The retail windows drawn at the right edge (retail's minimap keeps left of them); not retail's own place for
-    // its menu column, which the modern menu replaces wherever it was moved.
-    avoid.extend(p.m.retail.borrow().iter().filter(|r| r.max.x >= screen.max.x - 8.0 && r.width() < screen.width() / 2.0).copied());
-    avoid
-}
-
 /// Wide Scan as an edge window under the map (folded by default): the results by distance in their colours (players
 /// blue, NPCs green, monsters red) with their level and how far and which way they were; a click tracks one, a click
 /// on the tracked one asks to stop. Retail asks for a list only as its map opens; open, this asks every 10 s while
@@ -633,7 +604,6 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     let (find, typing) = (w.scan_find.clone(), w.scan_typing);
     let (mut flip, mut field_click, mut clear) = (0u8, false, false);
     let tracked = w.scan.track.index;
-    let avoid = column(p, "widescan");
     let (picked, picking) = (m.scan_pick.get(), m.scan_picking.get());
     let mut pick: Option<u16> = None;
     let mut chose: Option<u16> = None;
@@ -641,7 +611,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     let mut show_all = false;
     let mut cancel = false;
     let mut scan = false;
-    let toggle = edge_window(p, "widescan", 290.0, folded, &avoid, "Wide Scan", |ui, left| {
+    let toggle = edge_window(p, "widescan", 290.0, folded, "Wide Scan", |ui, left| {
         let (hr, hresp) = ui.allocate_exact_size(vec2(ui.available_width(), 20.0), Sense::click_and_drag());
         grip(m, &hresp);
         let c = if hresp.hovered() { m.theme.color("text") } else { m.theme.color("gold") };

@@ -355,9 +355,11 @@ const ROOM_MARGIN: egui::Margin = egui::Margin { bottom: 26, ..MARGIN };
 
 /// The panels placed by their bottom, growing upward (the chat window, the party window).
 const BOTTOM: [&str; 2] = ["chat", "party"];
-/// The right edge's column (the main menu, its submenu and the windows it opens): other panels anchored there keep
-/// left of it.
+/// The right edge's column (the main menu, its submenu and the windows it opens): the panels placed from the right
+/// keep left of it; the edge windows stay put under it.
 const COLUMN: [&str; 3] = ["command", "command sub", "window"];
+/// The windows on a screen edge (extras.rs edge_window): they slide along it, so nothing docks on them.
+const EDGE: [&str; 3] = ["timers", "minimap", "widescan"];
 
 impl Dock {
     /// The side of the panel it sits on that `dx` counts from.
@@ -622,6 +624,10 @@ impl<'a> Panels<'a> {
     /// default bottom).
     fn place(&self, id: &str) -> Place {
         let mut p = self.layout.get(id).cloned().or_else(|| self.retail.get(id).cloned()).unwrap_or_else(|| default_place(id));
+        // A dock on an edge window (saved before they refused them) gives way to the place itself.
+        if p.dock.as_ref().is_some_and(|d| EDGE.contains(&d.to.as_str())) {
+            p.dock = None;
+        }
         if BOTTOM.contains(&id) && p.b <= 0.0 {
             p.b = default_place(id).b;
         }
@@ -706,7 +712,7 @@ impl<'a> Panels<'a> {
         let mut best: Option<(f32, Dock)> = None;
         for (to, t) in self.this.iter().chain(last.iter().filter(|(k, _)| !self.this.contains_key(*k))) {
             let gap = t.min.y - r.max.y;
-            if to == id || gap.abs() > tol || r.max.x <= t.min.x || r.min.x >= t.max.x || self.rests_on(to, id) {
+            if to == id || EDGE.contains(&to.as_str()) || gap.abs() > tol || r.max.x <= t.min.x || r.min.x >= t.max.x || self.rests_on(to, id) {
                 continue;
             }
             if best.as_ref().is_none_or(|(g, _)| gap.abs() < *g) {
@@ -787,6 +793,10 @@ impl<'a> Panels<'a> {
             }
             g.dragged().then(|| g.drag_delta())
         });
+        // The menu's windows draw over the edge windows (they stay where they were put).
+        if COLUMN.contains(&id) {
+            ctx.move_to_top(shown.response.layer_id);
+        }
         let r = shown.response.rect;
         let showing = Rect::from_min_max(pos2(r.min.x, r.max.y - r.height() * fold), r.max);
         // Placement trace (debug), only when a panel moves.

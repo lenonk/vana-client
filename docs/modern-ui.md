@@ -445,13 +445,16 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- Edge windows and docks (user report 2026-10-27: the main menu, the minimap and an open Wide Scan swapped places every
-  frame): an edge window no longer steps clear of a panel docked on it (that panel moves with it, so it never
-  settles); a dock on a panel placed from the right edge counts its dx from that panel's right (ModernDock.right), as
-  its left moves when it folds or grows (the user's menu was docked on Wide Scan's folded tab and jumped 270 px when
-  it opened); the strip right of retail's own minimap (retail's place for its menu column) is no longer kept clear,
-  only the retail windows drawn at the edge. A dock saved before measures from the left still. Live: the user's
-  layout copied in (menu on Wide Scan, both open), frames alike; the default layout as before.
+- Edge windows and the menu (user, 2026-10-27: the main menu, the minimap and an open Wide Scan swapped places every
+  frame; then "the menu should just draw on top of edge windows"): the edge windows (Timers, minimap, Wide Scan) no
+  longer step aside for anything; the menu column (command, its submenu, the command window) is kept on top of them
+  (move_to_top each frame). Nothing docks on an edge window (their left moves as they fold, and a dock on Wide Scan's
+  tab made the menu jump 270 px when it opened), and a dock saved on one gives way to the panel's own place. A dock on
+  a panel placed from the right counts from its right side (ModernDock.right). Retail's strip right of its own minimap
+  is not kept clear. Live: the user's layout copied in, frames alike, the menu over the minimap.
+- The Num+ status cursor (user report 2026-10-27: no box on the picked buff): the modern status icons box the cursor's
+  icon in retail's orange-red (anc_equi), and Up / Down move by the panel's 10-icon rows (retail's 9 while classic).
+  Live: Num+ twice boxes Protect, Right moves it to Shell, the top bar names it.
 - Condensed battle lines (2026-10-27, not retail; BattleMod's condensing): with the chat settings' "Condense: On"
   (config modern_condense, On by default), a 0x028 action's record lines that differ only in their number merge into
   the first one as it grows ("Lnxcsfix hits the Wild Rabbit for 18, 14 points of damage."), lines with no number into

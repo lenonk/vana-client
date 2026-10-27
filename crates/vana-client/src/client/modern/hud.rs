@@ -40,6 +40,8 @@ pub struct Effect {
 /// Our effects (the effects panel).
 pub struct StatusView {
     pub effects: Vec<Effect>,
+    /// Num+'s cursor (status select, log focus 2): the icon boxed.
+    pub cursor: Option<usize>,
 }
 
 /// A party or alliance row as retail's (FUN_10202530 / FUN_10202720): ours first, from our own vitals.
@@ -186,16 +188,20 @@ fn effect_icon(p: Look, painter: &egui::Painter, e: &Effect, r: Rect, small: boo
 /// The effects panel's icons: their size, the step between them, how many a row.
 const FX: f32 = 28.0;
 const FX_STEP: f32 = 36.0;
-const FX_ROW: usize = 10;
+const FX_ROW: usize = buffs::MODERN_ROW;
 
 /// Effects in rows of `per` icons `size` points square, `step` apart, their times under them.
-fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, per: usize, small: bool) {
+fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, per: usize, small: bool, cursor: Option<usize>) {
     let m = p.m;
-    for chunk in effects.chunks(per) {
+    for (row, chunk) in effects.chunks(per).enumerate() {
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), size + 16.0), Sense::hover());
         for (k, e) in chunk.iter().enumerate() {
             let at = Rect::from_min_size(pos2(r.min.x + k as f32 * step, r.min.y), vec2(size, size));
             effect_icon(p, ui.painter(), e, at, small);
+            // Retail's cursor box (anc_equi) in its orange-red.
+            if cursor == Some(row * per + k) {
+                ui.painter().rect_stroke(at.expand(3.0), 4.0, egui::Stroke::new(2.5, Color32::from_rgb(0xff, 0x6a, 0x2a)), egui::StrokeKind::Outside);
+            }
             if let Some(l) = &e.label {
                 paint::outlined(ui.painter(), pos2(at.center().x, at.max.y + 1.0), Align2::CENTER_TOP, l, FontId::proportional(m.theme.small), m.theme.color("text"));
             }
@@ -220,7 +226,7 @@ pub fn status_panel(p: &mut Panels, v: &StatusView, small: bool) {
     let per = v.effects.len().min(FX_ROW);
     let width = super::MARGIN.sum().x + (per - 1) as f32 * FX_STEP + FX;
     // No frame: the icons alone (movable all the same).
-    p.framed("status", None, width, "none", |ui| effects_grid(ui, look, &v.effects, FX, FX_STEP, FX_ROW, small));
+    p.framed("status", None, width, "none", |ui| effects_grid(ui, look, &v.effects, FX, FX_STEP, FX_ROW, small, v.cursor));
 }
 
 /// Row heights: party rows carry an MP bar under the HP bar, alliance rows not.
@@ -598,7 +604,7 @@ fn effects(p: Look, w: &World) -> Vec<Effect> {
 
 fn status_view(p: Look, w: &World) -> Option<StatusView> {
     w.stats.as_ref()?;
-    Some(StatusView { effects: effects(p, w) })
+    Some(StatusView { effects: effects(p, w), cursor: (w.log_focus == 2).then_some(w.buff_cursor) })
 }
 
 /// FFXI weather ids 4..19 by pairs: fire, water, earth, wind, ice, lightning, light, dark (the second of a pair the

@@ -75,7 +75,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d)).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false }, shown, true);
     let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
-    hud::status_panel(&mut p, &StatusView { effects: mine }, false);
+    hud::status_panel(&mut p, &StatusView { effects: mine, cursor: None }, false);
     let dot = |x, y, c: u32| (x, y, super::chat::colour(c.to_le_bytes()));
     let compass = hud::CompassView { heading: 0.6, dots: vec![dot(4.0, -9.0, 0x8030_60e0), dot(-11.0, 3.0, 0x8000_b040), dot(14.0, 13.0, 0x5000_b040)], range: 28.8, arrow: Some((0.6, -0.8, "focus")) };
     hud::where_panel(&mut p, &WhereView { zone: "West Ronfaure".into(), grid: "(F-9)".into(), time: (18, 42), day: (3, "Windsday".into()), weather: Some((2, false)), compass: Some(compass) });
