@@ -145,9 +145,9 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
     (g, resp.on_hover_text("Chat settings").clicked())
 }
 
-/// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All. Closed by the
-/// button or a click elsewhere; true when one changed.
-fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in_all: &mut bool) -> bool {
+/// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All, their condensing.
+/// Closed by the button or a click elsewhere; true when one changed.
+fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in_all: &mut bool, condense: &mut bool) -> bool {
     let mut changed = false;
     // Below the button, or above it when the chat window sits in the screen's lower half.
     let up = at.center().y > ctx.content_rect().center().y;
@@ -194,6 +194,19 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in
                 for (val, label) in [(true, "Shown"), (false, "Hidden")] {
                     if super::craft::button(ui, m, label, 80.0, *battle_in_all == val, false) && *battle_in_all != val {
                         *battle_in_all = val;
+                        changed = true;
+                    }
+                }
+            });
+            ui.add_space(6.0);
+            // An action's lines that differ only in their number as one line (BattleMod's condensing; not retail).
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                let (r, _) = ui.allocate_exact_size(vec2(96.0, 28.0), Sense::hover());
+                ui.painter().text(pos2(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, "Condense", FontId::proportional(m.theme.ui), m.theme.color("text"));
+                for (val, label) in [(true, "On"), (false, "Off")] {
+                    if super::craft::button(ui, m, label, 80.0, *condense == val, false) && *condense != val {
+                        *condense = val;
                         changed = true;
                     }
                 }
@@ -376,6 +389,8 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     rule.cfg.max = (room.y / row).floor().clamp(1.0, 24.0);
     rule.cfg.min = rule.cfg.min.min(rule.cfg.max);
     rule.focused |= m.arranging.replace(false);
+    // The settings popup holds the window as it is (it went with the window when that folded away).
+    rule.stacked |= m.chat_settings.get();
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
     let ml = &mut w.modern_log;
     if std::mem::take(&mut ml.fill) {
@@ -499,7 +514,7 @@ fn full(p: &mut Panels, w: &mut World) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all) {
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
         *p.changed = true;
     }
 }
@@ -583,7 +598,7 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all) {
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all, p.condense) {
         *p.changed = true;
     }
 }

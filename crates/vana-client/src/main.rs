@@ -1899,7 +1899,7 @@ fn fx_sweep(out: &std::path::Path, kinds: &str, ticks: u32, mob_models: Option<&
             fx.reg.audit = Some(fx::Audit::default());
             let (a, t) = if category == 11 { (SWEEP_MOB, SWEEP_PC) } else { (SWEEP_PC, if category == 5 { SWEEP_PC } else { SWEEP_MOB }) };
             let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim as u16, ..Default::default() };
-            let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }] };
+            let action = net::action::Action { actor: a, category, arg: anim, info: 0, targets: vec![net::action::ActionTarget { id: t, results: vec![result] }], seq: 0 };
             fx.on_action(&action, None);
             let (mut n, mut kicks, mut peak) = (0, 0usize, 0.0f32);
             let started = std::time::Instant::now();
@@ -2072,7 +2072,7 @@ fn fx_shot(zone: u32, out: &std::path::Path, eye: &[f32], caster: &[f32], victim
     let files = [8392u32, 9672, 7072, 1300];
     fx.preload(&files);
     let result = net::action::ActionResult { kind: 1, scale: 1, value: 10, message: 1, animation: anim, ..Default::default() };
-    let action = net::action::Action { actor: 0x0001_0001, category, arg: if category == 1 { u32::from_le_bytes(*b"atk0") } else { anim as u32 }, info: 0, targets: vec![net::action::ActionTarget { id: 0x0100_0001, results: vec![result] }] };
+    let action = net::action::Action { actor: 0x0001_0001, category, arg: if category == 1 { u32::from_le_bytes(*b"atk0") } else { anim as u32 }, info: 0, targets: vec![net::action::ActionTarget { id: 0x0100_0001, results: vec![result] }], seq: 0 };
     let camera = render::Camera { eye: v3(eye), target: (c + t) / 2.0 + Vec3::new(0.0, -1.2, 0.0), up: Vec3::NEG_Y, fov_y: 50f32.to_radians() };
     let paths: Vec<PathBuf> = (0..frames).map(|i| out.with_file_name(format!("{}_{i:02}.png", out.file_stem().unwrap().to_string_lossy()))).collect();
     let list: Vec<(&render::Camera, &std::path::Path, Option<dat::weather::Lighting>)> = paths.iter().map(|p| (&camera, p.as_path(), lighting)).collect();

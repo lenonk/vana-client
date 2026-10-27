@@ -10,7 +10,8 @@ The plan for vana-client's modern interface, from the user's planning document (
   retail windows they replace are left out; everything else stays retail until it has a modern counterpart.
 - **egui.** The modern layer is egui (already in the client, on wgpu): windows, layout, focus, drag-and-drop,
   tooltips and text come from it; the pack's art is drawn through its painter.
-- **Fonts bundled.** Inter (interface), Cinzel (titles), JetBrains Mono (logs), all SIL OFL 1.1, unmodified, from
+- **Fonts bundled.** Inter Regular (interface, chat), Inter SemiBold (titles, names), Inter Bold Italic (name plates,
+  the bars' labels), JetBrains Mono (timestamps, logs); no Cinzel (planned once, never loaded). All SIL OFL 1.1, unmodified, from
   their official releases, in `crates/vana-client/assets/fonts` with their licence texts, embedded in the binary.
 - **Order.** Milestone 1 (theme and atlas loader, panels, movable windows with saved layout, HUD basics), then the Mog
   House storage slice.
@@ -441,7 +442,14 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- To do: condensed battle lines (BattleMod's one line per action).
+- Condensed battle lines (2026-10-27, not retail; BattleMod's condensing): with the chat settings' "Condense: On"
+  (config modern_condense, On by default), a 0x028 action's record lines that differ only in their number merge into
+  the first one as it grows ("Lnxcsfix hits the Wild Rabbit for 18, 14 points of damage."), lines with no number into
+  a count ("misses the Wild Rabbit. (x2)"). The action is the packet (Action::seq, numbered in on_action), so a melee
+  round's later swings still join it; a line whose text is not its template with the number in is left alone
+  (combat.rs condense / template_of). The retail log wraps again when a line changes (ChatLog::edits). The chat
+  settings popup now holds the chat window open (it folded away with the popup under the mouse). Live: MNK rounds of
+  two hits as one line, Off giving one line a hit.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.

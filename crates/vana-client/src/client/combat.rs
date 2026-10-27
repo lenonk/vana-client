@@ -21,6 +21,8 @@ pub struct ChatLog {
     /// Each line's chat mode (record byte 0: its colour and the full log's tab filters, FUN_101299f0), NO_MODE for the
     /// lines printed without one.
     modes: Vec<u16>,
+    /// Lines changed in place (condensed battle lines) so far.
+    edits: u64,
 }
 
 pub const NO_MODE: u16 = 0xffff;
@@ -61,6 +63,19 @@ impl ChatLog {
         self.times.push((super::cfgapply::local_hms(), chat, indent));
         self.modes.push(mode);
         self.lines.push((s, colour));
+    }
+
+    /// Line `k`'s text replaced (a condensed battle line grown).
+    pub fn set_text(&mut self, k: usize, s: String) {
+        if let Some(l) = self.lines.get_mut(k) {
+            l.0 = s;
+            self.edits += 1;
+        }
+    }
+
+    /// How many lines have been changed in place: the logs wrap again when it moves.
+    pub fn edits(&self) -> u64 {
+        self.edits
     }
 
     /// The lines' modes, in the lines' order.
@@ -104,6 +119,8 @@ struct Msg {
     work: [i32; 5],
     /// A 0x028 record's message (0 main, 1 proc, 2 react): it may also put its number on screen (FUN_1009e090).
     which: Option<u8>,
+    /// Its action's serial (Action::seq).
+    seq: u32,
 }
 
 /// Main lines waiting for the attacker's hit ("dada" in its attack scheduler).
@@ -252,6 +269,58 @@ pub fn render(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, cfg: &
     line.lines.into_iter().filter(|l| !l.is_empty()).map(|l| (l, colour)).collect()
 }
 
+/// A battle line the later records of its action merge into (modern chat, not retail): the action, the message, the
+/// line with its number as SLOT, where it is in the log and the numbers so far.
+pub(super) struct Condensed {
+    seq: u32,
+    id: u16,
+    template: String,
+    line: usize,
+    values: Vec<i32>,
+}
+
+const SLOT: i32 = 2_000_000_003;
+
+/// A record's line as its template: the text with work[`slot`] as SLOT, when the number is all that differs.
+fn template_of(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, slot: usize, line: &str, cfg: &crate::gamecfg::Values) -> Option<String> {
+    let mut tc = ctx.clone();
+    tc.work[slot] = SLOT;
+    let template = render(bt, id, rel, &tc, cfg).into_iter().next()?.0;
+    let own = template.replacen(&SLOT.to_string(), &ctx.work[slot].to_string(), 1);
+    (own == line).then_some(template)
+}
+
+/// A condensed line: the template with the numbers listed, or with no number its count.
+fn condensed_text(template: &str, values: &[i32]) -> String {
+    let slot = SLOT.to_string();
+    if template.contains(&slot) {
+        let list: Vec<String> = values.iter().map(|v| v.to_string()).collect();
+        template.replacen(&slot, &list.join(", "), 1)
+    } else if values.len() > 1 {
+        format!("{template} (x{})", values.len())
+    } else {
+        template.to_string()
+    }
+}
+
+/// A record's line merges into its action's earlier line of the same text but the number ("hits the Hare for 12, 15
+/// points of damage"); a line with no number into its twin ("misses the Hare. (x2)"). True when it merged.
+fn condense(w: &mut World, bt: &battle::BattleText, m: &Msg, which: u8, line: &str, ctx: &Ctx) -> bool {
+    let slot = 1 + which.min(2) as usize;
+    let Some(template) = template_of(bt, m.id, relation(w, m.actor, m.target), ctx, slot, line, &w.game) else { return false };
+    let value = m.work[slot];
+    if let Some(g) = w.condensed.iter_mut().find(|g| g.seq == m.seq && g.id == m.id && g.template == template) {
+        g.values.push(value);
+        w.chat.set_text(g.line, condensed_text(&g.template, &g.values));
+        return true;
+    }
+    if w.condensed.len() >= 64 {
+        w.condensed.remove(0);
+    }
+    w.condensed.push(Condensed { seq: m.seq, id: m.id, template, line: w.chat.len(), values: vec![value] });
+    false
+}
+
 fn print(w: &mut World, m: Msg) {
     let Some(bt) = w.battle.clone() else {
         log::info!("battle message {} before the message tables loaded", m.id);
@@ -275,7 +344,15 @@ fn print(w: &mut World, m: Msg) {
         return;
     }
     let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
-    for (l, c) in render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game) {
+    let lines = render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game);
+    if w.modern
+        && w.condense
+        && let (Some(which), [(line, _)]) = (m.which, lines.as_slice())
+        && condense(w, &bt, &m, which, line, &ctx)
+    {
+        return;
+    }
+    for (l, c) in lines {
         w.chat.push_battle(l, c);
     }
 }
@@ -303,7 +380,7 @@ fn record_messages(a: &Action) -> Vec<Msg> {
         let ids = [Some(r.message), r.proc.as_ref().map(|p| p.message), r.react.as_ref().map(|p| p.message)];
         for (which, id) in ids.into_iter().enumerate() {
             if let Some(id) = id.filter(|&id| id != 0) {
-                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8) });
+                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8), seq: a.seq });
             }
         }
     }
@@ -495,7 +572,7 @@ pub(super) fn message_queue(w: &mut World, dt: f32) {
             log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
             w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
         }
-        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None });
+        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None, seq: 0 });
     }
 }
 
@@ -508,6 +585,8 @@ pub(super) fn on_action(w: &mut World, a: &Action) {
             one_action(w, &r);
         }
     }
+    w.action_seq = w.action_seq.wrapping_add(1).max(1);
+    let a = &Action { seq: w.action_seq, ..a.clone() };
     if a.category != category::BASIC_ATTACK || a.records().len() < 2 {
         one_action(w, a);
         return;
@@ -634,7 +713,7 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
         _ => r.react.as_ref().map(|p| p.message),
     };
     if let Some(id) = id.filter(|&id| id != 0) {
-        print(w, Msg { id, actor: a.actor, target, work, which: Some(which) });
+        print(w, Msg { id, actor: a.actor, target, work, which: Some(which), seq: a.seq });
     }
 }
 
@@ -1503,7 +1582,7 @@ mod tests {
         // The rabbit hits for 7 with a 3-point additional effect, then misses.
         let hit = ActionResult { kind: 1, scale: 1, value: 7, message: 1, proc: Some(Side { kind: 1, info: 0, value: 3, message: 163 }), ..Default::default() };
         let miss = ActionResult { miss: 1, kind: 1, message: 15, ..Default::default() };
-        let a = Action { actor: RABBIT, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ME, results: vec![hit, miss] }] };
+        let a = Action { actor: RABBIT, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: ME, results: vec![hit, miss] }], seq: 0 };
         let decoded = parse(&sub(pack(&a)).data);
         let lines: Vec<(String, [u8; 4])> = action_messages(&decoded).into_iter().flat_map(|(id, t, work)| say(id, decoded.actor, t, work)).collect();
         assert_eq!(lines[0], ("The Wild Rabbit hits Tuxedo for 7 points of damage.".to_string(), red));
@@ -1515,6 +1594,17 @@ mod tests {
         let d = parse(&pack(&a));
         let (id, t, work) = action_messages(&d)[0];
         assert_eq!(say(id, d.actor, t, work), [("Tuxedo hits the Wild Rabbit for 12 points of damage.".to_string(), white)]);
+
+        // Condensed (modern chat): the hits of a round as one line, misses counted.
+        let ctx = |work: [i32; 5]| Ctx { actor: who(ME), target: who(RABBIT), me: "Tuxedo".into(), work, ..Default::default() };
+        let line = say(1, ME, RABBIT, [0, 12, 0, 0, 0])[0].0.clone();
+        let t = template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, &line, &cfg).unwrap();
+        assert_eq!(condensed_text(&t, &[12, 15, 9]), "Tuxedo hits the Wild Rabbit for 12, 15, 9 points of damage.");
+        let miss = say(15, ME, RABBIT, [0; 5])[0].0.clone();
+        let t = template_of(&bt, 15, rel(ME, RABBIT), &ctx([0; 5]), 1, &miss, &cfg).unwrap();
+        assert_eq!(condensed_text(&t, &[0, 0]), "Tuxedo misses the Wild Rabbit. (x2)");
+        // A line whose text is not the template with its number in is left alone.
+        assert_eq!(template_of(&bt, 1, rel(ME, RABBIT), &ctx([0, 12, 0, 0, 0]), 1, "something else", &cfg), None);
     }
 
     /// FUN_101275b0 over the layouts, filtered as FUN_10127230 does for a solo player.

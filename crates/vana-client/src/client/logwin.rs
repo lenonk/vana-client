@@ -63,6 +63,8 @@ pub struct LogWin {
     seen: usize,
     width: f32,
     stamps: Stamps,
+    /// The log's in-place edits when last wrapped (a changed line wraps everything again).
+    edits: u64,
     pub anim: LogAnim,
     /// The frame height's change in the last update (new - old), for the pointer follow.
     pub dh: i32,
@@ -391,10 +393,11 @@ impl LogWin {
     #[allow(clippy::too_many_arguments)]
     pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, typing: bool, stamps: Stamps) -> f32 {
         let tw = text_width(sw, self.cfg.pct);
-        let rewrap = tw != self.width || stamps != self.stamps;
+        let rewrap = tw != self.width || stamps != self.stamps || chat.edits() != self.edits;
         if rewrap {
             self.width = tw;
             self.stamps = stamps;
+            self.edits = chat.edits();
             self.wrapped.clear();
             self.seen = chat.len().saturating_sub(64);
             self.anim.settle();

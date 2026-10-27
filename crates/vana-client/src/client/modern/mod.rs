@@ -168,7 +168,7 @@ impl Modern {
         pointers(self, ctx, w);
         let layout = cfg.modern_places.entry(w.name.clone()).or_default();
         let mut changed = false;
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout, changed: &mut changed, chat_font: &mut cfg.modern_chat_font, battle_in_all: &mut cfg.modern_battle_in_all, condense: &mut cfg.modern_condense, folded: &mut cfg.modern_folded, scan_kinds: &mut cfg.modern_scan_kinds, this: HashMap::new(), retail: HashMap::new(), focus: focus_panel(w) };
         // The chat window first: what sits on it places by this frame's height.
         self.chat_edge.set(None);
         chat::panel(&mut p, w);
@@ -210,6 +210,8 @@ impl Modern {
         event_input(&mut p, w);
         let this = std::mem::take(&mut p.this);
         *self.rects.borrow_mut() = this;
+        // The chat settings act at once (the world reads it as lines print).
+        w.condense = cfg.modern_condense;
         self.dirty |= changed;
         let save = self.dirty && !ctx.input(|i| i.pointer.any_down());
         if save {
@@ -302,6 +304,8 @@ struct Panels<'a> {
     chat_font: &'a mut f32,
     /// The chat's All tab shows the battle lines (config modern_battle_in_all).
     battle_in_all: &'a mut bool,
+    /// An action's battle lines merge (config modern_condense).
+    condense: &'a mut bool,
     folded: &'a mut std::collections::BTreeMap<String, bool>,
     scan_kinds: &'a mut u8,
     /// The panels drawn this frame, as others dock on them (the chat window while it fades: its bottom edge).

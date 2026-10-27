@@ -127,6 +127,8 @@ pub struct Config {
     pub modern_scan_kinds: u8,
     /// The modern chat's All tab shows the battle lines too (the Battle tab has them alone).
     pub modern_battle_in_all: bool,
+    /// The modern chat merges an action's lines that differ only in their number (BattleMod's condensing).
+    pub modern_condense: bool,
 }
 
 /// A modern UI panel's place: its left and top (or, for the panels that grow upward, its bottom `b`) as fractions of the
@@ -251,6 +253,7 @@ impl Default for Config {
             modern_folded: Default::default(),
             modern_scan_kinds: 7,
             modern_battle_in_all: true,
+            modern_condense: true,
             tool: Default::default(),
             retail_aspect: false,
             monitor: String::new(),

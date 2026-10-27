@@ -54,7 +54,7 @@ impl Modern {
         self.zoom_to(ctx, window, scale);
         let mut layout = Default::default();
         let (mut changed, mut font) = (false, 15.0);
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("select") };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("select") };
         let mut out = Pointer::default();
         list_panel(&mut p, gu, v, &mut out);
         windows(&mut p, gu, v, &mut out);
@@ -67,7 +67,7 @@ impl Modern {
         let mut layout = Default::default();
         let (mut changed, mut font) = (false, 15.0);
         let focus = if c.ok.is_some() || c.confirm.is_some() { "creator prompt" } else { "creator" };
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some(focus) };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, condense: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some(focus) };
         let mut out = creator::Pointer::default();
         creator_panel(&mut p, gu, c, &mut out);
         creator_prompts(&mut p, gu, c, &mut out);

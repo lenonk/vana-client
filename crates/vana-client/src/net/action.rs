@@ -61,6 +61,8 @@ pub struct Action {
     /// info: the recast for magic finish.
     pub info: u32,
     pub targets: Vec<ActionTarget>,
+    /// The client's serial of the packet (combat::on_action; 0 before).
+    pub seq: u32,
 }
 
 impl Action {
@@ -134,7 +136,7 @@ pub fn parse(packet: &[u8]) -> Action {
         }
         targets.push(ActionTarget { id, results });
     }
-    Action { actor, category, arg, info, targets }
+    Action { actor, category, arg, info, targets, seq: 0 }
 }
 
 /// LSB's packer (packBitsBE + GP_SERV_COMMAND_BATTLE2::pack), for test packets and combat-shot.
@@ -201,7 +203,7 @@ mod tests {
         // A mob (0x0100_1234) hits Tuxedo for 7, with a 3-point additional effect, then misses.
         let hit = ActionResult { kind: 1, animation: 0, scale: 1, value: 7, message: 1, proc: Some(Side { kind: 1, info: 0, value: 3, message: 163 }), ..Default::default() };
         let miss = ActionResult { miss: 1, kind: 1, message: 15, ..Default::default() };
-        Action { actor: 0x0100_1234, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: 0x0001_0203, results: vec![hit, miss] }] }
+        Action { actor: 0x0100_1234, category: category::BASIC_ATTACK, arg: u32::from_le_bytes(*b"atk0"), info: 0, targets: vec![ActionTarget { id: 0x0001_0203, results: vec![hit, miss] }], seq: 0 }
     }
 
     #[test]
@@ -225,6 +227,7 @@ mod tests {
             arg: 144,
             info: 5,
             targets: vec![ActionTarget { id: 2, results: vec![r(2), r(3)] }, ActionTarget { id: 3, results: vec![r(264)] }],
+            seq: 0,
         };
         let b = parse(&pack(&a));
         assert_eq!(b, a);
@@ -234,7 +237,7 @@ mod tests {
     /// Bytes as LSB builds them for a known action (bit order checked by hand against packBitsBE).
     #[test]
     fn known_bits() {
-        let a = Action { actor: 0x0001_0203, category: 1, arg: 0, info: 0, targets: vec![] };
+        let a = Action { actor: 0x0001_0203, category: 1, arg: 0, info: 0, targets: vec![], seq: 0 };
         let p = pack(&a);
         assert_eq!(&p[5..9], &[0x03, 0x02, 0x01, 0x00]);
         // 6 bits of count (0), 4 of res_sum, then category 1 at bit 10 of byte 9.

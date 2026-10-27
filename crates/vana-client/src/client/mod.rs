@@ -4707,6 +4707,11 @@ struct World {
     party_tp: bool,
     /// Config `modern_ui`: the modern layer draws the windows it has, the retail ones are left out.
     modern: bool,
+    /// Config `modern_condense` (with `modern`): an action's battle lines merge (combat::condense).
+    condense: bool,
+    /// The lines later records of their action merge into, and the last action's serial.
+    condensed: Vec<combat::Condensed>,
+    action_seq: u32,
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
     item_search: bool,
@@ -5756,6 +5761,7 @@ impl App {
         if let Phase::World(w) = &mut self.phase {
             w.party_tp = self.cfg.party_tp;
             w.modern = self.cfg.modern_ui;
+            w.condense = self.cfg.modern_condense;
             w.map_opacity = self.cfg.map_overlay_opacity;
             w.map_overlay = self.cfg.map_overlay;
             w.synth_amount = self.cfg.synth_amount;
@@ -6343,6 +6349,9 @@ impl App {
                             zone_uploading: None,
                             party_tp: self.cfg.party_tp,
                             modern: self.cfg.modern_ui,
+                            condense: self.cfg.modern_condense,
+                            condensed: Vec::new(),
+                            action_seq: 0,
                             party_tp_save: false,
                             item_search: false,
                             follow: None,
