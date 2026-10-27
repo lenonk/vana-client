@@ -24,6 +24,8 @@ pub struct ChatLog {
 }
 
 pub const NO_MODE: u16 = 0xffff;
+/// Battle messages (print): the modern chat's Battle tab (not retail).
+pub const BATTLE_MODE: u16 = 0xfffe;
 
 impl ChatLog {
     pub fn push(&mut self, s: impl Into<String>) {
@@ -32,6 +34,11 @@ impl ChatLog {
 
     pub fn push_colour(&mut self, s: String, colour: [u8; 4]) {
         self.push_line(s, colour, false, false, NO_MODE);
+    }
+
+    /// A battle message's line.
+    pub fn push_battle(&mut self, s: String, colour: [u8; 4]) {
+        self.push_line(s, colour, false, false, BATTLE_MODE);
     }
 
     /// A line whose continuation lines are indented.
@@ -269,7 +276,7 @@ fn print(w: &mut World, m: Msg) {
     }
     let ctx = Ctx { actor: who(w, m.actor), target: who(w, m.target), me: w.name.clone(), work: m.work, keys: keys(w), ..Default::default() };
     for (l, c) in render(&bt, m.id, relation(w, m.actor, m.target), &ctx, &w.game) {
-        w.chat.push_colour(l, c);
+        w.chat.push_battle(l, c);
     }
 }
 

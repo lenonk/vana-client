@@ -27,7 +27,7 @@ impl Modern {
         self.zoom_to(ctx, window, scale);
         let mut layout = Default::default();
         let (mut changed, mut font) = (false, 15.0);
-        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("select") };
+        let mut p = Panels { m: self, ctx, gu: Some(gu), layout: &mut layout, changed: &mut changed, chat_font: &mut font, battle_in_all: &mut true, folded: &mut Default::default(), scan_kinds: &mut 7, this: Default::default(), retail: Default::default(), focus: Some("select") };
         let mut out = Pointer::default();
         list_panel(&mut p, gu, v, &mut out);
         windows(&mut p, gu, v, &mut out);

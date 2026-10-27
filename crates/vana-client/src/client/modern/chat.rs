@@ -3,6 +3,7 @@
 //! its settings (the font size) behind the button at the tabs' right. It grows and shrinks by the retail log's rule
 //! (logwin::LogAnim) on its own rows.
 
+use super::super::combat::BATTLE_MODE;
 use super::super::{World, cfgapply, event, fep};
 use super::{Modern, Panels, Show, paint};
 use crate::dat::font::{CODE_BASE, code_table};
@@ -12,7 +13,7 @@ use std::sync::OnceLock;
 
 /// The tabs: retail's full log's (FUN_10138700 / FUN_101299f0; scratch chatfilters/SPEC.md): every line, then each
 /// channel's chat modes, our own echo with the others' (Shout with Yell, Party with the trusts').
-pub const TABS: [(&str, &[u8]); 10] = [
+pub const TABS: [(&str, &[u8]); 11] = [
     ("All", &[]),
     ("Say", &[1, 9]),
     ("Tell", &[4, 12]),
@@ -23,11 +24,18 @@ pub const TABS: [(&str, &[u8]); 10] = [
     ("Assist J", &[0xdb, 0xdc]),
     ("Unity", &[0xd3, 0xd4]),
     ("Shout", &[2, 10, 3, 11]),
+    // Ours: the battle messages alone (BattleMod / rChat style; not retail).
+    ("Battle", &[]),
 ];
+const BATTLE_TAB: u8 = 10;
 
-/// A line of this mode shows on tab `tab`.
-fn shows(tab: u8, mode: u16) -> bool {
-    tab == 0 || TABS.get(tab as usize).is_some_and(|t| mode < 0x100 && t.1.contains(&(mode as u8)))
+/// A line of this mode shows on tab `tab`; All leaves the battle lines out when `battle_in_all` is off.
+fn shows(tab: u8, mode: u16, battle_in_all: bool) -> bool {
+    match tab {
+        0 => battle_in_all || mode != BATTLE_MODE,
+        BATTLE_TAB => mode == BATTLE_MODE,
+        _ => TABS.get(tab as usize).is_some_and(|t| mode < 0x100 && t.1.contains(&(mode as u8))),
+    }
 }
 /// Lines kept in the window's scroll.
 const KEEP: usize = 300;
@@ -137,11 +145,14 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32) -> (Rect, bool) {
     (g, resp.on_hover_text("Chat settings").clicked())
 }
 
-/// The settings below the button (`at`, on the screen): the font size, - and +. Closed by the button or a click
-/// elsewhere; true when the size changed.
-fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32) -> bool {
+/// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All. Closed by the
+/// button or a click elsewhere; true when one changed.
+fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in_all: &mut bool) -> bool {
     let mut changed = false;
-    let shown = egui::Area::new(Id::unique("modern chat settings")).order(Order::Foreground).pivot(egui::Align2::RIGHT_TOP).fixed_pos(pos2(at.max.x, at.max.y + 6.0)).show(ctx, |ui| {
+    // Below the button, or above it when the chat window sits in the screen's lower half.
+    let up = at.center().y > ctx.content_rect().center().y;
+    let (pivot, y) = if up { (egui::Align2::RIGHT_BOTTOM, at.min.y - 6.0) } else { (egui::Align2::RIGHT_TOP, at.max.y + 6.0) };
+    let shown = egui::Area::new(Id::unique("modern chat settings")).order(Order::Foreground).pivot(pivot).fixed_pos(pos2(at.max.x, y)).show(ctx, |ui| {
         let bg = ui.painter().add(egui::Shape::Noop);
         let inner = egui::Frame::NONE.inner_margin(super::MARGIN).show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -173,6 +184,19 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32) -> bool {
                 let (r, _) = ui.allocate_exact_size(vec2(30.0, 28.0), Sense::hover());
                 ui.painter().text(r.center(), egui::Align2::CENTER_CENTER, format!("{}", now as u32), FontId::proportional(m.theme.ui), m.theme.color("gold"));
                 step(ui, "+", 1.0);
+            });
+            ui.add_space(6.0);
+            // The battle lines on All, or on the Battle tab alone (not retail).
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+                let (r, _) = ui.allocate_exact_size(vec2(96.0, 28.0), Sense::hover());
+                ui.painter().text(pos2(r.min.x, r.center().y), egui::Align2::LEFT_CENTER, "Battle in All", FontId::proportional(m.theme.ui), m.theme.color("text"));
+                for (val, label) in [(true, "Shown"), (false, "Hidden")] {
+                    if super::craft::button(ui, m, label, 80.0, *battle_in_all == val, false) && *battle_in_all != val {
+                        *battle_in_all = val;
+                        changed = true;
+                    }
+                }
             });
         });
         let r = inner.response.rect;
@@ -343,6 +367,7 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     }
     let m = p.m;
     let tab = m.chat_tab.get();
+    let battle_in_all = *p.battle_in_all;
     let font = FontId::proportional(*p.chat_font);
     let room = p.room("chat", default_room(p.ctx));
     let wrap = wrap_width(room);
@@ -365,7 +390,7 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     }
     let modes = w.chat.modes();
     for (((line, c), (time, chat, _)), mode) in w.chat.iter_timed().zip(modes.iter().copied()).skip(ml.seen) {
-        if shows(tab, mode) {
+        if shows(tab, mode, battle_in_all) {
             let job = line_job((&stamp_of(stamps, time, chat), Color32::WHITE), line, *c, &font, wrap);
             for _ in 0..p.ctx.fonts_mut(|f| f.layout_job(job)).rows.len().max(1) {
                 ml.anim.add_line(&rule.cfg);
@@ -420,6 +445,7 @@ fn full(p: &mut Panels, w: &mut World) {
     let v = view_keep(w, usize::MAX);
     let t = p.ctx.input(|i| i.time) as f32;
     let tab = m.chat_tab.get();
+    let battle_in_all = *p.battle_in_all;
     let mut button = (Rect::NOTHING, false);
     let (mut short, mut hovered) = (None, false);
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), ..Default::default() }, |ui, room| {
@@ -435,7 +461,7 @@ fn full(p: &mut Panels, w: &mut World) {
         let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min, lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
         let mut y = lines.max.y + fl.scroll as f32 * row;
         for (st, line, c, mode) in v.lines.iter().rev() {
-            if !shows(tab, *mode) {
+            if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
             if y <= area.min.y {
@@ -473,7 +499,7 @@ fn full(p: &mut Panels, w: &mut World) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font) {
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all) {
         *p.changed = true;
     }
 }
@@ -484,6 +510,7 @@ fn full(p: &mut Panels, w: &mut World) {
 pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     let m = p.m;
     let tab = m.chat_tab.get();
+    let battle_in_all = *p.battle_in_all;
     let t = p.ctx.input(|i| i.time) as f32;
     let size = *p.chat_font;
     let font = FontId::proportional(size);
@@ -524,7 +551,7 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
         let mut y = base + s.pending as f32 * row;
         let mut newest = None;
         for (st, line, c, mode) in v.lines.iter().rev() {
-            if !shows(tab, *mode) {
+            if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
             if y <= clip.min.y {
@@ -556,7 +583,7 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
     if button.1 {
         m.chat_settings.set(!m.chat_settings.get());
     }
-    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font) {
+    if r.is_some() && m.chat_settings.get() && settings(p.ctx, m, button.0, p.chat_font, p.battle_in_all) {
         *p.changed = true;
     }
 }

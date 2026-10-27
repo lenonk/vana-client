@@ -408,6 +408,12 @@ Milestone 1:
   a Settings button (chfwin, as Num+ or the right button), chfwin and chswin beside it, the prompt (ptc6yesn), the ok
   window and the rename field below; the mouse as retail's (a row moves the cursor, a click is Enter). The title and the
   creator stay retail's (their own art). Live: the list by keys, the login prompt (No), Settings by the mouse.
+- The Battle tab (2026-10-27, not retail; the BattleMod / rChat way of keeping battle text apart): battle messages
+  (combat.rs print) are tagged BATTLE_MODE; the chat's Battle tab shows them alone, and the chat settings' "Battle in
+  All: Shown / Hidden" (config modern_battle_in_all, Shown by default) takes them out of All. Retail's own Chat
+  Filters (Config, 0x32 / 0x33) still decide which battle messages print at all. The settings popup opens above the
+  gear when the chat window sits in the screen's lower half (it opened off-screen before). Live: Cure and a say line,
+  the Battle tab with the cast lines alone, Hidden leaving All to the chat.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
@@ -420,7 +426,7 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
-- To do: the title's and the creator's own layouts; BattleMod / rChat in the chat.
+- To do: the title's and the creator's own layouts; condensed battle lines (BattleMod's one line per action).
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.
