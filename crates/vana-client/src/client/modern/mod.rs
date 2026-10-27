@@ -683,6 +683,11 @@ impl Modern {
 }
 
 fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
+    title_row_in(ui, m, t, m.theme.color("gold"));
+}
+
+/// A title row in another colour (the target's name in its retail name colour).
+fn title_row_in(ui: &mut Ui, m: &Modern, t: &Title, colour: egui::Color32) {
     let h = 28.0;
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
     let p = ui.painter();
@@ -692,7 +697,7 @@ fn title_row(ui: &mut Ui, m: &Modern, t: &Title) {
         x += 34.0;
     }
     let font = FontId::new(m.theme.title, FontFamily::Name(STRONG.into()));
-    p.text(pos2(x, r.center().y), egui::Align2::LEFT_CENTER, t.text, font, m.theme.color("gold"));
+    p.text(pos2(x, r.center().y), egui::Align2::LEFT_CENTER, t.text, font, colour);
     if let Some(n) = t.note {
         p.text(pos2(r.max.x, r.center().y), egui::Align2::RIGHT_CENTER, n, FontId::proportional(m.theme.small), m.theme.color("muted"));
     }

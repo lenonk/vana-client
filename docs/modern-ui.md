@@ -304,4 +304,6 @@ Milestone 1:
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
 - To do: the lobby screens' own layouts; BattleMod / rChat in the chat.
-- Not yet: keyboard focus between panels, the target's cast and claim colours, a way to reset places, alliance rows live.
+- The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
+  party's claim red, another's magenta).
+- Not yet: keyboard focus between panels, the target's cast, a way to reset places, alliance rows live.

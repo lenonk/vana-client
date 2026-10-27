@@ -83,6 +83,9 @@ pub struct TargetView {
     pub locked: bool,
     /// HP percent and the bar's eased fraction; none for a target without a gauge.
     pub hp: Option<(u8, f32)>,
+    /// The name's retail colour (FUN_1008db40: unclaimed monster pale yellow, claimed by our party red, by others
+    /// magenta ...); none outside the game (the offscreen shot).
+    pub colour: Option<Color32>,
 }
 
 pub struct WhereView {
@@ -347,7 +350,10 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
 pub fn target_panel(p: &mut Panels, v: &TargetView) {
     let m = p.m;
     let frame = if v.locked { "window_alert" } else { "window_normal" };
-    let r = p.framed("target", Some(Title { icon: Some(v.ring), text: &v.name, note: None }), 340.0, frame, |ui| {
+    let title = Title { icon: Some(v.ring), text: &v.name, note: None };
+    let r = p.framed("target", None, 340.0, frame, |ui| {
+        super::title_row_in(ui, m, &title, v.colour.unwrap_or(m.theme.color("gold")));
+        ui.add_space(6.0);
         if let Some((pct, f)) = v.hp {
             gauge_row(ui, m, "HP", "hp", f, &format!("{pct}%"));
         }
@@ -519,7 +525,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         let t = target::slot_target(w, k);
         target::pick(w, t);
     }
-    if let Some(v) = target_view(w) {
+    if let Some(v) = target_view(w, p.gu) {
         target_panel(p, &v);
     }
     if let Some((total, left)) = w.cast_bar {
@@ -652,7 +658,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
     (party, allies)
 }
 
-fn target_view(w: &World) -> Option<TargetView> {
+fn target_view(w: &World, gu: Option<&super::super::game_ui::GameUi>) -> Option<TargetView> {
     let id = w.target?;
     let me = (id == w.my_id).then(|| self_entity(w));
     let e = me.as_ref().or_else(|| w.entities.get(&id))?;
@@ -669,5 +675,6 @@ fn target_view(w: &World) -> Option<TargetView> {
     } else {
         "indicators/target_neutral"
     };
-    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)) })
+    let colour = gu.map(|gu| super::chat::colour(super::super::name_colour(id, e, w, |i| gu.ncol(i)).to_le_bytes()));
+    Some(TargetView { name, ring, locked: w.locked, hp: (!e.no_gauge).then_some((e.hpp, w.target_gauge.1 as f32 / 100.0)), colour })
 }
