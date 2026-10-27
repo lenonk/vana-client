@@ -1641,8 +1641,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                 }
                 // The palette (FUN_101a3960): Left / Right move the cursor (wrapping), Down / Up the next / previous set,
-                // Enter runs the cell and closes, Escape closes.
-                _ if world.palette.0 != 0 => {
+                // Enter runs the cell and closes, Escape closes. Other keys pass (Ctrl / Alt + M opens magic).
+                egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::ArrowDown | egui::Key::ArrowUp | egui::Key::Enter | egui::Key::Escape if world.palette.0 != 0 => {
                     let p = world.palette.0 as usize - 1;
                     match key {
                         egui::Key::ArrowLeft | egui::Key::ArrowRight => {
