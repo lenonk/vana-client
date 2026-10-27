@@ -7263,6 +7263,10 @@ impl App {
                     world.mog_zone = mog_zone;
                     world.mon_login = monstrosity;
                     monstrosity::zone_reset(world);
+                    // FUN_100f9eb0: each map connection zeroes the session object, the party roster with it
+                    // (FUN_100e8930); the new zone's 0x0C8 lists the party again, without the trusts released.
+                    world.party = Default::default();
+                    world.party_asked = false;
                     // FUN_100550f0: the old zone's path goes; the new one's comes with its scene.
                     world.voyage.path = None;
                     world.play_time = Some((play_time, Instant::now()));
@@ -7970,11 +7974,13 @@ impl App {
                 }
                 NetEvent::Vitals { hp, mp, tp, hpp, mpp } => world.vitals = Some((hp, mp, tp, hpp, mpp)),
                 NetEvent::PartyTable(entries) => {
+                    log::info!("0x0C8 party table: {:?}", entries.iter().filter(|e| e.0 != 0).map(|e| format!("{:#x}/{:#x} f{:#x} z{}", e.0, e.1, e.2, e.3)).collect::<Vec<_>>());
                     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
                     world.party.table(&entries);
                     world.party_asked = false;
                 }
                 NetEvent::PartyList(u, create) => {
+                    log::debug!("0x0DD party list: {:#x}/{:#x} {} zone {} create {create}", u.id, u.index, u.name, u.zone);
                     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
                     world.party.list(&u, world.my_id, create);
                 }

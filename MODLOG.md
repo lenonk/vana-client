@@ -10598,3 +10598,15 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   plain child on actor1, quiet as its parent (the hand schedulers' sounds; a child playing its own motion replaced the
   merged play, and the battle files left before the second hand's sheathe). Test dual_wield_files. Live (Lnxcsfix NIN
   30, two Wakizashi, a Wild Rabbit in West Ronfaure): engaged i0c then i1c, disengaged o0c then o1c.
+
+## The party roster at a zone change (2026-10-27)
+
+- User report: trusts stayed in the party list after zoning, shown as members in the zone left. LSB releases the
+  trusts on the zone change and, with nobody else in the party, sends no 0x0C8 afterwards (live: Lnxcsfix summoned
+  Kupipi in West Ronfaure, tables [us, 0x1064801/0x701 z100]; after `!zone 230` no table came).
+- Retail: each map connection (FUN_100f02b0 state 7 -> FUN_100f9a30 -> FUN_100f9eb0) zeroes the whole session object
+  (DAT_104dfd98, 0x1038e dwords) and runs the subsystem inits (FUN_100fa050), FUN_100e8930 among them: the party
+  roster G+0x57d8 (0x1024 dwords) zeroed and the 0xC8 / 0xDD / 0xDF / ... handlers registered. So every zone-in starts
+  with an empty roster and the new zone's 0x0C8 fills it.
+- Ours: the zone-in handler resets world.party (and party_asked). Live: Kupipi listed in West Ronfaure; after the zone
+  change the window shows Solo with us alone. 0x0C8 tables are logged (info), 0x0DD at debug.
