@@ -497,6 +497,34 @@ impl Region {
         lx.abs() <= self.scale[0].abs() / 2.0 && dy.abs() <= self.scale[1].abs() / 2.0 && lz.abs() <= self.scale[2].abs() / 2.0
     }
 
+    /// FUN_10175910: the segment a..b touches the box: an end inside, or it crosses a face.
+    pub fn touches(&self, a: [f32; 3], b: [f32; 3]) -> bool {
+        let (la, lb) = (self.local(a), self.local(b));
+        if [la, lb].iter().any(|p| p.iter().all(|v| v.abs() <= 0.5)) {
+            return true;
+        }
+        let (mut t0, mut t1) = (0.0f32, 1.0f32);
+        for i in 0..3 {
+            let d = lb[i] - la[i];
+            if d.abs() < 1e-9 {
+                if la[i].abs() > 0.5 {
+                    return false;
+                }
+                continue;
+            }
+            let (u, v) = ((-0.5 - la[i]) / d, (0.5 - la[i]) / d);
+            (t0, t1) = (t0.max(u.min(v)), t1.min(u.max(v)));
+        }
+        t0 <= t1
+    }
+
+    /// A point in the box's unit space (the box is [-0.5, 0.5]^3 there).
+    fn local(&self, p: [f32; 3]) -> [f32; 3] {
+        let (dx, dy, dz) = (p[0] - self.pos[0], p[1] - self.pos[1], p[2] - self.pos[2]);
+        let (s, c) = (-self.rot[1]).sin_cos();
+        [(dx * c + dz * s) / self.scale[0].abs(), dy / self.scale[1].abs(), (-dx * s + dz * c) / self.scale[2].abs()]
+    }
+
     /// A lift shaft ('@', collision_actors_spec 2.1).
     pub fn is_lift(&self) -> bool {
         self.name.starts_with('@')
@@ -646,5 +674,17 @@ mod tests {
         let mut p = header(0x81, 1, 2, 32, 0);
         p.extend([1, 2, 3, 0x40, 4, 5, 6, 0x80]);
         assert_eq!(parse_img(&p).unwrap().rgba, [6, 5, 4, 255, 3, 2, 1, 0x80]);
+    }
+
+    #[test]
+    fn zone_line_segments() {
+        // Ru'Lude Gardens' Mog House lift: the box under the floor, our place at the button, the event's pose below.
+        let r = Region { name: "zmrmzmrn".into(), pos: [48.989, 17.19, -79.994], rot: [0.0, 3.1416, 0.0], scale: [12.0, 10.0, 10.0], class: 0, param: 0, flags: 0, floors: [0, 0] };
+        let (button, down) = ([49.0, 9.65, -73.0], [51.531, 14.999, -77.941]);
+        assert!(!r.touches(button, button));
+        assert!(r.touches(button, down) && r.touches(down, down));
+        // Through the box with both ends outside, and beside it.
+        assert!(r.touches([40.0, 17.0, -80.0], [58.0, 17.0, -80.0]));
+        assert!(!r.touches([40.0, 17.0, -70.0], [58.0, 17.0, -70.0]));
     }
 }

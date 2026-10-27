@@ -4592,6 +4592,8 @@ struct World {
     /// Since when the zone-in fade waits for a lift actor.
     lift_wait: Option<Instant>,
     zoning_since: Option<Instant>,
+    /// A zone line touched in an event, asked for once it ends (DAT_1048098e = 1).
+    zone_touch: Option<zone::Region>,
     zone_hold: Option<zonefade::Hold>,
     /// The limited-time RoE record last seen in slot 63 this login (DAT_10487eec), and "New Challenge" waiting to play
     /// (DAT_104807ec bit 3).
@@ -6265,6 +6267,7 @@ impl App {
                             ride_y: 0.0,
                             lift_wait: None,
                             zoning_since: None,
+                            zone_touch: None,
                             zone_hold: None,
                             roe_timed: 0,
                             new_challenge: false,
@@ -7197,7 +7200,7 @@ impl App {
                     }
                     world.my_init_done = false;
                     world.effects.reset_equip(char_id);
-                    world.zoning_since = None;
+                    (world.zoning_since, world.zone_touch) = (None, None);
                     world.pos = Vec3::from(pos);
                     world.pos_zone = zone;
                     world.unsettled = true;
@@ -8695,13 +8698,18 @@ impl App {
         if *TRACE.get_or_init(|| std::env::var_os("FFXI_TRACE_MOVE").is_some()) && (cx != 0.0 || cy != 0.0 || (world.started.elapsed().as_secs_f32() * 2.0).fract() < dt * 2.0) {
             log::info!("cam t {:.3} eye {:.3} look {:.3} drawn {:.3} unlock {:.1} v6 {cx:.2} v7 {cy:.2} first {}", world.started.elapsed().as_secs_f32(), world.cam.eye, world.cam.look, world.draw_pos, world.unlock_ticks, world.camst.first);
         }
-        // Touching a zone line asks the server to move us; wait for its answer before asking again.
-        if stepping && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
-            if let Some(line) = world.zone_lines.iter().find(|r| r.contains(world.pos.to_array())) {
-                world.zoning_since = Some(Instant::now());
-                log::info!("zone line {}", line.name);
-                let _ = world.net.commands.send(NetCommand::ZoneLine { tag: line.tag(), pos: world.pos.to_array() });
-            }
+        // FUN_1008b100, every frame: a zone line between our position and where we are drawn (an event's pose: Jeuno's
+        // Mog House lifts carry us down into theirs) asks the server to move us, once no event runs (LSB refuses it in
+        // one). Wait for its answer before asking again.
+        let settled = world.in_scene() && !world.unsettled;
+        if settled && !world.dead() && world.zone_touch.is_none() && world.zoning_since.is_none_or(|t| t.elapsed().as_secs_f32() > 5.0) {
+            let (at, drawn) = (world.pos.to_array(), event::own_pose(world).unwrap_or(world.pos).to_array());
+            world.zone_touch = world.zone_lines.iter().find(|r| r.touches(at, drawn)).cloned();
+        }
+        if !in_event && let Some(line) = world.zone_touch.take() {
+            world.zoning_since = Some(Instant::now());
+            log::info!("zone line {}", line.name);
+            let _ = world.net.commands.send(NetCommand::ZoneLine { tag: line.tag(), pos: world.pos.to_array() });
         }
         if let Ok(mut me) = world.net.me.lock() {
             me.pos = world.pos.to_array();

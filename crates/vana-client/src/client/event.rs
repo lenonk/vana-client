@@ -1893,6 +1893,11 @@ pub fn position_ack(w: &mut World, mode: u8) {
     }
 }
 
+/// Where the running event draws us (the VM bodies are a draw override; our own position stays).
+pub fn own_pose(w: &World) -> Option<Vec3> {
+    w.event.as_ref()?.st.poses.get(&w.my_id).map(|p| p.pos)
+}
+
 pub fn active(w: &World) -> bool {
     w.event.is_some() || w.event_pending.is_some()
 }

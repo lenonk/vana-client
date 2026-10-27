@@ -10443,3 +10443,25 @@ Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables
   owner whose PClaimedMob is another mob abandons it), and Valaineral's weapon skill killed it; TakeWeaponskillDamage
   claims only for player attackers, so it died unowned and DistributeRewards gave no drops or EXP. Trust melee does
   reclaim for the master (battle_entity.cpp ClaimMob for any attacker). Server side; not changed (no LSB patches).
+
+## Zone lines: the per-frame segment test (2026-10-27)
+
+- User report: the Mog House entrance in Ru'Lude Gardens did nothing. The zone has one Mog House line, `zmrmzmrn`
+  at (48.99, 17.19, -79.99), 12 x 10 x 10, under the floor of the lift beside the Elevator Button (LSB event 75,
+  zone event 0x4b: "Enter the residential area?", then the player walks onto the lift and the script lowers its own
+  body 0.05 a tick from y 10 to 15 while thread npc02b lowers the lift; fade `fdo2`, op 0x47 sends the spot, end).
+  LSB ignores that 0x05C (onEventUpdate does not return 1: a mode 2 reply, the old place).
+- FUN_1008b100 (from the per-frame actor pass, 0x10096969) runs every frame with our actor in (+0x120 bit 9), not
+  zoning (DAT_10487e48) and no request pending (DAT_1048098e == 0); it does not look at events or input.
+  FUN_10181510 -> FUN_10175910(actor +4, model +0x34): each 'z' / 'Z' rect with a second name dword (8-character
+  names) maps both points into its unit box; a hit is either point inside or the segment crossing one of its faces
+  (FUN_101768a0 over the 6 planes at 0x10376bc0). A hit: FUN_100a6070(0), DAT_10482f1e = 1 (the zone-line fade-out,
+  60 ticks in FUN_1008abe0), DAT_1048098e = 1. FUN_1008abe0 sends 0x05E once the fade is done and the zone-in state
+  (DAT_104807f0 byte 3) is 0, then DAT_1048098e = 2; FUN_1009ee60 mode 5 about us (a reset) clears it.
+- So the event's draw override (the model) sinking into the box while the actor's own place stays at the button is
+  what zones you in retail. Ours tested only our own place, and only while a move key was held.
+- Ours: every frame (in the scene, not dead, nothing pending), Region::touches(our place, event::own_pose or our
+  place); a hit during an event waits for its end (LSB blocks 0x05E in an event), then 0x05E as before. The 5 s
+  resend and the 8 s give-up stay *(not retail: retail sends once and re-arms only on a mode 5 reset)*. Test
+  dat::zone::tests::zone_line_segments. Live (Lnxcsfix, 2026-10-27): Elevator Button, Yes, the ride; at the event's
+  end `zone line zmrmzmrn`, then the Jeuno Mog House (zone 243 at 0, 0, 0, music 126).
