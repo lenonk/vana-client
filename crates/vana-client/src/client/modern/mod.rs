@@ -5,6 +5,7 @@
 //! Each panel is an egui Area that a drag on its background moves (its contents keep their clicks), kept by character
 //! as screen fractions. The chat window also resizes by its corner grip: more room for the lines, nothing scaled.
 
+mod auction;
 mod chat;
 mod combat;
 mod command;
@@ -181,6 +182,7 @@ impl Modern {
         storage::draw(&mut p, w);
         loot::draw(&mut p, w);
         shop::draw(&mut p, w);
+        auction::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {

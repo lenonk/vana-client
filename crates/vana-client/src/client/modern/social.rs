@@ -33,7 +33,7 @@ fn title(gu: &GameUi, v: &MenuWin) -> String {
 }
 
 /// One window's rows as a column; the focused one takes hover and clicks: (row hovered, row clicked).
-fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, focused: bool, moved: bool) -> (Option<u16>, Option<u16>) {
+pub(super) fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, focused: bool, moved: bool) -> (Option<u16>, Option<u16>) {
     let (mut hover, mut click) = (None, None);
     ui.vertical(|ui| {
         ui.set_width(COL_W);

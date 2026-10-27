@@ -1087,6 +1087,10 @@ pub(super) fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 #[allow(clippy::too_many_arguments)]
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
     use super::winhits::{generic, over};
+    // The modern layer draws these and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(a) = w.auction.as_ref() else { return };
     let keys = |w: &mut World, _: &GameUi, k: egui::Key| {
         key(w, k);
@@ -1190,6 +1194,9 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 /// Draws the windows; returns their rects.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(a) = &w.auction else { return rects };
     let focus = a.money.is_none() && a.shopsell.is_none() && w.confirm.is_none();
     let n = a.layers.len();
@@ -1357,6 +1364,162 @@ fn draw_sell(gu: &mut GameUi, w: &World, scroll: usize, cursor: usize, focused: 
         gu.bar_site(super::scrollbar::Owner::Auction, bx, by, bh, list.rows.len(), crate::inventory::VISIBLE_ROWS, scroll);
     }
     gu.window_rect("menu    inventor", sw, sh)
+}
+
+/// A list row as the modern layer shows it: the item, the name's tint, the stack size shown before the name (stack
+/// forms, sales of a stack), the cell at the right ("[n]" listed, the price, the count held).
+pub(super) struct PaneRow {
+    pub item: u16,
+    pub tint: u32,
+    pub stack: Option<u32>,
+    pub right: String,
+}
+
+/// A window of the stack as the modern layer shows it.
+pub(super) enum Pane {
+    /// A command menu: its name, cursor, rows off and windowps label swaps.
+    Menu { name: &'static str, sel: u16, off: Vec<u16>, labels: Vec<(u16, usize)> },
+    /// auclist (bid or sales mode) and the line shown when it is empty or failed.
+    List { sales: bool, rows: Vec<PaneRow>, cursor: usize, note: Option<String> },
+    /// auchisto: date, seller, buyer, price per sale.
+    History { item: u16, rows: Vec<[String; 4]>, cursor: usize, note: Option<String> },
+    /// The inventory offered for sale.
+    Sell { rows: Vec<PaneRow>, cursor: usize },
+}
+
+/// What the modern layer shows: the stack's windows oldest first (the last has the keys unless the price or shopsell is
+/// asked), moneyctr's (step, max, value) and what it is for (the item), shopsell's cursor, item and price.
+pub(super) struct Look {
+    pub panes: Vec<Pane>,
+    pub money: Option<(u32, u32, u32, u16)>,
+    pub shopsell: Option<(u16, u16, u32)>,
+    pub busy: bool,
+}
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let a = w.auction.as_ref()?;
+    let info = w.item_info.as_ref()?;
+    let empty = |ready: bool, failed: bool, none: bool, sales: bool| {
+        let id = if !ready {
+            None
+        } else if failed {
+            Some(0x65)
+        } else if none {
+            Some(if sales { 0x6a } else { 0x6b })
+        } else {
+            None
+        };
+        id.and_then(|id| w.battle.as_ref().and_then(|b| b.group7(id)))
+    };
+    let mut panes = Vec::new();
+    for l in &a.layers {
+        panes.push(match *l {
+            Layer::Menu(name, sel) => {
+                let off = if name == AUC3 && cursor_row(a).is_some_and(|r| auc3_dim(w, r)) { vec![2u16] } else { Vec::new() };
+                let labels = if name == AUC3 && sort_kind(a.cat) == 2 { vec![(3, if a.sorts.any(a.cat) { 151 } else { 537 })] } else { Vec::new() };
+                Pane::Menu { name, sel, off, labels }
+            }
+            Layer::List => {
+                let Some(list) = a.list.as_ref() else { continue };
+                let rows = list
+                    .rows
+                    .iter()
+                    .map(|r| {
+                        let item = r.item(&w.ah_slots);
+                        let stack = info.item(item).map_or(1, |it| it.stack.max(1) as u32);
+                        match *r {
+                            Row::Single { single, .. } => PaneRow { item, tint: super::shop::name_tint(w, item), stack: None, right: format!("[{single}]") },
+                            Row::Stack { stack: n, .. } => PaneRow { item, tint: STACK_NAME, stack: Some(stack), right: format!("[{n}]") },
+                            Row::Slot(k) => {
+                                let p = &w.ah_slots[k as usize];
+                                PaneRow { item, tint: stat_look(w, p).0, stack: (p.qty != 1).then_some(stack), right: crate::inventory::gil_text(p.price as i64) }
+                            }
+                        }
+                    })
+                    .collect();
+                Pane::List { sales: list.sales, rows, cursor: list.scroll + list.cursor, note: empty(list.ready, list.failed, list.rows.is_empty(), list.sales) }
+            }
+            Layer::History => {
+                let Some(h) = a.history.as_ref() else { continue };
+                let rows = h.sales.iter().map(|x| [sale_date(w, x.date, 2), x.seller.clone(), x.buyer.clone(), crate::inventory::gil_text(x.price as i64)]).collect();
+                Pane::History { item: h.item, rows, cursor: h.scroll + h.cursor, note: empty(h.ready, h.failed, h.sales.is_empty(), false) }
+            }
+            Layer::Sell(scroll, cursor) => {
+                let rows = sell_rows(w)
+                    .iter()
+                    .map(|x| {
+                        let stack = info.item(x.id).map_or(1, |it| it.stack.max(1) as u32);
+                        PaneRow { item: x.id, tint: sell_tint(w, x), stack: None, right: if stack > 1 { x.count.to_string() } else { String::new() } }
+                    })
+                    .collect();
+                Pane::Sell { rows, cursor: scroll + cursor }
+            }
+        });
+    }
+    let money = a.money.map(|(step, max, v, purpose)| {
+        let item = match purpose {
+            MoneyFor::Bid(r) => r.item(&w.ah_slots),
+            MoneyFor::Sell { item, .. } => item,
+        };
+        (step, max, v, item)
+    });
+    Some(Look { panes, money, shopsell: a.shopsell.map(|(sel, _, item, price, _)| (sel, item, price)), busy: a.busy() })
+}
+
+/// The top menu's cursor onto `sel` while it has the keys. True when it moved.
+pub(super) fn set_menu(w: &mut World, sel: u16) -> bool {
+    let Some(a) = w.auction.as_mut().filter(|a| a.money.is_none() && a.shopsell.is_none()) else { return false };
+    match a.layers.last_mut() {
+        Some(Layer::Menu(_, s)) if *s != sel => {
+            *s = sel;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// The top list's (auclist, auchisto, the sell list) cursor onto row `at`, the scroll following. True when it moved.
+pub(super) fn set_row(w: &mut World, at: usize) -> bool {
+    let n_sell = sell_rows(w).len();
+    let Some(a) = w.auction.as_mut().filter(|a| a.money.is_none() && a.shopsell.is_none()) else { return false };
+    let place = |scroll: &mut usize, cursor: &mut usize, n: usize, rows: usize| {
+        if at >= n || *scroll + *cursor == at {
+            return false;
+        }
+        if at < *scroll || at >= *scroll + rows {
+            *scroll = (at + 1).saturating_sub(rows);
+        }
+        *cursor = at - *scroll;
+        true
+    };
+    match a.layers.last().copied() {
+        Some(Layer::List) => a.list.as_mut().is_some_and(|l| place(&mut l.scroll, &mut l.cursor, l.rows.len(), ROWS)),
+        Some(Layer::History) => a.history.as_mut().is_some_and(|h| place(&mut h.scroll, &mut h.cursor, h.sales.len(), ROWS)),
+        Some(Layer::Sell(mut scroll, mut cursor)) => {
+            let moved = place(&mut scroll, &mut cursor, n_sell, crate::inventory::VISIBLE_ROWS);
+            set_top(a, Layer::Sell(scroll, cursor));
+            moved
+        }
+        _ => false,
+    }
+}
+
+/// moneyctr's value outright (All, 0).
+pub(super) fn set_money(w: &mut World, v: u32) {
+    if let Some(m) = w.auction.as_mut().and_then(|a| a.money.as_mut()) {
+        m.2 = v.min(m.1);
+    }
+}
+
+/// shopsell's cursor (1 Sell, 2 Cancel). True when it moved.
+pub(super) fn set_shopsell(w: &mut World, sel: u16) -> bool {
+    match w.auction.as_mut().and_then(|a| a.shopsell.as_mut()) {
+        Some(s) if s.0 != sel => {
+            s.0 = sel;
+            true
+        }
+        _ => false,
+    }
 }
 
 #[cfg(test)]

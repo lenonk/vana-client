@@ -311,6 +311,12 @@ Milestone 1:
   buttons), the price (moneyctr's) and the confirm ("Buy 2 x Name for N G?", shopbuy / shopsell's captions) inside the
   panel. Live at Capucine: buy by mouse, appraise and sell by keys, Escape back out. Guild shops and Set Prices not
   seen live yet.
+- The auction house (2026-10-27, modern/auction.rs over auction.rs): its window stack side by side in the command
+  window's place (the last three): the command menus as the Social pages draw retail's (auc1, auc2 and the category
+  trees, auc3 / auc4, the sort menus), the item list (icon, name in retail's tint, stack forms "x12", "[n]" listed or
+  the sale's price), the price history (date, seller → buyer, price) and the inventory for sale; the bid or sale price
+  (moneyctr's buttons) and shopsell under them; the prompts are the modern confirm. Live: Bid → Weapons → Katana, auc3,
+  Price History, Bid's price (cancelled), Sell, Sales Status, by keys and mouse. No bid or sale made.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,
