@@ -359,17 +359,24 @@ const BOTTOM: [&str; 2] = ["chat", "party"];
 /// left of it.
 const COLUMN: [&str; 3] = ["command", "command sub", "window"];
 
+impl Dock {
+    /// The side of the panel it sits on that `dx` counts from.
+    fn x(&self, t: Rect) -> f32 {
+        if self.right { t.max.x } else { t.min.x }
+    }
+}
+
 /// Where each panel starts (the user's own arrangement, 2026-10-26): the chat and party windows on the screen's
 /// bottom, the location panel on the chat window and the combat window on it (retail's compass and action menu ride
 /// the log), the target on the party window (retail's targetwi, flag 0x2000), the status icons, the command window and
 /// the Timers at the left under the top bar, the main menu and the minimap at the right.
 fn default_place(id: &str) -> Place {
     let at = |x, y| Place { x, y, ..Default::default() };
-    let on = |to: &str| Place { dock: Some(Dock { to: to.into(), gap: 4.0, dx: 0.0 }), ..Default::default() };
+    let on = |to: &str| Place { dock: Some(Dock { to: to.into(), gap: 4.0, dx: 0.0, right: false }), ..Default::default() };
     match id {
         "chat" => Place { x: 0.0121, b: 0.9998, ..Default::default() },
         "party" => Place { x: 0.8836, b: 0.9992, ..Default::default() },
-        "where" => Place { dock: Some(Dock { to: "chat".into(), gap: -0.5, dx: 1.25 }), ..Default::default() },
+        "where" => Place { dock: Some(Dock { to: "chat".into(), gap: -0.5, dx: 1.25, right: false }), ..Default::default() },
         "combat" => on("where"),
         "target" => on("party"),
         // The magic and ability windows ride on the combat window (retail's sit on the log), the list on its categories.
@@ -632,7 +639,7 @@ impl<'a> Panels<'a> {
         if let Some(d) = &place.dock
             && let Some(t) = self.target(&d.to, 0)
         {
-            return pos2(t.min.x + d.dx, t.min.y - d.gap - h);
+            return pos2(d.x(t) + d.dx, t.min.y - d.gap - h);
         }
         let s = self.ctx.content_rect();
         // A bottom-placed panel's bottom on a whole pixel (its height changing must not move it).
@@ -672,7 +679,7 @@ impl<'a> Panels<'a> {
         let at = match &place.dock {
             Some(d) => {
                 let t = self.target(&d.to, depth + 1)?;
-                pos2(t.min.x + d.dx, t.min.y - d.gap)
+                pos2(d.x(t) + d.dx, t.min.y - d.gap)
             }
             None => self.resolve(id, &Place { dock: None, ..place }, 0.0),
         };
@@ -703,7 +710,8 @@ impl<'a> Panels<'a> {
                 continue;
             }
             if best.as_ref().is_none_or(|(g, _)| gap.abs() < *g) {
-                best = Some((gap.abs(), Dock { to: to.clone(), gap, dx: r.min.x - t.min.x }));
+                let right = self.place(to).x < 0.0;
+                best = Some((gap.abs(), Dock { to: to.clone(), gap, dx: r.min.x - if right { t.max.x } else { t.min.x }, right }));
             }
         }
         best.map(|b| b.1)

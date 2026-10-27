@@ -445,6 +445,13 @@ Milestone 1:
 - Edge windows: dragged by the heading, the background or the tab, a see-through copy follows the pointer and the
   window goes to the edge on the pointer's half; the minimap resizes by the grip on its far bottom corner (the
   Extras page's minimap size and place rows, and the Timers' place, are left out in Modern).
+- Edge windows and docks (user report 2026-10-27: the main menu, the minimap and an open Wide Scan swapped places every
+  frame): an edge window no longer steps clear of a panel docked on it (that panel moves with it, so it never
+  settles); a dock on a panel placed from the right edge counts its dx from that panel's right (ModernDock.right), as
+  its left moves when it folds or grows (the user's menu was docked on Wide Scan's folded tab and jumped 270 px when
+  it opened); the strip right of retail's own minimap (retail's place for its menu column) is no longer kept clear,
+  only the retail windows drawn at the edge. A dock saved before measures from the left still. Live: the user's
+  layout copied in (menu on Wide Scan, both open), frames alike; the default layout as before.
 - Condensed battle lines (2026-10-27, not retail; BattleMod's condensing): with the chat settings' "Condense: On"
   (config modern_condense, On by default), a 0x028 action's record lines that differ only in their number merge into
   the first one as it grows ("Lnxcsfix hits the Wild Rabbit for 18, 14 points of damage."), lines with no number into

@@ -61,7 +61,7 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
     let icons: Vec<Vec<Vec<Option<egui::TextureId>>>> = if out { secs.iter().map(|s| s.iter().map(|g| g.rows.iter().map(|r| icon(&r.icon)).collect()).collect()).collect() } else { Vec::new() };
     let mut fold: Option<usize> = None;
     // Clear of the menu's windows as the right edge's are (the item list grows over it on the left).
-    let avoid = column(p, w);
+    let avoid = column(p, "timers");
     let toggle = edge_window(p, "timers", WIDTH, !out, &avoid, "Timers", |ui, left| {
         let toggle = flyout_header(ui, m, "Timers", left).clicked();
         for (k, groups) in secs.iter().enumerate() {
@@ -419,7 +419,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let mut resize: Option<f32> = None;
     let (pos, facing, span) = (f.pos, f.facing, f.span);
     let dots = f.dots.clone();
-    let avoid = column(p, w);
+    let avoid = column(p, "minimap");
     // The Wide Scan row picked and the area narrowed to, in world x / z.
     let origin = m.scan_origin.get();
     let picked = m.scan_pick.get().and_then(|i| m.scan_rows.borrow().iter().find(|r| r.0.index == i).map(|r| (origin.0 + r.0.dx as f32, origin.1 + r.0.dz as f32)));
@@ -546,17 +546,15 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     }
 }
 
-/// What the windows at the right edge take (the command column as last drawn, and the retail windows there: where
-/// retail puts its own minimap's right edge); edge windows open there keep clear of it.
-fn column(p: &Panels, w: &World) -> Vec<Rect> {
+/// What the windows at the right edge take (the command column as last drawn, and the retail windows drawn there);
+/// edge window `key` open there keeps clear of it.
+fn column(p: &Panels, key: &str) -> Vec<Rect> {
     let screen = p.ctx.content_rect();
-    let mut avoid: Vec<Rect> = super::COLUMN.iter().filter_map(|c| p.m.rects.borrow().get(*c).copied()).collect();
-    if let Some(f) = w.minimap_frame.as_ref() {
-        let right = (f.rect[0] + f.rect[2]) / w.ui_wh.0.max(1.0) * screen.width();
-        if right < screen.max.x - 2.0 {
-            avoid.push(Rect::from_min_max(pos2(right + 4.0, screen.min.y), screen.max));
-        }
-    }
+    // Not the ones docked on this window: they move with it, so stepping clear of them never settles.
+    let mut avoid: Vec<Rect> = super::COLUMN.iter().filter(|c| !p.rests_on(c, key)).filter_map(|c| p.m.rects.borrow().get(*c).copied()).collect();
+    // The retail windows drawn at the right edge (retail's minimap keeps left of them); not retail's own place for
+    // its menu column, which the modern menu replaces wherever it was moved.
+    avoid.extend(p.m.retail.borrow().iter().filter(|r| r.max.x >= screen.max.x - 8.0 && r.width() < screen.width() / 2.0).copied());
     avoid
 }
 
@@ -635,7 +633,7 @@ fn widescan_panel(p: &mut Panels, w: &mut World) {
     let (find, typing) = (w.scan_find.clone(), w.scan_typing);
     let (mut flip, mut field_click, mut clear) = (0u8, false, false);
     let tracked = w.scan.track.index;
-    let avoid = column(p, w);
+    let avoid = column(p, "widescan");
     let (picked, picking) = (m.scan_pick.get(), m.scan_picking.get());
     let mut pick: Option<u16> = None;
     let mut chose: Option<u16> = None;

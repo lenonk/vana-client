@@ -145,12 +145,15 @@ pub struct ModernPlace {
     pub dock: Option<ModernDock>,
 }
 
-/// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left.
+/// A panel sitting on another: `gap` points between its bottom and the other's top, `dx` from the other's left, or
+/// from its right (`right`) for one placed from the right edge, whose left moves as it folds or grows.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct ModernDock {
     pub to: String,
     pub gap: f32,
     pub dx: f32,
+    #[serde(default)]
+    pub right: bool,
 }
 
 /// A character's panel places by panel id.
