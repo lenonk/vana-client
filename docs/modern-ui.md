@@ -439,8 +439,12 @@ Milestone 1:
 - From rChat (pChat in ESO; 2026-10-27): unread counts on the chat tabs (Say ... Shout; not All or Battle): the lines a
   tab shows since it, or All showing them, was last on screen, "9+" past nine; a line from another player naming you
   (a whole word, any case; retail's incoming modes only, never our own echoes) gets a gold wash and a gold bar at its
-  left. Live: two /say lines on the Battle tab counted on Say, cleared by opening it. Not yet: the log kept across
-  logins, search in the full log.
+  left. Live: two /say lines on the Battle tab counted on Say, cleared by opening it. The log across logins: the
+  session's last 200 lines saved at logout (the data dir's chat/<name>.json, or beside an FFXI_CONFIG copy) and shown
+  dimmed under "------ last session ------" at the next login (modern UI only; restored lines are not saved again).
+  Find in the full log: a letter or digit typed while it is open filters it to the lines holding the text (any case;
+  the field and the count at its top), Backspace edits, Escape clears the find, a second Escape closes the log. The
+  full log now draws over the edge windows. Live: "sand" left the 6 lines with it; history over two logins.
 - A click on a panel that does not move it leaves its place alone (egui starts a window's drag on the press: a click
   on the location panel while the chat folded saved it undocked, and it stopped riding the chat). Live: a click keeps
   the dock, a real drag moves and saves it.

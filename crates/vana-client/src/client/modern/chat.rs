@@ -512,6 +512,11 @@ fn full(p: &mut Panels, w: &mut World) {
     let lines_h = height - chrome();
     let mut v = view_keep(w, usize::MAX);
     v.unread = unread(m, w, *p.battle_in_all);
+    // The find (client/mod.rs log_find_events): the lines holding the text, any case.
+    let find = w.log_find.clone();
+    if let Some(f) = find.as_ref().map(|f| f.to_lowercase()) {
+        v.lines.retain(|l| crate::dat::font::strip_codes(l.1).to_lowercase().contains(&f));
+    }
     let t = p.ctx.input(|i| i.time) as f32;
     let tab = m.chat_tab.get();
     let battle_in_all = *p.battle_in_all;
@@ -526,6 +531,24 @@ fn full(p: &mut Panels, w: &mut World) {
         let wrap = wrap_width(room);
         // The chat line in the bottom row while typing.
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
+        // The find's field at the top of the lines.
+        let area = match &find {
+            Some(f) => {
+                let fr = Rect::from_min_size(area.min, vec2(area.width().min(420.0), 26.0));
+                if let Some(s) = m.art.sprite("controls/input_focused") {
+                    ui.painter().add(paint::nine_slice(&s, fr, (fr.height() / s.size.y).min(1.0), Color32::WHITE));
+                }
+                if let Some(s) = m.art.sprite("controls/search") {
+                    ui.painter().add(paint::image(&s, pos2(fr.min.x + 6.0, fr.center().y - 8.0), 16.0, Color32::WHITE));
+                }
+                let shown = v.lines.iter().filter(|l| shows(tab, l.3, battle_in_all)).count();
+                let blink = if (t * 2.0) as i64 % 2 == 0 { "|" } else { "" };
+                ui.painter().text(pos2(fr.min.x + 28.0, fr.center().y), egui::Align2::LEFT_CENTER, format!("{f}{blink}"), FontId::proportional(m.theme.small), m.theme.color("text"));
+                ui.painter().text(pos2(fr.max.x + 10.0, fr.center().y), egui::Align2::LEFT_CENTER, format!("{shown} lines"), FontId::proportional(m.theme.small), m.theme.color("muted"));
+                Rect::from_min_max(pos2(area.min.x, fr.max.y + 6.0), area.max)
+            }
+            None => area,
+        };
         let lines = Rect::from_min_max(area.min, pos2(area.max.x, input_r.map_or(area.max.y, |r| r.min.y - TAB_H)));
         let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min - vec2(10.0, 0.0), lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
         let mut y = lines.max.y + fl.scroll as f32 * row;
@@ -556,6 +579,10 @@ fn full(p: &mut Panels, w: &mut World) {
     });
     if let Some(r) = r {
         m.chat_edge.set(Some((r, false)));
+    }
+    // The full log covers the edge windows (the Timers) while it is open.
+    if r.is_some() {
+        p.ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::unique(("modern panel", "chat"))));
     }
     if let Some(f) = w.full_log.as_mut() {
         if let Some(k) = short {

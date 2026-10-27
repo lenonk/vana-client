@@ -998,6 +998,40 @@ fn log_cycle(w: &mut World) {
     w.log_active = w.log_focus == 1;
 }
 
+/// The modern full log's find (ours, as rChat's): a letter or digit starts it, text adds, Backspace takes off (the
+/// last one ends it), Escape clears it before the log closes. True when it took something this frame.
+fn log_find_events(w: &mut World, events: &[egui::Event]) -> bool {
+    if !w.modern || w.full_log.is_none() || w.typing || event::active(w) {
+        w.log_find = None;
+        return false;
+    }
+    let mut took = false;
+    for e in events {
+        match e {
+            egui::Event::Text(t) if w.log_find.is_some() || t.chars().next().is_some_and(|c| c.is_alphanumeric()) => {
+                w.log_find.get_or_insert_with(String::new).push_str(t);
+                took = true;
+            }
+            egui::Event::Key { key: egui::Key::Backspace, pressed: true, .. } if w.log_find.is_some() => {
+                if let Some(f) = w.log_find.as_mut() {
+                    f.pop();
+                }
+                if w.log_find.as_ref().is_some_and(|f| f.is_empty()) {
+                    w.log_find = None;
+                }
+                took = true;
+            }
+            egui::Event::Key { key: egui::Key::Escape, pressed: true, .. } if w.log_find.is_some() => {
+                w.log_find = None;
+                w.sounds.push(crate::audio::Ui::Cancel as u32);
+                took = true;
+            }
+            _ => {}
+        }
+    }
+    took
+}
+
 /// The full log's keys (FUN_10133890): arrows move the row / scroll (SE "0001"), Enter on a speaker line
 /// opens charlnk (not done; SE "0004"), Escape closes it and refocuses logwindo.
 fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
@@ -1403,12 +1437,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         keys.clear();
     }
+    // The modern full log's find takes the text, Backspace and Escape while the log is open.
+    let find_typing = log_find_events(world, &input.events);
+    if find_typing {
+        keys.clear();
+    }
     // The modern magic and ability windows' search takes the keys and text while it runs.
     let list_typing = listsearch::events(world, &input.events);
     if list_typing {
         keys.clear();
     }
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || list_typing || scan_typing;
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || list_typing || scan_typing || find_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1430,7 +1469,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
         keys.clear();
-    } else if input_open && !scan_typing {
+    } else if input_open && !scan_typing && !find_typing {
         event::input_events(world, &input.events);
         keys.clear();
     }
@@ -4923,6 +4962,8 @@ struct World {
     /// The windows that take the log's focus open last frame (main menu, item windows, action menu, confirm, config).
     log_takers: u8,
     full_log: Option<logwin::FullLog>,
+    /// The modern full log's find: typed while it is open, it shows the lines holding the text (not retail).
+    log_find: Option<String>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
     map: Option<map::MapWin>,
     /// The map overlay (extra, Ctrl / Alt + O).
@@ -5870,6 +5911,12 @@ impl App {
     fn to_login(&mut self, error: bool) {
         if let Phase::World(w) = &mut self.phase {
             self.line_hist = std::mem::take(&mut w.line_hist);
+            // The modern chat's history for the next login (not retail).
+            if self.cfg.modern_ui
+                && let Err(e) = w.chat.save(&crate::config::chat_history_path(&w.name))
+            {
+                log::warn!("chat history: {e}");
+            }
         }
         self.phase = Phase::login(&self.cfg);
         self.lobby_fade = LobbyFade::default();
@@ -6520,6 +6567,7 @@ impl App {
                             log_active: false,
                             log_takers: 0,
                             full_log: None,
+                            log_find: None,
                             map: None,
                             key_items: Vec::new(),
                             downloading: Some(Instant::now()),
@@ -6699,6 +6747,10 @@ impl App {
                         }));
                         if let Phase::World(w) = &mut self.phase {
                             cfgapply::apply_all(w);
+                            // The last session's lines in the modern chat, dimmed (not retail).
+                            if self.cfg.modern_ui {
+                                w.chat.restore(&crate::config::chat_history_path(&w.name), "------ last session ------");
+                            }
                         }
                         if let Ok((index, _)) = self.game_data() {
                             if let Phase::World(w) = &mut self.phase {

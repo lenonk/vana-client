@@ -19,6 +19,15 @@ pub fn data_dir() -> PathBuf {
     app_dir(dirs::data_dir())
 }
 
+/// A character's saved chat lines (the modern chat's history): in the data dir, or beside an FFXI_CONFIG copy.
+pub fn chat_history_path(name: &str) -> PathBuf {
+    let dir = match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("chat"),
+        None => data_dir().join("chat"),
+    };
+    dir.join(format!("{name}.json"))
+}
+
 /// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {

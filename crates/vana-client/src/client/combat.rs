@@ -27,6 +27,8 @@ pub struct ChatLog {
     /// on with the modern chat's Condense; the last line's index, text and count.
     fold: bool,
     repeat: Option<(usize, String, u32)>,
+    /// Lines restored from the last session (with their divider): never saved again.
+    restored: usize,
 }
 
 pub const NO_MODE: u16 = 0xffff;
@@ -126,6 +128,54 @@ impl ChatLog {
     #[cfg(test)]
     pub fn lines(&self) -> &[(String, [u8; 4])] {
         &self.lines
+    }
+}
+
+/// A saved chat line (ChatLog::save): its text, colour, mode, time, whether a chat line and indented.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct SavedLine {
+    text: String,
+    colour: [u8; 4],
+    mode: u16,
+    time: [u8; 3],
+    chat: bool,
+    indent: bool,
+}
+
+/// Lines a character's history keeps.
+const HISTORY: usize = 200;
+
+impl ChatLog {
+    /// This session's newest lines to `path` (the modern chat's history across logins; ours, not retail).
+    pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
+        let from = self.lines.len().saturating_sub(HISTORY).max(self.restored);
+        let saved: Vec<SavedLine> = (from..self.lines.len())
+            .map(|k| SavedLine { text: self.lines[k].0.clone(), colour: self.lines[k].1, mode: self.modes[k], time: self.times[k].0, chat: self.times[k].1, indent: self.times[k].2 })
+            .collect();
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir)?;
+        }
+        std::fs::write(path, serde_json::to_vec(&saved)?)
+    }
+
+    /// The last session's lines from `path` before this one's, dimmed, under a divider; nothing when there are none.
+    pub fn restore(&mut self, path: &std::path::Path, divider: &str) {
+        let Ok(bytes) = std::fs::read(path) else { return };
+        let Ok(saved) = serde_json::from_slice::<Vec<SavedLine>>(&bytes) else { return };
+        if saved.is_empty() {
+            return;
+        }
+        for l in saved {
+            let [b, g, r, a] = l.colour;
+            self.times.push((l.time, l.chat, l.indent));
+            self.modes.push(l.mode);
+            self.lines.push((l.text, [b, g, r, a / 2 + a / 8]));
+        }
+        self.times.push((super::cfgapply::local_hms(), false, false));
+        self.modes.push(NO_MODE);
+        self.lines.push((divider.to_string(), [0x60, 0x60, 0x60, 0x60]));
+        self.repeat = None;
+        self.restored = self.lines.len();
     }
 }
 
