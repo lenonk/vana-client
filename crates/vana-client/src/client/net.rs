@@ -87,6 +87,8 @@ pub struct EntityUpdate {
     /// 0x00D mask 0x04: ChocoboIndex u32 @0x20 bits 5..7 (asm 0x1009a1e7), the mount id u32 @0x44 bits 4..11 (asm
     /// 0x1009aa8d), CustomProperties @0x34 / @0x38 (FUN_1009ab40).
     pub ride: Option<Ride>,
+    /// Mask 0x04: the model radius x 0.1 into actor +0x208, 0x00D u8 @0x43 (asm 0x1009aa40), 0x00E u8 @0x25 (0x1009c7cb).
+    pub hitbox: Option<f32>,
     /// 0x00D (General) u8 @0x42: the Geomancer Indi aura byte (client/indi.rs).
     pub indi: Option<u8>,
 }
@@ -148,6 +150,8 @@ pub struct SelfPlate {
     pub mon_prefix: [u8; 2],
     /// Flags0 bit 9 (actor +0x18c, FUN_101cc330): a zone treasure pool (LSB's Treasure-flag zones, e.g. Dynamis).
     pub zone_pool: bool,
+    /// u8 @0x59 x 0.1 (asm 0x1009d90c): our model radius, actor +0x208.
+    pub hitbox: f32,
 }
 
 fn self_plate(p: &SubPacket) -> SelfPlate {
@@ -173,7 +177,7 @@ fn self_plate(p: &SubPacket) -> SelfPlate {
     };
     let r = p.u8(0x5a);
     let extra = PlateExtra { ballista: p.u8(0x39), trial: bit(f3, 1), job_master: p.u8(0x58) & 0x80 != 0, ranks: (r & 3) << 2 | (r >> 2 & 3) };
-    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), mon_prefix: [p.u8(0x56), p.u8(0x57)], zone_pool: bit(f0, 9) }
+    SelfPlate { marks, extra, invisible: bit(f1, 15), frozen: bit(f1, 13), charmed: bit(f1, 30), monstrosity: p.u16(0x54), mon_prefix: [p.u8(0x56), p.u8(0x57)], zone_pool: bit(f0, 9), hitbox: p.u8(0x59) as f32 * 0.1 }
 }
 
 /// The rest of the plate's fields: u8 @0x32 (+0x294 Ballista info) and @0x33 bit 1 trial, bit 6 job master, bits 4..5 /
@@ -864,6 +868,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
         king: kind == EntityKind::Npc && p.u32(0x18) >> 16 & 1 != 0,
         indi: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() > 0x42).then(|| p.u8(0x42)),
+        hitbox: (flags & 0x04 != 0).then(|| if kind == EntityKind::Player { (p.data.len() > 0x43).then(|| p.u8(0x43)) } else { (p.data.len() > 0x25).then(|| p.u8(0x25)) }).flatten().map(|h| h as f32 * 0.1),
         ride: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x48).then(|| Ride { chocobo: (p.u32(0x20) >> 5 & 7) as u8, mount: (p.u32(0x44) >> 4) as u8, custom: [p.u32(0x34), p.u32(0x38)] }),
     }
 }

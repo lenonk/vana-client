@@ -438,13 +438,14 @@ pub fn sub_slot(w: &mut World, slot: usize) {
     }
 }
 
-/// FUN_10150610: the prompt arrow's tint by distance from us against the range (y ignored): red past range + 0.5 or
-/// at 25 and more, yellow past range - 0.5, else blue. Not done: the model radii (+0x208) the spell record adds.
+/// FUN_10150610: the prompt arrow's tint by distance from us against the range (y ignored), less both model radii
+/// (+0x208; the spell and ability records set the radii flag): red past range + 0.5 or at 25 and more, yellow past
+/// range - 0.5, else blue.
 pub fn range_tint(w: &World, t: u32) -> u32 {
     let Some(r) = w.prompt.as_ref().and_then(|s| s.range) else { return 0xe040_40d0 };
-    let p = if t == w.my_id { w.pos } else { w.entities.get(&t).map_or(w.pos, |e| e.pos) };
+    let (p, radius) = if t == w.my_id { (w.pos, w.my_plate.hitbox) } else { w.entities.get(&t).map_or((w.pos, 0.0), |e| (e.pos, e.hitbox)) };
     let raw = (p - w.pos).length();
-    let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length();
+    let d = Vec3::new(p.x - w.pos.x, 0.0, p.z - w.pos.z).length() - (w.my_plate.hitbox + radius);
     if d > r + 0.5 || raw >= 25.0 {
         0xe0d0_4040
     } else if d > r - 0.5 {
@@ -465,7 +466,7 @@ pub fn set(w: &mut World, t: Option<u32>) {
         _ => {}
     }
     let e = t.and_then(|t| w.entities.get(&t));
-    log::info!("target {:#x} {:?} at {:?}", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)));
+    log::info!("target {:#x} {:?} at {:?} radius {:?} (ours {})", t.unwrap_or(0), e.map(|e| e.name.as_str()), e.map(|e| (e.pos.x, e.pos.z)), e.map(|e| e.hitbox), w.my_plate.hitbox);
     w.target = t;
     w.target_since = std::time::Instant::now();
     if w.locked && w.prompt.is_none() {

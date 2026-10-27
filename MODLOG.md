@@ -10360,3 +10360,15 @@ info window mode 3; scrollbar Owner::MonCustom.
 - LSB (report only): 0x044's rank and descriptors stay 0 (the cap reads level + 10 for every rank); its 0x102 handler
   takes only the first of species / instincts / descriptors (else-if), so two changes inside one commit window lose
   the later ones.
+
+## Model radii (+0x208) in the prompt arrow's range (2026-10-27)
+
+- Actor +0x208 = u8 x 0.1 (0x1032a378): 0x00D mask 0x04 @0x43 (asm 0x1009aa40), 0x00E mask 0x04 @0x25 (0x1009c7cb),
+  0x037 @0x59 for us (0x1009d90c). Only FUN_10150610 (the prompt arrow's tint) reads it here.
+- FUN_10150610 walks the prompt's range record (+0x6c, FUN_101577c0): up to two entries {origin kind (1 us, 2 a pet /
+  the other actor), range, y kept, radii}; the distance (y zeroed unless kept) less the two actors' +0x208 when the
+  radii byte is set: red past range + 0.5 (or the distance at 25 and more), yellow past range - 0.5. Spells set one
+  entry {1, table 0x103644a8[+0x45], 0, 1} (FUN_1022bc..), abilities {1, range, 0, 1} and for pet abilities {2, ...}
+  (FUN_102233xx): the radii always count. Ours: target.rs `range_tint` subtracts ours and the target's (the pet
+  origin entry is not modelled).
+- LSB: ours 0.4 (Mithra), NPCs 0 (Rumoie); a monster's not seen yet.

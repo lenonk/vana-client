@@ -411,6 +411,8 @@ struct Entity {
     face: u16,
     /// Actor +0x12c bit 23 (0x00E / 0x00D @0x28 bit 0x04): a new model plays 'spop' (FUN_1008f740).
     spawn_fx: bool,
+    /// Actor +0x208: the model radius from 0x00E / 0x00D (net::EntityUpdate::hitbox).
+    hitbox: f32,
     /// 0x00D's riding fields (ride.rs).
     ride: net::Ride,
     /// The Geomancer Indi aura (0x00D @0x42, client/indi.rs).
@@ -1103,6 +1105,7 @@ fn self_entity(w: &World) -> Entity {
         object: false,
         face: 0,
         spawn_fx: false,
+        hitbox: 0.0,
         ride: Default::default(),
         aura: Default::default(),
         name_ncol: 0x17,
@@ -3370,6 +3373,7 @@ fn place_mogdoor(w: &mut World) {
             object: true,
             face: 0,
             spawn_fx: false,
+            hitbox: 0.0,
             ride: Default::default(),
             aura: Default::default(),
             name_ncol: 0x17,
@@ -7052,6 +7056,7 @@ impl App {
                         object: false,
                         face: 0,
                         spawn_fx: false,
+                        hitbox: 0.0,
                         ride: Default::default(),
                         aura: Default::default(),
                         name_ncol: 0x17,
@@ -7091,6 +7096,9 @@ impl App {
                     }
                     if let Some(s) = e.spawn_fx {
                         entry.spawn_fx = s;
+                    }
+                    if let Some(h) = e.hitbox {
+                        entry.hitbox = h;
                     }
                     if let Some(r) = e.ride {
                         entry.ride = r;

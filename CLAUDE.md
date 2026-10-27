@@ -183,8 +183,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Monstrosity (spec `~/ffxi/lab/research/monstrosity_spec.md`; client/monstrosity.rs, moncustom.rs, MODLOG
     "Monstrosity, part 1..10"; LSB makes the player MON in the Feretory, zone 285): the look, names, 0x063 data and
     moves, mp_pmode, the Monster Skills lists, the main menu rules, mp_stat, mp_dead, the refusals, the engaged camera,
-    Customization (species, Faculties, Naming, c2s 0x102) done and seen live (refusals not); left: the Tab rule
-    (FUN_10083f20), the 0x00D hitbox;
+    Customization (species, Faculties, Naming, c2s 0x102), the Tab rule (Ctrl+F8), the hitbox (MODLOG "Model radii")
+    done and seen live (refusals not);
   - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
