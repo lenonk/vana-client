@@ -1,4 +1,4 @@
-//! The modern UI's text inside the game UI's own pass (while Modern is on): the bundled Inter faces' glyphs, each
+//! The modern UI's text inside the game UI's own pass (while Modern is on): the bundled Fira Sans faces' glyphs, each
 //! rasterized once per size into one atlas uploaded as the UI image "mtext" (again whenever it grows); a string is
 //! its glyphs' quads. Sizes come from the layout-to-screen scale of the last frame, so glyphs are never minified much.
 
@@ -11,8 +11,8 @@ pub const TEXTURE: &str = "mtext";
 /// The game font's text in the modern face: its em and its line top against retail's pen (16-px cells).
 pub const TEXT_EM: f32 = 14.0;
 pub const TEXT_DY: f32 = -0.5;
-const REGULAR: &[u8] = include_bytes!("../../assets/fonts/Inter-Regular.ttf");
-const BOLD: &[u8] = include_bytes!("../../assets/fonts/Inter-SemiBold.ttf");
+const REGULAR: &[u8] = include_bytes!("../../assets/fonts/FiraSans-Regular.ttf");
+const BOLD: &[u8] = include_bytes!("../../assets/fonts/FiraSans-SemiBold.ttf");
 /// Raster sizes (em, px): the smallest at or above the size on screen.
 const BUCKETS: [u16; 10] = [10, 12, 14, 16, 20, 24, 28, 34, 42, 56];
 

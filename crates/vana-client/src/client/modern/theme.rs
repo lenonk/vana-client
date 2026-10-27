@@ -17,8 +17,9 @@ const ATLASES: [(&str, &[u8]); 6] = [
     ("atlases/indicators_0@2x.png", include_bytes!("../../../assets/modern/atlases/indicators_0@2x.png")),
     ("atlases/jobs_0@2x.png", include_bytes!("../../../assets/modern/atlases/jobs_0@2x.png")),
 ];
-const FONTS: [(&str, &[u8]); 4] = [
-    ("Inter-Regular", include_bytes!("../../../assets/fonts/Inter-Regular.ttf")),
+const FONTS: [(&str, &[u8]); 5] = [
+    ("FiraSans-Regular", include_bytes!("../../../assets/fonts/FiraSans-Regular.ttf")),
+    ("FiraSans-SemiBold", include_bytes!("../../../assets/fonts/FiraSans-SemiBold.ttf")),
     ("Inter-SemiBold", include_bytes!("../../../assets/fonts/Inter-SemiBold.ttf")),
     ("Inter-BoldItalic", include_bytes!("../../../assets/fonts/Inter-BoldItalic.ttf")),
     ("JetBrainsMono-Regular", include_bytes!("../../../assets/fonts/JetBrainsMono-Regular.ttf")),
@@ -28,7 +29,7 @@ const FONTS: [(&str, &[u8]); 4] = [
 const FRAMES: [&str; 5] = ["window_normal", "window_focused", "window_inactive", "window_alert", "window_tooltip"];
 const FRAME_MASK: &str = "frames/window_normal_border";
 
-/// Emphasis beside egui's Proportional (Inter) and Monospace (JetBrains Mono): titles and names; the bars' labels.
+/// Emphasis beside egui's Proportional (Fira Sans) and Monospace (JetBrains Mono): titles and names; the bars' labels.
 pub const STRONG: &str = "strong";
 pub const LABEL: &str = "label";
 /// Party-list names out of the zone: their own face, kept whatever the interface's is.
@@ -248,14 +249,14 @@ impl Art {
     }
 }
 
-/// The bundled fonts: Inter for the interface (egui's Proportional), Inter SemiBold for titles and names (STRONG),
 /// A bundled font's bytes by name ("Inter-BoldItalic" ...).
 pub fn font(name: &str) -> Option<&'static [u8]> {
     FONTS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
 }
 
-/// Inter Bold Italic for the bars' labels (LABEL), JetBrains Mono for logs (Monospace); egui's own fonts stay behind
-/// them for missing glyphs.
+/// The bundled fonts: Fira Sans for the interface (egui's Proportional), Fira Sans SemiBold for titles (STRONG), Inter
+/// Bold Italic for the bars' labels and the party's names (LABEL), Inter SemiBold for names out of the zone (NAME),
+/// JetBrains Mono for logs (Monospace); egui's own fonts stay behind them for missing glyphs.
 pub fn install_fonts(ctx: &Context) {
     install_fonts_with(ctx, None);
 }
@@ -272,7 +273,7 @@ pub fn install_fonts_with(ctx: &Context, body: Option<(Vec<u8>, Vec<u8>)>) {
             defs.font_data.insert("body-strong".into(), Arc::new(FontData::from_owned(s)));
             ("body-regular", "body-strong")
         }
-        None => ("Inter-Regular", "Inter-SemiBold"),
+        None => ("FiraSans-Regular", "FiraSans-SemiBold"),
     };
     let fallbacks = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
     let with = |first: &str| -> Vec<String> { std::iter::once(first.to_string()).chain(fallbacks.iter().cloned()).collect() };

@@ -10,8 +10,11 @@ The plan for vana-client's modern interface, from the user's planning document (
   retail windows they replace are left out; everything else stays retail until it has a modern counterpart.
 - **egui.** The modern layer is egui (already in the client, on wgpu): windows, layout, focus, drag-and-drop,
   tooltips and text come from it; the pack's art is drawn through its painter.
-- **Fonts bundled.** Inter Regular (interface, chat), Inter SemiBold (titles, names), Inter Bold Italic (name plates,
-  the bars' labels), JetBrains Mono (timestamps, logs); no Cinzel (planned once, never loaded). All SIL OFL 1.1, unmodified, from
+- **Fonts bundled.** Fira Sans Regular (interface, chat, the retail windows' text), Fira Sans SemiBold (titles), Inter
+  Bold Italic (name plates, the bars' labels, the party's names), Inter SemiBold (party names out of the zone),
+  JetBrains Mono (timestamps, logs); no Cinzel (planned once, never loaded). Fira Sans replaced Inter for the interface
+  on 2026-10-27 (the user's pick from nine faces rendered by `modern-shot --font`; plates and party names kept). All SIL
+  OFL 1.1, unmodified, from
   their official releases, in `crates/vana-client/assets/fonts` with their licence texts, embedded in the binary.
 - **Order.** Milestone 1 (theme and atlas loader, panels, movable windows with saved layout, HUD basics), then the Mog
   House storage slice.
@@ -115,7 +118,7 @@ replaced the same day):
 - Controls: buttons, list rows, inputs, tabs, title bars, item slots and drop outlines, arrows, check boxes, key caps,
   scroll thumbs. 22 job pictograms (not SE's emblems). Indicators: target rings by relation, priorities, item and
   status badges. 131 generic icons (placeholders for game art).
-- Text is never in the art; fonts are Inter and JetBrains Mono (Cinzel was dropped with the first pack).
+- Text is never in the art; fonts are Fira Sans, Inter and JetBrains Mono (Cinzel was dropped with the first pack).
 
 ## Technical plan
 
@@ -259,7 +262,7 @@ Milestone 1:
   is all in. Its filter (ours): Players / NPCs / Monsters toggles (config `modern_scan_kinds`) and a name field (a
   click takes the keys, every word must be in the name; Enter keeps it, Escape or the cross clears it). The map
   overlay draws in egui at its box and opacity.
-- Retail windows while Modern is on: the pack's frame (render/ui.rs push_frame), the game UI's text in Inter through a
+- Retail windows while Modern is on: the pack's frame (render/ui.rs push_frame), the game UI's text in Fira Sans through a
   glyph atlas (render/mtext.rs; game font, sprite font, labels), and the captions baked into menu sprites read back
   from their glyph cells ("font    font" and "menu    menu2fon") and drawn as text; the lobby's too when Modern is
   chosen.

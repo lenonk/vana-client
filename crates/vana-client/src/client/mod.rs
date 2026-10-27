@@ -9495,7 +9495,7 @@ impl App {
                             let slots = lu.title_update(sw, sh, Some(shown), logos, child_enabled, upd.then_some((*menu == UPDATE, true)), wardrobes, press, !window_over, modern_title);
                             // Modern: the buttons in the modern style on retail's rects (their mouse as above).
                             if modern_title {
-                                let buttons: Vec<([f32; 4], &str, bool, bool)> = rects.iter().map(|&(m, r)| (r, if m == UPDATE { "Update" } else { ITEMS[m].0 }, m == *menu, m == UPDATE || enabled[m])).collect();
+                                let buttons: Vec<([f32; 4], &str, bool, bool)> = rects.iter().map(|&(m, r)| (r, if m == UPDATE { "Update" } else { ITEMS[m].0 }, m == *menu && !window_over, m == UPDATE || enabled[m])).collect();
                                 let mo = self.modern.get_or_insert_with(|| modern::Modern::new(ctx));
                                 mo.title_buttons(ctx, [screen_size[0] as u32, screen_size[1] as u32], self.cfg.modern_scale, self.ui_k, &buttons);
                             }
