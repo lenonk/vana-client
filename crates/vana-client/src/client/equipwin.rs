@@ -143,7 +143,22 @@ pub fn pup_bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     bars.help[1] = gu.focus_text(PUPEQUIP, p.sel)[0].clone().unwrap_or_default();
 }
 
+/// pupequip's name and cursor for the modern layer.
+pub(super) fn pup_look(w: &World) -> Option<(&'static str, u16)> {
+    w.pupequip.as_ref().map(|p| (PUPEQUIP, p.sel))
+}
+
+/// The mouse's cursor move onto pupequip's row `k`. True when it moved.
+pub(super) fn set_pup(w: &mut World, k: u16) -> bool {
+    let Some(p) = w.pupequip.as_mut().filter(|p| p.sel != k && (1..=2).contains(&k)) else { return false };
+    p.sel = k;
+    true
+}
+
 pub fn pup_draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Option<[f32; 4]> {
+    if w.modern {
+        return None;
+    }
     let p = w.pupequip.as_ref()?;
     gu.lobby_window_off(PUPEQUIP, sw, sh, (0.0, 0.0), Some(p.sel), w.confirm.is_none(), &[]).map(|win| win.frame)
 }

@@ -2,9 +2,9 @@
 //! names and blkmain's Delete) and the chat mode window (chatctrl.rs, its seven rows with the tell name, the shells
 //! and the Unity, the cursor row's range under them), the comment editor (seacom.rs) and the Linkshell Concierge
 //! (concierge.rs), Mog House Remodel (remodel.rs), the Adventuring Primer's lists (primer.rs) and layout mode's
-//! windows (layout.rs).
+//! windows (layout.rs), pupequip (equipwin.rs) and the fishing gauge (fishing.rs).
 
-use super::super::{World, blklist, chatctrl, concierge, layout, primer, remodel, seacom};
+use super::super::{World, blklist, chatctrl, concierge, equipwin, fishing, layout, primer, remodel, seacom};
 use super::craft::{button, caption};
 use super::{MenuWin, Panels, Title, paint, social};
 use crate::audio::Ui as Se;
@@ -25,6 +25,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     remodel_list(p, w);
     primer_lists(p, w);
     layout_windows(p, w);
+    pup_menu(p, w);
+    fish_gauge(p, w);
 }
 
 /// Plain rows (text, grey), the cursor's lit while focused and kept in view. (hovered, clicked) while focused.
@@ -405,5 +407,39 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
     social::act(w, gu, win, layout::set_win, enter);
     act(w, row, layout::set_row, |w| {
         layout::key(w, egui::Key::Enter);
+    });
+}
+
+/// pupequip (a PUP's main menu Equipment row): Equipment and Customize automaton as a column.
+fn pup_menu(p: &mut Panels, w: &mut World) {
+    let Some(gu) = p.gu else { return };
+    let Some((name, sel)) = equipwin::pup_look(w) else { return };
+    let m = p.m;
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none();
+    let title = gu.title_msg(0x14).unwrap_or_else(|| "Equipment".into());
+    let mut got = (None, None);
+    p.panel("window", Some(Title { icon: Some("icons/equipment"), text: &title, note: None }), social::width(1), |ui| {
+        let col = MenuWin { name, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+        got = social::column(ui, m, gu, &col, free, moved);
+    });
+    if free {
+        social::act(w, gu, got, equipwin::set_pup, |w, gu| equipwin::pup_key(w, gu, egui::Key::Enter));
+    }
+}
+
+/// The fish's gauge while fishing (FUN_10202af0): "Fish" over its bar at retail's place, the screen's centre at 0.2 H;
+/// grey at 0.
+fn fish_gauge(p: &mut Panels, w: &mut World) {
+    const GW: f32 = 240.0;
+    let Some(pct) = fishing::gauge(w) else { return };
+    let m = p.m;
+    let screen = p.ctx.content_rect();
+    let at = pos2(screen.center().x - (GW + 44.0) / 2.0, screen.min.y + screen.height() * 0.2);
+    p.panel_at("fishgauge", None, GW + 44.0, at, |ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(GW, 33.0), Sense::hover());
+        let bar = egui::Rect::from_min_max(pos2(r.min.x, r.max.y - super::hud::BAR), r.max);
+        let c = if pct > 0 { m.theme.color("text") } else { m.theme.color("muted") };
+        super::hud::labelled_bar(ui, m, "hp", bar, pct as f32 / 100.0, ("Fish", c), ("", c));
     });
 }

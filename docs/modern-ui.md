@@ -373,6 +373,10 @@ Milestone 1:
   beside it, the furniture list as the item list (installed here green, locked grey) in their place; the title is
   layout mode's (title slot 0). The mannequin's dressing windows stay retail's for now. Live: /layout in the Mog
   House, rmlo1, bankmenu (Mog Safe 2 dim), the list (empty safe).
+- pupequip and the fishing gauge (2026-10-27, minor.rs over equipwin.rs and fishing.rs): a PUP's Equipment row opens
+  pupequip as a column in the command window's place; while fishing the fish's gauge is a labelled bar ("Fish", grey
+  at 0) at retail's place, the screen's centre at 0.2 H (not seen live yet). Live: pupequip on Lnxcsfix as PUP 30 (back
+  to WAR 22 after), Master by the mouse opening the Equipment screen.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

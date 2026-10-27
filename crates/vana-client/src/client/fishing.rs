@@ -481,13 +481,15 @@ fn tick(w: &mut World, f: &mut Fishing) {
     f.game = Some(g);
 }
 
+/// The fish's gauge (percent) while it shows: fishing, no event holding the UI.
+pub(super) fn gauge(w: &World) -> Option<u8> {
+    w.fish_gauge.filter(|_| fishing_status(w.my_motion.status) && !super::event::active(w))
+}
+
 /// FUN_10202af0 at the end of the party window's draw: "Fish" and its gauge at (W / 2 - 58, 0.2 H), while fishing
 /// and no event holds the UI.
 pub fn draw_gauge(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
-    let Some(pct) = w.fish_gauge else { return };
-    if !fishing_status(w.my_motion.status) || super::event::active(w) {
-        return;
-    }
+    let Some(pct) = gauge(w).filter(|_| !w.modern) else { return };
     let (x, y) = ((sw / 2.0).trunc() - 58.0, (sh / 2.0 * 0.4).trunc());
     // FUN_101cb0d0: windowps 97 at 2 x pct / 100 wide from (4, 1), framesus 98 dimmed at 0.
     if pct > 0 {
