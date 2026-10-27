@@ -4750,6 +4750,7 @@ struct World {
     condense: bool,
     /// The lines later records of their action merge into, and the last action's serial.
     condensed: Vec<combat::Condensed>,
+    condensed_targets: Vec<combat::Targets>,
     action_seq: u32,
     party_tp_save: bool,
     /// /itemsearch's c2s 0x02C is waiting for s2c 0x049 (session +0x3c148).
@@ -6402,6 +6403,7 @@ impl App {
                             modern: self.cfg.modern_ui,
                             condense: self.cfg.modern_condense,
                             condensed: Vec::new(),
+                            condensed_targets: Vec::new(),
                             action_seq: 0,
                             party_tp_save: false,
                             item_search: false,

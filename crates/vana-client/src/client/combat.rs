@@ -196,8 +196,9 @@ struct Msg {
     work: [i32; 5],
     /// A 0x028 record's message (0 main, 1 proc, 2 react): it may also put its number on screen (FUN_1009e090).
     which: Option<u8>,
-    /// Its action's serial (Action::seq).
+    /// Its action's serial (Action::seq), and whether the action has more than one target.
     seq: u32,
+    multi: bool,
 }
 
 /// Main lines waiting for the attacker's hit ("dada" in its attack scheduler).
@@ -358,6 +359,89 @@ pub(super) struct Condensed {
 }
 
 const SLOT: i32 = 2_000_000_003;
+/// A target name's stand-in in a template (digits: no name has them; it passes the game's text encoding).
+const NAME: &str = "Xq7Zq9";
+
+/// An action's lines on several targets merged into one (BattleMod's condensetargets): the action, the line with the
+/// targets as NAME (plural verb) and the number as SLOT, where it is, whether the name opens it, the targets so far.
+pub(super) struct Targets {
+    seq: u32,
+    template: String,
+    line: usize,
+    first: bool,
+    entries: Vec<(String, i32)>,
+}
+
+/// "a", "a and b", "a, b, and c".
+fn join(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [a] => a.clone(),
+        [a, b] => format!("{a} and {b}"),
+        [rest @ .., last] => format!("{}, and {last}", rest.join(", ")),
+    }
+}
+
+/// A merged target line: the names (each with its article) and the numbers in the plural template.
+fn targets_text(g: &Targets) -> String {
+    let names: Vec<String> = g.entries.iter().map(|e| e.0.clone()).collect();
+    let mut names = join(&names);
+    if g.first
+        && let Some(c) = names.chars().next()
+    {
+        names = c.to_uppercase().chain(names.chars().skip(1)).collect();
+    }
+    let values: Vec<String> = g.entries.iter().map(|e| e.1.to_string()).collect();
+    g.template.replacen(NAME, &names, 1).replacen(&SLOT.to_string(), &join(&values), 1)
+}
+
+/// A target as a merged line names it: "the" before a common noun, as the messages do.
+fn target_name(t: &Who) -> String {
+    if t.pc || t.named { t.name.clone() } else { format!("the {}", t.name) }
+}
+
+/// A record of an action on several targets: its target line (the one naming the target, the number all else that
+/// differs) joins the action's earlier one of the same plural text ("Nine, Raven, and Koru take 50, 48, and 45
+/// points of damage."); a first one is printed and kept. True when the whole message was merged.
+fn condense_targets(w: &mut World, bt: &battle::BattleText, m: &Msg, lines: &[(String, [u8; 4])], ctx: &Ctx) -> bool {
+    let Some(target) = ctx.target.clone() else { return false };
+    let rel = relation(w, m.actor, m.target);
+    // The value as a number in the text (SLOT), else as the message reads it (a status id named in the line).
+    let found = [SLOT, m.work[1]].into_iter().find_map(|v| {
+        let mut tc = ctx.clone();
+        tc.work[1] = v;
+        tc.target = Some(Who { name: NAME.into(), ..target.clone() });
+        let single = render(bt, m.id, rel, &tc, &w.game);
+        let k = single.iter().position(|l| l.0.contains(NAME))?;
+        let own = single[k].0.replacen(NAME, &target.name, 1).replacen(&SLOT.to_string(), &m.work[1].to_string(), 1);
+        (single.len() == lines.len() && lines[k].0 == own).then(|| (tc, k, single[k].0.clone()))
+    });
+    let Some((mut tc, k, single)) = found else { return false };
+    tc.target = Some(Who { name: NAME.into(), pc: true, named: true, plural: true, female: false });
+    let Some(mut template) = render(bt, m.id, rel, &tc, &w.game).get(k).map(|l| l.0.clone()).filter(|t| t.contains(NAME)) else { return false };
+    // A possessive ("X's attacks"): each name keeps its own ("Lnxcsfix's and Aurelie's"), not the plural's "X'".
+    let mut name = target_name(&target);
+    if template.contains(&format!("{NAME}'")) {
+        template = template.replacen(&format!("{NAME}'"), NAME, 1);
+        let after = single.split(NAME).nth(1).unwrap_or("");
+        name += after.split(' ').next().unwrap_or("'s");
+    }
+    let entry = (name, m.work[1]);
+    if lines.len() == 1
+        && let Some(g) = w.condensed_targets.iter_mut().find(|g| g.seq == m.seq && g.template == template)
+    {
+        g.entries.push(entry);
+        let text = targets_text(g);
+        w.chat.set_text(g.line, text);
+        return true;
+    }
+    if w.condensed_targets.len() >= 32 {
+        w.condensed_targets.remove(0);
+    }
+    let first = template.starts_with(NAME);
+    w.condensed_targets.push(Targets { seq: m.seq, template, line: w.chat.len() + k, first, entries: vec![entry] });
+    false
+}
 
 /// A record's line as its template: the text with work[`slot`] as SLOT, when the number is all that differs.
 fn template_of(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, slot: usize, line: &str, cfg: &crate::gamecfg::Values) -> Option<String> {
@@ -458,6 +542,9 @@ fn print(w: &mut World, m: Msg) {
     if w.modern && w.condense && m.which == Some(0) && condense_crit(w, &bt, &m, &ctx) {
         return;
     }
+    if w.modern && w.condense && m.which == Some(0) && m.multi && condense_targets(w, &bt, &m, &lines, &ctx) {
+        return;
+    }
     if w.modern
         && w.condense
         && let (Some(which), [(line, _)]) = (m.which, lines.as_slice())
@@ -493,7 +580,7 @@ fn record_messages(a: &Action) -> Vec<Msg> {
         let ids = [Some(r.message), r.proc.as_ref().map(|p| p.message), r.react.as_ref().map(|p| p.message)];
         for (which, id) in ids.into_iter().enumerate() {
             if let Some(id) = id.filter(|&id| id != 0) {
-                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8), seq: a.seq });
+                out.push(Msg { id, actor: a.actor, target, work, which: Some(which as u8), seq: a.seq, multi: a.targets.len() > 1 });
             }
         }
     }
@@ -685,7 +772,7 @@ pub(super) fn message_queue(w: &mut World, dt: f32) {
             log::info!("battle message {}: effect DAT {} on {:#x}", m.message, 0xaf0 + id, m.actor);
             w.effects.on_event_scheduler(0xaf0 + id, u32::from_le_bytes(*b"main"), who, who);
         }
-        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None, seq: 0 });
+        print(w, Msg { id: m.message, actor: m.actor, target: m.target, work: [m.data[0], m.data[1], 0, 0, 0], which: None, seq: 0, multi: false });
     }
 }
 
@@ -826,7 +913,7 @@ pub(super) fn print_record(w: &mut World, a: &Action, k: usize, which: u8) {
         _ => r.react.as_ref().map(|p| p.message),
     };
     if let Some(id) = id.filter(|&id| id != 0) {
-        print(w, Msg { id, actor: a.actor, target, work, which: Some(which), seq: a.seq });
+        print(w, Msg { id, actor: a.actor, target, work, which: Some(which), seq: a.seq, multi: a.targets.len() > 1 });
     }
 }
 
@@ -1680,6 +1767,25 @@ mod tests {
 
     fn rel(actor: u32, target: u32) -> Relation {
         if target == ME { Relation::TargetIsMe } else if actor == ME { Relation::CasterIsMe } else { Relation::Other }
+    }
+
+    /// Area hits merged: the plural text from the message table, the targets joined with their articles.
+    #[test]
+    fn targets_merged() {
+        let Some(bt) = load() else { return };
+        let plural = Who { name: NAME.into(), pc: true, named: true, plural: true, female: false };
+        let ctx = Ctx { actor: who(ME), target: Some(plural), me: "Tuxedo".into(), work: [0, SLOT, 0, 0, 0], ..Default::default() };
+        let t = render(&bt, 264, Relation::Other, &ctx, &Default::default())[0].0.clone();
+        assert_eq!(t, format!("{NAME} take {SLOT} points of damage."));
+        // Magic's first record: its second line is the same target line.
+        assert_eq!(render(&bt, 2, Relation::Other, &ctx, &Default::default())[1].0, t);
+        let g = Targets { seq: 1, template: t, line: 0, first: true, entries: vec![("the Wild Rabbit".into(), 50), ("the Orc".into(), 48), ("Raven".into(), 45)] };
+        assert_eq!(targets_text(&g), "The Wild Rabbit, the Orc, and Raven take 50, 48, and 45 points of damage.");
+        // A status by id: no number in the line; a possessive keeps each name's own.
+        let ctx = Ctx { work: [0, 68, 0, 0, 0], ..ctx };
+        let t = render(&bt, 285, Relation::Other, &ctx, &Default::default())[0].0.replacen(&format!("{NAME}'"), NAME, 1);
+        let g = Targets { seq: 1, template: t, line: 0, first: true, entries: vec![("Lnxcsfix's".into(), 68), ("Aurelie's".into(), 68)] };
+        assert_eq!(targets_text(&g), "Lnxcsfix's and Aurelie's attacks are enhanced.");
     }
 
     /// Replays LSB-built 0x029 / 0x02D / 0x028 bytes through the client's parsers and the message table.

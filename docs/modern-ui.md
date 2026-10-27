@@ -489,7 +489,11 @@ Milestone 1:
   hit joins its round's hit line marked "!" (alone it stays retail's two lines), and a system or battle line equal to
   the one before counts on it ("The Wild Rabbit is out of range. (x2)"; players' lines never fold). With the split
   rounds the target is held while its round has swings left (combat::held), so its death and "defeats" no longer
-  print before the killing swing (seen live before the fix).
+  print before the killing swing (seen live before the fix). An action on several targets (BattleMod's
+  condensetargets): each target's line that differs only in the name and number joins the first in the message
+  table's own plural ("Nine, Raven, and Koru take 50, 48, and 45 points of damage."; Who.plural), each name with its
+  article; a possessive keeps every name's own ("Lnxcsfix's and Aurelie's attacks are enhanced."); a value the line
+  names (a status id) rather than prints is kept as it is. Live: Warcry with a bot in the party.
 - The target panel's name in retail's name colour (FUN_1008db40 as the plates: unclaimed monster pale yellow, our
   party's claim red, another's magenta).
 - Not yet: alliance rows live.
