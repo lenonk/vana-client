@@ -554,7 +554,8 @@ fn one_action(w: &mut World, a: &Action) {
             fx_load(w, id);
         }
     }
-    let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first)).flatten();
+    let record = a.records().first().map(|(_, r)| (r.kind, r.animation));
+    let attack = (a.category == category::BASIC_ATTACK).then(|| start_attack(w, a.actor, first, record)).flatten();
     // The swing's holds (ops 0x59 / 0x20): the attacker's status changes and reactions wait, the target's status too.
     if let Some((_, _, att, tgt)) = &attack {
         let now = Instant::now();
@@ -857,7 +858,18 @@ pub(super) fn swing_patterns(moving: bool, sub: u8) -> (String, String) {
     if moving { (f, i) } else { (i, f) }
 }
 
-pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
+/// FUN_100d46f0 by the hit's record (FUN_10185ea0: kind @4, animation @6): kind 1 animation 1 (the off hand) tries the
+/// sub weapon's `b..?` swings first, 2 / 3 `c..?` / `d..?` (4 "ls05" not handled), then the `a..?` ones.
+pub(super) fn swing_hand(record: Option<(u8, u16)>) -> Option<char> {
+    match record {
+        Some((1, 1)) => Some('b'),
+        Some((1, 2)) => Some('c'),
+        Some((1, 3)) => Some('d'),
+        _ => None,
+    }
+}
+
+pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>, record: Option<(u8, u16)>) -> Option<(Duration, String, Option<u32>, Option<u32>)> {
     let moving = moving(w, actor);
     let sub = w.entities.get(&actor).map_or(0, |e| e.sub[2]);
     let seed = Instant::now().duration_since(w.started).subsec_nanos() as usize;
@@ -865,9 +877,13 @@ pub(super) fn start_attack(w: &mut World, actor: u32, _target: Option<u32>) -> O
     let ch = a.character.clone()?;
     let names = actmotion::scheduler_names(&a.extra, &ch);
     let (first, other) = swing_patterns(moving, sub);
-    let mut pool = sched::matching(names.iter().copied(), &first);
-    if pool.is_empty() {
-        pool = sched::matching(names.iter().copied(), &other);
+    let hand = |p: &str| swing_hand(record).map(|h| format!("{h}{}", &p[1..]));
+    let mut pool = Vec::new();
+    for p in [hand(&first), Some(first.clone()), hand(&other), Some(other.clone())].into_iter().flatten() {
+        pool = sched::matching(names.iter().copied(), &p);
+        if !pool.is_empty() {
+            break;
+        }
     }
     let name = if moving {
         *pool.first()?

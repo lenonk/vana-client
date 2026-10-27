@@ -4724,6 +4724,8 @@ struct World {
     journal_roe: Option<usize>,
     /// The modern Journal's rows have the keys (else its logs, areas or categories on the left).
     journal_on_list: bool,
+    /// Items /equip took in the last seconds (FUN_101efee0; six, each held while under 2 s old).
+    equip_claims: Vec<((u8, u8), Instant)>,
     autorun_dir: Vec3,
     move_tier: f32,
     /// Player physics runs in retail frames (ground::STEP_TICKS): ticks not yet stepped, the last four step
@@ -6350,6 +6352,7 @@ impl App {
                             mouse_look: false,
                             journal_roe: None,
                             journal_on_list: false,
+                            equip_claims: Vec::new(),
                             autorun_dir: Vec3::ZERO,
                             move_tier: 0.0,
                             step_ticks: 0.0,

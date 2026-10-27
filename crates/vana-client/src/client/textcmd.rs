@@ -2084,15 +2084,20 @@ fn equip(w: &mut World, args: &[String]) -> Done {
         Some(b) if b.len() == 1 && b.as_bytes()[0].is_ascii_digit() && b.as_bytes()[0] <= b'8' => vec![EQUIP_BAGS[(b.as_bytes()[0] - b'0') as usize]],
         Some(_) => return Err(()),
     };
-    let Some((bag, index, id)) = find_item(w, name, &bags) else {
-        log::info!("/equip: no {name:?} in containers {bags:?}");
-        return Ok(());
-    };
-    if w.inv.equip[slot as usize] == Some((bag, index)) {
+    // FUN_1007b1c0: the slot already wears an item of that name: nothing.
+    let worn = w.inv.equip[slot as usize].and_then(|s| w.inv.slots.get(&s)).and_then(|&(id, _)| w.item_info.as_ref()?.item(id)).is_some_and(|it| it.name.eq_ignore_ascii_case(name));
+    if worn {
         return Ok(());
     }
-    let locked = w.inv.locks.get(&(bag, index)).is_some_and(|&l| l != 0);
-    if !locked && super::equipwin::try_equip(w, slot as usize, bag, index, id) {
+    let Some((bag, index, id)) = find_free(w, name, &bags) else {
+        log::info!("/equip: no free {name:?} in containers {bags:?}");
+        return Ok(());
+    };
+    if super::equipwin::try_equip(w, slot as usize, bag, index, id) {
+        let now = std::time::Instant::now();
+        w.equip_claims.retain(|c| now.duration_since(c.1).as_secs_f32() < 2.0);
+        w.equip_claims.truncate(5);
+        w.equip_claims.push(((bag, index), now));
         if !quiet {
             log9(w, 0x43);
         }
@@ -2100,6 +2105,16 @@ fn equip(w: &mut World, args: &[String]) -> Done {
         refuse(w, 0x8e);
     }
     Ok(())
+}
+
+/// FUN_101efff0(.., 1, 1): the first item of that name, in the bags' order, that is not locked (equipped, in the bazaar:
+/// LockFlg, +8) nor taken by an /equip under 2 s ago (FUN_101eff30), so `/equip sub` finds the second of a pair.
+fn find_free(w: &World, name: &str, bags: &[u8]) -> Option<(u8, u8, u16)> {
+    let info = w.item_info.as_ref()?;
+    let claimed = |k: &(u8, u8)| w.equip_claims.iter().any(|c| c.0 == *k && c.1.elapsed().as_secs_f32() < 2.0);
+    bags.iter().find_map(|&bag| {
+        w.inv.slots.iter().filter(|((c, i), _)| *c == bag && *i != 0).find(|(k, (id, _))| info.item(*id).is_some_and(|it| it.name.eq_ignore_ascii_case(name)) && w.inv.locks.get(k).is_none_or(|&l| l == 0) && !claimed(k)).map(|((c, i), (id, _))| (*c, *i, *id))
+    })
 }
 
 /// FUN_1007adc0: /item name target, from the temporary bag, the inventory, then the wardrobes; the target is required.

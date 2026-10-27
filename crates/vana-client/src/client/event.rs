@@ -621,7 +621,7 @@ impl LiveHost<'_> {
         let act = Action { actor: a, category, targets: vec![ActionTarget { id: b, results: vec![result] }], ..Default::default() };
         if category == 1 {
             // FUN_100d67b0 (characters only): a swing unless one is already playing (+0x2a4) *(inf: not checked)*.
-            if let Some((_, swing, _, _)) = super::combat::start_attack(self.w, a, Some(b)) {
+            if let Some((_, swing, _, _)) = super::combat::start_attack(self.w, a, Some(b), None) {
                 self.w.effects.on_action(&act, Some(swing));
             }
         } else {

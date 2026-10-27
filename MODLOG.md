@@ -1711,7 +1711,7 @@ with ~/ffxi/lab/combat/q.sh. Inferred items are marked *(inf)*.
   (skeleton + 2600). Skirt: FUN_100d0d00(race, 1, 0) = 0x10352348[race * 2 + max(body info[9] - 1, 0)] +
   info[3]: 9800 / 9928, 12976 / 13104, 16152 / 16280, 19328 / 19456, 22504 / 22632, 25904 / 26032,
   29080 / 29208. Dual wield loads 0x103523a4 (40815..) + info[3] and 0x1035236c (40431..) + sub info[3]
-  (+0x88a) with skirts 0x103523b8 / 0x10352380 instead (not implemented).
+  (+0x88a) with skirts 0x103523b8 / 0x10352380 instead (done 2026-10-27: "Dual wield" below).
 - Weapon motion set = main weapon file 0x45 info[3] (FUN_100cea10 case 6): 8392 (main 0) 10 = hand-to-hand,
   8393 (main 1) 2, 8394 / 8395 3, 8396 / 8397 1, 8400 4, 8410 5. A battle file holds btl0/1, wlk1, run1,
   at00..at21, dfm1 / dbm1, gdm1, the swing schedulers ati0..2 atf0 atb0 atr0 atl0, "in 0" / "out0", atk0;
@@ -10465,3 +10465,34 @@ Spec: ~/ffxi/lab/scratch/chatfilters/SPEC.md (agent decode of 30261006_0; tables
   resend and the 8 s give-up stay *(not retail: retail sends once and re-arms only on a mode 5 reset)*. Test
   dat::zone::tests::zone_line_segments. Live (Lnxcsfix, 2026-10-27): Elevator Button, Yes, the ride; at the event's
   end `zone line zmrmzmrn`, then the Jeuno Mog House (zone 243 at 0, 0, 0, music 126).
+
+## Dual wield (2026-10-27)
+
+- User report: Nine (Mithra NIN/THF, a Wakizashi in each hand: main and sub model 310) swung twice but the second blade
+  was not in her hand. Engaged, we loaded the one-weapon battle files, whose motions leave the sub weapon's bones at the
+  hip: the blade stuck out sideways behind her while the left hand swung empty.
+- FUN_100cd3e0 (+0x8b5): a sub-slot model is a weapon (dual wield) unless its id (low 12 bits) is in a shield range
+  [0, 0x3f], [0x75, 0x8f], [0x1d7, 0x1ff], [0x280, 0x2bf]. FUN_100cea10 case 7 then takes the sub file's info[3] (@0x33)
+  as +0x88a and zeroes +0x87d (the upper-body file pick, skeleton + 1 + it); a shield keeps info[5] there.
+- Engaging (state 0 -> 1 at 0x10089f46 in the old build): +0x8b5 picks FUN_100cf900 over FUN_100cf650. It loads the
+  race base file FUN_100d0d00(race, 0, 0) (as the one-weapon loader), then FUN_100d0dc0(race, 1 / 2): table 0x103523a4
+  + main info[3] and 0x1035236c + sub info[3], then FUN_100d0d00(race, 1, 1 / 2): skirts 0x103523b8 / 0x10352380
+  [race * 2 + max(skirt - 1, 0)] + the same sets; a set of -1 skips its file. Tables (u16 x 9 / x 18, unchanged in
+  30261006_0 at 0x1035d754..): dual main 40815 40815 42095 43375 44655 45935 45935 47215 48495, dual sub 40431 40431
+  41711 42991 44271 45551 45551 46831 48111; skirts in dat/motionfile.rs. Mithra, set 3, skirt 2: 47218 / 46834 /
+  47474 / 47090. The main file holds ati4 / ati5, atf0.., "in 0" / "out0", in10 / ot10; the sub file bti4 / bti5,
+  btf0 btb0 btr0 btl0, in20 / ot20.
+- The swing (FUN_100d4600 -> FUN_100d46f0): the hit's record (FUN_10185ea0: the action's records of 0x34, +8 the
+  0x2c-byte result FUN_10185a20 parsed, its u16 @4 kind and @6 animation) picks the scheduler's first letter: kind 1
+  with animation 1 (LSB LEFT_ATTACK, the off hand) 'b', 2 'c', 3 'd' (kicks), 4 the fixed "ls05" (a throw), then the
+  'a' set. With +0x8b5 a 'b' scheduler calls the model's vtable +0x250(1) *(not traced: no effect seen; the after-image
+  comes from the scheduler's own file)*.
+- Ours: dat/motionfile.rs dual_wield / battle_files (PcMotion.dual = the sub's info[3]), dat/character.rs (the upper
+  file pick zeroed), combat::swing_hand (start_attack gets the round's record). Test dual_wield_files. Live
+  (Lnxcsfix NIN 30, two Wakizashi, a Wild Rabbit in West Ronfaure): battle files [47218, 46834, 47346, 46962], both
+  blades in hand, records "kind 1 anim 0" then "kind 1 anim 1" played ati5 then bti4; out0 sheathed both at the hips.
+- /equip (FUN_1007b390) looks an item up with FUN_101efff0(.., 1, 1) -> FUN_101f0060: the first flag skips items whose
+  +8 (LockFlg: equipped, bazaar) is set, the second items an /equip took under 2 s ago (FUN_101efee0 marks, six slots,
+  FUN_101eff30 checks; the clock DAT_10492e10+0xc counts whole seconds of timeGetTime), so `/equip main` then
+  `/equip sub` on a pair takes both. FUN_1007b1c0 first: the slot already wears an item of that name: nothing. Ours
+  matched the first by name, the one in the main hand, and refused 7 0x8e. Fixed (textcmd::find_free).
