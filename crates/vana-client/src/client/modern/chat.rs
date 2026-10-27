@@ -374,7 +374,7 @@ fn candidates(ui: &mut Ui, m: &Modern, cands: &[String], sel: usize, bottom_left
     let font = FontId::proportional(m.theme.small);
     let first = sel / fep::ROWS * fep::ROWS;
     egui::Area::new(egui::Id::unique("fep list")).order(egui::Order::Foreground).pivot(egui::Align2::LEFT_BOTTOM).fixed_pos(bottom_left).show(ui.ctx(), |ui| {
-        egui::Frame::NONE.fill(m.theme.color("charcoal").gamma_multiply(0.97)).stroke(egui::Stroke::new(1.0, m.theme.color("bronze"))).corner_radius(6.0).inner_margin(6.0).show(ui, |ui| {
+        egui::Frame::NONE.fill(m.bg(m.theme.color("charcoal"))).stroke(egui::Stroke::new(1.0, m.theme.color("bronze"))).corner_radius(6.0).inner_margin(6.0).show(ui, |ui| {
             ui.set_min_width(160.0);
             ui.label(egui::RichText::new(format!("{}/{}", sel + 1, cands.len())).size(m.theme.small - 1.0).color(m.theme.color("muted")));
             for (k, c) in cands.iter().enumerate().skip(first).take(fep::ROWS) {

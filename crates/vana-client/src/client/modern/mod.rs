@@ -61,6 +61,8 @@ pub struct Modern {
     chat_seen: std::cell::RefCell<[Option<usize>; 11]>,
     /// The login form's text size (lobby.rs), for the lobby's popups.
     lobby_text: std::cell::Cell<f32>,
+    /// The windows' background opacity (config `modern_opacity`).
+    opacity: std::cell::Cell<f32>,
     /// The panel a drag has really moved (show): a press alone moves nothing.
     dragging: std::cell::RefCell<Option<String>>,
     /// How menu rows look (rows.rs), and window borders (borders.rs).
@@ -122,6 +124,7 @@ impl Modern {
             chat_seen: Default::default(),
             dragging: Default::default(),
             lobby_text: Default::default(),
+            opacity: std::cell::Cell::new(0.85),
             row_style: Default::default(),
             border_style: Default::default(),
             images: Default::default(),
@@ -149,6 +152,16 @@ impl Modern {
             edge_ghost: Default::default(),
             dirty: false,
         }
+    }
+
+    /// The windows' background opacity from the config (Settings' Panel Opacity).
+    pub fn set_opacity(&self, o: f32) {
+        self.opacity.set(o.clamp(0.1, 1.0));
+    }
+
+    /// A window background colour at the set opacity.
+    pub(super) fn bg(&self, c: egui::Color32) -> egui::Color32 {
+        c.gamma_multiply(self.opacity.get())
     }
 
     /// One frame: egui's zoom for the window height, the panels. True when the config (the layout, the chat font) is

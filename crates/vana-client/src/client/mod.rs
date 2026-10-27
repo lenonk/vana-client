@@ -9365,6 +9365,9 @@ impl App {
         let k = self.ui_k;
         let screen_size = size;
         let ppp = ctx.pixels_per_point();
+        if let Some(m) = &self.modern {
+            m.set_opacity(self.cfg.modern_opacity);
+        }
         // The stacked-window pointer follow, only with the drawn (software) cursor.
         let ptr_dy = match &self.phase {
             Phase::World(w) if self.cfg.tool("0021") == 0 => w.ptr_dy,

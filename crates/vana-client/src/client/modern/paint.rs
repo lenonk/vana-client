@@ -48,14 +48,14 @@ fn quad(m: &mut Mesh, r: Rect, uv: Rect) {
 /// A window over `r` at `k` points per logical pixel (NINE_SLICE.md): the interior's gradient stretched top to
 /// bottom, then the border: fixed corners, edges tiled from the frame's middle strips (their pattern repeats, so they
 /// are never stretched), the last tile cut short.
-pub fn window(f: &Frame, r: Rect, k: f32) -> Shape {
+pub fn window(f: &Frame, r: Rect, k: f32, opacity: f32) -> Shape {
     let k = k.min(r.width() / (2.0 * f.corner)).min(r.height() / (2.0 * f.corner));
     let inner = r.shrink(f.inset * k);
     let mut g = Mesh::default();
     let bands = 16;
     for i in 0..=bands {
         let t = i as f32 / bands as f32;
-        let c = f.gradient[((f.gradient.len() - 1) as f32 * t).round() as usize];
+        let c = f.gradient[((f.gradient.len() - 1) as f32 * t).round() as usize].gamma_multiply(opacity);
         let y = inner.top() + inner.height() * t;
         g.colored_vertex(pos2(inner.left(), y), c);
         g.colored_vertex(pos2(inner.right(), y), c);

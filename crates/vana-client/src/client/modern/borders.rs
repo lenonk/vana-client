@@ -57,7 +57,7 @@ fn accent(m: &Modern, frame: &str) -> Color32 {
 
 /// The pack frame's interior colour (its gradient's middle), for the styles that fill a rounded rect.
 fn fill(m: &Modern, frame: &str) -> Color32 {
-    m.art.frame(frame).or_else(|| m.art.frame("window_normal")).map_or(m.theme.color("surface"), |f| f.gradient[f.gradient.len() / 2])
+    m.bg(m.art.frame(frame).or_else(|| m.art.frame("window_normal")).map_or(m.theme.color("surface"), |f| f.gradient[f.gradient.len() / 2]))
 }
 
 /// A horizontal line from `a` to `b` at `y`, clear at both ends and `c` over its middle half.
@@ -130,7 +130,7 @@ pub fn window(m: &Modern, frame: &str, r: Rect) -> Shape {
     let Some(f) = m.art.frame(frame) else { return Shape::Noop };
     let style = m.border_style.get();
     if style == Style::Pack {
-        return paint::window(f, r, 1.0);
+        return paint::window(f, r, 1.0, m.opacity.get());
     }
     Shape::Vec(shapes(m, frame, r, CornerRadius::same(6), style))
 }

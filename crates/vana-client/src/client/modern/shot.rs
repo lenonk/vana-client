@@ -146,7 +146,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         let Some(f) = m.art.frame(n) else { continue };
         let s = sizes[i % sizes.len()];
         let y = screen.center().y - s.y;
-        painter.add(paint::window(f, Rect::from_min_size(pos2(x, y), s), 1.0));
+        painter.add(paint::window(f, Rect::from_min_size(pos2(x, y), s), 1.0, 1.0));
         painter.text(pos2(x + 12.0, y + 14.0), egui::Align2::LEFT_TOP, *n, egui::FontId::proportional(12.0), m.theme.color("muted"));
         x += s.x + 12.0;
     }
@@ -162,6 +162,8 @@ pub struct Opts {
     pub rows: Option<String>,
     /// A window border style by name (borders.rs): the panels, the menu and an edge window drawn in it.
     pub borders: Option<String>,
+    /// The windows' background opacity.
+    pub opacity: f32,
 }
 
 pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &Path, opts: &Opts) -> Result<()> {
@@ -180,6 +182,7 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     let view = target.create_view(&Default::default());
     let ctx = egui::Context::default();
     let m = Modern::new(&ctx);
+    m.set_opacity(opts.opacity);
     if let Some(name) = &opts.rows {
         m.row_style.set(super::rows::Style::from_name(name).with_context(|| format!("no row style {name}"))?);
     }

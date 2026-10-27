@@ -34,6 +34,7 @@ pub struct Settings {
     pub cursor_size: u32,
     pub modern_ui: bool,
     pub modern_scale: u32,
+    pub modern_opacity: u32,
     /// The mod packs in priority order (the Mods page; config `mods`).
     pub mods: Vec<crate::config::ModRef>,
     /// Panel Places' Reset pressed: this character's modern panels go back to where they start (not kept).
@@ -66,6 +67,7 @@ impl Settings {
             cursor_size: c.cursor_size,
             modern_ui: c.modern_ui,
             modern_scale: c.modern_scale,
+            modern_opacity: pct(c.modern_opacity),
             mods: crate::modpack::merged(&c.mods, &crate::modpack::folders()),
             reset_places: false,
         }
@@ -91,6 +93,7 @@ impl Settings {
         c.cursor_size = self.cursor_size;
         c.modern_ui = self.modern_ui;
         c.modern_scale = self.modern_scale;
+        c.modern_opacity = self.modern_opacity as f32 / 100.0;
         c.mods = self.mods.clone();
     }
 }
@@ -140,6 +143,7 @@ enum Val {
     Gpu,
     ModernUi,
     ModernScale,
+    ModernOpacity,
     ResetPlaces,
 }
 
@@ -221,6 +225,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
         row("Interface", "Classic: the game's own windows. Modern: the new interface's windows where it has them (not retail).", ModernUi, &[(0, "Classic"), (1, "Modern")], Now),
         row("Interface Size", "The modern interface's size (not retail).", ModernScale, MODERN_SCALES, Now),
+        row("Panel Opacity", "How opaque the modern interface's window backgrounds are (not retail).", ModernOpacity, &[], Now),
         row("Panel Places", "Reset puts this character's modern windows back where they start (not retail).", ResetPlaces, &[(0, "As Moved"), (1, "Reset")], Now),
     ];
     const MAPS: &[Row] = &[
@@ -324,7 +329,7 @@ impl SettingsUi {
 
     fn ctl(r: &Row) -> Ctl {
         match r.val {
-            Val::Size(..) | Val::Gamma | Val::FrameLimit | Val::Monitor | Val::Gpu | Val::Music | Val::Effects | Val::MapOpacity => Ctl::Slider,
+            Val::Size(..) | Val::Gamma | Val::FrameLimit | Val::Monitor | Val::Gpu | Val::Music | Val::Effects | Val::MapOpacity | Val::ModernOpacity => Ctl::Slider,
             _ if r.choices.len() <= 3 => Ctl::Buttons(r.choices.len()),
             _ => Ctl::Slider,
         }
@@ -363,6 +368,7 @@ impl SettingsUi {
             Val::PartyTp => self.s.party_tp as u32,
             Val::ModernUi => self.s.modern_ui as u32,
             Val::ModernScale => self.s.modern_scale,
+            Val::ModernOpacity => self.s.modern_opacity,
             Val::ResetPlaces => self.s.reset_places as u32,
             Val::MapOverlay => self.s.map_overlay as u32,
             Val::MapOpacity => self.s.map_opacity,
@@ -387,6 +393,7 @@ impl SettingsUi {
             Val::PartyTp => self.s.party_tp = x != 0,
             Val::ModernUi => self.s.modern_ui = x != 0,
             Val::ModernScale => self.s.modern_scale = x,
+            Val::ModernOpacity => self.s.modern_opacity = x,
             Val::ResetPlaces => self.s.reset_places = x != 0,
             Val::MapOverlay => self.s.map_overlay = x != 0,
             Val::SynthAmount => self.s.synth_amount = x != 0,
@@ -430,6 +437,7 @@ impl SettingsUi {
             Val::Music => (21, (self.s.music / 5) as usize),
             Val::Effects => (21, (self.s.effects / 5) as usize),
             Val::MapOpacity => (19, (self.s.map_opacity.clamp(10, 100) / 5 - 2) as usize),
+            Val::ModernOpacity => (19, (self.s.modern_opacity.clamp(10, 100) / 5 - 2) as usize),
             v => {
                 let list: Vec<u32> = r.choices.iter().map(|c| c.0).collect();
                 (list.len(), pos(&list, self.get(v)))
@@ -461,6 +469,7 @@ impl SettingsUi {
             Val::Music => self.s.music = (i as u32 * 5).min(100),
             Val::Effects => self.s.effects = (i as u32 * 5).min(100),
             Val::MapOpacity => self.s.map_opacity = ((i as u32 + 2) * 5).clamp(10, 100),
+            Val::ModernOpacity => self.s.modern_opacity = ((i as u32 + 2) * 5).clamp(10, 100),
             v => {
                 if let Some(c) = r.choices.get(i) {
                     self.set(v, c.0);
@@ -485,6 +494,7 @@ impl SettingsUi {
             Val::Music => format!("{}%", self.s.music),
             Val::Effects => format!("{}%", self.s.effects),
             Val::MapOpacity => format!("{}%", self.s.map_opacity),
+            Val::ModernOpacity => format!("{}%", self.s.modern_opacity),
             Val::Monitor => self.monitors.iter().find(|m| m.0 == self.s.monitor).or(self.monitors.first()).map_or_else(|| "Default".into(), |m| m.0.clone()),
             Val::Gpu if self.s.gpu.is_empty() => "Default".into(),
             // The name without the driver's part ("AMD Radeon RX 6800 XT (RADV NAVI21)").

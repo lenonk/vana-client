@@ -128,6 +128,8 @@ pub struct Config {
     pub modern_ui: bool,
     /// The modern layer's size in percent of its 1080-line design.
     pub modern_scale: u32,
+    /// How opaque the modern windows' backgrounds are (0.1 ..= 1).
+    pub modern_opacity: f32,
     pub modern_places: std::collections::BTreeMap<String, ModernLayout>,
     pub modern_chat_font: f32,
     /// The modern edge windows folded to their tabs, by panel (the minimap, Wide Scan).
@@ -262,6 +264,7 @@ impl Default for Config {
             mods: Vec::new(),
             modern_ui: false,
             modern_scale: 60,
+            modern_opacity: 0.85,
             modern_places: Default::default(),
             modern_chat_font: 15.0,
             modern_folded: Default::default(),

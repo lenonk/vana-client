@@ -294,7 +294,7 @@ pub(super) fn edge_frame_shape(r: Rect, left: bool, attached: bool, m: &super::M
         return s;
     }
     let mut v = vec![
-        Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.theme.color("surface").gamma_multiply(0.95))),
+        Shape::Rect(egui::epaint::RectShape::filled(ext, round(radius), m.bg(m.theme.color("surface")))),
         Shape::Rect(egui::epaint::RectShape::stroke(ext, round(radius), Stroke::new(2.0, m.theme.color("bronze")), egui::StrokeKind::Inside)),
         Shape::Rect(egui::epaint::RectShape::stroke(ext.shrink(4.0), round(radius.saturating_sub(4)), Stroke::new(1.0, m.theme.color("gold").gamma_multiply(0.45)), egui::StrokeKind::Inside)),
     ];
