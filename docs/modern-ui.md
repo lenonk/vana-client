@@ -420,6 +420,14 @@ Milestone 1:
   the Update button as retail places it; retail's keys and mouse untouched (hover moves the cursor, a click is Enter).
   The labels are sized to the buttons (half their height; user, 2026-10-27: the panel-sized font was far too small). The
   logo, the expansion banners and the help bar stay. Live: hover, Select Character by the mouse, back by Escape.
+- The login screen (2026-10-27, modern/lobby.rs login_form / ok_popup / wait_panel / help_bar over client/mod.rs
+  login_window, which keeps the keys): the form at 1.5x in the pack's input, checkbox and button art; the wait and
+  error popups on retail's netwait / ok rects with their text above the form's size (user: as big as the original's
+  or bigger) and OK centred on retail's row, lifted clear of the form; the help bar on retail's lobyhelp strip with
+  the version above it at loby2win's spot (title screen too). Character select's wait is the same panel.
+- Panel Opacity (2026-10-27, Settings > Linux, config modern_opacity, default 85 %): every window background the layer
+  paints (the frame gradient, the other border styles' fill, the edge windows, the auto-translate list); borders and
+  text stay opaque.
 - The creator (2026-10-27, modern/lobby.rs creator_screen over client/creator.rs and client/mod.rs, which keep every
   step's rules and keys): one panel where the select list sits, the step's help line and "n/7"; the step's choices as
   rows (the race by its group 6 name, Face / Hair as the stats line's words, the size, job and nation rows' own
