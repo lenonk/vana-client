@@ -191,6 +191,7 @@ impl Modern {
         auction::draw(&mut p, w);
         post::draw(&mut p, w);
         inspect::draw(&mut p, w);
+        inspect::dress(&mut p, w);
         minor::draw(&mut p, w);
         bluset::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat

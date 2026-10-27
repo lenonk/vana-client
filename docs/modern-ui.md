@@ -371,8 +371,11 @@ Milestone 1:
   the help, Undead filtered, a spell picked and dropped; nothing set.
 - Layout mode's windows (2026-10-27, minor.rs over layout.rs): the rmlo window as a column with its dim rows, bankmenu
   beside it, the furniture list as the item list (installed here green, locked grey) in their place; the title is
-  layout mode's (title slot 0). The mannequin's dressing windows stay retail's for now. Live: /layout in the Mog
-  House, rmlo1, bankmenu (Mog Safe 2 dim), the list (empty safe).
+  layout mode's (title slot 0). Live: /layout in the Mog
+  House, rmlo1, bankmenu (Mog Safe 2 dim), the list (empty safe). The mannequin's dressing (inspect.rs dress over
+  mannequin.rs) uses /check's grid: the worn pieces, the slots it can't wear shaded, Remove All under it (dim with
+  nothing worn), the Storage list beside it in its tints; the side without the keys takes them on the mouse first, as
+  retail's pointer (not seen live: Lnxcsfix has no mannequin now).
 - pupequip and the fishing gauge (2026-10-27, minor.rs over equipwin.rs and fishing.rs): a PUP's Equipment row opens
   pupequip as a column in the command window's place; while fishing the fish's gauge is a labelled bar ("Fish", grey
   at 0) at retail's place, the screen's centre at 0.2 H (not seen live yet). Live: pupequip on Lnxcsfix as PUP 30 (back

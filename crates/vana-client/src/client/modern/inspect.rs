@@ -1,9 +1,10 @@
 //! The modern /check window over client/inspect.rs, which keeps its store, rules and keys: the checked player's name,
 //! jobs and linkshell, the sixteen slots in retail's grid (child 1 + column x 4 + row, so its links walk it as drawn),
 //! View Wares, and the bazaar message while View Wares has the cursor. The item info follows the cursor as retail's.
+//! The mannequin's dressing (mannequin.rs, layout mode 4) uses the same grid with Remove All and the Storage list.
 
-use super::super::{World, inspect, linkshell, textcmd};
-use super::craft::{button, tile};
+use super::super::{World, inspect, linkshell, mannequin, textcmd};
+use super::craft::{button, list, tile};
 use super::{Panels, Title};
 use crate::audio::Ui as Se;
 use crate::inventory::SLOT_CHILD;
@@ -87,5 +88,82 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some(k) = click {
         inspect::set_cursor(w, k);
         inspect::key(w, gu, egui::Key::Enter);
+    }
+}
+
+/// Dressing a mannequin: the grid (the worn pieces, the slots it can't wear shaded), Remove All under it (dim with
+/// nothing worn), the Storage list beside it in its tints (picked orange, worn here green, elsewhere or the wrong race
+/// grey); the side without the keys takes them on the mouse first.
+pub fn dress(p: &mut Panels, w: &mut World) {
+    const LIST_W: f32 = 330.0;
+    if !w.modern {
+        return;
+    }
+    let (Some(gu), Some(info)) = (p.gu, w.item_info.clone()) else { return };
+    let Some(v) = mannequin::look(w) else { return };
+    let m = p.m;
+    let ctx = p.ctx;
+    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none();
+    let title = gu.title_msg(4).filter(|t| !t.is_empty()).unwrap_or_else(|| "Layout".into());
+    let (mut grid, mut rows) = ((None, None), (None, None));
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), GRID_W + 16.0 + LIST_W + 44.0, |ui| {
+        ui.horizontal_top(|ui| {
+            ui.vertical(|ui| {
+                ui.set_width(GRID_W);
+                let (area, _) = ui.allocate_exact_size(vec2(GRID_W, 4.0 * PITCH - GAP), Sense::hover());
+                for child in 1..=16u16 {
+                    let (col, row) = ((child - 1) / 4, (child - 1) % 4);
+                    let r = Rect::from_min_size(area.min + vec2(col as f32 * PITCH, row as f32 * PITCH), vec2(SLOT, SLOT));
+                    let item = v.worn[child as usize - 1];
+                    let icon = (item != 0).then(|| m.item_icon(ctx, &info, item)).flatten();
+                    let lit = (v.cursor == child).then_some(v.on_grid);
+                    let resp = tile(ui, m, r, egui::Id::unique(("dress slot", child)), icon, 0, lit, false);
+                    if v.off.contains(&child) {
+                        ui.painter().rect_filled(r.shrink(4.0), 6.0, Color32::from_black_alpha(140));
+                    } else {
+                        if free && resp.hovered() && moved {
+                            grid.0 = Some(child);
+                        }
+                        if free && resp.clicked() {
+                            grid.1 = Some(child);
+                        }
+                    }
+                }
+                ui.add_space(8.0);
+                let label = gu.sprite_caption("menu    windowps", 545).unwrap_or_else(|| "Remove all".into());
+                if button(ui, m, &label, GRID_W, v.on_grid && v.cursor == mannequin::REMOVE, !v.any_worn) && free {
+                    grid.1 = Some(mannequin::REMOVE);
+                }
+            });
+            ui.add_space(16.0);
+            ui.vertical(|ui| {
+                ui.set_width(LIST_W);
+                rows = list(ui, m, ctx, &info, "dress storage", &v.rows, &v.tints, v.row, free && !v.on_grid, &[]);
+            });
+        });
+    });
+    if !free {
+        return;
+    }
+    let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);
+    if let Some(k) = grid.0
+        && mannequin::set_grid(w, k)
+    {
+        cursor(w);
+    }
+    if let Some(k) = grid.1 {
+        mannequin::set_grid(w, k);
+        mannequin::key(w, gu, egui::Key::Enter);
+        return;
+    }
+    if let Some(k) = rows.0
+        && mannequin::set_list(w, k)
+    {
+        cursor(w);
+    }
+    if let Some(k) = rows.1 {
+        mannequin::set_list(w, k);
+        mannequin::key(w, gu, egui::Key::Enter);
     }
 }

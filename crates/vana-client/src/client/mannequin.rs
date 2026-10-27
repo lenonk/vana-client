@@ -440,6 +440,10 @@ pub fn bar(w: &mut World, m: super::scrollbar::Msg) -> bool {
 /// The mouse: a grid child under it takes the cursor and a click on the cursor's child is Enter; the list's rows as
 /// the item list's; the pointer over the other window moves the focus there (message 8), as the Equipment screen.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws them and takes their mouse.
+    if w.modern {
+        return;
+    }
     let Some(d) = dress(w) else { return };
     let (focus, cursor, scroll, row) = (d.focus, d.cursor, d.scroll, d.row);
     let n = rows(w, d).len();
@@ -487,10 +491,70 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
     }
 }
 
+/// The dressing windows as the modern layer draws them: each grid child's worn item (child - 1), the children a
+/// mannequin can't wear, the cursor, the grid has the keys; the Storage list's rows, tints and cursor row.
+pub(super) struct Look {
+    pub worn: [u16; 16],
+    pub off: Vec<u16>,
+    pub any_worn: bool,
+    pub cursor: u16,
+    pub on_grid: bool,
+    pub rows: Vec<Slot>,
+    pub tints: Vec<u32>,
+    pub row: usize,
+}
+
+pub(super) const REMOVE: u16 = REMOVE_ALL;
+
+pub(super) fn look(w: &World) -> Option<Look> {
+    let d = dress(w)?;
+    let ext = worn(w, d.c, d.slot);
+    let mut by_child = [0u16; 16];
+    for (slot, &child) in SLOT_CHILD.iter().enumerate() {
+        if let Some(i) = idx(slot)
+            && ext[i] != 0
+            && let Some(&(id, _)) = w.inv.slots.get(&(STORAGE, ext[i]))
+        {
+            by_child[child as usize - 1] = id;
+        }
+    }
+    let rows = rows(w, d);
+    let tints = rows.iter().map(|s| tint(w, d, s)).collect();
+    Some(Look { worn: by_child, off: off_children(), any_worn: ext.iter().any(|&s| s != 0), cursor: d.cursor, on_grid: d.focus == Focus::Grid, rows, tints, row: d.scroll + d.row })
+}
+
+/// The mouse onto grid child `k` or list row `k`: the other side takes the focus first (as Num+, the retail
+/// pointer's rule); then the cursor moves. True when it moved.
+pub(super) fn set_grid(w: &mut World, k: u16) -> bool {
+    if dress(w).is_some_and(|d| d.focus == Focus::List) {
+        num_plus(w);
+    }
+    let Some(d) = dress_mut(w).filter(|d| d.focus == Focus::Grid && d.cursor != k && (1..=REMOVE_ALL).contains(&k)) else { return false };
+    (d.cursor, d.prev) = (k, k);
+    if k != REMOVE_ALL {
+        d.col = (k - 1) / 4;
+    }
+    true
+}
+
+pub(super) fn set_list(w: &mut World, k: usize) -> bool {
+    if dress(w).is_some_and(|d| d.focus == Focus::Grid) {
+        num_plus(w);
+    }
+    let n = dress(w).map_or(0, |d| rows(w, d).len());
+    let Some(d) = dress_mut(w).filter(|d| d.focus == Focus::List && d.scroll + d.row != k && k < n) else { return false };
+    d.scroll = d.scroll.min(k).max((k + 1).saturating_sub(VISIBLE_ROWS));
+    d.row = k - d.scroll;
+    true
+}
+
 /// FUN_10134180 / FUN_10133d70: the grid with the worn pieces' icons, child 17 as windowps 545 (546 dim with nothing
 /// worn), anc_equi on a slot; the Storage list at (200, 48) with its tints.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let (Some(d), Some(info)) = (dress(w), w.item_info.clone()) else { return rects };
     let ext = worn(w, d.c, d.slot);
     let dim = ext.iter().all(|&s| s == 0);
