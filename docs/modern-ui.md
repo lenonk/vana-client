@@ -341,6 +341,13 @@ Milestone 1:
   (Unity Information's lines and the chat setting with a dot on the current one, or the two weeks), quest01's ranking
   of every unity under its rows; Unity Lists opens the area list's own panel. Live: both pages, a week's ranking, a
   row and Unity Lists by the mouse.
+- Level Sync (2026-10-27, social.rs over levelsync.rs): the party's members as the search results' people rows beside
+  the party menu, Level Sync's own status icon on the synced one, grey under level 10 or anonymous.
+- The block list and the chat mode window (2026-10-27, modern/minor.rs over blklist.rs and chatctrl.rs): the names
+  with blkmain's Delete as a button while it is up; chatctrl's seven rows as a column on the combat window with the tell
+  name, the shells ("No Linkshell") and the Unity at the right, subwindo's range under them. Retail's engaged gauge
+  window (gaugewin) is not drawn: the party panel shows our HP / MP / TP. Live: a name added, picked by the mouse and
+  deleted by the button; the chat mode window from the action menu's Chat arrow; Level Sync with a bot in the party.
 - A panel taller than the room under its place (a window dragged low, a long list) rises until it fits (user,
   2026-10-27: a list cut at the screen's bottom, its cursor walked into rows not shown); its saved place stays.
 - Chat tabs as retail's full log (decoded 2026-10-26, FUN_101299f0 by the line's chat mode): All, Say, Tell, Party,

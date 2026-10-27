@@ -95,6 +95,14 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// The mouse's cursor move onto row `k`. True when it moved.
+pub(super) fn set_cursor(w: &mut World, k: usize) -> bool {
+    let Some(l) = w.levelsync.as_mut().filter(|l| l.cursor != k && k < l.rows.len()) else { return false };
+    l.cursor = k;
+    l.scroll = l.scroll.min(k).max((k + 1).saturating_sub(ROWS));
+    true
+}
+
 /// The prompt's question (FUN_10153180 with the name and the pronoun by race, FUN_101cc590).
 pub fn ask_text(w: &World, id: u32, race: u8, off: bool) -> String {
     let Some(bt) = w.battle.as_ref() else { return String::new() };

@@ -20,6 +20,7 @@ mod journal;
 mod lists;
 mod loot;
 mod macros;
+mod minor;
 mod paint;
 pub mod plates;
 mod points;
@@ -189,6 +190,7 @@ impl Modern {
         auction::draw(&mut p, w);
         post::draw(&mut p, w);
         inspect::draw(&mut p, w);
+        minor::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {
@@ -343,6 +345,9 @@ fn default_place(id: &str) -> Place {
         "loot" => on("combat"),
         // /check beside the command window's place.
         "check" => at(0.2, 0.0347),
+        "blklist" => at(0.2, 0.0347),
+        // The chat mode window rides the action menu it is opened from.
+        "chatctrl" => on("combat"),
         _ => at(0.3, 0.3),
     }
 }

@@ -3,7 +3,7 @@
 //! searchmenu.rs and linkshell.rs, which keep every rule and key. A window opened over another shows beside it.
 
 use super::super::game_ui::GameUi;
-use super::super::{World, arealist, bazaar, helpdesk, linklist, linkshell, moogle, partymenu, region, search, searchmenu, viewhouse};
+use super::super::{World, arealist, bazaar, helpdesk, levelsync, linklist, linkshell, moogle, partymenu, region, search, searchmenu, viewhouse};
 use super::{MenuWin, Panels, Title, paint};
 use crate::inventory::ItemInfo;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
@@ -39,7 +39,7 @@ pub(super) fn column(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &MenuWin, f
         ui.set_width(COL_W);
         let t = title(gu, v);
         // The panel already carries the page's name; a window's own title shows when it adds something.
-        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info" | "Synthesis" | "MacroPalette" | "Unity") {
+        if !t.is_empty() && !matches!(t.as_str(), "Party" | "Search" | "Linkshell" | "Set Bazaar" | "Region Info" | "Synthesis" | "MacroPalette" | "Unity" | "Chat") {
             ui.label(egui::RichText::new(t).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
             ui.add_space(4.0);
         }
@@ -414,6 +414,40 @@ fn link_list(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
     }
 }
 
+/// Level Sync (levelsync.rs keeps its rules and keys): the party's members as people rows, Level Sync's own status
+/// icon on the synced one, grey under level 10 or anonymous.
+fn level_sync(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
+    let Some(l) = w.levelsync.as_ref() else { return };
+    let m = p.m;
+    let synced = levelsync::synced(w).map(|s| s.name.clone());
+    let icon = m.status_icon(p.ctx, gu, false, 269);
+    let rows = l
+        .rows
+        .iter()
+        .map(|r| {
+            let mut pr = person(w, gu, r, icon.filter(|_| synced.as_ref() == Some(&r.name)), false);
+            if r.level.0 < 10 || r.flags & 0x4000 != 0 {
+                pr.colour = m.theme.color("muted");
+            }
+            pr
+        })
+        .collect();
+    let empty = if l.busy { Some("Please wait...".to_string()) } else { None };
+    let title = gu.title_msg(0x95).unwrap_or_else(|| "Level Sync".into());
+    let pv = People { id: "levelsync", title: &title, icon: "icons/party", header: None, empty, rows, cursor: l.cursor, focused: w.confirm.is_none(), opts: Vec::new(), opt_sel: None };
+    let mouse = people(p, pv, moved);
+    for k in mouse.hover.into_iter().chain(mouse.click) {
+        if levelsync::set_cursor(w, k) {
+            w.sounds.push(crate::audio::Ui::Cursor as u32);
+        }
+    }
+    if mouse.click.is_some() {
+        levelsync::key(w, egui::Key::Enter);
+    } else if mouse.back {
+        levelsync::key(w, egui::Key::Escape);
+    }
+}
+
 /// A Help Desk page: its text and rows wrapped to the panel, a question's value under its row (the field while typing),
 /// the cursor's row kept in view. (row hovered, row clicked).
 fn help_page(p: &mut Panels, v: &helpdesk::PageView, moved: bool) -> (Option<i32>, Option<i32>) {
@@ -535,6 +569,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     }
     results(p, w, gu, moved);
     link_list(p, w, gu, moved);
+    level_sync(p, w, gu, moved);
     // View House is the storage view on its first bag (its bags as the view's tabs).
     if w.viewhouse.is_some() && w.win.is_none() {
         viewhouse::open_row(w, 1);

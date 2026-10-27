@@ -5,8 +5,8 @@ use super::World;
 use super::game_ui::GameUi;
 use crate::audio::Ui;
 
-const LIST: &str = "menu    blklist";
-const MAIN: &str = "menu    blkmain";
+pub(super) const LIST: &str = "menu    blklist";
+pub(super) const MAIN: &str = "menu    blkmain";
 const ROWS: usize = 15;
 const WHITE: u32 = 0x8080_8080;
 
@@ -104,9 +104,28 @@ pub fn key(w: &mut World, key: egui::Key) {
     }
 }
 
+/// The block list as the modern layer draws it: the names, the cursor, blkmain up; the empty line (group 7 0x67).
+pub(super) fn view(w: &World) -> Option<(Vec<String>, usize, bool, String)> {
+    let b = w.blklist.as_ref()?;
+    let empty = if b.rows.is_empty() { w.battle.as_ref().and_then(|bt| bt.group7(0x67)).unwrap_or_default() } else { String::new() };
+    Some((b.rows.iter().map(|r| r.1.clone()).collect(), b.cursor, b.main, empty))
+}
+
+/// The mouse's cursor move onto row `k` (not while blkmain is up). True when it moved.
+pub(super) fn set_cursor(w: &mut World, k: usize) -> bool {
+    let Some(b) = w.blklist.as_mut().filter(|b| !b.main && b.cursor != k && k < b.rows.len()) else { return false };
+    b.cursor = k;
+    b.top = b.top.min(k).max((k + 1).saturating_sub(ROWS));
+    true
+}
+
 /// The mouse (the list base, message 9 / 5 / 6): hovering a row (not past the count) moves the hand there, a click on
 /// the hand's row or on Delete is Enter, a right click on the window is Escape.
 pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
+    // The modern layer draws it and takes its mouse.
+    if w.modern {
+        return;
+    }
     let Some(b) = w.blklist.as_ref() else { return };
     let (win, child) = if b.main { (MAIN, None) } else { (LIST, Some(())) };
     let (Some((x, y)), Some(lay)) = (gu.window_xy(win, sw, sh), gu.layout(win)) else { return };
@@ -146,6 +165,9 @@ pub fn pointer(w: &mut World, gu: &GameUi, sw: f32, sh: f32, p: (f32, f32), move
 /// cursor band windowps 75 while the list has the focus; the scroll bar; blkmain from its layout.
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     let mut rects = Vec::new();
+    if w.modern {
+        return rects;
+    }
     let Some(b) = &w.blklist else { return rects };
     let focused = !b.main && w.confirm.is_none();
     let n = b.rows.len();

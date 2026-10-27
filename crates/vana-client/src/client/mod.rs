@@ -2691,7 +2691,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let log_top = gu.log_top.unwrap_or(log.rect[1]);
     blockers.extend(shop::draw(gu, world, sw, sh, log_top));
     blockers.extend(trade::draw(gu, world, sw, sh));
-    blockers.extend(gauge::draw(gu, world, sw, sh));
+    // The modern party panel always shows our HP / MP / TP.
+    if !world.modern {
+        blockers.extend(gauge::draw(gu, world, sw, sh));
+    }
     // Layer 2 (scresult) over the status icons' layer 0 (registry +0x29).
     if !world.modern {
         blockers.extend(search::draw(gu, world, sw, sh));
@@ -2730,8 +2733,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if !world.modern {
         blockers.extend(partymenu::draw(gu, world, sw, sh));
     }
-    blockers.extend(levelsync::draw(gu, world, sw, sh));
     if !world.modern {
+        blockers.extend(levelsync::draw(gu, world, sw, sh));
         blockers.extend(viewhouse::draw(gu, world, sw, sh));
         blockers.extend(bazaar::draw(gu, world, sw, sh));
     }
