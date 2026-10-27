@@ -10356,7 +10356,7 @@ info window mode 3; scrollbar Owner::MonCustom.
   order and Lv 99, Rabbit -> Lapinion (same family, no prompt): star, the Rabbit fades, Lapinion appears at the hold's
   end; Rabbit Ins. II equipped (cost 0 / 11 -> 4 / 11, DEX +5 from 0x061, iteminfo "HP+3% DEX+5 Evasion+15 Cost:4");
   the names list; Escape back to the main menu.
-- Unclear: the title "Customization" is clipped by titlewin's width in ours (retail not seen).
+- The title "Customization" shows clipped: any title is cut at titlewin's width - 8 (as "Treasure Pool").
 - LSB (report only): 0x044's rank and descriptors stay 0 (the cap reads level + 10 for every rank); its 0x102 handler
   takes only the first of species / instincts / descriptors (else-if), so two changes inside one commit window lose
   the later ones.
