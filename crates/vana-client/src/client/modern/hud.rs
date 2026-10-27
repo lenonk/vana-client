@@ -427,17 +427,17 @@ const TILT: f32 = 0.4536;
 pub fn where_panel(p: &mut Panels, v: &WhereView) {
     let m = p.m;
     p.panel("where", None, 430.0, |ui| {
-        // The zone over the time and day at the left, the compass, the grid over the weather at the right.
+        // The zone over the time and day at the left, the compass, the grid, the weather at the right end over both lines.
         let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 54.0), Sense::hover());
-        let right = r.max.x - 66.0;
+        let right = r.max.x - 92.0;
         let dial = pos2(right - 16.0 - DIAL, r.center().y);
         let (top, low) = (r.center().y - 12.0, r.center().y + 13.0);
         let painter = ui.painter().with_clip_rect(Rect::from_min_max(r.min, pos2(dial.x - DIAL - 14.0, r.max.y)));
         painter.text(pos2(r.min.x, top), Align2::LEFT_CENTER, &v.zone, FontId::new(m.theme.ui, FontFamily::Name(super::STRONG.into())), m.theme.color("gold"));
         let mut x = r.min.x;
         if let Some(s) = m.art.sprite(ELEMENTS[v.day.0 % 8]) {
-            painter.add(paint::image(&s, pos2(x, low - 10.0), 20.0, Color32::WHITE));
-            x += 26.0;
+            painter.add(paint::image(&s, pos2(x, low - 13.0), 26.0, Color32::WHITE));
+            x += 31.0;
         }
         let t = painter.text(pos2(x, low), Align2::LEFT_CENTER, format!("{}:{:02}", v.time.0, v.time.1), FontId::proportional(m.theme.ui), m.theme.color("text"));
         painter.text(pos2(t.max.x + 10.0, low), Align2::LEFT_CENTER, &v.day.1, FontId::proportional(m.theme.small), m.theme.color("muted"));
@@ -445,9 +445,10 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
         if let Some(c) = &v.compass {
             compass(painter, m, dial, c);
         }
-        painter.text(pos2(r.max.x, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        const WEATHER: f32 = 36.0;
+        painter.text(pos2(r.max.x - WEATHER - 8.0, top), Align2::RIGHT_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
         if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
-            painter.add(paint::image(&s, pos2(r.max.x - 20.0, low - 10.0), 20.0, Color32::WHITE));
+            painter.add(paint::image(&s, pos2(r.max.x - WEATHER, r.center().y - WEATHER / 2.0), WEATHER, Color32::WHITE));
         }
     });
 }
