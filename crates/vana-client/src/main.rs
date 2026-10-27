@@ -216,6 +216,16 @@ enum Cmd {
         #[arg(value_parser = parse_num)]
         ids: Vec<u32>,
     },
+    /// Save the images (IMG chunks) of DAT files as PNGs: every image of the given ids, or with --random N one image each
+    /// from N random files that hold any.
+    TexDump {
+        #[arg(value_parser = parse_num)]
+        ids: Vec<u32>,
+        #[arg(long)]
+        random: Option<usize>,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Decode a menu DAT (default 79, the US lobby): images, sprite sheets and a listing.
     UiDump {
         #[arg(long, default_value_t = dat::ui::LOBBY_US)]
@@ -1410,6 +1420,7 @@ fn main() -> Result<()> {
             Ok(())
         }
         Cmd::UiDump { id, out } => uishot::ui_dump(id, &out),
+        Cmd::TexDump { ids, random, out } => tex_dump(&ids, random, &out),
         Cmd::TitleShot { out, width, height } => uishot::title_shot(&out, width, height),
         Cmd::UiShot { out, width, height } => uishot::ui_shot(&out, width, height),
         Cmd::TopbarShot { out, fade, menu, menu_swap, target, hpp, map, downloading, window, config, cfgset, installed, width, height } => client::topbar_shot(&out, &fade, menu, menu_swap.as_deref(), target.as_deref(), hpp, map.as_deref(), downloading, window.as_deref(), config.as_deref(), cfgset.as_deref(), installed, width, height),
@@ -1577,6 +1588,57 @@ fn run_with_progress(opts: &install::Options) -> Result<()> {
         }
         worker.join().unwrap()
     })
+}
+
+/// `tex-dump`: a file's images as `<id>_<k>_<name>.png`; with `random`, one random image from each of that many random
+/// files that hold images.
+fn tex_dump(ids: &[u32], random: Option<usize>, out: &std::path::Path) -> Result<()> {
+    let cfg = config::Config::load();
+    let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
+    std::fs::create_dir_all(out)?;
+    let mut seed = [0u8; 8];
+    getrandom::fill(&mut seed).map_err(|e| anyhow::anyhow!("random bytes: {e}"))?;
+    let mut state = u64::from_le_bytes(seed) | 1;
+    let mut next = move || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        state
+    };
+    let images = |id: u32| -> Vec<dat::zone::Texture> {
+        let Ok(bytes) = index.read(id) else { return Vec::new() };
+        let Ok(chunks) = dat::chunks(&bytes) else { return Vec::new() };
+        chunks.iter().filter(|c| c.kind == 0x20).filter_map(|c| dat::zone::parse_img(c.data).ok()).collect()
+    };
+    let save = |id: u32, k: usize, t: &dat::zone::Texture| -> Result<()> {
+        let name: String = t.name.trim().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '_' }).collect();
+        let path = out.join(format!("{id}_{k}_{name}.png"));
+        let mut enc = png::Encoder::new(std::io::BufWriter::new(std::fs::File::create(&path)?), t.width, t.height);
+        enc.set_color(png::ColorType::Rgba);
+        enc.write_header()?.write_image_data(&t.rgba)?;
+        println!("{} {}x{}", path.display(), t.width, t.height);
+        Ok(())
+    };
+    for &id in ids {
+        for (k, t) in images(id).iter().enumerate() {
+            save(id, k, t)?;
+        }
+    }
+    if let Some(n) = random {
+        let (mut got, mut tries) = (0, 0);
+        while got < n && tries < 20000 {
+            tries += 1;
+            let id = (next() % 0x10000) as u32;
+            let imgs = images(id);
+            if imgs.is_empty() {
+                continue;
+            }
+            let k = (next() % imgs.len() as u64) as usize;
+            save(id, k, &imgs[k])?;
+            got += 1;
+        }
+    }
+    Ok(())
 }
 
 fn dump_msi(path: &PathBuf, out: &PathBuf) -> Result<()> {
