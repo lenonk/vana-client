@@ -10676,3 +10676,11 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   lock, the network meter (S / R as bytes a second), minimap dots (the entity's name), the chat settings button, the
   equipment slots and the currency rows (these three were egui's plain tooltips). Seen live on Lnxcsfix (status icon,
   the location panel's four, the network meter).
+
+## Items: Up from the sort row, the drop question follows its item (ours, 2026-10-27)
+
+- Modern item list: Up on the sort strip (above the first row) wraps to the last item (user report); seen live.
+- While iuse or the drop question is up, items::follow_held keeps the cursor on that item as the rows shift under it
+  (a pickup, the kept-sorted Auto sort) and closes the question when the item leaves its slot; drop_now sends c2s
+  0x028 only while the slot still holds the item's id (a merge could put another stack there). User report: a new
+  item during the question moved the selection. Not seen live (a script cannot type while the window has the keys).

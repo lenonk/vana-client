@@ -3171,7 +3171,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 world.confirm = Some((Confirm::Drop { index, id, stage: stage + 1 }, false));
             } else {
                 world.confirm = None;
-                items::drop_now(world, index);
+                items::drop_now(world, index, id);
             }
         }
         (Some(true), Some((Confirm::Sync { id, off, .. }, _))) => {
@@ -8506,6 +8506,7 @@ impl App {
         partymenu::update(world);
         status::update(world);
         items::auto_sort_tick(world, dt);
+        items::follow_held(world);
         equipwin::tick(world);
         auction::update(world, dt);
         currencies::update(world, dt * 60.0);

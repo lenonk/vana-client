@@ -98,6 +98,11 @@ impl Inventory {
     }
 
     /// The occupied slots in the view's order.
+    /// The item id in a slot.
+    pub fn item(&self, container: u8, index: u8) -> Option<u16> {
+        self.slots.get(&(container, index)).map(|s| s.0)
+    }
+
     pub fn viewed(&self, container: u8) -> Vec<Slot> {
         let slots = self.slots_of(container);
         let o = self.order.get(&container).map(Vec::as_slice).unwrap_or_default();
@@ -422,7 +427,7 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
         return true;
     }
     // Modern: the sort strip stands above the list as a row, so Up from the first item goes to it, Left / Right move
-    // along it (and between Yes / No), Down comes back to the list.
+    // along it (and between Yes / No), Down comes back to the list and Up wraps to the last item.
     if w.modern
         && let Some(Win::Items { scroll, cursor, sub: None, sort, manual: None, store: None, direct: false }) = w.win.as_mut()
     {
@@ -449,7 +454,15 @@ pub fn key(w: &mut World, key: egui::Key, page: bool, alt: bool) -> bool {
                 w.sounds.push(Ui::Cursor as u32);
                 return true;
             }
-            (Some(SortWin { ask: None, .. }), K::ArrowUp) => return true,
+            (Some(SortWin { ask: None, .. }), K::ArrowUp) => {
+                if rows > 0 {
+                    *sort = None;
+                    *scroll = rows.saturating_sub(VISIBLE_ROWS);
+                    *cursor = rows - 1 - *scroll;
+                    w.sounds.push(Ui::Cursor as u32);
+                }
+                return true;
+            }
             _ => {}
         }
     }
@@ -804,6 +817,25 @@ fn use_entry(w: &mut World, index: u8, id: u16) {
     }
 }
 
+/// Ours: while iuse or the drop question is up, the cursor stays on its item as the list changes under it (a new item,
+/// the kept-sorted sort); the question closes when the item is gone from its slot.
+pub(super) fn follow_held(w: &mut World) {
+    let Some(Win::Items { sub: Some(Sub::Use { index, id, .. } | Sub::Drop { index, id, .. }), store: None, direct, .. }) = &w.win else { return };
+    let (index, id, direct) = (*index, *id, *direct);
+    let rows = listed(w, direct);
+    let at = rows.iter().position(|s| s.index == index).filter(|_| w.inv.item(INVENTORY, index) == Some(id));
+    let Some(Win::Items { sub, scroll, cursor, .. }) = &mut w.win else { return };
+    match at {
+        Some(at) => {
+            if at < *scroll || at >= *scroll + VISIBLE_ROWS {
+                *scroll = at.saturating_sub(VISIBLE_ROWS - 1).min(rows.len().saturating_sub(VISIBLE_ROWS));
+            }
+            *cursor = at - *scroll;
+        }
+        None => *sub = None,
+    }
+}
+
 /// Seconds after the last new item before a container kept sorted sorts (a pickup's updates come in a burst).
 pub(super) const SORT_DELAY: f32 = 0.5;
 
@@ -950,13 +982,21 @@ fn drop_entry(w: &mut World, index: u8, id: u16) {
     if it.flags & 0xc000 != 0 || aug || id == 0x201 {
         w.confirm = Some((super::Confirm::Drop { index, id, stage: 0 }, false));
     } else {
-        drop_now(w, index);
+        drop_now(w, index, id);
     }
 }
 
-/// FUN_101f2ff0: c2s 0x028 {count = the whole stack, container, index}; iuse closes.
-pub fn drop_now(w: &mut World, index: u8) {
-    let Some(&(_, count)) = w.inv.slots.get(&(INVENTORY, index)) else { return };
+/// FUN_101f2ff0: c2s 0x028 {count = the whole stack, container, index}; iuse closes. Ours sends nothing when the slot
+/// no longer holds item `id` (a stack merged or moved while the prompt was up).
+pub fn drop_now(w: &mut World, index: u8, id: u16) {
+    let Some(&(_, count)) = w.inv.slots.get(&(INVENTORY, index)).filter(|_| w.inv.item(INVENTORY, index) == Some(id)) else {
+        log::info!("items: drop of {id:#x} at {index} cancelled, the slot changed");
+        if let Some(Win::Items { sub, .. }) = &mut w.win {
+            *sub = None;
+        }
+        w.sounds.push(crate::audio::Ui::Error as u32);
+        return;
+    };
     let mut b = vec![0u8; 8];
     b[0..4].copy_from_slice(&count.to_le_bytes());
     (b[4], b[5]) = (INVENTORY, index);
