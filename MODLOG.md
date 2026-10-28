@@ -11122,6 +11122,10 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   msglist; Accept (LSB cleared pending, FOK in the bot's mailbox), Ignore (block list + FNO), Reply, Decline, Exit;
   /friendlist; /befriend on ourselves (7 0xa2); both UIs. Not seen: a friend online with a character and zone (needs
   a second account signed on), the request flow on a live bot (no bot in game), netstat's mail page.
-- Not done: netstat page 0 (the envelope and count), the busy strip bit 0x10, deleting / unblocking / reordering
+- netstat (FUN_102014f0 / FUN_10201180): page 0 the mail (windowps 2 "PlayOnline" + envelope, 418 with a system
+  message; the unread count at (+0x6c, +0x10), 0x60808080) for 60 ticks (DAT_10385270), page 1 the network for 120
+  (DAT_10385272), held on page 1 while nothing is unread; the modern top bar the same with its own envelope. Seen live
+  in both UIs.
+- Not done: netstat's Help Desk count (GM replies) and its second count (engine +0xe), the busy strip bit 0x10, deleting / unblocking / reordering
   (retail has no in-game way: the user's call), Away back to Online at login *(inf, spec 2.5)*.
 - Also: the K.O. windows (dead, mp_dead) drawn 8 / 4 px larger (ours, the user's call, as the raise prompt).

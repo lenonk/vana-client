@@ -89,6 +89,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         sent: 154,
         recv: 276,
         meter: (1, 3),
+        mail: None,
     };
     super::topbar::draw(m, ctx, &top);
     let (mut changed, mut chat_font) = (false, opts.chat_font);

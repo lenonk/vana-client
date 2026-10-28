@@ -95,7 +95,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     MODLOG "Blue magic sets"; live on Lnxcsfix as BLU 75, now back to WAR 21); the mount model under the rider
     (ride.rs, MODLOG "Riding"));
   - the Friend List and PlayOnline messages over LSB's xi_profile (net/profile.rs, client/friends.rs, friendlist.rs,
-    polmail.rs; MODLOG "The Friend List and PlayOnline messages"): done in both UIs; left netstat's mail page, a friend
+    polmail.rs; MODLOG "The Friend List and PlayOnline messages"): done in both UIs (netstat's mail page too); left a friend
     seen online (needs a second account); message bodies are ours (polcore's format unknown);
   - the full log's charlnk and the Mute list's acoption (client/charlnk.rs, MODLOG "charlnk ..."): done;
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event

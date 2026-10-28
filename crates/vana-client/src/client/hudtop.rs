@@ -37,6 +37,11 @@ pub struct HudTop {
     busy_was: bool,
     /// What the modern layer draws in place of the three windows (the same rule and state).
     pub view: TopView,
+    /// netstat's page (FUN_102014f0): 0 the PlayOnline mail (60 ticks), 1 the network (120, held with no mail); the
+    /// unread messages (<= 200) and whether one is a system message (windowps 418).
+    net_page: u8,
+    net_ticks: f32,
+    pub mail: (u32, bool),
 }
 
 /// The top bar's state for the modern layer: the shown texts, the fade, the busy strip's frame, the network numbers.
@@ -57,6 +62,8 @@ pub struct TopView {
     pub recv: u64,
     /// The meter's step (0..4) and its level: 0 none, 1 low, 2 fair, 3 good.
     pub meter: (usize, u8),
+    /// netstat's mail page while it shows: the unread count and whether a system message is among them.
+    pub mail: Option<(u32, bool)>,
 }
 
 /// Text slots of helpwind (+0x20) and titlewin (+0xa4), FUN_10217230: index 0 action menu, 1 focused window,
@@ -216,6 +223,9 @@ impl HudTop {
             || super::search::busy(w)
             || w.bid.pending;
         self.fade.advance(ticks, !title.is_empty() || !help.is_empty() || busy, w.zoning_since.is_none() && w.loading.is_none());
+        let unread = w.friends.mail.iter().filter(|m| m.unread);
+        self.mail = (unread.clone().count().min(200) as u32, unread.clone().any(|m| m.header.kind == 0x1e));
+        self.step_page(ticks);
         if w.modern {
             self.step_busy(ticks, busy);
             self.step_meter(ticks);
@@ -237,6 +247,7 @@ impl HudTop {
                     9 => 1,
                     _ => 0,
                 }),
+                mail: (self.net_page == 0).then_some(self.mail),
             };
         } else {
             self.draw_bars(gu, sw, sh, title, help, ticks, busy);
@@ -303,7 +314,16 @@ impl HudTop {
         }
         // netstat (W - 128, 16): mode 1 (network), FUN_101f8370. The frame and its "Network" sprite fade; the
         // content is drawn whatever the fade.
-        if let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a) {
+        // Page 0 (FUN_10201180): the envelope (windowps 2, 418 with a system message) and the unread count at
+        // (+0x6c, +0x10).
+        if self.net_page == 0
+            && let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a)
+        {
+            gu.sprite("menu    windowps", if self.mail.1 { 418 } else { 2 }, x, y, 0x8080_8080);
+            if self.mail.0 > 0 {
+                gu.shape_text(&self.mail.0.to_string(), x + 108.0, y + 16.0, 0x6080_8080, false);
+            }
+        } else if let Some((x, y)) = gu.window_alpha("menu    netstat", sw, sh, a) {
             let pct = self.pct;
             self.step_meter(ticks);
             let base = self.meter_base();
@@ -317,6 +337,21 @@ impl HudTop {
             gu.shape_text(&self.sent_rate.to_string(), x + 68.0, y + 4.0, 0x6080_8080, false);
             gu.shape_text("R", x + 58.0, y + 16.0, 0x6080_8080, false);
             gu.shape_text(&self.recv_rate.to_string(), x + 68.0, y + 16.0, 0x6080_8080, false);
+        }
+    }
+
+    /// FUN_102014f0: the mail page for 60 ticks, then the network page for 120; held on the network page while nothing
+    /// is unread (no Help Desk count here).
+    fn step_page(&mut self, ticks: f32) {
+        self.net_ticks += ticks;
+        if self.net_page == 0 {
+            if self.net_ticks > 60.0 {
+                (self.net_page, self.net_ticks) = (1, 0.0);
+            }
+        } else if self.mail.0 == 0 {
+            self.net_ticks = 0.0;
+        } else if self.net_ticks > 120.0 {
+            (self.net_page, self.net_ticks) = (0, 0.0);
         }
     }
 
@@ -358,6 +393,7 @@ impl HudTop {
 
     /// Fixed netstat numbers for offscreen shots.
     pub fn set_net(&mut self, pct: i32, sent: u64, recv: u64) {
+        self.net_page = 1;
         (self.pct, self.sent_rate, self.recv_rate) = (pct, sent, recv);
     }
 

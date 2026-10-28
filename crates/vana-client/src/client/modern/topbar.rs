@@ -114,6 +114,19 @@ fn help(m: &Modern, ctx: &Context, p: &Painter, r: Rect, v: &TopView) {
 
 /// netstat: the meter (four bars by level, the lit step walking as retail's frames do), the percentage, S / R.
 fn network(p: &Painter, m: &Modern, r: Rect, v: &TopView) {
+    // Retail's mail page (netstat page 0): an envelope (red with a system message) and the unread count.
+    if let Some((n, sys)) = v.mail {
+        let c = if sys { m.theme.color("hp") } else { m.theme.color("gold") };
+        let e = Rect::from_center_size(pos2(r.min.x + 30.0, r.center().y + 1.0), vec2(22.0, 15.0));
+        p.rect_stroke(e, 2.0, egui::Stroke::new(1.5, c), egui::StrokeKind::Inside);
+        p.line_segment([e.left_top() + vec2(2.0, 2.0), pos2(e.center().x, e.center().y + 2.0)], egui::Stroke::new(1.5, c));
+        p.line_segment([e.right_top() + vec2(-2.0, 2.0), pos2(e.center().x, e.center().y + 2.0)], egui::Stroke::new(1.5, c));
+        p.text(pos2(r.min.x + 50.0, r.center().y + 2.0), Align2::LEFT_CENTER, "PlayOnline", FontId::proportional(SMALL), m.theme.color("muted"));
+        if n > 0 {
+            p.text(pos2(r.max.x - 14.0, r.center().y + 2.0), Align2::RIGHT_CENTER, n.to_string(), FontId::proportional(m.theme.ui + 2.0), m.theme.color("text"));
+        }
+        return;
+    }
     let (step, level) = v.meter;
     // Good green, fair yellow, poor red.
     let lit = match level {
