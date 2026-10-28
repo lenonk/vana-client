@@ -8697,7 +8697,10 @@ interpolates between the hour keys in both clients.
   dismount; the battle name (0x79) has no copy and starts over. Scheduler op 0xab (case 0x1005c18f, FUN_1005e720):
   entity +0x130 bit 4 = @8 & 1; while set each model creation resets the bases first (FUN_1008a160). Ours:
   Entity::motion_bases / reset_bases (World::my_motion_bases for us), Actor::rebase / fresh at a model attach and a
-  ride's end. Not done: the idle variants +0x1a8 / +0x1ac (kind-2 `dft` / `df1` alternation, FUN_1008da00).
+  ride's end. Not done: the idle variants +0x1a8 / +0x1ac (`dft` / `df1` alternation, FUN_1008da00): FUN_1008a1a0
+  picks them (walk `ark`, run `hsr`) only when FUN_10087dc0 = 2, the two bits of +0x124 13..14 that a non-monster
+  0x00E sets from u8 @0x2a bits 0..1 (asm 0x1009be5d; LSB's Flags3.MonStat, which LSB never sets); FUN_1008da00 then
+  swaps an idle NPC between them every 600..1199 ticks at random. Never reached on LSB.
 - `sdep` (FUN_1008c6c0, a new status 2 / 3, model kinds not 3..5): entity +0x12f bit 0 (0x00D / 0x00E u8 @0x28 bit
   3, LSB: a monster with HP in its death animation) or +0x12c bit 22 (u8 @0x28 bit 0, a trust) -> `sdep` through
   vtable +0x298 (motion files, model files, DAT 0: DAT 0's runs file 3417 `main`, the trusts' own file 3722), its
