@@ -34,6 +34,8 @@ pub struct Frame {
     pub facing: f32,
     pub span: f32,
     pub dots: Vec<(f32, f32, u32, bool)>,
+    /// Each dot's name (the modern minimap's tooltip).
+    pub names: Vec<String>,
     /// The map overlay's opacity: the marker is coloured as the overlay's.
     mix: f32,
 }
@@ -65,14 +67,14 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32) {
     let column = [menu, gu.edge_column(sw, 50.0, 50.0 + side)].into_iter().flatten().reduce(f32::min);
     let rect = place(w.minimap_dock, w.minimap_size, sw, icons, column);
     let facing = w.net.me.lock().map_or(0.0, |m| event::rad_of(m.dir));
-    let dots = w
+    let (dots, names) = w
         .entities
         .iter()
         .filter(|(id, e)| **id != w.my_id && radar::shown(e))
-        .filter_map(|(&id, e)| Some((e.pos.x, e.pos.z, radar::colour(radar::kind_bits(w, id, e), e.monstrosity, e.motion.status, true)? | 0x8000_0000, w.target == Some(id))))
-        .collect();
+        .filter_map(|(&id, e)| Some(((e.pos.x, e.pos.z, radar::colour(radar::kind_bits(w, id, e), e.monstrosity, e.motion.status, true)? | 0x8000_0000, w.target == Some(id)), e.name.clone())))
+        .unzip();
     w.minimap_rect = Some(rect);
-    w.minimap_frame = Some(Frame { rect, pos: (w.pos.x, w.pos.z), facing, span: w.minimap_span.clamp(SPAN.0, SPAN.1), dots, mix: w.map_opacity });
+    w.minimap_frame = Some(Frame { rect, pos: (w.pos.x, w.pos.z), facing, span: w.minimap_span.clamp(SPAN.0, SPAN.1), dots, names, mix: w.map_opacity });
 }
 
 /// Draws what `prepare` set up (after the HUD's clear, under the party / target windows and the menus).

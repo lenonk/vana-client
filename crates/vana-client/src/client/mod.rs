@@ -1713,12 +1713,19 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     world.timers.toggle();
                     world.sounds.push(crate::audio::Ui::Cursor as u32);
                 }
-                // Our settings screen, then the Config windows, take the keys while open.
-                _ if world.settings.is_some() => {
+                // Our settings screen, then the Config windows, take the keys while open (in the modern Config, while
+                // its page is open there; its Escape goes back to the list).
+                _ if world.settings.is_some() && !(world.modern && world.config.as_ref().is_some_and(|c| !c.m_open)) => {
                     let mut s = world.settings.take().unwrap();
-                    if !s.key_mod(*key, modifiers.ctrl || modifiers.alt) {
+                    let closes = s.key_mod(*key, modifiers.ctrl || modifiers.alt);
+                    let inline = world.modern && world.config.is_some();
+                    if closes && let Some(c) = world.config.as_mut().filter(|_| inline) {
+                        c.m_open = false;
+                    }
+                    if !closes || inline {
                         world.settings = Some(s);
-                    } else {
+                    }
+                    if closes {
                         world.sounds.push(crate::audio::Ui::Cancel as u32);
                     }
                     if let Some(s) = &world.settings {
@@ -2883,7 +2890,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         magic::draw_cast_bar(gu, world, sw, sh);
     }
     if let Some(c) = world.config.as_mut() {
-        c.covered = world.settings.is_some();
+        // The modern Config shows ours as one of its pages.
+        c.covered = world.settings.is_some() && !world.modern;
     }
     if let Some(c) = &world.config {
         // While Modern is on configwi is the modern layer's page; retail draws the windows over it.

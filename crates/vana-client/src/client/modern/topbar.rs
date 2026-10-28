@@ -52,6 +52,11 @@ pub fn draw(m: &Modern, ctx: &Context, v: &TopView) {
             legend(&p, m, r, "Network", false);
         }
         network(&p, m, r, v);
+        // Its tooltip (ours) where no window covers it.
+        if let Some(at) = ctx.input(|i| i.pointer.hover_pos()).filter(|at| r.contains(*at) && ctx.layer_id_at(*at).is_none_or(|l| l.order == Order::Background)) {
+            let body = format!("Connection {}%: it falls while the server sends nothing.\nS {} / R {}: bytes sent and received a second.", v.pct, v.sent, v.recv);
+            m.tip_at(ctx, at, "Network", &body);
+        }
     }
 }
 

@@ -308,13 +308,12 @@ fn job_points(p: &mut Panels, w: &mut World) {
             ui.add_space(16.0);
             ui.vertical(|ui| {
                 ui.set_width(LIST_W);
-                ui.horizontal(|ui| {
-                    for (k, d) in [(0usize, "Job Points"), (1, "Gifts")] {
-                        if button(ui, m, d, 140.0, *pg == k, false) && free {
-                            tab = Some(k);
-                        }
-                    }
-                });
+                let tabs = super::tabs::strip(ui, m, "jp tabs", &["Job Points", "Gifts"], Some(*pg), None);
+                if let Some(k) = tabs.iter().position(|r| r.clicked())
+                    && free
+                {
+                    tab = Some(k);
+                }
                 ui.add_space(6.0);
                 // The gifts page's header (windowps 723, "Gifts Combo Total:") with the points spent.
                 if *pg == 1 {

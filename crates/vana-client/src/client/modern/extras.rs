@@ -407,6 +407,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let mut resize: Option<f32> = None;
     let (pos, facing, span) = (f.pos, f.facing, f.span);
     let dots = f.dots.clone();
+    let names = f.names.clone();
     // The Wide Scan row picked and the area narrowed to, in world x / z.
     let origin = m.scan_origin.get();
     let picked = m.scan_pick.get().and_then(|i| m.scan_rows.borrow().iter().find(|r| r.0.index == i).map(|r| (origin.0 + r.0.dx as f32, origin.1 + r.0.dz as f32)));
@@ -438,10 +439,16 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
         let u0 = pos2((px - span / 2.0 - img.region.ox as f32) / 512.0, (py - span / 2.0 - img.region.oy as f32) / 512.0);
         painter.image(tex, area, Rect::from_min_size(u0, vec2(span / 512.0, span / 512.0)), Color32::WHITE);
         let c = area.center();
-        for &(x, wz, colour, target) in &dots {
+        // The dot nearest the pointer (within 7 points) names itself in a tooltip.
+        let hover = resp.hover_pos();
+        let mut near: Option<(f32, usize)> = None;
+        for (k, &(x, wz, colour, target)) in dots.iter().enumerate() {
             let q = c + vec2((x * s - px) * z, (-wz * s - py) * z);
             if !area.shrink(2.0).contains(q) {
                 continue;
+            }
+            if let Some(d) = hover.map(|h| h.distance(q)).filter(|d| *d < 7.0 && near.is_none_or(|n| *d < n.0)) {
+                near = Some((d, k));
             }
             let col = Color32::from_rgb((colour >> 16) as u8, (colour >> 8) as u8, colour as u8);
             if target {
@@ -451,6 +458,11 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
             }
         }
         arrow_in(&painter, c, facing, 9.0, ME);
+        if let (Some((_, k)), Some(h)) = (near.filter(|_| !picking), hover)
+            && let Some(name) = names.get(k).filter(|n| !n.is_empty())
+        {
+            m.tip_at(ui.ctx(), h, name, "");
+        }
         // World x / z on the map and back.
         let at = |x: f32, wz: f32| c + vec2((x * s - px) * z, (-wz * s - py) * z);
         if let Some((x, wz, r)) = narrowed {

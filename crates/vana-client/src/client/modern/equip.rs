@@ -134,7 +134,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     if let Some(g) = resp.dnd_release_payload::<Gear>() {
                         mouse.drop = Some(((*g).clone(), Some(slot)));
                     }
-                    resp.on_hover_text_at_pointer(SLOTS[slot]);
+                    m.tip(ui, resp.rect, SLOTS[slot], "");
                 }
                 ui.add_space(10.0);
                 // The resistances in the slots' columns, two rows of four.

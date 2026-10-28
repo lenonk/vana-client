@@ -4,7 +4,7 @@
 //! a row per setting with its options as buttons or a slider, named with retail's own captions read from the page's
 //! layout (a few made clearer), its help line under its heading. Chat Filters, Effects and the first log window's
 //! categories are lists of rows with retail's toggles, Font Colors each colour's sample with R / G / B sliders;
-//! key assignment still opens retail's window over it, Extras and Settings ours.
+//! key assignment still opens retail's window over it. Extras and Settings (ours, client/settings.rs) are pages here too.
 
 use super::super::World;
 use super::super::configui::{self, Act, ConfigUi, Ctl};
@@ -160,16 +160,12 @@ fn state_word(m: &super::Modern, gu: &GameUi, state: usize) -> String {
     })
 }
 
-/// The category strip: a button per category, the chosen one lit (ringed while it has the keys).
+/// The category strip: a tab per category, the chosen one open (its cursor marked while it has the keys).
 fn cat_strip(ui: &mut Ui, m: &super::Modern, cats: &[String], cat: usize, focus: bool, click: &mut Option<Click>) {
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-        for (k, name) in cats.iter().enumerate() {
-            if button(ui, m, name, k == cat, false, focus).clicked() {
-                *click = Some(Click::Cat(k));
-            }
-        }
-    });
+    let labels: Vec<&str> = cats.iter().map(String::as_str).collect();
+    if let Some(k) = super::tabs::strip(ui, m, "config cats", &labels, Some(cat), focus.then_some(cat)).iter().position(|r| r.clicked()) {
+        *click = Some(Click::Cat(k));
+    }
     ui.add_space(8.0);
 }
 
@@ -255,94 +251,80 @@ fn colour_rows(ui: &mut Ui, m: &super::Modern, gu: &GameUi, v: &crate::gamecfg::
     }
 }
 
+/// What the mouse did on our Settings / Extras page.
+enum Do {
+    Tab(usize),
+    Point(usize, usize),
+    Click(usize, usize),
+    Slide(usize, usize),
+}
+
 /// Our Settings and Extras pages (settings.rs keeps their rules and keys): the page strip, each setting's heading, help
-/// and buttons or slider, the cursor's ringed; the help line under them.
-fn settings_panel(p: &mut Panels, w: &mut World) {
-    let Some(s) = w.settings.as_ref() else { return };
-    let v = s.view();
-    let m = p.m;
-    enum Do {
-        Tab(usize),
-        Point(usize, usize),
-        Click(usize, usize),
-        Slide(usize, usize),
-    }
-    let mut act: Vec<Do> = Vec::new();
-    let moved = p.ctx.input(|i| i.pointer.delta() != Vec2::ZERO);
-    p.panel("window", Some(Title { icon: Some("icons/config"), text: v.title, note: None }), 520.0, |ui| {
-        // The pages in rows of six.
-        for (r, chunk) in v.tabs.chunks(6).enumerate() {
-            ui.horizontal(|ui| {
-                ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                for (j, t) in chunk.iter().enumerate() {
-                    let k = r * 6 + j;
-                    let resp = button(ui, m, t, k == v.tab, false, v.row == 0 && k == v.tab);
-                    if resp.clicked() {
-                        act.push(Do::Tab(k));
-                    }
-                }
-            });
-            ui.add_space(4.0);
+/// and buttons or slider, the cursor's ringed while `open` (the page has the keys).
+fn settings_page(ui: &mut Ui, m: &super::Modern, v: &settings::View, open: bool, width: f32, act: &mut Vec<Do>) {
+    let moved = ui.ctx().input(|i| i.pointer.delta() != Vec2::ZERO);
+    // The pages as tabs, wrapping into rows where they must; the cursor on the open one while row 0 has it.
+    if !v.tabs.is_empty() {
+        ui.set_max_width(width);
+        if let Some(k) = super::tabs::strip(ui, m, "settings tabs", v.tabs, Some(v.tab), (open && v.row == 0).then_some(v.tab)).iter().position(|r| r.clicked()) {
+            act.push(Do::Tab(k));
         }
         ui.add_space(8.0);
-        let tall = ui.ctx().content_rect().height() * 0.6;
-        egui::ScrollArea::vertical().id_salt("settings page").max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
-            ui.set_width(476.0);
-            for (k, r) in v.rows.iter().enumerate() {
-                let row = k + 1;
-                let focus = v.row == row;
-                let top = ui.cursor().min;
-                ui.label(egui::RichText::new(&r.label).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(if focus { m.theme.color("gold") } else { m.theme.color("muted") }));
-                ui.label(egui::RichText::new(&r.help).size(m.theme.small - 1.5).color(m.theme.color("muted")));
-                ui.add_space(2.0);
-                match &r.ctl {
-                    settings::VCtl::Buttons(bs) => {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-                            for (c, (label, held)) in bs.iter().enumerate() {
-                                let resp = button(ui, m, label, *held, false, focus && v.col == c);
-                                if resp.hovered() && moved {
-                                    act.push(Do::Point(row, c));
-                                }
-                                if resp.clicked() {
-                                    act.push(Do::Click(row, c));
-                                }
-                            }
-                        });
-                    }
-                    settings::VCtl::Slider { n, at, shown } => {
-                        let (rr, resp) = ui.allocate_exact_size(vec2(ui.available_width() - 110.0, 18.0), Sense::click_and_drag());
-                        let f = if *n > 1 { *at as f32 / (*n - 1) as f32 } else { 1.0 };
-                        let track = rr.shrink2(vec2(0.0, 5.0));
-                        ui.painter().rect_filled(track, 4.0, m.theme.color("charcoal"));
-                        ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(rr.min.x + rr.width() * f, track.max.y)), 4.0, m.theme.color("bronze"));
-                        let knob = if focus && v.edit { m.theme.color("focus") } else { m.theme.color("gold") };
-                        ui.painter().circle(pos2(rr.min.x + rr.width() * f, rr.center().y), 7.0, knob, egui::Stroke::new(1.0, Color32::from_black_alpha(200)));
-                        ui.painter().text(pos2(rr.max.x + 12.0, rr.center().y), Align2::LEFT_CENTER, shown, FontId::proportional(m.theme.small), m.theme.color("text"));
+    }
+    for (k, r) in v.rows.iter().enumerate() {
+        let row = k + 1;
+        let focus = open && v.row == row;
+        let top = ui.cursor().min;
+        ui.label(egui::RichText::new(&r.label).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(if focus { m.theme.color("gold") } else { m.theme.color("muted") }));
+        ui.label(egui::RichText::new(&r.help).size(m.theme.small - 1.5).color(m.theme.color("muted")));
+        ui.add_space(2.0);
+        match &r.ctl {
+            settings::VCtl::Buttons(bs) => {
+                ui.horizontal_wrapped(|ui| {
+                    ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
+                    for (c, (label, held)) in bs.iter().enumerate() {
+                        let resp = button(ui, m, label, *held, false, focus && v.col == c);
                         if resp.hovered() && moved {
-                            act.push(Do::Point(row, 0));
+                            act.push(Do::Point(row, c));
                         }
-                        if (resp.clicked() || resp.dragged())
-                            && let Some(at_p) = resp.interact_pointer_pos()
-                        {
-                            let t = ((at_p.x - rr.min.x) / rr.width()).clamp(0.0, 1.0);
-                            act.push(Do::Slide(row, (t * (*n - 1).max(0) as f32).round() as usize));
+                        if resp.clicked() {
+                            act.push(Do::Click(row, c));
                         }
                     }
-                }
-                if focus {
-                    let r = Rect::from_min_max(top - vec2(6.0, 2.0), pos2(top.x + ui.available_width() + 6.0, ui.cursor().min.y + 2.0));
-                    ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.6)), egui::StrokeKind::Outside);
-                }
-                ui.add_space(8.0);
+                });
             }
-        });
-        if !v.help.is_empty() {
-            ui.separator();
-            ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
+            settings::VCtl::Slider { n, at, shown } => {
+                let (rr, resp) = ui.allocate_exact_size(vec2(ui.available_width() - 110.0, 18.0), Sense::click_and_drag());
+                let f = if *n > 1 { *at as f32 / (*n - 1) as f32 } else { 1.0 };
+                let track = rr.shrink2(vec2(0.0, 5.0));
+                ui.painter().rect_filled(track, 4.0, m.theme.color("charcoal"));
+                ui.painter().rect_filled(Rect::from_min_max(track.min, pos2(rr.min.x + rr.width() * f, track.max.y)), 4.0, m.theme.color("bronze"));
+                let knob = if focus && v.edit { m.theme.color("focus") } else { m.theme.color("gold") };
+                ui.painter().circle(pos2(rr.min.x + rr.width() * f, rr.center().y), 7.0, knob, egui::Stroke::new(1.0, Color32::from_black_alpha(200)));
+                ui.painter().text(pos2(rr.max.x + 12.0, rr.center().y), Align2::LEFT_CENTER, shown, FontId::proportional(m.theme.small), m.theme.color("text"));
+                if resp.hovered() && moved {
+                    act.push(Do::Point(row, 0));
+                }
+                if (resp.clicked() || resp.dragged())
+                    && let Some(at_p) = resp.interact_pointer_pos()
+                {
+                    let t = ((at_p.x - rr.min.x) / rr.width()).clamp(0.0, 1.0);
+                    act.push(Do::Slide(row, (t * (*n - 1).max(0) as f32).round() as usize));
+                }
+            }
         }
-    });
-    let Some(s) = w.settings.as_mut() else { return };
+        if focus {
+            let r = Rect::from_min_max(top - vec2(6.0, 2.0), pos2(top.x + ui.available_width() + 6.0, ui.cursor().min.y + 2.0));
+            ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.6)), egui::StrokeKind::Outside);
+        }
+        ui.add_space(8.0);
+    }
+}
+
+/// The mouse's actions on the Settings / Extras page; true when one was taken.
+fn settings_act(w: &mut World, act: Vec<Do>) -> bool {
+    let Some(s) = w.settings.as_mut() else { return false };
+    let any = !act.is_empty();
     for a in act {
         match a {
             Do::Tab(k) => s.m_tab(k),
@@ -356,21 +338,47 @@ fn settings_panel(p: &mut Panels, w: &mut World) {
         }
         w.sounds.extend(s.sounds.drain(..).map(|x| x as u32));
     }
+    any
+}
+
+/// Our page kind for a Config list entry.
+fn settings_kind(k: usize) -> Option<settings::Kind> {
+    match ENTRIES.get(k)?.1 {
+        Entry::Extras => Some(settings::Kind::Extras),
+        Entry::Settings => Some(settings::Kind::Settings),
+        _ => None,
+    }
+}
+
+/// Our Settings / Extras state follows the list's entry: asked for (the app makes it) while one is chosen, dropped
+/// once another is and nothing is left to store.
+fn settings_follow(w: &mut World, entry: usize) {
+    match settings_kind(entry) {
+        Some(kind) if w.settings.as_ref().map(|s| s.kind) != Some(kind) => w.want_settings = Some(kind),
+        Some(_) => {}
+        None if w.settings.as_ref().is_some_and(|s| s.in_game && !s.dirty) => w.settings = None,
+        None => {}
+    }
 }
 
 pub fn draw(p: &mut Panels, w: &mut World) {
-    if w.modern && w.settings.as_ref().is_some_and(|s| s.in_game) {
-        settings_panel(p, w);
-        return;
+    // Ours goes with the Config window, once the app has stored what changed.
+    if w.modern && w.config.is_none() && w.settings.as_ref().is_some_and(|s| s.in_game && !s.dirty) {
+        w.settings = None;
     }
     let Some(gu) = p.gu else { return };
     if !w.modern || !shown(w) {
         return;
     }
+    let Some(entry) = w.config.as_ref().map(|c| c.m_entry.min(ENTRIES.len() - 1)) else { return };
+    settings_follow(w, entry);
     let Some(c) = w.config.as_ref() else { return };
     let m = p.m;
     let sw = w.ui_wh.0;
-    let (entry, open, row) = (c.m_entry.min(ENTRIES.len() - 1), c.m_open, c.m_row);
+    let (open, row) = (c.m_open, c.m_row);
+    // Our Settings / Extras page, when that entry is chosen and its state is up.
+    let ours = w.settings.as_ref().filter(|s| settings_kind(entry) == Some(s.kind)).map(|s| s.view());
+    let mut sact: Vec<Do> = Vec::new();
     let shapes = match ENTRIES[entry].1 {
         Entry::Native(menus) => shapes(menus),
         _ => Vec::new(),
@@ -447,6 +455,10 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                     }
                     _ => {}
                 }
+                if let Some(v) = &ours {
+                    settings_page(ui, m, v, open, 440.0, &mut sact);
+                    return;
+                }
                 if shapes.is_empty() {
                     let what = match ENTRIES[entry].1 {
                         Entry::Extras => "The gameplay additions (not retail): the map overlay, the synthesis amount, timestamps, timers, the minimap.",
@@ -512,6 +524,11 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 }
             }));
         });
+        if let Some(v) = ours.as_ref().filter(|v| !v.help.is_empty()) {
+            ui.separator();
+            ui.label(egui::RichText::new(&v.help).size(m.theme.small).color(m.theme.color("muted")));
+            return;
+        }
         // The help line of the setting under the pointer, else the focused one.
         let hovered = hover_opt.and_then(|(i, j)| opt_helps.get(i)?.get(j)).filter(|h| !h.is_empty());
         if let Some(h) = hovered.or_else(|| hover_help.or(open.then_some(row)).and_then(|i| helps.get(i))).filter(|h| !h.is_empty()) {
@@ -519,6 +536,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
             ui.label(egui::RichText::new(h).size(m.theme.small).color(m.theme.color("muted")));
         }
     });
+    // A click on our page gives it the keys.
+    if settings_act(w, sact)
+        && let Some(c) = w.config.as_mut()
+    {
+        (c.m_open, c.m_row) = (true, 0);
+    }
     match click {
         Some(Click::Entry(k)) => choose(w, k),
         Some(Click::Apply(menu, child)) => apply(w, menu, child),
@@ -591,12 +614,10 @@ fn choose(w: &mut World, k: usize) {
     c.m_entry = k;
     let mut out = configui::Out::default();
     out.sounds.push(Se::Select);
-    match ENTRIES[k].1 {
-        Entry::Native(_) | Entry::List(..) | Entry::Colors => (c.m_open, c.m_row) = (true, 0),
-        Entry::Extras => out.open_extras = true,
-        Entry::Settings => out.open_settings = true,
-    }
+    // Every page opens in place, ours (Extras / Settings) too: its state takes the keys from here.
+    (c.m_open, c.m_row) = (true, 0);
     super::super::config_out(w, out);
+    settings_follow(w, k);
 }
 
 /// An option or button taken (retail's Enter on that child of its page).

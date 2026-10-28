@@ -35,6 +35,20 @@ pub struct Effect {
     /// Its time left as the retail icons label it, and whether it blinks (its last 15 s).
     pub label: Option<String>,
     pub ending: bool,
+    /// The tooltip (ours): its name, and its description with the time left.
+    pub tip: (String, String),
+}
+
+/// An effect's tooltip: the status name (the Num+ cursor's title) and description, the time left when timed.
+fn effect_tip(w: &World, gu: Option<&super::super::game_ui::GameUi>, id: u16, rem: Option<i32>) -> (String, String) {
+    let small = w.game.get(0x99) & 4 != 0;
+    let name = w.battle.as_ref().map(|b| b.status_title(id)).unwrap_or_default();
+    let mut body = gu.and_then(|gu| gu.status_entry(small, id)).map(|e| e.desc).unwrap_or_default();
+    if let Some(r) = rem.filter(|r| *r > 0) {
+        let t = if r >= 3600 { format!("{}:{:02}:{:02}", r / 3600, r / 60 % 60, r % 60) } else { format!("{}:{:02}", r / 60, r % 60) };
+        body = if body.is_empty() { format!("{t} left") } else { format!("{body}\n{t} left") };
+    }
+    (name, body)
 }
 
 /// Our effects (the effects panel).
@@ -62,6 +76,18 @@ pub struct PartyRow {
     /// 1 the party's leader, 2 the alliance's.
     pub marks: u8,
     pub effects: Vec<Effect>,
+    /// The jobs and levels for the tooltip ("WAR 22 / NIN 11").
+    pub jobs: String,
+}
+
+/// "WAR 22 / NIN 11" from (job, level) pairs; no sub job, the main alone.
+fn jobs_text(main: (u8, u8), sub: (u8, u8)) -> String {
+    let name = |j: u8| super::super::items::JOBS.get(j as usize).copied().unwrap_or("");
+    match (name(main.0), name(sub.0)) {
+        ("", _) => String::new(),
+        (m, "") => format!("{m} {}", main.1),
+        (m, s) => format!("{m} {} / {s} {}", main.1, sub.1),
+    }
 }
 
 /// A row's numbers and eased bars: HP in its colour by HP percent (menu hpcol) over its max (ours known, a member's
@@ -198,6 +224,7 @@ fn effects_grid(ui: &mut Ui, p: Look, effects: &[Effect], size: f32, step: f32, 
         for (k, e) in chunk.iter().enumerate() {
             let at = Rect::from_min_size(pos2(r.min.x + k as f32 * step, r.min.y), vec2(size, size));
             effect_icon(p, ui.painter(), e, at, small);
+            m.tip(ui, at, &e.tip.0, &e.tip.1);
             // Retail's cursor box (anc_equi) in its orange-red, on the icon's cell, clear of the time under it.
             if cursor == Some(row * per + k) {
                 ui.painter().rect_stroke(at.expand(1.0), 4.0, egui::Stroke::new(2.0, Color32::from_rgb(0xff, 0x6a, 0x2a)), egui::StrokeKind::Outside);
@@ -318,6 +345,9 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                     painter.add(paint::star(pos2(x + 1.0 + 11.0 * k as f32, r.max.y - 9.0), 6.5, col));
                 }
             }
+            let lead = [(1u8, "Party leader"), (2, "Alliance leader")].iter().filter(|(b, _)| row.marks & b != 0).map(|(_, t)| *t).collect::<Vec<_>>().join("\n");
+            let body = [row.jobs.as_str(), lead.as_str()].iter().filter(|t| !t.is_empty()).copied().collect::<Vec<_>>().join("\n");
+            m.tip(ui, Rect::from_min_size(pos2(x - 2.0, r.min.y), vec2(32.0, r.height())), &row.name, &body);
             x += 32.0;
             let right = r.max.x - 10.0;
             let Some(v) = &row.here else {
@@ -360,7 +390,9 @@ pub fn party_panel(p: &mut Panels, id: &str, title: &str, rows: &[PartyRow], sma
                     if ex < name_end + 8.0 {
                         break;
                     }
-                    effect_icon(look, painter, e, Rect::from_min_size(pos2(ex, r.min.y + 9.0), vec2(14.0, 14.0)), small);
+                    let at = Rect::from_min_size(pos2(ex, r.min.y + 9.0), vec2(14.0, 14.0));
+                    effect_icon(look, painter, e, at, small);
+                    m.tip(ui, at.expand(1.0), &e.tip.0, &e.tip.1);
                     ex -= 15.0;
                 }
             }
@@ -393,6 +425,9 @@ pub fn target_panel(p: &mut Panels, v: &TargetView) {
     });
     if let Some(r) = r.filter(|_| v.locked) {
         locked(&p.over("target"), m, r);
+        if let Some(at) = p.ctx.input(|i| i.pointer.hover_pos()).filter(|at| r.contains(*at)) {
+            m.tip_at(p.ctx, at, "Locked on", "You keep facing the target. Lock on again to let go.");
+        }
     }
 }
 
@@ -440,19 +475,52 @@ pub fn where_panel(p: &mut Panels, v: &WhereView) {
             x += 31.0;
         }
         let t = painter.text(pos2(x, low), Align2::LEFT_CENTER, format!("{}:{:02}", v.time.0, v.time.1), FontId::proportional(m.theme.ui), m.theme.color("text"));
-        painter.text(pos2(t.max.x + 10.0, low), Align2::LEFT_CENTER, &v.day.1, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        let d = painter.text(pos2(t.max.x + 10.0, low), Align2::LEFT_CENTER, &v.day.1, FontId::proportional(m.theme.small), m.theme.color("muted"));
         let painter = ui.painter();
         if let Some(c) = &v.compass {
             compass(painter, m, dial, c);
         }
-        painter.text(pos2(dial.x, r.min.y + 2.0), Align2::CENTER_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
+        let g = painter.text(pos2(dial.x, r.min.y + 2.0), Align2::CENTER_CENTER, &v.grid, FontId::proportional(m.theme.small), m.theme.color("muted"));
         // The weather fills the room right of the compass, centred (a double weather's art in the same square).
         let room = Rect::from_min_max(pos2(right, r.min.y), r.max);
         let size = room.width().min(room.height()) - 4.0;
         if let Some(s) = v.weather.and_then(|id| m.art.sprite(&format!("weather/w{id:02}"))) {
             painter.add(paint::image(&s, room.center() - vec2(size, size) / 2.0, size, Color32::WHITE));
         }
+        // Tooltips (ours).
+        let element = DAY_ELEMENTS[v.day.0 % 8];
+        m.tip(ui, Rect::from_min_max(pos2(r.min.x, low - 14.0), pos2(d.max.x, low + 14.0)), &v.day.1, &format!("Vana'diel time {}:{:02}.\n{element} is strong today.", v.time.0, v.time.1));
+        m.tip(ui, g.expand(4.0), "Map position", &format!("{} on this area's map.", v.grid));
+        if let Some(c) = &v.compass {
+            let arrow = if c.arrow.is_some() { "\nThe arrow points to what you are tracking." } else { "" };
+            m.tip(ui, Rect::from_center_size(dial, vec2(2.0 * DIAL, 2.0 * DIAL * TILT + 8.0)), "Compass", &format!("The red N is north; the dial turns with the camera. The dots are the people and monsters near you.{arrow}"));
+        }
+        if let Some(id) = v.weather {
+            let (name, body) = weather_tip(id);
+            m.tip(ui, room, name, &body);
+        }
     });
+}
+
+/// The days' elements, Firesday first.
+const DAY_ELEMENTS: [&str; 8] = ["Fire", "Earth", "Water", "Wind", "Ice", "Lightning", "Light", "Darkness"];
+
+/// A weather's name and what it does (ours): ids 4..19 an element's single (even) and double (odd) weather.
+fn weather_tip(id: u16) -> (&'static str, String) {
+    const NAMES: [&str; 20] = [
+        "Clear", "Sunshine", "Clouds", "Fog", "Hot Spells", "Heat Waves", "Rain", "Squalls", "Dust Storms", "Sand Storms", "Wind", "Gales", "Snow", "Blizzards",
+        "Thunder", "Thunderstorms", "Auroras", "Stellar Glare", "Gloom", "Darkness",
+    ];
+    const ELEMENTS: [&str; 8] = ["Fire", "Water", "Earth", "Wind", "Ice", "Lightning", "Light", "Darkness"];
+    let name = NAMES.get(id as usize).copied().unwrap_or("Weather");
+    let body = match id {
+        4..=19 => {
+            let e = ELEMENTS[(id as usize - 4) / 2];
+            if id % 2 == 0 { format!("{e} weather: {e} is stronger here while it lasts.") } else { format!("Double {} weather: {e} is stronger still while it lasts.", e.to_lowercase()) }
+        }
+        _ => "No elemental weather.".to_string(),
+    };
+    (name, body)
 }
 
 /// The compass dial at `c` as retail's disk: turned so the camera's heading is up and tilted back (Rx(-1.0996)), with
@@ -592,7 +660,7 @@ fn effects(p: Look, w: &World) -> Vec<Effect> {
             let no_timer = p.gu.and_then(|gu| gu.status_entry(small, id)).is_some_and(|e| e.no_timer);
             let timed = timers && end != 0x7fff_ffff && !no_timer;
             let rem = (end.wrapping_sub(now).wrapping_add(59) as i32) / 60;
-            Effect { icon: Icon::Game(id), label: buffs::label(rem).filter(|_| timed), ending: timed && rem <= 15 }
+            Effect { icon: Icon::Game(id), label: buffs::label(rem).filter(|_| timed), ending: timed && rem <= 15, tip: effect_tip(w, p.gu, id, timed.then_some(rem)) }
         })
         .collect()
 }
@@ -630,7 +698,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
     let marked = |slot: usize, id: u32, index: u16| hand == Some(slot) || w.target.is_some_and(|t| t == id || (id != w.my_id && w.entities.get(&t).is_some_and(|e| e.index == index)));
     let marks = |id: u32, party: usize| (id != 0 && id == slots.leaders[party]) as u8 | ((id != 0 && id == slots.alliance_leader) as u8) << 1;
     let zone = |z: u16| p.gu.map(|gu| crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(z)))).unwrap_or_default();
-    let effects = |id: u32| w.party_buffs.get(&id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false }).collect());
+    let effects = |id: u32| w.party_buffs.get(&id).map_or(Vec::new(), |row| row.iter().filter(|&&b| b != 0xffff && b != 0).map(|&b| Effect { icon: Icon::Game(b), label: None, ending: false, tip: effect_tip(w, p.gu, b, None) }).collect());
     let gauge = |k: usize, hpp: u8, mpp: u8| w.party_gauges.get(k).map_or((hpp, mpp), |g| (g.1, g.2));
     // A member's max HP: as last seen at 100 %, else HP / HP %.
     let hp_max = |id: u32, hp: u32, hpp: u8| match w.party_hp_max.get(&id) {
@@ -653,6 +721,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             hand: hand_of(0),
             marks: marks(w.my_id, 0),
             effects: Vec::new(),
+            jobs: w.stats.as_ref().map_or(String::new(), |s| jobs_text(s.main, s.sub)),
         });
     }
     for (k, m) in (1..6).map_while(|k| slots.slots[k].as_ref().map(|m| (k, m))) {
@@ -669,6 +738,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
             hand: hand_of(k),
             marks: marks(m.id, 0),
             effects: effects(m.id),
+            jobs: jobs_text((m.jobs[0], m.jobs[1]), (m.jobs[2], m.jobs[3])),
         });
     }
     let hidden = super::super::alliance_hidden(w);
@@ -690,6 +760,7 @@ fn party_rows(p: Look, w: &World) -> (Vec<PartyRow>, [Option<Vec<PartyRow>>; 2])
                         hand: hand_of(s),
                         marks: marks(m.id, a + 1),
                         effects: Vec::new(),
+                        jobs: jobs_text((m.jobs[0], m.jobs[1]), (m.jobs[2], m.jobs[3])),
                     })
                 })
                 .collect()

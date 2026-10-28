@@ -161,15 +161,14 @@ fn concierge_list(p: &mut Panels, w: &mut World) {
             ui.label(egui::RichText::new(&v.title).size(m.theme.ui).color(m.theme.color("gold")));
             ui.add_space(6.0);
         }
-        ui.horizontal(|ui| {
-            for (k, sprite) in [(1u16, 715usize), (2, 92), (3, 93), (4, 574)] {
-                let t = m.caption(gu, "menu    windowps", sprite).unwrap_or_default();
-                let lit = v.lsc.map_or(v.filter == k, |s| s == k);
-                if button(ui, m, &t, 108.0, lit, false) && free {
-                    tab = Some(k);
-                }
-            }
-        });
+        let labels: Vec<String> = [715usize, 92, 93, 574].iter().map(|&s| m.caption(gu, "menu    windowps", s).unwrap_or_default()).collect();
+        let labels: Vec<&str> = labels.iter().map(String::as_str).collect();
+        let tabs = super::tabs::strip(ui, m, "concierge", &labels, Some((v.filter as usize).saturating_sub(1)), v.lsc.map(|s| (s as usize).saturating_sub(1)));
+        if let Some(k) = tabs.iter().position(|r| r.clicked())
+            && free
+        {
+            tab = Some(k as u16 + 1);
+        }
         ui.add_space(6.0);
         let seen = egui::Id::unique("concierge cursor seen");
         let follow = ui.ctx().data(|d| d.get_temp::<usize>(seen)) != Some(v.cursor);

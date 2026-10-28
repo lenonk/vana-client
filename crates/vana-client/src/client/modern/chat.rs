@@ -114,23 +114,19 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool)
     let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), TAB_H), Sense::hover());
     let font = FontId::proportional(m.theme.small);
     let mut x = row.min.x;
+    // The tabs on a baseline up to the settings button; the open one painted last, over the baseline.
+    super::tabs::baseline(ui.painter(), m, Rect::from_min_max(row.min, pos2(row.max.x - row.height() - 4.0, row.min.y + super::tabs::H)), alpha);
+    let mut open_tab = None;
     for (i, (name, _)) in TABS.iter().enumerate() {
-        let tw = ui.fonts_mut(|f| f.layout_no_wrap(name.to_string(), font.clone(), Color32::WHITE).size().x);
-        let r = Rect::from_min_size(pos2(x, row.min.y), vec2((tw + 24.0).max(64.0), 24.0));
-        x = r.max.x + 4.0;
+        let r = Rect::from_min_size(pos2(x, row.min.y), vec2(super::tabs::width(ui, name, &font, 56.0), super::tabs::H));
+        x = r.max.x + 3.0;
         let resp = ui.interact(r, ui.scope_id().with(("chat tab", i)), Sense::click());
-        let s = if i == tab as usize {
-            "controls/tab_active"
-        } else if resp.hovered() {
-            "controls/tab_hover"
+        let state = super::tabs::State { open: i == tab as usize, hover: resp.hovered(), cursor: false };
+        if state.open {
+            open_tab = Some((r, *name));
         } else {
-            "controls/tab_normal"
-        };
-        if let Some(s) = m.art.sprite(s) {
-            ui.painter().add(paint::nine_slice(&s, r, r.height() / s.size.y, Color32::WHITE.gamma_multiply(alpha)));
+            super::tabs::paint(ui.painter(), m, r, name, &font, state, alpha);
         }
-        let c = if i == tab as usize { m.theme.color("gold") } else { m.theme.color("text") };
-        ui.painter().text(r.center() + vec2(0.0, 2.0), egui::Align2::CENTER_CENTER, *name, font.clone(), c.gamma_multiply(alpha));
         // New lines since the tab was last shown: a count on its corner.
         if let Some(&k) = unread.get(i).filter(|&&k| k > 0 && i != tab as usize) {
             let text = if k > 9 { "9+".to_string() } else { k.to_string() };
@@ -144,6 +140,9 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool)
             m.chat_tab.set(i as u8);
         }
     }
+    if let Some((r, name)) = open_tab {
+        super::tabs::paint(ui.painter(), m, r, name, &font, super::tabs::State { open: true, ..Default::default() }, alpha);
+    }
     let g = Rect::from_min_size(pos2(row.max.x - row.height(), row.min.y), Vec2::splat(row.height()));
     let resp = ui.interact(g, ui.scope_id().with("chat settings"), Sense::click());
     if let Some(s) = m.art.sprite("icons/settings") {
@@ -151,7 +150,8 @@ fn tabs(ui: &mut Ui, m: &Modern, alpha: f32, unread: &[u32; 11]) -> (Rect, bool)
         let c = if resp.hovered() || open { Color32::WHITE } else { Color32::from_gray(205) };
         ui.painter().add(paint::image(&s, g.min, g.width(), c.gamma_multiply(alpha)));
     }
-    (g, resp.on_hover_text("Chat settings").clicked())
+    m.tip(ui, g, "Chat settings", "The font size, battle lines in All, and their condensing.");
+    (g, resp.clicked())
 }
 
 /// The settings by the button (`at`, on the screen): the font size, - and +, the battle lines on All, their condensing.

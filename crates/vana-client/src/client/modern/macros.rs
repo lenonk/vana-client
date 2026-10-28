@@ -215,13 +215,13 @@ fn keycap(ui: &mut Ui, m: &super::Modern, digit: usize, title: &str, cursor: Opt
 fn palettes(ui: &mut Ui, m: &super::Modern, gu: &GameUi, pv: &macroedit::Palettes, moved: bool, mouse: &mut Mouse) {
     ui.label(egui::RichText::new(&pv.book).size(m.theme.ui).color(m.theme.color("gold")));
     ui.add_space(4.0);
-    ui.horizontal(|ui| {
-        for s in 0..10 {
-            if button(ui, m, &format!("Set {}", s + 1), 64.0, s == pv.set, false) {
-                mouse.set = Some(s);
-            }
+    let sets: Vec<String> = (1..=10).map(|s| format!("Set {s}")).collect();
+    let labels: Vec<&str> = sets.iter().map(String::as_str).collect();
+    for (s, resp) in super::tabs::strip(ui, m, "macro sets", &labels, Some(pv.set), None).into_iter().enumerate() {
+        if resp.clicked() {
+            mouse.set = Some(s);
         }
-    });
+    }
     ui.add_space(8.0);
     for (pal, label) in [(1u8, caption(gu, "menu    mcr1edit", 1, "Ctrl")), (2, caption(gu, "menu    mcr2edit", 1, "Alt"))] {
         ui.horizontal(|ui| {
@@ -387,16 +387,14 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
                 ui.add_space(12.0);
                 ui.vertical(|ui| {
                     ui.set_width(380.0);
-                    ui.horizontal_wrapped(|ui| {
-                        ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-                        for (child, c) in STORES {
-                            let Some(name) = gu.child_caption("menu    mcrmogc", child) else { continue };
-                            let tw = ui.fonts_mut(|f| f.layout_no_wrap(name.clone(), FontId::proportional(m.theme.small), Color32::WHITE).size().x);
-                            if button(ui, m, &name, tw + 20.0, e.container == c, false) {
-                                store = Some(c);
-                            }
+                    let stores: Vec<(String, u8)> = STORES.iter().filter_map(|&(child, c)| Some((gu.child_caption("menu    mcrmogc", child)?, c))).collect();
+                    let labels: Vec<&str> = stores.iter().map(|(n, _)| n.as_str()).collect();
+                    let open = stores.iter().position(|(_, c)| *c == e.container);
+                    for (k, resp) in super::tabs::strip(ui, m, "equip set storage", &labels, open, None).into_iter().enumerate() {
+                        if resp.clicked() {
+                            store = Some(stores[k].1);
                         }
-                    });
+                    }
                     ui.add_space(6.0);
                     let tall = 10.0 * (ROW + 4.0);
                     egui::ScrollArea::vertical().id_salt("set list").max_height(tall).min_scrolled_height(tall).auto_shrink([false, true]).show(ui, |ui| {
@@ -451,14 +449,13 @@ fn equip_sets(p: &mut Panels, w: &mut World, gu: &GameUi, v: &esmenu::View) {
     }
     let (mut page, mut row, mut opt) = (None, (None, None), (None, None));
     p.panel("window", Some(Title { icon: Some("icons/equip_set"), text: &title, note: None }), BOOK_W + social::width(1) + 12.0, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(4.0, 4.0);
-            for k in 0..10 {
-                if button(ui, m, &format!("{}", k + 1), 40.0, k == v.page, false) {
-                    page = Some(k);
-                }
+        let pages: Vec<String> = (1..=10).map(|k| k.to_string()).collect();
+        let labels: Vec<&str> = pages.iter().map(String::as_str).collect();
+        for (k, resp) in super::tabs::strip(ui, m, "equip set pages", &labels, Some(v.page), None).into_iter().enumerate() {
+            if resp.clicked() {
+                page = Some(k);
             }
-        });
+        }
         ui.add_space(6.0);
         ui.horizontal_top(|ui| {
             ui.vertical(|ui| {

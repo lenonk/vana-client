@@ -6,10 +6,10 @@
 
 use super::super::World;
 use super::super::items::{self as gitems, Storage, Win};
-use super::{Panels, Title, paint};
+use super::{Panels, Title};
 use crate::audio::Ui as Se;
 use crate::inventory::{Slot, TINT_DIM, TINT_WHITE};
-use egui::{Align2, Color32, FontId, Rect, Sense, Ui, pos2, vec2};
+use egui::{Align2, Color32, FontId, Rect, Sense, pos2, vec2};
 
 const ROW: f32 = 30.0;
 const ICON: f32 = 24.0;
@@ -104,14 +104,12 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let (bcur, icur) = (b.scroll + b.cursor, iscroll + icursor);
     let mut mouse = Mouse::default();
     p.panel("window", Some(Title { icon: Some("icons/mog_safe"), text: "Storage", note: b.read_only.then_some("Away from the moogle") }), 720.0, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            ui.spacing_mut().item_spacing = vec2(6.0, 6.0);
-            for &k in &tabs {
-                if tab(ui, m, BAGS[k].0, k == g).clicked() {
-                    mouse.bag = Some(k);
-                }
+        let labels: Vec<&str> = tabs.iter().map(|&k| BAGS[k].0).collect();
+        for (i, resp) in super::tabs::strip(ui, m, "storage tabs", &labels, tabs.iter().position(|&k| k == g), None).into_iter().enumerate() {
+            if resp.clicked() {
+                mouse.bag = Some(tabs[i]);
             }
-        });
+        }
         ui.add_space(8.0);
         let tall = ui.ctx().content_rect().height() * 0.55;
         ui.horizontal_top(|ui| {
@@ -166,19 +164,6 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         set_cursor(w, bank_side, k);
         take(w, bank_side, k, one);
     }
-}
-
-/// A tab in the pack's button frame.
-fn tab(ui: &mut Ui, m: &super::Modern, label: &str, lit: bool) -> egui::Response {
-    let font = FontId::proportional(m.theme.small);
-    let tw = ui.fonts_mut(|f| f.layout_no_wrap(label.to_string(), font.clone(), Color32::WHITE).size().x);
-    let (r, resp) = ui.allocate_exact_size(vec2(tw + 24.0, 26.0), Sense::click());
-    let face = if lit { "controls/button_selected" } else if resp.hovered() { "controls/button_hover" } else { "controls/button_normal" };
-    if let Some(s) = m.art.sprite(face) {
-        ui.painter().add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
-    }
-    ui.painter().text(r.center(), Align2::CENTER_CENTER, label, font, if lit { m.theme.color("gold") } else { m.theme.color("text") });
-    resp
 }
 
 fn store_mut(w: &mut World) -> Option<&mut Storage> {

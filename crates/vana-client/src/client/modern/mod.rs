@@ -33,6 +33,7 @@ mod shop;
 mod social;
 mod status;
 mod storage;
+mod tabs;
 pub mod shot;
 mod theme;
 mod topbar;
@@ -877,6 +878,43 @@ impl<'a> Panels<'a> {
 }
 
 impl Modern {
+    /// A tooltip (ours) while the pointer rests on `r` and `ui`'s layer is the one under it: `title` in gold over `body`
+    /// in the pack's tooltip frame.
+    pub fn tip(&self, ui: &Ui, r: Rect, title: &str, body: &str) {
+        let ctx = ui.ctx();
+        let Some(at) = ctx.input(|i| i.pointer.hover_pos()) else { return };
+        if r.contains(at) && ctx.layer_id_at(at) == Some(ui.layer_id()) {
+            self.tip_at(ctx, at, title, body);
+        }
+    }
+
+    /// The tooltip by the pointer at `at`, once it has rested a moment (none while dragging).
+    pub fn tip_at(&self, ctx: &Context, at: Pos2, title: &str, body: &str) {
+        const REST: f32 = 0.35;
+        if title.is_empty() && body.is_empty() || ctx.dragged_id().is_some() {
+            return;
+        }
+        let still = ctx.input(|i| i.pointer.time_since_last_movement());
+        if still < REST {
+            ctx.request_repaint_after(std::time::Duration::from_secs_f32(REST - still));
+            return;
+        }
+        egui::Area::new(Id::new("modern tip")).order(Order::Tooltip).fixed_pos(at + vec2(16.0, 20.0)).constrain(true).interactable(false).show(ctx, |ui| {
+            let bg = ui.painter().add(Shape::Noop);
+            let inner = egui::Frame::NONE.inner_margin(egui::Margin::symmetric(10, 7)).show(ui, |ui| {
+                ui.set_max_width(300.0);
+                ui.spacing_mut().item_spacing.y = 3.0;
+                if !title.is_empty() {
+                    ui.label(egui::RichText::new(title).size(self.theme.ui).family(FontFamily::Name(STRONG.into())).color(self.theme.color("gold")));
+                }
+                if !body.is_empty() {
+                    ui.label(egui::RichText::new(body).size(self.theme.small).color(self.theme.color("text")));
+                }
+            });
+            ui.painter().set(bg, borders::window(self, "window_tooltip", inner.response.rect));
+        });
+    }
+
     fn grid(&self, w: &World, gu: &GameUi) -> String {
         let mut g = self.grid.borrow_mut();
         if g.0.is_none_or(|t| t.elapsed().as_secs_f32() >= 0.5) {

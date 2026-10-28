@@ -10654,3 +10654,25 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
 - Ours (fx/mod.rs): Effects::expire deletes a held element whose clone is gone or has no live elements; drive() still
   moves a 0x33 / 0x46 clone with a held element but runs it only while either life is not 0. fx-shot of 4628 in zone
   100: before, 40+ `bsho` elements at 40 s; after, the puffs fade out by 4 s and nothing of 4628 is left.
+
+## Modern UI: tab strips, Extras and Settings in Config, tooltips (ours, 2026-10-27)
+
+- Tabs (modern/tabs.rs, user: "something that actually looks like tabs instead of buttons"): a strip of tabs on a
+  bronze baseline, the open one taller in the panel's colour with a gold edge, covering the baseline; the others
+  darker and 4 points lower; the keyboard cursor a focus line under its label; rows wrap when the strip is too wide.
+  Used by the chat tabs (their unread badges kept), the journal (Missions / Quests / Records of Eminence / Key Items),
+  the storage views, the macro palettes' sets and the equipment-set pages, the shop's Buy / Sell, the Linkshell
+  Concierge filters, Job Points / Gifts, the Config list pages' categories and our Settings / Extras pages.
+- Extras and Settings (user: "should not open a new window; they should work like everything else under config"):
+  the modern Config draws our page (settings.rs's view) in its right pane as the other entries; the state follows the
+  list's entry (created while it is chosen, so it previews; dropped when another is chosen or Config closes, once
+  stored); it takes the keys only while the page is open (Enter or a click), and its Escape goes back to the list.
+  The standalone Settings panel is gone from the modern UI.
+- Tooltips (user: "we need tooltips in the modern UI for all sorts of things when hovered"): Modern::tip / tip_at, the
+  pack's window_tooltip frame by the pointer once it rests 0.35 s, gold title over the body, only when the hovered
+  panel is the top layer there. On: status icons (ours and party members': the status name from the battle text, its
+  description, the time left), party rows' jobs (WAR 22 / NIN 11, the leader marks), the location panel (the day and
+  Vana'diel time with the day's strong element, the map grid, the compass, the weather's name and element), the target
+  lock, the network meter (S / R as bytes a second), minimap dots (the entity's name), the chat settings button, the
+  equipment slots and the currency rows (these three were egui's plain tooltips). Seen live on Lnxcsfix (status icon,
+  the location panel's four, the network meter).

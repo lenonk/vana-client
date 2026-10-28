@@ -305,7 +305,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             ui.painter().text(pos2(r.min.x + 4.0, r.center().y), Align2::LEFT_CENTER, label, FontId::proportional(m.theme.small), c);
                             ui.painter().text(pos2(r.max.x - 4.0, r.center().y), Align2::RIGHT_CENTER, status::grouped(*v, &sep), FontId::monospace(m.theme.small), c);
                             if !tip.is_empty() {
-                                resp.on_hover_text(tip);
+                                m.tip(ui, resp.rect, label, tip);
                             }
                         }
                     }

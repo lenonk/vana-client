@@ -295,17 +295,15 @@ fn description(ui: &mut Ui, m: &super::Modern, name: &str, text: &str) {
     });
 }
 
-/// The tab strip: the three tabs as buttons.
+/// The tab strip.
 fn tabs(ui: &mut Ui, m: &super::Modern, t: Tab, mouse: &mut Mouse) {
-    ui.horizontal(|ui| {
-        for (tab, label) in TABS {
-            let on = tab == t;
-            let text = egui::RichText::new(label).size(m.theme.ui).color(if on { m.theme.color("gold") } else { m.theme.color("text") });
-            if ui.add(egui::Button::new(text).selected(on)).clicked() && !on {
-                mouse.tab = Some(tab);
-            }
+    let labels: Vec<&str> = TABS.iter().map(|(_, l)| *l).collect();
+    let open = TABS.iter().position(|(tab, _)| *tab == t);
+    for (k, resp) in super::tabs::strip(ui, m, "journal tabs", &labels, open, None).into_iter().enumerate() {
+        if resp.clicked() && Some(k) != open {
+            mouse.tab = Some(TABS[k].0);
         }
-    });
+    }
     ui.add_space(8.0);
 }
 
