@@ -11158,5 +11158,9 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   newest 3 rows under it, gone at the message's end; with Say on Hold (0x34 1): "Bob : held" (printToPlayer type 0) and
   our held say echoes pinned while 5 pushes scrolled, gone after the 30 s period; with both, the rem drawn over the
   spool. Classic UI only: the modern chat has no such limit.
-- Not done: the frames' magenta tint (windowps 43, spec §8), op 0xb4 sub 5 (auto-advance), SE 0015 on a page advance,
-  0xbe as the page mode of a 0x97 message.
+- SE 0015 (FUN_10037f50, "0015") on every Enter or click that advances a waiting page, the last too (FUN_10126880).
+- Op 0xb4 sub 5 (FUN_100b0a00 case 5, byte@2: 0 on, 1 off) sets the rems' +0x60: their update (FUN_10136cd0) then
+  sends message 5 every frame, each waiting page going on (SE 0015 each) until the message closes (FUN_10136ab0 clears
+  it); ours event::State auto_advance. Its one site: Reisenjima (291) event_ffff @0x1f, after a 21600-tick event timer
+  (subs 0xa / 0xc / 0xb). Not seen live.
+- Not done: the frames' magenta tint (windowps 43, spec §8), 0xbe as the page mode of a 0x97 message.

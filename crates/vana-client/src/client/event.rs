@@ -341,6 +341,8 @@ pub struct State {
     pub choice: Option<Choice>,
     /// Op 0xb4 6's auto-pick (DAT_104886f4): 1 the open or next choice takes its cursor's option, 2 every choice.
     pub auto_pick: u8,
+    /// Op 0xb4 5's auto-advance (the rems' +0x60): a waiting page goes on every frame until the message closes.
+    pub auto_advance: bool,
     /// Op 0x71's input window ("menu    passinpu").
     pub input: Option<Input>,
     /// Op 0xd4 3..5 option entries (select window +0x13c): option position -> item, extdata (subs 4 / 5), flags (byte
@@ -418,6 +420,7 @@ impl State {
             msg: None,
             choice: None,
             auto_pick: 0,
+            auto_advance: false,
             input: None,
             option_items: HashMap::new(),
             item_preview: false,
@@ -1249,6 +1252,12 @@ impl Host for LiveHost<'_> {
                 Some(2) => self.st.auto_pick = 2,
                 _ => {}
             },
+            // FUN_100b0a00 5: the rems' auto-advance on (0) or off (1).
+            Effect::Op { op: 0xb4, sub: Some(5), args, .. } => match Self::arg_int(&args, 0) {
+                Some(0) => self.st.auto_advance = true,
+                Some(1) => self.st.auto_advance = false,
+                _ => {}
+            },
             Effect::Op { op: 0xb4, sub: Some(8), .. } => self.w.cast_bar = None,
             Effect::Op { op: 0xb4, sub: Some(0xb), .. } => self.w.event_timer = None,
             // FUN_100b0a00 0xd / 0xe: hold the voyage (V identity, t still) / let it go on.
@@ -1677,6 +1686,20 @@ pub fn update(w: &mut World, dt: f32) {
             close_msg(&mut live.st, w);
         }
     }
+    // FUN_10136cd0: under the auto-advance the rem sends message 5 every frame: each waiting page goes on (SE 0015);
+    // the message's close clears it (FUN_10136ab0).
+    if live.st.auto_advance
+        && let Some(m) = live.st.msg.as_mut().filter(|m| m.waits_key())
+    {
+        w.sounds.push(crate::audio::Ui::Page as u32);
+        if m.pages.as_ref().is_some_and(|(_, p)| m.page + 1 < p.len()) {
+            m.page += 1;
+            m.open = 0.0;
+        } else {
+            live.rt.close_message();
+            close_msg(&mut live.st, w);
+        }
+    }
     // FUN_1014e3e0: a choice under the auto-pick (a timer ran out) takes its cursor's option, with no sound.
     if live.st.auto_pick != 0
         && live.rt.choice_open()
@@ -1721,7 +1744,7 @@ pub fn update(w: &mut World, dt: f32) {
 
 /// The message window closed: its speaker's mouth stops (FUN_100b1140 on 0x23).
 fn close_msg(st: &mut State, w: &mut World) {
-    st.msg = None;
+    (st.msg, st.auto_advance) = (None, false);
     for a in w.actors.values_mut() {
         a.mouth = None;
     }
@@ -2286,6 +2309,8 @@ fn key_live(w: &mut World, l: &mut Live, key: egui::Key) {
     if let Some(m) = l.st.msg.as_mut().filter(|m| m.waits_key()) {
         match key {
             egui::Key::Enter => {
+                // FUN_10126880: every advance plays SE 0015, the last (the message's end) too.
+                w.sounds.push(crate::audio::Ui::Page as u32);
                 // A full page (4 lines) waits for a key before the next one.
                 let more = m.pages.as_ref().is_some_and(|(_, p)| m.page + 1 < p.len());
                 if more {

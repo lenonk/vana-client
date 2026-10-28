@@ -1923,8 +1923,9 @@ impl Runtime {
                     }
                     // The cast bar (7, FUN_1012c1d0 mode 4) or the event timer (0xa, FUN_1012c500 mode 0) for val@2
                     // ticks, unless it is up.
-                    // The choice's auto-pick (FUN_100b0a00 6: byte@2 0 on, 1 off, 2 on for good).
-                    6 => {
+                    // The choice's auto-pick (FUN_100b0a00 6: byte@2 0 on, 1 off, 2 on for good); 5 the message's
+                    // auto-advance (byte@2 0 on, 1 off).
+                    5 | 6 => {
                         let b = self.u8_at(v, 2) as i32;
                         host.effect(Effect::Op { op: opc, sub, actor, args: vec![Arg::Int(b)] });
                     }
