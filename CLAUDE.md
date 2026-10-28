@@ -190,6 +190,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     done and seen live (refusals not);
   - two-factor sign-in (client/twofa.rs, MODLOG "Two-factor sign-in"): the login form's Two-factor window (enrol with
     a QR code, turn off, new recovery code) done and seen live.
+  - GM prompts (client/gmtell.rs, MODLOG "GM prompts"; LSB's !menu / !quest / !mission / !afkcheck): done and seen
+    live in both UIs.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

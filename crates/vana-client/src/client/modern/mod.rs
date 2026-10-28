@@ -243,6 +243,7 @@ impl Modern {
         }
         confirm(&mut p, w);
         choice(&mut p, w);
+        gm_prompt(&mut p, w);
         mogdoor(&mut p, w);
         event_input(&mut p, w);
         let this = std::mem::take(&mut p.this);
@@ -364,6 +365,7 @@ fn focus_panel(w: &World) -> Option<&'static str> {
         _ if w.palette.0 != 0 => "macro palette",
         _ if w.concierge_ui.is_some() => "window",
         _ if event::choice(w).is_some() => "choice",
+        _ if w.gmtell.open.is_some() => "gm prompt",
         _ if event::input(w).is_some() => "event input",
         _ if event::active(w) => return None,
         _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() => "window",
@@ -561,6 +563,18 @@ fn choice(p: &mut Panels, w: &mut World) {
     }
     if click.is_some() {
         super::event::key(w, egui::Key::Enter);
+    }
+}
+
+/// A GM prompt (retail's gmtell, the query's class): its keys stay gmtell.rs's. Hovering moves the cursor, a click
+/// picks.
+fn gm_prompt(p: &mut Panels, w: &mut World) {
+    let Some(g) = w.gmtell.open.as_ref() else { return };
+    let rows: Vec<(String, [u8; 4])> = g.options.iter().map(|o| (o.clone(), [0x80; 4])).collect();
+    let (question, cursor) = (g.question.clone(), g.cursor);
+    let (hover, click) = log_list(p, "gm prompt", &question, &rows, cursor, w.confirm.is_none());
+    if let Some(k) = click.or(hover) {
+        super::gmtell::pointer(w, k, click.is_some());
     }
 }
 

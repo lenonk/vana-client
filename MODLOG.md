@@ -10876,3 +10876,32 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   - Southern San d'Oria gate: GPU 0.96 -> 0.23 ms, 7442 pixels differ (the battlements beyond the inner wall).
   - Street: 0.71 -> 0.41 ms, 1146 pixels (rooftops over the wall). Square: 0.83 -> 0.49 ms, identical.
   - Windurst Waters: 0.31 -> 0.27 ms, 1349 pixels.
+
+## GM prompts: "menu    gmtell" (2026-10-28)
+
+- s2c 0x017 Kind 0x0c (LAB_100e37a0: byte table 0x100e3de8 -> jump table 0x100e3da0 entry 8, 0x100e3cb7; any sender
+  past the block list, GM flag or not) draws no line: FUN_100a40a0 queues the sender (24 bytes) and the text (0x100;
+  the packet's text is cut at 150 as every 0x017) in 4 slots of 0x140 at DAT_10485a78. In an event (DAT_10487e48, set
+  at an event's start, cleared at the zone load) it answers group 9 0x82 at once; with every slot taken 0x83.
+- FUN_100a3d00 (each frame, FUN_10096640 after the K.O. machine): in an event any flagged slot is cancelled with 0x84
+  and the window closes; else with no window the lowest flagged slot opens (FUN_100a3f10), else the window's result
+  (+0x548, FUN_1014e1c0) is polled: 0xff / negative 0x85, an answer id 0x86. The zone load clears the slots
+  (FUN_10093720 -> FUN_100a3cd0).
+- FUN_100a3f10: the text split by FUN_100a3fe0 (a word is a quoted run to its closing quote, else up to a space or
+  tab; the blanks after it skipped): the first word the question (FUN_1014df50), up to 8 more the answers
+  (FUN_1014df90, ids 1..8). No question or no answer: the slot goes with no tell.
+- The answers (FUN_100e3570: c2s 0x0B6 to the sender, Kind 3, no log echo; a first lower-case letter capitalised in
+  some languages): 0x82 "Currently in an event. This GMTELL was invalidated.", 0x83 "Currently four GMTELL's have
+  been received. ...", 0x84 / 0x85 "GMTELL(%s): Question(%s): Result (Canceled due to event activation.)" /
+  "(Canceled.)", 0x86 "GMTELL(%s): Question(%s): Result (%s)"; the first %s is the player's shown name
+  (FUN_100a3ea0: actor +0x210 ? +0x214 : +0x7c).
+- The window: the query's class (FUN_1014dd30, 0x54c; vtable 0x103352c8 vs the query's 0x10335280), the same layout
+  (16, 208, 366x88, rows 1..3), registry flags 0x11012 (stacked on the log). Only the key handler differs
+  (FUN_1014e550): Down / Up one answer without wrap or pages, the view inside 3 rows, SE 0001 when it moved; Enter the
+  cursor's answer; Escape always cancels (0xff, SE 0003). No wheel, bar or row messages.
+- LSB (luautils SetCustomMenuContext / HandleCustomMenu) sends `"title""opt1"...` from "_CUSTOM_MENU" (!menu, !quest,
+  !mission, !afkcheck, !minigame) and reads the answer from the tell's "Result (" text. Seen live 2026-10-28 (Lnxcsfix,
+  both UIs: a pick and a cancel).
+- Ours (client/gmtell.rs): an event answers every waiting prompt once with 0x84 (retail repeats the open slot's tell
+  each frame while another slot waits, the window already gone); the mouse moves the cursor and a click picks, as in
+  the query *(inf: retail's handler takes no row messages)*. The modern UI shows it as a "gm prompt" panel.

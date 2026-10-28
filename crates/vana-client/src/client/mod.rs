@@ -8,6 +8,7 @@ mod resttick;
 mod creator;
 mod netwait;
 mod twofa;
+mod gmtell;
 mod modern;
 mod monstrosity;
 mod moncustom;
@@ -276,7 +277,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some()
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some() || gmtell::open(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -990,6 +991,29 @@ fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
     }
 }
 
+/// A query-class window (FUN_1014e220): the question at the top, three option rows with the anc_s hand, the bar
+/// (FUN_1014de10: total the options, top the first shown; at x1 - 8 when stacked). Its rect.
+#[allow(clippy::too_many_arguments)]
+fn draw_choice(gu: &mut GameUi, name: &str, question: &str, options: &[String], scroll: usize, cursor: usize, sw: f32, sh: f32, bar: Option<scrollbar::Owner>) -> Option<[f32; 4]> {
+    let (qx, qy) = gu.window(name, sw, sh)?;
+    for (k, l) in question.split('\n').enumerate() {
+        gu.text(l, qx + 8.0, qy + 6.0 + k as f32 * 16.0, 0, WHITE);
+    }
+    let rows = gu.children(name);
+    for (k, (row, opt)) in rows.iter().zip(options.iter().skip(scroll)).enumerate() {
+        gu.text(opt, qx + row[0] + 4.0, qy + row[1], 0, WHITE);
+        if scroll + k == cursor {
+            gu.cursor(qx + row[0], qy + row[1]);
+        }
+    }
+    let r = gu.window_rect(name, sw, sh)?;
+    gu.scroll_bar(r[0] + r[2] - 8.0, r[1], r[3], options.len(), rows.len(), scroll);
+    if let Some(owner) = bar {
+        gu.bar_site(owner, r[0] + r[2] - 8.0, r[1], r[3], options.len(), rows.len(), scroll);
+    }
+    Some(r)
+}
+
 /// Ctrl/Alt + S/T/P/L/U/X (LAB_101a64c0): open the input on a channel, keeping a message being typed
 /// minus its own channel command (FUN_101a6550).
 fn chat_prefix(world: &mut World, prefix: &str) {
@@ -1639,6 +1663,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.concierge_ui.is_some() => concierge::key(world, gu, *key),
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
+                _ if gmtell::open(world) => gmtell::key(world, *key),
                 egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
                 }
@@ -2271,6 +2296,17 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The party cursor (<stpc>, a party menu pick): the mouse over the party windows' rows.
     if let Some(p) = input.pointer.filter(|_| world.party_cursor.is_some() && world.confirm.is_none()) {
         target::party_cursor_pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    // The GM prompt's rows: hovering moves the cursor, a click picks.
+    if let Some(p) = input.pointer.filter(|_| gmtell::open(world) && !world.modern && world.confirm.is_none())
+        && let Some(r) = gu.window_rect(gmtell::WINDOW, sw, sh)
+        && let Some(k) = gu.children(gmtell::WINDOW).iter().position(|c| inside(&[r[0] + c[0], r[1] + c[1], c[2].max(132.0), c[3].max(16.0)], p))
+    {
+        gu.hover.set(true);
+        let k = k + world.gmtell.open.as_ref().map_or(0, |o| o.scroll);
+        if input.moved || input.clicked {
+            gmtell::pointer(world, k, input.clicked);
+        }
     }
     // Mouse in an event: a click on a choice row picks it, anywhere else advances a prompt.
     if input.clicked && world.event.is_some() {
@@ -2941,27 +2977,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if world.map.is_some() || world.cnq.is_some() {
         blockers.push([0.0, 0.0, sw, sh]);
     }
-    // The choice menu (FUN_100b0960): question at the top, three option rows with the anc_s hand.
-    if let Some(c) = event::choice(world).filter(|_| !world.modern)
-        && let Some((qx, qy)) = gu.window("menu    query", sw, sh)
-    {
-        let (question, options, scroll, cursor) = (c.question.clone(), c.options.clone(), c.scroll, c.cursor);
-        for (k, l) in question.split('\n').enumerate() {
-            gu.text(l, qx + 8.0, qy + 6.0 + k as f32 * 16.0, 0, WHITE);
-        }
-        let rows = gu.children("menu    query");
-        for (k, (row, (_, opt))) in rows.iter().zip(options.iter().skip(scroll)).enumerate() {
-            gu.text(opt, qx + row[0] + 4.0, qy + row[1], 0, WHITE);
-            if scroll + k == cursor {
-                gu.cursor(qx + row[0], qy + row[1]);
-            }
-        }
-        // FUN_1014de10: 3 rows, total the options, top the first shown (FUN_1014e300); at x1 - 8 when stacked.
-        if let Some([fx, fy, fw, fh]) = gu.window_rect("menu    query", sw, sh) {
-            gu.scroll_bar(fx + fw - 8.0, fy, fh, options.len(), rows.len(), scroll);
-            gu.bar_site(scrollbar::Owner::Query, fx + fw - 8.0, fy, fh, options.len(), rows.len(), scroll);
-        }
-        blockers.extend(gu.window_rect("menu    query", sw, sh));
+    // The choice menu (FUN_100b0960).
+    if let Some(c) = event::choice(world).filter(|_| !world.modern) {
+        let options: Vec<String> = c.options.iter().map(|o| o.1.clone()).collect();
+        let (question, scroll, cursor) = (c.question.clone(), c.scroll, c.cursor);
+        blockers.extend(draw_choice(gu, "menu    query", &question, &options, scroll, cursor, sw, sh, Some(scrollbar::Owner::Query)));
+    }
+    // A GM prompt (gmtell, the query's class): its bar takes no messages (FUN_1014e550).
+    if let Some(p) = world.gmtell.open.as_ref().filter(|_| !world.modern) {
+        let (question, options, scroll, cursor) = (p.question.clone(), p.options.clone(), p.scroll, p.cursor);
+        blockers.extend(draw_choice(gu, gmtell::WINDOW, &question, &options, scroll, cursor, sw, sh, None));
     }
     if world.menu.is_some() {
         blockers.extend(gu.window_rect(crate::render::screens::menu_window(world.menu_page), sw, sh));
@@ -4719,6 +4744,8 @@ struct World {
     /// Zone flag 0x100 (0x00A LoginState 1, 4 or 5): no grid position by the clock.
     room_flag: bool,
     mogdoor: Option<myroom::Menu>,
+    /// GM prompts (s2c 0x017 kind 0x0c) and the open one.
+    gmtell: gmtell::GmTell,
     leaving_room: bool,
     area: AreaSwitch,
     /// The building interior loaded over the zone.
@@ -6731,6 +6758,7 @@ impl App {
                             shot_request: None,
                             shot_count: (0, -1),
                             mogdoor: None,
+                            gmtell: Default::default(),
                             leaving_room: false,
                             doors: Default::default(),
                             event_voices: false,
@@ -7373,8 +7401,9 @@ impl App {
                     world.arealist = None;
                     world.seacom_edit = None;
                     world.linkshell = None;
-                    // FUN_10093720: the zone load clears the concierge's slots.
+                    // FUN_10093720: the zone load clears the concierge's slots and the GM prompts (FUN_100a3cd0).
                     (world.concierge, world.concierge_ui) = (Default::default(), None);
+                    world.gmtell = Default::default();
                     (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
@@ -7801,6 +7830,11 @@ impl App {
                     } else {
                         String::new()
                     };
+                    // The GM prompt (LAB_100e37a0 -> FUN_100a40a0): no line, a window.
+                    if kind == 0x0c {
+                        gmtell::receive(world, &from, &text);
+                        continue;
+                    }
                     if let Some((line, mode)) = chat_line(kind, attr, data, &from, &text, &zone) {
                         push_chat_mode(world, line, mode, kind);
                     }
@@ -8301,6 +8335,7 @@ impl App {
         if !event::active(world) {
             ko_step(world);
         }
+        gmtell::step(world);
         event::update(world, dt);
         event::rebuild_models(world);
         if world.in_scene() {
