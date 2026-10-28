@@ -7890,6 +7890,7 @@ impl App {
                     world.my_id = char_id;
                     world.name = name;
                     timers::on_zone(world);
+                    seacom::zone_in(world);
                     world.entities.clear();
                     world.new_challenge = false;
                     // FUN_10093b10: the 0x077 list goes with the zone.

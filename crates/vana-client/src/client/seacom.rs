@@ -22,11 +22,13 @@ pub struct Store {
     sent_kind: u8,
     /// +0x19: our own message came (s2c 0x0CA with MyFlag; the bazaar store only).
     pub own_in: bool,
+    /// DAT_104df770 +0x136a4 past 0: a zone was entered since the character's login (zone_in).
+    entered: bool,
 }
 
 impl Default for Store {
     fn default() -> Self {
-        Store { lines: Default::default(), sent: Default::default(), kind: 0, sent_kind: 0xff, own_in: false }
+        Store { lines: Default::default(), sent: Default::default(), kind: 0, sent_kind: 0xff, own_in: false, entered: false }
     }
 }
 
@@ -152,6 +154,22 @@ fn commit(w: &mut World) {
     s.sent_kind = s.kind;
     let kind = s.kind;
     send(w, kind, &text);
+}
+
+/// FUN_100e57c0 from netstat's init, once a zone: the first since the character's login (the counter FUN_100f05f0
+/// resets) clears the search comment (ffxiusr.msg saved empty), later ones send the kept one; c2s 0x0E0, then c2s
+/// 0x00F (32 zero bytes; LSB's CLSTAT reads nothing).
+pub fn zone_in(w: &mut World) {
+    let s = &mut w.seacom;
+    if !s.entered {
+        s.entered = true;
+        (s.lines, s.kind) = (Default::default(), 0);
+        (s.sent, s.sent_kind) = (Default::default(), 0);
+    }
+    let text = if s.lines.iter().all(|l| l.trim_matches(' ').is_empty()) { Vec::new() } else { padded(&s.lines) };
+    let kind = s.kind;
+    send(w, kind, &text);
+    let _ = w.net.commands.send(NetCommand::Packet { id: 0x00F, body: vec![0; 0x20] });
 }
 
 /// /seacom N ["text"] (FUN_1007efb0 -> FUN_101ddb30): line N (0..2) set to the text or cleared; nothing while the

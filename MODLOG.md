@@ -11427,3 +11427,15 @@ Supersedes "Not done: the idle variants +0x1a8 / +0x1ac" under "Motion name base
   the four names (and drops them again when MonStat leaves 2); actmotion::idle_swap. LSB never sets MonStat. A race
   model (Elvaan F) has no dft / df1 / ark (npc-shot: bind pose), so the motions belong to particular NPC models *(inf:
   not found yet)*.
+
+## Zone entry: the search comment again and c2s 0x00F (2026-10-28)
+
+- netstat's init (FUN_10201640, vtable 0x10338368, handler DAT_10663acc) calls FUN_100e57c0, which runs once a session
+  (+0x19d4c = 0; the session block is zeroed at each map connection): the counter DAT_104df770 +0x136a4
+  (FUN_100f0630, reset to 0 by FUN_100f05f0 in the lobby's login steps) is 0 on the first zone after a character login:
+  the comment and its type are cleared and saved empty to "ffxiusr.msg" (FUN_100e32d0: 0x90 bytes {12 zero, text[128],
+  u32 type}); later zones load it back (FUN_100e3340). Then c2s 0x0E0 with it (the editor's own layout), FUN_100f0610,
+  +0x19d4c = the counter, and c2s 0x00F (FUN_100fc7f0: 0x24 bytes, 32 zero; LSB GP_CLI_COMMAND_CLSTAT, which reads
+  nothing). So retail logs in with no search comment and keeps it across zones.
+- Ours: seacom::zone_in at each 0x00A (Store.entered for the first since login; the comment kept in memory).
+  Live: a login of Lnxcsfix, no server warning.
