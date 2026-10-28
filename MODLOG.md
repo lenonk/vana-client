@@ -7462,8 +7462,9 @@ Spec `~/ffxi/lab/research/social_rows_spec.md` H4.2 (client/faqmain.rs).
   script in memory, a leaf page whose row 0 reads "Delete this message." (9 0x7b) and sends c2s 0x0D5 {0}, then the
   0x0D3 type 1 report and close, as the other Return paths. The waiting reply is cleared on 0x0D5.
 - LSB sends the oldest unread `help_desk.response` at zone-in as 0x0B6 chunks; 0x0D5 marks it read and sends the
-  next. Not tried live (needs a reply written into help_desk by hand: the user's OK first). Not done: netstat's
-  "reply waiting" mark (+0x30 = 2, its drawing not traced).
+  next. Live (2026-10-28, a help_desk row for Lnxcsfix): the reply arrived at zone-in, /helpdesk -> Help Desk showed
+  it with "Delete this message." / "Return.", Delete set deleted_at (LSB) and went back to faqsub; the same in the
+  modern UI. Not done: netstat's "reply waiting" mark (+0x30 = 2, its drawing not traced).
 
 ## The party cursor with the mouse (2026-10-25)
 

@@ -129,7 +129,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     live with a real shell; left seeing To Sack / To Pearl / Kick, which need a second member); Region Info done (region.rs; left the Campaign windows, which LSB never
     feeds); the social page (spec `social_rows_spec.md`): View House done (viewhouse.rs), Set Bazaar done
     (bazaar.rs, shop.rs, seacom.rs, the plate's bag glyph 0x9c in plate.rs; left View Wares), Help Desk's faqsub and the GM call done
-    (helpdesk.rs, faqmain.rs; the GM reply page, the Adventuring Primer done; left Execute and the reply not tried live), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
+    (helpdesk.rs, faqmain.rs; the GM reply page (seen live in both UIs), the Adventuring Primer done; left Execute), MacroPalette's Edit Macro done (macroedit.rs), Edit Equip. Set
     done (equipsets.rs, esmenu.rs, esedit.rs, /equipset, /lockstyle, /lockstyleset), the mouse in both;
   - window groups (MODLOG "Window group walk"; spec `~/ffxi/lab/research/window_groups_spec.md`): FUN_1015fa00's walk
     over every open window by open order, the main menu zooming as any window; left the raise tickets (a window
