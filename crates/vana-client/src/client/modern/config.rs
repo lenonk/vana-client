@@ -516,6 +516,22 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                             });
                         }
                     }
+                    // keylayou (Misc. 2's Compact 1): the functions the compact keyboard picture shows and their keys, while
+                    // Compact 1 is under the pointer or the row has the keys with it chosen.
+                    let compact = |j: usize| matches!(s.ctls.get(j), Some((6, Ctl::Pick(0x42, 1, _))));
+                    if s.menu == "conf6win" && s.ctls.iter().any(|(k, _)| *k == 6) && (hover_opt.is_some_and(|(hi, j)| hi == i && compact(j)) || (focus && v.get(0x42) == 1)) {
+                        ui.add_space(4.0);
+                        egui::Grid::new("keylayou").num_columns(4).spacing(vec2(12.0, 2.0)).show(ui, |ui| {
+                            for (k, cfg) in configui::KEYLAYOU_CELLS.iter().enumerate() {
+                                let label = configui2::k1_label(gu, *cfg).unwrap_or_default();
+                                ui.label(egui::RichText::new(label).size(m.theme.small - 1.5).color(m.theme.color("muted")));
+                                ui.label(egui::RichText::new(configui2::dik_char(v.get(*cfg))).size(m.theme.small - 1.5).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("text")));
+                                if k % 2 == 1 {
+                                    ui.end_row();
+                                }
+                            }
+                        });
+                    }
                     if focus {
                         let r = Rect::from_min_max(top - vec2(6.0, 2.0), pos2(top.x + ui.available_width() + 6.0, ui.cursor().min.y + 2.0));
                         ui.painter().rect_stroke(r, 6.0, egui::Stroke::new(1.0, m.theme.color("focus").gamma_multiply(0.6)), egui::StrokeKind::Outside);

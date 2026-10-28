@@ -166,6 +166,11 @@ const COLOUR_ROWS: [&[(u16, u16, u16)]; 4] = [
 const K1_LABELS: [u16; 30] = [89, 90, 92, 91, 101, 102, 104, 103, 93, 94, 96, 95, 137, 136, 97, 98, 100, 99, 105, 106, 107, 108, 109, 110, 111, 138, 142, 141, 198, 199];
 const K2_LABELS: [u16; 29] = [112, 113, 114, 115, 116, 133, 134, 135, 140, 139, 142, 141, 138, 137, 136, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 130, 129, 127, 128];
 
+/// A k1assign function's label (config 0x4a + row).
+pub fn k1_label(gu: &GameUi, cfg: u16) -> Option<String> {
+    gu.group_b(*K1_LABELS.get(cfg.checked_sub(0x4a)? as usize)? as usize)
+}
+
 /// DIK scan codes: the character a key shows (FUN_101a7c20) and the egui key that makes it.
 const DIK: &[(u8, &str, egui::Key)] = {
     use egui::Key::*;
