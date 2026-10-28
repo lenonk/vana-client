@@ -2025,9 +2025,15 @@ pub fn hidden(w: &World) -> HashSet<u32> {
         Some(h) if takes_part(&me) => h.contains(&me),
         _ => !takes_part(&me) && filtered(me),
     };
-    // FUN_101d4d90: laying out the Mog House the player is not drawn (+0xb2 bit 4).
-    if hide_me || w.layout.is_some() {
+    // FUN_101d4d90: laying out the Mog House or gardening in it the player is not drawn (+0xb2 bit 4).
+    if hide_me || w.layout.is_some() || super::garden::hides_player(w) {
         out.insert(me);
+    }
+    // FUN_100a17f0(1): the moogle gone over to the Mog House (own model hidden, +0x120 bit 15).
+    if w.moogle_hidden
+        && let Some(id) = super::moogle::moogle_actor(w)
+    {
+        out.insert(id);
     }
     out
 }

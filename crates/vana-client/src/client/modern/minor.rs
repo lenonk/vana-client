@@ -25,6 +25,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     remodel_list(p, w);
     primer_lists(p, w);
     layout_windows(p, w);
+    garden_windows(p, w);
     pup_menu(p, w);
     fish_gauge(p, w);
 }
@@ -352,6 +353,50 @@ fn chat_mode(p: &mut Panels, w: &mut World) {
     if free {
         social::act(w, gu, got, chatctrl::set_sel, |w, _| chatctrl::key(w, egui::Key::Enter));
     }
+}
+
+/// Gardening (garden.rs): the plnt window as a column, bankmenu beside it, the pot / seed / crystal list in their place
+/// while it is open.
+fn garden_windows(p: &mut Panels, w: &mut World) {
+    use super::super::garden;
+    let Some(gu) = p.gu else { return };
+    let Some(v) = garden::look(w) else { return };
+    if v.win.is_none() && v.bank.is_none() && v.list.is_none() {
+        return;
+    }
+    let m = p.m;
+    let ctx = p.ctx;
+    let info = w.item_info.clone();
+    let moved = ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let free = w.confirm.is_none();
+    // 0xd 0x59 "Gardening".
+    let title = gu.title_msg(0x59).filter(|t| !t.is_empty()).unwrap_or_else(|| "Gardening".into());
+    let wide = if v.list.is_some() { 360.0 } else { social::width(1 + v.bank.is_some() as usize) - 44.0 };
+    let (mut win, mut bank, mut row) = ((None, None), (None, None), (None, None));
+    p.panel("window", Some(Title { icon: Some("icons/mog_house"), text: &title, note: None }), wide + 44.0, |ui| {
+        if let (Some((rows, tints, cur)), Some(info)) = (&v.list, &info) {
+            row = super::craft::list(ui, m, ctx, info, "garden list", rows, tints, *cur, free, &[]);
+            return;
+        }
+        ui.horizontal_top(|ui| {
+            if let Some((name, sel)) = v.win {
+                let col = MenuWin { name, sel, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+                win = social::column(ui, m, gu, &col, free && v.bank.is_none(), moved);
+            }
+            if let Some((sel, off)) = &v.bank {
+                ui.add_space(12.0);
+                let col = MenuWin { name: garden::BANK, sel: *sel, off: off.clone(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() };
+                bank = social::column(ui, m, gu, &col, free, moved);
+            }
+        });
+    });
+    if !free {
+        return;
+    }
+    let enter = |w: &mut World, _: &super::super::game_ui::GameUi| garden::key(w, egui::Key::Enter);
+    social::act(w, gu, bank, garden::set_bank, enter);
+    social::act(w, gu, win, garden::set_win, enter);
+    act(w, row, garden::set_row, |w| garden::key(w, egui::Key::Enter));
 }
 
 /// Layout mode (layout.rs): the rmlo window as a column, bankmenu beside it, the furniture list (installed here green,

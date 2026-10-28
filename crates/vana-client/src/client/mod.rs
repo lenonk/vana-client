@@ -65,6 +65,7 @@ mod linklist;
 mod blklist;
 mod furniture;
 mod layout;
+mod garden;
 mod fishing;
 mod primer;
 mod fishrod;
@@ -1879,6 +1880,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 _ if world.layout.is_some() && !(layout::in_field(world) && matches!(key, egui::Key::Space | egui::Key::Slash)) => {
                     layout::key(world, *key);
                 }
+                _ if garden::has_window(world) && !matches!(key, egui::Key::Space | egui::Key::Slash) => garden::key(world, *key),
                 _ if world.auction.is_some() => {
                     auction::key(world, *key);
                 }
@@ -2201,6 +2203,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = input.pointer.filter(|_| world.layout.is_some() && world.confirm.is_none()) {
         layout::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.garden.is_some() && world.confirm.is_none()) {
+        garden::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
     }
     if let Some(p) = input.pointer.filter(|_| post::active(world) && world.confirm.is_none()) {
         post::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
@@ -2921,6 +2926,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(moogle::draw(gu, world, sw, sh));
     blockers.extend(remodel::draw(gu, world, sw, sh));
     blockers.extend(layout::draw(gu, world, sw, sh));
+    blockers.extend(garden::draw(gu, world, sw, sh));
     blockers.extend(auction::draw(gu, world, sw, sh));
     blockers.extend(post::draw(gu, world, sw, sh));
     blockers.extend(treasure::draw(gu, world, sw, sh));
@@ -3325,6 +3331,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             aepoints::answer(world, a);
         }
+        (Some(yes), Some((Confirm::Garden(a), _))) => {
+            world.confirm = None;
+            garden::confirmed(world, a, yes);
+        }
         (Some(true), Some((Confirm::BlueRemoveAll, _))) => {
             world.confirm = None;
             bluset::remove_all(world);
@@ -3567,6 +3577,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     moogle::bars(gu, world, &mut bars);
     remodel::bars(gu, world, &mut bars);
     layout::bars(gu, world, &mut bars);
+    garden::bars(gu, world, &mut bars);
     auction::bars(gu, world, &mut bars);
     post::bars(gu, world, &mut bars);
     treasure::bars(gu, world, &mut bars);
@@ -3640,6 +3651,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Macro(a), _) => macroedit::ask_text(world, a),
         (Confirm::Merit(a), _) => merits::ask_text(world, a),
         (Confirm::Layout(a), _) => layout::ask_text(gu, a),
+        (Confirm::Garden(a), _) => garden::ask_text(gu, a),
         (Confirm::Remodel(_), _) => gu.lobby_msg(0x0c, 0x1c3, "Make changes?"),
         (Confirm::Auction(a), _) => auction::ask_text(world, a),
         (Confirm::LinkKick(k), _) => linklist::kick_text(world, &k),
@@ -4250,6 +4262,7 @@ fn item_info_source(world: &World) -> Option<(u16, Option<[u8; 24]>, Option<u8>,
         (None, _) if let Some((id, ext, mode)) = auction::info_source(world) => (id, ext, None, false, mode, 0),
         (None, _) if let Some((id, ext)) = mannequin::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = layout::info_source(world) => (id, ext, None, false, 0, 0),
+        (None, _) if let Some((id, ext)) = garden::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = trade::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = inspect::info_source(world) => (id, ext, None, false, 0, 0),
         (None, _) if let Some((id, ext)) = esedit::info_source(world) => (id, ext, None, false, 0, 0),
@@ -5303,7 +5316,11 @@ struct World {
     layout: Option<layout::Layout>,
     layout_view: u8,
     /// /garden's bankmenu was cancelled: layout mode ends after the key.
-    layout_leave: bool,
+    /// Gardening (client/garden.rs), the moogle going over (1) or coming back (2) with its ticks, and the moogle hidden
+    /// once over (+0x120 bit 15).
+    garden: Option<garden::Garden>,
+    garden_away: Option<(u8, f32)>,
+    moogle_hidden: bool,
     /// Fishing (client/fishing.rs) while the fishing model is set up; the /fish latch (DAT_10487e49); the bite wait
     /// (+0x1e4, ticks); the "Fish" gauge's percent (party window +0x3a); our last 0x037 status (+0x16c).
     fishing: Option<fishing::Fishing>,
@@ -5556,6 +5573,8 @@ enum Confirm {
     LinkKick(linklist::Kick),
     /// Layout mode's removal and Clear All prompts.
     Layout(layout::Ask),
+    /// Gardening's prompts (FUN_10210e30, default No): any answer brings the pot list back.
+    Garden(garden::Ask),
     /// The Remodel list's "Make changes?" for a 2F map.
     Remodel(u16),
     /// The auction house's bid, fee, listing and Stop Sale prompts.
@@ -6915,7 +6934,9 @@ impl App {
                             lock_carry: false,
                             layout: None,
                             layout_view: 0,
-                            layout_leave: false,
+                            garden: None,
+                            garden_away: None,
+                            moogle_hidden: false,
                             fishing: None,
                             primer: None,
                             fish_pending: false,
@@ -7498,6 +7519,7 @@ impl App {
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
                     world.myroom = myroom;
+                    (world.garden, world.garden_away, world.moogle_hidden) = (None, None, false);
                     world.room_flag = room_flag;
                     (world.mh_seen, world.viewhouse, world.currencies, world.unity, world.bazaar) = (false, None, None, None, None);
                     world.helpdesk = None;
@@ -8702,7 +8724,7 @@ impl App {
             world.control_lock = None;
         }
         // The script, or a lock carried past its end, moves us.
-        let in_event = event::active(world) || world.control_lock.is_some() || world.layout.is_some();
+        let in_event = event::active(world) || world.control_lock.is_some() || world.layout.is_some() || garden::locked(world) || garden::context(world).is_some();
         target::update(world);
         // The prompt pick flashes (+0x88 |= 0x600) unless its arrow is red; so does the party cursor's.
         if let Some(t) = world.target.filter(|_| world.prompt.is_some())
@@ -9168,6 +9190,8 @@ impl App {
                 0x26
             } else if w.layout.is_some() {
                 layout::context(w)
+            } else if let Some(c) = garden::context(w) {
+                c
             } else {
                 0xffff
             };
@@ -9186,6 +9210,7 @@ impl App {
         if world.layout.is_some() && !world_window_open(world) {
             layout::update(world, &mut self.input, dt);
         }
+        garden::update(world, dt);
         // The map window's keys and animations (FUN_101ef0a0); it goes once its fade-out ends, reopening the main menu
         // it came from (LAB_101faff0).
         let k = self.ui_k;

@@ -912,14 +912,15 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             if !status_gate(w, 0x44) {
                 return Ok(());
             }
-            if super::moogle::job_cooling(w) || w.layout.is_some() || w.remodel.is_some() {
+            // Ours: refused while gardening already (as read a second /garden would break the camera).
+            if super::moogle::job_cooling(w) || w.layout.is_some() || w.remodel.is_some() || w.garden.is_some() {
                 return Err(());
             }
             if !super::myroom::in_city(w.zone) {
                 refuse(w, 0x48);
                 return Ok(());
             }
-            super::layout::garden(w);
+            super::garden::start(w);
             Ok(())
         }
         // FUN_1007e7a0 (/remodel): the gate as /layout's to the cooldown; a busy window (Err); not furnished (7 0x47);

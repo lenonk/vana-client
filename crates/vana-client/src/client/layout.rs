@@ -31,8 +31,6 @@ pub struct Layout {
     pub list: Option<(u8, usize, usize)>,
     /// Mode 4: a mannequin being dressed.
     pub dress: Option<super::mannequin::Dress>,
-    /// /garden's bankmenu (mode 2): cancelling it leaves (LAB_101d3bf0).
-    garden: bool,
     /// The pieces' colours (FUN_101d39a0 for all, FUN_101cea80 for one), ARGB with 0x80 = 1.0.
     color_all: u32,
     colors: std::collections::HashMap<(u8, u8), u32>,
@@ -240,17 +238,8 @@ pub fn enter(w: &mut World) {
     let sel = placed(w, &table, r.floor).first().map(|p| (p.piece.c, p.piece.slot));
     log::info!("layout: entered, floor {}, selected {sel:?}", r.floor);
     let win = sel.is_none().then_some((1, 1));
-    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None, dress: None, garden: false, color_all: WHITE, colors: Default::default() });
+    w.layout = Some(Layout { table, floor: r.floor, map: r.map, view: w.layout_view, sel, ticks: 0.0, held: None, win, bank: None, list: None, dress: None, color_all: WHITE, colors: Default::default() });
     w.pos = park(r.floor);
-}
-
-/// FUN_101d3380(2, -1, 1) (/garden): bankmenu with LAB_101d3bf0: a pick opens that container's list (mode 3), a
-/// cancel leaves (mode 0). Ours enters layout mode first, so the list and the held piece have its camera *(inf)*.
-pub fn garden(w: &mut World) {
-    enter(w);
-    if let Some(l) = w.layout.as_mut() {
-        (l.win, l.bank, l.garden) = (None, Some(1), true);
-    }
 }
 
 /// FUN_101d3380(0, -1, 1): a held piece goes back, the player returns to the room centre, the normal camera behind
@@ -649,9 +638,6 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
     if let Some(row) = l.bank {
         bank_key(w, &mut l, row, key);
         w.layout = Some(l);
-        if std::mem::take(&mut w.layout_leave) {
-            leave(w);
-        }
         return true;
     }
     let Some((kind, sel)) = l.win else {
@@ -749,15 +735,11 @@ fn bank_key(w: &mut World, l: &mut Layout, row: u16, key: egui::Key) {
         K::Escape => {
             l.bank = None;
             w.sounds.push(Ui::Cancel as u32);
-            if l.garden {
-                l.garden = false;
-                w.layout_leave = true;
-            }
         }
         K::Enter if bank_dim(w).contains(&row) => w.sounds.push(Ui::Error as u32),
         K::Enter => {
             w.sounds.push(Ui::Select as u32);
-            (l.bank, l.win, l.garden) = (None, None, false);
+            (l.bank, l.win) = (None, None);
             l.list = Some((if row == 1 { 1 } else { 9 }, 0, 0));
         }
         _ => {}

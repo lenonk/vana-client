@@ -10977,3 +10977,25 @@ FUN_10128ce0 -> FUN_10129980, region 0 FUN_1015f980). Ours: client/logwin.rs (`L
   and system lines in window 1, the GM prompt stacked on window 2 (mode 1) or window 1 (mode 2). Not done: rem4line /
   rem4li2 (page overflow) and spoolmsg / splmsg2 (Chat Filters Hold), for both windows; the full log's tab switch
   (Num+, message 8).
+
+## Mog House gardening (2026-10-28)
+
+Spec `~/ffxi/lab/research/gardening_spec.md`. Ours: client/garden.rs (replacing layout mode's stand-in /garden).
+- /garden (its gate in textcmd.rs, plus ours: not while gardening) opens bankmenu for the Safe (myroom mode 2);
+  Escape ends it. A Safe with no installed pot: moogle 0x3b. Else mode 3: furnished rooms (myroom::has_floors) hide
+  the player at the room's middle with focal 350 and frame the pot under the list's cursor (FUN_101d4500: look 0.4
+  above it, eye 1.5 from it toward the room's axis, eased 0.3 a retail frame); context 0x42 holds the player.
+- The pot list (inventor with the pot source): installed flowerpots of that Safe in slot order; every open says
+  0x3d (furnished 1F); the row last entered comes back as the top row (FUN_101f7080). Enter opens the stage's
+  window (table 0x103854f4; dried plnt6; from stage 12 gardening ends); Escape ends gardening (myroom's menu again).
+- plnt1..6 (stacked on the log): Examine (c2s 0x0FD and the moogle's line by stage, one of two at random; dried
+  0x8b), Plant Seeds / Feed Crystal (bankmenu, then the seed list (type 11) / crystal list (0x1000..0x1007), moogle
+  0x4b / 0x4c; Enter asks 0xc 0x30 / 0x32 with 0x53 / 0x54; Yes c2s 0x0FC), Harvest / Dry Flowers / Empty Pot (0xc
+  0x33 / 0x31 / 0x34 with two moogle lines each; Yes c2s 0x0FE flag 0, 0x0FF, 0x0FE flag 1). Any answer brings the
+  pot list back. A stage change of the current pot (s2c 0x020) closes its windows and the prompt and reopens the list.
+- Rooms without furniture (rent-a-rooms): the moogle goes over (0x50, the control lock, file 0xbf8's 'main' on it;
+  the list on its first frame; after 180 ticks hidden, 0x51) and comes back on leaving (fades in over 180 ticks,
+  0x52), also when it never left, as read. Not seen live.
+- Seen live 2026-10-28 (Lnxcsfix's San d'Oria Mog House, seven test pots at stages 0, 1, 4, 9, 10, 11 and dried; both
+  UIs): sow (LSB 0x084 "Your moogle plants the bag of herb seeds"), feed (0x088), harvest (0x086: 16 rock salt),
+  dry (0x085), Examine with LSB's "Seeds sown / Crystal used" lines, Empty Pot, the dried pot's plnt6, leaving.

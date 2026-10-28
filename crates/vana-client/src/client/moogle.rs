@@ -118,7 +118,7 @@ pub fn job_cooling(w: &World) -> bool {
 
 /// The moogle actor (FUN_100a0080; retail by model 0x52 / 0x3d5 / 0x58a / 0x939, ours the nearest entity named
 /// Moogle, inferred stand-in).
-fn moogle_actor(w: &World) -> Option<u32> {
+pub(super) fn moogle_actor(w: &World) -> Option<u32> {
     w.entities
         .iter()
         .filter(|(_, e)| e.name.contains("Moogle"))
