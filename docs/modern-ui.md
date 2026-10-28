@@ -6,7 +6,7 @@ master 2026-10-27 (kept).
 
 ## Decisions (2026-10-26)
 
-- **Runtime toggle.** The retail UI stays the default and untouched. Settings > Linux > Interface switches between
+- **Runtime toggle.** The retail UI stays the default and untouched. Settings > Client > Interface switches between
   Classic and Modern (config `modern_ui`). While Modern is on, the modern layer draws the windows it has and the
   retail windows they replace are left out; everything else stays retail until it has a modern counterpart.
 - **egui.** The modern layer is egui (already in the client, on wgpu): windows, layout, focus, drag-and-drop,
@@ -165,7 +165,7 @@ Milestone 1:
   any size, nine-slices, gauges), `hud.rs` (the panels from views gathered from the World), `chat.rs`, `command.rs`,
   `combat.rs`, `mod.rs` (the layer, zoom, panels with saved places), `shot.rs` (`vana-client modern-shot
   [--backdrop PNG] --out PNG`: the panels with sample values and every frame, offscreen).
-- egui's zoom follows the window height against 1080, times Settings > Linux > Interface Size (config modern_scale,
+- egui's zoom follows the window height against 1080, times Settings > Client > Interface Size (config modern_scale,
   50 .. 150% in 5% steps, default 60%).
 - Panels: Status, Party, Target, Location (zone, grid, time, day, weather, and the compass: retail's disk turned so
   the camera's heading is up and tilted by cos 1.0996, N E S W, the radar dots, the tracking / call-for-help arrow),
@@ -404,7 +404,7 @@ Milestone 1:
   the door asks Yes / No). Live: the Bastok Mines concierge's choice by keys and mouse, Escape cancelling.
 - An event's text input (passinpu): a panel stacked on the chat window, its title (group 0xb by kind) or "Password:"
   and the text with its caret; the keys stay event.rs's (not seen live: no event on hand asks for text).
-- Panel Places (2026-10-27, settings.rs, Settings > Linux, in game only): Reset drops this character's saved panel
+- Panel Places (2026-10-27, settings.rs, Settings > Client, in game only): Reset drops this character's saved panel
   places (config modern_places) and saves; every panel goes back to where it starts the next frame (positions come
   from the places each frame). The row reads As Moved again. Live: the Settings panel dragged away, Reset by keys and
   by the mouse.
@@ -435,7 +435,7 @@ Milestone 1:
   error popups on retail's netwait / ok rects with their text above the form's size (user: as big as the original's
   or bigger) and OK centred on retail's row, lifted clear of the form; the help bar on retail's lobyhelp strip with
   the version above it at loby2win's spot (title screen too). Character select's wait is the same panel.
-- Panel Opacity (2026-10-27, Settings > Linux, config modern_opacity, default 85 %): every window background the layer
+- Panel Opacity (2026-10-27, Settings > Client, config modern_opacity, default 85 %): every window background the layer
   paints (the frame gradient, the other border styles' fill, the edge windows, the auto-translate list); borders and
   text stay opaque.
 - The creator (2026-10-27, modern/lobby.rs creator_screen over client/creator.rs and client/mod.rs, which keep every

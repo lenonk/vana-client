@@ -170,7 +170,7 @@ const fn row(label: &'static str, help: &'static str, val: Val, choices: &'stati
     Row { label, help, val, choices, when }
 }
 
-const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Linux", "Mods"];
+const TABS: [&str; 8] = ["General", "Screen", "Textures", "Effects", "Sound", "Misc.", "Client", "Mods"];
 /// The Mods page (client/modsui.rs): its rows come from the mods folder, not a table.
 const MODS: usize = 7;
 const EXTRA_TABS: [&str; 3] = ["Maps", "Timers", "Misc."];
@@ -219,7 +219,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Simple Character Creation", "0023: character creation without 3D models.", Tool("0023"), OFF_ON, Stored),
         row("Screenshot Size", "0043: screenshots at the screen size.", Tool("0043"), OFF_ON, Stored),
     ];
-    const LINUX: &[Row] = &[
+    const CLIENT: &[Row] = &[
         row("Frame Limit", "Frames drawn a second; game time stays at 60 ticks.", FrameLimit, &[], Now),
         row("Anisotropic Filtering", "Anisotropic texture filtering.", Aniso, &[(1, "Off"), (2, "2x"), (4, "4x"), (8, "8x"), (16, "16x")], NextZone),
         row("Party TP", "Show TP in the party window (retail config 0xae, off there).", PartyTp, OFF_ON, Now),
@@ -249,8 +249,8 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
         // Panel Places (the last Linux row) is a character's: in game only.
-        Kind::Settings if !in_game && tab == 6 => &LINUX[..LINUX.len() - 1],
-        Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, LINUX][tab.min(6)],
+        Kind::Settings if !in_game && tab == 6 => &CLIENT[..CLIENT.len() - 1],
+        Kind::Settings => [GENERAL, SCREEN, TEXTURES, EFFECTS, SOUND, MISC, CLIENT][tab.min(6)],
     }
 }
 

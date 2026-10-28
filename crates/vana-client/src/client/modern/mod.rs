@@ -1,4 +1,4 @@
-//! The modern UI (docs/modern-ui.md; Settings > Linux > Interface): an egui layer over the world, drawn with the
+//! The modern UI (docs/modern-ui.md; Settings > Client > Interface): an egui layer over the world, drawn with the
 //! modern asset pack (assets/modern) and the bundled fonts, switched on at run time. The retail windows it replaces
 //! are not drawn while it is on; the rest of the retail UI stays.
 //!

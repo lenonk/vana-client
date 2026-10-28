@@ -231,7 +231,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   (`~/ffxi/lab/research/textcmds2_spec.md` parts A and B). s2c 0x0B4's system message filter done (its PvP word is dead on LSB). The spec's part C
   (window, list and server-flag commands) done: the toggles' consumers, /furcc, the map on an elevator, /layout,
   /remodel, /garden, /mutelist, /guide /primer.
-- The modern UI (Settings > Linux > Interface: Classic / Modern; docs/modern-ui.md): kept and merged into master
+- The modern UI (Settings > Client > Interface: Classic / Modern; docs/modern-ui.md): kept and merged into master
   (user, 2026-10-27: "past the PoC stage"). After it, an embedded Lua layer for mods.
 - Deferred until after the first release (user, 2026-10-27): gamepad support.
 - Portability to Windows and macOS: see "Portability notes" in MODLOG. Windows (MinGW cross build, tested by the
