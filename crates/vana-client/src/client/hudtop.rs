@@ -75,7 +75,7 @@ pub struct BarText {
 }
 
 /// The shown slot (FUN_102178e0): 3 when set, else the highest non-empty of 2 > 1 > 0.
-fn shown(slots: &[String; 4]) -> &str {
+pub(super) fn shown(slots: &[String; 4]) -> &str {
     slots.iter().rev().find(|s| !s.is_empty()).map_or("", String::as_str)
 }
 

@@ -5,7 +5,7 @@
 //! draw them too.
 
 use super::super::resttick::Shown;
-use super::super::{App, World, buffs, hudtop, items::JOBS, monstrosity, radar, self_entity, target, vana_now};
+use super::super::{App, World, buffs, hudtop, items::JOBS, monstrosity, objective, radar, self_entity, target, vana_now};
 use super::{Look, Modern, Panels, Title, chat, paint};
 use egui::{Align2, Color32, FontFamily, FontId, Painter, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 use std::f32::consts::PI;
@@ -666,6 +666,37 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     if let Some((total, left)) = w.event_timer {
         let f = if total > 0.0 { ((total - left) / total).clamp(0.0, 1.0) } else { 1.0 };
         cast_panel(p, "event timer", "Time", f, &super::super::magic::bar_clock(left));
+    }
+    // The 0x075 countdown (cnttime; ours: a gauge of the time gone, the time in retail's colour and pulse).
+    if let Some((f, text, _, argb)) = objective::countdown(w) {
+        let m = p.m;
+        let c = chat::colour(argb.to_le_bytes());
+        p.panel("countdown", None, 300.0, |ui| {
+            let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 33.0), Sense::hover());
+            labelled_bar(ui, m, "cast", Rect::from_min_max(pos2(r.min.x, r.max.y - BAR), r.max), f, ("Time Left", m.theme.color("text")), (&text, c));
+        });
+    }
+    // The progress bars or the scoreboard (FUN_1021fe10).
+    match objective::shown(&w.objective) {
+        Some(0x1000) => {
+            let s = objective::score(&w.objective);
+            let m = p.m;
+            p.panel("objective", None, 300.0, |ui| {
+                gauge_row(ui, m, "Marchland", "hp", s.marchland, &s.scores.0.to_string());
+                gauge_row(ui, m, s.second, "mp", s.stronghold, &s.scores.1.to_string());
+            });
+        }
+        Some(mode) => {
+            let rows = objective::bar_rows(&w.objective);
+            let m = p.m;
+            p.panel("objective", None, 300.0, |ui| {
+                for (v, name) in &rows {
+                    let f = if mode == 0xfffe && *v < 0 { 0.0 } else { *v as f32 * 0.01 };
+                    gauge_row(ui, m, name, "tp", f, "");
+                }
+            });
+        }
+        None => {}
     }
 }
 

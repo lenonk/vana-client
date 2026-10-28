@@ -11166,3 +11166,48 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
 - A 0x97 message's pages (op 0x48) print as mode 0xbe (asm 0x1013669b); 0x96 / 0x97 / 0x98 / 0xbe share colour id 91
   and mask bit 9, so only the record's mode differs.
 - Not done: the frames' magenta tint (windowps 43, spec §8).
+
+## s2c 0x075: the battlefield countdown, objective bars and text (2026-10-28)
+
+- Handler FUN_10098e90 (registered at 0x1009468e; the bulk registrations are PUSH handler / PUSH id / CALL 0x100fc3a0
+  around 0x100944xx, not in all.c's FUN_100fc370 calls). LSB GP_SERV_COMMAND_BATTLEFIELD: Mode @4, Timestamp @8,
+  Duration @0xc, DurationWarn @0x10, FenceX / FenceY @0x14 / @0x18 (x 1000), radius @0x1c, show distance @0x20, Flags
+  @0x24 (1 countdown, 2 bars, 4 help, 8 gate), colour @0x25, gate @0x26, data[128] @0x28, title / description @0xa8 /
+  @0xaa. Store DAT_10480800.. (FUN_100878b0..FUN_10087a20): Mode 0 drops every flag; a flag absent clears its bit
+  (help and gate only ever set); the border values are stored on every packet (FUN_10087990, which remakes the
+  player's border parts, or drops them at radius 0). The zone load clears the store (FUN_10093720 -> FUN_10093af0).
+- Countdown (FUN_100873b0 each frame: Mode != 0 and flag 1 opens "menu    cnttime", else it closes). cnttime (class
+  FUN_1012c590, 128 x 24, frame framesus 196): placed (FUN_1012c7f0) at x 16 under casttime's bottom while it is up,
+  else y 94 under gaugewin, else 47. Draw FUN_1012c660: left = FUN_10103a50(stamp + duration) (0 once past), " %s" of
+  FUN_101c93c0(left) right-aligned (FUN_101c9b50) at right - 16, y + 6; the sand glass framesus 197 at (+4, +4).
+  Colour 0x80808080, 0x80804040 under the warning (0 = 60 s), 0x80606060 at 0. Under the warning (not 0) the alpha
+  (+0x20, 9 bits) is 0xff on each new second, then loses 6 a tick (FUN_10014cf0 x 6.0 at 0x1032a3e8), back to 0xff
+  below 0x20. Ours keeps the alpha unrounded so the pulse holds at any frame rate. The play palettes' 0x82 shift now
+  counts cnttime (FUN_101a3840).
+- Bars (FUN_1021fe10, called first by the compass draw FUN_102203b0, so whatever the compass's visibility): anchor
+  FUN_1021f360 = the first window up of cnttime, casttime, gaugewin, titlewin (pointers 0x10385ed4) -> its bottom b.
+  Mode 0xffff: 6 rows {u32 progress, name[16]}; row k (name non-empty) at y = b + 12 + 16 k: gauge FUN_101cb040 (windowps
+  frame 38, fill 97) at (16 + 24, y) by progress x 0.01, the name in the sprite font at (16 + 16, y - 8). 0xfffe: name
+  first, the gauge only for progress >= 0. 0x1000 (FUN_10220010, the scoreboard): keytops3 540 at (x, b + 4), "%2d "
+  of the first score right-aligned at x + 40 and "%2d" of the second from there, keytops3 541 at x + 56; then
+  FUN_102201a0 rows at b + 20 / b + 36 (icon 540 / 541 at (x, y), gauge at (x + 24, y + 8), name at (x + 16, y)):
+  "Marchland" and "Stronghold" ("Balamor's Adumbration" when the override u32 @0x1c of the data is set), progress /
+  max (0 when max 0). LSB never sends the scoreboard (no script uses it).
+- Help (flag 4, FUN_100873b0): title and description + 19 from message group 0x1a (file 55679); both non-zero set
+  entry 0 of the ticker object (FUN_10139f40), else it clears (FUN_10139fb0); the flag is consumed. Ticker
+  (FUN_1013a010 per helpwind update): while FUN_10087070(0) (an event, frozen, charmed, fishing) it hides (slot 3
+  cleared, 0x5a frames before it shows again); otherwise once shown or both bars hold text or every 0x5a idle ticks,
+  it shows the entry in titlewin and helpwind slot 3 (FUN_10150ce0 / FUN_1013a320 -> FUN_10221030), which outranks
+  slots 0..2. A packet without the help flag (LSB's bare objectiveUtility()) leaves it up; only a help of 0 / 0 clears.
+  Ours drops it at the zone load *(inf: retail's helpwind teardown FUN_1013a450 clears it)*.
+- Ours: client/objective.rs (Objective, frame, draw_countdown, draw_bars), NetEvent::Objective; modern: a "Time Left"
+  gauge panel (the time in retail's colour and pulse) and an objective panel of the bars (or the two scoreboard rows);
+  the top bar shows slot 3 as before.
+- Live (Lnxcsfix, both UIs): `!exec player:countdown(70)` white then red and pulsing under 60 s; Motivation 80 / Pep
+  30 bars under it with "Objectives" / "...even Esuna won't make you whole." (group 0x1a 1 / 62) in the top bars;
+  objectiveUtility() cleared the countdown and bars, the help stayed until help 0 / 0. The chat line truncates long
+  `!exec` text: build the table in steps (`!exec xi.tmpo={...}`, `xi.tmpo.bars=...`, then
+  `!exec player:objectiveUtility(xi.tmpo)`).
+- Not done yet: the border (flag 8 / radius): 8 border parts of kinds 0x35..0x3c (entity +0x134 bits 1..8 wanted,
+  9..16 made, +0xac..), file FUN_100d43e0 = table 0x10330f34 (0x3b2 red, 0x3bc blue) + 0xca53 = 52741 / 52751,
+  placed each frame by FUN_100c9c10 at 15 degree steps on the circle near the player.

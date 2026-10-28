@@ -444,6 +444,9 @@ fn default_place(id: &str) -> Place {
         "alliance2" => at(0.87, 0.335),
         // The cast bar at retail's (16, 94); the Timers on the left edge, the minimap on the right one.
         "cast" => at(0.02, 0.21),
+        // The 0x075 countdown under it, the objective's bars under that.
+        "countdown" => at(0.02, 0.28),
+        "objective" => at(0.02, 0.35),
         "timers" => at(0.0, 0.2187),
         "minimap" => at(-0.001, 0.0353),
         // The command window: every window the command menu opens shows here. The item info rides the log as retail's

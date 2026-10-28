@@ -453,6 +453,8 @@ pub enum NetEvent {
     Fish(super::fishing::FishParams),
     /// s2c 0x076: party members' status icons (UniqueNo, 32 icons), five rows (ourselves not included).
     PartyEffects(Vec<(u32, [u16; 32])>),
+    /// s2c 0x075 (GP_SERV_COMMAND_BATTLEFIELD): the whole packet (client/objective.rs).
+    Objective(Vec<u8>),
     /// s2c 0x063 type 2 (FUN_10099270): limit points u16 @8, bits u16 @0xa (merits 0..6, bit 13 canUseMeritMode, 14
     /// EXP capped or merit mode), max merits @0xc; type 5 the job point access @8; types 3 / 4 (Monstrosity): type 3's
     /// u32 @0xc (gladiator rank bits 2..3) and u16 @0x14 (prestige).
@@ -1014,6 +1016,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                             .collect();
                         tx.send(NetEvent::PartyEffects(rows))?;
                     }
+                    0x075 => tx.send(NetEvent::Objective(p.data.to_vec()))?,
                     0x063 if p.u16(4) == 2 => tx.send(NetEvent::Merits { limit: p.u16(8), bits: p.u16(0xa), max: p.u8(0xc) })?,
                     // Type 5: access @8, then per job 0..23 {u16 capacity, u16 current, u16 spent} from @0xc.
                     0x063 if p.u16(4) == 5 => {

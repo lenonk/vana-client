@@ -16,6 +16,7 @@ mod polmail;
 mod modern;
 mod monstrosity;
 mod moncustom;
+mod objective;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
@@ -2861,7 +2862,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.ptr_dy -= world.log.dh as f32;
     }
     let event_window = event_window(gu, world, sw, sh, tw);
-    let bars = bar_text(gu, world, &items);
+    let mut bars = bar_text(gu, world, &items);
+    let (secs, busy) = (vana_now(world) as u32, textcmd::busy(world));
+    objective::frame(gu, &mut world.objective, secs, busy, &mut bars);
     let cam = App::camera(world);
     let mut top = std::mem::take(&mut world.hud_top);
     // The compass follows region 0's top (UI object +0xa0, refreshed by FUN_10159080), i.e. the log's current top.
@@ -3142,6 +3145,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if !world.modern {
         magic::draw_cast_bar(gu, world, sw, sh);
         magic::draw_event_timer(gu, world, sw, sh);
+        objective::draw_countdown(gu, world, sw, sh);
+        objective::draw_bars(gu, world);
     }
     if let Some(c) = world.config.as_mut() {
         // The modern Config shows ours as one of its pages.
@@ -5653,6 +5658,8 @@ struct World {
     cast_event: bool,
     /// "menu    eventtim" (FUN_1012c500, op 0xb4 0xa): total and remaining ticks.
     event_timer: Option<(f32, f32)>,
+    /// s2c 0x075: the countdown, bars, objective text and border.
+    objective: objective::Objective,
     /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
     casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -7210,6 +7217,7 @@ impl App {
                             cast_bar: None,
                             cast_event: false,
                             event_timer: None,
+                            objective: Default::default(),
                             casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
@@ -7676,6 +7684,8 @@ impl App {
                     // FUN_10093720: the zone load clears the concierge's slots and the GM prompts (FUN_100a3cd0).
                     (world.concierge, world.concierge_ui) = (Default::default(), None);
                     world.gmtell = Default::default();
+                    // FUN_10093af0: the 0x075 store.
+                    objective::reset(world);
                     (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
@@ -8131,6 +8141,11 @@ impl App {
                     return;
                 }
                 NetEvent::StatusTimers { ids, ends } => world.buff_timers = Some((ids, ends)),
+                NetEvent::Objective(p) => {
+                    if world.objective.apply(&p) {
+                        log::info!("0x075 border {:?}", world.objective.border);
+                    }
+                }
                 NetEvent::PartyEffects(rows) => {
                     world.party_buffs = rows.into_iter().collect();
                     timers::on_party_effects(world);

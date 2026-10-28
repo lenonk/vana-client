@@ -97,10 +97,10 @@ pub(super) fn cell_title(gu: &mut GameUi, title: &str, r: [f32; 4], pad: f32) {
     }
 }
 
-/// The play and edit palettes sit 0x82 further right while gaugewin (or cnttime, not modelled) is up (FUN_101a3840:
-/// DAT_105781ec / DAT_10578184, not the cast bar).
+/// The play and edit palettes sit 0x82 further right while gaugewin or cnttime is up (FUN_101a3840: DAT_105781ec /
+/// DAT_10578184, not the cast bar).
 pub(super) fn palette_dx(w: &World) -> f32 {
-    if w.gauge.is_some() { 130.0 } else { 0.0 }
+    if w.gauge.is_some() || w.objective.counting() { 130.0 } else { 0.0 }
 }
 
 /// Social child 6 (FUN_1014e7b0 case 6): mcrmenu over the social page (which the walk suspends), SE 0002.
