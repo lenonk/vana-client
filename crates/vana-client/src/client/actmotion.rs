@@ -49,6 +49,23 @@ pub struct Mouth {
     pub ticks: Option<f32>,
 }
 
+/// FUN_1008da00: an NPC with MonStat 2 takes its dft or df1 idle at random every 600..1199 ticks (+0x1ba), statuses
+/// 3..5 aside *(+0x120 bits 7 / 13 and +0x170 not modelled; for any other NPC both idles are the same)*.
+pub(super) fn idle_swap(id: u32, e: &mut super::Entity, a: Option<&mut Actor>, ticks: f32) {
+    if e.mon_stat != 2 || id >> 24 == 0 || matches!(e.motion.status, 3..=5) {
+        return;
+    }
+    e.idle_swap -= ticks;
+    if e.idle_swap >= 0.0 {
+        return;
+    }
+    e.idle_swap = (600 + crand() % 600) as f32;
+    let idle = if crand() & 1 == 0 { "dft" } else { "df1" };
+    if let Some(n) = a.and_then(|a| a.motion_names.as_mut()) {
+        n.idle = idle;
+    }
+}
+
 /// The C runtime's rand() (0..0x7fff), for the blink timer.
 pub fn crand() -> u32 {
     use std::sync::atomic::{AtomicU32, Ordering};

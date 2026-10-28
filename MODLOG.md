@@ -4100,7 +4100,7 @@ Dropped for emote 0x61+, a caster / target not in the actor table, or a caster o
   str@2 (byte 15 zeroed; 0x13 '@' -> ' '); 1 reads event string slot val@4 (0..3) into str@2, 4 writes it (DAT_104882b8
   / DAT_10488d08; ours: Start::strings, which the message string codes read); 9 / 0xc read the cast bar's / event
   timer's progress (ours 0: those windows aren't modelled); 0x15 waits while the map window is open. 2 / 3 target
-  window, 7 / 8 casttime, 0xa / 0xb eventtim, 0xf..0x12 chocobo race windows, 0x14 map view: host effects only so far.
+  window, 7 / 8 casttime, 0xa / 0xb eventtim, 0xf..0x12 chocobo race windows (done since: "Chocobo racing"), 0x14 map view: host effects only so far.
   Sweep of zones 230 / 240 after: 1,450 of 1,489 events finish headless, 0 faults.
 - Smaller VM fixes (audit R10 / R14 / R15 / R20 / R21): 0xb0's talking mouth is actor@6 (the prefix stays actor@2);
   0xbe stores the caller's real server id; a 0x5b / 0x66 / 0x5f motion named 0 or 'xxxx' only loads its file; 0xb6
@@ -8698,7 +8698,7 @@ interpolates between the hour keys in both clients.
   dismount; the battle name (0x79) has no copy and starts over. Scheduler op 0xab (case 0x1005c18f, FUN_1005e720):
   entity +0x130 bit 4 = @8 & 1; while set each model creation resets the bases first (FUN_1008a160). Ours:
   Entity::motion_bases / reset_bases (World::my_motion_bases for us), Actor::rebase / fresh at a model attach and a
-  ride's end. Not done: the idle variants +0x1a8 / +0x1ac (`dft` / `df1` alternation, FUN_1008da00): FUN_1008a1a0
+  ride's end. Not done (done since: "MonStat idles"): the idle variants +0x1a8 / +0x1ac (`dft` / `df1` alternation, FUN_1008da00): FUN_1008a1a0
   picks them (walk `ark`, run `hsr`) only when FUN_10087dc0 = 2, the two bits of +0x124 13..14 that a non-monster
   0x00E sets from u8 @0x2a bits 0..1 (asm 0x1009be5d; LSB's Flags3.MonStat, which LSB never sets); FUN_1008da00 then
   swaps an idle NPC between them every 600..1199 ticks at random. Never reached on LSB.
@@ -11329,3 +11329,101 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
   FUN_100fc9c0(our ActIndex DAT_10485f7a, 1) = c2s 0x01C {u16 ActIndex @4, u32 1 @8}; FUN_10222e20 does the same when
   an ability id is looked up and not found in the list while a pet is out. LSB answers with 0x0AC (COMMAND_DATA).
 - Ours: magic::open_ability (type 2 only). Not seen live (LSB always sends the pet's commands).
+
+## Chocobo racing (2026-10-28)
+
+Spec `~/ffxi/lab/research/chocobo_racing_spec.md` (addresses, LSB flows). Supersedes "0xf..0x12 chocobo race windows:
+host effects only so far" under op 0xb4.
+
+- Op 0xb4 0xf (FUN_10209430): the toteboard "menu    chocobor" for attendant colour (u8) val@2, betting closing in
+  val@4 seconds (+0x24 = s x 60 ticks), grade -1, refresh countdown 0; 0x10 closes it. Op 0xb4 0x11 (FUN_10209890):
+  the race card "menu    racecard" (colour val@2; val@4 unread); 0x12 closes it. Both windows take no input.
+- c2s 0x09B {i32 colour (sign-extended), u32 kind}: kind 1 from the toteboard's per-frame (FUN_102095b0), kind 2 once
+  at the race card's init. FUN_100fc3c0 refuses an id sent within 1000 ms.
+- Toteboard refresh (FUN_102095b0): both countdowns go down by the frame's ticks; when the refresh one is below 0 it
+  re-arms from s = left / 60: s < 0 0x8700 as i16 (negative: every frame, cut to 1 / s by the throttle), s < 60 600,
+  s < 180 900, else 1800; then asks.
+- s2c 0x073 (LAB_100ec140 -> FUN_10209530): 28 u16 odds @0x10 (pairs 1-2 .. 7-8), tiers by < 200 / 1000 / 3000 /
+  6000 -> 0 / 1 / 2 / 3 (colours 0x80509050 / 0x80808080 / 0x80909040 / 0x80804020), Ident @8 = race no. (bits 0..17)
+  and grade (18..31). Language slot 0x1c names the grade ("C3 Chocobo Race"). LSB sends 50000 for a pair with no bet.
+- s2c 0x074 (LAB_100ec190): byte @0x10 mode: 1 zero the store, 2 0x60 bytes of params at 12 x byte @0x11, 3 0xa0
+  bytes of {u32 flags, char name[16]} at 20 x byte @0x11, 4 done (the card draws from then on).
+- Toteboard draw (FUN_10209660): title group 10 0x66 "%s (Race No. %d)" at (x0 + 0x10, y0 + 0x18); the countdown
+  right-aligned at (x1 - 0x10, y0 + 0x2c): 11 0xbb closed, 11 0xba under 60 ticks, else 10 0x65 "Betting ends in (%s)";
+  the odds in fontshp right-aligned, columns (102, 83) (182, 83) (262, 83) (342, 83) (342, 179) (262, 195) (182, 211),
+  16 px a row; while open 10 0x64 "Toteboard updated in (%s)" at (x1 - 4, y1 - 0x14) in 0x80404040.
+- Race card draw (FUN_10209920 x 8, 30 px apart): name (x + 0x20, y + 5); keytops3 455 + rank (stat >> 5) for STR /
+  END / DSC / RCP at x + 0x3a / 0x68 / 0x99 / 0xcb, y + 0x12; crest 434 + (flags & 3) when not 0 at (x + 0xe0, y + 8);
+  colour ball 439 + (DNA >> 25 & 7) and gender 444 + bit 24 at (x + 0xf0, y + 8); weather 462 + (DNA >> 20 & 0xf) for
+  1..8 at (x + 0x100, y + 8); abilities 448 + (DNA >> 9 & 0xf) / (>> 13) when not 0 at (x + 0x114, y + 7 / 0x11);
+  orders 446 + (byte 0 & 0xf) at (x + 0x14d, y + 8).
+- s2c 0x069 (LAB_100f9ba0): byte @4 mode 1 race params (2 x u32 @8), 2 chocobos (12 bytes each), 3 sections (32 x
+  12), 4 the result (8 place nibbles), each clearing the download flag at S+0x3bde8; 5 sets it. Op 0xbf (FUN_100bbd80,
+  val@2 unread, no frame end) reads it: sub 0 race param val@4 -> set@6, 0x20 chocobo val@4 dword val@6 -> set@8, 0x40
+  section, 0x60 the result; 0 until the flag is set or out of range.
+- Ours: client/racing.rs (store, list, board, card, request, step, draw), op 0xbf in event_vm.rs (Host::race_value),
+  the windows drawn in both UIs (classic art; no modern panel yet *(our choice)*).
+- Live (Lnxcsfix, Chocobo Circuit, classic): Jadamo's toteboard "C3 Chocobo Race (Race No. 144185)", "Betting ends in
+  (3:23)", 28 odds of 50000 in orange, "Toteboard updated in (0:23)" counting down; the race card's 8 rows match the
+  paddock (Gelber red, rainy days, Auto-Regen). Event 210 (the broadcast at hh:05:59 / :20:59 / :35:59 / :50:59 UTC)
+  runs to its end with the chocobos dressed from op 0xbf 0x20 (colours as the card). Modern UI (the classic windows,
+  as every retail window without a modern counterpart): the toteboard "C2 Chocobo Race (Race No. 144190)", "Betting
+  ends in (12:32)", and the card; the 22:50:59 broadcast with the framed race cameras and the entrants' names (below).
+
+## Grammar blocks from 0x80 and event op 0xc3 (2026-10-28)
+
+- FUN_100bf790 sends a 0x01 block whose kind byte is 0x80 or more to FUN_100bdc50 (not the phrase builder). It
+  appends the text as is (FUN_100c2d00); the args are FUN_100bdbe0 indices (0x40 | k a slot, 0x?2 a 14-bit packed
+  index, computed in 16 bits):
+  - 0x82: two words of file 55473 (0xd8b1, loader DAT_10663184) by num[a] and num[b] (as i16), joined by " " (the
+    Pankration names, zone 71 "And in the blue corner is...").
+  - 0x84: the name of op 0xc3 slot num[n] (n < 8; the slot itself unchecked), the racing chocobos' names in zone 70
+    and the cities' chocobo lines.
+  - 0x85: slot num[n]'s word, low byte (+0x6ec = 1, +0x6ed): FUN_100bdad0 then takes that alternative of the [a/b]
+    group after the block ("...a [male/female]!").
+  - 0x86: file 55474 (0xd8b2, expander +0x7f0) by num[n]: the chocobo name words ("Choose a word.").
+  - 0x87 / 0x88 / 0x8a: language slots 0x1c (race names) by num[n], 0x22 (trust lines) and 0x1b (augments) by work[n]
+    (expander +0x788 / +0x858 / +0x8c0, FUN_100bd820).
+  - 0x89: group 12 0x1a2 + num[n] (0 past 0xb; a Unity leader) as "{%s} ", nothing for 0.
+  - 0x81 / 0x83 (FUN_1022f330 / FUN_1022ec10 names) are in no dialogue file; not kept.
+- Op 0xc3 (FUN_100bc000, len 7): slot val@1 (0..7) of DAT_10488210 (0x14 each) = the 16 bytes of str@3 and the word
+  val@5. A slot outside 0..7 never advances in retail; ours waits there a frame at a time. The table outlives events
+  (event_vm Memory.names).
+- Ours: dialog::grammar_high, Texts::grammar (client/event.rs EventTexts: the two files, BattleText::grammar_line,
+  group 12). The race broadcast's "Incredible! {name}'s speed..." and "#5: {name}" lines printed no names before.
+
+## Camera paths framed on actors (2026-10-28)
+
+- A camera path's payload u32 @0 is an attach word (FUN_1003b900 copies it into the CMoCameraTask, whose actor and
+  target are the scheduler's: FUN_1003a970 / FUN_1003a9f0). FUN_1003be10 (2019 FUN_1003afd0, the effect generators'
+  attach switch) turns it into a frame on those actors.
+- FUN_1003be40 (construction) takes the frame into task +0x20. Per frame (FUN_1003d220): with flags byte 1 (u32 @0x10
+  bits 8..15) not 0 the frame moves toward a fresh one by byte / 255 (0x10329e94 = 1/255) per element.
+- Count = keys + bit 19 + bit 20: 2 lerps in the world (the buffer +0xc4, no frame); 1 key (FUN_1003c970) is placed
+  in a fresh frame; 3 or more: the spline's eye and target go through the task's frame (vtable +0x50).
+- Zone 70's race cameras: rm00 / rm01 / rm04 attach 0x823 (mode 3: from the actor's point 2 toward the target's),
+  byte 1 0xff; rm03 / rmat 0x821 (mode 1: the actor's point 2 in its matrix), rm03 byte 1 0x3c. The scheduler runs on
+  npc040 with a chocobo as target (`sched_file #294, npc040, npc02e, 'rm01'`); keys are a few units around it.
+  Ours drew them at their raw coordinates, near the world origin: a view of the sky under the map.
+- Ours: CameraPath.attach (dat/title.rs), fx Effects::camera_frame (the shared attach switch, factored out of
+  attach_matrix), event::camera_frame after the effects tick (the frame is one frame behind the actors *(ours)*), the
+  blend scaled to retail's frame as 1/30 s *(inf)*; until the first frame a framed path keeps the last camera.
+
+## MonStat idles: dft / df1, ark, hsr (2026-10-28)
+
+Supersedes "Not done: the idle variants +0x1a8 / +0x1ac" under "Motion name bases".
+
+- 0x00E (asm 0x1009be45..): with Flags1 bit 0 (byte @0x20, the monster flag) and Flags3 bit 26 (u32 @0x28) both
+  clear, byte @0x2a bits 0..1 (LSB Flags3.MonStat) go to actor +0x124 bits 13..14; otherwise @0x2a is the
+  sub-animation. FUN_10087dc0 reads them (or +0x12c bits 20..21 while +0x12c bit 19 is set: FUN_10087d80 /
+  FUN_10087db0, an event-side override; not modelled).
+- FUN_1008a1a0 with MonStat 2: idle +0x1a4 and +0x1a8 'dft ', the variant +0x1ac 'df1 ', walk +0x1b0 'ark ', run +0x1b4
+  'hsr ', ignoring the bases. Otherwise all three idles take the base (+0x190, or +0x194 / +0x1a0 by state) and
+  +0x1ac = +0x190 for statuses 2 / 7 on SubKind 0 models 0x3c0..0x3c9, 0x979..0x97d, 0x9bf..0x9c3.
+- FUN_1008da00 per frame, for an NPC (UniqueNo high byte) not in statuses 3..5 (also +0x120 bits 7 / 13 clear and
+  +0x170 = 0, and not those models in 2 / 7): +0x1ba -= the frame's ticks; below 0 it re-arms at 600 + rand % 600 and
+  the idle becomes +0x1a8 or +0x1ac by rand & 1. Only MonStat 2 makes the two differ.
+- Ours: net::EntityUpdate::mon_stat, Entity::mon_stat / idle_swap; a change marks the actor for a rebase, which takes
+  the four names (and drops them again when MonStat leaves 2); actmotion::idle_swap. LSB never sets MonStat. A race
+  model (Elvaan F) has no dft / df1 / ark (npc-shot: bind pose), so the motions belong to particular NPC models *(inf:
+  not found yet)*.

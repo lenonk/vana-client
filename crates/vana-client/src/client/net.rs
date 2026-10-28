@@ -78,6 +78,8 @@ pub struct EntityUpdate {
     /// The sub-animation (actor +0x124 bits 1..3): 0x00E mask 0x04, @0x2A & 7 when @0x20 bit 0 (monster) or u32 @0x28
     /// bit 26 (asm 0x1009be45; LSB animationsub).
     pub sub_anim: Option<u8>,
+    /// MonStat (actor +0x124 bits 13..14): 0x00E mask 0x04 without those two bits, @0x2A & 3 (asm 0x1009be5d).
+    pub mon_stat: Option<u8>,
     /// The face target's ActIndex, (u32 @0x18 >> 17) & 0x7fff with the position (actor +0x1f8; LSB facetarget).
     pub face: Option<u16>,
     /// Mask 0x04, u8 @0x28 bit 0x04 (LSB PetNewFlag; actor +0x12c bit 23): the model is made with 'spop'.
@@ -571,6 +573,8 @@ pub enum NetEvent {
     MapScheduler { ids: (u32, u32), indices: (u16, u16), name: [u8; 4] },
     /// s2c 0x03A (GP_SERV_COMMAND_MAGICSCHEDULOR): an action file on (caster, target) by type.
     MagicScheduler { ids: (u32, u32), indices: (u16, u16), file: u16, kind: u8 },
+    /// s2c 0x069 / 0x073 / 0x074: chocobo racing (client/racing.rs), the whole packet.
+    Racing { id: u16, data: Vec<u8> },
     /// s2c 0x02F (GP_SERV_COMMAND_DIG): TarUniqueNo, TarActIndex, Flags.
     Dig { id: u32, index: u16, flags: u8 },
     /// s2c 0x11E: ActIndex @4 used /jump.
@@ -892,6 +896,7 @@ fn entity(p: &SubPacket, kind: EntityKind) -> EntityUpdate {
         mon_prefix: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x42).then(|| [p.u8(0x40), p.u8(0x41)]),
         mon_form: (kind == EntityKind::Player && flags & 0x04 != 0 && p.data.len() >= 0x40 && p.u16(0x3E) != 0).then(|| p.u8(0x2A) & 7),
         sub_anim: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && (p.u8(0x20) & 1 != 0 || p.u32(0x28) & (1 << 26) != 0)).then(|| p.u8(0x2A) & 7),
+        mon_stat: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C && p.u8(0x20) & 1 == 0 && p.u32(0x28) & (1 << 26) == 0).then(|| p.u8(0x2A) & 3),
         hp_bits: (kind == EntityKind::Npc && flags & 0x04 != 0 && p.data.len() >= 0x2C).then(|| (p.u8(0x22) & 1 != 0, p.u8(0x22) & 1 == 0 && p.u8(0x2B) & 0x20 != 0)),
         face: (flags & 1 != 0).then(|| ((p.u32(0x18) >> 17) & 0x7fff) as u16),
         spawn_fx: (flags & 0x04 != 0 && p.data.len() > 0x28).then(|| p.u8(0x28) & 0x04 != 0),
@@ -1145,6 +1150,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x02D => tx.send(NetEvent::Battle(battle_message2(&p)))?,
                     0x028 => tx.send(NetEvent::Action(crate::net::action::parse(&p.data)))?,
                     0x038 => tx.send(NetEvent::Scheduler { actor: p.u32(4), target: p.u32(8), name: p.u32(12).to_le_bytes() })?,
+                    0x069 | 0x073 | 0x074 => tx.send(NetEvent::Racing { id: p.id, data: p.data.to_vec() })?,
                     0x02F => tx.send(NetEvent::Dig { id: p.u32(4), index: p.u16(8), flags: p.u8(0xa) })?,
                     0x03A => tx.send(NetEvent::MagicScheduler { ids: (p.u32(4), p.u32(8)), indices: (p.u16(0xc), p.u16(0xe)), file: p.u16(0x10), kind: p.u8(0x12) })?,
                     0x039 => tx.send(NetEvent::MapScheduler { ids: (p.u32(4), p.u32(8)), indices: (p.u16(0x10), p.u16(0x12)), name: p.u32(12).to_le_bytes() })?,

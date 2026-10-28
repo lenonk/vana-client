@@ -1849,19 +1849,53 @@ impl Effects {
         let x = self.insts[i].as_ref()?;
         let g = self.reg.libs[x.src.0].generator(x.src.1)?;
         let w = x.attach;
-        let pc = ((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16;
-        let pt = ((w >> 10) & 0x3f) as u16;
         let [a1, a2] = x.actors;
-        // 0x1003c5f0: the mode's actor missing (never linked, or deleted) gives the identity.
-        let missing = match x.mode {
-            1 | 7 | 9 | 0xb | 0x10 => a1 == Who::None,
-            2 | 8 | 0xa | 0xc | 0x11 | 0x13 => a2 == Who::None,
-            3..=6 | 0xd | 0x12 | 0x16..=0x1b => a1 == Who::None && a2 == Who::None,
-            _ => false,
-        };
-        if missing {
+        if attach_missing(x.mode, x.actors) {
             return Some((Some(Mat4::IDENTITY), Vec3::ONE, Vec3::ONE, 0.0));
         }
+        // FUN_10053e60: with gen +0x98 set, emission op 0x7b's offsets A (caster point) / B (target point) reach the
+        // two-point modes only.
+        let two_point = matches!(x.mode, 3 | 6 | 0xd | 0x10 | 0x11 | 0x12 | 0x16..=0x1b);
+        let (off_a, off_b) = match x.streams[1].iter().find(|o| o.code == 0x7b) {
+            Some(o) if g.offsets && two_point => (Vec3::new(o.f32(1), o.f32(2), o.f32(3)), Vec3::new(o.f32(4), o.f32(5), o.f32(6))),
+            _ => (Vec3::ZERO, Vec3::ZERO),
+        };
+        let (m, dist) = self.attach_frame(x.mode, w, x.actors, (off_a, off_b), x.matrix, f, actors)?;
+        // Scale A from bits 20..23 (1-4 caster, 5-8 target), scale B from byte 3 low nibble.
+        let size = |src: u32, blend: f32| -> Vec3 {
+            let who = match src & 0xf {
+                1..=4 => a1,
+                5..=8 => a2,
+                _ => return Vec3::ONE,
+            };
+            let k = if blend == 0.0 { 1.0 } else { blend };
+            let s = (self.who_scale(who, actors) - 1.0) * k + 1.0;
+            // FUN_10053e60 on nibble & 3: 0 uniform, bit 0 x and z, bit 1 y.
+            match src & 3 {
+                0 => Vec3::splat(s),
+                b => {
+                    let xz = if b & 1 != 0 { s } else { 1.0 };
+                    Vec3::new(xz, if b & 2 != 0 { s } else { 1.0 }, xz)
+                }
+            }
+        };
+        let mut a = size(w >> 20, g.blend[0]);
+        let b = size(w >> 24, g.blend[1]);
+        if dist != 0.0 {
+            a.x = dist;
+        }
+        Some((m, a, b, dist))
+    }
+
+    /// FUN_1003afd0's frame for attach `mode` / word `w` on two actor slots, with op 0x7b's offsets and the last matrix
+    /// (dolls): the matrix (None while unplaced) and the two-point distance; None for a mode it does not know.
+    #[allow(clippy::too_many_arguments)]
+    fn attach_frame(&self, mode: u8, w: u32, [a1, a2]: [Who; 2], (off_a, off_b): (Vec3, Vec3), last: Option<Mat4>, f: Option<&Frame>, actors: &dyn Actors) -> Option<(Option<Mat4>, f32)> {
+        if attach_missing(mode, [a1, a2]) {
+            return Some((Some(Mat4::IDENTITY), 0.0));
+        }
+        let pc = ((((w >> 18) & 1) << 6) | ((w >> 4) & 0x3f)) as u16;
+        let pt = ((w >> 10) & 0x3f) as u16;
         let rot = |m: Mat4| Mat4::from_cols(m.x_axis, m.y_axis, m.z_axis, glam::Vec4::W);
         let at = |m: Mat4, p: Vec3| {
             let mut r = rot(m);
@@ -1884,13 +1918,6 @@ impl Effects {
             m
         });
         let eye = f.map(|f| f.eye);
-        // FUN_10053e60: with gen +0x98 set, emission op 0x7b's offsets A (caster point) / B (target point) reach the
-        // two-point modes only.
-        let two_point = matches!(x.mode, 3 | 6 | 0xd | 0x10 | 0x11 | 0x12 | 0x16..=0x1b);
-        let (off_a, off_b) = match x.streams[1].iter().find(|o| o.code == 0x7b) {
-            Some(o) if g.offsets && two_point => (Vec3::new(o.f32(1), o.f32(2), o.f32(3)), Vec3::new(o.f32(4), o.f32(5), o.f32(6))),
-            _ => (Vec3::ZERO, Vec3::ZERO),
-        };
         let p1 = |k: u16| self.who_point(a1, k, a2, eye, off_a, actors);
         let p2 = |k: u16| self.who_point(a2, k, a1, eye, off_b, actors);
         let mut dist = 0.0;
@@ -1912,7 +1939,7 @@ impl Effects {
             }
             Who::Doll(_) => {
                 let (_, d) = self.who_matrix(w, actors)?;
-                let mut o = x.matrix.unwrap_or(Mat4::IDENTITY);
+                let mut o = last.unwrap_or(Mat4::IDENTITY);
                 o.w_axis += d.w_axis.truncate().extend(0.0);
                 Some(o)
             }
@@ -1929,8 +1956,8 @@ impl Effects {
             r.w_axis = p.map_or(b.w_axis, |(_, p)| p.extend(1.0));
             Some(r)
         };
-        let m = match x.mode {
-            9 | 0xa => bone_frame(if x.mode == 9 { a1 } else { a2 }, if x.mode == 9 { pc } else { pt }).or_else(|| if x.mode == 9 { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
+        let m = match mode {
+            9 | 0xa => bone_frame(if mode == 9 { a1 } else { a2 }, if mode == 9 { pc } else { pt }).or_else(|| if mode == 9 { p1(pc) } else { p2(pt) }.map(|(m, p)| at(m, p))),
             0xb => heading(a1, pc, p1(pc)).or_else(|| p1(pc).map(|(m, p)| at(m, p))),
             0xc => heading(a2, pt, p2(pt)).or_else(|| p2(pt).map(|(m, p)| at(m, p))),
             // FUN_1003be10 0x14 / 0x15: the voyage matrix DAT_10631ed0 (identity off a voyage), whole / its rotation.
@@ -1965,7 +1992,7 @@ impl Effects {
             7 => p1(pc).and_then(|(_, p)| cam(p)),
             8 => p2(pt).and_then(|(_, p)| cam(p)),
             0x10 | 0x11 => {
-                let (a, o) = if x.mode == 0x10 { (a1, a2) } else { (a2, a1) };
+                let (a, o) = if mode == 0x10 { (a1, a2) } else { (a2, a1) };
                 match (self.who_point(a, pc, o, eye, off_a, actors), self.who_point(a, pt, o, eye, off_b, actors)) {
                     (Some((_, p1)), Some((_, p2))) => {
                         let (m, d) = two(p1, p2);
@@ -1978,30 +2005,13 @@ impl Effects {
             0x13 => p2(2).map(|(_, p)| Mat4::from_translation(p + Vec3::new(0.0, 0.18, 0.0))),
             _ => return None,
         };
-        // Scale A from bits 20..23 (1-4 caster, 5-8 target), scale B from byte 3 low nibble.
-        let size = |src: u32, blend: f32| -> Vec3 {
-            let who = match src & 0xf {
-                1..=4 => a1,
-                5..=8 => a2,
-                _ => return Vec3::ONE,
-            };
-            let k = if blend == 0.0 { 1.0 } else { blend };
-            let s = (self.who_scale(who, actors) - 1.0) * k + 1.0;
-            // FUN_10053e60 on nibble & 3: 0 uniform, bit 0 x and z, bit 1 y.
-            match src & 3 {
-                0 => Vec3::splat(s),
-                b => {
-                    let xz = if b & 1 != 0 { s } else { 1.0 };
-                    Vec3::new(xz, if b & 2 != 0 { s } else { 1.0 }, xz)
-                }
-            }
-        };
-        let mut a = size(w >> 20, g.blend[0]);
-        let b = size(w >> 24, g.blend[1]);
-        if dist != 0.0 {
-            a.x = dist;
-        }
-        Some((m, a, b, dist))
+        Some((m, dist))
+    }
+
+    /// A camera task's frame (FUN_1003be40 / FUN_1003d220 -> FUN_1003be10): payload word `w` of its path on the
+    /// scheduler's actor and target.
+    pub fn camera_frame(&self, w: u32, who: [Who; 2], actors: &dyn Actors) -> Option<Mat4> {
+        self.attach_frame(crate::dat::generator::attach_mode(w), w, who, (Vec3::ZERO, Vec3::ZERO), None, self.last_frame.as_ref(), actors)?.0
     }
 
     /// At start (FUN_10052220 -> FUN_10052eb0).
@@ -2328,6 +2338,16 @@ pub fn filter_class(mine: bool, monster: bool, listed: bool, master_listed: bool
         return c;
     }
     (if listed || master_listed { 4 } else { 0 }) | if listed { 0 } else { 8 }
+}
+
+/// 0x1003c5f0: the mode's actor missing (never linked, or deleted) gives the identity.
+fn attach_missing(mode: u8, [a1, a2]: [Who; 2]) -> bool {
+    match mode {
+        1 | 7 | 9 | 0xb | 0x10 => a1 == Who::None,
+        2 | 8 | 0xa | 0xc | 0x11 | 0x13 => a2 == Who::None,
+        3..=6 | 0xd | 0x12 | 0x16..=0x1b => a1 == Who::None && a2 == Who::None,
+        _ => false,
+    }
 }
 
 #[cfg(test)]

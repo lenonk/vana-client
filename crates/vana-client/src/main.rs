@@ -210,7 +210,7 @@ enum Cmd {
     },
     /// Print English client messages of a group (thunk_FUN_1014c660(group, id)); all when no ids given.
     MsgDump { group: u8, ids: Vec<usize> },
-    /// Print the English d_msg file of a language slot (this build's numbering): every field of each entry.
+    /// Print the English d_msg file of a language slot (this build's numbering), or of a file id from 0x1000: every field of each entry.
     DmsgDump {
         #[arg(value_parser = parse_num)]
         slot: u32,
@@ -1347,7 +1347,12 @@ fn main() -> Result<()> {
             let scene = dat::zone::load_scene(&keys, &index.read(dat::zone::file_id(zone))?)?;
             let textures: std::collections::HashMap<&str, &dat::zone::Texture> = scene.textures.iter().map(|t| (t.name.as_str(), t)).collect();
             for p in &scene.placements {
-                let Some(mesh) = scene.meshes.iter().find(|m| m.name == p.name) else { continue };
+                let Some(mesh) = scene.meshes.iter().find(|m| m.name == p.name) else {
+                    if (p.translate[0] - x).hypot(p.translate[2] - z) < 40.0 {
+                        println!("no mesh: {} translate {:?} scale {:?} id {:#x}", p.name, p.translate, p.scale, p.id);
+                    }
+                    continue;
+                };
                 let m = Mat4::from_cols_array_2d(&p.matrix());
                 for (mi, model) in mesh.models.iter().enumerate() {
                     let w: Vec<Vec3> = model.vertices.iter().map(|v| m.transform_point3(Vec3::from(v.pos))).collect();
@@ -1373,9 +1378,18 @@ fn main() -> Result<()> {
                         format!("fmt {:#04x} {}x{} texel alpha {:.0}", t.format, t.width, t.height, a)
                     });
                     println!(
-                        "y {:7.2}  {} model {} tex {:<16} {}  verts {} strip {} blend {:#06x} vertex alpha {:.0} scale {:?}",
-                        y, p.name, mi, model.texture, tex.unwrap_or_else(|| "MISSING".into()), model.vertices.len(), model.strip, model.blending, va, p.scale
+                        "y {:7.2}  {} model {} tex {:<16} {}  verts {} strip {} blend {:#06x} vertex alpha {:.0} scale {:?} id {:#x} link {} area {:#x} lod {:?} drawn {}",
+                        y, p.name, mi, model.texture, tex.unwrap_or_else(|| "MISSING".into()), model.vertices.len(), model.strip, model.blending, va, p.scale, p.id, p.link, p.area, p.lod, p.drawn()
                     );
+                    let (mut lo, mut hi) = ([f32::MAX; 3], [f32::MIN; 3]);
+                    for v in mesh.models.iter().flat_map(|m| &m.vertices) {
+                        for k in 0..3 {
+                            lo[k] = lo[k].min(v.pos[k]);
+                            hi[k] = hi[k].max(v.pos[k]);
+                        }
+                    }
+                    let same = scene.meshes.iter().filter(|m| m.name == p.name).count();
+                    println!("    header bounds {:?} .. {:?}, vertices {:?} .. {:?}, meshes of this name {same}, translate {:?} rotate {:?} own_dist {:?} world {}", mesh.min, mesh.max, lo, hi, p.translate, p.rotate, p.own_dist, p.world);
                 }
             }
             Ok(())
@@ -1499,7 +1513,8 @@ fn main() -> Result<()> {
             let cfg = config::Config::load();
             let index = dat::DatIndex::open(&cfg.ffxi_dir())?;
             let dll = std::fs::read(cfg.ffxi_dir().join("FFXiMain.dll"))?;
-            let file = dat::msg::current_slot_file(&dll, 1, slot as usize).ok_or_else(|| anyhow::anyhow!("no file for slot {slot:#x}"))?;
+            // A value past the slot range is a file id (0x86 grammar blocks read file 0xd8b2 directly).
+            let file = if slot >= 0x1000 { slot as u32 } else { dat::msg::current_slot_file(&dll, 1, slot as usize).ok_or_else(|| anyhow::anyhow!("no file for slot {slot:#x}"))? };
             let m = dat::names::DMsg::load(&index, file)?;
             println!("slot {slot:#x}: file {file}, {} entries", m.len());
             let ids = if ids.is_empty() { (0..m.len() as u32).collect() } else { ids };

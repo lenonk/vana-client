@@ -12,7 +12,7 @@ use crate::dat::font::decode_sjis;
 use crate::dat::title::{Key, Title, focal_of, fov_y, sample_from};
 use crate::event_vm::{Arg, Busy, Effect, Host, Packet, PLAYER, Runtime, Start};
 use crate::render::Camera;
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Instant;
@@ -88,6 +88,8 @@ struct Sched {
     tag: String,
     actor: u32,
     target: u32,
+    /// Actor and target in the world, for the camera paths' frames.
+    who: [crate::fx::sched::Who; 2],
     ops: Vec<SOp>,
     cursor: usize,
     next_at: f32,
@@ -107,6 +109,9 @@ struct Shot {
     /// The camera when it started (flag bit 19) and the player's follow camera (bit 20), FUN_1003be40.
     from: Option<Key>,
     follow: Option<Key>,
+    who: [crate::fx::sched::Who; 2],
+    /// The frame (task +0x20) the keys are placed in, once the actors have been placed (camera_frame).
+    frame: Option<glam::Mat4>,
 }
 
 /// Op 0x10 (0x10057d12, FUN_1005f020): the frame before the cut fades out over `len` ticks.
@@ -219,7 +224,7 @@ impl Screen {
                 match op.op {
                     0x04 if op.data.len() >= 12 => {
                         let name = String::from_utf8_lossy(&op.data[8..12]).trim_end_matches('\0').to_string();
-                        shot = Some((s.file, s.tag.clone(), name, at, op.ticks.max(1) as f32 * s.speed));
+                        shot = Some((s.file, s.tag.clone(), name, at, op.ticks.max(1) as f32 * s.speed, s.who));
                     }
                     // 0x10057ee6 / FUN_1005f630: D3DCOLOR R G B A @8; lasts dur * speed - 1 ticks.
                     0x0f if op.data.len() >= 12 => {
@@ -233,14 +238,14 @@ impl Screen {
                 s.next_at = at + op.wait as f32 * s.speed;
             }
         }
-        if let Some((file, tag, name, at, ticks)) = shot
+        if let Some((file, tag, name, at, ticks, who)) = shot
             && let Some(Some(f)) = self.files.get(&file).cloned()
             && let Some(path) = f.title.as_ref().and_then(|t| t.paths.iter().position(|p| p.name == name))
         {
             if let Some(p) = f.title.as_ref().and_then(|t| t.paths.get(path)) {
                 log::info!("event camera {tag}: path {} flags {:#x}, {} keys, {ticks} ticks{}", p.name, p.flags, p.keys.len(), if p.flags & crate::dat::title::FROM_CURRENT != 0 { ", from the current camera" } else { "" });
             }
-            self.shot = Some(Shot { file: f, tag, path, start: at, ticks, from: current.map(key_of), follow });
+            self.shot = Some(Shot { file: f, tag, path, start: at, ticks, from: current.map(key_of), follow, who, frame: None });
         }
         if let Some((to, at, ticks)) = fade {
             self.fade = (self.fade.1, to, at, ticks);
@@ -662,7 +667,8 @@ impl Host for LiveHost<'_> {
                 // The same CMoSchedularTask runs the effects side (generators, sounds, motions): the set of a
                 // cutscene staged off the map is built from it.
                 let who = |a: u32| if a == 0 { crate::fx::sched::Who::None } else { crate::fx::sched::Who::Actor(self.wid(a)) };
-                self.w.effects.on_event_scheduler(file, u32::from_le_bytes(crate::dat::generator::fourcc(&tag)), who(actor), who(target));
+                let who = [who(actor), who(target)];
+                self.w.effects.on_event_scheduler(file, u32::from_le_bytes(crate::dat::generator::fourcc(&tag)), who[0], who[1]);
                 let Some(f) = self.w.screen.file(self.index, file) else { return };
                 let Some(ops) = sched_ops(&f.bytes, &tag) else {
                     log::warn!("event: no scheduler {tag} in {file}");
@@ -677,7 +683,7 @@ impl Host for LiveHost<'_> {
                 let sc = &mut self.w.screen;
                 let now = sc.tick;
                 sc.scheds.retain(|x| !(x.file == file && x.tag == tag && x.actor == actor && x.target == target));
-                sc.scheds.push(Sched { file, tag, actor, target, ops, cursor: 0, next_at: now, start: now, len, speed });
+                sc.scheds.push(Sched { file, tag, actor, target, who, ops, cursor: 0, next_at: now, start: now, len, speed });
                 let (cam, follow) = (self.w.last_camera, follow_key(self.w));
                 self.w.screen.advance(cam, follow);
             }
@@ -1238,6 +1244,13 @@ impl Host for LiveHost<'_> {
             },
             Effect::Op { op: 0xb4, sub: Some(8), .. } => self.w.cast_bar = None,
             Effect::Op { op: 0xb4, sub: Some(0xb), .. } => self.w.event_timer = None,
+            // FUN_100b0a00 0xf..0x12: the toteboard (colour val@2, seconds val@4) and the race card (colour val@2).
+            Effect::Op { op: 0xb4, sub: Some(0xf), args, .. } => {
+                super::racing::open_board(self.w, Self::arg_int(&args, 0).unwrap_or(0) as u8 as i8, Self::arg_int(&args, 1).unwrap_or(0));
+            }
+            Effect::Op { op: 0xb4, sub: Some(0x10), .. } => super::racing::close_board(self.w),
+            Effect::Op { op: 0xb4, sub: Some(0x11), args, .. } => super::racing::open_card(self.w, Self::arg_int(&args, 0).unwrap_or(0) as u8 as i8),
+            Effect::Op { op: 0xb4, sub: Some(0x12), .. } => super::racing::close_card(self.w),
             // FUN_100b0a00 0xd / 0xe: hold the voyage (V identity, t still) / let it go on.
             Effect::Op { op: 0xb4, sub: Some(s @ (0xd | 0xe)), .. } => self.w.voyage.hold = s == 0xd,
             // FUN_100b0a00 0x14 -> FUN_101fb070: the map view to x, y, zoom factor, speed (each x 0.001) and flags.
@@ -1405,6 +1418,10 @@ impl Host for LiveHost<'_> {
 
     fn concierge_pick(&mut self) -> Option<[u32; 3]> {
         self.w.concierge_ui.is_none().then_some(self.w.concierge_pick)
+    }
+
+    fn race_value(&self, sub: u8, a: i32, b: i32) -> u32 {
+        self.w.racing.store.value(sub, a, b)
     }
 
     fn area_pick(&mut self) -> Option<i32> {
@@ -1988,7 +2005,35 @@ pub fn event_status(w: &World, id: u32) -> u8 {
     w.event.as_ref().and_then(|l| l.st.event_status.get(&id).copied()).unwrap_or(0)
 }
 
-/// The cutscene camera: the scheduler's path while the 0x46 flag is 0.
+/// FUN_1003d220: points 2 (with bits 19 / 20) are lerped in the world; one key and 3 or more points are placed in
+/// the frame.
+fn framed(p: &crate::dat::title::CameraPath) -> bool {
+    p.keys.len() + (p.flags & crate::dat::title::FROM_CURRENT != 0) as usize + (p.flags & crate::dat::title::TO_FOLLOW != 0) as usize != 2
+}
+
+/// Per frame once the actors are placed: the running path's frame on its scheduler's actors. One key takes it
+/// afresh (FUN_1003c970); more move it toward the actors by flags byte 1 / 255 a frame (retail's frame taken as
+/// 1/30 s *(inf)*).
+pub fn camera_frame(screen: &mut Screen, effects: &crate::fx::Effects, actors: &dyn crate::fx::Actors, ticks: f32) {
+    let Some(s) = screen.shot.as_mut() else { return };
+    let Some(path) = s.file.title.as_ref().and_then(|t| t.paths.get(s.path)).filter(|p| framed(p)) else { return };
+    let Some(fresh) = effects.camera_frame(path.attach, s.who, actors) else { return };
+    let b = ((path.flags >> 8) & 0xff) as f32 / 255.0;
+    s.frame = Some(match s.frame {
+        Some(m) if path.keys.len() > 1 && b > 0.0 => {
+            let k = 1.0 - (1.0 - b).powf(ticks / 2.0);
+            Mat4::from_cols_array(&std::array::from_fn(|i| {
+                let (a, f) = (m.to_cols_array()[i], fresh.to_cols_array()[i]);
+                a + (f - a) * k
+            }))
+        }
+        Some(m) if path.keys.len() > 1 => m,
+        _ => fresh,
+    });
+}
+
+/// The cutscene camera: the scheduler's path while the 0x46 flag is 0. A framed path holds the last camera until
+/// its frame is known.
 pub fn camera(w: &World) -> Option<Camera> {
     let l = w.event.as_ref()?;
     if l.st.camera_flag {
@@ -1997,7 +2042,12 @@ pub fn camera(w: &World) -> Option<Camera> {
     let s = w.screen.shot.as_ref()?;
     let path = s.file.title.as_ref()?.paths.get(s.path).filter(|p| !p.keys.is_empty())?;
     let k = sample_from(path, (w.screen.tick - s.start) / s.ticks, s.from, s.follow);
-    Some(Camera { eye: k.eye, target: k.target, up: Vec3::NEG_Y, fov_y: fov_y(k.focal) })
+    let (eye, target) = match (framed(path), s.frame) {
+        (false, _) => (k.eye, k.target),
+        (true, Some(m)) => (m.transform_point3(k.eye), m.transform_point3(k.target)),
+        (true, None) => return w.last_camera,
+    };
+    Some(Camera { eye, target, up: Vec3::NEG_Y, fov_y: fov_y(k.focal) })
 }
 
 /// The running shot's path name (test drives wait for it).
@@ -2397,6 +2447,8 @@ struct EventTexts {
     jp: std::sync::OnceLock<Option<Arc<crate::dat::merits::JobPointTables>>>,
     ae: std::sync::OnceLock<Option<Arc<crate::dat::merits::AeTables>>>,
     mon: std::sync::OnceLock<Option<crate::dat::names::DMsg>>,
+    /// Files 55473 / 55474 (grammar 0x82 / 0x86).
+    words: [std::sync::OnceLock<Option<crate::dat::names::DMsg>>; 2],
 }
 
 impl dialog::Texts for EventTexts {
@@ -2422,6 +2474,22 @@ impl dialog::Texts for EventTexts {
         });
         Some(crate::dat::font::encode_sjis(&mon.as_ref()?.text(usize::try_from(row).ok()?)?))
     }
+
+    fn grammar(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+        let bt = self.bt.as_ref();
+        match kind {
+            0x82 | 0x86 => {
+                let k = (kind == 0x86) as usize;
+                let words = self.words[k].get_or_init(|| {
+                    let f = [55473, 55474][k];
+                    crate::dat::names::DMsg::load(self.index.as_ref()?, f).map_err(|e| log::warn!("grammar words {f}: {e:#}")).ok()
+                });
+                Some(crate::dat::font::encode_sjis(&words.as_ref()?.text(id as usize)?)).filter(|t| !t.is_empty())
+            }
+            0x89 => Some(crate::dat::font::encode_sjis(&bt?.group12(0x1a2 + if id > 0xb { 0 } else { id as usize })?)),
+            _ => bt?.grammar_line(kind, id),
+        }
+    }
 }
 
 /// What message codes take from the client (FUN_100c1650): the date strings, the roster, the other name tables.
@@ -2438,6 +2506,7 @@ pub fn text_ctx(w: &World) -> dialog::Ctx {
         jp: w.jp_tables.clone().map(Some).map(std::sync::OnceLock::from).unwrap_or_default(),
         ae: w.ae_tables.clone().map(Some).map(std::sync::OnceLock::from).unwrap_or_default(),
         mon: Default::default(),
+        words: Default::default(),
     };
     dialog::Ctx {
         dates,
@@ -2488,6 +2557,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         _ => String::new(),
     };
     let g = w.event.as_ref().map_or(w.event_mem.g, |l| l.rt.mem.g).map(|v| v as i32);
+    let slots = w.event.as_ref().map_or(w.event_mem.names, |l| l.rt.mem.names);
     let ctx = dialog::Ctx {
         player: super::monstrosity::my_name(w).to_string(),
         speaker,
@@ -2497,6 +2567,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         female: matches!(w.my_race, 2 | 4 | 6 | 7),
         names: w.names.clone().map(|n| n as Arc<dyn crate::dat::names::NameSource>),
         msg_name,
+        slots,
         ..text_ctx(w)
     };
     let e = dialog::expand(&raw, &ctx);
@@ -2685,11 +2756,11 @@ mod tests {
             data.extend_from_slice(&rgba);
             SOp { op: 0x0f, wait: 60, ticks: 60, data }
         };
-        sc.scheds.push(Sched { file: 30904, tag: "fdo1".into(), actor: 0, target: 0, ops: vec![op([0, 0, 0, 0x80])], cursor: 0, next_at: 0.0, start: 0.0, len: Some(60.0), speed: 1.0 });
+        sc.scheds.push(Sched { file: 30904, tag: "fdo1".into(), actor: 0, target: 0, who: Default::default(), ops: vec![op([0, 0, 0, 0x80])], cursor: 0, next_at: 0.0, start: 0.0, len: Some(60.0), speed: 1.0 });
         sc.advance(None, None);
         sc.tick = 59.0;
         assert!(sc.multiply()[0] < 1e-6);
-        sc.scheds.push(Sched { file: 30904, tag: "fdi1".into(), actor: 0, target: 0, ops: vec![op([0x80, 0x80, 0x80, 0])], cursor: 0, next_at: 59.0, start: 59.0, len: Some(60.0), speed: 1.0 });
+        sc.scheds.push(Sched { file: 30904, tag: "fdi1".into(), actor: 0, target: 0, who: Default::default(), ops: vec![op([0x80, 0x80, 0x80, 0])], cursor: 0, next_at: 59.0, start: 59.0, len: Some(60.0), speed: 1.0 });
         sc.advance(None, None);
         sc.tick = 59.0 + 29.5;
         let m = sc.multiply()[0];

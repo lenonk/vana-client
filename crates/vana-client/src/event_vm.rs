@@ -128,6 +128,10 @@ pub trait Host {
     fn concierge_pick(&mut self) -> Option<[u32; 3]> {
         Some([0; 3])
     }
+    /// Op 0xbf (FUN_100bbd80): a value of the race store (s2c 0x069); 0 until it is complete or out of range.
+    fn race_value(&self, _sub: u8, _a: i32, _b: i32) -> u32 {
+        0
+    }
     /// Op 0xcc 0x11: None while arealist's event pick is up (+0x6d), then its pick (+0x6e: a zone, -1 cancelled).
     fn area_pick(&mut self) -> Option<i32> {
         Some(-1)
@@ -211,11 +215,13 @@ pub struct Start {
 pub struct Memory {
     pub m: [u32; 0x40],
     pub g: [u32; 0x20],
+    /// Op 0xc3's name slots (DAT_10488210, 0x14 each): 16 name bytes and a word whose low byte grammar 0x85 picks by.
+    pub names: [([u8; 16], u32); 8],
 }
 
 impl Default for Memory {
     fn default() -> Self {
-        Memory { m: [0; 0x40], g: [0; 0x20] }
+        Memory { m: [0; 0x40], g: [0; 0x20], names: [([0; 16], 0); 8] }
     }
 }
 
@@ -952,6 +958,7 @@ impl Runtime {
             strings: self.start.strings.clone(),
             female: host.female(),
             names: self.names.clone(),
+            slots: self.mem.names,
             ..host.text_ctx()
         }
     }
@@ -2027,6 +2034,26 @@ impl Runtime {
                     }
                 }
                 self.yield_(v);
+            }
+            // FUN_100bbd80: race data (val@2 unused); subs 0 / 0x60 read val@4 into set@6, 0x20 / 0x40 val@4 and val@6
+            // into set@8; no frame end.
+            0xbf if matches!(sub, Some(0 | 0x20 | 0x40 | 0x60)) => {
+                let s = sub.unwrap_or(0);
+                let two = matches!(s, 0x20 | 0x40);
+                let value = host.race_value(s, self.val(v, 4), if two { self.val(v, 6) } else { 0 });
+                self.set_at(v, if two { 8 } else { 6 }, 0, value);
+                self.adv(v, len);
+            }
+            // FUN_100bc000: name slot val@1 = the 16 bytes of str@3 and val@5. Retail never advances past a slot outside
+            // 0..7; ours waits there a frame at a time.
+            0xc3 => {
+                let k = self.val(v, 1);
+                if !(0..8).contains(&k) {
+                    self.yield_(v);
+                    return;
+                }
+                self.mem.names[k as usize] = (self.str_at(v, 3), self.val(v, 5) as u32);
+                self.adv(v, len);
             }
             // FUN_100b9d90 0x11: wait while arealist picks, then set@2 = the pick (FUN_100af310(2, +0x6e)).
             0xcc if sub == Some(0x11) => match host.area_pick() {

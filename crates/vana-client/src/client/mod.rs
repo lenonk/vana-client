@@ -18,6 +18,7 @@ mod monstrosity;
 mod moncustom;
 mod objective;
 mod border;
+mod racing;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
@@ -410,6 +411,10 @@ struct Entity {
     sync: u8,
     /// +0x124: the sub-animation wanted (bits 1..3), applied (bits 4..7, 8 = none yet), and the model's own (+0x8a5).
     sub: [u8; 3],
+    /// +0x124 bits 13..14 (0x00E MonStat): 2 takes the dft / df1 idles, ark walk and hsr run (FUN_1008a1a0); and the
+    /// ticks to the next idle pick (+0x1ba, FUN_1008da00).
+    mon_stat: u8,
+    idle_swap: f32,
     /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
     master: u16,
     /// +0x128 bit 29: the model's "init" ran (FUN_1008c480).
@@ -1344,6 +1349,8 @@ fn self_entity(w: &World) -> Entity {
         mon_name: w.my_mon_name.clone(),
         mon_key: w.my_mon_key,
         sub: [0, 8, 0],
+        mon_stat: 0,
+        idle_swap: 0.0,
         master: 0,
         init_done: false,
         motion_bases: Vec::new(),
@@ -3195,6 +3202,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         objective::draw_countdown(gu, world, sw, sh);
         objective::draw_bars(gu, world);
     }
+    racing::draw(gu, world, sw, sh);
     if let Some(c) = world.config.as_mut() {
         // The modern Config shows ours as one of its pages.
         c.covered = world.settings.is_some() && !world.modern;
@@ -3987,6 +3995,8 @@ fn place_mogdoor(w: &mut World) {
             mon_name: None,
             mon_key: (0, [0; 2]),
             sub: [0, 8, 0],
+            mon_stat: 0,
+            idle_swap: 0.0,
             master: 0,
             init_done: false,
             motion_bases: Vec::new(),
@@ -5716,6 +5726,8 @@ struct World {
     objective: objective::Objective,
     /// The objective border's parts.
     border: border::Parts,
+    /// Chocobo racing: the race store, the toteboard and the race card.
+    racing: racing::Racing,
     /// s2c 0x039s held until the zone's effects are in.
     map_schedulers: Vec<((u32, u32), (u16, u16), [u8; 4])>,
     /// Entity +0x12c bits 4 / 5 by id: a chocobo dig to play, and the dig holding (s2c 0x02F).
@@ -7283,6 +7295,7 @@ impl App {
                             objective: Default::default(),
                             border: Default::default(),
                             map_schedulers: Vec::new(),
+                            racing: Default::default(),
                             digs: HashMap::new(),
                             index_masks: HashMap::new(),
                             casts: HashMap::new(),
@@ -7985,6 +7998,8 @@ impl App {
                         mon_name: None,
                         mon_key: (0, [0; 2]),
                         sub: [0, 8, 0],
+                        mon_stat: 0,
+                        idle_swap: 0.0,
                         master: 0,
                         init_done: false,
                         motion_bases: Vec::new(),
@@ -8143,6 +8158,14 @@ impl App {
                     }
                     if let Some(s) = e.sub_anim {
                         entry.sub[0] = s;
+                    }
+                    if let Some(m) = e.mon_stat
+                        && m != entry.mon_stat
+                    {
+                        entry.mon_stat = m;
+                        if let Some(a) = world.actors.get_mut(&e.id) {
+                            a.rebase = true;
+                        }
                     }
                     if let Some((b20, b3)) = e.hp_bits {
                         (entry.no_gauge, entry.no_plate) = (b20 || b3, b3);
@@ -8367,6 +8390,7 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::MapScheduler { ids, indices, name } => combat::on_map_scheduler(world, ids, indices, name),
                 NetEvent::Dig { id, index, flags } => ride::on_dig(world, id, index, flags),
+                NetEvent::Racing { id, data } => racing::on_packet(world, id, &data),
                 NetEvent::MagicScheduler { ids, indices, file, kind } => combat::on_magic_scheduler(world, ids, indices, file, kind),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
@@ -8904,25 +8928,30 @@ impl App {
         for (id, a) in world.actors.iter_mut().filter(|(_, a)| a.rebase) {
             let Some(ch) = a.character.as_ref() else { continue };
             a.rebase = false;
-            let bases = if *id == world.my_id {
+            let (bases, mon) = if *id == world.my_id {
                 if std::mem::take(&mut a.fresh) && world.my_reset_bases {
                     world.my_motion_bases.clear();
                 }
-                &world.my_motion_bases
+                (&world.my_motion_bases, 0)
             } else if let Some(e) = world.entities.get_mut(id) {
                 if std::mem::take(&mut a.fresh) && e.reset_bases {
                     e.motion_bases.clear();
                 }
-                &e.motion_bases
+                (&e.motion_bases, e.mon_stat)
             } else {
                 continue;
             };
-            if !bases.is_empty() {
+            // MonStat 2 (FUN_10087dc0) takes its own names over the bases.
+            if mon == 2 {
+                a.motion_names = Some(crate::motion::MotionNames { idle: "dft", walk: "ark", run: "hsr", ..ch.motions });
+            } else if !bases.is_empty() {
                 let mut n = ch.motions;
                 for &(op, set) in bases {
                     n.apply(op, set);
                 }
                 a.motion_names = Some(n);
+            } else if a.motion_names.is_some_and(|n| matches!(n.idle, "dft" | "df1")) {
+                a.motion_names = None;
             }
         }
         for (id, op, set) in std::mem::take(&mut world.effects.motion_sets) {
@@ -8981,6 +9010,7 @@ impl App {
         fishrod::update(world, dt);
         indi::update(world, dt);
         border::update(world);
+        racing::step(world, dt * 60.0);
         combat::run_map_schedulers(world);
         ride::dig_update(world);
         actmotion::update(world, dt);
@@ -9109,6 +9139,7 @@ impl App {
             }
             e.ratio = crate::motion::move_ratio(e.ratio, moved, dt, e.motion.speed, e.motion.speed_base, e.motion.status);
             bump::active_tick(e, ticks);
+            actmotion::idle_swap(*eid, e, world.actors.get_mut(eid), ticks);
             e.last_pos = e.pos;
         }
         // Our own push goes through the walking collision (walls, floor); the server learns it from 0x015.
@@ -12352,6 +12383,7 @@ impl App {
                     w.effects.weapon_effect_off = w.game.get(0xbe) == 1;
                     w.effects.reg.aspect = aspect;
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
+                    event::camera_frame(&mut w.screen, &w.effects, &fa, f.dt);
                     counts.fx = w.effects.counts();
                     if self.fx_census.is_none_or(|t| t.elapsed().as_secs() >= 60) {
                         self.fx_census = Some(Instant::now());

@@ -378,6 +378,22 @@ impl BattleText {
         self.slot_names.as_ref()?.get(id)
     }
 
+    /// A race name of language slot 0x1c (the toteboard's FUN_101c8450) by grade.
+    pub fn race_name(&self, grade: usize) -> Option<String> {
+        self.tables[0].as_ref()?.get(grade)
+    }
+
+    /// Grammar kinds 0x87 / 0x88 / 0x8a in event text: line `id` of table 0 / 1 / 2.
+    pub fn grammar_line(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+        let t = match kind {
+            0x87 => 0,
+            0x88 => 1,
+            0x8a => 2,
+            _ => return None,
+        };
+        Some(Self::msg_of(&self.tables[t], i32::try_from(id).ok()?)).filter(|t| !t.is_empty())
+    }
+
     pub fn group9(&self, id: usize) -> Option<String> {
         self.group9.as_ref()?.get(id)
     }

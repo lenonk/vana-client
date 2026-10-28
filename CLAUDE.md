@@ -207,8 +207,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     text, the border walls and the gate's hiding of other fenced content done and seen live in both UIs; left the
     scoreboard (LSB never sends it). 0x039 zone schedulers, 0x02F chocobo digging (`chor`), 0x04F, 0x03A magic
     schedulers (independentAnimation), 0x05D event strings, c2s 0x017 (re-ask a partly known entity), c2s 0x01C done.
-    Chocobo raising runs on plain event menus (headless check); chocobo racing (toteboard 0x073 / c2s 0x09B, op 0xb4
-    0xf..0x12 windows) is being specced in ~/ffxi/lab/research/chocobo_racing_spec.md.
+    Chocobo raising runs on plain event menus (headless check); chocobo racing (client/racing.rs, MODLOG "Chocobo
+    racing": toteboard, race card, 0x069 / op 0xbf, the broadcast) done and seen live in both UIs, with grammar blocks
+    from 0x80 and op 0xc3 (MODLOG "Grammar blocks from 0x80"), camera paths framed on actors (MODLOG "Camera paths
+    framed on actors") and the MonStat idles (not seen live: LSB never sets it).
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

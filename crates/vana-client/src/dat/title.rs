@@ -19,8 +19,10 @@ pub struct Key {
 #[derive(Clone, Debug)]
 pub struct CameraPath {
     pub name: String,
-    /// Payload u32 @0x10: low byte key count; bit 19 puts the current camera first, bit 20 the player's follow
-    /// camera last (FUN_1003be40).
+    /// Payload u32 @0: the attach word (FUN_1003b900) that frames the keys on the scheduler's actor and target.
+    pub attach: u32,
+    /// Payload u32 @0x10: low byte key count; byte 1 / 255 how far the frame moves toward the actors each frame
+    /// (FUN_1003d220); bit 19 puts the current camera first, bit 20 the player's follow camera last (FUN_1003be40).
     pub flags: u32,
     /// Payload u32 @0x14: 0 linear, 1 sin ease-out, 2 1-cos ease-in, 3 split sine, 4 ease in-out (FUN_1003c270).
     pub ease: u32,
@@ -108,6 +110,7 @@ impl Title {
             match c.kind {
                 0x07 => schedulers.push((c.name(), parse_ops(c.data))),
                 0x06 => {
+                    let attach = u32_at(c.data, 0);
                     let flags = u32_at(c.data, 0x10);
                     let ease = u32_at(c.data, 0x14);
                     let keys = (0..(flags & 0xff) as usize)
@@ -117,7 +120,7 @@ impl Title {
                             Key { eye: v(o), focal: f32_at(c.data, o + 12), target: v(o + 16), roll: f32_at(c.data, o + 28) }
                         })
                         .collect();
-                    paths.push(CameraPath { name: c.name(), flags, ease, keys });
+                    paths.push(CameraPath { name: c.name(), attach, flags, ease, keys });
                 }
                 _ => {}
             }
@@ -270,14 +273,14 @@ mod tests {
     /// A one-key bit-19 path lerps from the current camera; without the bit it holds its key.
     #[test]
     fn starts_from_current() {
-        let p = CameraPath { name: "t".into(), flags: FROM_CURRENT | 1, ease: 0, keys: vec![key(10.0)] };
+        let p = CameraPath { name: "t".into(), attach: 0, flags: FROM_CURRENT | 1, ease: 0, keys: vec![key(10.0)] };
         assert_eq!(sample_from(&p, 0.0, Some(key(0.0)), None).eye.x, 0.0);
         assert_eq!(sample_from(&p, 0.5, Some(key(0.0)), None).eye.x, 5.0);
         assert_eq!(sample_from(&p, 1.0, Some(key(0.0)), None).eye.x, 10.0);
         let q = CameraPath { flags: 1, ..p.clone() };
         assert_eq!(sample_from(&q, 0.0, Some(key(0.0)), None).eye.x, 10.0);
         // Three points: the spline passes through the current camera first.
-        let r = CameraPath { name: "t".into(), flags: FROM_CURRENT | 2, ease: 0, keys: vec![key(10.0), key(20.0)] };
+        let r = CameraPath { name: "t".into(), attach: 0, flags: FROM_CURRENT | 2, ease: 0, keys: vec![key(10.0), key(20.0)] };
         assert!((sample_from(&r, 0.0, Some(key(0.0)), None).eye.x).abs() < 1e-4);
         assert!((sample_from(&r, 1.0, Some(key(0.0)), None).eye.x - 20.0).abs() < 1e-3);
         assert!((focal_of(fov_y(350.0)) - 350.0).abs() < 1e-2);

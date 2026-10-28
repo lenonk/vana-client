@@ -95,6 +95,14 @@ fn grammar(kind: u8, args: &[u8]) -> String {
         0x36 => format!("{{keyitem art num{arg}}}"),
         0x45 => format!("{{keyitem art work{arg}}}"),
         0x03 => format!("{{count num{arg}}}"),
+        0x82 => format!("{{words num{arg} num?}}"),
+        0x84 => format!("{{slot name num{arg}}}"),
+        0x85 => format!("{{slot pick num{arg}}}"),
+        0x86 => format!("{{choco word num{arg}}}"),
+        0x87 => format!("{{race name num{arg}}}"),
+        0x88 => format!("{{0x22 line work{arg}}}"),
+        0x89 => format!("{{unity num{arg}}}"),
+        0x8a => format!("{{0x1b line work{arg}}}"),
         0x04 => format!("{{count work{arg}}}"),
         _ => format!("{{grammar {kind:02x} {arg}}}"),
     }
@@ -221,6 +229,8 @@ pub struct Ctx {
     pub texts: Option<std::sync::Arc<dyn Texts>>,
     /// `7f 81 n`: the Linkshell Concierge slots' shell names (DAT_10488b08; None without the extdata Flag).
     pub concierge: Vec<Option<String>>,
+    /// Event op 0xc3's name slots (DAT_10488210) for grammar 0x84 / 0x85: 16 name bytes and the pick word.
+    pub slots: [([u8; 16], u32); 8],
 }
 
 /// Name tables FUN_100c1650 reads besides `names`.
@@ -232,6 +242,11 @@ pub trait Texts: Send + Sync {
     fn point(&self, sub: u8, id: u16) -> Option<Vec<u8>>;
     /// 7f b5: row num[n] of language slot 0x21 (Monstrosity), FUN_100bd9b0.
     fn monstrosity(&self, row: i16) -> Option<Vec<u8>>;
+    /// The tables of grammar blocks from 0x80 (FUN_100bdc50): 0x82 file 55473, 0x86 file 55474, 0x87 / 0x88 / 0x8a
+    /// language slots 0x1c / 0x22 / 0x1b, 0x89 group 12 0x1a2 + id (0 past 0xb).
+    fn grammar(&self, _kind: u8, _id: u32) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// Group 10 by id (raw) and config 0x95 (the date order) / 0x96 (12-hour).
@@ -372,6 +387,45 @@ fn grammar_expand(kind: u8, args: &[u8], ctx: &Ctx, lines: &mut [Vec<u8>], pendi
     }
 }
 
+/// A grammar block from 0x80 (FUN_100bdc50): the text it appends, and for 0x85 the [a/b] pick of the group after it.
+/// 0x81 / 0x83 (names through FUN_1022f330 / FUN_1022ec10) are in no dialogue file and not kept.
+fn grammar_high(kind: u8, args: &[u8], ctx: &Ctx) -> (Vec<u8>, Option<usize>) {
+    // FUN_100bdbe0: a slot form (0x40) takes one byte and is not filled here; the rest take 4, 0x?2 a packed index.
+    let index = |b: &[u8]| -> (Option<usize>, usize) {
+        match b {
+            [b0, ..] if b0 & 0x40 != 0 => (None, 1),
+            [b0, b1, b2, b3, ..] if b0 & 0x3f == 2 => (Some((((((b2 & 0x7f) as u16) | (*b3 as u16) << 7) << 7) | (b1 & 0x7f) as u16) as usize), 4),
+            _ => (None, 4),
+        }
+    };
+    let (first, len) = index(args);
+    let num = |i: Option<usize>| i.and_then(|i| ctx.num_at(i));
+    let table = |id: Option<i32>| id.and_then(|id| ctx.texts.as_deref()?.grammar(kind, u32::try_from(id).ok()?)).unwrap_or_default();
+    // The op 0xc3 slot that num[index] names; the index must be below 8, the slot is not checked in retail.
+    let slot = || first.filter(|&i| i < 8).and_then(|i| ctx.slots.get(usize::try_from(num(Some(i))?).ok()?));
+    match kind {
+        // Two words of file 55473 (FUN_100bd9d0, num[] as i16), joined by a space.
+        0x82 => {
+            let second = index(args.get(len..).unwrap_or_default()).0;
+            let (a, b) = (table(num(first).map(|v| v as i16 as i32)), table(num(second).map(|v| v as i16 as i32)));
+            if a.is_empty() || b.is_empty() { (Vec::new(), None) } else { ([a, b" ".to_vec(), b].concat(), None) }
+        }
+        0x84 => (slot().map(|(n, _)| n.split(|&b| b == 0).next().unwrap_or_default().to_vec()).unwrap_or_default(), None),
+        0x85 => (Vec::new(), slot().map(|&(_, w)| w as u8 as usize)),
+        0x86 | 0x87 => (table(num(first)), None),
+        0x88 | 0x8a => (table(first.and_then(|i| ctx.work.get(i).copied())), None),
+        // A Unity leader (FUN_100a36f0 with 1: group 12 0x1a2 + n), as "{%s} " when num[] is not 0.
+        0x89 => match num(first).filter(|&v| v != 0) {
+            Some(v) => {
+                let t = table(Some(v));
+                (if t.is_empty() { t } else { [b"{".to_vec(), t, b"} ".to_vec()].concat() }, None)
+            }
+            None => (Vec::new(), None),
+        },
+        _ => (Vec::new(), None),
+    }
+}
+
 /// An expanded message: Shift-JIS lines and how it ends.
 pub struct Expanded {
     pub lines: Vec<Vec<u8>>,
@@ -467,11 +521,26 @@ pub fn expand(s: &[u8], ctx: &Ctx) -> Expanded {
             }
             0x01 => {
                 let body = s.get(i + 2..(i + 2 + a).min(s.len())).unwrap_or_default();
-                if let Some(&k) = body.first() {
-                    grammar_expand(k, &body[1..], ctx, &mut lines, &mut pending);
+                let mut step = a + 2;
+                match body.first() {
+                    // FUN_100bf790: kinds from 0x80 go to FUN_100bdc50, which appends as is.
+                    Some(&k) if k >= 0x80 => {
+                        let (text, pick) = grammar_high(k, &body[1..], ctx);
+                        push(&mut lines, &text);
+                        // 0x85 (+0x6ec / +0x6ed): the [a/b] group after the block, by the slot's pick (FUN_100bdad0).
+                        if let Some(p) = pick {
+                            let (t, n) = alt(i + step, p);
+                            push(&mut lines, &t);
+                            step += n;
+                        }
+                    }
+                    Some(&k) => {
+                        grammar_expand(k, &body[1..], ctx, &mut lines, &mut pending);
+                        capital(&mut lines, &mut cap);
+                    }
+                    None => capital(&mut lines, &mut cap),
                 }
-                capital(&mut lines, &mut cap);
-                a + 2
+                step
             }
             0x02 | 0x03 => {
                 place[(c - 2) as usize] = Some(i16::from_le_bytes([a as u8, s.get(i + 2).copied().unwrap_or(0)]));
@@ -794,6 +863,10 @@ mod tests {
         fn monstrosity(&self, row: i16) -> Option<Vec<u8>> {
             Some(format!("m{row}").into_bytes())
         }
+
+        fn grammar(&self, kind: u8, id: u32) -> Option<Vec<u8>> {
+            Some(format!("g{kind:x}:{id}").into_bytes())
+        }
     }
 
     fn line(zone: u16, id: u32, ctx: &Ctx) -> Option<String> {
@@ -824,6 +897,22 @@ mod tests {
         let index = crate::dat::DatIndex::open(&cfg.ffxi_dir()).unwrap();
         let e = expand(&Dialog::load(&index, 102).unwrap().raw(12608).unwrap(), &Ctx { num: [0, 41, 0, 0, 0, 0, 0, 0], ..Default::default() });
         assert_eq!(e.sounds, [41]);
+    }
+
+    /// Grammar blocks from 0x80 on real lines: op 0xc3's slot name and its [a/b] pick (zone 70), the tables of 0x87
+    /// (70) and 0x82 (71).
+    #[test]
+    fn high_grammar() {
+        let mut slots: [([u8; 16], u32); 8] = Default::default();
+        slots[3].0[..5].copy_from_slice(b"Gelbe");
+        slots[3].1 = 1;
+        let texts = Some(std::sync::Arc::new(Stub) as std::sync::Arc<dyn Texts>);
+        let ctx = Ctx { num: [3, 5, 14, 0, 0, 0, 0, 0], slots, texts, ..Default::default() };
+        let Some(t) = line(70, 8858, &ctx) else { return };
+        assert_eq!(t, "Incredible! Gelbe's speed is approaching dangerous limits!");
+        assert!(line(70, 7887, &ctx).unwrap().ends_with("is...a female!"));
+        assert_eq!(line(70, 9767, &ctx).unwrap(), "You can purchase your g87:14 tickets here, kupo.");
+        assert!(line(71, 7361, &ctx).unwrap().ends_with("g82:3 g82:5!"));
     }
 
     /// `7f 81 n`: concierge slot num[n]'s name (zone 231 19321 "{7f81 num1}, correct?"); a slot without a name prints
