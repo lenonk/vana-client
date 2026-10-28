@@ -1373,7 +1373,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
             let p = entity_plate(*id, e);
             let (prefix, icon) = plate::prefix(&p);
             if world.modern {
-                modern::plates::draw(gu, &prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
+                modern::plates::draw(gu, &prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p), m);
             } else {
                 gu.name_plate(&prefix, monstrosity::name(e), x, y, scale, faded(tint), pulse, faded(icon), plate::stars(&p));
             }
@@ -1391,7 +1391,7 @@ fn name_plates(gu: &mut GameUi, world: &World, sw: f32, sh: f32, view_proj: glam
         let p = self_plate(world);
         let (prefix, icon) = plate::prefix(&p);
         if world.modern {
-            modern::plates::draw(gu, &prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
+            modern::plates::draw(gu, &prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p), m);
         } else {
             gu.name_plate(&prefix, monstrosity::my_name(world), x, y, scale, tint, 1.0, faded(icon), plate::stars(&p));
         }

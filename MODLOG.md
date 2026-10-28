@@ -4824,6 +4824,8 @@ Full spec: scratchpad iuse/SPEC.md of that session (sort windows, manual sort, t
   is now scaled by the same multiply (and the zoning fade), which equals retail for an alpha-blended plate *(inf:
   up to the clamp of MODULATE4X)*. Seen before: a "Moogle" plate bright over the fdo1 black in the AMK cutscene.
 - Not done: op 0x51 multiplies the scene too in retail (ours only the 2D layer); the one-frame delay.
+- The modern plates' badges and master stars take the same multiply (2026-10-28): drawn white, the new-adventurer "?"
+  stayed bright over an opening's fade to black (Port Bastok) while the name went dark.
 - MODLOG's FUN_10080100 / FUN_10084b20 / FUN_100ce4d0 / FUN_1005f630 names are the 2019 build's.
 - Also live 2026-10-23: talking to the Mog House moogle with AMK on starts LSB's AMK mission 1 cutscene (event
   30023); it played to its end, and talking again opened myroom through s2c 0x02E.
