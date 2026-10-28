@@ -1156,7 +1156,8 @@ fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
             }
         }
         k => {
-            if fl.key(k, held, logwin::full_lines(sh), w.log.history()) {
+            let total = w.log.full_total(fl.filter);
+            if fl.key(k, held, logwin::full_lines(sh), total) {
                 w.sounds.push(1);
             }
         }
@@ -2798,9 +2799,18 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
-    } else if let Some(fl) = world.full_log.filter(|_| !world.modern) {
+    } else if world.full_log.is_some() && !world.modern {
         // The small logs are closed while the full log is open (FUN_1015c280); the modern one is the chat window.
-        blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, world.game.get(0xb4) != 0));
+        // Message 8 (Num+, FUN_10138230 case 8): the next tab from its newest row.
+        if std::mem::take(&mut world.full_log_next)
+            && let Some(fl) = world.full_log.as_mut()
+        {
+            fl.filter = logwin::next_tab(fl.filter, route.second);
+            (fl.scroll, fl.row) = (0, logwin::full_lines(sh));
+        }
+        let fl = world.full_log.unwrap_or_default();
+        world.log.prepare_tab(gu, &world.chat, fl.filter, route);
+        blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, route.second));
     } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);

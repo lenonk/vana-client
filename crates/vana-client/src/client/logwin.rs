@@ -150,6 +150,8 @@ pub struct LogWin {
     pub second: bool,
     /// The route its lines were taken with (a change rebuilds them).
     route: Route,
+    /// The full log's rows on a tab other than Window 1 (window 1's own rows).
+    tab: TabRows,
 }
 
 /// FUN_101626e0's state, shared by the retail log and the modern chat window (each counting the rows of its own
@@ -327,12 +329,70 @@ impl LogAnim {
     }
 }
 
-/// The full log (menu fulllog, FUN_10132e60 / FUN_10133890): cursor row 1..=lines (+0x1c) and the lines
-/// skipped from the newest (+0x20).
+/// The full log (menu fulllog, FUN_10132e60 / FUN_10133890): cursor row 1..=lines (+0x1c), the lines skipped from
+/// the newest (+0x20) and the tab's filter (+0x54).
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FullLog {
     pub row: usize,
     pub scroll: usize,
+    pub filter: u8,
+}
+
+/// The full log's tabs (list 0x1036f940 as FUN_10138700 / FUN_10138800 leave it in English): filters Window 1, Window 2
+/// (only with config 0xb4), Say, Tell, Party, Linkshell, Linkshell 2, Assist E, Assist J, Unity, Shout.
+pub fn full_tabs(second: bool) -> Vec<u8> {
+    [0u8, 8, 3, 4, 1, 2, 7, 10, 9, 6, 5].into_iter().filter(|&f| f != 8 || second).collect()
+}
+
+/// Message 8 (Num+, FUN_10138230 case 8 -> FUN_10138910): the next tab, wrapping.
+pub fn next_tab(filter: u8, second: bool) -> u8 {
+    let tabs = full_tabs(second);
+    let k = tabs.iter().position(|&f| f == filter).map_or(0, |k| (k + 1) % tabs.len());
+    tabs[k]
+}
+
+/// A filter's fep sprite pair (the list's second bytes).
+fn tab_pair(filter: u8) -> usize {
+    match filter {
+        0 => 0,
+        8 => 1,
+        3 => 2,
+        4 => 3,
+        1 => 4,
+        2 => 5,
+        7 => 6,
+        9 => 7,
+        10 => 8,
+        6 => 9,
+        _ => 10,
+    }
+}
+
+/// FUN_101299f0: a line on tab `filter`: Window 1 / 2 by their masks, the channels by their modes.
+pub fn tab_shows(filter: u8, route: &Route, mode: Option<u8>, gm: bool) -> bool {
+    let m = mode.unwrap_or(0xff);
+    match filter {
+        0 => route.shows(0, mode, gm),
+        8 => route.shows(1, mode, gm),
+        1 => matches!(m, 5 | 13 | 0xd2),
+        2 => matches!(m, 6 | 14),
+        3 => matches!(m, 1 | 9),
+        4 => matches!(m, 4 | 12),
+        5 => matches!(m, 2 | 10 | 3 | 11),
+        6 => matches!(m, 0xd3 | 0xd4),
+        7 => matches!(m, 0xd5 | 0xd6),
+        9 => matches!(m, 0xdb | 0xdc),
+        10 => matches!(m, 0xdd | 0xde),
+        _ => false,
+    }
+}
+
+/// A full log tab's rows (wrapped at window 1's width) and what they were built from: the filter, the log's length and
+/// edits, the width, the route.
+#[derive(Default)]
+struct TabRows {
+    key: (u8, usize, u64, u32, Route),
+    rows: Vec<(String, [u8; 4], usize)>,
 }
 
 /// Visible rows: 23 + (H - 448) / 16, truncated toward zero.
@@ -342,7 +402,7 @@ pub fn full_lines(sh: f32) -> usize {
 
 impl FullLog {
     pub fn open(sh: f32) -> Self {
-        Self { row: full_lines(sh), scroll: 0 }
+        Self { row: full_lines(sh), scroll: 0, filter: 0 }
     }
 
     /// Messages 1 / 2 (Down / Up: the row, scrolling at its ends; with Ctrl / Alt, key 0xaf, scrolling only),
@@ -439,6 +499,15 @@ mod tests {
         assert_eq!((caption_1("/p", true), caption_1("/yell", true), caption_1("", false)), (735, 278, 276));
     }
 
+    /// The tabs in English order; Window 2 only with a second window; Num+ wraps; Shout takes yells.
+    #[test]
+    fn full_log_tabs() {
+        assert_eq!(full_tabs(false), [0, 3, 4, 1, 2, 7, 10, 9, 6, 5]);
+        assert_eq!((next_tab(0, true), next_tab(0, false), next_tab(5, true)), (8, 3, 0));
+        let r = Route::default();
+        assert!(tab_shows(5, &r, Some(11), false) && tab_shows(1, &r, Some(0xd2), false) && !tab_shows(3, &r, Some(7), false));
+    }
+
     /// Default masks with window 2 on: chat, emotes and NPC talk to window 2; battle, system and modeless lines to
     /// window 1; GM lines to window 1 only; everything to window 1 with window 2 off. Window 2 above or right of 1.
     #[test]
@@ -497,24 +566,62 @@ mod tests {
     fn full_log_keys() {
         assert_eq!([full_lines(480.0), full_lines(600.0), full_lines(800.0)], [25, 32, 45]);
         let mut f = FullLog::open(480.0);
-        assert_eq!(f, FullLog { row: 25, scroll: 0 });
+        assert_eq!(f, FullLog { row: 25, scroll: 0, filter: 0 });
         f.key(egui::Key::ArrowDown, false, 25, 100);
-        assert_eq!(f, FullLog { row: 25, scroll: 0 });
+        assert_eq!(f, FullLog { row: 25, scroll: 0, filter: 0 });
         f.key(egui::Key::ArrowUp, true, 25, 100);
-        assert_eq!(f, FullLog { row: 25, scroll: 1 });
+        assert_eq!(f, FullLog { row: 25, scroll: 1, filter: 0 });
         f.key(egui::Key::ArrowLeft, false, 25, 100);
         f.key(egui::Key::ArrowLeft, false, 25, 100);
         f.key(egui::Key::ArrowLeft, false, 25, 100);
-        assert_eq!(f, FullLog { row: 1, scroll: 75 });
+        assert_eq!(f, FullLog { row: 1, scroll: 75, filter: 0 });
         f.key(egui::Key::ArrowRight, false, 25, 100);
         assert_eq!(f.scroll, 50);
         f.key(egui::Key::ArrowRight, false, 25, 100);
         f.key(egui::Key::ArrowRight, false, 25, 100);
-        assert_eq!(f, FullLog { row: 25, scroll: 0 });
+        assert_eq!(f, FullLog { row: 25, scroll: 0, filter: 0 });
     }
 }
 
 impl LogWin {
+    /// The full log's rows for `filter` (FUN_101295d0 over the history): Window 1 is this window's rows; Window 2 every
+    /// line of its mask up to KEEP rows; a channel the newest 100 rows *(inf: ~50 rows at the open, up to 100 while
+    /// open)*.
+    pub fn prepare_tab(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, filter: u8, route: Route) {
+        if filter == 0 {
+            return;
+        }
+        let key = (filter, chat.len(), chat.edits(), self.width.to_bits(), route);
+        if self.tab.key == key && !self.tab.rows.is_empty() {
+            return;
+        }
+        let limit = if filter == 8 { KEEP } else { 100 };
+        let mut rows: Vec<Vec<(String, [u8; 4], usize)>> = Vec::new();
+        let mut n = 0;
+        for k in (0..chat.len()).rev() {
+            let (mode, gm) = chat.route(k);
+            if !tab_shows(filter, &route, mode, gm) {
+                continue;
+            }
+            let r = self.wrap_line(gu, chat, k, self.width);
+            n += r.len();
+            rows.push(r);
+            if n >= limit {
+                break;
+            }
+        }
+        self.tab = TabRows { key, rows: rows.into_iter().rev().flatten().collect() };
+    }
+
+    fn full_rows(&self, filter: u8) -> &[(String, [u8; 4], usize)] {
+        if filter == 0 { &self.wrapped } else { &self.tab.rows }
+    }
+
+    /// The full log's row count on its tab (its bar and paging).
+    pub fn full_total(&self, filter: u8) -> usize {
+        self.full_rows(filter).len()
+    }
+
     /// Window 2.
     pub fn second() -> Self {
         Self { second: true, ..Default::default() }
@@ -684,7 +791,8 @@ impl LogWin {
         let (n, yoff) = if typing { (lines - 1, -16.0) } else { (lines, 0.0) };
         let bottom = y0 + h - 4.0 + yoff;
         gu.clip(Some([x0, y0 + 3.0, w, (bottom - (y0 + 3.0)).max(0.0)]));
-        for (i, (line, colour, st)) in self.wrapped.iter().rev().skip(fl.scroll).take(n).enumerate() {
+        let rows = self.full_rows(fl.filter);
+        for (i, (line, colour, st)) in rows.iter().rev().skip(fl.scroll).take(n).enumerate() {
             stamped(gu, line, *st, x0 + 4.0, bottom + yoff - 16.0 - 16.0 * i as f32, *colour, self.stamps.colour);
         }
         gu.clip(None);
@@ -693,17 +801,16 @@ impl LogWin {
         let yb = bottom + yoff + 16.0 * (fl.row as f32 - lines as f32);
         gu.cursor(x0 + 3.0, yb - 15.0);
         // FUN_10137840: the bar at x1 - 6 (resized at open), the log's lines, bottom-anchored top.
-        let total = self.wrapped.len();
+        let total = rows.len();
         gu.scroll_bar(x0 + w - 6.0, y0, h, total, lines, total.saturating_sub(fl.scroll + lines));
         gu.bar_site(super::scrollbar::Owner::FullLog, x0 + w - 6.0, y0, h, total, lines, total.saturating_sub(fl.scroll + lines));
-        // Tabs (FUN_10138800; list built by FUN_10138700): fep sprite pairs 0x10333b4c, unselected A[2s] / selected
-        // A[2s + 1]; the filter-8 tab (pair 1) only with config 0xb4 (a second log window). Pairs 7 / 8 are the
-        // Assist J / E filters 9 / 10, in that order only in Japanese. Filter 0 (all) is selected.
+        // Tabs (FUN_10137b80; list FUN_10138800): fep sprite pairs 0x10333b4c, unselected A[2p] / selected A[2p + 1];
+        // the selected one advances 64, the others 30 (they overlap).
         const A: [usize; 22] = [0x12, 0x1b, 0x13, 0x1c, 0x0a, 0x14, 0x0c, 0x16, 0x0d, 0x17, 0x0e, 0x18, 0x10, 0x19, 0x1d, 0x1f, 0x1e, 0x20, 0x11, 0x1a, 0x0b, 0x15];
         let mut x = x0;
-        for slot in [0usize, 1, 2, 3, 4, 5, 6, 8, 7, 9, 10].into_iter().filter(|&s| s != 1 || second) {
-            let on = slot == 0;
-            let k = A[2 * slot + on as usize];
+        for f in full_tabs(second) {
+            let on = f == fl.filter;
+            let k = A[2 * tab_pair(f) + on as usize];
             gu.sprite("menu    fep", k, x, y0 - 9.0, 0x8080_8080);
             x += if on { gu.sprite_width("menu    fep", k) } else { 30.0 };
         }

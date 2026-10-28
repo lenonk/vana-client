@@ -10999,3 +10999,14 @@ Spec `~/ffxi/lab/research/gardening_spec.md`. Ours: client/garden.rs (replacing 
 - Seen live 2026-10-28 (Lnxcsfix's San d'Oria Mog House, seven test pots at stages 0, 1, 4, 9, 10, 11 and dried; both
   UIs): sow (LSB 0x084 "Your moogle plants the bag of herb seeds"), feed (0x088), harvest (0x086: 16 rock salt),
   dry (0x085), Examine with LSB's "Seeds sown / Crystal used" lines, Empty Pot, the dried pot's plnt6, leaving.
+
+## Full log: the tab switch (2026-10-28)
+
+From `~/ffxi/lab/scratch/chatfilters/SPEC.md` §1, §2, §5. Key function 0x11 (Num+, Ctrl / Alt + F) sends message 8
+to the open full log (FUN_10138230 case 8): the next tab of the list (English: Window 1, Window 2 only with config
+0xb4, Say, Tell, Party, Linkshell, Linkshell 2, Assist E, Assist J, Unity, Shout), wrapping, from its newest row, SE
+0002. FUN_101299f0 filters: Window 1 / 2 by the windows' masks, the channels by mode (Party 5 / 13 / 0xd2, Linkshell
+6 / 14, Say 1 / 9, Tell 4 / 12, Shout 2 / 10 / 3 / 11, Unity 0xd3 / 0xd4, Linkshell 2 0xd5 / 0xd6, Assist J 0xdb /
+0xdc, Assist E 0xdd / 0xde). The strip (FUN_10137b80): the selected tab's sprite advances 64, the others 30. Every
+open starts on Window 1. Ours: logwin.rs `full_tabs`, `next_tab`, `tab_shows`, `LogWin::prepare_tab` (a channel tab
+keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)*). Seen live 2026-10-28.
