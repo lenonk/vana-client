@@ -11163,4 +11163,6 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   sends message 5 every frame, each waiting page going on (SE 0015 each) until the message closes (FUN_10136ab0 clears
   it); ours event::State auto_advance. Its one site: Reisenjima (291) event_ffff @0x1f, after a 21600-tick event timer
   (subs 0xa / 0xc / 0xb). Not seen live.
-- Not done: the frames' magenta tint (windowps 43, spec §8), 0xbe as the page mode of a 0x97 message.
+- A 0x97 message's pages (op 0x48) print as mode 0xbe (asm 0x1013669b); 0x96 / 0x97 / 0x98 / 0xbe share colour id 91
+  and mask bit 9, so only the record's mode differs.
+- Not done: the frames' magenta tint (windowps 43, spec §8).

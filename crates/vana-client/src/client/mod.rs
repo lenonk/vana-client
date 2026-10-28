@@ -998,6 +998,11 @@ fn chat_record(kind: u8, attr: u8, data: u16, from: &str) -> Option<(String, u8)
     named.then(|| (from.to_string(), flags))
 }
 
+/// A message page's print mode: 0xbe for a 0x97 message (op 0x48), else 0x98.
+fn page_mode(message: Option<u8>) -> u8 {
+    if message == Some(0x97) { 0xbe } else { 0x98 }
+}
+
 /// Config 0x34's bit for a chat mode (FUN_101273c0): the Chat Filters' "Hold" (the spool).
 fn hold_bit(mode: u8) -> Option<u32> {
     Some(match mode {
@@ -2512,14 +2517,16 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     // The log line's colour is its mode's (FUN_10129c70); mode 0 has none of its own.
     let colour = mode.and_then(|m| world.battle.as_ref().map(|bt| bt.colour_in(m, &world.game))).unwrap_or(WHITE);
-    // The pages print with mode 0x98 (the message queues' writer FUN_10136670): NPC talk for the log windows' masks,
-    // marked as the open page (record +0x12 = 1); the pages before it lose their mark (FUN_10126a90).
+    // The pages print with mode 0x98, 0xbe for a 0x97 message (the message queues' writer FUN_10136670, asm
+    // 0x1013669b): NPC talk for the log windows' masks, marked as the open page (record +0x12 = 1); the pages before it
+    // lose their mark (FUN_10126a90).
+    let print_mode = page_mode(mode);
     if !page_lines.is_empty() {
         let from = *world.page_from.get_or_insert(world.chat.len());
         world.chat.unmark(1, from);
     }
     for l in page_lines {
-        world.chat.push_event(l, colour, false, 0x98);
+        world.chat.push_event(l, colour, false, print_mode);
         world.chat.mark_last(1);
     }
     if world.page_from.is_some() && world.rem_open_at.is_none() {
@@ -2773,8 +2780,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let second_mode = world.game.get(0xb4);
     let second_up = route.second && world.full_log.is_none();
     let prompt = event::prompt(world);
-    let keep = (world.typing && world.log.at_most_two()) || stacked || (prompt && route.shows(0, Some(0x98), false) && world.log.lines() <= page_rows.max(1));
-    let keep2 = (world.typing && world.log2.at_most_two()) || stacked || (prompt && route.shows(1, Some(0x98), false) && world.log2.lines() <= page_rows.max(1));
+    let pm = Some(page_mode(event::message_ref(world).and_then(|m| m.mode)));
+    let keep = (world.typing && world.log.at_most_two()) || stacked || (prompt && route.shows(0, pm, false) && world.log.lines() <= page_rows.max(1));
+    let keep2 = (world.typing && world.log2.at_most_two()) || stacked || (prompt && route.shows(1, pm, false) && world.log2.lines() <= page_rows.max(1));
     // A window taking the keys takes the focus as it opens: Num+ may focus the log over one already open (the action menu
     // while engaged) *(inf: the newest window has the focus)*; an event closes the full log (FUN_10133000).
     let takers = [world.menu.is_some(), world.win.is_some(), world.action_menu.is_some(), world.confirm.is_some(), world.config.is_some()].iter().enumerate().fold(0u8, |m, (i, &on)| m | (on as u8) << i);
@@ -2877,7 +2885,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let newest = world.log2.draw(gu, &f, false, &world.chat);
         let over = world.log2.draw_over(gu, &f);
         if prompt
-            && route.shows(1, Some(0x98), false)
+            && route.shows(1, pm, false)
             && let Some((lx, ly, last)) = newest.or(over)
         {
             kaipage(gu, world, lx, ly, &last);
@@ -2912,7 +2920,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw, in the window the
         // pages print to: after the page's newest row in the log, or the rem's.
         if prompt
-            && !(second_up && route.shows(1, Some(0x98), false))
+            && !(second_up && route.shows(1, pm, false))
             && let Some((lx, ly, last)) = newest.or(over)
         {
             kaipage(gu, world, lx, ly, &last);
