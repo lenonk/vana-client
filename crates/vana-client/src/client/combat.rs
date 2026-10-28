@@ -1360,6 +1360,37 @@ pub(super) fn on_scheduler(w: &mut World, actor: u32, name: [u8; 4]) {
     w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
 }
 
+/// 0x039 (FUN_1009dd20): a scheduler of the zone's files (DAT_1065cb04 vt+0x18 = FUN_1018b770) on no actors when every
+/// id and index is 0 (LSB's entityVisualPacket at zone-in: '1pb1', 'on00'), else on the two actors, both known by
+/// index and id with their models in. Held until the zone's effects are loaded (retail handles packets after the load).
+pub(super) fn on_map_scheduler(w: &mut World, ids: (u32, u32), indices: (u16, u16), name: [u8; 4]) {
+    w.map_schedulers.push((ids, indices, name));
+}
+
+/// Runs the held 0x039s once the zone is in.
+pub(super) fn run_map_schedulers(w: &mut World) {
+    if w.map_schedulers.is_empty() || w.loading.is_some() {
+        return;
+    }
+    let Some(file) = w.effects.zone_file() else { return };
+    for (ids, indices, name) in std::mem::take(&mut w.map_schedulers) {
+        let n = u32::from_le_bytes(name);
+        if ids == (0, 0) && indices == (0, 0) {
+            w.effects.on_event_scheduler(file, n, crate::fx::sched::Who::None, crate::fx::sched::Who::None);
+            continue;
+        }
+        let ok = |id: u32, index: u16| {
+            let known = if id == w.my_id { w.my_index == index } else { w.entities.get(&id).is_some_and(|e| e.index == index) };
+            known && w.actors.get(&id).is_some_and(|a| a.character.is_some())
+        };
+        if ok(ids.0, indices.0) && ok(ids.1, indices.1) {
+            w.effects.on_event_scheduler(file, n, crate::fx::sched::Who::Actor(ids.0), crate::fx::sched::Who::Actor(ids.1));
+        } else {
+            log::debug!("0x039 {}: actors not ready, dropped", String::from_utf8_lossy(&name));
+        }
+    }
+}
+
 // --- Action menu (FUN_10127790 / FUN_101275b0 / FUN_10127230) ---
 
 /// Command layouts at FFXiMain 0x10363648 (13 bytes each, 0x1c ends).

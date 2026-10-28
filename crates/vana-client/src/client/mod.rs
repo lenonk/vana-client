@@ -5667,6 +5667,10 @@ struct World {
     objective: objective::Objective,
     /// The objective border's parts.
     border: border::Parts,
+    /// s2c 0x039s held until the zone's effects are in.
+    map_schedulers: Vec<((u32, u32), (u16, u16), [u8; 4])>,
+    /// Entity +0x12c bits 4 / 5 by id: a chocobo dig to play, and the dig holding (s2c 0x02F).
+    digs: HashMap<u32, u8>,
     /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
     casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -7226,6 +7230,8 @@ impl App {
                             event_timer: None,
                             objective: Default::default(),
                             border: Default::default(),
+                            map_schedulers: Vec::new(),
+                            digs: HashMap::new(),
                             casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
@@ -8274,6 +8280,11 @@ impl App {
                     }
                 }
                 NetEvent::Equip { slot, index, container } => world.inv.set_equip(slot, index, container),
+                NetEvent::EquipClear => {
+                    for slot in 0..16 {
+                        world.inv.set_equip(slot, 0, 0);
+                    }
+                }
                 NetEvent::CharStats(s) => {
                     world.stats = Some(s);
                     status::on_stats(world);
@@ -8294,6 +8305,8 @@ impl App {
                     combat::on_action(world, &a);
                 }
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
+                NetEvent::MapScheduler { ids, indices, name } => combat::on_map_scheduler(world, ids, indices, name),
+                NetEvent::Dig { id, index, flags } => ride::on_dig(world, id, index, flags),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
                 NetEvent::Fragments(p) => servmes::on_fragment(world, &p),
@@ -8906,6 +8919,8 @@ impl App {
         fishrod::update(world, dt);
         indi::update(world, dt);
         border::update(world);
+        combat::run_map_schedulers(world);
+        ride::dig_update(world);
         actmotion::update(world, dt);
         // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
         if !event::active(world) && world.control_lock.is_some_and(|(t, id)| t.elapsed().as_secs_f32() > 10.0 || !world.entities.contains_key(&id)) {
@@ -9193,8 +9208,8 @@ impl App {
         if world.walk {
             tier = f32::min(tier, 1.0 / 3.0);
         }
-        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request.
-        if world.my_motion.status == 0x2c || fishing::locked(world) {
+        // FUN_100964f0: no movement during a synthesis (status 0x2c), fishing or its request, or a dig.
+        if world.my_motion.status == 0x2c || fishing::locked(world) || ride::digging(world) {
             tier = 0.0;
         }
         if tier == 0.0 {

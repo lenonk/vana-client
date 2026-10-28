@@ -11236,3 +11236,31 @@ Follows "s2c 0x075: the battlefield countdown, objective bars and text".
   walls (translucent blue panels, red / yellow bars) where the arc puts them: between the camera and the player for a
   line 2 yalms behind her, through her for a circle beside her; render 1 with the player 3 from the line: parts made,
   no efon, nothing drawn. Not compared with retail footage.
+
+## s2c 0x039 map schedulers, 0x02F chocobo digging, 0x04F equipment clear (2026-10-28)
+
+Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, asm ~0x100944f6..0x10094719):
+0x039 -> 0x1009dd20, 0x02F -> 0x1009fac0, 0x075 -> 0x10098e90; 0x04F registers through FUN_100fc370 (LAB_100e5ac0).
+- 0x039 {UniqueNoCas @4, UniqueNoTar @8, 4cc @0xc, ActIndexCast @0x10, ActIndexTar @0x12}: all four 0 -> DAT_1065cb04
+  vt+0x18 = FUN_1018b770(name, 0, 0): the zone resources (+0x1ac) searched for a type-7 scheduler of that name
+  (FUN_10072290(.., 7, name)), started on no actors (FUN_10056c70). Otherwise both indices valid, both entity slots
+  present with the matching ids (+0x78), both models in (+0x120 bit 9), then refusals: (DAT_104808fc | DAT_1047fb40) &
+  0x800 while an event runs (DAT_10487e48); & 0x20 with either +0x120 bit 7; either +0x124 bit 30; else the same start
+  on the two actors (+0xa0). LSB's entityVisualPacket sends the ids of `entity` or zeros (zone visuals at zone-in:
+  Whitegate '1pb1' = generators g0c1 / g0b1 of zone file 150, AlTaieu 'on00', RuHmet 'lst1'.., PsoXja 'brmp'..).
+  Ours: combat::on_map_scheduler / run_map_schedulers, held until the zone's effects are loaded (ours loads zones
+  apart from the packet stream); the refusal flags are not modelled. Live (230): `!exec
+  player:entityVisualPacket("open")` ran zone 330's `open` on no actors, `("clos", player)` on Lnxcsfix.
+- 0x02F {TarUniqueNo @4, TarActIndex @8, Flags @0xa}: the entity at the index with that id; Flags & 0xf == 1, status 5 /
+  0x55 (FUN_10095680 / FUN_100956a0) and model in -> +0x12c |= 0x30, else +0x12c = (& ~0x10) | 0x20. Each frame
+  FUN_1008e740: bit 4 with the model in (and +0x120 bit 10) -> for us FUN_100a6070(0), then if FUN_100d65b0(1) (a
+  motion-slot test on the rider) `chor` on the animal (+0xa4) and on the rider (+0xa0); bit 4 cleared. Bit 5: another's
+  clears at once; ours waits until the animal's `chor` no longer runs (vt+0x2a0), then FUN_10088270(0, 0x11) sends c2s
+  0x063 {UniqueNo, para 0, ActIndex, mode 0x11} (LSB ignores it) and resets both actors' +0x7d8 to "    "; while bit 5
+  is set FUN_100964f0 refuses our control. LSB sends 0x02F to everyone in range on a dig; the result line comes at
+  once. `chor` lives in the chocobo file (39275) and the rider's riding file (38603.., ride.rs FILES).
+  Ours: ride::on_dig / dig_update / digging (World.digs = +0x12c bits 4 / 5 by id; movement held); FUN_100d65b0 taken
+  as passed *(inf)*. Live (Lnxcsfix on a chocobo in West Ronfaure, LSB's 60 s zone-in dig cooldown): the chocobo
+  lowered its head and dug (dirt), the rider leaned; "You dig and you dig, but find nothing.".
+- 0x04F (no data): G+0x19a54's 16 equipment records {u32, u8} zeroed, then the hook DAT_104b1774. LSB sends it at login
+  (before the 0x050s), on Monstrosity changes and from char_entity. Ours: every equip slot emptied.

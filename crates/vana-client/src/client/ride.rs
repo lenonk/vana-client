@@ -461,6 +461,62 @@ pub fn points(w: &mut World, pts: Vec<(u64, Vec3)>) {
     }
 }
 
+/// s2c 0x02F (FUN_1009fac0): the entity at the index with that id; flags 1 on a chocobo or mount with its model in
+/// sets entity +0x12c bits 4 and 5 (dig, held), anything else bit 5 only.
+pub fn on_dig(w: &mut World, id: u32, index: u16, flags: u8) {
+    let status = if id == w.my_id && index == w.my_index {
+        w.my_motion.status
+    } else if let Some(e) = w.entities.get(&id).filter(|e| e.index == index) {
+        e.motion.status
+    } else {
+        return;
+    };
+    let ready = w.actors.get(&id).is_some_and(|a| a.character.is_some());
+    let bits = if flags & 0xf == 1 && matches!(status, 5 | 0x55) && ready { 0x30 } else { 0x20 };
+    log::info!("0x02F dig {id:#x}: flags {flags} status {status:#x} -> bits {bits:#x}");
+    *w.digs.entry(id).or_default() |= bits;
+}
+
+/// We are held while our dig runs (+0x12c bit 5, FUN_100964f0).
+pub fn digging(w: &World) -> bool {
+    w.digs.get(&w.my_id).is_some_and(|b| b & 0x20 != 0)
+}
+
+/// FUN_1008e740 per entity: bit 4 starts `chor` on the animal (+0xa4) and the rider (+0xa0) *(inf: FUN_100d65b0's
+/// motion test taken as passed)*; bit 5 holds us until the animal's `chor` ends, then c2s 0x063 {UniqueNo, para 0,
+/// ActIndex, mode 0x11} (FUN_10088270) tells the server; another's bit 5 just clears.
+pub fn dig_update(w: &mut World) {
+    let chor = u32::from_le_bytes(*b"chor");
+    for (id, bits) in w.digs.clone() {
+        let ready = w.actors.get(&id).is_some_and(|a| a.character.is_some());
+        let mut b = bits;
+        if ready && b & 0x10 != 0 {
+            w.effects.on_scheduler(ANIMAL | id, ANIMAL | id, chor);
+            w.effects.on_scheduler(id, id, chor);
+        }
+        b &= !0x10;
+        if b & 0x20 != 0 {
+            let me = id == w.my_id;
+            if !me {
+                b &= !0x20;
+            } else if !ready || !w.effects.actor_scheduler_running(ANIMAL | id, chor) {
+                let mut body = w.my_id.to_le_bytes().to_vec();
+                body.extend(0u32.to_le_bytes());
+                body.extend(w.my_index.to_le_bytes());
+                body.extend([0x11, 0]);
+                log::info!("dig done: c2s 0x063 mode 0x11");
+                let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x063, body });
+                b &= !0x20;
+            }
+        }
+        if b == 0 {
+            w.digs.remove(&id);
+        } else {
+            w.digs.insert(id, b);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::drop_for;

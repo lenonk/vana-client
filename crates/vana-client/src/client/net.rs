@@ -425,6 +425,8 @@ pub enum NetEvent {
     BazaarSold { count: u32, owner: u16, name: String, index: u8 },
     /// 0x050: equipment slot -> container slot (index 0 = removed).
     Equip { slot: u8, index: u8, container: u8 },
+    /// s2c 0x04F (LAB_100e5ac0): every equipment slot empties (G+0x19a54, 16 x 8 bytes), then the equipment hook.
+    EquipClear,
     /// 0x061: our stats.
     CharStats(super::items::CharStats),
     /// 0x05F: a music slot changed.
@@ -560,6 +562,10 @@ pub enum NetEvent {
     Action(crate::net::action::Action),
     /// 0x038: run scheduler `name` (a 4cc such as "kesu") on an actor.
     Scheduler { actor: u32, target: u32, name: [u8; 4] },
+    /// s2c 0x039 (GP_SERV_COMMAND_MAPSCHEDULOR): a zone scheduler on (caster, target), ids and ActIndexes.
+    MapScheduler { ids: (u32, u32), indices: (u16, u16), name: [u8; 4] },
+    /// s2c 0x02F (GP_SERV_COMMAND_DIG): TarUniqueNo, TarActIndex, Flags.
+    Dig { id: u32, index: u16, flags: u8 },
     /// s2c 0x11E: ActIndex @4 used /jump.
     Jump(u16),
     /// s2c 0x030 (GP_SERV_COMMAND_EFFECT): UniqueNo @4, ActIndex @8, EffectNum @0xa, Type @0xc, Status @0xd, Timer @0xe.
@@ -1131,6 +1137,8 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x02D => tx.send(NetEvent::Battle(battle_message2(&p)))?,
                     0x028 => tx.send(NetEvent::Action(crate::net::action::parse(&p.data)))?,
                     0x038 => tx.send(NetEvent::Scheduler { actor: p.u32(4), target: p.u32(8), name: p.u32(12).to_le_bytes() })?,
+                    0x02F => tx.send(NetEvent::Dig { id: p.u32(4), index: p.u16(8), flags: p.u8(0xa) })?,
+                    0x039 => tx.send(NetEvent::MapScheduler { ids: (p.u32(4), p.u32(8)), indices: (p.u16(0x10), p.u16(0x12)), name: p.u32(12).to_le_bytes() })?,
                     0x051 => tx.send(NetEvent::SelfLook(look_at(&p, 4)))?,
                     0x00E => tx.send(NetEvent::Entity(entity(&p, EntityKind::Npc)))?,
                     0x057 => tx.send(NetEvent::Weather(p.u16(8), p.u16(0x0a)))?,
@@ -1295,6 +1303,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     }
                     // GP_SERV_COMMAND_ITEM_SUBCONTAINER (LAB_100ec730): a mannequin's look, bytes 4..0x1b kept whole.
                     0x026 => tx.send(NetEvent::MannequinLook { rec: std::array::from_fn(|k| p.u8(4 + k)) })?,
+                    0x04F => tx.send(NetEvent::EquipClear)?,
                     0x050 => tx.send(NetEvent::Equip { index: p.u8(4), slot: p.u8(5), container: p.u8(6) })?,
                     // CLISTATUS: hpmax @4, mpmax @8, jobs @0xc..0xf, bp_base @0x14, bp_adj @0x22, atk @0x30,
                     // def @0x32, def_elem @0x34, su_lv @0x52, ilvl @0x55.
