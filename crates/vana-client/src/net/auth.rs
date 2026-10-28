@@ -43,7 +43,7 @@ pub enum Reply {
 fn describe(result: u64) -> &'static str {
     match result {
         0x00 => "the account is not active",
-        0x02 => "invalid username or password",
+        0x02 => "invalid username, password or one-time code",
         0x04 => "that username is already taken",
         0x07 => "the password could not be changed",
         0x08 => "account creation is disabled on this server",

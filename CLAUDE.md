@@ -186,7 +186,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     moves, mp_pmode, the Monster Skills lists, the main menu rules, mp_stat, mp_dead, the refusals, the engaged camera,
     Customization (species, Faculties, Naming, c2s 0x102), the Tab rule (Ctrl+F8), the hitbox (MODLOG "Model radii")
     done and seen live (refusals not);
-  - OTP (TOTP) device enrolment for 2FA: net/auth.rs has CreateTotp / VerifyTotp / RemoveTotp, nothing uses them.
+  - two-factor sign-in (client/twofa.rs, MODLOG "Two-factor sign-in"): the login form's Two-factor window (enrol with
+    a QR code, turn off, new recovery code) done and seen live.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

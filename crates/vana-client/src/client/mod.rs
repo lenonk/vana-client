@@ -7,6 +7,7 @@ mod flyover;
 mod resttick;
 mod creator;
 mod netwait;
+mod twofa;
 mod modern;
 mod monstrosity;
 mod moncustom;
@@ -172,6 +173,7 @@ impl Task {
             Task::Furniture(_) => "furniture",
             Task::NameChecked(_) => "name check",
             Task::Created(_) => "created",
+            Task::TwoFa(_) => "two-factor",
         }
     }
 }
@@ -185,6 +187,8 @@ enum Task {
     NameChecked(Result<(Lobby, Option<u16>)>),
     /// The creator's create (view 0x21): the lobby back, the refusal code, the new list.
     Created(Result<(Lobby, Option<u16>, Vec<Character>)>),
+    /// The two-factor window's request (client/twofa.rs).
+    TwoFa(Result<auth::Reply>),
     /// Zone number, scene (map number) and the scene off the loader thread.
     ZoneLoaded(u16, u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, ZoneEffects)>),
     AreaLoaded(u16, Result<(zone::ZoneScene, ground::Ground, Option<crate::dat::weather::ZoneWeather>, Arc<crate::render::ZoneGeometry>, Option<crate::fx::lib::Library>)>),
@@ -547,6 +551,8 @@ pub struct LoginView {
     pub fields: Vec<([f32; 4], &'static str, String, &'static str)>,
     pub check: ([f32; 4], &'static str, bool),
     pub buttons: Vec<([f32; 4], &'static str, bool)>,
+    /// Two-factor (focus 8), left of the box.
+    pub twofa: ([f32; 4], &'static str, bool),
     pub focus: usize,
     pub busy: bool,
 }
@@ -568,19 +574,22 @@ enum LoginChoice {
     LogIn,
     Create,
     Exit,
+    TwoFa,
 }
 
 /// The credentials window over the title art (ours: retail logged in through PlayOnline). Focus 0..3 are the
-/// fields, 4 Remember password, 5..7 Log in / Create account / Exit.
+/// fields, 4 Remember password, 5..7 Log in / Create account / Exit, 8 Two-factor (client/twofa.rs). `help_over`
+/// replaces the help line (the two-factor window's).
 /// Not retail (PlayOnline logged in): the generic window sounds (FUN_10118260) go to `sounds`: 0001 when the focus
 /// moves (and on Escape, which lands on Exit), 0002 on an enabled action, 0004 on a disabled one.
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::too_many_arguments)]
-fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>) -> Option<LoginChoice> {
+fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut String; 4], remember: &mut bool, focus: &mut usize, busy: bool, status: &str, help_over: Option<&str>, version: &str, sounds: &mut Vec<crate::audio::Ui>, modern: Option<&mut Option<LoginView>>) -> Option<LoginChoice> {
     let was = *focus;
     const CHOICES: [LoginChoice; 3] = [LoginChoice::LogIn, LoginChoice::Create, LoginChoice::Exit];
-    const ITEMS: usize = 8;
+    const ITEMS: usize = 9;
     const CHECK: usize = 4;
+    const TWOFA: usize = 8;
     let (sw, sh) = (size[0] as f32, size[1] as f32);
     // The modern layer's form is half again as large (its text sized to the fields).
     let f = if modern.is_some() { 1.5 } else { 1.0 };
@@ -605,6 +614,9 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     // Log in and Create account need the server, account and password.
     let filled = !fields[0].trim().is_empty() && !fields[1].trim().is_empty() && !fields[2].is_empty();
     let enabled = [filled, filled, true];
+    // Two-factor (also needing them) under the labels, on the box's row.
+    const TF: &str = "Two-factor";
+    let tf_rect = [wx + 16.0 * f, row(CHECK) + 1.0 * f, ((lu.label_width(TF) + 14.0).max(88.0) * f).round(), 16.0 * f];
 
     let mut chosen = None;
     // Hovering an action (or the box) moves the selection there, as in the game's menus.
@@ -618,6 +630,12 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         lu.hover.set(true);
         if input.moved {
             *focus = CHECK;
+        }
+    }
+    if input.pointer.is_some_and(|p| inside(&tf_rect, p)) {
+        lu.hover.set(true);
+        if input.moved {
+            *focus = TWOFA;
         }
     }
     let mut toggled = false;
@@ -636,6 +654,11 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             chosen = enabled[k].then_some(CHOICES[k]);
             sounds.push(if enabled[k] { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
         }
+        if inside(&tf_rect, p) {
+            *focus = TWOFA;
+            chosen = filled.then_some(LoginChoice::TwoFa);
+            sounds.push(if filled { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
+        }
     }
     let mut escape = false;
     for ev in &input.events {
@@ -647,9 +670,13 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             }
             egui::Event::Key { key, pressed: true, modifiers, .. } => match key {
                 egui::Key::Tab => *focus = if modifiers.shift { (*focus + ITEMS - 1) % ITEMS } else { (*focus + 1) % ITEMS },
+                egui::Key::ArrowDown if *focus == TWOFA => *focus = 5,
+                egui::Key::ArrowUp if *focus == TWOFA => *focus = 3,
                 egui::Key::ArrowDown => *focus = (*focus + 1).min(5.max(*focus)),
                 egui::Key::ArrowUp => *focus = if *focus > CHECK { CHECK } else { focus.saturating_sub(1) },
-                egui::Key::ArrowLeft if *focus > 5 => *focus -= 1,
+                egui::Key::ArrowLeft if *focus == CHECK => *focus = TWOFA,
+                egui::Key::ArrowRight if *focus == TWOFA => *focus = CHECK,
+                egui::Key::ArrowLeft if (6..=7).contains(&*focus) => *focus -= 1,
                 egui::Key::ArrowRight if (5..7).contains(&*focus) => *focus += 1,
                 egui::Key::Enter | egui::Key::Space if *focus == CHECK && !busy => toggled = true,
                 egui::Key::Backspace if *focus < 4 => {
@@ -659,6 +686,10 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
                 egui::Key::Escape => {
                     *focus = 7;
                     escape = true;
+                }
+                egui::Key::Enter if *focus == TWOFA => {
+                    chosen = filled.then_some(LoginChoice::TwoFa);
+                    sounds.push(if filled { crate::audio::Ui::Select } else { crate::audio::Ui::Error });
                 }
                 egui::Key::Enter => {
                     let k = focus.saturating_sub(5);
@@ -678,15 +709,18 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         sounds.push(crate::audio::Ui::Cursor);
     }
     // While the netwait run is up the help line is empty (retail's op 0 shows none).
-    let help = if busy {
+    let help = if let Some(h) = help_over {
+        h
+    } else if busy {
         ""
     } else if !status.is_empty() {
         status
-    } else if *focus >= 5 && !enabled[*focus - 5] {
+    } else if *focus >= 5 && !(if *focus == TWOFA { filled } else { enabled[*focus - 5] }) {
         "Enter the server, account name and password first."
     } else {
         match *focus {
             CHECK => "Keep the password on this computer, encrypted, and fill it in next time.",
+            TWOFA => "Turn two-factor sign-in (a code from an authenticator app) on or off for this account.",
             5 => "Log in with this account.",
             6 => "Create a new account on this server with the account name and password above.",
             7 => "Exit the game.",
@@ -694,7 +728,7 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
         }
     };
     let slots = lu.title_update(sw, sh, None, 0, [true; 5], None, 0, None, true, modern.is_some());
-    let help_colour = if busy || status.is_empty() { WHITE } else { YELLOW };
+    let help_colour = if help_over.is_some() || busy || status.is_empty() { WHITE } else { YELLOW };
     // Modern: the layer draws the form on these rects (its mouse stays this one's) and the help bar.
     if let Some(out) = modern {
         lu.modern_help = Some((help.to_string(), help_colour));
@@ -704,6 +738,7 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
             fields: (0..4).map(|i| (field_rect(i), LOGIN_LABELS[i], shown(i), if i == 3 { "only with 2FA" } else { "" })).collect(),
             check: (check_rect, CAPTION, *remember),
             buttons: (0..3).map(|k| (arects[k], ACTIONS[k], enabled[k])).collect(),
+            twofa: (tf_rect, TF, filled),
             focus: *focus,
             busy,
         });
@@ -730,13 +765,14 @@ fn login_window(lu: &mut GameUi, input: &UiInput, size: [u32; 2], fields: [&mut 
     // As the Config pages' buttons: the selected one gold (0x80805020) one pixel up-left, the hand over it last;
     // disabled grey.
     let mut hand = (*focus == CHECK && !busy).then_some((check_rect[0], check_rect[1]));
-    for (k, r) in arects.iter().enumerate() {
-        let on = *focus == 5 + k && !busy;
+    let all = arects.iter().zip(ACTIONS).zip(enabled).enumerate().map(|(k, ((r, a), e))| (5 + k, *r, a, e)).chain([(TWOFA, tf_rect, TF, filled)]);
+    for (i, r, name, on_ok) in all {
+        let on = *focus == i && !busy;
         let d = if on { -1.0 } else { 0.0 };
-        let tint = if busy || !enabled[k] { 0x8040_4040 } else if on { 0x8080_5020 } else { 0x8080_8080 };
+        let tint = if busy || !on_ok { 0x8040_4040 } else if on { 0x8080_5020 } else { 0x8080_8080 };
         settings::button(lu, [r[0] + d, r[1] + d, r[2], r[3]], tint);
-        let lx = r[0] + ((r[2] - lu.label_width(ACTIONS[k])) / 2.0).round();
-        lu.label(ACTIONS[k], lx + d, r[1] + 1.0 + d, tint, true);
+        let lx = r[0] + ((r[2] - lu.label_width(name)) / 2.0).round();
+        lu.label(name, lx + d, r[1] + 1.0 + d, tint, true);
         if on {
             hand = Some((r[0] + d, r[1] + d));
         }
@@ -5683,6 +5719,8 @@ pub struct App {
     mouse: mousecur::MouseCursor,
     /// A lobby or login error (or the new account's notice) waiting in the OK window on the login screen.
     login_error: Option<String>,
+    /// The two-factor window over the login form.
+    twofa: Option<twofa::TwoFa>,
     /// The title's Config window (lobycwin) with its values, and our settings screen over the title.
     lobby_cfg: Option<configui::ConfigUi>,
     /// The title's pressed button (menu index), when, and whether the press was taken (loby2win +0x5e / +0x1c).
@@ -5878,6 +5916,7 @@ impl App {
             scene_scale: None,
             cursor_in: false,
             login_error: None,
+            twofa: None,
             lobby_cfg: None,
             title_press: None,
             lobby_values: Default::default(),
@@ -6278,6 +6317,16 @@ impl App {
         });
     }
 
+    /// A two-factor request with the form's account and password (client/twofa.rs).
+    fn twofa_send(&mut self, command: Command, password: String, otp: String) {
+        let cfg = self.cfg.clone();
+        let user = cfg.username.trim().to_string();
+        self.spawn(move || {
+            let req = Request { username: &user, password: &password, otp: &otp, ..Default::default() };
+            Task::TwoFa(auth::send(&cfg.server, cfg.auth_port, command, &req))
+        });
+    }
+
     fn handle_task(&mut self, task: Task) {
         // A lobby operation's Task waits for its netwait / netbar run to end (FUN_1023b550).
         if let Some(nw) = self.netwait.as_mut()
@@ -6368,6 +6417,11 @@ impl App {
             Task::GameUi(Err(e)) => {
                 log::warn!("lobby UI: {e:#}");
                 self.game_ui_state = LoadState::Failed;
+            }
+            Task::TwoFa(r) => {
+                if let Some(t) = self.twofa.as_mut() {
+                    t.reply(r);
+                }
             }
             Task::AccountCreated(Ok(())) => {
                 // In the OK window, with the cursor then on Log in.
@@ -9578,11 +9632,12 @@ impl App {
                     let remembered = self.cfg.remember_password;
                     // While an error shows, the fields take no input (the OK window has it).
                     let none = UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
-                    let shown = if self.login_error.is_some() { &none } else { &input };
+                    let shown = if self.login_error.is_some() || self.twofa.is_some() { &none } else { &input };
                     let mut sounds = Vec::new();
                     let modern_ui = self.cfg.modern_ui;
                     let mut view = None;
-                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view));
+                    let help_over = self.twofa.as_ref().map(|t| t.help());
+                    let chosen = login_window(lu, shown, size, fields, &mut self.cfg.remember_password, focus, busy, &status, help_over, &self.cfg.client_version, &mut sounds, modern_ui.then_some(&mut view));
                     let window = [size[0], size[1]];
                     // The popups keep retail's size but stand clear of our (larger) form: their bottom above its top.
                     let form_top = view.as_ref().map_or(f32::MAX, |v| v.frame[1] - 10.0);
@@ -9605,6 +9660,22 @@ impl App {
                             self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).wait_panel(ctx, window, self.cfg.modern_scale, self.ui_k, frame, &text, p);
                         } else {
                             netwait::draw(lu, nw, size[0] as f32, size[1] as f32);
+                        }
+                    }
+                    // The two-factor window over the form (client/twofa.rs).
+                    if let Some(t) = self.twofa.as_mut() {
+                        let mut tv = None;
+                        let act = twofa::window(lu, &input, size, t, busy, &mut sounds, modern_ui.then_some(&mut tv));
+                        if let Some(v) = &tv {
+                            self.modern.get_or_insert_with(|| modern::Modern::new(ctx)).twofa_window(ctx, window, self.cfg.modern_scale, self.ui_k, v);
+                        }
+                        match act {
+                            Some(twofa::Act::Close) => self.twofa = None,
+                            Some(twofa::Act::Send(command, otp)) => {
+                                let p = password.clone();
+                                action = Some(Box::new(move |app: &mut App| app.twofa_send(command, p, otp)));
+                            }
+                            None => {}
                         }
                     }
                     // Unticked: the remembered password goes at once.
@@ -9650,6 +9721,7 @@ impl App {
                     }
                     match chosen.filter(|_| self.login_error.is_none()) {
                         Some(LoginChoice::Exit) => self.exit_requested = true,
+                        Some(LoginChoice::TwoFa) => self.twofa = Some(twofa::TwoFa::new()),
                         Some(c) => {
                             let create = c == LoginChoice::Create;
                             let (p, o) = (password.clone(), if create { String::new() } else { otp.clone() });

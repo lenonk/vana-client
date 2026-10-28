@@ -10788,3 +10788,26 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   (FFXI_BENCH=N on the offscreen tools, now timed by GPU timestamps too) 0.83 -> 0.32 ms looking along the ground in
   Qufim Island, 1.51 -> 0.81 ms in a Southern San d'Oria street, 0.80 -> 0.49 ms in La Theine, unchanged top-down
   (everything in view).
+
+## Two-factor sign-in (ours, 2026-10-27)
+
+- User's request: a button on the login screen that enrols TOTP. LSB's auth service (src/login/auth_session.cpp,
+  otp_helpers.h) checks the password on each command: 0x31 CreateTotp -> result 0x10 with `TOTP_uri`
+  (otpauth://totp/SERVER:USER?secret=...&issuer=SERVER&algorithm=SHA1&digits=6&period=30; a new secret, not validated,
+  replaces an unvalidated one; refused while a validated one exists); 0x34 VerifyTotp (otp) -> 0x11 with the
+  `recovery_code`, the secret validated (from then on Login needs the otp); 0x32 RemoveTotp (otp or the recovery code,
+  case-insensitive) -> 0x12, the trust tokens dropped; 0x33 RegenerateRecovery (otp or recovery code) -> 0x11 with the
+  new code. Every refusal is the error text "Failed to validate credentials".
+- Ours (client/twofa.rs): the login form's Two-factor button (focus 8, under the labels on the box's row; needs the
+  server, account and password). Its window over the form: Turn on (the URI as a QR code, error correction M, from the
+  qrcode crate, and the key in groups of 4; a code field; Confirm -> VerifyTotp; then the recovery code to keep), Turn
+  off and New recovery code (a code or the recovery code), Close. Errors show in the window in yellow; the help line is
+  the window's. Classic: the game font and buttons over an opaque backing; modern: Modern::twofa_window on the same
+  rects. Offscreen: topbar-shot --config login2fa[:scan|:code|:done].
+- Login: LSB answers a missing or wrong otp with LOGIN_ERROR 0x02, the same as a wrong password (auth_session.cpp), so
+  0x02 reads "invalid username, password or one-time code".
+- Seen live 2026-10-28 on a throwaway account: Turn on (the QR decodes to the server's otpauth URI), Confirm with the
+  app's code (validated on the server, the recovery code shown), a login without the code refused, with it to the
+  character list, New recovery code with the app's code (the server's code replaced by the one shown), Turn off with
+  the recovery code in lower case (the row gone). The modern window is drawn opaque
+  whatever the Opacity setting, so the form under it does not show through.

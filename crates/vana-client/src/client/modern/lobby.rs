@@ -109,6 +109,73 @@ impl Modern {
             let c = if v.busy || !enabled { self.theme.color("muted") } else if on { self.theme.color("gold") } else { self.theme.color("text") };
             p.text(r.center(), Align2::CENTER_CENTER, *label, FontId::new(size, FontFamily::Name(super::STRONG.into())), c);
         }
+        let (r, label, enabled) = &v.twofa;
+        self.lobby_button(&p, pt(*r).expand2(vec2(4.0, 3.0)), label, v.focus == 8 && !v.busy, *enabled && !v.busy, hover, size);
+    }
+
+    /// A lobby button on `r`: the pack's face for its state, the caption in the strong face.
+    fn lobby_button(&self, p: &egui::Painter, r: egui::Rect, label: &str, on: bool, enabled: bool, hover: Option<egui::Pos2>, size: f32) {
+        let face = match () {
+            _ if !enabled => "controls/button_disabled",
+            _ if on => "controls/button_selected",
+            _ if hover.is_some_and(|h| r.contains(h)) => "controls/button_hover",
+            _ => "controls/button_normal",
+        };
+        if let Some(s) = self.art.sprite(face) {
+            p.add(paint::nine_slice(&s, r, 0.5, Color32::WHITE));
+        }
+        let c = if !enabled { self.theme.color("muted") } else if on { self.theme.color("gold") } else { self.theme.color("text") };
+        p.text(r.center(), Align2::CENTER_CENTER, label, FontId::new(size, FontFamily::Name(super::STRONG.into())), c);
+    }
+
+    /// The two-factor window (client/twofa.rs) on the rects it placed (UI pixels): the frame, its lines, the QR code on
+    /// white, the code field, the buttons; their mouse stays the window's.
+    pub fn twofa_window(&mut self, ctx: &Context, window: [u32; 2], scale: u32, ui_k: (f32, f32), v: &super::super::twofa::View) {
+        self.zoom_to(ctx, window, scale);
+        let k = ctx.pixels_per_point();
+        let pt = |r: [f32; 4]| egui::Rect::from_min_size(pos2(r[0] / (k * ui_k.0), r[1] / (k * ui_k.1)), vec2(r[2] / (k * ui_k.0), r[3] / (k * ui_k.1)));
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("modern two-factor")));
+        let frame = pt(v.frame).expand(6.0);
+        // Opaque whatever the Opacity setting: the login form under it must not show through.
+        let opacity = self.opacity.replace(1.0);
+        p.add(super::borders::window(self, "window_focused", frame));
+        self.opacity.set(opacity);
+        let size = self.lobby_text.get().max(self.theme.small);
+        for (r, text, colour, centre) in &v.lines {
+            let r = pt(*r);
+            let c = if *colour == super::super::game_ui::WHITE { self.theme.color("text") } else if *colour == super::super::game_ui::YELLOW { self.theme.color("gold") } else { self.theme.color("muted") };
+            let (at, align) = if *centre { (pos2(r.center().x, r.center().y), Align2::CENTER_CENTER) } else { (pos2(r.min.x, r.center().y), Align2::LEFT_CENTER) };
+            p.text(at, align, text, FontId::proportional(size), c);
+        }
+        if let Some((r, side, dark)) = &v.qr {
+            let r = pt(*r);
+            p.rect_filled(r, 2.0, Color32::WHITE);
+            let m = r.width() / (*side as f32 + 8.0);
+            for (i, _) in dark.iter().enumerate().filter(|(_, d)| **d) {
+                let (x, y) = ((i % side) as f32, (i / side) as f32);
+                p.rect_filled(egui::Rect::from_min_size(pos2(r.min.x + (x + 4.0) * m, r.min.y + (y + 4.0) * m), vec2(m, m)), 0.0, Color32::BLACK);
+            }
+        }
+        if let Some((r, text)) = &v.field {
+            let r = pt(*r);
+            let on = v.focus == 0 && !v.busy;
+            if let Some(s) = self.art.sprite(if on { "controls/input_focused" } else { "controls/input_normal" }) {
+                p.add(paint::nine_slice(&s, r.expand2(vec2(2.0, 3.0)), 0.5, Color32::WHITE));
+            }
+            let g = p.layout_no_wrap(text.clone(), FontId::proportional(size), self.theme.color("text"));
+            let at = pos2(r.min.x + 6.0, r.center().y - g.size().y / 2.0);
+            let end = at.x + g.size().x;
+            p.galley(at, g, self.theme.color("text"));
+            if on && (ctx.input(|i| i.time) * 2.0) as i64 % 2 == 0 {
+                p.line_segment([pos2(end + 1.0, r.min.y + 3.0), pos2(end + 1.0, r.max.y - 3.0)], egui::Stroke::new(1.5, self.theme.color("text")));
+            }
+        }
+        let first = v.field.is_some() as usize;
+        let hover = ctx.input(|i| i.pointer.hover_pos());
+        for (i, (r, label)) in v.buttons.iter().enumerate() {
+            self.lobby_button(&p, pt(*r).expand2(vec2(4.0, 3.0)), label, v.focus == first + i && !v.busy, !v.busy, hover, size);
+        }
+        ctx.request_repaint();
     }
 
     /// The lobby's help bar on retail's lobyhelp strip (UI pixels, the screen's width): the help line centred in its

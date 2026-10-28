@@ -27,6 +27,8 @@ msi = "0.10.0"
 png = "0.18.1"
 ring = "0.17.14"
 pollster = "1.0.1"
+# The two-factor setup's QR code (no image or SVG output).
+qrcode = { version = "0.14", default-features = false }
 rfd = "0.15"
 texpresso = "2.0.2"
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12", "logging"] }

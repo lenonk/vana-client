@@ -511,13 +511,36 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
         chat_log: false,
     };
     gu.clear();
-    let login = config == Some("login");
+    let login = config.is_some_and(|c| c == "login" || c.starts_with("login2fa"));
     let lobby = login || config.is_some_and(|c| c.starts_with("lobycwin") || c.starts_with("lobby"));
     if login {
         let input = super::UiInput { pointer: None, moved: false, clicked: false, pressed: false, down: false, released: false, right_clicked: false, wheel: 0, events: Vec::new() };
         let (mut a, mut b, mut c, mut d) = ("127.0.0.1".to_string(), "tuxedo".to_string(), "secret".to_string(), String::new());
         let mut remember = cfgset == Some("remember");
-        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut remember, &mut 0, false, "", &cfg.client_version, &mut Vec::new(), None);
+        // login2fa[:scan|:code|:done]: the two-factor window over the form, a sample key for the QR code.
+        let mut twofa = config.and_then(|c| c.strip_prefix("login2fa")).map(|step| {
+            let mut t = super::twofa::TwoFa::new();
+            let uri = "otpauth://totp/Nameless:tuxedo?secret=JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP&issuer=Nameless&algorithm=SHA1&digits=6&period=30";
+            match step {
+                ":scan" => t.reply(Ok(crate::net::auth::Reply::TotpCreated { uri: uri.into() })),
+                ":code" => {
+                    t.reply(Ok(crate::net::auth::Reply::TotpCreated { uri: uri.into() }));
+                    t.reply(Err(anyhow::anyhow!("Failed to validate credentials")));
+                    t.code = "123456".into();
+                }
+                ":done" => {
+                    t.reply(Ok(crate::net::auth::Reply::TotpCreated { uri: uri.into() }));
+                    t.reply(Ok(crate::net::auth::Reply::TotpVerified { recovery_code: Some("ABCDEFGHIJKLMNOPQRSTUVWXYZ234567".into()) }));
+                }
+                _ => {}
+            }
+            t
+        });
+        let help = twofa.as_ref().map(|t| t.help());
+        super::login_window(&mut gu, &input, [width, height], [&mut a, &mut b, &mut c, &mut d], &mut remember, &mut 0, false, "", help, &cfg.client_version, &mut Vec::new(), None);
+        if let Some(t) = twofa.as_mut() {
+            super::twofa::window(&mut gu, &input, [width, height], t, false, &mut Vec::new(), None);
+        }
     } else if lobby {
         let slots = gu.title(sw, sh, Some(3), 0xfff, [true; 5]);
         let _ = slots;
