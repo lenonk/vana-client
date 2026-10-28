@@ -128,6 +128,16 @@ fn raw(b: &[u8]) -> Option<Vec<Raw<'_>>> {
     Some(out)
 }
 
+/// A D3s chunk holds its image: a sane size and at least half a byte a pixel (DXT1's) after the 57-byte header. A
+/// broken one (a size field wrapped past 8 MB left an 80-byte stub in our own pack) is passed over, so the next mod's
+/// or the stock image stays.
+fn image_ok(chunk: &[u8]) -> bool {
+    let p = chunk.get(16..).unwrap_or_default();
+    let (Some(w), Some(h)) = (p.get(21..25), p.get(25..29)) else { return false };
+    let (w, h) = (u32::from_le_bytes(w.try_into().unwrap()) as usize, u32::from_le_bytes(h.try_into().unwrap()) as usize);
+    (1..=4096).contains(&w) && (1..=4096).contains(&h) && p.len() >= 57 + w * h / 2
+}
+
 /// The stock file with the mods' D3s / Msb / Bp chunks in place of stock ones of the same key; `mods` highest
 /// priority first. Chunks a mod has that stock lacks are left out (the stock file was restructured since).
 pub fn merge(stock: &[u8], mods: &[Vec<u8>]) -> Option<Vec<u8>> {
@@ -135,7 +145,7 @@ pub fn merge(stock: &[u8], mods: &[Vec<u8>]) -> Option<Vec<u8>> {
     let parsed: Vec<Vec<Raw>> = mods.iter().map(|m| raw(m)).collect::<Option<_>>()?;
     let mut take: HashMap<&(Vec<[u8; 4]>, [u8; 4], u8, Vec<u8>, usize), &[u8]> = HashMap::new();
     for m in parsed.iter().rev() {
-        for c in m.iter().filter(|c| MERGED.contains(&c.kind)) {
+        for c in m.iter().filter(|c| MERGED.contains(&c.kind) && (c.kind != 0x20 || image_ok(c.bytes))) {
             take.insert(&c.key, c.bytes);
         }
     }
@@ -164,8 +174,10 @@ mod tests {
     #[test]
     fn textures_only_highest_first() {
         let tex = |n: u8| {
-            let mut d = vec![0u8; 40];
+            let mut d = vec![0u8; 64];
             d[1..5].copy_from_slice(b"tex1");
+            d[21..25].copy_from_slice(&1u32.to_le_bytes());
+            d[25..29].copy_from_slice(&1u32.to_le_bytes());
             d[30] = n;
             d
         };
@@ -176,5 +188,23 @@ mod tests {
         let expect = [chunk(b"fold", 1, &[]), chunk(b"img1", 0x20, &tex(3)), chunk(b"mdl1", 0x2e, &[1; 16]), chunk(b"end\0", 0, &[])].concat();
         assert_eq!(m, expect);
         assert!(merge(b"not a dat", &[high]).is_none());
+    }
+
+    /// A mod's image too small for its own size is passed over: the next mod's (or stock) stays.
+    #[test]
+    fn broken_image_skipped() {
+        let tex = |n: u8, w: u32, h: u32, len: usize| {
+            let mut d = vec![0u8; len];
+            d[1..5].copy_from_slice(b"tex1");
+            d[21..25].copy_from_slice(&w.to_le_bytes());
+            d[25..29].copy_from_slice(&h.to_le_bytes());
+            d[30] = n;
+            d
+        };
+        let stock = [chunk(b"img1", 0x20, &tex(1, 8, 8, 57 + 32))].concat();
+        let low = [chunk(b"img1", 0x20, &tex(2, 16, 16, 57 + 128))].concat();
+        let high = [chunk(b"img1", 0x20, &tex(3, 2048, 4096, 80))].concat();
+        assert_eq!(merge(&stock, &[high.clone(), low.clone()]).unwrap(), low);
+        assert_eq!(merge(&stock, &[high]).unwrap(), stock);
     }
 }

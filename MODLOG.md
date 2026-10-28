@@ -11463,3 +11463,16 @@ Regime (config `regime`, its drawer `regime_out`). The state comes from packets 
 - Live (Lnxcsfix, Valkurm Dunes Field Manual, classic): page 1 accepted (regime 7: Hill Lizard 0/7, Sand Hare 0/1 shown
   at the "registered" line), credits 3/7 and 1/1 (`!exec player:messageBasic(558, k, n)`), the Review reset them to
   the server's 0/7 and 0/1, the cancel hid it; modern: a kills-only row "Target 1: 2/4", hidden by 559.
+
+## Our upscale pack: four wrapped chunks, and the merge passes over broken images (2026-10-28)
+
+- Crawlers' Nest (zone 197, file 297) drew its cave walls and floor untextured (the user's report): vana-upscale's
+  ROM/0/76.DAT held "model dav_wf" as an 80-byte stub (header 2048 x 4096, no pixels). A 4x DXT3 of 512 x 1024 is 8 MB
+  plus the header: its 19-bit size field (16-byte units) wrapped to 6 units. tex-pack halves such images since
+  2931631, but files built before that were kept by its resume. The merge took the stub over the stock / AshenbubsHD
+  image, parse_img refused it, and every model on that texture lost it (92 of 170 models textured instead of 158).
+- A scan of the whole pack (~/ffxi/lab/scratch/crawl/scan_pack.py: IMG payloads under 57 + w x h / 2) found 4: ROM/0/100.DAT,
+  ROM/0/76.DAT and ROM5/0/27.DAT (dav_wf), ROM4/0/20.DAT (riz_wf01). Rebuilt with tex-pack (the four removed, halved
+  now); the broken copies are in ~/ffxi/lab/scratch/crawl/broken_backup.
+- dat/overlay.rs merge: a mod's D3s chunk too small for its own size (or with a bad size) is passed over, so the next
+  mod's or the stock image stays (image_ok).
