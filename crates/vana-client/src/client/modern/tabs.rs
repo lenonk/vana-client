@@ -5,7 +5,7 @@
 use egui::{Align2, Color32, CornerRadius, FontId, Painter, Rect, Response, Sense, Stroke, StrokeKind, Ui, pos2, vec2};
 
 /// A strip row's height; inactive tabs start this much lower.
-pub const H: f32 = 26.0;
+pub const H: f32 = 28.0;
 const DROP: f32 = 4.0;
 const GAP: f32 = 3.0;
 const PAD: f32 = 12.0;
@@ -47,7 +47,8 @@ pub fn paint(p: &Painter, m: &super::Modern, r: Rect, label: &str, font: &FontId
         // Open into the content: the bottom edge and the baseline under it painted over in the face.
         p.line_segment([pos2(t.min.x + 1.0, t.max.y - 0.5), pos2(t.max.x - 1.0, t.max.y - 0.5)], Stroke::new(2.0, face.gamma_multiply(alpha)));
     }
-    let c = t.center() + vec2(0.0, if s.open { 1.0 } else { 0.5 });
+    // Labels sit low, leaving the room above them.
+    let c = t.center() + vec2(0.0, if s.open { 2.0 } else { 1.5 });
     p.text(c, Align2::CENTER_CENTER, label, font.clone(), text.gamma_multiply(alpha));
     if s.cursor {
         let w = t.width() - 2.0 * PAD + 6.0;

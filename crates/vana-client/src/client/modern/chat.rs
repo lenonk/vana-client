@@ -47,7 +47,7 @@ fn default_room(ctx: &egui::Context) -> Vec2 {
 /// The font sizes the settings offer.
 const FONT_SIZES: std::ops::RangeInclusive<f32> = 10.0..=32.0;
 /// The tab row's height and the gap under it.
-const TAB_H: f32 = 24.0;
+const TAB_H: f32 = 26.0;
 const GAP: f32 = 4.0;
 
 /// An FFXI colour (b, g, r, a at 0x80 = 1.0).
