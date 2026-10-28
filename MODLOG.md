@@ -11299,3 +11299,18 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
 - 0x0B5 (LAB_101131f0, LSB's answer to c2s 0x0D4 FAQ_GMPARAM): while the Help Desk counter DAT_104e1b5c is non-zero,
   32 bytes from the packet into DAT_104e1b44, which nothing reads (only cleared with 0x0B5 / 0x0B6's handlers). Ours
   ignores it, as retail effectively does.
+
+## c2s 0x017: asking again for a partly known entity (2026-10-28)
+
+- s2c 0x00D / 0x00E register FUN_100fbb80 / FUN_100fbc30, wrappers that keep per ActIndex (G+0x3c43c, 0x900 x {u32 id,
+  u16 masks seen}) and call FUN_100fc830 = c2s 0x017 CHARREQ2 {ActIndex @4, UniqueNo2 @8 = the packet's id, UniqueNo3
+  @0xc = the slot's id, Flg @0x10 = masks seen, Flg2 @0x12 = this mask} before storing: mask 0x20 frees the slot (id
+  -1, masks 0), else masks |= mask and id = the packet's.
+  - 0x00D (full 0x1f): same id: asks unless the masks seen or this mask already have all of 0x1f, or this is 0x20;
+    another id in a used slot (not 0 / -1): asks unless this mask is exactly 0x1f.
+  - 0x00E (full 0x17 for SubKind (@0x30 & 7) 1 / 7, else 7): another id in a used slot and this mask not exactly
+    full: asks; then (any slot) the masks seen lacking a full bit and this mask lacking one and not 0x20: asks (so a
+    brand-new NPC whose first update is partial asks at once, possibly twice).
+- LSB (c2s 0x017) resends the entity's full spawn (and 0x067 sync for PCs within 50 yalms).
+- Ours: client::charreq before every Entity update, World.index_masks (cleared at the zone load *(inf)*). Live: an idle
+  25 s in Southern San d'Oria with bots and NPCs sent none (LSB's spawns are full).

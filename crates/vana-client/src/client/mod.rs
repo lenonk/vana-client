@@ -816,6 +816,49 @@ fn answer_raise(w: &mut World, yes: bool) {
     }
 }
 
+/// The 0x00D / 0x00E wrappers (FUN_100fbb80 / FUN_100fbc30): per index (G+0x3c43c, 0x900 x {id, mask}) the id and
+/// the update masks seen since it appeared; an entity left partly known asks the server for it again with c2s 0x017
+/// {ActIndex, new id, old id, mask so far, this mask} (FUN_100fc830). Despawn (0x20) frees the slot.
+fn charreq(w: &mut World, e: &net::EntityUpdate) {
+    if e.index > 0x8ff {
+        return;
+    }
+    let (old, seen) = w.index_masks.get(&e.index).copied().unwrap_or((0, 0));
+    let free = old == 0 || old == u32::MAX;
+    let m = e.mask as u16;
+    let mut asks = Vec::new();
+    if e.kind == EntityKind::Player {
+        let ask = if old == e.id {
+            seen & 0x1f != 0x1f && m & 0x1f != 0x1f && m != 0x20
+        } else {
+            !free && m != 0x1f
+        };
+        if ask {
+            asks.push(());
+        }
+    } else {
+        let full = if matches!(e.look_kind, 1 | 7) { 0x17 } else { 7 };
+        if old != e.id && !free && m != full {
+            asks.push(());
+        }
+        if seen & full != full && m & full != full && m != 0x20 {
+            asks.push(());
+        }
+    }
+    for () in asks {
+        log::info!("c2s 0x017: index {:#x} id {:#x} (was {old:#x}), masks {seen:#x} / {m:#x}", e.index, e.id);
+        let mut b = e.index.to_le_bytes().to_vec();
+        b.extend([0, 0]);
+        b.extend(e.id.to_le_bytes());
+        b.extend(old.to_le_bytes());
+        b.extend(seen.to_le_bytes());
+        b.extend(m.to_le_bytes());
+        let _ = w.net.commands.send(NetCommand::Packet { id: 0x017, body: b });
+    }
+    let slot = if m & 0x20 != 0 { (u32::MAX, 0) } else { (e.id, seen | m) };
+    w.index_masks.insert(e.index, slot);
+}
+
 /// The game clock in Earth seconds since the Vana'diel epoch (FUN_101039e0: 0x00A GameTime plus the time since).
 pub(super) fn vana_now(w: &World) -> u64 {
     w.clock.map_or(0, |(t, at)| t as u64 + at.elapsed().as_secs())
@@ -5671,6 +5714,8 @@ struct World {
     map_schedulers: Vec<((u32, u32), (u16, u16), [u8; 4])>,
     /// Entity +0x12c bits 4 / 5 by id: a chocobo dig to play, and the dig holding (s2c 0x02F).
     digs: HashMap<u32, u8>,
+    /// The 0x00D / 0x00E wrappers' table (G+0x3c43c): per index the id and the masks seen.
+    index_masks: HashMap<u16, (u32, u16)>,
     /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
     casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -7232,6 +7277,7 @@ impl App {
                             border: Default::default(),
                             map_schedulers: Vec::new(),
                             digs: HashMap::new(),
+                            index_masks: HashMap::new(),
                             casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
@@ -7698,8 +7744,9 @@ impl App {
                     // FUN_10093720: the zone load clears the concierge's slots and the GM prompts (FUN_100a3cd0).
                     (world.concierge, world.concierge_ui) = (Default::default(), None);
                     world.gmtell = Default::default();
-                    // FUN_10093af0: the 0x075 store.
+                    // FUN_10093af0: the 0x075 store; the sync table goes with the zone's entities *(inf)*.
                     objective::reset(world);
+                    world.index_masks.clear();
                     border::remove(world);
                     (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
@@ -7846,6 +7893,7 @@ impl App {
                     }
                 }
                 NetEvent::Entity(e) => {
+                    charreq(world, &e);
                     if e.king {
                         world.res_rdy.kings.insert(e.id);
                     }
