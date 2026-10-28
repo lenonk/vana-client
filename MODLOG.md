@@ -11288,3 +11288,14 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
 - LSB's updateEventString: battlefield record holders, chocobo raising / racing names, ASA mission 5's mob names.
 - Ours: event::strings -> the running or waiting event's string slots (Start.strings, which both tables read).
   Not seen live (no such event at hand).
+
+## s2c 0x0AD and 0x0B5: kept but unused on LSB (2026-10-28)
+
+- 0x0AD (LAB_100e6150, LSB GP_SERV_COMMAND_DUNGEON at game-ok): 128 bytes from @4 into G+0x3c2b8, G+0x3c2b4 |= 1;
+  read only through FUN_100e6050 by the Moblin Maze Mongers maze window (FUN_101fe930: mode 0 the vouchers, bits of
+  the first 8 bytes as items 0x7040 + n, help 0x2a5; mode 1 the runes, bits of the next 64 as 0x7080 + n, help 0x2a6 /
+  0x2a7, colours 0x80404040 / 0x80804020). That window only opens from the MMM NPC's event, which LSB never starts, so
+  ours does not keep it.
+- 0x0B5 (LAB_101131f0, LSB's answer to c2s 0x0D4 FAQ_GMPARAM): while the Help Desk counter DAT_104e1b5c is non-zero,
+  32 bytes from the packet into DAT_104e1b44, which nothing reads (only cleared with 0x0B5 / 0x0B6's handlers). Ours
+  ignores it, as retail effectively does.
