@@ -157,6 +157,10 @@ pub trait Host {
     fn game_config(&self, _id: u16) -> u32 {
         0
     }
+    /// Op 0xb4 9 / 0xc: the ticks left on the cast bar / the event timer (truncated), 0 when it is not up.
+    fn bar_left(&self, _event_timer: bool) -> i32 {
+        0
+    }
 
     /// Config word read by op 0xb1 (*(DAT_10444110 + 0x18)).
     fn config_word(&self) -> u32 {
@@ -1913,7 +1917,21 @@ impl Runtime {
                         }
                         self.start.strings[slot] = text;
                     }
-                    9 | 0xc => self.set_at(v, 2, 0, 0),
+                    9 | 0xc => {
+                        let n = host.bar_left(s == 0xc);
+                        self.set_at(v, 2, 0, n as u32);
+                    }
+                    // The cast bar (7, FUN_1012c1d0 mode 4) or the event timer (0xa, FUN_1012c500 mode 0) for val@2
+                    // ticks, unless it is up.
+                    // The choice's auto-pick (FUN_100b0a00 6: byte@2 0 on, 1 off, 2 on for good).
+                    6 => {
+                        let b = self.u8_at(v, 2) as i32;
+                        host.effect(Effect::Op { op: opc, sub, actor, args: vec![Arg::Int(b)] });
+                    }
+                    7 | 0xa => {
+                        let n = self.val(v, 2);
+                        host.effect(Effect::Op { op: opc, sub, actor, args: vec![Arg::Int(n)] });
+                    }
                     // The map view: x, y, zoom factor, speed, flags (each a value) for the host.
                     0x14 => {
                         let a = [2, 4, 6, 8, 10].map(|o| Arg::Int(self.val(v, o)));

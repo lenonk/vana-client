@@ -339,6 +339,8 @@ pub struct State {
     pub start: EventStart,
     pub msg: Option<Msg>,
     pub choice: Option<Choice>,
+    /// Op 0xb4 6's auto-pick (DAT_104886f4): 1 the open or next choice takes its cursor's option, 2 every choice.
+    pub auto_pick: u8,
     /// Op 0x71's input window ("menu    passinpu").
     pub input: Option<Input>,
     /// Op 0xd4 3..5 option entries (select window +0x13c): option position -> item, extdata (subs 4 / 5), flags (byte
@@ -415,6 +417,7 @@ impl State {
             start,
             msg: None,
             choice: None,
+            auto_pick: 0,
             input: None,
             option_items: HashMap::new(),
             item_preview: false,
@@ -1225,6 +1228,29 @@ impl Host for LiveHost<'_> {
                 self.w.map_open = None;
                 self.w.map_cmds.push(super::map::Cmd::Close);
             }
+            // FUN_100b0a00 7 / 0xa: the cast bar in its event mode (4: the time left, no gauge) / the event timer, for
+            // val@2 ticks, unless it is up; 8 / 0xb close them.
+            Effect::Op { op: 0xb4, sub: Some(7), args, .. } => {
+                if self.w.cast_bar.is_none() {
+                    let n = Self::arg_int(&args, 0).unwrap_or(0).max(0) as f32;
+                    (self.w.cast_bar, self.w.cast_event) = (Some((n, n)), true);
+                }
+            }
+            Effect::Op { op: 0xb4, sub: Some(0xa), args, .. } => {
+                if self.w.event_timer.is_none() {
+                    let n = Self::arg_int(&args, 0).unwrap_or(0).max(0) as f32;
+                    self.w.event_timer = Some((n, n));
+                }
+            }
+            // FUN_100b0a00 6: the auto-pick on (0), off (1) or on for good (2); the open choice follows it.
+            Effect::Op { op: 0xb4, sub: Some(6), args, .. } => match Self::arg_int(&args, 0) {
+                Some(0) => self.st.auto_pick = 1,
+                Some(1) => self.st.auto_pick = 0,
+                Some(2) => self.st.auto_pick = 2,
+                _ => {}
+            },
+            Effect::Op { op: 0xb4, sub: Some(8), .. } => self.w.cast_bar = None,
+            Effect::Op { op: 0xb4, sub: Some(0xb), .. } => self.w.event_timer = None,
             // FUN_100b0a00 0xd / 0xe: hold the voyage (V identity, t still) / let it go on.
             Effect::Op { op: 0xb4, sub: Some(s @ (0xd | 0xe)), .. } => self.w.voyage.hold = s == 0xd,
             // FUN_100b0a00 0x14 -> FUN_101fb070: the map view to x, y, zoom factor, speed (each x 0.001) and flags.
@@ -1400,6 +1426,11 @@ impl Host for LiveHost<'_> {
 
     fn game_config(&self, id: u16) -> u32 {
         self.w.game.get(id)
+    }
+
+    fn bar_left(&self, event_timer: bool) -> i32 {
+        let bar = if event_timer { self.w.event_timer } else { self.w.cast_bar };
+        bar.map_or(0, |(_, left)| left as i32)
     }
 
     fn place(&self, actor: u32) -> ([f32; 3], f32) {
@@ -1645,6 +1676,14 @@ pub fn update(w: &mut World, dt: f32) {
             live.rt.close_message();
             close_msg(&mut live.st, w);
         }
+    }
+    // FUN_1014e3e0: a choice under the auto-pick (a timer ran out) takes its cursor's option, with no sound.
+    if live.st.auto_pick != 0
+        && live.rt.choice_open()
+        && let Some(c) = live.st.choice.take()
+    {
+        live.rt.choose(c.options.get(c.cursor).map(|o| o.0));
+        choice_done(w, &mut live);
     }
     // The VM runs in 60 Hz ticks as at retail's frame rate (FUN_10014000 counts at least one tick a frame), so
     // a faster frame limit does not speed the script up; a slow frame runs up to 4 ticks.
@@ -2156,6 +2195,10 @@ pub fn keeps_target(w: &World) -> bool {
 /// FUN_100b2940 / FUN_100b2aa0 after an answer: an event map closes (FUN_100b2a60), the item info window too,
 /// whoever opened it, and the option entries go.
 fn choice_done(w: &mut World, l: &mut Live) {
+    // FUN_100ae3a0: closing the choice ends the auto-pick unless it is for good.
+    if l.st.auto_pick != 2 {
+        l.st.auto_pick = 0;
+    }
     if w.map_open.take().is_some() {
         w.map_cmds.push(super::map::Cmd::CloseEvent);
     }

@@ -2960,6 +2960,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(moncustom::draw(gu, world, sw, sh));
     if !world.modern {
         magic::draw_cast_bar(gu, world, sw, sh);
+        magic::draw_event_timer(gu, world, sw, sh);
     }
     if let Some(c) = world.config.as_mut() {
         // The modern Config shows ours as one of its pages.
@@ -5413,6 +5414,10 @@ struct World {
     voyage: voyage::Voyage,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
     cast_bar: Option<(f32, f32)>,
+    /// The cast bar was opened by an event (op 0xb4 7, mode 4): it shows the time left (FUN_1012bfe0).
+    cast_event: bool,
+    /// "menu    eventtim" (FUN_1012c500, op 0xb4 0xa): total and remaining ticks.
+    event_timer: Option<(f32, f32)>,
     /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
     casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -6943,6 +6948,8 @@ impl App {
                             voyage: Default::default(),
                             recasts_seen: false,
                             cast_bar: None,
+                            cast_event: false,
+                            event_timer: None,
                             casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
@@ -8369,11 +8376,14 @@ impl App {
                 a.extra.retain(|(k, m)| !(*k == actmotion::Kind::Effect && m.id == file));
             }
         }
-        // FUN_1012c0f0: the cast bar runs down and closes at 0.
-        if let Some((_, left)) = world.cast_bar.as_mut() {
-            *left -= (dt * 60.0).max(1.0 / 60.0);
-            if *left <= 0.0 {
-                world.cast_bar = None;
+        // FUN_1012c0f0 / FUN_1012c410: the cast bar and the event timer run down; at 0 they close the frame after.
+        for bar in [&mut world.cast_bar, &mut world.event_timer] {
+            if let Some((_, left)) = bar.as_mut() {
+                if *left <= 0.0 {
+                    *bar = None;
+                } else {
+                    *left = (*left - dt * 60.0).max(0.0);
+                }
             }
         }
         // FUN_1008c480: a model's "init" once it is in ("inte" too for status 0x22; none seated, none fishing);

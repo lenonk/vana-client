@@ -610,10 +610,10 @@ fn compass_view(w: &World) -> Option<CompassView> {
     Some(CompassView { heading: f.x.atan2(-f.z), dots, range: rs.range, arrow })
 }
 
-pub fn cast_panel(p: &mut Panels, f: f32) {
+pub fn cast_panel(p: &mut Panels, id: &str, label: &str, f: f32, text: &str) {
     let m = p.m;
-    p.panel("cast", None, 300.0, |ui| {
-        gauge_row(ui, m, "Casting", "cast", f, &format!("{}%", (f * 100.0) as u32));
+    p.panel(id, None, 300.0, |ui| {
+        gauge_row(ui, m, label, "cast", f, text);
     });
 }
 
@@ -658,7 +658,14 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         target_panel(p, &v);
     }
     if let Some((total, left)) = w.cast_bar {
-        cast_panel(p, ((total - left) / total).clamp(0.0, 1.0));
+        let f = if total > 0.0 { ((total - left) / total).clamp(0.0, 1.0) } else { 1.0 };
+        let text = if w.cast_event { super::super::magic::bar_clock(left) } else { format!("{}%", (f * 100.0) as u32) };
+        cast_panel(p, "cast", "Casting", f, &text);
+    }
+    // The event timer (eventtim; ours: a gauge of the time gone).
+    if let Some((total, left)) = w.event_timer {
+        let f = if total > 0.0 { ((total - left) / total).clamp(0.0, 1.0) } else { 1.0 };
+        cast_panel(p, "event timer", "Time", f, &super::super::magic::bar_clock(left));
     }
 }
 

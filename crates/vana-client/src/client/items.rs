@@ -965,7 +965,7 @@ pub fn use_slot(w: &mut World, container: u8, index: u8, target: u32) {
     let use_time = if matches!(it.item_type, 4 | 5) { it.cast_time as u32 } else { it.extra.iter().find(|e| e.0 == 0xd08).map_or(0, |e| e.1) };
     if use_time > 0 {
         let total = use_time as f32 * 20.0;
-        w.cast_bar = Some((total, total));
+        (w.cast_bar, w.cast_event) = (Some((total, total)), false);
     }
     let mut b = vec![0u8; 16];
     b[0..4].copy_from_slice(&target.to_le_bytes());

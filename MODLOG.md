@@ -10905,3 +10905,25 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
 - Ours (client/gmtell.rs): an event answers every waiting prompt once with 0x84 (retail repeats the open slot's tell
   each frame while another slot waits, the window already gone); the mouse moves the cursor and a click picks, as in
   the query *(inf: retail's handler takes no row messages)*. The modern UI shows it as a "gm prompt" panel.
+
+## Event timers: "menu    eventtim", the event cast bar, the timed choice (2026-10-28)
+
+- Op 0xb4 (FUN_100b0a00) 7 / 0xa: unless "menu    casttime" / "menu    eventtim" is open, FUN_1012c1d0(4, val@2) /
+  FUN_1012c500(0, val@2) open it for val@2 ticks (negative 0); 8 / 0xb close it (FUN_1015e910); 9 / 0xc write
+  ftol(remaining ticks, +0x18) to set@2, 0 when it is not open. Supersedes "ours 0" in "Op 0xb4" above.
+- eventtim (FUN_1012c540 class, vtable 0x10333410; layout 16, 94, 128x24, frames 138 with the gauge child frames 59):
+  each frame (FUN_1012c410) at (16, 94) under gaugewin else (16, 47); at 0 remaining it closes, else remaining -= the
+  frame's whole ticks (FUN_10014d60). Drawn (FUN_1012c280, mode 0): FUN_101c93c0(ftol(remaining / 60)) ("%d:%02d",
+  "%d:%02d:%02d" from an hour; truncated seconds) in the sprite font, centred across the window, y + 9.
+- casttime in mode 4 (FUN_1012bf60 -> FUN_1012bfe0): the same time text right-aligned at x + 0x69, y + 9, no gauge
+  or percentage (modes 0..3 are the spell's gauge and "%d%%").
+- Op 0xb4 6 (byte@2): 0 sets the auto-pick DAT_104886f4 = 1, 1 clears it, 2 sets 2; an open choice gets it at once
+  (FUN_1014e210: query +0x54a), a choice opening later at its open. FUN_1014e3e0 (the query each frame): +0x54a set
+  sends message 5 with the window's cursor row, so the choice takes its cursor's option, no sound. Closing a choice
+  (FUN_100ae3a0) clears the mode unless it is 2; the event end clears it.
+- Users: helper threads "60 s (3600 ticks): open the timer, read it until 0, close, then b4 6 0 unless stopped" in
+  the player blocks of Port Bastok, Windurst Waters / Woods, Lower / Port Jeuno, and the Windurst Woods minigames
+  (event 0x321 "Chocobo Chick Catchery" on actors 0x171.., the venture roll die 0x314). LSB spawns none of those
+  actors, so not seen live; event sweeps of 230 / 240 and 236 / 238 / 241 / 245 / 246 unchanged, 0 faults.
+- Ours: client/event.rs (State::auto_pick, the host's bar_left), magic.rs draw_event_timer / bar_clock; the modern
+  UI shows the timer as a gauge panel and the event cast bar's time in place of its percentage.

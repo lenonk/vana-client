@@ -1014,7 +1014,7 @@ pub fn open_cast_bar(w: &mut World, spell: u16) {
     let Some(r) = w.actions.as_ref().and_then(|a| a.spell(spell)) else { return };
     let total = r.cast as f32 * 20.0;
     if total > 0.0 {
-        w.cast_bar = Some((total, total));
+        (w.cast_bar, w.cast_event) = (Some((total, total)), false);
     }
 }
 
@@ -1029,10 +1029,34 @@ pub fn draw_cast_bar(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
     // y 47, or 94 under the gauge window (FUN_1012c0f0).
     let top = if w.gauge.is_some() { 94.0 } else { 47.0 };
     let (x, y) = crate::render::screens::push_window_at(b, ui, style, m, sw, sh, top - m.elements[0].y as f32);
+    // Mode 4 (an event's, FUN_1012bfe0): the time left right-aligned at +0x69, y + 9, no gauge.
+    if w.cast_event {
+        crate::render::screens::push_shape_text_right(b, ui, bar_clock(left).as_bytes(), x + 105.0, y + 9.0, 0x8080_8080);
+        return;
+    }
     crate::render::screens::push_gauge(b, ui, wps, x + 8.0, y + 9.0, 38, 97, f);
     let pct = ((f * 100.0) as u32).to_string();
     crate::render::screens::push_shape_text_right(b, ui, pct.as_bytes(), x + 106.0, y + 7.0, 0x8080_8080);
     crate::render::screens::push_shape_text(b, ui, b"%", x + 112.0, y + 7.0, 0x8080_8080);
+}
+
+/// A bar's time left (FUN_101c93c0 of ftol(ticks / 60): truncated seconds).
+pub(super) fn bar_clock(ticks: f32) -> String {
+    clock((ticks / 60.0).trunc())
+}
+
+/// "menu    eventtim" (FUN_1012c410 / FUN_1012c280 mode 0): at casttime's place, the time left centred across the
+/// window at y + 9 in the sprite font.
+pub fn draw_event_timer(gu: &mut GameUi, w: &World, sw: f32, sh: f32) {
+    let Some((_, left)) = w.event_timer else { return };
+    let (b, ui, style, _) = gu.parts();
+    let Some(m) = ui.menu("menu    eventtim") else { return };
+    let top = if w.gauge.is_some() { 94.0 } else { 47.0 };
+    let (x, y) = crate::render::screens::push_window_at(b, ui, style, m, sw, sh, top - m.elements[0].y as f32);
+    let text = bar_clock(left);
+    let tw = crate::render::screens::shape_text_width(ui, text.as_bytes());
+    let ww = m.elements[0].w as f32;
+    crate::render::screens::push_shape_text(b, ui, text.as_bytes(), x + ((ww - tw) / 2.0).trunc(), y + 9.0, 0x8080_8080);
 }
 
 /// Mouse (window messages 9 hover / 5 confirm): hovering a row or category moves the cursor there (SE 0001), a click
