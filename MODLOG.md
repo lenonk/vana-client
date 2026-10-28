@@ -10717,3 +10717,14 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   net.rs (s2c 0x105 / 0x106 / 0x107 / 0x109), modern/shop.rs ("Bazaar", no tabs, the tax cell). Test
   wares_records_and_tax. Not done: the per-id 1000 ms send refusal (FUN_100fc3c0). Not seen live: it needs a second
   player with a bazaar.
+
+## Clones belong to their task by uid, not by slot (Shantotto II's frozen orbs, 2026-10-27)
+
+- User report: Shantotto II's six orbs stopped orbiting after 5-10 minutes out, apparently after something she did.
+  Her orbs are `efon`'s clones (op 0x02), attached at points 0x1c..0x21 (bones 102..107, which idl1 / btl1 orbit).
+- Ours recorded a clone's task as Owner::Task(slot); task slots are reused (the first free one) and the clones of an
+  ended task kept the old slot. Ops 0x15 / 0x16 / 0x22 / 0x23 (FUN_100abea0 -> FUN_10062d50: the clones this task
+  started, clone +0xf0 == the task, move to the doll) matched by slot, so a later task in efon's old slot that dolled
+  her (a spell shot dolls its caster) took her orbs onto the doll's snapshot: frozen for good.
+- Ours now: Owner::Task(uid), the task's never-reused uid (sched.rs Task::uid), for op 0x02's clones and the doll /
+  undoll moves.

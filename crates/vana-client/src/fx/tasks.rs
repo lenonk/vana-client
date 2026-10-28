@@ -819,7 +819,7 @@ impl Effects {
             // No case (0x1005ac96): it only keeps the scheduler from starting by itself.
             0xa2 => Flow::Next,
             0x02 => {
-                self.op_start_generator(me, t, op, actors);
+                self.op_start_generator(t, op, actors);
                 Flow::Next
             }
             0x1e | 0x2d => {
@@ -984,19 +984,19 @@ impl Effects {
                 }
             }
             0x15 | 0x22 => {
-                t.a1 = self.doll(t.a1, op.code == 0x22, actors, me);
+                t.a1 = self.doll(t.a1, op.code == 0x22, actors, t.uid);
                 Flow::Next
             }
             0x16 | 0x23 => {
-                t.a2 = self.doll(t.a2, op.code == 0x23, actors, me);
+                t.a2 = self.doll(t.a2, op.code == 0x23, actors, t.uid);
                 Flow::Next
             }
             0x17 => {
-                t.a1 = self.undoll(t.a1, me);
+                t.a1 = self.undoll(t.a1, t.uid);
                 Flow::Next
             }
             0x18 => {
-                t.a2 = self.undoll(t.a2, me);
+                t.a2 = self.undoll(t.a2, t.uid);
                 Flow::Next
             }
             0x31 => {
@@ -1630,7 +1630,7 @@ impl Effects {
     }
 
     /// Op 0x02 (FUN_10052710 via FUN_10057000 case 2): a clone of the generator on the task's actor pair.
-    fn op_start_generator(&mut self, me: usize, t: &Task, op: &SOp, actors: &dyn Actors) {
+    fn op_start_generator(&mut self, t: &Task, op: &SOp, actors: &dyn Actors) {
         let Some(g) = self.reg.resolve(t.res.0, t.res.1, kind::GENERATOR, op.name()) else {
             self.reg.miss(t.res.0, t.res.1, op.name(), 5);
             return;
@@ -1655,7 +1655,7 @@ impl Effects {
             }
         }
         log::debug!("effects: generator {} (DAT {}) on {:?} -> {:?}", String::from_utf8_lossy(&self.reg.libs[g.0].tree.nodes[g.1].name), self.reg.libs[g.0].file_id, t.a1, t.a2);
-        let Some(i) = self.start(g, Owner::Task(me)) else { return };
+        let Some(i) = self.start(g, Owner::Task(t.uid)) else { return };
         // FUN_10041f40: "%d" of the task's number, ":" (the "Miss!" art) under `misv`; fixed at emission.
         let misv = self.reg.libs[t.res.0].tree.nodes[t.res.1].name == *b"misv";
         let dam = t.num.map(|(v, rgb)| super::DamValue { glyphs: if misv { vec![10] } else { v.to_string().bytes().filter(u8::is_ascii_digit).map(|b| b - b'0').take(16).collect() }, rgb });
@@ -1730,7 +1730,7 @@ impl Effects {
 
     /// FUN_100abea0: a doll where the actor stands now; FUN_10062d50 moves the clones this task started (clone
     /// +0xf0 == the task) to it, others stay on the actor.
-    fn doll(&mut self, w: Who, follow: bool, actors: &dyn Actors, me: usize) -> Who {
+    fn doll(&mut self, w: Who, follow: bool, actors: &dyn Actors, uid: u64) -> Who {
         let Who::Actor(id) = w else { return w };
         let Some(m) = actors.matrix(id) else { return w };
         let d = Who::Doll(self.dolls.len());
@@ -1740,15 +1740,15 @@ impl Effects {
         }
         let points = (0..DOLL_POINTS).map(|k| if unposed { None } else { actors.point(id, k) }).collect();
         self.dolls.push(Doll { of: id, matrix: m, follow, points, unposed });
-        self.move_clones(w, d, me);
+        self.move_clones(w, d, uid);
         d
     }
 
     /// Ops 0x17 / 0x18: back to the actor, with the clones of this task.
-    fn undoll(&mut self, w: Who, me: usize) -> Who {
+    fn undoll(&mut self, w: Who, uid: u64) -> Who {
         let back = self.doll_of(w);
         if back != w {
-            self.move_clones(w, back, me);
+            self.move_clones(w, back, uid);
         }
         back
     }
@@ -1761,8 +1761,8 @@ impl Effects {
         }
     }
 
-    fn move_clones(&mut self, from: Who, to: Who, me: usize) {
-        for x in self.insts.iter_mut().flatten().filter(|x| x.owner == Owner::Task(me)) {
+    fn move_clones(&mut self, from: Who, to: Who, uid: u64) {
+        for x in self.insts.iter_mut().flatten().filter(|x| x.owner == Owner::Task(uid)) {
             for a in x.actors.iter_mut() {
                 if *a == from {
                     *a = to;

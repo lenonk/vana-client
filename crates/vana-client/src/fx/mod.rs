@@ -328,8 +328,9 @@ pub enum Owner {
     /// The weather set (index into Effects::weathers' serials).
     Weather(u32),
     Element(usize),
-    /// A scheduler task (op 0x02).
-    Task(usize),
+    /// A scheduler task (op 0x02), by its uid: slots are reused, so a later task in the slot never takes the clones of
+    /// one that ended (a doll took Shantotto II's orbs that way and froze them).
+    Task(u64),
     /// An actor's model files (FUN_10083970).
     Actor(u32),
     /// A footstep's dust burst on an actor (FUN_100d41a0).
