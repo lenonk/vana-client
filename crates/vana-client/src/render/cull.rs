@@ -170,6 +170,11 @@ pub struct Cull {
     runs: u32,
     boxes: Vec<RunBox>,
     arg_run: Vec<u32>,
+    /// Each run's instances, and while a camera list is in force (set_mask), the runs with a listed instance.
+    ranges: Vec<(u32, u32)>,
+    listed: Option<Vec<bool>>,
+    /// Word 0: a camera list is in force; then a bit per instance, set when it may draw.
+    mask: wgpu::Buffer,
     /// The visible instances, run by run (the scenery's instance vertex buffer), and the draws' indirect arguments.
     pub out: wgpu::Buffer,
     pub args: wgpu::Buffer,
@@ -197,17 +202,33 @@ impl Cull {
         let out = empty("culled instances", data.out_len as u64 * INSTANCE_BYTES, storage | wgpu::BufferUsages::VERTEX);
         let args = empty("cull args", data.args.len() as u64 * 20, storage | wgpu::BufferUsages::INDIRECT | wgpu::BufferUsages::COPY_SRC);
         let vis = empty("cull visibility", data.bounds.len() as u64 * 4, storage);
+        let mask = with("cull camera list", &vec![0u8; (1 + data.bounds.len().div_ceil(32)) * 4], storage);
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("cull"),
             layout,
-            entries: &[&runs, &bounds, instances, &out, &run_args, &arg_base, &args, &vis]
+            entries: &[&runs, &bounds, instances, &out, &run_args, &arg_base, &args, &vis, &mask]
                 .iter()
                 .enumerate()
                 .map(|(k, b)| wgpu::BindGroupEntry { binding: k as u32, resource: b.as_entire_binding() })
                 .collect::<Vec<_>>(),
         });
         log::info!("scenery culled on the GPU: {} instances in {} runs, {} draws", data.bounds.len(), data.runs.len(), data.args.len());
-        Some(Self { group, instances: data.bounds.len() as u32, runs: data.runs.len() as u32, boxes: data.boxes.clone(), arg_run: data.arg_run.clone(), out, args })
+        let ranges = data.runs.iter().map(|r| (r.inst_start, r.inst_end)).collect();
+        Some(Self { group, instances: data.bounds.len() as u32, runs: data.runs.len() as u32, boxes: data.boxes.clone(), arg_run: data.arg_run.clone(), ranges, listed: None, mask, out, args })
+    }
+
+    /// A camera list in force (FUN_1017b510: the slot draws only its placements): `allowed` per instance, or None for
+    /// every instance.
+    pub fn set_mask(&mut self, gpu: &Gpu, allowed: Option<&[bool]>) {
+        let mut words = vec![0u32; 1 + (self.instances as usize).div_ceil(32)];
+        self.listed = allowed.map(|a| {
+            words[0] = 1;
+            for (i, _) in a.iter().enumerate().filter(|(_, on)| **on) {
+                words[1 + i / 32] |= 1 << (i % 32);
+            }
+            self.ranges.iter().map(|&(s, e)| a.get(s as usize..e as usize).is_some_and(|r| r.iter().any(|&on| on))).collect()
+        });
+        gpu.queue.put(&self.mask, 0, bytemuck::cast_slice(&words));
     }
 
     /// The last culling's draws with an instance, of all, and the instances drawn (a blocking readback, for the
@@ -229,7 +250,7 @@ impl Cull {
     /// Per run, whether its draws go in this frame (RunBox::maybe_visible); the GPU counts what they draw.
     pub fn runs_shown(&self, view_proj: Mat4, eye: Vec3, dk: [f32; 2]) -> Vec<bool> {
         let p = planes(view_proj);
-        self.boxes.iter().map(|b| b.maybe_visible(&p, eye, dk)).collect()
+        self.boxes.iter().enumerate().map(|(k, b)| self.listed.as_ref().is_none_or(|l| l[k]) && b.maybe_visible(&p, eye, dk)).collect()
     }
 
     /// The run of an argument slot.
@@ -250,7 +271,7 @@ impl Cull {
 }
 
 /// The bind group layout of group 3: runs, bounds, source instances, culled instances, run args, arg bases, args,
-/// visibility.
+/// visibility, the camera list's mask.
 pub fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     let entry = |binding: u32, read_only: bool| wgpu::BindGroupLayoutEntry {
         binding,
@@ -260,6 +281,6 @@ pub fn layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     };
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("cull"),
-        entries: &[entry(0, true), entry(1, true), entry(2, true), entry(3, false), entry(4, true), entry(5, true), entry(6, false), entry(7, false)],
+        entries: &[entry(0, true), entry(1, true), entry(2, true), entry(3, false), entry(4, true), entry(5, true), entry(6, false), entry(7, false), entry(8, true)],
     })
 }

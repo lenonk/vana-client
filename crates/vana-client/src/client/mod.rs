@@ -11857,6 +11857,9 @@ impl App {
                 let budget = if w.zone_uploading.is_some() || w.downloading.is_some() { crate::render::MIP_BUDGET } else { crate::render::MIP_BUDGET_WORLD };
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, budget));
                 mark!("mips");
+                // FUN_10179390: the camera list under the eye, at the Retail draw distance only (render/cull.rs).
+                let list = if self.cfg.draw_distance == 100 { w.ground.as_ref().map_or(0, |g| g.camera_list(camera.eye)) } else { 0 };
+                r.set_camera_list(&gfx.gpu, list);
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
                 mark!("scene");
                 // Refracting actors, farthest first (retail's sorted list), after the opaque scene.

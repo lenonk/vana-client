@@ -281,6 +281,27 @@ impl Placement {
     }
 }
 
+/// The camera lists (FUN_1017af30; potentially visible sets): version byte 3 >= 0x15 and u32 @0x14: u32 n, then n x
+/// { u32 count; u32 placement[count] }, each by its MZB offset, which a collision object's +0xa8 names (a probe from
+/// the camera eye picks one, FUN_101813f0). Placement indices are 0-based into the MZB's records.
+pub fn camera_lists(p: &[u8]) -> std::collections::HashMap<u32, Vec<u32>> {
+    let mut out = std::collections::HashMap::new();
+    let pool = if p.len() >= 0x18 && p[3] >= 0x15 { u32_at(p, 0x14) as usize } else { 0 };
+    if pool == 0 || pool + 4 > p.len() {
+        return out;
+    }
+    let mut at = pool + 4;
+    for _ in 0..u32_at(p, pool) {
+        let Some(n) = p.get(at..at + 4).map(|_| u32_at(p, at) as usize) else { break };
+        if at + 4 + n * 4 > p.len() {
+            break;
+        }
+        out.insert(at as u32, (0..n).map(|k| u32_at(p, at + 4 + k * 4)).collect());
+        at += 4 + n * 4;
+    }
+    out
+}
+
 /// FUN_10172530: version byte 3 > 0x11 and u32 @0x18: the light list, 256 records of 0x4c with the key at +0
 /// (empty without one).
 pub fn light_list(p: &[u8]) -> Vec<u32> {
@@ -602,15 +623,20 @@ pub struct ZoneScene {
     pub light_keys: Vec<u32>,
     /// The voyage paths `c000`..`c003` (type-6 chunks, the first of each name; FUN_10055040), payloads.
     pub paths: [Option<Vec<u8>>; 4],
+    /// The MZB's camera lists by offset (camera_lists), as indices into `placements`.
+    pub camera_lists: std::collections::HashMap<u32, Vec<u32>>,
 }
 
 pub fn load_scene(keys: &Keys, file: &[u8]) -> Result<ZoneScene> {
-    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default() };
+    let mut scene = ZoneScene { regions: Vec::new(), collision: None, placements: Vec::new(), meshes: Vec::new(), textures: Vec::new(), warnings: Vec::new(), light_keys: Vec::new(), paths: Default::default(), camera_lists: Default::default() };
     let list: Vec<Chunk> = chunks(file)?;
     for c in list {
         let mut data = c.data.to_vec();
         let result = match c.kind {
             0x1C => decode_mzb(keys, &mut data).and_then(|_| parse_mzb(&mut data)).map(|p| {
+                // As the collision, the last MZB's.
+                let base = scene.placements.len() as u32;
+                scene.camera_lists = camera_lists(&data).into_iter().map(|(at, l)| (at, l.into_iter().map(|i| i + base).collect())).collect();
                 scene.placements.extend(p);
                 for k in light_list(&data) {
                     if k != 0 && !scene.light_keys.contains(&k) {

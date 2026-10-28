@@ -10842,3 +10842,35 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   - La Theine along the ground: 0.430 -> 0.348 ms; grass within 50, trees within their distances.
   - Qufim: about 1000 pixels differ; San d'Oria: none.
   - Live in Qufim at Retail: scenery, actors and plates draw.
+
+## Camera lists (retail's visible sets) in the GPU culling (2026-10-28)
+
+- Retail (research spec culling_spec.md, "Camera lists"):
+  - MZB +0x14 (version >= 0x15): u32 n, then n lists of { u32 count; u32 placement[count] }.
+  - Each collision object's +0xa8 is the MZB offset of one list (0 none). Checked on 230, 100, 193 and 231: every
+    nonzero +0xa8 lands on a list start. No file cell list carries flag 0x800 or 0x2000, and none is chained.
+  - FUN_10179390 (before the draw) takes coll+0x1807c, set by FUN_101813f0's probe from the camera eye.
+    - The first segment runs 0.51 above the eye to 100 below it. If nothing is hit, a second runs 0.51 below the eye
+      to 15 above it.
+    - FUN_1016a2d0 walks the cells within 1 of the start's. It checks each object's y range against the segment's,
+      and skips objects whose +0xbc is the loaded sub-area.
+    - The list is the nearest hit's +0xa8, among hits from cell lists without 0x800 (0x800 hits only set the
+      surface).
+  - FUN_1017b510: while a list is in force, slot 0 draws only its placements, each still distance / frustum / LOD
+    tested. Door groups are drawn apart, and the sub-area slot gets no list.
+  - Interiors (335, 326) carry no lists. Zones without lists (La Theine, Bastok Markets at the views tried) draw as
+    before.
+- Ours:
+  - zone::camera_lists (ZoneScene::camera_lists, the last MZB's, as collision) and collision::Object::vis. A merged
+    sub-area's objects get vis 0 *(inf: retail would hand slot 0 a list from the sub-area's pool; no interior has
+    one)*.
+  - Ground::camera_list(eye): the same vertical segments as covered(). *(inf: our door boxes name no list)*
+  - ZoneRenderer::set_camera_list: a per-instance mask from each instance's record (door parts always pass).
+  - Cull::set_mask, a storage buffer: word 0 is the flag, then a bit per instance; cs_cull_vis tests it first. The
+    CPU skips runs with no listed instance.
+- Only at Settings' Draw Distance = Retail: the lists leave out what peeks over walls, as retail does; at the
+  larger distances they would cut the scenery that setting is for.
+- Checked offscreen at Retail (zone-shot applies the list under its eye; FFXI_NO_LISTS to compare):
+  - Southern San d'Oria gate: GPU 0.96 -> 0.23 ms, 7442 pixels differ (the battlements beyond the inner wall).
+  - Street: 0.71 -> 0.41 ms, 1146 pixels (rooftops over the wall). Square: 0.83 -> 0.49 ms, identical.
+  - Windurst Waters: 0.31 -> 0.27 ms, 1349 pixels.

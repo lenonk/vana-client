@@ -1184,11 +1184,17 @@ fn main() -> Result<()> {
                         if let Some(v) = voyage_v {
                             r.voyage = v;
                         }
-                        // The draw distance at full Clipping (FFXI_NO_CLIP: none, to compare).
+                        // The draw distance at full Clipping and the camera list under the eye (FFXI_NO_CLIP: neither,
+                        // FFXI_NO_LISTS: no list, to compare).
                         if let Some(l) = lighting.filter(|_| std::env::var_os("FFXI_NO_CLIP").is_none()) {
                             let (d, k) = dat::weather::clipping(l.draw_dist, 1.0, zone as u16);
-                            println!("draw distance {d:.1}, K {k}");
                             r.clip = [d, k];
+                            let list = match scene.collision.as_ref().filter(|_| std::env::var_os("FFXI_NO_LISTS").is_none()) {
+                                Some(c) => client::ground::Ground::from_collision(c, &scene.light_keys).camera_list(camera.eye),
+                                None => 0,
+                            };
+                            println!("draw distance {d:.1}, K {k}, camera list {list:#x} ({} placements)", scene.camera_lists.get(&list).map_or(0, |l| l.len()));
+                            r.set_camera_list(gpu, list);
                         }
                         if let Some((id, s)) = &sub_scene {
                             let mut all = scene.light_keys.clone();

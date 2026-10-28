@@ -72,6 +72,8 @@ pub struct Ground {
     /// Per object: its four point lights (table slot + 1, 0 = none or past slot 254), and its type-9 water height.
     obj_lights: Vec<[u8; 4]>,
     obj_water: Vec<f32>,
+    /// Per object: its camera list's MZB offset (+0xa8, 0 none).
+    obj_vis: Vec<u32>,
     /// Per triangle: the door whose box it is (0 none), and the doors open now (their boxes are skipped).
     doors: Vec<u32>,
     open: std::cell::RefCell<std::collections::HashSet<u32>>,
@@ -264,7 +266,7 @@ impl Ground {
     pub fn build(scene: &ZoneScene) -> Self {
         match scene.collision.as_ref() {
             Some(c) => Self::from_collision(c, &scene.light_keys),
-            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), obj_water: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
+            None => Self { tris: Vec::new(), normals: Vec::new(), y_range: Vec::new(), degenerate: Vec::new(), cells: HashMap::new(), grid: None, body: Cell::new(Body::NEW), covers: Vec::new(), map_keys: Vec::new(), kinds: Vec::new(), areas: Vec::new(), objs: Vec::new(), obj_lights: Vec::new(), obj_water: Vec::new(), obj_vis: Vec::new(), doors: Vec::new(), open: Default::default(), cam_pass: Vec::new(), decal: Vec::new(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true },
         }
     }
 
@@ -287,6 +289,7 @@ impl Ground {
         };
         let obj_lights = c.objects.iter().map(|o| o.lights.map(slot)).collect();
         let obj_water = c.objects.iter().map(|o| crate::dat::collision::water_of(o.flags)).collect();
+        let obj_vis = c.objects.iter().map(|o| o.vis).collect();
         let degenerate = tris.iter().map(|[a, b, c]| *a == *b || *b == *c || *c == *a).collect();
         let mut cells: HashMap<(i32, i32), Vec<u32>> = HashMap::new();
         for (i, t) in tris.iter().enumerate() {
@@ -303,7 +306,7 @@ impl Ground {
         let bounds = c.entries.iter().map(|e| tris[e.first as usize..(e.first + e.count) as usize].iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))).collect();
         let grid = Some(Grid { w: c.grid.0, h: c.grid.1, cells: c.cells.clone(), entries, bounds });
         let doors = c.object.iter().map(|&o| c.objects[o as usize].door).collect();
-        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, obj_water, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Self { tris, normals: c.normals.clone(), y_range, degenerate, cells, grid, body: Cell::new(Body::NEW), covers, map_keys, kinds: c.kinds.clone(), areas, objs: c.object.clone(), obj_lights, obj_water, obj_vis, doors, open: Default::default(), cam_pass: c.cam_pass.clone(), decal: c.decal.clone(), furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     /// FUN_10182700's cells: the MZB cell of `c` (truncated) and its neighbours clamped to the grid; None without one.
@@ -413,6 +416,16 @@ impl Ground {
         let down = hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
         let up = || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
         down.or_else(up).is_some_and(|h| self.covers.get(h.1).copied().unwrap_or(false))
+    }
+
+    /// FUN_101813f0 / FUN_1016a2d0 for the camera lists (FUN_10179390): a ray from 0.51 above the eye 100 down, else
+    /// from 0.51 below it 15 up; the nearest face's object names the list (+0xa8, the MZB offset; 0 none or a miss).
+    /// *(inf: door boxes name none; retail links them in lists of their own)*
+    pub fn camera_list(&self, eye: Vec3) -> u32 {
+        let hits = self.heights(eye.x, eye.z);
+        let down = hits.iter().filter(|h| h.0 >= eye.y - 0.51 && h.0 <= eye.y + 100.0).min_by(|a, b| a.0.total_cmp(&b.0));
+        let up = || hits.iter().filter(|h| h.0 <= eye.y + 0.51 && h.0 >= eye.y - 15.0).max_by(|a, b| a.0.total_cmp(&b.0));
+        down.or_else(up).and_then(|h| self.objs.get(h.1)).and_then(|&o| self.obj_vis.get(o as usize)).copied().unwrap_or(0)
     }
 
     /// FUN_101811d0: the map sub-key under a point, from the nearest face a ray from 0.51 above it 10 down hits,

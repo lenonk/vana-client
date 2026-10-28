@@ -60,6 +60,8 @@ pub struct Object {
     pub link: u32,
     /// A door's box (FUN_10171930): the door id; the walks skip it while the door is open (list bit 0x2000).
     pub door: u32,
+    /// +0xa8: the MZB offset of its camera list (zone::camera_lists), 0 none.
+    pub vis: u32,
 }
 
 fn u32_at(b: &[u8], o: usize) -> Option<u32> {
@@ -126,7 +128,7 @@ pub fn parse(p: &[u8]) -> Result<Collision> {
                     None => {
                         let next = objects.len() as u32;
                         let obj = *objects.entry(xf).or_insert_with(|| {
-                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)), link: u32_at(p, xf + 0xbc).unwrap_or(0), door: 0 });
+                            out.objects.push(Object { flags: u32_at(p, xf + 0xa4).unwrap_or(0), area: u32_at(p, xf + 0xb0).unwrap_or(0), lights: light_keys(xf), y_range: (f32_at(p, xf + 0xb4).unwrap_or(f32::MIN), f32_at(p, xf + 0xb8).unwrap_or(f32::MAX)), link: u32_at(p, xf + 0xbc).unwrap_or(0), door: 0, vis: u32_at(p, xf + 0xa8).unwrap_or(0) });
                             next
                         });
                         let first = out.tris.len() as u32;
@@ -164,7 +166,7 @@ impl Collision {
             let turn = |v: Vec3| Vec3::new(v.x * c + v.z * s, v.y, -v.x * s + v.z * c);
             let verts: Vec<Vec3> = CORNERS.iter().map(|k| pos + turn(Vec3::from(*k) * size)).collect();
             let obj = self.objects.len() as u32;
-            self.objects.push(Object { flags: 2, y_range: (pos.y - size.y / 2.0, pos.y + size.y / 2.0), area: 0, lights: [0; 4], link: 0, door: r.tag() });
+            self.objects.push(Object { flags: 2, y_range: (pos.y - size.y / 2.0, pos.y + size.y / 2.0), area: 0, lights: [0; 4], link: 0, door: r.tag(), vis: 0 });
             let first = self.tris.len() as u32;
             for t in TRIS {
                 self.tris.push([verts[t[0]], verts[t[1]], verts[t[2]]]);
@@ -203,7 +205,8 @@ impl Collision {
         let mut out = Collision { tris: Vec::new(), flags: Vec::new(), cam_pass: Vec::new(), decal: Vec::new(), normals: Vec::new(), kinds: Vec::new(), object: Vec::new(), objects: Vec::new(), entries: Vec::new(), cells: vec![Vec::new(); w * h], grid: self.grid };
         for (src, skip) in [(self, Some(link)), (sub, None)] {
             let base = out.objects.len() as u32;
-            out.objects.extend(src.objects.iter().cloned());
+            // The camera lists are the zone's (a sub-area's offsets name its own MZB; interiors carry none).
+            out.objects.extend(src.objects.iter().cloned().map(|o| Object { vis: if skip.is_some() { o.vis } else { 0 }, ..o }));
             let mut entry = vec![None; src.entries.len()];
             for (i, e) in src.entries.iter().enumerate() {
                 if skip.is_some_and(|l| src.objects[e.object as usize].link == l) {

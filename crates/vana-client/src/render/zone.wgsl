@@ -527,6 +527,8 @@ struct CullArg {
 // DrawIndexedIndirect arguments, 5 words each.
 @group(3) @binding(6) var<storage, read_write> cull_args: array<u32>;
 @group(3) @binding(7) var<storage, read_write> cull_vis: array<u32>;
+// Word 0: a camera list is in force (FUN_1017b510); then a bit per instance that may draw.
+@group(3) @binding(8) var<storage, read> cull_mask: array<u32>;
 
 const INST_WORDS: u32 = 28u;
 
@@ -535,10 +537,14 @@ fn cull_col(i: u32, k: u32) -> vec4<f32> {
     return vec4<f32>(bitcast<f32>(cull_src[b]), bitcast<f32>(cull_src[b + 1u]), bitcast<f32>(cull_src[b + 2u]), bitcast<f32>(cull_src[b + 3u]));
 }
 
-// FUN_1017c9c0: the draw distance to the origin (D, or the placement's own times K; a door group's within both),
-// the LOD band as vs_main tests it, then the mesh's box (through the model as vs_main places it) against the six
-// planes of the view frustum (clip x, y in -w..w, z in 0..w) and retail's far plane at view depth D.
+// FUN_1017b510: only the camera list's placements while one is in force; FUN_1017c9c0: the draw distance to the
+// origin (D, or the placement's own times K; a door group's within both), the LOD band as vs_main tests it, then the
+// mesh's box (through the model as vs_main places it) against the six planes of the view frustum (clip x, y in
+// -w..w, z in 0..w) and retail's far plane at view depth D.
 fn cull_visible(i: u32) -> bool {
+    if (cull_mask[0] != 0u && (cull_mask[1u + i / 32u] & (1u << (i % 32u))) == 0u) {
+        return false;
+    }
     let m3 = cull_col(i, 3u);
     var model = mat4x4<f32>(cull_col(i, 0u), cull_col(i, 1u), cull_col(i, 2u), m3);
     let band = cull_col(i, 6u);

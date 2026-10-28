@@ -343,6 +343,10 @@ pub struct ZoneRenderer {
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
     cull_layout: wgpu::BindGroupLayout,
+    /// The zone's instances' placements and camera lists (ZoneGeometry), and the list in force (MZB offset, 0 none).
+    inst_placement: Vec<u32>,
+    camera_lists: HashMap<u32, Vec<u32>>,
+    camera_list: u32,
     /// All scenery in one vertex and one index buffer, uploaded once; draws keep the file order.
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -1068,6 +1072,10 @@ pub struct ZoneGeometry {
     indices: Vec<u16>,
     /// Each instance's mesh box and the draws' runs, for culling (render/cull.rs).
     cull: cull::CullData,
+    /// Each instance's placement (its MZB record; u32::MAX for door parts), and the camera lists by MZB offset
+    /// (zone::camera_lists).
+    inst_placement: Vec<u32>,
+    camera_lists: HashMap<u32, Vec<u32>>,
 }
 
 impl ZoneGeometry {
@@ -1095,9 +1103,10 @@ impl ZoneGeometry {
         let mut door_bases: HashMap<u32, Vec<glam::Mat4>> = HashMap::new();
         let mut next_part = 1u32;
         let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
-        // Per instance: the placement's link, whether mirrored, and its distance rule for the culling (cull.rs).
-        let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool, [f32; 2])>> = HashMap::new();
-        for p in scene.placements.iter().filter(|p| p.drawn()) {
+        // Per instance: the placement's link, whether mirrored, its distance rule for the culling (cull.rs) and its
+        // record.
+        let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool, [f32; 2], u32)>> = HashMap::new();
+        for (pi, p) in scene.placements.iter().enumerate().filter(|(_, p)| p.drawn()) {
             let area = match area_keys.iter().position(|&k| k == p.area) {
                 _ if p.area == 0 => 0,
                 Some(s) => s as u32 + 1,
@@ -1140,12 +1149,15 @@ impl ZoneGeometry {
             // Door parts draw through FUN_1017ce60 (2019), which takes every ref, 'c' keys too.
             let lights = p.lights.map(|k| slot_of(k, part != 0));
             let reach = cull::reach(p.own_dist, p.id != 0);
+            // Door groups draw whatever the camera list (FUN_1017ade0): no record for it.
+            let rec = if part != 0 { u32::MAX } else { pi as u32 };
             for (name, b) in bands {
                 let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, p.world as u32 as f32] };
-                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0, reach));
+                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0, reach, rec));
             }
         }
         let mut matrices: Vec<Instance> = Vec::new();
+        let mut inst_placement: Vec<u32> = Vec::new();
         let mut bounds: Vec<[f32; 8]> = Vec::new();
         let mut links = Vec::new();
         let mut draws = Vec::new();
@@ -1158,11 +1170,12 @@ impl ZoneGeometry {
             let start = matrices.len() as u32;
             let split = start + mats.iter().filter(|m| !m.2).count() as u32;
             let mut reaches = Vec::with_capacity(mats.len());
-            for (inst, link, _, reach) in mats {
+            for (inst, link, _, reach, pi) in mats {
                 if link != 0 {
                     links.push((matrices.len() as u32, link, inst));
                 }
                 matrices.push(inst);
+                inst_placement.push(pi);
                 reaches.push(reach);
             }
             let (instances, mirrored) = (start..split, split..matrices.len() as u32);
@@ -1219,7 +1232,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull }
+        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull, inst_placement, camera_lists: scene.camera_lists.clone() }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -1317,6 +1330,9 @@ impl ZoneRenderer {
             cull,
             cull_pipes: p.cull,
             cull_layout: p.cull_layout,
+            inst_placement: geo.inst_placement.clone(),
+            camera_lists: geo.camera_lists.clone(),
+            camera_list: 0,
             lights,
             light_keys: geo.light_keys.clone(),
             vertices: buffer("scenery vertices", v, wgpu::BufferUsages::VERTEX),
@@ -1395,6 +1411,24 @@ impl ZoneRenderer {
     /// This frame's lighting per area slot - 1 (None: no environment, lit as the zone).
     pub fn set_area_lights(&mut self, lights: Vec<Option<crate::dat::weather::Lighting>>) {
         self.area_lights = lights;
+    }
+
+    /// FUN_10179390: the camera list the eye's probe found (MZB offset, 0 none; Ground::camera_list). While one is in
+    /// force the zone's scenery draws only its placements (FUN_1017b510; door groups and a sub-area's scenery always).
+    pub fn set_camera_list(&mut self, gpu: &Gpu, list: u32) {
+        if list == self.camera_list {
+            return;
+        }
+        self.camera_list = list;
+        let Some(c) = self.cull.as_mut() else { return };
+        match self.camera_lists.get(&list) {
+            Some(l) => {
+                let listed: std::collections::HashSet<u32> = l.iter().copied().collect();
+                let allowed: Vec<bool> = self.inst_placement.iter().map(|p| *p == u32::MAX || listed.contains(p)).collect();
+                c.set_mask(gpu, Some(&allowed));
+            }
+            None => c.set_mask(gpu, None),
+        }
     }
 
     /// A sub-area's scenery replaces the loaded one (FUN_101787c0 state 2); `light_keys` is the zone's table with
