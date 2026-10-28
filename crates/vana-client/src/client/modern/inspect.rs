@@ -16,7 +16,8 @@ const PITCH: f32 = SLOT + GAP;
 const GRID_W: f32 = 4.0 * SLOT + 3.0 * GAP;
 
 pub fn draw(p: &mut Panels, w: &mut World) {
-    if !w.modern {
+    // The bazaar list over it suspends it.
+    if !w.modern || super::super::shop::wares_open(w) {
         return;
     }
     let (Some(gu), Some(info)) = (p.gu, w.item_info.clone()) else { return };

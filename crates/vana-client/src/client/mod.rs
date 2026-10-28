@@ -1760,7 +1760,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     }
                     _ => {}
                 },
-                _ if world.inspect.up() => inspect::key(world, gu, *key),
+                _ if world.inspect.up() && !shop::wares_open(world) => inspect::key(world, gu, *key),
                 _ if world.win.is_some() => {
                     items::key(world, *key, modifiers.ctrl || modifiers.alt, modifiers.alt);
                 }
@@ -5242,6 +5242,8 @@ struct World {
     bazaar: Option<bazaar::Bazaar>,
     bazaar_msg: seacom::Store,
     bazaar_customers: i32,
+    /// The bazaar we browse (bazaar.rs Wares).
+    wares: bazaar::Wares,
     /// Social row Help Desk: "menu    faqsub".
     helpdesk: Option<helpdesk::HelpDesk>,
     /// The GM call's packet counters: c2s 0x0D4's Id (DAT_104e1b5c) and 0x0D3's pktId (DAT_104e1b64), never 0.
@@ -6779,6 +6781,7 @@ impl App {
                             bazaar: None,
                             bazaar_msg: Default::default(),
                             bazaar_customers: 0,
+                            wares: Default::default(),
                             helpdesk: None,
                             faq_counter: 0,
                             gm_reply: None,
@@ -8050,6 +8053,10 @@ impl App {
                 NetEvent::GroupId(gid) => partymenu::on_group_id(world, gid),
                 NetEvent::BazaarShopper { state, hide, name } => bazaar::on_shopper(world, state, hide, name),
                 NetEvent::BazaarSale { count, item, name } => bazaar::on_sale(world, count, item, name),
+                NetEvent::BazaarItem { price, count, tax, item, index, attr } => bazaar::on_item(world, bazaar::Ware { item, index, count, price, attr, tax }),
+                NetEvent::BazaarBuy { state, name } => bazaar::on_buy(world, state, name),
+                NetEvent::BazaarClosed { name } => bazaar::on_closed(world, name),
+                NetEvent::BazaarSold { count, owner, name, index } => bazaar::on_sold(world, count, owner, name, index),
                 NetEvent::Currencies { mode, data } => currencies::on_packet(world, mode, &data),
                 NetEvent::EquipSetValid(slots) => esedit::on_valid(world, slots),
                 NetEvent::EquipSetRes { count, changed, equipped } => equipsets::on_res(world, count, &changed, &equipped),

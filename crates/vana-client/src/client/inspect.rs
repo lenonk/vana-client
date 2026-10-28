@@ -212,9 +212,17 @@ pub fn frame(w: &mut World) {
     }
 }
 
-/// FUN_10134760 / FUN_101336d0: the window and the item info go, a new check may go at once, and the action menu
-/// comes back unless the check was typed without it.
+/// The bazaar list closed over the window: it has the focus again (FUN_101337d0), View Wares waits 2 s.
+pub(super) fn refocus(w: &mut World) {
+    if w.inspect.up() {
+        w.inspect.delay = VIEW_DELAY;
+    }
+}
+
+/// FUN_10134760 / FUN_101336d0: the window, the bazaar list over it and the item info go, a new check may go at once,
+/// and the action menu comes back unless the check was typed without it.
 pub fn close(w: &mut World) {
+    super::shop::close_wares(w);
     if w.inspect.win.take().is_none() {
         return;
     }
@@ -245,9 +253,14 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
         K::ArrowRight => link(4),
         K::ArrowLeft => link(5),
         K::Enter => {
-            // View Wares would open the bazaar list (c2s 0x105, "menu    shop"): not done.
-            let sound = if win.cursor == VIEW && !enabled { Ui::Error } else { Ui::Select };
+            // View Wares (2.7): the bazaar list over the window, c1 cleared.
+            let view = win.cursor == VIEW;
+            let sound = if view && !enabled { Ui::Error } else { Ui::Select };
             w.sounds.push(sound as u32);
+            if view && enabled {
+                w.inspect.msg_in = false;
+                super::shop::open_wares(w);
+            }
             return;
         }
         K::Escape => {
@@ -272,8 +285,8 @@ pub fn key(w: &mut World, gu: &GameUi, key: egui::Key) {
 
 /// The mouse: the generic window over the slots and View Wares (winhits.rs).
 pub fn pointer(w: &mut World, gu: &GameUi, p: (f32, f32), moved: bool, clicked: bool, right: bool) {
-    // The modern layer draws it and takes its mouse.
-    if w.modern {
+    // The modern layer draws it and takes its mouse; the bazaar list over it suspends it.
+    if w.modern || super::shop::wares_open(w) {
         return;
     }
     let Some(cursor) = w.inspect.win.as_ref().map(|win| win.cursor) else { return };
@@ -299,7 +312,7 @@ pub fn info_source(w: &World) -> Option<(u16, Option<[u8; 24]>)> {
 /// Title slot 2: the checked player's name; help slot 2: "Lv.%d %s" (or "M.Lv.%d %s") and " / " the sub job, or
 /// "？　？　？" when anonymous (FUN_10133a80).
 pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
-    if !w.inspect.up() {
+    if !w.inspect.up() || super::shop::wares_open(w) {
         return;
     }
     bars.title[2] = super::textcmd::display_name(w, w.inspect.expect.0);
@@ -322,7 +335,8 @@ pub fn bars(gu: &GameUi, w: &World, bars: &mut super::hudtop::BarText) {
 pub fn draw(gu: &mut GameUi, w: &World, sw: f32, sh: f32) -> Vec<[f32; 4]> {
     const WHITE: u32 = 0x8080_8080;
     let mut rects = Vec::new();
-    if w.modern {
+    // The bazaar list (group 0x10) suspends the window and its comment window *(inf: the group walk)*.
+    if w.modern || super::shop::wares_open(w) {
         return rects;
     }
     let (Some(win), Some(info)) = (&w.inspect.win, w.item_info.clone()) else { return rects };

@@ -1,6 +1,6 @@
-//! The modern NPC and guild shops and Set Bazaar's prices over client/shop.rs, which keeps every rule and key: Buy /
-//! Sell as tabs (shopmain / guildsho), the whole list with its prices and requirements, the quantity, the price and the
-//! confirm asked inside the panel.
+//! The modern NPC and guild shops, Set Bazaar's prices and another player's bazaar over client/shop.rs, which keeps
+//! every rule and key: Buy / Sell as tabs (shopmain / guildsho), the whole list with its prices and requirements, the
+//! quantity, the price and the confirm asked inside the panel.
 
 use super::super::game_ui::GameUi;
 use super::super::items::ItemCache;
@@ -73,8 +73,13 @@ fn list(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look,
                 ui.painter().text(pos2(right, rect.center().y), Align2::RIGHT_CENTER, req_text(m, gu, req), FontId::proportional(m.theme.small), name_tint);
             }
             let cell = r.price.clone().or_else(|| r.count.map(|n| n.to_string()));
+            // A bazaar row's tax "(+T G)" in yellow at the right, the price before it.
+            let mut end = rect.max.x - 12.0;
+            if let Some(t) = &r.tax {
+                end = ui.painter().text(pos2(end, rect.center().y), Align2::RIGHT_CENTER, t, FontId::proportional(m.theme.small), tint(m, 0x8090_9040)).min.x - 8.0;
+            }
             if let Some(c) = cell {
-                ui.painter().text(pos2(rect.max.x - 12.0, rect.center().y), Align2::RIGHT_CENTER, c, FontId::proportional(m.theme.ui), tint(m, r.price_tint));
+                ui.painter().text(pos2(end, rect.center().y), Align2::RIGHT_CENTER, c, FontId::proportional(m.theme.ui), tint(m, r.price_tint));
             }
             if k == v.cursor && follow {
                 ui.scroll_to_rect(rect, None);
@@ -96,13 +101,13 @@ fn list(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look,
 
 /// The confirm (shopbuy / shopsell): what it is for, then Yes / No with the cursor's lit.
 fn confirm(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, v: &Look, (n, child): (u32, u16), mouse: &mut Mouse) {
-    let menu = if v.view == Some(View::Buy) { SHOPBUY } else { SHOPSELL };
+    let menu = if matches!(v.view, Some(View::Buy | View::Wares)) { SHOPBUY } else { SHOPSELL };
     let gil = |g: u64| crate::inventory::gil_text(g as i64);
     let (item, unit) = v.busy.unwrap_or((0, None));
     let name = info.item(item).map(|it| it.name.clone()).unwrap_or_default();
     let line = match v.view {
         Some(View::Bazaar) => format!("Put {name} up for {}?", gil(n as u64)),
-        Some(View::Buy) => match unit {
+        Some(View::Buy | View::Wares) => match unit {
             Some(p) => format!("Buy {n} x {name} for {}?", gil(p as u64 * n as u64)),
             None => format!("Buy {n} x {name}?"),
         },
@@ -133,27 +138,25 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let asking = v.qty.is_some() || v.money.is_some() || v.confirm.is_some();
     let title = match () {
         _ if v.bazaar => gu.title_msg(0x0f).unwrap_or_else(|| "Set Bazaar".into()),
+        _ if v.wares => gu.title_msg(0x0e).unwrap_or_else(|| "Bazaar".into()),
         _ if v.guild => gu.title_msg(0xd).unwrap_or_else(|| "Guild Shop".into()),
         _ => gu.title_msg(0xc).unwrap_or_else(|| "Shop".into()),
     };
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     let mut mouse = Mouse::default();
     p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), W, |ui| {
-        // shopmain / guildsho: Buy and Sell as tabs; the open list's lit, else the cursor's.
-        if !v.bazaar {
+        // shopmain / guildsho: Buy and Sell as tabs; the open list's open, else the cursor's marked.
+        if !v.bazaar && !v.wares {
             let main = if v.guild { GUILDSHO } else { SHOPMAIN };
-            ui.horizontal(|ui| {
-                for (k, d) in [(1u16, "Buy"), (2, "Sell")] {
-                    let open = match v.view {
-                        Some(View::Buy) => k == 1,
-                        Some(_) => k == 2,
-                        None => v.main == k,
-                    };
-                    if button(ui, m, &caption(gu, main, k, d), 120.0, open, false) {
-                        mouse.tab = Some(k);
-                    }
+            let names = [caption(gu, main, 1, "Buy"), caption(gu, main, 2, "Sell")];
+            let labels: Vec<&str> = names.iter().map(String::as_str).collect();
+            let open = v.view.map(|view| if matches!(view, View::Buy) { 0 } else { 1 });
+            let cursor = open.is_none().then(|| v.main.saturating_sub(1) as usize);
+            for (k, resp) in super::tabs::strip(ui, m, "shop tabs", &labels, open.or(cursor), cursor).into_iter().enumerate() {
+                if resp.clicked() {
+                    mouse.tab = Some(k as u16 + 1);
                 }
-            });
+            }
             ui.add_space(6.0);
         }
         if v.view.is_some() {

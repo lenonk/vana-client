@@ -414,6 +414,15 @@ pub enum NetEvent {
     BazaarShopper { state: u32, hide: u16, name: String },
     /// s2c 0x10A BAZAAR_SALE: ItemNum @4, ItemNo @8, the buyer's name @0xa.
     BazaarSale { count: u32, item: u16, name: String },
+    /// s2c 0x105 BAZAAR_LIST: Price @4, ItemNum @8, TaxRate @0xc, ItemNo @0xe, ItemIndex @0x10, Attr @0x11.
+    BazaarItem { price: u32, count: u32, tax: u16, item: u16, index: u8, attr: [u8; 24] },
+    /// s2c 0x106 BAZAAR_BUY: State @4 (0 bought), the seller's name @8.
+    BazaarBuy { state: u32, name: String },
+    /// s2c 0x107 BAZAAR_CLOSE: the seller's name @4.
+    BazaarClosed { name: String },
+    /// s2c 0x109 BAZAAR_SELL (another customer bought): ItemNum @8, BazaarActIndex @0xe, the buyer's name @0x10,
+    /// ItemIndex @0x20.
+    BazaarSold { count: u32, owner: u16, name: String, index: u8 },
     /// 0x050: equipment slot -> container slot (index 0 = removed).
     Equip { slot: u8, index: u8, container: u8 },
     /// 0x061: our stats.
@@ -1065,6 +1074,10 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x0E1 => tx.send(NetEvent::GroupId(p.u32(4)))?,
                     0x108 => tx.send(NetEvent::BazaarShopper { state: p.u32(8), hide: p.u16(0xc), name: text(&p, 0x10, 16) })?,
                     0x10A => tx.send(NetEvent::BazaarSale { count: p.u32(4), item: p.u16(8), name: text(&p, 0xa, 16) })?,
+                    0x105 => tx.send(NetEvent::BazaarItem { price: p.u32(4), count: p.u32(8), tax: p.u16(0xc), item: p.u16(0xe), index: p.u8(0x10), attr: std::array::from_fn(|i| p.u8(0x11 + i)) })?,
+                    0x106 => tx.send(NetEvent::BazaarBuy { state: p.u32(4), name: text(&p, 8, 16) })?,
+                    0x107 => tx.send(NetEvent::BazaarClosed { name: text(&p, 4, 16) })?,
+                    0x109 => tx.send(NetEvent::BazaarSold { count: p.u32(8), owner: p.u16(0xe), name: text(&p, 0x10, 16), index: p.u8(0x20) })?,
                     0x115 => tx.send(NetEvent::Fish(super::fishing::FishParams { stamina: p.u16(4), delay: p.u16(6), regen: p.u16(8), moves: p.u16(0xa), damage: p.u16(0xc), heal: p.u16(0xe), time: p.u16(0x10), sense: p.u8(0x12), special: p.u32(0x14) }))?,
                     0x116 => tx.send(NetEvent::EquipSetValid(std::array::from_fn(|i| std::array::from_fn(|k| p.u8(4 + 4 * i + k)))))?,
                     0x117 => tx.send(NetEvent::EquipSetRes { count: p.u8(4), changed: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(8 + 4 * i + k))), equipped: std::array::from_fn(|i| std::array::from_fn(|k| p.u8(0x48 + 4 * i + k))) })?,

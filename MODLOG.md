@@ -10684,3 +10684,36 @@ texpack.rs (`tex-export`, `tex-pack`), the user's pick of model (upscayl-standar
   (a pickup, the kept-sorted Auto sort) and closes the question when the item leaves its slot; drop_now sends c2s
   0x028 only while the slot still holds the item's id (a merge could put another stack there). User report: a new
   item during the question moved the selection. Not seen live (a script cannot type while the window has the keys).
+
+## Buying from a player's bazaar: View Wares (2026-10-27)
+
+Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference in its section 9).
+- Enter on an enabled View Wares (SE 0002, c1 cleared) opens the shop list with the bazaar source (vtable
+  0x10338ea4): the wares store is cleared and c2s 0x105 {UniqueNo, ActIndex, 0} goes out; LSB answers one s2c 0x105
+  per priced item. The store (G+0x3aeb0, 81 records of 0x30 by the seller's slot) keeps item, index, count, unit price,
+  24 extdata bytes and the tax rate; a record counts with an item, its own index, a count and a price (FUN_100e0300).
+  The last tax rate with a count is kept apart (G+0x3bde6, survives clears).
+- Rows every frame in slot order (no sorting, no end marker, no quantity column): icon, name, "N  G" darker
+  (0x80606060) when we hold the item, "(+T  G)" in yellow with a zone tax (the window widens by its widest text + 0xf).
+  Name tint: orange the row being bought, green worn equipment, yellow wearable, then grey when a unit with the tax is
+  more than our gil. Tax per unit = max(1, price x rate / 10000) (FUN_100fd710 with n = 1; LSB charges
+  floor(rate x price x n / 10000) + price x n; no zone of ours sets a tax).
+- Enter on a row (FUN_101de4a0): refused (SE 0004) without a valid record, a known item, or the gil for a unit; no
+  free-slot check. itemctrl up to min(count, gil / unit) (skipped at 1), then file 7031 line 0x5e "Purchase <n> <item>
+  for <total> gil?" in the log and shopbuy with the cursor on Cancel. Buy sends c2s 0x106 {index u8 @4, qty u32 @8}
+  only while the busy row still holds that record (a row before it may have sold out), else SE 0004. Nothing changes
+  locally; 0x020 / 0x01D, the gil and the 0x105 for the slot do.
+- s2c 0x106: State 0 group 9 0x28 "You made a purchase from %s's bazaar." (mode 0x79), else group 7 0x7c; both only
+  with the system message filter (0x0B4 bits 11..12) under 2. s2c 0x107: store cleared, the list closed, View Wares
+  disabled, group 9 0x29 under the filter. s2c 0x109 (another customer bought): file 7031 line 0x5d with the record's
+  item unless the bazaar is ours (@0xe our ActIndex), the record's count lowered when @0xe is the bazaar we browse (LSB
+  never fills it and sends the slot's 0x105 instead).
+- Closing: Escape, the seller gone or beyond 50.0 (x / z), s2c 0x107, and everything that closes the inspect window
+  (zoning, target dropped, engaged, an event); every close clears the store and sends c2s 0x104 (LSB refuses the next
+  0x105 without it). The inspect window (and its comment window) is suspended while the list is up and takes the focus
+  back after, View Wares disabled 2 s.
+- Ours: bazaar.rs (Wares, on_item / on_buy / on_closed / on_sold), shop.rs View::Wares (open_wares, enter_wares,
+  wares_line, send_wares_buy, leave_wares / close_wares, the reach in update), inspect.rs (View Wares, refocus, close),
+  net.rs (s2c 0x105 / 0x106 / 0x107 / 0x109), modern/shop.rs ("Bazaar", no tabs, the tax cell). Test
+  wares_records_and_tax. Not done: the per-id 1000 ms send refusal (FUN_100fc3c0). Not seen live: it needs a second
+  player with a bazaar.

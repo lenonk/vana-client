@@ -106,8 +106,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - trading (client/trade.rs, MODLOG "NPC trade", "Player trade"): the NPC hand-over done and live-tested; player trade
     done but untested live (needs a second account); the mouse in both done (MODLOG "Trade windows: the mouse"; player
     trade's not tried live) and the main menu's target prompt with no target done;
-  - /check on a player (client/inspect.rs, MODLOG "/check on a player"): the inspect window done; left the bazaar
-    list behind View Wares (c2s 0x105);
+  - /check on a player (client/inspect.rs, MODLOG "/check on a player"): the inspect window and buying from a bazaar
+    behind View Wares done (shop.rs View::Wares, bazaar.rs; spec `~/ffxi/lab/research/bazaar_spec.md`, MODLOG "Buying
+    from a player's bazaar"; not seen live: it needs a second player with a bazaar);
   - main menu rows (specs in `~/ffxi/lab/research/`: `party_menu_spec.md`, `status_window_spec.md`,
     `quest_mission_spec.md`, `menu_rows2_spec.md` for Search / Linkshell / Region Info): Party done (client/partymenu.rs,
     levelsync.rs, partyreq.rs, MODLOG "Party menu", "Party menu: Member List, Level Sync, Focus, Rearrange", "Party
