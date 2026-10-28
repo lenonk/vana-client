@@ -922,8 +922,12 @@ fn auc4_pick(w: &mut World, a: &mut Auction, sel: u16) {
     }
 }
 
+/// Up / Down a row; Right / Left a page (FUN_101f6c70 messages 3 / 4, as every list window).
 fn scroll_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key) -> bool {
-    super::items::list_keys(scroll, cursor, n, key)
+    match key {
+        egui::Key::ArrowRight | egui::Key::ArrowLeft => super::items::page_keys(scroll, cursor, n, key == egui::Key::ArrowRight),
+        _ => super::items::list_keys(scroll, cursor, n, key),
+    }
 }
 
 /// auclist: rows, Enter (bid: auc3; sales: auc4 or the sold / returned line), Escape closes it.
