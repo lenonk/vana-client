@@ -5701,6 +5701,11 @@ pub struct App {
     /// The top-left debug lines (position, zone, frame timing), toggled with F12.
     debug_overlay: bool,
     perf: perf::Perf,
+    /// When the live effects were last counted into the log (once a minute: a leak shows as a growing name).
+    fx_census: Option<Instant>,
+    /// GPU time per frame stage (render/gputime.rs; the F12 overlay), made once the device is up if it has timestamps.
+    gpu_time: Option<crate::render::gputime::GpuTime>,
+    gpu_time_checked: bool,
     /// Sound output (opened on the first frame; None when there is no device).
     audio: Option<crate::audio::Audio>,
     audio_tried: bool,
@@ -5882,6 +5887,9 @@ impl App {
             // FFXI_DEBUG_OVERLAY=1 starts with the F12 lines on (test shots).
             debug_overlay: std::env::var_os("FFXI_DEBUG_OVERLAY").is_some(),
             perf: Default::default(),
+            fx_census: None,
+            gpu_time: None,
+            gpu_time_checked: false,
             audio: None,
             audio_tried: false,
             music_scene: MusicScene::None,
@@ -10378,6 +10386,9 @@ impl App {
                 if self.debug_overlay {
                     let mut lines = vec![format!("{}  zone {}  ({:.1}, {:.1}, {:.1})  status {}", world.name, world.zone.map_or("-".into(), |z| z.to_string()), world.pos.x, world.pos.y, world.pos.z, world.my_motion.status)];
                     lines.extend(self.perf.lines());
+                    if let Some(t) = &self.gpu_time {
+                        lines.push(t.line());
+                    }
                     if let Some(t) = world.target.and_then(|t| world.entities.get(&t).map(|e| (t, e))) {
                         lines.push(format!("target {:#x} {}  {:.1} away{}", t.0, t.1.name, (t.1.pos - world.pos).length(), if world.locked { "  locked" } else { "" }));
                     }
@@ -11095,6 +11106,19 @@ impl App {
         };
         let view = frame.texture.create_view(&Default::default());
         let mut encoder = gfx.gpu.device.create_command_encoder(&Default::default());
+        if !self.gpu_time_checked {
+            self.gpu_time_checked = true;
+            self.gpu_time = crate::render::gputime::GpuTime::new(&gfx.gpu);
+        }
+        let mut gpu_time = self.gpu_time.take();
+        macro_rules! mark {
+            ($l:expr) => {
+                if let Some(t) = gpu_time.as_mut() {
+                    t.mark(&mut encoder, $l);
+                }
+            };
+        }
+        mark!("start");
         // Background resolution: the scene draws offscreen at its own size and is scaled to the window once;
         // the projection keeps the window's aspect.
         let bg = self.cfg.background(size);
@@ -11241,6 +11265,7 @@ impl App {
                 use crate::render::upload::{FRAME_MS, LOADING_MS};
                 gfx.gpu.begin_uploads(if w.downloading.is_some() { LOADING_MS } else { FRAME_MS });
                 perf::timed(|| "uploads".into(), || r.upload_step(&gfx.gpu, &mut encoder));
+                mark!("uploads");
                 if let Some(since) = w.zone_uploading
                     && r.ready(&gfx.gpu)
                 {
@@ -11729,14 +11754,17 @@ impl App {
                 visible.retain(|id| r.occl.results.get(id) != Some(&false));
                 w.visible = visible;
                 r.upload_poses(&gfx.gpu, &mut encoder);
+                mark!("poses");
                 // FUN_100cbde0: a drawn alpha under 0.0001 is not drawn (the near-camera fade, first person).
                 let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
-                counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0 };
+                counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0, fx: [(0, 0); 3] };
                 m_actors = Instant::now();
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
                 let budget = if w.zone_uploading.is_some() || w.downloading.is_some() { crate::render::MIP_BUDGET } else { crate::render::MIP_BUDGET_WORLD };
                 perf::timed(|| "mips".into(), || gfx.gpu.run_mips(&mut encoder, budget));
+                mark!("mips");
                 perf::timed(|| "zone render".into(), || r.render(&gfx.gpu, &mut encoder, &scene_raw, &scene_depth, &camera, aspect, &actors));
+                mark!("scene");
                 // Refracting actors, farthest first (retail's sorted list), after the opaque scene.
                 let mut refracting: Vec<(f32, &crate::render::ActorGpu)> = w
                     .actors
@@ -11749,7 +11777,9 @@ impl App {
                     let list: Vec<&crate::render::ActorGpu> = refracting.iter().map(|x| x.1).collect();
                     r.render_refraction(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), &scene_depth, &camera, aspect, &list);
                 }
+                mark!("refraction");
                 r.occl.run(&gfx.gpu, &mut encoder, &scene_depth);
+                mark!("occlusion");
                 // Effect generators: CPU emission, the GPU update pass, then the elements over the scene.
                 // Its pipelines are made while the zone still goes up (behind the loading indicator), not on the
                 // first shown frame.
@@ -11794,6 +11824,13 @@ impl App {
                     w.effects.weapon_effect_off = w.game.get(0xbe) == 1;
                     w.effects.reg.aspect = aspect;
                     perf::timed(|| "effects".into(), || w.effects.tick(&f, &fa));
+                    counts.fx = w.effects.counts();
+                    if self.fx_census.is_none_or(|t| t.elapsed().as_secs() >= 60) {
+                        self.fx_census = Some(Instant::now());
+                        let top: Vec<String> = w.effects.census().into_iter().take(8).map(|(n, k)| format!("{n} x{k}")).collect();
+                        let [t, g, e] = counts.fx;
+                        log::info!("effects live: tasks {}/{}, generators {}/{}, elements {}/{}; most: {}", t.0, t.1, g.0, g.1, e.0, e.1, top.join(", "));
+                    }
                     w.ambient = w.effects.ambient(minute);
                     // Effect sounds (fx/sound.rs) to the sound thread; without audio they are dropped.
                     for c in std::mem::take(&mut w.effects.sound_cmds) {
@@ -11803,8 +11840,10 @@ impl App {
                     eg.set_lights(&r.lights);
                     eg.set_light(r.lighting.as_ref().map(|l| (l.dir, l.diffuse, l.ambient)));
                     perf::timed(|| "effects upload".into(), || eg.update(&gfx.gpu, &mut encoder, &mut w.effects, &f));
+                    mark!("fx update");
                     let (fog_color, fog) = r.lighting.as_ref().map_or(([0.0; 3], [150.0, 600.0]), |l| (l.fog.to_array(), [l.fog_start, l.fog_end]));
                     eg.draw(&gfx.gpu, &mut encoder, (&scene_raw, &scene_depth, bg), Some(&scene_tex), &w.effects, (camera.proj(aspect), camera.view(), camera.eye), [crate::render::NEAR, crate::render::FAR], fog_color, fog);
+                    mark!("fx draw");
                 }
                 // Layout mode's overlay over the finished scene.
                 r.render_lines(&mut encoder, &scene_raw);
@@ -11820,6 +11859,7 @@ impl App {
                     let fx = self.screen_fx_world.get_or_insert_with(|| crate::render::screenfx::ScreenFx::new(&gfx.gpu, scene_fmt));
                     fx.draw_all(&gfx.gpu, &mut encoder, &scene_raw, Some(&scene_tex), bg, cross, flash, blur, m);
                 }
+                mark!("screen fx");
                 w.last_camera = Some(camera);
                 drew_world = true;
             }
@@ -11911,7 +11951,9 @@ impl App {
             }
             counts.ui_vertices = lu.vertex_count();
             lu.scene_depth = drew_world.then(|| scene_depth.clone());
+            mark!("blit");
             perf::timed(|| "ui render".into(), || lu.render(&gfx.gpu, gfx.config.format, &mut encoder, &view, self.cfg.ui_size(size), size, drew_world, ui_level, scene_level));
+            mark!("game ui");
             drew_world = true;
         }
 
@@ -11939,6 +11981,7 @@ impl App {
                 .forget_lifetime();
             gfx.egui_renderer.render(&mut pass, &jobs, &screen);
         }
+        mark!("egui");
         for id in &output.textures_delta.free {
             gfx.egui_renderer.free_texture(id);
         }
@@ -11957,7 +12000,14 @@ impl App {
             );
             buf
         });
+        if let Some(t) = gpu_time.as_mut() {
+            t.finish(&mut encoder);
+        }
         perf::timed(|| "submit".into(), || gfx.gpu.queue.submit(extra.into_iter().chain([encoder.finish()])));
+        if let Some(t) = gpu_time.as_mut() {
+            t.after_submit();
+        }
+        self.gpu_time = gpu_time;
         if let (Some(eg), Phase::World(w)) = (&mut self.effects_gpu, &mut self.phase) {
             eg.after_submit(&gfx.gpu, &mut w.effects);
         }

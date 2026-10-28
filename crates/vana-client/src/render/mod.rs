@@ -14,6 +14,7 @@ pub mod screens;
 pub mod invwin;
 pub mod screenfx;
 pub mod scale;
+pub mod gputime;
 
 use crate::dat::zone::ZoneScene;
 use anyhow::{Context, Result};
@@ -120,8 +121,9 @@ impl Gpu {
         };
         let info = adapter.get_info();
         log::info!("GPU: {} ({:?}, {:?})", info.name, info.backend, info.device_type);
-        // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3).
-        let required_features = adapter.features() & wgpu::Features::TEXTURE_COMPRESSION_BC;
+        // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3); timestamps between
+        // passes give the F12 overlay its GPU times (render/gputime.rs).
+        let required_features = adapter.features() & (wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
         // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).
         let required_limits = wgpu::Limits { max_storage_buffers_per_shader_stage: adapter.limits().max_storage_buffers_per_shader_stage.min(16), ..Default::default() };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, required_limits, ..Default::default() }))?;

@@ -2450,6 +2450,30 @@ impl Effects {
     pub fn live_count(&self) -> usize {
         self.elems.iter().filter(|e| e.is_some()).count()
     }
+
+    /// Live and allocated scheduler tasks, generator instances and elements (the F12 overlay).
+    pub fn counts(&self) -> [(usize, usize); 3] {
+        [
+            (self.tasks.iter().flatten().count(), self.tasks.len()),
+            (self.insts.iter().flatten().count(), self.insts.len()),
+            (self.elems.iter().flatten().count(), self.elems.len()),
+        ]
+    }
+
+    /// The live tasks and generator instances by name and file, most first: one that keeps growing is a leak.
+    pub fn census(&self) -> Vec<(String, usize)> {
+        let mut by: HashMap<String, usize> = HashMap::new();
+        for t in self.tasks.iter().flatten() {
+            let lib = &self.reg.libs[t.res.0];
+            *by.entry(format!("task {} ({})", String::from_utf8_lossy(&lib.tree.nodes[t.res.1].name), lib.file_id)).or_default() += 1;
+        }
+        for x in self.insts.iter().flatten() {
+            *by.entry(format!("gen {} ({})", String::from_utf8_lossy(&x.name), self.reg.libs[x.src.0].file_id)).or_default() += 1;
+        }
+        let mut v: Vec<(String, usize)> = by.into_iter().collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        v
+    }
 }
 
 /// Op-1 flags 4 (camera-relative) or 0x4000000 (spawned in view space): stopped under a roof (LAB_10183a30 /

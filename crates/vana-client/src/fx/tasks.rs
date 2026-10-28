@@ -778,6 +778,23 @@ impl Effects {
         }
     }
 
+    /// A copy that runs the rest of its task this frame (ops 0x52, 0x64 / 0x65): a free slot the frame's step has still to
+    /// reach (past the running task's), else a new one. Pushing every copy grew the list for good, each frame's walks
+    /// over it with it.
+    fn later_slot(&mut self, t: Task) -> usize {
+        let from = self.stepping.first().map_or(0, |o| o + 1);
+        match (from..self.tasks.len()).find(|&i| self.tasks[i].is_none() && !self.stepping.contains(&i)) {
+            Some(i) => {
+                self.tasks[i] = Some(t);
+                i
+            }
+            None => {
+                self.tasks.push(Some(t));
+                self.tasks.len() - 1
+            }
+        }
+    }
+
     /// FUN_10055c00 / FUN_10055cc0 -> FUN_10073910: a task an op creates takes its first step at once (vtable +0x20), before
     /// the op after its creator's (efon's efkl kills the old orbs before the new ones start). True when it already ended.
     fn run_new(&mut self, i: usize, actors: &dyn Actors) -> bool {
@@ -811,7 +828,7 @@ impl Effects {
                     let mut c = Task::new(t.res, t.ops.clone(), t.a1, t.a2, t.action.clone(), t.speed);
                     (c.ip, c.countdown, c.parent, c.motions, c.num, c.ends_loop) = (t.ip + 1, op.wait as f32 * t.speed, t.parent, t.motions, t.num, t.ends_loop);
                     log::debug!("effects: {} window opens", String::from_utf8_lossy(&self.reg.libs[t.res.0].tree.nodes[t.res.1].name));
-                    self.tasks.push(Some(c));
+                    self.later_slot(c);
                 }
                 t.countdown = wait as f32;
                 Flow::Pause
@@ -1202,7 +1219,7 @@ impl Effects {
                     c.stop_at = Some(stop);
                     c.countdown = t.countdown;
                     c.loop_at = t.loop_at;
-                    self.tasks.push(Some(c));
+                    self.later_slot(c);
                 }
                 t.ip = else_end + 1;
                 Flow::Jump

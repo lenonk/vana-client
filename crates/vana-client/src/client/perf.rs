@@ -43,6 +43,8 @@ pub struct Counts {
     pub drawn: usize,
     pub zone_draws: usize,
     pub ui_vertices: usize,
+    /// Live / allocated effect tasks, generator instances and elements.
+    pub fx: [(usize, usize); 3],
 }
 
 pub struct Perf {
@@ -174,6 +176,7 @@ impl Perf {
             spans.join("  "),
             format!("entities {}  actors {} (posed {}, drawn {})  zone draws {}  ui vertices {}", c.entities, c.actors, c.posed, c.drawn, c.zone_draws, c.ui_vertices),
             format!("upload {:.0} KB/frame", self.upload_kb),
+            format!("effects: tasks {}/{}  generators {}/{}  elements {}/{}", c.fx[0].0, c.fx[0].1, c.fx[1].0, c.fx[1].1, c.fx[2].0, c.fx[2].1),
         ]
     }
 }

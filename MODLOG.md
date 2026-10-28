@@ -10750,3 +10750,18 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
 - F12 and the FFXI_PERF line show "upload N KB/frame": every Queue::write_buffer goes through render::Put (counted in
   render::WRITTEN) plus egui's vertices and indices. About 230 KB a frame in that scene.
 - Not the 4x pack: zone 126 renders offscreen in 0.89 ms a frame at 1600 x 900 with and without vana-upscale.
+
+## Effect task slots: copies reuse free slots (the slowdown over time, 2026-10-27)
+
+- User report: 144 fps held, then sank under 100 after a while in Qufim Island; zoning restored it. The census added
+  to the log (once a minute, client/mod.rs: live / allocated tasks, generators, elements, the most numerous by name;
+  also on F12) on Lnxcsfix running laps of Qufim and fighting (immortal): live tasks stayed 1..10 while the task list
+  grew 1 -> 243 -> 437 -> 1441 -> 2327 -> 3966 -> 5678 in nine minutes, the frame's CPU time 1.4 -> 4.8 ms and the rate
+  740 -> 198 fps. Zoning clears the list (load_zone), hence the recovery.
+- Cause: two ops pushed their task copies on the list instead of taking a free slot: op 0x52 (the Vana'diel time
+  window's copy) and ops 0x64 / 0x65 (the conditional block's clone). Every frame walks the whole list (step_tasks,
+  posed_actors, the live uids) and every new task scans it for a free slot.
+- Fix: Effects::later_slot: the copy takes a free slot past the running task's (the frame's step still reaches it, so
+  it runs this frame as a pushed one did), else a new one.
+- Also on F12 now: GPU time per frame stage (render/gputime.rs: timestamps between the passes, TIMESTAMP_QUERY and
+  TIMESTAMP_QUERY_INSIDE_ENCODERS when the device has them; each line with FFXI_PERF) and the effect counts.
