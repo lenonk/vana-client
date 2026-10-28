@@ -66,8 +66,8 @@ fn u16_at(p: &[u8], o: usize) -> u16 {
 }
 
 impl Objective {
-    /// FUN_10098e90 on the packet. Returns whether the border changed.
-    pub fn apply(&mut self, p: &[u8]) -> bool {
+    /// FUN_10098e90 on the packet.
+    pub fn apply(&mut self, p: &[u8]) {
         self.mode = u32_at(p, 4);
         if self.mode == 0 {
             self.flags = 0;
@@ -95,10 +95,7 @@ impl Objective {
         }
         // FUN_10087990: always stored; the player's border parts are remade (or dropped at radius 0).
         let milli = |o| u32_at(p, o) as i32 as f32 * 0.001;
-        let b = Border { x: milli(0x14), z: milli(0x18), radius: u32_at(p, 0x1c) as f32 * 0.001, render: u32_at(p, 0x20) as f32 * 0.001, blue: p.get(0x25).copied().unwrap_or(0) != 0 };
-        let changed = b != self.border;
-        self.border = b;
-        changed
+        self.border = Border { x: milli(0x14), z: milli(0x18), radius: u32_at(p, 0x1c) as f32 * 0.001, render: u32_at(p, 0x20) as f32 * 0.001, blue: p.get(0x25).copied().unwrap_or(0) != 0 };
     }
 
     /// cnttime is up (FUN_100873b0: a mode and the countdown flag).
@@ -387,17 +384,15 @@ mod tests {
     #[test]
     fn apply_and_left() {
         let mut o = Objective::default();
-        assert!(o.apply(&packet(1 | 2 | 4, 0xffff)));
+        o.apply(&packet(1 | 2 | 4, 0xffff));
         assert!(o.counting());
         assert_eq!((o.left(1000), o.left(1089), o.left(1090), o.left(2000)), (90, 1, 0, 0));
         assert_eq!(o.help, (1, 43));
         assert_eq!(bar_rows(&o), vec![(40, "Motivation".to_string())]);
         let b = o.border;
         assert!((b.x + 12.5).abs() < 1e-4 && (b.radius - 25.0).abs() < 1e-4 && b.blue);
-        // A clear: mode 0 drops every flag; the border unchanged is not a change.
-        let mut c = packet(0, 0);
-        c[0x14..0x18].copy_from_slice(&(-12500i32).to_le_bytes());
-        assert!(!o.apply(&c));
+        // A clear: mode 0 drops every flag.
+        o.apply(&packet(0, 0));
         assert!(!o.counting() && shown(&o).is_none());
     }
 
