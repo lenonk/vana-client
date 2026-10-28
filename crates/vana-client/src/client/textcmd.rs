@@ -118,6 +118,8 @@ mod id {
     pub const PARTYINFO: u16 = 0x1ad;
     pub const BLACKLIST: u16 = 0x3b;
     pub const MUTELIST: u16 = 0x3c;
+    pub const BEFRIEND: u16 = 0x0d;
+    pub const FRIENDLIST: u16 = 0x3d;
     pub const GUIDE: u16 = 0xa0;
     pub const PRIMER: u16 = 0xa1;
     pub const PRCMD: u16 = 0x61;
@@ -1673,6 +1675,21 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
         }
         // FUN_1007ca40: a fresh condition (no area), status 0x20000000 (flag 0x40), searched in every area; nothing while
         // a query is out (FUN_1020a9d0).
+        // FUN_1007ca90: the list straight away when it is not up.
+        id::FRIENDLIST => {
+            if w.friendui.as_ref().is_none_or(|u| u.list.is_none()) {
+                super::friendlist::open_list(w);
+            }
+            Ok(())
+        }
+        // FUN_1007a020: exactly two words; the exact name searched (LAB_1007a0b0).
+        id::BEFRIEND => {
+            if args.len() != 2 {
+                return Err(());
+            }
+            super::search::lookup(w, &args[1], super::search::Then::Befriend);
+            Ok(())
+        }
         id::MUTELIST => {
             if !super::search::busy(w) {
                 let cond = crate::net::search::Cond { flags: crate::net::search::STATUS, status: 0x2000_0000, last_area: -1, ..Default::default() };

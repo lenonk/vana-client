@@ -25,6 +25,8 @@ pub enum Then {
     Request(String, u8),
     /// LAB_1007c7c0 / LAB_1007c920: /blacklist add (0) / delete (1).
     Black(String, u8),
+    /// LAB_1007a0b0: /befriend's exact name.
+    Befriend(String),
 }
 
 /// Which summary line the results get (list +0x16): one area, several, none (all areas).
@@ -466,6 +468,11 @@ fn finish(w: &mut World, reply: Option<Reply>, then: Then) {
             }
         }
         // An exact name: c2s 0x03D; none: group 9 0x75 / 0x77.
+        // No record (or ourselves): 7 0xa2; else the friend request's lookup (FUN_101ffa20 flag 1).
+        Then::Befriend(name) => match reply.and_then(|r| r.records.iter().find(|r| r.name == name).cloned()).filter(|r| r.id != w.my_id) {
+            Some(r) => super::friends::befriend(w, r.id, r.name, true),
+            None => super::textcmd::refuse(w, 0xa2),
+        },
         Then::Black(name, mode) => match reply.and_then(|r| r.records.iter().find(|r| r.name == name).map(|r| r.id)) {
             Some(id) => super::partyreq::black_edit(w, id, &name, mode),
             None => super::textcmd::log9(w, if mode == 0 { 0x75 } else { 0x77 }),
@@ -690,11 +697,11 @@ pub fn toggle_view(w: &mut World) {
     }
 }
 
-/// FUN_1020c540's disabled rows: 2 Befriend (the Friend List is PlayOnline's; retail dims it on ourselves), 3 when the
+/// FUN_1020c540's disabled rows: 2 Befriend on ourselves, 3 when the
 /// person is in our party, a party member but not its leader, recruiting, or on MON. 4 / 5 never.
 pub fn option_enabled(w: &World, c: u16, r: &Record) -> bool {
     match c {
-        2 => false,
+        2 => r.name != w.name,
         3 => {
             let in_party = w.party.members().any(|m| m.id == r.id && m.id != 0);
             !(in_party || (r.flags & 0x2000 != 0 && r.flags & 8 == 0) || r.flags & 0x1000_0000 != 0 || r.job.0 == 0x17 || r.name == w.name)
@@ -710,6 +717,7 @@ fn option(w: &mut World, c: u16, r: &Record) {
             (w.chat_input, w.chat_caret) = (format!("/tell {} ", r.name), None);
             w.typing = true;
         }
+        2 => super::friends::befriend(w, r.id, r.name.clone(), false),
         3 => invite(w, r.id, r.flags),
         4 | 5 => {
             let line = format!("/partyrequestcmd {} {}", if c == 4 { "add" } else { "remove" }, r.name);

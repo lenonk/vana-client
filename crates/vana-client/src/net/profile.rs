@@ -322,6 +322,95 @@ pub fn remove_file(c: &Cred, path: &str) -> Result<()> {
     ok(request(c, 3, 2, &b)?, "RemoveFile").map(|_| ())
 }
 
+/// Message types (header +0x3e bits 7..11).
+pub const PLAIN: u8 = 0;
+pub const FRIEND_REQUEST: u8 = 1;
+pub const FRIEND_ACCEPTED: u8 = 9;
+pub const FRIEND_DECLINED: u8 = 10;
+
+/// sqPolMessageHeader (0x48, 3.4.3): a message's file name is "O/m/" and its base64.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct MsgHeader {
+    pub from: u64,
+    pub to: u64,
+    /// One of the sender's character names (LSB checks it).
+    pub sender: String,
+    pub title: String,
+    pub seq: u32,
+    /// sqGetCalendarTime *(inf: unix seconds)*.
+    pub date: u32,
+    pub length: u32,
+    pub kind: u8,
+    pub no_reply: bool,
+}
+
+impl MsgHeader {
+    pub fn to_bytes(&self) -> [u8; 0x48] {
+        let mut b = [0u8; 0x48];
+        b[..8].copy_from_slice(&(self.from ^ POL_MASK).to_le_bytes());
+        b[8..16].copy_from_slice(&(self.to ^ POL_MASK).to_le_bytes());
+        for (d, c) in b[0x10..0x1f].iter_mut().zip(self.sender.bytes()) {
+            *d = c;
+        }
+        for (d, c) in b[0x20..0x2f].iter_mut().zip(self.title.bytes()) {
+            *d = c;
+        }
+        b[0x30..0x34].copy_from_slice(&self.seq.to_le_bytes());
+        b[0x34..0x38].copy_from_slice(&self.date.to_le_bytes());
+        b[0x38..0x3c].copy_from_slice(&self.length.to_le_bytes());
+        let bits = ((self.kind as u16 & 0x1f) << 7) | 1 << 15;
+        b[0x3e..0x40].copy_from_slice(&bits.to_le_bytes());
+        b[0x42..0x44].copy_from_slice(&((self.no_reply as u16) << 9).to_le_bytes());
+        b
+    }
+
+    pub fn from_bytes(b: &[u8]) -> Option<Self> {
+        let b = b.get(..0x48)?;
+        let u32at = |o: usize| u32::from_le_bytes(b[o..o + 4].try_into().unwrap());
+        let bits = u16::from_le_bytes([b[0x3e], b[0x3f]]);
+        Some(Self {
+            from: u64::from_le_bytes(b[..8].try_into().unwrap()) ^ POL_MASK,
+            to: u64::from_le_bytes(b[8..16].try_into().unwrap()) ^ POL_MASK,
+            sender: name16(&b[0x10..0x20]),
+            title: name16(&b[0x20..0x30]),
+            seq: u32at(0x30),
+            date: u32at(0x34),
+            length: u32at(0x38),
+            kind: (bits >> 7 & 0x1f) as u8,
+            no_reply: b[0x43] & 2 != 0,
+        })
+    }
+
+    /// The mailbox file name.
+    pub fn file_name(&self) -> String {
+        b64(&self.to_bytes(), true)
+    }
+
+    pub fn from_name(name: &str) -> Option<Self> {
+        Self::from_bytes(&b64_decode(name.get(..96)?)?)
+    }
+}
+
+/// A message's data. polcore's own encoding (slots 0x110 / 0x10f) is not known; ours is the title (<= 50) and the text
+/// (<= 300) as Shift-JIS, each ending in NUL *(ours, not retail's: retail clients' messages will not read right)*.
+pub fn encode_body(title: &[u8], text: &[u8]) -> Vec<u8> {
+    let mut b = title[..title.len().min(50)].to_vec();
+    b.push(0);
+    b.extend_from_slice(&text[..text.len().min(300)]);
+    b.push(0);
+    b
+}
+
+pub fn decode_body(b: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let mut parts = b.split(|&c| c == 0);
+    (parts.next().unwrap_or_default().to_vec(), parts.next().unwrap_or_default().to_vec())
+}
+
+/// Posts a message: its header names the file, the data follows.
+pub fn send_message(c: &Cred, h: &MsgHeader, data: &[u8]) -> Result<()> {
+    write_file(c, h.to, &format!("{MAILBOX}{}", h.file_name()), data)
+}
+
 /// What the IRC session hears.
 #[derive(Clone, Debug)]
 pub enum Irc {
@@ -469,6 +558,14 @@ mod tests {
         println!("mail {:?}", mail_list(&c));
         let _ = link.quit.send(());
         println!("irc: {:?}", link.events.recv_timeout(Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn message_header() {
+        let h = MsgHeader { from: 1000, to: 1003, sender: "Lnxcsfix".into(), title: "Hi".into(), seq: 7, date: 1_800_000_000, length: 12, kind: FRIEND_REQUEST, no_reply: false };
+        assert_eq!(h.file_name().len(), 96);
+        assert_eq!(MsgHeader::from_name(&h.file_name()), Some(h));
+        assert_eq!(decode_body(&encode_body(b"T", b"text")), (b"T".to_vec(), b"text".to_vec()));
     }
 
     #[test]

@@ -64,6 +64,8 @@ pub struct Cond {
     pub group: Option<[u32; 4]>,
     /// With REQUEST: cond+0x390, the request history's names (FUN_100e3130 fills it at every send; 64 at most).
     pub requests: Vec<String>,
+    /// The friend list's refresh instead (wire type 1 ID_LIST, FUN_100e2ee0): character ids, 20 at most.
+    pub ids: Option<Vec<u32>>,
 }
 
 impl Cond {
@@ -71,6 +73,11 @@ impl Cond {
     /// else LS2; no reply when all are 0).
     pub fn group(ids: [u32; 4]) -> Self {
         Cond { group: Some(ids), ..Default::default() }
+    }
+
+    /// The friends' characters (wire type 1): u16 count, u32 ids.
+    pub fn ids(ids: Vec<u32>) -> Self {
+        Cond { ids: Some(ids), ..Default::default() }
     }
 
     /// `/sea all`: the area flag with no area, wire type 0.
@@ -184,6 +191,12 @@ impl Bits {
 
 /// FUN_101041e0 -> FUN_10104200: the condition block (u8 byte count, then the bits) and its wire type.
 pub fn condition(c: &Cond) -> (u8, Vec<u8>) {
+    if let Some(ids) = &c.ids {
+        let n = ids.len().min(20);
+        let mut p = (n as u16).to_le_bytes().to_vec();
+        p.extend(ids[..n].iter().flat_map(|v| v.to_le_bytes()));
+        return (1, p);
+    }
     if let Some(ids) = c.group {
         let mut p: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
         p.extend([0; 4]);

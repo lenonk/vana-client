@@ -93,7 +93,11 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - magic and ability menus (done: lists, prompt, <st> tags, cast bar, mouse in the lists, the sort windows and the
     order files, cursor memory, the mount list, the emote list, mouse in the prompt, blue magic sets (bluset.rs,
     MODLOG "Blue magic sets"; live on Lnxcsfix as BLU 75, now back to WAR 21); the mount model under the rider
-    (ride.rs, MODLOG "Riding"); left: the Friend List (no LSB service));
+    (ride.rs, MODLOG "Riding"));
+  - the Friend List and PlayOnline messages over LSB's xi_profile (net/profile.rs, client/friends.rs, friendlist.rs,
+    polmail.rs; MODLOG "The Friend List and PlayOnline messages"): done in both UIs; left netstat's mail page, a friend
+    seen online (needs a second account); message bodies are ours (polcore's format unknown);
+  - the full log's charlnk and the Mute list's acoption (client/charlnk.rs, MODLOG "charlnk ..."): done;
   - the map (MODLOG "Map window: pan, zoom, fades, event maps"): done: pan, left-drag pan, zoom, fades, /map, event
     maps and views, markers and the .MRK file, Change Map, Wide Scan and tracking, the busy strip, the call-for-help
     pointer and `<ht>`, the compass radar dots (MODLOG "Compass radar dots"), the busy strip's bits (MODLOG "The help

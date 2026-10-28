@@ -11078,3 +11078,50 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
 - Also: tskill2 (the craft skills beside synthesis) and mcr1long / mcr2long / mcr1edlo / mcr2edlo are the Japanese
   client's (FUN_101e0e30 opens tskill2 only with DAT_10456a28 +8 = 0, the language; the window-name resolver at all.c
   274990 swaps mcr*pall for mcr*long only with +0xb5 = 0).
+
+## The Friend List and PlayOnline messages (2026-10-28; spec ~/ffxi/lab/research/friend_list_spec.md)
+
+- LSB's xi_profile stands in for PlayOnline (spec 3): TLS 51220, one request per connection (hello {u32 account, the
+  login's session hash}, ProfOpenData, ProfOpenAns 0x81, ProfSendReqData {kind 2, command, sub, size}, body;
+  ProfRecvAns 0x83 {error, size} + body), and TLS 51240, an IRC-like session (USER, NICK U<scrambled id>, the
+  profile-available notice, PING / PONG, notices as polcore base64 of a 0x48-byte header). polcore's checksum, line
+  checksum and base64 (alphabet TSG8IncW..., pad T) are in net/profile.rs, checked against the spec's vectors.
+- Ours: net/profile.rs (requests, FriendInfo, MsgHeader, the IRC thread); MapLogin carries the account id and hash.
+  client/friends.rs: in game (first zone-in) the IRC sign-on and LoadMyStatus / LoadFriendList / LoadHandleNameList /
+  LoadCharacterList; ChangeMyStatus {character found, slot} once signed on and in a zone; /away /online /hide (and
+  olstat) as ChangeMyStatus 1 / 0 / 4; status notices update a friend's status (Status - 1) and character, newer ages
+  only; the friends' characters from xi_search wire type 1 (ID_LIST, u16 count + u32 ids, 20 a query) every 60 s
+  (record and "fresh"); a dropped IRC session comes back after 30 s.
+- Mail (spec 2.4): at sign-on and on a new-message notice the mailbox (GetFileList O/m/) is downloaded (ReadFile),
+  kept in <data>/mail/<account>/unread and deleted on the server (RemoveFile); read messages move to .../read. A
+  friend's +0xfc bit 1 (unread mail) from the unread folder. A message's body is ours: title and text as Shift-JIS,
+  each ending in NUL *(polcore's format unknown: retail clients' messages will not read right)*. Header Date = unix
+  seconds *(inf)*, SenderName = our character.
+- Windows (client/friendlist.rs, polmail.rs): commenu child 1 -> flistmai (commenu suspended under it, back on
+  Escape); To List -> "menu    friend" (rows FUN_101eb0d0: category 4 block list, 3 pending, 2 status 4, 0 status
+  1..3, else 1, by name; bars windowps 324..327 / 343, "[Hidden]" on a folded one; cells at wx + 4 + {0, 18, 138, 175,
+  265}: the status icon keytops3 64 / 65 / 66 / 177 or the mail bubble 158, "(Handle)" fitted 106, "menu    contents"
+  sprite 0, the character fitted 82, the zone when not ours; band windowps 75; "No friends registered." 7 0x66);
+  flmes (Tell / Send Message / View Messages with FUN_101eb880's rules; the handle and its id text over them); olstat
+  (marker keytops3 101 under the status in force, anc2s hand; its layout anchors it right); titlehan (our handle and id
+  while the list or msglist is up; the id text is polcore's 8 base-36 digits of the nick *(inf: slot 0x1db)*).
+  msglist (the windowps 275 header, From / To / type label / FUN_101c8fd0 date, unread only, by Date); a read prints
+  "From: %s", "Title: %s", "Message: %s" (0x10385260..48) in mode 0x12 and opens mes2frnd (FWT) or mes1rcv; Reply,
+  Accept (the "Friend's Name:" box, 9 0x22), Decline, Ignore Sender (prompt 9 0x1a, default No), Leave Unread, Exit
+  (9 0x19). msgline at (16, 410), the chat line's width + 14, 15 / 300 characters; the log gives it its input row.
+  One operation at a time (7 0x7a). /friendlist, /befriend (exact name, then FUN_101ffa20; ourselves or not found: 7
+  0xa2; listed: 7 0xa1), the search results' Befriend (dim only on ourselves; listed: a plain message).
+- Sends (spec 2.6): request = StoreFriendList set {first free index, our list name} + WriteFile FWT "Let's be
+  friends!" with the character's name, 9 0x14; accept = store + FOK, 9 0x15 (LSB clears both pending flags); decline =
+  FNO, 9 0x16; reply / plain = NRM with 9 0x1f / 0x1c titles, 9 0x12 / 0x11; ignore = store set black, 9 0x18; failures
+  10 0x2d / 0x6f.
+- Modern: flistmai and olstat as menus in the window panel, the list and msglist as people lists with flmes /
+  mes1rcv / mes2frnd beside the cursor row, msgline as a line over the chat window.
+- Live (lnxtest01 = account 1000, handle "Tuxedo"; bots' accounts 1003+ played by DB rows): the loads, sign-on,
+  ChangeMyStatus (in game, Away, Online); the list with Offline / Pending / the block list and the mail bubble; flmes;
+  msglist; Accept (LSB cleared pending, FOK in the bot's mailbox), Ignore (block list + FNO), Reply, Decline, Exit;
+  /friendlist; /befriend on ourselves (7 0xa2); both UIs. Not seen: a friend online with a character and zone (needs
+  a second account signed on), the request flow on a live bot (no bot in game), netstat's mail page.
+- Not done: netstat page 0 (the envelope and count), the busy strip bit 0x10, deleting / unblocking / reordering
+  (retail has no in-game way: the user's call), Away back to Online at login *(inf, spec 2.5)*.
+- Also: the K.O. windows (dead, mp_dead) drawn 8 / 4 px larger (ours, the user's call, as the raise prompt).

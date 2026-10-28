@@ -3,7 +3,7 @@
 //! searchmenu.rs and linkshell.rs, which keep every rule and key. A window opened over another shows beside it.
 
 use super::super::game_ui::GameUi;
-use super::super::{World, arealist, bazaar, helpdesk, levelsync, linklist, linkshell, moogle, partymenu, region, search, searchmenu, viewhouse};
+use super::super::{World, arealist, bazaar, friendlist, helpdesk, levelsync, linklist, linkshell, moogle, partymenu, polmail, region, search, searchmenu, viewhouse};
 use super::{MenuWin, Panels, Title};
 use crate::inventory::ItemInfo;
 use egui::{Align2, Color32, FontFamily, FontId, Rect, Sense, Ui, pos2, vec2};
@@ -379,6 +379,126 @@ fn results(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
     }
 }
 
+/// The Friend List (friendlist.rs keeps the rules and keys): flistmai or olstat as menus in the window panel, the list
+/// as people (a bar's row in gold, "[Hidden]" when folded; an entry's status icon, name, character and zone), flmes's
+/// rows beside the cursor's.
+fn friends(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
+    let Some(ui) = w.friendui.clone() else { return };
+    let m = p.m;
+    let free = w.confirm.is_none() && !polmail::composing(w) && !polmail::list_up(w);
+    let menu = match (ui.stat, ui.main) {
+        (Some(c), _) => Some(MenuWin { name: friendlist::STAT, sel: c, off: Vec::new(), labels: Vec::new(), marked: vec![1 + friendlist::STATS.iter().position(|&s| s == w.friends.my_status).unwrap_or(0) as u16], values: Vec::new() }),
+        (None, Some(c)) if ui.list.is_none() => Some(MenuWin { name: friendlist::MAIN, sel: c, off: Vec::new(), labels: Vec::new(), marked: Vec::new(), values: Vec::new() }),
+        _ => None,
+    };
+    if let Some(v) = menu {
+        let title = gu.focus_text(v.name, 0)[1].clone().unwrap_or_else(|| "Friend List".into());
+        let mut got = (None, None);
+        p.panel("window", Some(Title { icon: Some("icons/party"), text: &title, note: None }), width(1), |ui| got = stack(ui, m, gu, std::slice::from_ref(&v), free, moved));
+        act(w, gu, got, |w, c| friendlist::set_cursor(w, c as usize), |w, _| friendlist::key(w, egui::Key::Enter));
+        if ui.stat.is_some() {
+            return;
+        }
+    }
+    let Some((rows, cursor)) = friendlist::rows_view(w).map(|(r, c)| (r.to_vec(), c)) else { return };
+    let icon = |n: usize| m.sprite_icon(p.ctx, gu, "menu    keytops3", n).map(|t| (t, super::FULL_UV));
+    let people_rows = rows
+        .iter()
+        .map(|r| match *r {
+            friendlist::Row::Header(c) => Person {
+                icon: None,
+                name: m.caption(gu, "menu    windowps", friendlist::BARS[c as usize]).unwrap_or_else(|| "Block List".into()),
+                colour: m.theme.color("gold"),
+                jobs: String::new(),
+                who: if w.friends.hidden[c as usize] { "[Hidden]".into() } else { String::new() },
+                zone: String::new(),
+            },
+            friendlist::Row::Entry(i) => {
+                let f = &w.friends.list[i];
+                let cat = friendlist::category(f);
+                let ic = if f.mail { Some(158) } else if cat == 0 { friendlist::status_icon(f.status) } else { None };
+                let rec = f.record.as_ref().filter(|_| f.fresh && cat == 0);
+                Person {
+                    icon: ic.and_then(icon),
+                    name: f.name.clone(),
+                    colour: m.theme.color("text"),
+                    jobs: rec.map(|r| r.name.clone()).unwrap_or_default(),
+                    who: String::new(),
+                    zone: rec.filter(|r| r.zone != w.pos_zone).map(|r| crate::dat::font::plain(&crate::dat::font::decode_sjis(&gu.area_name(r.zone)))).unwrap_or_default(),
+                }
+            }
+        })
+        .collect();
+    let opts: Vec<(u16, String, bool)> = ui.mes.map_or(Vec::new(), |_| {
+        let off = friendlist::mes_off(w);
+        (1..=3).map(|c| (c, gu.child_caption(friendlist::MES, c).or_else(|| gu.focus_text(friendlist::MES, c)[1].clone()).unwrap_or_default(), !off.contains(&c))).collect()
+    });
+    let title = w.friends.handle.as_ref().map(|h| format!("{} ({})", h.1, friendlist::handle_id_text(h.0))).unwrap_or_default();
+    let empty = rows.is_empty().then(|| w.battle.as_ref().and_then(|bt| bt.group7(0x66)).unwrap_or_default());
+    let v = People { id: "friendlist", title: &title, icon: "icons/party", header: None, empty, rows: people_rows, cursor, focused: free && ui.mes.is_none(), opts, opt_sel: ui.mes };
+    let mouse = people(p, v, moved);
+    for k in mouse.hover.into_iter().chain(mouse.click) {
+        if friendlist::set_cursor(w, k) {
+            w.sounds.push(crate::audio::Ui::Cursor as u32);
+        }
+    }
+    for c in mouse.opt_hover.into_iter().chain(mouse.opt_click) {
+        if friendlist::set_cursor(w, c as usize) {
+            w.sounds.push(crate::audio::Ui::Cursor as u32);
+        }
+    }
+    if mouse.click.is_some() || mouse.opt_click.is_some() {
+        friendlist::key(w, egui::Key::Enter);
+    } else if mouse.back {
+        friendlist::key(w, egui::Key::Escape);
+    }
+}
+
+/// PlayOnline messages (polmail.rs keeps the rules and keys): msglist as people (From, the type, To, the date),
+/// mes1rcv / mes2frnd's rows beside the cursor's, msgline as a line over the chat window.
+fn messages(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
+    let m = p.m;
+    if let Some((text, naming)) = polmail::line_view(w) {
+        let label = if naming { w.battle.as_ref().and_then(|b| b.group9(0x22)).unwrap_or_default() } else { "Message".into() };
+        let screen = p.ctx.content_rect();
+        let edge = m.chat_edge.get().filter(|c| !c.1).map_or(screen.max.y, |(r, _)| r.min.y).min(screen.max.y);
+        let h = m.rects.borrow().get("msgline").map_or(80.0, |r| r.height());
+        let caret = if (w.started.elapsed().as_secs_f32() * 2.0) as u32 % 2 == 0 { "|" } else { "" };
+        let shown = format!("{text}{caret}");
+        p.panel_at("msgline", Some(Title { icon: Some("icons/party"), text: &label, note: None }), 520.0, pos2(screen.width() * 0.0121, edge - h - 6.0), |ui| {
+            ui.label(egui::RichText::new(shown).size(m.theme.ui).color(m.theme.color("text")));
+        });
+    }
+    let Some((rows, _, cursor, _)) = w.polmail.list.clone() else { return };
+    let free = w.confirm.is_none() && !polmail::composing(w);
+    let me = w.friends.handle.as_ref().map(|h| h.1.clone()).unwrap_or_default();
+    let people_rows = rows
+        .iter()
+        .skip(1)
+        .filter_map(|n| polmail::mail(w, n))
+        .map(|ml| Person { icon: None, name: polmail::from_name(w, ml), colour: m.theme.color("text"), jobs: polmail::type_label(ml.header.kind).into(), who: format!("To {me}"), zone: polmail::date(w, ml.header.date) })
+        .collect();
+    let read = w.polmail.read.clone();
+    let opts: Vec<(u16, String, bool)> = read.as_ref().map_or(Vec::new(), |(_, frnd, _)| {
+        let name = if *frnd { polmail::FRND } else { polmail::RCV };
+        let off = polmail::read_off(w);
+        (1..=4).map(|c| (c, gu.child_caption(name, c).or_else(|| gu.focus_text(name, c)[1].clone()).unwrap_or_default(), !off.contains(&c))).collect()
+    });
+    let title = gu.title_msg(0x52).unwrap_or_else(|| "Messages".into());
+    let v = People { id: "msglist", title: &title, icon: "icons/party", header: Some(("Messages".into(), "")), empty: None, rows: people_rows, cursor, focused: free && read.is_none(), opts, opt_sel: read.map(|r| r.2) };
+    let mouse = people(p, v, moved);
+    for k in mouse.hover.into_iter().chain(mouse.click).chain(mouse.opt_hover.map(|c| c as usize)).chain(mouse.opt_click.map(|c| c as usize)) {
+        if polmail::set_cursor(w, k) {
+            w.sounds.push(crate::audio::Ui::Cursor as u32);
+        }
+    }
+    if mouse.click.is_some() || mouse.opt_click.is_some() {
+        polmail::key(w, egui::Key::Enter);
+    } else if mouse.back {
+        polmail::key(w, egui::Key::Escape);
+    }
+}
+
 /// A linkshell's member list (linklist.rs keeps the rules and keys): each member with the shell item of their rank,
 /// the member window's rows beside the cursor's.
 fn link_list(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
@@ -559,6 +679,8 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         area_act(w, gu, got);
     }
     results(p, w, gu, moved);
+    friends(p, w, gu, moved);
+    messages(p, w, gu, moved);
     link_list(p, w, gu, moved);
     level_sync(p, w, gu, moved);
     // View House is the storage view on its first bag (its bags as the view's tabs).

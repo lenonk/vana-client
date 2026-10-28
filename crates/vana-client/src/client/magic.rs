@@ -752,7 +752,7 @@ pub fn key(w: &mut World, key: egui::Key) -> bool {
                         w.emote_path.clear();
                         open_emote(w);
                     }
-                    Some(Cat::Friends) => log::info!("the Friend List (flistmai) is not implemented"),
+                    Some(Cat::Friends) => super::friendlist::open_main(w),
                     None => {}
                 }
                 w.sounds.push(Ui::Select as u32);

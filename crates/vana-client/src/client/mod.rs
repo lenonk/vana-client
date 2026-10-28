@@ -11,6 +11,8 @@ mod twofa;
 mod gmtell;
 mod charlnk;
 mod friends;
+mod friendlist;
+mod polmail;
 mod modern;
 mod monstrosity;
 mod moncustom;
@@ -271,6 +273,7 @@ fn text_field_open(w: &World) -> bool {
         || seacom::typing(w)
         || macroedit::typing(w)
         || faqmain::typing(w)
+        || polmail::composing(w)
 }
 
 /// A window that has the focus or blocks targeting (FUN_101585f0's T+0x74 bit 0 / T+0x6a; ours the open windows).
@@ -281,7 +284,7 @@ fn world_window_open(w: &World) -> bool {
 /// The open windows but the action menu (playermo), which stays up while engaged: macros run while it is the only one
 /// (FUN_101a33e0 lets the focus be playermo, mp_pmode or a palette).
 fn window_over_actions(w: &World) -> bool {
-    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some() || gmtell::open(w)
+    w.ko_open || w.ko_offer == 2 || w.menu.is_some() || w.confirm.is_some() || w.win.is_some() || w.config.is_some() || w.settings.is_some() || w.map.is_some() || w.full_log.is_some() || w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.moogle.is_some() || post::active(w) || synth::active(w) || shop::active(w) || trade::active(w) || w.search.is_some() || w.inspect.up() || w.mogdoor.is_some() || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.cnq.is_some() || w.blklist.is_some() || w.auction.is_some() || w.remodel.is_some() || w.moncustom.is_some() || gmtell::open(w) || w.friendui.is_some() || polmail::focused(w)
 }
 
 /// FUN_100c63d0: a jump starts when none runs (draw actor +0x8bc = 32 ticks).
@@ -1101,7 +1104,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some() || w.pupequip.is_some() || w.pupset.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some() || w.pupequip.is_some() || w.pupset.is_some() || w.friendui.is_some() || polmail::focused(w)) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1571,6 +1574,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let comment_typing = seacom::typing(world);
     let macro_typing = macroedit::typing(world);
     let faq_typing = faqmain::typing(world);
+    let mail_typing = polmail::composing(world);
     // The Wide Scan flyout's name filter.
     let scan_typing = world.scan_typing && world.modern;
     if scan_typing {
@@ -1597,7 +1601,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if list_typing {
         keys.clear();
     }
-    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || list_typing || scan_typing || find_typing;
+    let input_open = event::input(world).is_some() || map_typing || post_typing || search_typing || ls_typing || comment_typing || macro_typing || faq_typing || mail_typing || list_typing || scan_typing || find_typing;
     if post_typing {
         post::text_events(world, &input.events);
         keys.clear();
@@ -1615,6 +1619,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         keys.clear();
     } else if faq_typing {
         faqmain::text_events(world, &input.events);
+        keys.clear();
+    } else if mail_typing {
+        polmail::text_events(world, &input.events);
         keys.clear();
     } else if map_typing && let Some(m) = world.map.as_mut() {
         m.text_events(&input.events);
@@ -1794,6 +1801,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     _ if monstrosity::active(world) => {}
                     _ => magic::open_ability(world, 2, false),
                 },
+                _ if polmail::focused(world) => polmail::key(world, *key),
+                _ if friendlist::focused(world) => friendlist::key(world, *key),
                 _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
                 _ if world.pupset.is_some() && world.confirm.is_none() => pupset::key(world, gu, *key),
                 _ if world.moncustom.is_some() && world.confirm.is_none() => moncustom::key(world, gu, *key),
@@ -2280,6 +2289,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             search::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
         }
     }
+    if let Some(p) = input.pointer.filter(|_| polmail::focused(world) && !world.modern) {
+        polmail::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    } else if let Some(p) = input.pointer.filter(|_| friendlist::focused(world) && !polmail::composing(world) && !world.modern) {
+        friendlist::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
     if let Some(p) = input.pointer.filter(|_| world.charlnk.is_some() && world.confirm.is_none() && !world.modern) {
         charlnk::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
@@ -2710,7 +2724,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // decay away and the message holds.
     let page_rows = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page)).map(Vec::len)).unwrap_or(0);
     // The event input window sets the same input-line flag as the chat line (DAT_1062193c +0x4c).
-    let line_open = world.typing || event::input(world).is_some();
+    let line_open = world.typing || event::input(world).is_some() || polmail::composing(world);
     // FUN_101626e0's keep: FUN_1015ecc0(0x1000), any open window stacked on the log (the raise prompt, comyn, query,
     // shops, the lists ...), the chat line at 2 lines or fewer, a message page waiting.
     let stacked = gu.open_with_flag(0x1000) || (dead && world.ko_offer == 2) || event::choice(world).is_some() || world.confirm.is_some();
@@ -3056,6 +3070,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(concierge::draw(gu, world, sw, sh));
     blockers.extend(linklist::draw(gu, world, sw, sh));
     blockers.extend(blklist::draw(gu, world, sw, sh));
+    blockers.extend(friendlist::draw(gu, world, sw, sh));
+    blockers.extend(polmail::draw(gu, world, sw, sh, logwin::text_width(sw, world.log.cfg.pct)));
     // The item info window over the action menu: both sit on the log (flag 0x1000), and it opens later (raise order).
     if !world.modern {
         blockers.extend(draw_item_info(gu, world, sw, sh, log_top));
@@ -3255,12 +3271,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The K.O. window ("menu    dead", FUN_1012def0): "Time Left:" baked in its frame sprite, the time "%d:%02d" (minutes
     // unwrapped) at (+75, +6) in the sprite font, child 1 "Back to Home Point" with the hand while it has the focus.
     // mp_dead (FUN_10141920): Retry / Cancel, the same "%d:%02d" at (+0x4b, +6).
+    // Ours (the user's call, as the raise prompt): the frame 8 / 4 px larger so the text does not touch its edges.
+    const KO_PAD: [f32; 4] = [8.0, 4.0, 8.0, 4.0];
     if world.ko_open
         && monstrosity::active(world)
-        && let Some(win) = gu.lobby_window_off("menu    mp_dead", sw, sh, (0.0, 0.0), Some(world.mon_dead_sel), world.confirm.is_none(), &[])
+        && let Some(win) = gu.lobby_window_padded("menu    mp_dead", sw, sh, Some(world.mon_dead_sel), world.confirm.is_none(), KO_PAD)
     {
         let s = world.ko_deadline.saturating_sub(vana_now(world));
-        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + 75.0, win.frame[1] + 6.0, 0x8080_8080, false);
+        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + KO_PAD[0] + 75.0, win.frame[1] + KO_PAD[1] + 6.0, 0x8080_8080, false);
         let mut pick = false;
         for (id, r) in &win.children {
             if world.confirm.is_none() && input.pointer.is_some_and(|p| inside(r, p)) {
@@ -3277,10 +3295,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         blockers.push(win.frame);
     } else if world.ko_open
-        && let Some(win) = gu.lobby_window_off("menu    dead", sw, sh, (0.0, 0.0), Some(1), world.confirm.is_none() && world.ko_offer != 2, &[])
+        && let Some(win) = gu.lobby_window_padded("menu    dead", sw, sh, Some(1), world.confirm.is_none() && world.ko_offer != 2, KO_PAD)
     {
         let s = world.ko_deadline.saturating_sub(vana_now(world));
-        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + 75.0, win.frame[1] + 6.0, 0x8080_8080, false);
+        gu.shape_text(&format!("{}:{:02}", s / 60, s % 60), win.frame[0] + KO_PAD[0] + 75.0, win.frame[1] + KO_PAD[1] + 6.0, 0x8080_8080, false);
         for (id, r) in win.children.iter().filter(|(id, _)| *id == 1) {
             if world.confirm.is_none() && world.ko_offer != 2 && input.pointer.is_some_and(|p| inside(r, p)) {
                 gu.hover.set(true);
@@ -3383,6 +3401,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         (Some(true), Some((Confirm::PupRemoveAll, _))) => {
             world.confirm = None;
             pupset::remove_all(world);
+        }
+        (Some(yes), Some((Confirm::PolIgnore, _))) => {
+            world.confirm = None;
+            if yes {
+                polmail::ignore_yes(world);
+            }
         }
         (Some(yes), Some((Confirm::Assist(kind), _))) => {
             world.confirm = None;
@@ -3655,6 +3679,8 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
     charlnk::bars(gu, world, &mut bars);
+    friendlist::bars(gu, world, &mut bars);
+    polmail::bars(gu, world, &mut bars);
     arealist::bars(gu, world, &mut bars);
     seacom::bars(gu, world, &mut bars);
     region::bars(gu, world, &mut bars);
@@ -3711,6 +3737,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::PupRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe5)).unwrap_or_default(),
         (Confirm::MonRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0x101)).unwrap_or_default(),
         (Confirm::Assist(kind), _) => charlnk::ask_text(gu, kind),
+        (Confirm::PolIgnore, _) => world.battle.as_ref().and_then(|b| b.group9(0x1a)).unwrap_or_default(),
         (Confirm::MonSpecies(_), _) => gu.menu_msg(0x2c5, ""),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
@@ -5271,8 +5298,10 @@ struct World {
     charlnk: Option<charlnk::CharLnk>,
     /// The name an Assist Channel prompt (charlnk's, acoption's) acts on.
     assist_name: String,
-    /// The Friend List's data (xi_profile).
+    /// The Friend List's data (xi_profile), its windows and the PlayOnline messages' windows.
     friends: friends::Friends,
+    friendui: Option<friendlist::FriendUi>,
+    polmail: polmail::PolMail,
     /// The modern full log's find: typed while it is open, it shows the lines holding the text (not retail).
     log_find: Option<String>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
@@ -5646,6 +5675,8 @@ enum Confirm {
     PupRemoveAll,
     /// Customization's Remove All (FUN_101431b0): group 9 0x101 "Remove all?".
     MonRemoveAll,
+    /// mes1rcv / mes2frnd's Ignore Sender: group 9 0x1a "Add sender to\nIgnore List?", default No.
+    PolIgnore,
     /// charlnk's Warning / Mute / Thumbs Up and acoption's Remove (c2s 0x0B7 kind), default No.
     Assist(u8),
     /// A species of another family (FUN_10142b50): 0xe 0x2c5, the experience reset.
@@ -6948,6 +6979,8 @@ impl App {
                             charlnk: None,
                             assist_name: String::new(),
                             friends: friends::Friends::new(pol),
+                            friendui: None,
+                            polmail: Default::default(),
                             log_find: None,
                             map: None,
                             key_items: Vec::new(),
@@ -8635,6 +8668,7 @@ impl App {
         }
         search::poll(world);
         friends::poll(world);
+        polmail::update(world);
         world.line_hist.track(world.typing);
         inspect::frame(world);
         for (id, off) in std::mem::take(&mut world.effects.gens_off) {
