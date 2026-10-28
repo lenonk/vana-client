@@ -2838,7 +2838,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         }
         let fl = world.full_log.unwrap_or_default();
         world.log.prepare_tab(gu, &world.chat, fl.filter, route);
-        blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, route.second));
+        let band = world.log.full_row_line(fl.filter, fl.back(logwin::full_lines(sh))).is_some_and(|k| charlnk::lit(world, k));
+        blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, route.second, band));
         blockers.extend(charlnk::draw(gu, world, sw, sh));
     } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;

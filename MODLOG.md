@@ -11034,8 +11034,9 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   4 / 5 / 8 / 0x1a / 0x1b / 0x21 / 0x22 / 0x23 and our echoes.
 - Full log (FUN_10137c70, each frame): the cursor row's record when its kind is 1 (+0x28); +0x2c / +0x2d = 1 / 1 for
   our modes 1..7, 0xd3, 0xd5, 0xdb, 0xdd; others' 9..0xf, 0xd4, 0xd6, 0xdc, 0xde give +0x2d = 1 and +0x2c only for an
-  emote (0xf) naming us. Child 1 (the cursor row) takes keytops3 538 on a player's row not ours, else windowps 332 (not
-  drawn by ours yet).
+  emote (0xf) naming us. Child 1 (the cursor row's rect) takes keytops3 538 (a 174 x 16 blue band, alpha 85, from menu gauge) when
+  +0x26 (a player's row, but not another's line naming us), else windowps 332 (alpha 0: nothing). Ours draws the band
+  under the text *(inf: the order)*; seen live on our say row.
 - Enter (FUN_10138230 case 5, focused): no player's row -> the buzzer (FUN_10037c50); else charlnk (DAT_105781e4)
   gets the record (+0x14), +0x54 / +0x55 = +0x2c / +0x2d, the text from the cursor row to the line's end (the rows of
   one serial joined, a continuation's first glyph skipped, glyphs 0x2115..0x2143 left out) and opens.

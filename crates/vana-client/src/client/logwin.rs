@@ -646,6 +646,12 @@ impl LogWin {
         }).collect()
     }
 
+    /// The log line of the full log's row `back` rows above its newest on tab `filter`.
+    pub fn full_row_line(&self, filter: u8, back: usize) -> Option<usize> {
+        let rows = self.full_rows(filter);
+        Some(rows[rows.len().checked_sub(back + 1)?].3)
+    }
+
     /// The full log's row `back` rows above its newest on tab `filter`: its log line, and the text from that row to
     /// the line's end (charlnk +0x56: the rows of one record joined, a continuation's indent left out).
     pub fn full_line(&self, filter: u8, back: usize) -> Option<(usize, String)> {
@@ -805,12 +811,18 @@ impl LogWin {
     /// The full log (FUN_10133680): frame (16, 48, text width + 14, H - 64), the tab strip at y0 - 9, lines 16 px
     /// apart from the text rect's bottom (y1 - 4); while typing the rect ends 16 higher and the lines move up 16 more
     /// (FUN_10138020's offset -16), the hand with them. Returns the frame rect.
-    pub fn draw_full(&self, gu: &mut GameUi, fl: &FullLog, sw: f32, sh: f32, typing: bool, second: bool) -> [f32; 4] {
+    /// `band`: the cursor row is a player's line (+0x26): child 1 (the row) shows keytops3 538, a translucent blue band,
+    /// instead of windowps 332 (blank) (FUN_10137c70; drawn under the text *(inf: the order)*).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_full(&self, gu: &mut GameUi, fl: &FullLog, sw: f32, sh: f32, typing: bool, second: bool, band: bool) -> [f32; 4] {
         let (x0, y0, w, h) = (16.0, 48.0, text_width(sw, self.cfg.pct) + 14.0, sh - 64.0);
         gu.frame(x0, y0, w, h);
         let lines = full_lines(sh);
         let (n, yoff) = if typing { (lines - 1, -16.0) } else { (lines, 0.0) };
         let bottom = y0 + h - 4.0 + yoff;
+        if band {
+            gu.sprite("menu    keytops3", 538, x0 + 3.0, bottom + yoff + 16.0 * (fl.row as f32 - lines as f32) - 15.0, 0x8080_8080);
+        }
         gu.clip(Some([x0, y0 + 3.0, w, (bottom - (y0 + 3.0)).max(0.0)]));
         let rows = self.full_rows(fl.filter);
         for (i, (line, colour, st, _)) in rows.iter().rev().skip(fl.scroll).take(n).enumerate() {

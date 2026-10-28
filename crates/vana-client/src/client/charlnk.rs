@@ -45,6 +45,13 @@ fn sides(mode: u8, name: &str, me: &str) -> (bool, bool) {
     }
 }
 
+/// FUN_10137c70's +0x26: line `k` is a player's, but not another's line naming us.
+pub fn lit(w: &World, k: usize) -> bool {
+    let Some((name, _)) = w.chat.who(k) else { return false };
+    let Some(mode) = w.chat.modes().get(k).and_then(|&m| super::combat::log_mode(m)) else { return false };
+    sides(mode, name, &w.name).0 || name != w.name
+}
+
 /// Enter in the full log (FUN_10138230 case 5): on a player's line charlnk opens over it on its first row; on any
 /// other row the buzzer (FUN_10037c50).
 pub fn open(w: &mut World, line: Option<(usize, String)>) {
