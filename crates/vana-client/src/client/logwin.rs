@@ -1,10 +1,11 @@
-//! The chat log window (logwindo, base class FUN_1015b250) and the input line (msgline): width from the UI
-//! width, height from the visible line count, auto-shrink, slide-in, the channel caption.
+//! The chat log windows (logwindo, base class FUN_1015b250; logwin2, config 0xb4, logwin2_spec.md) and the input line
+//! (msgline): width from the UI width, height from the visible line count, auto-shrink, slide-in, the channel caption,
+//! each line routed to a window by its mode and the window's mask.
 
 use super::game_ui::GameUi;
 
-/// Window 1's config: 0x0f max lines, 0x10 min lines, 0x11 seconds per line, 0x9c width percent, 0x0e fixed size
-/// (FUN_1015c180..FUN_1015c220; fixed: min = max).
+/// A window's config: window 1 0x0f max lines, 0x10 min lines, 0x11 seconds per line, 0x9c width percent, 0x0e fixed
+/// size (FUN_1015c180..FUN_1015c220; fixed: min = max); window 2 0xb7, 0xb8, 0xc6, 0xc5, 0xb6.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct LogCfg {
     pub max: f32,
@@ -21,16 +22,88 @@ impl Default for LogCfg {
 
 impl LogCfg {
     pub fn from_config(v: &crate::gamecfg::Values) -> Self {
-        // FUN_1015c1a0: max outside 4..24 is 24; FUN_1015c220: under 1 s is 20 ticks.
-        let max = match v.get_i(0x0f) {
+        Self::for_window(v, false)
+    }
+
+    /// FUN_10162e20: max outside 4..24 is 24; FUN_10162e60: min = max unless reactive; FUN_10162ea0: under 3 s is 3 s,
+    /// then x 60 (20 ticks at 0). Window 2's -1 width and time are resolved by cfgapply::normalise.
+    pub fn for_window(v: &crate::gamecfg::Values, second: bool) -> Self {
+        let [fixed, max, min, secs, pct] = if second { [0xb6, 0xb7, 0xb8, 0xc6, 0xc5] } else { [0x0e, 0x0f, 0x10, 0x11, 0x9c] };
+        let max = match v.get_i(max) {
             m @ 4..=24 => m as f32,
             _ => 24.0,
         };
-        let min = if v.get(0x0e) != 0 { max } else { (v.get_i(0x10).max(0) as f32).min(max) };
-        let secs = v.get_i(0x11);
-        Self { max, min, ticks: if secs < 1 { 20.0 } else { secs as f32 * 60.0 }, pct: v.get_i(0x9c).clamp(0, 100) as f32 }
+        let min = if v.get(fixed) != 0 { max } else { (v.get_i(min).max(0) as f32).min(max) };
+        let ticks = (v.get_i(secs).max(3) * 60) as f32;
+        Self { max, min, ticks: if ticks <= 0.0 { 20.0 } else { ticks }, pct: v.get_i(pct).clamp(0, 100) as f32 }
     }
 }
+
+/// Which lines each window takes (FUN_10129980): window 2 on (config 0xb4) and the masks {0xb9, 0xba}, {0xbb, 0xbc}.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Route {
+    pub second: bool,
+    pub masks: [u64; 2],
+}
+
+impl Route {
+    pub fn from_config(v: &crate::gamecfg::Values) -> Self {
+        let mask = |lo: u16, hi: u16| v.get(lo) as u64 | (v.get(hi) as u64) << 32;
+        Self { second: v.get(0xb4) != 0, masks: [mask(0xb9, 0xba), mask(0xbb, 0xbc)] }
+    }
+
+    /// FUN_10129b40 (window 0: everything while window 2 is off; GM lines; else its mask, default shown) and
+    /// FUN_10129b80 (window 1: never GM lines; its mask, default hidden).
+    pub fn shows(&self, window: usize, mode: Option<u8>, gm: bool) -> bool {
+        match window {
+            0 if !self.second || gm => true,
+            0 => mode.and_then(mode_bit).is_none_or(|b| self.masks[0] >> b & 1 != 0),
+            _ => !gm && mode.and_then(mode_bit).is_some_and(|b| self.masks[1] >> b & 1 != 0),
+        }
+    }
+}
+
+/// A print mode's mask bit (table 0x1036e888 -> FUN_1012a120; the Config > Log rows): none for the modes without one.
+pub fn mode_bit(mode: u8) -> Option<u8> {
+    Some(match mode {
+        1 | 9 => 0,
+        4 | 12 => 1,
+        5 | 13 | 0xd2 => 2,
+        6 | 14 | 0xcd => 3,
+        0xd5 | 0xd6 | 0xd9 => 4,
+        0xd3 | 0xd4 => 6,
+        7 | 15 | 0xd0 => 7,
+        17 | 18 => 8,
+        0x8e..=0x99 | 0xbe => 9,
+        2 | 10 => 10,
+        3 | 11 => 11,
+        0xdb | 0xdc => 12,
+        0xdd | 0xde => 13,
+        30 | 31 => 33,
+        28 => 34,
+        56 | 81 | 101 => 35,
+        57 | 82 | 102 => 36,
+        59 => 37,
+        29 | 70 | 84 | 104 => 38,
+        22 | 23 | 24 | 27 | 34 | 35 | 42 | 43 | 162 | 165 | 187 | 188 => 39,
+        20 | 25 | 32 | 40 | 163 | 185 => 40,
+        60 | 64 | 86 | 91 | 106 | 111 | 175 | 178 | 183 => 41,
+        61 | 65 | 87 | 92 | 107 | 112 | 174 | 176 | 182 => 42,
+        63 | 67 | 68 | 69 | 170 | 189 => 43,
+        21 | 26 | 33 | 41 | 71 | 72 | 89 | 94 | 109 | 114 | 164 | 173 | 181 | 184 | 186 => 44,
+        50..=52 | 55 | 58 | 62 | 66 | 80 | 83 | 85 | 88 | 90 | 93 | 100 | 103 | 105 | 108 | 110 | 113 | 122 | 168 | 169 | 171 | 172 | 177 | 179 | 180 => 45,
+        8 | 16 => 46,
+        121 | 127..=140 => 47,
+        _ => return None,
+    })
+}
+
+/// Window 2's place from window 1's frame (FUN_10161c70): 0xb4 1 above it (same x, its bottom on window 1's top),
+/// 2 to its right (bottoms aligned); `w` and `h` its own size.
+pub fn second_rect(mode: u32, w1: [f32; 4], w: f32, h: f32) -> [f32; 4] {
+    if mode == 2 { [w1[0] + w1[2], w1[1] + w1[3] - h, w, h] } else { [w1[0], w1[1] - h, w, h] }
+}
+
 /// Wrapped lines kept for drawing.
 const KEEP: usize = 512;
 
@@ -71,8 +144,12 @@ pub struct LogWin {
     ticker: Ticker,
     /// Wrapped lines added by the last update.
     pub new_lines: usize,
-    /// Size and timing from the config (Windows / Window 1 page).
+    /// Size and timing from the config (Windows / Window 1 or 2 page).
     pub cfg: LogCfg,
+    /// Window 2 (logwin2): its mask, no typing shift, no keys.
+    pub second: bool,
+    /// The route its lines were taken with (a change rebuilds them).
+    route: Route,
 }
 
 /// FUN_101626e0's state, shared by the retail log and the modern chat window (each counting the rows of its own
@@ -310,6 +387,28 @@ pub fn text_width(sw: f32, pct: f32) -> f32 {
     ((sw - 512.0) * pct / 100.0 + 352.0).clamp(352.0, (sw - 160.0).max(352.0))
 }
 
+/// Window 2's caption (windowps 740 "Window 2", FUN_10161d60).
+pub const CAPTION_2: usize = 740;
+
+/// Window 1's caption with window 2 on (config 0xb4, FUN_10161990's second column, pairs 0x10371b80): "Window 1:Say"
+/// 733 and the like; Yell has none (278 stays).
+pub fn caption_1(channel: &str, second: bool) -> usize {
+    let c = caption(channel);
+    if !second {
+        return c;
+    }
+    match c {
+        276 => 733,
+        277 => 739,
+        279 => 734,
+        280 => 735,
+        281 => 736,
+        711 => 737,
+        712 => 738,
+        c => c,
+    }
+}
+
 /// Caption sprite (windowps) for a channel command (table 0x10365d50, FUN_101496d0); not found = Say.
 pub fn caption(channel: &str) -> usize {
     match channel {
@@ -337,6 +436,29 @@ mod tests {
         assert_eq!(text_width(1280.0, 50.0), 736.0);
         assert_eq!(caption(""), 276);
         assert_eq!(caption("/p"), 280);
+        assert_eq!((caption_1("/p", true), caption_1("/yell", true), caption_1("", false)), (735, 278, 276));
+    }
+
+    /// Default masks with window 2 on: chat, emotes and NPC talk to window 2; battle, system and modeless lines to
+    /// window 1; GM lines to window 1 only; everything to window 1 with window 2 off. Window 2 above or right of 1.
+    #[test]
+    fn routing_and_place() {
+        let mut v = crate::gamecfg::Values::default();
+        let off = Route::from_config(&v);
+        v.set(0xb4, 1);
+        let on = Route::from_config(&v);
+        let say = Some(1);
+        assert!(off.shows(0, say, false) && !on.shows(0, say, false) && on.shows(1, say, false));
+        for battle in [Some(80), Some(121), None, Some(36)] {
+            assert!(on.shows(0, battle, false) && !on.shows(1, battle, false), "{battle:?}");
+        }
+        assert!(on.shows(1, Some(0x98), false) && !on.shows(0, Some(0x98), false));
+        assert!(on.shows(0, say, true) && !on.shows(1, say, true));
+        assert_eq!(second_rect(1, [16.0, 500.0, 366.0, 134.0], 300.0, 70.0), [16.0, 430.0, 300.0, 70.0]);
+        assert_eq!(second_rect(2, [16.0, 500.0, 366.0, 134.0], 300.0, 70.0), [382.0, 564.0, 300.0, 70.0]);
+        // 0xc6 / 0xc5 at -1 follow window 1.
+        crate::client::cfgapply::normalise(&mut v);
+        assert_eq!(LogCfg::for_window(&v, true), LogCfg::for_window(&v, false));
     }
 
     /// FUN_101626e0 at stock 30 fps (2 ticks a frame): one line slides 14 12 11 9 8 6 4 3 1 0 px; two lines enter
@@ -393,32 +515,60 @@ mod tests {
 }
 
 impl LogWin {
+    /// Window 2.
+    pub fn second() -> Self {
+        Self { second: true, ..Default::default() }
+    }
+
+    /// Log line `k` wrapped to `tw` with its stamp: (row, colour, stamp bytes).
+    fn wrap_line(&self, gu: &GameUi, chat: &super::combat::ChatLog, k: usize, tw: f32) -> Vec<(String, [u8; 4], usize)> {
+        let Some(((line, colour), (time, is_chat, indent))) = chat.timed(k) else { return Vec::new() };
+        let st = self.stamps.text(time, is_chat);
+        let rows = gu.wrap_indent(&format!("{st}{line}"), tw, indent);
+        rows.into_iter().enumerate().map(|(i, piece)| {
+            let n = if i == 0 { st.trim_end().len().min(piece.len()) } else { 0 };
+            (piece, *colour, n)
+        }).collect()
+    }
+
     /// Takes in new log lines and advances the counters by the ticks since the last call. `keep` holds it
-    /// open, `shrink` is Escape (key 0x95, FUN_1015b830).
+    /// open, `shrink` is Escape (key 0x95, FUN_1015b830). Lines this window's mask leaves out are not taken; stamps
+    /// are added as lines come (a change of 0xb5 shows on new lines).
     #[allow(clippy::too_many_arguments)]
-    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, typing: bool, stamps: Stamps) -> f32 {
+    pub fn update(&mut self, gu: &GameUi, chat: &super::combat::ChatLog, sw: f32, keep: bool, shrink: bool, focused: bool, typing: bool, stamps: Stamps, route: Route) -> f32 {
         let tw = text_width(sw, self.cfg.pct);
-        let rewrap = tw != self.width || stamps != self.stamps || chat.edits() != self.edits;
-        if rewrap {
-            self.width = tw;
-            self.stamps = stamps;
-            self.edits = chat.edits();
-            self.wrapped.clear();
-            self.seen = chat.len().saturating_sub(64);
-            self.anim.settle();
-        }
+        let window = self.second as usize;
+        self.stamps = stamps;
+        let rewrap = tw != self.width || chat.edits() != self.edits || route != self.route;
         let mut new = 0;
-        for ((line, colour), (time, is_chat, indent)) in chat.iter_timed().skip(self.seen) {
-            let st = stamps.text(time, is_chat);
-            for (k, piece) in gu.wrap_indent(&format!("{st}{line}"), tw, indent).into_iter().enumerate() {
-                let n = if k == 0 { st.trim_end().len().min(piece.len()) } else { 0 };
-                self.wrapped.push((piece, *colour, n));
-                new += 1;
-            }
-        }
-        // A rewrap redraws the kept lines, not new ones.
         if rewrap {
-            new = 0;
+            // FUN_101295d0 at an open: the newest lines that pass, until more than 49 rows.
+            (self.width, self.edits, self.route) = (tw, chat.edits(), route);
+            let mut rows: Vec<Vec<(String, [u8; 4], usize)>> = Vec::new();
+            let mut n = 0;
+            for k in (0..chat.len()).rev() {
+                let (mode, gm) = chat.route(k);
+                if !route.shows(window, mode, gm) {
+                    continue;
+                }
+                let r = self.wrap_line(gu, chat, k, tw);
+                n += r.len();
+                rows.push(r);
+                if n > 49 {
+                    break;
+                }
+            }
+            self.wrapped = rows.into_iter().rev().flatten().collect();
+            self.anim.settle();
+        } else {
+            for k in self.seen..chat.len() {
+                let (mode, gm) = chat.route(k);
+                if route.shows(window, mode, gm) {
+                    let r = self.wrap_line(gu, chat, k, tw);
+                    new += r.len();
+                    self.wrapped.extend(r);
+                }
+            }
         }
         self.seen = chat.len();
         if self.wrapped.len() > KEEP {
@@ -568,6 +718,18 @@ impl LogWin {
     /// The frame fading out or faded (0 lines shown): FUN_1015f790 then puts stacked windows on the log's bottom.
     pub fn faded(&self) -> bool {
         self.anim.faded()
+    }
+
+    /// Its lines rebuilt at the next update (a window's init on every open).
+    pub fn reopen(&mut self) {
+        self.width = -1.0;
+    }
+
+    /// Window 2's frame: its width and eased height, placed on window 1's frame `w1` by config 0xb4.
+    pub fn frame_beside(&mut self, sw: f32, w1: [f32; 4], mode: u32) -> LogFrame {
+        let w = text_width(sw, self.cfg.pct) + 14.0;
+        let h = self.anim.h.max(0) as f32;
+        LogFrame { rect: second_rect(mode, w1, w, h), lines: self.lines(), alpha: self.anim.alpha() }
     }
 
     /// The frame's rect (x 16, bottom H - 16, the height the step eased), its lines and the fade's alpha.

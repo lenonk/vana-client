@@ -194,6 +194,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     live in both UIs.
   - PUP automaton customization (client/pupset.rs, MODLOG "Automaton customization"): done and seen live in both
     UIs; the activated-automaton refusal and the mouse not tried.
+  - Log window 2 (client/logwin.rs, MODLOG "Log window 2"; config 0xb4): done and seen live; left the page overflow
+    and Hold windows (rem4line / spoolmsg and their window-2 twins) and the full log's tab switch.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

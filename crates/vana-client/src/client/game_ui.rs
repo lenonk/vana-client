@@ -212,6 +212,8 @@ pub struct GameUi {
     pub log_top: Option<f32>,
     /// The log shows no lines (fading or faded): stacked windows sit on its bottom instead.
     pub log_faded: bool,
+    /// Region 0's bottom (the log window stacked windows sit on): they go there while it shows no lines.
+    pub log_bottom: Option<f32>,
     /// The target window is up this frame (region 2's window, which flag-0x4000 windows sit on).
     target_up: bool,
     /// The window style in use and images to replace in the renderer.
@@ -320,7 +322,7 @@ pub struct WorldView<'a> {
 impl GameUi {
     pub fn new(data: GameUiData) -> Self {
         crate::render::ui::set_caption_words(caption_words(&data));
-        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
+        Self { data, renderer: None, scene_depth: None, batch: UiBatch::default(), modern_frame: None, skin_on: false, modern_help: None, started: Instant::now(), pending: Vec::new(), images: Default::default(), help: HelpScroll::default(), party_window: "menu    ptw0".into(), log_top: None, style_index: 0, replaced: Vec::new(), style_saved: Default::default(), scroll_seen: Default::default(), hover: Default::default(), modern_order: Default::default(), bars: Vec::new(), bar_hold: None, anims: Default::default(), contents: Default::default(), anim_frame: 1, anim_acc: 0.0, open_ticks: 25.0, log_faded: false, log_bottom: None, target_up: false, walk: Walk::default(), focus: (None, None), presses: Default::default() }
     }
 
     /// FUN_1015e530 / FUN_101177d0 for a window drawn this frame with frame rect `r`: false while it opens (only the
@@ -1279,6 +1281,7 @@ impl GameUi {
         self.batch = UiBatch::default();
         self.batch.modern = if self.skin_on { self.modern_frame.clone().flatten() } else { None };
         self.log_top = None;
+        self.log_bottom = None;
         self.target_up = false;
     }
 
@@ -1339,8 +1342,8 @@ impl GameUi {
             (Some(top), Some(m)) if flags & 0x1000 != 0 => {
                 let (_, wy) = screens::window_pos(m, w, h, 1.0, 1.0);
                 let wh = m.elements[0].h as f32;
-                // On the log's bottom (h - 16) while it shows no lines, else 2 px above its top.
-                let y = if self.log_faded { h - 16.0 - wh } else { top - wh - 2.0 };
+                // On the region window's bottom while it shows no lines, else 2 px above its top.
+                let y = if self.log_faded { self.log_bottom.unwrap_or(h - 16.0) - wh } else { top - wh - 2.0 };
                 y.max(16.0) - wy
             }
             // Region 2 (flag 0x4000, subwindo): on the target window, else on the party window (FUN_1015e530).

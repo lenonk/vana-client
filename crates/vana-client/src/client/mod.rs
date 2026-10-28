@@ -976,6 +976,11 @@ fn call_sound(bt: &crate::dat::battle::BattleText, line: &str, mode: u8) -> Opti
 }
 
 fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
+    push_chat_line(world, line, mode, kind, false);
+}
+
+/// A chat line in its mode, `gm` from s2c 0x017's Attr bit 0.
+fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool) {
     if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode)) {
         world.sounds.push(n);
     }
@@ -988,8 +993,15 @@ fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
         None => (cfgapply::chat_colour(&world.game, kind), line, false),
     };
     for l in line.split('\n') {
-        world.chat.push_mode(l.to_string(), colour, indent, mode);
+        world.chat.push_mode(l.to_string(), colour, indent, mode, gm);
     }
+}
+
+/// The kaipage arrow after a waiting message's last row (FUN_1015ad10), one frame per draw.
+fn kaipage(gu: &mut GameUi, world: &World, x: f32, y: f32, last: &str) {
+    let n = gu.lib_len("anc     kaipage").max(1);
+    let frame = (world.started.elapsed().as_secs_f32() * 60.0) as usize % n;
+    gu.sprite("anc     kaipage", frame, x + gu.text_width(last) + 2.0, y + 3.0, 0x8080_8080);
 }
 
 /// A query-class window (FUN_1014e220): the question at the top, three option rows with the anc_s hand, the bar
@@ -2432,8 +2444,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     // The log line's colour is its mode's (FUN_10129c70); mode 0 has none of its own.
     let colour = mode.and_then(|m| world.battle.as_ref().map(|bt| bt.colour_in(m, &world.game))).unwrap_or(WHITE);
+    // The pages print with mode 0x98 (the message queues' writer FUN_10136670): NPC talk for the log windows' masks.
     for l in page_lines {
-        world.chat.push_colour(l, colour);
+        world.chat.push_event(l, colour, false, 0x98);
     }
     minimap::prepare(gu, world, sw);
     // The modern layer draws the Timers, the minimap and the map overlay itself.
@@ -2670,7 +2683,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // shops, the lists ...), the chat line at 2 lines or fewer, a message page waiting.
     let stacked = gu.open_with_flag(0x1000) || (dead && world.ko_offer == 2) || event::choice(world).is_some() || world.confirm.is_some();
     world.main_open = gu.open_with_flag(0x20000);
-    let keep = (world.typing && world.log.at_most_two()) || stacked || (event::prompt(world) && world.log.lines() <= page_rows.max(1));
+    // Each window takes its lines by its mask (FUN_10129980); window 2 is up with 0xb4 and not under the full log
+    // (FUN_10162f00). A message page (mode 0x98) holds the window it prints to.
+    let route = logwin::Route::from_config(&world.game);
+    let second_mode = world.game.get(0xb4);
+    let second_up = route.second && world.full_log.is_none();
+    let prompt = event::prompt(world);
+    let keep = (world.typing && world.log.at_most_two()) || stacked || (prompt && route.shows(0, Some(0x98), false) && world.log.lines() <= page_rows.max(1));
+    let keep2 = (world.typing && world.log2.at_most_two()) || stacked || (prompt && route.shows(1, Some(0x98), false) && world.log2.lines() <= page_rows.max(1));
     // A window taking the keys takes the focus as it opens: Num+ may focus the log over one already open (the action menu
     // while engaged) *(inf: the newest window has the focus)*; an event closes the full log (FUN_10133000).
     let takers = [world.menu.is_some(), world.win.is_some(), world.action_menu.is_some(), world.confirm.is_some(), world.config.is_some()].iter().enumerate().fold(0u8, |m, (i, &on)| m | (on as u8) << i);
@@ -2694,12 +2714,29 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         cfg: world.log.cfg,
     };
     world.log.chat_line(world.typing);
-    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps);
+    let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps, route);
     let log = world.log.frame(sw, sh);
-    // The Timers window stacks on the log (next frame) where the log reaches under it.
-    world.timers.log = Some(log.rect);
-    gu.log_top = Some(log.rect[1]);
-    gu.log_faded = world.log.faded();
+    // Window 2 (FUN_10161c70): the same rule with its own values, held at its max by window 1's focus, its text never
+    // moved for the chat line; placed on window 1's frame. A reopen rebuilds its lines (its init).
+    if second_up && !world.log2_up {
+        world.log2.reopen();
+    }
+    world.log2_up = second_up;
+    let log2 = second_up.then(|| {
+        world.log2.chat_line(world.typing);
+        world.log2.update(gu, &world.chat, sw, keep2, shrink_log, world.log_active, false, stamps, route);
+        world.log2.frame_beside(sw, log.rect, second_mode)
+    });
+    // Region 0 (FUN_1015f980): window 2 when it is up above window 1, else window 1. Windows stacked on the log, the
+    // compass, the party icons and the Timers window follow it.
+    let (region, region_faded) = match &log2 {
+        Some(f) if second_mode != 2 => (f.rect, world.log2.faded()),
+        _ => (log.rect, world.log.faded()),
+    };
+    world.timers.log = Some(region);
+    gu.log_top = Some(region[1]);
+    gu.log_bottom = Some(region[1] + region[3]);
+    gu.log_faded = region_faded;
     // The modern chat window stands for the log: stacked windows 2 px above the part of it showing (as it fades it
     // folds into its bottom edge).
     if world.modern
@@ -2724,7 +2761,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let cam = App::camera(world);
     let mut top = std::mem::take(&mut world.hud_top);
     // The compass follows region 0's top (UI object +0xa0, refreshed by FUN_10159080), i.e. the log's current top.
-    top.draw(gu, world, sw, sh, &bars, cam.target - cam.eye, log.rect[1]);
+    top.draw(gu, world, sw, sh, &bars, cam.target - cam.eye, region[1]);
     world.hud_top = top;
     let party = st.party_window.clone();
     let mut blockers: Vec<[f32; 4]> = [party.as_str()].iter().filter_map(|n| gu.window_rect(n, sw, sh)).collect();
@@ -2736,6 +2773,23 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     blockers.extend(world.overlay.as_ref().filter(|o| o.has_map()).map(|o| o.rect));
     blockers.extend(world.minimap_rect);
+    // Window 2 (FUN_10161d60): its frame, text and caption 740 at its own (x0 + textw - 352, y0); drawn before window 1,
+    // which comes later in the window list (reopened after it), so window 1's caption sits over window 2's bottom edge.
+    if let Some(f) = log2.filter(|f| event_window.is_none() && !world.modern && (f.alpha > 0.0 || f.lines > 0)) {
+        let [x, y, w, h] = f.rect;
+        gu.frame_alpha(x, y, w, h, f.alpha);
+        let newest = world.log2.draw(gu, &f, false);
+        if prompt
+            && route.shows(1, Some(0x98), false)
+            && let Some((lx, ly, last)) = newest
+        {
+            kaipage(gu, world, lx, ly, &last);
+        }
+        if f.lines > 0 {
+            gu.sprite("menu    windowps", logwin::CAPTION_2, x + logwin::text_width(sw, world.log2.cfg.pct) - 352.0, y, 0x8080_8080);
+        }
+        blockers.push(f.rect);
+    }
     // Event text is in the log, drawn as usual; only placed narration (text codes 02 / 03) has its own window.
     if let Some(r) = event_window {
         blockers.push(r);
@@ -2746,17 +2800,18 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);
         let newest = world.log.draw(gu, &log, line_open);
-        // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw.
-        if event::prompt(world)
+        // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw, in the window the
+        // pages print to.
+        if prompt
+            && !(second_up && route.shows(1, Some(0x98), false))
             && let Some((lx, ly, last)) = newest
         {
-            let n = gu.lib_len("anc     kaipage").max(1);
-            let frame = (world.started.elapsed().as_secs_f32() * 60.0) as usize % n;
-            gu.sprite("anc     kaipage", frame, lx + gu.text_width(&last) + 2.0, ly + 3.0, 0x8080_8080);
+            kaipage(gu, world, lx, ly, &last);
         }
-        // FUN_1015ad10: the channel caption (windowps by chat mode; Say by default) at (x0 + textw - 352, y0).
+        // FUN_1015ad10: the channel caption (windowps by chat mode; Say by default; "Window 1:" ones with window 2 on)
+        // at (x0 + textw - 352, y0).
         if log.lines > 0 {
-            gu.sprite("menu    windowps", logwin::caption(world.chat_prefix.split(' ').next().unwrap_or("")), x + tw - 352.0, y, 0x8080_8080);
+            gu.sprite("menu    windowps", logwin::caption_1(world.chat_prefix.split(' ').next().unwrap_or(""), route.second), x + tw - 352.0, y, 0x8080_8080);
         }
         blockers.push(log.rect);
     }
@@ -2860,7 +2915,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     // The status icons are layer 0 (registry +0x29): every window draws over them.
     if !world.modern {
         buffs::draw(gu, world, sw, sh);
-        buffs::draw_party(gu, world, sw, sh, log.rect);
+        buffs::draw_party(gu, world, sw, sh, region);
     }
     fishing::draw_gauge(gu, world, sw, sh);
     blockers.extend(moogle::draw(gu, world, sw, sh));
@@ -4843,6 +4898,9 @@ struct World {
     fep: Option<fep::Fep>,
     /// The log window's size and scroll state, and the top bar / Network / compass state.
     log: logwin::LogWin,
+    /// Log window 2 (logwin2, config 0xb4) and whether it was up last frame (a reopen rebuilds its lines).
+    log2: logwin::LogWin,
+    log2_up: bool,
     hud_top: hudtop::HudTop,
     /// Who sent us tells, most recent first (Ctrl+R).
     tells: Vec<String>,
@@ -6590,6 +6648,8 @@ impl App {
                             copied: None,
                             fep: None,
                             log: Default::default(),
+                            log2: logwin::LogWin::second(),
+                            log2_up: false,
                             hud_top: Default::default(),
                             tells: Vec::new(),
                             battle: None,
@@ -7866,7 +7926,7 @@ impl App {
                         continue;
                     }
                     if let Some((line, mode)) = chat_line(kind, attr, data, &from, &text, &zone) {
-                        push_chat_mode(world, line, mode, kind);
+                        push_chat_line(world, line, mode, kind, attr & 1 != 0);
                     }
                 }
                 NetEvent::Logout { state } => {

@@ -2495,11 +2495,7 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
             _ if indent => format!("\u{3000}{text}"),
             _ => text,
         };
-        if indent {
-            w.chat.push_indented(text, colour);
-        } else {
-            w.chat.push_colour(text, colour);
-        }
+        w.chat.push_event(text, colour, indent, mode);
     }
 }
 

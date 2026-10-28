@@ -3,7 +3,7 @@
 //! its settings (the font size) behind the button at the tabs' right. It grows and shrinks by the retail log's rule
 //! (logwin::LogAnim) on its own rows.
 
-use super::super::combat::BATTLE_MODE;
+use super::super::combat::is_battle;
 use super::super::{World, cfgapply, event, fep};
 use super::{Modern, Panels, Show, paint};
 use crate::dat::font::{CODE_BASE, code_table};
@@ -32,8 +32,8 @@ const BATTLE_TAB: u8 = 10;
 /// A line of this mode shows on tab `tab`; All leaves the battle lines out when `battle_in_all` is off.
 fn shows(tab: u8, mode: u16, battle_in_all: bool) -> bool {
     match tab {
-        0 => battle_in_all || mode != BATTLE_MODE,
-        BATTLE_TAB => mode == BATTLE_MODE,
+        0 => battle_in_all || !is_battle(mode),
+        BATTLE_TAB => is_battle(mode),
         _ => TABS.get(tab as usize).is_some_and(|t| mode < 0x100 && t.1.contains(&(mode as u8))),
     }
 }

@@ -26,15 +26,22 @@ pub fn apply(w: &mut World, id: u16) {
     match id {
         // LAB_101a2c60: *(DAT_10565d34 + 0x51) = (v == 0).
         7 => w.auto_lock = w.game.get(7) == 0,
-        // Log window 1's setters (FUN_10162e60 and its siblings): lines and time also open it at the max (FUN_10162ef0),
-        // which is why the log comes up full at login; the width does not.
-        0x0e | 0x0f | 0x10 | 0x11 => {
+        // Log window 1's setters (FUN_10162e60 and its siblings, the width's case runs the line setters first): each
+        // opens it at the max (FUN_10162ef0), which is why the log comes up full at login.
+        0x0e | 0x0f | 0x10 | 0x11 | 0x9c => {
             w.log.cfg = super::logwin::LogCfg::from_config(&w.game);
             w.log.fill();
             let cfg = w.log.cfg;
             w.modern_log.anim.fill(&cfg);
         }
-        0x9c => w.log.cfg = super::logwin::LogCfg::from_config(&w.game),
+        // Window 2's (LAB_101aaa90): 0xb4 opens or closes it (window 1 reopens through its mask), every setter fills it.
+        0xb4 | 0xb6 | 0xb7 | 0xb8 | 0xc5 | 0xc6 => {
+            w.log2.cfg = super::logwin::LogCfg::for_window(&w.game, true);
+            w.log2.fill();
+        }
+        // The masks (LAB_1019a220): the window reopens (its lines through the new mask) at the max.
+        0xb9 | 0xba => w.log.fill(),
+        0xbb | 0xbc => w.log2.fill(),
         // SE / music level (FUN_10035060 / FUN_10036480): the app sets the mixer.
         9 | 10 => w.volume_dirty = true,
         _ => {}

@@ -10950,3 +10950,30 @@ view modern/pupset.rs.
 - Seen live 2026-10-28 (Lnxcsfix PUP 75 via !changejob, !addallattachments; both UIs): Valoredge head (capacities and
   LSB's stats follow), Strobe in, Strobe out, Mana Booster under the Ice filter, Remove All, Escape back to pupequip
   on Automaton. Not seen: the activated-automaton refusal (7 0xb8; Activate needs an Animator), the mouse.
+
+## Log window 2 (2026-10-28)
+
+Spec `~/ffxi/lab/research/logwin2_spec.md` (FUN_10161b80 class, FUN_10161c70 placement, routing FUN_10127c00 ->
+FUN_10128ce0 -> FUN_10129980, region 0 FUN_1015f980). Ours: client/logwin.rs (`LogWin::second`, `Route`, `mode_bit`,
+`second_rect`, `caption_1`), the world's `log2`.
+- Config 0xb4: 0 off, 1 above window 1 (same x, bottom on window 1's top), 2 right of it (left edge on window 1's
+  right, bottoms aligned; unclamped, so at 100 % widths it runs off-screen as retail's). Its own 0xb6 fixed, 0xb7 max,
+  0xb8 min, 0xc5 width, 0xc6 seconds (the -1s follow window 1 once, cfgapply::normalise); every setter fills it.
+- Routing at print time: window 1 takes everything while window 2 is off, GM lines (s2c 0x017 Attr bit 0), and the
+  modes its mask {0xb9, 0xba} allows or that have no bit; window 2 never GM lines, only modes its mask {0xbb, 0xbc}
+  allows. Mode -> bit: table 0x1036e888 -> FUN_1012a120 (chatfilters/SPEC.md §3). Defaults: chat, emotes, NPC talk
+  to window 2; battle, system and modeless lines to window 1. A route change (0xb4, the masks) or a reopen rebuilds a
+  window from the log newest first through its mask until more than 49 rows (FUN_101295d0).
+- Window 2 runs window 1's rule with its own values, held at its max by window 1's Num+ focus, never moved for the
+  chat line, shrunk by the same Escape; captions 740 "Window 2" and, with it on, window 1's "Window 1:Say" (733..739;
+  Yell keeps 278). Window 1 draws after it (later in the window list). Region 0 (flag 0x1000 windows, the compass,
+  the party icons, the Timers window) is window 2 while it is up above window 1, else window 1; faded, they sit on
+  its bottom (GameUi::log_bottom).
+- Lines now carry their print mode: event text its mode (pages 0x98, the queues' writer FUN_10136670), battle
+  messages BATTLE + their relation mode (the modern Battle tab tests combat::is_battle), chat lines their GM flag.
+- Window 1 fixes from the spec: 0x9c fills it like the other setters; seconds per line under 3 are 3 (FUN_10162ea0);
+  timestamps are added as lines come (a change of 0xb5 shows on new lines only).
+- Seen live 2026-10-28 (Lnxcsfix, 0xb4 1 with 0xc5 60 and 2 with 40): /say and NPC-style lines in window 2, the echo
+  and system lines in window 1, the GM prompt stacked on window 2 (mode 1) or window 1 (mode 2). Not done: rem4line /
+  rem4li2 (page overflow) and spoolmsg / splmsg2 (Chat Filters Hold), for both windows; the full log's tab switch
+  (Num+, message 8).

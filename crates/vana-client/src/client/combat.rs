@@ -19,8 +19,10 @@ pub struct ChatLog {
     /// whether its continuation lines are indented (the mode's flag, FUN_10127870).
     times: Vec<([u8; 3], bool, bool)>,
     /// Each line's chat mode (record byte 0: its colour and the full log's tab filters, FUN_101299f0), NO_MODE for the
-    /// lines printed without one.
+    /// lines printed without one, BATTLE + mode for battle messages.
     modes: Vec<u16>,
+    /// Each line's GM flag (record byte 1 bit 7, s2c 0x017 Attr bit 0): log window 1 always shows it, window 2 never.
+    gm: Vec<bool>,
     /// Lines changed in place (condensed battle lines) so far.
     edits: u64,
     /// A line that repeats the last one counts on it instead ("Target out of range. (x3)"; BattleMod's cancelmulti):
@@ -34,8 +36,25 @@ pub struct ChatLog {
 }
 
 pub const NO_MODE: u16 = 0xffff;
-/// Battle messages (print): the modern chat's Battle tab (not retail).
+/// Battle messages from older saves, without their mode: the modern chat's Battle tab (not retail).
 pub const BATTLE_MODE: u16 = 0xfffe;
+/// A battle message's mode is stored as BATTLE + its mode.
+pub const BATTLE: u16 = 0x100;
+
+/// A battle message's line (the modern chat's Battle tab).
+pub fn is_battle(mode: u16) -> bool {
+    mode == BATTLE_MODE || mode & 0xff00 == BATTLE
+}
+
+/// The mode a line was printed with (the log windows' masks test it); none for NO_MODE. An old save's battle line
+/// counts as a Battle Message (mode 80).
+pub fn log_mode(mode: u16) -> Option<u8> {
+    match mode {
+        NO_MODE => None,
+        BATTLE_MODE => Some(80),
+        m => Some(m as u8),
+    }
+}
 
 impl ChatLog {
     pub fn push(&mut self, s: impl Into<String>) {
@@ -46,14 +65,14 @@ impl ChatLog {
         self.push_line(s, colour, false, false, NO_MODE);
     }
 
-    /// A battle message's line.
-    pub fn push_battle(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, false, BATTLE_MODE);
+    /// A battle message's line and its mode.
+    pub fn push_battle(&mut self, s: String, colour: [u8; 4], mode: u8) {
+        self.push_line(s, colour, false, false, BATTLE | mode as u16);
     }
 
-    /// A line whose continuation lines are indented.
-    pub fn push_indented(&mut self, s: String, colour: [u8; 4]) {
-        self.push_line(s, colour, false, true, NO_MODE);
+    /// A line printed with a mode but no timestamp (event text).
+    pub fn push_event(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8) {
+        self.push_line(s, colour, false, indent, mode as u16);
     }
 
     /// A chat line (s2c 0x017 or our sends' echoes), which config 0xb5 stamps.
@@ -61,9 +80,12 @@ impl ChatLog {
         self.push_line(s, colour, true, indent, NO_MODE);
     }
 
-    /// A chat line with its mode.
-    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8) {
+    /// A chat line with its mode and the sender's GM flag.
+    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8, gm: bool) {
         self.push_line(s, colour, true, indent, mode as u16);
+        if let Some(g) = self.gm.last_mut() {
+            *g = gm;
+        }
     }
 
     fn push_line(&mut self, s: String, colour: [u8; 4], chat: bool, indent: bool, mode: u16) {
@@ -86,6 +108,7 @@ impl ChatLog {
         self.repeat = (!chat).then(|| (self.lines.len(), s.clone(), 1));
         self.times.push((super::cfgapply::local_hms(), chat, indent));
         self.modes.push(mode);
+        self.gm.push(false);
         self.lines.push((s, colour));
     }
 
@@ -120,6 +143,16 @@ impl ChatLog {
         &self.modes
     }
 
+    /// Line `k`'s print mode and GM flag, for the log windows' masks.
+    pub fn route(&self, k: usize) -> (Option<u8>, bool) {
+        (self.modes.get(k).and_then(|&m| log_mode(m)), self.gm.get(k).copied().unwrap_or(false))
+    }
+
+    /// Line `k` with the time it came in, whether it is a chat line and whether it indents.
+    pub fn timed(&self, k: usize) -> Option<(&(String, [u8; 4]), ([u8; 3], bool, bool))> {
+        Some((self.lines.get(k)?, *self.times.get(k)?))
+    }
+
     /// Lines with the time they came in, whether they are chat lines and whether they indent.
     pub fn iter_timed(&self) -> impl Iterator<Item = (&(String, [u8; 4]), ([u8; 3], bool, bool))> {
         self.lines.iter().zip(self.times.iter().copied())
@@ -148,6 +181,8 @@ struct SavedLine {
     time: [u8; 3],
     chat: bool,
     indent: bool,
+    #[serde(default)]
+    gm: bool,
 }
 
 /// Lines a character's history keeps.
@@ -158,7 +193,7 @@ impl ChatLog {
     pub fn save(&self, path: &std::path::Path) -> std::io::Result<()> {
         let from = self.lines.len().saturating_sub(HISTORY).max(self.restored);
         let saved: Vec<SavedLine> = (from..self.lines.len())
-            .map(|k| SavedLine { text: self.lines[k].0.clone(), colour: self.lines[k].1, mode: self.modes[k], time: self.times[k].0, chat: self.times[k].1, indent: self.times[k].2 })
+            .map(|k| SavedLine { text: self.lines[k].0.clone(), colour: self.lines[k].1, mode: self.modes[k], time: self.times[k].0, chat: self.times[k].1, indent: self.times[k].2, gm: self.gm[k] })
             .collect();
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir)?;
@@ -177,10 +212,12 @@ impl ChatLog {
             let [b, g, r, a] = l.colour;
             self.times.push((l.time, l.chat, l.indent));
             self.modes.push(l.mode);
+            self.gm.push(l.gm);
             self.lines.push((l.text, [b, g, r, a / 2 + a / 8]));
         }
         self.times.push((super::cfgapply::local_hms(), false, false));
         self.modes.push(NO_MODE);
+        self.gm.push(false);
         self.lines.push((divider.to_string(), [0x60, 0x60, 0x60, 0x60]));
         self.repeat = None;
         self.restored = self.lines.len();
@@ -345,6 +382,11 @@ fn filter_relation(w: &World, actor: u32, target: u32) -> usize {
 
 /// Chat lines of a message: hidden modes print nothing; a `1f` code overrides the mode's colour (with the
 /// config's text colours).
+/// The mode render colours a message's lines by: its text's 1f code, else the relation's.
+fn line_mode(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx) -> u8 {
+    bt.expand(id, ctx).and_then(|l| l.mode).unwrap_or_else(|| bt.mode(id, rel))
+}
+
 pub fn render(bt: &battle::BattleText, id: u16, rel: Relation, ctx: &Ctx, cfg: &crate::gamecfg::Values) -> Vec<(String, [u8; 4])> {
     let mode = bt.mode(id, rel);
     if mode == battle::HIDDEN {
@@ -560,8 +602,9 @@ fn print(w: &mut World, m: Msg) {
     {
         return;
     }
+    let mode = line_mode(&bt, m.id, relation(w, m.actor, m.target), &ctx);
     for (l, c) in lines {
-        w.chat.push_battle(l, c);
+        w.chat.push_battle(l, c, mode);
     }
 }
 
