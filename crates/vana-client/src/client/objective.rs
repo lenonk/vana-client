@@ -43,8 +43,10 @@ pub struct Objective {
     pub duration: u32,
     pub warn: u32,
     pub border: Border,
-    /// @0x26: the content gate.
+    /// @0x26: the content gate, kept from the first flag-8 packet (DAT_10480826 with DAT_104808a8 bit 1, which a
+    /// mode 0 does not clear).
     pub gate: u8,
+    gate_seen: bool,
     /// @0xa8 / @0xaa: group 0x1a title and description (+ 19).
     pub help: (u16, u16),
     /// @0x28: 128 bytes of bars or scoreboard.
@@ -91,7 +93,7 @@ impl Objective {
         }
         if f & 8 != 0 {
             self.gate = p.get(0x26).copied().unwrap_or(0);
-            self.flags |= 8;
+            (self.flags, self.gate_seen) = (self.flags | 8, true);
         }
         // FUN_10087990: always stored; the player's border parts are remade (or dropped at radius 0).
         let milli = |o| u32_at(p, o) as i32 as f32 * 0.001;
@@ -212,6 +214,13 @@ pub fn frame(gu: &GameUi, o: &mut Objective, secs: u32, busy: bool, bars: &mut B
         bars.title[3] = gu.lobby_msg(0x1a, title as usize, "");
         bars.help[3] = gu.lobby_msg(0x1a, desc as usize + 19, "");
     }
+}
+
+/// FUN_100cd040 with the gate (FUN_10087890): while a 0x075 gate is in force, another entity whose gate differs from
+/// our non-zero one is not drawn (+0xb2 bit 5): the fenced content's non-participants.
+pub fn gated(w: &World, gate: u8) -> bool {
+    let o = &w.objective;
+    o.gate_seen && o.gate != 0 && w.my_gate != 0 && gate != w.my_gate
 }
 
 /// cnttime's top (FUN_1012c7f0): under casttime while it is up, else at 94 under gaugewin, else 47.

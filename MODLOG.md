@@ -11227,9 +11227,13 @@ Follows "s2c 0x075: the battlefield countdown, objective bars and text".
   start = (-4 - deg / 15) x 15 (C division); part k at angle a = (start + 15 k) degrees wrapped to [-pi, pi]: position
   (cx + r sin a, the player's y, cz + r cos a), rotation (0, a, 0). near = |r - |player - c|| < render (y ignored):
   a part not yet on plays `efon` (+0x8ac bit 2 set), one on and no longer near plays `efof`.
-- Not done: the gate (flag 8, @0x26, FUN_10087890): while set, FUN_100cd040 hides (+0xb2 | 0x20) any other entity
-  whose +0x1d0 & 0xffffff1f is set when its +0x13f low nibble differs from ours (both non-zero); neither field is
-  parsed by us yet.
+- The gate (flag 8, @0x26; FUN_10087890 returns it once DAT_104808a8 bit 1 is set, which a mode 0 does not clear):
+  while it is non-zero FUN_100cd040 hides (+0xb2 | 0x20) any other entity of an ordinary class (+0x1d0 & 0xffffff1f,
+  FUN_1008e290: PCs, NPCs, monsters, pets, party) whose gate (+0x13f & 0xf = +0x13c bits 24..27) differs from our
+  non-zero one. The gates: 0x00D mask 4 u8 @0x44 low nibble (asm 0x1009aa6a), 0x00E mask 4 u8 @0x26 high nibble
+  (0x1009c7f3), ours 0x037 u8 @0x5a high nibble (0x1009d8d1); LSB fills all three from the Confrontation / Elvorseal
+  sub power. Ours: Entity.gate, World.my_gate, objective::gated in event.rs's hidden set. Live: Elvorseal sub power 13
+  and a fence with gateId 13 hid the bot and the NPC beside Lnxcsfix; removing Elvorseal showed them again.
 - Ours: client/border.rs (Parts, arc, update, remove; actor ids 0x0800_0000 | k; actor_place takes the arc). A
   removal stops the looping lp00 with the actor *(inf: retail frees the part's file with it)*.
 - Live (Lnxcsfix in 230, both UIs): `!exec player:objectiveUtility({fence={pos={x=..,z=..},radius=..}})` red and blue

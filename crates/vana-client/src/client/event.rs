@@ -2026,8 +2026,9 @@ pub fn hidden(w: &World) -> HashSet<u32> {
             Some(h) if takes_part(id) => h.contains(id),
             _ => e.flags & 2 != 0 || (!takes_part(id) && (filtered(*id) || trust)),
         };
-        // FUN_100cd040: a listed-only NPC the s2c 0x077 list lacks is not drawn (+0xb2 bit 7), events included.
-        if hide || e.unlisted {
+        // FUN_100cd040: a listed-only NPC the s2c 0x077 list lacks is not drawn (+0xb2 bit 7), events included; nor
+        // one outside our fenced content's gate (+0xb2 bit 5).
+        if hide || e.unlisted || super::objective::gated(w, e.gate) {
             out.insert(*id);
         }
     }

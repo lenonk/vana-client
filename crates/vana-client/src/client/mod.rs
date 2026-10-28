@@ -441,6 +441,8 @@ struct Entity {
     ride: net::Ride,
     /// The Geomancer Indi aura (0x00D @0x42, client/indi.rs).
     aura: indi::Aura,
+    /// +0x13f & 0xf: the fenced-content gate (0x00D @0x44 / 0x00E @0x26), client/objective.rs gated.
+    gate: u8,
     /// Entity +0x1d8: an "menu    ncol" index event op 0xae 1 forces the name colour to, 0x17 none (op 0xae 2).
     name_ncol: u16,
     /// Name-colour marks (net::Marks) and SubKind 2..4 (doors, lifts, ships); a female PC (0x00D @0x20 bit 15 clear).
@@ -1358,6 +1360,7 @@ fn self_entity(w: &World) -> Entity {
         hitbox: 0.0,
         ride: Default::default(),
         aura: Default::default(),
+        gate: 0,
         name_ncol: 0x17,
         marks: net::Marks::default(),
         female: false,
@@ -4000,6 +4003,7 @@ fn place_mogdoor(w: &mut World) {
             hitbox: 0.0,
             ride: Default::default(),
             aura: Default::default(),
+            gate: 0,
             name_ncol: 0x17,
             marks: net::Marks::default(),
             female: false,
@@ -5029,6 +5033,8 @@ struct World {
     my_ride: net::Ride,
     /// Our Geomancer Indi aura (s2c 0x037 @0x58, client/indi.rs).
     my_aura: indi::Aura,
+    /// Our fenced-content gate (s2c 0x037 @0x5a high nibble, asm 0x1009d8d1).
+    my_gate: u8,
     /// Our actor's "init" ran (+0x128 bit 29; again after each zone-in, as a new actor).
     my_init_done: bool,
     /// Our own entity's motion name bases and op 0xab flag (Entity::motion_bases).
@@ -7084,6 +7090,7 @@ impl App {
                             rebuild_models: false,
                             my_ride: Default::default(),
                             my_aura: Default::default(),
+                            my_gate: 0,
                             my_init_done: false,
                             my_motion_bases: Vec::new(),
                             my_reset_bases: false,
@@ -7994,6 +8001,7 @@ impl App {
                         hitbox: 0.0,
                         ride: Default::default(),
                         aura: Default::default(),
+                        gate: 0,
                         name_ncol: 0x17,
                         marks: net::Marks::default(),
                         female: false,
@@ -8037,6 +8045,9 @@ impl App {
                     }
                     if let Some(r) = e.ride {
                         entry.ride = r;
+                    }
+                    if let Some(g) = e.gate {
+                        entry.gate = g;
                     }
                     // FUN_1009ad20: a new element or size while on drops the shown aura now.
                     if let Some(b) = e.indi
@@ -8416,7 +8427,8 @@ impl App {
                 }
                 NetEvent::KeyItems { .. } => {}
                 NetEvent::Music { slot, id } => world.music.set_slot(slot, id),
-                NetEvent::SelfStatus { speed, status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer } => {
+                NetEvent::SelfStatus { speed, status, hpp, dead, pet, flags, icons, team, fellow, plate, ride, indi, fish_timer, gate } => {
+                    world.my_gate = gate;
                     // LSB sends Death (3) for a character leaving by a zone line (its isDead() counts status Disappear)
                     // with HP left: not a death, the status stays (ours, inferred).
                     let status = if matches!(status, 2 | 3) && hpp > 0 { world.server_status } else { status };
