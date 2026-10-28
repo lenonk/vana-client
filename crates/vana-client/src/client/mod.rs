@@ -8307,6 +8307,7 @@ impl App {
                 NetEvent::Scheduler { actor, name, .. } => combat::on_scheduler(world, actor, name),
                 NetEvent::MapScheduler { ids, indices, name } => combat::on_map_scheduler(world, ids, indices, name),
                 NetEvent::Dig { id, index, flags } => ride::on_dig(world, id, index, flags),
+                NetEvent::MagicScheduler { ids, indices, file, kind } => combat::on_magic_scheduler(world, ids, indices, file, kind),
                 NetEvent::Status(s) => log::info!("net: {s}"),
                 NetEvent::SystemMessage { id, para, para2 } => combat::on_system_message(world, id, [para as i32, para2 as i32]),
                 NetEvent::Fragments(p) => servmes::on_fragment(world, &p),

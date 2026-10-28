@@ -11264,3 +11264,18 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
   lowered its head and dug (dirt), the rider leaned; "You dig and you dig, but find nothing.".
 - 0x04F (no data): G+0x19a54's 16 equipment records {u32, u8} zeroed, then the hook DAT_104b1774. LSB sends it at login
   (before the 0x050s), on Monstrosity changes and from char_entity. Ours: every equip slot emptied.
+
+## s2c 0x03A: magic schedulers (2026-10-28)
+
+- Handler 0x1009d9d0 (registered at 0x10094502). {UniqueNoCas @4, UniqueNoTar @8, ActIndexCast @0xc, ActIndexTar @0xe,
+  fileNum @0x10, type @0x12}: both indices valid, slots present with matching ids, models in (+0x120 bit 9), the same
+  refusals as 0x039 (flags 0x800 in an event, 0x20 with +0x120 bit 7) and +0x124 bit 31; then by type (jump table
+  0x1009dce0, 0..0xc) the caster model's vtable slot on (target model, fileNum, "main"): 0 +0x2c4 (magic; its two
+  extra arguments 0, so no text), 1 +0x2d0 (item), 2 +0x2cc, 3 +0x2d4, 4 +0x2d8, 5 +0x2dc, 6 +0x2f0 (weapon skill
+  action), 7 +0x2f8 (swing), 8 +0x2e0, 9 +0x2f4 (monster skill action), 10 +0x2e4, 11 +0x2e8, 12 +0x2ec — the slots of
+  "Event ops 0x73 / 0xad / 0xc4 / 0x7d" (kinds 1, 0, 2..5, 0x10, 0x11, 6, 0x12, 7..9).
+- LSB: independentAnimation(target, id, mode) (`!menu`'s hearts 251 / notes 252 / lightbulb 250 at mode 4 = file
+  0xc7ef + id, Full Speed Ahead, warps, the Archaic Gear).
+- Ours: combat::on_magic_scheduler, combat::action_file (the event VM's, moved there). Live (Lnxcsfix in 230, `!exec
+  player:independentAnimation(player, 251, 4)` ..): hearts and notes over her head, Cure's light pillars for mode 0
+  id 1; the lightbulb's file 51433 ran (not caught in the shot). Refusal flags not modelled.

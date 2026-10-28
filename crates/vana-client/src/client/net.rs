@@ -564,6 +564,8 @@ pub enum NetEvent {
     Scheduler { actor: u32, target: u32, name: [u8; 4] },
     /// s2c 0x039 (GP_SERV_COMMAND_MAPSCHEDULOR): a zone scheduler on (caster, target), ids and ActIndexes.
     MapScheduler { ids: (u32, u32), indices: (u16, u16), name: [u8; 4] },
+    /// s2c 0x03A (GP_SERV_COMMAND_MAGICSCHEDULOR): an action file on (caster, target) by type.
+    MagicScheduler { ids: (u32, u32), indices: (u16, u16), file: u16, kind: u8 },
     /// s2c 0x02F (GP_SERV_COMMAND_DIG): TarUniqueNo, TarActIndex, Flags.
     Dig { id: u32, index: u16, flags: u8 },
     /// s2c 0x11E: ActIndex @4 used /jump.
@@ -1138,6 +1140,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x028 => tx.send(NetEvent::Action(crate::net::action::parse(&p.data)))?,
                     0x038 => tx.send(NetEvent::Scheduler { actor: p.u32(4), target: p.u32(8), name: p.u32(12).to_le_bytes() })?,
                     0x02F => tx.send(NetEvent::Dig { id: p.u32(4), index: p.u16(8), flags: p.u8(0xa) })?,
+                    0x03A => tx.send(NetEvent::MagicScheduler { ids: (p.u32(4), p.u32(8)), indices: (p.u16(0xc), p.u16(0xe)), file: p.u16(0x10), kind: p.u8(0x12) })?,
                     0x039 => tx.send(NetEvent::MapScheduler { ids: (p.u32(4), p.u32(8)), indices: (p.u16(0x10), p.u16(0x12)), name: p.u32(12).to_le_bytes() })?,
                     0x051 => tx.send(NetEvent::SelfLook(look_at(&p, 4)))?,
                     0x00E => tx.send(NetEvent::Entity(entity(&p, EntityKind::Npc)))?,

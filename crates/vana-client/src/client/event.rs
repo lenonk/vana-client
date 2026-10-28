@@ -610,29 +610,7 @@ impl LiveHost<'_> {
     }
 
     fn action_file(&mut self, kind: u8, id: u32, a: u32, b: u32) {
-        use crate::fx::sched::Who;
-        use crate::net::action::{Action, ActionResult, ActionTarget};
-        if let Some(file) = crate::fx::event_action_file(kind, id) {
-            self.w.effects.on_event_scheduler(file, u32::from_le_bytes(*b"main"), Who::Actor(a), Who::Actor(b));
-            return;
-        }
-        // Vtable +0x3e4 builds an action of one zeroed record (DAT_1032cfac) whose animation is `id`.
-        let category = match kind {
-            0x10 => 3,
-            0x11 => 1,
-            0x12 => 0xb,
-            _ => return,
-        };
-        let result = ActionResult { animation: id as u16, ..Default::default() };
-        let act = Action { actor: a, category, targets: vec![ActionTarget { id: b, results: vec![result] }], ..Default::default() };
-        if category == 1 {
-            // FUN_100d67b0 (characters only): a swing unless one is already playing (+0x2a4) *(inf: not checked)*.
-            if let Some((_, swing, _, _)) = super::combat::start_attack(self.w, a, Some(b), None) {
-                self.w.effects.on_action(&act, Some(swing));
-            }
-        } else {
-            self.w.effects.on_action(&act, None);
-        }
+        super::combat::action_file(self.w, kind, id, a, b);
     }
 
     fn arg_int(args: &[Arg], i: usize) -> Option<i32> {

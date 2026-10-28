@@ -1360,6 +1360,52 @@ pub(super) fn on_scheduler(w: &mut World, actor: u32, name: [u8; 4]) {
     w.effects.on_scheduler(actor, actor, u32::from_le_bytes(name));
 }
 
+/// A model's vtable +0x2c4..+0x2f8 by kind (event ops 0x73 / 0xad / 0xc4, s2c 0x03A): a file's `main` on A -> B, or
+/// for 0x10 / 0x11 / 0x12 an action built on one zeroed record (vtable +0x3e4, DAT_1032cfac) whose animation is `id`.
+pub(super) fn action_file(w: &mut World, kind: u8, id: u32, a: u32, b: u32) {
+    use crate::fx::sched::Who;
+    use crate::net::action::{Action, ActionResult, ActionTarget};
+    if let Some(file) = crate::fx::event_action_file(kind, id) {
+        w.effects.on_event_scheduler(file, u32::from_le_bytes(*b"main"), Who::Actor(a), Who::Actor(b));
+        return;
+    }
+    let category = match kind {
+        0x10 => 3,
+        0x11 => 1,
+        0x12 => 0xb,
+        _ => return,
+    };
+    let result = ActionResult { animation: id as u16, ..Default::default() };
+    let act = Action { actor: a, category, targets: vec![ActionTarget { id: b, results: vec![result] }], ..Default::default() };
+    if category == 1 {
+        // FUN_100d67b0 (characters only): a swing unless one is already playing (+0x2a4) *(inf: not checked)*.
+        if let Some((_, swing, _, _)) = start_attack(w, a, Some(b), None) {
+            w.effects.on_action(&act, Some(swing));
+        }
+    } else {
+        w.effects.on_action(&act, None);
+    }
+}
+
+/// 0x03A (FUN_1009d9d0) {UniqueNoCas @4, UniqueNoTar @8, ActIndexCast @0xc, ActIndexTar @0xe, fileNum @0x10, type
+/// @0x12}: both actors known by index and id with their models in, then by type (jump table 0x1009dce0) the caster's
+/// vtable slot +0x2c4 (magic, no text), +0x2d0 item, +0x2cc, +0x2d4, +0x2d8, +0x2dc, +0x2f0 (weapon skill), +0x2f8
+/// (swing), +0x2e0, +0x2f4 (monster skill), +0x2e4, +0x2e8, +0x2ec on the target with `main`. LSB's
+/// independentAnimation.
+pub(super) fn on_magic_scheduler(w: &mut World, ids: (u32, u32), indices: (u16, u16), file: u16, kind: u8) {
+    const KINDS: [u8; 13] = [1, 0, 2, 3, 4, 5, 0x10, 0x11, 6, 0x12, 7, 8, 9];
+    let Some(&k) = KINDS.get(kind as usize) else { return };
+    let ok = |id: u32, index: u16| {
+        let known = if id == w.my_id { w.my_index == index } else { w.entities.get(&id).is_some_and(|e| e.index == index) };
+        known && w.actors.get(&id).is_some_and(|a| a.character.is_some())
+    };
+    if !(ok(ids.0, indices.0) && ok(ids.1, indices.1)) {
+        return;
+    }
+    log::debug!("0x03A type {kind} file {file} on {:#x} -> {:#x}", ids.0, ids.1);
+    action_file(w, k, file as u32, ids.0, ids.1);
+}
+
 /// 0x039 (FUN_1009dd20): a scheduler of the zone's files (DAT_1065cb04 vt+0x18 = FUN_1018b770) on no actors when every
 /// id and index is 0 (LSB's entityVisualPacket at zone-in: '1pb1', 'on00'), else on the two actors, both known by
 /// index and id with their models in. Held until the zone's effects are loaded (retail handles packets after the load).
