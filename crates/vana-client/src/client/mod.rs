@@ -3831,6 +3831,8 @@ struct Actor {
     /// Regions 0..2 the current motion has no chunk for: the motion still playing there, its ticks, played once
     /// (FUN_100cb500 leaves those region queues alone).
     keep: [Option<(String, f32, bool)>; 3],
+    /// The motion regions in the last pose (a bit each; logged at debug when it changes).
+    regions: u8,
     /// Event op 0xae 5 (model +0x798): the leader whose motion frame this one's never runs ahead of (FUN_100cb400).
     motion_link: Option<u32>,
     /// The current motion plays once (a one-shot or a single-count scheduler motion): it holds its last frame,
@@ -3941,6 +3943,7 @@ impl Actor {
             ticks: 0.0,
             prev: None,
             keep: Default::default(),
+            regions: 0,
             once: false,
             blend: 0.0,
             top: -2.0,
@@ -11643,6 +11646,11 @@ impl App {
                         if !playing {
                             a.blink = None;
                         }
+                    }
+                    let regions = mask(&anims) & 7;
+                    if regions != a.regions {
+                        log::debug!(target: "motion", "actor {id:#x}: regions {:#05b} -> {regions:#05b} ({name}, base {base}, keep {:?})", a.regions, a.keep.iter().map(|k| k.as_ref().map(|k| k.0.as_str())).collect::<Vec<_>>());
+                        a.regions = regions;
                     }
                     a.blend += dt * 60.0;
                     if a.blend >= a.blend_len {
