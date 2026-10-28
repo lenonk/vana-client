@@ -888,7 +888,7 @@ mod tests {
         // One MZB entry listed in every cell of a 256-unit grid, for cam_ray.
         let bounds = vec![tris.iter().flatten().fold((Vec3::MAX, Vec3::MIN), |(lo, hi), v| (lo.min(*v), hi.max(*v)))];
         let grid = Some(Grid { w: 64, h: 64, cells: vec![vec![0]; 64 * 64], entries: vec![(0, n as u32, false)], bounds });
-        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], obj_water: vec![0.0], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
+        Ground { tris, normals, y_range: vec![(f32::MIN, f32::MAX); n], degenerate: vec![false; n], cells, grid, body: Cell::new(Body::NEW), covers: vec![false; n], map_keys: vec![0; n], kinds: vec![0; n], areas: vec![0; n], objs: vec![0; n], obj_lights: vec![[0; 4]], obj_water: vec![0.0], obj_vis: vec![0], doors: vec![0; n], open: Default::default(), cam_pass: vec![false; n], decal: vec![true; n], furniture: Vec::new(), furn_mesh: Vec::new(), furcc: true }
     }
 
     fn quad(x0: f32, x1: f32, y0: f32, y1: f32) -> [Vec3; 4] {
