@@ -307,6 +307,14 @@ pub fn open_magic(w: &mut World, ty: u16, list_mode: bool, exclude: u32) {
 /// passed on to sub-lists and the Escape back to the parent).
 pub fn open_ability(w: &mut World, ty: u16, sortable: bool) {
     let rows = ability_rows(w, ty);
+    // FUN_10223ec0 (type 2): with a pet and no pet command, c2s 0x01C {our ActIndex, 1} (FUN_100fc9c0); LSB resends
+    // 0x0AC.
+    if ty == 2 && rows.is_empty() && w.my_pet != 0 {
+        let mut b = w.my_index.to_le_bytes().to_vec();
+        b.extend([0, 0]);
+        b.extend(1u32.to_le_bytes());
+        let _ = w.net.commands.send(super::net::NetCommand::Packet { id: 0x01C, body: b });
+    }
     // Ours: the modern UI sorts Job Abilities, Weapon Skills and their sub-lists however they were opened.
     let parent = ABILITY_TYPES.get(ty as usize).map_or(0, |t| t.0);
     let sort = (sortable || (w.modern && (matches!(ty, 1 | 3) || matches!(parent, 1 | 3)))).then_some("menu    abisortw");

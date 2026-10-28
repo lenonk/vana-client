@@ -11314,3 +11314,10 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
 - LSB (c2s 0x017) resends the entity's full spawn (and 0x067 sync for PCs within 50 yalms).
 - Ours: client::charreq before every Entity update, World.index_masks (cleared at the zone load *(inf)*). Live: an idle
   25 s in Southern San d'Oria with bots and NPCs sent none (LSB's spawns are full).
+
+## c2s 0x01C: the pet command list asked for again (2026-10-28)
+
+- FUN_10223ec0 (the ability list builder) for type 2 (Pet Commands): with a pet (FUN_101cc510) and no row, it sends
+  FUN_100fc9c0(our ActIndex DAT_10485f7a, 1) = c2s 0x01C {u16 ActIndex @4, u32 1 @8}; FUN_10222e20 does the same when
+  an ability id is looked up and not found in the list while a pet is out. LSB answers with 0x0AC (COMMAND_DATA).
+- Ours: magic::open_ability (type 2 only). Not seen live (LSB always sends the pet's commands).
