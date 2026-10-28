@@ -82,7 +82,7 @@ fn help(ui: &mut Ui, m: &super::Modern, (name, desc): &(String, String)) {
     ui.add_space(8.0);
     ui.label(egui::RichText::new(name).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
     if !desc.is_empty() {
-        ui.label(egui::RichText::new(desc).size(m.theme.small).color(m.theme.color("text")));
+        super::gametext::label(ui, m, desc, m.theme.small, m.theme.color("text"));
     }
 }
 

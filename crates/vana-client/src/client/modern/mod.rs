@@ -15,6 +15,7 @@ mod config;
 mod craft;
 mod equip;
 mod extras;
+mod gametext;
 mod hud;
 mod inspect;
 mod items;
@@ -917,7 +918,7 @@ impl Modern {
                     ui.label(egui::RichText::new(title).size(self.theme.ui).family(FontFamily::Name(STRONG.into())).color(self.theme.color("gold")));
                 }
                 if !body.is_empty() {
-                    ui.label(egui::RichText::new(body).size(self.theme.small).color(self.theme.color("text")));
+                    gametext::label(ui, self, body, self.theme.small, self.theme.color("text"));
                 }
             });
             ui.painter().set(bg, borders::window(self, "window_tooltip", inner.response.rect));

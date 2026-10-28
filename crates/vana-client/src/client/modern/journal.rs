@@ -291,7 +291,7 @@ fn description(ui: &mut Ui, m: &super::Modern, name: &str, text: &str) {
         ui.set_min_height(DESC_H - 20.0);
         ui.label(egui::RichText::new(name).size(m.theme.small).family(FontFamily::Name(super::STRONG.into())).color(m.theme.color("gold")));
         ui.add_space(2.0);
-        ui.label(egui::RichText::new(text).size(m.theme.small).color(m.theme.color("text")));
+        super::gametext::label(ui, m, text, m.theme.small, m.theme.color("text"));
     });
 }
 

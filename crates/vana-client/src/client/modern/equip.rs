@@ -19,8 +19,6 @@ const GRID_W: f32 = 4.0 * SLOT + 3.0 * GAP;
 const LIST_W: f32 = 340.0;
 const ROW: f32 = 34.0;
 const ICON: f32 = 24.0;
-/// The resistances in s2c 0x061's order (def_elem).
-const ELEMENTS: [&str; 8] = ["icons/fire", "icons/ice", "icons/wind", "icons/earth", "icons/lightning", "icons/water", "icons/light", "icons/dark"];
 const STATS: [&str; 7] = ["STR", "DEX", "VIT", "AGI", "INT", "MND", "CHR"];
 /// The equipment slots' names by slot.
 const SLOTS: [&str; 16] = ["Main", "Sub", "Range", "Ammo", "Head", "Body", "Hands", "Legs", "Feet", "Neck", "Waist", "Ear 1", "Ear 2", "Ring 1", "Ring 2", "Back"];
@@ -139,7 +137,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.add_space(10.0);
                 // The resistances in the slots' columns, two rows of four.
                 let (area, _) = ui.allocate_exact_size(vec2(GRID_W, 2.0 * 26.0), Sense::hover());
-                for (k, icon) in ELEMENTS.iter().enumerate() {
+                for (k, icon) in super::gametext::ELEMENTS.iter().enumerate() {
                     let r = Rect::from_min_size(area.min + vec2((k % 4) as f32 * PITCH, (k / 4) as f32 * 26.0), vec2(SLOT, 22.0));
                     ui.painter().rect_filled(r, 4.0, m.theme.color("charcoal").gamma_multiply(0.7));
                     if let Some(s) = m.art.sprite(icon) {

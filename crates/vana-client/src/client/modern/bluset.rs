@@ -109,7 +109,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 ui.label(egui::RichText::new(name).size(m.theme.small).family(FontFamily::Name(STRONG.into())).color(m.theme.color("gold")));
                 ui.label(egui::RichText::new(head).size(m.theme.small).color(m.theme.color("muted")));
             });
-            ui.label(egui::RichText::new(desc).size(m.theme.small).color(m.theme.color("text")));
+            super::gametext::label(ui, m, desc, m.theme.small, m.theme.color("text"));
             ui.label(egui::RichText::new(foot).size(m.theme.small).color(m.theme.color("muted")));
         }
     });

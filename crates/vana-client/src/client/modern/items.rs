@@ -324,9 +324,8 @@ fn body(ui: &mut Ui, m: &super::Modern, info: &iteminfo::Info, icon: Option<egui
         ui.painter().text(tag.center(), Align2::CENTER_CENTER, label, f, m.theme.color("gold"));
         x = tag.max.x + 4.0;
     }
-    let line = |ui: &mut Ui, s: &str, size: f32, c: Color32| {
-        ui.add(egui::Label::new(egui::RichText::new(s).size(size).color(c)).wrap());
-    };
+    // Game text: its element gaiji as the pack's icons.
+    let line = |ui: &mut Ui, s: &str, size: f32, c: Color32| super::gametext::label(ui, m, s, size, c);
     if !info.line2.is_empty() {
         line(ui, &info.line2.join("  "), m.theme.small, m.theme.color("muted"));
     }
