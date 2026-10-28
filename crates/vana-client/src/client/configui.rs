@@ -656,6 +656,11 @@ impl ConfigUi {
                 continue;
             }
             draw_page(self, w, top, gu, v, sw, sh);
+            // FUN_1019b030: the cursor on Misc. 2's "Compact 1" (child 6) opens keylayou at that button's top right, 14
+            // up; elsewhere it closes.
+            if top && w.name == "conf6win" && w.cursor == 6 {
+                rects.extend(keylayou(gu, v, &w.full(), Self::offset(w, sw, sh), sw, sh));
+            }
             if let Some(r) = settings_rect(gu, w, sw, sh) {
                 // A frame with a blank config button and the game font (our addition).
                 gu.frame(r[0], r[1], r[2], r[3]);
@@ -673,6 +678,40 @@ impl ConfigUi {
         }
         rects
     }
+}
+
+/// keylayou's cells (table 0x1037a3e8): the key assignment each shows (configs 0x4a.., k1assign's).
+const KEYLAYOU_CELLS: [u16; 20] = [0x4a, 0x4c, 0x4b, 0x4d, 0x63, 0x5f, 0x61, 0x5e, 0x5c, 0x60, 0x5d, 0x62, 0x65, 0x64, 0x4e, 0x50, 0x4f, 0x51, 0x57, 0x56];
+
+/// Table 0x1037a418: a key's character (FUN_101afce0) to its key1topu cap, '!' (0x21) to '_' (0x5f).
+const KEY_CAPS: [u16; 63] = [
+    135, 340, 411, 373, 324, 374, 339, 408, 409, 412, 319, 92, 320, 93, 36, 32, 23, 24, 25, 26, 27, 28, 29, 30, 31, 104, 410, 402, 323, 403, 65, 37,
+    66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 308, 426, 309, 401, 106,
+];
+
+/// The cap of a DIK key; none for a key without a character (the cell keeps its blank cap, sprite 21).
+pub fn key_cap(dik: u32) -> Option<usize> {
+    let s = super::configui2::dik_char(dik).as_bytes();
+    let c = *s.first().filter(|_| s.len() == 1)?;
+    KEY_CAPS.get(c.checked_sub(0x21)? as usize).map(|&k| k as usize).filter(|&k| k != 0)
+}
+
+/// keylayou (FUN_1019d5e0 / FUN_1019d6b0): the controls picture (windowps 488) with each cell's assigned key cap from
+/// key1topu (key1top in Japanese), placed (FUN_10119110) at `page`'s child 6's top right, 14 up.
+fn keylayou(gu: &mut GameUi, v: &Values, page: &str, (dx, dy): (f32, f32), sw: f32, sh: f32) -> Option<[f32; 4]> {
+    const KEYLAYOU: &str = "menu    keylayou";
+    let (px, py) = gu.window_xy(page, sw, sh)?;
+    let c6 = gu.menu_def(page)?.elements.iter().skip(1).find(|e| e.id == 6).map(|e| (e.x as f32 + e.w as f32, e.y as f32))?;
+    let target = (px + dx + c6.0, py + dy + c6.1 - 14.0);
+    let (kx, ky) = gu.window_xy(KEYLAYOU, sw, sh)?;
+    let win = gu.lobby_window_off(KEYLAYOU, sw, sh, (target.0 - kx, target.1 - ky), None, false, &[])?;
+    for (id, r) in &win.children {
+        let Some(&cfg) = KEYLAYOU_CELLS.get(*id as usize - 1) else { continue };
+        if let Some(k) = key_cap(v.get(cfg)) {
+            gu.sprite("menu    key1topu", k, r[0], r[1], 0x8080_8080);
+        }
+    }
+    Some(win.frame)
 }
 
 /// A layout page as FUN_101144b0 draws it plus the config handler's markers and slider fills (FUN_1018f4a0,

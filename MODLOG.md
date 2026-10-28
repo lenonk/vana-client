@@ -11010,3 +11010,16 @@ to the open full log (FUN_10138230 case 8): the next tab of the list (English: W
 0xdc, Assist E 0xdd / 0xde). The strip (FUN_10137b80): the selected tab's sprite advances 64, the others 30. Every
 open starts on Window 1. Ours: logwin.rs `full_tabs`, `next_tab`, `tab_shows`, `LogWin::prepare_tab` (a channel tab
 keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)*). Seen live 2026-10-28.
+
+## Config: keylayou, the compact keyboard's controls picture (2026-10-28)
+
+- Misc. 2 (conf6win, FUN_1019b030 each frame): with its cursor on child 6 ("Compact 1") "menu    keylayou" opens,
+  moved (FUN_10119110) to that child's top right, 14 up (rect cached at open, FUN_1019af80); any other cursor closes
+  it. (conf1win's copy at child 4, FUN_10196c90, has no layout in 39542: dead.)
+- keylayou (vt 0x103370f8): windowps 488 (the controls picture: Move, Autorun, Confirm, Select Window, Heal, Change
+  View, Cancel, Zoom, Toggle Walk / Run, Open Menu, Open Input Window, Screenshot, Hide Windows) and 20 cells. Its open
+  (FUN_1019d5e0) reads each cell's key assignment (configs 0x4a, 0x4c, 0x4b, 0x4d, 0x63, 0x5f, 0x61, 0x5e, 0x5c,
+  0x60, 0x5d, 0x62, 0x65, 0x64, 0x4e, 0x50, 0x4f, 0x51, 0x57, 0x56, table 0x1037a3e8), the key's character
+  (FUN_101afce0: DIK -> table FUN_101afd10 builds per language) and the cap sprite (table 0x1037a418 by character);
+  the draw (FUN_1019d6b0) puts each cap (library key1topu, key1top in Japanese; 0 -> sprite 21, the blank cap) on its
+  cell. Ours: configui.rs `keylayou`, `key_cap`. Checked offscreen (topbar-shot --config configwi:6,conf6win:6).
