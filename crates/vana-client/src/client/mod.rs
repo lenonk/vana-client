@@ -11077,6 +11077,12 @@ impl App {
         }
         gfx.egui_state.handle_platform_output(&gfx.window, platform);
         let jobs = ctx.tessellate(output.shapes, output.pixels_per_point);
+        // egui-wgpu writes its meshes too (update_buffers): counted with ours.
+        let egui_bytes: usize = jobs.iter().map(|j| match &j.primitive {
+            egui::epaint::Primitive::Mesh(m) => m.vertices.len() * std::mem::size_of::<egui::epaint::Vertex>() + m.indices.len() * 4,
+            egui::epaint::Primitive::Callback(_) => 0,
+        }).sum();
+        crate::render::WRITTEN.fetch_add(egui_bytes as u64, std::sync::atomic::Ordering::Relaxed);
         let m_ui = Instant::now();
 
         let frame = match gfx.surface.get_current_texture() {

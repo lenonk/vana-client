@@ -3,6 +3,7 @@
 //! pixel's footprint, upscaling is Catmull-Rom.
 
 use super::Gpu;
+use super::Put;
 
 const SHADER: &str = r#"
 struct U { src: vec2<f32>, dst: vec2<f32>, gamma: vec4<f32> };
@@ -168,7 +169,7 @@ impl SceneScale {
     pub fn blit(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, dst: &wgpu::TextureView, dst_size: [u32; 2], gamma: [f32; 3]) {
         let Some(t) = &self.target else { return };
         let u = [t.size[0] as f32, t.size[1] as f32, dst_size[0].max(1) as f32, dst_size[1].max(1) as f32, gamma[0], gamma[1], gamma[2], 1.0];
-        gpu.queue.write_buffer(&self.uniform, 0, bytemuck::cast_slice(&u));
+        gpu.queue.put(&self.uniform, 0, bytemuck::cast_slice(&u));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("scene scale"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view: dst, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::BLACK), store: wgpu::StoreOp::Store } })],

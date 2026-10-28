@@ -6,6 +6,7 @@ use super::Gpu;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use super::Put;
 
 const WGSL: &str = r#"
 @group(0) @binding(0) var depth: texture_depth_2d;
@@ -116,7 +117,7 @@ impl Occlusion {
             self.out_buf = Some((device.create_buffer(&wgpu::BufferDescriptor { label: Some("occlusion"), size: c, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false }), c));
         }
         let (qb, ob) = (&self.query_buf.as_ref().unwrap().0, &self.out_buf.as_ref().unwrap().0);
-        gpu.queue.write_buffer(qb, 0, bytemuck::cast_slice(&words));
+        gpu.queue.put(qb, 0, bytemuck::cast_slice(&words));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("occlusion"),
             layout: &self.layout,

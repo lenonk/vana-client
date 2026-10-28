@@ -9,6 +9,7 @@ use glam::Mat4;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use super::Put;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -737,31 +738,31 @@ impl EffectsGpu {
         let mut redraw = self.draw_group.is_none();
         if reg.ops_dirty {
             rebind |= Self::fit(gpu, &mut self.ops, reg.ops.len() * 4, "effects ops");
-            q.write_buffer(&self.ops.0, 0, bytemuck::cast_slice(&reg.ops));
+            q.put(&self.ops.0, 0, bytemuck::cast_slice(&reg.ops));
             reg.ops_dirty = false;
         }
         if reg.keys_dirty {
             rebind |= Self::fit(gpu, &mut self.keys, reg.key_data.len() * 8, "effects keys");
             rebind |= Self::fit(gpu, &mut self.key_desc, reg.key_desc.len() * 8, "effects key table");
-            q.write_buffer(&self.keys.0, 0, bytemuck::cast_slice(&reg.key_data));
-            q.write_buffer(&self.key_desc.0, 0, bytemuck::cast_slice(&reg.key_desc));
+            q.put(&self.keys.0, 0, bytemuck::cast_slice(&reg.key_data));
+            q.put(&self.key_desc.0, 0, bytemuck::cast_slice(&reg.key_desc));
             reg.keys_dirty = false;
         }
         if reg.paths_dirty {
             rebind |= Self::fit(gpu, &mut self.paths, reg.path_data.len() * 16, "effects paths");
-            q.write_buffer(&self.paths.0, 0, bytemuck::cast_slice(&reg.path_data));
+            q.put(&self.paths.0, 0, bytemuck::cast_slice(&reg.path_data));
             reg.paths_dirty = false;
         }
         if reg.sprites_dirty {
             redraw |= Self::fit(gpu, &mut self.sverts, reg.sprite_verts.len() * 36, "effects sprite vertices");
             redraw |= Self::fit(gpu, &mut self.sframes, reg.sprite_frame_table.len() * 8, "effects sprite frames");
-            q.write_buffer(&self.sverts.0, 0, bytemuck::cast_slice(&reg.sprite_verts));
-            q.write_buffer(&self.sframes.0, 0, bytemuck::cast_slice(&reg.sprite_frame_table));
+            q.put(&self.sverts.0, 0, bytemuck::cast_slice(&reg.sprite_verts));
+            q.put(&self.sframes.0, 0, bytemuck::cast_slice(&reg.sprite_frame_table));
             reg.sprites_dirty = false;
         }
         if reg.morphs_dirty {
             redraw |= Self::fit(gpu, &mut self.mdata, reg.morph_data.len() * 4, "effects morph data");
-            q.write_buffer(&self.mdata.0, 0, bytemuck::cast_slice(&reg.morph_data));
+            q.put(&self.mdata.0, 0, bytemuck::cast_slice(&reg.morph_data));
             reg.morphs_dirty = false;
         }
         if fx.trails_dirty {
@@ -770,7 +771,7 @@ impl EffectsGpu {
                 if Self::fit(gpu, &mut self.trails, words.len() * 4, "effects trails") {
                     self.trail_group = None;
                 }
-                q.write_buffer(&self.trails.0, 0, bytemuck::cast_slice(&words));
+                q.put(&self.trails.0, 0, bytemuck::cast_slice(&words));
             }
             fx.trails_dirty = false;
         }
@@ -783,7 +784,7 @@ impl EffectsGpu {
         }
         rebind |= Self::fit(gpu, &mut self.slots, fx.slots.len() * SLOT_WORDS * 4, "effects slots");
         if !fx.slots.is_empty() {
-            q.write_buffer(&self.slots.0, 0, bytemuck::cast_slice(&fx.slots));
+            q.put(&self.slots.0, 0, bytemuck::cast_slice(&fx.slots));
         }
         for id in std::mem::take(&mut fx.reg.new_meshes) {
             self.upload_mesh(gpu, fx, id);
@@ -801,10 +802,10 @@ impl EffectsGpu {
         }
         for wr in std::mem::take(&mut fx.writes) {
             match wr {
-                Write::Full(e, el) => q.write_buffer(&self.elems, (e as usize * w::WORDS * 4) as u64, bytemuck::cast_slice(&el.0)),
-                Write::Words(e, off, words) => q.write_buffer(&self.elems, ((e as usize * w::WORDS + off) * 4) as u64, bytemuck::cast_slice(&words)),
-                Write::Parts(first, recs) => q.write_buffer(&self.parts, (first as usize * PART_WORDS * 4) as u64, bytemuck::cast_slice(&recs)),
-                Write::LightOff(s) if (s as usize) < crate::render::LIGHTS => q.write_buffer(&self.lights, s as u64 * 32 + 16, &[0u8; 16]),
+                Write::Full(e, el) => q.put(&self.elems, (e as usize * w::WORDS * 4) as u64, bytemuck::cast_slice(&el.0)),
+                Write::Words(e, off, words) => q.put(&self.elems, ((e as usize * w::WORDS + off) * 4) as u64, bytemuck::cast_slice(&words)),
+                Write::Parts(first, recs) => q.put(&self.parts, (first as usize * PART_WORDS * 4) as u64, bytemuck::cast_slice(&recs)),
+                Write::LightOff(s) if (s as usize) < crate::render::LIGHTS => q.put(&self.lights, s as u64 * 32 + 16, &[0u8; 16]),
                 Write::LightOff(_) => {}
             }
         }
@@ -870,7 +871,7 @@ impl EffectsGpu {
             area: [f.area_light.x, f.area_light.y, f.area_light.z, 0.0],
             light: self.light.map_or([0.0; 4], |(d, _, _)| [d.x, d.y, d.z, 1.0]),
         };
-        q.write_buffer(&self.params, 0, bytemuck::bytes_of(&p));
+        q.put(&self.params, 0, bytemuck::bytes_of(&p));
         if self.count == 0 {
             return;
         }
@@ -1020,10 +1021,10 @@ impl EffectsGpu {
                 [g.x, g.y, g.z, 0.0]
             }),
         };
-        gpu.queue.write_buffer(&self.draw_u, 0, bytemuck::bytes_of(&u));
+        gpu.queue.put(&self.draw_u, 0, bytemuck::bytes_of(&u));
         let mut u_rt = u;
         u_rt.fog[2] = 0.0;
-        gpu.queue.write_buffer(&self.draw_u_rt, 0, bytemuck::bytes_of(&u_rt));
+        gpu.queue.put(&self.draw_u_rt, 0, bytemuck::bytes_of(&u_rt));
         // FUN_10040e70 steps 2-4: each projection's image, cleared to 0 (depth 1), the mesh as its own mode draws it.
         let mut gp_layer: HashMap<u32, usize> = HashMap::new();
         if let (Some((_, views, _)), Some(g_rt)) = (self.gp_rt.as_ref(), self.draw_group_rt.as_ref()) {
@@ -1058,7 +1059,7 @@ impl EffectsGpu {
             let mut view_rot = view;
             view_rot.w_axis = glam::Vec4::W;
             let fu = FlareU { proj: proj.to_cols_array_2d(), view_rot: view_rot.to_cols_array_2d(), eye: [eye.x, eye.y, eye.z, 1.0], info: [self.count as f32, 0.0, 0.0, 0.0] };
-            gpu.queue.write_buffer(&self.flare_u, 0, bytemuck::bytes_of(&fu));
+            gpu.queue.put(&self.flare_u, 0, bytemuck::bytes_of(&fu));
             let fg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("effects flare"),
                 layout: &self.flare_layout,

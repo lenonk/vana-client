@@ -444,6 +444,22 @@ pub fn mip_sampler(device: &wgpu::Device) -> wgpu::Sampler {
 /// Bytes of texture memory uploaded so far (the F12 overlay and zone logs).
 pub static TEXTURE_BYTES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// Bytes given to Queue::write_buffer (Put), read and cleared once a frame for the F12 overlay: what crosses to the
+/// GPU every frame, the limit behind a narrow eGPU link.
+pub static WRITTEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// Queue::write_buffer, counted in WRITTEN.
+pub trait Put {
+    fn put(&self, buffer: &wgpu::Buffer, offset: u64, data: &[u8]);
+}
+
+impl Put for wgpu::Queue {
+    fn put(&self, buffer: &wgpu::Buffer, offset: u64, data: &[u8]) {
+        WRITTEN.fetch_add(data.len() as u64, std::sync::atomic::Ordering::Relaxed);
+        self.write_buffer(buffer, offset, data);
+    }
+}
+
 /// A texture with its full mip chain; see upload_texture_seq.
 pub fn upload_texture(gpu: &Gpu, t: &crate::dat::zone::Texture, srgb: bool) -> wgpu::TextureView {
     upload_texture_seq(gpu, t, srgb).0
@@ -1163,7 +1179,7 @@ impl ZoneRenderer {
         let geo = ZoneGeometry::build(scene);
         let mut r = Self::empty(gpu, &geo, scene.textures.len(), color_format, false);
         for (buf, bytes) in [&r.vertices, &r.indices, &r.instances].into_iter().zip(geo.parts()) {
-            gpu.queue.write_buffer(buf, 0, bytes);
+            gpu.queue.put(buf, 0, bytes);
         }
         for (i, t) in scene.textures.iter().enumerate() {
             r.put_texture(gpu, i + 1, t);
@@ -1303,7 +1319,7 @@ impl ZoneRenderer {
         *dst = [to[0], to[1], to[2], 0.0];
         *time = [now, ticks.max(0.0), 0.0, 0.0];
         let at = slot as u64 * std::mem::size_of::<PartGpu>() as u64;
-        gpu.queue.write_buffer(&self.parts_gpu, at, bytemuck::bytes_of(&*p));
+        gpu.queue.put(&self.parts_gpu, at, bytemuck::bytes_of(&*p));
     }
 
     /// Area 4ccs by slot - 1 (zone's, then the shown sub-area's).
@@ -1325,7 +1341,7 @@ impl ZoneRenderer {
         let device = &gpu.device;
         let buffer = |label, bytes: &[u8], usage| {
             let b = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (bytes.len() as u64).max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-            gpu.queue.write_buffer(&b, 0, bytes);
+            gpu.queue.put(&b, 0, bytes);
             b
         };
         let [v, i, m] = geo.parts();
@@ -1364,7 +1380,7 @@ impl ZoneRenderer {
         let device = &gpu.device;
         let buffer = |label, bytes: &[u8], usage| {
             let b = device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: (bytes.len() as u64).max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
-            gpu.queue.write_buffer(&b, 0, bytes);
+            gpu.queue.put(&b, 0, bytes);
             b
         };
         self.furn_base = Some(self.textures.len());
@@ -1425,7 +1441,7 @@ impl ZoneRenderer {
                 self.line_buf = Some((buf, cap));
             }
             if let Some((buf, _)) = &self.line_buf {
-                gpu.queue.write_buffer(buf, 0, bytemuck::cast_slice(&lines));
+                gpu.queue.put(buf, 0, bytemuck::cast_slice(&lines));
             }
         }
         self.lines = lines;
@@ -1463,7 +1479,7 @@ impl ZoneRenderer {
         let old = old.to_cols_array_2d();
         let Some(i) = list.iter().position(|x| x.model == old) else { return };
         list[i].model = new.to_cols_array_2d();
-        gpu.queue.write_buffer(&f.instances, i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&list[i]));
+        gpu.queue.put(&f.instances, i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&list[i]));
     }
 
     /// The sub-area goes (FUN_10178ac0). Its stand-ins stay hidden: unloading does not run FUN_1017a630 again.
@@ -1483,7 +1499,7 @@ impl ZoneRenderer {
         }
         for (i, _, inst) in self.links.iter().filter(|x| x.1 == 999) {
             let v = if shown { *inst } else { Instance::zeroed() };
-            gpu.queue.write_buffer(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
+            gpu.queue.put(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
         }
         self.link999_off = !shown;
     }
@@ -1496,7 +1512,7 @@ impl ZoneRenderer {
         for (i, l, inst) in &self.links {
             if *l == link || *l == self.hidden {
                 let v = if *l == link { Instance::zeroed() } else { *inst };
-                gpu.queue.write_buffer(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
+                gpu.queue.put(&self.instances, *i as u64 * INSTANCE_BYTES, bytemuck::bytes_of(&v));
             }
         }
         self.hidden = link;
@@ -1752,7 +1768,7 @@ impl ZoneRenderer {
             self.pose_gpu = Some((buf, group, cap));
         }
         if let Some((buf, _, _)) = &self.pose_gpu {
-            gpu.queue.write_buffer(buf, 0, bytemuck::cast_slice(&self.poses));
+            gpu.queue.put(buf, 0, bytemuck::cast_slice(&self.poses));
             self.anim.dispatch(gpu, encoder, buf, !self.budgeted);
             self.points.run(gpu, encoder, buf);
         }
@@ -1812,9 +1828,9 @@ impl ZoneRenderer {
             actor.vertices = Some((buf, bytes.len().max(64)));
         }
         if let Some((buf, _)) = &actor.vertices {
-            gpu.queue.write_buffer(buf, 0, bytes);
+            gpu.queue.put(buf, 0, bytes);
         }
-        gpu.queue.write_buffer(&actor.instance, 0, bytemuck::bytes_of(&model.to_cols_array_2d()));
+        gpu.queue.put(&actor.instance, 0, bytemuck::bytes_of(&model.to_cols_array_2d()));
     }
 
     pub fn draw_count(&self) -> usize {
@@ -1887,8 +1903,8 @@ impl ZoneRenderer {
                 areas[slot + 1] = AreaGpu { sun: v4(l.dir, 1.0), sun_color: v4(l.diffuse, 1.0), ambient: v4(l.ambient, 1.0), fog_color: v4(l.fog, 1.0), fog: [l.fog_start, l.fog_end, 0.0, 0.0], actor_sun: v4(l.actor_dir, 1.0), actor_color: v4(l.actor_diffuse, 1.0), actor_ambient: v4(l.actor_ambient, 1.0) };
             }
         }
-        gpu.queue.write_buffer(&self.areas, 0, bytemuck::cast_slice(&areas));
-        gpu.queue.write_buffer(&self.uniforms, 0, bytemuck::bytes_of(&u));
+        gpu.queue.put(&self.areas, 0, bytemuck::cast_slice(&areas));
+        gpu.queue.put(&self.uniforms, 0, bytemuck::bytes_of(&u));
         let [r, g, b] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("zone"),
@@ -1972,7 +1988,7 @@ impl ZoneRenderer {
                 if slot >= SHINE_SLOTS as u64 {
                     break;
                 }
-                gpu.queue.write_buffer(&self.shine_buf, slot * SHINE_STRIDE, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                gpu.queue.put(&self.shine_buf, slot * SHINE_STRIDE, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
                 pass.set_pipeline(&self.shine_pipeline);
                 pass.set_bind_group(3, &self.shine_group, &[(slot * SHINE_STRIDE) as u32]);
                 pass.set_bind_group(2, group, &[skin.offset]);
@@ -2038,7 +2054,7 @@ impl ZoneRenderer {
         for (slot, a) in list.iter().enumerate() {
             let (Some(rf), Some(skin)) = (a.refract, a.skin.as_ref()) else { continue };
             let off = (slot as u64 * SHINE_STRIDE) as u32;
-            gpu.queue.write_buffer(&self.refract_buf, off as u64, bytemuck::cast_slice(&[rf.level, rf.r, a.alpha, 0.0, p00, p11, 0.0, 0.0]));
+            gpu.queue.put(&self.refract_buf, off as u64, bytemuck::cast_slice(&[rf.level, rf.r, a.alpha, 0.0, p00, p11, 0.0, 0.0]));
             if let (Some(t), Some((c, _))) = (src, self.refract_copy.as_ref()) {
                 encoder.copy_texture_to_texture(t.as_image_copy(), c.as_image_copy(), t.size());
             }
@@ -2066,7 +2082,7 @@ impl ZoneRenderer {
                 && let Some(tex) = self.shine_tex.get(&s.key)
             {
                 let so = (SHINE_SLOTS - 1 - slot) as u64 * SHINE_STRIDE;
-                gpu.queue.write_buffer(&self.shine_buf, so, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
+                gpu.queue.put(&self.shine_buf, so, bytemuck::cast_slice(&[s.u, s.v, 0.0, 0.0, s.tf[0], s.tf[1], s.tf[2], s.tf[3]]));
                 pass.set_pipeline(&self.shine_pipeline);
                 pass.set_bind_group(3, &self.shine_group, &[so as u32]);
                 pass.set_bind_group(1, tex, &[]);

@@ -1,6 +1,7 @@
 [workspace]
 resolver = "3"
 members = ["crates/vana-client"]
+exclude = ["vendor"]
 
 # Day-to-day builds: incremental, no LTO. A one-file change rebuilds in seconds (60 s with thin LTO).
 [profile.release]
@@ -13,3 +14,8 @@ inherits = "release"
 incremental = false
 lto = "fat"
 codegen-units = 1
+
+# gpu-allocator 0.28.0 with one change (vendor/gpu-allocator/src/vulkan/mod.rs, "vana-client:"): wgpu's staging
+# buffers in system memory rather than in VRAM through ReBAR.
+[patch.crates-io]
+gpu-allocator = { path = "vendor/gpu-allocator" }

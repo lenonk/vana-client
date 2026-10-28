@@ -10,6 +10,7 @@ use bytemuck::{Pod, Zeroable};
 use glam::{Mat3, Mat4, Vec3};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
+use super::Put;
 
 const BAD: u32 = 0xEFBE_DDBA;
 
@@ -1019,12 +1020,12 @@ impl DancerGpu {
             });
             self.joints = Some((jb, g, cap));
         }
-        gpu.queue.write_buffer(&self.joints.as_ref().unwrap().0, 0, jbytes);
+        gpu.queue.put(&self.joints.as_ref().unwrap().0, 0, jbytes);
         for (m, s, tris) in &f.sorted {
             if let Some((_, range)) = self.ranges.get(*m).and_then(|r| r.get(*s)) {
                 let flat: Vec<u32> = tris.iter().flatten().copied().collect();
                 if flat.len() == range.len() {
-                    gpu.queue.write_buffer(&self.ib, range.start as u64 * 4, bytemuck::cast_slice(&flat));
+                    gpu.queue.put(&self.ib, range.start as u64 * 4, bytemuck::cast_slice(&flat));
                 }
             }
         }
@@ -1090,7 +1091,7 @@ impl DancerGpu {
             self.ub = Some((ub, g, cap));
         }
         if !ubytes.is_empty() {
-            gpu.queue.write_buffer(&self.ub.as_ref().unwrap().0, 0, &ubytes);
+            gpu.queue.put(&self.ub.as_ref().unwrap().0, 0, &ubytes);
         }
         self.calls = shadow_calls;
     }

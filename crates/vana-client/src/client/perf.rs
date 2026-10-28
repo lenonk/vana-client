@@ -61,6 +61,9 @@ pub struct Perf {
     pub cpu_ms: f32,
     pub worst_ms: f32,
     pub span_ms: [f32; SPANS.len()],
+    /// Buffer bytes written to the GPU (render::WRITTEN) in this window, and their mean KB per frame in the last.
+    written: u64,
+    pub upload_kb: f32,
     pub counts: Counts,
     /// The frame limit and present mode, for the overlay.
     pub limit: String,
@@ -86,6 +89,8 @@ impl Default for Perf {
             cpu_ms: 0.0,
             worst_ms: 0.0,
             span_ms: [0.0; SPANS.len()],
+            written: 0,
+            upload_kb: 0.0,
             counts: Counts::default(),
             limit: String::new(),
             log,
@@ -107,6 +112,7 @@ impl Perf {
         self.busy += busy;
         self.worst = self.worst.max(busy);
         self.frames += 1;
+        self.written += crate::render::WRITTEN.swap(0, Ordering::Relaxed);
         let gap = self.last_start.map_or(Duration::ZERO, |l| start.saturating_duration_since(l));
         self.last_start = Some(start);
         let notes = if self.log { NOTES.lock().map(|mut n| std::mem::take(&mut *n)).unwrap_or_default() } else { Vec::new() };
@@ -126,11 +132,12 @@ impl Perf {
             self.cpu_ms = self.busy.as_secs_f32() * 1000.0 / n;
             self.worst_ms = self.worst.as_secs_f32() * 1000.0;
             self.span_ms = self.spans.map(|d| d.as_secs_f32() * 1000.0 / n);
+            self.upload_kb = self.written as f32 / 1024.0 / n;
             if self.log {
                 let spans: Vec<String> = SPANS.iter().zip(self.span_ms).map(|(s, v)| format!("{s} {v:.2}")).collect();
                 let c = self.counts;
                 log::warn!(
-                    "perf: {:.1} fps ({}), cpu {:.2} ms (worst {:.2}), worst gap {:.1} ms, spikes {}; {}; entities {} actors {} posed {} drawn {} zone draws {} ui verts {}",
+                    "perf: {:.1} fps ({}), cpu {:.2} ms (worst {:.2}), worst gap {:.1} ms, spikes {}; {}; entities {} actors {} posed {} drawn {} zone draws {} ui verts {}, upload {:.0} KB/frame",
                     self.fps,
                     self.limit,
                     self.cpu_ms,
@@ -143,11 +150,13 @@ impl Perf {
                     c.posed,
                     c.drawn,
                     c.zone_draws,
-                    c.ui_vertices
+                    c.ui_vertices,
+                    self.upload_kb
                 );
             }
             self.window = Instant::now();
             self.frames = 0;
+            self.written = 0;
             self.busy = Duration::ZERO;
             self.worst = Duration::ZERO;
             self.spans = [Duration::ZERO; SPANS.len()];
@@ -164,6 +173,7 @@ impl Perf {
             format!("{:.1} fps ({})   cpu {:.2} ms/frame (worst {:.1})", self.fps, self.limit, self.cpu_ms, self.worst_ms),
             spans.join("  "),
             format!("entities {}  actors {} (posed {}, drawn {})  zone draws {}  ui vertices {}", c.entities, c.actors, c.posed, c.drawn, c.zone_draws, c.ui_vertices),
+            format!("upload {:.0} KB/frame", self.upload_kb),
         ]
     }
 }

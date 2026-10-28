@@ -4,6 +4,7 @@
 use super::Gpu;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use super::Put;
 
 const WGSL: &str = r#"
 @group(0) @binding(0) var<storage, read> pose: array<vec4<f32>>;
@@ -103,7 +104,7 @@ impl Points {
             self.out_buf = Some((device.create_buffer(&wgpu::BufferDescriptor { label: Some("points"), size: c, usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false }), c));
         }
         let (jb, ob) = (&self.job_buf.as_ref().unwrap().0, &self.out_buf.as_ref().unwrap().0);
-        gpu.queue.write_buffer(jb, 0, bytemuck::cast_slice(&words));
+        gpu.queue.put(jb, 0, bytemuck::cast_slice(&words));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("actor points"),
             layout: &self.layout,

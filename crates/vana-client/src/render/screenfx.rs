@@ -4,6 +4,7 @@
 //! MODULATE2X, 0x10011a26: scene x 2 * RGB / 255).
 
 use super::Gpu;
+use super::Put;
 
 const SHADER: &str = r#"
 struct U { color: vec4<f32>, extra: vec4<f32> };
@@ -167,9 +168,9 @@ impl ScreenFx {
             return;
         }
         self.capture_target(gpu, size);
-        gpu.queue.write_buffer(&self.uniforms[0], 0, bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, cross.unwrap_or(0.0)]));
-        gpu.queue.write_buffer(&self.uniforms[1], 0, bytemuck::cast_slice(&[m[0] * 0.5, m[1] * 0.5, m[2] * 0.5, 1.0]));
-        gpu.queue.write_buffer(&self.uniforms[2], 0, bytemuck::cast_slice(&flash.unwrap_or_default()));
+        gpu.queue.put(&self.uniforms[0], 0, bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, cross.unwrap_or(0.0)]));
+        gpu.queue.put(&self.uniforms[1], 0, bytemuck::cast_slice(&[m[0] * 0.5, m[1] * 0.5, m[2] * 0.5, 1.0]));
+        gpu.queue.put(&self.uniforms[2], 0, bytemuck::cast_slice(&flash.unwrap_or_default()));
         let begin = |encoder: &mut wgpu::CommandEncoder, draw: &dyn Fn(&mut wgpu::RenderPass)| {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("screen fx"),
@@ -199,7 +200,7 @@ impl ScreenFx {
         if let Some((b, t)) = blur {
             self.prev_target(gpu, t);
             let (prev, g) = self.prev.as_ref().unwrap();
-            gpu.queue.write_buffer(&self.uniforms[3], 0, bytemuck::cast_slice(&[b.rgb[0], b.rgb[1], b.rgb[2], b.a, b.zoom, 0.0, 0.0, 0.0]));
+            gpu.queue.put(&self.uniforms[3], 0, bytemuck::cast_slice(&[b.rgb[0], b.rgb[1], b.rgb[2], b.a, b.zoom, 0.0, 0.0, 0.0]));
             // A new op restarts the capture: this frame is its first picture.
             if self.blur_seen != Some(b.start) {
                 encoder.copy_texture_to_texture(t.as_image_copy(), prev.as_image_copy(), t.size());
@@ -232,7 +233,7 @@ impl ScreenFx {
     /// The held picture over `view` at alpha `a` (SRCALPHA / INVSRCALPHA).
     pub fn draw_held(&self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, view: &wgpu::TextureView, a: f32) {
         let Some((_, g)) = &self.prev else { return };
-        gpu.queue.write_buffer(&self.uniforms[3], 0, bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, a, 0.0, 0.0, 0.0, 0.0]));
+        gpu.queue.put(&self.uniforms[3], 0, bytemuck::cast_slice(&[0.0f32, 0.0, 0.0, a, 0.0, 0.0, 0.0, 0.0]));
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("zone crossfade"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment { view, depth_slice: None, resolve_target: None, ops: wgpu::Operations { load: wgpu::LoadOp::Load, store: wgpu::StoreOp::Store } })],

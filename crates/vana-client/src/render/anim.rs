@@ -7,6 +7,7 @@ use crate::dat::character::{Animation, Character};
 use std::any::Any;
 use std::collections::HashMap;
 use std::sync::Arc;
+use super::Put;
 
 /// Bones a pose region holds (render/mod.rs MAX_BONES) and the per-animation bone table size.
 const TABLE: usize = crate::dat::animpack::TABLE;
@@ -558,7 +559,7 @@ impl GpuAnim {
             // As much of the tail as the frame's copy budget allows (render/upload.rs).
             if !self.data.is_empty() && (all || gpu.upload_room() > 0) {
                 let n = if all { self.data.len() } else { (gpu.piece(self.data.len() as u64 * 4, 4) / 4) as usize };
-                gpu.upload(n as u64 * 4, || gpu.queue.write_buffer(self.data_buf.as_ref().unwrap(), (self.uploaded * 4) as u64, bytemuck::cast_slice(&self.data[..n])));
+                gpu.upload(n as u64 * 4, || gpu.queue.put(self.data_buf.as_ref().unwrap(), (self.uploaded * 4) as u64, bytemuck::cast_slice(&self.data[..n])));
                 self.uploaded += n;
                 self.data.drain(..n);
             }
@@ -585,7 +586,7 @@ impl GpuAnim {
             self.scratch = Some((device.create_buffer(&wgpu::BufferDescriptor { label: Some("anim scratch"), size: c, usage: wgpu::BufferUsages::STORAGE, mapped_at_creation: false }), c));
         }
         let (jb, _) = self.job_buf.as_ref().unwrap();
-        gpu.queue.write_buffer(jb, 0, bytemuck::cast_slice(&self.jobs));
+        gpu.queue.put(jb, 0, bytemuck::cast_slice(&self.jobs));
         let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("pose actors"),
             layout: &self.layout,

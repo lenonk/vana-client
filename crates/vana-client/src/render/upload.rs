@@ -5,6 +5,7 @@
 
 use super::Gpu;
 use std::time::Instant;
+use super::Put;
 
 /// Copy time a frame in the world, and while the zone indicator is up.
 pub const FRAME_MS: f64 = 2.0;
@@ -141,7 +142,7 @@ pub fn buffer_step(gpu: &Gpu, buf: &wgpu::Buffer, data: &[u8], at: &mut u64) -> 
     let total = data.len() as u64;
     while *at < total && gpu.upload_room() > 0 {
         let n = gpu.piece(total - *at, 4);
-        gpu.upload(n, || gpu.queue.write_buffer(buf, *at, &data[*at as usize..(*at + n) as usize]));
+        gpu.upload(n, || gpu.queue.put(buf, *at, &data[*at as usize..(*at + n) as usize]));
         *at += n;
     }
     *at >= total

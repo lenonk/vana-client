@@ -10728,3 +10728,25 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   her (a spell shot dolls its caster) took her orbs onto the doll's snapshot: frozen for good.
 - Ours now: Owner::Task(uid), the task's never-reused uid (sched.rs Task::uid), for op 0x02's clones and the doll /
   undoll moves.
+
+## GPU uploads behind a slow link: host memory when it measures faster (ours, 2026-10-27)
+
+- User report: 109-120 fps where 144 had held (cap 144, borderless on a 144 Hz VRR monitor; F12: cpu 5.6 ms, encode
+  4.7 ms). The machine: RX 6800 XT in a Thunderbolt enclosure whose bridge trains at 8 GT/s x1 (05:01.0, capable of
+  x4), with full ReBAR (heap 1, 16 GB, DEVICE_LOCAL | HOST_VISIBLE).
+- perf with frame pointers (`dist` + force-frame-pointers): glibc's AVX-512 memcpy was 30% of the main thread, nearly
+  all of it copying into wgpu staging buffers (egui-wgpu's update_buffers ~17% for ~185 KB a frame, EffectsGpu::update
+  ~8%, upload_poses); CommandEncoder::finish's validation 15%. wgpu-hal maps every MAP_WRITE buffer to gpu-allocator's
+  CpuToGpu, which prefers DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT: VRAM through the BAR, every store across the
+  link.
+- vendor/gpu-allocator (0.28.0, [patch.crates-io]) measures it, as bg3le's memsteer does: at device creation CPU writes
+  into the two types the allocator would pick are timed (4 MiB, best of 3 after a warm copy), and CpuToGpu goes to the
+  first HOST_VISIBLE | HOST_COHERENT type without DEVICE_LOCAL only when the VRAM type writes under a quarter of host
+  speed. Here: host 37-38 GB/s, VRAM 0.25 GB/s, steered; a desktop link stays as it was. FFXI_MEMSTEER=on / off
+  skips the measurement. The client creates no MAP_WRITE buffers of its own, so only wgpu's staging moves.
+- Measured windowed on Lnxcsfix in Qufim Island: cpu 2.5 -> 1.6 ms a frame, encode 1.8 -> 1.0 ms. Windowed FIFO stays
+  at ~115-120 there (KWin composites at a fixed 144 Hz; uncapped Mailbox runs at 298 fps, so neither the GPU nor the
+  CPU is the limit); under VRR the rate follows the frame time, so the CPU saved is fps.
+- F12 and the FFXI_PERF line show "upload N KB/frame": every Queue::write_buffer goes through render::Put (counted in
+  render::WRITTEN) plus egui's vertices and indices. About 230 KB a frame in that scene.
+- Not the 4x pack: zone 126 renders offscreen in 0.89 ms a frame at 1600 x 900 with and without vana-upscale.

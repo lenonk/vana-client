@@ -7,6 +7,7 @@ use anyhow::Result;
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
 use wgpu::util::DeviceExt;
+use super::Put;
 
 /// D3D8 blending, as FFXiMain maps the PS2 (A - B) * As + D fields (FUN_1011bc10).
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
@@ -804,7 +805,7 @@ impl UiRenderer {
     pub fn render(&mut self, gpu: &Gpu, encoder: &mut wgpu::CommandEncoder, target: &wgpu::TextureView, layout: [u32; 2], size: [u32; 2], clear: Option<wgpu::Color>, batch: &UiBatch) {
         let [width, height] = size;
         let (kx, ky) = (width as f32 / layout[0].max(1) as f32, height as f32 / layout[1].max(1) as f32);
-        gpu.queue.write_buffer(&self.uniforms, 0, bytemuck::cast_slice(&[layout[0] as f32, layout[1] as f32, self.fade.clamp(0.0, 1.0), 0.0, width as f32, height as f32, 0.0, 0.0]));
+        gpu.queue.put(&self.uniforms, 0, bytemuck::cast_slice(&[layout[0] as f32, layout[1] as f32, self.fade.clamp(0.0, 1.0), 0.0, width as f32, height as f32, 0.0, 0.0]));
         let bytes: &[u8] = bytemuck::cast_slice(&batch.vertices);
         if !bytes.is_empty() {
             if self.vertices.as_ref().is_none_or(|(_, cap)| *cap < bytes.len() as u64) {
@@ -816,7 +817,7 @@ impl UiRenderer {
             if bytemuck::cast_slice::<UiVertex, u8>(&self.uploaded) != bytes
                 && let Some((buf, _)) = &self.vertices
             {
-                gpu.queue.write_buffer(buf, 0, bytes);
+                gpu.queue.put(buf, 0, bytes);
                 self.uploaded.clear();
                 self.uploaded.extend_from_slice(&batch.vertices);
             }
