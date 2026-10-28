@@ -57,6 +57,8 @@ pub struct Results {
     pub alt: bool,
     /// scoption's cursor (child id) while it is open.
     pub option: Option<u16>,
+    /// The option window is acoption (FUN_1020c250: a muted person on the Mute list) rather than scoption.
+    pub ac: bool,
     /// Title slot 2 (group 0xd): 0 "Search", 0x13 "Party" from the party menu's Find Member (FUN_10204c60).
     pub title: usize,
     /// W+0x58: 1 a search, 2 the request list (languages on every row), 3 a group list (no header help, no summary
@@ -364,7 +366,7 @@ pub fn run(w: &mut World, mut cond: Cond, scope: Scope) {
     }
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
-    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title: 0, mode: 1 });
+    w.search = Some(Results { busy: true, failed: false, scope, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, ac: false, title: 0, mode: 1 });
 }
 
 /// FUN_1020c390 (View Request, /recruitlist): once s2c 0x119 came, the request list in every area (mode 2, title
@@ -395,7 +397,7 @@ pub fn run_group(w: &mut World, ids: [u32; 4], title: usize) {
     w.search_cond = cond.clone();
     let rx = search::spawn(w.search_addr, cond);
     w.searches.push((rx, Then::Results));
-    w.search = Some(Results { busy: true, failed: false, scope: Scope::Area, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, title, mode: 3 });
+    w.search = Some(Results { busy: true, failed: false, scope: Scope::Area, rows: Vec::new(), total: 0, cursor: 0, scroll: 0, alt: false, option: None, ac: false, title, mode: 3 });
 }
 
 /// The same with p6 = 1: the old results window closes (FUN_1020b3a0), none opens; only the summary line comes.
@@ -530,11 +532,48 @@ fn invite(w: &World, id: u32, flags: u32) {
 /// scoption's rows by child id (the layout's order top to bottom: 1, 4, 5, 2, 3).
 pub const OPTION_ORDER: [u16; 5] = [1, 4, 5, 2, 3];
 
+/// FUN_1020c440: results of a search (mode 1) for the muted (status flag 0x40 with 0x20000000: /mutelist).
+fn mute_list(w: &World, res: &Results) -> bool {
+    res.mode == 1 && w.search_cond.flags & search::STATUS != 0 && w.search_cond.status == 0x2000_0000
+}
+
+/// The open option window and its rows: acoption's one (Remove), else scoption's.
+pub fn option_window(res: &Results) -> (&'static str, &'static [u16]) {
+    if res.ac { (ACOPTION, &[1]) } else { (SCOPTION, &OPTION_ORDER) }
+}
+
+/// Whether option `c` is on for `r`: acoption's Remove by FUN_1020cc90's rule, scoption's by FUN_1020c540's.
+pub fn option_on(w: &World, res: &Results, c: u16, r: &Record) -> bool {
+    if res.ac { super::charlnk::can_mute(w) } else { option_enabled(w, c, r) }
+}
+
 /// Keys while the results window (or scoption over it) is up. The list base: Up / Down stop at the ends, Left / Right
 /// page by 15, Escape closes (FUN_101f67c0); Num+ (list message 8) flips the job cells.
 pub fn key(w: &mut World, key: egui::Key) {
     use egui::Key as K;
     let Some(mut res) = w.search.take() else { return };
+    if let Some(c) = res.option
+        && res.ac
+    {
+        match key {
+            K::Escape => {
+                (res.option, res.ac) = (None, false);
+                w.sounds.push(Ui::Cancel as u32);
+            }
+            // FUN_1020cd00: "Remove from the Mute list?" (0xe 0x41a, comyn default No).
+            K::Enter => match res.cursor.checked_sub(1).and_then(|i| res.rows.get(i)) {
+                Some(r) if option_on(w, &res, c, r) => {
+                    w.sounds.push(Ui::Select as u32);
+                    w.assist_name = r.name.clone();
+                    w.confirm = Some((super::Confirm::Assist(super::charlnk::UNMUTE), false));
+                }
+                _ => w.sounds.push(Ui::Error as u32),
+            },
+            _ => {}
+        }
+        w.search = Some(res);
+        return;
+    }
     if let Some(c) = res.option {
         let at = OPTION_ORDER.iter().position(|&o| o == c).unwrap_or(0);
         match key {
@@ -609,6 +648,7 @@ pub fn key(w: &mut World, key: egui::Key) {
             w.sounds.push(Ui::Select as u32);
         }
         K::Enter if !res.busy => {
+            res.ac = mute_list(w, &res) && res.rows.get(res.cursor - 1).is_some_and(|r| r.flags & 0x2000_0000 != 0);
             res.option = Some(1);
             w.sounds.push(Ui::Select as u32);
         }
@@ -627,7 +667,8 @@ pub fn pointer(w: &mut World, gu: &super::game_ui::GameUi, p: (f32, f32), moved:
     let Some(res) = w.search.as_ref() else { return };
     let keys = |w: &mut World, _: &super::game_ui::GameUi, k: egui::Key| key(w, k);
     if let Some(c) = res.option {
-        generic(w, gu, SCOPTION, c, 1..=5, p, moved, clicked, right, |w, id| {
+        let (name, rows) = option_window(res);
+        generic(w, gu, name, c, 1..=rows.len() as u16, p, moved, clicked, right, |w, id| {
             if let Some(r) = w.search.as_mut() {
                 r.option = Some(id);
             }
@@ -687,6 +728,7 @@ const RACE: [usize; 9] = [0, 0, 0, 1, 1, 2, 2, 3, 4];
 
 const SCRESULT: &str = "menu    scresult";
 pub(super) const SCOPTION: &str = "menu    scoption";
+pub(super) const ACOPTION: &str = "menu    acoption";
 
 /// FUN_1020a740's status icon index and the Ballista team (ncol, icon index) by the record flags.
 pub(super) fn status_icon(f: u32) -> (usize, Option<(usize, usize)>) {
@@ -886,12 +928,14 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
     }
     if let Some(c) = res.option {
         let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
-        let off: Vec<u16> = OPTION_ORDER.iter().copied().filter(|&o| r.is_some_and(|r| !option_enabled(w, o, r))).collect();
+        let (name, rows) = option_window(res);
+        let off: Vec<u16> = rows.iter().copied().filter(|&o| r.is_some_and(|r| !option_on(w, res, o, r))).collect();
         // FUN_1020c7a0: Clear History / Delete Request in the request list.
-        let swaps: &[(u16, usize)] = if request_mode(w, res) { &[(4, 785), (5, 786)] } else { &[] };
-        if let Some(win) = gu.lobby_window_swaps(SCOPTION, sw, sh, (0.0, 0.0), Some(c), !off.contains(&c), &off, swaps) {
-            super::winhits::record(w, SCOPTION, &win);
-            gu.disabled_children(SCOPTION, win.frame[0], win.frame[1], &off, Some(c));
+        let swaps: &[(u16, usize)] = if request_mode(w, res) && !res.ac { &[(4, 785), (5, 786)] } else { &[] };
+        let hand = !off.contains(&c) && w.confirm.is_none();
+        if let Some(win) = gu.lobby_window_swaps(name, sw, sh, (0.0, 0.0), Some(c), hand, &off, swaps) {
+            super::winhits::record(w, name, &win);
+            gu.disabled_children(name, win.frame[0], win.frame[1], &off, Some(c));
             rects.push(win.frame);
         }
     }
@@ -903,6 +947,15 @@ pub fn draw(gu: &mut super::game_ui::GameUi, w: &World, sw: f32, sh: f32) -> Vec
 pub fn bars(gu: &super::game_ui::GameUi, w: &World, bars: &mut super::hudtop::BarText) {
     let Some(res) = &w.search else { return };
     bars.title[2] = gu.title_msg(res.title).unwrap_or_default();
+    if let Some(c) = res.option
+        && res.ac
+    {
+        // FUN_1020cc90: a Remove we cannot use says why (0xe 0x41c).
+        let [help, title] = gu.focus_text(ACOPTION, c);
+        let help = if super::charlnk::can_mute(w) { help.unwrap_or_default() } else { gu.menu_msg(0x41c, "") };
+        (bars.help[1], bars.title[1]) = (help, title.unwrap_or_default());
+        return;
+    }
     if let Some(c) = res.option {
         let [mut help, title] = gu.focus_text(SCOPTION, c);
         if request_mode(w, res) && matches!(c, 4 | 5) {

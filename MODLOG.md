@@ -11023,3 +11023,57 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   (FUN_101afce0: DIK -> table FUN_101afd10 builds per language) and the cap sprite (table 0x1037a418 by character);
   the draw (FUN_1019d6b0) puts each cap (library key1topu, key1top in Japanese; 0 -> sprite 21, the blank cap) on its
   cell. Ours: configui.rs `keylayou`, `key_cap`. Checked offscreen (topbar-shot --config configwi:6,conf6win:6).
+
+## charlnk (the full log's menu on a player's line) and acoption (2026-10-28)
+
+- Records (FUN_101273c0): a line's 60-byte record has its mode at +0, flags byte 1 (0x80 GM, 0x40 the "NS" text-only
+  kinds and event speakers, 0x20 an assist line whose text holds the rank icon 0xEF 0x2f..0x4c, FUN_100d9b20), kind
+  +0x15 low nibble = 1 for modes 1..0xf, 0x87, 0xce, 0xd0, 0xd3..0xd6, 0xdb..0xde with no 0x1f / 0x40 flags (a
+  player's line), and the name at +0x18 parsed from the text between codes 7f fc / 7f fb (FUN_101284f0): the speaker,
+  a tell's recipient on our own tell. Ours: ChatLog `who` (name, flags) for s2c 0x017 kinds 0 / 0x18 / 0x19 / 1 / 3 /
+  4 / 5 / 8 / 0x1a / 0x1b / 0x21 / 0x22 / 0x23 and our echoes.
+- Full log (FUN_10137c70, each frame): the cursor row's record when its kind is 1 (+0x28); +0x2c / +0x2d = 1 / 1 for
+  our modes 1..7, 0xd3, 0xd5, 0xdb, 0xdd; others' 9..0xf, 0xd4, 0xd6, 0xdc, 0xde give +0x2d = 1 and +0x2c only for an
+  emote (0xf) naming us. Child 1 (the cursor row) takes keytops3 538 on a player's row not ours, else windowps 332 (not
+  drawn by ours yet).
+- Enter (FUN_10138230 case 5, focused): no player's row -> the buzzer (FUN_10037c50); else charlnk (DAT_105781e4)
+  gets the record (+0x14), +0x54 / +0x55 = +0x2c / +0x2d, the text from the cursor row to the line's end (the rows of
+  one serial joined, a continuation's first glyph skipped, glyphs 0x2115..0x2143 left out) and opens.
+- charlnk (vt 0x10333bb0; layout (384, 48) 112 x 170, windowps 839; rows top to bottom 1 Tell, 4 Request, 5 Cancel
+  Request, 9 Copy to Clipboard, 2 Search, 3 Target, 6 Warn Player, 8 Thumbs Up, 7 Mute Player, wrapping):
+  - open FUN_101389c0: the name at the top (+0x458, "%s") is ours on our own line (+0x54), else the record's; draw
+    FUN_10138e60 fits it to 100 px (FUN_101c9d50) at (+4, +6), 0x80808080. Our own line: rows 1..8 disabled, 9 on.
+    Else all on, 9 off unless +0x55; 6 / 7 / 8 off unless the record has a name and mode 0xdc / 0xde (an incoming
+    assist line); then not a mentor (FUN_100e47c0(8) = MentorFlg, 0x0B4 byte 3 bit 1) -> 6 off, and 7 off too unless
+    GM rank >= 3 (actor +0x128 bits 11..13 = 0x037 flags0 bits 29..31) or mastery rank >= 6 (+0x40dec, 0x01B @0x66);
+    8 and 6 off unless the speaker is ranked (flags 0x20) and we are a mentor or +0x40dea (0x01B @0x64,
+    can_thumbs_up_mentor) is 1..3.
+  - picks FUN_10138b50 (5, row), only with a name but 9: 1 "/tell Name " into the chat line; 2 a name search in every
+    area (FUN_1020a9d0(1, cond, 1, 0, 0, 0)), the full log and charlnk close; 3 "/target Name", 4 / 5
+    "/partyrequestcmd add / remove Name" as commands (FUN_10080dc0); 6 / 7 / 8 comyn (FUN_10210e30, default No) 0xe
+    0x417 "Issue a warning?" / 0x419 "Add to the Mute list?" / 0x418 "Give a thumbs up?", Yes (LAB_10138f50 / 70 / 90)
+    -> c2s 0x0B7 kind 0x25 / 0x26 / 0x24; 9 the text to the clipboard (FUN_1011dee0 -> FUN_10001d20). Only Search
+    closes charlnk.
+- c2s 0x0B7 (FUN_100e3650): {u8 Kind, u8 0, name (<= 15, a lowercase first letter raised for English), at +0x15 " "
+  NUL}, nothing for an empty name. LSB (0x0b7_assist_channel): 0x24 Give Thumbs Up (once a day, not while muted), 0x25
+  Issue Warning (mentor), 0x26 / 0x27 Add to / Remove from the Mute list (mentor with mastery rank 6); a refusal is Msg
+  std "An error has occurred.".
+- acoption (vt 0x1033ba20, layout (384, 48) 112 x 26, one row "Delete" windowps 260 / 810, help 0xe 0x416): the
+  search results' Enter on a person (FUN_1020c250) opens it instead of scoption when the results are a mute-list
+  search (FUN_1020c440: mode 1, condition flag 0x40, status 0x20000000: /mutelist) and the person has flags1
+  0x20000000 (LSB char_flags.muted). Open FUN_1020cc90: Delete disabled with help 0xe 0x41c "You do not have the
+  ability to remove someone from the Mute list." unless mentor, GM rank >= 3 or mastery rank >= 6. Enter
+  (FUN_1020cd00): comyn 0xe 0x41a "Remove from the Mute list?" (default No); Yes (LAB_1020cd60) -> 0x0B7 kind 0x27, then
+  the results' vtable +0x74 (FUN_1020c010) closes scresult / scoption / acoption.
+- Ours: client/charlnk.rs, search.rs (`ac`, `option_window`, `option_on`), Confirm::Assist(kind); modern: a click on a
+  player's line in the full log opens charlnk as a panel beside it (modern/charlnk.rs; the modern full log has no row
+  cursor), the search panel's options follow acoption.
+- Live (Lnxcsfix, classic): our own assist echo -> only Copy lit; the tell back from ourselves -> rows 1..5 and 9
+  lit, 6..8 off; Tell opened "/tell Lnxcsfix "; Search closed the full log, "Only one person found in the entire
+  world."; /mutelist with char_flags.muted 1 -> acoption, Delete off with 0xe 0x41c; after !togglegm (GM icon) on,
+  Yes sent 0x0B7 0x27 and LSB answered "An error has occurred." (not a mentor), the search windows closed. Modern: the
+  click opened the panel. The clipboard is not checked live (an unfocused test window cannot own the Wayland
+  selection). Not seen: rows 6..8 lit (needs another player's ranked assist line).
+- Also: tskill2 (the craft skills beside synthesis) and mcr1long / mcr2long / mcr1edlo / mcr2edlo are the Japanese
+  client's (FUN_101e0e30 opens tskill2 only with DAT_10456a28 +8 = 0, the language; the window-name resolver at all.c
+  274990 swaps mcr*pall for mcr*long only with +0xb5 = 0).

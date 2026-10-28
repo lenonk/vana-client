@@ -132,7 +132,7 @@ impl Stamps {
 pub struct LogWin {
     /// Log lines wrapped to the text width (with the bytes of a timestamp at the start), the log lines consumed,
     /// and the width and timestamps they were wrapped with.
-    wrapped: Vec<(String, [u8; 4], usize)>,
+    wrapped: Vec<Row>,
     seen: usize,
     width: f32,
     stamps: Stamps,
@@ -387,12 +387,15 @@ pub fn tab_shows(filter: u8, route: &Route, mode: Option<u8>, gm: bool) -> bool 
     }
 }
 
+/// A wrapped row: its text, colour, timestamp bytes and the log line it came from.
+pub type Row = (String, [u8; 4], usize, usize);
+
 /// A full log tab's rows (wrapped at window 1's width) and what they were built from: the filter, the log's length and
 /// edits, the width, the route.
 #[derive(Default)]
 struct TabRows {
     key: (u8, usize, u64, u32, Route),
-    rows: Vec<(String, [u8; 4], usize)>,
+    rows: Vec<Row>,
 }
 
 /// Visible rows: 23 + (H - 448) / 16, truncated toward zero.
@@ -403,6 +406,11 @@ pub fn full_lines(sh: f32) -> usize {
 impl FullLog {
     pub fn open(sh: f32) -> Self {
         Self { row: full_lines(sh), scroll: 0, filter: 0 }
+    }
+
+    /// The cursor's row counted up from the newest (0 the bottom one), with `lines` rows shown.
+    pub fn back(&self, lines: usize) -> usize {
+        self.scroll + lines.saturating_sub(self.row)
     }
 
     /// Messages 1 / 2 (Down / Up: the row, scrolling at its ends; with Ctrl / Alt, key 0xaf, scrolling only),
@@ -596,7 +604,7 @@ impl LogWin {
             return;
         }
         let limit = if filter == 8 { KEEP } else { 100 };
-        let mut rows: Vec<Vec<(String, [u8; 4], usize)>> = Vec::new();
+        let mut rows: Vec<Vec<Row>> = Vec::new();
         let mut n = 0;
         for k in (0..chat.len()).rev() {
             let (mode, gm) = chat.route(k);
@@ -613,7 +621,7 @@ impl LogWin {
         self.tab = TabRows { key, rows: rows.into_iter().rev().flatten().collect() };
     }
 
-    fn full_rows(&self, filter: u8) -> &[(String, [u8; 4], usize)] {
+    fn full_rows(&self, filter: u8) -> &[Row] {
         if filter == 0 { &self.wrapped } else { &self.tab.rows }
     }
 
@@ -627,15 +635,28 @@ impl LogWin {
         Self { second: true, ..Default::default() }
     }
 
-    /// Log line `k` wrapped to `tw` with its stamp: (row, colour, stamp bytes).
-    fn wrap_line(&self, gu: &GameUi, chat: &super::combat::ChatLog, k: usize, tw: f32) -> Vec<(String, [u8; 4], usize)> {
+    /// Log line `k` wrapped to `tw` with its stamp: (row, colour, stamp bytes, k).
+    fn wrap_line(&self, gu: &GameUi, chat: &super::combat::ChatLog, k: usize, tw: f32) -> Vec<Row> {
         let Some(((line, colour), (time, is_chat, indent))) = chat.timed(k) else { return Vec::new() };
         let st = self.stamps.text(time, is_chat);
         let rows = gu.wrap_indent(&format!("{st}{line}"), tw, indent);
         rows.into_iter().enumerate().map(|(i, piece)| {
             let n = if i == 0 { st.trim_end().len().min(piece.len()) } else { 0 };
-            (piece, *colour, n)
+            (piece, *colour, n, k)
         }).collect()
+    }
+
+    /// The full log's row `back` rows above its newest on tab `filter`: its log line, and the text from that row to
+    /// the line's end (charlnk +0x56: the rows of one record joined, a continuation's indent left out).
+    pub fn full_line(&self, filter: u8, back: usize) -> Option<(usize, String)> {
+        let rows = self.full_rows(filter);
+        let at = rows.len().checked_sub(back + 1)?;
+        let k = rows[at].3;
+        let mut text = String::new();
+        for (i, r) in rows[at..].iter().take_while(|r| r.3 == k).enumerate() {
+            text.push_str(if i == 0 { &r.0 } else { r.0.strip_prefix('\u{3000}').unwrap_or(&r.0) });
+        }
+        Some((k, text))
     }
 
     /// Takes in new log lines and advances the counters by the ticks since the last call. `keep` holds it
@@ -651,7 +672,7 @@ impl LogWin {
         if rewrap {
             // FUN_101295d0 at an open: the newest lines that pass, until more than 49 rows.
             (self.width, self.edits, self.route) = (tw, chat.edits(), route);
-            let mut rows: Vec<Vec<(String, [u8; 4], usize)>> = Vec::new();
+            let mut rows: Vec<Vec<Row>> = Vec::new();
             let mut n = 0;
             for k in (0..chat.len()).rev() {
                 let (mode, gm) = chat.route(k);
@@ -792,7 +813,7 @@ impl LogWin {
         let bottom = y0 + h - 4.0 + yoff;
         gu.clip(Some([x0, y0 + 3.0, w, (bottom - (y0 + 3.0)).max(0.0)]));
         let rows = self.full_rows(fl.filter);
-        for (i, (line, colour, st)) in rows.iter().rev().skip(fl.scroll).take(n).enumerate() {
+        for (i, (line, colour, st, _)) in rows.iter().rev().skip(fl.scroll).take(n).enumerate() {
             stamped(gu, line, *st, x0 + 4.0, bottom + yoff - 16.0 - 16.0 * i as f32, *colour, self.stamps.colour);
         }
         gu.clip(None);
@@ -862,7 +883,7 @@ impl LogWin {
         let clip = [x0, y0 + 3.0, w, (y1 - 4.0 - (y0 + 3.0)).max(0.0)];
         gu.clip(Some(clip));
         let mut newest = None;
-        for (k, (line, colour, st)) in self.wrapped.iter().rev().skip(a.pending).take(a.draw_n()).enumerate() {
+        for (k, (line, colour, st, _)) in self.wrapped.iter().rev().skip(a.pending).take(a.draw_n()).enumerate() {
             let y = (y1 - 4.0) - 16.0 * (k as f32 + 1.0) + a.off as f32;
             stamped(gu, line, *st, x0 + 4.0, y, *colour, self.stamps.colour);
             if k == 0 {

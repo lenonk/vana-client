@@ -336,8 +336,9 @@ fn results(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
         .collect();
     let opts: Vec<(u16, String, bool)> = res.option.map_or(Vec::new(), |_| {
         let r = res.cursor.checked_sub(1).and_then(|i| res.rows.get(i));
-        let req = search::request_mode(w, res);
-        search::OPTION_ORDER
+        let req = search::request_mode(w, res) && !res.ac;
+        let (window, order) = search::option_window(res);
+        order
             .iter()
             .map(|&c| {
                 let swap = match c {
@@ -345,8 +346,8 @@ fn results(p: &mut Panels, w: &mut World, gu: &GameUi, moved: bool) {
                     5 if req => m.caption(gu, "menu    windowps", 786),
                     _ => None,
                 };
-                let name = swap.or_else(|| gu.child_caption(search::SCOPTION, c)).or_else(|| gu.focus_text(search::SCOPTION, c)[1].clone()).unwrap_or_default();
-                (c, name, r.is_some_and(|r| search::option_enabled(w, c, r)))
+                let name = swap.or_else(|| gu.child_caption(window, c)).or_else(|| gu.focus_text(window, c)[1].clone()).unwrap_or_default();
+                (c, name, r.is_some_and(|r| search::option_on(w, res, c, r)))
             })
             .collect()
     });

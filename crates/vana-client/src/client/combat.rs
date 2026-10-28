@@ -23,6 +23,9 @@ pub struct ChatLog {
     modes: Vec<u16>,
     /// Each line's GM flag (record byte 1 bit 7, s2c 0x017 Attr bit 0): log window 1 always shows it, window 2 never.
     gm: Vec<bool>,
+    /// Each line's record name (+0x18) and flags byte 1 (0x20 the assist rank icon) when it is a player's line (record
+    /// kind 1, FUN_101273c0): the full log's charlnk acts on it.
+    who: Vec<Option<(String, u8)>>,
     /// Lines changed in place (condensed battle lines) so far.
     edits: u64,
     /// A line that repeats the last one counts on it instead ("Target out of range. (x3)"; BattleMod's cancelmulti):
@@ -80,11 +83,14 @@ impl ChatLog {
         self.push_line(s, colour, true, indent, NO_MODE);
     }
 
-    /// A chat line with its mode and the sender's GM flag.
-    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8, gm: bool) {
+    /// A chat line with its mode, the sender's GM flag and the name its record carries.
+    pub fn push_mode(&mut self, s: String, colour: [u8; 4], indent: bool, mode: u8, gm: bool, who: Option<(String, u8)>) {
         self.push_line(s, colour, true, indent, mode as u16);
         if let Some(g) = self.gm.last_mut() {
             *g = gm;
+        }
+        if let Some(n) = self.who.last_mut() {
+            *n = who;
         }
     }
 
@@ -109,6 +115,7 @@ impl ChatLog {
         self.times.push((super::cfgapply::local_hms(), chat, indent));
         self.modes.push(mode);
         self.gm.push(false);
+        self.who.push(None);
         self.lines.push((s, colour));
     }
 
@@ -146,6 +153,11 @@ impl ChatLog {
     /// Line `k`'s print mode and GM flag, for the log windows' masks.
     pub fn route(&self, k: usize) -> (Option<u8>, bool) {
         (self.modes.get(k).and_then(|&m| log_mode(m)), self.gm.get(k).copied().unwrap_or(false))
+    }
+
+    /// Line `k`'s record name and flags byte 1 when it is a player's line.
+    pub fn who(&self, k: usize) -> Option<(&str, u8)> {
+        self.who.get(k)?.as_ref().map(|(n, f)| (n.as_str(), *f))
     }
 
     /// Line `k` with the time it came in, whether it is a chat line and whether it indents.
@@ -213,11 +225,13 @@ impl ChatLog {
             self.times.push((l.time, l.chat, l.indent));
             self.modes.push(l.mode);
             self.gm.push(l.gm);
+            self.who.push(None);
             self.lines.push((l.text, [b, g, r, a / 2 + a / 8]));
         }
         self.times.push((super::cfgapply::local_hms(), false, false));
         self.modes.push(NO_MODE);
         self.gm.push(false);
+        self.who.push(None);
         self.lines.push((divider.to_string(), [0x60, 0x60, 0x60, 0x60]));
         self.repeat = None;
         self.restored = self.lines.len();

@@ -1277,6 +1277,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                         levels: std::array::from_fn(|n| if n < 16 { p.u8(0x10 + n) } else { p.u8(0x48 + n) }),
                         sub_ok: p.u8(0x44) != 0,
                         encumbrance: p.u32(0x60),
+                        thumbs: p.u8(0x64),
                         mentor: p.u8(0x65),
                         mastery: p.u8(0x66),
                         ml_jobs: p.u32(0x68),

@@ -8,6 +8,7 @@
 mod auction;
 mod bluset;
 mod pupset;
+mod charlnk;
 mod borders;
 mod chat;
 mod combat;
@@ -100,6 +101,8 @@ pub struct Modern {
     captions: std::cell::RefCell<HashMap<(String, usize), Option<String>>>,
     /// The full log's wheel, in rows not yet scrolled.
     wheel: std::cell::Cell<f32>,
+    /// Where charlnk opens (beside the full log at the clicked line).
+    charlnk_at: std::cell::Cell<Option<Pos2>>,
     /// The Status page's currencies: only those held.
     held_only: std::cell::Cell<bool>,
     /// The Journal's tab and cursor last drawn (a moved cursor is scrolled into view), and the quest list's line of
@@ -152,6 +155,7 @@ impl Modern {
             captions: Default::default(),
             held_only: Default::default(),
             wheel: Default::default(),
+            charlnk_at: Default::default(),
             journal_seen: Default::default(),
             config_seen: Default::default(),
             journal_rows: Default::default(),
@@ -246,6 +250,7 @@ impl Modern {
         confirm(&mut p, w);
         choice(&mut p, w);
         gm_prompt(&mut p, w);
+        charlnk::draw(&mut p, w);
         mogdoor(&mut p, w);
         event_input(&mut p, w);
         let this = std::mem::take(&mut p.this);
@@ -370,6 +375,7 @@ fn focus_panel(w: &World) -> Option<&'static str> {
         _ if w.gmtell.open.is_some() => "gm prompt",
         _ if event::input(w).is_some() => "event input",
         _ if event::active(w) => return None,
+        _ if w.charlnk.is_some() => "charlnk",
         _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() || w.pupset.is_some() => "window",
         _ if w.magic.is_some() || w.ability.is_some() => "list",
         _ if w.cats.is_some() => "cats",

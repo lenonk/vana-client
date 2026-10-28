@@ -9,6 +9,7 @@ mod creator;
 mod netwait;
 mod twofa;
 mod gmtell;
+mod charlnk;
 mod modern;
 mod monstrosity;
 mod moncustom;
@@ -977,11 +978,24 @@ fn call_sound(bt: &crate::dat::battle::BattleText, line: &str, mode: u8) -> Opti
 }
 
 fn push_chat_mode(world: &mut World, line: String, mode: u8, kind: u8) {
-    push_chat_line(world, line, mode, kind, false);
+    push_chat_line(world, line, mode, kind, false, None);
 }
 
-/// A chat line in its mode, `gm` from s2c 0x017's Attr bit 0.
-fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool) {
+/// Our own echo, its record naming `name` (ourselves, or a tell's recipient).
+fn push_chat_from(world: &mut World, line: String, mode: u8, kind: u8, name: &str) {
+    push_chat_line(world, line, mode, kind, false, Some((name.to_string(), 0)));
+}
+
+/// FUN_100d9b20 -> FUN_101273c0: the kinds whose line is a player's (record kind 1): its name and flags byte 1 (0x80
+/// GM, 0x20 an assist line with the rank icon).
+fn chat_record(kind: u8, attr: u8, data: u16, from: &str) -> Option<(String, u8)> {
+    let named = matches!(kind, 0 | 0x18 | 0x19 | 1 | 3 | 4 | 5 | 8 | 0x1a | 0x1b | 0x21 | 0x22 | 0x23);
+    let flags = if attr & 1 != 0 { 0x80 } else { 0 } | if matches!(kind, 0x22 | 0x23) && data != 0 { 0x20 } else { 0 };
+    named.then(|| (from.to_string(), flags))
+}
+
+/// A chat line in its mode, `gm` from s2c 0x017's Attr bit 0, `who` its record's name.
+fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool, who: Option<(String, u8)>) {
     if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode)) {
         world.sounds.push(n);
     }
@@ -994,7 +1008,7 @@ fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool)
         None => (cfgapply::chat_colour(&world.game, kind), line, false),
     };
     for l in line.split('\n') {
-        world.chat.push_mode(l.to_string(), colour, indent, mode, gm);
+        world.chat.push_mode(l.to_string(), colour, indent, mode, gm, who.clone());
     }
 }
 
@@ -1138,8 +1152,8 @@ fn log_find_events(w: &mut World, events: &[egui::Event]) -> bool {
     took
 }
 
-/// The full log's keys (FUN_10133890): arrows move the row / scroll (SE "0001"), Enter on a speaker line
-/// opens charlnk (not done; SE "0004"), Escape closes it and refocuses logwindo.
+/// The full log's keys (FUN_10138230): arrows move the row / scroll (SE "0001"), Enter on a player's line opens
+/// charlnk (charlnk.rs), Escape closes it and refocuses logwindo.
 fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
     let Some(fl) = w.full_log.as_mut() else { return };
     match key {
@@ -1148,7 +1162,13 @@ fn full_log_key(w: &mut World, key: egui::Key, held: bool, sh: f32) {
             w.log_active = w.log_focus == 1;
             w.sounds.push(crate::audio::Ui::Cancel as u32);
         }
-        egui::Key::Enter => w.sounds.push(4),
+        // The modern one has no row cursor: a click on a line opens charlnk there (modern/chat.rs).
+        egui::Key::Enter if w.modern => {}
+        egui::Key::Enter => {
+            let (filter, back) = (fl.filter, fl.back(logwin::full_lines(sh)));
+            let line = w.log.full_line(filter, back);
+            charlnk::open(w, line);
+        }
         // The modern one only scrolls (no row cursor); its draw stops at the oldest line.
         k if w.modern => {
             if fl.key(k, true, logwin::full_lines(sh), usize::MAX / 2) {
@@ -1679,7 +1699,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                 // An event takes the keys: Enter advances or picks, arrows move, Escape cancels.
                 _ if event::active(world) => event::key(world, *key),
                 _ if gmtell::open(world) => gmtell::key(world, *key),
-                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() => {
+                // charlnk over the full log, and the prompts it opens (the comyn arm below).
+                _ if world.charlnk.is_some() && world.confirm.is_none() => charlnk::key(world, *key),
+                egui::Key::ArrowUp | egui::Key::ArrowDown | egui::Key::ArrowLeft | egui::Key::ArrowRight | egui::Key::Enter | egui::Key::Escape if world.full_log.is_some() && world.confirm.is_none() => {
                     full_log_key(world, *key, modifiers.ctrl || modifiers.alt, sh);
                 }
                 // cnqframe takes the arrows (its cursor) and Escape (FUN_101e8b10).
@@ -2257,6 +2279,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             search::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
         }
     }
+    if let Some(p) = input.pointer.filter(|_| world.charlnk.is_some() && world.confirm.is_none() && !world.modern) {
+        charlnk::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
+    }
     if let Some(p) = input.pointer.filter(|_| world.linklist.is_some() && world.confirm.is_none()) {
         linklist::pointer(world, gu, p, input.moved, input.clicked, input.right_clicked);
     }
@@ -2708,6 +2733,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         world.log_focus = 0;
         world.modern_log.fill = true;
     }
+    if world.full_log.is_none() {
+        world.charlnk = None;
+    }
     let stamps = logwin::Stamps { mode: world.game.get(0xb5), all: world.stamp_all_lines, colour: crate::dat::battle::argb_bytes(world.game.get(0x31)) };
     // The same inputs for the modern chat window's run of the rule; its combat window is retail's playermo (flag 0x1000).
     world.log_rule = logwin::LogRule {
@@ -2811,6 +2839,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         let fl = world.full_log.unwrap_or_default();
         world.log.prepare_tab(gu, &world.chat, fl.filter, route);
         blockers.push(world.log.draw_full(gu, &fl, sw, sh, line_open, route.second));
+        blockers.extend(charlnk::draw(gu, world, sw, sh));
     } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);
@@ -3353,6 +3382,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             pupset::remove_all(world);
         }
+        (Some(yes), Some((Confirm::Assist(kind), _))) => {
+            world.confirm = None;
+            if yes {
+                charlnk::answer(world, kind);
+            }
+        }
         (Some(true), Some((Confirm::MonRemoveAll, _))) => {
             world.confirm = None;
             moncustom::remove_all(world);
@@ -3617,6 +3652,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     blklist::bars(gu, world, &mut bars);
     shop::bars(gu, world, &mut bars);
     search::bars(gu, world, &mut bars);
+    charlnk::bars(gu, world, &mut bars);
     arealist::bars(gu, world, &mut bars);
     seacom::bars(gu, world, &mut bars);
     region::bars(gu, world, &mut bars);
@@ -3672,6 +3708,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
         (Confirm::PupRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe5)).unwrap_or_default(),
         (Confirm::MonRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0x101)).unwrap_or_default(),
+        (Confirm::Assist(kind), _) => charlnk::ask_text(gu, kind),
         (Confirm::MonSpecies(_), _) => gu.menu_msg(0x2c5, ""),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
             let name = world.item_info.as_ref().and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
@@ -5228,6 +5265,10 @@ struct World {
     /// The windows that take the log's focus open last frame (main menu, item windows, action menu, confirm, config).
     log_takers: u8,
     full_log: Option<logwin::FullLog>,
+    /// The full log's menu on a player's line.
+    charlnk: Option<charlnk::CharLnk>,
+    /// The name an Assist Channel prompt (charlnk's, acoption's) acts on.
+    assist_name: String,
     /// The modern full log's find: typed while it is open, it shows the lines holding the text (not retail).
     log_find: Option<String>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
@@ -5601,6 +5642,8 @@ enum Confirm {
     PupRemoveAll,
     /// Customization's Remove All (FUN_101431b0): group 9 0x101 "Remove all?".
     MonRemoveAll,
+    /// charlnk's Warning / Mute / Thumbs Up and acoption's Remove (c2s 0x0B7 kind), default No.
+    Assist(u8),
     /// A species of another family (FUN_10142b50): 0xe 0x2c5, the experience reset.
     MonSpecies(u16),
 }
@@ -6897,6 +6940,8 @@ impl App {
                             log_active: false,
                             log_takers: 0,
                             full_log: None,
+                            charlnk: None,
+                            assist_name: String::new(),
                             log_find: None,
                             map: None,
                             key_items: Vec::new(),
@@ -7958,7 +8003,7 @@ impl App {
                         continue;
                     }
                     if let Some((line, mode)) = chat_line(kind, attr, data, &from, &text, &zone) {
-                        push_chat_line(world, line, mode, kind, attr & 1 != 0);
+                        push_chat_line(world, line, mode, kind, attr & 1 != 0, chat_record(kind, attr, data, &from));
                     }
                 }
                 NetEvent::Logout { state } => {

@@ -236,8 +236,9 @@ fn settings(ctx: &egui::Context, m: &Modern, at: Rect, size: &mut f32, battle_in
 /// What the chat window shows: the lines (timestamp, text, colour, chat line or not), the chat line while typing,
 /// and whether a message waits for a key.
 pub struct ChatView<'a> {
-    /// The lines: timestamp, text, colour, chat mode (combat::NO_MODE without one), whether it names us.
-    pub lines: Vec<(String, &'a str, [u8; 4], u16, bool)>,
+    /// The lines: timestamp, text, colour, chat mode (combat::NO_MODE without one), whether it names us, its index in
+    /// the log.
+    pub lines: Vec<(String, &'a str, [u8; 4], u16, bool, usize)>,
     pub input: Option<InputView>,
     pub waiting: bool,
     /// The lines each tab has had since it was last shown (rChat's unread markers).
@@ -322,7 +323,8 @@ fn view_keep(w: &World, keep: usize) -> ChatView<'_> {
     let stamps = (w.game.get(0xb5), w.stamp_all_lines);
     let modes = w.chat.modes();
     let all: Vec<_> = w.chat.iter_timed().zip(modes.iter().copied()).collect();
-    let lines = all[all.len().saturating_sub(keep)..].iter().map(|(((line, c), (time, chat, _)), mode)| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode, incoming(*mode) && mentions(line, &w.name))).collect();
+    let from = all.len().saturating_sub(keep);
+    let lines = all[from..].iter().enumerate().map(|(i, (((line, c), (time, chat, _)), mode))| (stamp_of(stamps, *time, *chat), line.as_str(), *c, *mode, incoming(*mode) && mentions(line, &w.name), from + i)).collect();
     let input = w.typing.then(|| InputView { channel: channel(super::super::chatctrl::line_mode(&w.chat_input, w.chat_mode)), pieces: fep::pieces(w, &w.chat_input), caret: fep::caret(w), fep: w.fep.as_ref().map(|f| (f.cands.iter().map(|c| c.text.clone()).collect(), f.sel)) });
     ChatView { lines, input, waiting: event::prompt(w), unread: [0; 11] }
 }
@@ -533,12 +535,14 @@ fn full(p: &mut Panels, w: &mut World) {
     let battle_in_all = *p.battle_in_all;
     let mut button = (Rect::NOTHING, false);
     let (mut short, mut hovered) = (None, false);
+    let (mut clicked, mut picked) = (None, None);
     let r = p.show("chat", Show { size: default_room(p.ctx), resizable: true, height: Some(height), ..Default::default() }, |ui, room| {
         ui.spacing_mut().item_spacing.y = 0.0;
         button = tabs(ui, m, 1.0, &v.unread);
         ui.add_space(GAP);
-        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::hover());
+        let (area, resp) = ui.allocate_exact_size(vec2(ui.available_width(), lines_h), Sense::click());
         hovered = resp.hovered();
+        clicked = resp.clicked().then(|| resp.interact_pointer_pos()).flatten();
         let wrap = wrap_width(room);
         // The chat line in the bottom row while typing.
         let input_r = v.input.as_ref().map(|_| Rect::from_min_max(pos2(area.min.x, area.max.y - row - 5.0), pos2(area.max.x, area.max.y + 5.0)));
@@ -563,7 +567,8 @@ fn full(p: &mut Panels, w: &mut World) {
         let lines = Rect::from_min_max(area.min, pos2(area.max.x, input_r.map_or(area.max.y, |r| r.min.y - TAB_H)));
         let painter = ui.painter().with_clip_rect(Rect::from_min_max(lines.min - vec2(10.0, 0.0), lines.max + vec2(0.0, if input_r.is_some() { 0.0 } else { 4.0 })).intersect(ui.clip_rect()));
         let mut y = lines.max.y + fl.scroll as f32 * row;
-        for (st, line, c, mode, named) in v.lines.iter().rev() {
+        let open = w.charlnk.as_ref().map(|c| c.line);
+        for (st, line, c, mode, named, k) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
             }
@@ -572,6 +577,15 @@ fn full(p: &mut Panels, w: &mut World) {
             }
             let galley = painter.layout_job(line_job((st, m.theme.color("muted")), line, *c, &font, wrap));
             y -= galley.size().y;
+            let lr = Rect::from_min_size(pos2(area.min.x, y), vec2(area.width(), galley.size().y));
+            // A player's line (charlnk's) lights under the pointer and while its menu is open.
+            let player = w.chat.who(*k).is_some();
+            if player && (open == Some(*k) || hovered && ui.rect_contains_pointer(lr.intersect(lines))) {
+                painter.rect_filled(lr.expand2(vec2(4.0, 0.0)), 3.0, m.theme.color("gold").gamma_multiply(0.14));
+            }
+            if clicked.is_some_and(|p| lr.intersect(lines).contains(p)) {
+                picked = Some((*k, crate::dat::font::strip_codes(line).to_string()));
+            }
             if *named {
                 mention_mark(&painter, m, Rect::from_min_size(pos2(area.min.x, y), vec2(galley.size().x, galley.size().y)));
             }
@@ -594,6 +608,14 @@ fn full(p: &mut Panels, w: &mut World) {
     // The full log covers the edge windows (the Timers) while it is open.
     if r.is_some() {
         p.ctx.move_to_top(egui::LayerId::new(egui::Order::Middle, egui::Id::unique(("modern panel", "chat"))));
+    }
+    // A click on a line is the full log's Enter there (charlnk.rs); the menu opens beside the window at its height.
+    if let Some((k, text)) = picked
+        && w.confirm.is_none()
+    {
+        let at = r.map_or(pos2(0.0, 0.0), |r| pos2(r.max.x + 8.0, p.ctx.pointer_latest_pos().map_or(r.min.y, |q| q.y - 20.0)));
+        m.charlnk_at.set(Some(at));
+        super::super::charlnk::open(w, Some((k, text)));
     }
     if let Some(f) = w.full_log.as_mut() {
         if let Some(k) = short {
@@ -661,7 +683,7 @@ pub fn draw(p: &mut Panels, v: &ChatView, s: Shown, lift: bool) {
         let painter = ui.painter().with_clip_rect(clip.intersect(ui.clip_rect()));
         let mut y = base + s.pending as f32 * row;
         let mut newest = None;
-        for (st, line, c, mode, named) in v.lines.iter().rev() {
+        for (st, line, c, mode, named, _) in v.lines.iter().rev() {
             if !shows(tab, *mode, battle_in_all) {
                 continue;
             }

@@ -1799,7 +1799,7 @@ fn chat(w: &mut World, cid: u16, msg: &str) -> Done {
         id::EMOTE_TEXT => (format!("{me} {msg}"), 7),
         _ => (format!("{me} : {msg}"), 1),
     };
-    super::push_chat_mode(w, line, mode, kind);
+    super::push_chat_from(w, line, mode, kind, &me);
     if send_it {
         send(w, NetCommand::Chat { kind, text: msg.to_string() });
         restore_temp_mode(w);
@@ -1879,7 +1879,7 @@ fn tell(w: &mut World, args: &[String], line: &str) -> Done {
         return Ok(());
     }
     let msg = tail(line, 2).trim().to_string();
-    super::push_chat_mode(w, format!(">>{name} : {msg}"), 4, 3);
+    super::push_chat_from(w, format!(">>{name} : {msg}"), 4, 3, &name);
     // FUN_1018d6e0: the sent-tell names, newest first, 8 at most (exact match moves to the front).
     w.tell_hist.retain(|n| *n != name);
     w.tell_hist.insert(0, name.clone());

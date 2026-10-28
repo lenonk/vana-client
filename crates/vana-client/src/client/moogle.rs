@@ -30,6 +30,8 @@ pub struct JobInfo {
     pub sub_ok: bool,
     /// Encumbered equipment slots (low 16 bits) and stat debilitations (player +0x40df0, s2c 0x01B @0x60).
     pub encumbrance: u32,
+    /// @0x64 can_thumbs_up_mentor (player +0x40dea: 1..3 let charlnk thumb up a ranked mentor).
+    pub thumbs: u8,
     /// @0x65 mentor, @0x66 mastery rank, @0x68 the jobs with a master level (bit n), @0x6c + n their levels.
     pub mentor: u8,
     pub mastery: u8,
