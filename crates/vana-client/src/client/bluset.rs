@@ -22,7 +22,7 @@ const PICKED: u32 = 0x8080_4020;
 const SET: u32 = 0x8050_9050;
 const GREY: u32 = 0x8040_4040;
 /// FUN_100fc3c0: one c2s 0x102 per second, extras dropped.
-const THROTTLE: Duration = Duration::from_millis(1000);
+pub(super) const THROTTLE: Duration = Duration::from_millis(1000);
 /// DAT_1037f1dc / DAT_1037f1e8: the slot numbers' colours by the level a set needs.
 const BAND_LEVELS: [u8; 9] = [20, 30, 40, 50, 60, 70, 80, 90, 99];
 const BAND_COLOURS: [u32; 9] = [0x8080_8080, 0x8090_9050, 0x8050_8080, 0x8080_6090, 0x8050_9050, 0x8090_6050, 0x8050_6090, 0x8060_6050, 0x8060_4010];
@@ -62,7 +62,6 @@ pub struct Screen {
     filter: u8,
     /// bluesibo's cursor row while it is open.
     sibo: Option<u16>,
-    sent: Option<Instant>,
 }
 
 /// FUN_100fcb70: a block is kept only when its job is the one s2c 0x01B gave that side. The stamp (FUN_1022b290):
@@ -149,7 +148,7 @@ pub fn open(w: &mut World) {
     let st = w.stats.as_ref().unwrap();
     let level = if side == 0 { st.main.1 } else { st.sub.1 };
     let (slots, total) = (blumagic::slots(level), total_points(w, level));
-    w.bluset = Some(Screen { side, slots, total, level, focus: Focus::Equip, equip: (0, 0), inven: (0, 0), slot_pick: None, spell_pick: None, filter: 0, sibo: None, sent: None });
+    w.bluset = Some(Screen { side, slots, total, level, focus: Focus::Equip, equip: (0, 0), inven: (0, 0), slot_pick: None, spell_pick: None, filter: 0, sibo: None });
 }
 
 /// FUN_101dfe30: Type, Remove All, then the known blue spells in the mix.dat order that have points and the family.
@@ -211,7 +210,7 @@ fn band_colours(w: &World, s: &Screen) -> Vec<u32> {
 /// second of the last.
 fn send(w: &mut World, s: &mut Screen, spell: u8, slots: &[(usize, u8)]) {
     let b = w.ext_job[s.side];
-    if b[0] != 0x10 || slots.is_empty() || s.sent.is_some_and(|t| t.elapsed() < THROTTLE) {
+    if b[0] != 0x10 || slots.is_empty() || w.ext_job_sent.is_some_and(|t| t.elapsed() < THROTTLE) {
         return;
     }
     let mut body = vec![0u8; 0xa0];
@@ -221,7 +220,7 @@ fn send(w: &mut World, s: &mut Screen, spell: u8, slots: &[(usize, u8)]) {
         body[8 + i] = v;
     }
     log::info!("blue magic: c2s 0x102 spell {spell} slots {slots:?}");
-    s.sent = Some(Instant::now());
+    w.ext_job_sent = Some(Instant::now());
     let _ = w.net.commands.send(NetCommand::Packet { id: 0x102, body });
 }
 

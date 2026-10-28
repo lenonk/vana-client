@@ -7,6 +7,7 @@
 
 mod auction;
 mod bluset;
+mod pupset;
 mod borders;
 mod chat;
 mod combat;
@@ -232,6 +233,7 @@ impl Modern {
         inspect::dress(&mut p, w);
         minor::draw(&mut p, w);
         bluset::draw(&mut p, w);
+        pupset::draw(&mut p, w);
         // The game's windows that stack on the log (a dialogue's choices ...) go on top of what rides on the chat
         // window (the location panel, the combat window), as retail's stack over its compass and action menu.
         if let Some((r, faded)) = self.chat_edge.get() {
@@ -368,7 +370,7 @@ fn focus_panel(w: &World) -> Option<&'static str> {
         _ if w.gmtell.open.is_some() => "gm prompt",
         _ if event::input(w).is_some() => "event input",
         _ if event::active(w) => return None,
-        _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() => "window",
+        _ if w.settings.is_some() || w.config.is_some() || w.bluset.is_some() || w.pupset.is_some() => "window",
         _ if w.magic.is_some() || w.ability.is_some() => "list",
         _ if w.cats.is_some() => "cats",
         _ if w.inspect.up() => "check",

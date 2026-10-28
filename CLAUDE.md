@@ -192,6 +192,8 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     a QR code, turn off, new recovery code) done and seen live.
   - GM prompts (client/gmtell.rs, MODLOG "GM prompts"; LSB's !menu / !quest / !mission / !afkcheck): done and seen
     live in both UIs.
+  - PUP automaton customization (client/pupset.rs, MODLOG "Automaton customization"): done and seen live in both
+    UIs; the activated-automaton refusal and the mouse not tried.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

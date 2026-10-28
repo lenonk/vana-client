@@ -2,7 +2,7 @@
 //! the item list "menu    inventor" at (314, 48) (source vt 0x103336c0) and the grid "menu    equip", with the list's
 //! Storage Options row and "menu    mnstorag". Mode 2 (slot first): Enter on a slot lists its pieces; mode 1 (Num+,
 //! item first): a picked item limits the grid to its slots. Equipping sends c2s 0x050 {index, slot, container}.
-//! A PUP (main or sub) gets "menu    pupequip" first. Not done: its "Customize automaton" (FUN_10207670).
+//! A PUP (main or sub) gets "menu    pupequip" first; its "Automaton" row is client/pupset.rs.
 
 use super::World;
 use super::game_ui::GameUi;
@@ -129,7 +129,7 @@ pub fn pup_key(w: &mut World, gu: &GameUi, key: egui::Key) {
                 }
                 open(w);
             } else {
-                log::info!("pupequip: Customize automaton (FUN_10207670) is not implemented yet");
+                super::pupset::open(w);
             }
         }
         _ => {}

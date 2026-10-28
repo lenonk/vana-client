@@ -403,6 +403,10 @@ fn layout_windows(p: &mut Panels, w: &mut World) {
 
 /// pupequip (a PUP's main menu Equipment row): Equipment and Customize automaton as a column.
 fn pup_menu(p: &mut Panels, w: &mut World) {
+    // The automaton screen suspends it (the window walk).
+    if w.pupset.is_some() {
+        return;
+    }
     let Some(gu) = p.gu else { return };
     let Some((name, sel)) = equipwin::pup_look(w) else { return };
     let m = p.m;

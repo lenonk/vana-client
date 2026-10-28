@@ -10927,3 +10927,26 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   actors, so not seen live; event sweeps of 230 / 240 and 236 / 238 / 241 / 245 / 246 unchanged, 0 faults.
 - Ours: client/event.rs (State::auto_pick, the host's bar_left), magic.rs draw_event_timer / bar_clock; the modern
   UI shows the timer as a gauge panel and the event cast bar's time in place of its percentage.
+
+## Automaton customization: automato, statpup, pupsibor (2026-10-28)
+
+Spec `~/ffxi/lab/research/pup_automaton_spec.md` (addresses, layouts, flows, packets). Ours client/pupset.rs, the modern
+view modern/pupset.rs.
+- pupequip's Automaton row (FUN_10207670): 0x119 seen and PUP main or sub, else 7 0x57. Opens statpup (16, 48),
+  automato (130, 48; cursor remembered), BLU's bluinven / bluehelp fed by the automaton rows, pupsibor on the Element
+  row. pupequip stays open under them (registry 0x20000: Num+ does not cycle the log while it or the screen is up).
+- automato: head (child 1), frame (5), the 12 attachments row by row (DAT_10385530); the anc_equi box on the cursor
+  cell (as the Equipment grid), item icons at (-1, -1) under it; the eight "used/capacity" counts from (39, 148), 60
+  apart by e / 3, 14 by e % 3, red 0x80804040 over capacity (capacity = head + frame nibbles + block +0x98 & 0xf).
+- Item records 0x2000..0x21ff: ours `resource` is the kind (0 head, 1 frame, 2..9 attachment element + 2), `jobs` the
+  element nibbles (Fire, Ice, Wind, Earth, Lightning, Water, Light, Dark).
+- The list: heads, frames, Element, (Remove All), attachments (by filter); green = on, orange = picked, grey = does
+  not fit (the cursor slot's attachment given back while a slot is picked). Flow A slot first (the list in that
+  slot's mode, its item on the top row), flow B item first (automato's cursor held on head / frame, off them for an
+  attachment); the slot's own attachment again removes it; the same head / frame buzzes.
+- c2s 0x102 (FUN_100fcf80 / FUN_100fd100): value @4, block dword 0 @8, the slot byte @0xc + slot (the old byte for a
+  removal); Remove All copies the 12 attachments, head and frame 0. One 0x102 a second, the timer shared with BLU's
+  (World::ext_job_sent).
+- Seen live 2026-10-28 (Lnxcsfix PUP 75 via !changejob, !addallattachments; both UIs): Valoredge head (capacities and
+  LSB's stats follow), Strobe in, Strobe out, Mana Booster under the Ice filter, Remove All, Escape back to pupequip
+  on Automaton. Not seen: the activated-automaton refusal (7 0xb8; Activate needs an Animator), the mouse.

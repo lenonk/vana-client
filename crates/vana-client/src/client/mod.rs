@@ -79,6 +79,7 @@ mod plate;
 mod partymenu;
 mod partyreq;
 mod bluset;
+mod pupset;
 mod roe;
 mod levelsync;
 mod viewhouse;
@@ -1072,7 +1073,7 @@ fn log_cycle(w: &mut World) {
     // FUN_1015ecc0(0x20000 / 0x20000000) with no focus yet: an open window flagged in the registry (0x103722f8)
     // stops it: mgcmenu / abimenu / magselec / abiselec stay open under their lists, sortyn, ... The item windows'
     // share of this is inferred (Num+ is their list's message 8 there).
-    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some()) {
+    if w.log_focus == 0 && (w.magic.is_some() || w.ability.is_some() || w.cats.is_some() || w.win.is_some() || w.confirm.is_some() || synth::active(w) || post::active(w) || shop::active(w) || trade::active(w) || treasure::active(w) || w.chatctrl.is_some() || w.partymenu.is_some() || w.levelsync.is_some() || w.viewhouse.is_some() || w.bazaar.is_some() || w.helpdesk.is_some() || w.primer.is_some() || w.macroedit.is_some() || w.status.is_some() || w.missions.is_some() || w.quests.is_some() || w.keyitems.is_some() || w.searchmenu.is_some() || w.linkshell.is_some() || w.arealist.is_some() || w.region_menu.is_some() || w.blklist.is_some() || w.inspect.up() || mannequin::active(w) || w.moncustom.is_some() || w.pupequip.is_some() || w.pupset.is_some()) {
         return;
     }
     let active = w.log_active || w.menu.is_some() || w.win.is_some() || w.action_menu.is_some();
@@ -1757,6 +1758,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
                     _ => magic::open_ability(world, 2, false),
                 },
                 _ if world.bluset.is_some() && world.confirm.is_none() => bluset::key(world, *key),
+                _ if world.pupset.is_some() && world.confirm.is_none() => pupset::key(world, gu, *key),
                 _ if world.moncustom.is_some() && world.confirm.is_none() => moncustom::key(world, gu, *key),
                 _ if world.prompt.is_none() && world.confirm.is_none() && (world.cats.is_some() || world.magic.is_some() || world.ability.is_some()) => {
                     magic::key(world, *key);
@@ -2284,6 +2286,9 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     if let Some(p) = status_pointer.filter(|_| world.status.is_some()) {
         status::pointer(world, gu, sw, sh, p, input.moved, input.clicked, input.right_clicked);
+    }
+    if let Some(p) = input.pointer.filter(|_| world.pupset.is_some() && world.confirm.is_none()) {
+        pupset::pointer(world, gu, sw, sh, p, input.moved, input.clicked);
     }
     // Mouse on the magic / ability lists and their category windows, or the Set Spells screen over them.
     if let Some(p) = input.pointer.filter(|_| world.bluset.is_some() && world.confirm.is_none()) {
@@ -2935,6 +2940,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     blockers.extend(unity::draw(gu, world, sw, sh));
     blockers.extend(merits::draw(gu, world, sw, sh));
     blockers.extend(equipwin::pup_draw(gu, world, sw, sh));
+    blockers.extend(pupset::draw(gu, world, sw, sh));
     blockers.extend(jobpoints::draw(gu, world, sw, sh));
     blockers.extend(aepoints::draw(gu, world, sw, sh));
     if !world.modern {
@@ -3268,6 +3274,10 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             bluset::remove_all(world);
         }
+        (Some(true), Some((Confirm::PupRemoveAll, _))) => {
+            world.confirm = None;
+            pupset::remove_all(world);
+        }
         (Some(true), Some((Confirm::MonRemoveAll, _))) => {
             world.confirm = None;
             moncustom::remove_all(world);
@@ -3519,6 +3529,7 @@ fn bar_text(gu: &GameUi, world: &World, items: &[(usize, [f32; 4])]) -> hudtop::
     unity::bars(gu, world, &mut bars);
     merits::bars(gu, world, &mut bars);
     equipwin::pup_bars(gu, world, &mut bars);
+    pupset::bars(gu, world, &mut bars);
     jobpoints::bars(gu, world, &mut bars);
     aepoints::bars(gu, world, &mut bars);
     missions::bars(gu, world, &mut bars);
@@ -3582,6 +3593,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Request(_), _) => partyreq::ask_text(world),
         (Confirm::Roe(a), _) => roe::ask_text(gu, a),
         (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
+        (Confirm::PupRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe5)).unwrap_or_default(),
         (Confirm::MonRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0x101)).unwrap_or_default(),
         (Confirm::MonSpecies(_), _) => gu.menu_msg(0x2c5, ""),
         (Confirm::Drop { id, stage: 0, .. }, _) => {
@@ -5363,6 +5375,10 @@ struct World {
     blu_reset: Option<Instant>,
     blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
     bluset: Option<bluset::Screen>,
+    /// The automaton screen (client/pupset.rs).
+    pupset: Option<pupset::Screen>,
+    /// FUN_100fc3c0's last c2s 0x102 (one a second, shared by BLU and PUP).
+    ext_job_sent: Option<Instant>,
     /// Monstrosity Customization (client/moncustom.rs).
     moncustom: Option<moncustom::Screen>,
     /// The server message's transfer, its one request per lobby login (first zone) still to come, and the world's
@@ -5494,6 +5510,8 @@ enum Confirm {
     Roe(roe::Ask),
     /// bluinven's Remove All (FUN_10210e30): group 9 0xe4 "Remove all set blue magic spells?".
     BlueRemoveAll,
+    /// The automaton list's Remove All (LAB_10209290): group 9 0xe5 "Remove all attachments?".
+    PupRemoveAll,
     /// Customization's Remove All (FUN_101431b0): group 9 0x101 "Remove all?".
     MonRemoveAll,
     /// A species of another family (FUN_10142b50): 0xe 0x2c5, the experience reset.
@@ -5532,6 +5550,9 @@ impl World {
         }
         if let Some(c) = &self.cats {
             kept.push((c.menu, magic::cat_child(c)));
+        }
+        if let Some(s) = &self.pupset {
+            kept.extend(pupset::kept(s));
         }
         self.cursor_mem.extend(kept);
     }
@@ -6916,6 +6937,8 @@ impl App {
                             blu_reset: None,
                             blu_data: self.blu_data.clone(),
                             bluset: None,
+                            pupset: None,
+                            ext_job_sent: None,
                             moncustom: None,
                             treasure: Default::default(),
                             loot: None,
@@ -9142,6 +9165,9 @@ impl App {
             world.info_page.set(p);
         }
         items::compare_key(world, self.input.test(0x76, input::mode::HELD) || self.input.test(0x89, input::mode::HELD));
+        if self.input.test(0x11, input::mode::PRESS) && world.pupset.is_some() {
+            pupset::num_plus(world);
+        }
         if self.input.test(0x11, input::mode::PRESS) && world.bluset.is_some() {
             bluset::num_plus(world);
         } else if self.input.test(0x11, input::mode::PRESS) && world.moncustom.is_some() {
