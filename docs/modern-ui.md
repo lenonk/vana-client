@@ -17,6 +17,8 @@ master 2026-10-27 (kept).
   on 2026-10-27 (the user's pick from nine faces rendered by `modern-shot --font`; plates and party names kept). All SIL
   OFL 1.1, unmodified, from
   their official releases, in `crates/vana-client/assets/fonts` with their licence texts, embedded in the binary.
+  None has kana or kanji: a system Japanese font (Noto Sans CJK, Source Han Sans, Yu Gothic, Meiryo, Hiragino...;
+  theme.rs `CJK`) is the last fallback of every family, for Japanese game text and chat (2026-10-28).
 - **Order.** Milestone 1 (theme and atlas loader, panels, movable windows with saved layout, HUD basics), then the Mog
   House storage slice.
 - **Config pages.** The modern Config pages leave out the options that mean nothing with the modern UI (window type,

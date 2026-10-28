@@ -104,6 +104,8 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
         (String::new(), "The Robber Crab hits Raven for 24 points of damage.", [0x60, 0x60, 0x80, 0x80], NO_MODE),
         ("[18:42:31] ".to_string(), "(Koru) \u{E008}Let's go!\u{E009}", [0x80, 0x70, 0x40, 0x80], 13),
         ("[18:42:33] ".to_string(), "(Raven) lenon, cure me pls", [0x80, 0x70, 0x40, 0x80], 13),
+        // Japanese game text (zone 70's Sakura) through the system CJK font.
+        (String::new(), "Sakura : \u{30D4}\u{30E8}\u{30D4}\u{30E8}\u{FF01} \u{65E5}\u{672C}\u{8A9E}", wh, NO_MODE),
         // The game's own glyphs and an event item name (1e 02 .. 1e 01).
         (String::new(), "Kupipi : A pre\u{FF5E}sent? Take this \u{100402}Fire Crystal\u{100401} to the \u{F87B2}Mog House\u{F87B3}.", wh, NO_MODE),
     ];

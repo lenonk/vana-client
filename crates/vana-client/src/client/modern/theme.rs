@@ -257,9 +257,41 @@ pub fn font(name: &str) -> Option<&'static [u8]> {
     FONTS.iter().find(|(n, _)| *n == name).map(|(_, b)| *b)
 }
 
+/// System fonts with Japanese (game text, Japanese players' chat) and their face index, tried in order *(ours: none of
+/// the bundled faces has kana or kanji)*.
+const CJK: [(&str, u32); 12] = [
+    ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", 0),
+    ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 0),
+    ("/usr/share/fonts/google-noto-sans-cjk-fonts/NotoSansCJK-Regular.ttc", 0),
+    ("/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", 0),
+    ("/usr/share/fonts/noto-cjk/NotoSansCJKjp-Regular.otf", 0),
+    ("/usr/share/fonts/adobe-source-han-sans/SourceHanSansJP-Regular.otf", 0),
+    ("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", 0),
+    ("/usr/share/fonts/wenquanyi/wqy-zenhei/wqy-zenhei.ttc", 0),
+    ("C:\\Windows\\Fonts\\YuGothM.ttc", 0),
+    ("C:\\Windows\\Fonts\\meiryo.ttc", 0),
+    ("C:\\Windows\\Fonts\\msgothic.ttc", 0),
+    ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
+];
+
+/// The first of `CJK` present, read once.
+fn cjk_font() -> Option<Arc<FontData>> {
+    static FONT: std::sync::OnceLock<Option<Arc<FontData>>> = std::sync::OnceLock::new();
+    FONT.get_or_init(|| {
+        let (path, index) = CJK.iter().find(|(p, _)| std::path::Path::new(p).is_file())?;
+        let bytes = std::fs::read(path).map_err(|e| log::warn!("CJK font {path}: {e}")).ok()?;
+        log::info!("modern UI: Japanese glyphs from {path}");
+        let mut f = FontData::from_owned(bytes);
+        f.index = *index;
+        Some(Arc::new(f))
+    })
+    .clone()
+}
+
 /// The bundled fonts: Fira Sans for the interface (egui's Proportional), Fira Sans SemiBold for titles (STRONG), Inter
 /// Bold Italic for the bars' labels and the party's names (LABEL), Inter SemiBold for names out of the zone (NAME),
-/// JetBrains Mono for logs (Monospace); egui's own fonts stay behind them for missing glyphs.
+/// JetBrains Mono for logs (Monospace); egui's own fonts stay behind them for missing glyphs, then a system Japanese
+/// font (`CJK`).
 pub fn install_fonts(ctx: &Context) {
     install_fonts_with(ctx, None);
 }
@@ -278,14 +310,18 @@ pub fn install_fonts_with(ctx: &Context, body: Option<(Vec<u8>, Vec<u8>)>) {
         }
         None => ("FiraSans-Regular", "FiraSans-SemiBold"),
     };
-    let fallbacks = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let mut fallbacks = defs.families.get(&FontFamily::Proportional).cloned().unwrap_or_default();
+    let cjk = cjk_font().map(|f| defs.font_data.insert("cjk".into(), f)).is_some();
+    if cjk {
+        fallbacks.push("cjk".into());
+    }
     let with = |first: &str| -> Vec<String> { std::iter::once(first.to_string()).chain(fallbacks.iter().cloned()).collect() };
     defs.families.insert(FontFamily::Proportional, with(regular));
     defs.families.insert(FontFamily::Name(STRONG.into()), with(strong));
     defs.families.insert(FontFamily::Name(NAME.into()), with("Inter-SemiBold"));
     defs.families.insert(FontFamily::Name(LABEL.into()), with("Inter-BoldItalic"));
     let mono = defs.families.get(&FontFamily::Monospace).cloned().unwrap_or_default();
-    defs.families.insert(FontFamily::Monospace, std::iter::once("JetBrainsMono-Regular".to_string()).chain(mono).collect());
+    defs.families.insert(FontFamily::Monospace, std::iter::once("JetBrainsMono-Regular".to_string()).chain(mono).chain(cjk.then(|| "cjk".to_string())).collect());
     ctx.set_fonts(defs);
 }
 
