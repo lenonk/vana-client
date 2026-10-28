@@ -10765,3 +10765,26 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   it runs this frame as a pushed one did), else a new one.
 - Also on F12 now: GPU time per frame stage (render/gputime.rs: timestamps between the passes, TIMESTAMP_QUERY and
   TIMESTAMP_QUERY_INSIDE_ENCODERS when the device has them; each line with FFXI_PERF) and the effect counts.
+
+## Scenery culled on the GPU (ours, 2026-10-27)
+
+- Before: every zone draw (one per MMB model, all of its mesh's placements instanced) went in every frame, wherever the
+  camera looked; placements outside their LOD band were collapsed in vs_main after their vertices ran. Retail culls on
+  the CPU with the MZB's tree (FUN_1017c8b0; research spec culling_spec.md for its draw distance and tree).
+- render/cull.rs, zone.wgsl cs_cull_vis / cs_cull_compact: per instance its mesh's box (model space, over every model
+  drawn) and the draws' runs (a mesh's normal, mirrored or both placements: instance range, where the visible copies
+  go, the draws' indirect argument slots). Each frame, from the uniforms render() writes: pass 1 marks each instance
+  (the LOD band as vs_main tests it to the origin, then the box through the model, door part and voyage matrices
+  against the six frustum planes, clip z 0..w); pass 2, a workgroup a run, copies the visible instances in order
+  (an inclusive scan of 64 flags at a time) into a second instance buffer and writes the run's draws'
+  DrawIndexedIndirect arguments. The zone's draws then go in as draw_indexed_indirect from that buffer.
+- Empty indirect draws cost the GPU about as much as full ones (its command processor fetches each draw's arguments),
+  so the CPU also leaves out the runs that cannot show: each run's world box over its placements' geometry and the
+  box over their origins with the union of their bands, built at load; a run goes in when its box (2 % + 0.5 larger)
+  meets the frustum and its origins can be within its bands. Runs with door parts or a voyage's world always go in.
+- Needs INDIRECT_FIRST_INSTANCE (requested when the adapter has it); without it, or with FFXI_NO_CULL, the draws go
+  in as before. Sub-areas and Mog House furniture draw as before.
+- Checked: six views in zones 126, 230 and 102 pixel-identical to the unculled render; the GPU time of render()
+  (FFXI_BENCH=N on the offscreen tools, now timed by GPU timestamps too) 0.83 -> 0.32 ms looking along the ground in
+  Qufim Island, 1.51 -> 0.81 ms in a Southern San d'Oria street, 0.80 -> 0.49 ms in La Theine, unchanged top-down
+  (everything in view).

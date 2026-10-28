@@ -15,6 +15,7 @@ pub mod invwin;
 pub mod screenfx;
 pub mod scale;
 pub mod gputime;
+pub mod cull;
 
 use crate::dat::zone::ZoneScene;
 use anyhow::{Context, Result};
@@ -122,8 +123,9 @@ impl Gpu {
         let info = adapter.get_info();
         log::info!("GPU: {} ({:?}, {:?})", info.name, info.backend, info.device_type);
         // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3); timestamps between
-        // passes give the F12 overlay its GPU times (render/gputime.rs).
-        let required_features = adapter.features() & (wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
+        // passes give the F12 overlay its GPU times (render/gputime.rs); indirect draws from any instance let the
+        // scenery be culled on the GPU (render/cull.rs).
+        let required_features = adapter.features() & (wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::INDIRECT_FIRST_INSTANCE);
         // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).
         let required_limits = wgpu::Limits { max_storage_buffers_per_shader_stage: adapter.limits().max_storage_buffers_per_shader_stage.min(16), ..Default::default() };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, required_limits, ..Default::default() }))?;
@@ -273,6 +275,15 @@ struct Draw {
     /// FUN_1017c9c0's states: bit 0 alpha test (placements named '_', inst+0xd6), bit 1 alpha blend (MMB model bit 31:
     /// no depth write, ZBIAS 8). Drawn in that order: opaque, cut out, blended.
     mode: u8,
+    /// The indirect argument slots of its two runs (draw_runs), when the scenery is culled.
+    args: [u32; 2],
+}
+
+impl Draw {
+    /// Its runs: the normal placements culled back and the mirrored ones front, or all of them in one draw.
+    fn runs(&self) -> [(usize, std::ops::Range<u32>); 2] {
+        if self.cull { [(1, self.instances.clone()), (2, self.mirrored.clone())] } else { [(0, self.instances.start..self.mirrored.end), (0, 0..0)] }
+    }
 }
 
 /// The scene projection's near and far planes. Near is retail's 0.1 (FUN_100146e0): the eye keeps only 0.17 off the
@@ -319,6 +330,9 @@ pub struct ZoneRenderer {
     globals: wgpu::BindGroup,
     textures: Vec<wgpu::BindGroup>,
     instances: wgpu::Buffer,
+    /// The zone's scenery culled on the GPU (render/cull.rs) when the device draws indirectly, and its passes.
+    cull: Option<cull::Cull>,
+    cull_pipes: [wgpu::ComputePipeline; 2],
     /// All scenery in one vertex and one index buffer, uploaded once; draws keep the file order.
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -689,6 +703,9 @@ pub struct ZonePipes {
     shine_pipeline: wgpu::RenderPipeline,
     refract_pipeline: wgpu::RenderPipeline,
     line_pipeline: wgpu::RenderPipeline,
+    /// The scenery's frustum culling (render/cull.rs): its group 3 layout, the visibility and compaction passes.
+    cull_layout: wgpu::BindGroupLayout,
+    cull: [wgpu::ComputePipeline; 2],
 }
 
 impl ZonePipes {
@@ -702,7 +719,7 @@ impl ZonePipes {
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT.union(wgpu::ShaderStages::COMPUTE),
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Uniform, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
@@ -720,7 +737,7 @@ impl ZonePipes {
                 },
                 wgpu::BindGroupLayoutEntry {
                     binding: 3,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX.union(wgpu::ShaderStages::COMPUTE),
                     ty: wgpu::BindingType::Buffer { ty: wgpu::BufferBindingType::Storage { read_only: true }, has_dynamic_offset: false, min_binding_size: None },
                     count: None,
                 },
@@ -983,7 +1000,12 @@ impl ZonePipes {
             multiview_mask: None,
             cache: None,
         });
-        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline }
+        // Culling binds the globals (camera, voyage, door parts) at group 0 and its own buffers at group 3.
+        let cull_layout = cull::layout(device);
+        let cull_pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor { label: Some("cull"), bind_group_layouts: &[Some(&globals_layout), None, None, Some(&cull_layout)], immediate_size: 0 });
+        let make_cull = |entry: &str| device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor { label: Some(entry), layout: Some(&cull_pl), module: &shader, entry_point: Some(entry), compilation_options: Default::default(), cache: None });
+        let cull = [make_cull("cs_cull_vis"), make_cull("cs_cull_compact")];
+        Self { globals_layout, texture_layout, pose_layout, scenery, actor_pipeline, sky_pipeline, skin_pipeline, shine_layout, shine_pipeline, refract_pipeline, line_pipeline, cull_layout, cull }
     }
 }
 
@@ -1030,6 +1052,8 @@ pub struct ZoneGeometry {
     draws: Vec<Draw>,
     verts: Vec<GpuVertex>,
     indices: Vec<u16>,
+    /// Each instance's mesh box and the draws' runs, for culling (render/cull.rs).
+    cull: cull::CullData,
 }
 
 impl ZoneGeometry {
@@ -1106,6 +1130,7 @@ impl ZoneGeometry {
             }
         }
         let mut matrices: Vec<Instance> = Vec::new();
+        let mut bounds: Vec<[f32; 8]> = Vec::new();
         let mut links = Vec::new();
         let mut draws = Vec::new();
         let mut all_verts: Vec<GpuVertex> = Vec::new();
@@ -1123,6 +1148,13 @@ impl ZoneGeometry {
                 matrices.push(inst);
             }
             let (instances, mirrored) = (start..split, split..matrices.len() as u32);
+            // The mesh's box over every model drawn, for each of its placements.
+            let (lo, hi) = mesh.models.iter().filter(|m| !m.indices.is_empty()).flat_map(|m| m.vertices.iter()).fold((Vec3::splat(f32::MAX), Vec3::splat(f32::MIN)), |(lo, hi), v| {
+                let p = Vec3::from(v.pos);
+                (lo.min(p), hi.max(p))
+            });
+            let (c, h) = if lo.x <= hi.x { ((lo + hi) / 2.0, (hi - lo) / 2.0) } else { (Vec3::ZERO, Vec3::ZERO) };
+            bounds.resize(matrices.len(), [c.x, c.y, c.z, 0.0, h.x, h.y, h.z, 0.0]);
             for model in &mesh.models {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
                 if indices.is_empty() || model.vertices.is_empty() {
@@ -1150,8 +1182,14 @@ impl ZoneGeometry {
                     texture: texture_slot.get(model.texture.as_str()).copied().unwrap_or(0),
                     // Same rule as the reference viewer: '_' meshes and blend bit 0x8000 are cut out.
                     mode: mesh.name.starts_with('_') as u8 | ((model.blending & 0x8000 != 0) as u8) << 1,
+                    args: [u32::MAX; 2],
                 });
             }
+        }
+        let subs: Vec<Vec<(std::ops::Range<u32>, u32, u32, i32)>> = draws.iter().map(|d: &Draw| d.runs().into_iter().map(|(_, r)| (r, d.index_count, d.first_index, d.base_vertex)).collect()).collect();
+        let (cull, slots) = cull::CullData::build(bounds, &matrices, &subs);
+        for (d, s) in draws.iter_mut().zip(slots) {
+            d.args = [s[0], s[1]];
         }
         // A scene with no scenery (the character screen) still needs a non-empty buffer to bind.
         if matrices.is_empty() {
@@ -1163,7 +1201,7 @@ impl ZoneGeometry {
         while all_indices.len() % 2 != 0 || all_indices.is_empty() {
             all_indices.push(0);
         }
-        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices }
+        Self { matrices, links, light_keys, area_keys, door_parts, door_bases, draws, verts: all_verts, indices: all_indices, cull }
     }
 
     fn parts(&self) -> [&[u8]; 3] {
@@ -1241,6 +1279,9 @@ impl ZoneRenderer {
         });
         let [v, i, m] = geo.parts().map(|b| b.len() as u64);
         let buffer = |label, size: u64, usage| device.create_buffer(&wgpu::BufferDescriptor { label: Some(label), size: size.max(4), usage: usage | wgpu::BufferUsages::COPY_DST, mapped_at_creation: false });
+        // The culling reads the instances as storage.
+        let instances = buffer("instances", m, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
+        let cull = cull::Cull::new(gpu, &p.cull_layout, &geo.cull, &instances);
         Self {
             scenery: p.scenery,
             actor_pipeline: p.actor_pipeline,
@@ -1254,7 +1295,9 @@ impl ZoneRenderer {
             globals,
             textures: vec![white; textures + 1],
             magenta,
-            instances: buffer("instances", m, wgpu::BufferUsages::VERTEX),
+            instances,
+            cull,
+            cull_pipes: p.cull,
             lights,
             light_keys: geo.light_keys.clone(),
             vertices: buffer("scenery vertices", v, wgpu::BufferUsages::VERTEX),
@@ -1907,6 +1950,10 @@ impl ZoneRenderer {
         }
         gpu.queue.put(&self.areas, 0, bytemuck::cast_slice(&areas));
         gpu.queue.put(&self.uniforms, 0, bytemuck::bytes_of(&u));
+        // The scenery this camera sees (render/cull.rs), from the uniforms just written.
+        if let Some(c) = &self.cull {
+            c.run(encoder, &self.globals, &self.cull_pipes);
+        }
         let [r, g, b] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("zone"),
@@ -1934,23 +1981,29 @@ impl ZoneRenderer {
             pass.set_bind_group(1, &self.textures[0], &[]);
             pass.draw(0..3, 0..1);
         }
-        pass.set_vertex_buffer(1, self.instances.slice(..));
+        // The zone's own scenery draws from its culled instances when it is culled, only runs that may show.
+        let shown = self.cull.as_ref().map(|c| c.runs_shown(vp, camera.eye)).unwrap_or_default();
+        let (zone_inst, zone_args) = match &self.cull {
+            Some(c) => (&c.out, Some((c, &c.args, shown.as_slice()))),
+            None => (&self.instances, None),
+        };
+        pass.set_vertex_buffer(1, zone_inst.slice(..));
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
         for mode in 0..4u8 {
             let mut bound = usize::MAX;
             let mut pipe = usize::MAX;
             for d in self.draws.iter().filter(|d| d.mode == mode) {
-                self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
+                self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, zone_args);
             }
             if let Some(s) = self.sub.as_ref().filter(|s| s.shown) {
                 pass.set_vertex_buffer(1, s.instances.slice(..));
                 pass.set_vertex_buffer(0, s.vertices.slice(..));
                 pass.set_index_buffer(s.indices.slice(..), wgpu::IndexFormat::Uint16);
                 for d in s.draws.iter().filter(|d| d.mode == mode) {
-                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
+                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, None);
                 }
-                pass.set_vertex_buffer(1, self.instances.slice(..));
+                pass.set_vertex_buffer(1, zone_inst.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
             }
@@ -1959,11 +2012,11 @@ impl ZoneRenderer {
                 pass.set_vertex_buffer(0, f.vertices.slice(..));
                 pass.set_index_buffer(f.indices.slice(..), wgpu::IndexFormat::Uint16);
                 for d in f.draws.iter().filter(|d| d.mode == mode) {
-                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe);
+                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, None);
                 }
             }
             if self.furniture.iter().any(|f| f.shown) {
-                pass.set_vertex_buffer(1, self.instances.slice(..));
+                pass.set_vertex_buffer(1, zone_inst.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
             }
@@ -2108,21 +2161,29 @@ impl ZoneRenderer {
     }
 
     /// One model: both-sided models in one draw; otherwise the normal instances culled back, the mirrored front.
-    fn draw_scenery(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize) {
+    /// `args`: the culled draws' indirect arguments (render/cull.rs), each run's at its slot.
+    fn draw_scenery(&self, pass: &mut wgpu::RenderPass, d: &Draw, mode: u8, bound: &mut usize, pipe: &mut usize, culled: Option<(&cull::Cull, &wgpu::Buffer, &[bool])>) {
+        let runs = d.runs();
+        let live = |k: usize| !runs[k].1.is_empty() && culled.is_none_or(|(c, _, shown)| shown[c.run_of(d.args[k])]);
+        if !live(0) && !live(1) {
+            return;
+        }
         if d.texture != *bound {
             pass.set_bind_group(1, &self.textures[d.texture], &[]);
             *bound = d.texture;
         }
-        let runs = if d.cull { [(1, d.instances.clone()), (2, d.mirrored.clone())] } else { [(0, d.instances.start..d.mirrored.end), (0, 0..0)] };
-        for (c, range) in runs {
-            if range.is_empty() {
+        for (k, (c, range)) in runs.clone().into_iter().enumerate() {
+            if !live(k) {
                 continue;
             }
             if *pipe != c {
                 pass.set_pipeline(&self.scenery[mode as usize][c]);
                 *pipe = c;
             }
-            pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range);
+            match culled {
+                Some((_, a, _)) => pass.draw_indexed_indirect(a, d.args[k] as u64 * 20),
+                None => pass.draw_indexed(d.first_index..d.first_index + d.index_count, d.base_vertex, range),
+            }
         }
     }
 }
@@ -2207,6 +2268,52 @@ pub fn render_pngs_post(
     let view = target.create_view(&Default::default());
     let depth = depth_view(&gpu.device, width, height);
     let row = (width * 4).div_ceil(256) * 256;
+    // FFXI_BENCH=N: the first view N more times after a warm-up, its time a frame printed (GPU-bound offscreen).
+    if let (Some(n), Some((camera, _, lighting))) = (std::env::var("FFXI_BENCH").ok().and_then(|v| v.parse::<u32>().ok()), frames.first()) {
+        renderer.lighting = *lighting;
+        // With timestamps, the GPU's own time for render() too (one pair a frame, up to 2048 frames).
+        let ts = gpu.device.features().contains(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
+        let n = n.min(2048);
+        let qs = ts.then(|| gpu.device.create_query_set(&wgpu::QuerySetDescriptor { label: Some("bench"), ty: wgpu::QueryType::Timestamp, count: n * 2 }));
+        let run = |k: u32, timed: bool| -> Result<(f32, Option<f32>)> {
+            let t = std::time::Instant::now();
+            for f in 0..k {
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                let q = qs.as_ref().filter(|_| timed);
+                if let Some(q) = q {
+                    encoder.write_timestamp(q, f * 2);
+                }
+                renderer.render(&gpu, &mut encoder, &view, &depth, camera, width as f32 / height as f32, &actor_refs);
+                if let Some(q) = q {
+                    encoder.write_timestamp(q, f * 2 + 1);
+                }
+                gpu.queue.submit([encoder.finish()]);
+            }
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None })?;
+            let wall = t.elapsed().as_secs_f32() * 1000.0 / k as f32;
+            let Some(q) = qs.as_ref().filter(|_| timed) else { return Ok((wall, None)) };
+            let size = k as u64 * 16;
+            let resolve = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::QUERY_RESOLVE | wgpu::BufferUsages::COPY_SRC, mapped_at_creation: false });
+            let read = gpu.device.create_buffer(&wgpu::BufferDescriptor { label: None, size, usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ, mapped_at_creation: false });
+            let mut e = gpu.device.create_command_encoder(&Default::default());
+            e.resolve_query_set(q, 0..k * 2, &resolve, 0);
+            e.copy_buffer_to_buffer(&resolve, 0, &read, 0, size);
+            gpu.queue.submit([e.finish()]);
+            read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
+            gpu.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: None })?;
+            let ticks: Vec<u64> = bytemuck::cast_slice(&read.slice(..).get_mapped_range().map_err(|e| anyhow::anyhow!("{e:?}"))?).to_vec();
+            let period = gpu.queue.get_timestamp_period() as f64;
+            let total: f64 = ticks.chunks(2).map(|p| p[1].saturating_sub(p[0]) as f64 * period).sum();
+            Ok((wall, Some((total / 1e6 / k as f64) as f32)))
+        };
+        run(20, false)?;
+        let (wall, gpu_ms) = run(n, true)?;
+        println!("bench: {wall:.3} ms a frame over {n} frames at {width}x{height} ({} draws), gpu {}", renderer.draw_count(), gpu_ms.map_or("n/a".into(), |g| format!("{g:.3} ms")));
+        if let Some(c) = &renderer.cull {
+            let (live, all, inst) = c.stats(&gpu);
+            println!("cull: {live} of {all} indirect draws have an instance; {inst} instances drawn");
+        }
+    }
     for (camera, path, lighting) in frames {
         renderer.lighting = *lighting;
         let readback = gpu.device.create_buffer(&wgpu::BufferDescriptor {

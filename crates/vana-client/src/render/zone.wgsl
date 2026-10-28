@@ -496,3 +496,138 @@ fn fs_sky(in: SkyOut) -> @location(0) vec4<f32> {
     }
     return vec4<f32>(select(pow(c, vec3<f32>(2.2)), c, u.fog.z > 0.5), 1.0);
 }
+
+// Frustum culling (render/cull.rs, ours): cs_cull_vis marks each instance, cs_cull_compact copies each run's visible
+// instances in order and writes its draws' indirect arguments.
+struct CullRun {
+    inst_start: u32,
+    inst_end: u32,
+    out_start: u32,
+    args_start: u32,
+    args_count: u32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
+}
+struct CullArg {
+    index_count: u32,
+    first_index: u32,
+    base_vertex: u32,
+    pad: u32,
+}
+@group(3) @binding(0) var<storage, read> cull_runs: array<CullRun>;
+// Per instance: its mesh's box centre, then half extents (model space).
+@group(3) @binding(1) var<storage, read> cull_bounds: array<vec4<f32>>;
+// Instances as the vertex buffer holds them, 28 words each (render::Instance).
+@group(3) @binding(2) var<storage, read> cull_src: array<u32>;
+@group(3) @binding(3) var<storage, read_write> cull_dst: array<u32>;
+@group(3) @binding(4) var<storage, read> cull_run_args: array<u32>;
+@group(3) @binding(5) var<storage, read> cull_arg_base: array<CullArg>;
+// DrawIndexedIndirect arguments, 5 words each.
+@group(3) @binding(6) var<storage, read_write> cull_args: array<u32>;
+@group(3) @binding(7) var<storage, read_write> cull_vis: array<u32>;
+
+const INST_WORDS: u32 = 28u;
+
+fn cull_col(i: u32, k: u32) -> vec4<f32> {
+    let b = i * INST_WORDS + k * 4u;
+    return vec4<f32>(bitcast<f32>(cull_src[b]), bitcast<f32>(cull_src[b + 1u]), bitcast<f32>(cull_src[b + 2u]), bitcast<f32>(cull_src[b + 3u]));
+}
+
+// The LOD band as vs_main tests it, then the mesh's box (through the model as vs_main places it) against the six
+// planes of the view frustum (clip x, y in -w..w, z in 0..w).
+fn cull_visible(i: u32) -> bool {
+    let m3 = cull_col(i, 3u);
+    var model = mat4x4<f32>(cull_col(i, 0u), cull_col(i, 1u), cull_col(i, 2u), m3);
+    let band = cull_col(i, 6u);
+    let voyaged = band.w != 0.0;
+    let origin = select(m3.xyz, (u.voyage * m3).xyz, voyaged);
+    let d = u.eye.xyz - origin;
+    let d2 = dot(d, d);
+    if (band.y > 0.0 && !(d2 > band.x && d2 <= band.y)) {
+        return false;
+    }
+    let part = u32(band.z);
+    if (part != 0u) {
+        model = model * part_matrix(part);
+    }
+    if (voyaged) {
+        model = u.voyage * model;
+    }
+    let c = cull_bounds[2u * i];
+    let h = cull_bounds[2u * i + 1u];
+    let centre = (model * vec4<f32>(c.xyz, 1.0)).xyz;
+    let ax = model[0].xyz * h.x;
+    let ay = model[1].xyz * h.y;
+    let az = model[2].xyz * h.z;
+    let rows = transpose(u.view_proj);
+    let planes = array<vec4<f32>, 6>(rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1], rows[3] - rows[1], rows[2], rows[3] - rows[2]);
+    for (var k = 0u; k < 6u; k++) {
+        let p = planes[k];
+        let reach = abs(dot(p.xyz, ax)) + abs(dot(p.xyz, ay)) + abs(dot(p.xyz, az));
+        if (dot(p.xyz, centre) + p.w < -reach) {
+            return false;
+        }
+    }
+    return true;
+}
+
+@compute @workgroup_size(64)
+fn cs_cull_vis(@builtin(global_invocation_id) id: vec3<u32>) {
+    if (id.x < arrayLength(&cull_vis)) {
+        cull_vis[id.x] = select(0u, 1u, cull_visible(id.x));
+    }
+}
+
+var<workgroup> cull_scan: array<u32, 64>;
+var<workgroup> cull_base: u32;
+
+// One workgroup a run: 64 instances at a time, an inclusive scan of their flags places each visible one after the
+// ones before it.
+@compute @workgroup_size(64)
+fn cs_cull_compact(@builtin(workgroup_id) wg: vec3<u32>, @builtin(local_invocation_index) lid: u32) {
+    let run = cull_runs[wg.x];
+    if (lid == 0u) {
+        cull_base = 0u;
+    }
+    workgroupBarrier();
+    for (var start = run.inst_start; start < run.inst_end; start += 64u) {
+        let i = start + lid;
+        let v = select(0u, cull_vis[min(i, run.inst_end - 1u)], i < run.inst_end);
+        cull_scan[lid] = v;
+        workgroupBarrier();
+        for (var off = 1u; off < 64u; off <<= 1u) {
+            var t = 0u;
+            if (lid >= off) {
+                t = cull_scan[lid - off];
+            }
+            workgroupBarrier();
+            cull_scan[lid] += t;
+            workgroupBarrier();
+        }
+        let base = workgroupUniformLoad(&cull_base);
+        if (v != 0u) {
+            let s = i * INST_WORDS;
+            let o = (run.out_start + base + cull_scan[lid] - 1u) * INST_WORDS;
+            for (var k = 0u; k < INST_WORDS; k++) {
+                cull_dst[o + k] = cull_src[s + k];
+            }
+        }
+        workgroupBarrier();
+        if (lid == 63u) {
+            cull_base = base + cull_scan[63];
+        }
+        workgroupBarrier();
+    }
+    let n = workgroupUniformLoad(&cull_base);
+    for (var a = lid; a < run.args_count; a += 64u) {
+        let slot = cull_run_args[run.args_start + a];
+        let b = cull_arg_base[slot];
+        let o = slot * 5u;
+        cull_args[o] = b.index_count;
+        cull_args[o + 1u] = n;
+        cull_args[o + 2u] = b.first_index;
+        cull_args[o + 3u] = b.base_vertex;
+        cull_args[o + 4u] = run.out_start;
+    }
+}
