@@ -111,7 +111,7 @@ fn sample(m: &Modern, ctx: &egui::Context, layout: &mut Layout, opts: &Opts) {
     unread[2] = 3;
     let named = |l: &str, mode: u16| mode == 13 && chat::mentions(l, "Lenon");
     chat::draw(&mut p, &ChatView { lines: lines.iter().map(|(a, b, c, d)| (a.clone(), *b, *c, *d, named(b, *d))).collect(), input: Some(InputView { channel: "Party", pieces: vec![("Pulling now ".into(), false), ("Thank you.".into(), true)], caret: 22, fep: None }), waiting: false, unread }, shown, true);
-    let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending, tip: Default::default() };
+    let fx = |icon, label: Option<&str>, ending| Effect { icon: Icon::Pack(icon), label: label.map(str::to_string), ending, tip: None };
     let mine = vec![fx("icons/protect", Some("25m"), false), fx("icons/haste", Some("2m"), false), fx("icons/refresh", Some("12"), true), fx("icons/poison", None, false)];
     hud::status_panel(&mut p, &StatusView { effects: mine, cursor: None }, false);
     let dot = |x, y, c: u32| (x, y, super::chat::colour(c.to_le_bytes()));

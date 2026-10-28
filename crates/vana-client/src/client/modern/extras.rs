@@ -407,7 +407,7 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
     let mut resize: Option<f32> = None;
     let (pos, facing, span) = (f.pos, f.facing, f.span);
     let dots = f.dots.clone();
-    let names = f.names.clone();
+    let ids = f.ids.clone();
     // The Wide Scan row picked and the area narrowed to, in world x / z.
     let origin = m.scan_origin.get();
     let picked = m.scan_pick.get().and_then(|i| m.scan_rows.borrow().iter().find(|r| r.0.index == i).map(|r| (origin.0 + r.0.dx as f32, origin.1 + r.0.dz as f32)));
@@ -459,9 +459,9 @@ fn minimap_panel(p: &mut Panels, w: &mut World) {
         }
         arrow_in(&painter, c, facing, 9.0, ME);
         if let (Some((_, k)), Some(h)) = (near.filter(|_| !picking), hover)
-            && let Some(name) = names.get(k).filter(|n| !n.is_empty())
+            && let Some(name) = ids.get(k).and_then(|id| w.entities.get(id)).map(|e| e.name.clone()).filter(|n| !n.is_empty())
         {
-            m.tip_at(ui.ctx(), h, name, "");
+            m.tip_at(ui.ctx(), h, &name, "");
         }
         // World x / z on the map and back.
         let at = |x: f32, wz: f32| c + vec2((x * s - px) * z, (-wz * s - py) * z);

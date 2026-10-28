@@ -70,6 +70,8 @@ pub struct Modern {
     row_style: std::cell::Cell<rows::Style>,
     border_style: std::cell::Cell<borders::Style>,
     images: std::cell::RefCell<std::collections::HashMap<String, Option<egui::TextureHandle>>>,
+    /// Status tooltips' name and description by (status id, small set), read once (hud.rs).
+    pub status_tips: std::cell::RefCell<HashMap<(u16, bool), std::rc::Rc<(String, String)>>>,
     /// Macro lines and the spell or ability each names (textcmd::line_action), for greying the macro keys.
     macro_acts: std::cell::RefCell<HashMap<String, Option<(super::magic::Kind, u16)>>>,
     /// The grid text ("(E-8)") and when it was made: rebuilt every half second, as retail's every 30 ticks.
@@ -131,6 +133,7 @@ impl Modern {
             row_style: Default::default(),
             border_style: Default::default(),
             images: Default::default(),
+            status_tips: Default::default(),
             macro_acts: Default::default(),
             grid: Default::default(),
             marquee: Default::default(),
@@ -881,10 +884,16 @@ impl Modern {
     /// A tooltip (ours) while the pointer rests on `r` and `ui`'s layer is the one under it: `title` in gold over `body`
     /// in the pack's tooltip frame.
     pub fn tip(&self, ui: &Ui, r: Rect, title: &str, body: &str) {
+        self.tip_with(ui, r, || (title.to_string(), body.to_string()));
+    }
+
+    /// `tip` with its text made only while the pointer is on `r`.
+    pub fn tip_with(&self, ui: &Ui, r: Rect, text: impl FnOnce() -> (String, String)) {
         let ctx = ui.ctx();
         let Some(at) = ctx.input(|i| i.pointer.hover_pos()) else { return };
         if r.contains(at) && ctx.layer_id_at(at) == Some(ui.layer_id()) {
-            self.tip_at(ctx, at, title, body);
+            let (title, body) = text();
+            self.tip_at(ctx, at, &title, &body);
         }
     }
 
