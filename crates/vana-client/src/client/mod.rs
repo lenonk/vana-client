@@ -998,6 +998,24 @@ fn chat_record(kind: u8, attr: u8, data: u16, from: &str) -> Option<(String, u8)
     named.then(|| (from.to_string(), flags))
 }
 
+/// Config 0x34's bit for a chat mode (FUN_101273c0): the Chat Filters' "Hold" (the spool).
+fn hold_bit(mode: u8) -> Option<u32> {
+    Some(match mode {
+        1 | 9 => 0,
+        2 | 3 | 10 | 11 => 1,
+        4 | 12 => 2,
+        5 | 13 => 3,
+        6 | 14 => 4,
+        7 | 15 => 5,
+        0xd2 => 6,
+        0xd3 | 0xd4 => 7,
+        0xd5 | 0xd6 => 8,
+        0xdb | 0xdc => 9,
+        0xdd | 0xde => 10,
+        _ => return None,
+    })
+}
+
 /// A chat line in its mode, `gm` from s2c 0x017's Attr bit 0, `who` its record's name.
 fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool, who: Option<(String, u8)>) {
     if let Some(n) = world.battle.as_ref().and_then(|bt| call_sound(bt, &line, mode)) {
@@ -1011,8 +1029,12 @@ fn push_chat_line(world: &mut World, line: String, mode: u8, kind: u8, gm: bool,
         }
         None => (cfgapply::chat_colour(&world.game, kind), line, false),
     };
+    let held = hold_bit(mode).is_some_and(|b| world.game.get(0x34) >> b & 1 != 0);
     for l in line.split('\n') {
         world.chat.push_mode(l.to_string(), colour, indent, mode, gm, who.clone());
+        if held {
+            world.chat.mark_last(2);
+        }
     }
 }
 
@@ -2490,9 +2512,25 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     // The log line's colour is its mode's (FUN_10129c70); mode 0 has none of its own.
     let colour = mode.and_then(|m| world.battle.as_ref().map(|bt| bt.colour_in(m, &world.game))).unwrap_or(WHITE);
-    // The pages print with mode 0x98 (the message queues' writer FUN_10136670): NPC talk for the log windows' masks.
+    // The pages print with mode 0x98 (the message queues' writer FUN_10136670): NPC talk for the log windows' masks,
+    // marked as the open page (record +0x12 = 1); the pages before it lose their mark (FUN_10126a90).
+    if !page_lines.is_empty() {
+        let from = *world.page_from.get_or_insert(world.chat.len());
+        world.chat.unmark(1, from);
+    }
     for l in page_lines {
         world.chat.push_event(l, colour, false, 0x98);
+        world.chat.mark_last(1);
+    }
+    if world.page_from.is_some() && world.rem_open_at.is_none() {
+        world.rem_open_at = Some(world.chat.len());
+    }
+    // The message is over (FUN_10126970): its rows are plain log rows.
+    if event::message_ref(world).is_none()
+        && let Some(from) = world.page_from.take()
+    {
+        world.chat.unmark(1, from);
+        world.rem_open_at = None;
     }
     minimap::prepare(gu, world, sw);
     // The modern layer draws the Timers, the minimap and the map overlay itself.
@@ -2764,6 +2802,14 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     };
     world.log.chat_line(world.typing);
     let tw = world.log.update(gu, &world.chat, sw, keep, shrink_log, world.log_active, line_open, stamps, route);
+    // rem4line / rem4li2: the open page and whether it waits for a key.
+    let page = event::message_ref(world).and_then(|m| m.pages.as_ref().and_then(|(_, p)| p.get(m.page).cloned()).map(|rows| (rows, m.mode)));
+    let page = page.map(|(rows, mode)| (rows, mode.and_then(|m| world.battle.as_ref().map(|bt| bt.colour_in(m, &world.game))).unwrap_or(WHITE), prompt));
+    world.log.overflow(&world.chat, page.clone(), world.rem_open_at);
+    if world.full_log.is_some() {
+        world.log.clear_spool();
+        world.log2.clear_spool();
+    }
     let log = world.log.frame(sw, sh);
     // Window 2 (FUN_10161c70): the same rule with its own values, held at its max by window 1's focus, its text never
     // moved for the chat line; placed on window 1's frame. A reopen rebuilds its lines (its init).
@@ -2774,6 +2820,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     let log2 = second_up.then(|| {
         world.log2.chat_line(world.typing);
         world.log2.update(gu, &world.chat, sw, keep2, shrink_log, world.log_active, false, stamps, route);
+        world.log2.overflow(&world.chat, page.clone(), world.rem_open_at);
         world.log2.frame_beside(sw, log.rect, second_mode)
     });
     // Region 0 (FUN_1015f980): window 2 when it is up above window 1, else window 1. Windows stacked on the log, the
@@ -2827,10 +2874,11 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if let Some(f) = log2.filter(|f| event_window.is_none() && !world.modern && (f.alpha > 0.0 || f.lines > 0)) {
         let [x, y, w, h] = f.rect;
         gu.frame_alpha(x, y, w, h, f.alpha);
-        let newest = world.log2.draw(gu, &f, false);
+        let newest = world.log2.draw(gu, &f, false, &world.chat);
+        let over = world.log2.draw_over(gu, &f);
         if prompt
             && route.shows(1, Some(0x98), false)
-            && let Some((lx, ly, last)) = newest
+            && let Some((lx, ly, last)) = newest.or(over)
         {
             kaipage(gu, world, lx, ly, &last);
         }
@@ -2859,12 +2907,13 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     } else if !world.modern && (log.alpha > 0.0 || log.lines > 0) {
         let [x, y, w, h] = log.rect;
         gu.frame_alpha(x, y, w, h, log.alpha);
-        let newest = world.log.draw(gu, &log, line_open);
+        let newest = world.log.draw(gu, &log, line_open, &world.chat);
+        let over = world.log.draw_over(gu, &log);
         // A message waiting for a key ends in the kaipage arrow (FUN_1015ad10), one frame per draw, in the window the
-        // pages print to.
+        // pages print to: after the page's newest row in the log, or the rem's.
         if prompt
             && !(second_up && route.shows(1, Some(0x98), false))
-            && let Some((lx, ly, last)) = newest
+            && let Some((lx, ly, last)) = newest.or(over)
         {
             kaipage(gu, world, lx, ly, &last);
         }
@@ -5296,6 +5345,9 @@ struct World {
     full_log: Option<logwin::FullLog>,
     /// The full log's menu on a player's line.
     charlnk: Option<charlnk::CharLnk>,
+    /// The open event message's first page line in the log and the log's length once it printed (rem4line's open).
+    page_from: Option<usize>,
+    rem_open_at: Option<usize>,
     /// The name an Assist Channel prompt (charlnk's, acoption's) acts on.
     assist_name: String,
     /// The Friend List's data (xi_profile), its windows and the PlayOnline messages' windows.
@@ -6977,6 +7029,8 @@ impl App {
                             log_takers: 0,
                             full_log: None,
                             charlnk: None,
+                            page_from: None,
+                            rem_open_at: None,
                             assist_name: String::new(),
                             friends: friends::Friends::new(pol),
                             friendui: None,
@@ -7583,6 +7637,9 @@ impl App {
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship, monstrosity } => {
                     // The PlayOnline side (xi_profile): signed on and loaded once per session.
                     friends::start(world);
+                    // The spools close at a zone change (FUN_1015f3e0(0x200)).
+                    world.log.clear_spool();
+                    world.log2.clear_spool();
                     world.mog_zone = mog_zone;
                     world.mon_login = monstrosity;
                     monstrosity::zone_reset(world);

@@ -11129,3 +11129,34 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
 - Not done: netstat's Help Desk count (GM replies) and its second count (engine +0xe), the busy strip bit 0x10, deleting / unblocking / reordering
   (retail has no in-game way: the user's call), Away back to Online at login *(inf, spec 2.5)*.
 - Also: the K.O. windows (dead, mp_dead) drawn 8 / 4 px larger (ours, the user's call, as the raise prompt).
+
+## rem4line / rem4li2 and spoolmsg / splmsg2: the log's page overflow and Hold (2026-10-28; spec ~/ffxi/lab/research/log_overflow_spec.md)
+
+- Corrects the older note under "Event text" (2019 build): rem4line is the event message's own window, open (invisible)
+  for the whole message; it shows only when lines push the page off a full log (spec §5).
+- Records carry a print mark (+0x12): 1 the open event page (FUN_10136670 prints pages with it; each advance unmarks
+  the pages before, FUN_10126a90), 2 a held chat line (FUN_101273c0, config 0x34 bit by mode: 0 say 1/9, 1 shout and
+  yell 2/3/10/11, 2 tell 4/12, 3 party 5/13, 4 linkshell 6/14, 5 emote 7/15, 6 0xd2, 7 unity 0xd3/0xd4, 8 linkshell 2
+  0xd5/0xd6, 9 assist J 0xdb/0xdc, 10 assist E 0xdd/0xde; our own echoes in a held channel are held too). Ours:
+  ChatLog `marks`, World `page_from` / `rem_open_at`.
+- Show (FUN_10162560 first loop, per printed row after the page printed): the log at its max lines, draw > 0, the row
+  min(draw, max) - 1 older than the new one still the page's -> the rem shows: at the log's top-left, the log's width,
+  rows x 16 + 4, its rows at (x0 + 4, y0 + 2 + 16 k), the kaipage arrow after its last row while the page waits; the
+  page's rows in the log are no longer the page's (the log's own arrow, after the page's newest drawn row, goes). It
+  stays until the message ends. Ours runs the test per new row of the frame (a frame's rows come together), and shows
+  the current page *(inf: retail draws from its list head +0x58, stepped 4 rows by the message handler; the handler's
+  double run, spec §3.5, is not modelled: one page per Enter as ours always did)*.
+- Spool (§4): a held line goes into the spool (per window, of the lines it takes) with the log's period (config 0x11 x
+  60 ticks); caught (+0x14a = 1) when it scrolls to or past the visible rows of a full log (walk max + 6 rows back,
+  lim = vis - shown rows); the reached rows (<= 4) pinned at the log's top-left, newest at the bottom (x0 + 4, y1 - 18 +
+  slide - 16 k), the frame eased +8 / -2 px a frame, 8 to slide (-4 a frame), a 20-tick fade; expired entries go, the
+  newest 8 kept. Closed at the full log's open and a zone change.
+- The log under them (FUN_101626e0): r = max(rem rows, spool rows) <= 4 rows off its top (the text area starts 16 r
+  lower); kept open while the rem shows, the spool shows, or a waiting held line is the oldest visible row.
+- Live (Lnxcsfix, a fixed 4-line log: 0x0e 1, 0x0f 4, 0x11 30): `!exec player:startEvent(60)` in Southern San
+  d'Oria (Daggao's line) with a timer printing 6 system lines 7 s later: the page pinned at the top with its arrow, the
+  newest 3 rows under it, gone at the message's end; with Say on Hold (0x34 1): "Bob : held" (printToPlayer type 0) and
+  our held say echoes pinned while 5 pushes scrolled, gone after the 30 s period; with both, the rem drawn over the
+  spool. Classic UI only: the modern chat has no such limit.
+- Not done: the frames' magenta tint (windowps 43, spec §8), op 0xb4 sub 5 (auto-advance), SE 0015 on a page advance,
+  0xbe as the page mode of a 0x97 message.

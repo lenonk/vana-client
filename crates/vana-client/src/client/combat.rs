@@ -26,6 +26,9 @@ pub struct ChatLog {
     /// Each line's record name (+0x18) and flags byte 1 (0x20 the assist rank icon) when it is a player's line (record
     /// kind 1, FUN_101273c0): the full log's charlnk acts on it.
     who: Vec<Option<(String, u8)>>,
+    /// Each line's print mark (record +0x12): 1 the open event message's page (rem4line), 2 a held chat line (the
+    /// spool, config 0x34).
+    marks: Vec<u8>,
     /// Lines changed in place (condensed battle lines) so far.
     edits: u64,
     /// A line that repeats the last one counts on it instead ("Target out of range. (x3)"; BattleMod's cancelmulti):
@@ -116,6 +119,7 @@ impl ChatLog {
         self.modes.push(mode);
         self.gm.push(false);
         self.who.push(None);
+        self.marks.push(0);
         self.lines.push((s, colour));
     }
 
@@ -153,6 +157,25 @@ impl ChatLog {
     /// Line `k`'s print mode and GM flag, for the log windows' masks.
     pub fn route(&self, k: usize) -> (Option<u8>, bool) {
         (self.modes.get(k).and_then(|&m| log_mode(m)), self.gm.get(k).copied().unwrap_or(false))
+    }
+
+    /// Line `k`'s print mark (0 none).
+    pub fn mark(&self, k: usize) -> u8 {
+        self.marks.get(k).copied().unwrap_or(0)
+    }
+
+    /// Marks the newest line.
+    pub fn mark_last(&mut self, m: u8) {
+        if let Some(x) = self.marks.last_mut() {
+            *x = m;
+        }
+    }
+
+    /// FUN_10129290: lines from `from` on lose mark `m`.
+    pub fn unmark(&mut self, m: u8, from: usize) {
+        for x in self.marks.iter_mut().skip(from).filter(|x| **x == m) {
+            *x = 0;
+        }
     }
 
     /// Line `k`'s record name and flags byte 1 when it is a player's line.
@@ -226,12 +249,14 @@ impl ChatLog {
             self.modes.push(l.mode);
             self.gm.push(l.gm);
             self.who.push(None);
+            self.marks.push(0);
             self.lines.push((l.text, [b, g, r, a / 2 + a / 8]));
         }
         self.times.push((super::cfgapply::local_hms(), false, false));
         self.modes.push(NO_MODE);
         self.gm.push(false);
         self.who.push(None);
+        self.marks.push(0);
         self.lines.push((divider.to_string(), [0x60, 0x60, 0x60, 0x60]));
         self.repeat = None;
         self.restored = self.lines.len();

@@ -152,6 +152,84 @@ pub struct LogWin {
     route: Route,
     /// The full log's rows on a tab other than Window 1 (window 1's own rows).
     tab: TabRows,
+    /// rem4line / rem4li2 and spoolmsg / splmsg2 over its top.
+    pub rem: Rem,
+    spool: Spool,
+}
+
+/// rem4line / rem4li2 (research log_overflow_spec.md 3): the open event message's page, pinned at the log's top-left
+/// once lines push it off a full log; shown until the message ends.
+#[derive(Default)]
+pub struct Rem {
+    /// The log's length once the message's first page had printed: only later rows can show it.
+    open_at: Option<usize>,
+    seen: usize,
+    pub shown: bool,
+    rows: Vec<(String, [u8; 4])>,
+    keyed: bool,
+}
+
+/// spoolmsg / splmsg2 (§4): a held chat line (config 0x34) caught as it scrolls off a full log stays pinned at the
+/// top-left until its period ends.
+#[derive(Default)]
+struct Spool {
+    entries: Vec<SpoolEntry>,
+    /// The frame's eased height, the slide (+0x6c), its fade.
+    h: f32,
+    slide: f32,
+    fade: super::hudtop::Fade,
+}
+
+struct SpoolEntry {
+    line: usize,
+    rows: Vec<(String, [u8; 4])>,
+    ticks: f32,
+    reached: bool,
+}
+
+impl Spool {
+    /// Reached rows (+0x4e), at most 4.
+    fn rows(&self) -> usize {
+        self.entries.iter().filter(|e| e.reached).map(|e| e.rows.len()).sum::<usize>().min(4)
+    }
+
+    /// The frame showing or fading in (FUN_10137550).
+    fn showing(&self) -> bool {
+        matches!(self.fade, super::hudtop::Fade::Shown | super::hudtop::Fade::In(_))
+    }
+
+    fn waiting(&self, line: usize) -> bool {
+        self.entries.iter().any(|e| !e.reached && e.line == line)
+    }
+
+    /// FUN_10137270, one frame of `t` ticks: timers (expired entries go, the newest 8 kept), the height eased +8 / -2,
+    /// the slide 4 a frame, the 20-tick fade.
+    fn step(&mut self, t: f32) {
+        use super::hudtop::Fade;
+        for e in &mut self.entries {
+            e.ticks -= t;
+        }
+        self.entries.retain(|e| e.ticks > 0.0);
+        if self.entries.len() > 8 {
+            self.entries.drain(..self.entries.len() - 8);
+        }
+        let target = self.rows() as f32 * 16.0 + 4.0;
+        self.h = if self.h < target { (self.h + 8.0).min(target) } else { (self.h - 2.0).max(target) };
+        self.slide = (self.slide - 4.0).max(0.0);
+        let ti = t as i32;
+        self.fade = match self.fade {
+            Fade::Out(n) if n - ti >= 1 => Fade::Out(n - ti),
+            Fade::Out(_) => Fade::Hidden,
+            Fade::In(n) if n - ti >= 1 => Fade::In(n - ti),
+            Fade::In(_) => Fade::Shown,
+            f => f,
+        };
+        self.fade = match (self.rows() > 0, self.fade) {
+            (false, Fade::In(_) | Fade::Shown) => Fade::Out(20),
+            (true, Fade::Out(_) | Fade::Hidden) => Fade::In(20),
+            (_, f) => f,
+        };
+    }
 }
 
 /// FUN_101626e0's state, shared by the retail log and the modern chat window (each counting the rows of its own
@@ -700,6 +778,12 @@ impl LogWin {
                 if route.shows(window, mode, gm) {
                     let r = self.wrap_line(gu, chat, k, tw);
                     new += r.len();
+                    // FUN_10127c00 -> FUN_10136fd0: a held line goes into the spool with the log's period.
+                    if chat.mark(k) == 2 {
+                        log::debug!("spool: line {k} held");
+                        let rows = r.iter().map(|x| (x.0.clone(), x.1)).collect();
+                        self.spool.entries.push(SpoolEntry { line: k, rows, ticks: self.cfg.ticks.max(1.0), reached: false });
+                    }
                     self.wrapped.extend(r);
                 }
             }
@@ -712,13 +796,19 @@ impl LogWin {
         for _ in 0..new {
             self.anim.add_line(&cfg);
         }
+        self.new_lines = new;
+        if new > 0 {
+            self.reach();
+        }
         if shrink {
             self.anim.escape(&cfg);
         }
         // Whole retail frames of FRAME ticks (stock retail runs 30 fps: 2 ticks a frame); the fraction carries.
         let h0 = self.anim.h;
+        let keep = keep || self.holds();
         for _ in 0..self.ticker.frames() {
             self.anim.step(FRAME, keep, focused, typing, &cfg);
+            self.spool.step(FRAME as f32);
         }
         self.dh = self.anim.h - h0;
         self.new_lines = new;
@@ -728,6 +818,117 @@ impl LogWin {
     pub fn chat_line(&mut self, open: bool) {
         let cfg = self.cfg;
         self.anim.chat_line(open, &cfg);
+    }
+
+    /// FUN_10162560's second loop (§4.4): a held row at or past the visible rows of a full log is caught; every older
+    /// waiting entry with it (+0x14a = 1), 8 to slide.
+    fn reach(&mut self) {
+        let (max, vis, draw) = (self.cfg.max as usize, self.anim.lines(), self.anim.draw_n());
+        if draw == 0 {
+            return;
+        }
+        let mut lim = vis as i64 - self.spool.rows() as i64;
+        while vis + self.spool.rows() >= max {
+            // Retail walks max + 6 rows back from each row as it prints; rows printed together reach further back.
+            let back = max + 6 + self.new_lines;
+            let hit = self.wrapped.iter().rev().take(back).enumerate().find(|(i, r)| *i as i64 >= lim && self.spool.waiting(r.3)).map(|(_, r)| r.3);
+            let Some(line) = hit else { break };
+            for e in self.spool.entries.iter_mut().filter(|e| !e.reached && e.line <= line) {
+                e.reached = true;
+            }
+            self.spool.slide = 8.0;
+            if lim > max as i64 - 4 {
+                lim -= 1;
+            }
+        }
+    }
+
+    /// FUN_10136560's test after this frame's rows (§3.2): the open message's page (wrapped rows, colour, waiting for a
+    /// key) shows pinned when the top drawn row of a full log is still the page's. `open_at`: the log's length once
+    /// its first page printed, none when no message is open. True when it showed now.
+    pub fn overflow(&mut self, chat: &super::combat::ChatLog, page: Option<(Vec<String>, [u8; 4], bool)>, open_at: Option<usize>) -> bool {
+        let Some(open_at) = open_at else {
+            self.rem = Rem::default();
+            return false;
+        };
+        if self.rem.open_at != Some(open_at) {
+            self.rem = Rem { open_at: Some(open_at), seen: open_at, ..Default::default() };
+        }
+        if let Some((rows, colour, keyed)) = page {
+            (self.rem.rows, self.rem.keyed) = (rows.into_iter().map(|r| (r, colour)).collect(), keyed);
+        }
+        let added = chat.len() > self.rem.seen;
+        self.rem.seen = chat.len();
+        let (max, draw) = (self.cfg.max as usize, self.anim.draw_n());
+        if self.rem.shown || !added || draw == 0 || self.anim.lines() < max {
+            return false;
+        }
+        // Per row printed after the rem opened, in order (FUN_10128ce0 -> FUN_10162560): the row min(draw, max) - 1
+        // older than it is the top drawn one then.
+        let (len, n, span) = (self.wrapped.len(), self.new_lines.min(self.wrapped.len()), draw.min(max) - 1);
+        let rows: Vec<usize> = if n > 0 { (len - n..len).collect() } else { vec![len.saturating_sub(1)] };
+        for newest in rows.into_iter().filter(|&i| i >= span && self.wrapped[i].3 >= open_at) {
+            if chat.mark(self.wrapped[newest - span].3) == 1 {
+                self.rem.shown = true;
+                let tail: Vec<(usize, u8, String)> = self.wrapped.iter().rev().take(8).map(|r| (r.3, chat.mark(r.3), r.0.chars().take(30).collect())).collect();
+                log::debug!("rem shown (second {}): vis {} draw {} pending {} new {n} rows {:?}", self.second, self.anim.lines(), draw, self.anim.pending(), tail);
+                return true;
+            }
+        }
+        false
+    }
+
+    /// FUN_101626e0's keep for these two: the rem shown, the spool showing, or a held line still waiting the oldest
+    /// visible row.
+    fn holds(&self) -> bool {
+        let top = self.wrapped.iter().rev().nth(self.anim.lines().saturating_sub(1)).map(|r| r.3);
+        self.rem.shown || self.spool.showing() || top.is_some_and(|k| self.spool.waiting(k))
+    }
+
+    /// The rows the rem and the spool take off the log's top (asm 0x10162b04..0x10162b53), 4 at most.
+    fn covered(&self) -> usize {
+        let rem = if self.rem.shown { self.rem.rows.len() } else { 0 };
+        rem.max(self.spool.rows()).min(4)
+    }
+
+    /// The spool (FUN_101370f0: from the newest reached row up, bottom-anchored) and the rem (FUN_10136b40: 4 rows at
+    /// (x0 + 4, y0 + 2 + 16 k)) over the log's top-left. Returns where the rem's arrow goes while its page waits.
+    pub fn draw_over(&self, gu: &mut GameUi, f: &LogFrame) -> Option<(f32, f32, String)> {
+        let [x0, y0, w, _] = f.rect;
+        if !matches!(self.spool.fade, super::hudtop::Fade::Hidden) {
+            let h = self.spool.h;
+            let a = match self.spool.fade {
+                super::hudtop::Fade::In(n) => 1.0 - n as f32 / 20.0,
+                super::hudtop::Fade::Out(n) => n as f32 / 20.0,
+                _ => 1.0,
+            };
+            gu.frame_alpha(x0, y0, w, h, a);
+            if self.spool.showing() {
+                gu.clip(Some([x0, y0, w, h]));
+                let rows: Vec<&(String, [u8; 4])> = self.spool.entries.iter().filter(|e| e.reached).flat_map(|e| e.rows.iter()).collect();
+                for (k, (line, colour)) in rows.iter().rev().take(5).enumerate() {
+                    gu.text(line, x0 + 4.0, y0 + h - 18.0 + self.spool.slide - 16.0 * k as f32, 0, *colour);
+                }
+                gu.clip(None);
+            }
+        }
+        if !self.rem.shown {
+            return None;
+        }
+        let rows = &self.rem.rows[..self.rem.rows.len().min(4)];
+        gu.frame(x0, y0, w, rows.len() as f32 * 16.0 + 4.0);
+        let mut last = None;
+        for (k, (line, colour)) in rows.iter().enumerate() {
+            let y = y0 + 2.0 + 16.0 * k as f32;
+            gu.text(line, x0 + 4.0, y, 0, *colour);
+            last = Some((x0 + 4.0, y, line.clone()));
+        }
+        last.filter(|_| self.rem.keyed)
+    }
+
+    /// The spool's close (the full log, a zone change).
+    pub fn clear_spool(&mut self) {
+        self.spool = Spool::default();
     }
 }
 
@@ -881,7 +1082,7 @@ impl LogWin {
 
     /// Draws the text: newest line at the bottom, lines 16 px apart, clipped to [x0, y0 + 3, x1, y1 - 4]; the
     /// input line takes the bottom 16 px. Returns the newest line's (x, y, text) for the kaipage arrow.
-    pub fn draw(&self, gu: &mut GameUi, f: &LogFrame, typing: bool) -> Option<(f32, f32, String)> {
+    pub fn draw(&self, gu: &mut GameUi, f: &LogFrame, typing: bool, chat: &super::combat::ChatLog) -> Option<(f32, f32, String)> {
         let [x0, y0, w, h] = f.rect;
         // FUN_10162510: only while there are visible lines; from the displayed line up (FUN_101622e0), whole pixels.
         let a = &self.anim;
@@ -892,13 +1093,17 @@ impl LogWin {
         if typing {
             y1 -= 16.0;
         }
-        let clip = [x0, y0 + 3.0, w, (y1 - 4.0 - (y0 + 3.0)).max(0.0)];
+        // The rem and the spool cover the top rows: the text area starts 16 r lower, r rows fewer.
+        let r = self.covered();
+        let top = y0 + 3.0 + 16.0 * r as f32;
+        let clip = [x0, top, w, (y1 - 4.0 - top).max(0.0)];
         gu.clip(Some(clip));
+        // FUN_101622e0: the kaipage arrow after the newest drawn row of the waiting page (none once the rem took it).
         let mut newest = None;
-        for (k, (line, colour, st, _)) in self.wrapped.iter().rev().skip(a.pending).take(a.draw_n()).enumerate() {
+        for (k, (line, colour, st, n)) in self.wrapped.iter().rev().skip(a.pending).take(a.draw_n().saturating_sub(r)).enumerate() {
             let y = (y1 - 4.0) - 16.0 * (k as f32 + 1.0) + a.off as f32;
             stamped(gu, line, *st, x0 + 4.0, y, *colour, self.stamps.colour);
-            if k == 0 {
+            if newest.is_none() && !self.rem.shown && chat.mark(*n) == 1 {
                 newest = Some((x0 + 4.0, y, line.clone()));
             }
         }

@@ -198,8 +198,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     live in both UIs.
   - PUP automaton customization (client/pupset.rs, MODLOG "Automaton customization"): done and seen live in both
     UIs; the activated-automaton refusal and the mouse not tried.
-  - Log window 2 (client/logwin.rs, MODLOG "Log window 2"; config 0xb4): done and seen live; left the page overflow
-    and Hold windows (rem4line / spoolmsg and their window-2 twins). The full log's tabs (Num+) done.
+  - Log window 2 (client/logwin.rs, MODLOG "Log window 2"; config 0xb4): done and seen live; the page overflow and
+    Hold windows (rem4line / spoolmsg and their window-2 twins, MODLOG "rem4line / rem4li2 and spoolmsg / splmsg2")
+    done and seen live (classic). The full log's tabs (Num+) done.
   - Mog House gardening (client/garden.rs, MODLOG "Mog House gardening"): done and seen live in both UIs; the
     rent-a-room moogle trip not seen.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
