@@ -18,7 +18,8 @@ struct Uniforms {
     clear: vec4<f32>,
     sky_colors: array<vec4<f32>, 8>,
     sky_stops: array<vec4<f32>, 2>,
-    // x: the area slot of 'ev10' while a sub-area is shown (0 none).
+    // x: the area slot of 'ev10' while a sub-area is shown (0 none); y: now (door parts); z, w: the draw distance D
+    // (0 none) and the Clipping factor K (render/cull.rs).
     area_info: vec4<f32>,
     // The voyage matrix (identity off a ship's voyage).
     voyage: mat4x4<f32>,
@@ -534,8 +535,9 @@ fn cull_col(i: u32, k: u32) -> vec4<f32> {
     return vec4<f32>(bitcast<f32>(cull_src[b]), bitcast<f32>(cull_src[b + 1u]), bitcast<f32>(cull_src[b + 2u]), bitcast<f32>(cull_src[b + 3u]));
 }
 
-// The LOD band as vs_main tests it, then the mesh's box (through the model as vs_main places it) against the six
-// planes of the view frustum (clip x, y in -w..w, z in 0..w).
+// FUN_1017c9c0: the draw distance to the origin (D, or the placement's own times K; a door group's within both),
+// the LOD band as vs_main tests it, then the mesh's box (through the model as vs_main places it) against the six
+// planes of the view frustum (clip x, y in -w..w, z in 0..w) and retail's far plane at view depth D.
 fn cull_visible(i: u32) -> bool {
     let m3 = cull_col(i, 3u);
     var model = mat4x4<f32>(cull_col(i, 0u), cull_col(i, 1u), cull_col(i, 2u), m3);
@@ -544,6 +546,16 @@ fn cull_visible(i: u32) -> bool {
     let origin = select(m3.xyz, (u.voyage * m3).xyz, voyaged);
     let d = u.eye.xyz - origin;
     let d2 = dot(d, d);
+    let c = cull_bounds[2u * i];
+    let h = cull_bounds[2u * i + 1u];
+    let far = u.area_info.z;
+    if (far > 0.0) {
+        let own = u.area_info.w * c.w;
+        let limit = select(far * far, select(own, min(own, far * far), h.w > 1.5), h.w > 0.5);
+        if (d2 > limit) {
+            return false;
+        }
+    }
     if (band.y > 0.0 && !(d2 > band.x && d2 <= band.y)) {
         return false;
     }
@@ -554,15 +566,15 @@ fn cull_visible(i: u32) -> bool {
     if (voyaged) {
         model = u.voyage * model;
     }
-    let c = cull_bounds[2u * i];
-    let h = cull_bounds[2u * i + 1u];
     let centre = (model * vec4<f32>(c.xyz, 1.0)).xyz;
     let ax = model[0].xyz * h.x;
     let ay = model[1].xyz * h.y;
     let az = model[2].xyz * h.z;
     let rows = transpose(u.view_proj);
-    let planes = array<vec4<f32>, 6>(rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1], rows[3] - rows[1], rows[2], rows[3] - rows[2]);
-    for (var k = 0u; k < 6u; k++) {
+    // Clip w is the view depth: the seventh plane keeps w <= D (none when D is 0).
+    let depth = select(vec4<f32>(0.0, 0.0, 0.0, 1.0), vec4<f32>(0.0, 0.0, 0.0, far) - rows[3], far > 0.0);
+    let planes = array<vec4<f32>, 7>(rows[3] + rows[0], rows[3] - rows[0], rows[3] + rows[1], rows[3] - rows[1], rows[2], rows[3] - rows[2], depth);
+    for (var k = 0u; k < 7u; k++) {
         let p = planes[k];
         let reach = abs(dot(p.xyz, ax)) + abs(dot(p.xyz, ay)) + abs(dot(p.xyz, az));
         if (dot(p.xyz, centre) + p.w < -reach) {

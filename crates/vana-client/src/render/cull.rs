@@ -1,7 +1,7 @@
 //! Frustum culling of scenery on the GPU (ours: retail walks the MZB's tree on the CPU, FUN_1017c8b0). One compute
-//! pass marks each instance visible (its LOD band as vs_main tests it, its mesh's box against the view frustum), a
-//! second copies each run's visible instances, in order, into a second instance buffer and writes its draws'
-//! indirect arguments; the scenery then draws from those.
+//! pass marks each instance visible (retail's draw distance and its LOD band to the origin, its mesh's box against the
+//! view frustum with the far plane at the draw distance), a second copies each run's visible instances, in order,
+//! into a second instance buffer and writes its draws' indirect arguments; the scenery then draws from those.
 
 use super::{Gpu, INSTANCE_BYTES, Instance, Put};
 use bytemuck::{Pod, Zeroable};
@@ -32,7 +32,8 @@ struct ArgBase {
 
 /// A run as the CPU tests it before submitting its draws: the world box around its placements' geometry, the box
 /// around their origins (the LOD band is measured to the origin), the union of their bands (None: one draws at any
-/// distance), and whether it moves (door parts, a voyage's world), which is never skipped.
+/// distance), whether any keeps the zone's draw distance and the largest own one squared, and whether it moves (door
+/// parts, a voyage's world), which is never skipped.
 #[derive(Clone, Copy)]
 struct RunBox {
     lo: Vec3,
@@ -40,13 +41,24 @@ struct RunBox {
     org_lo: Vec3,
     org_hi: Vec3,
     band: Option<(f32, f32)>,
+    plain: bool,
+    own: f32,
     moves: bool,
+}
+
+/// A placement's distance rule (FUN_1017c9c0, doors FUN_10183da0) as cs_cull_vis takes it: its own distance squared,
+/// and 0 = within the zone's draw distance D, 1 = within its own distance times K, 2 (a door group's) = within both.
+pub fn reach(own: Option<f32>, door: bool) -> [f32; 2] {
+    match own {
+        Some(k) => [k * k, if door { 2.0 } else { 1.0 }],
+        None => [0.0, 0.0],
+    }
 }
 
 /// What the culling needs of a geometry, built with it (ZoneGeometry::build_keyed).
 #[derive(Default)]
 pub struct CullData {
-    /// Per instance: its mesh's box in model space, centre then half extents.
+    /// Per instance: its mesh's box in model space, centre then half extents; the fourth words its reach().
     bounds: Vec<[f32; 8]>,
     runs: Vec<Run>,
     boxes: Vec<RunBox>,
@@ -97,10 +109,15 @@ impl CullData {
 
 /// A run's boxes from its instances (each mesh box through its placement matrix).
 fn run_box(bounds: &[[f32; 8]], instances: &[Instance], range: std::ops::Range<u32>) -> RunBox {
-    let mut b = RunBox { lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN), org_lo: Vec3::splat(f32::MAX), org_hi: Vec3::splat(f32::MIN), band: Some((f32::MAX, f32::MIN)), moves: false };
+    let mut b = RunBox { lo: Vec3::splat(f32::MAX), hi: Vec3::splat(f32::MIN), org_lo: Vec3::splat(f32::MAX), org_hi: Vec3::splat(f32::MIN), band: Some((f32::MAX, f32::MIN)), plain: false, own: 0.0, moves: false };
     for i in range {
         let (Some(inst), Some(bd)) = (instances.get(i as usize), bounds.get(i as usize)) else { continue };
         b.moves |= inst.band[2] != 0.0 || inst.band[3] != 0.0;
+        if bd[7] == 0.0 {
+            b.plain = true;
+        } else {
+            b.own = b.own.max(bd[3]);
+        }
         let m = Mat4::from_cols_array_2d(&inst.model);
         let centre = m.transform_point3(Vec3::new(bd[0], bd[1], bd[2]));
         let reach = m.x_axis.truncate().abs() * bd[4] + m.y_axis.truncate().abs() * bd[5] + m.z_axis.truncate().abs() * bd[6];
@@ -123,8 +140,9 @@ fn planes(view_proj: Mat4) -> [Vec4; 6] {
 
 impl RunBox {
     /// Could any of its placements be drawn: its geometry box (a little larger, so the GPU's own test decides at the
-    /// edges) inside the frustum, and its origins within reach of its bands.
-    fn maybe_visible(&self, planes: &[Vec4; 6], eye: Vec3) -> bool {
+    /// edges) inside the frustum, and its origins within reach of the draw distance (`dk`: D, K; D 0 = none) and of
+    /// its bands.
+    fn maybe_visible(&self, planes: &[Vec4; 6], eye: Vec3, dk: [f32; 2]) -> bool {
         if self.moves {
             return true;
         }
@@ -132,8 +150,14 @@ impl RunBox {
         if planes.iter().any(|p| p.truncate().dot(c) + p.w < -(p.truncate().abs().dot(e))) {
             return false;
         }
-        let Some((near, far)) = self.band else { return true };
         let nearest = eye.clamp(self.org_lo, self.org_hi).distance_squared(eye);
+        if dk[0] > 0.0 {
+            let limit = (if self.plain { dk[0] * dk[0] } else { 0.0 }).max(dk[1] * self.own);
+            if nearest * 0.98 - 1.0 > limit {
+                return false;
+            }
+        }
+        let Some((near, far)) = self.band else { return true };
         let farthest = (eye - self.org_lo).abs().max((eye - self.org_hi).abs()).length_squared();
         farthest * 1.02 + 1.0 > near && nearest * 0.98 - 1.0 <= far
     }
@@ -203,9 +227,9 @@ impl Cull {
     }
 
     /// Per run, whether its draws go in this frame (RunBox::maybe_visible); the GPU counts what they draw.
-    pub fn runs_shown(&self, view_proj: Mat4, eye: Vec3) -> Vec<bool> {
+    pub fn runs_shown(&self, view_proj: Mat4, eye: Vec3, dk: [f32; 2]) -> Vec<bool> {
         let p = planes(view_proj);
-        self.boxes.iter().map(|b| b.maybe_visible(&p, eye)).collect()
+        self.boxes.iter().map(|b| b.maybe_visible(&p, eye, dk)).collect()
     }
 
     /// The run of an argument slot.

@@ -238,6 +238,9 @@ pub struct Placement {
     /// From an MZB whose byte 0x1c is 2 (scene slot type 3, FUN_10179430): a voyage zone's world, drawn through the
     /// voyage matrix while the voyage runs (FUN_1017b510).
     pub world: bool,
+    /// Record +0x40 when +0x46 bit 0 is set: its own draw distance, scaled by the Clipping factor instead of the
+    /// zone's (FUN_1017c9c0).
+    pub own_dist: Option<f32>,
 }
 
 impl Placement {
@@ -308,7 +311,7 @@ pub fn parse_mzb(p: &mut [u8]) -> Result<Vec<Placement>> {
                 *l = if rf >= 1 { keys.get(rf - 1).copied().unwrap_or(0) } else { 0 };
             }
         }
-        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c), id: u32_at(p, r + 0x34), lod: [f32_at(p, r + 0x38), f32_at(p, r + 0x3c)], world });
+        out.push(Placement { name: name_at(p, r, 16), translate: vec3_at(p, r + 16), rotate: vec3_at(p, r + 28), scale: vec3_at(p, r + 40), lights, link: u32_at(p, r + 0x50), area: u32_at(p, r + 0x4c), id: u32_at(p, r + 0x34), lod: [f32_at(p, r + 0x38), f32_at(p, r + 0x3c)], world, own_dist: (p[r + 0x46] & 1 != 0).then(|| f32_at(p, r + 0x40)) });
     }
     Ok(out)
 }

@@ -4601,6 +4601,11 @@ fn box_on_screen(view: glam::Mat4, proj: glam::Mat4, model: glam::Mat4, corners:
     (hi.x >= -1.0 && lo.x <= 1.0 && hi.y >= -1.0 && lo.y <= 1.0).then(|| ([lo.x, lo.y, hi.x, hi.y], lo.z + 0.25 * (hi.z - lo.z)))
 }
 
+/// The view depth of a box's farthest corner (FUN_100c63d0: -min z_view, against the actors' draw distance).
+fn box_depth(view: glam::Mat4, model: glam::Mat4, corners: &[Vec3; 8]) -> f32 {
+    corners.iter().map(|c| -view.transform_point3(model.transform_point3(*c)).z).fold(f32::MIN, f32::max)
+}
+
 /// A skeleton box's corners in FUN_100c63d0's order (b0 / b1 and b2 / b3 one apart when equal).
 fn box_corners(b: [f32; 6]) -> [Vec3; 8] {
     let [mut b0, mut b1, mut b2, mut b3, b4, b5] = b;
@@ -11382,13 +11387,19 @@ impl App {
                         steps += 1;
                     }
                     w.light_acc = w.light_acc.min(2.0);
+                    // The Clipping setting scales each env's fog and the scenery's draw distance (dat/weather.rs).
+                    let (x, zone) = (crate::dat::weather::clipping_factor(w.game.get(0x3e)), w.zone.unwrap_or(0));
                     let step = |ease: &mut crate::dat::weather::LightEase, e: &crate::dat::weather::Env| {
                         for _ in 0..steps {
                             ease.step(e, minute);
                         }
-                        crate::dat::weather::Lighting::from_env_eased(e, minute, ease)
+                        crate::dat::weather::Lighting::from_env_eased(e, minute, ease, crate::dat::weather::clipping(e.draw_dist, x, zone).1)
                     };
                     r.lighting = mix(&|t| zw.at(t, minute)).map(|e| step(&mut w.light_ease, &e));
+                    // FUN_1018b8f0: 100 before the env is up. Settings' Draw Distance scales it, or lifts it (0).
+                    let (d, k) = crate::dat::weather::clipping(r.lighting.map_or(100.0, |l| l.draw_dist), x, zone);
+                    let scale = self.cfg.draw_distance as f32 / 100.0;
+                    r.clip = [d * scale, k * scale * scale];
                     if steps > 0 {
                         log::debug!(target: "light", "{minute:.3}: bg dir {:.3} colour {:.4}", w.light_ease.bg.dir, w.light_ease.bg.color);
                     }
@@ -11456,6 +11467,7 @@ impl App {
                 let frame_of = |a: &Actor| Some(a.ticks * actmotion::find(&a.extra, a.character.as_ref()?, &a.motion).first()?.speed * 0.5);
                 let leads: HashMap<u32, f32> = w.actors.iter().filter_map(|(id, a)| Some((*id, frame_of(w.actors.get(&a.motion_link?)?)?))).collect();
                 let me = w.my_id;
+                let mut far_out: HashSet<u32> = HashSet::new();
                 for (id, a) in w.actors.iter_mut() {
                     let Some(ch) = a.character.clone() else { continue };
                     let Some(&Place { pos, forward, tilt, status, ratio, size }) = places.get(id) else { continue };
@@ -11756,11 +11768,17 @@ impl App {
                         limits: ch.skeleton.look_limits,
                     });
                     let drawn = !a.vanished() && !hidden.contains(id) && !(*id == w.my_id && w.camst.self_alpha <= 0.0);
+                    let bx = ch.skeleton.boxes.get(box_index(status)).or(ch.skeleton.boxes.first()).copied();
+                    // FUN_100c63d0: past the draw distance by its box's farthest corner, neither drawn nor a target.
+                    if r.clip[0] > 0.0 && *id != w.my_id && bx.is_some_and(|b| box_depth(cview, model, &box_corners(b)) > r.clip[0]) {
+                        far_out.insert(*id);
+                    }
                     // Tests 1-5 of FUN_100c63d0 / FUN_100cbde0: a box, faded in, in front and on screen.
                     if drawn
+                        && !far_out.contains(id)
                         && a.alpha > 0.0
-                        && let Some(b) = ch.skeleton.boxes.get(box_index(status)).or(ch.skeleton.boxes.first())
-                        && let Some((rect, z)) = box_on_screen(cview, cproj, model, &box_corners(*b))
+                        && let Some(b) = bx
+                        && let Some((rect, z)) = box_on_screen(cview, cproj, model, &box_corners(b))
                     {
                         visible.insert(*id);
                         if *id != w.my_id {
@@ -11832,7 +11850,7 @@ impl App {
                 r.upload_poses(&gfx.gpu, &mut encoder);
                 mark!("poses");
                 // FUN_100cbde0: a drawn alpha under 0.0001 is not drawn (the near-camera fade, first person).
-                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
+                let actors: Vec<&crate::render::ActorGpu> = w.actors.iter().filter(|(id, a)| !a.vanished() && !hidden.contains(id) && !far_out.contains(id)).filter_map(|(_, a)| a.gpu.as_ref()).filter(|g| g.alpha >= 1e-4).collect();
                 counts = perf::Counts { entities: w.entities.len(), actors: w.actors.len(), posed: counts.posed, drawn: actors.len(), zone_draws: r.draw_count(), ui_vertices: 0, fx: [(0, 0); 3] };
                 m_actors = Instant::now();
                 // Mips of new textures (models that came this frame, a zone going up) under the frame budget.
@@ -11880,7 +11898,9 @@ impl App {
                         view,
                         view_rot,
                         eye: camera.eye,
-                        draw_distance: 2000.0,
+                        // FUN_100496f0: an emitter without its own range shows within the scenery's draw distance
+                        // (none: Settings' Draw Distance at Unlimited).
+                        draw_distance: if r.clip[0] > 0.0 { r.clip[0] } else { 2000.0 },
                         // Op 0x8f: the actor's area env, else the zone; areas are not loaded *(the zone's)*.
                         area_light: r.lighting.map_or(Vec3::ONE, |l| l.area),
                         focal: 192.0 / (camera.fov_y * 0.5).tan(),

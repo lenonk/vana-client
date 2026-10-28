@@ -158,7 +158,7 @@ fn set_ground(w: &mut World) {
 
 /// The matrix of a piece placed at `pos` turned `yaw` (as an MZB placement).
 fn matrix(pos: Vec3, yaw: f32) -> glam::Mat4 {
-    let p = Placement { name: String::new(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false };
+    let p = Placement { name: String::new(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false, own_dist: None };
     glam::Mat4::from_cols_array_2d(&p.matrix())
 }
 
@@ -391,7 +391,7 @@ pub fn load(index: &DatIndex, keys: &Keys, seq: u64, want: &[Key], map: u16, flo
         let Some(name) = scene.meshes.first().map(|m| m.name.clone()) else { continue };
         scene.placements = places
             .iter()
-            .map(|&(_, _, pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false })
+            .map(|&(_, _, pos, yaw, _)| Placement { name: name.clone(), translate: pos.to_array(), rotate: [0.0, yaw, 0.0], scale: [1.0; 3], lights: [0; 4], link: 0, area: 0, id: 0, lod: [0.0; 2], world: false, own_dist: None })
             .collect();
         let local = Arc::new(scene.meshes[0].models.iter().flat_map(model_tris).collect::<Vec<_>>());
         for (p, &(key, furn, _, _, plant)) in scene.placements.iter().zip(&places) {

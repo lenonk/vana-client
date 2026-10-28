@@ -415,6 +415,8 @@ pub struct ZoneRenderer {
     pub now: f32,
     /// FUN_10178b30's V for the world slot (zone +0x38e1c).
     pub voyage: Mat4,
+    /// The scenery's draw distance D and Clipping factor K (dat/weather.rs clipping); D 0 draws at any distance.
+    pub clip: [f32; 2],
 }
 
 /// A sub-area's scenery (FUN_101787c0 loads it into zone slot 1): its own buffers and draws, its textures in the
@@ -1090,7 +1092,8 @@ impl ZoneGeometry {
         let mut door_bases: HashMap<u32, Vec<glam::Mat4>> = HashMap::new();
         let mut next_part = 1u32;
         let mesh_names: std::collections::HashSet<&str> = scene.meshes.iter().map(|m| m.name.as_str()).collect();
-        let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool)>> = HashMap::new();
+        // Per instance: the placement's link, whether mirrored, and its distance rule for the culling (cull.rs).
+        let mut by_mesh: HashMap<String, Vec<(Instance, u32, bool, [f32; 2])>> = HashMap::new();
         for p in scene.placements.iter().filter(|p| p.drawn()) {
             let area = match area_keys.iter().position(|&k| k == p.area) {
                 _ if p.area == 0 => 0,
@@ -1133,9 +1136,10 @@ impl ZoneGeometry {
             }
             // Door parts draw through FUN_1017ce60 (2019), which takes every ref, 'c' keys too.
             let lights = p.lights.map(|k| slot_of(k, part != 0));
+            let reach = cull::reach(p.own_dist, p.id != 0);
             for (name, b) in bands {
                 let inst = Instance { model: p.matrix(), lights, area: [area, 0, 0, 0], band: [b[0], b[1], part as f32, p.world as u32 as f32] };
-                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0));
+                by_mesh.entry(name.into_owned()).or_default().push((inst, p.link, p.scale[0] * p.scale[2] < 0.0, reach));
             }
         }
         let mut matrices: Vec<Instance> = Vec::new();
@@ -1150,11 +1154,13 @@ impl ZoneGeometry {
             mats.sort_by_key(|m| m.2);
             let start = matrices.len() as u32;
             let split = start + mats.iter().filter(|m| !m.2).count() as u32;
-            for (inst, link, _) in mats {
+            let mut reaches = Vec::with_capacity(mats.len());
+            for (inst, link, _, reach) in mats {
                 if link != 0 {
                     links.push((matrices.len() as u32, link, inst));
                 }
                 matrices.push(inst);
+                reaches.push(reach);
             }
             let (instances, mirrored) = (start..split, split..matrices.len() as u32);
             // The mesh's box over every model drawn, for each of its placements.
@@ -1163,7 +1169,7 @@ impl ZoneGeometry {
                 (lo.min(p), hi.max(p))
             });
             let (c, h) = if lo.x <= hi.x { ((lo + hi) / 2.0, (hi - lo) / 2.0) } else { (Vec3::ZERO, Vec3::ZERO) };
-            bounds.resize(matrices.len(), [c.x, c.y, c.z, 0.0, h.x, h.y, h.z, 0.0]);
+            bounds.extend(reaches.iter().map(|r| [c.x, c.y, c.z, r[0], h.x, h.y, h.z, r[1]]));
             for model in &mesh.models {
                 let indices = if model.strip { strip_to_list(&model.indices) } else { model.indices.clone() };
                 if indices.is_empty() || model.vertices.is_empty() {
@@ -1357,6 +1363,7 @@ impl ZoneRenderer {
             parts_gpu,
             now: 0.0,
             voyage: Mat4::IDENTITY,
+            clip: [0.0, 1.0],
         }
     }
 
@@ -1945,6 +1952,7 @@ impl ZoneRenderer {
         // FUN_10183da0: instances with an area are lit by its environment; flagged models by 'ev10' while a sub-area
         // is in (+0x50, FUN_101787c0).
         u.area_info[1] = self.now;
+        (u.area_info[2], u.area_info[3]) = (self.clip[0], self.clip[1]);
         let ev10 = u32::from_le_bytes(*b"ev10");
         if self.sub.as_ref().is_some_and(|s| s.shown)
             && let Some(s) = self.area_keys.iter().position(|&k| k == ev10)
@@ -1991,7 +1999,7 @@ impl ZoneRenderer {
             pass.draw(0..3, 0..1);
         }
         // The zone's own scenery draws from its culled instances when it is culled, only runs that may show.
-        let shown = self.cull.as_ref().map(|c| c.runs_shown(vp, camera.eye)).unwrap_or_default();
+        let shown = self.cull.as_ref().map(|c| c.runs_shown(vp, camera.eye, self.clip)).unwrap_or_default();
         let (zone_inst, zone_args) = match &self.cull {
             Some(c) => (&c.out, Some((c, &c.args, shown.as_slice()))),
             None => (&self.instances, None),

@@ -1184,6 +1184,12 @@ fn main() -> Result<()> {
                         if let Some(v) = voyage_v {
                             r.voyage = v;
                         }
+                        // The draw distance at full Clipping (FFXI_NO_CLIP: none, to compare).
+                        if let Some(l) = lighting.filter(|_| std::env::var_os("FFXI_NO_CLIP").is_none()) {
+                            let (d, k) = dat::weather::clipping(l.draw_dist, 1.0, zone as u16);
+                            println!("draw distance {d:.1}, K {k}");
+                            r.clip = [d, k];
+                        }
                         if let Some((id, s)) = &sub_scene {
                             let mut all = scene.light_keys.clone();
                             all.extend(s.light_keys.iter().filter(|k| **k != 0 && !scene.light_keys.contains(k)));

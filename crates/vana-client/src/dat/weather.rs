@@ -234,6 +234,32 @@ pub struct Lighting {
     pub sky: Option<([Vec3; 8], [f32; 8])>,
     /// The effect tint (emission ops 0x8f / 0x90, update op 0x69): Env::area_light.
     pub area: Vec3,
+    /// The env's draw distance before the Clipping factor (@0x58; clipping()).
+    pub draw_dist: f32,
+}
+
+/// FUN_101892b0 (K) and FUN_1018b8f0 (D, the scenery's draw distance; actors get the same values): `raw` an env's
+/// @0x58, `x` the Clipping setting's factor (config 0x3e: (v + 25) x 0.02), `zone` for the two the env object treats
+/// apart (FUN_1018b3a0: E+0x1d0 floor 43, none in 0xc1; E+0x1d4, K at least 0.7 in 0x32). Returns (D, K).
+pub fn clipping(raw: f32, x: f32, zone: u16) -> (f32, f32) {
+    let (floor, least) = match zone {
+        0xc1 => (0.0, 0.0),
+        0x32 => (43.0, 0.7),
+        _ => (43.0, 0.0),
+    };
+    // F: the halving flag, set below full Clipping; it halves K in zones drawn past 500.
+    let f = if x < 0.99 { 0.5 } else { 1.0 };
+    let mut k = if raw > 500.0 && f != 1.0 { 0.5 } else { 1.0 } * x;
+    if least > 0.0 {
+        k = k.max(least);
+    }
+    let d = if floor > 0.0 { (k * raw).max(floor) } else { raw };
+    (d, k)
+}
+
+/// The Clipping setting's factor X from config 0x3e (0..25; config apply case 0x3e).
+pub fn clipping_factor(v: u32) -> f32 {
+    (v.min(25) + 25) as f32 * 0.02
 }
 
 /// FUN_10187720's stored 2 pi and pi (0x10329d2c, 0x10329d30): the switch falls at 05:59:59.4 and 18:00:00.6.
@@ -312,9 +338,9 @@ impl LightEase {
 
 impl Lighting {
     /// In game (FUN_10188ca0): the eased direction and colour times the environment's light scale (not eased);
-    /// ambient and fog as the keys give them.
-    pub fn from_env_eased(env: &Env, minute: f32, ease: &LightEase) -> Self {
-        let mut l = Self::from_env(env, minute);
+    /// ambient as the keys give it, the fog times the Clipping factor `k` (FUN_10189120).
+    pub fn from_env_eased(env: &Env, minute: f32, ease: &LightEase, k: f32) -> Self {
+        let mut l = Self::from_env_k(env, minute, k);
         if env.flags & 1 == 0 && ease.init {
             l.dir = ease.bg.dir;
             l.diffuse = ease.bg.color * env.bg.light_scale;
@@ -325,6 +351,11 @@ impl Lighting {
     }
 
     pub fn from_env(env: &Env, minute: f32) -> Self {
+        Self::from_env_k(env, minute, 1.0)
+    }
+
+    /// With the fog's start and end times the Clipping factor `k` (FUN_10189120).
+    pub fn from_env_k(env: &Env, minute: f32, k: f32) -> Self {
         let (sun, moon) = sun_moon(minute);
         let night = sun.y < 0.0;
         let (dir, diffuse, actor_dir, actor_diffuse) = if env.flags & 1 != 0 {
@@ -335,8 +366,8 @@ impl Lighting {
         } else {
             (sun, rgb(env.bg.sun), sun, rgb(env.actor.sun))
         };
-        let mut end = env.bg.fog_end;
-        let start = env.bg.fog_start;
+        let mut end = env.bg.fog_end * k;
+        let start = env.bg.fog_start * k;
         if end <= start {
             end = start + 1.0;
         }
@@ -354,6 +385,7 @@ impl Lighting {
             clear: rgb(env.clear),
             sky,
             area: env.area_light(),
+            draw_dist: env.draw_dist,
         }
     }
 }

@@ -16,6 +16,7 @@ pub struct Settings {
     pub tool: std::collections::BTreeMap<String, u32>,
     pub frame_limit: u32,
     pub anisotropy: u16,
+    pub draw_distance: u32,
     pub party_tp: bool,
     pub map_overlay: bool,
     pub map_opacity: u32,
@@ -48,6 +49,7 @@ impl Settings {
             tool: c.tool.clone(),
             frame_limit: c.frame_limit,
             anisotropy: c.anisotropy,
+            draw_distance: c.draw_distance,
             party_tp: c.party_tp,
             map_overlay: c.map_overlay,
             map_opacity: pct(c.map_overlay_opacity),
@@ -79,6 +81,7 @@ impl Settings {
         c.tool = self.tool.clone();
         c.frame_limit = self.frame_limit;
         c.anisotropy = self.anisotropy;
+        c.draw_distance = self.draw_distance;
         c.party_tp = self.party_tp;
         c.map_overlay = self.map_overlay;
         c.map_overlay_opacity = self.map_opacity as f32 / 100.0;
@@ -123,6 +126,7 @@ enum Val {
     Gamma,
     FrameLimit,
     Aniso,
+    DrawDistance,
     PartyTp,
     MapOverlay,
     MapOpacity,
@@ -192,6 +196,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Background", "0003 / 0004: the 3D scene's resolution, scaled to the window.", Size("0003", "0004", Sizes::Background), &[], Now),
         row("Menu Size", "0037 / 0038: the resolution menus and text are laid out at, then stretched.", Size("0037", "0038", Sizes::Ui), &[], Now),
         row("3D Aspect", "Window: the window's shape. Config: retail's ratio from Misc. 2 / the lobby Config.", RetailAspect, &[(0, "Window"), (1, "Config")], Now),
+        row("Draw Distance", "How far scenery, characters and effects draw: Retail is the game's distance, the others farther (not retail).", DrawDistance, &[(100, "Retail"), (150, "1.5x"), (200, "2x"), (300, "3x"), (0, "Unlimited")], Now),
     ];
     const TEXTURES: &[Row] = &[
         row("Textures", "0018: compressed (BC1 / BC2) or uncompressed textures.", Tool("0018"), &[(0, "High"), (1, "Low"), (2, "Full")], NextZone),
@@ -365,6 +370,7 @@ impl SettingsUi {
             Val::Size(..) | Val::Gamma | Val::Monitor | Val::Gpu => 0,
             Val::FrameLimit => self.s.frame_limit,
             Val::Aniso => self.s.anisotropy as u32,
+            Val::DrawDistance => self.s.draw_distance,
             Val::PartyTp => self.s.party_tp as u32,
             Val::ModernUi => self.s.modern_ui as u32,
             Val::ModernScale => self.s.modern_scale,
@@ -390,6 +396,7 @@ impl SettingsUi {
         match v {
             Val::Tool(n) => self.tool_set(n, x),
             Val::Aniso => self.s.anisotropy = x as u16,
+            Val::DrawDistance => self.s.draw_distance = x,
             Val::PartyTp => self.s.party_tp = x != 0,
             Val::ModernUi => self.s.modern_ui = x != 0,
             Val::ModernScale => self.s.modern_scale = x,

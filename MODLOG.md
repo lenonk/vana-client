@@ -10811,3 +10811,32 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   character list, New recovery code with the app's code (the server's code replaced by the one shown), Turn off with
   the recovery code in lower case (the row gone). The modern window is drawn opaque
   whatever the Opacity setting, so the form under it does not show through.
+
+## Draw distance: retail's, and the Draw Distance setting (2026-10-28)
+
+- Retail (research spec culling_spec.md sections 3..5; FUN_1017c9c0, FUN_101892b0, FUN_1018b8f0, FUN_10189120):
+  - D = max(K x env@0x58, 43) (map 0xc1: @0x58 itself; 100 before an env is up).
+  - K = X, halved when @0x58 > 500 and the Clipping flag F is 0.5 (map 0x32: K >= 0.7).
+  - X = (config 0x3e + 25) x 0.02, F = 0.5 below X 0.99. At the default Clipping (25), K = 1 and D = @0x58
+    (302 in Qufim Island, La Theine and San d'Oria).
+  - A placement draws when its origin is within D, or within its own distance (record +0x40, used when +0x46 bit 0)
+    times sqrt K. A door group's must be within both.
+  - The cull frustum's far plane is at view depth D. Fog start and end are scaled by K.
+  - Emitters without their own range (op 0x0a) show within D. Actors whose skeleton box's farthest corner is deeper
+    than D are neither drawn nor targetable.
+  - Data (La Theine): grass `_kusa_*` 50, trees 80..170, hit walls 1; the mountains (`pl_moa*`) carry 1000 without
+    the flag, so retail drops them past 302.
+- Ours: dat/zone.rs Placement::own_dist; dat/weather.rs clipping(), Lighting::draw_dist and the fog x K.
+  - render/cull.rs: each instance's rule rides in its bounds' fourth words; area_info.zw = D, K.
+  - render/zone.wgsl cs_cull_vis: the distance test before the LOD band, and the depth plane.
+  - RunBox::maybe_visible: skips runs whose nearest origin is past their largest reach.
+  - client: the actors' far_out set; the effects' Frame::draw_distance.
+- Settings > Screen > Draw Distance (not retail; config `draw_distance`, percent of retail's, 0 = no limit):
+  - Retail, 1.5x, 2x, 3x, Unlimited; default Unlimited, the look before this change.
+  - Retail's limit is a 2002-hardware one (CLAUDE.md: such limits become settings).
+  - A scale s multiplies D by s and K by s squared (the own distances by s). The fog stays retail's.
+- Checked offscreen (zone-shot applies the Retail distance; FFXI_NO_CLIP turns it off):
+  - La Theine from above: GPU 0.876 -> 0.061 ms; the far mountains gone past 302.
+  - La Theine along the ground: 0.430 -> 0.348 ms; grass within 50, trees within their distances.
+  - Qufim: about 1000 pixels differ; San d'Oria: none.
+  - Live in Qufim at Retail: scenery, actors and plates draw.
