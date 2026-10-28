@@ -203,6 +203,9 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     done and seen live (classic). The full log's tabs (Num+) done.
   - Mog House gardening (client/garden.rs, MODLOG "Mog House gardening"): done and seen live in both UIs; the
     rent-a-room moogle trip not seen.
+  - s2c 0x075 (client/objective.rs, border.rs; MODLOG "s2c 0x075: ..."): the countdown (cnttime), the objective bars and
+    text, the border walls done and seen live in both UIs; left the gate's hiding of other confrontations and the
+    scoreboard (LSB never sends it). Also unhandled from LSB: 0x039 (map scheduler visuals), 0x02F (dig), 0x04F.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").

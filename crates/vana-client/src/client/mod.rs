@@ -17,6 +17,7 @@ mod modern;
 mod monstrosity;
 mod moncustom;
 mod objective;
+mod border;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
@@ -4506,6 +4507,10 @@ fn actor_place(w: &World, id: u32, my_dir: u8) -> Option<Place> {
         let (pos, yaw) = mannequin::place(w, id, pos, yaw);
         return Some(Place { pos, forward: Vec3::new(yaw.cos(), 0.0, -yaw.sin()), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
     }
+    // FUN_100c9c10: a border part on its arc.
+    if let Some((pos, yaw)) = w.border.place_of(id) {
+        return Some(Place { pos, forward: Vec3::new(yaw.cos(), 0.0, -yaw.sin()), tilt: [0.0; 2], status: 0, ratio: 0.0, size: 0 });
+    }
     // FUN_100c9810: an Indi aura stands at its owner's ground place, scaled by its size.
     if id & indi::AURA != 0 {
         let p = base_place(w, id & !indi::AURA, my_dir)?;
@@ -5660,6 +5665,8 @@ struct World {
     event_timer: Option<(f32, f32)>,
     /// s2c 0x075: the countdown, bars, objective text and border.
     objective: objective::Objective,
+    /// The objective border's parts.
+    border: border::Parts,
     /// What others are casting or readying (0x028 categories 7 / 8), for the modern target panel (not retail).
     casts: HashMap<u32, combat::Casting>,
     item_info: Option<Arc<items::ItemCache>>,
@@ -7218,6 +7225,7 @@ impl App {
                             cast_event: false,
                             event_timer: None,
                             objective: Default::default(),
+                            border: Default::default(),
                             casts: HashMap::new(),
                             item_info: None,
                             msgshift: None,
@@ -7686,6 +7694,7 @@ impl App {
                     world.gmtell = Default::default();
                     // FUN_10093af0: the 0x075 store.
                     objective::reset(world);
+                    border::remove(world);
                     (world.region_menu, world.cnq) = (None, None);
                     world.names_hidden = None;
                     world.res_rdy = ResRdy { send_count, since: Some(Instant::now()), ..ResRdy::default() };
@@ -8142,9 +8151,9 @@ impl App {
                 }
                 NetEvent::StatusTimers { ids, ends } => world.buff_timers = Some((ids, ends)),
                 NetEvent::Objective(p) => {
-                    if world.objective.apply(&p) {
-                        log::info!("0x075 border {:?}", world.objective.border);
-                    }
+                    world.objective.apply(&p);
+                    // FUN_10087990: every packet drops the border's parts; a radius makes them again.
+                    border::remove(world);
                 }
                 NetEvent::PartyEffects(rows) => {
                     world.party_buffs = rows.into_iter().collect();
@@ -8896,6 +8905,7 @@ impl App {
         ride::update(world, dt);
         fishrod::update(world, dt);
         indi::update(world, dt);
+        border::update(world);
         actmotion::update(world, dt);
         // FUN_10096640: the lock goes with its target; inferred, after 10 s (a talk the server never answers).
         if !event::active(world) && world.control_lock.is_some_and(|(t, id)| t.elapsed().as_secs_f32() > 10.0 || !world.entities.contains_key(&id)) {

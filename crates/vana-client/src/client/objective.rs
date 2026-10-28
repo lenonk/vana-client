@@ -66,7 +66,7 @@ fn u16_at(p: &[u8], o: usize) -> u16 {
 }
 
 impl Objective {
-    /// FUN_10098e90 on the packet. Returns the border when it changed.
+    /// FUN_10098e90 on the packet. Returns whether the border changed.
     pub fn apply(&mut self, p: &[u8]) -> bool {
         self.mode = u32_at(p, 4);
         if self.mode == 0 {

@@ -11208,6 +11208,31 @@ keeps its newest 100 rows *(inf: retail ~50 at the switch, up to 100 while open)
   objectiveUtility() cleared the countdown and bars, the help stayed until help 0 / 0. The chat line truncates long
   `!exec` text: build the table in steps (`!exec xi.tmpo={...}`, `xi.tmpo.bars=...`, then
   `!exec player:objectiveUtility(xi.tmpo)`).
-- Not done yet: the border (flag 8 / radius): 8 border parts of kinds 0x35..0x3c (entity +0x134 bits 1..8 wanted,
-  9..16 made, +0xac..), file FUN_100d43e0 = table 0x10330f34 (0x3b2 red, 0x3bc blue) + 0xca53 = 52741 / 52751,
-  placed each frame by FUN_100c9c10 at 15 degree steps on the circle near the player.
+- The border: see "s2c 0x075: the border".
+
+## s2c 0x075: the border (2026-10-28)
+
+Follows "s2c 0x075: the battlefield countdown, objective bars and text".
+- FUN_10087990 on every 0x075 (our entity present): radius != 0 -> FUN_1009adb0 (FUN_10092760 drops all ten parts,
+  entity +0x134 bits 9..18, then wants parts 0..7: | 0x1fe), radius 0 -> FUN_1009add0 (wants none). So any 0x075
+  remakes the border, even unchanged. The entity update (FUN_1008f740's block, all.c ~112270) makes each wanted part
+  with FUN_100c59b0(entity pos, entity, kind 0x35 + k), file FUN_100d43e0 = table 0x10330f34 by colour @0x25 (0x3b2,
+  0x3bc) + 0xca53 = 52741 red, 52751 blue (anything over 1 counts as 0).
+- The file: skeleton toum, a 208-byte mesh hf_t, idl0; schedulers init (-> efkl), pop0, lp00 (generators bou3 and
+  bou2, mesh glg4 / glg3, 59 ticks), efon (op 0x73: lp00 looping), efof (op 0x2d on bou3 / bou2, op 0x5f lp00), efkl
+  (op 0x1e, 0x5f). The walls are those generators on each part.
+- Placement FUN_100c9c10 (asm 0x100c9c10.., the player's actor, parts at actor +0x770) each frame once all 8 parts
+  are ready (vt +0x1e4), radius r > 0: d = (player - camera) with y 0, normalised; q = camera + d x render (the source
+  computes |d - d| + render, so the length of d drops out); bearing deg = ftol(-atan2(q.x - cx, q.z - cz) x 57.29578);
+  start = (-4 - deg / 15) x 15 (C division); part k at angle a = (start + 15 k) degrees wrapped to [-pi, pi]: position
+  (cx + r sin a, the player's y, cz + r cos a), rotation (0, a, 0). near = |r - |player - c|| < render (y ignored):
+  a part not yet on plays `efon` (+0x8ac bit 2 set), one on and no longer near plays `efof`.
+- Not done: the gate (flag 8, @0x26, FUN_10087890): while set, FUN_100cd040 hides (+0xb2 | 0x20) any other entity
+  whose +0x1d0 & 0xffffff1f is set when its +0x13f low nibble differs from ours (both non-zero); neither field is
+  parsed by us yet.
+- Ours: client/border.rs (Parts, arc, update, remove; actor ids 0x0800_0000 | k; actor_place takes the arc). A
+  removal stops the looping lp00 with the actor *(inf: retail frees the part's file with it)*.
+- Live (Lnxcsfix in 230, both UIs): `!exec player:objectiveUtility({fence={pos={x=..,z=..},radius=..}})` red and blue
+  walls (translucent blue panels, red / yellow bars) where the arc puts them: between the camera and the player for a
+  line 2 yalms behind her, through her for a circle beside her; render 1 with the player 3 from the line: parts made,
+  no efon, nothing drawn. Not compared with retail footage.
