@@ -201,7 +201,7 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
     // Frame 0 only sets the screen (egui's first frame has its default one); the time steps finish the fades.
     for frame in 0..8 {
         let raw = egui::RawInput { screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(width as f32, height as f32) / zoom)), time: Some(frame as f64 * 0.5), ..Default::default() };
-        let output = ctx.run_ui(raw, |ui| {
+        let mut output = ctx.run_ui(raw, |ui| {
             let ctx = ui.ctx();
             if frame == 0 {
                 return;
@@ -211,9 +211,9 @@ pub fn shot(width: u32, height: u32, scale: u32, backdrop: Option<&Path>, out: &
             }
             sample(&m, ctx, &mut layout, opts);
         });
-        for (id, ds) in &output.textures_delta.set {
-            deltas.push((*id, ds.clone()));
-        }
+        // Taken as they come (a TexturesDelta dropped unapplied is an error in debug builds).
+        deltas.extend(output.textures_delta.set.drain());
+        output.textures_delta.clear();
         last = Some(output);
     }
     let output = last.context("no egui output")?;

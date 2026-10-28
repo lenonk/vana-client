@@ -5706,6 +5706,8 @@ pub struct App {
     /// GPU time per frame stage (render/gputime.rs; the F12 overlay), made once the device is up if it has timestamps.
     gpu_time: Option<crate::render::gputime::GpuTime>,
     gpu_time_checked: bool,
+    /// Texture changes egui asked for and not applied yet: a frame that cannot draw keeps them for the next.
+    egui_deltas: egui::TexturesDelta,
     /// Sound output (opened on the first frame; None when there is no device).
     audio: Option<crate::audio::Audio>,
     audio_tried: bool,
@@ -5890,6 +5892,7 @@ impl App {
             fx_census: None,
             gpu_time: None,
             gpu_time_checked: false,
+            egui_deltas: Default::default(),
             audio: None,
             audio_tried: false,
             music_scene: MusicScene::None,
@@ -11067,7 +11070,8 @@ impl App {
         let ctx = gfx.egui_ctx.clone();
         self.update_netwait(dt);
         let before = self.ui_snap();
-        let output = perf::timed(|| "egui".into(), || ctx.run_ui(raw, |ui| self.ui(ui.ctx(), size)));
+        let mut output = perf::timed(|| "egui".into(), || ctx.run_ui(raw, |ui| self.ui(ui.ctx(), size)));
+        self.egui_deltas.append(std::mem::take(&mut output.textures_delta));
         let after = self.ui_snap();
         if let (Some(s), Some(a)) = (Self::ui_sound(&before, &after), self.audio.as_mut()) {
             a.ui(s);
@@ -11958,10 +11962,11 @@ impl App {
         }
 
         let screen = egui_wgpu::ScreenDescriptor { size_in_pixels: size, pixels_per_point: output.pixels_per_point };
-        if !output.textures_delta.set.is_empty() {
-            perf::note(|| format!("egui textures {}", output.textures_delta.set.len()));
+        let mut textures = std::mem::take(&mut self.egui_deltas);
+        if !textures.set.is_empty() {
+            perf::note(|| format!("egui textures {}", textures.set.len()));
         }
-        for (id, deltas) in &output.textures_delta.set {
+        for (id, deltas) in &textures.set {
             for delta in deltas {
                 gfx.egui_renderer.update_texture(&gfx.gpu.device, &gfx.gpu.queue, *id, delta);
             }
@@ -11982,9 +11987,10 @@ impl App {
             gfx.egui_renderer.render(&mut pass, &jobs, &screen);
         }
         mark!("egui");
-        for id in &output.textures_delta.free {
+        for id in &textures.free {
             gfx.egui_renderer.free_texture(id);
         }
+        textures.clear();
         let row = (size[0] * 4).div_ceil(256) * 256;
         let capture = (shoot && gfx.config.usage.contains(wgpu::TextureUsages::COPY_SRC)).then(|| {
             let buf = gfx.gpu.device.create_buffer(&wgpu::BufferDescriptor {
@@ -12150,7 +12156,8 @@ impl ApplicationHandler for App {
         surface.configure(&gpu.device, &config);
         let depth = depth_view(&gpu.device, config.width, config.height);
         let egui_ctx = egui::Context::default();
-        let egui_state = egui_winit::State::new(egui_ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, None);
+        // The device's own texture limit (egui assumes 2048; the modern atlases are larger).
+        let egui_state = egui_winit::State::new(egui_ctx.clone(), egui::ViewportId::ROOT, &window, Some(window.scale_factor() as f32), None, Some(gpu.device.limits().max_texture_dimension_2d as usize));
         let egui_renderer = egui_wgpu::Renderer::new(&gpu.device, config.format, Default::default());
         // Zone, posing and mip pipelines are compiled now, off this thread.
         gpu.warm(&[config.format]);

@@ -125,7 +125,16 @@ impl Gpu {
         // BC textures go up compressed when the adapter has them (zone and model DXT1 / DXT3); timestamps between
         // passes give the F12 overlay its GPU times (render/gputime.rs); indirect draws from any instance let the
         // scenery be culled on the GPU (render/cull.rs).
-        let required_features = adapter.features() & (wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        let mut wanted = wgpu::Features::TEXTURE_COMPRESSION_BC | wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS | wgpu::Features::INDIRECT_FIRST_INSTANCE;
+        // FFXI_NO_GPU_TIME / FFXI_NO_CULL: without the timestamps or the culling's indirect draws (driver checks).
+        if std::env::var_os("FFXI_NO_GPU_TIME").is_some() {
+            wanted.remove(wgpu::Features::TIMESTAMP_QUERY | wgpu::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS);
+        }
+        if std::env::var_os("FFXI_NO_CULL").is_some() {
+            wanted.remove(wgpu::Features::INDIRECT_FIRST_INSTANCE);
+        }
+        let required_features = adapter.features() & wanted;
+        log::info!("device features {required_features:?}");
         // The effects update pass binds 9 storage buffers (the default limit is 8; desktop GPUs allow far more).
         let required_limits = wgpu::Limits { max_storage_buffers_per_shader_stage: adapter.limits().max_storage_buffers_per_shader_stage.min(16), ..Default::default() };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor { required_features, required_limits, ..Default::default() }))?;
