@@ -28,6 +28,15 @@ pub fn chat_history_path(name: &str) -> PathBuf {
     dir.join(format!("{name}.json"))
 }
 
+/// A character's training regime state (client/regime.rs), beside the chat history.
+pub fn regime_path(name: &str) -> PathBuf {
+    let dir = match std::env::var_os("FFXI_CONFIG") {
+        Some(p) => PathBuf::from(p).with_file_name("regime"),
+        None => data_dir().join("regime"),
+    };
+    dir.join(format!("{name}.json"))
+}
+
 /// The client's log: in the data dir, or beside an FFXI_CONFIG copy (test runs keep their own).
 pub fn log_path() -> PathBuf {
     match std::env::var_os("FFXI_CONFIG") {
@@ -92,6 +101,9 @@ pub struct Config {
     pub timers_dock: u32,
     pub timers_out: bool,
     pub timers_folded: u8,
+    /// Extra (ours): the training regime window (client/regime.rs) and its drawer out.
+    pub regime: bool,
+    pub regime_out: bool,
     /// Extra (the minimap add-ons): the minimap, its place (0 top right, 1 top left), size (0..2) and the map pixels
     /// across (the wheel's zoom).
     pub minimap: bool,
@@ -257,6 +269,8 @@ impl Default for Config {
             timers_dock: 0,
             timers_out: true,
             timers_folded: 0,
+            regime: false,
+            regime_out: true,
             minimap: false,
             minimap_dock: 0,
             minimap_size: 1,

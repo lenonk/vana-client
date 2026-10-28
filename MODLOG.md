@@ -11439,3 +11439,27 @@ Supersedes "Not done: the idle variants +0x1a8 / +0x1ac" under "Motion name base
   nothing). So retail logs in with no search comment and keeps it across zones.
 - Ours: seacom::zone_in at each 0x00A (Store.entered for the first since login; the comment kept in memory).
   Live: a login of Lnxcsfix, no server warning.
+
+## Training regime window (an Extra, 2026-10-28; spec ~/ffxi/lab/research/training_regime_spec.md)
+
+Not retail (retail has no tracker and no regime packet; the user's wish). client/regime.rs, Extras > Timers > Training
+Regime (config `regime`, its drawer `regime_out`). The state comes from packets alone; nothing is sent for it:
+- the book's event (an NPC named "Field Manual" / "Grounds Tome"): the start's num[7] is the server's regime id
+  (0 or a hunt's 147..559: none); our update option 2 | page << 4 gets s2c 0x05C num[0..3] needed, num[7] the id; our
+  end with that option (bit 31 repeat) and then s2c 0x02A with MesNum bit 15 about us is the accept, its installed id
+  the block base R; option 3 (a Hunt Registry's 4) then 0x02A is a cancel; option 1 (Review) gets num[0..3] needed and
+  num[4..7] killed;
+- s2c 0x029 558 (about us: Data killed, Data2 needed) a credit, 559 complete, 643 begun anew; 6 / 20 (the defeated
+  monster) name the credit's target when two slots need the same count (spec 7.3).
+- The names are never sent: the client's own zone dialogue holds them by id (R - 2050 + id a line per target,
+  "[Siege Bat/Siege Bats]", "member[/s] of the worm family", "undead-type creature[/s]"; R + 3 + id the area), the
+  same text the book shows. A book seen with a regime but no accept finds R as the entry "New training regime
+  registered!" *(English only)*.
+- The server re-sends nothing at login: the state is kept per character (regime/<name>.json beside the chat history).
+  Credits with no page known make rows named after the monsters (or "Target n") until a book is visited.
+- Window: classic on the Timers' dock under the Timers window (above it on the right), the area as its heading, a row
+  per target "Siege Bat:" with "3/4" and a gauge (windowps 38 / 97), full rows dimmed; the drawer as the Timers'.
+  Modern: an edge window ("regime", left edge at 0.6 by default) folding to a "Training" tab.
+- Live (Lnxcsfix, Valkurm Dunes Field Manual, classic): page 1 accepted (regime 7: Hill Lizard 0/7, Sand Hare 0/1 shown
+  at the "registered" line), credits 3/7 and 1/1 (`!exec player:messageBasic(558, k, n)`), the Review reset them to
+  the server's 0/7 and 0/1, the cancel hid it; modern: a kills-only row "Target 1: 2/4", hidden by 559.

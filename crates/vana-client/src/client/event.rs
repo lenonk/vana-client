@@ -745,8 +745,14 @@ impl Host for LiveHost<'_> {
                 }
             }
             Effect::Send(p) => match p {
-                Packet::EventUpdate { head, option } => self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 1 }),
-                Packet::EventEnd { head, option } => self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 0 }),
+                Packet::EventUpdate { head, option } => {
+                    super::regime::on_send(self.w, true, option);
+                    self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 1 })
+                }
+                Packet::EventEnd { head, option } => {
+                    super::regime::on_send(self.w, false, option);
+                    self.send(NetCommand::EventEnd { target: head.target, index, option, zone: head.zone, event: head.event, mode: 0 })
+                }
                 Packet::Passwords { head, text } => {
                     let mut body = Vec::with_capacity(24);
                     body.extend_from_slice(&head.target.to_le_bytes());
@@ -2530,6 +2536,9 @@ pub fn zone_text(w: &mut World, t: &ZoneText) {
         Some(m) if m.zones.contains_key(&zone) => m.map_near(zone, lsb),
         _ => Some(lsb),
     };
+    if let Some(i) = id {
+        super::regime::on_zone_text(w, i, t.mes & 0x8000 != 0, t.actor);
+    }
     let Some((_, d)) = &w.zone_text else { return };
     let raw = id.and_then(|i| d.raw(i));
     let Some(raw) = raw else {

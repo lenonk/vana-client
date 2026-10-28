@@ -411,7 +411,7 @@ const BOTTOM: [&str; 2] = ["chat", "party"];
 /// keep left of it; the edge windows stay put under it.
 const COLUMN: [&str; 3] = ["command", "command sub", "window"];
 /// The windows on a screen edge (extras.rs edge_window): they slide along it, so nothing docks on them.
-const EDGE: [&str; 3] = ["timers", "minimap", "widescan"];
+const EDGE: [&str; 4] = ["timers", "minimap", "widescan", "regime"];
 
 impl Dock {
     /// The side of the panel it sits on that `dx` counts from.
@@ -448,6 +448,8 @@ fn default_place(id: &str) -> Place {
         "countdown" => at(0.02, 0.28),
         "objective" => at(0.02, 0.35),
         "timers" => at(0.0, 0.2187),
+        // The training regime lower on the same edge.
+        "regime" => at(0.0, 0.6),
         "minimap" => at(-0.001, 0.0353),
         // The command window: every window the command menu opens shows here. The item info rides the log as retail's
         // (mode 0, flag 0x1000).

@@ -19,6 +19,7 @@ mod moncustom;
 mod objective;
 mod border;
 mod racing;
+mod regime;
 pub use creator::{ScreenShot as CreatorScreenShot, screen_shot as creator_screen_shot};
 pub use modern::shot::{Opts as ModernShotOpts, shot as modern_shot};
 pub use hudtop::topbar_shot;
@@ -2599,6 +2600,8 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     if !world.modern {
         let foot = timers_foot(gu, world, sw, sh);
         timers::prepare(gu, world, sw, sh, foot);
+        let base = timers::base_place(gu, world, sw, sh, foot);
+        regime::prepare(gu, world, base);
     }
     // FUN_100e8b80 (from the name colours, every frame): record 0 is ours, so a solo 0x0DF lands.
     world.party.refresh_self(world.my_id, world.my_index, &world.name, world.pos_zone);
@@ -2776,6 +2779,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
         minimap::draw(gu, &mut world.minimap, world.minimap_frame.take());
     }
     timers::draw(gu, &mut world.timers, sw);
+    regime::draw(gu, &mut world.regime, sw);
     let slots = gu.hud(sw, sh, &st);
 
     // Target cursor (FUN_10149900): anc_l at the target's point, 6 frames of 4 ticks, tint 0xe0808080;
@@ -3595,6 +3599,7 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
     }
     // The Timers window under every other window: its clicks only where none is over it.
     blockers.extend(timers::pointer(world, gu, input.pointer, input.clicked, &blockers));
+    blockers.extend(regime::pointer(world, gu, input.pointer, input.clicked, &blockers));
 
     blockers
 }
@@ -5694,6 +5699,8 @@ struct World {
     recasts_seen: bool,
     /// Extras: the Timers window (on, dock) and its state.
     extra_timers: bool,
+    /// Extra: the training regime window (client/regime.rs).
+    extra_regime: bool,
     /// Extra: the minimap (client/minimap.rs), its map, its rect this frame, its config and an unsaved zoom.
     extra_minimap: bool,
     minimap: Option<map::Overlay>,
@@ -5714,6 +5721,7 @@ struct World {
     sort_due: (u32, f32),
     timers_dock: u32,
     timers: timers::Timers,
+    regime: regime::Tracker,
     /// The ship voyage (kept across zone changes, as retail's globals).
     voyage: voyage::Voyage,
     /// "menu    casttime" (FUN_1012c1d0): total and remaining ticks of our cast.
@@ -6338,6 +6346,7 @@ impl App {
             w.synth_amount = self.cfg.synth_amount;
             w.stamp_all_lines = self.cfg.stamp_all_lines;
             w.extra_timers = self.cfg.timers;
+            w.extra_regime = self.cfg.regime;
             w.timers_dock = self.cfg.timers_dock;
             (w.extra_minimap, w.minimap_dock, w.minimap_size) = (self.cfg.minimap, self.cfg.minimap_dock, self.cfg.minimap_size);
         }
@@ -7272,6 +7281,7 @@ impl App {
                             ability_recast: HashMap::new(),
                             ability_calc: HashMap::new(),
                             extra_timers: self.cfg.timers,
+                            extra_regime: self.cfg.regime,
                             extra_minimap: self.cfg.minimap,
                             minimap: None,
                             minimap_rect: None,
@@ -7287,6 +7297,7 @@ impl App {
                             sort_due: (0, 0.0),
                             timers_dock: self.cfg.timers_dock,
                             timers: timers::Timers::new(self.cfg.timers_out, self.cfg.timers_folded),
+                            regime: regime::Tracker::new(self.cfg.regime_out),
                             voyage: Default::default(),
                             recasts_seen: false,
                             cast_bar: None,
@@ -7890,6 +7901,7 @@ impl App {
                     world.my_id = char_id;
                     world.name = name;
                     timers::on_zone(world);
+                    regime::on_zone(world);
                     seacom::zone_in(world);
                     world.entities.clear();
                     world.new_challenge = false;
@@ -8250,10 +8262,17 @@ impl App {
                 }
                 NetEvent::Battle(m) => {
                     timers::on_message(world, m.target, m.data[0] as u32, m.message);
+                    regime::on_battle(world, &m);
                     combat::on_battle_message(world, &m);
                 }
-                NetEvent::Event(s) => event::queue(world, s),
-                NetEvent::EventParams(n) => event::params(world, n),
+                NetEvent::Event(s) => {
+                    regime::on_event_start(world, &s);
+                    event::queue(world, s)
+                }
+                NetEvent::EventParams(n) => {
+                    regime::on_params(world, n);
+                    event::params(world, n)
+                }
                 NetEvent::EventStrings(s) => event::strings(world, s),
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
                 NetEvent::Fish(p) => fishing::on_fish(world, p),
@@ -11067,6 +11086,12 @@ impl App {
                 }
                 if std::mem::take(&mut world.timers.dirty) {
                     (self.cfg.timers_out, self.cfg.timers_folded) = (world.timers.out, world.timers.folded);
+                    if let Err(e) = self.cfg.save() {
+                        log::warn!("config: {e:#}");
+                    }
+                }
+                if std::mem::take(&mut world.regime.dirty) {
+                    self.cfg.regime_out = world.regime.out;
                     if let Err(e) = self.cfg.save() {
                         log::warn!("config: {e:#}");
                     }

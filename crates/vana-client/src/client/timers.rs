@@ -205,6 +205,11 @@ impl Timers {
         self.dirty = true;
     }
 
+    /// Last frame's window (the training regime window stacks on it).
+    pub fn rect(&self) -> Option<[f32; 4]> {
+        self.rect
+    }
+
     /// The total of a roll that landed on us.
     pub fn roll_on_me(&self, status: u16) -> Option<u32> {
         self.rolls.get(&status).copied()
@@ -1094,16 +1099,21 @@ pub fn prepare(gu: &GameUi, w: &mut World, sw: f32, sh: f32, foot: f32) {
         return;
     }
     let secs = sections(w, gu);
+    let place = base_place(gu, w, sw, sh, foot);
+    let t = 40.0 - (w.started.elapsed().as_secs_f32() * 60.0) % 40.0;
+    let pulse = if t <= 20.0 { t } else { 40.0 - t } * 0.05;
+    w.timers.frame = Some(Prepared { secs, place, pulse, small: w.game.get(0x99) & 4 != 0 });
+}
+
+/// The dock's place this frame (the training regime window's too).
+pub fn base_place(gu: &GameUi, w: &World, sw: f32, sh: f32, foot: f32) -> Place {
     let log_top = gu.log_top.unwrap_or(sh - 16.0 - 120.0);
     // On the right, the log reaching under the window is one more window to stand on.
     let foot = match w.timers.log {
         Some([lx, ly, lw, _]) if lx + lw > sw - 16.0 - WIDTH => foot.min(ly),
         _ => foot,
     };
-    let place = place(Dock::of(w.timers_dock), sw, sh, icon_count(w), log_top, foot, w.minimap_rect);
-    let t = 40.0 - (w.started.elapsed().as_secs_f32() * 60.0) % 40.0;
-    let pulse = if t <= 20.0 { t } else { 40.0 - t } * 0.05;
-    w.timers.frame = Some(Prepared { secs, place, pulse, small: w.game.get(0x99) & 4 != 0 });
+    place(Dock::of(w.timers_dock), sw, sh, icon_count(w), log_top, foot, w.minimap_rect)
 }
 
 /// Draws what `prepare` set up (after the HUD's clear, before the party / target windows and the menus).

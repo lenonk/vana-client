@@ -24,6 +24,7 @@ pub struct Settings {
     pub stamp_all_lines: bool,
     pub timers: bool,
     pub timers_dock: u32,
+    pub regime: bool,
     pub minimap: bool,
     pub minimap_dock: u32,
     pub minimap_size: u32,
@@ -57,6 +58,7 @@ impl Settings {
             stamp_all_lines: c.stamp_all_lines,
             timers: c.timers,
             timers_dock: c.timers_dock,
+            regime: c.regime,
             minimap: c.minimap,
             minimap_dock: c.minimap_dock,
             minimap_size: c.minimap_size,
@@ -89,6 +91,7 @@ impl Settings {
         c.stamp_all_lines = self.stamp_all_lines;
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
+        c.regime = self.regime;
         c.minimap = self.minimap;
         c.minimap_dock = self.minimap_dock;
         c.minimap_size = self.minimap_size;
@@ -134,6 +137,7 @@ enum Val {
     StampAll,
     Timers,
     TimersDock,
+    Regime,
     Minimap,
     MinimapDock,
     MinimapSize,
@@ -240,16 +244,20 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Minimap Position", "Where the minimap stands: the top right (beside the menus while one is open), or the top left under the cast bar.", MinimapDock, &[(0, "Top Right"), (1, "Top Left")], Now),
         row("Minimap Size", "How big the minimap is.", MinimapSize, &[(0, "Small"), (1, "Medium"), (2, "Large")], Now),
     ];
+    const TIMERS_ROW: Row = row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now);
+    const REGIME_ROW: Row = row("Training Regime", "While a Fields or Grounds of Valor regime is on, its targets and kills in a window beside the timers (from a manual's page, or the kills).", Regime, OFF_ON, Now);
     const TIMERS: &[Row] = &[
-        row("Timers", "Recasts, our effects and the ones we put on others and on monsters, in a window that slides in and out (/timers).", Timers, OFF_ON, Now),
+        TIMERS_ROW,
         row("Timers Position", "Where the timers window docks: the left edge, the right edge above the party list, or the top.", TimersDock, &[(0, "Left"), (1, "Right"), (2, "Top")], Now),
+        REGIME_ROW,
     ];
+    const TIMERS_MODERN: &[Row] = &[TIMERS_ROW, REGIME_ROW];
     const EXTRA_MISC: &[Row] = &[
         row("Synthesis Amount", "After Synthesize, ask how many to make and make them one after another.", SynthAmount, OFF_ON, Now),
         row("Timestamps on All Lines", "Every log line gets the time, not only chat (the format of /timestamp; seconds while it is off).", StampAll, OFF_ON, Now),
     ];
     match kind {
-        Kind::Extras if modern => [&MAPS[..3], &TIMERS[..1], EXTRA_MISC][tab.min(2)],
+        Kind::Extras if modern => [&MAPS[..3], TIMERS_MODERN, EXTRA_MISC][tab.min(2)],
         Kind::Extras => [MAPS, TIMERS, EXTRA_MISC][tab.min(2)],
         Kind::Settings if in_game && tab == 4 => &SOUND[..3],
         Kind::Settings if tab == MODS => &[],
@@ -382,6 +390,7 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines as u32,
             Val::Timers => self.s.timers as u32,
             Val::TimersDock => self.s.timers_dock,
+            Val::Regime => self.s.regime as u32,
             Val::Minimap => self.s.minimap as u32,
             Val::MinimapDock => self.s.minimap_dock,
             Val::MinimapSize => self.s.minimap_size,
@@ -407,6 +416,7 @@ impl SettingsUi {
             Val::StampAll => self.s.stamp_all_lines = x != 0,
             Val::Timers => self.s.timers = x != 0,
             Val::TimersDock => self.s.timers_dock = x,
+            Val::Regime => self.s.regime = x != 0,
             Val::Minimap => self.s.minimap = x != 0,
             Val::MinimapDock => self.s.minimap_dock = x,
             Val::MinimapSize => self.s.minimap_size = x,

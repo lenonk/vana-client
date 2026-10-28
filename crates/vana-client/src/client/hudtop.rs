@@ -646,6 +646,10 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
         let acts = crate::dat::DatIndex::open(&cfg.ffxi_dir()).ok().and_then(|i| crate::dat::actions::Actions::load(&i).ok());
         super::timers::shot(&mut gu, acts.as_ref(), spec, sw, sh, mini);
     }
+    // "regime:DOCK[:SLIDE]": the training regime window's sample.
+    for spec in window.unwrap_or_default().split(',').filter_map(|w| w.strip_prefix("regime:")) {
+        super::regime::shot(&mut gu, spec, sw, sh, mini);
+    }
     let hud = if lobby { Vec::new() } else { gu.hud(sw, sh, &st) };
     for t in hud {
         match t.what {
@@ -667,7 +671,7 @@ pub fn topbar_shot(out: &std::path::Path, fade: &str, menu: Option<u16>, menu_sw
             _ => {}
         }
     }
-    for w in window.unwrap_or_default().split(',').filter(|w| !w.is_empty() && !w.starts_with("timers:")) {
+    for w in window.unwrap_or_default().split(',').filter(|w| !w.is_empty() && !w.starts_with("timers:") && !w.starts_with("regime:")) {
         // "iteminfo:ID[:PAGE[:EXTHEX]]": the item info window as an event opens it.
         if let Some(rest) = w.strip_prefix("iteminfo:") {
             let f: Vec<&str> = rest.split(':').collect();

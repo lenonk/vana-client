@@ -10,6 +10,7 @@ use egui::{Align2, Color32, FontFamily, FontId, Pos2, Rect, Sense, Shape, Stroke
 
 pub fn draw(p: &mut Panels, w: &mut World) {
     timers_panel(p, w);
+    regime_panel(p, w);
     minimap_panel(p, w);
     widescan_panel(p, w);
     overlay(p, w);
@@ -89,6 +90,39 @@ fn timers_panel(p: &mut Panels, w: &mut World) {
     if let Some(k) = fold {
         w.timers.folded ^= 1 << k;
         w.timers.dirty = true;
+        w.sounds.push(crate::audio::Ui::Cursor as u32);
+    }
+}
+
+/// The training regime (regime.rs) on a screen edge: the area as its heading (a click folds it to a tab), a row per
+/// target with its kills of the needed and a bar; a full one dims.
+fn regime_panel(p: &mut Panels, w: &mut World) {
+    if !w.extra_regime || hidden(w) {
+        return;
+    }
+    let Some(r) = w.regime.shown().cloned() else { return };
+    let m = p.m;
+    let toggle = edge_window(p, "regime", WIDTH, !w.regime.out, "Training", |ui, left| {
+        let toggle = flyout_header(ui, m, &r.heading(), left).clicked();
+        ui.add_space(4.0);
+        for s in &r.slots {
+            let (text, done, f) = super::super::regime::row_text(s);
+            let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), 26.0), Sense::hover());
+            let colour = if done { m.theme.color("muted") } else { m.theme.color("text") };
+            let (label, count) = text.rsplit_once(": ").unwrap_or((text.as_str(), ""));
+            ui.painter().text(pos2(rect.min.x, rect.min.y + 2.0), Align2::LEFT_TOP, label, FontId::proportional(m.theme.small), colour);
+            ui.painter().text(pos2(rect.max.x, rect.min.y + 2.0), Align2::RIGHT_TOP, count, FontId::monospace(m.theme.small), colour);
+            let bar = Rect::from_min_max(pos2(rect.min.x, rect.max.y - 6.0), pos2(rect.max.x, rect.max.y - 2.0));
+            ui.painter().rect_filled(bar, 2.0, m.theme.color("charcoal"));
+            if let Some(f) = f.filter(|f| *f > 0.0) {
+                let fill = Rect::from_min_max(bar.min, pos2(bar.min.x + bar.width() * f.min(1.0), bar.max.y));
+                ui.painter().rect_filled(fill, 2.0, if done { m.theme.color("muted") } else { m.theme.color("gold") });
+            }
+        }
+        toggle
+    });
+    if toggle {
+        w.regime.toggle();
         w.sounds.push(crate::audio::Ui::Cursor as u32);
     }
 }
