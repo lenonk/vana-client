@@ -1286,10 +1286,11 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::CHATMODE => chat_mode(w, args),
-        // FUN_1007e120: the away flag cleared, like /online, and Msg std 0x79 (no PlayOnline friend list here).
+        // FUN_1007e120: the away flag cleared, like /online, Msg std 0x79, and our open status Invisible (4).
         id::HIDE => {
             config_flag(w, 1, false);
             system_line(w, 0x79);
+            super::friends::set_status(w, 4);
             Ok(())
         }
         id::LOCALSETTINGS => local_settings(w, args),
@@ -1703,9 +1704,10 @@ fn handle(w: &mut World, cid: u16, args: &[String], line: &str, mode: Mode) -> D
             Ok(())
         }
         id::AWAY | id::ONLINE => {
-            // FUN_1007e080 / FUN_1007e0d0: the away flag and Msg std 0x77 / 0x76.
+            // FUN_1007e080 / FUN_1007e0d0: the away flag, Msg std 0x77 / 0x76, our open status Away (1) / Online (0).
             config_flag(w, 1, cid == id::AWAY);
             system_line(w, if cid == id::AWAY { 0x77 } else { 0x76 });
+            super::friends::set_status(w, (cid == id::AWAY) as u8);
             Ok(())
         }
         id::RECAST => recast(w, args),

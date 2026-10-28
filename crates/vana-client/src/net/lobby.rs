@@ -46,6 +46,9 @@ pub struct MapLogin {
     pub search: (Ipv4Addr, u16),
     /// The 20-byte session key the map server stored for this login.
     pub key: [u8; 20],
+    /// The game login's account id and session hash (xi_profile's credentials).
+    pub account: u32,
+    pub hash: [u8; 16],
 }
 
 /// 0x21's make block; the name went with the 0x22 before it.
@@ -326,6 +329,8 @@ impl Lobby {
             map: (ip(0x38), rd_u32(&pkt, 0x3C) as u16),
             search: (ip(0x40), rd_u32(&pkt, 0x44) as u16),
             key,
+            account: self.account_id,
+            hash: self.hash,
         })
     }
 }

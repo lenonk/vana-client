@@ -10,6 +10,7 @@ mod netwait;
 mod twofa;
 mod gmtell;
 mod charlnk;
+mod friends;
 mod modern;
 mod monstrosity;
 mod moncustom;
@@ -5270,6 +5271,8 @@ struct World {
     charlnk: Option<charlnk::CharLnk>,
     /// The name an Assist Channel prompt (charlnk's, acoption's) acts on.
     assist_name: String,
+    /// The Friend List's data (xi_profile).
+    friends: friends::Friends,
     /// The modern full log's find: typed while it is open, it shows the lines holding the text (not retail).
     log_find: Option<String>,
     /// The main menu's map window, and the key item bits by word (table * 16 + word, s2c 0x055).
@@ -6667,6 +6670,7 @@ impl App {
                         let net = net::spawn(login.clone(), self.cfg.username.clone(), codec);
                         self.status = format!("Connecting to {}:{}...", login.map.0, login.map.1);
                         let features = if let Phase::Characters { lobby: Some(l), .. } = &self.phase { l.features } else { 0 };
+                        let pol = Some(crate::net::profile::Cred { host: self.cfg.server.clone(), port: self.cfg.profile_port, irc_port: self.cfg.irc_port, account: login.account, hash: login.hash });
                         let world_name = match &self.phase {
                             Phase::Characters { chars, selected: Some(s), .. } => chars.get(*s).map(|c| c.world.clone()).unwrap_or_default(),
                             _ => String::new(),
@@ -6943,6 +6947,7 @@ impl App {
                             full_log: None,
                             charlnk: None,
                             assist_name: String::new(),
+                            friends: friends::Friends::new(pol),
                             log_find: None,
                             map: None,
                             key_items: Vec::new(),
@@ -7543,6 +7548,8 @@ impl App {
                 }
                 NetEvent::SelfLook(tbl) => looks.push((world.my_id, look_source(tbl))),
                 NetEvent::ZoneIn { zone, pos, dir, char_id, index, name, look, motion, game_time, weather, music, event: login_event, area, sub_map, scene, myroom, room_flag, dead_counter, play_time, mog_zone, send_count, ship, monstrosity } => {
+                    // The PlayOnline side (xi_profile): signed on and loaded once per session.
+                    friends::start(world);
                     world.mog_zone = mog_zone;
                     world.mon_login = monstrosity;
                     monstrosity::zone_reset(world);
@@ -8627,6 +8634,7 @@ impl App {
             world.effects.on_scheduler(id, id, u32::from_le_bytes(*b"spop"));
         }
         search::poll(world);
+        friends::poll(world);
         world.line_hist.track(world.typing);
         inspect::frame(world);
         for (id, off) in std::mem::take(&mut world.effects.gens_off) {
