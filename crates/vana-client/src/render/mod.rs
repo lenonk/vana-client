@@ -342,6 +342,7 @@ pub struct ZoneRenderer {
     /// The zone's scenery culled on the GPU (render/cull.rs) when the device draws indirectly, and its passes.
     cull: Option<cull::Cull>,
     cull_pipes: [wgpu::ComputePipeline; 2],
+    cull_layout: wgpu::BindGroupLayout,
     /// All scenery in one vertex and one index buffer, uploaded once; draws keep the file order.
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
@@ -425,6 +426,8 @@ struct SubGeometry {
     vertices: wgpu::Buffer,
     indices: wgpu::Buffer,
     instances: wgpu::Buffer,
+    /// Culled as the zone's scenery is (render/cull.rs).
+    cull: Option<cull::Cull>,
     draws: Vec<Draw>,
     tex_base: usize,
     link: u32,
@@ -1313,6 +1316,7 @@ impl ZoneRenderer {
             instances,
             cull,
             cull_pipes: p.cull,
+            cull_layout: p.cull_layout,
             lights,
             light_keys: geo.light_keys.clone(),
             vertices: buffer("scenery vertices", v, wgpu::BufferUsages::VERTEX),
@@ -1411,10 +1415,13 @@ impl ZoneRenderer {
         self.textures.extend(std::iter::repeat_n(white, textures.len()));
         self.pending.extend(textures.into_iter().enumerate().map(|(k, t)| (tex_base + k, t, None)));
         let draws = geo.draws.iter().map(|d| Draw { texture: if d.texture == 0 { 0 } else { tex_base + d.texture - 1 }, instances: d.instances.clone(), mirrored: d.mirrored.clone(), ..*d }).collect();
+        let instances = buffer("sub-area instances", m, wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::STORAGE);
+        let cull = cull::Cull::new(gpu, &self.cull_layout, &geo.cull, &instances);
         self.sub = Some(SubGeometry {
             vertices: buffer("sub-area vertices", v, wgpu::BufferUsages::VERTEX),
             indices: buffer("sub-area indices", i, wgpu::BufferUsages::INDEX),
-            instances: buffer("sub-area instances", m, wgpu::BufferUsages::VERTEX),
+            instances,
+            cull,
             draws,
             tex_base,
             link,
@@ -1458,6 +1465,8 @@ impl ZoneRenderer {
                 vertices: buffer("furniture vertices", v, wgpu::BufferUsages::VERTEX),
                 indices: buffer("furniture indices", i, wgpu::BufferUsages::INDEX),
                 instances: buffer("furniture instances", bytemuck::cast_slice(&inst), wgpu::BufferUsages::VERTEX),
+                // A few pieces that layout mode moves: drawn unculled.
+                cull: None,
                 draws,
                 tex_base,
                 link: 0,
@@ -1971,6 +1980,9 @@ impl ZoneRenderer {
         if let Some(c) = &self.cull {
             c.run(encoder, &self.globals, &self.cull_pipes);
         }
+        if let Some(c) = self.sub.as_ref().filter(|s| s.shown).and_then(|s| s.cull.as_ref()) {
+            c.run(encoder, &self.globals, &self.cull_pipes);
+        }
         let [r, g, b] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("zone"),
@@ -2004,6 +2016,7 @@ impl ZoneRenderer {
             Some(c) => (&c.out, Some((c, &c.args, shown.as_slice()))),
             None => (&self.instances, None),
         };
+        let sub_shown = self.sub.as_ref().and_then(|s| s.cull.as_ref()).map(|c| c.runs_shown(vp, camera.eye, self.clip)).unwrap_or_default();
         pass.set_vertex_buffer(1, zone_inst.slice(..));
         pass.set_vertex_buffer(0, self.vertices.slice(..));
         pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint16);
@@ -2014,11 +2027,15 @@ impl ZoneRenderer {
                 self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, zone_args);
             }
             if let Some(s) = self.sub.as_ref().filter(|s| s.shown) {
-                pass.set_vertex_buffer(1, s.instances.slice(..));
+                let (inst, args) = match &s.cull {
+                    Some(c) => (&c.out, Some((c, &c.args, sub_shown.as_slice()))),
+                    None => (&s.instances, None),
+                };
+                pass.set_vertex_buffer(1, inst.slice(..));
                 pass.set_vertex_buffer(0, s.vertices.slice(..));
                 pass.set_index_buffer(s.indices.slice(..), wgpu::IndexFormat::Uint16);
                 for d in s.draws.iter().filter(|d| d.mode == mode) {
-                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, None);
+                    self.draw_scenery(&mut pass, d, mode, &mut bound, &mut pipe, args);
                 }
                 pass.set_vertex_buffer(1, zone_inst.slice(..));
                 pass.set_vertex_buffer(0, self.vertices.slice(..));

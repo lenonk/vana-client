@@ -10783,7 +10783,9 @@ Spec `~/ffxi/lab/research/bazaar_spec.md` (current build; 2019 cross-reference i
   box over their origins with the union of their bands, built at load; a run goes in when its box (2 % + 0.5 larger)
   meets the frustum and its origins can be within its bands. Runs with door parts or a voyage's world always go in.
 - Needs INDIRECT_FIRST_INSTANCE (requested when the adapter has it); without it, or with FFXI_NO_CULL, the draws go
-  in as before. Sub-areas and Mog House furniture draw as before.
+  in as before. A sub-area's scenery is culled the same way with its own buffers (2026-10-28; San d'Oria's 335
+  pixel-identical to unculled, inside and out). Mog House furniture draws as before: a few dozen pieces that layout
+  mode moves, whose run boxes would go stale.
 - Checked: six views in zones 126, 230 and 102 pixel-identical to the unculled render; the GPU time of render()
   (FFXI_BENCH=N on the offscreen tools, now timed by GPU timestamps too) 0.83 -> 0.32 ms looking along the ground in
   Qufim Island, 1.51 -> 0.81 ms in a Southern San d'Oria street, 0.80 -> 0.49 ms in La Theine, unchanged top-down
