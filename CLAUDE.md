@@ -205,8 +205,10 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
     rent-a-room moogle trip not seen.
   - s2c 0x075 (client/objective.rs, border.rs; MODLOG "s2c 0x075: ..."): the countdown (cnttime), the objective bars and
     text, the border walls done and seen live in both UIs; left the gate's hiding of other confrontations and the
-    scoreboard (LSB never sends it). 0x039 zone schedulers, 0x02F chocobo digging (`chor`), 0x04F done (MODLOG "s2c
-    0x039 map schedulers, 0x02F ...").
+    scoreboard (LSB never sends it). 0x039 zone schedulers, 0x02F chocobo digging (`chor`), 0x04F, 0x03A magic
+    schedulers (independentAnimation), 0x05D event strings, c2s 0x017 (re-ask a partly known entity), c2s 0x01C done.
+    Chocobo raising runs on plain event menus (headless check); chocobo racing (toteboard 0x073 / c2s 0x09B, op 0xb4
+    0xf..0x12 windows) is being specced in ~/ffxi/lab/research/chocobo_racing_spec.md.
   - parked (user, 2026-10-25, "we'll come back to it"): the logout destination (title Config 0xac, MODLOG "The gray
     select screen after a relog"; a logout goes back to the lobby without the password, as retail). The login
     screen's Remember password is done (MODLOG "Remember password").
