@@ -204,7 +204,7 @@ input and the F12 debug overlay). Faithful to retail first; improvements come af
   - Mog House gardening (client/garden.rs, MODLOG "Mog House gardening"): done and seen live in both UIs; the
     rent-a-room moogle trip not seen.
   - s2c 0x075 (client/objective.rs, border.rs; MODLOG "s2c 0x075: ..."): the countdown (cnttime), the objective bars and
-    text, the border walls done and seen live in both UIs; left the gate's hiding of other confrontations and the
+    text, the border walls and the gate's hiding of other fenced content done and seen live in both UIs; left the
     scoreboard (LSB never sends it). 0x039 zone schedulers, 0x02F chocobo digging (`chor`), 0x04F, 0x03A magic
     schedulers (independentAnimation), 0x05D event strings, c2s 0x017 (re-ask a partly known entity), c2s 0x01C done.
     Chocobo raising runs on plain event menus (headless check); chocobo racing (toteboard 0x073 / c2s 0x09B, op 0xb4
