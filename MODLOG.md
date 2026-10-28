@@ -11279,3 +11279,12 @@ Handlers from the bulk registrations (PUSH handler / PUSH id / CALL 0x100fc3a0, 
 - Ours: combat::on_magic_scheduler, combat::action_file (the event VM's, moved there). Live (Lnxcsfix in 230, `!exec
   player:independentAnimation(player, 251, 4)` ..): hearts and notes over her head, Cure's light pillars for mode 0
   id 1; the lightbulb's file 51433 ran (not caught in the shot). Refusal flags not modelled.
+
+## s2c 0x05D: event strings (2026-10-28)
+
+- Handler 0x100a0110 (registered at 0x10094565; 0x05C's is 0x100a00f0: 8 u32 from @4 into DAT_10488800). For i 0..3
+  the 16 bytes at @0x28 + 16 i go to DAT_10488d08 + 0x100 i (text code 1c n, "msg+0xd04") and DAT_104882b8 + 0x100 i
+  (op 0xb4 1 / 4), each ended by a NUL at +0x10. LSB's num[9] @4..@0x27 is not read.
+- LSB's updateEventString: battlefield record holders, chocobo raising / racing names, ASA mission 5's mob names.
+- Ours: event::strings -> the running or waiting event's string slots (Start.strings, which both tables read).
+  Not seen live (no such event at hand).

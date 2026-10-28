@@ -510,6 +510,11 @@ impl Runtime {
         self.z[2..10].copy_from_slice(&num);
     }
 
+    /// s2c 0x05D: the four string slots.
+    pub fn set_strings(&mut self, s: Vec<String>) {
+        self.start.strings = s;
+    }
+
     /// The input window closed (callback LAB_100b83d0): every way out returns the text as typed.
     pub fn input_done(&mut self, text: &[u8]) {
         self.input_buf = [0; 16];

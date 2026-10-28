@@ -1924,6 +1924,16 @@ pub fn params(w: &mut World, num: [u32; 8]) {
     }
 }
 
+/// s2c 0x05D (0x100a0110): the four 16-byte strings @0x28 into the event string slots (DAT_10488d08, text code 1c n,
+/// and DAT_104882b8, op 0xb4 1 / 4); num[9] @4 is not read. Ours keeps them with the running or waiting event.
+pub fn strings(w: &mut World, s: Vec<String>) {
+    if let Some(l) = &mut w.event {
+        l.rt.set_strings(s);
+    } else if let Some(p) = &mut w.event_pending {
+        p.start.strings = s;
+    }
+}
+
 /// s2c 0x05B / 0x065 position modes 1 and 2 end a 0x05C round trip (FUN_1009d500).
 pub fn position_ack(w: &mut World, mode: u8) {
     if matches!(mode, 1 | 2)

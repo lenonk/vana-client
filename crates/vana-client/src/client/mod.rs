@@ -8171,6 +8171,7 @@ impl App {
                 }
                 NetEvent::Event(s) => event::queue(world, s),
                 NetEvent::EventParams(n) => event::params(world, n),
+                NetEvent::EventStrings(s) => event::strings(world, s),
                 NetEvent::EventRelease { mode, event: e } => event::release(world, mode, e),
                 NetEvent::Fish(p) => fishing::on_fish(world, p),
                 NetEvent::Wpos { id, pos, dir, mode } => {

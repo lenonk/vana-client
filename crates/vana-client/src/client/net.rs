@@ -370,6 +370,8 @@ pub enum NetEvent {
     /// TrophyItemIndex @0x14, JudgeFlg @0x15, sLootName @0x16, sLootName2 @0x26.
     TrophySolution { slot: u8, judge: u8, loot: u32, loot_point: i16, entry: u32, entry_point: i16, entry_flg: bool, loot_name: String, entry_name: String },
     Event(EventStart),
+    /// 0x05D: the event's four string slots.
+    EventStrings(Vec<String>),
     /// 0x05C: event params into Z2..Z9.
     EventParams([u32; 8]),
     /// 0x052: release mode (low byte) and, for mode 2, the event id.
@@ -1218,6 +1220,7 @@ fn session(addr: SocketAddr, login: &MapLogin, account: &str, codec: &Codec, tx:
                     0x05F => tx.send(NetEvent::Music { slot: p.u16(4), id: p.u16(6) })?,
                     0x017 => tx.send(NetEvent::Chat { kind: p.u8(4), attr: p.u8(5), data: p.u16(6), from: text(&p, 8, 15), text: text(&p, 23, 150) })?,
                     0x032..=0x034 => tx.send(NetEvent::Event(event_start(&p)))?,
+                    0x05D => tx.send(NetEvent::EventStrings((0..4).map(|i| p.str(0x28 + 16 * i, 16)).collect()))?,
                     0x05C => tx.send(NetEvent::EventParams(std::array::from_fn(|i| p.u32(4 + 4 * i))))?,
                     0x052 => tx.send(NetEvent::EventRelease { mode: p.u8(4), event: (p.u32(4) >> 8) as u16 })?,
                     0x05B | 0x065 => tx.send(NetEvent::Wpos { id: p.u32(0x10), pos: [p.f32(4), p.f32(8), p.f32(0xc)], dir: p.u8(0x17), mode: p.u8(0x16) })?,
