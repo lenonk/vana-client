@@ -135,6 +135,8 @@ pub struct ModernLog {
     pub anim: LogAnim,
     pub ticker: Ticker,
     pub seen: usize,
+    /// Folded repeats taken (ChatLog::folds).
+    pub folds: u64,
     pub key: (u32, u32, u8),
     pub shown: Option<f32>,
     /// The full log just closed: open at the max lines (its text stays in view rather than folding away).
@@ -169,12 +171,18 @@ impl LogAnim {
     /// FUN_10162560: a line keeps the window open one more period (capped, rounded up to a whole period) and has 20
     /// to slide; the displayed line stays until the step reaches it.
     pub fn add_line(&mut self, cfg: &LogCfg) {
+        self.extend(cfg);
+        self.slide += 20;
+        self.pending += 1;
+    }
+
+    /// FUN_10162560's open period alone (capped, rounded up), nothing to slide: also a repeat folded into the last
+    /// line (ours, the modern chat's Condense).
+    pub fn extend(&mut self, cfg: &LogCfg) {
         let t = Self::period(cfg);
         self.open = if self.open < 0 { t } else { self.open + t };
-        self.slide += 20;
         self.open = self.open.min(cfg.max as i32 * t);
         self.round_up(cfg);
-        self.pending += 1;
     }
 
     /// Inline's open (FUN_101b7f00) runs FUN_10162560 twice: two periods open and 40 to slide, no line pending. The log
@@ -182,11 +190,8 @@ impl LogAnim {
     pub fn chat_line(&mut self, open: bool, cfg: &LogCfg) {
         if open && !self.inline {
             for _ in 0..2 {
-                let t = Self::period(cfg);
-                self.open = if self.open < 0 { t } else { self.open + t };
+                self.extend(cfg);
                 self.slide += 20;
-                self.open = self.open.min(cfg.max as i32 * t);
-                self.round_up(cfg);
             }
         }
         self.inline = open;

@@ -445,7 +445,7 @@ pub fn panel(p: &mut Panels, w: &mut World) {
     let key = (wrap.to_bits(), font.size.to_bits(), tab);
     if ml.key != key {
         // A rewrap (FUN_10162d60): the newest shown, nothing sliding, nothing counted.
-        (ml.key, ml.seen) = (key, w.chat.len());
+        (ml.key, ml.seen, ml.folds) = (key, w.chat.len(), w.chat.folds().0);
         ml.anim.settle();
     }
     let modes = w.chat.modes();
@@ -458,6 +458,17 @@ pub fn panel(p: &mut Panels, w: &mut World) {
         }
     }
     ml.seen = w.chat.len();
+    // A repeat folded into the last line ("(x13)") keeps the window open as a new line would, without a new row.
+    let (folds, last) = w.chat.folds();
+    if folds != ml.folds {
+        let shown = last.and_then(|k| modes.get(k)).is_some_and(|&mode| shows(tab, mode, battle_in_all));
+        if shown {
+            for _ in 0..(folds - ml.folds).min(rule.cfg.max as u64) {
+                ml.anim.extend(&rule.cfg);
+            }
+        }
+        ml.folds = folds;
+    }
     let frames = ml.ticker.frames();
     ml.anim.run(&rule, frames);
     let floor = -chrome() / row;

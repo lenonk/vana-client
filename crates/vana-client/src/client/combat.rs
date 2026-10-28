@@ -27,6 +27,8 @@ pub struct ChatLog {
     /// on with the modern chat's Condense; the last line's index, text and count.
     fold: bool,
     repeat: Option<(usize, String, u32)>,
+    /// Repeats folded so far: each counts as a new line for the chat's open-period rule.
+    folds: u64,
     /// Lines restored from the last session (with their divider): never saved again.
     restored: usize,
 }
@@ -78,6 +80,7 @@ impl ChatLog {
             *n += 1;
             self.lines[*k].0 = format!("{base} (x{n})");
             self.edits += 1;
+            self.folds += 1;
             return;
         }
         self.repeat = (!chat).then(|| (self.lines.len(), s.clone(), 1));
@@ -100,6 +103,11 @@ impl ChatLog {
     /// Whether repeated lines fold (the modern chat's Condense).
     pub fn set_fold(&mut self, on: bool) {
         self.fold = on;
+    }
+
+    /// How many repeats have folded into the last line so far, and that line.
+    pub fn folds(&self) -> (u64, Option<usize>) {
+        (self.folds, self.repeat.as_ref().map(|r| r.0))
     }
 
     /// How many lines have been changed in place: the logs wrap again when it moves.
