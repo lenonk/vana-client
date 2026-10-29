@@ -460,6 +460,11 @@ impl Ground {
         down.or_else(|| hits.iter().map(|h| h.0).filter(|&h| h <= y + 2.0 && h > y - 13.0).max_by(|a, b| a.total_cmp(b)))
     }
 
+    /// The height of the face over (x, z) nearest `y`, at most `within` from it.
+    pub fn nearest(&self, x: f32, z: f32, y: f32, within: f32) -> Option<f32> {
+        self.heights(x, z).into_iter().map(|h| h.0).filter(|h| (h - y).abs() <= within).min_by(|a, b| (a - y).abs().total_cmp(&(b - y).abs()))
+    }
+
     /// The heights of every face over (x, z), top first (diagnostics).
     pub fn floors(&self, x: f32, z: f32) -> Vec<f32> {
         let mut h: Vec<f32> = self.heights(x, z).into_iter().map(|h| (h.0 * 100.0).round() / 100.0).collect();
@@ -1061,9 +1066,9 @@ mod tests {
         let Some(g) = zone(197) else { return };
         assert!((g.snap(57.0, -25.0, -36.06).unwrap() + 10.61).abs() < 0.1);
         let run = |mut pos: Vec3, mut goal: Vec3, frames: usize| {
-            let mut remain = 61.0;
+            let (mut remain, sent, mut raw) = (61.0, goal.y, pos.y);
             for _ in 0..frames {
-                pos = super::super::slide_frame(pos, &mut goal, &mut remain, 1.0, Some(&g)).0;
+                pos = super::super::slide_frame(pos, &mut goal, &mut remain, 1.0, Some(&g), (sent, &mut raw)).0;
             }
             pos
         };
@@ -1071,6 +1076,20 @@ mod tests {
         assert!((walked.y + 38.08).abs() < 0.2, "{walked}");
         let back = run(Vec3::new(57.0, -10.61, -25.0), Vec3::new(55.5, -35.86, -27.5), 2);
         assert!((back.y + 37.16).abs() < 0.2, "{back}");
+    }
+
+    /// Garlaige Citadel: LSB's navmesh crosses the rim of a hole at (-299.9, 251) at -0.2, over the floor 20 below; an
+    /// actor sent there (standing to fight, so no goal follows) stays at the server's height instead of dropping.
+    #[test]
+    fn remote_actor_stays_out_of_holes() {
+        let Some(g) = zone(200) else { return };
+        assert!(g.snap(-299.9, 251.0, -0.2).unwrap() > 19.0);
+        let (mut goal, mut remain, mut raw) = (Vec3::new(-299.9, -0.2, 251.0), 61.0, 0.0);
+        let mut pos = Vec3::new(-297.0, 0.0, 251.0);
+        for _ in 0..240 {
+            pos = super::super::slide_frame(pos, &mut goal, &mut remain, 1.0, Some(&g), (-0.2, &mut raw)).0;
+        }
+        assert!((pos.y + 0.2).abs() < 0.3, "{pos}");
     }
 
     /// Snaps a TSV of points (id, name, x, y, z) in zone FLOOR_ZONE from FLOOR_POINTS, printing the ones whose snap

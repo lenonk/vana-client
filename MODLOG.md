@@ -11522,3 +11522,23 @@ fight, and cannot be seen or targeted.
   (a sloped wall face within 2 above), three on the wrong level.
 - Live: Lnxcsfix in c_196 with Worker Crawlers about, no "floor:" diagnostic lines. The user's Nine run predates the
   diagnostic.
+
+## Remote actors over holes in the floor (2026-10-28, not retail)
+
+User report: in Garlaige Citadel, monsters and trusts fight from a level below around the holes in the floor.
+- LSB's navmesh (navmeshes/<Zone>.nav, Detour with 32-bit refs, stored as x, -y, -z; reader
+  ~/ffxi/lab/scratch/floors/navpts.py) crosses the rims of the pits. In Garlaige, 42 of its 10,787 points have no
+  collision face within 3 of their height; 22 of them drop more than 8, most 12..20 (e.g. (-299.9, -0.2, 251): the
+  floor under it is 19.75). Collision lists switched off in the file (0x2000): none in zone 200. LSB's own collision
+  (ximeshes/<Zone>.ximesh: zlib, cells of block / placement pairs, a 3x3 column-major matrix and a translation; reader
+  ~/ffxi/lab/scratch/floors/ximesh_at.py) has the same faces there as ours to the hundredth, so the holes are real
+  and only LSB's navmesh crosses them.
+- Retail's snap (part 1 above) drops an actor there, and one that stops over the rim to fight gets no goal that
+  would bring it back. SE's servers never put an actor over a hole; LSB's do.
+- Ours: slide_frame keeps the server's height along the slide, unsnapped (Entity.raw_y, the same linear slide as
+  the position toward the sent height). A snap more than 8 under it stands the actor on the floor nearest that
+  height within 3 (Ground::nearest), else holds it at that height. Test ground::remote_actor_stays_out_of_holes.
+- Drops of 3..8 stay retail: in Crawlers' Nest 168 of 184 are navmesh points in the air over the floor just below,
+  16 lie between two floors. Crawlers' Nest's navmesh has 27 points dropping more than 8, 5 of them 8..12 (which
+  the 12-unit jump never brings back).
+- The "floor:" diagnostic now compares with that height along the slide.

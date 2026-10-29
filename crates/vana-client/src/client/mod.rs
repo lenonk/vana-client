@@ -416,8 +416,10 @@ struct Entity {
     /// ticks to the next idle pick (+0x1ba, FUN_1008da00).
     mon_stat: u8,
     idle_swap: f32,
-    /// The height the server last gave, and whether a drawn height far from it was logged (the floor follow's check).
+    /// The height the server last gave, the server's height along the slide (unsnapped), and whether a drawn height
+    /// far from it was logged.
     server_y: f32,
+    raw_y: f32,
     floor_noted: bool,
     /// +0x2a0: the master's ActIndex (s2c 0x067 kind 3 @0x0C; LSB sends it for our trusts), 0 none.
     master: u16,
@@ -1356,6 +1358,7 @@ fn self_entity(w: &World) -> Entity {
         mon_stat: 0,
         idle_swap: 0.0,
         server_y: 0.0,
+        raw_y: 0.0,
         floor_noted: false,
         master: 0,
         init_done: false,
@@ -4008,6 +4011,7 @@ fn place_mogdoor(w: &mut World) {
             mon_stat: 0,
             idle_swap: 0.0,
             server_y: 0.0,
+            raw_y: 0.0,
             floor_noted: false,
             master: 0,
             init_done: false,
@@ -4565,23 +4569,35 @@ fn scan_track(world: &mut World, index: u16) {
 /// One frame of a remote actor's move: FUN_1008b680 slides from the drawn spot `pos` linearly to the goal over the
 /// remaining ticks, a goal more than 12 units from it taken at once (FUN_100911f0); then FUN_1008dfb0 stands a
 /// grounded actor on the floor under the slide and gives the goal that height (+8 and +0x28), so a goal sent on
-/// another level is more than 12 away and taken at once. Returns the slide (where the actor is drawn) and whether
-/// the goal was taken at once.
-fn slide_frame(pos: Vec3, target: &mut Vec3, remain: &mut f32, ticks: f32, floor: Option<&ground::Ground>) -> (Vec3, bool) {
+/// another level is more than 12 away and taken at once. `server` is the goal's height as sent and the server's
+/// height along the slide (unsnapped), which keeps an actor out of holes the server walks it over. Returns the slide
+/// (where the actor is drawn) and whether the goal was taken at once.
+fn slide_frame(pos: Vec3, target: &mut Vec3, remain: &mut f32, ticks: f32, floor: Option<&ground::Ground>, server: (f32, &mut f32)) -> (Vec3, bool) {
+    let (sent, raw) = server;
     let mut slide = pos;
     if *remain > ticks {
         slide += (*target - slide) / *remain * ticks;
+        *raw += (sent - *raw) / *remain * ticks;
         *remain -= ticks;
     } else {
         slide = *target;
+        *raw = sent;
         *remain = 0.0;
     }
     let jumped = (*target - pos).length_squared() > 144.0;
     if jumped {
         slide = *target;
+        *raw = sent;
         *remain = 0.0;
     }
-    if let Some(y) = floor.and_then(|g| g.snap(slide.x, slide.z, slide.y)) {
+    if let Some(g) = floor
+        && let Some(mut y) = g.snap(slide.x, slide.z, slide.y)
+    {
+        // Not retail: more than 8 under the server's height (LSB's navmesh crosses the rims of holes in the floor)
+        // stands the actor on the floor nearest that height, or at it over a hole.
+        if y - *raw > 8.0 {
+            y = g.nearest(slide.x, slide.z, *raw, 3.0).unwrap_or(*raw);
+        }
         slide.y = y;
         target.y = y;
     }
@@ -8047,6 +8063,7 @@ impl App {
                         mon_stat: 0,
                         idle_swap: 0.0,
                         server_y: 0.0,
+                        raw_y: 0.0,
                         floor_noted: false,
                         master: 0,
                         init_done: false,
@@ -8161,6 +8178,7 @@ impl App {
                             entry.pos = p;
                             entry.last_pos = p;
                             entry.slide = p;
+                            entry.raw_y = entry.server_y;
                             entry.remain = 0.0;
                         }
                         entry.dir = e.dir;
@@ -9153,7 +9171,7 @@ impl App {
             }
             let start = e.pos;
             let jumped;
-            (e.slide, jumped) = slide_frame(start, &mut e.target, &mut e.remain, ticks, floor.filter(|_| e.grounded));
+            (e.slide, jumped) = slide_frame(start, &mut e.target, &mut e.remain, ticks, floor.filter(|_| e.grounded), (e.server_y, &mut e.raw_y));
             if jumped {
                 e.yaw = event::rad_of(e.dir);
             }
@@ -9161,9 +9179,9 @@ impl App {
                 && let Some(g) = floor
             {
                 // Diagnostic: drawn on another level than the server's height (the floors under it, Y down).
-                let far = (e.slide.y - e.server_y).abs() > 3.0;
+                let far = (e.slide.y - e.raw_y).abs() > 3.0;
                 if far && !e.floor_noted {
-                    log::info!("floor: {} {eid:#x} at ({:.1}, {:.1}): server y {:.2}, drawn {:.2}, floors {:?}", e.name, e.slide.x, e.slide.z, e.server_y, e.slide.y, g.floors(e.slide.x, e.slide.z));
+                    log::info!("floor: {} {eid:#x} at ({:.1}, {:.1}): server y {:.2}, drawn {:.2}, floors {:?}", e.name, e.slide.x, e.slide.z, e.raw_y, e.slide.y, g.floors(e.slide.x, e.slide.z));
                 }
                 e.floor_noted = far;
             }
