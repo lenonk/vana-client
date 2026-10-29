@@ -119,6 +119,20 @@ fn history_rows(ui: &mut Ui, m: &super::Modern, rows: &[[String; 4]], cur: usize
     (hover, click)
 }
 
+/// The idle search field: "Search the auction house" until it is clicked or typed into. True when clicked.
+fn search_box(ui: &mut Ui, m: &super::Modern) -> bool {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width().min(LIST_W), 30.0), Sense::click());
+    let face = if resp.hovered() { "controls/input_focused" } else { "controls/input_normal" };
+    if let Some(s) = m.art.sprite(face).or_else(|| m.art.sprite("controls/input_focused")) {
+        ui.painter().add(super::paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+    }
+    if let Some(s) = m.art.sprite("controls/search") {
+        ui.painter().add(super::paint::image(&s, pos2(r.min.x + 8.0, r.center().y - 9.0), 18.0, Color32::WHITE));
+    }
+    ui.painter().text(pos2(r.min.x + 32.0, r.center().y), Align2::LEFT_CENTER, "Search the auction house", FontId::proportional(m.theme.ui), m.theme.color("muted"));
+    resp.clicked()
+}
+
 /// One pane as a column.
 fn pane(ui: &mut Ui, m: &super::Modern, gu: &GameUi, info: &ItemCache, p: &Pane, focused: bool, mouse: &mut Mouse) {
     let moved = ui.ctx().input(|i| i.pointer.delta() != egui::Vec2::ZERO);
@@ -174,21 +188,50 @@ pub fn draw(p: &mut Panels, w: &mut World) {
     let title = gu.title_msg(0x12).unwrap_or_else(|| "Auction".into());
     let gil = crate::inventory::gil_text(w.inv.gil() as i64);
     let mut mouse = Mouse::default();
-    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), total.max(MENU_W + 44.0), |ui| {
+    // Not retail: the search over every bid category while the bid menus have the keys (typing starts it too).
+    let searchable = free && !v.busy && auction::searchable(w);
+    let search = if searchable { super::lists::search_hits(p, w) } else { None };
+    if search.is_some() {
+        auction::index_build(w);
+    }
+    let loading = auction::index(w).is_none();
+    let (mut found, mut start) = (super::lists::Mouse::default(), false);
+    let moved = p.ctx.input(|i| i.pointer.delta() != egui::Vec2::ZERO);
+    let wide = if search.is_some() { LIST_W + 44.0 } else { 0.0 };
+    p.panel("window", Some(Title { icon: Some("icons/currency"), text: &title, note: Some(&gil) }), total.max(MENU_W + 44.0).max(wide), |ui| {
+        if let Some((text, sel, hits, icons)) = search.as_ref().filter(|s| !s.0.is_empty()) {
+            if loading {
+                // Every category is asked once, slowly (the server limits its sessions); later searches are instant.
+                super::lists::search_field(ui, m, text);
+                let dots = ".".repeat(1 + (ui.input(|i| i.time) * 2.0) as usize % 3);
+                ui.label(egui::RichText::new(format!("Searching{dots}")).size(m.theme.ui).color(m.theme.color("muted")));
+                return;
+            }
+            found = super::lists::search_rows(ui, m, w, icons, text, *sel, hits, moved);
+            return;
+        }
+        if searchable {
+            // The field reached with Up and still empty: focused, the pages under it as they were.
+            match &search {
+                Some(_) => super::lists::search_field(ui, m, ""),
+                None => start = search_box(ui, m),
+            }
+            ui.add_space(6.0);
+        }
         ui.horizontal_top(|ui| {
             for (k, pn) in panes.iter().enumerate() {
                 if k > 0 {
                     ui.add_space(16.0);
                 }
                 let top = k + 1 == panes.len();
-                pane(ui, m, gu, &info, pn, top && free && !asking && !v.busy, &mut mouse);
+                pane(ui, m, gu, &info, pn, top && free && !asking && !v.busy && search.is_none(), &mut mouse);
             }
         });
         if let Some((step, max, val, item)) = v.money {
             ui.add_space(10.0);
             let name = info.item(item).map(|it| it.name.clone()).unwrap_or_default();
             ui.label(egui::RichText::new(name).size(m.theme.ui).color(m.theme.color("gold")));
-            (mouse.key, mouse.money) = money_row(ui, m, gu, (step, max, val));
+            (mouse.key, mouse.money) = money_row(ui, m, gu, (step, max, val), v.money_btn);
         }
         if let Some((sel, item, price)) = v.shopsell {
             ui.add_space(10.0);
@@ -204,6 +247,17 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
     });
     if !free {
+        return;
+    }
+    if let Some((_, _, hits, _)) = search.as_ref().filter(|s| !s.0.is_empty()) {
+        super::lists::search_mouse(w, &found, hits);
+        return;
+    }
+    if search.is_some() {
+        return;
+    }
+    if start {
+        w.list_search = Some(Default::default());
         return;
     }
     let cursor = |w: &mut World| w.sounds.push(Se::Cursor as u32);

@@ -431,7 +431,37 @@ pub fn decode(entry: &[u8]) -> Record {
 }
 
 /// One query, blocking: connect, send, read packets until the last-packet flag (reply +0x0a bit 7), close.
+/// Not retail: at most this many search-server connections of ours at once. LSB's server closes a sixth from one
+/// address (SearchHandler: "More than 5 simultaneous connections"), and a second client on the same machine shares
+/// the count.
+const MAX_OPEN: usize = 2;
+static OPEN: (std::sync::Mutex<usize>, std::sync::Condvar) = (std::sync::Mutex::new(0), std::sync::Condvar::new());
+
+/// A connection slot, held until dropped.
+struct Slot;
+
+impl Slot {
+    fn take() -> Slot {
+        let (m, cv) = &OPEN;
+        let mut n = m.lock().unwrap_or_else(|e| e.into_inner());
+        while *n >= MAX_OPEN {
+            n = cv.wait(n).unwrap_or_else(|e| e.into_inner());
+        }
+        *n += 1;
+        Slot
+    }
+}
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        let (m, cv) = &OPEN;
+        *m.lock().unwrap_or_else(|e| e.into_inner()) -= 1;
+        cv.notify_one();
+    }
+}
+
 pub fn query(addr: (Ipv4Addr, u16), cond: &Cond) -> Result<Reply> {
+    let _slot = Slot::take();
     let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let (session, salt) = (seed as u32 | 1, (seed >> 32) as u32 ^ 0x5a5a_5a5a);
     let (wire, payload) = condition(cond);
@@ -540,10 +570,36 @@ fn ah_decode(r: &[u8], d: usize, kind: u8, total: u16, out: &mut AhReply) {
 
 /// One auction house query, blocking: the list (wire 0x15, `extra` the language) or a history (5 / 6).
 pub fn ah_query(addr: (Ipv4Addr, u16), wire: u8, payload: &[u8], extra: u16) -> Result<AhReply> {
-    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
-    let (session, salt) = (seed as u32 | 1, (seed >> 32) as u32 ^ 0x5a5a_5a5a);
+    let _slot = Slot::take();
     let mut s = TcpStream::connect_timeout(&SocketAddr::from(addr), Duration::from_secs(10))?;
     s.set_read_timeout(Some(TIMEOUT))?;
+    ah_exchange(&mut s, wire, payload, extra)
+}
+
+/// Not retail: several queries over one connection, one after another (LSB's handler reads request after request;
+/// one session instead of a burst it would refuse). Stops at the first failure; the rest are not asked.
+pub fn ah_query_many(addr: (Ipv4Addr, u16), wire: u8, payloads: &[Vec<u8>], extra: u16) -> Vec<Result<AhReply>> {
+    let _slot = Slot::take();
+    let mut out = Vec::new();
+    let mut s = match TcpStream::connect_timeout(&SocketAddr::from(addr), Duration::from_secs(10)).and_then(|s| s.set_read_timeout(Some(TIMEOUT)).map(|_| s)) {
+        Ok(s) => s,
+        Err(e) => return vec![Err(e.into())],
+    };
+    for p in payloads {
+        let r = ah_exchange(&mut s, wire, p, extra);
+        let failed = r.is_err();
+        out.push(r);
+        if failed {
+            break;
+        }
+    }
+    out
+}
+
+/// A request on an open connection and its reply, packet by packet to the one flagged last.
+fn ah_exchange(s: &mut TcpStream, wire: u8, payload: &[u8], extra: u16) -> Result<AhReply> {
+    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_nanos());
+    let (session, salt) = (seed as u32 | 1, (seed >> 32) as u32 ^ 0x5a5a_5a5a);
     s.write_all(&request_x(wire, payload, session, salt, extra))?;
     let mut out = AhReply::default();
     loop {
@@ -605,6 +661,21 @@ mod tests {
         let h = ah_query(addr, 6, &ah_history_payload(4096, 4, true), 0).unwrap();
         println!("history: {:?} {:?}", h.head, h.sales);
         assert!(l.total > 0 && h.head.is_some());
+    }
+
+    /// Several category lists over one connection (by hand: `cargo test --release ah_many_live -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn ah_many_live() {
+        let addr = (Ipv4Addr::new(127, 0, 0, 1), 54002);
+        let cats = [0x23u16, 0x30, 0x01, 0x2e, 0x3d];
+        let payloads: Vec<Vec<u8>> = cats.iter().map(|&c| ah_list_payload(c, 4, &[])).collect();
+        let r = ah_query_many(addr, 0x15, &payloads, 1);
+        for (c, r) in cats.iter().zip(&r) {
+            println!("{c:#x}: {:?}", r.as_ref().map(|r| (r.total, r.items.len())).map_err(|e| e.to_string()));
+        }
+        assert_eq!(r.len(), cats.len());
+        assert!(r.iter().all(|r| r.as_ref().is_ok_and(|r| !r.items.is_empty())));
     }
 
     /// auction_spec 2.1 / 2.2: the payloads, and a canned list and history packet decoded.

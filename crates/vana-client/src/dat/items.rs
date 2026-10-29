@@ -129,6 +129,9 @@ pub struct Item {
     pub singular: String,
     pub plural: String,
     pub description: String,
+    /// K7000 (Moblin Maze Mongers) record +0x14..+0x54 (FUN_1015c860's +0x1530): a tabula's 25 grid bytes, a voucher's
+    /// allowed-rune bits, a rune's element and shape (dat/maze.rs, client/maze.rs).
+    pub maze: Option<[u8; 64]>,
     icon: Option<Vec<u8>>,
 }
 
@@ -257,6 +260,7 @@ pub fn parse(r: &[u8], kind: Kind, lang: Lang, wide: bool) -> Item {
             header(&mut it);
             // The u32 at 0x14 is aligned in both layouts.
             it.extra = vec![x16(0xd08, 0xe), x16(0xd34, 0x10), (0xd30, u32_at(r, 0x14))];
+            it.maze = r.get(0x14..0x54).and_then(|b| b.try_into().ok());
             (Some(0x54), 1, true)
         }
         Kind::K7400 => {

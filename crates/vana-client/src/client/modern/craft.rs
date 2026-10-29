@@ -201,7 +201,8 @@ pub(super) fn count_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, label: &str
 
 /// The gil asked (moneyctr): the amount with the digit the arrows step underlined; its keys as buttons ("-" / "+" by
 /// the step, the step x10 / /10), All and 0 outright, OK and Cancel. A key, or an amount to set.
-pub(super) fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max, v): (u32, u32, u32)) -> (Option<egui::Key>, Option<u32>) {
+/// `focus`: the button with the keys (0..5 the value buttons, 6 OK, 7 Cancel), None the value.
+pub(super) fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max, v): (u32, u32, u32), focus: Option<u8>) -> (Option<egui::Key>, Option<u32>) {
     use egui::Key as K;
     let (mut key, mut set) = (None, None);
     ui.label(egui::RichText::new("Gil").size(m.theme.small).color(m.theme.color("gold")));
@@ -215,27 +216,28 @@ pub(super) fn money_row(ui: &mut Ui, m: &super::Modern, gu: &GameUi, (step, max,
         // The step's digit, counted from the right.
         let k = step.max(1).ilog10() as f32;
         let x = r.max.x - (k + 1.0) * cw;
-        ui.painter().line_segment([pos2(x + 1.0, r.max.y), pos2(x + cw - 1.0, r.max.y)], egui::Stroke::new(2.0, m.theme.color("focus")));
+        let mark = if focus.is_none() { m.theme.color("focus") } else { m.theme.color("muted") };
+        ui.painter().line_segment([pos2(x + 1.0, r.max.y), pos2(x + cw - 1.0, r.max.y)], egui::Stroke::new(2.0, mark));
         ui.label(egui::RichText::new(format!(" / {}", crate::inventory::gil_text(max as i64))).size(m.theme.small).color(m.theme.color("muted")));
     });
     ui.horizontal(|ui| {
-        for (text, k) in [("-", K::ArrowDown), ("+", K::ArrowUp), ("x10", K::ArrowLeft), ("/10", K::ArrowRight)] {
-            if button(ui, m, text, 40.0, false, false) {
+        for (b, (text, k)) in [("-", K::ArrowDown), ("+", K::ArrowUp), ("x10", K::ArrowLeft), ("/10", K::ArrowRight)].into_iter().enumerate() {
+            if button(ui, m, text, 40.0, focus == Some(b as u8), false) {
                 key = Some(k);
             }
         }
-        for (text, to) in [("All", max), ("0", 0)] {
-            if button(ui, m, text, 40.0, false, false) {
+        for (b, (text, to)) in [("All", max), ("0", 0)].into_iter().enumerate() {
+            if button(ui, m, text, 40.0, focus == Some(4 + b as u8), false) {
                 set = Some(to);
             }
         }
     });
     ui.horizontal(|ui| {
         let (ok, cancel) = (caption(gu, trade::HANDOVER, 9, "OK"), caption(gu, trade::HANDOVER, 10, "Cancel"));
-        if button(ui, m, &ok, 96.0, true, false) {
+        if button(ui, m, &ok, 96.0, focus.is_none_or(|b| b == 6), false) {
             key = Some(K::Enter);
         }
-        if button(ui, m, &cancel, 96.0, false, false) {
+        if button(ui, m, &cancel, 96.0, focus == Some(7), false) {
             key = Some(K::Escape);
         }
     });
@@ -457,7 +459,7 @@ fn trading(p: &mut Panels, w: &mut World, gu: &GameUi, info: &ItemCache) {
                 }
                 if let Some(money) = v.money {
                     ui.add_space(10.0);
-                    (mouse.key, money_set) = money_row(ui, m, gu, money);
+                    (mouse.key, money_set) = money_row(ui, m, gu, money, None);
                 }
             });
             // Their offer: their OK lights their name.

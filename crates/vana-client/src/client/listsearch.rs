@@ -95,6 +95,8 @@ pub enum Journal {
     Quest(usize, usize),
     /// The log and the entry.
     Mission(usize, usize),
+    /// An auction house item (not retail) and its bid category.
+    Auction(u8),
 }
 
 /// Rows a search shows at most.
@@ -118,8 +120,47 @@ fn normal(s: &str) -> String {
         .join(" ")
 }
 
+/// Edits between two words, a swap of neighbours counting one (optimal string alignment).
+fn edits(a: &[char], b: &[char]) -> usize {
+    let mut d = vec![vec![0usize; b.len() + 1]; a.len() + 1];
+    for (i, row) in d.iter_mut().enumerate() {
+        row[0] = i;
+    }
+    for j in 0..=b.len() {
+        d[0][j] = j;
+    }
+    for i in 1..=a.len() {
+        for j in 1..=b.len() {
+            let cost = usize::from(a[i - 1] != b[j - 1]);
+            d[i][j] = (d[i - 1][j] + 1).min(d[i][j - 1] + 1).min(d[i - 1][j - 1] + cost);
+            if i > 1 && j > 1 && a[i - 1] == b[j - 2] && a[i - 2] == b[j - 1] {
+                d[i][j] = d[i][j].min(d[i - 2][j - 2] + 1);
+            }
+        }
+    }
+    d[a.len()][b.len()]
+}
+
+/// The typo fallback: every query word within an edit or two (by its length) of a name word or its start; the fewer
+/// edits the better. None: some word too far off.
+fn typo_score(name: &str, q: &str) -> Option<i32> {
+    let words: Vec<Vec<char>> = name.split([' ', '-', ':', '\'']).filter(|w| !w.is_empty()).map(|w| w.chars().collect()).collect();
+    let mut total = 0;
+    for qw in q.split(' ').filter(|w| !w.is_empty()) {
+        let qc: Vec<char> = qw.chars().collect();
+        let allowed = if qc.len() <= 3 { 0 } else if qc.len() <= 5 { 1 } else { 2 };
+        // Against each name word cut near the query word's length (a word typed part way).
+        let best = words.iter().map(|w| (qc.len().saturating_sub(1)..=w.len().min(qc.len() + 1)).map(|n| edits(&qc, &w[..n.min(w.len())])).min().unwrap_or(usize::MAX)).min()?;
+        if best > allowed {
+            return None;
+        }
+        total += best as i32;
+    }
+    Some(200 - 40 * total - name.chars().count() as i32)
+}
+
 /// How well `name` matches `query` (higher better): its start, a word's start, anywhere, its letters in order; with
-/// and without spaces, roman numerals as digits. None: no match.
+/// and without spaces, roman numerals as digits; failing those, words an edit or two off (typos). None: no match.
 pub fn score(name: &str, query: &str) -> Option<i32> {
     let q = normal(query.trim());
     if q.is_empty() {
@@ -158,7 +199,7 @@ pub fn score(name: &str, query: &str) -> Option<i32> {
             best = Some(best.map_or(s, |b: i32| b.max(s)));
         }
     }
-    best
+    best.or_else(|| typo_score(&normal(name), &q))
 }
 
 fn name(w: &World, kind: Kind, id: u16) -> String {
@@ -179,6 +220,7 @@ pub fn key_of(h: &Hit) -> String {
         (Some(Journal::KeyItem), _, _) => format!("k:{}", h.id),
         (Some(Journal::Quest(a, e)), _, _) => format!("q:{a}:{e}"),
         (Some(Journal::Mission(l, e)), _, _) => format!("n:{l}:{e}"),
+        (Some(Journal::Auction(_)), _, _) => format!("h:{}", h.id),
         (None, Some(_), _) => format!("i:{}", h.id),
         (None, None, Kind::Magic) => format!("m:{}", h.id),
         (None, None, Kind::Ability) => format!("a:{}", h.id),
@@ -218,6 +260,19 @@ fn remember(w: &mut World, h: &Hit) {
 /// The matches for the open window by score (the list's own order among equals).
 fn matches(w: &World, query: &str) -> Vec<Hit> {
     let mut out = Vec::new();
+    // The auction house's bid menus: every item of every category (its place as the note, filled by the modern layer);
+    // none until the index is in.
+    if super::auction::searchable(w) {
+        let info = w.item_info.as_ref();
+        for &(id, cat) in super::auction::index(w).iter().flat_map(|v| v.iter()) {
+            let name = info.and_then(|c| c.item(id)).map(|it| it.name.clone()).unwrap_or_default();
+            if let Some(score) = score(&name, query) {
+                out.push(Hit { kind: Kind::Ability, cat: None, id, name, score, slot: None, note: String::new(), journal: Some(Journal::Auction(cat)), recent: false });
+            }
+        }
+        out.sort_by(|a, b| b.score.cmp(&a.score));
+        return out;
+    }
     // The key items we hold, over every category (the category as the note).
     if key_items(w) {
         for (k, (title, items)) in keyitems::all(w).into_iter().enumerate() {
@@ -326,7 +381,7 @@ pub fn can_run(w: &World) -> bool {
         && w.prompt.is_none()
         && w.confirm.is_none()
         && !w.typing
-        && (w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0) || (w.win.is_some() && item_list(w).is_some()) || key_items(w) || quest_list(w) || mission_list(w))
+        && (super::auction::searchable(w) || w.cats.is_some() || list.is_some_and(|l| !l.hidden && l.sort_focus.is_none() && l.ask.is_none() && l.manual == 0) || (w.win.is_some() && item_list(w).is_some()) || key_items(w) || quest_list(w) || mission_list(w))
 }
 
 /// The modern quest list (no Records of Eminence list over it).
@@ -406,6 +461,11 @@ fn key_in(w: &mut World, key: egui::Key) {
     let Some(s) = w.list_search.clone() else { return };
     let n = hits(w, &s.text).len().min(MAX);
     match key {
+        // An empty field (the auction's, reached with Up) gives the keys back with Down.
+        egui::Key::ArrowDown if s.text.is_empty() => {
+            w.list_search = None;
+            w.sounds.push(Se::Cursor as u32);
+        }
         egui::Key::ArrowDown if n > 0 => {
             set_sel(w, (s.sel + 1) % n);
             w.sounds.push(Se::Cursor as u32);
@@ -445,6 +505,10 @@ pub fn pick(w: &mut World, h: &Hit) {
         remember(w, h);
     }
     match h.journal {
+        Some(Journal::Auction(cat)) => {
+            super::auction::show(w, cat, h.id);
+            return;
+        }
         Some(Journal::Quest(area, entry)) => {
             quests::show_area(w, area, Some(entry));
             w.sounds.push(Se::Select as u32);
@@ -494,6 +558,16 @@ pub fn pick(w: &mut World, h: &Hit) {
 #[cfg(test)]
 mod tests {
     use super::{Hit, Kind, boost, key_of, score};
+
+    /// A swapped pair and a dropped letter still find their item; a word too far off does not.
+    #[test]
+    fn typos() {
+        assert!(score("Bunch of Gysahl Greens", "ghysal greens").is_some());
+        assert!(score("Gysahl Greens", "gysal greens").is_some());
+        assert!(score("Gysahl Greens", "ghysal").is_some());
+        assert!(score("Gysahl Greens", "carrot").is_none());
+        assert!(score("Fire Crystal", "fire").unwrap() > score("Fire Crystal", "fier").unwrap());
+    }
 
     fn hit(id: u16, score: i32) -> Hit {
         Hit { kind: Kind::Magic, cat: None, id, name: String::new(), score, slot: None, note: String::new(), journal: None, recent: false }

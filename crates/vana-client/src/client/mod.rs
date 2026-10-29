@@ -89,6 +89,7 @@ mod partymenu;
 mod partyreq;
 mod bluset;
 mod pupset;
+mod maze;
 mod roe;
 mod levelsync;
 mod viewhouse;
@@ -3531,6 +3532,12 @@ fn world_hud(gu: &mut GameUi, world: &mut World, input: &UiInput, size: [u32; 2]
             world.confirm = None;
             pupset::remove_all(world);
         }
+        (Some(yes), Some((Confirm::MazeVoucher(v), _))) => {
+            world.confirm = None;
+            if yes {
+                maze::voucher_yes(world, v);
+            }
+        }
         (Some(yes), Some((Confirm::PolIgnore, _))) => {
             world.confirm = None;
             if yes {
@@ -3865,6 +3872,7 @@ fn confirm_msg(gu: &GameUi, world: &World, kind: Confirm) -> String {
         (Confirm::Roe(a), _) => roe::ask_text(gu, a),
         (Confirm::BlueRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe4)).unwrap_or_default(),
         (Confirm::PupRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0xe5)).unwrap_or_default(),
+        (Confirm::MazeVoucher(_), _) => world.battle.as_ref().and_then(|b| b.group9(0xf6)).unwrap_or_default(),
         (Confirm::MonRemoveAll, _) => world.battle.as_ref().and_then(|b| b.group9(0x101)).unwrap_or_default(),
         (Confirm::Assist(kind), _) => charlnk::ask_text(gu, kind),
         (Confirm::PolIgnore, _) => world.battle.as_ref().and_then(|b| b.group9(0x1a)).unwrap_or_default(),
@@ -5420,8 +5428,9 @@ struct World {
     /// Alter Ego Points: the window, the tables and s2c 0x08E's data.
     ae_ui: Option<aepoints::AeUi>,
     ae_tables: Option<Arc<crate::dat::merits::AeTables>>,
-    /// The d_msg files of language slots 0x1d..0x21: merit, job point, gift, alter ego point and Monstrosity names.
-    point_files: [Option<u32>; 5],
+    /// The d_msg files of language slots 0x1d..0x21 (merit, job point, gift, alter ego point and Monstrosity names) and
+    /// 0x26 (the maze rune texts).
+    point_files: [Option<u32>; 6],
     ae_data: Option<aepoints::AeData>,
     jp_list: HashMap<u16, (u8, u16)>,
     jp_seen: bool,
@@ -5719,6 +5728,10 @@ struct World {
     bluset: Option<bluset::Screen>,
     /// The automaton screen (client/pupset.rs).
     pupset: Option<pupset::Screen>,
+    /// The Maze Tabula editor and s2c 0x0AD's store (client/maze.rs).
+    maze: maze::Maze,
+    /// Not retail: every bid category's items for the modern auction search.
+    ah_index: auction::AhIndex,
     /// FUN_100fc3c0's last c2s 0x102 (one a second, shared by BLU and PUP).
     ext_job_sent: Option<Instant>,
     /// Monstrosity Customization (client/moncustom.rs).
@@ -5871,6 +5884,9 @@ enum Confirm {
     BlueRemoveAll,
     /// The automaton list's Remove All (LAB_10209290): group 9 0xe5 "Remove all attachments?".
     PupRemoveAll,
+    /// The maze list's voucher change (FUN_10210e30): group 9 0xf6 "All Maze Runes will be removed.\nDo you wish to
+    /// proceed?", default No.
+    MazeVoucher(u16),
     /// Customization's Remove All (FUN_101431b0): group 9 0x101 "Remove all?".
     MonRemoveAll,
     /// mes1rcv / mes2frnd's Ignore Sender: group 9 0x1a "Add sender to\nIgnore List?", default No.
@@ -6084,7 +6100,7 @@ pub struct App {
     search_words: Option<Arc<crate::dat::tables::SearchWords>>,
     blu_data: Option<Arc<crate::dat::blumagic::BluData>>,
     cnq_tables: Option<Arc<crate::dat::tables::CnqTables>>,
-    point_files: [Option<u32>; 5],
+    point_files: [Option<u32>; 6],
     /// Title art, buttons and font from the game's lobby DATs; egui stand-ins until loaded.
     game_ui: Option<GameUi>,
     game_ui_state: LoadState,
@@ -6304,7 +6320,7 @@ impl App {
             search_words: None,
             blu_data: None,
             cnq_tables: None,
-            point_files: [None; 5],
+            point_files: [None; 6],
             game_ui: None,
             modern: None,
             game_ui_state: LoadState::Idle,
@@ -6694,7 +6710,7 @@ impl App {
             let blu_desc = crate::dat::msg::current_slot_file(&dll, 1, 0x1a);
             self.blu_data = Some(Arc::new(crate::dat::blumagic::BluData::load(self.index.as_ref().unwrap(), blu_desc)));
             self.cnq_tables = crate::dat::tables::conquest(&dll).map_err(|e| log::warn!("{e:#}")).ok().map(Arc::new);
-            self.point_files = [0x1d, 0x1e, 0x1f, 0x20, 0x21].map(|slot| crate::dat::msg::current_slot_file(&dll, 1, slot));
+            self.point_files = [0x1d, 0x1e, 0x1f, 0x20, 0x21, maze::TEXT_SLOT].map(|slot| crate::dat::msg::current_slot_file(&dll, 1, slot));
             self.input.load(&dll);
         }
         Ok((self.index.clone().unwrap(), self.keys_table.clone().unwrap()))
@@ -7315,6 +7331,8 @@ impl App {
                             blu_data: self.blu_data.clone(),
                             bluset: None,
                             pupset: None,
+                            maze: Default::default(),
+                            ah_index: Default::default(),
                             ext_job_sent: None,
                             moncustom: None,
                             treasure: Default::default(),
@@ -9110,6 +9128,7 @@ impl App {
         items::follow_held(world);
         equipwin::tick(world);
         auction::update(world, dt);
+        auction::index_tick(world);
         currencies::update(world, dt * 60.0);
         merits::update(world);
         jobpoints::update(world, dt * 60.0);

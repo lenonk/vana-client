@@ -170,7 +170,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
         }
         if let Some(money) = v.money {
             ui.add_space(8.0);
-            (mouse.key, mouse.money) = money_row(ui, m, gu, money);
+            (mouse.key, mouse.money) = money_row(ui, m, gu, money, None);
         }
         if let Some(c) = v.confirm {
             ui.add_space(8.0);

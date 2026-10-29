@@ -113,6 +113,10 @@ impl GameUiData {
             Ok(f) => lobby.absorb(f, true),
             Err(e) => log::warn!("map backdrop: {e:#}"),
         }
+        match parse(crate::dat::ui::MAZE_UI) {
+            Ok(f) => lobby.absorb(f, true),
+            Err(e) => log::warn!("maze tabula windows: {e:#}"),
+        }
         // FUN_1011ad50 (non-Japanese clients, called by the dead windows' open): the window takes its frame sprite's
         // bounds, framesus 65's 144 x 44 for "menu    dead".
         for name in ["menu    dead", "menu    mp_dead"] {
@@ -1014,6 +1018,22 @@ impl GameUi {
 
     pub fn sprite_width(&self, lib: &str, k: usize) -> f32 {
         self.data.lobby.lib(lib).map_or(0.0, |l| screens::sprite_width(l, k))
+    }
+
+    /// The screen offset that moves a window from its layout place to layout (x, y) (an open hook's move).
+    pub fn moved_off(&self, name: &str, w: f32, h: f32, x: i16, y: i16) -> (f32, f32) {
+        let Some(m) = self.data.lobby.menu(name) else { return (0.0, 0.0) };
+        let (fx, fy, ..) = screens::frame_rect(m, w, h, 1.0, 1.0);
+        let mut moved = m.clone();
+        if let Some(e) = moved.elements.first_mut() {
+            (e.x, e.y) = (x, y);
+        }
+        let (mx, my, ..) = screens::frame_rect(&moved, w, h, 1.0, 1.0);
+        (mx - fx, my - fy)
+    }
+
+    pub fn sprite_height(&self, lib: &str, k: usize) -> f32 {
+        self.data.lobby.lib(lib).map_or(0.0, |l| screens::sprite_height(l, k))
     }
 
     /// Sprite `k` from cell `skip` on (window sprites, whose first cell is the background).

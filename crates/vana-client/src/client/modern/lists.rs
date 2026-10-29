@@ -142,19 +142,7 @@ fn suggested_mouse(w: &mut World, mouse: &Mouse, list: &[Suggestion]) {
 
 /// The search field and its hits in place of the window's rows: what was clicked, what the pointer is over.
 pub(super) fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Option<egui::TextureId>], text: &str, sel: usize, hits: &[Hit], moved: bool) -> Mouse {
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-    if let Some(s) = m.art.sprite("controls/input_focused") {
-        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
-    }
-    if let Some(s) = m.art.sprite("controls/search") {
-        ui.painter().add(paint::image(&s, pos2(r.min.x + 8.0, r.center().y - 9.0), 18.0, Color32::WHITE));
-    }
-    let t = ui.painter().text(pos2(r.min.x + 32.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.ui), m.theme.color("text"));
-    let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
-    if blink {
-        ui.painter().vline(t.max.x + 2.0, (r.center().y - 8.0)..=(r.center().y + 8.0), egui::Stroke::new(1.5, m.theme.color("text")));
-    }
-    ui.add_space(4.0);
+    search_field(ui, m, text);
     let mut mouse = Mouse::default();
     if hits.is_empty() {
         ui.label(egui::RichText::new("Nothing matches.").size(m.theme.ui).color(m.theme.color("muted")));
@@ -180,11 +168,29 @@ pub(super) fn search_rows(ui: &mut Ui, m: &super::Modern, w: &World, icons: &[Op
     mouse
 }
 
+/// The search field with the typed text and its caret.
+pub(super) fn search_field(ui: &mut Ui, m: &super::Modern, text: &str) {
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
+    if let Some(s) = m.art.sprite("controls/input_focused") {
+        ui.painter().add(paint::nine_slice(&s, r, (r.height() / s.size.y).min(1.0), Color32::WHITE));
+    }
+    if let Some(s) = m.art.sprite("controls/search") {
+        ui.painter().add(paint::image(&s, pos2(r.min.x + 8.0, r.center().y - 9.0), 18.0, Color32::WHITE));
+    }
+    let t = ui.painter().text(pos2(r.min.x + 32.0, r.center().y), Align2::LEFT_CENTER, text, FontId::proportional(m.theme.ui), m.theme.color("text"));
+    let blink = (ui.input(|i| i.time) * 2.0) as i64 % 2 == 0;
+    if blink {
+        ui.painter().vline(t.max.x + 2.0, (r.center().y - 8.0)..=(r.center().y + 8.0), egui::Stroke::new(1.5, m.theme.color("text")));
+    }
+    ui.add_space(4.0);
+}
+
 /// The search's hits for the open window, their icons.
 pub(super) fn search_hits(p: &Panels, w: &World) -> Option<(String, usize, Vec<Hit>, Vec<Option<egui::TextureId>>)> {
     let s = w.list_search.as_ref()?;
     let hits = listsearch::hits(w, &s.text);
     let icon = |h: &Hit| match h.slot {
+        _ if matches!(h.journal, Some(listsearch::Journal::Auction(_))) => w.item_info.as_ref().and_then(|info| p.m.item_icon(p.ctx, info, h.id)),
         _ if h.journal.is_some() => None,
         Some(_) => w.item_info.as_ref().and_then(|info| p.m.item_icon(p.ctx, info, h.id)),
         None => p.gu.and_then(|gu| magic::row_icon(w, h.kind, h.id).and_then(|(lib, k)| p.m.sprite_icon(p.ctx, gu, lib, k))),
@@ -197,6 +203,7 @@ pub(super) fn search_hits(p: &Panels, w: &World) -> Option<(String, usize, Vec<H
             match h.journal {
                 Some(listsearch::Journal::Quest(area, _)) => h.note = format!("{} ({})", super::journal::area_title(gu, area), h.note),
                 Some(listsearch::Journal::Mission(log, _)) => h.note = super::journal::log_title(gu, log),
+                Some(listsearch::Journal::Auction(cat)) => h.note = super::super::auction::cat_label(gu, cat),
                 _ => {}
             }
         }

@@ -11542,3 +11542,30 @@ User report: in Garlaige Citadel, monsters and trusts fight from a level below a
   16 lie between two floors. Crawlers' Nest's navmesh has 27 points dropping more than 8, 5 of them 8..12 (which
   the 12-unit jump never brings back).
 - The "floor:" diagnostic now compares with that height along the slide.
+
+## Auction house additions (2026-10-28, not retail)
+
+User requests, the modern layer unless noted.
+- Price counter (moneyctr), both UIs: Right on the ones place fills the top price of the item's price history (the
+  history window's first row, the first of the last ten sales) for a sale and for a bid; retail clears to 0. A bid
+  opened from the list's menu has no history window, so the history is asked in the background when its counter
+  opens (search wire 5 / 6, the row's form); a history for another item is not used. Capped at the counter's max.
+- The modern counter's buttons (-, +, x10, /10, All, 0 / OK, Cancel): Tab gives them the keys and back; Left /
+  Right along a row, Up / Down between the rows, Enter presses the lit one. The digit's underline dims meanwhile.
+- Search on the bid pages only (the category menus and the bid lists; not auc1, Sell or Sales Status): a field at
+  the top ("Search the auction house"), reached by typing, a click, or Up off a menu's or list's top row (Down from
+  the empty field gives the keys back). Hits from every bid category with their place as the note ("Weapons >
+  Ammo&Misc. > Pet Items"); a pick opens the menus down to the category as Bid and its rows would, asks the list and
+  puts the cursor on the item.
+- The index: the search server's category lists (wire 0x15) hold every item of the category, in stock or not.
+  Item records carry no AH category (LSB's item_basic.aH). All 60 categories are asked over one connection
+  (net::search::ah_query_many; LSB's handler reads request after request on a socket), about a second for 10,721
+  items, quietly 20 s after entering the world when no complete index exists, or at the first search ("Searching...").
+  Kept in <data>/ah-index-<server>-<port>.tsv ("complete" or "partial", then item<TAB>category); category lists seen
+  while browsing go in while it is partial; an item missing from the list its entry names drops the file.
+- LSB's search server closes a sixth simultaneous session from one address ("More than 5 simultaneous connections",
+  SearchHandler:69) and counts a finished session for some seconds after its reply (sequential queries 400 ms apart
+  were still refused), with every client on the machine sharing the count. Ours now holds at most two search
+  connections at once (net::search Slot), the friend list, Link List, level sync and search included.
+- The list search's score (client/listsearch.rs) takes typos when nothing else matches: every query word within an
+  edit (4..5 letters) or two (6+) of a name word or its start, a swap of neighbours one edit ("ghysal" finds Gysahl).

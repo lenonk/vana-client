@@ -2448,7 +2448,7 @@ pub fn talk(w: &mut World, target: u32) -> bool {
 struct EventTexts {
     bt: Option<Arc<crate::dat::battle::BattleText>>,
     index: Option<Arc<crate::dat::DatIndex>>,
-    files: [Option<u32>; 5],
+    files: [Option<u32>; 6],
     merits: std::sync::OnceLock<Option<Arc<crate::dat::merits::MeritTables>>>,
     jp: std::sync::OnceLock<Option<Arc<crate::dat::merits::JobPointTables>>>,
     ae: std::sync::OnceLock<Option<Arc<crate::dat::merits::AeTables>>>,

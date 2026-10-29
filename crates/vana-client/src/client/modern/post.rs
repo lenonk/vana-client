@@ -185,7 +185,7 @@ pub fn draw(p: &mut Panels, w: &mut World) {
                 }
                 if let Some(mv) = money {
                     ui.add_space(8.0);
-                    (mouse.key, mouse.money) = money_row(ui, m, gu, *mv);
+                    (mouse.key, mouse.money) = money_row(ui, m, gu, *mv, None);
                 }
             });
         }

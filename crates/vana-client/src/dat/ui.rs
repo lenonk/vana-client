@@ -16,6 +16,9 @@ pub const ICONS: u32 = 39551;
 pub const ICONS2: u32 = 39560;
 /// "menumap m_x36_00": the map preview's backdrop (FUN_101cc620(0xd0c2), loaded on demand in retail).
 pub const MAP_BACKDROP: u32 = 53442;
+/// The Maze Tabula windows (prvdungp, prvdunsi), the "prvdunge" library and its "tex4" image (FUN_101c8950 ->
+/// FUN_101cc620(0x5c) at UI start).
+pub const MAZE_UI: u32 = 92;
 
 /// Files whose images a UI file's sprites also draw from.
 pub fn companions(id: u32) -> &'static [u32] {

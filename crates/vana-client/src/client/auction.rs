@@ -10,6 +10,7 @@ use crate::audio::Ui;
 use crate::inventory::ItemInfo;
 use crate::net::search::{AhReply, AhSale};
 use glam::Vec3;
+use std::sync::Arc;
 use std::sync::mpsc::Receiver;
 
 const WHITE: u32 = 0x8080_8080;
@@ -192,6 +193,13 @@ pub struct Auction {
     query: Option<(bool, Receiver<anyhow::Result<AhReply>>)>,
     cat: u8,
     money: Option<(u32, u32, u32, MoneyFor)>,
+    /// Not retail: the modern counter's button that has the keys (Tab), 0..5 -, +, x10, /10, All, 0, 6 OK, 7 Cancel.
+    money_btn: Option<u8>,
+    /// Not retail: a bid's item and the top price of its history, asked in the background for Right on the ones place.
+    bid_top: Option<(u16, Option<u32>)>,
+    bid_query: Option<Receiver<anyhow::Result<AhReply>>>,
+    /// Not retail: the item a search picked, for the cursor once its category's list is in.
+    find: Option<u16>,
     /// shopsell (Sell / Cancel) for a price: its cursor and the sale.
     shopsell: Option<(u16, u8, u16, u32, bool)>,
     /// LotCheck sent for the slot this opening.
@@ -421,9 +429,192 @@ fn open(w: &mut World) {
         return;
     }
     let sorts = sort_path(w).and_then(|p| std::fs::read(p).ok()).map_or_else(Sorts::default, |b| Sorts::parse(&b));
-    w.auction = Some(Box::new(Auction { origin: w.pos, layers: vec![Layer::Menu(AUC1, 1)], list: None, history: None, kept: None, query: None, cat: 0, money: None, shopsell: None, checked: [false; 8], sorts, cond: Vec::new() }));
+    w.auction = Some(Box::new(Auction { origin: w.pos, layers: vec![Layer::Menu(AUC1, 1)], list: None, history: None, kept: None, query: None, cat: 0, money: None, money_btn: None, bid_top: None, bid_query: None, find: None, shopsell: None, checked: [false; 8], sorts, cond: Vec::new() }));
     w.bid.pending = false;
     send(w, 0xa, -1, 0, 0, 0, 0);
+}
+
+/// Not retail: every bid category's items (the search server's category lists hold all of them, in stock or not), for
+/// the modern search; asked once a session in the background when the first search starts.
+#[derive(Default)]
+pub struct AhIndex {
+    pub items: Option<Arc<Vec<(u16, u8)>>>,
+    /// Every category was read (from the server or the file).
+    complete: bool,
+    /// The quiet build was started this session, and when we came into the world for it.
+    tried: bool,
+    since: Option<std::time::Instant>,
+    rx: Option<Receiver<(Vec<(u16, u8)>, bool)>>,
+}
+
+/// The categories under auc2, in menu order.
+fn all_cats() -> Vec<u8> {
+    fn walk(name: &str, out: &mut Vec<u8>) {
+        for &(_, p) in menu_rows(name) {
+            match p {
+                Pick::Cat(c) if !out.contains(&c) => out.push(c),
+                Pick::Menu(m) => walk(m, out),
+                Pick::Cat(_) => {}
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk("menu    auc2", &mut out);
+    out
+}
+
+/// The index kept on disk per search server: a line "complete" once every category was read, then "item<TAB>category"
+/// lines.
+fn cache_path(w: &World) -> std::path::PathBuf {
+    crate::config::data_dir().join(format!("ah-index-{}-{}.tsv", w.search_addr.0, w.search_addr.1))
+}
+
+fn cache_load(path: &std::path::Path) -> Option<(Vec<(u16, u8)>, bool)> {
+    let text = std::fs::read_to_string(path).ok()?;
+    let mut lines = text.lines();
+    let complete = lines.next()? == "complete";
+    let items = lines.filter_map(|l| l.split_once('\t')).filter_map(|(a, b)| Some((a.parse().ok()?, b.parse().ok()?))).collect();
+    Some((items, complete))
+}
+
+fn cache_save(path: &std::path::Path, items: &[(u16, u8)], complete: bool) {
+    let mut text = String::from(if complete { "complete\n" } else { "partial\n" });
+    for (item, cat) in items {
+        text.push_str(&format!("{item}\t{cat}\n"));
+    }
+    if let Err(e) = std::fs::create_dir_all(path.parent().unwrap_or(path)).and_then(|_| std::fs::write(path, text)) {
+        log::warn!("auction search index {}: {e}", path.display());
+    }
+}
+
+/// A category list seen while browsing goes into the index (and its file) when the index is not yet complete.
+fn index_seen(w: &mut World, cat: u8, items: &[u16]) {
+    if w.ah_index.complete {
+        return;
+    }
+    let mut v: Vec<(u16, u8)> = w.ah_index.items.as_deref().cloned().unwrap_or_default();
+    let before = v.len();
+    v.extend(items.iter().filter(|id| !v.iter().any(|(i, _)| i == *id)).map(|&id| (id, cat)).collect::<Vec<_>>());
+    if v.len() != before {
+        cache_save(&cache_path(w), &v, false);
+        w.ah_index.items = Some(Arc::new(v));
+    }
+}
+
+/// The cached index is wrong somewhere (an item missing from its category's list): dropped, read again on the next
+/// search.
+fn index_drop(w: &mut World) {
+    log::info!("auction search index: an item was not in its category; rebuilding");
+    let _ = std::fs::remove_file(cache_path(w));
+    (w.ah_index.items, w.ah_index.complete, w.ah_index.tried) = (None, false, false);
+}
+
+pub(super) fn index_build(w: &mut World) {
+    if w.ah_index.complete || w.ah_index.rx.is_some() {
+        return;
+    }
+    // The file first: a complete one answers at once, a partial one while the server is asked.
+    if w.ah_index.items.is_none()
+        && let Some((items, complete)) = cache_load(&cache_path(w))
+    {
+        log::info!("auction search index: {} items from the cache ({})", items.len(), if complete { "complete" } else { "partial" });
+        (w.ah_index.items, w.ah_index.complete) = (Some(Arc::new(items)), complete);
+        if complete {
+            return;
+        }
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (addr, market, path) = (w.search_addr, market(w.zone), cache_path(w));
+    // One connection for every category (LSB's search server closes a sixth session from one address, and counts a
+    // finished one for some seconds); a dropped connection goes on from where it broke after a pause.
+    std::thread::spawn(move || {
+        let mut out: Vec<(u16, u8)> = Vec::new();
+        let mut left = all_cats();
+        for round in 0..4 {
+            let payloads: Vec<Vec<u8>> = left.iter().map(|&c| crate::net::search::ah_list_payload(c as u16, market, &[])).collect();
+            let replies = crate::net::search::ah_query_many(addr, 0x15, &payloads, 1);
+            let mut done = 0;
+            for (r, &cat) in replies.into_iter().zip(&left) {
+                match r {
+                    Ok(r) => {
+                        out.extend(r.items.into_iter().map(|(item, ..)| (item, cat)).filter(|&(item, _)| item != 0));
+                        done += 1;
+                    }
+                    Err(e) => log::debug!("auction search index, category {cat:#x} (round {round}): {e}"),
+                }
+            }
+            left.drain(..done);
+            if left.is_empty() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+        let mut seen = std::collections::HashSet::new();
+        out.retain(|(item, _)| seen.insert(*item));
+        log::info!("auction search index: {} items, {} categories not read", out.len(), left.len());
+        cache_save(&path, &out, left.is_empty());
+        let _ = tx.send((out, left.is_empty()));
+    });
+    w.ah_index.rx = Some(rx);
+}
+
+/// The index as far as it has come.
+pub(super) fn index(w: &World) -> Option<Arc<Vec<(u16, u8)>>> {
+    w.ah_index.items.clone()
+}
+
+/// The bid pages have the keys (a category menu or a bid list on top, nothing asked; not auc1, Sell or Sales
+/// Status): the modern search can run.
+pub(super) fn searchable(w: &World) -> bool {
+    let Some(a) = w.auction.as_ref() else { return false };
+    let bid = match a.top() {
+        Some(Layer::Menu(name, _)) => !menu_rows(name).is_empty(),
+        Some(Layer::List) => a.list.as_ref().is_some_and(|l| !l.sales),
+        _ => false,
+    };
+    w.confirm.is_none() && a.money.is_none() && a.shopsell.is_none() && bid
+}
+
+/// The menus from auc2 down to the row of category `cat`: (menu, row) each.
+fn cat_path(cat: u8) -> Vec<(&'static str, u16)> {
+    fn find(name: &'static str, cat: u8, path: &mut Vec<(&'static str, u16)>) -> bool {
+        for &(row, p) in menu_rows(name) {
+            path.push((name, row));
+            match p {
+                Pick::Cat(c) if c == cat => return true,
+                Pick::Menu(m) if find(m, cat, path) => return true,
+                _ => {}
+            }
+            path.pop();
+        }
+        false
+    }
+    let mut path = Vec::new();
+    find("menu    auc2", cat, &mut path);
+    path
+}
+
+/// A category's place as its menus' row captions ("Others > Pet Items").
+pub(super) fn cat_label(gu: &GameUi, cat: u8) -> String {
+    cat_path(cat).into_iter().map(|(m, row)| gu.child_caption(m, row).unwrap_or_default()).filter(|s| !s.is_empty()).collect::<Vec<_>>().join(" \u{203a} ")
+}
+
+/// A search pick: the menus opened down to the item's category as Bid and its rows would, the list asked, and the
+/// cursor put on the item once the list is in.
+pub(super) fn show(w: &mut World, cat: u8, item: u16) {
+    let Some(mut a) = w.auction.take() else { return };
+    a.layers.retain(|l| matches!(l, Layer::Menu(AUC1, _)));
+    if let Some(Layer::Menu(_, sel)) = a.layers.first_mut() {
+        *sel = 1;
+    }
+    for (m, row) in cat_path(cat) {
+        a.layers.push(Layer::Menu(m, row));
+    }
+    (a.list, a.history, a.kept) = (None, None, None);
+    a.find = Some(item);
+    a.ask_list(w, cat);
+    w.auction = Some(a);
+    w.sounds.push(Ui::Select as u32);
 }
 
 /// FUN_101da370: every auction window closes; a waiting bid result prints now; the sorts are saved (FUN_101d7820).
@@ -542,6 +733,21 @@ pub fn update(w: &mut World, dt: f32) {
         close(w);
         return;
     }
+    let (mut seen, mut wrong) = (None, false);
+    if let Some(rx) = &a.bid_query {
+        match rx.try_recv() {
+            Ok(r) => {
+                a.bid_query = None;
+                // The history window's top row: the first of the last ten.
+                let top = r.ok().and_then(|r| r.sales.iter().rev().take(10).last().map(|s| s.price));
+                if let Some(t) = a.bid_top.as_mut() {
+                    t.1 = top;
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => a.bid_query = None,
+            Err(_) => {}
+        }
+    }
     if let Some((hist, rx)) = &a.query {
         let hist = *hist;
         match rx.try_recv() {
@@ -569,6 +775,16 @@ pub fn update(w: &mut World, dt: f32) {
                                     l.rows.push(Row::Stack { item, single, stack });
                                 }
                             }
+                            seen = Some((a.cat, l.rows.iter().map(|r| r.item(&w.ah_slots)).collect::<Vec<u16>>()));
+                            if let Some(id) = a.find.take() {
+                                match l.rows.iter().position(|r| r.item(&w.ah_slots) == id) {
+                                    Some(k) => {
+                                        l.scroll = (k + 1).saturating_sub(ROWS);
+                                        l.cursor = k - l.scroll;
+                                    }
+                                    None => wrong = true,
+                                }
+                            }
                         }
                         Err(_) => l.failed = true,
                     }
@@ -592,7 +808,30 @@ pub fn update(w: &mut World, dt: f32) {
         }
     }
     w.auction = Some(a);
+    if let Some((cat, items)) = seen {
+        index_seen(w, cat, &items);
+    }
+    if wrong {
+        index_drop(w);
+    }
     print_result(w, false);
+}
+
+/// Per frame: the index's reply taken in; with no complete index, the build starts quietly once we have been in the
+/// world a while (one connection, a second or two), once a session.
+pub fn index_tick(w: &mut World) {
+    if let Some((items, complete)) = w.ah_index.rx.as_ref().and_then(|rx| rx.try_recv().ok()) {
+        (w.ah_index.items, w.ah_index.complete, w.ah_index.rx) = (Some(Arc::new(items)), complete, None);
+    }
+    if w.ah_index.complete || w.ah_index.tried || !w.in_scene() || w.zone.is_none() {
+        w.ah_index.since = None;
+        return;
+    }
+    let since = *w.ah_index.since.get_or_insert_with(std::time::Instant::now);
+    if since.elapsed() >= std::time::Duration::from_secs(20) {
+        w.ah_index.tried = true;
+        index_build(w);
+    }
 }
 
 /// The item the item info window shows: the list's or the history's cursor row, the sell list's item; mode 2 at
@@ -715,10 +954,51 @@ fn key_inner(w: &mut World, a: &mut Auction, key: egui::Key) -> bool {
     use egui::Key as K;
     // moneyctr (FUN_10140bc0): Down / Up by the step, Right a tenth of it, Left ten times.
     if let Some((mut step, max, mut v, purpose)) = a.money {
+        // Not retail: in the modern counter Tab swaps the keys between the value and its buttons; arrows walk the
+        // buttons (two rows) and Enter presses the lit one.
+        let mut key = key;
+        if w.modern && key == K::Tab {
+            a.money_btn = if a.money_btn.is_some() { None } else { Some(6) };
+            w.sounds.push(Ui::Cursor as u32);
+            return true;
+        }
+        let priced = match purpose {
+            MoneyFor::Bid(r) => r.item(&w.ah_slots),
+            MoneyFor::Sell { item, .. } => item,
+        };
+        if let Some(b) = a.money_btn {
+            let walk = |w: &mut World, a: &mut Auction, to: u8| {
+                a.money_btn = Some(to);
+                w.sounds.push(Ui::Cursor as u32);
+                true
+            };
+            match key {
+                K::ArrowLeft | K::ArrowRight => {
+                    let (lo, n) = if b < 6 { (0, 6) } else { (6, 2) };
+                    return walk(w, a, lo + (b - lo + if key == K::ArrowRight { 1 } else { n - 1 }) % n);
+                }
+                K::ArrowUp | K::ArrowDown => return walk(w, a, match b { 0..=2 => 6, 3..=5 => 7, 6 => 0, _ => 4 }),
+                K::Enter => match b {
+                    0..=3 => key = [K::ArrowDown, K::ArrowUp, K::ArrowLeft, K::ArrowRight][b as usize],
+                    4 | 5 => {
+                        a.money = Some((step, max, if b == 4 { max } else { 0 }, purpose));
+                        w.sounds.push(Ui::Cursor as u32);
+                        return true;
+                    }
+                    6 => {}
+                    _ => key = K::Escape,
+                },
+                _ => {}
+            }
+        }
         match key {
             K::ArrowDown if v >= step => v -= step,
             K::ArrowUp if v < max => v = (v + step).min(max),
             K::ArrowRight if step > 1 => step /= 10,
+            // Not retail: Right on the ones place takes the top price of the item's price history (selling or bidding).
+            K::ArrowRight if let Some(top) = a.history.as_ref().filter(|h| h.item == priced).and_then(|h| h.sales.first()).map(|s| s.price).or(a.bid_top.filter(|t| t.0 == priced).and_then(|t| t.1)) => {
+                v = top.min(max);
+            }
             K::ArrowRight => v = 0,
             K::ArrowLeft if max / step.max(1) < 10 => v = max,
             K::ArrowLeft => step *= 10,
@@ -730,6 +1010,7 @@ fn key_inner(w: &mut World, a: &mut Auction, key: egui::Key) -> bool {
             K::Enter | K::Escape => {
                 w.sounds.push(if key == K::Enter { Ui::Select } else { Ui::Cancel } as u32);
                 a.money = None;
+                a.money_btn = None;
                 let price = if key == K::Enter { v } else { 0 };
                 match purpose {
                     MoneyFor::Bid(r) if price > 0 => {
@@ -784,6 +1065,12 @@ fn set_top(a: &mut Auction, l: Layer) {
 /// The command menus: Up / Down along their rows, Enter (refused while the search is busy), Escape back (auc1: all).
 fn menu_key(w: &mut World, a: &mut Auction, name: &'static str, sel: u16, key: egui::Key) {
     use egui::Key as K;
+    // Not retail: in the modern layer Up off a bid menu's top row goes into the search field.
+    if w.modern && key == K::ArrowUp && !menu_rows(name).is_empty() && sel == first_row(name) && w.confirm.is_none() {
+        w.list_search = Some(Default::default());
+        w.sounds.push(Ui::Cursor as u32);
+        return;
+    }
     match key {
         K::ArrowUp | K::ArrowDown => {
             set_top(a, Layer::Menu(name, step_row(name, sel, key == K::ArrowDown)));
@@ -835,7 +1122,13 @@ fn auc3_pick(w: &mut World, a: &mut Auction, sel: u16) {
             a.ask_history(w, r.item(&w.ah_slots), r.stack(), 0, 1);
         }
         2 if auc3_dim(w, r) => w.sounds.push(Ui::Error as u32),
-        2 => a.money = Some((1, w.inv.gil(), 0, MoneyFor::Bid(r))),
+        2 => {
+            a.money = Some((1, w.inv.gil(), 0, MoneyFor::Bid(r)));
+            let item = r.item(&w.ah_slots);
+            let payload = crate::net::search::ah_history_payload(item, market(w.zone), r.stack());
+            a.bid_query = Some(crate::net::search::ah_spawn(w.search_addr, if r.stack() { 6 } else { 5 }, payload, 0));
+            a.bid_top = Some((item, None));
+        }
         _ => match sort_kind(a.cat) {
             0 => a.layers.push(Layer::Menu(WEPSORT, 1)),
             1 => a.layers.push(Layer::Menu(ARMSORT, 1)),
@@ -933,6 +1226,12 @@ fn scroll_keys(scroll: &mut usize, cursor: &mut usize, n: usize, key: egui::Key)
 /// auclist: rows, Enter (bid: auc3; sales: auc4 or the sold / returned line), Escape closes it.
 fn list_key(w: &mut World, a: &mut Auction, key: egui::Key) {
     use egui::Key as K;
+    // Not retail: in the modern layer Up off a bid list's first row goes into the search field.
+    if w.modern && key == K::ArrowUp && w.confirm.is_none() && a.list.as_ref().is_some_and(|l| !l.sales && l.scroll + l.cursor == 0) {
+        w.list_search = Some(Default::default());
+        w.sounds.push(Ui::Cursor as u32);
+        return;
+    }
     let Some(mut l) = a.list.take() else { return };
     match key {
         K::Escape => {
@@ -1396,6 +1695,8 @@ pub(super) enum Pane {
 pub(super) struct Look {
     pub panes: Vec<Pane>,
     pub money: Option<(u32, u32, u32, u16)>,
+    /// The counter's button with the keys (Tab), None the value.
+    pub money_btn: Option<u8>,
     pub shopsell: Option<(u16, u16, u32)>,
     pub busy: bool,
 }
@@ -1467,7 +1768,7 @@ pub(super) fn look(w: &World) -> Option<Look> {
         };
         (step, max, v, item)
     });
-    Some(Look { panes, money, shopsell: a.shopsell.map(|(sel, _, item, price, _)| (sel, item, price)), busy: a.busy() })
+    Some(Look { panes, money, money_btn: a.money_btn, shopsell: a.shopsell.map(|(sel, _, item, price, _)| (sel, item, price)), busy: a.busy() })
 }
 
 /// The top menu's cursor onto `sel` while it has the keys. True when it moved.

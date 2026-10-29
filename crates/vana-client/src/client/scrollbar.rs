@@ -40,6 +40,7 @@ pub enum Owner {
     BlueSet,
     /// The automaton screen's list.
     PupSet,
+    Maze,
     /// Monstrosity Customization's list (mp_invnt).
     MonCustom,
     /// The merit, job point and alter ego point lists, Unity's ranking.
@@ -184,6 +185,7 @@ fn dispatch(w: &mut World, owner: Owner, m: Msg, bar: (usize, usize, usize)) -> 
         Owner::Linkshell => super::linkshell::bar(w, m) || super::linklist::bar(w, m) || super::concierge::bar(w, m),
         Owner::BlueSet => super::bluset::bar(w, m),
         Owner::PupSet => super::pupset::bar(w, m),
+        Owner::Maze => super::maze::bar(w, m),
         Owner::MonCustom => super::moncustom::bar(w, bar.0, m),
         Owner::Auction => super::auction::bar(w, m),
         Owner::Primer => super::primer::bar(w, m),
