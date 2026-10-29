@@ -103,6 +103,8 @@ pub struct Config {
     pub earth_clock: bool,
     /// Extra (the trust chatter filters): trusts' party lines (battle message 711) are not printed.
     pub hide_trust_speech: bool,
+    /// Extra (Battlemod's filters): "readies" / "starts casting" lines only for us and monsters.
+    pub hide_ready_lines: bool,
     /// Extra (the text auto-advance add-ons): an event message waiting for a key goes on by itself after this many
     /// seconds; 0 off.
     pub auto_advance: u32,
@@ -282,6 +284,7 @@ impl Default for Config {
             target_hpp: false,
             earth_clock: false,
             hide_trust_speech: false,
+            hide_ready_lines: false,
             auto_advance: 0,
             timers: false,
             timers_dock: 0,

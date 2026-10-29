@@ -26,6 +26,7 @@ pub struct Settings {
     pub target_hpp: bool,
     pub earth_clock: bool,
     pub hide_trust_speech: bool,
+    pub hide_ready_lines: bool,
     pub auto_advance: u32,
     pub timers: bool,
     pub timers_dock: u32,
@@ -66,6 +67,7 @@ impl Settings {
             target_hpp: c.target_hpp,
             earth_clock: c.earth_clock,
             hide_trust_speech: c.hide_trust_speech,
+            hide_ready_lines: c.hide_ready_lines,
             auto_advance: c.auto_advance,
             timers: c.timers,
             timers_dock: c.timers_dock,
@@ -105,6 +107,7 @@ impl Settings {
         c.target_hpp = self.target_hpp;
         c.earth_clock = self.earth_clock;
         c.hide_trust_speech = self.hide_trust_speech;
+        c.hide_ready_lines = self.hide_ready_lines;
         c.auto_advance = self.auto_advance;
         c.timers = self.timers;
         c.timers_dock = self.timers_dock;
@@ -157,6 +160,7 @@ enum Val {
     TargetHpp,
     EarthClock,
     TrustSpeech,
+    ReadyLines,
     AutoAdvance,
     Timers,
     TimersDock,
@@ -285,6 +289,7 @@ fn rows(kind: Kind, tab: usize, in_game: bool, modern: bool) -> &'static [Row] {
         row("Target HP %", "The target's HP percent beside its gauge in the classic target window (the modern one shows it).", TargetHpp, OFF_ON, Now),
         row("Clock", "Earth time, the moon and the next Vana'diel day beside the game's clock.", EarthClock, OFF_ON, Now),
         row("Trust Speech", "What your trusts say to the party (on summoning, on a weapon skill, on defeat) in the log, or not.", TrustSpeech, &[(0, "Shown"), (1, "Hidden")], Now),
+        row("Ready Lines", "The \"readies\" and \"starts casting\" lines: everyone's, or only yours and monsters' (what is coming at you).", ReadyLines, &[(0, "All"), (1, "Mine, Monsters'")], Now),
         row("Text Auto-Advance", "An event's message waiting for a key goes on by itself after this many seconds.", AutoAdvance, &[(0, "OFF"), (3, "3 s"), (5, "5 s"), (8, "8 s")], Now),
     ];
     match kind {
@@ -423,6 +428,7 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp as u32,
             Val::EarthClock => self.s.earth_clock as u32,
             Val::TrustSpeech => self.s.hide_trust_speech as u32,
+            Val::ReadyLines => self.s.hide_ready_lines as u32,
             Val::AutoAdvance => self.s.auto_advance,
             Val::Timers => self.s.timers as u32,
             Val::Skillchains => self.s.skillchain_helper as u32,
@@ -455,6 +461,7 @@ impl SettingsUi {
             Val::TargetHpp => self.s.target_hpp = x != 0,
             Val::EarthClock => self.s.earth_clock = x != 0,
             Val::TrustSpeech => self.s.hide_trust_speech = x != 0,
+            Val::ReadyLines => self.s.hide_ready_lines = x != 0,
             Val::AutoAdvance => self.s.auto_advance = x,
             Val::Timers => self.s.timers = x != 0,
             Val::Skillchains => self.s.skillchain_helper = x != 0,

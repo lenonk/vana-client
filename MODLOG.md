@@ -11862,3 +11862,8 @@ since "Ship voyages: the moving world" listed them as not done.
   printed only "starts casting Naji", without "(Naji) All right! Let me at 'em!".
 - Party TP and party buffs, the other candidates, were already there: config `party_tp` (retail 0xae bit 0, on by
   default) and the party members' status icons.
+- Ready Lines (config `hide_ready_lines`, All / "Mine, Monsters'"; Battlemod's per-actor "readies" / "casting"
+  filters): a 0x028 start line (categories 7 weapon / mob skill, 8 spell, 9 item, 12 ranged) prints only for us and
+  for a monster outside the party (dps::ours: party, trusts, pets hidden). Seen live: Ayame's Tachi: Yukikaze
+  printed only "uses", ours still "readies Fast Blade". A monster's line under the filter was not seen live (the worm
+  used no move in the window).

@@ -951,6 +951,14 @@ fn one_action(w: &mut World, a: &Action) {
         }
     }
     let mut messages = record_messages(a);
+    // Ours (the Ready Lines extra): a start line (weapon skill, spell, item, ranged) only for us and monsters.
+    if w.hide_ready_lines
+        && matches!(a.category, category::SKILL_START | category::MAGIC_START | category::ITEM_START | category::RANGED_START)
+        && a.actor != w.my_id
+        && (super::dps::ours(w, a.actor) || !w.entities.get(&a.actor).is_some_and(|e| e.mob))
+    {
+        messages.clear();
+    }
     // Melee / ranged proc and react lines (added effects, spikes, counters) print from their files' op 0x71.
     if matches!(a.category, category::BASIC_ATTACK | category::RANGED_FINISH) {
         messages.retain(|m| m.which == Some(0));
